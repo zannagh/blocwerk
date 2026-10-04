@@ -164,7 +164,7 @@ public sealed partial class WallRefreshProcessor
 
         // Summed up from the decisions as stored, the way Apply reads them, so the version below is what Apply checks.
         var promotable = await RefreshDecisions.LoadAsync(refresh.WallId, actors, matched, await StagedHoldsByPanelAsync(refresh.WallId, ct));
-        var summary = await SummarizeAsync(refresh.WallId, RefreshDecisions.AsQuick(promotable), promotable.PendingRelocations, panels, ct);
+        var summary = await SummarizeAsync(refresh.WallId, RefreshDecisions.AsQuick(promotable), promotable.PendingRelocations, panels, ct, promotable.Moves);
         var dropped = promotable.Folded.RemovedNewCenterHoldIds.Concat(promotable.Folded.Neighbours.SelectMany(n => n.RemovedNeighbourHoldIds));
         var by3D = dropped.Count(id => matched.SuggestedNewDiscards?.GetValueOrDefault(id) is NewHoldDiscardReason.KnownHoldIn3D or NewHoldDiscardReason.OffWallIn3D);
         return RefreshDecisions.Stamp(summary, promotable) with

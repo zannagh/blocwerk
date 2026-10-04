@@ -44,6 +44,19 @@ public static class UpdateExceptionBuilder
             }
         }
 
+        foreach (var m in session.HandPlacedMerges ?? [])
+        {
+            if (carry.GetValueOrDefault(m.OldHoldId) is { Kind: CarryKind.Carried } d && d.NewHoldId == m.NewHoldId)
+            {
+                drafts.Add(new UpdateExceptionDraft(UpdateExceptionKind.MatchedToHandPlaced, m.OldHoldId, m.NewHoldId));
+            }
+        }
+
+        foreach (var a in session.HandPlacedAmbiguous ?? [])
+        {
+            drafts.Add(new UpdateExceptionDraft(UpdateExceptionKind.HandPlacedAmbiguous, a.OldHoldId, a.NewHoldIds[0]));
+        }
+
         var leftOut = quick.RemovedNewCentreHoldIds.Concat(quick.Neighbours.SelectMany(n => n.RemovedNeighbourHoldIds)).ToHashSet();
         foreach (var c in (session.ConflictingNew ?? []).Where(c => leftOut.Contains(c.StagedHoldId)))
         {

@@ -63,6 +63,8 @@ public sealed partial class WallRefreshProcessor
         {
             CarriedWarpPositions = matched.CarriedWarpPositions,
             CarriedWarpShapes = matched.CarriedWarpShapes,
+            HandPlacedMergeOldIds = (matched.HandPlacedMerges ?? []).Select(m => m.OldHoldId).ToList(),
+            ExpectedMovesVersion = promotable.Moves.Version,
         };
         await actors.BigUpdate.PromoteAsync(refresh.WallId, confirmation, open.Id);
         await FinishPromotedAsync(refresh, actors, ct);

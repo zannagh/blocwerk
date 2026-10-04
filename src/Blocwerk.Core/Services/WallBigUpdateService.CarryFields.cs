@@ -24,8 +24,8 @@ public partial class WallBigUpdateService
 
     /// <summary>
     /// Copies the curated (user-set) fields from the old hold onto its successor row, leaving the
-    /// successor's own detected position and shape untouched. Virtual only carries forward from a
-    /// virtual predecessor; a real detection is never demoted to virtual.
+    /// successor's own detected position and shape untouched. A real detection is never demoted to
+    /// virtual: a virtual (or hand-placed) old hold that lands on a detection becomes a real hold.
     /// </summary>
     private static void CopyCuratedFields(Hold from, Hold to)
     {
@@ -36,10 +36,6 @@ public partial class WallBigUpdateService
         to.HandType = from.HandType;
         to.IsOnKickboard = from.IsOnKickboard;
         to.IsAutoDetected = from.IsAutoDetected;
-        if (from.IsVirtual)
-        {
-            to.IsVirtual = true;
-        }
     }
 
     /// <summary>

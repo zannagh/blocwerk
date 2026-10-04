@@ -23,5 +23,8 @@ internal sealed class HookedBigUpdate(IWallBigUpdateService inner, Func<Task> be
     public Task PromoteAsync(Guid wallId, BigUpdateConfirmation confirmation, Guid? expectedSessionId = null) =>
         inner.PromoteAsync(wallId, confirmation, expectedSessionId);
 
+    public Task<Blocwerk.Core.HoldMoves.HoldMovePlan> PreviewHoldMovesAsync(Guid wallId, BigUpdateConfirmation confirmation) =>
+        inner.PreviewHoldMovesAsync(wallId, confirmation);
+
     public Task DiscardAsync(Guid wallId, Guid? expectedSessionId = null) => inner.DiscardAsync(wallId, expectedSessionId);
 }

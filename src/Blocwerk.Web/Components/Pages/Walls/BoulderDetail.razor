@@ -183,6 +183,12 @@ else
             </div>
         }
 
+        @if (!_boulder.IsHistoric && !_boulder.IsArchived)
+        {
+            <BoulderMovesNotice WallId="WallId" BoulderId="BoulderId" ShareToken="@ShareToken" NeedsReview="_boulder.NeedsReview"
+                                CanManage="CanManageBoulder && !_isAnonymous" HasThen="CanViewHistoric" OnArchive="ArchiveBoulder" />
+        }
+
         @* Same rule again. On a Ghost boulder a creator-only accept/reject meant an open proposal
            nobody in the installation could ever resolve. *@
         @if (_activeProposal != null && CanManageBoulder)

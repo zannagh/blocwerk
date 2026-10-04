@@ -38,6 +38,11 @@ public partial class WallUpdateSessionService
             case UpdateExceptionKind.LowConfidenceMatch:
                 await AnswerLowConfidenceAsync(db, session.Id, card, answer, user.Id, now);
                 break;
+            case UpdateExceptionKind.MatchedToHandPlaced:
+                await AnswerHandPlacedMergeAsync(db, session.Id, card, answer, user.Id, now);
+                break;
+            case UpdateExceptionKind.HandPlacedAmbiguous:
+                break;
             default:
                 await AnswerConflictingNewAsync(db, session.Id, card, answer);
                 break;
@@ -92,6 +97,43 @@ public partial class WallUpdateSessionService
         }
 
         row.UpdatedAt = now;
+    }
+
+    /// <summary>
+    /// Keep or Undo: the old hold takes the detection (confirmed on Keep). Remove: the merge is undone, the old hold stays
+    /// as it was and the detection becomes a new hold beside it.
+    /// </summary>
+    private static async Task AnswerHandPlacedMergeAsync(
+        BlocwerkDbContext db, Guid sessionId, WallUpdateException card, UpdateExceptionAnswer answer, Guid userId, DateTimeOffset now)
+    {
+        var row = await CarryRowAsync(db, sessionId, card.OldHoldId!.Value);
+        var rejected = answer == UpdateExceptionAnswer.Remove;
+        CarryConfirmationPolicy.Apply(row, CarryKind.Carried, rejected ? null : card.StagedHoldId, confirmed: answer != UpdateExceptionAnswer.Undo, userId, now);
+        if (answer == UpdateExceptionAnswer.Undo)
+        {
+            CarryConfirmationPolicy.Clear(row);
+        }
+
+        row.UpdatedAt = now;
+        if (!rejected)
+        {
+            return;
+        }
+
+        var holdId = card.StagedHoldId!.Value;
+        var detection = await db.WallUpdateHoldDecisions.FirstOrDefaultAsync(d =>
+            d.SessionId == sessionId && d.Kind == WallUpdateHoldDecisionKind.NewCentreHold && d.HoldId == holdId);
+        if (detection is null)
+        {
+            db.WallUpdateHoldDecisions.Add(new WallUpdateHoldDecision
+            {
+                SessionId = sessionId, Kind = WallUpdateHoldDecisionKind.NewCentreHold, HoldId = holdId, Discarded = false,
+            });
+        }
+        else
+        {
+            detection.Discarded = false;
+        }
     }
 
     /// <summary>Keep: the detection becomes a new hold. Remove or Undo: it is left out, as the photo check suggested.</summary>

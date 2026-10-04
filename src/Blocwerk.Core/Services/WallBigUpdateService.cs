@@ -4,6 +4,7 @@ using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Helpers;
+using Blocwerk.Core.HoldMoves;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -32,6 +33,7 @@ public partial class WallBigUpdateService : IWallBigUpdateService
     private readonly IMarkerDetectionService? markerDetection;
     private readonly IPhotoTextureMatcher? textureMatcher;
     private readonly ICaptureFileStore? captureFiles;
+    private readonly HoldMoveOptions moveOptions;
 
     public WallBigUpdateService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
@@ -47,8 +49,10 @@ public partial class WallBigUpdateService : IWallBigUpdateService
         IHoldPresenceProbe? presenceProbe = null,
         IMarkerDetectionService? markerDetection = null,
         IPhotoTextureMatcher? textureMatcher = null,
-        ICaptureFileStore? captureFiles = null)
+        ICaptureFileStore? captureFiles = null,
+        HoldMoveOptions? moveOptions = null)
     {
+        this.moveOptions = moveOptions ?? new HoldMoveOptions();
         this.textureMatcher = textureMatcher;
         this.captureFiles = captureFiles;
         this.photoConverter = photoConverter;
@@ -264,6 +268,8 @@ public partial class WallBigUpdateService : IWallBigUpdateService
             neighbours.Add(new NeighbourOverlap(panel.Id, panel.Col, panel.Row, proposals, overlapFailed));
         }
 
+        var handPlaced = MergeHandPlaced(
+            centerHolds, centreOldHolds, centerImage, carryover, removedCandidates, newCenter, carriedWarp);
         var removals = new RemovalInputs(oldByPosition, removedCandidates.ToHashSet(), carriedWarp);
         var triage = await SuggestNewDiscardsAsync(db, wall, stagedGen, carryover, oldHolds, oldPanelPhotosById, neighbours, use3DEvidence, removals);
         return new BigUpdateSession(
@@ -275,7 +281,9 @@ public partial class WallBigUpdateService : IWallBigUpdateService
             triage.SeenIn3D,
             triage.Evidence3DModelId,
             use3DEvidence ? triage.PossiblyRemoved : null,
-            use3DEvidence ? triage.ConflictingNew : null);
+            use3DEvidence ? triage.ConflictingNew : null,
+            handPlaced.Merges,
+            handPlaced.Ambiguous);
     }
 
     /// <summary>

@@ -6,6 +6,7 @@ using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Detection.Outlines;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Geometry.TextureRegistration;
+using Blocwerk.Core.HoldMoves;
 
 namespace Blocwerk.Core.Services;
 
@@ -42,12 +43,20 @@ public static class HoldRelocationProposer
     /// <param name="appeared">Staged holds that matched no old hold.</param>
     /// <param name="fingerprints">Fingerprint per hold id; holds without one take no part.</param>
     /// <param name="markerWall">Whether the wall is a glyph (marker) wall.</param>
+    /// <param name="distanceMm">
+    /// How far an old hold would have moved to the new detection, when known. Look-alikes the fingerprint alone cannot tell apart
+    /// (several similar holds on the wall) are then assigned by least total movement, so one that moved among
+    /// look-alikes that stayed is paired with the detection nearest to where it was.
+    /// </param>
+    /// <param name="options">The look-alike thresholds.</param>
     /// <returns>The pairs worth suggesting, by descending score.</returns>
     public static IReadOnlyList<RelocationPair> Propose(
         IReadOnlyList<Hold> disappeared,
         IReadOnlyList<Hold> appeared,
         IReadOnlyDictionary<Guid, HoldFingerprint> fingerprints,
-        bool markerWall)
+        bool markerWall,
+        Func<Guid, Guid, double?>? distanceMm = null,
+        HoldMoveOptions? options = null)
     {
         var olds = Candidates(disappeared, fingerprints, _ => true);
         var news = Candidates(appeared, fingerprints, h => !markerWall || IsOnWall(h));
@@ -70,7 +79,34 @@ public static class HoldRelocationProposer
                 proposal.DisappearedHoldId, proposal.AppearedHoldId, proposal.Score, proposal.Margin, metric));
         }
 
-        return pairs;
+        return distanceMm is null ? pairs : pairs.Concat(ByLeastMovement(disappeared, appeared, fingerprints, pairs, distanceMm, options ?? new HoldMoveOptions())).ToList();
+    }
+
+    /// <summary>
+    /// The look-alike groups the fingerprint left ambiguous (several similar holds, no clear lead): their old holds are
+    /// assigned to the detections by least total movement. Only pairs that are alike enough to be suggested at all.
+    /// </summary>
+    private static IEnumerable<RelocationPair> ByLeastMovement(
+        IReadOnlyList<Hold> disappeared,
+        IReadOnlyList<Hold> appeared,
+        IReadOnlyDictionary<Guid, HoldFingerprint> fingerprints,
+        IReadOnlyList<RelocationPair> already,
+        Func<Guid, Guid, double?> distanceMm,
+        HoldMoveOptions options)
+    {
+        var takenOld = already.Select(p => p.OldHoldId).ToHashSet();
+        var takenNew = already.Select(p => p.NewHoldId).ToHashSet();
+        SimilarHold Describe(Hold h) => new(h.Id, h.Color, fingerprints.GetValueOrDefault(h.Id), h.WidthMm, null);
+        var olds = disappeared.Where(h => !h.IsVirtual && !takenOld.Contains(h.Id) && fingerprints.ContainsKey(h.Id)).Select(Describe).ToList();
+        var news = appeared.Where(h => !takenNew.Contains(h.Id) && fingerprints.ContainsKey(h.Id)).Select(Describe).ToList();
+        foreach (var a in SimilarHoldAssigner.Assign(olds, news, distanceMm, options))
+        {
+            var score = HoldFingerprint.Similarity(fingerprints[a.OldId], fingerprints[a.NewId]);
+            if (score >= LookAlikeMinScore)
+            {
+                yield return new RelocationPair(a.OldId, a.NewId, score, LookAlikeMinMargin, false);
+            }
+        }
     }
 
     /// <summary>

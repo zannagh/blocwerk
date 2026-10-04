@@ -62,6 +62,29 @@ public partial class WallBigUpdateService
         }
     }
 
+    /// <summary>
+    /// How far each disappeared old hold would have moved to each appeared detection (mm): measured in 3D when both are
+    /// placed, else from the warp-predicted spot with the panel's scale, else null. Used to tell look-alikes apart.
+    /// </summary>
+    private static async Task<Func<Guid, Guid, double?>> MoveDistanceAsync(
+        BlocwerkDbContext db, BigUpdateSession session, IReadOnlyList<Hold> disappeared, IReadOnlyList<Hold> appeared, byte[]? stagedPhoto)
+    {
+        var size = stagedPhoto is null ? null : OverlapSeedLoader.RawSize(stagedPhoto);
+        var carriedOld = session.Carryover.Select(c => c.OldHoldId).ToList();
+        var carriedNew = session.Carryover.Select(c => c.NewHoldId).ToList();
+        var olds = await db.Holds.AsNoTracking().Where(h => carriedOld.Contains(h.Id)).ToDictionaryAsync(h => h.Id);
+        var news = await db.Holds.AsNoTracking().Where(h => carriedNew.Contains(h.Id)).ToDictionaryAsync(h => h.Id);
+        var pairs = session.Carryover.Where(c => olds.ContainsKey(c.OldHoldId) && news.ContainsKey(c.NewHoldId))
+            .Select(c => (Old: olds[c.OldHoldId], Twin: news[c.NewHoldId]));
+        var scale = size is { } s ? HoldMoves.PanelScaleEstimator.Estimate(pairs, s) : null;
+        var oldById = disappeared.ToDictionary(h => h.Id);
+        var newById = appeared.ToDictionary(h => h.Id);
+        var warp = session.CarriedWarpPositions;
+        return (oldId, newId) => oldById.TryGetValue(oldId, out var o) && newById.TryGetValue(newId, out var n)
+            ? HoldMoves.HoldMoveCalculator.Measure(o, n, warp?.GetValueOrDefault(oldId), size, scale)?.DistanceMm
+            : null;
+    }
+
     private static void DiscardPendingProposals(BlocwerkDbContext db, WallUpdateSession open)
     {
         foreach (var entry in db.ChangeTracker.Entries<WallUpdateRelocationProposal>()
@@ -103,7 +126,8 @@ public partial class WallBigUpdateService
             fingerprints[id] = fingerprint;
         }
 
-        var proposed = HoldRelocationProposer.Propose(disappeared, appeared, fingerprints, wall.GlyphsEnabled);
+        var distance = await MoveDistanceAsync(db, session, disappeared, appeared, stagedPhoto);
+        var proposed = HoldRelocationProposer.Propose(disappeared, appeared, fingerprints, wall.GlyphsEnabled, distance, moveOptions);
         return await GuardDisplacementAsync(db, session, proposed, disappeared, appeared, stagedPhoto);
     }
 

@@ -63,6 +63,10 @@
 .refresh-page { padding-bottom: calc(48px + var(--bottomnav-h, 0px)); }
 .refresh-actions > button { scroll-margin-bottom: calc(24px + var(--bottomnav-h, 0px)); }
 .refresh-page ::deep .refresh-3d-note { padding: 8px 12px; border-radius: var(--r-md); background: var(--info-bg); color: var(--info-text); }
+.refresh-page ::deep .refresh-moves-list { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 8px; }
+.refresh-page ::deep .refresh-moves-list li { padding: 10px; border: 1px solid var(--border-light); border-radius: var(--r-md); background: var(--bg-surface-alt); }
+.refresh-page ::deep .refresh-moves-list li.is-removed { border-color: var(--warning-fill); background: var(--warning-bg); color: var(--warning-text); }
+.refresh-page ::deep .refresh-moves-source, .refresh-page ::deep .refresh-moves-boulders { font-size: 0.85rem; opacity: 0.85; }
 .refresh-page ::deep .refresh-check-list { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 12px; }
 .refresh-page ::deep .refresh-check { padding: 10px; border: 1px solid var(--border-light); border-radius: var(--r-md); background: var(--bg-surface-alt); }
 .refresh-page ::deep .refresh-check.is-answered { opacity: 0.75; }

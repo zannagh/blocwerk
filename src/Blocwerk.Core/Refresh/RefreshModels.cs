@@ -104,7 +104,27 @@ public sealed record RefreshSummary(
     bool EditedInFullReview = false,
     int PossiblyRemovedHolds = 0,
     int ChecksOpen = 0,
-    DateTimeOffset? AnsweredAt = null);
+    DateTimeOffset? AnsweredAt = null,
+    IReadOnlyList<MovedHoldLine>? MovedHolds = null);
+
+/// <summary>A hold that physically moved, as the confirm screen lists it.</summary>
+/// <param name="OldHoldId">The hold before.</param>
+/// <param name="NewHoldId">The hold after.</param>
+/// <param name="HoldName">Its name, when it has one.</param>
+/// <param name="DistanceMm">How far it moved.</param>
+/// <param name="Source">3D or photo estimate.</param>
+/// <param name="Outcome">Kept on its boulders or removed from them.</param>
+/// <param name="Text">Plain language, for example "moved 6 cm, kept".</param>
+/// <param name="Boulders">The boulders that use it.</param>
+public sealed record MovedHoldLine(
+    Guid OldHoldId,
+    Guid NewHoldId,
+    string? HoldName,
+    double DistanceMm,
+    Enums.HoldMoveSource Source,
+    Enums.HoldMoveOutcome Outcome,
+    string Text,
+    IReadOnlyList<string> Boulders);
 
 /// <summary>An uploaded file, as the drop zone lists it.</summary>
 public sealed record RefreshFile(Guid? PhotoId, string? FileName, bool IsVideo, string? Problem);

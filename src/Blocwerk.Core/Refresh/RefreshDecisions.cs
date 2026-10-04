@@ -38,8 +38,14 @@ internal static class RefreshDecisions
             .ToList();
         var exceptions = await actors.Sessions.GetUpdateExceptionsAsync(wallId);
         var review = ReviewOldHoldIds(exceptions);
-        promotable = promotable with { ReviewOldHoldIds = review };
+        promotable = promotable with
+        {
+            ReviewOldHoldIds = review,
+            HandPlacedMergeOldIds = (matched.HandPlacedMerges ?? []).Select(m => m.OldHoldId).ToList(),
+        };
         var folded = RelocationFold.Apply(promotable, accepted);
+        var moves = await actors.BigUpdate.PreviewHoldMovesAsync(
+            wallId, folded with { CarriedWarpPositions = matched.CarriedWarpPositions });
         var linked = folded.Neighbours.Sum(n => n.Links.Count);
         var leftOut = Math.Max(0, matched.Neighbours.Sum(n => n.Proposals.Count) - linked);
         return new PromotableDecisions(
@@ -48,8 +54,9 @@ internal static class RefreshDecisions
             scoped.Reset.Count,
             relocations.Count(r => r.Status == RelocationProposalStatus.Pending),
             leftOut,
-            Fingerprint(folded, stagedByPanel),
-            exceptions);
+            Fingerprint(folded, stagedByPanel, moves.Version),
+            exceptions,
+            moves);
     }
 
     /// <summary>The old holds of unanswered cards: they go live as decided, marked for review.</summary>
@@ -57,7 +64,8 @@ internal static class RefreshDecisions
     /// <returns>The old hold ids.</returns>
     public static IReadOnlyCollection<Guid> ReviewOldHoldIds(IReadOnlyList<UpdateExceptionInfo> exceptions) =>
         exceptions
-            .Where(e => e.Status == UpdateExceptionStatus.Pending && e.Kind is UpdateExceptionKind.PossiblyRemoved or UpdateExceptionKind.LowConfidenceMatch)
+            .Where(e => e.Status == UpdateExceptionStatus.Pending
+                && e.Kind is UpdateExceptionKind.PossiblyRemoved or UpdateExceptionKind.LowConfidenceMatch or UpdateExceptionKind.HandPlacedAmbiguous)
             .Select(e => e.OldHoldId)
             .OfType<Guid>()
             .ToHashSet();
@@ -87,9 +95,11 @@ internal static class RefreshDecisions
     /// <param name="c">The decisions (relocations folded in).</param>
     /// <param name="stagedByPanel">The staged holds per staged panel.</param>
     /// <returns>The fingerprint.</returns>
-    public static string Fingerprint(BigUpdateConfirmation c, IReadOnlyDictionary<Guid, IReadOnlyList<Guid>> stagedByPanel)
+    public static string Fingerprint(
+        BigUpdateConfirmation c, IReadOnlyDictionary<Guid, IReadOnlyList<Guid>> stagedByPanel, string? movesVersion = null)
     {
         var text = new StringBuilder();
+        text.Append("m:").Append(movesVersion).Append('\n');
         foreach (var (panel, holds) in stagedByPanel.OrderBy(p => p.Key.ToString(), StringComparer.Ordinal))
         {
             text.Append("s:").Append(panel).Append('\n');
@@ -111,6 +121,7 @@ internal static class RefreshDecisions
         }
 
         Append(text, "f", c.ReviewOldHoldIds ?? []);
+        Append(text, "p", c.HandPlacedMergeOldIds ?? []);
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(text.ToString()));
         return Convert.ToHexString(hash, 0, 12);
     }
@@ -132,6 +143,7 @@ internal static class RefreshDecisions
 /// <param name="OverlapsLeftOut">Overlap suggestions not linked.</param>
 /// <param name="Version">The fingerprint of <paramref name="Folded"/>.</param>
 /// <param name="Exceptions">The confirm screen's cards (their unanswered old holds are in <paramref name="Folded"/>).</param>
+/// <param name="Moves">The carried holds that physically moved and what that does to their boulders; part of <paramref name="Version"/>.</param>
 internal sealed record PromotableDecisions(
     BigUpdateConfirmation Scoped,
     BigUpdateConfirmation Folded,
@@ -139,4 +151,5 @@ internal sealed record PromotableDecisions(
     int PendingRelocations,
     int OverlapsLeftOut,
     string Version,
-    IReadOnlyList<UpdateExceptionInfo> Exceptions);
+    IReadOnlyList<UpdateExceptionInfo> Exceptions,
+    HoldMoves.HoldMovePlan Moves);
