@@ -70,7 +70,7 @@
     [Parameter] public string? Caption { get; set; }
     [Parameter, EditorRequired] public IReadOnlyList<ChartSeriesPoint> Points { get; set; } = [];
     [Parameter] public IReadOnlyList<(double Value, string Label)> YTicks { get; set; } = [];
-    [Parameter] public string Stroke { get; set; } = "#e94560";
+    [Parameter] public string Stroke { get; set; } = "var(--accent)";
     [Parameter] public bool ShowTrendline { get; set; }
     [Parameter] public string EmptyText { get; set; } = "Not enough data yet.";
 

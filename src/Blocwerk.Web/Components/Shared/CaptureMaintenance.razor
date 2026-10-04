@@ -1,0 +1,73 @@
+@* Wall-admin maintenance for one finished capture. Each action is a real button with a one-line description that is
+   always visible (a title= tooltip never shows on a phone). The costly ones, retrain and re-solve, ask first. *@
+
+<ul class="capture-maintenance" aria-label="Maintenance for this capture">
+    @if (CanRetrain)
+    {
+        <li>
+            <ConfirmAction Label="@($"Retrain photo-real ({RetrainQuality})")" TriggerClass="btn-secondary"
+                           ConfirmLabel="Retrain" ConfirmClass="btn-primary" Disabled="Disabled"
+                           Question="@($"Retrain the photo-real view at {RetrainQuality} quality? It uses runner (GPU) time and takes a long while; the current view stays until the new one is ready.")"
+                           OnConfirm="OnRetrain" />
+            <span class="capture-maintenance-desc">Trains the photo-real view again from these photos at higher quality.</span>
+        </li>
+    }
+    @if (CanRefinish)
+    {
+        <li>
+            <button type="button" class="btn-secondary" disabled="@Disabled" @onclick="OnRefinish">Re-finish photo-real</button>
+            <span class="capture-maintenance-desc">Crops, cleans and exports the trained view again and re-runs the follow-up steps. Nothing is trained; takes minutes.</span>
+        </li>
+    }
+    @if (Rerendering)
+    {
+        <li class="hint" role="status">Rendering the wall textures again&hellip;</li>
+    }
+    else if (CanRerender)
+    {
+        <li>
+            <button type="button" class="btn-secondary" disabled="@Disabled" @onclick="OnRerender">Re-render textures</button>
+            <span class="capture-maintenance-desc">Renders the wall textures again from this capture's photos and re-places the holds; the photo-real view is untouched. Takes minutes.</span>
+        </li>
+    }
+    @if (Resolving)
+    {
+        <li class="hint" role="status">Solving the 3D model again from this capture's photos&hellip;</li>
+    }
+    else if (CanResolve)
+    {
+        <li>
+            <ConfirmAction Label="Re-solve 3D model" TriggerClass="btn-secondary"
+                           ConfirmLabel="Re-solve" ConfirmClass="btn-primary" Disabled="Disabled"
+                           Question="Solve the 3D model again with the current solver? It is only activated if it lines up with the active model; textures are re-rendered and holds re-placed."
+                           OnConfirm="OnResolve" />
+            <span class="capture-maintenance-desc">Solves the 3D model again from these photos. Nothing is trained; takes minutes.</span>
+        </li>
+    }
+</ul>
+
+@code {
+    [Parameter] public bool CanRetrain { get; set; }
+
+    [Parameter] public string RetrainQuality { get; set; } = string.Empty;
+
+    [Parameter] public bool CanRefinish { get; set; }
+
+    [Parameter] public bool CanRerender { get; set; }
+
+    [Parameter] public bool Rerendering { get; set; }
+
+    [Parameter] public bool CanResolve { get; set; }
+
+    [Parameter] public bool Resolving { get; set; }
+
+    [Parameter] public bool Disabled { get; set; }
+
+    [Parameter] public EventCallback OnRetrain { get; set; }
+
+    [Parameter] public EventCallback OnRefinish { get; set; }
+
+    [Parameter] public EventCallback OnRerender { get; set; }
+
+    [Parameter] public EventCallback OnResolve { get; set; }
+}

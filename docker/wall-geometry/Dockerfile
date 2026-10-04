@@ -20,6 +20,8 @@ RUN pip install --require-hashes --no-deps -r requirements-dev.lock
 COPY docker/wall-geometry/tests/ tests/
 # The geometry kernel's golden cases, shared with the C# tests (docs/geometry-kernel.md; test_geometry_golden.py).
 COPY test/geometry-golden/ tests/geometry-golden/
+# The Attic's real model, plan and hold geometry (no photos), shared with the C# tests (test_real_attic.py).
+COPY test/real-data/ tests/real-data/
 COPY docker/compute-jobs-py/tests/ tests-shared/
 RUN python -m pytest -q -p no:cacheprovider tests tests-shared
 

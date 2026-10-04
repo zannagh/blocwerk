@@ -17,7 +17,7 @@ namespace Blocwerk.Web.Components.Shared;
 /// </summary>
 public partial class WallHoldProposals
 {
-    private const int PageSize = 24;
+    private const int PageSize = 20;
     private const int CropBatch = 6;
     private readonly Dictionary<Guid, string> crops = [];
     private readonly HashSet<Guid> cropFailed = [];
@@ -51,8 +51,15 @@ public partial class WallHoldProposals
     private bool Hidden => KioskContext.IsKiosk || !string.IsNullOrEmpty(ShareToken);
 
     /// <summary>A proposal in a few words: photos, size, where.</summary>
-    internal static string ProposalText(HoldProposal p) =>
-        string.Create(CultureInfo.InvariantCulture, $"Seen in {p.Views} photos, about {p.SizeMm:0} mm, facet {p.FacetId}{(p.H > 60 ? ", on a volume" : string.Empty)}.");
+    internal static string ProposalText(HoldProposal p)
+    {
+        var size = string.Create(CultureInfo.InvariantCulture, $"{p.SizeMm:0}");
+        var where = p is { PanelX: { } x, PanelY: { } y } ? $", {PlainCopy.Position(x, y)} on its panel photo." : ".";
+        return $"Seen in {PlainCopy.Plural(p.Views, "photo")}, about {size} mm wide{(p.H > 60 ? ", on a volume" : string.Empty)}{where}";
+    }
+
+    /// <summary>The spot of a proposal on the 3D wall, for "Show on wall".</summary>
+    internal static WallSpot SpotOf(HoldProposal p) => new(p.FacetId, p.A, p.B, p.H);
 
     // Loaded here, not in OnInitializedAsync: WallDetail is retained across enhanced navigation between walls.
     protected override async Task OnParametersSetAsync()

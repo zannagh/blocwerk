@@ -9,21 +9,12 @@
 @if (_show)
 {
     <div class="bw-install" role="region" aria-label="Install Blocwerk">
-        <div class="bw-install-body">
-            <p class="bw-install-title">Blocwerk works best as an app.</p>
-            @if (_instructions != null)
-            {
-                <p class="bw-install-hint">@_instructions</p>
-            }
-        </div>
-        <div class="bw-install-actions">
-            @if (_instructions == null)
-            {
-                <button type="button" class="bw-install-accept" @onclick="InstallAsync" disabled="@_busy">Install</button>
-            }
-            <button type="button" class="bw-install-dismiss" @onclick="Snooze">No thanks</button>
-            <button type="button" class="bw-install-dismiss" @onclick="Never">Don't show again</button>
-        </div>
+        <p class="bw-install-title">@(_instructions ?? "Install Blocwerk as an app")</p>
+        @if (_instructions == null)
+        {
+            <button type="button" class="bw-install-accept" @onclick="InstallAsync" disabled="@_busy">Install</button>
+        }
+        <button type="button" class="bw-install-dismiss" @onclick="Snooze" aria-label="Dismiss, ask again in two weeks">&times;</button>
     </div>
 }
 
@@ -71,16 +62,10 @@
         }
     }
 
-    // "No thanks" is bounded (14 days, in bwInstall); "Don't show again" is permanent.
+    // The close button is a bounded no (14 days, remembered by bwInstall).
     private async Task Snooze()
     {
         await JS.InvokeVoidAsync("bwInstall.snooze");
-        _show = false;
-    }
-
-    private async Task Never()
-    {
-        await JS.InvokeVoidAsync("bwInstall.never");
         _show = false;
     }
 }

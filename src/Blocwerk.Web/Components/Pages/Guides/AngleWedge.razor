@@ -249,7 +249,7 @@
             builder.AddAttribute(13, "text-anchor", "middle");
             builder.AddAttribute(14, "dominant-baseline", "middle");
             builder.AddAttribute(15, "font-size", F2(fontSize));
-            builder.AddAttribute(16, "fill", "var(--accent, #e94560)");
+            builder.AddAttribute(16, "fill", "var(--accent)");
             builder.AddAttribute(17, "font-weight", "600");
             builder.AddAttribute(18, "font-family", "sans-serif");
             builder.AddMarkupContent(19, $"{F(piece.EdgeLengths[i])}mm");
@@ -387,15 +387,15 @@
         // Wedge cross-section, stuck to the wall.
         builder.OpenElement(23, "polygon");
         builder.AddAttribute(24, "points", string.Join(" ", rc.Select(p => $"{Sx(p)},{Sy(p)}")));
-        builder.AddAttribute(25, "fill", "rgba(233,69,96,0.15)");
+        builder.AddAttribute(25, "fill", "var(--accent-soft)");
         builder.AddAttribute(26, "stroke", "var(--text-heading, #1a1a2e)");
         builder.AddAttribute(27, "stroke-width", F2(sw * 1.4));
         builder.CloseElement();
 
         // Perpendicular "tip from wall" dimension.
-        Seg(tip, foot, "var(--accent, #e94560)", sw, $"{F2(tile * 0.4)} {F2(tile * 0.25)}");
+        Seg(tip, foot, "var(--accent)", sw, $"{F2(tile * 0.4)} {F2(tile * 0.25)}");
         var depthMid = new Point2D(((tip.X + foot.X) / 2.0) + cos * size * 0.11, ((tip.Y + foot.Y) / 2.0) + sin * size * 0.11);
-        Txt(depthMid, $"Tip {F(_result.DepthMm)}mm", font * 0.9, "var(--accent, #e94560)", "700");
+        Txt(depthMid, $"Tip {F(_result.DepthMm)}mm", font * 0.9, "var(--accent)", "700");
 
         // Edge length labels, pushed outward from the wedge centroid.
         var cx = rc.Average(p => p.X);
@@ -425,7 +425,7 @@
             if (il < 1e-6) il = 1;
             var ap = new Point2D(v.X + ix / il * size * 0.09, v.Y + iy / il * size * 0.09);
             var angle = i < _result.CrossSectionEdgeAngles.Length ? _result.CrossSectionEdgeAngles[i] : 0;
-            Txt(ap, $"{F(angle)}&deg;", font * 0.85, "var(--accent, #e94560)", "700");
+            Txt(ap, $"{F(angle)}&deg;", font * 0.85, "var(--accent)", "700");
         }
 
         builder.CloseElement();

@@ -220,7 +220,7 @@
                         </div>
 
                         @{ var bScale = BoulderScale(); }
-                        <ProgressionChart Title="Boulder progression" Caption="rolling 60-day rating · drag axis to zoom" Stroke="#e94560"
+                        <ProgressionChart Title="Boulder progression" Caption="rolling 60-day rating · drag axis to zoom" Stroke="var(--accent)"
                                           Points="BoulderPoints()" YTicks="bScale.Ticks" YMin="bScale.Min" YMax="bScale.Max"
                                           ShowTrendline="true" OnYScaleStep="OnBoulderYScale"
                                           EmptyText="No sends in this window yet." />
@@ -317,7 +317,9 @@
                         than rolling forward.
                     </p>
                 </div>
-                <button class="btn-primary" @onclick="() => _showScoreInfo = false">Got it</button>
+                <div class="bw-modal-actions">
+                    <button class="btn-primary" @onclick="() => _showScoreInfo = false">Got it</button>
+                </div>
         </Modal>
     }
 
@@ -341,7 +343,9 @@
                         }
                     </div>
                 }
-                <button class="btn-secondary" @onclick="() => _showWallPicker = false">Cancel</button>
+                <div class="bw-modal-actions">
+                    <button class="btn-secondary" @onclick="() => _showWallPicker = false">Cancel</button>
+                </div>
         </Modal>
     }
 </div>

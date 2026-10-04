@@ -9,3 +9,11 @@ button.stat {
     appearance: none;
     -webkit-appearance: none;
 }
+
+/* Delete Wall lives in its own bordered block at the very bottom of Wall Settings, away from the routine controls. */
+.danger-zone {
+    margin-top: 32px; padding: 14px; display: flex; flex-direction: column; gap: 8px;
+    border: 1px solid var(--danger-text); border-radius: var(--r-md);
+}
+.danger-zone h3 { margin: 0; font-size: 1rem; color: var(--danger-text); }
+.danger-zone .hint { margin: 0; }

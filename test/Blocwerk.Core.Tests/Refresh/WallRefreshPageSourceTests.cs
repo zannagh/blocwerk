@@ -27,7 +27,7 @@ public class WallRefreshPageSourceTests
         Assert.True(guard > 0 && entry - guard < 200, "entry must sit right inside the kiosk/share-link guard");
         Assert.True(adminOnly > 0 && settings > adminOnly && entry > settings, "entry must live in the admin-only Wall Settings card");
         Assert.Equal(entry, markup.LastIndexOf("href=\"/walls/@WallId/update\"", StringComparison.Ordinal));
-        Assert.Contains("\"Update wall with new photos\"", markup);
+        Assert.Contains("\"Update step by step\"", markup);
     }
 
     [Fact]

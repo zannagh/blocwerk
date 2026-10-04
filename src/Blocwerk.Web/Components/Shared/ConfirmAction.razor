@@ -1,0 +1,114 @@
+@* A button that asks before it acts: the first tap opens an in-page question with Confirm and Cancel (no browser
+   dialog, nothing to scroll away on a phone). When RequiredText is set the confirm button stays disabled until the
+   user has typed exactly that text (used for deleting a whole wall). Escape cancels. *@
+
+@if (!asking)
+{
+    <button type="button" class="@TriggerClass" disabled="@Disabled" @onclick="Ask">@Label</button>
+}
+else
+{
+    <div class="confirm-action" @ref="panel" role="group" aria-label="@Question" @onkeydown="OnKeyDown">
+        <p class="confirm-action-question">@Question</p>
+        @if (!string.IsNullOrEmpty(RequiredText))
+        {
+            <label class="confirm-action-label">
+                <span>Type <strong>@RequiredText</strong> to confirm</span>
+                <input class="form-input" autocomplete="off" autocapitalize="off" spellcheck="false"
+                       @bind="typed" @bind:event="oninput" />
+            </label>
+        }
+        <div class="confirm-action-buttons">
+            <button type="button" class="@ConfirmClass" disabled="@(Disabled || !Matches)" @onclick="ConfirmAsync">@ConfirmLabel</button>
+            <button type="button" class="btn-secondary" disabled="@Disabled" @onclick="Cancel">Cancel</button>
+        </div>
+    </div>
+}
+
+@inject IJSRuntime JS
+
+@code {
+    private bool asking;
+    private bool revealPending;
+    private ElementReference panel;
+    private string typed = string.Empty;
+
+    /// <summary>Text of the button that opens the question.</summary>
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+
+    /// <summary>The question, stating what will happen and what is lost.</summary>
+    [Parameter, EditorRequired] public string Question { get; set; } = string.Empty;
+
+    /// <summary>Text of the button that performs the action.</summary>
+    [Parameter] public string ConfirmLabel { get; set; } = "Yes";
+
+    /// <summary>CSS class of the opening button.</summary>
+    [Parameter] public string TriggerClass { get; set; } = "btn-secondary";
+
+    /// <summary>CSS class of the confirm button.</summary>
+    [Parameter] public string ConfirmClass { get; set; } = "btn-danger";
+
+    /// <summary>When set, the confirm button needs this text typed first.</summary>
+    [Parameter] public string? RequiredText { get; set; }
+
+    [Parameter] public bool Disabled { get; set; }
+
+    [Parameter] public EventCallback OnConfirm { get; set; }
+
+    private bool Matches => string.IsNullOrEmpty(RequiredText)
+        || string.Equals(typed.Trim(), RequiredText.Trim(), StringComparison.Ordinal);
+
+    private void Ask()
+    {
+        typed = string.Empty;
+        asking = true;
+        revealPending = true;
+    }
+
+    /// <summary>
+    /// The question opens inline, which on a short landscape screen can leave Cancel under the tab
+    /// bar and the input under a banner; centre it once it has rendered.
+    /// </summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!revealPending || !asking)
+        {
+            return;
+        }
+
+        revealPending = false;
+        try
+        {
+            await using var module = await JS.InvokeAsync<IJSObjectReference>("import", "/js/reveal-section.js");
+            await module.InvokeVoidAsync("revealCentered", panel);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or TaskCanceledException or InvalidOperationException)
+        {
+            // Cosmetic only: the dialog works without the scroll.
+        }
+    }
+
+    private void Cancel()
+    {
+        asking = false;
+    }
+
+    private void OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            asking = false;
+        }
+    }
+
+    private async Task ConfirmAsync()
+    {
+        if (!Matches)
+        {
+            return;
+        }
+
+        asking = false;
+        await OnConfirm.InvokeAsync();
+    }
+}

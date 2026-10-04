@@ -9,6 +9,7 @@
 !docker/wall-geometry/service/
 !docker/wall-geometry/tests/
 !test/geometry-golden/
+!test/real-data/
 **/__pycache__
 **/*.pyc
 **/.pytest_cache

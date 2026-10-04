@@ -23,7 +23,7 @@
                     <tr @key="entry.Id">
                         <td><LocalTime Value="@entry.CreatedAt" Format="LocalTimeFormat.DateDmy" /></td>
                         <td class="num">@GlyphFormat.Pixels(entry.ReprojRmsPx)</td>
-                        <td>@(entry.Notes ?? "—")</td>
+                        <td>@(entry.Notes is null ? "—" : PlainCopy.Notes(entry.Notes))</td>
                         <td class="glyph-history-action">
                             @if (entry.IsActive)
                             {

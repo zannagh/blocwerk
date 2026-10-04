@@ -95,7 +95,7 @@
     background: transparent; color: var(--accent); font-size: 0.82rem; font-weight: 600;
     cursor: pointer; white-space: nowrap;
 }
-.btn-pdf:hover { background: var(--accent); color: #fff; }
+.btn-pdf:hover { background: var(--accent); color: var(--on-accent); }
 
 .piece-card {
     padding: 14px; background: var(--bg-surface); border-radius: 10px;

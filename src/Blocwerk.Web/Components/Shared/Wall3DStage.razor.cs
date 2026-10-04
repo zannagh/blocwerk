@@ -50,6 +50,10 @@ public partial class Wall3DStage : IAsyncDisposable
     [Parameter]
     public string InitialPreset { get; set; } = "front";
 
+    /// <summary>A spot to mark and look at ("Show on wall"); null for the normal start view.</summary>
+    [Parameter]
+    public WallSpot? Highlight { get; set; }
+
     /// <summary>Show the gesture hint only until the viewer first touches a 3D view (remembered per browser).</summary>
     [Parameter]
     public bool HintOnce { get; set; }
@@ -215,6 +219,7 @@ public partial class Wall3DStage : IAsyncDisposable
         ["initialPreset"] = InitialPreset,
         ["initialMode"] = InitialMode ?? "schematic",
         ["hintOnce"] = HintOnce,
+        ["highlight"] = Highlight,
     };
 
     private async Task ListenFacetTapsAsync()

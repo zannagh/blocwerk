@@ -67,10 +67,18 @@ public partial class WallShapeCleanup : IDisposable
     /// <returns>Text, or an empty string when there are none.</returns>
     internal static string ManualOverlapText(HoldShapeCleanupSummary p) => p.ManualOverlapCount == 0
         ? string.Empty
-        : $"{p.ManualOverlapCount} overlap(s) involve only hand-placed or hand-drawn holds. Those are never changed automatically - "
+        : $"{PlainCopy.Plural(p.ManualOverlapCount, "overlap")} {(p.ManualOverlapCount == 1 ? "involves" : "involve")} only hand-placed or hand-drawn holds. Those are never changed automatically: "
           + "adjust them by hand in the hold editor.";
 
-    /// <summary>A short label for a hold in the overlap list.</summary>
+    /// <summary>An overlapping pair in plain words: named holds by name, others by where they are.</summary>
+    /// <param name="pair">The pair.</param>
+    /// <returns>The line for the list.</returns>
+    internal static string OverlapText(HoldShapeOverlapPair pair) =>
+        (string.IsNullOrWhiteSpace(pair.NameA) || string.IsNullOrWhiteSpace(pair.NameB)
+            ? "Two holds overlap"
+            : $"{pair.NameA} and {pair.NameB} overlap") + $" {PlainCopy.Position(pair.X, pair.Y)}";
+
+    /// <summary>A short label for a hold in the overlap list (tooltip only: an id when it has no name).</summary>
     /// <param name="name">The hold's name, if any.</param>
     /// <param name="id">The hold id.</param>
     /// <returns>The label.</returns>

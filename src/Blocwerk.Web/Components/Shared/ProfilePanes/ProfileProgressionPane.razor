@@ -42,7 +42,7 @@
 
         @{ var bScale = BoulderScale(); }
         <div class="profile-chart-grid">
-            <ProgressionChart Title="Boulder progression" Caption="rolling 60-day rating · drag axis to zoom" Stroke="#e94560"
+            <ProgressionChart Title="Boulder progression" Caption="rolling 60-day rating · drag axis to zoom" Stroke="var(--accent)"
                               Points="BoulderPoints()" YTicks="bScale.Ticks" YMin="bScale.Min" YMax="bScale.Max"
                               ShowTrendline="true" OnYScaleStep="OnBoulderYScale"
                               EmptyText="No sends in this window yet." />

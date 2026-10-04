@@ -34,10 +34,10 @@
                 <li @key="job.Id" class="job job-@job.State">
                     <div class="job-head">
                         <span class="job-kind">@KindLabel(job.Kind)</span>
-                        <span class="job-state">@job.State</span>
-                        @if (job.Stage is not null)
+                        <span class="job-state" title="@job.State">@PlainCopy.StateName(job.State)</span>
+                        @if (PlainCopy.StageName(job.Stage, job.State) is { } stage)
                         {
-                            <span class="job-stage">@job.Stage</span>
+                            <span class="job-stage" title="@job.Stage">@stage</span>
                         }
                         @if (job.RunnerPaused == true)
                         {

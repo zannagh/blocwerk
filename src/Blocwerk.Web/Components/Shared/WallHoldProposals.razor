@@ -36,6 +36,7 @@
 
     @if (proposals.Count > 0)
     {
+        <p class="glyph-summary" role="status">@PlainCopy.Plural(proposals.Count, "possible new hold") to review@(proposals.Count > shown ? $", showing the first {shown}" : string.Empty).</p>
         <div class="proposal-grid">
             @foreach (var p in proposals.Take(shown))
             {
@@ -44,7 +45,8 @@
                     {
                         <img src="@src" alt="Proposed hold" width="180" height="180" loading="lazy" />
                     }
-                    <p class="glyph-summary">@ProposalText(p)</p>
+                    <p class="glyph-summary" title="Surface @p.FacetId">@ProposalText(p)</p>
+                    <a class="btn-link" href="@SpotOf(p).Url(WallId)">Show on wall</a>
                     @if (p.IsStale)
                     {
                         <p class="hint">Found on a panel photo that has since been replaced. Run "Find holds from all photos" again to add it.</p>

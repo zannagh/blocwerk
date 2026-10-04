@@ -14,12 +14,14 @@ on:
       - 'docker/wall-geometry/**'
       - 'docker/compute-jobs-py/**'
       - 'test/geometry-golden/**'
+      - 'test/real-data/**'
       - '.github/workflows/wall-geometry.yml'
   pull_request:
     paths:
       - 'docker/wall-geometry/**'
       - 'docker/compute-jobs-py/**'
       - 'test/geometry-golden/**'
+      - 'test/real-data/**'
       - '.github/workflows/wall-geometry.yml'
   workflow_dispatch:
 

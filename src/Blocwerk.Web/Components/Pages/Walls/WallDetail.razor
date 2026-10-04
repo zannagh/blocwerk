@@ -95,9 +95,9 @@ else
                     <div class="form-group">
                         <label class="filter-check">
                             <input type="checkbox" checked="@_wall.UnderMaintenance" @onchange="OnToggleMaintenance" />
-                            Update mode — hide this wall from others while you work on it
+                            Update mode: hide this wall from others
                         </label>
-                        <p class="field-hint">While this is on, everyone except you sees a "currently being updated" notice instead of the wall.</p>
+                        <p class="field-hint">Optional, and separate from the updates below. Turn it on while you work if climbers should not see a half-updated wall: everyone except you sees a "being updated" notice. It does not update anything by itself.</p>
                     </div>
 
                     @* Anchor for "where panel photos are managed" (linked from the capture section). *@
@@ -132,18 +132,19 @@ else
                             }
                             @* Wall admins' main way to bring the wall up to date after a visit. "Update panels + 3D" is
                                not offered on the wall tablet (the page refuses kiosks too); this card is admin-only and
-                               not on share links. "Update wall with new photos" is the step-by-step flow. *@
+                               not on share links. "Update step by step" is the manual flow. *@
                             <div class="update-actions" role="group" aria-labelledby="update-actions-title">
                                 <h3 class="update-actions-title" id="update-actions-title">Update panels</h3>
+                                <p class="field-hint">Two ways to bring the wall up to date after a visit. Pick the first unless you want to decide every hold yourself.</p>
                                 @if (!KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))
                                 {
-                                    <a class="btn-secondary update-action" href="/walls/@WallId/update">Update panels + 3D</a>
-                                    <p class="field-hint">Drop a visit's photos and videos at once; check, confirm, optionally keep the 3D model.</p>
+                                    <a class="btn-primary update-action" href="/walls/@WallId/update">Update panels + 3D</a>
+                                    <p class="field-hint"><strong>Recommended.</strong> Upload all photos and videos of a visit in one go. Blocwerk sorts them to the panels, carries your holds over and updates the 3D model; you check the result and apply it.</p>
                                 }
                                 <button class="btn-secondary update-action" @onclick="OpenBigUpdate">
-                                    @(_openUpdate is null ? "Update wall with new photos" : "Continue the wall update")
+                                    @(_openUpdate is null ? "Update step by step" : "Continue the step-by-step update")
                                 </button>
-                                <p class="field-hint">Step by step: stage the panel photos, then decide each hold's carry-over yourself.</p>
+                                <p class="field-hint">Manual route, panel photos only. You stage the new photos and decide what happens to each hold. Use it when you want full control or have no 3D photos.</p>
                             </div>
                         </div>
                     }
@@ -173,7 +174,17 @@ else
                             </div>
                         }
 
-                        <button class="btn-danger" @onclick="DeleteWall">Delete Wall</button>
+                        @if (!KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))
+                        {
+                        <section class="danger-zone" aria-labelledby="danger-zone-title">
+                            <h3 id="danger-zone-title">Danger zone</h3>
+                            <p class="hint">Deleting a wall removes its boulders, ascents, photos and members for good. This cannot be undone.</p>
+                            <ConfirmAction Label="Delete Wall" TriggerClass="btn-danger" ConfirmLabel="Delete this wall for good"
+                                           RequiredText="@_wall.Name"
+                                           Question="@($"Delete \"{_wall.Name}\" with all its boulders, ascents and photos?")"
+                                           OnConfirm="DeleteWall" />
+                        </section>
+                        }
                     }
                     </div>
                 </details>
