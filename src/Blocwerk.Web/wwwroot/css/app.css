@@ -86,7 +86,7 @@
         --text-heading: #f4f2ec;
         --accent: #ff5a75;
         --accent-hover: #ff7288;
-        --on-accent: #16162a;
+        --on-accent: #ffffff;
         --accent-soft: rgba(255, 90, 117, 0.14);
         --secondary: #6ea3ff;
         --secondary-hover: #4e8ae6;
@@ -133,7 +133,7 @@
     --text-heading: #f4f2ec;
     --accent: #ff5a75;
     --accent-hover: #ff7288;
-    --on-accent: #16162a;
+    --on-accent: #ffffff;
     --accent-soft: rgba(255, 90, 117, 0.14);
     --secondary: #6ea3ff;
     --secondary-hover: #4e8ae6;
