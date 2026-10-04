@@ -264,7 +264,8 @@ public partial class WallBigUpdateService : IWallBigUpdateService
             neighbours.Add(new NeighbourOverlap(panel.Id, panel.Col, panel.Row, proposals, overlapFailed));
         }
 
-        var triage = await SuggestNewDiscardsAsync(db, wall, stagedGen, carryover, oldHolds, oldPanelPhotosById, neighbours, use3DEvidence);
+        var removals = new RemovalInputs(oldByPosition, removedCandidates.ToHashSet(), carriedWarp);
+        var triage = await SuggestNewDiscardsAsync(db, wall, stagedGen, carryover, oldHolds, oldPanelPhotosById, neighbours, use3DEvidence, removals);
         return new BigUpdateSession(
             wall.Id, centerPanelId, carryover, removedCandidates, newCenter, neighbours,
             autoMatchStatus, autoMatchMessage, carriedWarp, carriedShapes,
@@ -272,7 +273,9 @@ public partial class WallBigUpdateService : IWallBigUpdateService
             oldHolds.Select(h => h.Id).ToList(),
             triage.Discards,
             triage.SeenIn3D,
-            triage.Evidence3DModelId);
+            triage.Evidence3DModelId,
+            use3DEvidence ? triage.PossiblyRemoved : null,
+            use3DEvidence ? triage.ConflictingNew : null);
     }
 
     /// <summary>

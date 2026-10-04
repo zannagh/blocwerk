@@ -36,6 +36,9 @@ internal static class RefreshDecisions
             .Where(r => RelocationFold.VerdictOf(r.Status) is not null)
             .Select(r => (r.OldHoldId, r.NewHoldId, RelocationFold.VerdictOf(r.Status)!.Value))
             .ToList();
+        var exceptions = await actors.Sessions.GetUpdateExceptionsAsync(wallId);
+        var review = ReviewOldHoldIds(exceptions);
+        promotable = promotable with { ReviewOldHoldIds = review };
         var folded = RelocationFold.Apply(promotable, accepted);
         var linked = folded.Neighbours.Sum(n => n.Links.Count);
         var leftOut = Math.Max(0, matched.Neighbours.Sum(n => n.Proposals.Count) - linked);
@@ -45,8 +48,31 @@ internal static class RefreshDecisions
             scoped.Reset.Count,
             relocations.Count(r => r.Status == RelocationProposalStatus.Pending),
             leftOut,
-            Fingerprint(folded, stagedByPanel));
+            Fingerprint(folded, stagedByPanel),
+            exceptions);
     }
+
+    /// <summary>The old holds of unanswered cards: they go live as decided, marked for review.</summary>
+    /// <param name="exceptions">The session's cards.</param>
+    /// <returns>The old hold ids.</returns>
+    public static IReadOnlyCollection<Guid> ReviewOldHoldIds(IReadOnlyList<UpdateExceptionInfo> exceptions) =>
+        exceptions
+            .Where(e => e.Status == UpdateExceptionStatus.Pending && e.Kind is UpdateExceptionKind.PossiblyRemoved or UpdateExceptionKind.LowConfidenceMatch)
+            .Select(e => e.OldHoldId)
+            .OfType<Guid>()
+            .ToHashSet();
+
+    /// <summary>The summary with the version of <paramref name="decisions"/> and its cards counted.</summary>
+    /// <param name="summary">The counts.</param>
+    /// <param name="decisions">What Apply would promote.</param>
+    /// <returns>The summary.</returns>
+    public static RefreshSummary Stamp(RefreshSummary summary, PromotableDecisions decisions) =>
+        summary with
+        {
+            DecisionsVersion = decisions.Version,
+            PossiblyRemovedHolds = decisions.Exceptions.Count(e => e.Kind == UpdateExceptionKind.PossiblyRemoved),
+            ChecksOpen = decisions.Exceptions.Count(e => e.Status == UpdateExceptionStatus.Pending),
+        };
 
     /// <summary>The decisions in the shape the summary is worked out from.</summary>
     public static QuickDecisions AsQuick(PromotableDecisions decisions) =>
@@ -84,6 +110,7 @@ internal static class RefreshDecisions
             Append(text, "x", n.RemovedNeighbourHoldIds);
         }
 
+        Append(text, "f", c.ReviewOldHoldIds ?? []);
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(text.ToString()));
         return Convert.ToHexString(hash, 0, 12);
     }
@@ -104,10 +131,12 @@ internal static class RefreshDecisions
 /// <param name="PendingRelocations">"This hold may have moved" suggestions nobody decided.</param>
 /// <param name="OverlapsLeftOut">Overlap suggestions not linked.</param>
 /// <param name="Version">The fingerprint of <paramref name="Folded"/>.</param>
+/// <param name="Exceptions">The confirm screen's cards (their unanswered old holds are in <paramref name="Folded"/>).</param>
 internal sealed record PromotableDecisions(
     BigUpdateConfirmation Scoped,
     BigUpdateConfirmation Folded,
     int Resets,
     int PendingRelocations,
     int OverlapsLeftOut,
-    string Version);
+    string Version,
+    IReadOnlyList<UpdateExceptionInfo> Exceptions);

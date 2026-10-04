@@ -39,6 +39,11 @@ public partial class WallUpdateSessionService
             await WriteNeighbourLinkSetAsync(db, session, set);
         }
 
+        if (decisions.Exceptions is { } cards)
+        {
+            await ReplaceExceptionsAsync(db, session, cards);
+        }
+
         WallUpdateSessions.MovePhase(session, decisions.Phase, 0, user.Id);
         await db.SaveChangesAsync();
 

@@ -115,6 +115,14 @@ public static class NewHoldEvidence3D
         return offWall ? Evidence3DVerdict.OffWall : Evidence3DVerdict.None;
     }
 
+    /// <summary>Whether a facet point lies within the catch radius of one of <paramref name="spots"/>.</summary>
+    /// <param name="spots">The spots.</param>
+    /// <param name="facetId">The point's facet.</param>
+    /// <param name="a">Plane a, mm.</param>
+    /// <param name="b">Plane b, mm.</param>
+    /// <returns>True when it does.</returns>
+    public static bool IsNear(IReadOnlyList<FacetSpot> spots, string facetId, double a, double b) => Near(spots, (facetId, a, b));
+
     private static bool Near(IReadOnlyList<FacetSpot> spots, (string FacetId, double A, double B) p) =>
         spots.Any(s => s.FacetId == p.FacetId
             && Math.Sqrt(((s.A - p.A) * (s.A - p.A)) + ((s.B - p.B) * (s.B - p.B))) <= Math.Clamp(s.RadiusMm, MinimumCatchMm, MaximumCatchMm));

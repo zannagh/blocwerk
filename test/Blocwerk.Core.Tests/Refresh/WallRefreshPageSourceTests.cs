@@ -86,7 +86,7 @@ public class WallRefreshPageSourceTests
         Assert.Contains("@page \"/walls/{WallId:guid}/update\"", page);
         Assert.Contains("bwRefreshUpload.upload", drop);
         Assert.Contains("js/refresh-upload.js", app);
-        Assert.Contains("@onclick=\"OnApply\" disabled=\"@View.Check3DPending\">Apply update</button>", confirm);
+        Assert.Contains("@onclick=\"OnApply\" disabled=\"@(View.Check3DPending || View.SummaryUpdating)\">Apply update</button>", confirm);
         Assert.Contains("?update=review&amp;session=@View.UpdateSessionId\">Open full review</a>", confirm);
     }
 

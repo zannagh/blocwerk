@@ -106,6 +106,7 @@ public class ApiSurfaceAuthorizationTests
         Assert.Contains("/api/v1/me/sessions", routes);
         Assert.Contains("/api/captures/{captureId:guid}/video", routes);
         Assert.Contains("/api/refreshes/{refreshId:guid}/files", routes);
+        Assert.Contains("/api/refreshes/{refreshId:guid}/checks/{checkId:guid}/{view}", routes);
 
         // The browser gallery route lives under /media, outside the prefixes, so it must NOT show
         // up here — if it ever moved under /api/walls this assertion would say so.
@@ -265,6 +266,7 @@ public class ApiSurfaceAuthorizationTests
 
         // The wall update's file drop sits under /api/refreshes, an API-key prefix for personal write keys.
         app.MapWallRefreshUpload();
+        app.MapWallRefreshCheckCrops();
 
         // The liveness beacon: mapped here so the anonymity assertion below sees the real route
         // rather than a copy of it.

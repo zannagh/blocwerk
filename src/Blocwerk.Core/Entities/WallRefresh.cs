@@ -54,6 +54,12 @@ public class WallRefresh
     [MaxLength(64)]
     public string? ConfirmedDecisionsVersion { get; set; }
 
+    /// <summary>
+    /// Set when an answer on the confirm screen changed the decisions: the worker makes the summary again (and Apply
+    /// waits) until it has done so for this stamp.
+    /// </summary>
+    public DateTimeOffset? SummaryRequestedAt { get; set; }
+
     [MaxLength(2048)]
     public string? Error { get; set; }
 

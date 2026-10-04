@@ -155,6 +155,12 @@ public partial class WallRefresh : IDisposable
         return view?.Id;
     }
 
+    private async Task ReloadAfterAnswerAsync()
+    {
+        await ReloadAsync();
+        StateHasChanged();
+    }
+
     private Task SortAsync() => ActAsync(id => Refreshes.SortAsync(id));
 
     private Task StartAsync(IReadOnlyList<PanelChoice> choices) => ActAsync(id => Refreshes.StartAsync(id, choices));
@@ -242,7 +248,7 @@ public partial class WallRefresh : IDisposable
         {
             while (await ticks.WaitForNextTickAsync(ct))
             {
-                if (view is null || !(view.IsWorking || view.Check3DPending || view.Capture is { IsRunning: true }))
+                if (view is null || !(view.IsWorking || view.Check3DPending || view.SummaryUpdating || view.Capture is { IsRunning: true }))
                 {
                     continue;
                 }
