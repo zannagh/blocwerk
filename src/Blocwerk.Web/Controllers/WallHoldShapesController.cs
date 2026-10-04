@@ -25,6 +25,7 @@ namespace Blocwerk.Web.Controllers;
 public sealed class WallHoldShapesController(
     IHoldOutlineUpgradeService outlines,
     IHoldFootprintService footprints,
+    IHoldShapeCleanupService cleanup,
     ILogger<WallHoldShapesController> logger) : WallAdminApiController(logger)
 {
     /// <summary>Whether the outline upgrade is available here, and the wall's latest run (for a revert).</summary>
@@ -46,6 +47,26 @@ public sealed class WallHoldShapesController(
     [HttpPost("outline-upgrade/{runId:guid}/revert")]
     public Task<IActionResult> RevertOutlines(Guid wallId, Guid runId, CancellationToken ct) =>
         RunAsync(wallId, async () => Ok(await outlines.RevertAsync(wallId, runId, ct)));
+
+    /// <summary>The latest shape clean-up that can still be undone (its journal batch id), if any.</summary>
+    [HttpGet("shape-cleanup")]
+    public Task<IActionResult> CleanupStatus(Guid wallId, CancellationToken ct) =>
+        RunAsync(wallId, async () => Ok(await cleanup.GetStatusAsync(wallId, ct)));
+
+    /// <summary>Dry run of the shape clean-up (smooth jagged auto outlines, remove overlaps); writes nothing.</summary>
+    [HttpPost("shape-cleanup/preview")]
+    public Task<IActionResult> PreviewCleanup(Guid wallId, CancellationToken ct) =>
+        RunAsync(wallId, async () => Ok(await cleanup.PreviewAsync(wallId, ct)));
+
+    /// <summary>Applies the shape clean-up as one change-journal batch (never touches manual shapes); returns its batch id.</summary>
+    [HttpPost("shape-cleanup")]
+    public Task<IActionResult> ApplyCleanup(Guid wallId, CancellationToken ct) =>
+        RunAsync(wallId, async () => Ok(await cleanup.ApplyAsync(wallId, ct)));
+
+    /// <summary>Reverts a clean-up batch exactly (refused as a whole if a hold was edited since).</summary>
+    [HttpPost("shape-cleanup/{batchId:guid}/revert")]
+    public Task<IActionResult> RevertCleanup(Guid wallId, Guid batchId, CancellationToken ct) =>
+        RunAsync(wallId, async () => Ok(await cleanup.RevertAsync(wallId, batchId, ct)));
 
     /// <summary>"Refine 3D hold shapes": the holds' contact footprints on the active model, from the capture photos.</summary>
     [HttpPost("refine-shapes")]

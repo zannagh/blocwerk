@@ -86,6 +86,9 @@ public sealed partial class PanelCropService : IPanelCropService
         Guid wallId, Guid panelId, PanelCropRect rect, bool confirmRemovals, CancellationToken ct = default)
     {
         rect.Validate();
+
+        // Re-maps and removes holds from a snapshot, so it must not interleave with a clean-up, an outline upgrade or a wall update.
+        using var holdWrite = await WallHoldWriteLock.AcquireAsync(wallId, ct: ct);
         await using var db = await OpenAdminContextAsync(wallId, ct);
         var target = await LoadTargetAsync(db, wallId, panelId, ct);
         var plan = await PlanCropAsync(db, target, rect, ct);

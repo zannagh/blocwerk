@@ -17,6 +17,7 @@ public sealed partial class HoldOutlineUpgradeService
     {
         ArgumentNullException.ThrowIfNull(options);
         EnsureEnabled();
+        using var holdWrite = await WallHoldWriteLock.AcquireAsync(wallId, ct: ct);
         var (db, userId) = await OpenForAdminAsync(wallId, ct);
         await using (db)
         {
@@ -40,7 +41,7 @@ public sealed partial class HoldOutlineUpgradeService
 
                 run.EligibleCount += plan.Proposals.Count;
                 run.KeptCircleCount += plan.Proposals.Count(p => p.Outcome != HoldOutlineUpgradeOutcome.Outline);
-                var writes = plan.Proposals.Where(p => p.Outcome == HoldOutlineUpgradeOutcome.Outline || p.FillsFingerprint);
+                var writes = plan.Proposals.Where(p => p.Outcome == HoldOutlineUpgradeOutcome.Outline || p.FillsFingerprint || p.NewRadius is not null);
                 foreach (var batch in writes.Chunk(BatchSize))
                 {
                     skipped += await WriteBatchAsync(db, run, batch, plan.Metrics, entries, ct);
@@ -120,6 +121,8 @@ public sealed partial class HoldOutlineUpgradeService
             PrevShapeEmpty = hold.ShapePoints is { Count: 0 },
             PrevOutlineSource = hold.OutlineSource,
             PrevFingerprintJson = hold.FingerprintJson,
+            PrevRadius = proposal.NewRadius is null ? null : hold.Radius,
+            NewRadius = proposal.NewRadius,
             PrevMetric = outline && metric is not null ? HoldMetricSnapshot.Of(hold) : null,
         };
         var fingerprintBefore = hold.FingerprintJson;
@@ -130,6 +133,11 @@ public sealed partial class HoldOutlineUpgradeService
             hold.ShapeHoles = proposal.HasHoles ? proposal.Result.ShapeHoles : null;
             hold.OutlineSource = HoldOutlineSource.AutoContour;
             hold.OutlineConfidence = proposal.Result.Confidence;
+        }
+
+        if (proposal.NewRadius is { } radius)
+        {
+            hold.Radius = radius;
         }
 
         if (proposal.FillsFingerprint)

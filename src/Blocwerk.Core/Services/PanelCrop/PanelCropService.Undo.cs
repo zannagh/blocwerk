@@ -39,6 +39,7 @@ public sealed partial class PanelCropService
     /// <inheritdoc/>
     public async Task<PanelCropResult> UndoAsync(Guid wallId, Guid panelId, CancellationToken ct = default)
     {
+        using var holdWrite = await WallHoldWriteLock.AcquireAsync(wallId, ct: ct);
         List<PanelCropBatch> chain;
         await using (var db = await OpenAdminContextAsync(wallId, ct))
         {

@@ -50,8 +50,9 @@ public static class HoldOutlineUpgradePlanner
     public static List<HoldOutlineUpgradeProposal> Plan(IHoldOutlineSession session, IEnumerable<Hold> holds, bool includeManual)
     {
         ArgumentNullException.ThrowIfNull(session);
+        var all = holds.ToList();
         var proposals = new List<HoldOutlineUpgradeProposal>();
-        foreach (var hold in holds.Where(h => IsEligible(h, includeManual)))
+        foreach (var hold in all.Where(h => IsEligible(h, includeManual)))
         {
             var seed = SeedFor(hold);
             var outline = session.Outline(seed);
@@ -59,7 +60,7 @@ public static class HoldOutlineUpgradePlanner
             proposals.Add(new HoldOutlineUpgradeProposal(hold, outcome, outline));
         }
 
-        return proposals;
+        return ResolveOverlaps(all, proposals, (double)session.ImageWidth / Math.Max(1, session.ImageHeight));
     }
 
     /// <summary>Classifies one outline result for one hold.</summary>
@@ -106,6 +107,30 @@ public static class HoldOutlineUpgradePlanner
         }
 
         return !Contains(outline.Polygon, hold.X, hold.Y);
+    }
+
+    /// <summary>
+    /// A new outline must not overlap any other hold on the photo: clipped, else a circle, else a circle with a
+    /// smaller radius (auto-detected holds only, as at ingest). Manual holds keep what they have and always win.
+    /// </summary>
+    private static List<HoldOutlineUpgradeProposal> ResolveOverlaps(
+        List<Hold> all, List<HoldOutlineUpgradeProposal> proposals, double aspect)
+    {
+        // New outlines, and automatic holds that stay plain circles (those may shrink to clear a neighbour).
+        var accepted = proposals
+            .Where(p => p.Outcome == HoldOutlineUpgradeOutcome.Outline || p.Hold.IsAutoDetected)
+            .ToDictionary(p => p.Hold, p => p.Result);
+        var resolved = HoldShapeCleanup.ResolveOutlines(all, accepted, allowRadiusShrink: true, aspect);
+        return proposals
+            .Select(p => resolved.TryGetValue(p.Hold, out var r)
+                ? p with
+                {
+                    Result = r.Outline,
+                    Outcome = r.Outline.ShapePoints is null ? HoldOutlineUpgradeOutcome.KeepCircle : p.Outcome,
+                    NewRadius = p.Hold.IsAutoDetected && Math.Abs(r.Radius - p.Hold.Radius) > 1e-9 ? r.Radius : null,
+                }
+                : p)
+            .ToList();
     }
 
     /// <summary>Even-odd point-in-polygon test in normalized image space.</summary>

@@ -151,7 +151,31 @@ internal sealed class WallShapeRecognitionJob
             await db.SaveChangesAsync(ct);
         }
 
+        await ResolvePanelOverlapsAsync(db, session.Id, panelId, targets[0].Hold.Generation, ct);
         return true;
+    }
+
+    /// <summary>
+    /// With the whole panel recognised (also after a resumed run: it is idempotent), clips or circles every
+    /// proposal that would overlap another staged hold, so the reviewer never sees an overlap.
+    /// </summary>
+    private async Task ResolvePanelOverlapsAsync(BlocwerkDbContext db, Guid sessionId, Guid panelId, int generation, CancellationToken ct)
+    {
+        var proposals = await db.WallUpdateShapeProposals.Where(p => p.SessionId == sessionId && p.PanelId == panelId).ToListAsync(ct);
+        if (proposals.Count == 0)
+        {
+            return;
+        }
+
+        var holds = await db.Holds.AsNoTracking().Where(h => h.WallPanelId == panelId && h.Generation == generation).ToListAsync(ct);
+        var first = proposals[0];
+        var aspect = first.ImageHeight > 0 ? (double)first.ImageWidth / first.ImageHeight : 1;
+        var changed = ShapeProposalOverlaps.Resolve(holds, proposals, aspect);
+        if (changed > 0)
+        {
+            await db.SaveChangesAsync(ct);
+            logger.LogInformation("Shape recognition: {Changed} proposals on panel {PanelId} clipped or turned into circles to avoid overlaps", changed, panelId);
+        }
     }
 
     private async Task MarkFailedAsync(Guid sessionId, string message)
