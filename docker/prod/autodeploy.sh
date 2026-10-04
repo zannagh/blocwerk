@@ -192,10 +192,36 @@ run_compute() {
   exec 9>&-
 }
 
+# ---------- pg_stat_statements reset (run from the EXIT trap, before the compute pass) ----------
+#
+# The per-statement timings are only useful while they are recent, and the diagnostics keep two days
+# (docker/prod/README.md, "Diagnostics"): reset them once the last reset is 48 h old. The time of the
+# last reset is the epoch in $PGSTATS_STATE; a missing file counts as "never reset". A failure
+# (postgres down, extension not created yet) is logged once and retried next minute; it never
+# affects a deploy.
+PGSTATS_STATE=$DIR/.autodeploy-pgstats-reset
+PGSTATS_MAX_AGE=172800
+
+reset_db_stats() {
+  local now last
+  now=$(date +%s)
+  last=$(cat "$PGSTATS_STATE" 2>/dev/null || true)
+  case "$last" in ''|*[!0-9]*) last=0 ;; esac
+  [ $((now - last)) -ge "$PGSTATS_MAX_AGE" ] || return 0
+  if timeout "$EXEC_TIMEOUT" docker compose exec -T postgres \
+       psql -U postgres -d blocwerk -qAt -c "select pg_stat_statements_reset()" >/dev/null 2>&1; then
+    printf '%s' "$now" > "$PGSTATS_STATE"
+    echo "pg_stat_statements reset (every $((PGSTATS_MAX_AGE / 3600)) h)"
+    log_clear pgstats
+  else
+    log_change pgstats "pg_stat_statements reset failed (postgres down or the extension not created yet); retrying every minute (logged once)"
+  fi
+}
+
 # The app part below ends with `exit` on every path (nothing to do, deferred, deployed, failed).
-# The EXIT trap runs the compute part after it, whatever the outcome; the script's exit status
-# stays the app part's.
-trap 'run_compute || true' EXIT
+# The EXIT trap runs the stats reset and then the compute part after it, whatever the outcome; the
+# script's exit status stays the app part's.
+trap 'reset_db_stats || true; run_compute || true' EXIT
 
 # ---------- the app (unchanged) ----------
 

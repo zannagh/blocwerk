@@ -41,19 +41,17 @@ public static class Program
         var otlpEndpoint = builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"];
 
         var loggerConfiguration = new LoggerConfiguration()
-
-            // Information by default. Debug produced ~200k rows/day here — almost entirely EF Core
-            // connection/reader chatter and Kestrel keep-alive noise — which drowned the handful of
-            // real warnings/errors in the log and in the OTLP export. Framework categories are
-            // pinned to Warning so only genuine problems (and our own Information logs) ship.
-            .MinimumLevel.Information()
-            .MinimumLevel.Override("Microsoft.EntityFrameworkCore", Serilog.Events.LogEventLevel.Warning)
-            .MinimumLevel.Override("Microsoft.AspNetCore", Serilog.Events.LogEventLevel.Warning)
-            .MinimumLevel.Override("Microsoft.AspNetCore.Hosting.Diagnostics", Serilog.Events.LogEventLevel.Information)
-            .MinimumLevel.Override("Microsoft.Hosting.Lifetime", Serilog.Events.LogEventLevel.Information)
             .Enrich.FromLogContext()
-            .WriteTo.Console(restrictedToMinimumLevel: Serilog.Events.LogEventLevel.Information)
-            .WriteTo.File("logs/blocwerk.log", rollingInterval: RollingInterval.Day);
+            .WriteTo.Console()
+
+            // Two days of files on top of today's, so a container that lives for weeks does not keep a month of logs
+            // (the files sit in the container's writable layer, which a redeploy resets anyway).
+            .WriteTo.File("logs/blocwerk.log", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 3);
+
+        // Levels per category: defaults in LoggingLevels, overridable with Logging__LogLevel__<Category> (compose/env).
+        // The framework categories stay at Warning so only genuine problems (and our own Information logs) ship; Debug
+        // produced ~200k rows/day here, almost all EF Core connection/reader chatter and Kestrel keep-alive noise.
+        LoggingLevels.Apply(loggerConfiguration, builder.Configuration);
 
         // Ship logs to the OTLP collector so they land next to traces and metrics (e.g. the
         // Aspire dashboard's Structured Logs view). Serilog is the one log pipeline here —
@@ -191,6 +189,9 @@ public static class Program
         // Counts live circuits into the "connected users" gauge.
         builder.Services.AddScoped<CircuitHandler, TelemetryCircuitHandler>();
 
+        // Opened / connection up / down / closed per circuit at Information, with the client class and durations.
+        builder.Services.AddScoped<CircuitHandler, CircuitLifecycleLogHandler>();
+
         // Primes IKioskContext at circuit start, while the connection's HttpContext is still on the
         // stack, so the kiosk device cookie is captured once and held for the circuit's life.
         builder.Services.AddScoped<CircuitHandler, KioskCircuitHandler>();
@@ -252,6 +253,7 @@ public static class Program
         var app = builder.Build();
 
         app.UseForwardedHeaders();
+        app.UseSlowRequestLogging();
 
         // A cookie that no longer names anybody who may sign in must land on a sign-in prompt, not a
         // 500 the user cannot read their way out of. Narrow by design — see the class docs.

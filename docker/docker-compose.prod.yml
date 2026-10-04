@@ -9,9 +9,36 @@
 #  * no deploy-hook: an inbound webhook is an attack surface on a public host. A cron job polls
 #    GHCR for new images instead (docker/prod/autodeploy.sh).
 #  * no GPU services: this box has no GPU; training runs on the owner's 3D runner.
+#  * bounded container logs (the diagnostics retention, docker/prod/README.md "Diagnostics"): every service
+#    rotates its json-file log by size, so roughly two days of normal volume stay and nothing grows forever.
+#  * Postgres preloads pg_stat_statements (per-statement timings, read at /administration/db-stats).
+x-logging-app: &logging-app
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+x-logging-small: &logging-small
+  driver: json-file
+  options:
+    max-size: "5m"
+    max-file: "2"
+x-logging-tiny: &logging-tiny
+  driver: json-file
+  options:
+    max-size: "2m"
+    max-file: "2"
+
 services:
   postgres:
     image: postgres:17
+    # pg_stat_statements needs the library preloaded (a postgres restart to take effect). max=2000 distinct
+    # statement shapes, top-level statements only; the counters are reset every 48 h by autodeploy.sh.
+    command: >
+      postgres
+      -c shared_preload_libraries=pg_stat_statements
+      -c pg_stat_statements.max=2000
+      -c pg_stat_statements.track=top
+    logging: *logging-small
     environment:
       POSTGRES_DB: blocwerk
       POSTGRES_USER: postgres
@@ -38,6 +65,8 @@ services:
       - "127.0.0.1:${OTEL_UI_HOST_PORT:?set OTEL_UI_HOST_PORT in .env}:18888"
       - "127.0.0.1:${OTEL_OTLP_HOST_PORT:?set OTEL_OTLP_HOST_PORT in .env}:18889"
     restart: unless-stopped
+    # The dashboard keeps its telemetry in memory only (a restart empties it); this is just its own stdout.
+    logging: *logging-tiny
 
   blocwerk:
     image: ghcr.io/zannagh/blocwerk:latest
@@ -51,6 +80,11 @@ services:
       SMTP__FROMNAME: ${SMTP__FROMNAME}
       SMTP__SECURITY: ${SMTP__SECURITY}
       ASPNETCORE_ENVIRONMENT: Production
+      # Log levels (docker/prod/README.md, "Diagnostics"). Default = everything the app itself logs at Information
+      # and up; the circuit registry at Debug logs evictions, reconnect attempts and permanent disconnects (a few
+      # lines per circuit). Other categories: add Logging__LogLevel__<Category> here.
+      Logging__LogLevel__Default: ${LOG_LEVEL:-Information}
+      Logging__LogLevel__Microsoft.AspNetCore.Components.Server.Circuits.CircuitRegistry: ${LOG_LEVEL_CIRCUIT_REGISTRY:-Debug}
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-dashboard:18889"
       OTEL_SERVICE_NAME: Blocwerk
       POSTGRES__HOST: postgres
@@ -108,6 +142,8 @@ services:
       otel-dashboard:
         condition: service_started
     restart: unless-stopped
+    # Also writes logs/blocwerk<day>.log inside the container, three files kept (today + 2 days).
+    logging: *logging-app
     networks:
       - default
       - edge
@@ -142,6 +178,7 @@ services:
     mem_limit: 4g
     # Job files live in the container's /tmp (writable layer) and expire after RESULT_TTL_S.
     restart: unless-stopped
+    logging: *logging-small
 
   # The splat worker's CPU half for 3D runners: splat-prepare (COLMAP, training bundle) and
   # splat-finish (alignment, crop, clean-up, export). No GPU, no trainer: SPLAT_WORKER_MODE=cpu
@@ -172,6 +209,7 @@ services:
     cpu_shares: 256
     mem_limit: 8g
     restart: unless-stopped
+    logging: *logging-small
 
 networks:
   edge:
