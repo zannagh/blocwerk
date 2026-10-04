@@ -140,4 +140,17 @@ public interface IWallUpdateSessionService
     /// unconfirmed default (carried in place) while its verdict is still the one that accept wrote.
     /// </summary>
     Task DecideRelocationAsync(Guid wallId, Guid suggestionId, RelocationDecision decision);
+
+    /// <summary>
+    /// The open session's confirm-screen cards (<see cref="Entities.WallUpdateException"/>): the holds whose evidence needs a
+    /// person's look. Empty when no session is open.
+    /// </summary>
+    Task<IReadOnlyList<UpdateExceptionInfo>> GetUpdateExceptionsAsync(Guid wallId);
+
+    /// <summary>
+    /// Answers one card, written as the decision a person would record in the full review: an old hold possibly removed is
+    /// kept (carried in place) or removed, a low-confidence match is confirmed, a disputed detection is kept as a new hold
+    /// or left out. <see cref="UpdateExceptionAnswer.Undo"/> puts the update's default back.
+    /// </summary>
+    Task DecideUpdateExceptionAsync(Guid wallId, Guid exceptionId, UpdateExceptionAnswer answer);
 }

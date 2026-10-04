@@ -8,16 +8,12 @@ using Blocwerk.Core.Enums;
 using Blocwerk.Core.Geometry.Proposals;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using SkiaSharp;
 
 namespace Blocwerk.Core.Services;
 
 /// <summary>Storing and reviewing the proposals.</summary>
 public sealed partial class HoldProposalService
 {
-    private const int CropSidePx = 360;
-    private const double CropMinHalfPx = 120;
-
     /// <inheritdoc />
     public async Task<IReadOnlyList<HoldProposal>> ListAsync(Guid wallId, HoldProposalStatus status = HoldProposalStatus.Pending, CancellationToken ct = default)
     {
@@ -80,7 +76,7 @@ public sealed partial class HoldProposalService
 
         var photos = await CapturePhotosAsync(db, p.GeometryModelId, ct);
         var bytes = photos.TryGetValue(p.BestPhoto, out var path) ? await files.ReadAsync(path, ct) : null;
-        return bytes is null ? null : Crop(bytes, p.BestPx, p.BestPy, p.BestRadiusPx);
+        return bytes is null ? null : RingCrop.Render(bytes, p.BestPx, p.BestPy, p.BestRadiusPx);
     }
 
     /// <summary>Replaces the wall's pending proposals with <paramref name="candidates"/>; returns how many map onto a panel.</summary>
@@ -161,28 +157,5 @@ public sealed partial class HoldProposalService
         p.ReviewedAt = DateTimeOffset.UtcNow;
         p.ReviewedByUserId = (await currentUserService.GetCurrentUserAsync()).Id;
         await db.SaveChangesAsync(ct);
-    }
-
-    /// <summary>A square crop around (x, y) with a ring of the detected radius on the hold, scaled to <see cref="CropSidePx"/>; JPEG.</summary>
-    private static byte[]? Crop(byte[] image, double x, double y, double radius)
-    {
-        var half = Math.Max(CropMinHalfPx, 3 * radius);
-        using var bitmap = SKBitmap.Decode(image);
-        if (bitmap is null)
-        {
-            return null;
-        }
-
-        using var surface = SKSurface.Create(new SKImageInfo(CropSidePx, CropSidePx));
-        var canvas = surface.Canvas;
-        canvas.Clear(SKColors.Black);
-        var src = new SKRect((float)(x - half), (float)(y - half), (float)(x + half), (float)(y + half));
-        using var paint = new SKPaint { IsAntialias = true };
-        canvas.DrawBitmap(bitmap, src, new SKRect(0, 0, CropSidePx, CropSidePx), paint);
-        using var ring = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 2, Color = SKColors.Magenta };
-        canvas.DrawCircle(CropSidePx / 2f, CropSidePx / 2f, (float)Math.Max(10, radius * CropSidePx / (2 * half)), ring);
-        using var snapshot = surface.Snapshot();
-        using var data = snapshot.Encode(SKEncodedImageFormat.Jpeg, 85);
-        return data.ToArray();
     }
 }

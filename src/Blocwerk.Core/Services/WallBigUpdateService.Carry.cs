@@ -93,9 +93,15 @@ public partial class WallBigUpdateService
 
             var destinationPanelId = ResolveDestinationPanelId(
                 oldHold, centerPanel.Id, panelPositions, newGenPanelByPosition);
-            await AdvanceCarriedHoldAsync(
+            var successor = await AdvanceCarriedHoldAsync(
                 db, wallId, destinationPanelId, newGen, oldHold, decision.Kind, decision.NewHoldId,
                 stagedTwins, claimedTwins, survivingCenterStaged, warpPositions, warpShapes, photoSizes, userId);
+
+            // The confirm screen asked about this hold and nobody answered: it goes live as decided, marked for a look.
+            if (confirmation.ReviewOldHoldIds?.Contains(decision.OldHoldId) == true)
+            {
+                successor.NeedsReview = true;
+            }
         }
 
         // Reconcile: any gen-N hold the outcome never mentions is default-carried (clone forward, link
