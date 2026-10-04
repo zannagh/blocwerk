@@ -1608,11 +1608,21 @@ a.wall3d-link {
    while the crop dialog is open and the backdrop is lifted over every page layer (below only the classify menu).
    The dialog fits the viewport on a phone and a desktop; it scrolls inside itself if it ever has to. */
 body:has(.panel-crop-modal) .bw-toolbar { display: none; }
-.bw-modal-backdrop:has(.panel-crop-modal) { z-index: 950; }
-.bw-modal.panel-crop-modal { max-width: 960px; max-height: calc(100dvh - 40px); overflow-y: auto; }
-@media (max-width: 600px) {
-    .bw-modal-backdrop:has(.panel-crop-modal) { padding: 8px; }
-    .bw-modal.panel-crop-modal { padding: 12px; gap: 8px; max-height: calc(100dvh - 16px); }
+.bw-modal-backdrop:has(.panel-crop-modal) {
+    z-index: 950;
+    height: 100vh; height: 100dvh;
+    padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
+             max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+}
+/* The dialog is a column: title, a scrolling middle (.panel-crop-body) and a footer with the buttons that never
+   scrolls away, so every button stays visible however long the hold/boulder list is. */
+.bw-modal.panel-crop-modal { max-width: 960px; max-height: 100%; overflow: hidden; }
+@media (max-width: 600px), (max-height: 500px) {
+    .bw-modal-backdrop:has(.panel-crop-modal) {
+        padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right))
+                 max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+    }
+    .bw-modal.panel-crop-modal { padding: 12px; gap: 8px; }
 }
 .wall-pick-list { display: flex; flex-direction: column; gap: 8px; max-height: 50vh; overflow-y: auto; }
 .wall-pick-item {

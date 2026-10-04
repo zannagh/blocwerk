@@ -12,7 +12,7 @@ namespace Blocwerk.Core.Services.PanelCrop;
 public sealed record PanelCropAffectedBoulder(Guid Id, string Name, string? Grade, bool IsActive);
 
 /// <summary>What a crop would do to the panel's live holds.</summary>
-/// <param name="RemovedHoldIds">The holds the crop cuts off (centre outside, or outline mostly outside).</param>
+/// <param name="RemovedHoldIds">The holds the crop cuts off (its whole shape lies outside the new frame).</param>
 /// <param name="KeptHoldCount">The live holds that stay and are re-mapped.</param>
 /// <param name="Boulders">The boulders that use a removed hold.</param>
 public sealed record PanelCropPreview(
