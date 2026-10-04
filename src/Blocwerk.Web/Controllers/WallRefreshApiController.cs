@@ -31,7 +31,6 @@ namespace Blocwerk.Web.Controllers;
 [Authorize(Policy = BlocwerkPolicies.HumanOrUserApiKey, AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName)]
 [Produces("application/json")]
 [IgnoreAntiforgeryToken]
-[IgnoreAntiforgeryToken]
 public sealed partial class WallRefreshApiController(
     IWallRefreshService refreshes,
     ApiWriteAudit audit,
