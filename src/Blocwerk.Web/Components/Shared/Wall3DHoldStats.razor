@@ -1,0 +1,70 @@
+@* Wall-settings section (inside the "Wall Shape" card): how many holds the 3D model places and how
+   many it could not measure yet. It used to be a diagnostic line under every 3D viewer; it lives here
+   now so the viewers keep their room. Builds the view only when the disclosure opens. *@
+@using Blocwerk.Core.Geometry.View3D
+@inject IWall3DViewService ViewService
+
+<details class="segment-settings" id="wall-3d-hold-stats" @ontoggle="OnToggle">
+    <summary>3D model: holds placed</summary>
+    @if (loading)
+    {
+        <p class="loading-small">Loading…</p>
+    }
+    else if (view is not null)
+    {
+        <p class="hint">@Wall3DHoldCountText.Format(view) placed on the 3D model.</p>
+        @if (view.UnplacedHoldCount > 0)
+        {
+            <p class="hint">@Unplaced(view.UnplacedHoldCount)</p>
+        }
+
+        @if (view.PanelsNewerThanModelCount > 0)
+        {
+            <p class="hint">@Newer(view.PanelsNewerThanModelCount)</p>
+        }
+    }
+    else if (opened)
+    {
+        <p class="hint">This wall has no 3D model to count holds on yet.</p>
+    }
+</details>
+
+@code {
+    private Wall3DView? view;
+    private bool loading;
+    private bool opened;
+
+    [Parameter, EditorRequired] public Guid WallId { get; set; }
+
+    [Parameter] public string? ShareToken { get; set; }
+
+    private static string Unplaced(int count) =>
+        count == 1 ? "1 hold is not measured yet, so it is not drawn in 3D." : $"{count} holds are not measured yet, so they are not drawn in 3D.";
+
+    private static string Newer(int count) =>
+        count == 1 ? "3D photos are older than the panel photo of 1 panel." : $"3D photos are older than the panel photos of {count} panels.";
+
+    private async Task OnToggle(EventArgs e)
+    {
+        if (opened || loading)
+        {
+            return;
+        }
+
+        loading = true;
+        try
+        {
+            var result = await ViewService.BuildAsync(WallId, null, ShareToken);
+            view = result.Status == Wall3DViewStatus.Ok ? result.View : null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            view = null;
+        }
+        finally
+        {
+            loading = false;
+            opened = true;
+        }
+    }
+}

@@ -12,14 +12,14 @@
 .wall3d-inline-stage {
     display: flex;
     flex-direction: column;
-    height: min(68dvh, 640px);
+    height: min(80dvh, 860px);
     min-height: 320px;
 }
 
 /* Phones in portrait: a wall is wider than it is tall, so the camera fits it to the width and a
    68dvh box left the lower half as empty floor. Keep the box a little taller than wide instead. */
 @media (max-width: 600px) and (orientation: portrait) {
-    .wall3d-inline-stage { height: min(68dvh, 640px, max(320px, 115vw)); }
+    .wall3d-inline-stage { height: min(80dvh, 860px, max(320px, 115vw)); }
 }
 
 .wall3d-inline-message {
@@ -43,11 +43,3 @@
 .wall3d-inline-legend { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; }
 .wall3d-inline-legend span { display: inline-flex; align-items: center; gap: 4px; }
 .wall3d-inline-legend i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-
-.wall3d-inline-full {
-    margin-left: auto;
-    font-weight: 600;
-    color: var(--accent);
-    text-decoration: none;
-}
-.wall3d-inline-full:hover { text-decoration: underline; }

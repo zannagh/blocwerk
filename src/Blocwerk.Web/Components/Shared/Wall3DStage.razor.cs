@@ -36,6 +36,7 @@ public partial class Wall3DStage : IAsyncDisposable
     private Task mounting = Task.CompletedTask;
     private bool disposed;
     private string? failure;
+    private bool fullscreen;
 
     /// <summary>The view to render. A new instance remounts the viewer.</summary>
     [Parameter]
@@ -61,6 +62,10 @@ public partial class Wall3DStage : IAsyncDisposable
     /// <summary>Raised with the surface (facet id, or null for none) under every tap; set only for the model corrections.</summary>
     [Parameter]
     public EventCallback<string?> OnFacetTap { get; set; }
+
+    /// <summary>Show the full-screen icon button over the viewer (same look as on the photo views).</summary>
+    [Parameter]
+    public bool ShowFullscreen { get; set; } = true;
 
     [Inject]
     private IJSRuntime JS { get; set; } = null!;
@@ -143,6 +148,11 @@ public partial class Wall3DStage : IAsyncDisposable
         {
             // A failed or timed-out dispose must not block the next mount or the component's own dispose.
         }
+    }
+
+    private void SetFullscreen(bool on)
+    {
+        fullscreen = on;
     }
 
     private bool IsCurrent(Wall3DView view) => !disposed && ReferenceEquals(mounted, view);

@@ -7,7 +7,7 @@
    (bound at parse, from the app shell — nothing has to be armed from here) and asks for both in the
    SAME task as the tap, while @onclick opens the overlay over the circuit in parallel. If the
    overlay never comes up, that script's watchdog releases both again. *@
-<button type="button" class="bw-stage-open @Class" data-bw-stage-open
+<button type="button" class="bw-stage-open @Class" data-bw-stage-open="@(RealFullscreen ? string.Empty : null)"
         title="@Title" aria-label="@Title"
         @onclick="OnOpen" @onclick:stopPropagation="true">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"
@@ -22,6 +22,12 @@
 
     /// <summary>Extra classes, e.g. <c>stacked</c> when another button already owns the corner.</summary>
     [Parameter] public string? Class { get; set; }
+
+    /// <summary>
+    /// False for a takeover that stays in the page (the 3D viewer's fixed-position full screen): it asks
+    /// the browser for neither real fullscreen nor the landscape lock, so no watchdog has to undo them.
+    /// </summary>
+    [Parameter] public bool RealFullscreen { get; set; } = true;
 
     [Parameter] public string Title { get; set; } = "Open in full screen";
 }
