@@ -91,12 +91,16 @@ public class PanelCropMathTests
     }
 
     [Theory]
-    [InlineData(1.02, 0.5, 0.01, true)] // centre outside
-    [InlineData(-0.001, 0.5, 0.01, true)] // centre just outside
-    [InlineData(0.99, 0.5, 0.05, false)] // centre inside, a sliver of the outline outside
-    [InlineData(0.99, 0.99, 0.2, true)] // centre inside a corner, three quarters of the outline outside
+    [InlineData(1.02, 0.5, 0.01, true)] // wholly outside, just right of the frame
+    [InlineData(-0.5, 0.5, 0.05, true)] // wholly outside, far left
+    [InlineData(1.04, 0.5, 0.05, false)] // centre outside, the circle still reaches in
+    [InlineData(-0.04, 0.5, 0.05, false)] // centre outside on the left, still reaches in
+    [InlineData(1.05, 0.5, 0.05, false)] // circle just touching the edge (the 16-gon has a vertex on it)
+    [InlineData(0.99, 0.5, 0.05, false)] // centre inside, a sliver outside
+    [InlineData(0.99, 0.99, 0.2, false)] // centre in a corner, most of the circle outside but some inside
     [InlineData(0.5, 0.5, 0.05, false)] // well inside
-    public void CutOff_CentreOutside_OrOutlineMostlyOutside(double x, double y, double radius, bool expected)
+    [InlineData(1.0, 1.0, 0.0001, false)] // a speck exactly on the corner
+    public void CutOff_OnlyWhenTheWholeCircleIsOutside(double x, double y, double radius, bool expected)
     {
         var hold = new Hold { X = x, Y = y, Radius = radius };
 
@@ -104,16 +108,39 @@ public class PanelCropMathTests
     }
 
     [Fact]
-    public void CutOff_UsesTheTracedOutline_WhenThereIsOne()
+    public void CutOff_KeepsATracedOutline_ThatCrossesTheEdge_WithItsCentreOutside()
     {
-        // Centre inside, but the traced outline extends far to the right of the frame.
         var hold = new Hold
         {
-            X = 0.98, Y = 0.5, Radius = 0.01,
-            ShapePoints = [new() { Dx = -0.01, Dy = -0.02 }, new() { Dx = 0.2, Dy = -0.02 }, new() { Dx = 0.2, Dy = 0.02 }, new() { Dx = -0.01, Dy = 0.02 }],
+            X = 1.03, Y = 0.5, Radius = 0.01,
+            ShapePoints = [new() { Dx = -0.08, Dy = -0.02 }, new() { Dx = 0.05, Dy = -0.02 }, new() { Dx = 0.05, Dy = 0.02 }, new() { Dx = -0.08, Dy = 0.02 }],
+        };
+
+        Assert.False(PanelCropCutoff.IsCutOff(hold));
+    }
+
+    [Fact]
+    public void CutOff_RemovesATracedOutline_ThatIsWhollyOutside()
+    {
+        var hold = new Hold
+        {
+            X = 1.2, Y = 0.5, Radius = 0.01,
+            ShapePoints = [new() { Dx = -0.08, Dy = -0.02 }, new() { Dx = 0.05, Dy = -0.02 }, new() { Dx = 0.05, Dy = 0.02 }, new() { Dx = -0.08, Dy = 0.02 }],
         };
 
         Assert.True(PanelCropCutoff.IsCutOff(hold));
+    }
+
+    [Fact]
+    public void CutOff_KeepsAnOutline_ThatSpansTheWholeFrame_WithNoVertexInside()
+    {
+        var hold = new Hold
+        {
+            X = 0.5, Y = 0.5, Radius = 0.01,
+            ShapePoints = [new() { Dx = -2, Dy = -2 }, new() { Dx = 2, Dy = -2 }, new() { Dx = 2, Dy = 2 }, new() { Dx = -2, Dy = 2 }],
+        };
+
+        Assert.False(PanelCropCutoff.IsCutOff(hold));
     }
 
     [Theory]

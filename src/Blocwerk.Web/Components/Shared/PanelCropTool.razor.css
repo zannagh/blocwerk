@@ -1,5 +1,26 @@
 /* The photo sits centred and as large as the dialog allows; the stage hugs the image so the box's percentages
    are fractions of the photo itself. */
+.panel-crop-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.panel-crop-footer {
+    flex: 0 0 auto;
+    margin-top: 0;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.panel-crop-body > * {
+    flex-shrink: 0;
+}
+
 .panel-crop-frame {
     display: flex;
     justify-content: center;
@@ -22,13 +43,13 @@
 .panel-crop-stage img {
     display: block;
     max-width: 100%;
-    max-height: max(180px, min(640px, calc(100dvh - 330px)));
+    max-height: max(96px, min(640px, calc(100dvh - 300px)));
     pointer-events: none;
 }
 
 /* While a confirmation is open the photo steps back so the question and its buttons fit without scrolling. */
 .panel-crop-frame.confirming .panel-crop-stage img {
-    max-height: max(120px, calc(100dvh - 560px));
+    max-height: max(72px, calc(100dvh - 520px));
 }
 
 .panel-crop-holds {
@@ -153,7 +174,7 @@
 .panel-crop-boulders {
     margin: 0;
     padding-left: 18px;
-    max-height: 22vh;
+    max-height: 22dvh;
     overflow-y: auto;
     font-size: 0.9rem;
 }
@@ -164,7 +185,18 @@
     color: var(--text-secondary);
 }
 
-.panel-crop-actions {
-    flex-wrap: wrap;
-    justify-content: flex-end;
+
+/* Landscape phone: the hint goes (the handles speak for themselves) so the photo gets the height that is left. */
+@media (max-height: 500px) {
+    .panel-crop-body > .panel-crop-hint:first-child {
+        display: none;
+    }
+
+    .panel-crop-stage img {
+        max-height: max(96px, calc(100dvh - 190px));
+    }
+
+    .panel-crop-frame.confirming .panel-crop-stage img {
+        max-height: max(60px, calc(100dvh - 330px));
+    }
 }

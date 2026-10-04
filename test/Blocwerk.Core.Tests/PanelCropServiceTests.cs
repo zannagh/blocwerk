@@ -76,6 +76,26 @@ public class PanelCropServiceTests
     }
 
     [Fact]
+    public async Task Crop_KeepsAHoldThatStillReachesIn_WithItsCentreOutside_AndUndoRestoresIt()
+    {
+        using var f = new PanelCropFixture();
+        await f.SeedAsync();
+        var edgeCrop = new PanelCropRect(0, 0, 0.94, 1); // the edge hold's centre (0.95) falls outside, its outline reaches in
+
+        var preview = await f.Service.PreviewAsync(f.Harness.WallId, f.PanelId, edgeCrop);
+        var result = await f.Service.CropAsync(f.Harness.WallId, f.PanelId, edgeCrop, confirmRemovals: false);
+
+        Assert.Empty(preview.RemovedHoldIds);
+        Assert.True(result.Applied);
+        var kept = await f.LoadHoldAsync(f.Edge.Id);
+        Assert.Equal(0.95 / 0.94, kept.X, Tolerance);
+        Assert.True(kept.X > 1);
+
+        await f.Service.UndoAsync(f.Harness.WallId, f.PanelId);
+        Assert.Equal(0.95, (await f.LoadHoldAsync(f.Edge.Id)).X, Tolerance);
+    }
+
+    [Fact]
     public async Task Crop_ThatCutsOffHolds_NeedsConfirmation_AndListsTheBoulders()
     {
         using var f = new PanelCropFixture();
