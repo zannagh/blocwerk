@@ -1,10 +1,30 @@
 @* The three.js stage of the 3D wall view: mounts wwwroot/js/wall3d.js into one element and frees
    its WebGL context again. Used full-page by Wall3D and inline by Wall3DInline (wall + boulder pages).
-   The stage element is rendered once and left alone: wall3d.js owns everything inside it. *@
+   The stage element is rendered once and left alone: wall3d.js owns everything inside it.
+
+   Full screen is a fixed-position takeover of the host element rather than a second stage: the same
+   canvas (and WebGL context) just gets the whole window, and wall3d.js's ResizeObserver refits it. *@
 @implements IAsyncDisposable
 
-<div class="wall3d-stage-el" @ref="stage"></div>
-@if (failure is not null)
-{
-    <p class="wall3d-stage-failed">@failure</p>
-}
+<div class="wall3d-stage-host@(fullscreen ? " wall3d-fs" : string.Empty)">
+    <div class="wall3d-stage-el" @ref="stage"></div>
+    @if (failure is not null)
+    {
+        <p class="wall3d-stage-failed">@failure</p>
+    }
+    @if (ShowFullscreen && !fullscreen)
+    {
+        <StageOpenButton RealFullscreen="false" OnOpen="() => SetFullscreen(true)" />
+    }
+    @if (fullscreen)
+    {
+        <button type="button" class="bw-stage-close" title="Close full screen" aria-label="Close full screen"
+                @onclick="() => SetFullscreen(false)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                 width="28" height="28" stroke-linecap="round" aria-hidden="true">
+                <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+            <span class="bw-stage-close-label">Close</span>
+        </button>
+    }
+</div>

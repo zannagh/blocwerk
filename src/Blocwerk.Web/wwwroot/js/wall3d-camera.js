@@ -1,7 +1,7 @@
 // Camera presets and tweens for the 3D wall view (wall3d.js). World is z-up, millimetres.
 import * as THREE from '../lib/three/three.module.min.js';
 import { v3 } from './wall3d-scene.js';
-import { clearPose, facetQuads } from './wall3d-clearance.js';
+import { facetQuads } from './wall3d-clearance.js';
 import { createReach } from './wall3d-reach.js';
 
 export const PRESETS = ['front', 'below', 'left', 'right', 'top'];
@@ -50,8 +50,35 @@ export function wallFrame(view, facetGroup, body = {}) {
     }
     // floorZ is the lowest facet edge (the kickboard's bottom ≈ the mats' top): the floor plane.
     const quads = facetQuads(view.facets);
-    const reach = createReach(body.pieces || [], main, floorZ, front, body.ceilingZ);
-    return { box, center, front, right, floorZ, stand, under, points, quads, reach, radius: box.getBoundingSphere(new THREE.Sphere()).radius };
+    // Facets with holds are the climbing surface: never hidden, never anchored through. The rest (closing
+    // panels, caps) may be hidden when in the way (wall3d-ghost.js, wall3d-occlude.js).
+    const holdFacets = new Set((view.holds || []).map(h => h.facetId));
+    if (main) holdFacets.add(main.id);
+    const bare = new Set(view.facets.filter(f => !holdFacets.has(f.id)).map(f => f.id));
+    const reach = createReach(body.pieces || [], main, floorZ, front, body.ceilingZ, holdFacets);
+    const climbing = view.facets.filter(f => holdFacets.has(f.id));
+    const aims = climbing.length
+        ? climbing.flatMap(f => (f.id === main?.id ? wallAims(f, 4, 3) : wallAims(f, 3, 2)))
+        : [center.clone()];
+    return { box, center, front, right, floorZ, stand, under, points, quads, reach, holdFacets, bare, aims, mainId: main?.id ?? null, radius: box.getBoundingSphere(new THREE.Sphere()).radius };
+}
+
+/**
+ * World points spread over facet `f` (its extent sampled cols x rows, edges included) that the camera must
+ * be able to see (wall3d-ghost.js, wall3d-occlude.js).
+ */
+export function wallAims(f, cols, rows) {
+    const e = f.extent;
+    const points = [];
+    for (let i = 0; i < cols; i++) {
+        for (let j = 0; j < rows; j++) {
+            const a = e.aMin + (e.aMax - e.aMin) * i / (cols - 1);
+            const b = e.bMin + (e.bMax - e.bMin) * j / (rows - 1);
+            points.push(v3(f.origin).addScaledVector(v3(f.u), a).addScaledVector(v3(f.v), b));
+        }
+    }
+
+    return points;
 }
 
 function area(f) {
@@ -109,20 +136,13 @@ export function fitPose(camera, points, dir, insets = {}, size = null) {
 }
 
 /**
- * { position, target } for a named preset, framed into the stage's free area (see fitPose) and
- * moved out of the way of facets (wall3d-clearance.js): a camera behind a side piece, under the
- * floor clearance or with a facet between it and the wall turns around the target until clear.
+ * { position, target } for a named preset, framed into the stage's free area (see fitPose) and kept
+ * clear of the floor and the wall (wall3d-reach.js). What stands between the camera and the wall is
+ * not avoided: it is hidden (wall3d-ghost.js, wall3d-occlude.js).
  */
 export function presetPose(name, frame, camera, insets, size) {
     const along = dir => fitPose(camera, frame.points, dir, insets, size);
-    const base = designedPose(name, frame, along);
-    const distance = base.position.distanceTo(base.target);
-    // 'below' is placed, not fitted: turning it keeps its distance to the target.
-    const poseAlong = name === 'below'
-        ? dir => ({ target: base.target.clone(), position: base.target.clone().addScaledVector(dir, distance) })
-        : along;
-    // 'top' is placed in free space by design (in front of the wall, under its top edge).
-    const pose = name === 'top' ? base : clearPose(base, poseAlong, frame.quads || [], frame.floorZ);
+    const pose = designedPose(name, frame, along);
     frame.reach?.keepOut(pose.position);
     return pose;
 }

@@ -192,81 +192,8 @@ export function buildMarkers(view, sides) {
     return new THREE.Mesh(g, sides.cullBehind(new THREE.MeshBasicMaterial({ color: 0x17171c, side: THREE.FrontSide }), 'solid'));
 }
 
-/** A screen-sized text label (sizeAttenuation off, so it stays legible at any zoom). */
-export function label(text, sub) {
-    const c = document.createElement('canvas');
-    const g = c.getContext('2d');
-    const font = '600 30px system-ui, -apple-system, "Segoe UI", sans-serif';
-    const subFont = '500 24px system-ui, -apple-system, "Segoe UI", sans-serif';
-    g.font = font;
-    const w1 = g.measureText(text).width;
-    g.font = subFont;
-    const w2 = sub ? g.measureText(sub).width : 0;
-    c.width = Math.ceil(Math.max(w1, w2) + 28);
-    c.height = sub ? 76 : 46;
-    g.fillStyle = 'rgba(22,22,42,0.78)';
-    g.beginPath();
-    g.roundRect(0, 0, c.width, c.height, 12);
-    g.fill();
-    g.fillStyle = '#fff';
-    g.font = font;
-    g.textBaseline = 'top';
-    g.fillText(text, 14, 8);
-    if (sub) {
-        g.font = subFont;
-        g.fillStyle = '#ffd08a';
-        g.fillText(sub, 14, 42);
-    }
-    const tex = new THREE.CanvasTexture(c);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, sizeAttenuation: false }));
-    const h = sub ? 0.075 : 0.045;
-    sprite.userData.baseScale = [h * c.width / c.height, h];
-    sprite.scale.set(h * c.width / c.height, h, 1);
-    sprite.renderOrder = 20;
-    return sprite;
-}
-
 /**
  * Tilts within this many degrees of plumb read as "vertical": a declared-vertical kickboard that
- * measures ±1–2° is solver noise, not a slab.
+ * measures ±1–2° is solver noise, not a slab. (Mirrors SurfaceAngle in Blocwerk.Core.)
  */
 export const VERTICAL_TOLERANCE_DEG = 2;
-
-/** "45.4° overhang" / "vertical" / "12.0° slab" for a facet's measured tilt from vertical. */
-export function angleText(deg, normal) {
-    if (deg == null) return null;
-    if (Math.abs(deg) < VERTICAL_TOLERANCE_DEG) return 'vertical';
-    // The normal's z sign tells overhang (faces down) from slab (faces up).
-    const kind = normal && normal[2] > 0.01 ? 'slab' : 'overhang';
-    return `${Math.abs(deg).toFixed(1)}° ${kind}`;
-}
-
-/**
- * Screen-sized sprites scale with the viewport HEIGHT, so on a portrait phone they would be as
- * wide as the screen. Shrink them with the aspect ratio (never below half size).
- */
-export function fitLabels(group, aspect) {
-    const k = Math.max(0.5, Math.min(1, aspect / 1.3));
-    group.children.forEach(s => {
-        if (!s.userData.baseScale) return;          // the leader lines (wall3d-labels.js)
-        const [w, h] = s.userData.baseScale;
-        s.scale.set(w * k, h * k, 1);
-    });
-}
-
-/** Facet name + angle labels, placed near each facet's top edge. */
-export function buildLabels(view) {
-    const group = new THREE.Group();
-    for (const f of view.facets) {
-        const e = f.extent;
-        const a = (e.aMin + e.aMax) / 2;
-        const b = e.bMax - Math.min(250, (e.bMax - e.bMin) * 0.15);
-        const p = v3(f.origin).addScaledVector(v3(f.u), a).addScaledVector(v3(f.v), b).addScaledVector(v3(f.normal), 60);
-        const s = label(f.name, angleText(f.angleDeg, f.normal));
-        s.position.copy(p);
-        s.userData.facet = f;                       // hidden while the camera is behind it
-        group.add(s);
-    }
-    return group;
-}

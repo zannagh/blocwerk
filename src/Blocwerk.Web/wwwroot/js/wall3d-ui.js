@@ -1,5 +1,5 @@
-// DOM overlay of the 3D wall view (wall3d.js): preset buttons, hold info card, scale bar, the
-// "you stand here" plan map and the Schematic / Photos / Photo-real mode switch. Plain DOM, styled
+// DOM overlay of the 3D wall view (wall3d.js): preset buttons, hold info card, scale bar
+// and the Schematic / Photos / Photo-real mode switch. Plain DOM, styled
 // by /css/wall3d.css.
 import { MODE_LABELS } from './wall3d-modes.js';
 
@@ -89,16 +89,13 @@ export function buildOverlay(root, view, on, modes, { hintOnce = false } = {}) {
     const scaleText = el('span', 'w3d-scale-text');
     scale.append(bar, scaleText);
 
-    const map = el('div', 'w3d-map');
-    map.setAttribute('aria-hidden', 'true');
-
     const card = el('div', 'w3d-card');
     card.hidden = true;
     card.setAttribute('role', 'status');
 
-    root.append(modeSwitch, hint, map, scale, card, presets);   // modes first: the hint's CSS keys off it
+    root.append(modeSwitch, hint, scale, card, presets);   // modes first: the hint's CSS keys off it
     return {
-        hint, presets, card, map, modes: modeSwitch,
+        hint, presets, card, modes: modeSwitch,
         setActive(name) {
             presets.querySelectorAll('[data-preset]').forEach(b => b.classList.toggle('active', b.dataset.preset === name));
         },
@@ -134,7 +131,7 @@ export function buildOverlay(root, view, on, modes, { hintOnce = false } = {}) {
 }
 
 /**
- * Pixels of overlay chrome along the stage's top and bottom edges (mode switch, plan map, preset
+ * Pixels of overlay chrome along the stage's top and bottom edges (mode switch, preset
  * bar, a visible hint), for fitPose to frame the wall between. Capped at half the height so a
  * short landscape stage still gives the wall most of its room.
  */
@@ -142,7 +139,7 @@ export function chromeInsets(root, ui) {
     const box = root.getBoundingClientRect();
     if (!box.width || !box.height) return {};
     let top = 0, bottom = 0;
-    for (const e of [ui.modes, ui.map, ui.presets, ui.hint]) {
+    for (const e of [ui.modes, ui.presets, ui.hint]) {
         if (!e || e.hidden || e.classList.contains('gone')) continue;
         const r = e.getBoundingClientRect();
         if (!r.width || !r.height) continue;
@@ -174,69 +171,4 @@ function showCard(card, h, close) {
     if (copies > 1) card.append(el('div', 'w3d-card-line', `Seen on ${copies} panels`));
     if (h.role) card.append(el('div', `w3d-card-role role-${h.role}`, ROLE_LABELS[h.role] || h.role));
     card.hidden = false;
-}
-
-/**
- * Plan (top-down) map: facet outlines, a person where a climber stands in front of the wall,
- * and a wedge showing where the camera looks from. World +y (into the wall) is up on the map,
- * so the climber is at the bottom, as you'd sketch it.
- */
-export function createPlanMap(host, view, frame) {
-    const NS = 'http://www.w3.org/2000/svg';
-    const size = 96;
-    const pad = 10;
-    const pts = view.facets.flatMap(f => f.corners);
-    pts.push([frame.stand.x, frame.stand.y, 0]);
-    const xs = pts.map(p => p[0]);
-    const ys = pts.map(p => p[1]);
-    const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
-    const s = (size - 2 * pad) / Math.max(maxX - minX, maxY - minY, 1);
-    const ox = (size - (maxX - minX) * s) / 2;
-    const oy = (size - (maxY - minY) * s) / 2;
-    const px = x => ox + (x - minX) * s;
-    const py = y => oy + (maxY - y) * s;
-    const svg = document.createElementNS(NS, 'svg');
-    svg.setAttribute('viewBox', `0 0 ${size} ${size}`);
-    for (const f of view.facets) {
-        const poly = document.createElementNS(NS, 'polygon');
-        poly.setAttribute('points', f.corners.map(c => `${px(c[0]).toFixed(1)},${py(c[1]).toFixed(1)}`).join(' '));
-        poly.setAttribute('class', 'w3d-map-facet');
-        svg.append(poly);
-    }
-    const cam = document.createElementNS(NS, 'path');
-    cam.setAttribute('class', 'w3d-map-cam');
-    svg.append(cam);
-    const you = document.createElementNS(NS, 'circle');
-    you.setAttribute('cx', px(frame.stand.x));
-    you.setAttribute('cy', py(frame.stand.y));
-    you.setAttribute('r', 4);
-    you.setAttribute('class', 'w3d-map-you');
-    svg.append(you);
-    const youText = document.createElementNS(NS, 'text');
-    youText.setAttribute('x', px(frame.stand.x));
-    youText.setAttribute('y', Math.min(size - 2, py(frame.stand.y) + 13));
-    youText.setAttribute('class', 'w3d-map-label');
-    youText.textContent = 'you';
-    svg.append(youText);
-    host.append(svg);
-
-    const clamp = v => Math.max(4, Math.min(size - 4, v));
-    return {
-        /** Draws the camera wedge from `position` toward `target` (world vectors). */
-        update(position, target) {
-            const cx = clamp(px(position.x));
-            const cy = clamp(py(position.y));
-            const dx = px(target.x) - px(position.x);
-            const dy = py(target.y) - py(position.y);
-            const len = Math.hypot(dx, dy);
-            if (len < 1e-3) {
-                cam.setAttribute('d', `M${cx - 5},${cy} a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0`);
-                return;
-            }
-            const ux = dx / len, uy = dy / len;
-            const l = 16, w = 8;
-            const tx = cx + ux * l, ty = cy + uy * l;
-            cam.setAttribute('d', `M${cx},${cy} L${tx - uy * w},${ty + ux * w} L${tx + uy * w},${ty - ux * w} Z`);
-        },
-    };
 }

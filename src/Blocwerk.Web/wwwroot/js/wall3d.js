@@ -6,26 +6,27 @@
 // (wall3d-loop.js): a frame is drawn only while something moves or changes, and never while the page
 // is hidden or the view off screen, so an idle view costs nothing.
 //
-// Nothing blocks the view: presets pick camera spots in free space with a clear sight line
-// (wall3d-clearance.js), a facet between the camera and its target is ghosted (wall3d-ghost.js) and
-// the splat fades what is near the camera and the mats in the way (wall3d-splat-clip.js). The wall is
+// Nothing blocks the view, and the camera never moves closer for what is in its way: a facet, body block,
+// cap or volume between the camera and the wall is ghosted or hidden (wall3d-ghost.js, wall3d-occlude.js,
+// wall3d-clearance.js tests the sight lines) and the splat fades what is near the camera and the mats in
+// the way (wall3d-splat-clip.js). The wall is
 // a solid body (wall3d-body.js) the camera cannot enter or pass (wall3d-reach.js). Photo-real draws the
 // hold outlines over the splat (wall3d-overlay.js); taps pick holds in every mode (wall3d-pick.js).
 import * as THREE from '../lib/three/three.module.min.js';
 import { OrbitControls } from '../lib/three/controls/OrbitControls.js';
-import { buildFacets, buildLabels, buildMarkers, buildTextures, fitLabels } from './wall3d-scene.js';
+import { buildFacets, buildMarkers, buildTextures } from './wall3d-scene.js';
 import { buildHolds, buildSelection, OUTLINE_LIFT, placeSelection } from './wall3d-holds.js';
 import { buildOutlines } from './wall3d-outlines.js';
 import { availableModes, createModeController, normalizeMode, PHOTO_REAL_FAILED, watchRenderFailures } from './wall3d-modes.js';
-import { createLabelLayout } from './wall3d-labels.js';
 import { createTweener, presetPose, wallFrame } from './wall3d-camera.js';
-import { buildOverlay, chromeInsets, createPlanMap } from './wall3d-ui.js';
+import { buildOverlay, chromeInsets } from './wall3d-ui.js';
 import { createPhotoReal } from './wall3d-splat.js';
 import { createPhotoLoader } from './wall3d-photos.js';
 import { createFacetSides } from './wall3d-sides.js';
 import { createPicker, screenPointOf } from './wall3d-pick.js';
 import { buildSurroundings, disposeScene, ensureStylesheet, themeColor } from './wall3d-stage.js';
 import { createGhosting } from './wall3d-ghost.js';
+import { createOccluders } from './wall3d-occlude.js';
 import { createPhotoOverlay } from './wall3d-overlay.js';
 import { createSplatClip } from './wall3d-splat-clip.js';
 import { buildVolumes } from './wall3d-volumes.js';
@@ -74,7 +75,6 @@ function build(container, renderer, view, options) {
     const holds = buildHolds(view, roleColors, sides);
     const outlines = buildOutlines(holds.litHolds, holds.dimHolds, holds.facets, OUTLINE_LIFT, sides);
     const selection = buildSelection();
-    const labels = buildLabels(view);
     const photos = createPhotoLoader(() => request());   // the facet photos load on the first switch to Photos
     const textures = buildTextures(view, renderer, photos);
     const markers = buildMarkers(view, sides);
@@ -82,9 +82,14 @@ function build(container, renderer, view, options) {
     const body = buildBody(view);                             // solid in every mode, photo-real too
     const locator = buildLocator(view, options.highlight);       // "Show on wall": one marked spot
     if (locator) scene.add(locator.group);
-    scene.add(body.group, facets.group, textures, markers, labels, holds.lit, holds.dim, volumes.plain, outlines, holds.rings, holds.pick, selection);
+    scene.add(body.group, facets.group, textures, markers, holds.lit, holds.dim, volumes.plain, outlines, holds.rings, holds.pick, selection);
     const frame = wallFrame(view, facets.group, body);
-    const ghosts = createGhosting({ facets, textures, quads: frame.quads, sides });
+    const ghosts = createGhosting({
+        facets, textures, quads: frame.quads, sides,
+        aims: frame.aims, bare: frame.bare, wall: new Set([frame.mainId]),
+        wallQuads: frame.quads.filter(q => frame.holdFacets.has(q.id)),
+    });
+    const occluders = createOccluders({ body, volumes, facets: view.facets, sides, aims: frame.aims, wallId: frame.mainId });
     const clip = createSplatClip(frame.quads, frame.floorZ);
     const surroundings = buildSurroundings(scene, frame, themeColor(container, '--bg', '#f5f4f1'));
 
@@ -110,7 +115,7 @@ function build(container, renderer, view, options) {
     // rings (wall3d-overlay.js), the selection and hold taps stay.
     const photo = createPhotoReal({
         renderer, scene, view, clip,
-        facetParts: [facets.group, textures, markers, labels, holds.lit, holds.dim, volumes.plain, ...surroundings],
+        facetParts: [facets.group, textures, markers, holds.lit, holds.dim, volumes.plain, ...surroundings],
         photoTextures: textures,
         onGiveUp: message => modeCtl.fail(message),
         onProgress: f => ui.say(f == null ? 'Loading the photo-real view…' : `Loading the photo-real view… ${Math.round(f * 100)}%`),
@@ -129,12 +134,6 @@ function build(container, renderer, view, options) {
         parts: { textures, outlines, photos, slabs: [holds.lit, holds.dim, volumes.plain] },
     });
     const failures = watchRenderFailures(renderer, modeCtl, () => request(), photo);
-    const plan = createPlanMap(ui.map, view, frame);
-    const labelLayout = createLabelLayout(labels, camera, renderer.domElement, sides);
-    // Labels keep out of the overlay controls; re-measured when one appears, goes or resizes.
-    let obstaclesDirty = true;
-    const hintObserver = new MutationObserver(() => { obstaclesDirty = true; request(); });
-    hintObserver.observe(ui.hint, { attributes: true, attributeFilter: ['class'], childList: true, characterData: true });
 
     // The preset the camera still shows as framed; a drag clears it. While set, a resize (rotation,
     // the stylesheet landing, the page reflowing) re-frames it for the new stage.
@@ -166,21 +165,13 @@ function build(container, renderer, view, options) {
         const moving = frame.reach.step(camera, controls, tweening);   // controls.update(), then out of the wall
         camera.updateMatrixWorld();
         sides.update(camera);
-        if (ghosts.update(camera.position, controls.target)) {
-            body.setGhosted(ghosts.ids);
-        }
+        ghosts.update(camera.position, controls.target);
+        occluders.update(camera.position, controls.target, ghosts.ids);
         if (photo.active) {
             clip.update(camera, controls.target, ghosts.ids);
         }
         // The selection halo draws over everything (no depth test), so it hides behind its facet.
         if (selection.userData.facet) selection.material.visible = sides.inFront(selection.userData.facet, camera.position);
-        if (labels.visible) {
-            if (obstaclesDirty) {
-                labelLayout.measure([ui.modes, ui.hint, ui.map]);
-                obstaclesDirty = false;
-            }
-            labelLayout.update();
-        }
         try {
             renderer.render(scene, camera);
         } catch (err) {
@@ -190,7 +181,6 @@ function build(container, renderer, view, options) {
         const dist = camera.position.distanceTo(controls.target);
         const h = renderer.domElement.clientHeight;
         ui.setScale(h / (2 * dist * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)));
-        plan.update(camera.position, controls.target);
         if (photo.active) photo.frame(now);
         return tweening || moving;
     }
@@ -201,9 +191,7 @@ function build(container, renderer, view, options) {
         renderer.setSize(w, h, false);
         camera.aspect = w / h;
         camera.updateProjectionMatrix();
-        fitLabels(labels, camera.aspect);
         reframe();
-        obstaclesDirty = true;
         request();
     }
 
@@ -254,10 +242,12 @@ function build(container, renderer, view, options) {
         mode: name => modeCtl.set(name),
         /** Turns the photo-real (splat) mode on or off; resolves when it shows. */
         photoReal: on => modeCtl.set(on ? 'photoreal' : 'schematic'),
+        /** Camera pose (tests, probes). */
+        pose: () => ({ position: camera.position.toArray(), target: controls.target.toArray() }),
         /** Scene statistics for the screenshot harness / perf checks. */
         stats: () => ({
             holds: holds.all.length, drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles,
-            splat: photo.level, pixelRatio: renderer.getPixelRatio(), frames: loop.frames, paused: loop.paused, running: loop.running,
+            occluded: occluders.state, ghosted: ghosts.ids, splat: photo.level, pixelRatio: renderer.getPixelRatio(), frames: loop.frames, paused: loop.paused, running: loop.running,
         }),
         /** Renders synchronously (used by the screenshot harness). */
         renderNow() { tweener.step(performance.now() + 1e6); controls.update(); loop.drawNow(performance.now()); },
@@ -302,12 +292,12 @@ function build(container, renderer, view, options) {
             disposed = true;
             loop.dispose();
             ro.disconnect();
-            hintObserver.disconnect();
             window.removeEventListener('orientationchange', resize);
             picker.dispose();
             pickListeners.clear();
             overlay.dispose();
             ghosts.dispose();
+            occluders.dispose();
             failures.dispose();
             controls.removeEventListener('start', onStart);
             controls.removeEventListener('change', request);

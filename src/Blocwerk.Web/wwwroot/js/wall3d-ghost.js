@@ -3,8 +3,13 @@
 // faded to a see-through ghost: low opacity, no depth write, its edge outline kept. Its holds,
 // outlines and markers switch to their faded twins (wall3d-sides.js), its photo fades too, it no
 // longer blocks a hold tap, and in photo-real the splat around it fades (wall3d-splat-clip.js).
-// Only facets actually in between are ghosted; nothing changes while the set stays the same.
-import { blockersBetween } from './wall3d-clearance.js';
+// "Between" means any sight line from the camera to the orbit target or to a point of a grid over the wall
+// being looked at (wall3d-camera.js wallAims), so a closing panel beside the wall is ghosted too even
+// when the centre line misses it. A facet without holds is ghosted from either side, and whenever the
+// camera is behind it (its back is plywood nobody needs to see); one with holds only when crossed
+// from behind; the wall itself never. Only facets actually in between are
+// ghosted; nothing changes while the set stays the same.
+import { facetsInTheWay } from './wall3d-clearance.js';
 
 const GHOST_OPACITY = 0.12;
 const PHOTO_GHOST_OPACITY = 0.15;
@@ -17,15 +22,17 @@ function ghostOf(material) {
 
 /**
  * `facets`: buildFacets' result, `textures`: the facet photo group, `quads`: facetQuads(view.facets),
- * `sides`: createFacetSides. Returns { update(cameraPos, target) → true when the set changed, ids,
+ * `sides`: createFacetSides, `aims`: world points on the wall the view must see, `bare`: ids of facets
+ * without holds, `wall`: ids that are never ghosted, `wallQuads`: the quads of the facets that carry holds. Returns { update(cameraPos, target) → true when the set changed, ids,
  * quads (the ghosted ones), occluders() (the facet meshes a tap may not pass through), dispose() }.
  */
-export function createGhosting({ facets, textures, quads, sides }) {
+export function createGhosting({ facets, textures, quads, sides, aims = [], bare = null, wall = null, wallQuads = null }) {
     const fronts = [...facets.meshes.values()];
     const solidFront = fronts[0]?.material;
     const solidBack = facets.backs[0]?.material;
     const ghostFront = solidFront ? ghostOf(solidFront) : null;
     const ghostBack = solidBack ? ghostOf(solidBack) : null;
+    const aimList = [null, ...aims];
     let ids = [];
     let key = '';
 
@@ -61,7 +68,14 @@ export function createGhosting({ facets, textures, quads, sides }) {
         get quads() { return quads.filter(q => ids.includes(q.id)); },
         /** Re-tests the sight line; true when the ghosted set changed (and was applied). */
         update(cameraPos, target) {
-            const next = blockersBetween(quads, cameraPos, target);
+            aimList[0] = target;
+            const next = facetsInTheWay(quads, cameraPos, aimList, bare, wall, wallQuads);
+            for (const q of quads) {
+                if (bare?.has(q.id) && !next.includes(q.id) && !sides.inFront(q.facet, cameraPos)) {
+                    next.push(q.id);
+                }
+            }
+
             const nextKey = next.join('|');
             if (nextKey === key) {
                 return false;
