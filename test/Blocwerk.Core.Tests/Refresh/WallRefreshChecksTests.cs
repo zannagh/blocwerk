@@ -164,6 +164,75 @@ public class WallRefreshChecksTests
     }
 
     [Fact]
+    public async Task APictureThatFailedToRead_IsNotRemembered_ButTriedAgain()
+    {
+        using var h = new WallTestHarness();
+        using var s = new RefreshScenario(h);
+        s.Capture.Client.IsConfigured = false;
+        var old = await s.SeedWallAsync();
+        var (view, card) = await PrepareWithCardAsync(h, s, old[0].Id);
+
+        // The seeded photo does not decode: a failure, not "no picture by design".
+        Assert.Null(await s.Service.GetCheckCropAsync(view.Id, card, CheckCropView.Old, CancellationToken.None));
+        await SetOldPhotoAsync(h, CaptureScenario.TinyJpeg(seed: 5));
+        var again = await s.Service.GetCheckCropAsync(view.Id, card, CheckCropView.Old, CancellationToken.None);
+
+        Assert.NotNull(again);
+    }
+
+    [Fact]
+    public async Task ConcurrentRequestsForOnePicture_AllGetIt()
+    {
+        using var h = new WallTestHarness();
+        using var s = new RefreshScenario(h);
+        s.Capture.Client.IsConfigured = false;
+        var old = await s.SeedWallAsync();
+        var (view, card) = await PrepareWithCardAsync(h, s, old[0].Id);
+        await SetOldPhotoAsync(h, CaptureScenario.TinyJpeg(seed: 6));
+
+        var all = await Task.WhenAll(Enumerable.Range(0, 8)
+            .Select(_ => s.Service.GetCheckCropAsync(view.Id, card, CheckCropView.Old, CancellationToken.None)));
+
+        Assert.All(all, bytes => Assert.Equal(all[0], bytes));
+        Assert.NotNull(all[0]);
+    }
+
+    [Fact]
+    public async Task ALostSummaryRequest_StopsHoldingApplyBackAfterTenMinutes()
+    {
+        using var h = new WallTestHarness();
+        using var s = new RefreshScenario(h);
+        s.Capture.Client.IsConfigured = false;
+        var old = await s.SeedWallAsync();
+        var (pending, card) = await PrepareWithCardAsync(h, s, old[0].Id);
+        await s.Service.DecideCheckAsync(pending.Id, card, UpdateExceptionAnswer.Keep);
+        await s.Queue.DequeueAsync(CancellationToken.None);
+
+        // Fresh: Apply waits. Stale (the job was lost): Apply goes on, and the version check still guards it.
+        Assert.True(WallRefreshProcessor.IsResummarizing(await RefreshRowAsync(h, pending.Id), DateTimeOffset.UtcNow));
+        await SetRequestedAtAsync(h, pending.Id, DateTimeOffset.UtcNow - WallRefreshProcessor.ResummarizeStale - TimeSpan.FromMinutes(1));
+        Assert.False((await s.CurrentAsync()).SummaryUpdating);
+        await s.Service.ApplyAsync(pending.Id, pending.Summary!.DecisionsVersion);
+
+        Assert.Null((await RefreshRowAsync(h, pending.Id)).SummaryRequestedAt);
+        Assert.Equal(WallRefreshStatus.Applying, (await RefreshRowAsync(h, pending.Id)).Status);
+    }
+
+    private static async Task<WallRefresh> RefreshRowAsync(WallTestHarness h, Guid id)
+    {
+        await using var db = h.CreateContext();
+        return await db.WallRefreshes.AsNoTracking().SingleAsync(r => r.Id == id);
+    }
+
+    private static async Task SetRequestedAtAsync(WallTestHarness h, Guid id, DateTimeOffset at)
+    {
+        await using var db = h.CreateContext();
+        var row = await db.WallRefreshes.SingleAsync(r => r.Id == id);
+        row.SummaryRequestedAt = at;
+        await db.SaveChangesAsync();
+    }
+
+    [Fact]
     public async Task ACardsMissingPicture_IsNull_AndTheModelPictureNeedsATexture()
     {
         using var h = new WallTestHarness();

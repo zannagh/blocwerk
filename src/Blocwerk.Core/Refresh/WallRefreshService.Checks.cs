@@ -52,7 +52,7 @@ public sealed partial class WallRefreshService
         await using (db)
         {
             return refresh.UpdateSessionId is { } sessionId
-                ? await RefreshCheckCrops.GetAsync(db, files, sessionId, checkId, view, ct)
+                ? await RefreshCheckCrops.GetAsync(dbContextFactory, files, sessionId, checkId, view, ct)
                 : null;
         }
     }

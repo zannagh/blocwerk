@@ -119,6 +119,48 @@ public class PossiblyRemovedTests
         Assert.Equal(RemovalVerdict.HoldPresent, Assert.Single(findings).Verdict);
     }
 
+    [Fact]
+    public void TheCheck_OutOfTime_StartsNoProbe_AndAddsNothing()
+    {
+        using var expired = new CancellationTokenSource();
+        expired.Cancel();
+        var probed = false;
+        IReadOnlyList<double?> Probe(IReadOnlyList<PresenceQuery> q)
+        {
+            probed = true;
+            return q.Select(_ => (double?)0.0).ToList();
+        }
+
+        var findings = RemovalCheck.Run(Panel(), Probe, (_, q) => Probe(q), expired.Token);
+
+        Assert.False(probed);
+        Assert.Equal(RemovalVerdict.Unknown, Assert.Single(findings).Verdict);
+    }
+
+    [Fact]
+    public void TheCheck_RunningOutOfTimeBetweenProbes_LeavesTheRestUnknown()
+    {
+        using var budget = new CancellationTokenSource();
+        var textureProbed = false;
+
+        var findings = RemovalCheck.Run(
+            Panel(),
+            q =>
+            {
+                budget.Cancel();
+                return q.Select(_ => (double?)0.05).ToList();
+            },
+            (_, q) =>
+            {
+                textureProbed = true;
+                return q.Select(_ => (double?)0.1).ToList();
+            },
+            budget.Token);
+
+        Assert.False(textureProbed);
+        Assert.Equal(RemovalVerdict.Unknown, Assert.Single(findings).Verdict);
+    }
+
     private static RemovalPanel Panel(bool fresh = true)
     {
         var camera = new SyntheticWallCamera();

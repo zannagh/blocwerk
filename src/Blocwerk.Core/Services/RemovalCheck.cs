@@ -65,18 +65,28 @@ public static class RemovalCheck
     /// <param name="panel">The panel.</param>
     /// <param name="photoProbe">Old photo against the staged photo; null without a probe or an old photo.</param>
     /// <param name="textureProbe">Old photo against a facet texture; null without a probe.</param>
+    /// <param name="ct">
+    /// The check's time budget, looked at between probes: once it is cancelled no further probe starts, and the holds
+    /// without both scores stay <see cref="RemovalVerdict.Unknown"/>. Never thrown.
+    /// </param>
     /// <returns>One finding per candidate.</returns>
     public static IReadOnlyList<RemovalFinding> Run(
         RemovalPanel panel,
         Func<IReadOnlyList<PresenceQuery>, IReadOnlyList<double?>>? photoProbe,
-        TextureProbe? textureProbe)
+        TextureProbe? textureProbe,
+        CancellationToken ct = default)
     {
         var (w, h) = panel.NewSize;
-        var items = panel.Candidates.Select(c => Prepare(panel, c, w, h)).ToList();
+        var items = new List<(RemovalCandidate Candidate, RemovalEvidence Evidence, TextureSpot? Spot, PresenceQuery? Photo, PresenceQuery? Texture)>();
+        foreach (var candidate in panel.Candidates)
+        {
+            items.Add(ct.IsCancellationRequested ? (candidate, new RemovalEvidence(false, false, false, false, null, null), null, null, null) : Prepare(panel, candidate, w, h));
+        }
+
         var probed = Enumerable.Range(0, items.Count).Where(k => items[k].Photo is not null && items[k].Texture is not null).ToList();
         var photoScores = new double?[items.Count];
         var textureScores = new double?[items.Count];
-        if (photoProbe is not null && probed.Count > 0)
+        if (photoProbe is not null && probed.Count > 0 && !ct.IsCancellationRequested)
         {
             Fill(photoScores, probed, photoProbe(probed.Select(k => items[k].Photo!.Value).ToList()));
         }
@@ -85,6 +95,11 @@ public static class RemovalCheck
         {
             foreach (var facet in probed.GroupBy(k => items[k].Spot!.FacetId, StringComparer.Ordinal))
             {
+                if (ct.IsCancellationRequested)
+                {
+                    break;
+                }
+
                 var list = facet.ToList();
                 Fill(textureScores, list, textureProbe(facet.Key, list.Select(k => items[k].Texture!.Value).ToList()));
             }

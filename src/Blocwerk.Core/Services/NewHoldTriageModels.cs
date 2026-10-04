@@ -53,6 +53,9 @@ internal sealed record NewHoldTriageOutcome(Dictionary<Guid, NewHoldDiscardReaso
 
     public List<PossiblyRemovedHold> PossiblyRemoved { get; } = [];
 
+    /// <summary>When the removal checks of this run run out of time (set by the first one).</summary>
+    public DateTimeOffset? RemovalDeadline { get; set; }
+
     public List<ConflictingNewHold> ConflictingNew { get; } = [];
 }
 

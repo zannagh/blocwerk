@@ -16,9 +16,16 @@ namespace Blocwerk.Core.Refresh;
 /// </summary>
 public sealed partial class WallRefreshProcessor
 {
-    /// <summary>Whether an answer's summary is still being made (Apply waits for it).</summary>
-    public static bool IsResummarizing(WallRefresh refresh) =>
+    /// <summary>A request older than this is taken as lost (the job never ran): Apply stops waiting for it.</summary>
+    public static readonly TimeSpan ResummarizeStale = TimeSpan.FromMinutes(10);
+
+    /// <summary>Whether an answer's summary is waiting to be made (the worker makes it, however old the request).</summary>
+    public static bool HasSummaryRequest(WallRefresh refresh) =>
         refresh.Status == WallRefreshStatus.ReadyToApply && refresh.SummaryRequestedAt is not null;
+
+    /// <summary>Whether an answer's summary is still being made (Apply waits for it), unless the request went stale.</summary>
+    public static bool IsResummarizing(WallRefresh refresh, DateTimeOffset now) =>
+        HasSummaryRequest(refresh) && now - refresh.SummaryRequestedAt < ResummarizeStale;
 
     private async Task ResummarizeAsync(WallRefresh refresh, WallRefreshActors actors, CancellationToken ct)
     {

@@ -132,10 +132,17 @@ public sealed partial class WallRefreshService
             throw new UserFacingException("The summary changed while you were looking at it. Check it again, then apply.");
         }
 
-        if (WallRefreshProcessor.IsResummarizing(refresh))
+        if (WallRefreshProcessor.HasSummaryRequest(refresh))
         {
+            // Asked again either way; a request that went stale (a lost job) no longer holds Apply back: the version
+            // check below and the background apply's own check keep it from promoting an unseen summary.
             queue.Enqueue(refresh.Id);
-            throw new UserFacingException("The summary is being updated with your answers. Try again in a moment.");
+            if (WallRefreshProcessor.IsResummarizing(refresh, DateTimeOffset.UtcNow))
+            {
+                throw new UserFacingException("The summary is being updated with your answers. Try again in a moment.");
+            }
+
+            refresh.SummaryRequestedAt = null;
         }
 
         if (WallRefreshProcessor.IsRechecking(refresh, DateTimeOffset.UtcNow)

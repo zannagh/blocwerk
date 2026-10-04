@@ -38,7 +38,7 @@ public sealed partial class WallRefreshService
             refresh.CaptureId,
             refresh.UpdateSessionId,
             HasActiveModel: await db.WallGeometryModels.AnyAsync(m => m.WallId == refresh.WallId && m.IsActive),
-            SummaryUpdating: WallRefreshProcessor.IsResummarizing(refresh));
+            SummaryUpdating: WallRefreshProcessor.IsResummarizing(refresh, DateTimeOffset.UtcNow));
     }
 
     private async Task<bool> CaptureAvailableAsync(BlocwerkDbContext db, Guid wallId)

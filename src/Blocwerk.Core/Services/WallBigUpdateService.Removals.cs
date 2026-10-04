@@ -19,6 +19,14 @@ namespace Blocwerk.Core.Services;
 /// </summary>
 public partial class WallBigUpdateService
 {
+    /// <summary>How long a run's removal checks may probe in all before the rest stay unknown (default 2 min).</summary>
+    internal TimeSpan RemovalCheckBudget { get; set; } = DefaultRemovalCheckBudget;
+
+    private static TimeSpan DefaultRemovalCheckBudget =>
+        int.TryParse(Environment.GetEnvironmentVariable("BLOCWERK_REMOVAL_CHECK_SECONDS"), out var seconds) && seconds > 0
+            ? TimeSpan.FromSeconds(seconds)
+            : TimeSpan.FromMinutes(2);
+
     /// <summary>The old holds at a grid position that were not found again and have a predicted spot.</summary>
     private static List<Hold> RemovableAt(RemovalInputs removals, int col, int row) =>
         (removals.OldByPosition.GetValueOrDefault((col, row)) ?? [])
@@ -66,6 +74,10 @@ public partial class WallBigUpdateService
             return;
         }
 
+        // One budget for the whole run, shared by its panels: what is left of it when this panel's check starts.
+        result.RemovalDeadline ??= DateTimeOffset.UtcNow + RemovalCheckBudget;
+        var left = result.RemovalDeadline.Value - DateTimeOffset.UtcNow;
+        using var budget = new CancellationTokenSource(left > TimeSpan.Zero ? left : TimeSpan.Zero);
         try
         {
             var newPhoto = await db.WallPanels.Where(p => p.Id == scope.PanelId).Select(p => p.StagedPhoto).FirstAsync();
@@ -82,7 +94,14 @@ public partial class WallBigUpdateService
             var findings = await Task.Run(() => RemovalCheck.Run(
                 panel,
                 q => probe.Score(oldPhoto, newPhoto, q),
-                (facet, q) => images.TryGetValue(facet, out var texture) ? probe.Score(texture, oldPhoto, q) : q.Select(_ => (double?)null).ToList()));
+                (facet, q) => images.TryGetValue(facet, out var texture) ? probe.Score(texture, oldPhoto, q) : q.Select(_ => (double?)null).ToList(),
+                budget.Token));
+            if (budget.IsCancellationRequested)
+            {
+                logger.LogWarning(
+                    "Removal check on panel {PanelId} ran out of time ({Budget}); the holds not probed yet stay unknown", scope.PanelId, RemovalCheckBudget);
+            }
+
             var bare = findings.Where(f => f is { Verdict: RemovalVerdict.BareWall, Spot: not null, PhotoScore: not null, TextureScore: not null }).ToList();
             result.PossiblyRemoved.AddRange(bare.Select(f => new PossiblyRemovedHold(
                 f.OldHoldId, scope.PanelId, f.X, f.Y, model.Id, f.Spot!.FacetId, f.Spot.A, f.Spot.B, f.PhotoScore!.Value, f.TextureScore!.Value)));
@@ -90,8 +109,10 @@ public partial class WallBigUpdateService
                 "Removal check on panel {PanelId}: {Bare} of {Candidates} old holds not found again show bare wall ({Present} show a hold)",
                 scope.PanelId, bare.Count, findings.Count, findings.Count(f => f.Verdict == RemovalVerdict.HoldPresent));
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex)
         {
+            // Contained whatever it is (a probe's cancellation or timeout too): the shutdown token never reaches this
+            // service, and the refresh goes on without evidence rather than failing for it.
             logger.LogWarning(ex, "Removal check failed on panel {PanelId}; no hold is reported as possibly removed", scope.PanelId);
         }
     }
