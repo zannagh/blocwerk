@@ -195,8 +195,6 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-    env:
-      BLOCWERK_TEST_PG: Host=localhost;Port=${{ job.services.postgres.ports['5432'] }};Username=blocwerk;Password=blocwerk
     steps:
       - uses: actions/checkout@v4
 
@@ -206,6 +204,9 @@ jobs:
           global-json-file: "global.json"
 
       - name: Test (Postgres tier)
+        # The job context (the service's mapped port) is only available at step level.
+        env:
+          BLOCWERK_TEST_PG: Host=localhost;Port=${{ job.services.postgres.ports['5432'] }};Username=blocwerk;Password=blocwerk
         run: dotnet test test/Blocwerk.Core.Tests -c Release --filter "Db=Postgres"
 
   upload-to-release:
