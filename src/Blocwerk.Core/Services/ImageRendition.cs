@@ -82,7 +82,7 @@ public static class ImageRendition
     /// The bitmap the EXIF tag says the photographer saw, or null when the pixels are already
     /// upright and nothing has to be copied.
     /// </summary>
-    private static SKBitmap? Reorient(SKBitmap source, SKEncodedOrigin origin)
+    internal static SKBitmap? Reorient(SKBitmap source, SKEncodedOrigin origin)
     {
         if (origin is SKEncodedOrigin.Default or SKEncodedOrigin.TopLeft)
         {
@@ -119,7 +119,7 @@ public static class ImageRendition
     };
 
     /// <summary>The EXIF orientation the file declares, or upright when it declares none.</summary>
-    private static SKEncodedOrigin OriginOf(byte[] original)
+    internal static SKEncodedOrigin OriginOf(byte[] original)
     {
         try
         {

@@ -1,0 +1,85 @@
+@* Wall-settings section: "Possible duplicate holds" - the same physical hold recorded twice. Each suggestion shows both holds
+   on the photo, the boulders affected and offers Merge / Not a duplicate; recent merges can be undone.
+   Admin-only (rendered inside the admin card); hidden on a kiosk tablet and behind a share link. *@
+
+@using Blocwerk.Core.Detection.Outlines
+
+@if (!Hidden)
+{
+<div class="glyph-settings">
+    <h3 class="glyph-heading">Possible duplicate holds</h3>
+    <p class="hint">
+        Finds holds that are probably the same hold on the wall recorded twice. You decide for each pair: merge them into one
+        (boulders move over to the hold that stays) or say it is not a duplicate. You can undo a merge afterwards.
+    </p>
+
+    @if (!open)
+    {
+        <div class="staged-actions">
+            <button class="btn-secondary" disabled="@busy" @onclick="OpenAsync">Check for duplicate holds</button>
+        </div>
+    }
+    else if (page is not null)
+    {
+        <p class="glyph-summary" role="status">@Summary(page)</p>
+        @foreach (var item in page.Items)
+        {
+            <div class="dup-card" @key="@($"{item.Left.Id}-{item.Right.Id}")">
+                <p class="hint">@Reason(item.Kind) (@((int)Math.Round(item.Confidence * 100))% sure)</p>
+                <div class="dup-pair">
+                    <figure class="dup-side">
+                        <img src="@CropUrl(item.Left.Id, item.Right.Id)" alt="Left hold, outlined in yellow, with the other outlined in pink" loading="lazy" />
+                        <figcaption><strong>Left</strong>, @SideKind(item.Left)@(string.IsNullOrWhiteSpace(item.Left.Name) ? "" : " - " + item.Left.Name)<br />@BoulderText(item.Left)</figcaption>
+                    </figure>
+                    <figure class="dup-side">
+                        <img src="@CropUrl(item.Right.Id, item.Left.Id)" alt="Right hold, outlined in yellow, with the other outlined in pink" loading="lazy" />
+                        <figcaption><strong>Right</strong>, @SideKind(item.Right)@(string.IsNullOrWhiteSpace(item.Right.Name) ? "" : " - " + item.Right.Name)<br />@BoulderText(item.Right)</figcaption>
+                    </figure>
+                </div>
+                <div class="dup-actions">
+                    @if (item.SuggestedMode == HoldMergeMode.KeepHandUseDetectedShape)
+                    {
+                        <button class="btn-primary" disabled="@busy" @onclick="() => MergeAsync(item, HoldMergeMode.KeepHandUseDetectedShape)">Keep the hand-placed hold, use the detected shape</button>
+                        <button class="btn-secondary" disabled="@busy" @onclick="() => MergeAsync(item, HoldMergeMode.KeepLeft)">Merge (keep left as it is)</button>
+                        <button class="btn-secondary" disabled="@busy" @onclick="() => MergeAsync(item, HoldMergeMode.KeepRight)">Merge (keep right as it is)</button>
+                    }
+                    else
+                    {
+                        <button class="btn-primary" disabled="@busy" @onclick="() => MergeAsync(item, HoldMergeMode.KeepLeft)">Merge (keep left)</button>
+                        <button class="btn-secondary" disabled="@busy" @onclick="() => MergeAsync(item, HoldMergeMode.KeepRight)">Merge (keep right)</button>
+                    }
+                    <button class="btn-secondary" disabled="@busy" @onclick="() => DismissAsync(item)">Not a duplicate</button>
+                </div>
+            </div>
+        }
+
+        <div class="staged-actions">
+            @if (page.Total > page.Items.Count)
+            {
+                <button class="btn-secondary" disabled="@busy" @onclick="MoreAsync">Show 20 more (@(page.Total - page.Items.Count) left)</button>
+            }
+            <button class="btn-secondary" @onclick="Close">Close</button>
+        </div>
+    }
+
+    @if (failure is not null)
+    {
+        <p class="field-error" role="alert">@failure</p>
+    }
+    else if (message is not null)
+    {
+        <p class="glyph-ok" role="status">@message</p>
+    }
+
+    @if (open && page is { RecentMerges.Count: > 0 })
+    {
+        <p class="hint">Recent merges you can undo:</p>
+        <div class="dup-actions">
+            @foreach (var merge in page.RecentMerges)
+            {
+                <button class="btn-secondary" disabled="@busy" @onclick="() => UndoAsync(merge.BatchId)">Undo merge from @merge.CreatedAt.ToLocalTime().ToString("g")</button>
+            }
+        </div>
+    }
+</div>
+}
