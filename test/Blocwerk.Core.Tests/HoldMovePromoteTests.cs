@@ -166,7 +166,7 @@ public class HoldMovePromoteTests
         };
         foreach (var (i, e) in s.Extra.Select((e, i) => (i, e)))
         {
-            all[e.New] = new("0", 1050 + (100 * i), 1000);
+            all[e.New] = new("0", 1050 + (100.0 * i), 1000);
         }
 
         return all;
@@ -208,8 +208,8 @@ public class HoldMovePromoteTests
         var oldStayer = Placed(wall.Id, live.Id, 2, 1200, 1000, 0.2, 0.5);
         var newMover = Placed(wall.Id, staged.Id, 3, movedToA, 1000, 0.5, 0.5);
         var newStayer = Placed(wall.Id, staged.Id, 3, 1200, 1000, 0.2, 0.5);
-        var extraOld = Enumerable.Range(0, 3).Select(i => Placed(wall.Id, live.Id, 2, 1050 + (100 * i), 1000, 0.1 + (0.05 * i), 0.8)).ToList();
-        var extraNew = Enumerable.Range(0, 3).Select(i => Placed(wall.Id, staged.Id, 3, 1050 + (100 * i), 1000, 0.1 + (0.05 * i), 0.8)).ToList();
+        var extraOld = Enumerable.Range(0, 3).Select(i => Placed(wall.Id, live.Id, 2, 1050 + (100.0 * i), 1000, 0.1 + (0.05 * i), 0.8)).ToList();
+        var extraNew = Enumerable.Range(0, 3).Select(i => Placed(wall.Id, staged.Id, 3, 1050 + (100.0 * i), 1000, 0.1 + (0.05 * i), 0.8)).ToList();
         if (!placeStaged)
         {
             foreach (var n in new[] { newMover, newStayer }.Concat(extraNew))

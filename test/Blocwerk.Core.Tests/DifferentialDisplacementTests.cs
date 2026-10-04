@@ -17,7 +17,7 @@ public class DifferentialDisplacementTests
         new(Id(n), "0", a, b, da, db, 0);
 
     private static List<DifferentialDisplacement.Input> Grid(double offA, double offB) =>
-        Enumerable.Range(0, 12).Select(i => Hold(i + 1, (i % 4) * 150, (i / 4) * 150, offA, offB)).ToList();
+        Enumerable.Range(0, 12).Select(i => Hold(i + 1, (i % 4) * 150.0, (i / 4) * 150.0, offA, offB)).ToList();
 
     [Fact]
     public void ASystematicOffset_IsCancelled_EvenWhenItIsFarBeyondTheCutoff()

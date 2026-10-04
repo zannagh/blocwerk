@@ -95,7 +95,7 @@ public sealed class HoldMoveJournalTests : IDisposable
             var live = new WallPanel { WallId = wallId, Col = 0, Row = 0, Photo = [1], PhotoContentType = "image/jpeg", Generation = 2 };
             db.WallPanels.Add(live);
             db.Holds.AddRange(Placed(oldMover, live.Id, 2, 1000, 0.5), Placed(oldStayer, live.Id, 2, 1200, 0.2));
-            db.Holds.AddRange(extra.Select((e, i) => Placed(e.Old, live.Id, 2, 1050 + (100 * i), 0.1)));
+            db.Holds.AddRange(extra.Select((e, i) => Placed(e.Old, live.Id, 2, 1050 + (100.0 * i), 0.1)));
             db.Boulders.Add(new Boulder { Id = boulderId, WallId = wallId, Name = "Route", CreatedByUserId = owner.Id, Generation = 2 });
             db.BoulderHolds.AddRange(
                 new BoulderHold { BoulderId = boulderId, HoldId = oldMover, Type = HoldType.Start },
@@ -109,7 +109,7 @@ public sealed class HoldMoveJournalTests : IDisposable
             var staged = new WallPanel { WallId = wallId, Col = 0, Row = 0, StagedPhoto = [7], StagedPhotoContentType = "image/jpeg", Generation = 3 };
             db.WallPanels.Add(staged);
             db.Holds.AddRange(Placed(newMover, staged.Id, 3, 1340, 0.5), Placed(newStayer, staged.Id, 3, 1200, 0.2));
-            db.Holds.AddRange(extra.Select((e, i) => Placed(e.New, staged.Id, 3, 1050 + (100 * i), 0.1)));
+            db.Holds.AddRange(extra.Select((e, i) => Placed(e.New, staged.Id, 3, 1050 + (100.0 * i), 0.1)));
             await db.SaveChangesAsync();
         }
 

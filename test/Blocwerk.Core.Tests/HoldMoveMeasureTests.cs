@@ -182,7 +182,7 @@ public class HoldMoveMeasureTests
         // Holds on a grid, 100 mm per 0.05 of a 1000 px photo = 2 mm/px; the last one "moved" far in the new photo.
         var pairs = Enumerable.Range(0, 6).Select(i =>
         {
-            var old = Placed("0", i * 200, 0);
+            var old = Placed("0", i * 200.0, 0);
             old.Id = new Guid(i + 1, 0, 0, [0, 0, 0, 0, 0, 0, 0, 0]);
             var twin = new Hold { X = (i * 100.0 / 1000) + 0.1, Y = 0.5 };
             return (old, twin);
