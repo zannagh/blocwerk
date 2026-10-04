@@ -98,8 +98,21 @@ public static class PhotoTextureRegistration
         var reason = Refusal(new FitEvidence(inliers.Count, rmsMm, coverage, spread, extent), Mirrored(fit.Homography, cx, cy));
         return new FacetRegistration(
             id, reason is null, match.Pairs.Count, inliers.Count, match.CoarseInliers, coverage.Coverage, coverage.PhotoShare,
-            rmsMm, reason, toPlane, extent, depthSign, [.. inliers.Select(p => (p.SrcX / photoWidth, p.SrcY / photoHeight))]);
+            rmsMm, reason, toPlane, extent, depthSign, [.. inliers.Select(p => (p.SrcX / photoWidth, p.SrcY / photoHeight))],
+            reason is null ? Warp(match.Pairs, toPlane, frame, photoWidth, photoHeight) : null);
     }
+
+    /// <summary>The smooth residual field of an accepted fit, from every pair's disagreement with the homography (null when none is supported).</summary>
+    private static ResidualWarp? Warp(
+        IReadOnlyList<PointCorrespondence> pairs, PlaneHomography toPlane, TexturePlaneFrame frame, int photoWidth, int photoHeight) =>
+        ResidualWarp.Fit(
+            [.. pairs.Select(p =>
+            {
+                var (x, y) = (p.SrcX / photoWidth, p.SrcY / photoHeight);
+                var (a, b) = toPlane.Apply(x, y);
+                var (ta, tb) = frame.ToPlane(p.DstX, p.DstY);
+                return new WarpSample(x, y, ta - a, tb - b);
+            })]);
 
     /// <summary>Why a fit is refused, or null when it is accepted.</summary>
     private static string? Refusal(FitEvidence e, bool mirrored)
