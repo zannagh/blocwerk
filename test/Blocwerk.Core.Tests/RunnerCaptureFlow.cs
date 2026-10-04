@@ -69,8 +69,12 @@ internal sealed class RunnerCaptureFlow : IDisposable
         return flow;
     }
 
-    public Task<RunnerJobOutcome> PreviewAsync(int step, int total = 50000) =>
-        Runners.AcceptPreviewAsync(Runner, Job.Id, step, total, Upload(), "gzip", CancellationToken.None);
+    /// <summary>Uploads a preview; the clock moves past the per-job rate limit first unless <paramref name="wait"/> is zero.</summary>
+    public Task<RunnerJobOutcome> PreviewAsync(int step, int total = 50000, TimeSpan? wait = null)
+    {
+        Clock.Advance(wait ?? TimeSpan.FromMinutes(2));
+        return Runners.AcceptPreviewAsync(Runner, Job.Id, step, total, Upload(), "gzip", CancellationToken.None);
+    }
 
     public Task<RunnerJobOutcome> ResultAsync() =>
         Runners.AcceptResultAsync(Runner, Job.Id, Upload(), "gzip", null, CancellationToken.None);

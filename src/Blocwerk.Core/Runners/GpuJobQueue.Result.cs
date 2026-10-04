@@ -30,6 +30,9 @@ public sealed partial class GpuJobQueue
     /// <summary>After this long an unfinished delivered result is given up.</summary>
     private static readonly TimeSpan FinishGiveUp = TimeSpan.FromHours(24);
 
+    /// <summary>Whether the delivered result of <paramref name="job"/> waited for the splat worker longer than the give-up time.</summary>
+    public bool FinishGivenUp(GpuJob job) => job.CompletedAt is { } done && done < Now - FinishGiveUp;
+
     public async Task<RunnerJobOutcome> AcceptResultAsync(
         GpuRunner runner, Guid jobId, Stream body, string? contentEncoding, string? statsJson, CancellationToken ct)
     {
@@ -119,19 +122,20 @@ public sealed partial class GpuJobQueue
         files.ResolvePhysicalPath("probe") is { } probe && Path.GetDirectoryName(probe) is { } dir ? disk.FreeBytes(dir) : null;
 
     private async Task<(string? Stored, RunnerJobOutcome Refused)> StoreUploadAsync(
-        GpuRunner runner, Guid jobId, Stream body, bool gzip, CancellationToken ct)
+        GpuRunner runner, Guid jobId, Stream body, bool gzip, CancellationToken ct, long? maxBytes = null)
     {
+        var cap = maxBytes ?? options.MaxResultBytes;
         using var hold = busyGate?.Hold(DeployBusyWork.RunnerResultUpload);
         await using var encoded = gzip ? new CountingReadStream(body) : null;
         await using var decoded = encoded is null ? null : new GZipStream(encoded, CompressionMode.Decompress, leaveOpen: true);
         await using var guarded = new GuardedUploadStream(decoded ?? body, encoded, options, FreeBytes);
         try
         {
-            return (await files.SaveStreamAsync(guarded, ".upl", options.MaxResultBytes, ct), RunnerJobOutcome.Ok);
+            return (await files.SaveStreamAsync(guarded, ".upl", cap, ct), RunnerJobOutcome.Ok);
         }
         catch (CaptureFileTooLargeException)
         {
-            logger.LogWarning("Runner {RunnerId} sent a result over {Max} bytes for GPU job {JobId}", runner.Id, options.MaxResultBytes, jobId);
+            logger.LogWarning("Runner {RunnerId} sent an upload over {Max} bytes for GPU job {JobId}", runner.Id, cap, jobId);
             return (null, RunnerJobOutcome.TooLarge);
         }
         catch (RunnerUploadRefusedException ex)
@@ -201,7 +205,7 @@ public sealed partial class GpuJobQueue
     /// The capture (finished as "Model ready" while the runner trained) goes back to the photo-real stage, exactly
     /// like a retrain: its model and any older view stay live until the new view is stored.
     /// </summary>
-    private async Task HandBackAsync(BlocwerkDbContext db, Guid captureId, CancellationToken ct)
+    private async Task<bool> HandBackAsync(BlocwerkDbContext db, Guid captureId, CancellationToken ct)
     {
         var capture = await db.WallCaptures.FirstOrDefaultAsync(c => c.Id == captureId, ct);
         if (capture is { Status: WallCaptureStatus.Succeeded or WallCaptureStatus.SucceededWithoutTextures or WallCaptureStatus.SucceededWithoutSplat })
@@ -216,9 +220,10 @@ public sealed partial class GpuJobQueue
         }
         else if (capture is not { Status: WallCaptureStatus.Splatting })
         {
-            return;
+            return false;
         }
 
         captureQueue.Enqueue(captureId);
+        return true;
     }
 }

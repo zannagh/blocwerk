@@ -155,7 +155,7 @@ public static partial class RunnerApiEndpoints
             return refused;
         }
 
-        var max = queue.Options.MaxResultBytes;
+        var max = queue.Options.MaxPreviewBytes;
         if (http.Request.ContentLength > max)
         {
             return Outcome(http, RunnerJobOutcome.TooLarge);

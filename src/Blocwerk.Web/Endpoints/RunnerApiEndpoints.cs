@@ -144,7 +144,7 @@ public static partial class RunnerApiEndpoints
         RunnerJobOutcome.InsufficientStorage => Results.Problem(
             "The server is short of disk space; retry later.", statusCode: StatusCodes.Status507InsufficientStorage),
         RunnerJobOutcome.PreviewRefused => Results.Problem(
-            "This preview is not taken (previews are off, or a newer one or the final result is already here).",
+            "This preview is not taken (previews are off or used up, too early, too soon after the last one, or a newer one or the final result is already here); carry on training.",
             statusCode: StatusCodes.Status422UnprocessableEntity),
         _ => Results.NotFound(),
     };
