@@ -15,7 +15,9 @@
 #        --restore-db         with --rollback --apply: also pg_restore the dump (typed confirmation)
 # Env:   ROLLOUT_HOST (ssh alias, default ionos), ROLLOUT_DIR (deploy dir on the box),
 #        ROLLOUT_SSH (full ssh command prefix, replaces ssh; used by the tests), ROLLOUT_LOG_DIR,
-#        ROLLOUT_MIN_FREE_GB (default 5), ROLLOUT_WAIT_MIN (image wait, default 30).
+#        ROLLOUT_MIN_FREE_GB (default 5), ROLLOUT_WAIT_MIN (overall image wait, default 30),
+#        ROLLOUT_WAIT_SEC (same in seconds, wins over _MIN), ROLLOUT_POLL_SEC (default 30),
+#        ROLLOUT_AUTH_FAILS (consecutive unauthorized pulls before failing fast, default 3).
 # Secrets: .env is never read into this process or printed; only its key NAMES are listed.
 # SC2016: the remote commands are single-quoted on purpose, the BOX expands them.
 # shellcheck disable=SC2016
@@ -26,6 +28,9 @@ DIR=${ROLLOUT_DIR:-/home/patrickweindl/blocwerk}
 SSH_CMD=${ROLLOUT_SSH:-"ssh -o BatchMode=yes -o ConnectTimeout=15 $HOST"}
 MIN_FREE_GB=${ROLLOUT_MIN_FREE_GB:-5}
 WAIT_MIN=${ROLLOUT_WAIT_MIN:-30}
+WAIT_SEC=${ROLLOUT_WAIT_SEC:-$((WAIT_MIN * 60))}
+POLL_SEC=${ROLLOUT_POLL_SEC:-30}
+AUTH_FAILS=${ROLLOUT_AUTH_FAILS:-3}
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)
 COMPOSE_NEW=$REPO/docker/docker-compose.prod.yml
@@ -42,12 +47,14 @@ LOG_DIR=${ROLLOUT_LOG_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/blocwerk-rollou
 LOG=$LOG_DIR/rollout-$TS.log
 mkdir -p "$LOG_DIR"
 read -r -a SSH <<<"$SSH_CMD"
-PAUSED_BY_US=0 LOCKED=0 BACKUP_DIR=""
+PAUSED_BY_US=0 LOCKED=0 BACKUP_DIR="" CLEANED=0 NAP_PID=""
 
 log() { printf '%s %s\n' "$(date -u +%H:%M:%SZ)" "$*" | tee -a "$LOG"; }
 die() { log "ERROR: $*"; exit 1; }
 # Run a command string on the box, in the deploy dir. stdin is passed through.
 rr() { "${SSH[@]}" "cd '$DIR' && $1"; }
+# Interruptible sleep: a signal ends the `wait` at once and the trap runs (a plain foreground sleep delays it).
+nap() { sleep "$1" & NAP_PID=$!; wait "$NAP_PID" || true; NAP_PID=""; }
 
 usage() { sed -n '2,/^set -euo/p' "$0" | sed '$d;s/^# \{0,1\}//'; exit "${1:-0}"; }
 
@@ -118,9 +125,11 @@ ship_log() {
   rr "cat > '$BACKUP_DIR/rollout.log' && chmod 600 '$BACKUP_DIR/rollout.log'" <"$LOG" 2>/dev/null || true
 }
 
-on_exit() {
-  local rc=$?
-  trap - EXIT
+# Cleanup runs exactly once (CLEANED), whether the script ends normally, fails, or is signalled.
+cleanup() {
+  local rc=$1
+  [ "$CLEANED" = 0 ] || return 0
+  CLEANED=1
   if [ "$rc" -ne 0 ]; then
     log "FAILED (exit $rc)"
     [ -z "$BACKUP_DIR" ] || log "backup is in $BACKUP_DIR; undo with: rollout.sh --rollback ${BACKUP_DIR#backups/} --apply"
@@ -134,9 +143,25 @@ on_exit() {
   [ "$LOCKED" = 0 ] || rr 'rm -rf .rollout.lock' || true
   ship_log
   log "log: $LOG${BACKUP_DIR:+ and $HOST:$DIR/$BACKUP_DIR/rollout.log}"
+}
+
+on_exit() {
+  local rc=$?
+  trap '' INT TERM HUP # a second Ctrl-C must not abort the cleanup half way
+  trap - EXIT
+  cleanup "$rc"
   exit "$rc"
 }
+
+on_signal() {
+  log "received $1, stopping"
+  [ -z "$NAP_PID" ] || kill "$NAP_PID" 2>/dev/null || true
+  exit "$2" # runs on_exit with that code, which resumes the cron and releases the lock
+}
 trap on_exit EXIT
+trap 'on_signal SIGINT 130' INT
+trap 'on_signal SIGTERM 143' TERM
+trap 'on_signal SIGHUP 129' HUP
 
 # ---------- preflight ----------
 
@@ -240,19 +265,29 @@ backup() {
 
 wait_for_image() {
   [ "$SKIP_WAIT" = 0 ] || { log "== image wait skipped (--skip-wait)"; return 0; }
-  log "== waiting for the app image built from $SHA (up to $WAIT_MIN min)"
-  local i rev
-  for ((i = 0; i < WAIT_MIN * 2; i++)); do
-    rr 'docker compose pull -q blocwerk >/dev/null 2>&1' || log "  pull failed (GHCR token expired? see README); retrying"
+  log "== waiting for the app image built from $SHA (up to $((WAIT_SEC / 60)) min $((WAIT_SEC % 60)) s)"
+  local rev out denied=0 deadline=$((SECONDS + WAIT_SEC))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    if out=$(rr 'docker compose pull -q blocwerk 2>&1'); then
+      denied=0
+    elif grep -qiE 'unauthorized|denied|authentication required|requested access' <<<"$out"; then
+      denied=$((denied + 1))
+      log "  pull unauthorized ($denied/$AUTH_FAILS)"
+      [ "$denied" -lt "$AUTH_FAILS" ] \
+        || die "GHCR rejected the pull $AUTH_FAILS times in a row: the box's registry token is probably expired; see 'Renew the GHCR token' in docker/prod/README.md"
+    else
+      denied=0
+      log "  pull failed (see README if it persists); retrying"
+    fi
     rev=$(rr 'docker image inspect --format "{{index .Config.Labels \"org.opencontainers.image.revision\"}}" ghcr.io/zannagh/blocwerk:latest' 2>/dev/null || true)
     if [ -n "$rev" ] && { [ "$rev" = "$SHA" ] || [[ $rev == "$SHA"* ]] || [[ $SHA == "$rev"* ]]; }; then
       log "  image revision $rev matches"
       return 0
     fi
     log "  latest is built from '${rev:-unknown}', waiting"
-    sleep 30
+    nap "$POLL_SEC"
   done
-  die "image for $SHA did not appear on GHCR within $WAIT_MIN min"
+  die "image for $SHA did not appear on GHCR within $((WAIT_SEC / 60)) min $((WAIT_SEC % 60)) s"
 }
 
 install_files() {
@@ -277,7 +312,7 @@ verify() {
   for ((i = 0; i < 60; i++)); do
     code=$(app_code /health)
     [ "$code" = 200 ] && break
-    sleep 3
+    nap 3
   done
   [ "$code" = 200 ] || die "app did not answer 200 on /health within 180s (last: ${code:-none})"
   log "  /health: 200"

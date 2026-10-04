@@ -6,6 +6,9 @@
 //   floor       — splats below the mats' top (floor plane + ~33 cm) vanish when they sit between
 //                 the camera and a facet (the ray through them hits a facet behind them), and all of
 //                 them while the camera is low (crouched on the mats, the Below preset);
+//   recesses    — splats inside an enclosed recess (Wall3DRecesses: the pocket behind the main wall's plane between
+//                 two closing triangles) vanish, except within RECESS_KEEP_MM of its faces, which are the
+//                 pocket's real surfaces; the opaque body (wall3d-body.js) hides what lies beyond;
 //   ghosts      — splats within a slab around a facet ghosted in free orbit (wall3d-ghost.js) fade
 //                 like the facet does.
 // Spark 2.2's SplatEdit SDFs could hide boxes too, but every edit change regenerates the whole splat
@@ -34,6 +37,11 @@ const GHOST_BACK_MM = 350;
 const GHOST_FRONT_MM = 150;
 const GHOST_MARGIN_MM = 120;
 const GHOST_ALPHA = 0.12;
+/** A recess hides splats deeper inside it than this; closer to its faces they are its real surfaces. */
+const RECESS_KEEP_MM = 120;
+const MAX_RECESSES = 2;
+/** Half-spaces per recess: two triangles, the roof plane and two legs of each triangle. */
+const RECESS_PLANES = 7;
 const ANCHOR = 'vRgba = rgba;';
 
 const GLSL_DECLS = `
@@ -45,6 +53,8 @@ uniform int bwFacetCount;
 uniform mat4 bwFacetXf[${MAX_FACETS}];
 uniform vec4 bwFacetBox[${MAX_FACETS}];
 uniform float bwFacetGhost[${MAX_FACETS}];
+uniform int bwRecessCount;
+uniform vec4 bwRecessPlane[${MAX_RECESSES * RECESS_PLANES}];
 `;
 
 // Runs where Spark sets vRgba, after its frustum cull: `viewCenter` is the splat in view space.
@@ -75,6 +85,22 @@ const GLSL_BODY = `
                 float t = abs(dz) > 1e-3 ? c.z / dz : -1.0;
                 vec2 h = c.xy + t * (l.xy - c.xy);
                 bwBetween = t > 1.0 && h.x > box.x && h.x < box.y && h.y > box.z && h.y < box.w;
+            }
+        }
+        for (int r = 0; r < ${MAX_RECESSES}; r++) {
+            if (r >= bwRecessCount) {
+                break;
+            }
+            bool bwIn = true;
+            for (int k = 0; k < ${RECESS_PLANES}; k++) {
+                vec4 pl = bwRecessPlane[r * ${RECESS_PLANES} + k];
+                if (dot(pl.xyz, bwWorld) > pl.w - ${RECESS_KEEP_MM.toFixed(1)}) {
+                    bwIn = false;
+                    break;
+                }
+            }
+            if (bwIn) {
+                return;
             }
         }
         if (bwFloor && !bwOnFacet && (bwFloorAll || bwBetween)) {
@@ -109,12 +135,25 @@ function facetFrames(quads) {
     });
 }
 
+/** The recesses' half-spaces as vec4s (n, d), padded: a padded plane never excludes. */
+export function recessPlanes(recesses) {
+    const out = [];
+    for (let r = 0; r < MAX_RECESSES; r++) {
+        const planes = (recesses[r]?.planes || []).slice(0, RECESS_PLANES);
+        for (let k = 0; k < RECESS_PLANES; k++) {
+            const p = planes[k];
+            out.push(p ? new THREE.Vector4(p[0], p[1], p[2], p[3]) : new THREE.Vector4(0, 0, 0, 1e9));
+        }
+    }
+    return out;
+}
+
 /**
- * `quads`: facetQuads(view.facets), `floorZ`: the floor plane (wallFrame). `rendererOptions` go into
+ * `quads`: facetQuads(view.facets), `floorZ`: the floor plane (wallFrame), `recesses`: view.recesses. `rendererOptions` go into
  * the SparkRenderer; `install(sparkRenderer)` patches its shader; `update(camera, target, ghostIds)`
  * once per frame while photo-real shows.
  */
-export function createSplatClip(quads, floorZ) {
+export function createSplatClip(quads, floorZ, recesses = []) {
     const frames = facetFrames(quads);
     const pad = (list, fill) => [...list, ...Array.from({ length: MAX_FACETS - list.length }, fill)];
     const uniforms = {
@@ -126,6 +165,9 @@ export function createSplatClip(quads, floorZ) {
         bwFacetXf: { value: pad(frames.map(f => f.xf), () => new THREE.Matrix4()) },
         bwFacetBox: { value: pad(frames.map(f => f.box), () => new THREE.Vector4()) },
         bwFacetGhost: { value: pad(frames.map(() => 0), () => 0) },
+        // A recess with fewer planes than RECESS_PLANES would let a padded plane pass: only whole recesses count.
+        bwRecessCount: { value: Math.min(MAX_RECESSES, recesses.filter(r => (r.planes || []).length === RECESS_PLANES).length) },
+        bwRecessPlane: { value: recessPlanes(recesses.filter(r => (r.planes || []).length === RECESS_PLANES)) },
     };
     let installed = false;
     return {

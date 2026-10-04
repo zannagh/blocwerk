@@ -25,6 +25,12 @@ public sealed record Wall3DView
 
     public IReadOnlyList<Wall3DFacet> Facets { get; init; } = [];
 
+    /// <summary>
+    /// Enclosed recesses beside the main wall (<see cref="Wall3DRecesses"/>), derived from the facets; the renderer
+    /// closes them with solid pieces and hides the capture's splats inside them. Never carries holds.
+    /// </summary>
+    public IReadOnlyList<Wall3DRecess> Recesses { get; init; } = [];
+
     public IReadOnlyList<Wall3DMarker> Markers { get; init; } = [];
 
     public IReadOnlyList<Wall3DHold> Holds { get; init; } = [];

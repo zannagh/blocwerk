@@ -91,7 +91,7 @@ function build(container, renderer, view, options) {
         wallQuads: frame.quads.filter(q => frame.holdFacets.has(q.id)),
     });
     const occluders = createOccluders({ body, volumes, facets: view.facets, sides, aims: frame.aims, wallId: frame.mainId });
-    const clip = createSplatClip(frame.quads, frame.floorZ);
+    const clip = createSplatClip(frame.quads, frame.floorZ, view.recesses || []);
     const surroundings = buildSurroundings(scene, frame, themeColor(container, '--bg', '#f5f4f1'));
 
     const controls = new OrbitControls(camera, renderer.domElement);

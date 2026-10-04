@@ -16,6 +16,13 @@ import { facetOutline, v3 } from './wall3d-scene.js';
 
 export const BODY_FRONT_MM = 60;
 const BODY_DEPTH_MM = 1500;
+/**
+ * An enclosed recess (Wall3DRecesses): the closing triangle's block reaches this far outward, so nothing the capture
+ * put beyond it shows, and the roof surface between the triangles' hypotenuses gets a block this deep behind it,
+ * which fills the pocket up to its back wall.
+ */
+const RECESS_CLOSING_DEPTH_MM = 6000;
+const RECESS_ROOF_DEPTH_MM = 3000;
 /** A facet reaching at most this far past a neighbour's plane (and lying behind it otherwise) is trimmed. */
 const TRIM_SLACK_MM = 150;
 const TRIM_BEHIND_MM = 300;
@@ -132,13 +139,33 @@ function closeSlot(back, frames) {
     return false;
 }
 
-/** The body pieces: per facet { id, o, u, v, n, outline ([a, b], convex CCW), derived }. */
-export function bodyPieces(facets) {
+/**
+ * Closes each enclosed recess: its outer closing triangle's block is made deep, and the roof surface between the
+ * triangles' hypotenuses (on the main facet's plane, no facet of its own, never holds) becomes a piece of the main frame.
+ */
+function closeRecesses(frames, recesses) {
+    const roofs = [];
+    for (const r of recesses || []) {
+        const closing = frames.find(f => f.id === r.closingId);
+        const main = frames.find(f => f.id === r.mainId);
+        if (!closing || !main || (r.roof || []).length < 3) continue;
+        closing.depth = RECESS_CLOSING_DEPTH_MM;
+        const outline = r.roof.map(c => {
+            const d = v3(c).sub(main.o);
+            return [d.dot(main.u), d.dot(main.v)];
+        });
+        roofs.push({ ...main, id: undefined, outline, depth: RECESS_ROOF_DEPTH_MM, roof: true, derived: true });
+    }
+    return roofs;
+}
+
+/** The body pieces: per facet { id, o, u, v, n, outline ([a, b], convex CCW), derived }, plus one roof piece per recess. */
+export function bodyPieces(facets, recesses = []) {
     const frames = facets.filter(f => (f.corners || []).length >= 3).map(frameOf);
     frames.forEach(b => closeSlot(b, frames));
     const original = frames.map(f => ({ ...f, outline: f.outline.slice() }));
     frames.forEach((f, i) => original.forEach((g, j) => { if (i !== j) trim(f, original[i], g); }));
-    return frames;
+    return [...frames, ...closeRecesses(frames, recesses)];
 }
 
 /** Backwards and level (an overhang's block must not rise over its top edge), or straight back for a roof. */
@@ -149,7 +176,7 @@ function backwards(p) {
 
 function pieceGeometry(p) {
     const front = p.outline.map(([a, b]) => pointOf(p, a, b, -BODY_FRONT_MM));
-    const back = front.map(f => f.clone().addScaledVector(backwards(p), BODY_DEPTH_MM));
+    const back = front.map(f => f.clone().addScaledVector(backwards(p), p.depth ?? BODY_DEPTH_MM));
     const tris = [];
     for (let i = 1; i < front.length - 1; i++) {
         tris.push(front[0], front[i], front[i + 1], back[0], back[i + 1], back[i]);
@@ -207,12 +234,13 @@ function lip(quad, material) {
  * hide its fringe along the ceiling line.
  */
 export function buildBody(view) {
-    const pieces = bodyPieces(view.facets || []);
+    const pieces = bodyPieces(view.facets || [], view.recesses || []);
     const material = new THREE.MeshStandardMaterial({ color: BODY_WOOD, roughness: 0.95, metalness: 0, side: THREE.DoubleSide });
     const group = new THREE.Group();
     for (const p of pieces) {
         const mesh = new THREE.Mesh(pieceGeometry(p), material);
         mesh.userData.facetId = p.id;
+        mesh.userData.roof = !!p.roof;
         group.add(mesh);
     }
     const corners = (view.facets || []).flatMap(f => (f.corners || []).map(v3));
