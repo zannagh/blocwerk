@@ -153,6 +153,60 @@ public class HandPlacedMergeTests
         Assert.True(await db.Holds.AnyAsync(x => x.Id == s.StagedIds[0] && x.Generation == 3));
     }
 
+    [Fact]
+    public async Task OnANeighbourPanel_AHandPlacedHoldIsMergedToo_AndPromotedOntoItsOwnPanel()
+    {
+        using var h = new WallTestHarness();
+        await using var db = h.CreateContext();
+        db.Users.Add(h.Owner);
+        var wall = new Wall
+        {
+            Name = "Rings", OwnerId = h.Owner.Id, CurrentGeneration = 2, Photo = [1, 2, 3], PhotoContentType = "image/jpeg", UsesMultipleImages = true,
+        };
+        db.Walls.Add(wall);
+        db.WallMembers.Add(new WallMember { WallId = wall.Id, UserId = h.Owner.Id, Role = WallRole.Admin });
+        WallPanel Panel(int col, int gen, bool staged) => new()
+        {
+            WallId = wall.Id, Col = col, Row = 0, Generation = gen,
+            Photo = staged ? null : [1], PhotoContentType = "image/jpeg",
+            StagedPhoto = staged ? [7] : null, StagedPhotoContentType = staged ? "image/jpeg" : null,
+        };
+        var (liveC, liveN, stagedC, stagedN) = (Panel(0, 2, false), Panel(1, 2, false), Panel(0, 3, true), Panel(1, 3, true));
+        db.WallPanels.AddRange(liveC, liveN, stagedC, stagedN);
+        var old = Hand(0.5, 0.5);
+        (old.WallId, old.WallPanelId) = (wall.Id, liveN.Id);
+        var det = Detection(0.515, 0.5);
+        (det.WallId, det.WallPanelId) = (wall.Id, stagedN.Id);
+        db.Holds.AddRange(old, det);
+        var boulder = new Boulder { WallId = wall.Id, Name = "Side", CreatedByUserId = h.Owner.Id, Generation = 2 };
+        db.Boulders.Add(boulder);
+        db.BoulderHolds.Add(new BoulderHold { BoulderId = boulder.Id, HoldId = old.Id, Type = HoldType.Top });
+        var open = WallUpdateSessions.Open(db, wall.Id, 3, h.Owner.Id);
+        await db.SaveChangesAsync();
+        var service = new WallBigUpdateService(
+            h.DbContextFactory, h.CurrentUser, h.HoldDetection, new PositionHoldMatcher(), NullLogger<WallBigUpdateService>.Instance);
+
+        var session = await service.ResumeAsync(wall.Id);
+
+        Assert.Equal(new HandPlacedMerge(old.Id, det.Id), Assert.Single(session.HandPlacedMerges!));
+        Assert.DoesNotContain(old.Id, session.RemovedCandidateHoldIds);
+        var sessions = WallUpdateSessionFixture.Sessions(h);
+        var quick = QuickUpdateDefaults.Build(session, new Dictionary<Guid, IReadOnlyList<Guid>> { [stagedC.Id] = [], [stagedN.Id] = [det.Id] });
+        await sessions.SaveDefaultDecisionsAsync(
+            wall.Id,
+            new DefaultDecisions(quick.Carryover, quick.AcceptedNewCentreHoldIds, quick.RemovedNewCentreHoldIds, quick.Neighbours, WallUpdatePhase.Carryover, UpdateExceptionBuilder.Build(session, quick)),
+            null);
+        Assert.Contains(await sessions.GetUpdateExceptionsAsync(wall.Id), c => c.Kind == UpdateExceptionKind.MatchedToHandPlaced);
+
+        var confirmation = (await sessions.GetDecisionsAsync(wall.Id)) with { HandPlacedMergeOldIds = [old.Id] };
+        await service.PromoteAsync(wall.Id, confirmation, open.Id);
+
+        await using var check = h.CreateContext();
+        var membership = await check.BoulderHolds.SingleAsync(b => b.BoulderId == boulder.Id);
+        Assert.Equal((det.Id, HoldType.Top), (membership.HoldId, membership.Type));
+        Assert.Equal(1, await check.Holds.CountAsync(x => x.Generation == 3));
+    }
+
     private static Hold Hand(double x, double y, bool virt = false) =>
         new() { X = x, Y = y, Radius = 0.02, IsVirtual = virt, IsAutoDetected = false, Name = "Ring", Category = HoldCategory.Foot, Generation = 2 };
 

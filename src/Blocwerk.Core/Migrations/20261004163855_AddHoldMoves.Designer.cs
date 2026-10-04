@@ -13,7 +13,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Blocwerk.Core.Migrations
 {
     [DbContext(typeof(BlocwerkDbContext))]
-    [Migration("20261004161456_AddHoldMoves")]
+    [Migration("20261004163855_AddHoldMoves")]
     partial class AddHoldMoves
     {
         /// <inheritdoc />
@@ -427,6 +427,12 @@ namespace Blocwerk.Core.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<int>("Outcome")
+                        .HasColumnType("integer");
+
+                    b.Property<double?>("RemeasuredDistanceMm")
+                        .HasColumnType("double precision");
+
+                    b.Property<int?>("RemeasuredOutcome")
                         .HasColumnType("integer");
 
                     b.Property<double?>("RotationDeg")

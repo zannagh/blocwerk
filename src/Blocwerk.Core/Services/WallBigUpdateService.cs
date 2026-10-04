@@ -34,6 +34,7 @@ public partial class WallBigUpdateService : IWallBigUpdateService
     private readonly IPhotoTextureMatcher? textureMatcher;
     private readonly ICaptureFileStore? captureFiles;
     private readonly HoldMoveOptions moveOptions;
+    private readonly IStagedHoldPlacer? stagedPlacer;
 
     public WallBigUpdateService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
@@ -50,8 +51,10 @@ public partial class WallBigUpdateService : IWallBigUpdateService
         IMarkerDetectionService? markerDetection = null,
         IPhotoTextureMatcher? textureMatcher = null,
         ICaptureFileStore? captureFiles = null,
-        HoldMoveOptions? moveOptions = null)
+        HoldMoveOptions? moveOptions = null,
+        IStagedHoldPlacer? stagedPlacer = null)
     {
+        this.stagedPlacer = stagedPlacer;
         this.moveOptions = moveOptions ?? new HoldMoveOptions();
         this.textureMatcher = textureMatcher;
         this.captureFiles = captureFiles;
@@ -204,6 +207,8 @@ public partial class WallBigUpdateService : IWallBigUpdateService
         }
 
         var neighbours = new List<NeighbourOverlap>();
+        var handMerges = new List<HandPlacedMerge>();
+        var handAmbiguous = new List<HandPlacedAmbiguity>();
         var stagedPanels = await db.WallPanels
             .Where(p => p.WallId == wall.Id && p.Generation == stagedGen
                 && p.StagedPhoto != null && p.Id != centerPanelId)
@@ -237,6 +242,11 @@ public partial class WallBigUpdateService : IWallBigUpdateService
                 unalignedCarry.Add(panel.Id);
             }
 
+            if (aligned)
+            {
+                MergeHandPlaced(neighbourHolds, oldNeighbourHolds ?? [], panel.StagedPhoto!, carryover, removedCandidates, null, carriedWarp, handMerges, handAmbiguous);
+            }
+
             var proposals = new List<OverlapProposalDto>();
             var overlapFailed = false;
             try
@@ -268,8 +278,11 @@ public partial class WallBigUpdateService : IWallBigUpdateService
             neighbours.Add(new NeighbourOverlap(panel.Id, panel.Col, panel.Row, proposals, overlapFailed));
         }
 
-        var handPlaced = MergeHandPlaced(
-            centerHolds, centreOldHolds, centerImage, carryover, removedCandidates, newCenter, carriedWarp);
+        if (autoMatchStatus == AutoMatchStatus.Ok)
+        {
+            MergeHandPlaced(centerHolds, centreOldHolds, centerImage, carryover, removedCandidates, newCenter, carriedWarp, handMerges, handAmbiguous);
+        }
+
         var removals = new RemovalInputs(oldByPosition, removedCandidates.ToHashSet(), carriedWarp);
         var triage = await SuggestNewDiscardsAsync(db, wall, stagedGen, carryover, oldHolds, oldPanelPhotosById, neighbours, use3DEvidence, removals);
         return new BigUpdateSession(
@@ -282,8 +295,8 @@ public partial class WallBigUpdateService : IWallBigUpdateService
             triage.Evidence3DModelId,
             use3DEvidence ? triage.PossiblyRemoved : null,
             use3DEvidence ? triage.ConflictingNew : null,
-            handPlaced.Merges,
-            handPlaced.Ambiguous);
+            handMerges,
+            handAmbiguous);
     }
 
     /// <summary>

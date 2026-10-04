@@ -123,16 +123,28 @@ public partial class WallUpdateSessionService
         var holdId = card.StagedHoldId!.Value;
         var detection = await db.WallUpdateHoldDecisions.FirstOrDefaultAsync(d =>
             d.SessionId == sessionId && d.Kind == WallUpdateHoldDecisionKind.NewCentreHold && d.HoldId == holdId);
-        if (detection is null)
+        if (detection is not null)
+        {
+            detection.Discarded = false;
+            return;
+        }
+
+        var removal = await db.WallUpdateNeighbourDecisions.FirstOrDefaultAsync(d =>
+            d.SessionId == sessionId && d.Kind == WallUpdateNeighbourDecisionKind.Removed && d.HoldId == holdId);
+        if (removal is not null)
+        {
+            db.WallUpdateNeighbourDecisions.Remove(removal);
+            return;
+        }
+
+        // A centre detection no decision mentions yet (the merge consumed it): record it as kept. A neighbour's is kept anyway.
+        var onCentre = await db.Holds.AnyAsync(h => h.Id == holdId && h.WallPanel != null && h.WallPanel.Col == 0 && h.WallPanel.Row == 0);
+        if (onCentre)
         {
             db.WallUpdateHoldDecisions.Add(new WallUpdateHoldDecision
             {
                 SessionId = sessionId, Kind = WallUpdateHoldDecisionKind.NewCentreHold, HoldId = holdId, Discarded = false,
             });
-        }
-        else
-        {
-            detection.Discarded = false;
         }
     }
 

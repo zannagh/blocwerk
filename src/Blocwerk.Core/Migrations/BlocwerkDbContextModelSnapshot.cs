@@ -426,6 +426,12 @@ namespace Blocwerk.Core.Migrations
                     b.Property<int>("Outcome")
                         .HasColumnType("integer");
 
+                    b.Property<double?>("RemeasuredDistanceMm")
+                        .HasColumnType("double precision");
+
+                    b.Property<int?>("RemeasuredOutcome")
+                        .HasColumnType("integer");
+
                     b.Property<double?>("RotationDeg")
                         .HasColumnType("double precision");
 

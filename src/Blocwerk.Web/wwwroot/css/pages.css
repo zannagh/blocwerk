@@ -1162,6 +1162,7 @@ a.wall3d-link {
     padding: 12px 14px; background: var(--warning-bg); border-radius: 8px; margin-bottom: 12px;
 }
 .bw-revision-notice p { color: var(--warning-text); font-size: 0.9rem; margin-bottom: 8px; }
+.bw-moves-notice { scroll-margin-bottom: calc(24px + var(--bottomnav-h, 0px)); }
 .bw-moves-list { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 4px; }
 .bw-moves-list li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; color: var(--warning-text); font-size: 0.9rem; }
 .bw-moves-list .bw-moves-hold { font-weight: 600; }
@@ -3970,6 +3971,8 @@ html.bw-fullscreen .panel-link-dialog .panel-step-viewport {
     .boulder-detail .boulder-toggle-row { order: 2; margin: 0; }
     .boulder-detail .boulder-view-slot { order: 3; }
     .boulder-detail .attempt-section { order: 4; margin: 0; }
+    /* The moved-hold notice sits right above the action row (same order, earlier in the page), never under the tab bar. */
+    .boulder-detail .bw-moves-notice { order: 4; margin: 0; scroll-margin-bottom: calc(24px + var(--bottomnav-h, 0px)); }
     .boulder-detail .boulder-below-meta { display: block; }
 
     /* One-line header: arrow, title, grade, favourite, edit. */

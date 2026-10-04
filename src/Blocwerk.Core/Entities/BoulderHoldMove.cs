@@ -53,6 +53,15 @@ public class BoulderHoldMove
     /// <summary>Kept or Removed (a hold that stayed has no row).</summary>
     public HoldMoveOutcome Outcome { get; set; }
 
+    /// <summary>
+    /// The distance, mm, measured again after the new holds were placed on the 3D model, when that differs from what the
+    /// boulder was told. The boulder is not changed by it: it is marked for review and shows this number.
+    /// </summary>
+    public double? RemeasuredDistanceMm { get; set; }
+
+    /// <summary>What the later 3D measurement would have done to the boulder.</summary>
+    public HoldMoveOutcome? RemeasuredOutcome { get; set; }
+
     public int FromGeneration { get; set; }
 
     public int ToGeneration { get; set; }

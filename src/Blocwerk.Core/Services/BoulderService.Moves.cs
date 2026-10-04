@@ -48,7 +48,7 @@ public partial class BoulderService
             where m.BoulderId == b.Id && m.ToGeneration == b.Generation
             select new
             {
-                m.OldHoldId, m.NewHoldId, m.DistanceMm, m.Source, m.RotationDeg, m.Outcome, m.Type,
+                m.OldHoldId, m.NewHoldId, m.DistanceMm, m.Source, m.RotationDeg, m.Outcome, m.Type, m.RemeasuredDistanceMm, m.RemeasuredOutcome,
                 OldName = m.OldHold == null ? null : m.OldHold.Name,
                 NewName = m.NewHold == null ? null : m.NewHold.Name,
             })
@@ -59,8 +59,21 @@ public partial class BoulderService
             .ThenByDescending(r => r.DistanceMm)
             .Select(r => new BoulderMoveView(
                 r.OldHoldId, r.NewHoldId, r.NewName ?? r.OldName, r.DistanceMm, r.Source, r.Outcome,
-                HoldMovePolicy.Describe(r.DistanceMm, r.RotationDeg, r.Outcome), r.Type))
+                Text(r.DistanceMm, r.RotationDeg, r.Outcome, r.RemeasuredDistanceMm, r.RemeasuredOutcome), r.Type))
             .ToList();
+    }
+
+    private static string Text(double mm, double? rotation, HoldMoveOutcome outcome, double? later, HoldMoveOutcome? laterOutcome)
+    {
+        var text = HoldMovePolicy.Describe(mm, rotation, outcome);
+        if (later is not { } measured || laterOutcome is not { } verdict)
+        {
+            return text;
+        }
+
+        var cm = Math.Max(1, (int)Math.Round(measured / 10));
+        var tail = verdict == HoldMoveOutcome.Removed ? "farther than the limit, so check this hold" : "check this hold";
+        return $"{text}. Measured again in 3D after the new holds were placed: {cm} cm, {tail}";
     }
 
     /// <summary>

@@ -47,6 +47,8 @@ public partial class WallBigUpdateService
             .ToList();
         var panelIds = pairs.Select(p => p.Twin.WallPanelId!.Value).ToHashSet();
         var sizes = await LoadStagedPhotoSizesAsync(db, panelIds);
+        var provisional = await ProvisionalPlacementsAsync(db, pairs);
+        pairs = pairs.Select(p => (p.Old, WithPlacement(p.Twin, provisional))).ToList();
         var moves = new List<PlannedMove>();
         foreach (var byPanel in pairs.GroupBy(p => p.Twin.WallPanelId!.Value))
         {
@@ -63,6 +65,21 @@ public partial class WallBigUpdateService
         }
 
         return new HoldMovePlan(moves);
+    }
+
+    /// <summary>
+    /// The twin with its provisional 3D position when it has none of its own (an in-memory copy; the row is not touched).
+    /// </summary>
+    private static Hold WithPlacement(Hold twin, IReadOnlyDictionary<Guid, StagedPlacement> placements)
+    {
+        if (twin is { FacetId: not null, PlaneAMm: not null } || !placements.TryGetValue(twin.Id, out var p))
+        {
+            return twin;
+        }
+
+        var copy = twin.Clone();
+        (copy.Id, copy.FacetId, copy.PlaneAMm, copy.PlaneBMm) = (twin.Id, p.FacetId, p.PlaneAMm, p.PlaneBMm);
+        return copy;
     }
 
     /// <summary>Writes the measurement onto the lineage link of a carried pair.</summary>

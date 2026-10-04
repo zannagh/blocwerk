@@ -50,6 +50,8 @@ namespace Blocwerk.Core.Migrations
                     Source = table.Column<int>(type: "integer", nullable: false),
                     RotationDeg = table.Column<double>(type: "double precision", nullable: true),
                     Outcome = table.Column<int>(type: "integer", nullable: false),
+                    RemeasuredDistanceMm = table.Column<double>(type: "double precision", nullable: true),
+                    RemeasuredOutcome = table.Column<int>(type: "integer", nullable: true),
                     FromGeneration = table.Column<int>(type: "integer", nullable: false),
                     ToGeneration = table.Column<int>(type: "integer", nullable: false),
                     CreatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
