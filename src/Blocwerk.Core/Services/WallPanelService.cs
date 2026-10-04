@@ -308,6 +308,12 @@ public partial class WallPanelService : IWallPanelService
         using (changeJournal?.BeginBatch("panel-confirm", ChangeJournalScopeKind.Wall, wallId))
         {
             await db.SaveChangesAsync();
+
+            // The links just created are rule 2 too: defaults fill from the twin, in the same batch.
+            if ((await LinkedHoldSync.ReconcileAsync(db, wallId)).Any)
+            {
+                await db.SaveChangesAsync();
+            }
         }
 
         logger.LogInformation("Panel {PanelId} confirmed live on wall {WallId} by {UserId}", panelId, wallId, user.Id);

@@ -1,0 +1,49 @@
+@* Wall-settings section: "Sync linked holds". Holds linked across panels are the same physical hold, so their colour,
+   material, usage, grip type, kickboard flag and name should agree. A property one side has not set is filled from the
+   other; when both sides set different values, the chosen panel wins. One undoable journal batch per run.
+   Admin-only (rendered inside the admin card); hidden on a kiosk tablet and behind a share link. *@
+
+@if (!Hidden && status is not null)
+{
+<div class="glyph-settings">
+    <h3 class="glyph-heading">Sync linked holds</h3>
+    <p class="hint">
+        Holds you linked across panels are the same hold on the wall. This copies colour, material, hand or foot,
+        grip type, the kickboard mark and name between them. Something one copy has not set is filled in from the other.
+        Position and outline always stay as they are on each panel.
+    </p>
+
+    @if (status.Panels.Count > 1)
+    {
+        <div class="form-row">
+            <label for="linked-winner-@WallId">Panel that wins for linked holds</label>
+            <select id="linked-winner-@WallId" value="@WinnerValue" @onchange="OnWinnerChanged" disabled="@busy">
+                @foreach (var panel in status.Panels)
+                {
+                    <option value="@panel.Col,@panel.Row">@panel.Label</option>
+                }
+            </select>
+            <p class="hint">When two copies were set to different values, this panel's value is kept.</p>
+        </div>
+    }
+
+    <p class="hint">@PlainCopy.Plural(status.LinkCount, "link") on this wall.</p>
+
+    <div class="staged-actions">
+        <button class="btn-secondary" disabled="@busy" @onclick="SyncAsync">Sync linked holds</button>
+        @if (status.RevertableBatchId is { } batchId)
+        {
+            <button class="btn-secondary" disabled="@busy" @onclick="() => UndoAsync(batchId)">Undo last sync</button>
+        }
+    </div>
+
+    @if (failure is not null)
+    {
+        <p class="field-error" role="alert">@failure</p>
+    }
+    else if (message is not null)
+    {
+        <p class="glyph-ok" role="status">@message</p>
+    }
+</div>
+}

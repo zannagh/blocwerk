@@ -1555,6 +1555,7 @@ public class WallService : IWallService
             var wallStagedAt = await db.Walls.Where(w => w.Id == hold.WallId).Select(w => w.StagedAt).FirstOrDefaultAsync();
             bool isStaging = wallStagedAt != null;
 
+            var before = hold.Clone();
             bool positionChanged = Math.Abs(hold.X - x) > 0.0001 || Math.Abs(hold.Y - y) > 0.0001;
 
             // Every appearance field is tri-state: absent leaves it alone, present writes it — and a
@@ -1634,25 +1635,18 @@ public class WallService : IWallService
                 await _activityLogService.LogAsync(hold.WallId, null, ActivityType.HoldShapeChanged);
             }
 
-            await db.SaveChangesAsync();
+            // The hold and every linked twin it changes are saved together in ONE journal batch, so undoing
+            // the edit reverts both. The edited hold is the source: its new appearance (colour, material, usage,
+            // grip type, kickboard, name) wins verbatim on the twins; geometry stays per panel.
+            using (_changeJournal?.BeginBatch("hold-edit", ChangeJournalScopeKind.Wall, hold.WallId))
+            {
+                await SyncLinkedAppearanceAsync(db, before, hold);
+                await db.SaveChangesAsync();
+            }
+
             if (geometryEdited)
             {
                 refinementQueue?.Enqueue(hold.WallId, [hold.Id]);
-            }
-
-            // The edited hold is now authoritative: every hold transitively linked to it (the same
-            // physical hold seen on other panels) inherits its appearance verbatim. Runs alongside the
-            // existing move/name/cascade logic above — it only touches appearance fields and re-saves
-            // when a twin actually changed. Best-effort: the edit itself is already committed above, so a
-            // failure here (transient DB error / concurrency) must NOT surface the edit as failed — the
-            // startup backfill reconciles linked twins on the next start.
-            try
-            {
-                await SyncLinkedAppearanceAsync(db, hold);
-            }
-            catch (Exception syncEx)
-            {
-                _logger.LogWarning(syncEx, "Failed to sync appearance to linked twins of hold {HoldId}; the backfill will reconcile it.", holdId);
             }
 
             _logger.LogInformation("Hold {HoldId} on wall {WallId} updated by {UserId} (moved: {Moved}, renamed: {Renamed}, recolored: {Recolored}, reshaped: {Reshaped})", holdId, hold.WallId, user.Id, positionChanged, nameChanged, colorChanged, shapeChanged);
@@ -1669,11 +1663,11 @@ public class WallService : IWallService
     /// After a live edit, propagates the edited hold's appearance (Name/Color/Material/Category/HandType)
     /// to every hold transitively linked to it on the same wall — the same physical hold seen on other
     /// panels. The EDITED hold is the source here (its new values win, regardless of centrality). Only
-    /// appearance fields, verbatim; write-if-changed, so it re-saves only when a twin actually differs.
+    /// the properties the edit changed, verbatim, on twins of the same generation. No SaveChanges: the caller saves it with the edit.
     /// A blank source name is skipped rather than propagated, so an edit to an unnamed hold can never
     /// blank a named twin. Geometry stays per-panel: ShapePoints/X/Y/Radius describe one photograph.
     /// </summary>
-    private static async Task SyncLinkedAppearanceAsync(BlocwerkDbContext db, Hold source)
+    private static async Task SyncLinkedAppearanceAsync(BlocwerkDbContext db, Hold before, Hold source)
     {
         var links = await db.HoldLinks
             .Where(l => l.WallId == source.WallId)
@@ -1698,20 +1692,10 @@ public class WallService : IWallService
         }
 
         var twinIds = component.Where(id => id != source.Id).ToList();
-        var twins = await db.Holds.Where(h => twinIds.Contains(h.Id)).ToListAsync();
-
-        var changed = false;
+        var twins = await db.Holds.Where(h => twinIds.Contains(h.Id) && h.Generation == source.Generation).ToListAsync();
         foreach (var twin in twins)
         {
-            if (HoldPropertySync.CopyAppearance(source, twin))
-            {
-                changed = true;
-            }
-        }
-
-        if (changed)
-        {
-            await db.SaveChangesAsync();
+            HoldPropertySync.CopyChangedAppearance(before, source, twin);
         }
     }
 
