@@ -98,9 +98,11 @@ public static class CoreServices
         // Registers DbContextOptions<BlocwerkDbContext> (singleton) and EF's own factory. The
         // IDbContextFactory<BlocwerkDbContext> registration is then REPLACED below, so nothing
         // resolves EF's unstamped factory by accident.
+        builder.Services.AddSingleton<SlowCommandInterceptor>();
         builder.Services.AddDbContextFactory<BlocwerkDbContext>((sp, options) =>
         {
             options.UseNpgsql(config.Postgres.ConnectionString);
+            options.AddInterceptors(sp.GetRequiredService<SlowCommandInterceptor>());
             options.AddInterceptors(sp.GetRequiredService<DomainChangeInterceptor>());
             options.AddInterceptors(sp.GetRequiredService<ChangeJournalInterceptor>());
         });
@@ -191,6 +193,7 @@ public static class CoreServices
         builder.Services.AddScoped<IAccountMergeService, AccountMergeService>();
         builder.Services.AddScoped<IAccountDeletionService, AccountDeletionService>();
         builder.Services.AddScoped<IAdminDashboardService, AdminDashboardService>();
+        builder.Services.AddScoped<IDbStatsService, DbStatsService>();
 
         // Password login: the hasher is stateless (singleton); the credential/lookup service is scoped
         // like the other DB services.

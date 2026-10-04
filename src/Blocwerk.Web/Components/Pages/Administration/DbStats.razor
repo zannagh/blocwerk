@@ -1,0 +1,46 @@
+@page "/administration/db-stats"
+@rendermode InteractiveServer
+@using Blocwerk.Authentication.Authorization
+@attribute [Authorize(Policy = BlocwerkPolicies.AppAdmin)]
+@inject IDbStatsService Stats
+
+<PageTitle>Database timings - Blocwerk</PageTitle>
+
+<div class="admin-dashboard admin-subpage">
+    <div class="list-header">
+        <h1>Database timings</h1>
+        <a href="/administration" class="hint">Back to administration</a>
+    </div>
+
+    <div class="settings-panel">
+        <p class="apikey-blurb">
+            The 20 statements that took the most time, per statement shape (values are replaced by $1, $2...). Read-only.
+            The counters reset every two days.
+        </p>
+        @if (_report is null)
+        {
+            <p class="loading">Loading...</p>
+        }
+        else if (!_report.Available)
+        {
+            <p class="hint">Not available: @_report.Problem</p>
+        }
+        else
+        {
+            <p class="hint">Counting since @(_report.StatsReset?.ToLocalTime().ToString("g") ?? "the server start").</p>
+            <h2>By total time</h2>
+            <StatementTable Rows="_report.ByTotalTime" />
+            <h2>By mean time (at least 3 calls)</h2>
+            <StatementTable Rows="_report.ByMeanTime" />
+        }
+    </div>
+</div>
+
+@code {
+    private DbStatsReport? _report;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _report = await Stats.GetReportAsync();
+    }
+}

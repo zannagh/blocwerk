@@ -1,0 +1,30 @@
+<div class="leaderboard-scroll">
+    <table class="leaderboard-table">
+        <thead>
+            <tr>
+                <th class="num">Total ms</th>
+                <th class="num">Mean ms</th>
+                <th class="num">Calls</th>
+                <th class="num">Rows</th>
+                <th>Statement</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var row in Rows)
+            {
+                <tr>
+                    <td class="num">@row.TotalMs.ToString("N0")</td>
+                    <td class="num">@row.MeanMs.ToString("N1")</td>
+                    <td class="num">@row.Calls</td>
+                    <td class="num">@row.Rows</td>
+                    <td><code>@row.Query</code></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public IReadOnlyList<DbStatementStat> Rows { get; set; } = [];
+}
