@@ -39,4 +39,7 @@ jobs:
           bash -n docker/prod/autodeploy.sh
           bash -n docker/prod/check-prod-compose.sh
           bash -n docker/prod/rollout.sh
-          shellcheck -S error docker/prod/*.sh
+          shellcheck -S error docker/prod/*.sh docker/prod/tests/*.sh
+
+      - name: Rollout script tests (fake box)
+        run: docker/prod/tests/rollout-test.sh

@@ -147,17 +147,21 @@ Steps of `--apply`:
 3. **Backup** to `backups/<ts>/` (mode 600): `pg_dump -Fc` (verified with `pg_restore -l`), `docker-compose.yml`,
    `env`, `autodeploy.sh`, `appsettings.json`, the crontab; `--images-tar` adds `wall-images.tar.gz`.
 4. **Wait for the image**: pulls until `ghcr.io/zannagh/blocwerk:latest` carries the OCI revision label equal to
-   `--sha` (up to `ROLLOUT_WAIT_MIN`, 30), or `--skip-wait`.
+   `--sha` (overall limit `ROLLOUT_WAIT_MIN`, default 30; fails when it runs out), or `--skip-wait`. Three
+   unauthorized pulls in a row (`ROLLOUT_AUTH_FAILS`) fail fast: the box's `GHCR_TOKEN` expired, see
+   "Renew the GHCR token" above.
 5. **Install** compose and `autodeploy.sh` as `.new`, validate, `mv`. `.env` is never copied.
 6. **Pull and `up -d`** the app, plus `wall-geometry` and `splat-cpu` with `--compute`.
 7. **Verify**: `/health` answers 200 (inside the `edge` network, up to 3 min) and the database's latest
    `__EFMigrationsHistory` id equals the repo's newest migration.
 8. **Resume autodeploy.** Post-steps (UI checks, flags) stay manual.
 
-Safety: on any failure after the pause, a trap re-enables autodeploy (and releases the lock) unless `--keep-paused`;
-it prints the `--rollback` command for the backup. Everything is logged with timestamps to
+Safety: on any failure after the pause, and on Ctrl-C (INT), TERM or HUP (exit 130/143/129), a trap re-enables
+autodeploy (and releases the lock) exactly once unless `--keep-paused`; it prints the `--rollback` command for the backup. Everything is logged with timestamps to
 `~/.local/state/blocwerk-rollout/rollout-<ts>.log` (`ROLLOUT_LOG_DIR`) and copied to `backups/<ts>/rollout.log` on the
-box. `.env` values are never read into the script or printed.
+box. `.env` values are never read into the script or printed. (A shell that starts the script in the background
+may hand it SIGINT ignored, which bash cannot trap; use TERM there.) Tests against a fake box:
+`docker/prod/tests/rollout-test.sh`.
 
 `--rollback <ts>` without `--apply` only checks the backup and prints the plan. With `--apply` it pauses autodeploy and
 restores compose, `.env` (600), `autodeploy.sh` and `appsettings.json`, then `up -d`. The images are `:latest`, so this
