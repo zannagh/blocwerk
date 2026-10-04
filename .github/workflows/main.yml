@@ -197,6 +197,9 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The build runs GitVersion once per checkout, which needs the full history.
+          fetch-depth: 0
 
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
@@ -207,7 +210,6 @@ jobs:
         # The job context (the service's mapped port) is only available at step level.
         env:
           BLOCWERK_TEST_PG: Host=localhost;Port=${{ job.services.postgres.ports['5432'] }};Username=blocwerk;Password=blocwerk
-        # Debug on purpose: the build skips GitVersion there, so no full-history checkout or version tool is needed.
         run: dotnet test test/Blocwerk.Core.Tests --filter "Db=Postgres"
 
   upload-to-release:
