@@ -114,9 +114,17 @@ public interface IWallCaptureService
     /// Renders the wall textures of a capture whose model is active again (only the textures job, in the background; the
     /// holds are then placed on them again). The capture's status and photo-real view are left alone, so it may run while
     /// the view trains. On success the texture half of the capture's error goes; on failure it records the new reason.
-    /// Admin only, never from a kiosk. Returns the problems that prevent it (empty = queued).
+    /// Admin only, never from a kiosk. Returns the problems that prevent it (empty = queued). The photos are the capture's own
+    /// stored ones (kept while its model is the wall's active one), so nothing new has to be shot; <paramref name="quality"/>
+    /// picks how fine the textures are (<see cref="TextureQualityPresets"/>).
     /// </summary>
-    Task<IReadOnlyList<string>> RerenderTexturesAsync(Guid captureId);
+    Task<IReadOnlyList<string>> RerenderTexturesAsync(Guid captureId, TextureQuality quality = TextureQuality.Standard);
+
+    /// <summary>
+    /// What re-rendering the capture's textures would take at every quality (pixels, blend memory, whether the multi-view blend
+    /// still fits the worker, relative duration). Admin only. Empty when the capture has no readable model.
+    /// </summary>
+    Task<IReadOnlyList<TextureQualityEstimate>> EstimateTextureQualitiesAsync(Guid captureId);
 
     /// <summary>
     /// Solves the 3D model of a finished capture whose model is active again from its kept photos (same solve request, in

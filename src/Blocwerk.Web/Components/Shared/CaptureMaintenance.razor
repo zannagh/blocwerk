@@ -1,3 +1,4 @@
+@using Blocwerk.Core.Capture
 @* Wall-admin maintenance for one finished capture. Each action is a real button with a one-line description that is
    always visible (a title= tooltip never shows on a phone). The costly ones, retrain and re-solve, ask first. *@
 
@@ -26,8 +27,39 @@
     else if (CanRerender)
     {
         <li>
-            <button type="button" class="btn-secondary" disabled="@Disabled" @onclick="OnRerender">Re-render textures</button>
-            <span class="capture-maintenance-desc">Renders the wall textures again from this capture's photos and re-places the holds; the photo-real view is untouched. Takes minutes.</span>
+            @if (!pickerOpen)
+            {
+                <button type="button" class="btn-secondary" disabled="@Disabled" @onclick="OpenPickerAsync">Render textures again&hellip;</button>
+                <span class="capture-maintenance-desc">Renders the wall textures again, finer if you like, from the photos already stored with this capture (no new photos needed), and re-places the holds. The photo-real view is untouched. Takes minutes.</span>
+            }
+            else
+            {
+                <div class="texture-quality" role="group" aria-label="Render wall textures again">
+                    <p class="texture-quality-intro">The textures are rendered again from the photos stored with this capture, so nothing new has to be shot. It runs in the background and takes several minutes at Standard, about twice as long at High and three times at Maximum. The current textures stay until the new ones are ready.</p>
+                    <fieldset class="texture-quality-options">
+                        <legend class="texture-quality-legend">Quality</legend>
+                        @foreach (var quality in Enum.GetValues<TextureQuality>())
+                        {
+                            var estimate = EstimateOf(quality);
+                            <label class="texture-quality-option">
+                                <input type="radio" name="texture-quality" checked="@(chosen == quality)" @onchange="() => chosen = quality" />
+                                <span>
+                                    <strong>@TextureQualityPresets.Label(quality)</strong>
+                                    <span class="capture-maintenance-desc">@Describe(quality, estimate)</span>
+                                    @if (estimate is not null && Warning(estimate) is { } warning)
+                                    {
+                                        <span class="texture-quality-warning" role="note">@warning</span>
+                                    }
+                                </span>
+                            </label>
+                        }
+                    </fieldset>
+                    <div class="confirm-action-buttons">
+                        <button type="button" class="btn-primary" disabled="@Disabled" @onclick="StartAsync">Render textures</button>
+                        <button type="button" class="btn-secondary" disabled="@Disabled" @onclick="ClosePicker">Cancel</button>
+                    </div>
+                </div>
+            }
         </li>
     }
     @if (Resolving)
@@ -47,6 +79,43 @@
 </ul>
 
 @code {
+    private bool pickerOpen;
+    private TextureQuality chosen = TextureQuality.Standard;
+
+    private TextureQualityEstimate? EstimateOf(TextureQuality quality) => Estimates.FirstOrDefault(e => e.Quality == quality);
+
+    private async Task OpenPickerAsync()
+    {
+        pickerOpen = true;
+        await OnPickQuality.InvokeAsync();
+    }
+
+    private void ClosePicker() => pickerOpen = false;
+
+    private async Task StartAsync()
+    {
+        pickerOpen = false;
+        await OnRerender.InvokeAsync(chosen);
+    }
+
+    private static string Describe(TextureQuality quality, TextureQualityEstimate? e) => (quality, e) switch
+    {
+        (TextureQuality.Standard, null) => "The server's usual settings.",
+        (TextureQuality.High, null) => "Finer detail (1.5 mm per pixel at most), about twice as long.",
+        (TextureQuality.Maximum, null) => "Finest detail (1.25 mm per pixel at most), about three times as long.",
+        (_, null) => string.Empty,
+        (_, { } x) => $"{x.MmPerPx:0.##} mm per pixel, {x.MegaPixels:0.#} megapixels. Needs about {x.BlendGb:0.0} GB on the worker; "
+                      + $"about {x.RelativeDuration:0.#}x the time of Standard.",
+    };
+
+    private static string? Warning(TextureQualityEstimate e) => e.Fit switch
+    {
+        TextureBlendFit.FewerViews => $"The photos are blended from {e.BlendViews} views per spot here instead of 6 so it fits the server's memory.",
+        TextureBlendFit.SingleView => "Too big to blend photos on this server: each spot is taken from one photo, with visible seams. Pick a lower quality.",
+        TextureBlendFit.TooLarge => "Too big for the server to render in one go. Pick a lower quality.",
+        _ => null,
+    };
+
     [Parameter] public bool CanRetrain { get; set; }
 
     [Parameter] public string RetrainQuality { get; set; } = string.Empty;
@@ -67,7 +136,14 @@
 
     [Parameter] public EventCallback OnRefinish { get; set; }
 
-    [Parameter] public EventCallback OnRerender { get; set; }
+    /// <summary>Raised with the quality picked.</summary>
+    [Parameter] public EventCallback<TextureQuality> OnRerender { get; set; }
+
+    /// <summary>What each quality would take (pixels, memory, blend fit); empty until loaded or when unknown.</summary>
+    [Parameter] public IReadOnlyList<TextureQualityEstimate> Estimates { get; set; } = [];
+
+    /// <summary>Raised when the picker opens, to load <see cref="Estimates"/>.</summary>
+    [Parameter] public EventCallback OnPickQuality { get; set; }
 
     [Parameter] public EventCallback OnResolve { get; set; }
 }

@@ -1,7 +1,7 @@
 """Multi-view sample slots + the two ways to combine them for the facet textures.
 
 Default ("select", see consensus.py): per pixel the single best photo that agrees with the consensus
-of all photos, seams softened over `seamFeatherPx`. Averaging photos ghosts protruding holds (large
+of all photos, seams blended in two bands (seamblend.py). Averaging photos ghosts protruding holds (large
 parallax between close-range views), so the blend below is kept as blendMode "blend".
 
 Every facet pixel is drawn from up to `blendViews` photos (the best by image px per plane mm, see
@@ -25,10 +25,11 @@ import math
 import cv2
 import numpy as np
 
-from . import exposure
+from . import exposure, seamblend
 
 BLEND_DEFAULTS = {"blendViews": 6, "blendSharpness": 8.0, "outlierDeltaE": 12.0, "outlierBlurPx": 3.0,
-                  "outlierSmoothPx": 11, "blendMode": "select", "seamFeatherPx": 5,
+                  "outlierSmoothPx": 11, "blendMode": "select", "seamBlendPx": 8, "seamBandPx": 12,
+                  "seamWidePx": 48, "edgeSmoothPx": 16,
                   "selectModeFilterCells": 9,
                   "borderRampPx": 48.0, "combineTileRows": 128, "exposureBalance": True}
 
@@ -153,23 +154,6 @@ def robust_weights(rgb, wt, delta_e, blur, smooth=0):
     return out, keep, w
 
 
-def select_combine(rgb, wt, cam, label, feather):
-    """Single-photo choice per pixel (`label`, full-res photo index; -1 = none) from the slots, with the
-    seam softened over `feather` px; where the chosen photo has no slot, the best-weighted slot."""
-    K = rgb.shape[0]
-    pick = ((cam == label[None]) & (wt > 0)).astype(np.float32)
-    if feather > 1:
-        for k in range(K):
-            pick[k] = cv2.boxFilter(pick[k], -1, (feather, feather), borderType=cv2.BORDER_REPLICATE)
-        pick[wt <= 0] = 0
-    none = pick.sum(0) <= 0
-    best = (np.arange(K)[:, None, None] == wt.argmax(0)[None]) & (wt > 0)
-    w = np.where(none[None], best, pick).astype(np.float32)
-    tot = w.sum(0)
-    out = (rgb.astype(np.float32) * w[..., None]).sum(0) / np.where(tot > 0, tot, 1)[..., None]
-    return out, w
-
-
 def _dominant(cam, w):
     """Per pixel the photo whose slot has the largest combine weight `w` (K, h, w); -1 = none."""
     top = np.take_along_axis(cam, w.argmax(0)[None], 0)[0]
@@ -186,18 +170,22 @@ def finish(acc, gains, p, label=None):
     lut = exposure.gain_luts(gains)  # (C, 3, 256) uint8, identity where no gain
     kept_by_cam = np.zeros(len(lut), np.float64)
     step = int(p["combineTileRows"])
+    halo = seamblend.halo_rows(p) if label is not None else 0
     for r0 in range(0, H, step):
-        sl = slice(r0, min(r0 + step, H))
-        cam, wt = acc.cam[:, sl], acc.wt[:, sl].astype(np.float32)
-        rgb = exposure.apply_luts(acc.rgb[:, sl], cam, lut)
+        r1 = min(r0 + step, H)
+        e0, e1 = max(r0 - halo, 0), min(r1 + halo, H)  # the tile plus the context the seam blur reads
+        inner = slice(r0 - e0, r1 - e0)
+        cam, wt = acc.cam[:, e0:e1], acc.wt[:, e0:e1].astype(np.float32)
+        rgb = exposure.apply_luts(acc.rgb[:, e0:e1], cam, lut)
         if label is not None:
-            img, w = select_combine(rgb, wt, cam, label[sl], int(p["seamFeatherPx"]))
+            img, w = seamblend.combine(rgb, wt, cam, label[e0:e1], p, inner)
             keep = w > 0
         else:
             img, keep, w = robust_weights(rgb, wt, p["outlierDeltaE"], p["outlierBlurPx"],
                                           int(p["outlierSmoothPx"]))
-        out[sl] = np.clip(img + 0.5, 0, 255).astype(np.uint8)
-        drawn[sl] = _dominant(cam, w)
+        cam, wt = cam[:, inner], wt[:, inner]
+        out[r0:r1] = np.clip(img + 0.5, 0, 255).astype(np.uint8)
+        drawn[r0:r1] = _dominant(cam, w)
         kc = cam[keep]
         kept_by_cam += np.bincount(kc[kc >= 0], weights=wt[keep][kc >= 0], minlength=len(lut))
     filled = acc.count > 0

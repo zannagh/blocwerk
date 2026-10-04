@@ -21,11 +21,11 @@ def test_every_physical_size_is_its_pixel_default_at_the_reference():
         assert mm == DEFAULTS[key] * scale.REFERENCE_MM_PER_PX, key
 
 
-@pytest.mark.parametrize("res,cell,feather,mask", [(1.0, 16, 10, 8.0), (0.5, 32, 20, 16.0), (4.0, 4, 2, 2.0),
+@pytest.mark.parametrize("res,cell,feather,mask", [(1.0, 16, 16, 8.0), (0.5, 32, 32, 16.0), (4.0, 4, 4, 2.0),
                                                    (50.0, 1, 1, 0.16)])
 def test_finer_textures_get_more_pixels_for_the_same_size(res, cell, feather, mask):
     p = scale.at_resolution({**DEFAULTS, "mmPerPx": res})
-    assert p["labelCellPx"] == cell and p["seamFeatherPx"] == feather and p["maskFeatherPx"] == pytest.approx(mask)
+    assert p["labelCellPx"] == cell and p["seamBlendPx"] == feather and p["maskFeatherPx"] == pytest.approx(mask)
     assert isinstance(p["labelCellPx"], int) and isinstance(p["flattenDownscale"], int)
     # counts of cells and photo-pixel sizes are not scaled
     assert p["modeFilterCells"] == DEFAULTS["modeFilterCells"] and p["borderRampPx"] == DEFAULTS["borderRampPx"]

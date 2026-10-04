@@ -32,7 +32,7 @@ public sealed partial class WallCaptureProcessor
 
         var rendered = false;
         await RedoCountedAsync(
-            captureId, CaptureRedoKind.Rerender, async () => rendered = await RenderAndEndAsync(captureId, target.ModelId, target.JobId, ct), ct);
+            captureId, CaptureRedoKind.Rerender, async () => rendered = await RenderAndEndAsync(captureId, target.ModelId, target.JobId, target.Quality, ct), ct);
         if (rendered && followUps is not null)
         {
             await followUps.RerunAsync(captureId, PlaceHoldsFollowUpStep.StepKey, ct);
@@ -41,12 +41,13 @@ public sealed partial class WallCaptureProcessor
     }
 
     /// <summary>Renders the textures and clears the mark with the outcome; true when they were made.</summary>
-    private async Task<bool> RenderAndEndAsync(Guid captureId, Guid modelId, string? existingJobId, CancellationToken ct)
+    private async Task<bool> RenderAndEndAsync(
+        Guid captureId, Guid modelId, string? existingJobId, TextureQuality quality, CancellationToken ct)
     {
         string? jobId;
         try
         {
-            jobId = await RenderTexturesAgainAsync(captureId, modelId, existingJobId, ct);
+            jobId = await RenderTexturesAgainAsync(captureId, modelId, existingJobId, quality, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
@@ -66,7 +67,8 @@ public sealed partial class WallCaptureProcessor
         return true;
     }
 
-    private async Task<string> RenderTexturesAgainAsync(Guid captureId, Guid modelId, string? existingJobId, CancellationToken ct)
+    private async Task<string> RenderTexturesAgainAsync(
+        Guid captureId, Guid modelId, string? existingJobId, TextureQuality quality, CancellationToken ct)
     {
         var client = computeClients.Get(ComputeServiceKind.Geometry);
         if (!client.IsConfigured)
@@ -76,8 +78,8 @@ public sealed partial class WallCaptureProcessor
 
         var status = await RunJobAsync(
             existingJobId,
-            () => SubmitTexturesAsync(captureId, modelId, client, ct),
-            jobId => UpdateAsync(captureId, c => c.TexturesJobId = CaptureTextureOutcome.RerenderMark + jobId, ct),
+            () => SubmitTexturesAsync(captureId, modelId, client, ct, quality),
+            jobId => UpdateAsync(captureId, c => c.TexturesJobId = CaptureTextureOutcome.Mark(quality, jobId), ct),
             client,
             new JobStage(captureId, WallCaptureStatus.Texturing, 0, 1, "Rendering wall textures", Silent: true),
             ct);
@@ -86,7 +88,7 @@ public sealed partial class WallCaptureProcessor
     }
 
     /// <summary>The model and the submitted job of a pending re-render; null (and the mark dropped) when it may not run.</summary>
-    private async Task<(Guid ModelId, string? JobId)?> RerenderTargetAsync(Guid captureId, CancellationToken ct)
+    private async Task<(Guid ModelId, string? JobId, TextureQuality Quality)?> RerenderTargetAsync(Guid captureId, CancellationToken ct)
     {
         await using var db = dbContextFactory.CreateDbContext();
         var capture = await db.WallCaptures.AsNoTracking().FirstOrDefaultAsync(c => c.Id == captureId, ct);
@@ -106,7 +108,7 @@ public sealed partial class WallCaptureProcessor
             return null;
         }
 
-        return (modelId!.Value, CaptureTextureOutcome.RerenderJobId(capture.TexturesJobId));
+        return (modelId!.Value, CaptureTextureOutcome.RerenderJobId(capture.TexturesJobId), CaptureTextureOutcome.RerenderQuality(capture.TexturesJobId));
     }
 
     /// <summary>

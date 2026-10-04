@@ -109,7 +109,8 @@
                                                     Disabled="retraining"
                                                     OnRetrain="() => RetrainAsync(capture.Id, BetterQuality(capture)!.Value)"
                                                     OnRefinish="() => RefinishAsync(capture.Id)"
-                                                    OnRerender="() => RerenderTexturesAsync(capture.Id)"
+                                                    Estimates="@EstimatesOf(capture.Id)" OnPickQuality="() => LoadEstimatesAsync(capture.Id)"
+                                                    OnRerender="quality => RerenderTexturesAsync(capture.Id, quality)"
                                                     OnResolve="() => ResolveModelAsync(capture.Id)" />
                             </td>
                         </tr>

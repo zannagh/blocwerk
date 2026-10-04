@@ -9,7 +9,7 @@ Per-photo, per-cell data (scores, weights, low-res colours) lives in each facet'
 """
 import numpy as np
 
-from . import blend, consensus, exposure, sourcemap
+from . import blend, consensus, edges, exposure, sourcemap
 from . import textures as tx
 
 GAIN_DOWNSCALE = 8
@@ -115,6 +115,7 @@ def _label(j, gains, p):
 
 def _result(doc, j, gains, names, p, label):
     out, filled, kept, drawn = blend.finish(j["acc"], gains, p, label)
+    out, filled = edges.smooth_coverage(out, filled, float(p["edgeSmoothPx"]))
     cells = sourcemap.drawn_cells(drawn, p["labelCellPx"])
     g = j["g"]
     tot = kept.sum()
