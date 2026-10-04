@@ -2170,6 +2170,11 @@ html.bw-compact {
     .admin-dashboard { padding-inline: 16px; }
 }
 
+/* The sub-pages (background jobs, 3D runners) are phone-first lists: unlike the dashboard's
+ * edge-to-edge wall rows they need the 16px gutter on every tier, or the heading, the cards and
+ * the "Back to administration" link touch (and run off) the screen edge. */
+.admin-subpage { padding-inline: 16px; }
+
 /* ========== Personal API Keys ========== */
 
 .apikey-page { padding: 16px; max-width: 640px; margin: 0 auto; }
