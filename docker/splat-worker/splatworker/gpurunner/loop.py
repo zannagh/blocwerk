@@ -21,6 +21,8 @@ from .client import Backoff, Gone, Rejected, Transient, Unauthorized
 from .control import PauseControl, state_dir
 from .history import JobHistory, JobStatus
 from .job import JobRun
+from .textures import KIND as TEXTURES_KIND
+from .textures import TexturesRun
 from .resume import ResumeSettings
 
 log = logging.getLogger("gpurunner")
@@ -131,9 +133,11 @@ class Runner:
                         "offline); update the server first")
         self.pause_aware = aware
         if me.get("name") != self.name or not paused:
-            log.info("connected as runner %r (%s, %s VRAM, %s trainer, up to %s)%s", me.get("name"),
+            log.info("connected as runner %r (%s, %s VRAM, %s trainer, up to %s%s)%s", me.get("name"),
                      self.caps.get("gpuName"), f"{(self.caps.get('vramMb') or 0) / 1024:.1f} GB",
-                     self.caps.get("trainer"), self.caps.get("maxQuality"), ", paused" if paused else "")
+                     self.caps.get("trainer"), self.caps.get("maxQuality"),
+                     f", textures with {self.caps['texturesMemoryMb']} MB" if self.caps.get("texturesMemoryMb") else "",
+                     ", paused" if paused else "")
         self.name = me.get("name")
         return True
 
@@ -150,7 +154,7 @@ class Runner:
             if self.clock() - t0 < MIN_CLAIM_INTERVAL_S:
                 http.pause(self.shutdown, MIN_CLAIM_INTERVAL_S)
             return True
-        log.info("claimed job %s (%s)%s", job.get("jobId"), job.get("quality"),
+        log.info("claimed %s job %s (%s)%s", job.get("kind") or "splat", job.get("jobId"), job.get("quality"),
                  ", again after a restart" if job.get("reattached") else "")
         if self.control.now.is_set():  # paused while the claim was long-polling: straight back, for free
             self._hand_back_paused(job)
@@ -166,8 +170,9 @@ class Runner:
         self.current, outcome, run = status, "error", None
         self.control.set_busy(True)
         try:
-            run = JobRun(self.client, job, self.work_dir, self.caps, self.shutdown, self.alive, self.resume,
-                         pause=self.control.now, status=status)
+            kind = TexturesRun if job.get("kind") == TEXTURES_KIND else JobRun
+            run = kind(self.client, job, self.work_dir, self.caps, self.shutdown, self.alive, self.resume,
+                       pause=self.control.now, status=status)
             outcome = run.run()
             return outcome
         finally:

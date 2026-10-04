@@ -96,6 +96,7 @@ public partial class JobProgressList : IAsyncDisposable
     {
         JobKinds.Capture => "3D capture",
         JobKinds.GpuTraining => "Photo-real training",
+        JobKinds.GpuTextures => "Textures on a 3D runner",
         JobKinds.Finish => "Finishing the view",
         JobKinds.FollowUp => "Follow-up step",
         JobKinds.TextureRerender => "Textures again",

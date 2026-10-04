@@ -121,6 +121,9 @@ COPY docker/splat-worker/requirements.lock .
 RUN python3 -m venv /opt/venv && pip install --require-hashes --no-deps -r requirements.lock
 COPY docker/compute-jobs-py/computejobs/ computejobs/
 COPY docker/splat-worker/splatworker/ splatworker/
+# wall-geometry's renderer: a 3D runner renders wall textures with it (splatworker/gpurunner/textures.py); its
+# numpy / scipy / OpenCV pins are in requirements.lock, equal to docker/wall-geometry's
+COPY docker/wall-geometry/wallgeometry/ wallgeometry/
 # NVIDIA container toolkit: `compute` for CUDA, `utility` for nvidia-smi (the worker reads the VRAM).
 ENV GIT_SHA=${GIT_SHA} HOST=0.0.0.0 PORT=8100 WORK_DIR=/var/lib/splat-worker/jobs \
     NVIDIA_VISIBLE_DEVICES=all NVIDIA_DRIVER_CAPABILITIES=compute,utility

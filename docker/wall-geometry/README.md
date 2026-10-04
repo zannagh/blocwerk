@@ -19,7 +19,7 @@ separate `splat-worker` implements the same protocol.
 | path | what |
 |---|---|
 | `wallgeometry/` | the solver package (the ONLY copy): request parsing, BA, facet assignment, gravity, export, textures, edge refinement |
-| `service/` | the two kinds' request parsing + job bodies (thin: the protocol machinery is shared) |
+| `service/` | the kinds' request parsing + job bodies (thin: the protocol machinery is shared; the textures body is `wallgeometry/jobrender.py`) |
 | `../compute-jobs-py/computejobs/` | shared protocol package (queue, auth, callbacks, limits, status/files/cancel), also used by `../splat-worker/` |
 | `tests/` | pytest; `fixtures/capture1-request.json` is capture 1 as a request document |
 | `../../tools/glyph/geometry/solve.py` | thin CLI: builds capture 1's request from `tools/glyph` data and imports `wallgeometry` |
@@ -267,6 +267,12 @@ the texture shows them. ~0.1 MB for a 5 × 3.5 m facet; additive like the mask.
 side length vs `markerSizeMm` and position vs `cornersPlaneMm`.
 
 Not handled: occlusion by holds/volumes, exposure differences between photos (visible seams).
+
+The job body is `wallgeometry/jobrender.py` (`render_job(job_dir, progress, blend_max_bytes, max_image_pixels)`), shared
+with a 3D runner (`../splat-worker/splatworker/gpurunner/textures.py`): when a quality's blend does not fit this worker's
+`TEXTURES_BLEND_MAX_BYTES` (2 GB on the 4 GiB box), the app can have a runner with more memory (a 48 GB Mac) render it with
+the same code and a bigger budget, and installs the files it sends back (`textures.json` + the facet files) exactly like
+this job's.
 
 ## Configuration (env)
 

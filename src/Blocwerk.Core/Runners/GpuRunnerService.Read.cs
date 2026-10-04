@@ -37,7 +37,7 @@ public sealed partial class GpuRunnerService
                 .ToListAsync();
             return jobs.Select(x => new GpuJobInfo(
                 x.Job.Id, x.Job.CaptureId, CaptureSplatDocuments.QualityName(x.Job.Quality), x.Job.Status.ToString(),
-                x.Job.Progress, x.Job.Stage, x.Job.Attempts, x.Job.CreatedAt, x.Runner)).ToList();
+                x.Job.Progress, x.Job.Stage, x.Job.Attempts, x.Job.CreatedAt, x.Runner, RunnerCapabilities.KindName(x.Job.Kind))).ToList();
         }
     }
 
@@ -89,7 +89,7 @@ public sealed partial class GpuRunnerService
                 x.Id, x.Name, x.OwnerUserId, GpuRunnerOverviewService.OwnerName(r.CustomDisplayName, r.DisplayName), x.OwnerUserId == userId,
                 x.SharedWithOtherWalls, wallId is { } w && r.Walls.Contains(w), x.RevokedAt is null && x.LastSeenAt >= online,
                 x.RevokedAt is not null, x.KeyPrefix, x.CreatedAt, x.LastSeenAt, x.LastJobAt,
-                new GpuRunnerCapabilities(x.GpuName, x.VramMb, x.MaxQuality, x.MemoryBudgetMb, x.RunnerVersion, x.Platform),
+                new GpuRunnerCapabilities(x.GpuName, x.VramMb, x.MaxQuality, x.MemoryBudgetMb, x.RunnerVersion, x.Platform, x.Capabilities, x.TexturesMemoryMb),
                 current,
                 r.Walls.Count,
                 r.Approved,

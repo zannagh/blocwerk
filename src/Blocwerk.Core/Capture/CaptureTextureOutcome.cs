@@ -20,8 +20,12 @@ internal static class CaptureTextureOutcome
         texturesJobId?.StartsWith(RerenderMark, StringComparison.Ordinal) == true;
 
     /// <summary>The mark for a re-render at <paramref name="quality"/> (Standard writes none), once <paramref name="jobId"/> is submitted.</summary>
-    public static string Mark(TextureQuality quality, string? jobId = null) =>
-        RerenderMark + (quality == TextureQuality.Standard ? string.Empty : $"{QualityTag}{(int)quality}:") + jobId;
+    public static string Mark(TextureQuality quality, string? jobId = null, bool onRunner = false) =>
+        RerenderMark + (quality == TextureQuality.Standard ? string.Empty : $"{QualityTag}{(int)quality}:") + (onRunner ? RunnerTag : string.Empty) + jobId;
+
+    /// <summary>Whether a pending re-render goes to a 3D runner (its job id, once queued there, is a GPU job id) instead of the host's geometry worker.</summary>
+    public static bool RerenderOnRunner(string? texturesJobId) =>
+        Body(texturesJobId, out _)?.StartsWith(RunnerTag, StringComparison.Ordinal) == true;
 
     /// <summary>The quality a pending re-render was asked for (Standard when the mark carries none).</summary>
     public static TextureQuality RerenderQuality(string? texturesJobId) =>
@@ -29,7 +33,9 @@ internal static class CaptureTextureOutcome
 
     /// <summary>The submitted re-render job, or null when it is still to be submitted (or none runs).</summary>
     public static string? RerenderJobId(string? texturesJobId) =>
-        Body(texturesJobId, out _) is { Length: > 0 } id ? id : null;
+        Body(texturesJobId, out _) is { Length: > 0 } id && (id.StartsWith(RunnerTag, StringComparison.Ordinal) ? id[RunnerTag.Length..] : id) is { Length: > 0 } job
+            ? job
+            : null;
 
     /// <summary>The photo-real half of a finished capture's error, or null.</summary>
     public static string? SplatPart(string? error)
@@ -63,6 +69,9 @@ internal static class CaptureTextureOutcome
     }
 
     private const string QualityTag = "q";
+
+    /// <summary>Marks a re-render that runs on a 3D runner: <c>rerender:q1:gpu:&lt;GPU job id&gt;</c>.</summary>
+    private const string RunnerTag = "gpu:";
 
     private static string? Body(string? texturesJobId, out TextureQuality quality)
     {

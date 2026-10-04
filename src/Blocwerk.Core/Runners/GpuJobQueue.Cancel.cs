@@ -15,7 +15,7 @@ public sealed partial class GpuJobQueue
     public async Task<bool> CancelForCaptureAsync(Guid captureId, string reason, CancellationToken ct)
     {
         await using var db = dbContextFactory.CreateDbContext();
-        var jobs = await CancelActiveAsync(db, captureId, reason, Now, ct);
+        var jobs = await CancelActiveAsync(db, [captureId], reason, Now, ct, GpuJobKind.Splat);
         var spent = jobs.Select(KeepOnlyInstalledPreview).ToList();
         await db.SaveChangesAsync(ct);
         foreach (var (job, paths) in jobs.Zip(spent))
@@ -32,15 +32,16 @@ public sealed partial class GpuJobQueue
     /// their files after saving. A runner holding one learns it with its next call (410).
     /// </summary>
     public static Task<List<GpuJob>> CancelActiveAsync(
-        BlocwerkDbContext db, Guid captureId, string reason, DateTimeOffset now, CancellationToken ct) =>
-        CancelActiveAsync(db, [captureId], reason, now, ct);
+        BlocwerkDbContext db, Guid captureId, string reason, DateTimeOffset now, CancellationToken ct, GpuJobKind? kind = null) =>
+        CancelActiveAsync(db, [captureId], reason, now, ct, kind);
 
     /// <summary><see cref="CancelActiveAsync(BlocwerkDbContext, Guid, string, DateTimeOffset, CancellationToken)"/> for several captures.</summary>
     public static async Task<List<GpuJob>> CancelActiveAsync(
-        BlocwerkDbContext db, IReadOnlyCollection<Guid> captureIds, string reason, DateTimeOffset now, CancellationToken ct)
+        BlocwerkDbContext db, IReadOnlyCollection<Guid> captureIds, string reason, DateTimeOffset now, CancellationToken ct,
+        GpuJobKind? kind = null)
     {
         var jobs = await db.GpuJobs
-            .Where(j => captureIds.Contains(j.CaptureId)
+            .Where(j => captureIds.Contains(j.CaptureId) && (kind == null || j.Kind == kind)
                         && (j.Status == GpuJobStatus.Queued || j.Status == GpuJobStatus.Claimed || j.Status == GpuJobStatus.Running
                             || (j.Status == GpuJobStatus.Succeeded && j.InstalledAt == null)))
             .ToListAsync(ct);
@@ -74,7 +75,14 @@ public sealed partial class GpuJobQueue
 
         foreach (var job in jobs)
         {
-            await MarkCaptureWithoutSplatAsync(db, job, reason, ct);
+            if (job.Kind == GpuJobKind.Textures)
+            {
+                NotifyTextures(job.CaptureId);
+            }
+            else
+            {
+                await MarkCaptureWithoutSplatAsync(db, job, reason, ct);
+            }
         }
 
         logger.LogInformation("3D runners are off: cancelled {Count} waiting or running GPU job(s)", jobs.Count);

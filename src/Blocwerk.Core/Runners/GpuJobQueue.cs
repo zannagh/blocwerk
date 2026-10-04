@@ -30,7 +30,8 @@ public sealed partial class GpuJobQueue(
     IDeployBusyGate? busyGate = null,
     TimeProvider? clock = null,
     DiskSpaceProbe? diskSpace = null,
-    GpuPreviewQueue? previews = null)
+    GpuPreviewQueue? previews = null,
+    WallTextureRerenderQueue? textureQueue = null)
 {
     /// <summary>nvidia-smi's total of a "12 GB" card is 12282 MB; 98 % of 12 GB, like the worker's own ultra gate.</summary>
     public const int UltraMinVramMb = 12042;
@@ -88,9 +89,14 @@ public sealed partial class GpuJobQueue(
         row.MaxQuality = AcceptedMaxQuality(hello.MaxQuality, row.Trainer, row.VramMb);
         row.MemoryBudgetMb = hello.MemoryBudgetMb is > 0 and < 10_000_000 ? hello.MemoryBudgetMb : null;
         row.RunnerVersion = Clip(hello.RunnerVersion, 64);
+        row.Capabilities = RunnerCapabilities.Store(hello.Capabilities);
+        row.TexturesMemoryMb = RunnerCapabilities.Has(row.Capabilities, RunnerCapabilities.Textures) && hello.TexturesMemoryMb is > 0 and < 10_000_000
+            ? hello.TexturesMemoryMb
+            : null;
         var trainer = row.Trainer is null ? (hello.BrushVersion is null ? null : $"Brush {hello.BrushVersion}") : row.Trainer;
         var cuda = hello.Cuda is true ? "CUDA" : null;
-        row.Platform = Clip(string.Join(" · ", new[] { hello.Platform, trainer, cuda }.Where(s => !string.IsNullOrWhiteSpace(s))), 200);
+        var textures = row.TexturesMemoryMb is { } mb ? $"wall textures ({Math.Max(1, mb / 1024)} GB)" : null;
+        row.Platform = Clip(string.Join(" · ", new[] { hello.Platform, trainer, cuda, textures }.Where(s => !string.IsNullOrWhiteSpace(s))), 200);
         var pauseChanged = row.Paused != hello.Paused;
         row.Paused = hello.Paused;
         row.LastSeenAt = Now;
@@ -124,7 +130,7 @@ public sealed partial class GpuJobQueue(
     public async Task<GpuJob?> LatestForCaptureAsync(Guid captureId, CancellationToken ct)
     {
         await using var db = dbContextFactory.CreateDbContext();
-        return await db.GpuJobs.AsNoTracking().Where(j => j.CaptureId == captureId)
+        return await db.GpuJobs.AsNoTracking().Where(j => j.CaptureId == captureId && j.Kind == GpuJobKind.Splat)
             .OrderByDescending(j => j.CreatedAt).FirstOrDefaultAsync(ct);
     }
 

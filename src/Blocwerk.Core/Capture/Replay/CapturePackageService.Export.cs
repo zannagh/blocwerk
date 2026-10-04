@@ -102,7 +102,7 @@ public sealed partial class CapturePackageService
         }
 
         CheckStandalone(model);
-        var job = await db.GpuJobs.AsNoTracking().Where(j => j.CaptureId == captureId).OrderByDescending(j => j.CreatedAt).FirstOrDefaultAsync(ct);
+        var job = await db.GpuJobs.AsNoTracking().Where(j => j.CaptureId == captureId && j.Kind == GpuJobKind.Splat).OrderByDescending(j => j.CreatedAt).FirstOrDefaultAsync(ct);
         if (job is not { Status: GpuJobStatus.Succeeded, InstalledAt: not null, ResultPath: not null, RefinishStateJson: null })
         {
             throw new UserFacingException(

@@ -53,7 +53,7 @@ public sealed partial class WallCaptureService
 
             // A photo-real view still waiting for (or on) a 3D runner is superseded by the new one.
             var superseded = await Runners.GpuJobQueue.CancelActiveAsync(
-                db, capture.Id, "superseded by a retrain", DateTimeOffset.UtcNow, CancellationToken.None);
+                db, capture.Id, "superseded by a retrain", DateTimeOffset.UtcNow, CancellationToken.None, Entities.GpuJobKind.Splat);
             var spent = superseded.SelectMany(Runners.GpuJobQueue.ForgetFiles).ToList();
             await db.SaveChangesAsync();
             foreach (var path in spent)

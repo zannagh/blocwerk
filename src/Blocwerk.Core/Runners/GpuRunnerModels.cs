@@ -29,7 +29,8 @@ public sealed record GpuRunnerInfo(
 
 /// <summary>What the runner reported about itself in <c>hello</c>.</summary>
 public sealed record GpuRunnerCapabilities(
-    string? GpuName, int? VramMb, string? MaxQuality, int? MemoryBudgetMb, string? RunnerVersion, string? Platform);
+    string? GpuName, int? VramMb, string? MaxQuality, int? MemoryBudgetMb, string? RunnerVersion, string? Platform,
+    string? Capabilities = null, int? TexturesMemoryMb = null);
 
 /// <summary>
 /// The job a runner holds right now. <c>OtherWall</c>: it belongs to a wall the viewer does not administer, so only the
@@ -50,4 +51,4 @@ public sealed record GpuRunnerWallChoice(Guid WallId, string Name, bool Serves);
 /// <summary>A waiting or running GPU job of a wall, for the wall panel.</summary>
 public sealed record GpuJobInfo(
     Guid Id, Guid CaptureId, string Quality, string Status, double Progress, string? Stage, int Attempts,
-    DateTimeOffset CreatedAt, string? RunnerName);
+    DateTimeOffset CreatedAt, string? RunnerName, string Kind = "splat");
