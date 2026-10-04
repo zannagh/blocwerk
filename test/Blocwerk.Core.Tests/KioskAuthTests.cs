@@ -246,6 +246,7 @@ public class KioskAuthTests
     // Account takeover, credential minting and app-wide administration.
     [InlineData("/settings/api-keys", true)]
     [InlineData("/administration", true)]
+    [InlineData("/administration/db-stats", true)]
     [InlineData("/account/link", true)]
 
     // The gaps the allow-list closed: /account/link was blocked but the OAuth link actually

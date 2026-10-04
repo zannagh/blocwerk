@@ -12,7 +12,8 @@ truth, and you copy them over by hand.
   their authenticated `/v1/info` (no queued or running job). A failed probe counts as busy unless docker
   reports the container unhealthy; a busy service is never overridden. After 240 busy polls it deploys
   anyway (job counts only, no start times, so this can cut a job that just started; see the script).
-  Services that are not running are left alone. Exec/pull/up are bounded by `timeout`, one compute pass
+  Services that are not running are left alone. From the same trap, before the compute pass, it resets `pg_stat_statements` every
+  48 h (see Diagnostics). Exec/pull/up are bounded by `timeout`, one compute pass
   runs at a time (`flock`), and persistent failures (pull, lock) are logged once, not every minute.
 - `check-prod-compose.sh`: CI (`.github/workflows/prod-compose.yml`) renders the prod file with the
   example env and fails when shared services differ in image, environment keys, mount targets,
@@ -57,6 +58,56 @@ stays as it is:
 ```
 
 Watch the first runs with `tail -f autodeploy.log`.
+
+## Diagnostics
+
+What the app logs, how long it is kept and how to read it. Everything is bounded: nothing here grows without limit.
+
+**What is logged** (Serilog: console, which docker captures, plus `logs/blocwerk<day>.log` inside the app container):
+
+- Circuit lifecycle at Information, a few lines per circuit: `Circuit <id8> opened (phone|tablet|desktop|kiosk)`, `connected`,
+  `connection down ... after N s up`, `reconnected ... after N ms down, reconnect K`, `closed ... after N s, K reconnects,
+  closed while connected|disconnected`. Phone reconnect churn shows as many down/reconnected pairs on one circuit id.
+- The framework's `CircuitRegistry` at Debug (evictions, reconnect attempts, disconnects that became permanent), the rest of
+  `Microsoft.AspNetCore.Components.Server.Circuits` at Warning (that namespace logs per render batch at Debug).
+- Warnings: `Slow request: <method> <path> -> <status> in N ms` (over 1 s; websockets, `/_blazor` and uploads over 1 MB are
+  left out) and `Slow database command: N ms: <sql>` (over 500 ms; SQL text only, never parameter values).
+- Levels come from `Logging__LogLevel__<Category>` (compose passes `LOG_LEVEL` and `LOG_LEVEL_CIRCUIT_REGISTRY` from `.env`; any
+  other category can be added to the compose `environment`). Defaults live in `LoggingLevels.cs`.
+
+**Retention** (about two days, size-bounded): docker's `json-file` driver rotates by size, not by age, so the limits are sized
+from the measured volume (app about 25 KB/h without circuit logs; postgres 4 KB/h, wall-geometry 7 KB/h, splat-cpu 5 KB/h):
+
+| service | `max-size` x `max-file` | why |
+| --- | --- | --- |
+| blocwerk | 10m x 3 (30 MB) | two days of circuit logs at several hundred KB/h still fit |
+| postgres, wall-geometry, splat-cpu | 5m x 2 (10 MB) | days of normal volume |
+| otel-dashboard | 2m x 2 (4 MB) | its telemetry is in memory only (lost on restart); this is just its stdout |
+
+The app's own files keep today plus two days (`retainedFileCountLimit: 3`). They live in the container's writable layer, so a
+redeploy empties them; use the docker logs. If the volume turns out larger than expected, the app's logs rotate earlier than two
+days: raise `max-size`, not the log level, first.
+
+**Reading the logs**
+
+```sh
+ssh ionos 'cd /home/patrickweindl/blocwerk && docker compose logs --since 6h blocwerk | grep -E "Circuit |Slow "'
+```
+
+**Database timings** (`pg_stat_statements`): Postgres preloads the library (`command:` in the compose file, needs a postgres
+restart), the migration `EnablePgStatStatements` creates the extension (only when the server preloads it, so dev and CI
+databases are left alone), and `autodeploy.sh` resets the counters once the last reset is 48 h old (epoch in
+`.autodeploy-pgstats-reset`; delete that file to reset on the next minute). Read it either as an admin at
+`/administration/db-stats` (top 20 statements by total time and by mean time, read-only) or with psql:
+
+```sh
+ssh ionos 'cd /home/patrickweindl/blocwerk && docker compose exec -T postgres psql -U postgres -d blocwerk -c "
+select calls, round(total_exec_time) as total_ms, round(mean_exec_time::numeric, 1) as mean_ms, rows, left(query, 120) as query
+from pg_stat_statements order by total_exec_time desc limit 20"'
+```
+
+If the migration ran before Postgres had the preload (the app updated first), create the extension by hand once:
+`docker compose exec -T postgres psql -U postgres -d blocwerk -c "create extension if not exists pg_stat_statements"`.
 
 ## Renew the GHCR token before it expires
 
