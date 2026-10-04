@@ -1,7 +1,7 @@
-// Line of sight in the 3D wall view (wall3d.js) against its facets: which facets sit between two
-// points (free-orbit ghosting, wall3d-ghost.js), and camera presets moved into free space with a
-// clear view of the wall (wall3d-camera.js). Four to a dozen facets: plain segment/triangle tests,
-// cheap enough to run every frame.
+// Line of sight in the 3D wall view (wall3d.js) against its facets: which facets sit between the camera
+// and the wall (free-orbit ghosting, wall3d-ghost.js). Four to a dozen facets: plain segment/triangle
+// tests, cheap enough to run every frame. The camera is never moved for what is in its way; the
+// facets in the way fade instead.
 import * as THREE from '../lib/three/three.module.min.js';
 import { v3 } from './wall3d-scene.js';
 
@@ -12,14 +12,6 @@ import { v3 } from './wall3d-scene.js';
 export const FLOOR_CLEARANCE_MM = 550;
 /** A facet crossed this close to a sight line's far end is the one looked at, not in the way. */
 const END_SLACK_MM = 60;
-/** A pulled-in camera stops this far past the facet in its way. */
-const PULL_PAST_MM = 150;
-const MIN_DISTANCE_MM = 300;
-const DEG = Math.PI / 180;
-/** Preset search: azimuth / elevation offsets tried, cheapest (smallest turn) first. */
-const YAWS = [0, 15, -15, 30, -30, 45, -45, 60, -60, 75, -75];
-const PITCHES = [0, 10, -10, 20, -20, 30, -30, 40, -40];
-const MAX_ELEVATION = 84 * DEG;
 
 /** Facet polygons for the segment tests: { id, facet, points (convex, world), center }. */
 export function facetQuads(facets) {
@@ -56,8 +48,8 @@ const dir = new THREE.Vector3();
  * target often floats in the air behind the wall); crossing one from behind is a side piece, the
  * plywood back or the overhang seen from above in the way.
  */
-function crossing(q, from, to) {
-    if (inFront(q, from)) {
+function crossing(q, from, to, anySide = false) {
+    if (!anySide && inFront(q, from)) {
         return null;
     }
     dir.subVectors(to, from);
@@ -76,86 +68,74 @@ function crossing(q, from, to) {
 
 /** Ids of the facets in the way from `from` to `to`: crossed from behind (the end facet does not count). */
 export function blockersBetween(quads, from, to) {
+    return facetsInTheWay(quads, from, [to]);
+}
+
+const sample = new THREE.Vector3();
+const toward = new THREE.Vector3();
+
+/** Sample points of polygon `q`: its centre, its corners and edge midpoints pulled in toward the centre. */
+function samplePoints(q) {
+    const pts = [q.center.clone()];
+    const n = q.points.length;
+    for (let i = 0; i < n; i++) {
+        const a = q.points[i], b = q.points[(i + 1) % n];
+        pts.push(a.clone().lerp(q.center, 0.15), a.clone().add(b).multiplyScalar(0.5).lerp(q.center, 0.15));
+    }
+
+    return pts;
+}
+
+/**
+ * Whether polygon `q` hides part of a wall polygon from `from`: some point of `q`, seen from there, has a
+ * wall polygon (other than `q`) behind it. Sampling the occluder (not the wall) finds even a thin
+ * closing panel that no sight line to the wall's own points happens to cross.
+ */
+function overlapsWall(q, from, wallQuads) {
+    for (const s of q.samples ??= samplePoints(q)) {
+        toward.subVectors(s, from);
+        const near = toward.length();
+        if (near < 1e-6) {
+            continue;
+        }
+
+        ray.set(from, toward.divideScalar(near));
+        for (const w of wallQuads) {
+            if (w === q) {
+                continue;
+            }
+
+            const p = hitPolygon(w);
+            if (p && from.distanceTo(p) > near + END_SLACK_MM) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+/**
+ * Ids of the facets between `from` and the wall: crossed from behind by a sight line to any of `aims` (the
+ * orbit target and sample points of the wall); a facet in `anySide` (no holds on it: a closing panel)
+ * also when crossed from its front or when it covers any of `wallQuads` as seen from `from`; a facet with
+ * holds also when it covers the wall and the camera is behind it. `skip` names facets that are the wall
+ * itself and never count.
+ */
+export function facetsInTheWay(quads, from, aims, anySide = null, skip = null, wallQuads = null) {
     const ids = [];
     for (const q of quads) {
-        if (crossing(q, from, to) != null) {
+        if (skip?.has(q.id)) {
+            continue;
+        }
+
+        const any = !!anySide?.has(q.id);
+        const crossed = aims.some(to => crossing(q, from, to, any) != null);
+        const covers = !crossed && wallQuads && (any || !inFront(q, from)) && overlapsWall(q, from, wallQuads);
+        if (crossed || covers) {
             ids.push(q.id);
         }
     }
+
     return ids;
-}
-
-function nearestCrossing(quads, from, to) {
-    let best = null;
-    for (const q of quads) {
-        const t = crossing(q, from, to);
-        if (t != null && (best == null || t < best)) {
-            best = t;
-        }
-    }
-    return best;
-}
-
-/**
- * Whether a camera at `position` is in free space with a clear view: above the floor clearance,
- * no facet in the way of the target, nor of the centre of any facet whose front it faces (at least one).
- */
-export function poseIsClear(pose, quads, floorZ) {
-    if (pose.position.z < floorZ + FLOOR_CLEARANCE_MM) {
-        return false;
-    }
-    if (nearestCrossing(quads, pose.position, pose.target) != null) {
-        return false;
-    }
-    const facing = quads.filter(q => inFront(q, pose.position));
-    return facing.length > 0 && facing.every(q => nearestCrossing(quads, pose.position, q.center) == null);
-}
-
-function turned(base, yaw, pitch) {
-    const h = Math.hypot(base.x, base.y);
-    const az = Math.atan2(base.y, base.x) + yaw * DEG;
-    const el = Math.max(-MAX_ELEVATION, Math.min(MAX_ELEVATION, Math.atan2(base.z, h) + pitch * DEG));
-    return new THREE.Vector3(Math.cos(el) * Math.cos(az), Math.cos(el) * Math.sin(az), Math.sin(el));
-}
-
-/**
- * Moves a preset pose out of the way of facets: `base` is the pose as designed, `poseAlong(dir)`
- * re-frames it for another viewing direction (unit vector from target to camera). Tries the
- * smallest turns around the target first; when none is clear, pulls the camera in along its sight
- * line past the facet in the way and lifts it over the floor clearance.
- */
-export function clearPose(base, poseAlong, quads, floorZ) {
-    if (quads.length === 0 || poseIsClear(base, quads, floorZ)) {
-        return base;
-    }
-    const dir0 = base.position.clone().sub(base.target).normalize();
-    const tries = [];
-    for (const yaw of YAWS) {
-        for (const pitch of PITCHES) {
-            tries.push({ yaw, pitch, cost: Math.abs(yaw) + 1.2 * Math.abs(pitch) });
-        }
-    }
-    tries.sort((p, q) => p.cost - q.cost);
-    for (const t of tries) {
-        if (t.yaw === 0 && t.pitch === 0) {
-            continue;
-        }
-        const pose = poseAlong(turned(dir0, t.yaw, t.pitch));
-        if (poseIsClear(pose, quads, floorZ)) {
-            return pose;
-        }
-    }
-    return pulledIn(base, quads, floorZ);
-}
-
-function pulledIn(base, quads, floorZ) {
-    const position = base.position.clone();
-    const t = nearestCrossing(quads, position, base.target);
-    if (t != null) {
-        const toTarget = base.target.clone().sub(position);
-        const room = toTarget.length() - MIN_DISTANCE_MM;
-        position.addScaledVector(toTarget.normalize(), Math.min(room, t + PULL_PAST_MM));
-    }
-    position.z = Math.max(position.z, floorZ + FLOOR_CLEARANCE_MM);
-    return { position, target: base.target.clone() };
 }

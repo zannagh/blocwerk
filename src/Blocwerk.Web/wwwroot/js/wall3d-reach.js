@@ -1,16 +1,19 @@
-// Where the camera of the 3D wall view (wall3d.js) may go: as in the real room, never into or behind
-// the wall. The camera is kept CAMERA_GAP_MM in front of the main facet's plane (not over the top of an
-// overhang, not behind it) and of the side panels bounding the room, above the floor and out of every
-// body block (wall3d-body.js), each taken as reaching back without end and down to the floor; a camera
-// inside one is pushed out through the nearest face (the front, or a side it came in by).
+// Where the camera of the 3D wall view (wall3d.js) may go: never into or behind the climbing surface.
+// The camera is kept CAMERA_GAP_MM in front of the main facet's plane (not over the top of an overhang,
+// not behind it), above the floor and out of the body block (wall3d-body.js) of every facet that carries
+// holds; a camera inside one is pushed out through the nearest face. Closing panels, caps and the
+// like are NOT obstacles to the camera: when one is in the way it is hidden instead (wall3d-ghost.js,
+// wall3d-occlude.js), so the view never jumps closer because of them.
 //
 // Zoom: the orbit target is anchored on the wall surface the camera looks at. A preset frames the
 // wall around a point that often floats behind it, and zooming to the cursor keeps the target at the
 // old distance, so the camera flew through the wall and the splat's near fade (wall3d-splat-clip.js,
 // relative to the target) faded the wall away before it came close. With the target on the surface,
-// OrbitControls' minDistance (MIN_ZOOM_MM) is the closest the camera gets to the wall.
+// OrbitControls' minDistance (MIN_ZOOM_MM) is the closest the camera gets to the wall. Only facets
+// with holds anchor the target: a bare panel standing in front would otherwise pull the orbit target
+// (and with it the camera) onto itself.
 import * as THREE from '../lib/three/three.module.min.js';
-import { pointOf, polygonDistance } from './wall3d-body.js';
+import { polygonDistance } from './wall3d-body.js';
 
 /** Closest zoom: the camera stops this far from the surface it looks at. */
 export const MIN_ZOOM_MM = 150;
@@ -20,7 +23,6 @@ const SIDE_PAD_MM = 40;
 const FLOOR_GAP_MM = 200;
 /** Nor above the ceiling cap (wall3d-body.js), nor this close under it. */
 const CEILING_GAP_MM = 150;
-const SIDE_REACH_MM = 600;
 /** A target this much behind the surface on its sight line moves onto it. */
 const ANCHOR_SLACK_MM = 5;
 
@@ -57,29 +59,21 @@ function pushOut(q, pos) {
     return true;
 }
 
-/**
- * The room's walls as half-spaces the camera stays in front of: the main facet's plane everywhere, and
- * each side panel that has the main facet in front of it (The Attic's side wall, not the slot's side
- * facing away) alongside the wall, up to SIDE_REACH_MM out in front of the panel's front edge.
- */
-function roomLimits(prisms, main, front) {
+/** The main facet's plane as the one half-space the camera stays in front of, everywhere. */
+function roomLimits(prisms, main) {
     const wall = prisms.find(p => p.id === main?.id);
-    if (!wall) return [];
-    const centre = wall.outline.reduce((s, [a, b]) => s.add(pointOf(wall, a, b)), new THREE.Vector3()).divideScalar(wall.outline.length);
-    const sides = prisms.filter(p => Math.abs(p.n.z) < 0.3 && Math.abs(p.n.dot(front)) < 0.5 && p.n.dot(centre) - p.d > 0);
-    return [{ n: wall.n, d: wall.d, until: Infinity }, ...sides.map(p => ({
-        n: p.n, d: p.d, until: Math.max(...p.outline.map(([a, b]) => pointOf(p, a, b).dot(front))) + SIDE_REACH_MM,
-    }))];
+    return wall ? [{ n: wall.n, d: wall.d, until: Infinity }] : [];
 }
 
 /**
  * `pieces`: buildBody's pieces, `main`: the main facet, `floorZ`: the floor plane, `front`: the
- * horizontal direction toward the climber (wallFrame), `ceilingZ`: the ceiling cap. Returns
+ * horizontal direction toward the climber (wallFrame), `ceilingZ`: the ceiling cap, `solid`: ids of
+ * the facets that carry holds (the only ones the camera keeps out of and anchors on). Returns
  * { minDistance, keepOut(position) → moved, anchor(position, target) → moved, step(camera, controls, tweening) }.
  */
-export function createReach(pieces, main, floorZ, front, ceilingZ = null) {
-    const prisms = pieces.map(prism);
-    const limits = roomLimits(prisms, main, front);
+export function createReach(pieces, main, floorZ, front, ceilingZ = null, solid = null) {
+    const prisms = pieces.filter(p => !solid || solid.has(p.id)).map(prism);
+    const limits = roomLimits(prisms, main);
     const ray = new THREE.Ray();
     const dir = new THREE.Vector3();
     const hit = new THREE.Vector3();
