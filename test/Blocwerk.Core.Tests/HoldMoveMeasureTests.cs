@@ -112,13 +112,45 @@ public class HoldMoveMeasureTests
         Assert.Equal(HoldMoveOutcome.Stayed, HoldMovePolicy.Classify(new HoldMoveMeasure(60, HoldMoveSource.ThreeD, null, 40, false), Options));
     }
 
+    [Theory]
+    [InlineData(true, true, true, HoldMoveOutcome.Removed)]
+    [InlineData(false, true, true, HoldMoveOutcome.Possible)]
+    [InlineData(true, false, true, HoldMoveOutcome.Possible)]
+    [InlineData(true, true, false, HoldMoveOutcome.Possible)]
+    public void Policy_RemoveUnconfirmedBeyondCutoff_NeedsTheOptionAConfidentMeasureAndThePhotoBehindIt(
+        bool option, bool corroborated, bool confident, HoldMoveOutcome expected)
+    {
+        var options = new HoldMoveOptions { RemoveUnconfirmedBeyondCutoff = option };
+        var measure = new HoldMoveMeasure(300, HoldMoveSource.TwoD, null, null, confident, Corroborated: corroborated);
+
+        Assert.Equal(expected, HoldMovePolicy.Classify(measure, options, confirmedMove: false));
+    }
+
+    [Fact]
+    public void Policy_WithTheOptionOff_AConfidentPhotoMoveBeyondTheCutoffIsOnlyPossible_AndOnTheOptionRemoves()
+    {
+        var measure = new HoldMoveMeasure(340, HoldMoveSource.TwoD, null, null, true, Corroborated: true);
+
+        Assert.Equal(HoldMoveOutcome.Possible, HoldMovePolicy.Classify(measure, new HoldMoveOptions()));
+        Assert.Equal(HoldMoveOutcome.Removed, HoldMovePolicy.Classify(measure, new HoldMoveOptions { RemoveUnconfirmedBeyondCutoff = true }));
+    }
+
+    [Fact]
+    public void Reconcile_MarksPhotoBackedMeasures()
+    {
+        var three = new HoldMoveMeasure(90, HoldMoveSource.ThreeD, null, 6, true);
+
+        Assert.True(WallBigUpdateService.Reconcile(three, new HoldMoveMeasure(85, HoldMoveSource.TwoD, null), Options)!.Corroborated);
+        Assert.False(WallBigUpdateService.Reconcile(three, null, Options)!.Corroborated);
+    }
+
     [Fact]
     public void Reconcile_ThePhotoEstimateOverrulesAStale3DMove_AndAgreeingNumbersUse3D()
     {
         var three = new HoldMoveMeasure(90, HoldMoveSource.ThreeD, null, 6, true);
 
         Assert.Equal(HoldMoveSource.TwoD, WallBigUpdateService.Reconcile(three, new HoldMoveMeasure(5, HoldMoveSource.TwoD, null), Options)!.Source);
-        Assert.Same(three, WallBigUpdateService.Reconcile(three, new HoldMoveMeasure(85, HoldMoveSource.TwoD, null), Options));
+        Assert.Equal(three with { Corroborated = true }, WallBigUpdateService.Reconcile(three, new HoldMoveMeasure(85, HoldMoveSource.TwoD, null), Options));
         Assert.Equal(200, WallBigUpdateService.Reconcile(three, new HoldMoveMeasure(200, HoldMoveSource.TwoD, null), Options)!.DistanceMm);
         Assert.Same(three, WallBigUpdateService.Reconcile(three, null, Options));
         var onlyPhoto = new HoldMoveMeasure(70, HoldMoveSource.TwoD, null);

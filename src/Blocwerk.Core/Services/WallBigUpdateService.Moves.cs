@@ -64,7 +64,7 @@ public partial class WallBigUpdateService
             {
                 var two = HoldMoveCalculator.Distance2D(twin, confirmation.CarriedWarpPositions?.GetValueOrDefault(old.Id), size, scale);
                 var rotation = HoldMoveCalculator.Rotation(HoldFingerprint.FromJson(old.FingerprintJson), HoldFingerprint.FromJson(twin.FingerprintJson));
-                var photo = two is { } d2 ? new HoldMoveMeasure(d2, HoldMoveSource.TwoD, rotation) : null;
+                var photo = two is { } d2 ? new HoldMoveMeasure(d2, HoldMoveSource.TwoD, rotation, Corroborated: true) : null;
                 var measure = Reconcile(threeD.GetValueOrDefault(old.Id), photo, moveOptions);
                 if (measure is not null)
                 {
@@ -105,7 +105,7 @@ public partial class WallBigUpdateService
         }
 
         var agree = Math.Abs(threeD.DistanceMm - photo.DistanceMm) <= Math.Max(options.AgreeMm, 0.5 * photo.DistanceMm);
-        return agree ? threeD : withDiagnostics;
+        return agree ? threeD with { Corroborated = true } : withDiagnostics;
     }
 
     /// <summary>

@@ -20,7 +20,8 @@ public static class HoldMovePolicy
         {
             // Taking a hold off a boulder needs everything to agree: a person said it moved, the measure is trustworthy and
             // the distance is well past the cutoff. Anything less is "possibly moved": kept, for a person to check.
-            var certain = confirmedMove && measure.Confident && measure.DistanceMm >= options.CutoffMm * options.RemovalMargin;
+            var backed = confirmedMove || (options.RemoveUnconfirmedBeyondCutoff && measure.Corroborated);
+            var certain = backed && measure.Confident && measure.DistanceMm >= options.CutoffMm * options.RemovalMargin;
             return certain ? HoldMoveOutcome.Removed : HoldMoveOutcome.Possible;
         }
 

@@ -19,7 +19,7 @@ namespace Blocwerk.Core.Tests;
 /// </summary>
 public class HoldMoveFollowUpTests
 {
-    private sealed class FakePlacer(Dictionary<Guid, StagedPlacement> placements) : IStagedHoldPlacer
+    internal sealed class FakePlacer(Dictionary<Guid, StagedPlacement> placements) : IStagedHoldPlacer
     {
         public Task<IReadOnlyDictionary<Guid, StagedPlacement>> PlaceAsync(IReadOnlyList<(Hold Old, Hold Twin)> pairs) =>
             Task.FromResult<IReadOnlyDictionary<Guid, StagedPlacement>>(placements);

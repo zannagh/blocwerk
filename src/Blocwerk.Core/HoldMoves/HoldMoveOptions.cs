@@ -44,6 +44,14 @@ public sealed class HoldMoveOptions
     /// <summary>The 3D floor of a hold is at least this many times its neighbourhood's residual spread.</summary>
     public double SpreadFactor { get; set; } = 3.5;
 
+    /// <summary>
+    /// When true, a confident move past the removal margin takes the hold off its boulders even without an accepted
+    /// "this hold moved", as long as the photo estimate backs it (it is the photo estimate, or the photo estimate agrees with
+    /// the 3D measure). A 3D measure alone never does. Default false: only a person's accepted relocation removes a hold, and
+    /// every other move past the cutoff is "possibly moved", kept for review.
+    /// </summary>
+    public bool RemoveUnconfirmedBeyondCutoff { get; set; }
+
     /// <summary>A hold is only taken off its boulders at this multiple of the cutoff (and only when confirmed and confident).</summary>
     public double RemovalMargin { get; set; } = 1.5;
 
