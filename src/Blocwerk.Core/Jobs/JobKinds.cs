@@ -27,8 +27,11 @@ public static class JobKinds
     /// <summary>A capture package being imported (replayed) from another instance.</summary>
     public const string Import = "import";
 
+    /// <summary>A wall admin's "Find holds from all photos" search (queued, then one photo after the other).</summary>
+    public const string HoldSearch = "holdSearch";
+
     /// <summary>Every kind, in display order.</summary>
-    public static IReadOnlyList<string> All { get; } = [Capture, GpuTraining, Finish, FollowUp, TextureRerender, Resolve, Import];
+    public static IReadOnlyList<string> All { get; } = [Capture, GpuTraining, Finish, FollowUp, TextureRerender, Resolve, Import, HoldSearch];
 }
 
 /// <summary>The <see cref="JobProgressItem.State"/> values. Part of the API contract: never rename one.</summary>

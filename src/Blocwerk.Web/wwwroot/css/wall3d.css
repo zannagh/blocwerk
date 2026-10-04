@@ -220,3 +220,11 @@
 /* Landscape phones with a notch: keep the corner controls out of the cut-out. */
 .w3d-modes, .w3d-hint, .w3d-photo-tools, .w3d-scale { margin-left: env(safe-area-inset-left, 0px); }
 .w3d-card { margin-right: env(safe-area-inset-right, 0px); }
+
+/* Keyboard use (wall3d-keys.js): the stage itself is focusable, so it shows where the keys go. */
+.w3d-root:focus { outline: none; }
+.w3d-root:focus-visible { outline: 3px solid var(--accent, #2563eb); outline-offset: -3px; }
+.w3d-sr-only {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0;
+    overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}

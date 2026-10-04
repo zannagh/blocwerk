@@ -33,6 +33,7 @@ import { buildVolumes } from './wall3d-volumes.js';
 import { buildBody } from './wall3d-body.js';
 import { createRenderLoop } from './wall3d-loop.js';
 import { buildLocator, poseFor } from './wall3d-locate.js';
+import { createKeyboard } from './wall3d-keys.js';
 
 /** Colours of a boulder's hold roles; the page passes BoulderHoldColors so they match the 2D views. */
 const DEFAULT_ROLE_COLORS = { Start: '#4CAF50', Top: '#9C27B0', Hand: '#2196F3', Foot: '#FF9800', ColorFoot: '#FF9800' };
@@ -124,7 +125,7 @@ function build(container, renderer, view, options) {
     const modes = availableModes(view, photo.available);
     const ui = buildOverlay(container, view, {
         preset: name => goTo(name),
-        reset: () => { ui.hideCard(); selection.visible = false; goTo('front'); },
+        reset: () => resetView(),
         closeCard: () => { ui.hideCard(); selection.visible = false; request(); },
         mode: name => modeCtl.set(name),
     }, modes, { hintOnce: !!options.hintOnce });
@@ -148,6 +149,12 @@ function build(container, renderer, view, options) {
         tweener.to(framedPose(name));
         ui.setActive(name);
         loop.interact();
+    }
+
+    function resetView() {
+        ui.hideCard();
+        selection.visible = false;
+        goTo('front');
     }
 
     function reframe() {
@@ -204,10 +211,26 @@ function build(container, renderer, view, options) {
         onPick: pick => {
             placeSelection(selection, pick.hold, holds.facets.get(pick.facetId));
             ui.showHold(pick.hold);
+            keyboard.sync(pick.hold);
             request();
             for (const listener of pickListeners) listener(pick);
         },
-        onMiss: () => { selection.visible = false; ui.hideCard(); request(); },
+        onMiss: () => { selection.visible = false; ui.hideCard(); keyboard.sync(null); request(); },
+    });
+    // Keyboard: the stage takes focus; arrows / +- / Home move the camera, ] [ walk the holds (wall3d-keys.js).
+    const showHold = (hold, card) => {
+        placeSelection(selection, hold, holds.facets.get(hold.facetId));
+        if (card) {
+            ui.showHold(hold);
+        }
+        request();
+    };
+    const keyboard = createKeyboard({
+        container, camera, controls, holds, picker, ui, frame, boulder: !!view.boulderId,
+        moved: () => onStart(), reset: resetView,
+        select: hold => showHold(hold, false), open: hold => showHold(hold, true),
+        clear: () => { selection.visible = false; ui.hideCard(); request(); },
+        reveal: hold => handle.focusHold(hold.id, 1500),
     });
     const onStart = () => { tweener.cancel(); ui.hideHint(); ui.setActive(null); framed = null; loop.interact(); };
     controls.addEventListener('start', onStart);
@@ -294,6 +317,7 @@ function build(container, renderer, view, options) {
             ro.disconnect();
             window.removeEventListener('orientationchange', resize);
             picker.dispose();
+            keyboard.dispose();
             pickListeners.clear();
             overlay.dispose();
             ghosts.dispose();

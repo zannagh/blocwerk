@@ -17,12 +17,21 @@
         any wall photo yet (e.g. under volumes). Nothing is added until you accept it.
     </p>
     <div class="staged-actions">
-        <button class="btn-secondary" @onclick="FindAsync" disabled="@busy">Find holds from all photos</button>
+        <button class="btn-secondary" @onclick="StartSearchAsync" disabled="@(busy || Searching)">Find holds from all photos</button>
     </div>
 
-    @if (busy)
+    @if (search is { Active: true } running)
     {
-        <p class="loading-small">Looking at every 3D photo — this can take several minutes…</p>
+        @* A background job: the proposal buttons below stay usable while it runs, and it survives leaving the page. *@
+        <p class="loading-small" role="status">@SearchText(running)</p>
+        @if (running.Total > 0)
+        {
+            <progress max="@running.Total" value="@running.Done" aria-label="Photos searched"></progress>
+        }
+    }
+    else if (SearchOutcome(search) is { } outcome)
+    {
+        <p class="@(search!.State == Blocwerk.Core.Jobs.JobStates.Succeeded ? "glyph-ok" : "field-error")" role="status">@outcome</p>
     }
 
     @if (failure is not null)

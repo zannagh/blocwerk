@@ -172,6 +172,8 @@ public static class CoreServices
         builder.Services.AddScoped<ICaptureHoldDetector, ComputeCaptureHoldDetector>();
         builder.Services.AddScoped<ICaptureHoldDetector, InAppCaptureHoldDetector>();
         builder.Services.AddScoped<IHoldProposalService, HoldProposalService>();
+        builder.Services.AddSingleton<HoldSearchJobs>();
+        builder.Services.AddScoped<IHoldSearchService, HoldSearchService>();
         builder.Services.AddScoped<IHoldLinkSuggestionService, HoldLinks.HoldLinkSuggestionService>();
         builder.Services.AddSingleton<HoldRefinementQueue>();
         builder.Services.AddSingleton<IHoldRefinementQueue>(sp => sp.GetRequiredService<HoldRefinementQueue>());
