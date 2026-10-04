@@ -50,7 +50,7 @@ public sealed partial class HoldDuplicateService
             await HoldDeletion.PrepareHoldForDeleteAsync(db, removed.Id, HoldDeleteBoulderPolicy.LeaveUntouched, ct: ct);
             db.Holds.Remove(removed);
             ct.ThrowIfCancellationRequested();
-            var batchId = await SaveInBatchAsync(db, wallId, ct);
+            var batchId = await SaveInBatchAsync(db, wallId, kept.Id, ct);
             logger.LogInformation(
                 "Merged hold {Removed} into {Kept} on wall {WallId} by {UserId} ({Mode}): {Moved} boulders moved, {Flagged} flagged, journal batch {BatchId}",
                 removed.Id, kept.Id, wallId, userId, mode, moved, flagged, batchId);
@@ -109,11 +109,20 @@ public sealed partial class HoldDuplicateService
     }
 
     /// <summary>Saves inside a named batch and returns the id of exactly the batch that was opened for this write.</summary>
-    private async Task<Guid> SaveInBatchAsync(BlocwerkDbContext db, Guid wallId, CancellationToken ct)
+    private async Task<Guid> SaveInBatchAsync(BlocwerkDbContext db, Guid wallId, Guid keptId, CancellationToken ct)
     {
         using var scope = journal.BeginBatch(BatchLabel, ChangeJournalScopeKind.Wall, wallId);
         var batchId = ((ChangeJournalBatchScope)scope).BatchId;
         await db.SaveChangesAsync(ct);
+
+        // What the merge carried onto the kept hold (e.g. the kickboard flag) now reaches its linked twins, in the
+        // same batch so the undo reverts both. The removed hold's links are gone by now.
+        var sync = await LinkedHoldSync.ReconcileAsync(db, wallId, keptId, ct);
+        if (sync.Any)
+        {
+            await db.SaveChangesAsync(ct);
+        }
+
         return batchId;
     }
 }

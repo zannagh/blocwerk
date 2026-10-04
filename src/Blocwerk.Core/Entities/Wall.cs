@@ -114,6 +114,28 @@ public class Wall
     public int? LinksFinalizedGeneration { get; set; }
 
     /// <summary>
+    /// Column of the panel cell whose values win when linked holds disagree (the "Panel that wins for linked holds"
+    /// setting). A cell rather than a panel id, because a wall update replaces the panel rows but not the grid.
+    /// Null (with <see cref="LinkedHoldWinnerRow"/>) means the wall's centre panel.
+    /// </summary>
+    public int? LinkedHoldWinnerCol { get; set; }
+
+    /// <summary>Row of the winner cell; see <see cref="LinkedHoldWinnerCol"/>.</summary>
+    public int? LinkedHoldWinnerRow { get; set; }
+
+    /// <summary>The configured winner cell, or null when the wall uses its centre panel.</summary>
+    /// <returns>The cell.</returns>
+    public (int Col, int Row)? WinnerCell() =>
+        LinkedHoldWinnerCol is { } c && LinkedHoldWinnerRow is { } r ? (c, r) : null;
+
+    /// <summary>
+    /// The <c>LinkedHoldSync.Version</c> of the last startup reconciliation of this wall's linked holds. The
+    /// startup pass runs for a wall only while this is below the current version, so it runs once. Written
+    /// outside the journal on purpose: undoing the sync batch must not make the next start redo it.
+    /// </summary>
+    public int? LinkedHoldSyncVersion { get; set; }
+
+    /// <summary>
     /// Opt-in switch for the experimental glyph (ArUco marker) wall geometry. <b>Default false.</b>
     /// While false, every glyph-derived value (marker observations, geometry models, metric hold
     /// fields) is ignored and the normalized per-panel pipeline behaves exactly as before.
