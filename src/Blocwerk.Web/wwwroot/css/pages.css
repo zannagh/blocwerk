@@ -1603,6 +1603,35 @@ a.wall3d-link {
     padding: 18px; box-shadow: 0 10px 40px var(--shadow-lg); display: flex; flex-direction: column; gap: 12px;
 }
 .bw-modal h3 { font-size: 1.05rem; font-weight: 600; color: var(--text-heading); }
+/* Every modal fits the viewport: the backdrop is exactly the visible height inside the safe areas and the panel
+   never grows past it. A tall dialog scrolls inside itself; the title sticks to the top and the action row to the
+   bottom, so the buttons are always reachable (phone landscape, Safari toolbars, notches). */
+.bw-modal-backdrop {
+    z-index: 950; height: 100vh; height: 100dvh; box-sizing: border-box;
+    padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
+             max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+}
+.bw-modal { max-height: 100%; overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; }
+.bw-modal:not(.panel-crop-modal) > .bw-modal-title {
+    position: sticky; top: -18px; z-index: 1; margin: -18px -18px 0; padding: 18px 18px 8px;
+    background: var(--bg-surface); border-radius: 14px 14px 0 0;
+}
+.bw-modal:not(.panel-crop-modal) > .kiosk-modal-actions,
+.bw-modal:not(.panel-crop-modal) > .staged-actions,
+.bw-modal:not(.panel-crop-modal) > .bw-modal-actions {
+    position: sticky; bottom: -18px; z-index: 1; margin: auto -18px -18px; padding: 10px 18px 18px;
+    background: var(--bg-surface); border-radius: 0 0 14px 14px;
+}
+.bw-modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+@media (max-height: 500px) {
+    .bw-modal:not(.panel-crop-modal) { padding: 12px; gap: 8px; }
+    .bw-modal:not(.panel-crop-modal) > .bw-modal-title { top: -12px; margin: -12px -12px 0; padding: 12px 12px 6px; }
+    .bw-modal:not(.panel-crop-modal) > .kiosk-modal-actions,
+    .bw-modal:not(.panel-crop-modal) > .staged-actions,
+    .bw-modal:not(.panel-crop-modal) > .bw-modal-actions {
+        bottom: -12px; margin: auto -12px -12px; padding: 8px 12px 12px;
+    }
+}
 /* The panel crop tool (PanelCropTool.razor) is a real modal ABOVE the wall editor: the editor's own tool row is
    fixed/sticky at z-index 60 (above the plain modal backdrop's 50) and would draw over the dialog, so it is hidden
    while the crop dialog is open and the backdrop is lifted over every page layer (below only the classify menu).
@@ -1624,7 +1653,7 @@ body:has(.panel-crop-modal) .bw-toolbar { display: none; }
     }
     .bw-modal.panel-crop-modal { padding: 12px; gap: 8px; }
 }
-.wall-pick-list { display: flex; flex-direction: column; gap: 8px; max-height: 50vh; overflow-y: auto; }
+.wall-pick-list { display: flex; flex-direction: column; gap: 8px; }
 .wall-pick-item {
     text-align: left; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px;
     background: var(--bg-surface); color: var(--text); font-weight: 600; font-size: 0.95rem; cursor: pointer;
@@ -1633,7 +1662,7 @@ body:has(.panel-crop-modal) .bw-toolbar { display: none; }
 
 /* Consenting-member list inside the kiosk "who did this?" dialog. Rows reuse .kiosk-row from the
    kiosk picker further down, so only the scroll container is new here. */
-.kiosk-pick-list { display: flex; flex-direction: column; gap: 8px; max-height: 50vh; overflow-y: auto; }
+.kiosk-pick-list { display: flex; flex-direction: column; gap: 8px; }
 
 /* GitHub-style contribution graph: fixed-metric cells that can be wider than the viewport, with the
    grid area scrolling horizontally (swipe / trackpad / overflow) so the page body never scrolls sideways.
@@ -1708,7 +1737,7 @@ body:has(.panel-crop-modal) .bw-toolbar { display: none; }
 .info-btn:hover { background: var(--bg-surface-alt); color: var(--accent); }
 
 /* Score-explanation dialog (reuses .bw-modal / .bw-modal-backdrop). */
-.score-info-modal { max-width: 440px; max-height: 85vh; }
+.score-info-modal { max-width: 440px; }
 .score-info-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .score-info-head h3 { margin: 0; }
 .score-info-body { overflow-y: auto; }

@@ -1,0 +1,7 @@
+.confirm-action {
+    display: flex; flex-direction: column; gap: 8px; padding: 12px; margin: 6px 0;
+    border: 1px solid var(--danger-text); border-radius: var(--r-md); background: var(--danger-bg);
+}
+.confirm-action-question { margin: 0; font-size: 0.9rem; line-height: 1.45; color: var(--text); }
+.confirm-action-label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; color: var(--text); }
+.confirm-action-buttons { display: flex; flex-wrap: wrap; gap: 8px; }

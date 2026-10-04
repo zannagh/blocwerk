@@ -222,7 +222,9 @@ else
 
         <div class="staged-actions">
             <button class="btn-primary" @onclick="Continue" disabled="@ScopeResetsPending">Continue to overlaps →</button>
-            <button class="btn-danger-soft" @onclick="() => OnDiscard.InvokeAsync()">Discard update</button>
+            <ConfirmAction Label="Discard update" TriggerClass="btn-danger-soft" ConfirmLabel="Yes, discard it"
+                           Question="Discard this update? The staged photos and every choice made so far are thrown away."
+                           OnConfirm="OnDiscard" />
         </div>
     </div>
 }

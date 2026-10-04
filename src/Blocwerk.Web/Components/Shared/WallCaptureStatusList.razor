@@ -101,42 +101,16 @@
                                         @(openCaptureId == capture.Id ? "Hide photos" : "Use as panel photos…")
                                     </button>
                                 }
-                                @if (running is null && CanRetrain(capture) && BetterQuality(capture) is { } better)
-                                {
-                                    <button class="btn-link" @onclick="() => RetrainAsync(capture.Id, better)" disabled="@retraining"
-                                            title="Trains the photo-real view again from this capture's photos; the current one stays until the new one is ready.">
-                                        Retrain photo-real at higher quality (@CaptureSplatDocuments.QualityName(better))
-                                    </button>
-                                }
-                                @if (running is null && capture.CanRefinish && capture.PhotoRealPending is null)
-                                {
-                                    <button class="btn-link" @onclick="() => RefinishAsync(capture.Id)" disabled="@retraining"
-                                            title="Finishes the trained photo-real view again on the server (crop, clean-up, export) and re-runs every follow-up step. Nothing is trained; takes minutes.">
-                                        Re-finish photo-real view (no retraining)
-                                    </button>
-                                }
-                                @if (capture.TexturesRerendering)
-                                {
-                                    <div class="hint" role="status">Rendering the wall textures again…</div>
-                                }
-                                else if (capture.CanRerenderTextures)
-                                {
-                                    <button class="btn-link" @onclick="() => RerenderTexturesAsync(capture.Id)" disabled="@retraining"
-                                            title="Renders only this capture's wall textures again from its photos and places the holds on them; the photo-real view is left alone (also while it trains). Takes minutes.">
-                                        Render wall textures again
-                                    </button>
-                                }
-                                @if (capture.ModelResolving)
-                                {
-                                    <div class="hint" role="status">Solving the 3D model again from this capture's photos…</div>
-                                }
-                                else if (running is null && capture.CanResolveModel)
-                                {
-                                    <button class="btn-link" @onclick="() => ResolveModelAsync(capture.Id)" disabled="@retraining"
-                                            title="Solves the 3D model again from this capture's photos with the current solver and activates it only if it lines up with the active model; the photo-real view is kept, the wall textures are rendered again and the holds re-placed. Nothing is trained; takes minutes.">
-                                        Re-solve 3D model (no retraining)
-                                    </button>
-                                }
+                                <CaptureMaintenance CanRetrain="@(running is null && CanRetrain(capture) && BetterQuality(capture) is not null)"
+                                                    RetrainQuality="@(BetterQuality(capture) is { } better ? CaptureSplatDocuments.QualityName(better) : string.Empty)"
+                                                    CanRefinish="@(running is null && capture.CanRefinish && capture.PhotoRealPending is null)"
+                                                    CanRerender="capture.CanRerenderTextures" Rerendering="capture.TexturesRerendering"
+                                                    CanResolve="@(running is null && capture.CanResolveModel)" Resolving="capture.ModelResolving"
+                                                    Disabled="retraining"
+                                                    OnRetrain="() => RetrainAsync(capture.Id, BetterQuality(capture)!.Value)"
+                                                    OnRefinish="() => RefinishAsync(capture.Id)"
+                                                    OnRerender="() => RerenderTexturesAsync(capture.Id)"
+                                                    OnResolve="() => ResolveModelAsync(capture.Id)" />
                             </td>
                         </tr>
                         @if (openCaptureId == capture.Id && openPhotos is not null)
