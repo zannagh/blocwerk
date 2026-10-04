@@ -6,6 +6,7 @@
    Escape and the backdrop close it without saving (Modal). The stage stays rendered under the confirmation so the
    JS-owned box is never torn down mid-flow. *@
 <Modal Title="Crop panel photo" PanelClass="panel-crop-modal" OnClose="CloseAsync">
+    <div class="panel-crop-body">
     <p class="panel-crop-hint">Drag the edges or the box. Arrow keys move the focused edge (Shift: faster). Holds stay where they are on the wall.</p>
     <div class="panel-crop-frame @(Confirming ? "confirming" : null)">
         <div class="panel-crop-stage" @ref="stage">
@@ -71,10 +72,6 @@
             {
                 <p class="panel-crop-hint">No boulder uses them.</p>
             }
-            <div class="staged-actions">
-                <button type="button" class="btn-secondary" @onclick="CancelConfirm" disabled="@busy">Cancel</button>
-                <button type="button" class="btn-danger" @onclick="CropAnywayAsync" disabled="@busy">Crop anyway</button>
-            </div>
         </div>
     }
     else if (confirmUndo)
@@ -87,15 +84,22 @@
                 The original photo comes back, and if nothing on this panel was edited since the crop, the removed holds
                 and their boulders come back too. If it was edited, only the photo is restored and the removed holds stay deleted.
             </p>
-            <div class="staged-actions">
-                <button type="button" class="btn-secondary" @onclick="CancelUndo" disabled="@busy">Cancel</button>
-                <button type="button" class="btn-danger" @onclick="UndoConfirmedAsync" disabled="@busy">Undo crop</button>
-            </div>
         </div>
     }
-    else
-    {
-        <div class="staged-actions panel-crop-actions">
+    </div>
+    <div class="staged-actions panel-crop-footer">
+        @if (confirm is not null)
+        {
+            <button type="button" class="btn-secondary" @onclick="CancelConfirm" disabled="@busy">Cancel</button>
+            <button type="button" class="btn-danger" @onclick="CropAnywayAsync" disabled="@busy">Crop anyway</button>
+        }
+        else if (confirmUndo)
+        {
+            <button type="button" class="btn-secondary" @onclick="CancelUndo" disabled="@busy">Cancel</button>
+            <button type="button" class="btn-danger" @onclick="UndoConfirmedAsync" disabled="@busy">Undo crop</button>
+        }
+        else
+        {
             <button type="button" class="btn-secondary" @onclick="CloseAsync" disabled="@busy">Cancel</button>
             @if (state?.IsCropped == true)
             {
@@ -103,6 +107,7 @@
             }
             <button type="button" class="btn-secondary" @onclick="ResetAsync" disabled="@busy">Reset</button>
             <button type="button" class="btn-primary" @onclick="SaveAsync" disabled="@(busy || rect.IsFull)">Save crop</button>
-        </div>
-    }
+        }
+    </div>
 </Modal>
+}
