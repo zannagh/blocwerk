@@ -12,8 +12,12 @@ namespace Blocwerk.HoldDetection.Matching;
 /// </summary>
 internal static class TextureMatchRefiner
 {
-    /// <summary>Most rematch rounds after the first fine match.</summary>
-    internal const int MaxRounds = 3;
+    /// <summary>
+    /// Most rematch rounds after the first fine match. An oblique wide-angle photo starts from a poor coarse overlap
+    /// (The Attic's right panel: 15 coarse inliers) and its consensus is still growing after three rounds; the loop
+    /// stops as soon as a round gains nothing, so photos that converge quickly cost no more.
+    /// </summary>
+    internal const int MaxRounds = 10;
 
     /// <summary>Fewest RANSAC inliers a refit needs before it may steer the next round.</summary>
     internal const int MinSteeringInliers = 30;
