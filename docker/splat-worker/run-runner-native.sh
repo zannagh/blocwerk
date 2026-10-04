@@ -54,7 +54,9 @@ if [ "$(cat "$HERE/.venv/.requirements-sha256" 2>/dev/null)" != "$REQ_SUM" ]; th
   if command -v uv >/dev/null; then
     VIRTUAL_ENV="$HERE/.venv" uv pip install -q -r "$HERE/requirements.txt"
   else
-    "$HERE/.venv/bin/pip" install -q -r "$HERE/requirements.txt"
+    # A venv made by uv has no pip; bootstrap it so a run without uv on PATH (e.g. under launchd) still works.
+    "$HERE/.venv/bin/python" -m pip --version >/dev/null 2>&1 || "$HERE/.venv/bin/python" -m ensurepip -q
+    "$HERE/.venv/bin/python" -m pip install -q -r "$HERE/requirements.txt"
   fi
   echo "$REQ_SUM" > "$HERE/.venv/.requirements-sha256"
 fi
