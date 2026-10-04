@@ -49,6 +49,18 @@ public class HoldGenerationLink
     /// <summary>The generation the successor hold belongs to.</summary>
     public int ToGeneration { get; set; }
 
+    /// <summary>How far the hold moved on the wall between the two generations, mm. Null when it could not be measured.</summary>
+    public double? MoveDistanceMm { get; set; }
+
+    /// <summary>Whether <see cref="MoveDistanceMm"/> was measured in 3D or estimated from the photo warp.</summary>
+    public HoldMoveSource? MoveSource { get; set; }
+
+    /// <summary>How far an elongated hold turned (0..90 degrees), when it could be told.</summary>
+    public double? MoveRotationDeg { get; set; }
+
+    /// <summary>What the move did to the boulders using the hold. Null when no move was measured.</summary>
+    public HoldMoveOutcome? MoveOutcome { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
     public Guid? CreatedByUserId { get; set; }

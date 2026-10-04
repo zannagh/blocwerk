@@ -63,6 +63,8 @@ public sealed partial class WallRefreshProcessor
         {
             CarriedWarpPositions = matched.CarriedWarpPositions,
             CarriedWarpShapes = matched.CarriedWarpShapes,
+            HandPlacedMergeOldIds = (matched.HandPlacedMerges ?? []).Select(m => m.OldHoldId).ToList(),
+            ExpectedMovesVersion = promotable.Moves.Version,
         };
         await actors.BigUpdate.PromoteAsync(refresh.WallId, confirmation, open.Id);
         await FinishPromotedAsync(refresh, actors, ct);
@@ -105,6 +107,7 @@ public sealed partial class WallRefreshProcessor
             }
 
             var result = await placement.PlaceAsync(refresh.WallId, PlacementTrigger, ct);
+            await RemeasureMovesAsync(refresh.WallId);
             return (RefreshStepState.Done, $"{result.Placed} holds placed on the 3D model");
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

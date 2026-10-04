@@ -4,6 +4,8 @@
 
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Enums;
+using Blocwerk.Core.HoldMoves;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Services;
@@ -38,11 +40,13 @@ public partial class WallBigUpdateService
     /// </para>
     /// </summary>
     private static async Task RepointBouldersAsync(
-        BlocwerkDbContext db, Guid oldHoldId, Guid newHoldId, int newGen, bool changed)
+        BlocwerkDbContext db, Guid oldHoldId, Guid newHoldId, int newGen, bool changed, PlannedMove? move = null)
     {
+        var outcome = move?.Outcome ?? HoldMoveOutcome.Stayed;
         var boulderLinks = await db.BoulderHolds
             .Where(bh => bh.HoldId == oldHoldId)
             .Include(bh => bh.Boulder)
+            .Include(bh => bh.Hold)
             .ToListAsync();
 
         foreach (var link in boulderLinks)
@@ -53,6 +57,20 @@ public partial class WallBigUpdateService
             }
 
             db.BoulderHolds.Remove(link);
+            if (move is not null && outcome != HoldMoveOutcome.Stayed)
+            {
+                RecordBoulderMove(db, link, newHoldId, newGen, move);
+            }
+
+            if (outcome == HoldMoveOutcome.Removed)
+            {
+                // Moved beyond the cutoff: the hold is probably out of reach for this boulder. It comes off, the
+                // boulder stays (never deleted) and is marked for revision; the setter picks another hold or archives it.
+                link.Boulder.NeedsReview = true;
+                link.Boulder.Generation = newGen;
+                continue;
+            }
+
             if (FindBoulderHold(db, link.BoulderId, newHoldId) is { } merged)
             {
                 // Two of the boulder's holds became one: keep the more prominent mark (a start or top
@@ -76,11 +94,31 @@ public partial class WallBigUpdateService
             }
 
             link.Boulder.Generation = newGen;
-            if (changed)
+            if (changed || outcome is HoldMoveOutcome.Kept or HoldMoveOutcome.Possible)
             {
                 link.Boulder.NeedsReview = true;
             }
         }
+    }
+
+    /// <summary>Records what a hold's move did to one boulder, so the boulder and its history can show it.</summary>
+    private static void RecordBoulderMove(BlocwerkDbContext db, BoulderHold link, Guid newHoldId, int newGen, PlannedMove move)
+    {
+        db.BoulderHoldMoves.Add(new BoulderHoldMove
+        {
+            WallId = link.Boulder.WallId,
+            BoulderId = link.BoulderId,
+            OldHoldId = link.HoldId,
+            NewHoldId = newHoldId,
+            Type = link.Type,
+            Usage = link.Usage,
+            DistanceMm = Math.Round(move.Measure.DistanceMm, 1),
+            Source = move.Measure.Source,
+            RotationDeg = move.Measure.RotationDeg is { } r ? Math.Round(r, 1) : null,
+            Outcome = move.Outcome,
+            FromGeneration = link.Hold.Generation,
+            ToGeneration = newGen,
+        });
     }
 
     /// <summary>

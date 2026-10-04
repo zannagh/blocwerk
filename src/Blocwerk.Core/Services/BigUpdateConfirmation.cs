@@ -24,6 +24,14 @@ namespace Blocwerk.Core.Services;
 /// Old holds whose successor is marked <see cref="Blocwerk.Core.Entities.Hold.NeedsReview"/>: the confirm screen asked about
 /// them and nobody answered (an old hold possibly removed, an unsure match). Null/empty flags nothing.
 /// </param>
+/// <param name="HandPlacedMergeOldIds">
+/// Old hand-placed or virtual holds merged onto a detection: the successor adopts the detection's outline instead of the
+/// old hold's warped one. Null/empty changes nothing.
+/// </param>
+/// <param name="ExpectedMovesVersion">
+/// The <see cref="HoldMoves.HoldMovePlan.Version"/> the user confirmed. When set, the promote refuses if the moves it
+/// derives now differ, so it only ever does what was shown. Null skips the check (wizard, tests).
+/// </param>
 public record BigUpdateConfirmation(
     List<CarryoverDecision> Carryover,
     List<Guid> AcceptedNewCenterHoldIds,
@@ -31,4 +39,6 @@ public record BigUpdateConfirmation(
     List<NeighbourLinkSet> Neighbours,
     IReadOnlyDictionary<Guid, HoldPositionNorm>? CarriedWarpPositions = null,
     IReadOnlyDictionary<Guid, IReadOnlyList<HoldPositionNorm>>? CarriedWarpShapes = null,
-    IReadOnlyCollection<Guid>? ReviewOldHoldIds = null);
+    IReadOnlyCollection<Guid>? ReviewOldHoldIds = null,
+    IReadOnlyCollection<Guid>? HandPlacedMergeOldIds = null,
+    string? ExpectedMovesVersion = null);

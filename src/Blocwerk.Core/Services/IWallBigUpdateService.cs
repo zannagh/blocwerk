@@ -85,4 +85,14 @@ public interface IWallBigUpdateService
     /// <see cref="PromoteAsync"/> — a stale Discard must not destroy the update that replaced it.
     /// </summary>
     Task DiscardAsync(Guid wallId, Guid? expectedSessionId = null);
+
+    /// <summary>
+    /// Which carried holds moved and what that does to their boulders, as the promote of <paramref name="confirmation"/>
+    /// would act on it. The confirm screen lists it and its <see cref="HoldMoves.HoldMovePlan.Version"/> is part of the
+    /// decisions fingerprint.
+    /// </summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="confirmation">The decisions plus the matcher's warp positions.</param>
+    /// <returns>The plan.</returns>
+    Task<HoldMoves.HoldMovePlan> PreviewHoldMovesAsync(Guid wallId, BigUpdateConfirmation confirmation);
 }

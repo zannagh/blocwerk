@@ -399,6 +399,70 @@ namespace Blocwerk.Core.Migrations
                     b.ToTable("BoulderHolds");
                 });
 
+            modelBuilder.Entity("Blocwerk.Core.Entities.BoulderHoldMove", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("BoulderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<double>("DistanceMm")
+                        .HasColumnType("double precision");
+
+                    b.Property<int>("FromGeneration")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("NewHoldId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("OldHoldId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Outcome")
+                        .HasColumnType("integer");
+
+                    b.Property<double?>("RemeasuredDistanceMm")
+                        .HasColumnType("double precision");
+
+                    b.Property<int?>("RemeasuredOutcome")
+                        .HasColumnType("integer");
+
+                    b.Property<double?>("RotationDeg")
+                        .HasColumnType("double precision");
+
+                    b.Property<int>("Source")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ToGeneration")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Usage")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("WallId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BoulderId");
+
+                    b.HasIndex("NewHoldId");
+
+                    b.HasIndex("OldHoldId");
+
+                    b.HasIndex("WallId");
+
+                    b.ToTable("BoulderHoldMoves");
+                });
+
             modelBuilder.Entity("Blocwerk.Core.Entities.BoulderRating", b =>
                 {
                     b.Property<Guid>("BoulderId")
@@ -1294,6 +1358,18 @@ namespace Blocwerk.Core.Migrations
                         .HasColumnType("integer");
 
                     b.Property<int>("Kind")
+                        .HasColumnType("integer");
+
+                    b.Property<double?>("MoveDistanceMm")
+                        .HasColumnType("double precision");
+
+                    b.Property<int?>("MoveOutcome")
+                        .HasColumnType("integer");
+
+                    b.Property<double?>("MoveRotationDeg")
+                        .HasColumnType("double precision");
+
+                    b.Property<int?>("MoveSource")
                         .HasColumnType("integer");
 
                     b.Property<Guid?>("NewHoldId")
@@ -3522,6 +3598,31 @@ namespace Blocwerk.Core.Migrations
                     b.Navigation("Boulder");
 
                     b.Navigation("Hold");
+                });
+
+            modelBuilder.Entity("Blocwerk.Core.Entities.BoulderHoldMove", b =>
+                {
+                    b.HasOne("Blocwerk.Core.Entities.Boulder", "Boulder")
+                        .WithMany()
+                        .HasForeignKey("BoulderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Blocwerk.Core.Entities.Hold", "NewHold")
+                        .WithMany()
+                        .HasForeignKey("NewHoldId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Blocwerk.Core.Entities.Hold", "OldHold")
+                        .WithMany()
+                        .HasForeignKey("OldHoldId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Boulder");
+
+                    b.Navigation("NewHold");
+
+                    b.Navigation("OldHold");
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.BoulderRating", b =>

@@ -11,6 +11,29 @@
             <p class="refresh-3d-note">Includes the changes made in the full review.</p>
         }
         <RefreshChecks View="View" OnAnswered="OnAnswered" />
+        @if (s.MovedHolds is { Count: > 0 } moved)
+        {
+            <section class="refresh-moves" aria-labelledby="refresh-moves-title">
+                <h3 id="refresh-moves-title">@(moved.Count == 1 ? "1 hold moved" : $"{moved.Count} holds moved")</h3>
+                <p class="hint">
+                    A hold that moved up to 10 cm stays on its boulders, which are marked for review. A hold that moved farther
+                    is taken off its boulders; they are marked for revision, and nothing is deleted.
+                </p>
+                <ul class="refresh-moves-list">
+                    @foreach (var m in moved)
+                    {
+                        <li class="@(m.Outcome == Blocwerk.Core.Enums.HoldMoveOutcome.Removed ? "is-removed" : "is-kept")">
+                            <strong>@(m.HoldName ?? "A hold")</strong> @m.Text
+                            <span class="refresh-moves-source">(@(m.Source == Blocwerk.Core.Enums.HoldMoveSource.ThreeD ? "measured in 3D" : "estimated from the photo"))</span>
+                            @if (m.Boulders.Count > 0)
+                            {
+                                <div class="refresh-moves-boulders">Boulders: @string.Join(", ", m.Boulders)</div>
+                            }
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
         <details class="refresh-summary-details" open="@(!HasCards)">
             <summary>Everything else: what the update does</summary>
         <ul class="refresh-summary">
@@ -87,7 +110,7 @@
     [Parameter]
     public EventCallback OnAnswered { get; set; }
 
-    private bool HasCards => View.Summary is { ChecksOpen: > 0 } or { PossiblyRemovedHolds: > 0 };
+    private bool HasCards => View.Summary is { ChecksOpen: > 0 } or { PossiblyRemovedHolds: > 0 } or { MovedHolds.Count: > 0 };
 
     private bool Waiting3D => View.Capture is { IsRunning: true } && View.Summary is { Attempted3DModelId: null };
 }

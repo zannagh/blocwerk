@@ -55,6 +55,10 @@ namespace Blocwerk.Core.Services;
 /// <param name="Evidence3DModelId">The 3D model the triage matched at least one new photo to; null when it ran without 3D.</param>
 /// <param name="PossiblyRemoved">Old holds not found again where the new photo and this visit's 3D texture show bare wall. Null without 3D.</param>
 /// <param name="ConflictingNew">Detections the triage discards although this visit's 3D model sees a hold there. Null without 3D.</param>
+/// <param name="HandPlacedMerges">
+/// Hand-placed or virtual old holds merged onto the one detection at their spot (already in <paramref name="Carryover"/>).
+/// </param>
+/// <param name="HandPlacedAmbiguous">Hand-placed or virtual old holds whose spot is contested; not merged, a person decides.</param>
 public record BigUpdateSession(
     Guid WallId,
     Guid CenterPanelId,
@@ -72,4 +76,6 @@ public record BigUpdateSession(
     IReadOnlyList<Guid>? SeenIn3DHoldIds = null,
     Guid? Evidence3DModelId = null,
     IReadOnlyList<PossiblyRemovedHold>? PossiblyRemoved = null,
-    IReadOnlyList<ConflictingNewHold>? ConflictingNew = null);
+    IReadOnlyList<ConflictingNewHold>? ConflictingNew = null,
+    IReadOnlyList<HandPlacedMerge>? HandPlacedMerges = null,
+    IReadOnlyList<HandPlacedAmbiguity>? HandPlacedAmbiguous = null);

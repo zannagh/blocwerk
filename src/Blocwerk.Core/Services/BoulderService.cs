@@ -110,6 +110,13 @@ public interface IBoulderService
     Task<IReadOnlyList<BoulderHoldAtGeneration>?> GetBoulderHoldsAtGenerationAsync(
         Guid boulderId, int generation, string? shareToken = null, CancellationToken ct = default);
 
+    /// <summary>The holds of this boulder that moved at the last panel update, while it still needs review (removed ones first).</summary>
+    /// <param name="boulderId">The boulder.</param>
+    /// <param name="shareToken">The wall's share token on the share path.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>The moves.</returns>
+    Task<IReadOnlyList<BoulderMoveView>> GetBoulderMovesAsync(Guid boulderId, string? shareToken = null, CancellationToken ct = default);
+
     Task<List<Boulder>> GetBouldersForWallAsync(Guid wallId, bool includeArchived = false);
 
     /// <summary>
@@ -781,6 +788,9 @@ public partial class BoulderService : IBoulderService
             }
 
             var marks = await LoadBoulderMarksAsync(gated, ct);
+
+            // Holds a move took off the boulder still belong to its history: the Then view draws them where they were.
+            marks.AddRange((await LoadRemovedMovesAsync(db, gated, ct)).Where(m => marks.All(x => x.HoldId != m.HoldId)));
             if (marks.Count == 0)
             {
                 return [];

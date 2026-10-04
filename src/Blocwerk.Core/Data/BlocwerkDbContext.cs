@@ -97,6 +97,8 @@ public partial class BlocwerkDbContext : DbContext
 
     public DbSet<HoldGenerationLink> HoldGenerationLinks => Set<HoldGenerationLink>();
 
+    public DbSet<BoulderHoldMove> BoulderHoldMoves => Set<BoulderHoldMove>();
+
     public DbSet<WallUpdateSession> WallUpdateSessions => Set<WallUpdateSession>();
 
     public DbSet<WallUpdateHoldDecision> WallUpdateHoldDecisions => Set<WallUpdateHoldDecision>();
@@ -198,6 +200,7 @@ public partial class BlocwerkDbContext : DbContext
         ConfigureWallPanel(modelBuilder);
         ConfigureHoldLink(modelBuilder);
         ConfigureHoldGenerationLink(modelBuilder);
+        ConfigureBoulderHoldMove(modelBuilder);
         ConfigureChangeJournal(modelBuilder);
         ConfigureWallUpdateSession(modelBuilder);
         ConfigureRelocationProposals(modelBuilder);
@@ -345,6 +348,20 @@ public partial class BlocwerkDbContext : DbContext
 
             entity.HasIndex(l => l.WallId);
             entity.HasIndex(l => new { l.HoldAId, l.HoldBId }).IsUnique();
+        });
+    }
+
+    private static void ConfigureBoulderHoldMove(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<BoulderHoldMove>(entity =>
+        {
+            entity.HasOne(m => m.Boulder).WithMany().HasForeignKey(m => m.BoulderId).OnDelete(DeleteBehavior.Cascade);
+
+            // A deleted hold must not take the record of the move with it: the row stays, the end is nulled.
+            entity.HasOne(m => m.OldHold).WithMany().HasForeignKey(m => m.OldHoldId).OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(m => m.NewHold).WithMany().HasForeignKey(m => m.NewHoldId).OnDelete(DeleteBehavior.SetNull);
+            entity.HasIndex(m => m.BoulderId);
+            entity.HasIndex(m => m.WallId);
         });
     }
 

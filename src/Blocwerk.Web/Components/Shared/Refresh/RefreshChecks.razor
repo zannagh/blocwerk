@@ -34,7 +34,7 @@
                         @if (check.Status == UpdateExceptionStatus.Pending)
                         {
                             <button class="btn-secondary" disabled="@Disabled" @onclick="() => AnswerAsync(check, UpdateExceptionAnswer.Keep)">@KeepLabel(check)</button>
-                            @if (check.Kind != UpdateExceptionKind.LowConfidenceMatch)
+                            @if (check.Kind is not (UpdateExceptionKind.LowConfidenceMatch or UpdateExceptionKind.HandPlacedAmbiguous))
                             {
                                 <button class="btn-secondary" disabled="@Disabled" @onclick="() => AnswerAsync(check, UpdateExceptionAnswer.Remove)">@RemoveLabel(check)</button>
                             }
@@ -77,6 +77,8 @@
     {
         UpdateExceptionKind.PossiblyRemoved => "Possibly removed",
         UpdateExceptionKind.LowConfidenceMatch => "Unsure match",
+        UpdateExceptionKind.MatchedToHandPlaced => "Matched to hand-placed hold (now detected)",
+        UpdateExceptionKind.HandPlacedAmbiguous => "Hand-placed hold, several detections",
         _ => "New hold, conflicting evidence",
     };
 
@@ -86,6 +88,10 @@
             "The new photo and the 3D texture show bare wall where " + (check.HoldName is { } name ? $"the {name} hold" : "this hold") + " was."
             + (check.Boulders > 0 ? $" {check.Boulders} boulders use it." : string.Empty),
         UpdateExceptionKind.LowConfidenceMatch => "This old hold was carried onto a detection the matcher is not sure about.",
+        UpdateExceptionKind.MatchedToHandPlaced =>
+            (check.HoldName is { } n ? $"The {n} hold" : "A hold you placed by hand") + " now sits on a detected hold. It keeps its boulders and settings and takes the detection's position and outline."
+            + (check.Boulders > 0 ? $" {check.Boulders} boulders use it." : string.Empty),
+        UpdateExceptionKind.HandPlacedAmbiguous => "More than one detection sits on this hand-placed hold, or one detection overlaps several. Nothing was merged: the hold stays as it is, marked for review.",
         _ => "The photo check leaves this detection out, but the 3D model sees a hold there.",
     };
 
@@ -93,11 +99,18 @@
     {
         UpdateExceptionKind.PossiblyRemoved => "Keep hold",
         UpdateExceptionKind.LowConfidenceMatch => "Match is right",
+        UpdateExceptionKind.MatchedToHandPlaced => "Merge is right",
+        UpdateExceptionKind.HandPlacedAmbiguous => "Understood",
         _ => "Add as new hold",
     };
 
     private static string RemoveLabel(RefreshCheck check) =>
-        check.Kind == UpdateExceptionKind.PossiblyRemoved ? "Remove hold" : "Leave out";
+        check.Kind switch
+        {
+            UpdateExceptionKind.PossiblyRemoved => "Remove hold",
+            UpdateExceptionKind.MatchedToHandPlaced => "Don't merge",
+            _ => "Leave out",
+        };
 
     private async Task AnswerAsync(RefreshCheck check, UpdateExceptionAnswer answer)
     {

@@ -2,6 +2,7 @@ using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Capture;
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Data;
+using Blocwerk.Core.HoldMoves;
 using Blocwerk.Core.Detection.Enrichment;
 using Blocwerk.Core.MarkerPlanning;
 using Blocwerk.Core.Refresh;
@@ -44,6 +45,7 @@ public static class CoreServices
 
         var config = settings;
         builder.Services.AddSingleton(config);
+        builder.Services.AddSingleton(builder.Configuration.GetSection(HoldMoveOptions.Section).Get<HoldMoveOptions>() ?? new HoldMoveOptions());
 
         // In-process pub/sub for wall/boulder changes + the EF interceptor that publishes them.
         // Singletons so a mutation on any circuit invalidates every circuit's cache (see
