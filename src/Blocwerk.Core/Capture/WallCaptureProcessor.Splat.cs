@@ -97,7 +97,11 @@ public sealed partial class WallCaptureProcessor
         }
         catch (ComputeJobException ex) when (IsWorkerAbsent(ex))
         {
-            await EndWithoutWorkerAsync(run, ex, ct);
+            if (!await WaitForFinishWorkerAsync(run, ct))
+            {
+                await EndWithoutWorkerAsync(run, ex, ct);
+            }
+
             return;
         }
         catch (Exception ex) when (ex is CaptureFailedException or ComputeJobException or InvalidDataException or IOException)

@@ -111,7 +111,16 @@ public sealed partial class GpuJobQueue
         {
             if (job.CompletedAt < now - FinishGiveUp)
             {
+                // The capture's processor gives up (it tells the capture why, or restores a re-finish's state); only a
+                // job without a capture to tell is closed here.
                 logger.LogWarning("GPU job {JobId}: the delivered result could not be finished for a day; giving up", job.Id);
+                job.LeaseExpiresAt = now + FinishRetryInterval;
+                await db.SaveChangesAsync(ct);
+                if (await HandBackAsync(db, job.CaptureId, ct))
+                {
+                    continue;
+                }
+
                 var pending = job.PreviewPath;
                 job.PreviewPath = null;
                 if (GpuJobRefinishState.Parse(job.RefinishStateJson) is { } before)
