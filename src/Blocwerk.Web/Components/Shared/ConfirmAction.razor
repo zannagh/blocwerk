@@ -8,7 +8,7 @@
 }
 else
 {
-    <div class="confirm-action" role="group" aria-label="@Question" @onkeydown="OnKeyDown">
+    <div class="confirm-action" @ref="panel" role="group" aria-label="@Question" @onkeydown="OnKeyDown">
         <p class="confirm-action-question">@Question</p>
         @if (!string.IsNullOrEmpty(RequiredText))
         {
@@ -25,8 +25,12 @@ else
     </div>
 }
 
+@inject IJSRuntime JS
+
 @code {
     private bool asking;
+    private bool revealPending;
+    private ElementReference panel;
     private string typed = string.Empty;
 
     /// <summary>Text of the button that opens the question.</summary>
@@ -58,6 +62,30 @@ else
     {
         typed = string.Empty;
         asking = true;
+        revealPending = true;
+    }
+
+    /// <summary>
+    /// The question opens inline, which on a short landscape screen can leave Cancel under the tab
+    /// bar and the input under a banner; centre it once it has rendered.
+    /// </summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!revealPending || !asking)
+        {
+            return;
+        }
+
+        revealPending = false;
+        try
+        {
+            await using var module = await JS.InvokeAsync<IJSObjectReference>("import", "/js/reveal-section.js");
+            await module.InvokeVoidAsync("revealCentered", panel);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or TaskCanceledException or InvalidOperationException)
+        {
+            // Cosmetic only: the dialog works without the scroll.
+        }
     }
 
     private void Cancel()

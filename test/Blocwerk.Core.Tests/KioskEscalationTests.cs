@@ -67,6 +67,26 @@ public class KioskEscalationTests
     }
 
     [Fact]
+    public async Task DeletingAWall_IsRefusedFromAKiosk_ButWorksForAnOrdinarySession()
+    {
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync();
+
+        // The owner, on the tablet registered to this very wall: authority passes, the device does not.
+        var walls = KioskWallService(h, h.WallId);
+        await Assert.ThrowsAsync<KioskRestrictedException>(() => walls.DeleteWallAsync(h.WallId));
+
+        await using (var db = h.CreateContext())
+        {
+            Assert.True(await db.Walls.IgnoreQueryFilters().AnyAsync(w => w.Id == h.WallId));
+        }
+
+        await h.WallService.DeleteWallAsync(h.WallId);
+        await using var after = h.CreateContext();
+        Assert.False(await after.Walls.IgnoreQueryFilters().AnyAsync(w => w.Id == h.WallId));
+    }
+
+    [Fact]
     public async Task JoiningAWall_IsRefusedFromAKiosk()
     {
         using var h = new WallTestHarness();

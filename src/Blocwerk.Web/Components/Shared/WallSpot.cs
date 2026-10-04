@@ -15,6 +15,8 @@ namespace Blocwerk.Web.Components.Shared;
 /// <param name="H">Mm above the facet's plane (a volume's height).</param>
 public sealed record WallSpot(string FacetId, double A, double B, double H)
 {
+    private const double MaxAbsMm = 1e6;
+
     /// <summary>The 3D view of a wall with this spot marked.</summary>
     public string Url(Guid wallId) => $"/walls/{wallId}/3d?at={Uri.EscapeDataString(ToQuery())}";
 
@@ -30,8 +32,11 @@ public sealed record WallSpot(string FacetId, double A, double B, double H)
         var ok = double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var a)
                  & double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var b)
                  & double.TryParse(parts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var h);
-        return ok && double.IsFinite(a) && double.IsFinite(b) && double.IsFinite(h) ? new WallSpot(parts[0], a, b, h) : null;
+        return ok && InRange(a) && InRange(b) && InRange(h) ? new WallSpot(parts[0], a, b, h) : null;
     }
+
+    /// <summary>Finite and within a sane wall extent (1000 m), so nothing downstream sees 1e308.</summary>
+    private static bool InRange(double v) => double.IsFinite(v) && Math.Abs(v) <= MaxAbsMm;
 
     private string ToQuery() => string.Create(CultureInfo.InvariantCulture, $"{FacetId}:{A:0}:{B:0}:{H:0}");
 }

@@ -324,6 +324,10 @@ public class WallService : IWallService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
+            // Irreversible and it takes the whole wall with it, so it is never done from the wall
+            // tablet, whoever is picked on it.
+            KioskGuard.EnsureNotKiosk(_kioskContext, db, "Deleting a wall");
+
             var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId && w.OwnerId == user.Id);
             if (wall == null)
             {

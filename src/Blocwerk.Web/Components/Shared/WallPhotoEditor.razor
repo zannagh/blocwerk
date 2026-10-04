@@ -243,7 +243,7 @@
                     var cpIdx = i;
                     var sp = sh.ShapePoints[cpIdx];
                     <circle cx="@F((sh.X + sp.Dx) * 100)" cy="@F((sh.Y + sp.Dy) * 100)"
-                            r="@F(_shapePointRadius * HandleScale)" fill="white" stroke="#e94560" stroke-width="@F(0.25 * HandleScale)"
+                            r="@F(_shapePointRadius * HandleScale)" fill="white" stroke="var(--accent)" stroke-width="@F(0.25 * HandleScale)"
                             style="cursor: grab"
                             @onmousedown="() => StartShapePointDrag(sh, cpIdx)" @onmousedown:stopPropagation="true" />
                 }

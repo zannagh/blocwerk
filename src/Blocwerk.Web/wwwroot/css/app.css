@@ -29,6 +29,19 @@
     --input-bg: #ffffff;
     --warning-bg: #FFF3E0;
     --warning-text: #B33F00;
+    /* Solid warning fill + its text (>= 4.5:1 in both themes). */
+    --warning-fill: #B33F00;
+    --on-warning: #ffffff;
+    /* Attempt-button label colours (>= 4.5:1 on the surface and their hover tint). */
+    --label-try: #9A5B00;
+    --label-send: #2E7D32;
+    --label-flash: #BF360C;
+    --flash-bg: #FBE9E7;
+    /* Rating stars: lit gold and the unlit outline, both >= 3:1 on the surface. */
+    --star-gold: #a87400;
+    --star-off: #8a8578;
+    /* Hint copy; same ink as secondary text. */
+    --text-muted: var(--text-secondary);
     /* Attention copy (e.g. "holds not found again"): amber reads on the dark theme only. */
     --attention-text: #8a4b00;
     --step-done: #1f8f48;
@@ -103,6 +116,14 @@
         --input-bg: #22222f;
         --warning-bg: #3d2e1a;
         --warning-text: #FFB74D;
+        --warning-fill: #FFB74D;
+        --on-warning: #1a1200;
+        --label-try: #FF9800;
+        --label-send: #4CAF50;
+        --label-flash: #FF5722;
+        --flash-bg: #3d1f17;
+        --star-gold: #f5b301;
+        --star-off: #6f6c82;
     --attention-text: #ffc04d;
     --step-done: #3ddc84;
         --success-bg: #1a3d1a;
@@ -150,6 +171,14 @@
     --input-bg: #22222f;
     --warning-bg: #3d2e1a;
     --warning-text: #FFB74D;
+    --warning-fill: #FFB74D;
+    --on-warning: #1a1200;
+    --label-try: #FF9800;
+    --label-send: #4CAF50;
+    --label-flash: #FF5722;
+    --flash-bg: #3d1f17;
+    --star-gold: #f5b301;
+    --star-off: #6f6c82;
     --attention-text: #ffc04d;
     --step-done: #3ddc84;
     --success-bg: #1a3d1a;
@@ -778,6 +807,8 @@ body.bw-tabbar-collapsed .tabbar-restore { display: flex; }
 .app-shell:has(.bw-tabbar) :is(.bw-consent, .bw-install) { bottom: calc(var(--bw-tabbar-h) + 8px); }
 .app-shell:has(.bw-consent) .bw-install,
 .bw-install ~ .bw-install { display: none; }
+/* An open inline confirmation (e.g. typed-name wall delete) owns the bottom of the screen. */
+.app-shell:has(.confirm-action) .bw-install { display: none; }
 
 .bw-consent {
     position: fixed; left: 12px; right: 12px;
