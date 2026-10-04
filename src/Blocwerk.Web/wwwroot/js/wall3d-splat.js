@@ -31,6 +31,7 @@ import {
     createFirstLoad, PhotoRealCancelledError, PhotoRealStalledError, PhotoRealTooLargeError, PhotoRealUnsupportedError,
 } from './wall3d-splat-fetch.js';
 import { createLevelLoader } from './wall3d-splat-levels.js';
+import { createSplatCull, cullMode } from './wall3d-splat-cull.js';
 
 export { prefersLightSplat, PhotoRealUnsupportedError };
 
@@ -43,11 +44,14 @@ export { prefersLightSplat, PhotoRealUnsupportedError };
  * @param ctx.onProgress    (fraction 0..1 or null when unknown) while the first level downloads
  * @param ctx.onGiveUp      (message) when even the smallest level cannot be shown on this device
  * @param ctx.clip          the splat clip (wall3d-splat-clip.js): near fade, mats, ghosted facets
+ * @param ctx.body          the wall body (wall3d-body.js): the splats nobody can see behind and above it are dropped (wall3d-splat-cull.js)
  * @param ctx.request       asks the render loop for a frame (a sort finished, a level swapped in)
  */
-export function createPhotoReal({ renderer, scene, view, facetParts, photoTextures, onProgress, onGiveUp, clip, request = () => {} }) {
+export function createPhotoReal({ renderer, scene, view, facetParts, photoTextures, onProgress, onGiveUp, clip, body = null, request = () => {} }) {
     const levels = ladderOf(view);
     const light = prefersLightSplat(renderer);
+    const cullKind = body ? cullMode() : null;
+    const cullSplats = cullKind ? createSplatCull(body, view.splatMatrix, cullKind) : null;
     const facts = { ...deviceFacts(renderer), mobile: light };
     const scale = createRenderScale(renderer, light);
     const policy = createLadderPolicy(light);
@@ -95,7 +99,7 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
     });
 
     const loader = createLevelLoader({
-        renderer, scene, view, levels, light, clip, retry, request,
+        renderer, scene, view, levels, light, clip, cull: cullSplats, retry, request,
         visible: () => active,
         closed: () => disposed,
         onShown: () => {
@@ -198,7 +202,7 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
         get active() { return active; },
         get loaded() { return !!loader.mesh && loader.mesh.isInitialized; },
         /** The level showing, the levels and the cap (diagnostics, the screenshot harness). */
-        get level() { const index = loader.index; return { index, cap, count: levels.length, splats: index >= 0 ? levels[index].splats : 0, stepping: stepping !== null, recovering: recovery.recovering }; },
+        get level() { const index = loader.index; return { index, cap, count: levels.length, splats: index >= 0 ? levels[index].splats : 0, culled: loader.culled, stepping: stepping !== null, recovering: recovery.recovering }; },
 
         /** Switches the mode; resolves once the scene shows what was asked for. Throws on failure. */
         async setActive(on) {
