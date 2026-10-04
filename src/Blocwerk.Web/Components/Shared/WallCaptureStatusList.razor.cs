@@ -18,6 +18,7 @@ public partial class WallCaptureStatusList : IAsyncDisposable
 
     private readonly CancellationTokenSource disposed = new();
     private readonly HashSet<Guid> notified = [];
+    private readonly Dictionary<Guid, IReadOnlyList<TextureQualityEstimate>> estimates = [];
     private Guid loadedWallId;
     private IReadOnlyList<WallCaptureSummary> history = [];
     private WallCaptureSummary? running;
@@ -99,7 +100,24 @@ public partial class WallCaptureStatusList : IAsyncDisposable
     private Task RefinishAsync(Guid captureId) => QueuePhotoRealAsync(() => Captures.RefinishPhotoRealAsync(captureId));
 
     /// <summary>Queues rendering the capture's wall textures again; its photo-real view is left alone.</summary>
-    private Task RerenderTexturesAsync(Guid captureId) => QueuePhotoRealAsync(() => Captures.RerenderTexturesAsync(captureId));
+    private Task RerenderTexturesAsync(Guid captureId, TextureQuality quality) =>
+        QueuePhotoRealAsync(() => Captures.RerenderTexturesAsync(captureId, quality));
+
+    private IReadOnlyList<TextureQualityEstimate> EstimatesOf(Guid captureId) =>
+        estimates.TryGetValue(captureId, out var found) ? found : [];
+
+    /// <summary>Loads what each texture quality would take for the capture (shown when the quality picker opens).</summary>
+    private async Task LoadEstimatesAsync(Guid captureId)
+    {
+        try
+        {
+            estimates[captureId] = await Captures.EstimateTextureQualitiesAsync(captureId);
+        }
+        catch (Exception ex) when (ex is UserFacingException or UnauthorizedAccessException)
+        {
+            estimates[captureId] = [];
+        }
+    }
 
     /// <summary>Queues solving the capture's 3D model again from its photos; its photo-real view is kept.</summary>
     private Task ResolveModelAsync(Guid captureId) => QueuePhotoRealAsync(() => Captures.ResolveModelAsync(captureId));

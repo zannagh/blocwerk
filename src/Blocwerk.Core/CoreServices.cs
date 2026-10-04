@@ -168,6 +168,7 @@ public static class CoreServices
         builder.Services.AddScoped<IHoldOutlineUpgradeService, HoldOutlineUpgradeService>();
         builder.Services.AddScoped<IHoldShapeCleanupService, HoldShapeCleanupService>();
         builder.Services.AddScoped<IHoldDuplicateService, HoldDuplicateService>();
+        builder.Services.AddScoped<ILinkedHoldSyncService, LinkedHoldSyncService>();
         builder.Services.AddScoped<IHoldFootprintService, HoldFootprintService>();
         builder.Services.AddScoped<IHoldTexturePlacementService, HoldTexturePlacementService>();
         builder.Services.AddScoped<IHoldProtrusionService, HoldProtrusionService>();
@@ -343,6 +344,19 @@ public static class CoreServices
         catch (Exception ex)
         {
             logger.LogError(ex, "Activity backfill failed; existing events remain ungrouped until the next start.");
+        }
+
+        // One-time, journalled reconciliation of linked holds' shared properties (colour, material, usage, grip
+        // type, kickboard): defaults fill from the twin, conflicts go to the wall's winner panel. Per wall, once.
+        try
+        {
+            var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<BlocwerkDbContext>>();
+            var journal = scope.ServiceProvider.GetRequiredService<IChangeJournal>();
+            LinkedHoldSyncStartup.RunIfNeededAsync(factory, journal, logger).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Linked-hold startup sync failed; the wall page offers Sync linked holds.");
         }
 
         // Propagate appearance (Color/Material/Category/HandType) across linked holds so every copy of

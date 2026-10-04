@@ -93,6 +93,35 @@ public class CaptureRetentionSweepTests
         Assert.False(File.Exists(s.Files.ResolvePhysicalPath(stored)));
     }
 
+    [Fact]
+    public async Task PhotosOfTheActiveModel_StayForYears_SoTheTexturesCanBeRenderedAgain_UntilTheModelIsReplaced()
+    {
+        using var h = new WallTestHarness();
+        using var s = new CaptureScenario(h);
+        var active = await s.StartCaptureAsync();
+        await s.Processor.ProcessAsync(active, CancellationToken.None);
+        await AgeAsync(h, active, DateTimeOffset.UtcNow.AddDays(-3650));
+
+        var result = await Sweeper(s).SweepAsync(CancellationToken.None);
+        Assert.Equal(0, result.ExpiredPhotos);
+        await using (var db = h.CreateContext())
+        {
+            Assert.Equal(2, await db.WallCapturePhotos.CountAsync(p => p.CaptureId == active));
+        }
+
+        // still renderable at any quality: the photos it needs are there
+        Assert.Empty(await s.Service.RerenderTexturesAsync(active, TextureQuality.High));
+
+        // only once its model is no longer the active one do the photos follow the normal retention
+        await using (var db = h.CreateContext())
+        {
+            (await db.WallGeometryModels.SingleAsync()).IsActive = false;
+            await db.SaveChangesAsync();
+        }
+
+        Assert.Equal(2, (await Sweeper(s).SweepAsync(CancellationToken.None)).ExpiredPhotos);
+    }
+
     [Theory]
     [InlineData("7", 7)]
     [InlineData("0", null)]

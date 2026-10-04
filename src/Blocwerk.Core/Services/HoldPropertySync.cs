@@ -21,7 +21,7 @@ public static class HoldPropertySync
 {
     /// <summary>
     /// Copies the appearance/identity fields — <see cref="Hold.Name"/>, <see cref="Hold.Color"/>,
-    /// <see cref="Hold.Material"/>, <see cref="Hold.Category"/>, <see cref="Hold.HandType"/> — from
+    /// <see cref="Hold.Material"/>, <see cref="Hold.Category"/>, <see cref="Hold.HandType"/>, <see cref="Hold.IsOnKickboard"/> — from
     /// <paramref name="source"/> onto <paramref name="target"/>. Verbatim, nulls included: the source
     /// wins fully, even when that clears a value the target had. Never touches geometry, position, or
     /// lifecycle fields — <see cref="Hold.ShapePoints"/>, X/Y and radius are per-photo facts, since
@@ -64,6 +64,65 @@ public static class HoldPropertySync
         if (target.HandType != source.HandType)
         {
             target.HandType = source.HandType;
+            changed = true;
+        }
+
+        if (target.IsOnKickboard != source.IsOnKickboard)
+        {
+            target.IsOnKickboard = source.IsOnKickboard;
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    /// <summary>
+    /// The live-edit propagation: copies onto <paramref name="target"/> only the shared properties the edit
+    /// CHANGED on <paramref name="edited"/> (comparing against <paramref name="before"/>). An edit that only
+    /// moved the hold, or that left a property as it was, therefore never overwrites what a twin carries for it.
+    /// Same verbatim semantics as <see cref="CopyAppearance"/> for the properties that did change, including the
+    /// blank-name skip. Returns whether the target changed.
+    /// </summary>
+    /// <param name="before">The edited hold as it was before the edit.</param>
+    /// <param name="edited">The edited hold, now carrying the new values.</param>
+    /// <param name="target">A linked twin.</param>
+    /// <returns>Whether anything on the twin changed.</returns>
+    public static bool CopyChangedAppearance(Hold before, Hold edited, Hold target)
+    {
+        var changed = false;
+        if (before.Name != edited.Name && !string.IsNullOrWhiteSpace(edited.Name) && target.Name != edited.Name)
+        {
+            target.Name = edited.Name;
+            changed = true;
+        }
+
+        if (before.Color != edited.Color && target.Color != edited.Color)
+        {
+            target.Color = edited.Color;
+            changed = true;
+        }
+
+        if (before.Material != edited.Material && target.Material != edited.Material)
+        {
+            target.Material = edited.Material;
+            changed = true;
+        }
+
+        if (before.Category != edited.Category && target.Category != edited.Category)
+        {
+            target.Category = edited.Category;
+            changed = true;
+        }
+
+        if (before.HandType != edited.HandType && target.HandType != edited.HandType)
+        {
+            target.HandType = edited.HandType;
+            changed = true;
+        }
+
+        if (before.IsOnKickboard != edited.IsOnKickboard && target.IsOnKickboard != edited.IsOnKickboard)
+        {
+            target.IsOnKickboard = edited.IsOnKickboard;
             changed = true;
         }
 

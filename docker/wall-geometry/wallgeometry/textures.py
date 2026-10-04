@@ -42,7 +42,8 @@ DEFAULTS = {"behindOtherFacetMm": NEAR_PLANE_MM, "mmPerPx": 2.0, "maxSidePx": 40
 
 # What a client may set in `options`, with its bounds (everything else in DEFAULTS is internal).
 CLIENT_OPTIONS = {"mmPerPx": (0.25, 50.0, float), "maxSidePx": (256, 8192, int),
-                  "extraMarginMm": (0.0, 2000.0, float), "jpegQuality": (30, 100, int)}
+                  "extraMarginMm": (0.0, 2000.0, float), "jpegQuality": (30, 100, int),
+                  "blendViews": (1, 8, int)}
 
 
 class TextureError(ValueError):
@@ -207,7 +208,8 @@ def render_textures(doc, load_photo, available, params=None, progress=None):
     facets = list(_facets(doc))
     occs = occluders(facets, doc)
     jobs = _score_facets(facets, cams, names, p, occs)
-    if int(p["blendViews"]) > 1 and blend_bytes(jobs, p) <= p["blendMaxBytes"]:
+    p = fit_blend_views(jobs, p)
+    if int(p["blendViews"]) > 1:
         from . import blended  # imports this module
         results = blended.render(doc, load_photo, cams, names, jobs, p, progress)
     else:
@@ -249,6 +251,16 @@ def blend_bytes(jobs, p):
     pixels = [j["g"]["W"] * j["g"]["H"] for j in jobs]
     return ((int(p["blendViews"]) + 2) * 7 * sum(pixels) + 4 * max(pixels, default=0)
             + views.BYTES_PER_CELL * sum(j["views"].cells() for j in jobs))
+
+
+def fit_blend_views(jobs, p):
+    """p with `blendViews` lowered until the multi-view blend fits `blendMaxBytes` (down to 2 views; 1 =
+    the plain single-photo render when even that does not fit). A fine texture of a big wall used to fall
+    straight back to the single-photo render, which has no exposure balance and no seam blending."""
+    n = int(p["blendViews"])
+    while n > 1 and blend_bytes(jobs, {**p, "blendViews": n}) > p["blendMaxBytes"]:
+        n -= 1
+    return {**p, "blendViews": n}
 
 
 def _render_single(doc, load_photo, cams, names, jobs, p, progress):

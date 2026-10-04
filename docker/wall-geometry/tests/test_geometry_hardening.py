@@ -111,7 +111,7 @@ def _post(client, doc, photos=None, options=None):
 @pytest.mark.parametrize("options, text", [
     ({"maxSidePx": 10 ** 9}, "maxSidePx"), ({"maxSidePx": -5}, "maxSidePx"), ({"mmPerPx": 0}, "mmPerPx"),
     ({"mmPerPx": 0.001}, "mmPerPx"), ({"extraMarginMm": 1e12}, "extraMarginMm"), ({"jpegQuality": 101}, "jpegQuality"),
-    ({"jpegQuality": 90.5}, "jpegQuality"), ({"labelCellPx": 0}, "unknown option"),
+    ({"jpegQuality": 90.5}, "jpegQuality"), ({"blendViews": 9}, "blendViews"), ({"blendViews": 0}, "blendViews"), ({"labelCellPx": 0}, "unknown option"),
     ({"modeFilterCells": 10 ** 6}, "unknown option"), ({"maxSidePx": True}, "maxSidePx"), ([1, 2], "object")])
 def test_textures_options_are_bounded(client, options, text):
     doc, _ = _photo()

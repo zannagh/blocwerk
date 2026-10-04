@@ -71,7 +71,9 @@ public class HoldPropertySyncTests
         // Name IS an appearance field (a physical label carried across panels), so it is copied here;
         // geometry, position and lifecycle are what this asserts are left alone.
         Assert.Equal("src", target.Name);
-        Assert.False(target.IsOnKickboard);
+
+        // The kickboard flag is a physical property of the hold too, so it travels with the appearance.
+        Assert.True(target.IsOnKickboard);
         Assert.False(target.NeedsReview);
         Assert.Equal(3, target.Generation);
     }

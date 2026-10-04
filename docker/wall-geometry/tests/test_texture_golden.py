@@ -1,10 +1,13 @@
 """Frozen texture output of the synthetic photo wall (tests/photowall.py), guarding what the dense
 reference (dense_reference.py) cannot: it shares blended._result, blend.finish and the source map.
 
-The golden values were generated on branch fix-texture-memory-and-consensus at the follow-up commit
-to ac6871b (select mode: identical to ac6871b; blend mode: with the dominant photo ranked by the
-combine's real weights). Regenerate deliberately with `PYTHONPATH=.:tests python tests/test_texture_golden.py`
-and say why in the commit.
+The golden values were first generated on branch fix-texture-memory-and-consensus (select mode: identical
+to ac6871b; blend mode: dominant photo ranked by the combine's real weights). They were REGENERATED
+deliberately for the seam-smoothing change (fix-texture-artifacts): in select mode the seam between two
+photos is now a per-photo Gaussian blend plus a wide low-band colour blend (seamblend.py) and the coverage
+edge is rounded (edges.py), so about 1 % of the source-map cells (the photo that paints most of a seam
+pixel) and the block means near seams moved (the rounded coverage edge also touches blend mode). Regenerate deliberately with
+`PYTHONPATH=.:tests python tests/test_texture_golden.py` and say why in the commit.
 
 Source maps and photo shares are compared exactly as decoded cells / rounded shares; a few cells or a
 share's last digit may differ across CPU architectures, so up to 0.5 % of cells and 0.002 per share

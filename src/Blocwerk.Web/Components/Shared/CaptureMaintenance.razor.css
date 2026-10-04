@@ -1,3 +1,11 @@
 .capture-maintenance { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .capture-maintenance li { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .capture-maintenance-desc { font-size: 0.8rem; line-height: 1.4; color: var(--text-secondary); }
+.texture-quality { display: flex; flex-direction: column; gap: 10px; padding: 12px; width: 100%; box-sizing: border-box; border: 1px solid var(--border); border-radius: var(--r-md); }
+.texture-quality-intro { margin: 0; font-size: 0.85rem; line-height: 1.45; color: var(--text); }
+.texture-quality-options { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.texture-quality-legend { font-size: 0.85rem; font-weight: 600; padding: 0; margin-bottom: 4px; color: var(--text); }
+.texture-quality-option { display: flex; gap: 8px; align-items: flex-start; font-size: 0.9rem; color: var(--text); }
+.texture-quality-option > input { margin-top: 4px; }
+.texture-quality-option > span { display: flex; flex-direction: column; gap: 2px; }
+.texture-quality-warning { font-size: 0.8rem; line-height: 1.4; color: var(--danger-text); }

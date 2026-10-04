@@ -169,6 +169,7 @@ public partial class WallBigUpdateService
         await WallUpdateSessions.CloseOpenAsync(db, wallId, WallUpdateSessionStatus.Promoted, user.Id);
 
         await db.SaveChangesAsync();
+        await SyncLinkedHoldsAfterPromoteAsync(db, wallId);
 
         // Seal the batch now that the update is a complete, closed unit: the next update on this wall opens
         // a fresh batch instead of appending to this one. Sealing after the successful SaveChanges means a
@@ -187,6 +188,28 @@ public partial class WallBigUpdateService
 
         logger.LogInformation(
             "Big update promoted on wall {WallId} by {UserId}: generation {Old}->{New}", wallId, user.Id, oldGen, newGen);
+    }
+
+    /// <summary>
+    /// The carried links are all in place and the new generation is current: apply rule 2 to them (defaults fill from the
+    /// twin, explicit disagreements go to the wall's winner panel). Runs inside the still-open wall-update batch. The
+    /// promote is already committed, so a failure here only logs; the wall page's "Sync linked holds" does the same.
+    /// </summary>
+    private async Task SyncLinkedHoldsAfterPromoteAsync(BlocwerkDbContext db, Guid wallId)
+    {
+        try
+        {
+            var sync = await LinkedHoldSync.ReconcileAsync(db, wallId);
+            if (sync.Any)
+            {
+                await db.SaveChangesAsync();
+                LinkedHoldSyncLog.Write(logger, wallId, sync, "post-promote sync");
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Linked-hold sync after the promote of wall {WallId} failed; run Sync linked holds.", wallId);
+        }
     }
 
     /// <summary>

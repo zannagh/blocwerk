@@ -45,7 +45,8 @@ public sealed partial class WallCaptureProcessor
         }
     }
 
-    private async Task<string> SubmitTexturesAsync(Guid captureId, Guid modelId, IComputeJobClient client, CancellationToken ct)
+    private async Task<string> SubmitTexturesAsync(
+        Guid captureId, Guid modelId, IComputeJobClient client, CancellationToken ct, TextureQuality quality = TextureQuality.Standard)
     {
         await using var db = dbContextFactory.CreateDbContext();
         var stored = await db.WallGeometryModels.Where(m => m.Id == modelId).Select(m => m.Json).FirstAsync(ct);
@@ -54,7 +55,7 @@ public sealed partial class WallCaptureProcessor
         var geometry = RegisteredGeometry.WithoutFacets(stored, RegisteredGeometry.Carried(stored).CarriedFacets);
         var cameras = CameraNames(geometry);
         var parts = new List<ComputeJobPart> { ComputeJobPart.Json("geometry", geometry) };
-        if (settings.GeometryTextures.ToOptionsJson() is { } textureOptions)
+        if (TextureQualityPresets.ToOptionsJson(quality, settings.GeometryTextures) is { } textureOptions)
         {
             parts.Add(ComputeJobPart.Json("options", textureOptions));
         }
