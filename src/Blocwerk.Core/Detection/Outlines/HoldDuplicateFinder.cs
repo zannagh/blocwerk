@@ -75,8 +75,10 @@ public static class HoldDuplicateFinder
         }
 
         return TryRgb(a, out var x) && TryRgb(b, out var y)
-            && Math.Sqrt(((x.R - y.R) * (x.R - y.R)) + ((x.G - y.G) * (x.G - y.G)) + ((x.B - y.B) * (x.B - y.B))) <= MaxRgbDistance;
+            && Math.Sqrt(Square(x.R - y.R) + Square(x.G - y.G) + Square(x.B - y.B)) <= MaxRgbDistance;
     }
+
+    private static double Square(double d) => d * d;
 
     private static int Count(IReadOnlyDictionary<Guid, int>? counts, Hold hold) =>
         counts is not null && counts.TryGetValue(hold.Id, out var n) ? n : 0;
