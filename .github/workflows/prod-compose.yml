@@ -38,4 +38,5 @@ jobs:
         run: |
           bash -n docker/prod/autodeploy.sh
           bash -n docker/prod/check-prod-compose.sh
-          shellcheck -S error docker/prod/autodeploy.sh docker/prod/check-prod-compose.sh
+          bash -n docker/prod/rollout.sh
+          shellcheck -S error docker/prod/*.sh
