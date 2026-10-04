@@ -12,7 +12,7 @@
 }
 else
 {
-    <div class="panel-viewer">
+    <div class="panel-viewer @(_heatOn && _showCounts ? "heat-counts" : null)">
         @* Zoom geometry is owned by JS via `--zoom` (wwwroot/js/viewport.js). *@
         <div class="photo-viewport photo-section" @ref="_viewportRef">
             @* data-lens-overlay (boulder detail only) makes the long-press magnifier bake the
@@ -37,25 +37,17 @@ else
             </div>
         }
 
-        @if (OnRequestHoldUsage is not null)
+        @if (UsageCounts is not null)
         {
-            @* Magnifier toggle — same icon/idea as WallPhotoEditor's usage tool. When active every
-               hold is drawn green with a boulder-count badge. Hidden for anonymous/share viewers
-               (null callback). *@
-            <button class="panel-usage-toggle @(_showUsage ? "active" : "")" @onclick="ToggleUsageAsync"
-                    title="Show which holds are used by a boulder">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                    <circle cx="11" cy="11" r="7" /><line x1="16.5" y1="16.5" x2="21" y2="21" />
-                    <path d="M8 11h6M11 8v6" />
-                </svg>
-            </button>
+            <WallHeatControls On="_heatOn" ShowCounts="_showCounts" Max="HeatMax"
+                              OnToggle="ToggleHeat" OnToggleCounts="ToggleCounts" />
         }
 
         @* Full-screen landscape takeover. Steps aside for the usage toggle when that one is shown,
            since both float in the same corner. *@
         @if (Fullscreen)
         {
-            <StageOpenButton Class="@(OnRequestHoldUsage is not null ? "stacked" : null)"
+            <StageOpenButton Class="@(UsageCounts is not null ? "stacked" : null)"
                              OnOpen="() => _stageOpen = true" />
         }
         @if (Fullscreen && _stageOpen)
@@ -115,22 +107,17 @@ else
                     {
                     <img src="@ResponsiveImage.Initial(PhotoUrl(panel))" data-bw-res
                          alt="Wall panel @panel.Col,@panel.Row" class="wall-photo" />
+                    @if (_heatOn)
+                    {
+                        <canvas class="usage-heat" aria-hidden="true"></canvas>
+                    }
                     <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
                         @foreach (var h in _holds)
                         {
                             var isHi = HighlightedHoldIds?.Contains(h.Id) == true;
-                            @* Usage toggle overrides every other styling: used holds light green with a
-                               count badge, unused ones recede — mirroring WallPhotoEditor's usage tool. *@
-                            var usageCount = _showUsage ? UsageCount(h.Id) : -1;
-                            var fill = _showUsage
-                                ? (usageCount > 0 ? "rgba(76,175,80,0.55)" : "rgba(120,120,120,0.15)")
-                                : FillOf(h, isHi);
-                            var stroke = _showUsage
-                                ? (usageCount > 0 ? "#4CAF50" : "rgba(255,255,255,0.35)")
-                                : StrokeOf(h, isHi);
-                            var sw = _showUsage
-                                ? (usageCount > 0 ? "0.4" : "0.2")
-                                : (isHi ? "0.5" : "0.25");
+                            var fill = FillOf(h, isHi);
+                            var stroke = StrokeOf(h, isHi);
+                            var sw = isHi ? "0.5" : "0.25";
                             @* A virtual hold isn't on the photo at all — dash its outline (the same
                                convention the pickers and the wall editor use) so it never reads as a
                                real hold. The boulder-type fill/stroke above is kept either way. *@
@@ -145,17 +132,13 @@ else
                                        Foot="isFoot" FootScale="HoldShape.FullFoot"
                                        Fill="@fill" Stroke="@stroke" StrokeWidth="@sw" Dash="@dash" />
 
-                            @if (_showUsage && usageCount > 0)
+                            @if (_heatOn && UsageCount(h.Id) is > 0 and var usageCount)
                             {
-                                @* The drawn radius, which feet no longer shrink below (HoldShape.FullFoot),
-                                   so the badge keeps hugging the shape. *@
                                 var r = h.Radius * 100;
-                                <g pointer-events="none">
-                                    <circle cx="@F(h.X * 100 + r * 0.85)" cy="@F(h.Y * 100 - r * 0.85)" r="1.4"
-                                            fill="#4CAF50" stroke="white" stroke-width="0.25" />
+                                <g class="heat-badge" pointer-events="none">
+                                    <circle cx="@F(h.X * 100 + r * 0.85)" cy="@F(h.Y * 100 - r * 0.85)" r="1.4" />
                                     <text x="@F(h.X * 100 + r * 0.85)" y="@F(h.Y * 100 - r * 0.85)"
-                                          text-anchor="middle" dominant-baseline="central"
-                                          font-size="1.7" font-weight="700" fill="white">@usageCount</text>
+                                          text-anchor="middle" dominant-baseline="central">@usageCount</text>
                                 </g>
                             }
                         }
@@ -208,13 +191,10 @@ else
     [Parameter] public HashSet<Guid>? HighlightedPanelIds { get; set; }
 
     /// <summary>
-    /// Optional source for the wall's hold-usage map ("which boulders use this hold"), mirroring
-    /// <c>WallPhotoEditor.OnRequestHoldUsage</c>. When supplied, a magnifier toggle appears that
-    /// draws every hold green with a boulder-count badge; left null for anonymous/share viewers,
-    /// so no toggle is shown. Fetched once (lazily) when the toggle is first switched on and
-    /// cached for the viewer's session.
+    /// Boulders per hold id for the usage heat map (see <c>WallUsageHeat</c>). When supplied, the heat
+    /// map and per-hold count buttons appear; left null where no usage is known.
     /// </summary>
-    [Parameter] public Func<Task<Dictionary<Guid, List<HoldUsageRef>>>>? OnRequestHoldUsage { get; set; }
+    [Parameter] public IReadOnlyDictionary<Guid, int>? UsageCounts { get; set; }
 
     /// <summary>
     /// Enable horizontal swipe-to-navigate (touch swipe and trackpad two-finger slide). It only
@@ -265,11 +245,6 @@ else
     // Guards against a second step landing mid-swap (a fast double-tap on a chevron, or a swipe
     // arriving while the previous one is still fetching), which would interleave two commits.
     private bool _swapping;
-
-    // Usage-toggle state: when on, every hold is drawn green with a boulder-count badge. The wall's
-    // hold-usage map is fetched once (lazily) when the toggle is first switched on and cached.
-    private bool _showUsage;
-    private Dictionary<Guid, List<HoldUsageRef>>? _holdUsage;
 
     private List<WallPanelInfo> LivePanels => Panels.Where(p => p.IsLive).ToList();
 
@@ -482,6 +457,8 @@ else
                 _ = PrefetchNeighboursAsync(_panel.Id);
             }
 
+            await PaintHeatAsync();
+
             if (_recenterPending)
             {
                 _recenterPending = false;
@@ -556,19 +533,4 @@ else
     }
 
     private static string F(double v) => v.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
-
-    // Flips the usage overlay. On first switch-on (when a usage source is wired) the wall's
-    // hold-usage map is fetched once and cached for the viewer's session.
-    private async Task ToggleUsageAsync()
-    {
-        _showUsage = !_showUsage;
-        if (_showUsage && OnRequestHoldUsage is not null && _holdUsage is null)
-        {
-            _holdUsage = await OnRequestHoldUsage();
-        }
-    }
-
-    // How many boulders use a hold (0 until the usage map has loaded), used for the green badge.
-    private int UsageCount(Guid holdId) =>
-        _holdUsage is not null && _holdUsage.TryGetValue(holdId, out var refs) ? refs.Count : 0;
 }

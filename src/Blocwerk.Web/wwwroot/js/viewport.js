@@ -82,6 +82,9 @@ window.bwViewport = (function () {
 
             refreshTouchAction();
 
+            // Lets CSS reveal detail (the heat map's per-hold counts) once zoomed in far enough.
+            viewport.setAttribute('data-bw-zoomed', z >= DOUBLE_TAP_ZOOM ? 'true' : 'false');
+
             // Force a layout flush so the browser knows the NEW content width before
             // we write scrollLeft/scrollTop. Without this it clamps the scroll offset
             // against the old width and the zoom anchor is destroyed.

@@ -537,7 +537,7 @@ else
                                               ArrowMode="MultiPanelViewer.ArrowDisplayMode.AllNeighbours"
                                               HoldsProvider="LoadPanelHolds"
                                               EnableSwipe="true"
-                                              OnRequestHoldUsage="@(_isAnonymous ? null : LoadHoldUsage)" />
+                                              UsageCounts="_usageCounts" />
                         }
                         else if (_wall.PhotoContentType != null)
                         {
@@ -928,6 +928,7 @@ else
     // Twin-reconciled hold count per boulder id, computed once from the wall's links after each load.
     // Empty on single-panel walls (no links), where a card's raw BoulderHolds.Count is already right.
     private Dictionary<Guid, int> _reconciledHoldCounts = [];
+    private Dictionary<Guid, int>? _usageCounts;
     private bool _isAdmin;
     private bool _isModerator;
     private bool _isMember;
@@ -1939,15 +1940,24 @@ else
     private async Task LoadReconciledHoldCounts()
     {
         _reconciledHoldCounts = [];
+        _usageCounts = null;
         try
         {
             var links = await WallPanelService.GetHoldLinksAsync(WallId);
+            var linkPairs = links.ToList();
+
+            // The usage heat map counts the same boulders for every viewer (see WallUsageHeat), so a
+            // share link shows what a member sees. Kickboard holds count for boulders with kickboard on.
+            var kickboardHoldIds = _holds
+                .Where(h => h.IsOnKickboard && h.Generation <= (_wall?.CurrentGeneration ?? 0))
+                .Select(h => h.Id)
+                .ToList();
+            _usageCounts = WallUsageHeat.CountByHold(_boulders, linkPairs, kickboardHoldIds);
             if (links.Count == 0)
             {
                 return;
             }
 
-            var linkPairs = links.ToList();
             foreach (var boulder in _boulders)
             {
                 var reconciled = BoulderHoldReconciler.Reconcile(
