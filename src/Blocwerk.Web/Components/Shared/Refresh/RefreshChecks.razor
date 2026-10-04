@@ -1,0 +1,116 @@
+@using Blocwerk.Core.Abstractions
+@using Blocwerk.Core.Services
+@using Blocwerk.Core.Enums
+@using Blocwerk.Core.Refresh
+@using Blocwerk.Web.Endpoints
+@* The confirm screen's cards: only the holds whose evidence needs a look, each with the old photo, the new photo and this visit's 3D texture. *@
+
+@if (checks.Count > 0)
+{
+    <section class="refresh-checks" aria-labelledby="refresh-checks-title">
+        <h3 id="refresh-checks-title">@Title</h3>
+        <p class="hint">Nothing here is decided for you: if you leave a card alone, the old hold stays and is marked for review.</p>
+        @if (error is not null)
+        {
+            <p class="field-error" role="alert">@error</p>
+        }
+        <ul class="refresh-check-list">
+            @foreach (var check in checks)
+            {
+                <li class="refresh-check @(check.Status != UpdateExceptionStatus.Pending ? "is-answered" : null)" @key="check.Id">
+                    <p class="refresh-check-title"><strong>@Heading(check)</strong> @Detail(check)</p>
+                    <div class="refresh-check-crops">
+                        @if (check.HasOld)
+                        {
+                            <figure><img loading="lazy" src="@Crop(check, CheckCropView.Old)" alt="The old photo around this hold" /><figcaption>Old photo</figcaption></figure>
+                        }
+                        <figure><img loading="lazy" src="@Crop(check, CheckCropView.New)" alt="The new photo around this spot" /><figcaption>New photo</figcaption></figure>
+                        @if (check.HasModel)
+                        {
+                            <figure><img loading="lazy" onerror="this.parentElement.style.display='none'" src="@Crop(check, CheckCropView.Model)" alt="The 3D texture around this spot" /><figcaption>3D texture</figcaption></figure>
+                        }
+                    </div>
+                    <div class="refresh-check-actions">
+                        @if (check.Status == UpdateExceptionStatus.Pending)
+                        {
+                            <button class="btn-secondary" disabled="@Disabled" @onclick="() => AnswerAsync(check, UpdateExceptionAnswer.Keep)">@KeepLabel(check)</button>
+                            @if (check.Kind != UpdateExceptionKind.LowConfidenceMatch)
+                            {
+                                <button class="btn-secondary" disabled="@Disabled" @onclick="() => AnswerAsync(check, UpdateExceptionAnswer.Remove)">@RemoveLabel(check)</button>
+                            }
+                        }
+                        else
+                        {
+                            <span class="refresh-badge is-user">@(check.Status == UpdateExceptionStatus.Kept ? KeepLabel(check) : RemoveLabel(check))</span>
+                            <button class="btn-link" disabled="@Disabled" @onclick="() => AnswerAsync(check, UpdateExceptionAnswer.Undo)">Change</button>
+                        }
+                    </div>
+                </li>
+            }
+        </ul>
+    </section>
+}
+
+@code {
+    private IReadOnlyList<RefreshCheck> checks = [];
+    private string? error;
+
+    [Parameter]
+    public WallRefreshView View { get; set; } = default!;
+
+    /// <summary>Raised after an answer was written, so the page shows the summary that is being made again.</summary>
+    [Parameter]
+    public EventCallback OnAnswered { get; set; }
+
+    [Inject]
+    private IWallRefreshService Refreshes { get; set; } = default!;
+
+    private bool Disabled => View.SummaryUpdating || View.Check3DPending;
+
+    private string Title => checks.Count == 1 ? "1 hold needs a look" : $"{checks.Count} holds need a look";
+
+    protected override async Task OnParametersSetAsync() => checks = await Refreshes.GetChecksAsync(View.Id);
+
+    private string Crop(RefreshCheck check, CheckCropView view) => WallRefreshCheckCropEndpoint.Url(View.Id, check.Id, view);
+
+    private static string Heading(RefreshCheck check) => check.Kind switch
+    {
+        UpdateExceptionKind.PossiblyRemoved => "Possibly removed",
+        UpdateExceptionKind.LowConfidenceMatch => "Unsure match",
+        _ => "New hold, conflicting evidence",
+    };
+
+    private static string Detail(RefreshCheck check) => check.Kind switch
+    {
+        UpdateExceptionKind.PossiblyRemoved =>
+            "The new photo and the 3D texture show bare wall where " + (check.HoldName is { } name ? $"the {name} hold" : "this hold") + " was."
+            + (check.Boulders > 0 ? $" {check.Boulders} boulders use it." : string.Empty),
+        UpdateExceptionKind.LowConfidenceMatch => "This old hold was carried onto a detection the matcher is not sure about.",
+        _ => "The photo check leaves this detection out, but the 3D model sees a hold there.",
+    };
+
+    private static string KeepLabel(RefreshCheck check) => check.Kind switch
+    {
+        UpdateExceptionKind.PossiblyRemoved => "Keep hold",
+        UpdateExceptionKind.LowConfidenceMatch => "Match is right",
+        _ => "Add as new hold",
+    };
+
+    private static string RemoveLabel(RefreshCheck check) =>
+        check.Kind == UpdateExceptionKind.PossiblyRemoved ? "Remove hold" : "Leave out";
+
+    private async Task AnswerAsync(RefreshCheck check, UpdateExceptionAnswer answer)
+    {
+        error = null;
+        try
+        {
+            await Refreshes.DecideCheckAsync(View.Id, check.Id, answer);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or UserFacingException)
+        {
+            error = ex.Message;
+        }
+
+        await OnAnswered.InvokeAsync();
+    }
+}

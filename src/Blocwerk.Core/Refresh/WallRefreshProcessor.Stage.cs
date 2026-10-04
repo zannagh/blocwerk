@@ -78,14 +78,19 @@ public sealed partial class WallRefreshProcessor
     }
 
     /// <summary>
-    /// Records the quick review's decisions in one transaction and returns the session's stamp as committed with them;
-    /// null when the user changed the session after <paramref name="onlyIfUnchangedSince"/>.
+    /// Records the quick review's decisions and the confirm screen's cards in one transaction and returns the session's
+    /// stamp as committed with them; null when the user changed the session after <paramref name="onlyIfUnchangedSince"/>.
     /// </summary>
     private static Task<DateTimeOffset?> RecordDecisionsAsync(
-        Guid wallId, IWallUpdateSessionService sessions, QuickDecisions quick, DateTimeOffset? onlyIfUnchangedSince) =>
+        Guid wallId,
+        IWallUpdateSessionService sessions,
+        QuickDecisions quick,
+        IReadOnlyList<UpdateExceptionDraft> cards,
+        DateTimeOffset? onlyIfUnchangedSince) =>
         sessions.SaveDefaultDecisionsAsync(
             wallId,
-            new DefaultDecisions(quick.Carryover, quick.AcceptedNewCentreHoldIds, quick.RemovedNewCentreHoldIds, quick.Neighbours, WallUpdatePhase.Carryover),
+            new DefaultDecisions(
+                quick.Carryover, quick.AcceptedNewCentreHoldIds, quick.RemovedNewCentreHoldIds, quick.Neighbours, WallUpdatePhase.Carryover, cards),
             onlyIfUnchangedSince);
 
     private async Task<Dictionary<Guid, IReadOnlyList<Guid>>> StagedHoldsByPanelAsync(Guid wallId, CancellationToken ct)

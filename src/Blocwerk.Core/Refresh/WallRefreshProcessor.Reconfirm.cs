@@ -35,18 +35,10 @@ public sealed partial class WallRefreshProcessor
     private async Task ReconfirmAsync(
         WallRefresh refresh, RefreshSummary? summary, PromotableDecisions promotable, WallUpdateSessionInfo open, CancellationToken ct)
     {
-        var edited = summary?.DecisionsRecordedAt is { } recorded && open.UpdatedAt > recorded;
-        var counts = await SummarizeAsync(
-            refresh.WallId, RefreshDecisions.AsQuick(promotable), promotable.PendingRelocations, summary?.Panels ?? [], ct);
-        var fresh = counts with
+        var seenUpTo = Later(summary?.DecisionsRecordedAt, summary?.AnsweredAt);
+        var edited = seenUpTo is { } recorded && open.UpdatedAt > recorded;
+        var fresh = await FreshSummaryAsync(refresh, summary, promotable, ct) with
         {
-            // The 3D check's numbers describe the triage's suggestions; capped, as the full review may have kept some.
-            DroppedByThe3DModel = Math.Min(summary?.DroppedByThe3DModel ?? 0, counts.DroppedDetections),
-            NewSeenIn3D = Math.Min(summary?.NewSeenIn3D ?? 0, counts.NewHolds),
-            CheckedWithModelId = summary?.CheckedWithModelId,
-            Attempted3DModelId = summary?.Attempted3DModelId,
-            DecisionsRecordedAt = summary?.DecisionsRecordedAt,
-            DecisionsVersion = promotable.Version,
             EditedInFullReview = (summary?.EditedInFullReview ?? false) || edited,
         };
         var message = edited ? EditedSinceSummary : promotable.Resets > 0 ? MatchedDifferently : OutOfDate;
@@ -67,4 +59,27 @@ public sealed partial class WallRefreshProcessor
             refresh.Id,
             promotable.Resets);
     }
+
+    /// <summary>
+    /// The summary of what Apply would promote now, keeping what the earlier summary knew of the 3D check (its numbers
+    /// capped, as the full review may have kept some of the triage's suggestions) and its stamps.
+    /// </summary>
+    private async Task<RefreshSummary> FreshSummaryAsync(
+        WallRefresh refresh, RefreshSummary? summary, PromotableDecisions promotable, CancellationToken ct)
+    {
+        var counts = await SummarizeAsync(
+            refresh.WallId, RefreshDecisions.AsQuick(promotable), promotable.PendingRelocations, summary?.Panels ?? [], ct);
+        return RefreshDecisions.Stamp(counts, promotable) with
+        {
+            DroppedByThe3DModel = Math.Min(summary?.DroppedByThe3DModel ?? 0, counts.DroppedDetections),
+            NewSeenIn3D = Math.Min(summary?.NewSeenIn3D ?? 0, counts.NewHolds),
+            CheckedWithModelId = summary?.CheckedWithModelId,
+            Attempted3DModelId = summary?.Attempted3DModelId,
+            DecisionsRecordedAt = summary?.DecisionsRecordedAt,
+            AnsweredAt = summary?.AnsweredAt,
+            EditedInFullReview = summary?.EditedInFullReview ?? false,
+        };
+    }
+
+    private static DateTimeOffset? Later(DateTimeOffset? a, DateTimeOffset? b) => a is null ? b : b is null ? a : (a > b ? a : b);
 }

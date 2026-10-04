@@ -63,6 +63,9 @@ public sealed partial class WallRefreshProcessor(
                 case WallRefreshStatus.Applying:
                     await ApplyAsync(refresh, scope.Actors, ct);
                     break;
+                case WallRefreshStatus.ReadyToApply when IsResummarizing(refresh):
+                    await ResummarizeAsync(refresh, scope.Actors, ct);
+                    break;
                 case WallRefreshStatus.ReadyToApply:
                     await RecheckAsync(refresh, scope.Actors, ct);
                     break;

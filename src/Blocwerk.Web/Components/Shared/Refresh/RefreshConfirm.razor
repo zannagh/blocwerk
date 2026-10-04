@@ -10,6 +10,9 @@
         {
             <p class="refresh-3d-note">Includes the changes made in the full review.</p>
         }
+        <RefreshChecks View="View" OnAnswered="OnAnswered" />
+        <details class="refresh-summary-details" open="@(!HasCards)">
+            <summary>Everything else: what the update does</summary>
         <ul class="refresh-summary">
             <li><strong>@s.Refound</strong> holds found again on the new photos</li>
             <li class="@(s.KeptInPlace > 0 ? "is-attention" : null)">
@@ -34,8 +37,18 @@
                 <li class="is-attention"><strong>@s.PossiblyMoved</strong> holds may have moved; the quick review leaves them in place</li>
             }
             <li><strong>@s.OverlapLinks</strong> holds linked across panels@(s.OverlapsLeftOut > 0 ? $", {s.OverlapsLeftOut} unsure overlaps left unlinked" : string.Empty)</li>
+            @if (s.PossiblyRemovedHolds > 0)
+            {
+                <li class="is-attention"><strong>@s.PossiblyRemovedHolds</strong> of the holds not found again look removed (bare wall on the new photo and in the 3D model); they stay unless you remove them above</li>
+            }
             <li><strong>@s.Removed</strong> holds removed</li>
         </ul>
+        </details>
+    }
+
+    @if (View.SummaryUpdating)
+    {
+        <p class="refresh-3d-note" role="status">Updating the summary with your answer.</p>
     }
 
     @if (View.Check3DPending)
@@ -59,7 +72,7 @@
         Nothing is live yet. "Open full review" shows every step of the update with these choices already filled in.
     </p>
     <div class="refresh-actions">
-        <button class="btn-primary" @onclick="OnApply" disabled="@View.Check3DPending">Apply update</button>
+        <button class="btn-primary" @onclick="OnApply" disabled="@(View.Check3DPending || View.SummaryUpdating)">Apply update</button>
         <a class="btn-secondary" href="/walls/@View.WallId?update=review&amp;session=@View.UpdateSessionId">Open full review</a>
     </div>
 </div>
@@ -70,6 +83,11 @@
 
     [Parameter]
     public EventCallback OnApply { get; set; }
+
+    [Parameter]
+    public EventCallback OnAnswered { get; set; }
+
+    private bool HasCards => View.Summary is { ChecksOpen: > 0 } or { PossiblyRemovedHolds: > 0 };
 
     private bool Waiting3D => View.Capture is { IsRunning: true } && View.Summary is { Attempted3DModelId: null };
 }

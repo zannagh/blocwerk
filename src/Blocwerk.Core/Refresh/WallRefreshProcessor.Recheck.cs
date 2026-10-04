@@ -156,7 +156,8 @@ public sealed partial class WallRefreshProcessor
 
         var matched = await actors.BigUpdate.ResumeAsync(refresh.WallId, use3DEvidence: true);
         var quick = QuickUpdateDefaults.Build(matched, byPanel);
-        if (await RecordDecisionsAsync(refresh.WallId, actors.Sessions, quick, onlyIfUnchangedSince) is not { } recordedAt)
+        var cards = UpdateExceptionBuilder.Build(matched, quick);
+        if (await RecordDecisionsAsync(refresh.WallId, actors.Sessions, quick, cards, onlyIfUnchangedSince) is not { } recordedAt)
         {
             return null;
         }
@@ -166,13 +167,12 @@ public sealed partial class WallRefreshProcessor
         var summary = await SummarizeAsync(refresh.WallId, RefreshDecisions.AsQuick(promotable), promotable.PendingRelocations, panels, ct);
         var dropped = promotable.Folded.RemovedNewCenterHoldIds.Concat(promotable.Folded.Neighbours.SelectMany(n => n.RemovedNeighbourHoldIds));
         var by3D = dropped.Count(id => matched.SuggestedNewDiscards?.GetValueOrDefault(id) is NewHoldDiscardReason.KnownHoldIn3D or NewHoldDiscardReason.OffWallIn3D);
-        return summary with
+        return RefreshDecisions.Stamp(summary, promotable) with
         {
             DroppedByThe3DModel = by3D,
             NewSeenIn3D = matched.SeenIn3DHoldIds?.Count ?? 0,
             CheckedWithModelId = model is not null && matched.Evidence3DModelId == model ? model : null,
             Attempted3DModelId = model,
-            DecisionsVersion = promotable.Version,
             DecisionsRecordedAt = recordedAt,
         };
     }

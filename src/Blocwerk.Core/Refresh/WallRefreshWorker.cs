@@ -102,7 +102,8 @@ public sealed class WallRefreshWorker(
             await using var db = dbContextFactory.CreateDbContext();
             var unfinished = await db.WallRefreshes
                 .Where(r => r.Status == WallRefreshStatus.Sorting || r.Status == WallRefreshStatus.Running
-                            || r.Status == WallRefreshStatus.Applying)
+                            || r.Status == WallRefreshStatus.Applying
+                            || (r.Status == WallRefreshStatus.ReadyToApply && r.SummaryRequestedAt != null))
                 .Select(r => r.Id)
                 .ToListAsync(ct);
             foreach (var id in unfinished)

@@ -75,6 +75,15 @@ public sealed record RefreshVideo(string StoredName, string? FileName, long Size
 /// The fingerprint of what this summary describes (<see cref="RefreshDecisions"/>); Apply promotes only that.
 /// </param>
 /// <param name="EditedInFullReview">The summary includes choices made in the full review.</param>
+/// <param name="PossiblyRemovedHolds">
+/// Of the old holds not found again: those where the new photo and this visit's 3D texture show bare wall (kept unless
+/// a person removes them).
+/// </param>
+/// <param name="ChecksOpen">Confirm-screen cards nobody answered yet.</param>
+/// <param name="AnsweredAt">
+/// The update session's stamp when this summary was made again after answers on the confirm screen; session writes up
+/// to it are those answers, not changes made in the full review.
+/// </param>
 public sealed record RefreshSummary(
     int Refound,
     int KeptInPlace,
@@ -92,7 +101,10 @@ public sealed record RefreshSummary(
     Guid? Attempted3DModelId = null,
     DateTimeOffset? DecisionsRecordedAt = null,
     string? DecisionsVersion = null,
-    bool EditedInFullReview = false);
+    bool EditedInFullReview = false,
+    int PossiblyRemovedHolds = 0,
+    int ChecksOpen = 0,
+    DateTimeOffset? AnsweredAt = null);
 
 /// <summary>An uploaded file, as the drop zone lists it.</summary>
 public sealed record RefreshFile(Guid? PhotoId, string? FileName, bool IsVideo, string? Problem);
@@ -114,8 +126,8 @@ public sealed record WallRefreshView(
     Guid? CaptureId = null,
     Guid? UpdateSessionId = null,
     bool Check3DPending = false,
-    bool HasActiveModel = false)
+    bool HasActiveModel = false,
+    bool SummaryUpdating = false)
 {
     public bool IsWorking => Status is WallRefreshStatus.Sorting or WallRefreshStatus.Running or WallRefreshStatus.Applying;
-
 }

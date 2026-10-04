@@ -69,11 +69,11 @@ public partial class WallBigUpdateService
         }
     }
 
-    /// <summary>The 3D verdict per candidate of one staged panel, or null without usable evidence.</summary>
-    private async Task<Dictionary<Guid, Evidence3DVerdict>?> Verdicts3DAsync(
-        BlocwerkDbContext db, Evidence3DModel? model, Guid panelId, IReadOnlyList<Hold> candidates, IReadOnlyList<(Hold Old, Hold New)> twins)
+    /// <summary>One staged panel's photo registered onto the model, or null without usable evidence (or when not <paramref name="needed"/>).</summary>
+    private async Task<PanelEvidence3D?> PanelEvidenceAsync(
+        BlocwerkDbContext db, Evidence3DModel? model, Guid panelId, IReadOnlyList<(Hold Old, Hold New)> twins, bool needed)
     {
-        if (model is null || candidates.Count == 0)
+        if (model is null || !needed)
         {
             return null;
         }
@@ -83,15 +83,11 @@ public partial class WallBigUpdateService
             var staged = await db.WallPanels.AsNoTracking().Where(p => p.Id == panelId)
                 .Select(p => new { p.StagedAt, p.Col, p.Row }).FirstAsync();
             var registered = await RegisterStagedAsync(db, model, panelId, staged.StagedAt, twins, $"staged c{staged.Col} r{staged.Row}");
-            var seen = staged.StagedAt is { } at && model.CreatedAt >= at ? model.SeenIn3D : [];
+            var thisVisit = staged.StagedAt is { } stagedAt && model.CreatedAt >= stagedAt;
             var evidence = new Panel3DEvidence(
-                registered.Registrations, model.KnownHolds, seen, model.Facets, registered.Width, registered.Height, registered.FocalPx);
-            if (!evidence.IsUsable)
-            {
-                return null;
-            }
-
-            return candidates.ToDictionary(h => h.Id, h => NewHoldEvidence3D.Judge(evidence, h.X, h.Y));
+                registered.Registrations, model.KnownHolds, thisVisit ? model.SeenIn3D : [], model.Facets,
+                registered.Width, registered.Height, registered.FocalPx);
+            return evidence.IsUsable ? new PanelEvidence3D(evidence, thisVisit) : null;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -99,6 +95,12 @@ public partial class WallBigUpdateService
             return null;
         }
     }
+
+    /// <summary>The 3D verdict per candidate of one staged panel, or null without usable evidence.</summary>
+    private static Dictionary<Guid, Evidence3DVerdict>? Verdicts3D(PanelEvidence3D? evidence, IReadOnlyList<Hold> candidates) =>
+        evidence is null || candidates.Count == 0
+            ? null
+            : candidates.ToDictionary(h => h.Id, h => NewHoldEvidence3D.Judge(evidence.Evidence, h.X, h.Y));
 
     private async Task<StagedRegistration> RegisterStagedAsync(
         BlocwerkDbContext db, Evidence3DModel model, Guid panelId, DateTimeOffset? stagedAt, IReadOnlyList<(Hold Old, Hold New)> twins, string label)
@@ -142,4 +144,3 @@ public partial class WallBigUpdateService
         return new StagedRegistration(registrations, session.Width, session.Height, focal);
     }
 }
-

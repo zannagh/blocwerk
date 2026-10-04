@@ -39,4 +39,9 @@ internal sealed class FailingDecisionSessions(IWallUpdateSessionService inner) :
 
     public Task DecideRelocationAsync(Guid wallId, Guid suggestionId, RelocationDecision decision) =>
         inner.DecideRelocationAsync(wallId, suggestionId, decision);
+
+    public Task<IReadOnlyList<UpdateExceptionInfo>> GetUpdateExceptionsAsync(Guid wallId) => inner.GetUpdateExceptionsAsync(wallId);
+
+    public Task DecideUpdateExceptionAsync(Guid wallId, Guid exceptionId, UpdateExceptionAnswer answer) =>
+        inner.DecideUpdateExceptionAsync(wallId, exceptionId, answer);
 }

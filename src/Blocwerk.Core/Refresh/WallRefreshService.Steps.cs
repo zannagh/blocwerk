@@ -132,6 +132,12 @@ public sealed partial class WallRefreshService
             throw new UserFacingException("The summary changed while you were looking at it. Check it again, then apply.");
         }
 
+        if (WallRefreshProcessor.IsResummarizing(refresh))
+        {
+            queue.Enqueue(refresh.Id);
+            throw new UserFacingException("The summary is being updated with your answers. Try again in a moment.");
+        }
+
         if (WallRefreshProcessor.IsRechecking(refresh, DateTimeOffset.UtcNow)
             || WallRefreshProcessor.NeedsRecheck(refresh, await WallRefreshProcessor.Ready3DModelAsync(db, refresh, CancellationToken.None), DateTimeOffset.UtcNow))
         {

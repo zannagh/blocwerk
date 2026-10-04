@@ -12,9 +12,14 @@ namespace Blocwerk.Core.Services;
 /// <param name="RemovedNewCentreHoldIds">Centre detections dropped.</param>
 /// <param name="Neighbours">Per neighbour panel: links and removed detections.</param>
 /// <param name="Phase">The phase the session moves to.</param>
+/// <param name="Exceptions">
+/// The confirm screen's cards (<see cref="Entities.WallUpdateException"/>); when set, they replace the session's cards in the
+/// same transaction. Null leaves the cards alone.
+/// </param>
 public sealed record DefaultDecisions(
     IReadOnlyList<CarryoverDecision> Carryover,
     IReadOnlyList<Guid> AcceptedNewCentreHoldIds,
     IReadOnlyList<Guid> RemovedNewCentreHoldIds,
     IReadOnlyList<NeighbourLinkSet> Neighbours,
-    WallUpdatePhase Phase);
+    WallUpdatePhase Phase,
+    IReadOnlyList<UpdateExceptionDraft>? Exceptions = null);

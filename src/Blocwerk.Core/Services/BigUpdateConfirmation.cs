@@ -20,10 +20,15 @@ namespace Blocwerk.Core.Services;
 /// polygon (for matched twins and clones alike). Null/empty leaves the successor's shape as the clone
 /// copied it (the old outline), exactly as before.
 /// </param>
+/// <param name="ReviewOldHoldIds">
+/// Old holds whose successor is marked <see cref="Blocwerk.Core.Entities.Hold.NeedsReview"/>: the confirm screen asked about
+/// them and nobody answered (an old hold possibly removed, an unsure match). Null/empty flags nothing.
+/// </param>
 public record BigUpdateConfirmation(
     List<CarryoverDecision> Carryover,
     List<Guid> AcceptedNewCenterHoldIds,
     List<Guid> RemovedNewCenterHoldIds,
     List<NeighbourLinkSet> Neighbours,
     IReadOnlyDictionary<Guid, HoldPositionNorm>? CarriedWarpPositions = null,
-    IReadOnlyDictionary<Guid, IReadOnlyList<HoldPositionNorm>>? CarriedWarpShapes = null);
+    IReadOnlyDictionary<Guid, IReadOnlyList<HoldPositionNorm>>? CarriedWarpShapes = null,
+    IReadOnlyCollection<Guid>? ReviewOldHoldIds = null);

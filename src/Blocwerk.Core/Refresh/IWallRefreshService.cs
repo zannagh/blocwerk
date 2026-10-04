@@ -75,6 +75,18 @@ public interface IWallRefreshService
     /// </param>
     Task ApplyAsync(Guid refreshId, string? confirmedVersion = null);
 
+    /// <summary>The confirm screen's cards: the holds whose evidence needs a look (empty unless the update waits for its confirm).</summary>
+    Task<IReadOnlyList<RefreshCheck>> GetChecksAsync(Guid refreshId);
+
+    /// <summary>One picture of a card (JPEG, made on request and cached), or null when there is none.</summary>
+    Task<byte[]?> GetCheckCropAsync(Guid refreshId, Guid checkId, CheckCropView view, CancellationToken ct);
+
+    /// <summary>
+    /// Answers a card (written as the full review's decision); the summary is then made again, and Apply waits for it
+    /// (<see cref="WallRefreshView.SummaryUpdating"/>).
+    /// </summary>
+    Task DecideCheckAsync(Guid refreshId, Guid checkId, Enums.UpdateExceptionAnswer answer);
+
     /// <summary>Throws the run away (and its prepared panel update); a started 3D capture keeps running.</summary>
     Task DiscardAsync(Guid refreshId);
 }

@@ -43,7 +43,7 @@
         }
         else if (view.Status == WallRefreshStatus.ReadyToApply)
         {
-            <RefreshConfirm View="view" OnApply="ApplyAsync" />
+            <RefreshConfirm View="view" OnApply="ApplyAsync" OnAnswered="ReloadAfterAnswerAsync" />
         }
         else if (view.Status == WallRefreshStatus.Done)
         {

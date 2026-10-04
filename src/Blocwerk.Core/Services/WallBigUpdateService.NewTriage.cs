@@ -26,40 +26,24 @@ public partial class WallBigUpdateService
         IReadOnlyList<Hold> oldHolds,
         IReadOnlyDictionary<Guid, byte[]> oldPanelPhotosById,
         IReadOnlyList<NeighbourOverlap> neighbours,
-        bool use3DEvidence)
+        bool use3DEvidence,
+        RemovalInputs removals)
     {
         var result = new NewHoldTriageOutcome([], []);
         var model3D = use3DEvidence ? await LoadEvidence3DAsync(db, wall.Id, carryover, oldHolds) : null;
         var panels = (await db.WallPanels
                 .Where(p => p.WallId == wall.Id && p.Generation == stagedGen && p.StagedPhoto != null)
-                .Select(p => new { p.Id, p.Col, p.Row })
+                .Select(p => new StagedPanelRef(p.Id, p.Col, p.Row))
                 .ToListAsync())
             .OrderBy(p => p is { Col: 0, Row: 0 } ? 0 : 1)
             .ToList();
-        var oldById = oldHolds.ToDictionary(h => h.Id);
+        var context = new TriageContext(wall, stagedGen, carryover, oldHolds.ToDictionary(h => h.Id), oldPanelPhotosById, neighbours, model3D, removals);
         TriagedCentre? centre = null;
         foreach (var panel in panels)
         {
             try
             {
-                var staged = await db.Holds
-                    .Where(h => h.WallPanelId == panel.Id && h.Generation == stagedGen)
-                    .ToListAsync();
-                var twins = Twins(carryover, oldById, staged);
-                var isCentre = panel is { Col: 0, Row: 0 };
-                var oldPhoto = isCentre
-                    ? wall.Photo
-                    : twins.Select(t => t.Old.WallPanelId).OfType<Guid>().Select(oldPanelPhotosById.GetValueOrDefault).FirstOrDefault();
-                var overlap = isCentre ? null : neighbours.FirstOrDefault(n => n.PanelId == panel.Id);
-                var verdicts = await Verdicts3DAsync(db, model3D, panel.Id, Unpaired(staged, twins), twins);
-                var outcome = await TriagePanelAsync(db, panel.Id, staged, twins, oldPhoto, OwnerSource(centre, overlap, staged), verdicts);
-                Collect(result, outcome, verdicts);
-                result.Evidence3DModelId ??= verdicts is null ? null : model3D?.Id;
-
-                if (isCentre && outcome is { } o)
-                {
-                    centre = new TriagedCentre(staged.ToDictionary(h => h.Id), o.Size, o.KeptNew);
-                }
+                centre = await TriageOnePanelAsync(db, context, panel, centre, result) ?? centre;
             }
             catch (Exception ex)
             {
@@ -68,6 +52,36 @@ public partial class WallBigUpdateService
         }
 
         return result;
+    }
+
+    /// <summary>Triages one staged panel into <paramref name="result"/>; returns the triaged centre when this is the centre.</summary>
+    private async Task<TriagedCentre?> TriageOnePanelAsync(
+        BlocwerkDbContext db, TriageContext context, StagedPanelRef panel, TriagedCentre? centre, NewHoldTriageOutcome result)
+    {
+        var staged = await db.Holds
+            .Where(h => h.WallPanelId == panel.Id && h.Generation == context.StagedGen)
+            .ToListAsync();
+        var twins = Twins(context.Carryover, context.OldById, staged);
+        var isCentre = panel is { Col: 0, Row: 0 };
+        var removable = RemovableAt(context.Removals, panel.Col, panel.Row);
+        var oldPhoto = isCentre
+            ? context.Wall.Photo
+            : twins.Select(t => t.Old.WallPanelId).Concat(removable.Select(h => h.WallPanelId)).OfType<Guid>()
+                .Select(context.OldPanelPhotosById.GetValueOrDefault).FirstOrDefault(p => p is not null);
+        var overlap = isCentre ? null : context.Neighbours.FirstOrDefault(n => n.PanelId == panel.Id);
+        var unpaired = Unpaired(staged, twins);
+        var evidence = await PanelEvidenceAsync(db, context.Model3D, panel.Id, twins, unpaired.Count + removable.Count > 0);
+        var verdicts = Verdicts3D(evidence, unpaired);
+        var outcome = await TriagePanelAsync(db, panel.Id, staged, twins, oldPhoto, OwnerSource(centre, overlap, staged), verdicts);
+        Collect(result, outcome, verdicts);
+        result.Evidence3DModelId ??= verdicts is null ? null : context.Model3D?.Id;
+        if (evidence is not null && context.Model3D is { } model)
+        {
+            CollectConflicts(result, panel.Id, model.Id, evidence, unpaired, outcome, verdicts);
+            await CheckRemovalsAsync(db, model, evidence, new RemovalScope(panel.Id, staged, twins, removable, oldPhoto), context.Removals.Warp, result);
+        }
+
+        return isCentre && outcome is { } o ? new TriagedCentre(staged.ToDictionary(h => h.Id), o.Size, o.KeptNew) : null;
     }
 
     private static List<Hold> Unpaired(IReadOnlyList<Hold> staged, IReadOnlyList<(Hold Old, Hold New)> twins)
