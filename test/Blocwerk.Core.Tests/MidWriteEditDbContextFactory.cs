@@ -34,8 +34,7 @@ public sealed class MidWriteEditDbContextFactory : IDbContextFactory<BlocwerkDbC
     /// <summary>Gets a value indicating whether the edit ran.</summary>
     public bool Edited { get; private set; }
 
-    public BlocwerkDbContext CreateDbContext() => new SqliteBlocwerkDbContext(
-        new DbContextOptionsBuilder<BlocwerkDbContext>().UseSqlite(connectionString).AddInterceptors(this).Options);
+    public BlocwerkDbContext CreateDbContext() => TestDb.Create(connectionString, this);
 
     public async ValueTask<InterceptionResult<int>> SavingChangesAsync(
         DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)

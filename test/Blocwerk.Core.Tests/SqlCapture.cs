@@ -12,7 +12,7 @@ public sealed class SqlCapture : DbCommandInterceptor
 {
     // A blob column named in a select list, as opposed to an IS [NOT] NULL probe or a length() of it.
     private static readonly Regex BlobSelected = new(
-        "(?<!length\\()\"(Photo|StagedPhoto|PreviousPhoto)\"(?! IS)(?!\\))",
+        "(?<!length\\((?:\\w+\\.)?)\"(Photo|StagedPhoto|PreviousPhoto)\"(?! IS)(?!\\))",
         RegexOptions.Compiled);
 
     private readonly ConcurrentQueue<string> commands = new();
@@ -63,9 +63,5 @@ public sealed class CapturingDbContextFactory : IDbContextFactory<BlocwerkDbCont
     public SqlCapture Capture { get; }
 
     public BlocwerkDbContext CreateDbContext() =>
-        new SqliteBlocwerkDbContext(
-            new DbContextOptionsBuilder<BlocwerkDbContext>()
-                .UseSqlite(connectionString)
-                .AddInterceptors(Capture)
-                .Options);
+        TestDb.Create(connectionString, Capture);
 }

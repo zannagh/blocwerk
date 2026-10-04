@@ -175,6 +175,43 @@ jobs:
           path: blocwerk-${{ steps.version.outputs.semVer }}.tar.gz
           retention-days: 30
 
+  # The tests marked [Trait("Db","Postgres")] run against a real PostgreSQL (migrations, row locks, conditional
+  # writes, raw SQL), which the SQLite-backed suite in the build job cannot cover. Runs in parallel with it.
+  postgres-tests:
+    name: Postgres Tests
+    needs: [determine-runner]
+    runs-on: ${{ fromJSON(needs.determine-runner.outputs.runner) }}
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: blocwerk
+          POSTGRES_PASSWORD: blocwerk
+        # A random host port, so a self-hosted runner running several jobs never collides.
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U blocwerk"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The build runs GitVersion once per checkout, which needs the full history.
+          fetch-depth: 0
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: "global.json"
+
+      - name: Test (Postgres tier)
+        # The job context (the service's mapped port) is only available at step level.
+        env:
+          BLOCWERK_TEST_PG: Host=localhost;Port=${{ job.services.postgres.ports['5432'] }};Username=blocwerk;Password=blocwerk
+        run: dotnet test test/Blocwerk.Core.Tests --filter "Db=Postgres"
+
   upload-to-release:
     name: Upload to GitHub Release
     needs: [determine-runner, build, determine-jobs]
