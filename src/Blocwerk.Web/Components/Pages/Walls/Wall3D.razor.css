@@ -27,6 +27,12 @@
 
 .wall3d-note { font-size: 0.8rem; color: var(--text-secondary); }
 
+/* Phone landscape: the page is shorter than the 360px floor, which pushed the stage (and the preset
+   buttons pinned to its bottom) under the tab bar. Let the stage shrink to what is left instead. */
+@media (max-height: 520px) {
+    .wall3d-page { min-height: 0; }
+}
+
 /* Phone: the head line (back link, hold counts) took two lines and ~100px above the stage. */
 @media (max-width: 560px) {
     .wall3d-head { gap: 0 10px; padding: 2px 12px; }
