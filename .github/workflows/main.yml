@@ -207,7 +207,8 @@ jobs:
         # The job context (the service's mapped port) is only available at step level.
         env:
           BLOCWERK_TEST_PG: Host=localhost;Port=${{ job.services.postgres.ports['5432'] }};Username=blocwerk;Password=blocwerk
-        run: dotnet test test/Blocwerk.Core.Tests -c Release --filter "Db=Postgres"
+        # Debug on purpose: the build skips GitVersion there, so no full-history checkout or version tool is needed.
+        run: dotnet test test/Blocwerk.Core.Tests --filter "Db=Postgres"
 
   upload-to-release:
     name: Upload to GitHub Release
