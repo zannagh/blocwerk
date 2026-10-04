@@ -33,7 +33,7 @@ public sealed partial class WallRefreshProcessor
             refresh,
             r =>
             {
-                RefreshTimeline.Set(r, RefreshTimeline.Detect, RefreshStepState.Done, $"{byPanel.Values.Sum(v => v.Count)} holds found on {staged.Neighbours.Count + 1} panels");
+                RefreshTimeline.Set(r, RefreshTimeline.Detect, RefreshStepState.Done, $"{byPanel.Values.Sum(v => v.Count)} holds found on {staged.Neighbours.Count + 1} {(staged.Neighbours.Count == 0 ? "panel" : "panels")}");
                 RefreshTimeline.Set(r, RefreshTimeline.Match, RefreshStepState.Running, "Finding the old holds on the new photos");
             },
             ct);

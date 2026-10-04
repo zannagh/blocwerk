@@ -25,7 +25,7 @@
 }
 @if (!string.IsNullOrEmpty(Active.Model.Notes))
 {
-    <p class="hint">@Active.Model.Notes</p>
+    <p class="hint">@PlainCopy.Notes(Active.Model.Notes)</p>
 }
 
 @if (Active.Facets.Count == 0)
@@ -64,7 +64,7 @@ else
 }
 
 @* The angles are in the table above; the solver's own warnings and notes follow. *@
-<WallGeometryModelCheckList Checks="Active.Checks" HideKinds="AnglesInTable" Title="Solver notes" />
+<WallGeometryModelCheckList Checks="Active.Checks" HideKinds="AnglesInTable" Title="Measuring notes" />
 
 @code {
     private static readonly string[] AnglesInTable = [Blocwerk.Core.Geometry.WallGeometryModelCheck.KindSegmentAngle];

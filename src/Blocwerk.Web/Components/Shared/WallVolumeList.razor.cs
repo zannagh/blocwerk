@@ -45,9 +45,12 @@ public partial class WallVolumeList
             CultureInfo.InvariantCulture,
             $"{v.AreaM2:0.00} m², {v.HeightMm:0} mm high, {v.HoldCount} holds on it{(v.IsHidden ? " (hidden)" : string.Empty)}.");
 
-    /// <summary>Where it is: the facet and its centre on it.</summary>
+    /// <summary>Where it is, in plain terms (the facet id stays in the tooltip of the title).</summary>
     internal static string PlaceText(WallVolumeSummary v) =>
-        string.Create(CultureInfo.InvariantCulture, $"facet {v.FacetId}, {v.CentreA / 1000:0.00} m across, {v.CentreB / 1000:0.00} m up");
+        string.Create(CultureInfo.InvariantCulture, $"about {v.CentreA / 1000:0.00} m along, {v.CentreB / 1000:0.00} m up");
+
+    /// <summary>The spot of a volume on the 3D wall, for "Show on wall".</summary>
+    internal static WallSpot SpotOf(WallVolumeSummary v) => new(v.FacetId, v.CentreA, v.CentreB, v.HeightMm);
 
     /// <summary>The flat-sided shape, or null for a height field.</summary>
     internal static string? ShapeText(WallVolumeSummary v) => v.HasFlatSides

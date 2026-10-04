@@ -4,7 +4,7 @@
 
 <div class="bigupdate">
     <div class="bigupdate-head">
-        <h2>Update wall with new photos</h2>
+        <h2>Update step by step</h2>
         @if (!_superseded && _phase is not WallUpdatePhase.Done and not WallUpdatePhase.Working)
         {
             <ConfirmAction Label="Discard update" TriggerClass="btn-link" ConfirmLabel="Yes, discard it"
@@ -163,7 +163,7 @@
             @if (_scopeResets.Count > 0)
             {
                 <div class="bigupdate-banner" role="alert">
-                    <strong>@_scopeResets.Count earlier hold decision(s) were reset to "carry in place".</strong>
+                    <strong>@PlainCopy.Plural(_scopeResets.Count, "earlier hold decision") @(_scopeResets.Count == 1 ? "was" : "were") reset to "carry in place".</strong>
                     <span>
                         They were recorded against holds on re-photographed panels other than the centre,
                         which the carryover review cannot show — so they could be neither seen nor undone.
@@ -211,7 +211,7 @@
         case WallUpdatePhase.Done:
             <p class="staged-hint">
                 Update applied. Carried @CarriedCount · changed @ChangedCount · removed @RemovedCount ·
-                new @NewKeptCount · @LinkCount overlap link(s).
+                new @NewKeptCount · @PlainCopy.Plural(LinkCount, "overlap link").
             </p>
             <div class="staged-actions">
                 <button class="btn-primary" @onclick="Close">Done</button>

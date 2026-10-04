@@ -14,9 +14,12 @@
     <div class="settings-panel">
         <p class="apikey-blurb">
             Captures, photo-real training on 3D runners, finishing, follow-up steps, texture re-renders, re-solves and
-            imports on every wall: what runs now, how far it is and how long it usually takes. Scripts read the same
-            list from <code>GET /api/v1/admin/jobs</code> with a personal API key (see Settings → API keys).
+            imports on every wall: what runs now, how far it is and how long it usually takes.
         </p>
+        <details class="hint">
+            <summary>For scripts</summary>
+            Scripts read the same list from <code>GET /api/v1/admin/jobs</code> with a personal API key (Settings → API keys).
+        </details>
         <JobProgressList />
     </div>
 </div>

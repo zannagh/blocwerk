@@ -25,8 +25,9 @@
 .refresh-page ::deep .refresh-badge.is-medium { color: var(--warning-text); background: var(--warning-bg); }
 .refresh-page ::deep .refresh-badge.is-none { color: var(--text); background: var(--bg-surface); }
 .refresh-page ::deep .refresh-badge.is-user { color: var(--info-text); background: var(--info-bg); }
+.refresh-page ::deep .refresh-summary { padding-left: 1.25rem; }
 .refresh-page ::deep .refresh-summary li { margin: 4px 0; }
-.refresh-page ::deep .refresh-summary li.is-attention { color: var(--status-warning); }
+.refresh-page ::deep .refresh-summary li.is-attention { color: var(--attention-text); }
 .refresh-page ::deep .refresh-timeline { list-style: none; padding: 0; margin: 16px 0; }
 .refresh-page ::deep .refresh-step { display: flex; gap: 10px; padding: 6px 0; }
 /* Step marks: pending = empty ring, running = spinning ring, done = filled check, failed = filled "!",
@@ -42,7 +43,7 @@
     border-color: var(--accent); border-top-color: transparent; animation: refresh-spin 0.9s linear infinite;
 }
 .refresh-page ::deep .refresh-step.is-running strong { color: var(--accent); }
-.refresh-page ::deep .refresh-step.is-done .refresh-step-mark { background: var(--status-success); border-color: var(--status-success); color: #fff; }
+.refresh-page ::deep .refresh-step.is-done .refresh-step-mark { background: var(--step-done); border-color: var(--step-done); color: var(--on-accent); }
 .refresh-page ::deep .refresh-step.is-failed .refresh-step-mark { background: var(--status-danger); border-color: var(--status-danger); color: #fff; }
 .refresh-page ::deep .refresh-step.is-waiting .refresh-step-mark { border-color: var(--status-info); color: var(--status-info); }
 .refresh-page ::deep .refresh-step.is-skipped .refresh-step-mark { border-style: dashed; }

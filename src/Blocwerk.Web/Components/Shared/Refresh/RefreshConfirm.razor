@@ -16,7 +16,7 @@
         <ul class="refresh-summary">
             <li><strong>@s.Refound</strong> holds found again on the new photos</li>
             <li class="@(s.KeptInPlace > 0 ? "is-attention" : null)">
-                <strong>@s.KeptInPlace</strong> holds not found again, kept where they were
+                <strong>@s.KeptInPlace</strong> holds were not recognised in the new photos; they stay where they were
                 @if (s.BouldersOnKeptHolds > 0)
                 {
                     <span> (@s.BouldersOnKeptHolds boulders use one of them)</span>
@@ -26,7 +26,7 @@
                 <strong>@s.NewHolds</strong> new holds@(s.NewSeenIn3D > 0 ? $", {s.NewSeenIn3D} of them also seen in the 3D model" : string.Empty)
             </li>
             <li>
-                <strong>@s.DroppedDetections</strong> detections left out (on a marker, outside the old photo, or unchanged)
+                <strong>@s.DroppedDetections</strong> photo detections ignored (on a marker, outside the old photo or already known)
                 @if (s.DroppedByThe3DModel > 0)
                 {
                     <span>; @s.DroppedByThe3DModel of them the 3D model shows as a hold you already have, or off the wall</span>
@@ -36,7 +36,7 @@
             {
                 <li class="is-attention"><strong>@s.PossiblyMoved</strong> holds may have moved; the quick review leaves them in place</li>
             }
-            <li><strong>@s.OverlapLinks</strong> holds linked across panels@(s.OverlapsLeftOut > 0 ? $", {s.OverlapsLeftOut} unsure overlaps left unlinked" : string.Empty)</li>
+            <li><strong>@s.OverlapLinks</strong> holds linked between neighbouring panels@(s.OverlapsLeftOut > 0 ? $", {s.OverlapsLeftOut} unsure overlaps left unlinked" : string.Empty)</li>
             @if (s.PossiblyRemovedHolds > 0)
             {
                 <li class="is-attention"><strong>@s.PossiblyRemovedHolds</strong> of the holds not found again look removed (bare wall on the new photo and in the 3D model); they stay unless you remove them above</li>

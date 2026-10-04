@@ -31,6 +31,7 @@ import { createSplatClip } from './wall3d-splat-clip.js';
 import { buildVolumes } from './wall3d-volumes.js';
 import { buildBody } from './wall3d-body.js';
 import { createRenderLoop } from './wall3d-loop.js';
+import { buildLocator, poseFor } from './wall3d-locate.js';
 
 /** Colours of a boulder's hold roles; the page passes BoulderHoldColors so they match the 2D views. */
 const DEFAULT_ROLE_COLORS = { Start: '#4CAF50', Top: '#9C27B0', Hand: '#2196F3', Foot: '#FF9800', ColorFoot: '#FF9800' };
@@ -79,6 +80,8 @@ function build(container, renderer, view, options) {
     const markers = buildMarkers(view, sides);
     const volumes = buildVolumes(view, renderer, textures, photos);   // plain: Schematic; photo: Photos (in `textures`)
     const body = buildBody(view);                             // solid in every mode, photo-real too
+    const locator = buildLocator(view, options.highlight);       // "Show on wall": one marked spot
+    if (locator) scene.add(locator.group);
     scene.add(body.group, facets.group, textures, markers, labels, holds.lit, holds.dim, volumes.plain, outlines, holds.rings, holds.pick, selection);
     const frame = wallFrame(view, facets.group, body);
     const ghosts = createGhosting({ facets, textures, quads: frame.quads, sides });
@@ -233,6 +236,12 @@ function build(container, renderer, view, options) {
     const startMode = normalizeMode(options.initialMode);
     modeCtl.set(startMode && modes.includes(startMode) && startMode !== 'photoreal' ? startMode : 'schematic');
     if (startMode === 'photoreal') modeCtl.set('photoreal');
+    if (locator) {
+        framed = null;
+        ui.setActive(null);
+        tweener.to(poseFor(locator));
+        loop.interact();
+    }
     request();
 
     // A hold seen on two overlapping panels is drawn once; either panel's id resolves to it.

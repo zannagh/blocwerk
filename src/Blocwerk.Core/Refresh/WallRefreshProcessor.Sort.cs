@@ -44,7 +44,7 @@ public sealed partial class WallRefreshProcessor
     }
 
     private static string SortDetail(int assigned, int panels, int photos) =>
-        $"{assigned} of {panels} panels got a new photo; {photos - assigned} photos go to the 3D model only";
+        $"{assigned} of {panels} {(panels == 1 ? "panel" : "panels")} got a new photo; {photos - assigned} {(photos - assigned == 1 ? "photo goes" : "photos go")} to the 3D model only";
 
     private async Task<(IReadOnlyList<PanelPhotoTarget> Panels, IReadOnlyList<WallCapturePhoto> Photos)> LoadSortInputAsync(
         WallRefresh refresh, CancellationToken ct)

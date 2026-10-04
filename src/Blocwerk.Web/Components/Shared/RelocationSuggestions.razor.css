@@ -37,7 +37,7 @@
     background: var(--bg-surface);
 }
 
-.relocate-row.accepted { border-color: var(--status-warning); }
+.relocate-row.accepted { border-color: var(--attention-text); }
 .relocate-row.accepted.same { border-color: var(--status-success); }
 .relocate-row.dismissed { opacity: 0.6; }
 
@@ -113,7 +113,7 @@
     border: 1px solid var(--border);
 }
 
-.relocate-tag.low { border-color: var(--status-warning); color: var(--status-warning); }
+.relocate-tag.low { border-color: var(--status-warning); color: var(--attention-text); }
 
 .relocate-actions {
     display: flex;

@@ -3,11 +3,13 @@
     --bg-surface: #ffffff;
     --bg-surface-alt: #f8f7f4;
     --text: #2b2b33;
-    --text-secondary: #8a8a95;
+    --text-secondary: #666672;
     --text-heading: #16162a;
-    --accent: #e94560;
-    --accent-hover: #d63851;
-    --accent-soft: rgba(233, 69, 96, 0.12);
+    --accent: #cf2c49;
+    --accent-hover: #b8223c;
+    /* Text and icons on an accent fill (>= 4.5:1 in both themes). */
+    --on-accent: #ffffff;
+    --accent-soft: rgba(207, 44, 73, 0.12);
     --secondary: #0f3460;
     --secondary-hover: #0a2847;
     --border: #e3e0d9;
@@ -26,7 +28,10 @@
     --nav-border: #ecebe4;
     --input-bg: #ffffff;
     --warning-bg: #FFF3E0;
-    --warning-text: #E65100;
+    --warning-text: #B33F00;
+    /* Attention copy (e.g. "holds not found again"): amber reads on the dark theme only. */
+    --attention-text: #8a4b00;
+    --step-done: #1f8f48;
     --success-bg: #E8F5E9;
     --success-text: #2E7D32;
     --info-bg: #E3F2FD;
@@ -81,6 +86,7 @@
         --text-heading: #f4f2ec;
         --accent: #ff5a75;
         --accent-hover: #ff7288;
+        --on-accent: #16162a;
         --accent-soft: rgba(255, 90, 117, 0.14);
         --secondary: #6ea3ff;
         --secondary-hover: #4e8ae6;
@@ -97,6 +103,8 @@
         --input-bg: #22222f;
         --warning-bg: #3d2e1a;
         --warning-text: #FFB74D;
+    --attention-text: #ffc04d;
+    --step-done: #3ddc84;
         --success-bg: #1a3d1a;
         --success-text: #81C784;
         --info-bg: #1a2a3d;
@@ -125,6 +133,7 @@
     --text-heading: #f4f2ec;
     --accent: #ff5a75;
     --accent-hover: #ff7288;
+    --on-accent: #16162a;
     --accent-soft: rgba(255, 90, 117, 0.14);
     --secondary: #6ea3ff;
     --secondary-hover: #4e8ae6;
@@ -141,6 +150,8 @@
     --input-bg: #22222f;
     --warning-bg: #3d2e1a;
     --warning-text: #FFB74D;
+    --attention-text: #ffc04d;
+    --step-done: #3ddc84;
     --success-bg: #1a3d1a;
     --success-text: #81C784;
     --info-bg: #1a2a3d;
@@ -607,7 +618,7 @@ body.bw-tabbar-collapsed .tabbar-restore { display: flex; }
 
 .error-toast {
     position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
-    background: var(--accent); color: white; padding: 12px 24px;
+    background: var(--accent); color: var(--on-accent); padding: 12px 24px;
     border-radius: 8px; font-size: 0.9rem; z-index: 100;
 }
 
@@ -631,7 +642,7 @@ body.bw-tabbar-collapsed .tabbar-restore { display: flex; }
 
 .btn-primary {
     display: inline-block; padding: 13px 28px;
-    background: var(--accent); color: white;
+    background: var(--accent); color: var(--on-accent);
     text-decoration: none;
     font-size: 1.02rem;
     /* Subtle inner highlight + drop for tactile feel */
@@ -644,7 +655,7 @@ body.bw-tabbar-collapsed .tabbar-restore { display: flex; }
 
 .btn-submit {
     width: 100%; padding: 14px;
-    background: var(--accent); color: white;
+    background: var(--accent); color: var(--on-accent);
     border: none; font-size: 1rem;
     cursor: pointer;
     box-shadow:
@@ -674,7 +685,7 @@ body.bw-tabbar-collapsed .tabbar-restore { display: flex; }
     border: 1.5px solid var(--accent);
     cursor: pointer;
 }
-.btn-danger:hover { background: var(--accent); color: white; }
+.btn-danger:hover { background: var(--accent); color: var(--on-accent); }
 
 .staged-hint { margin: 8px 0; color: var(--text-secondary); font-size: 0.9rem; }
 .staged-hint.danger { color: var(--warning-text, #b3541e); }
@@ -781,7 +792,7 @@ body.bw-tabbar-collapsed .tabbar-restore { display: flex; }
 .bw-consent a { color: rgba(255,255,255,0.8); text-decoration: underline; }
 .bw-consent-accept {
     min-height: 44px; min-width: 64px;
-    padding: 8px 20px; background: var(--accent); color: white;
+    padding: 8px 20px; background: var(--accent); color: var(--on-accent);
     border: none; border-radius: 6px; font-weight: 600; cursor: pointer;
     white-space: nowrap;
 }
@@ -814,7 +825,7 @@ body.bw-tabbar-collapsed .tabbar-restore { display: flex; }
 }
 .bw-install-accept {
     min-height: 44px;
-    padding: 8px 16px; background: var(--accent); color: white;
+    padding: 8px 16px; background: var(--accent); color: var(--on-accent);
     border: none; border-radius: 6px; font-weight: 600; cursor: pointer;
     white-space: nowrap;
 }
@@ -1132,4 +1143,16 @@ body.bw-tabbar-collapsed .bw-conn-panel { bottom: calc(54px + env(safe-area-inse
     margin-top: 10px; max-height: 260px; overflow: auto;
     background: var(--bg-surface-alt); border-radius: var(--r-md); padding: 10px;
     font-size: 0.78rem; line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+}
+
+/* Disabled actions must look disabled everywhere (they used to keep the enabled fill). */
+.btn-primary:disabled,
+.btn-secondary:disabled,
+.btn-danger:disabled,
+.btn-submit:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    box-shadow: none;
+    filter: grayscale(0.5);
+    transform: none;
 }

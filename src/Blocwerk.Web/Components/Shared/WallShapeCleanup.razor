@@ -34,7 +34,7 @@
             <ul class="hint">
                 @foreach (var pair in preview.ManualOverlaps)
                 {
-                    <li>@HoldLabel(pair.NameA, pair.HoldA) overlaps @HoldLabel(pair.NameB, pair.HoldB) (near @(Math.Round(pair.X * 100))% across, @(Math.Round(pair.Y * 100))% down)</li>
+                    <li title="@HoldLabel(pair.NameA, pair.HoldA) / @HoldLabel(pair.NameB, pair.HoldB)">@OverlapText(pair)</li>
                 }
             </ul>
         }
@@ -42,10 +42,14 @@
         <div class="staged-actions">
             @if (preview.Changed > 0)
             {
-                <button class="btn-primary" @onclick="ApplyAsync">Apply</button>
+                <button class="btn-primary" @onclick="ApplyAsync">Apply to @PlainCopy.Plural(preview.Changed, "hold")</button>
             }
             <button class="btn-secondary" @onclick="CancelPreview">Close</button>
         </div>
+        @if (preview.Changed > 0)
+        {
+            <p class="hint">You can undo this afterwards.</p>
+        }
     }
 
     @if (failure is not null)
