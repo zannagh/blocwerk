@@ -9,6 +9,10 @@
 // for minutes. The Detail toggle (wall3d-splat-detail.js) lifts that: High to LIGHT_HIGH_CAP_SPLATS,
 // Ultra to the full scene on any device.
 
+import { fileKeyOf, remembered, sizeOf } from './wall3d-splat-store.js';
+
+export { fileKeyOf, remembered, rememberFailure, rememberRendered, rememberSuccess, sizeOf } from './wall3d-splat-store.js';
+
 /** Phones and low-memory devices never step past this many splats (Detail: auto). */
 const LIGHT_CAP_SPLATS = 250_000;
 /** … and with Detail: high. */
@@ -23,7 +27,6 @@ const SAMPLE_FRAMES = 45;
 const STEP_UP_MS = { light: 26, desktop: 45 };
 /** Median frame time (ms) above which a level is too slow and the view steps back down. */
 const STEP_DOWN_MS = 90;
-const STORE_KEY = 'bw.photoreal.lod.v1';
 
 /**
  * The view's levels, smallest first: `view.splatLevels` ({ url, splats, sizeBytes }), or for an older
@@ -36,50 +39,6 @@ export function ladderOf(view) {
     if (view.splatMobileUrl) levels.push({ url: view.splatMobileUrl, splats: 180000, sizeBytes: 0 });
     if (view.splatUrl) levels.push({ url: view.splatUrl, splats: 0, sizeBytes: 0 });
     return levels;
-}
-
-function readStore() {
-    try {
-        const v = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
-        return v && typeof v === 'object' ? v : {};
-    } catch {
-        return {};
-    }
-}
-
-function writeStore(v) {
-    try {
-        localStorage.setItem(STORE_KEY, JSON.stringify(v));
-    } catch {
-        // Private mode / storage off: the device relearns its limit next visit.
-    }
-}
-
-/** Splat count of a level, the unknown full scene counted as larger than anything. */
-export const sizeOf = level => level.splats > 0 ? level.splats : Number.MAX_SAFE_INTEGER;
-
-/** What this browser remembers: { failSplats, okSplats } (either may be missing). */
-export const remembered = () => readStore();
-
-/** Remembers that a level lost the context: the device stays below it from now on. */
-export function rememberFailure(level) {
-    const s = readStore();
-    const size = sizeOf(level);
-    s.failSplats = Math.min(s.failSplats ?? Number.MAX_SAFE_INTEGER, size);
-    if (s.okSplats >= size) delete s.okSplats;
-    s.at = Date.now();
-    writeStore(s);
-}
-
-/** Remembers that a level ran fine, so a later visit steps up to it without measuring again. */
-export function rememberSuccess(level) {
-    const s = readStore();
-    const size = sizeOf(level);
-    if (s.failSplats != null && size >= s.failSplats) return;
-    if ((s.okSplats ?? 0) >= size) return;
-    s.okSplats = size;
-    s.at = Date.now();
-    writeStore(s);
 }
 
 /**
@@ -95,7 +54,7 @@ export function levelCap(levels, light, detail = 'auto') {
     if (pinned != null) return pinned;
     if (detail === 'ultra') return Math.max(0, levels.length - 1);
     const high = detail === 'high';
-    const failed = readStore().failSplats ?? Number.MAX_SAFE_INTEGER;
+    const failed = remembered(fileKeyOf(levels)).failSplats ?? Number.MAX_SAFE_INTEGER;
     let cap = 0;
     for (let i = 1; i < levels.length; i++) {
         const size = sizeOf(levels[i]);
