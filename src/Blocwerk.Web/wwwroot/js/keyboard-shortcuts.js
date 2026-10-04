@@ -78,7 +78,7 @@ window.bwKeys = (function () {
     // The shape-adjust overlay (wall update shape review) hosts a whole editor over the wizard.
     function takeoverSurfaceOpen() {
         return document.querySelector(
-            '.panel-stepper, .wall-lightbox, .bw-modal-backdrop, .crossgen-tool, .panel-link-overlay, .bw-stage-overlay, '
+            '.panel-stepper, .wall-lightbox, .bw-modal-backdrop, .crossgen-tool, .panel-link-overlay, .bw-stage-overlay, .wall3d-fs, '
             + '.shape-adjust-overlay') !== null;
     }
 
