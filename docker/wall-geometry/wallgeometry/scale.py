@@ -17,7 +17,10 @@ REFERENCE_MM_PER_PX = 2.0
 PHYSICAL_MM = {
     "labelCellPx": 16.0,  # label / source-map cell
     "maskFeatherPx": 8.0,  # coverage-mask ramp into the covered area
-    "seamFeatherPx": 10.0,  # "select" mode: seam between two photos softened over this
+    "seamBlendPx": 16.0,  # "select" mode: sigma of the detail-band seam between two photos
+    "seamBandPx": 24.0,  # sigma of the low-pass that splits colour from detail at a seam
+    "seamWidePx": 96.0,  # sigma of the wide colour blend across a seam
+    "edgeSmoothPx": 32.0,  # sigma that rounds the staircase of the coverage edge
     "outlierBlurPx": 6.0,  # "blend" mode: Lab blur before the outlier test
     "outlierSmoothPx": 22.0,  # "blend" mode: neighbourhood the keep / drop decision is smoothed over
     "flattenDownscale": 16.0,  # work cell of the shading flattening (flatten.py)

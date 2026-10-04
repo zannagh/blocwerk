@@ -220,7 +220,7 @@ old rules took two spurious slabs there without them).
 
 Parts: `geometry` (JSON), `photos` (JPEG or PNG, named `<camera image>.<jpg|jpeg|png>`; size must equal
 the solved camera), optional `options` JSON (`mmPerPx` 2.0 in 0.25–50, `maxSidePx` 4096 in 256–8192,
-`extraMarginMm` 100 in 0–2000, `jpegQuality` 90 in 30–100; unknown keys → 422), optional `callbackUrl`.
+`extraMarginMm` 100 in 0–2000, `jpegQuality` 90 in 30–100, `blendViews` 6 in 1–8 (photos blended per spot); unknown keys → 422), optional `callbackUrl`.
 The geometry is range-checked (finite numbers, ≤ 64 facets, sane image sizes, known dictionary) and the
 total output must stay under `TEXTURES_MAX_MEGAPIXELS`, else `422`. The app sends `mmPerPx`, `maxSidePx` and
 `jpegQuality` only when configured (`GEOMETRYSERVICE__TEXTURES__MMPERPX` / `__MAXSIDEPX` / `__JPEGQUALITY`).

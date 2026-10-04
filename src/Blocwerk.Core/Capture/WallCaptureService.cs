@@ -1,5 +1,6 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Compute;
+using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.MarkerPlanning;
@@ -34,7 +35,8 @@ public sealed partial class WallCaptureService(
     CaptureVideoUploadSlots? uploadSlots = null,
     ICapturePhotoConverter? photoConverter = null,
     WallTextureRerenderQueue? textureQueue = null,
-    WallModelResolveQueue? resolveQueue = null) : IWallCaptureService
+    WallModelResolveQueue? resolveQueue = null,
+    BlocwerkSettings? settings = null) : IWallCaptureService
 {
     private const string AdminAction = "Capturing wall photos";
 

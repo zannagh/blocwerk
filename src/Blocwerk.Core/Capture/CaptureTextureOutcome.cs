@@ -19,9 +19,17 @@ internal static class CaptureTextureOutcome
     public static bool IsRerendering(string? texturesJobId) =>
         texturesJobId?.StartsWith(RerenderMark, StringComparison.Ordinal) == true;
 
+    /// <summary>The mark for a re-render at <paramref name="quality"/> (Standard writes none), once <paramref name="jobId"/> is submitted.</summary>
+    public static string Mark(TextureQuality quality, string? jobId = null) =>
+        RerenderMark + (quality == TextureQuality.Standard ? string.Empty : $"{QualityTag}{(int)quality}:") + jobId;
+
+    /// <summary>The quality a pending re-render was asked for (Standard when the mark carries none).</summary>
+    public static TextureQuality RerenderQuality(string? texturesJobId) =>
+        Body(texturesJobId, out var quality) is not null ? quality : TextureQuality.Standard;
+
     /// <summary>The submitted re-render job, or null when it is still to be submitted (or none runs).</summary>
     public static string? RerenderJobId(string? texturesJobId) =>
-        IsRerendering(texturesJobId) && texturesJobId!.Length > RerenderMark.Length ? texturesJobId[RerenderMark.Length..] : null;
+        Body(texturesJobId, out _) is { Length: > 0 } id ? id : null;
 
     /// <summary>The photo-real half of a finished capture's error, or null.</summary>
     public static string? SplatPart(string? error)
@@ -52,6 +60,27 @@ internal static class CaptureTextureOutcome
             c.Status = splatError is null ? WallCaptureStatus.Succeeded : WallCaptureStatus.SucceededWithoutSplat;
             c.Stage = splatError is null ? "Done" : "Done (without the photo-real view)";
         }
+    }
+
+    private const string QualityTag = "q";
+
+    private static string? Body(string? texturesJobId, out TextureQuality quality)
+    {
+        quality = TextureQuality.Standard;
+        if (!IsRerendering(texturesJobId))
+        {
+            return null;
+        }
+
+        var body = texturesJobId![RerenderMark.Length..];
+        if (body.Length >= 3 && body[0] == QualityTag[0] && body[2] == ':' && char.IsDigit(body[1])
+            && Enum.IsDefined(typeof(TextureQuality), body[1] - '0'))
+        {
+            quality = (TextureQuality)(body[1] - '0');
+            return body[3..];
+        }
+
+        return body;
     }
 
     private static string? Clip(string? error) => error is { Length: > 2048 } ? error[..2048] : error;
