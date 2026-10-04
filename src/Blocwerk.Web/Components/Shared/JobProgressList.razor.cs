@@ -101,6 +101,7 @@ public partial class JobProgressList : IAsyncDisposable
         JobKinds.TextureRerender => "Textures again",
         JobKinds.Resolve => "Model solved again",
         JobKinds.Import => "Capture import",
+        JobKinds.HoldSearch => "Hold search",
         _ => kind,
     };
 

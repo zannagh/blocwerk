@@ -5,6 +5,7 @@ using System.Globalization;
 using Blocwerk.Core.Capture.Replay;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Runners;
+using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Jobs;
@@ -18,7 +19,8 @@ public sealed partial class JobProgressReader(
     RootDbContextFactory dbContextFactory,
     CaptureImportProgress? imports = null,
     TimeProvider? clock = null,
-    GpuJobQueue? runnerQueue = null) : IJobProgressReader
+    GpuJobQueue? runnerQueue = null,
+    HoldSearchJobs? holdSearches = null) : IJobProgressReader
 {
     /// <summary>How many rows of each source with only ended work are read at most.</summary>
     public const int MaxRows = 200;
@@ -43,6 +45,7 @@ public sealed partial class JobProgressReader(
         items.AddRange(await CaptureItemsAsync(db, context, ct));
         items.AddRange(await GpuItemsAsync(db, context, ct));
         items.AddRange(await ImportItemsAsync(context, ct));
+        items.AddRange(HoldSearchItems(context));
         items = await MarkPausedAsync(db, items, context, ct);
         var named = await NameWallsAsync(db, items, ct);
         return new JobProgressSnapshot(now, Math.Round(scope.Recent.TotalHours, 2), Order(named));

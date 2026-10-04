@@ -5,6 +5,7 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Services;
 
 namespace Blocwerk.Core.Tests;
 
@@ -24,6 +25,11 @@ internal sealed class FakeHoldProposals : IHoldProposalService
             ? throw new InvalidOperationException("boom")
             : Task.FromResult<HoldProposalRunResult?>(new HoldProposalRunResult(53, 900, 40, Proposals, Proposals, "test"));
     }
+
+    public Task EnsureCanFindAsync(Guid wallId, CancellationToken ct = default) => Task.CompletedTask;
+
+    public Task<HoldProposalRunResult> FindInBackgroundAsync(Guid wallId, IProgress<HoldSearchProgress>? progress, CancellationToken ct = default) =>
+        throw new NotSupportedException();
 
     public Task<HoldProposalRunResult> FindAsync(Guid wallId, CancellationToken ct = default) => throw new NotSupportedException();
 
