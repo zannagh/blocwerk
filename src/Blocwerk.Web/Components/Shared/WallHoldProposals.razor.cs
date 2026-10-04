@@ -72,6 +72,7 @@ public partial class WallHoldProposals
         loadedWallId = WallId;
         (loaded, proposals, message, failure) = (false, [], null, null);
         await ReloadAsync();
+        await LoadSearchAsync();
     }
 
     /// <summary>Loads the list; after the first list a failure keeps it (and the message) on screen.</summary>
@@ -146,12 +147,6 @@ public partial class WallHoldProposals
             return null;
         }
     }
-
-    private Task FindAsync() => RunAsync(async () =>
-    {
-        var r = await Proposals.FindAsync(WallId);
-        return $"{r.Photos} photos searched: {r.Proposals} possible new holds ({r.OnPanels} on a wall photo).";
-    });
 
     private Task AcceptAsync(HoldProposal p) => RunAsync(async () =>
     {

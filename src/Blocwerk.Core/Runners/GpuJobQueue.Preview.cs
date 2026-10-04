@@ -33,7 +33,7 @@ public sealed partial class GpuJobQueue
             return found;
         }
 
-        if (!options.Previews || !GpuJobPreviews.MayAccept(job, step, total))
+        if (!options.Previews || !GpuJobPreviews.MayAccept(job, step, total, options, Now))
         {
             return RunnerJobOutcome.PreviewRefused;
         }
@@ -49,7 +49,7 @@ public sealed partial class GpuJobQueue
             return RunnerJobOutcome.InsufficientStorage;
         }
 
-        var (stored, refused) = await StoreUploadAsync(runner, jobId, body, encoding == "gzip", ct);
+        var (stored, refused) = await StoreUploadAsync(runner, jobId, body, encoding == "gzip", ct, options.MaxPreviewBytes);
         if (stored is null)
         {
             return refused;
@@ -90,13 +90,15 @@ public sealed partial class GpuJobQueue
             var updated = await db.GpuJobs
                 .Where(j => j.Id == job.Id && j.ClaimedByRunnerId == runner.Id && j.InstalledAt == null && j.PreviewPath == pending
                             && (j.Status == GpuJobStatus.Claimed || j.Status == GpuJobStatus.Running)
-                            && (j.PreviewStep == null || j.PreviewStep < step))
+                            && (j.PreviewStep == null || j.PreviewStep < step) && j.PreviewCount < options.MaxPreviewsPerJob)
                 .ExecuteUpdateAsync(
                     s => s.SetProperty(j => j.PreviewPath, stored)
                         .SetProperty(j => j.PreviewFormat, format)
                         .SetProperty(j => j.PreviewBytes, bytes)
                         .SetProperty(j => j.PreviewStep, step)
                         .SetProperty(j => j.TotalSteps, total)
+                        .SetProperty(j => j.PreviewCount, j => j.PreviewCount + 1)
+                        .SetProperty(j => j.PreviewAcceptedAt, Now)
                         .SetProperty(j => j.PreviewBaseSplatId, view)
                         .SetProperty(j => j.PreviewFinishJobId, (string?)null),
                     ct);

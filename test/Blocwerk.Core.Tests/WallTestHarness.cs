@@ -18,21 +18,33 @@ namespace Blocwerk.Core.Tests;
 /// </summary>
 public sealed class WallTestHarness : IDisposable
 {
-    private readonly SqliteConnection connection;
+    private readonly SqliteConnection? connection;
+    private readonly PostgresTestDatabase? postgres;
     private readonly string betaVideoDir;
     private readonly string wallImageDir;
 
     public WallTestHarness()
+        : this(null)
     {
+    }
+
+    /// <summary>A harness over a migrated PostgreSQL database instead of SQLite (disposed with it), for the Postgres tests.</summary>
+    public WallTestHarness(PostgresTestDatabase? postgres)
+    {
+        this.postgres = postgres;
+
         // A NAMED shared-cache database rather than a plain ":memory:" one, so every context the
         // factory hands out opens its OWN connection to it — which is what IDbContextFactory means
         // in production. Handing several contexts the SAME SqliteConnection makes creating them
         // concurrently a race: EF registers its user functions on the connection as each context
         // initialises, and doing that while another thread is querying fails with SQLITE_BUSY.
         // This connection is held open only to keep the database alive for the harness's lifetime.
-        var connectionString = TestDbContextFactory.IsolatedDatabase();
-        connection = new SqliteConnection(connectionString);
-        connection.Open();
+        var connectionString = postgres?.ConnectionString ?? TestDbContextFactory.IsolatedDatabase();
+        if (postgres is null)
+        {
+            connection = new SqliteConnection(connectionString);
+            connection.Open();
+        }
 
         // A root (session-less) factory over the SAME database, as the background normalizer takes.
         RootContextFactory = new TestRootDbContextFactory(connectionString);
@@ -43,8 +55,9 @@ public sealed class WallTestHarness : IDisposable
         Owner = new User { Identifier = "owner@test", DisplayName = "Owner" };
         DbContextFactory = new TestDbContextFactory(connectionString);
 
-        using (var db = DbContextFactory.CreateDbContext())
+        if (postgres is null)
         {
+            using var db = DbContextFactory.CreateDbContext();
             db.Database.EnsureCreated();
         }
 
@@ -198,7 +211,8 @@ public sealed class WallTestHarness : IDisposable
 
     public void Dispose()
     {
-        connection.Dispose();
+        connection?.Dispose();
+        postgres?.Dispose();
         if (Directory.Exists(betaVideoDir))
         {
             Directory.Delete(betaVideoDir, recursive: true);
@@ -249,11 +263,7 @@ public sealed class TestDbContextFactory : IDbContextFactory<BlocwerkDbContext>
 
     public BlocwerkDbContext CreateDbContext()
     {
-        var options = new DbContextOptionsBuilder<BlocwerkDbContext>()
-            .UseSqlite(connectionString)
-            .Options;
-
-        return new SqliteBlocwerkDbContext(options);
+        return TestDb.Create(connectionString);
     }
 }
 
@@ -268,18 +278,14 @@ public sealed class TestRootDbContextFactory : RootDbContextFactory
     private readonly string connectionString;
 
     public TestRootDbContextFactory(string connectionString)
-        : base(new DbContextOptionsBuilder<BlocwerkDbContext>().UseSqlite(connectionString).Options)
+        : base(new DbContextOptionsBuilder<BlocwerkDbContext>().Options)
     {
         this.connectionString = connectionString;
     }
 
     public override BlocwerkDbContext CreateDbContext()
     {
-        var options = new DbContextOptionsBuilder<BlocwerkDbContext>()
-            .UseSqlite(connectionString)
-            .Options;
-
-        return new SqliteBlocwerkDbContext(options);
+        return TestDb.Create(connectionString);
     }
 }
 

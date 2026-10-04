@@ -181,6 +181,12 @@ public class GpuJob
     /// <summary>The training step of <see cref="PreviewPath"/>; a later preview must have a higher one.</summary>
     public int? PreviewStep { get; set; }
 
+    /// <summary>How many previews of this job were taken so far (bounded by <c>GpuRunnerOptions.MaxPreviewsPerJob</c>).</summary>
+    public int PreviewCount { get; set; }
+
+    /// <summary>When the newest preview was taken (the per-job rate limit).</summary>
+    public DateTimeOffset? PreviewAcceptedAt { get; set; }
+
     /// <summary>The training's total steps, as the runner reports them with its progress or a preview.</summary>
     public int? TotalSteps { get; set; }
 

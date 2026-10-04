@@ -14,11 +14,22 @@ namespace Blocwerk.Core.Runners;
 /// </summary>
 public static class GpuJobPreviews
 {
-    /// <summary>Whether a runner's preview after <paramref name="step"/> of <paramref name="total"/> steps is taken.</summary>
-    public static bool MayAccept(GpuJob job, int step, int total) =>
+    /// <summary>
+    /// Whether a runner's preview after <paramref name="step"/> of <paramref name="total"/> steps is taken: it moves
+    /// forward, within the job's bounds (<paramref name="options"/>: a step of at least
+    /// <see cref="GpuRunnerOptions.MinPreviewStep"/>, a sane total, a step gap, a count and a rate limit per job).
+    /// </summary>
+    public static bool MayAccept(GpuJob job, int step, int total, GpuRunnerOptions? options = null, DateTimeOffset? now = null) =>
         step > 0 && total > step && job.InstalledAt is null
         && job.Status is GpuJobStatus.Claimed or GpuJobStatus.Running
-        && (job.PreviewStep is null || job.PreviewStep < step);
+        && (job.PreviewStep is null || job.PreviewStep < step)
+        && WithinBounds(job, step, total, options ?? new GpuRunnerOptions(), now ?? DateTimeOffset.UtcNow);
+
+    private static bool WithinBounds(GpuJob job, int step, int total, GpuRunnerOptions options, DateTimeOffset now) =>
+        step >= GpuRunnerOptions.MinPreviewStep && total <= GpuRunnerOptions.MaxPreviewTotalSteps
+        && job.PreviewCount < options.MaxPreviewsPerJob
+        && (job.PreviewStep is null || step - job.PreviewStep >= options.MinPreviewStepGap)
+        && (job.PreviewAcceptedAt is null || now - job.PreviewAcceptedAt >= options.MinPreviewInterval);
 
     /// <summary>Whether the preview after <paramref name="step"/> steps may still be installed on the model.</summary>
     public static bool MayInstall(GpuJob job, int step) =>

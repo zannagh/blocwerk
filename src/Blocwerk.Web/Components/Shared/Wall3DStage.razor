@@ -3,10 +3,13 @@
    The stage element is rendered once and left alone: wall3d.js owns everything inside it.
 
    Full screen is a fixed-position takeover of the host element rather than a second stage: the same
-   canvas (and WebGL context) just gets the whole window, and wall3d.js's ResizeObserver refits it. *@
+   canvas (and WebGL context) just gets the whole window, and wall3d.js's ResizeObserver refits it.
+   While open the host is moved to <body> (wall3d-portal.js) so no page stacking context can cover it; the
+   shell is the host's only Blazor parent, which keeps that move safe for Blazor's diffing. *@
 @implements IAsyncDisposable
 
-<div class="wall3d-stage-host@(fullscreen ? " wall3d-fs" : string.Empty)">
+<div class="wall3d-stage-shell">
+<div class="wall3d-stage-host@(fullscreen ? " wall3d-fs" : string.Empty)" @ref="host">
     <div class="wall3d-stage-el" @ref="stage"></div>
     @if (failure is not null)
     {
@@ -27,4 +30,5 @@
             <span class="bw-stage-close-label">Close</span>
         </button>
     }
+</div>
 </div>

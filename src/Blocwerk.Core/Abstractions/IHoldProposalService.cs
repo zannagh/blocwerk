@@ -4,6 +4,7 @@
 
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Services;
 
 namespace Blocwerk.Core.Abstractions;
 
@@ -26,6 +27,22 @@ public interface IHoldProposalService
     /// <param name="ct">Cancellation.</param>
     /// <returns>The outcome, or null when not possible or failed.</returns>
     Task<HoldProposalRunResult?> FindFromPipelineAsync(Guid wallId, CancellationToken ct = default);
+
+    /// <summary>Checks that the current user may search this wall (wall admin, not a kiosk).</summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>A task; it throws when the user may not.</returns>
+    Task EnsureCanFindAsync(Guid wallId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Runs the search for a background job (<see cref="HoldSearchJobs"/>): no user check (the starter was checked),
+    /// waits for its turn, reports the photos searched and throws a <see cref="UserFacingException"/> when it cannot run.
+    /// </summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="progress">Receives the photos searched so far.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>The outcome.</returns>
+    Task<HoldProposalRunResult> FindInBackgroundAsync(Guid wallId, IProgress<HoldSearchProgress>? progress, CancellationToken ct = default);
 
     /// <summary>The wall's proposals with the given status (wall admins).</summary>
     /// <param name="wallId">The wall.</param>

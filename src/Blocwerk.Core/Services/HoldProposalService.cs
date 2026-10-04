@@ -84,7 +84,7 @@ public sealed partial class HoldProposalService(
         await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, ct);
     }
 
-    private async Task<HoldProposalRunResult?> RunAsync(Guid wallId, CancellationToken ct)
+    private async Task<HoldProposalRunResult?> RunAsync(Guid wallId, CancellationToken ct, IProgress<HoldSearchProgress>? progress = null)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);
         var model = await db.WallGeometryModels.AsNoTracking()
@@ -104,7 +104,7 @@ public sealed partial class HoldProposalService(
         }
 
         var watch = Stopwatch.StartNew();
-        var detections = await DetectAllAsync(detector, cameras, photos, ct);
+        var detections = await DetectAllAsync(detector, cameras, photos, progress, ct);
         var inputs = await ProposalInputs.LoadAsync(db, wallId, model.Id, WallGeometryDocument.Parse(model.Json), ct);
         var reviewed = await db.HoldProposals.AsNoTracking()
             .Where(p => p.WallId == wallId && p.Status != HoldProposalStatus.Pending)
@@ -132,12 +132,16 @@ public sealed partial class HoldProposalService(
 
     /// <summary>Detections of every photo whose decoded size matches its solved camera (rotated photos are skipped).</summary>
     private async Task<List<CaptureDetection>> DetectAllAsync(
-        ICaptureHoldDetector detector, Dictionary<string, SolvedCamera> cameras, Dictionary<string, string> photos, CancellationToken ct)
+        ICaptureHoldDetector detector, Dictionary<string, SolvedCamera> cameras, Dictionary<string, string> photos,
+        IProgress<HoldSearchProgress>? progress, CancellationToken ct)
     {
         var all = new List<CaptureDetection>();
+        var done = 0;
+        progress?.Report(new HoldSearchProgress(0, cameras.Count));
         foreach (var (name, camera) in cameras)
         {
             ct.ThrowIfCancellationRequested();
+            progress?.Report(new HoldSearchProgress(done++, cameras.Count));
             if (CaptureDetectionCache.Get(photos[name], detector.Name) is { } cached)
             {
                 all.AddRange(cached);

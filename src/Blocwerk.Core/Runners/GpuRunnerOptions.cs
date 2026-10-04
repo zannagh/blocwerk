@@ -103,6 +103,24 @@ public sealed class GpuRunnerOptions
     /// </summary>
     public bool Previews { get; init; } = true;
 
+    /// <summary>The earliest step a preview is taken at (earlier ones are a blur, not worth a finish on the server).</summary>
+    public const int MinPreviewStep = 3000;
+
+    /// <summary>The largest total step count a preview may claim (the runner picks it; the server bounds it).</summary>
+    public const int MaxPreviewTotalSteps = 200_000;
+
+    /// <summary>How many previews of one job are taken (<c>RUNNERS__MAXPREVIEWSPERJOB</c>); more are refused (422, the runner skips them).</summary>
+    public int MaxPreviewsPerJob { get; init; } = 4;
+
+    /// <summary>The least training steps between two previews of a job (<c>RUNNERS__MINPREVIEWSTEPGAP</c>).</summary>
+    public int MinPreviewStepGap { get; init; } = 2000;
+
+    /// <summary>The least time between two previews of a job (<c>RUNNERS__MINPREVIEWINTERVALSECONDS</c>).</summary>
+    public TimeSpan MinPreviewInterval { get; init; } = TimeSpan.FromMinutes(1);
+
+    /// <summary>The largest preview upload, decoded (<c>RUNNERS__MAXPREVIEWMB</c>); a preview is never the final result.</summary>
+    public long MaxPreviewBytes { get; init; } = 1024L * 1024 * 1024;
+
     public static GpuRunnerOptions Bind(IConfiguration? configuration)
     {
         var d = new GpuRunnerOptions();
@@ -120,6 +138,10 @@ public sealed class GpuRunnerOptions
             MinFreeDiskBytes = Megabytes(configuration, "MinFreeDiskMb", 1024 * 1024) ?? d.MinFreeDiskBytes,
             MaxResultSplats = Int(configuration, "MaxResultSplats", 1000, 100_000_000) ?? d.MaxResultSplats,
             MaxRunnersPerUser = Int(configuration, "MaxRunnersPerUser", 1, 1000) ?? d.MaxRunnersPerUser,
+            MaxPreviewsPerJob = Int(configuration, "MaxPreviewsPerJob", 1, 50) ?? d.MaxPreviewsPerJob,
+            MinPreviewStepGap = Int(configuration, "MinPreviewStepGap", 1, 100_000) ?? d.MinPreviewStepGap,
+            MinPreviewInterval = Int(configuration, "MinPreviewIntervalSeconds", 0, 3600) is { } secs ? TimeSpan.FromSeconds(secs) : d.MinPreviewInterval,
+            MaxPreviewBytes = Megabytes(configuration, "MaxPreviewMb", 16 * 1024) ?? d.MaxPreviewBytes,
             Previews = bool.TryParse(Read(configuration, "Previews"), out var previews) ? previews : d.Previews,
         };
     }
