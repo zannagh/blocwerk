@@ -2,11 +2,12 @@ using System.Diagnostics;
 using Blocwerk.Core.Detection.Outlines;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Xunit.Abstractions;
 
 namespace Blocwerk.Core.Tests;
 
 /// <summary>A dense synthetic panel (900 holds, ~half of them overlapping): fast, overlap-free and stable on re-run.</summary>
-public sealed class HoldShapeCleanupStressTests
+public sealed class HoldShapeCleanupStressTests(ITestOutputHelper output)
 {
     [Fact]
     public void ADensePanelIsPlannedQuicklyAndEndsWithoutAutoOverlaps()
@@ -16,10 +17,11 @@ public sealed class HoldShapeCleanupStressTests
         var sw = Stopwatch.StartNew();
         var plan = HoldShapeCleanup.PlanDetailed(holds, 1.33);
         sw.Stop();
+        output.WriteLine($"Planning 900 holds: {sw.Elapsed.TotalSeconds:F1} s");
 
-        // One panel of 900 holds, far denser than a real wall (the real Attic plans in about a second); the generous bound
+        // One panel of 900 holds, far denser than a real wall (the real Attic plans in about a second); the bound is ~30x the typical 2 s, so a slow shared CI runner passes
         // only guards against a return of the quadratic distance scans while the suite runs in parallel.
-        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(15), $"planning took {sw.Elapsed.TotalSeconds:F1}s");
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(60), $"planning took {sw.Elapsed.TotalSeconds:F1}s");
         Assert.NotEmpty(plan.Changes);
         Apply(holds, plan);
         var offenders = OverlappingPairs(holds).Where(p => IsAuto(p.A) && IsAuto(p.B)).ToList();

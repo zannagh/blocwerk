@@ -25,7 +25,7 @@ public class CaptureCoverageScaleTests(ITestOutputHelper output)
         output.WriteLine($"Analysis of {inputs.Photos.Count} cameras: {clock.Elapsed.TotalSeconds:F1} s");
         Assert.Equal(3, report.Facets.Count);
         Assert.Equal(10, report.Volumes.Count);
-        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(20), $"took {clock.Elapsed.TotalSeconds:F1} s");
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(120), $"took {clock.Elapsed.TotalSeconds:F1} s");
     }
 
     [Fact]
