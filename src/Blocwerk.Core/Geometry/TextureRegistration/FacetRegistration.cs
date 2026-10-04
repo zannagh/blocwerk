@@ -21,6 +21,7 @@ namespace Blocwerk.Core.Geometry.TextureRegistration;
 /// <param name="Extent">The facet's extent a placed hold must fall into.</param>
 /// <param name="DepthSign">Sign of the mapping's projective depth on the inliers; points with the other sign lie beyond its horizon.</param>
 /// <param name="InlierPoints">The inliers' normalised photo points (where the fit is supported); null when unknown.</param>
+/// <param name="Warp">A smooth residual field added to the homography's plane position (see <see cref="ResidualWarp"/>); null when the homography is used alone.</param>
 public sealed record FacetRegistration(
     string FacetId,
     bool Accepted,
@@ -34,7 +35,8 @@ public sealed record FacetRegistration(
     PlaneHomography? PhotoToPlane,
     PlaneRectMm Extent,
     int DepthSign = 1,
-    IReadOnlyList<(double X, double Y)>? InlierPoints = null)
+    IReadOnlyList<(double X, double Y)>? InlierPoints = null,
+    ResidualWarp? Warp = null)
 {
     /// <summary>A rejected registration without a fit.</summary>
     /// <param name="facetId">The facet.</param>
@@ -50,6 +52,15 @@ public sealed record FacetRegistration(
     /// <param name="x">Normalised x.</param>
     /// <param name="y">Normalised y.</param>
     /// <returns>Plane (a, b) in mm.</returns>
-    public (double A, double B) Map(double x, double y) =>
-        PhotoToPlane is { } h && Math.Sign(h.Depth(x, y)) == DepthSign ? h.Apply(x, y) : (double.NaN, double.NaN);
+    public (double A, double B) Map(double x, double y)
+    {
+        if (PhotoToPlane is not { } h || Math.Sign(h.Depth(x, y)) != DepthSign)
+        {
+            return (double.NaN, double.NaN);
+        }
+
+        var (a, b) = h.Apply(x, y);
+        var (da, db) = Warp?.Correction(x, y) ?? (0, 0);
+        return (a + da, b + db);
+    }
 }
