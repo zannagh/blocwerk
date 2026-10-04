@@ -6,7 +6,7 @@
 // rebuilt after the restore, one level lower and at a lower resolution. A browser that does not give
 // the context back on its own is asked to (WEBGL_lose_context), and one that never does ends the
 // mode quietly. So does losing the smallest level twice.
-import { rememberFailure } from './wall3d-splat-ladder.js';
+import { rememberFailure } from './wall3d-splat-store.js';
 
 /** At most this much device memory (GB, `navigator.deviceMemory`; Chromium only) counts as low. */
 const LOW_MEMORY_GB = 4;
@@ -89,13 +89,14 @@ export function createRenderScale(renderer, light) {
 /**
  * @param ctx.renderer      the view's renderer
  * @param ctx.say           (event, extra) diagnostics report
+ * @param ctx.fileKey       the scene's key in the remembered limits (wall3d-splat-store.js)
  * @param ctx.culprit       () → the level that was showing or loading when the context went
  * @param ctx.culpritIndex  () → its index
  * @param ctx.drop          () drops the Spark scene (its GPU objects died with the context)
  * @param ctx.resume        (index) rebuilds the scene at that level once the context is back
  * @param ctx.giveUp        () ends the mode quietly
  */
-export function createRecovery({ renderer, say, culprit, culpritIndex, drop, resume, giveUp }) {
+export function createRecovery({ renderer, say, fileKey, culprit, culpritIndex, drop, resume, giveUp }) {
     // Fetched while the context is alive: a lost context answers getExtension with null.
     const loseExt = renderer.getContext().getExtension('WEBGL_lose_context');
     let recovering = false;
@@ -122,7 +123,7 @@ export function createRecovery({ renderer, say, culprit, culpritIndex, drop, res
             lostAt = performance.now();
             const i = culpritIndex();
             const level = culprit();
-            if (level) rememberFailure(level);
+            if (level) rememberFailure(fileKey, level);
             if (i === 0) smallestLosses++;
             resumeAt = Math.max(0, i - 1);
             say('lost', { level: i, splats: level?.splats ?? null });

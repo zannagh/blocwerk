@@ -17,9 +17,11 @@
 //
 // Rendered on demand (wall3d-loop.js): Spark re-sorts only after a camera move and its `onDirty`
 // asks for the frame showing the finished sort; phones space sorts LIGHT_SORT_MS apart.
-import { createDetailBadge, firstLevelWarning, ladderOf, levelCap, pinnedLevel, remembered, rememberSuccess, sizeOf } from './wall3d-splat-ladder.js';
+import {
+    createDetailBadge, fileKeyOf, firstLevelWarning, ladderOf, levelCap, pinnedLevel, remembered, rememberRendered, rememberSuccess, sizeOf,
+} from './wall3d-splat-ladder.js';
 import { storeDetail, storedDetail } from './wall3d-splat-detail.js';
-import { createLadderPolicy } from './wall3d-splat-policy.js';
+import { createLadderPolicy, createReprobe } from './wall3d-splat-policy.js';
 import { deviceFacts, report } from './wall3d-splat-diag.js';
 import { PHOTO_REAL_FAILED } from './wall3d-modes.js';
 import { createRecovery, createRenderScale, prefersLightSplat, supportsPhotoReal as supported } from './wall3d-splat-recover.js';
@@ -49,6 +51,10 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
     const facts = { ...deviceFacts(renderer), mobile: light };
     const scale = createRenderScale(renderer, light);
     const policy = createLadderPolicy(light);
+    const fileKey = fileKeyOf(levels);      // the remembered limits are per scene file
+    const reprobe = createReprobe();      // re-arms the step-up probe after a failed / aborted / 'stay' step
+    let reprobeTimer = 0;
+    let retryCap = -1;              // the cap a failed step lowered, restored when the re-probe runs
     let detailMode = storedDetail();    // 'auto' | 'high' | 'ultra' (wall3d-splat-detail.js)
     let onLevel = null;             // the Detail toggle's label follows the level drawn
     let cap = levels.length > 0 ? levelCap(levels, light, detailMode) : 0;
@@ -62,14 +68,14 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
     const state = extra => ({
         level: loader.index, levels: levels.length, splats: loader.index >= 0 ? levels[loader.index].splats : null,
         frameMs: policy.monitor.median || null, elapsedMs: startedAt ? performance.now() - startedAt : null,
-        lostCount: recovery.lostCount, safeSplats: remembered().failSplats ?? null, mobile: light, ...extra,
+        lostCount: recovery.lostCount, safeSplats: remembered(fileKey).failSplats ?? null, mobile: light, ...extra,
     });
     const say = (event, extra) => report(event, renderer, facts, state(extra));
     const detail = createDetailBadge(renderer.domElement.parentElement);
     const retry = createShaderRetry(renderer, say, () => !disposed && !broken && onGiveUp?.(PHOTO_REAL_FAILED));
 
     const recovery = createRecovery({
-        renderer, say,
+        renderer, say, fileKey,
         culprit: () => levels[Math.max(loader.index, loader.loadingIndex, 0)],
         culpritIndex: () => Math.max(loader.index, loader.loadingIndex, 0),
         drop() {
@@ -106,17 +112,46 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
         stepping = myEpoch;
         detail.show(recovering ? 'Restoring detail…' : 'Loading detail…');
         loader.load(i, null)
-            .then(ok => { if (ok) say(recovering ? 'resumed' : 'level'); })
+            .then(ok => {
+                if (ok) {
+                    say(recovering ? 'resumed' : 'level');
+                    rememberRendered(fileKey, levels[i]);   // rendering at/above a remembered failure clears it
+                } else if (!disposed && !broken && !recovery.recovering) {
+                    say('level-aborted', { level: i });
+                    scheduleReprobe();
+                }
+            })
             .catch(err => {
                 console.warn('wall3d: photo-real level failed', err);
-                cap = Math.max(0, Math.min(cap, index));
+                retryCap = Math.max(retryCap, cap);
+                cap = Math.max(0, Math.min(cap, loader.index));
                 say('level-failed', { detail: String(err?.message || err), level: i });
+                scheduleReprobe();
             })
             .finally(() => {
                 if (stepping !== myEpoch) return;
                 stepping = null;
                 if (!recovery.recovering) detail.hide();
             });
+    }
+
+    function scheduleReprobe() {
+        clearTimeout(reprobeTimer);
+        if (!reprobe.schedule()) {
+            say('reprobe-exhausted', { detail: `after ${reprobe.attempts} re-probes` });
+            return;
+        }
+        // The view renders on demand: ask for the frame that finds the back-off over.
+        reprobeTimer = setTimeout(() => { if (!disposed) request(); }, reprobe.delay + 50);
+    }
+
+    /** The back-off passed: lifts the cap a failed step lowered and measures the level on show again. */
+    function rearm(now, index) {
+        if (!reprobe.due(now)) return;
+        cap = Math.max(cap, Math.min(retryCap, levelCap(levels, light, detailMode)));
+        retryCap = -1;
+        say('reprobe', { detail: `attempt ${reprobe.attempts}, cap ${cap}` });
+        policy.shown(index < cap && detailMode !== 'ultra');
     }
 
     async function start() {
@@ -193,9 +228,10 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
         frame(now) {
             const index = loader.index;
             if (!active || !loader.mesh || stepping !== null || recovery.recovering || broken) return;
+            rearm(now, index);
             const next = index + 1;
             const ultra = detailMode === 'ultra';
-            if (next <= cap && (ultra || sizeOf(levels[next]) <= (remembered().okSplats ?? 0))) {
+            if (next <= cap && (ultra || sizeOf(levels[next]) <= (remembered(fileKey).okSplats ?? 0))) {
                 policy.stop();
                 stepTo(next);                     // Ultra, or ran fine here before: no need to measure
                 return;
@@ -203,10 +239,15 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
             if (ultra) return;                    // Ultra keeps the full level: no step-down for load
             const decision = policy.frame(now, detailMode === 'auto' && index > 1);
             if (decision === 'up') {
-                rememberSuccess(levels[index]);
+                rememberSuccess(fileKey, levels[index]);
                 if (next <= cap) stepTo(next);
+            } else if (decision === 'stay') {
+                say('probe-stay', { detail: `median ${policy.monitor.median.toFixed(1)} ms` });
+                scheduleReprobe();
             } else if ((decision === 'down' || decision === 'sustained') && index > 0) {
                 cap = index - 1;
+                retryCap = -1;
+                reprobe.cancel();             // too slow or too hot: no retry of what was just given up
                 say(decision === 'down' ? 'slow' : 'sustained', { detail: `median ${policy.monitor.median.toFixed(1)} ms` });
                 stepTo(index - 1);
             }
@@ -265,6 +306,7 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
             if (disposed) return;
             disposed = true;
             active = false;
+            clearTimeout(reprobeTimer);
             firstLoad.cancel(true);
             recovery.cancel();
             apply();

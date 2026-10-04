@@ -13,9 +13,44 @@ const SUSTAINED_MS = 20_000;
 /** A pause between frames at least this long counts as rest (the run starts over). */
 const REST_MS = 1500;
 
+/** Back-off before a probe that failed, was aborted or read 'stay' runs again (x attempt number). */
+const RETRY_MS = +(new URLSearchParams(location.search).get('splatRetryMs') || 15_000);
+/** Re-probes per view session; after these the level on show stays. */
+const MAX_RETRIES = 4;
+
+/**
+ * Re-arms the step-up probe: a step that failed, was aborted, or a probe that read 'stay' would
+ * otherwise leave the view on its level until a reload. `schedule` starts a back-off, `due` says
+ * (once) when it has passed. The attempts are bounded per session.
+ */
+export function createReprobe() {
+    let at = 0;
+    let pending = false;
+    let attempts = 0;
+    return {
+        get attempts() { return attempts; },
+        get pending() { return pending; },
+        /** Milliseconds from the last `schedule` until `due`. */
+        get delay() { return RETRY_MS * attempts + RETRY_MS; },
+        /** False when the attempts are used up. */
+        schedule(now = performance.now()) {
+            pending = attempts < MAX_RETRIES;
+            at = now + RETRY_MS * (attempts + 1);
+            return pending;
+        },
+        cancel() { pending = false; },
+        due(now) {
+            if (!pending || now < at) return false;
+            pending = false;
+            attempts++;
+            return true;
+        },
+    };
+}
+
 /**
  * `light`: phone-class device. Returns { probing, shown(canStepUp), stop(), frame(now, sustained) };
- * `frame` answers 'up' | 'down' | 'sustained' | null.
+ * `frame` answers 'up' | 'down' | 'stay' | 'sustained' | null.
  */
 export function createLadderPolicy(light) {
     const monitor = createFrameMonitor(light);
@@ -39,7 +74,7 @@ export function createLadderPolicy(light) {
             const decision = monitor.frame(now);
             if (probing && decision) {
                 probing = false;
-                return decision === 'stay' ? null : decision;
+                return decision;
             }
             if (decision === 'down') return 'down';
             if (light && sustained && now - runStart > SUSTAINED_MS) {
