@@ -1,0 +1,46 @@
+@* The heat map's buttons and legend, floated over the panel photo. The counts button only exists
+   while the heat map is on. *@
+<div class="heat-tools">
+    @if (On)
+    {
+        <button type="button" class="heat-tool @(ShowCounts ? "active" : null)" aria-pressed="@(ShowCounts ? "true" : "false")"
+                aria-label="Show how many boulders use each hold" title="Show counts" @onclick="OnToggleCounts">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"
+                 stroke-linecap="round" aria-hidden="true">
+                <line x1="5" y1="9" x2="19" y2="9" /><line x1="5" y1="15" x2="19" y2="15" />
+                <line x1="10" y1="4" x2="8" y2="20" /><line x1="16" y1="4" x2="14" y2="20" />
+            </svg>
+        </button>
+    }
+    <button type="button" class="heat-tool @(On ? "active" : null)" aria-pressed="@(On ? "true" : "false")"
+            aria-label="Show how often each area is used" title="Show how often each area is used" @onclick="OnToggle">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" /><line x1="16.5" y1="16.5" x2="21" y2="21" />
+            <path d="M8 11h6M11 8v6" />
+        </svg>
+    </button>
+</div>
+
+@if (On)
+{
+    <div class="heat-legend" role="img" aria-label="Colour scale from not used to heavily used, up to @Max boulders">
+        <div class="heat-legend-bar"></div>
+        <div class="heat-legend-ends">
+            <span>Not used</span>
+            <span>Heavily used (@Max)</span>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool On { get; set; }
+
+    [Parameter] public bool ShowCounts { get; set; }
+
+    /// <summary>The most boulders any single hold is part of.</summary>
+    [Parameter] public int Max { get; set; }
+
+    [Parameter] public EventCallback OnToggle { get; set; }
+
+    [Parameter] public EventCallback OnToggleCounts { get; set; }
+}
