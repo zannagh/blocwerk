@@ -70,6 +70,7 @@ public static class Wall3DViewBuilder
             BoulderName = boulder?.Name,
             MarkerSizeMm = doc.MarkerSizeMm,
             Facets = facets,
+            Recesses = Wall3DRecesses.Find(facets),
             Markers = markers,
             Holds = holds,
             UnplacedHoldCount = unplaced,
