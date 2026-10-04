@@ -47,7 +47,7 @@ public static class PanelCropCutoff
 
         const int sides = 16;
         return Enumerable.Range(0, sides)
-            .Select(i => i * 2 * Math.PI / sides)
+            .Select(i => i * (2 * Math.PI) / sides)
             .Select(a => (hold.X + (Math.Cos(a) * hold.Radius), hold.Y + (Math.Sin(a) * hold.Radius)))
             .ToList();
     }

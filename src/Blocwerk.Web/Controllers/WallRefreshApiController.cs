@@ -23,11 +23,14 @@ namespace Blocwerk.Web.Controllers;
 /// refused there too). Wall keys stay out even with write access: the file drop never admitted them, and replacing
 /// panel photos and promoting a new hold generation is a person's decision, not a device's. Writes are audited in the
 /// change journal (<see cref="ApiWriteAudit"/>).
+/// Antiforgery does not apply: the <c>[Authorize]</c> below pins the API-key scheme and nothing else, so a browser
+/// cookie can never authorize these routes and there is no ambient credential to forge with.
 /// </remarks>
 [ApiController]
 [Route("api/walls/{wallId:guid}/refresh")]
 [Authorize(Policy = BlocwerkPolicies.HumanOrUserApiKey, AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName)]
 [Produces("application/json")]
+[IgnoreAntiforgeryToken]
 [IgnoreAntiforgeryToken]
 public sealed partial class WallRefreshApiController(
     IWallRefreshService refreshes,

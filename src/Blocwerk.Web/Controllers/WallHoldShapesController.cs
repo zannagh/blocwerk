@@ -18,10 +18,15 @@ namespace Blocwerk.Web.Controllers;
 /// contact footprints on the model). Authorised like <see cref="WallGeometryPlacementController"/>: a wall key for
 /// the wall or a personal key, either created with write access, whose owner is an admin of the wall; kiosks are refused.
 /// </summary>
+/// <remarks>
+/// Antiforgery does not apply: the <c>[Authorize]</c> below pins the API-key scheme and nothing else, so a browser
+/// cookie can never authorize these routes and there is no ambient credential to forge with.
+/// </remarks>
 [ApiController]
 [Route("api/walls/{wallId:guid}/holds")]
 [Authorize(Policy = BlocwerkPolicies.AnyApiKey, AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName)]
 [Produces("application/json")]
+[IgnoreAntiforgeryToken]
 public sealed class WallHoldShapesController(
     IHoldOutlineUpgradeService outlines,
     IHoldFootprintService footprints,
