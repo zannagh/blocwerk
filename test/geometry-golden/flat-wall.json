@@ -1,0 +1,130 @@
+{
+ "name": "flat-wall",
+ "description": "One vertical wall (plane y = 0, facing -y) with two markers: no seams, nothing blocks.",
+ "model": {
+  "version": 1,
+  "units": "mm",
+  "world": {
+   "up": [0, 0, 1],
+   "referenceFacet": "0"
+  },
+  "segments": [
+   {
+    "index": 0,
+    "name": "Facet 0",
+    "facets": [
+     {
+      "id": "0",
+      "origin": [0, 0, 0],
+      "u": [1, 0, 0],
+      "v": [0, 0, 1],
+      "normal": [0, -1, 0],
+      "extentMm": {
+       "aMin": -50,
+       "aMax": 3050,
+       "bMin": -50,
+       "bMax": 2050
+      }
+     }
+    ]
+   }
+  ],
+  "markers": [
+   {
+    "id": 1,
+    "facet": "0",
+    "cornersPlaneMm": [
+     [437.5, 562.5],
+     [562.5, 562.5],
+     [562.5, 437.5],
+     [437.5, 437.5]
+    ]
+   },
+   {
+    "id": 2,
+    "facet": "0",
+    "cornersPlaneMm": [
+     [2437.5, 1562.5],
+     [2562.5, 1562.5],
+     [2562.5, 1437.5],
+     [2437.5, 1437.5]
+    ]
+   }
+  ]
+ },
+ "expect": {
+  "cuts": {
+   "0": []
+  }
+ },
+ "queries": [
+  {
+   "kind": "inShape",
+   "facet": "0",
+   "ab": [1500, 1000],
+   "insetMm": 0,
+   "expected": true,
+   "why": "the middle of the wall"
+  },
+  {
+   "kind": "inShape",
+   "facet": "0",
+   "ab": [3100, 1000],
+   "insetMm": 0,
+   "expected": false,
+   "why": "right of the extent rectangle"
+  },
+  {
+   "kind": "inShape",
+   "facet": "0",
+   "ab": [3020, 1000],
+   "insetMm": 0,
+   "expected": true,
+   "why": "inside the rectangle, 30 mm from its edge"
+  },
+  {
+   "kind": "inShape",
+   "facet": "0",
+   "ab": [3020, 1000],
+   "insetMm": 60,
+   "expected": false,
+   "why": "the same point with the coverage report's 60 mm edge inset"
+  },
+  {
+   "kind": "visible",
+   "camera": [1500, -3000, 1500],
+   "target": [1500, 0, 1000],
+   "targetFacet": "0",
+   "insetMm": 0,
+   "expected": true,
+   "why": "a camera straight in front"
+  },
+  {
+   "kind": "visible",
+   "camera": [1500, 3000, 1500],
+   "target": [1500, 0, 1000],
+   "targetFacet": "0",
+   "insetMm": 0,
+   "expected": false,
+   "why": "a camera behind the wall sees its back"
+  },
+  {
+   "kind": "visible",
+   "camera": [2500, -40, 1000],
+   "target": [1500, 0, 1000],
+   "targetFacet": "0",
+   "insetMm": 0,
+   "expected": false,
+   "why": "cos 0.040 to the normal: grazing below the 0.05 facing threshold (C# used to accept > 0.035)"
+  },
+  {
+   "kind": "visible",
+   "camera": [2500, -60, 1000],
+   "target": [1500, 0, 1000],
+   "targetFacet": "0",
+   "insetMm": 0,
+   "expected": true,
+   "why": "cos 0.060: just above the facing threshold"
+  }
+ ]
+}

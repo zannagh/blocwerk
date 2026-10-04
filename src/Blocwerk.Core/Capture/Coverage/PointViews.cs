@@ -2,6 +2,7 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using Blocwerk.Core.Geometry;
 using Blocwerk.Core.Geometry.Volumes;
 
 namespace Blocwerk.Core.Capture.Coverage;
@@ -65,7 +66,7 @@ public readonly record struct PointViews(
             double[] v = [cam.Centre[0] - point[0], cam.Centre[1] - point[1], cam.Centre[2] - point[2]];
             var dist = Math.Sqrt(Dot(v, v));
             var cos = dist <= 0 ? 0 : Dot(v, normal) / dist;
-            if (cos <= 0.035 || !cam.InFrame(point))
+            if (cos <= GeometryKernel.MinFacingCos || !cam.InFrame(point))
             {
                 continue;
             }

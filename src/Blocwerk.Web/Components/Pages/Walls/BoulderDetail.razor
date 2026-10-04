@@ -38,9 +38,9 @@ else
         <div class="boulder-photo-col">
         <div class="page-header">
             @{ var backUrl = !string.IsNullOrEmpty(ShareToken) ? $"/walls/{WallId}/shared/{ShareToken}?view=boulders" : $"/walls/{WallId}?view=boulders"; }
-            <a href="@backUrl" class="back-link">&larr; Back to boulder list</a>
+            <a href="@backUrl" class="back-link" aria-label="Back to boulder list"><span aria-hidden="true">&larr;</span><span class="back-link-text"> Back to boulder list</span></a>
             <div class="title-row">
-                <h1>@_boulder.Name</h1>
+                <h1 title="@_boulder.Name">@_boulder.Name</h1>
                 @if (!string.IsNullOrEmpty(_boulder.Grade))
                 {
                     <span class="grade-badge">@_boulder.Grade</span>
@@ -111,6 +111,25 @@ else
                 <p class="meta">by @CreatorDisplay &middot; <LocalTime Value="@_boulder.CreatedAt" Format="LocalTimeFormat.Date" /></p>
             }
 
+        </div>
+
+        @* Phone tier only: the first screen is the wall view plus the ascent buttons, so the setter line
+           and the Revise action leave the header and follow below the fold (CSS hides these two
+           everywhere else, and hides their header twins on the phone). *@
+        <div class="boulder-below-meta">
+            <p class="boulder-full-name">@_boulder.Name@(string.IsNullOrEmpty(_boulder.Grade) ? string.Empty : " · " + _boulder.Grade)</p>
+            @if (_boulder.Setters.Count > 0)
+            {
+                <p class="meta">Set by @SettersDisplay &middot; added by @CreatorDisplay &middot; <LocalTime Value="@_boulder.CreatedAt" Format="LocalTimeFormat.Date" /></p>
+            }
+            else
+            {
+                <p class="meta">by @CreatorDisplay &middot; <LocalTime Value="@_boulder.CreatedAt" Format="LocalTimeFormat.Date" /></p>
+            }
+            @if (CanFullRevise)
+            {
+                <a href="/walls/@WallId/boulders/@BoulderId/revise" class="btn-revise">Revise</a>
+            }
         </div>
 
         @if (_boulder.IsDraft)
@@ -186,12 +205,15 @@ else
         @* Two view switches: the historic Then/Now toggle, and Photos | 3D (the inline 3D schematic
            with this boulder highlighted). The 3D model is today's wall, so it is only offered on
            "Now", and going to "Then" leaves it. *@
+        @* ONE row, both groups side by side: two stacked 48px rows cost ~100px of a phone screen that
+           the wall view and the Attempt/Send/Flash buttons need to fit on together. *@
+        <div class="boulder-toggle-row">
         @if (CanViewHistoric)
         {
             @* Both states are rendered, with the active one marked. A single button labelled with the
                CURRENT state reads as a status label, so nobody could tell whether "Then" meant "you
                are in Then" or "go to Then" — the two-button form is unambiguous either way round. *@
-            <div class="view-toggle">
+            <div class="view-toggle" role="group" aria-label="Wall generation">
                 <button class="toggle-btn @(!_showHistoric ? "active" : "")" aria-pressed="@(_showHistoric ? "false" : "true")"
                         @onclick="() => ShowGenerationAsync(historic: false)"
                         title="Show the wall as it is today">
@@ -207,8 +229,9 @@ else
 
         @if (!_showHistoric)
         {
-            <WallViewSwitch WallId="WallId" @bind-Show3D="_show3D" />
+            <WallViewSwitch WallId="WallId" ReserveSpace="true" @bind-Show3D="_show3D" />
         }
+        </div>
 
         @if (!string.IsNullOrEmpty(_boulder.FootColorOnly) || _boulder.NoMatch)
         {
@@ -256,6 +279,7 @@ else
                 @HistoricHoldsMissing were set on holds that aren't on these photos.
             </p>
         }
+        <div class="boulder-view-slot">
         @if (_show3D && !_showHistoric)
         {
             <Wall3DInline WallId="WallId" BoulderId="BoulderId" ShareToken="@ShareToken" />
@@ -334,6 +358,7 @@ else
                 }
             </div>
         }
+        </div>
         </div>
 
         @* Right column on the desktop tier: everything you DO with the boulder. *@

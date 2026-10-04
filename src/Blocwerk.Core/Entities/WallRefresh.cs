@@ -46,6 +46,14 @@ public class WallRefresh
     /// <summary>What the confirm screen shows (carried, new, dropped, boulders affected), as JSON.</summary>
     public string? SummaryJson { get; set; }
 
+    /// <summary>
+    /// The decisions version the user confirmed when Apply was accepted (<see cref="Refresh.RefreshSummary.DecisionsVersion"/>
+    /// of the summary on their screen). The background apply promotes only when the live decisions still have exactly this
+    /// version; cleared when the run goes back to the confirm screen.
+    /// </summary>
+    [MaxLength(64)]
+    public string? ConfirmedDecisionsVersion { get; set; }
+
     [MaxLength(2048)]
     public string? Error { get; set; }
 

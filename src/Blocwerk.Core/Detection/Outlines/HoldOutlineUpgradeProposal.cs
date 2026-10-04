@@ -7,7 +7,9 @@ namespace Blocwerk.Core.Detection.Outlines;
 /// <param name="Hold">The hold as it was read (a snapshot; the apply step re-checks it before writing).</param>
 /// <param name="Outcome">The verdict.</param>
 /// <param name="Result">The outliner's result (its fingerprint is used even when the hold stays a circle).</param>
-public sealed record HoldOutlineUpgradeProposal(Hold Hold, HoldOutlineUpgradeOutcome Outcome, HoldOutlineResult Result)
+/// <param name="NewRadius">A reduced radius when the new shape fell back to a circle that still overlapped a neighbour; else null.</param>
+public sealed record HoldOutlineUpgradeProposal(
+    Hold Hold, HoldOutlineUpgradeOutcome Outcome, HoldOutlineResult Result, double? NewRadius = null)
 {
     /// <summary>Gets a value indicating whether the new outline carries a pocket / through-hole.</summary>
     public bool HasHoles => Outcome == HoldOutlineUpgradeOutcome.Outline && Result.ShapeHoles is { Count: > 0 };

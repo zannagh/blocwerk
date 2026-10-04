@@ -131,6 +131,8 @@ def _markers(sol, per_mk, measured):
             rec["downweightedSigmaPx"] = sol["downweighted"][m]["sigmaPx"]
         if m in req.unplanned:
             rec["unplanned"] = True
+        if m in wd.get("stray", {}).get(f, []):
+            rec["extentExcluded"] = True  # left out of its facet's extent: no vote on its shape (kernel.py)
         out.append(rec)
     return out
 

@@ -2,6 +2,7 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using Blocwerk.Core.Geometry;
 using Blocwerk.Core.Geometry.Volumes;
 
 namespace Blocwerk.Core.Capture.Coverage;
@@ -13,11 +14,15 @@ namespace Blocwerk.Core.Capture.Coverage;
 /// </summary>
 internal sealed class CoverageOccluder
 {
-    /// <summary>A board edge this close to the crossing does not block (neighbouring facets share their edges), mm.</summary>
+    /// <summary>
+    /// A board edge this close to the crossing does not block (neighbouring facets share their edges), mm. The coverage
+    /// report's own tolerance: its regions reach past the markers by the placed holds' margins too, and it errs towards
+    /// "seen". The wall textures use the exact shape (inset 0; <c>docs/geometry-kernel.md</c>).
+    /// </summary>
     public const double EdgeMarginMm = 60;
 
-    /// <summary>A crossing this close to the target is the target's own surroundings, mm.</summary>
-    public const double NearTargetMm = 80;
+    /// <summary>A target this close to the facet's plane is on its seam: the facet does not block it, mm.</summary>
+    public const double NearPlaneMm = GeometryKernel.NearPlaneMm;
 
     /// <summary>A point at least this far behind the facet's shape is inside the wall, mm.</summary>
     public const double InsideWallDepthMm = 30;
@@ -85,11 +90,19 @@ internal sealed class CoverageOccluder
         return true;
     }
 
-    /// <summary>Whether the straight line of sight from the camera to the target passes through the facet's shape.</summary>
+    /// <summary>The seam cuts and fold clips: (a, b) is kept where alpha·a + beta·b ≥ gamma.</summary>
+    public IReadOnlyList<(double Alpha, double Beta, double Gamma)> Cuts => halfPlanes;
+
+    /// <summary>
+    /// Whether the straight line of sight from the camera to the target passes through the facet's shape shrunk by
+    /// <paramref name="inset"/> (<see cref="GeometryKernel"/>'s line-of-sight rule): it must cross the facet's plane, the
+    /// target more than <see cref="NearPlaneMm"/> off it and the camera not on it.
+    /// </summary>
     /// <param name="camera">Camera centre, world mm.</param>
     /// <param name="target">The target, world mm.</param>
+    /// <param name="inset">How far inside the shape the crossing must be, mm.</param>
     /// <returns>True when blocked.</returns>
-    public bool Blocks(double[] camera, double[] target)
+    public bool Blocks(double[] camera, double[] target, double inset = EdgeMarginMm)
     {
         for (var i = 0; i < 3; i++)
         {
@@ -101,19 +114,13 @@ internal sealed class CoverageOccluder
 
         var from = FacetCloud.Local(Facet.Frame, camera[0], camera[1], camera[2]);
         var to = FacetCloud.Local(Facet.Frame, target[0], target[1], target[2]);
-        if (Math.Sign(from.H) == Math.Sign(to.H) || from.H == to.H)
+        if (Math.Sign(from.H) == Math.Sign(to.H) || Math.Abs(to.H) <= NearPlaneMm || Math.Abs(from.H) <= GeometryKernel.OnPlaneMm)
         {
             return false;
         }
 
         var t = from.H / (from.H - to.H);
-        var length = Math.Sqrt(Sq(to.A - from.A) + Sq(to.B - from.B) + Sq(to.H - from.H));
-        if ((1 - t) * length < NearTargetMm)
-        {
-            return false;
-        }
-
-        return Contains(from.A + (t * (to.A - from.A)), from.B + (t * (to.B - from.B)), EdgeMarginMm);
+        return Contains(from.A + (t * (to.A - from.A)), from.B + (t * (to.B - from.B)), inset);
     }
 
     /// <summary>
@@ -135,6 +142,4 @@ internal sealed class CoverageOccluder
         var local = FacetCloud.Local(Facet.Frame, point[0], point[1], point[2]);
         return local.H <= -InsideWallDepthMm && local.H >= -MaxInsideWallDepthMm && Contains(local.A, local.B, EdgeMarginMm);
     }
-
-    private static double Sq(double x) => x * x;
 }

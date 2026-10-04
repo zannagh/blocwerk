@@ -30,6 +30,7 @@ public sealed class ChangeJournalInterceptor : SaveChangesInterceptor
     [
         typeof(Wall),
         typeof(WallPanel),
+        typeof(WallPanelCrop),
         typeof(Hold),
         typeof(HoldGenerationLink),
         typeof(HoldLink),

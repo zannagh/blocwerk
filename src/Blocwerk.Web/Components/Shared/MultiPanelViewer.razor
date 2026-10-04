@@ -113,7 +113,7 @@ else
                        circuit from another component's tree. *@
                     @if (_panel is { } panel)
                     {
-                    <img src="@ResponsiveImage.Initial(PhotoUrl(panel.Id))" data-bw-res
+                    <img src="@ResponsiveImage.Initial(PhotoUrl(panel))" data-bw-res
                          alt="Wall panel @panel.Col,@panel.Row" class="wall-photo" />
                     <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
                         @foreach (var h in _holds)
@@ -277,9 +277,9 @@ else
         (Neighbour(-1, 0) is not null || Neighbour(1, 0) is not null
             || Neighbour(0, -1) is not null || Neighbour(0, 1) is not null);
 
-    private string PhotoUrl(Guid panelId) => string.IsNullOrEmpty(ShareToken)
-        ? $"/api/walls/{WallId}/panels/{panelId}/photo"
-        : $"/api/walls/{WallId}/panels/{panelId}/photo?token={Uri.EscapeDataString(ShareToken)}";
+    private string PhotoUrl(WallPanelInfo panel) => panel.WithPhotoRevision(string.IsNullOrEmpty(ShareToken)
+        ? $"/api/walls/{WallId}/panels/{panel.Id}/photo"
+        : $"/api/walls/{WallId}/panels/{panel.Id}/photo?token={Uri.EscapeDataString(ShareToken)}");
 
     protected override async Task OnInitializedAsync()
     {
@@ -374,7 +374,7 @@ else
     {
         try
         {
-            await JS.InvokeAsync<bool>("bwViewport.preloadImage", ResponsiveImage.Initial(PhotoUrl(panel.Id)), 4000);
+            await JS.InvokeAsync<bool>("bwViewport.preloadImage", ResponsiveImage.Initial(PhotoUrl(panel)), 4000);
         }
         catch (JSException)
         {
@@ -405,7 +405,7 @@ else
             {
                 await JS.InvokeAsync<bool>(
                     "bwViewport.preloadImage",
-                    ResponsiveImage.AtWidth(PhotoUrl(n.Id), NeighbourPrefetchWidth),
+                    ResponsiveImage.AtWidth(PhotoUrl(n), NeighbourPrefetchWidth),
                     4000);
             }
             catch (JSException)

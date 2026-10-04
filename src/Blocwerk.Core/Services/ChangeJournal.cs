@@ -10,7 +10,7 @@ namespace Blocwerk.Core.Services;
 /// <see cref="AsyncLocal{T}"/>, so it flows with the async call chain and is isolated between
 /// concurrent requests/circuits without any per-request state on the service itself.
 /// </summary>
-public sealed class ChangeJournal : IChangeJournal
+public sealed partial class ChangeJournal : IChangeJournal
 {
     /// <summary>The label the run→promote wall update shares, so both calls resume the same batch.</summary>
     public const string WallUpdateBatchLabel = "wall-update";
@@ -36,10 +36,7 @@ public sealed class ChangeJournal : IChangeJournal
         ChangeJournalScopeKind scopeKind = ChangeJournalScopeKind.None,
         Guid? scopeId = null)
     {
-        var previous = current.Value;
-        var scope = new ChangeJournalBatchScope(label, scopeKind, scopeId, () => current.Value = previous);
-        current.Value = scope;
-        return scope;
+        return Enter(label, scopeKind, scopeId, batchId: null, startSeq: 0, batchRowCreated: false);
     }
 
     /// <inheritdoc/>
@@ -88,17 +85,7 @@ public sealed class ChangeJournal : IChangeJournal
             startSeq = 0;
         }
 
-        var previous = current.Value;
-        var scope = new ChangeJournalBatchScope(
-            WallUpdateBatchLabel,
-            ChangeJournalScopeKind.Wall,
-            wallId,
-            () => current.Value = previous,
-            batchId: batchId,
-            startSeq: startSeq,
-            batchRowCreated: true);
-        current.Value = scope;
-        return scope;
+        return Enter(WallUpdateBatchLabel, ChangeJournalScopeKind.Wall, wallId, batchId, startSeq, batchRowCreated: true);
     }
 
     /// <inheritdoc/>
@@ -117,6 +104,21 @@ public sealed class ChangeJournal : IChangeJournal
 
         open.SealedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Makes a batch the ambient one on the current async flow (every scope opens through here); disposing the result
+    /// restores the previous one. Synchronous on purpose: an <see cref="AsyncLocal{T}"/> set inside an async method
+    /// would not flow back to its caller.
+    /// </summary>
+    private ChangeJournalBatchScope Enter(
+        string label, ChangeJournalScopeKind scopeKind, Guid? scopeId, Guid? batchId, int startSeq, bool batchRowCreated)
+    {
+        var previous = current.Value;
+        var scope = new ChangeJournalBatchScope(
+            label, scopeKind, scopeId, () => current.Value = previous, batchId, startSeq, batchRowCreated);
+        current.Value = scope;
+        return scope;
     }
 
     private BlocwerkDbContext RequireRegistryContext()

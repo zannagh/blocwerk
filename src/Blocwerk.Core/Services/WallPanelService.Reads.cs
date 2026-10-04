@@ -1,5 +1,6 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Services.PanelCrop;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Services;
@@ -53,7 +54,7 @@ public partial class WallPanelService
         var panels = await db.WallPanels
             .AsNoTracking()
             .Where(p => p.WallId == wallId && (p.Photo != null || p.StagedPhoto != null))
-            .Select(p => new { p.Id, p.Col, p.Row, p.Generation, HasLive = p.Photo != null, HasStaged = p.StagedPhoto != null })
+            .Select(p => new { p.Id, p.Col, p.Row, p.Generation, p.PhotoRevision, HasLive = p.Photo != null, HasStaged = p.StagedPhoto != null })
             .ToListAsync();
 
         return panels
@@ -67,7 +68,7 @@ public partial class WallPanelService
             // cell to a different photo between two identical loads. Arbitrary, but stable everywhere.
             .Select(g => g.OrderByDescending(p => p.HasLive).ThenByDescending(p => p.Generation).ThenBy(p => p.Id).First())
             .OrderBy(p => p.Row).ThenBy(p => p.Col)
-            .Select(p => new WallPanelInfo(p.Id, p.Col, p.Row, p.HasLive, p.HasStaged, p.Generation, p.Generation < currentGeneration))
+            .Select(p => new WallPanelInfo(p.Id, p.Col, p.Row, p.HasLive, p.HasStaged, p.Generation, p.Generation < currentGeneration, p.PhotoRevision))
             .ToList();
     }
 
@@ -99,7 +100,7 @@ public partial class WallPanelService
         var panels = await db.WallPanels
             .AsNoTracking()
             .Where(p => p.WallId == wallId && p.Photo != null && p.Generation <= generation)
-            .Select(p => new { p.Id, p.Col, p.Row, p.Generation })
+            .Select(p => new { p.Id, p.Col, p.Row, p.Generation, p.PhotoRevision })
             .ToListAsync(ct);
 
         return panels
@@ -110,7 +111,7 @@ public partial class WallPanelService
             .Select(g => g.OrderByDescending(p => p.Generation).ThenBy(p => p.Id).First())
             .OrderBy(p => p.Row).ThenBy(p => p.Col)
             .Select(p => new WallPanelInfo(
-                p.Id, p.Col, p.Row, true, false, p.Generation, p.Generation < currentGeneration))
+                p.Id, p.Col, p.Row, true, false, p.Generation, p.Generation < currentGeneration, p.PhotoRevision))
             .ToList();
     }
 
@@ -303,6 +304,7 @@ public partial class WallPanelService
                 Type = staged ? p.StagedPhotoContentType : p.PhotoContentType,
                 p.StagedAt,
                 p.Generation,
+                p.PhotoRevision,
             })
             .FirstOrDefaultAsync();
 
@@ -318,11 +320,12 @@ public partial class WallPanelService
         //            Generation alone). The token is nonetheless sound because Photo is WRITE-ONCE:
         //            promotion is refused unless Photo is still null (the `panel.Photo is not null`
         //            guard in StagePanelAsync/ResumePanelAsync), so a live panel photo is never
-        //            rewritten and there is nothing for a version to have to track. Length and
-        //            content type below are what would catch it if that guard ever went away.
+        //            rewritten by promotion. Length and content type below are what would catch it if
+        //            that guard ever went away. The ONE in-place rewrite is a crop or its undo
+        //            (PanelCropService), which moves PhotoRevision — folded into the token here.
         // This is load-bearing for the ETag AND for the variant cache key, which is derived from
         // exactly these parts — see FileSystemImageVariantCache.
-        var version = staged ? row.StagedAt?.UtcTicks ?? 0L : row.Generation;
+        var version = staged ? row.StagedAt?.UtcTicks ?? 0L : PanelPhotoVersion.Of(row.Generation, row.PhotoRevision);
         return new WallPhotoTag(row.Length, row.Type, version, IsArchived: false);
     }
 

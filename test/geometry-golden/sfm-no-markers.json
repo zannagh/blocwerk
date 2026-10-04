@@ -1,0 +1,111 @@
+{
+ "name": "sfm-no-markers",
+ "description": "The triangle side wall of a model solved from photo features: no markers, the extent is the clipped polygon's bounding box and the shape comes from its exported outlineMm (fold clip).",
+ "model": {
+  "version": 1,
+  "units": "mm",
+  "world": {
+   "up": [0, 0, 1],
+   "referenceFacet": "0",
+   "frameSource": "features"
+  },
+  "segments": [
+   {
+    "index": 0,
+    "name": "overhang",
+    "facets": [
+     {
+      "id": "0",
+      "origin": [0, 0, 0],
+      "u": [1, 0, 0],
+      "v": [0, -0.7071067811865475, 0.7071067811865475],
+      "normal": [0, -0.7071067811865475, -0.7071067811865475],
+      "extentMm": {
+       "aMin": 0,
+       "aMax": 3000,
+       "bMin": 0,
+       "bMax": 2121.3
+      }
+     }
+    ]
+   },
+   {
+    "index": 1,
+    "name": "side wall",
+    "facets": [
+     {
+      "id": "2",
+      "origin": [0, -1500, 0],
+      "u": [0, 1, 0],
+      "v": [0, 0, 1],
+      "normal": [1, 0, 0],
+      "extentMm": {
+       "aMin": 0,
+       "aMax": 1500,
+       "bMin": 0,
+       "bMax": 1500
+      },
+      "outlineMm": [
+       [0, 0],
+       [1500, 0],
+       [0, 1500]
+      ]
+     }
+    ]
+   }
+  ],
+  "markers": []
+ },
+ "expect": {
+  "cuts": {
+   "0": [],
+   "2": [
+    [-0.7071067811865475, -0.7071067811865475, -1060.6601717798212]
+   ]
+  }
+ },
+ "queries": [
+  {
+   "kind": "inShape",
+   "facet": "2",
+   "ab": [300, 300],
+   "insetMm": 0,
+   "expected": true,
+   "why": "inside the solver's fold-clipped outline (no markers)"
+  },
+  {
+   "kind": "inShape",
+   "facet": "2",
+   "ab": [1200, 1200],
+   "insetMm": 0,
+   "expected": false,
+   "why": "the cut-away corner: in the extent but outside the outline"
+  },
+  {
+   "kind": "inShape",
+   "facet": "0",
+   "ab": [1500, 1000],
+   "insetMm": 0,
+   "expected": true,
+   "why": "the overhang has no outline: its whole extent"
+  },
+  {
+   "kind": "blockedBy",
+   "occluder": "2",
+   "camera": [500, -300, 1000],
+   "target": [-500, -300, 1000],
+   "insetMm": 0,
+   "expected": false,
+   "why": "crosses the side wall at (a, b) = (1200, 1000): outside its outline"
+  },
+  {
+   "kind": "blockedBy",
+   "occluder": "2",
+   "camera": [500, -1000, 300],
+   "target": [-500, -1000, 300],
+   "insetMm": 0,
+   "expected": true,
+   "why": "crosses at (500, 300): inside its outline"
+  }
+ ]
+}

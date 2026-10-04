@@ -3,10 +3,14 @@
 // </copyright>
 
 using System.Security.Claims;
+using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Entities;
 using Blocwerk.Core.MarkerPlanning;
+using Blocwerk.Core.Services;
 using Blocwerk.Web.Controllers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -46,8 +50,20 @@ public class WallMarkerPlanRevisionsControllerTests
     }
 
     private static WallMarkerPlanRevisionsController Api(IMarkerPlanService plans, ClaimsPrincipal key) =>
-        new(plans, NullLogger<WallMarkerPlanRevisionsController>.Instance)
+        new(plans, Audit(), NullLogger<WallMarkerPlanRevisionsController>.Instance)
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = key } },
         };
+
+    /// <summary>A real audit over a throwaway database: these tests are about the key guard.</summary>
+    private static ApiWriteAudit Audit()
+    {
+        var factory = new TestDbContextFactory(TestDbContextFactory.IsolatedDatabase());
+        var keepAlive = factory.CreateDbContext();
+        keepAlive.Database.OpenConnection();
+        keepAlive.Database.EnsureCreated();
+        var users = Substitute.For<ICurrentUserService>();
+        users.GetCurrentUserAsync().Returns(new User { Identifier = "owner@test" });
+        return new ApiWriteAudit(new ChangeJournal(factory.CreateDbContext), users, NullLogger<ApiWriteAudit>.Instance);
+    }
 }

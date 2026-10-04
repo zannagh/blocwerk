@@ -17,13 +17,13 @@ namespace Blocwerk.Core.Geometry.View3D;
 public static class Wall3DFacetOutlines
 {
     /// <summary>Planes closer to parallel than this (sine of their angle, ~10°) give no reliable seam.</summary>
-    public const double MinPlaneAngleSin = 0.17;
+    public const double MinPlaneAngleSin = GeometryKernel.MinPlaneAngleSin;
 
     /// <summary>A seam must cut at least this share of the extent off; less is a sliver at an edge, not a hypotenuse.</summary>
     public const double MinCutFraction = 0.15;
 
     /// <summary>A non-parent facet's seam counts only when it lies, on average, within this of that facet's extent.</summary>
-    public const double MaxSeamGapMm = 800;
+    public const double MaxSeamGapMm = GeometryKernel.MaxSeamGapMm;
 
     /// <summary>Outline corners closer than this are merged.</summary>
     public const double MinEdgeMm = 10;
@@ -40,8 +40,9 @@ public static class Wall3DFacetOutlines
 
     /// <summary>
     /// The facets, each triangle's with its clipped <see cref="Wall3DFacet.Outline"/> where one can be found and reaching
-    /// the floor where its plan says so (<see cref="FacetFloorReach"/>), then every outline trimmed where it pokes a
-    /// little through a neighbour's plane at their seam (<see cref="FacetSeamTrim"/>).
+    /// the floor where its plan says so (<see cref="FacetFloorReach"/>), any other facet with the solver's fold-clipped
+    /// outline (<see cref="WallGeometryFacet.OutlineMm"/>, SfM models) with that one, then every outline trimmed where it
+    /// pokes a little through a neighbour's plane at their seam (<see cref="FacetSeamTrim"/>).
     /// </summary>
     public static List<Wall3DFacet> Apply(List<Wall3DFacet> facets, WallGeometryDocument doc, IReadOnlyDictionary<int, PlanTriangle>? triangles)
     {
@@ -51,6 +52,7 @@ public static class Wall3DFacetOutlines
             facets = FacetFloorReach.Apply(cut, doc, triangles);
         }
 
+        facets = facets.Select(f => f.Outline is null && SolvedOutline(doc, f.Id) is { } o ? WithShape(f, o) : f).ToList();
         return FacetSeamTrim.Apply(facets, doc);
     }
 
@@ -194,13 +196,10 @@ public static class Wall3DFacetOutlines
     internal static double RectDistance(PlaneRectMm r, double a, double b) =>
         Math.Sqrt(Math.Pow(Math.Max(Math.Max(r.AMin - a, 0), a - r.AMax), 2) + Math.Pow(Math.Max(Math.Max(r.BMin - b, 0), b - r.BMax), 2));
 
+    /// <summary>The centroid of the facet's voting markers (<see cref="GeometryKernel.VotingCorners"/>: not the strays left out of its extent).</summary>
     internal static (double A, double B)? MarkerCentroid(WallGeometryDocument doc, string facetId)
     {
-        var corners = doc.Markers
-            .Where(m => m.Facet == facetId)
-            .SelectMany(m => m.CornersPlaneMm)
-            .Where(c => c.Length >= 2)
-            .ToList();
+        var corners = GeometryKernel.VotingCorners(doc, facetId);
         return corners.Count == 0 ? null : (corners.Average(c => c[0]), corners.Average(c => c[1]));
     }
 
@@ -242,6 +241,23 @@ public static class Wall3DFacetOutlines
             .OrderBy(c => c.Gap)
             .Select(c => c.Outline)
             .FirstOrDefault();
+
+    /// <summary>The solver's fold-clipped outline (<see cref="WallGeometryFacet.OutlineMm"/>, SfM models), counter-clockwise; null without one.</summary>
+    private static IReadOnlyList<double[]>? SolvedOutline(WallGeometryDocument doc, string facetId)
+    {
+        if (doc.FindFacet(facetId)?.Facet.OutlineMm is not { Count: >= 3 } outline || outline.Any(p => p.Length < 2))
+        {
+            return null;
+        }
+
+        List<double[]> ring = [.. outline.Select(p => new[] { p[0], p[1] })];
+        if (SignedArea(ring) < 0)
+        {
+            ring.Reverse();
+        }
+
+        return ring;
+    }
 
     /// <summary>The plane's unit normal: <see cref="Wall3DFacet.Normal"/>, else U × V.</summary>
     private static double[] PlaneNormal(Wall3DFacet f)

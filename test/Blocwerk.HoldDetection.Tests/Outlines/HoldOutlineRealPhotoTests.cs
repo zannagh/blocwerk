@@ -1,4 +1,5 @@
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Detection.Outlines;
 using OpenCvSharp;
 
 namespace Blocwerk.HoldDetection.Tests.Outlines;
@@ -20,7 +21,7 @@ public class HoldOutlineRealPhotoTests
 
         Assert.Equal(HoldOutlineMethod.Contour, result.Method);
         Assert.True(result.Confidence >= 0.6, $"confidence {result.Confidence}");
-        Assert.InRange(result.Polygon.Count, 3, 24);
+        Assert.InRange(result.Polygon.Count, 3, HoldShapeSmoother.MaxVertices);
         Assert.NotNull(result.ShapePoints);
         Assert.Equal(result.Polygon.Count, result.ShapePoints!.Count);
 

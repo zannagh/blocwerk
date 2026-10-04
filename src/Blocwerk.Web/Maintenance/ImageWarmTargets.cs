@@ -2,6 +2,7 @@ using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
+using Blocwerk.Core.Services.PanelCrop;
 using Blocwerk.Web.Endpoints;
 using Microsoft.EntityFrameworkCore;
 
@@ -156,6 +157,7 @@ public static class ImageWarmTargets
             {
                 p.Id,
                 p.Generation,
+                p.PhotoRevision,
                 PhotoLength = p.Photo == null ? 0 : p.Photo.Length,
                 p.PhotoContentType,
                 StagedLength = p.StagedPhoto == null ? 0 : p.StagedPhoto.Length,
@@ -171,7 +173,7 @@ public static class ImageWarmTargets
             if (panel.PhotoLength > 0)
             {
                 var tag = new WallPhotoTag(
-                    panel.PhotoLength, panel.PhotoContentType, panel.Generation, IsArchived: false);
+                    panel.PhotoLength, panel.PhotoContentType, PanelPhotoVersion.Of(panel.Generation, panel.PhotoRevision), IsArchived: false);
 
                 targets.Add(new ImageWarmTarget(
                     ImageResponse.VariantKey(tag, ImageIdentity.PanelPhoto(id, ImageIdentity.LiveSlot)),

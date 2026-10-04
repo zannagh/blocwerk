@@ -17,7 +17,7 @@ public sealed partial class HoldOutlineUpgradeService
     /// The wall's live photos: per (Col, Row) the newest committed panel row (the same rule the live viewers
     /// use), plus the legacy single-image photo when holds still sit on it without a panel.
     /// </summary>
-    private static async Task<List<OutlineUpgradePhoto>> LoadLivePhotosAsync(BlocwerkDbContext db, Guid wallId, CancellationToken ct)
+    internal static async Task<List<OutlineUpgradePhoto>> LoadLivePhotosAsync(BlocwerkDbContext db, Guid wallId, CancellationToken ct)
     {
         var panels = await db.WallPanels
             .AsNoTracking()
@@ -44,7 +44,7 @@ public sealed partial class HoldOutlineUpgradeService
         return photos;
     }
 
-    private static IQueryable<Hold> LiveHolds(BlocwerkDbContext db, Guid wallId, OutlineUpgradePhoto photo) =>
+    internal static IQueryable<Hold> LiveHolds(BlocwerkDbContext db, Guid wallId, OutlineUpgradePhoto photo) =>
         photo.PanelId is { } panelId
             ? db.Holds.Where(h => h.WallPanelId == panelId && h.Generation == photo.Generation)
             : db.Holds.Where(h => h.WallId == wallId && h.WallPanelId == null && h.Generation == photo.Generation);

@@ -25,11 +25,14 @@ namespace Blocwerk.Web.Controllers;
 public sealed class WallMarkerPlanRevisionsController : WallAdminApiController
 {
     private readonly IMarkerPlanService plans;
+    private readonly ApiWriteAudit audit;
 
-    public WallMarkerPlanRevisionsController(IMarkerPlanService markerPlans, ILogger<WallMarkerPlanRevisionsController> logger)
+    public WallMarkerPlanRevisionsController(
+        IMarkerPlanService markerPlans, ApiWriteAudit writeAudit, ILogger<WallMarkerPlanRevisionsController> logger)
         : base(logger)
     {
         plans = markerPlans;
+        audit = writeAudit;
     }
 
     /// <summary>The wall's plan revisions, newest first, with when each went up on the wall.</summary>
@@ -37,8 +40,7 @@ public sealed class WallMarkerPlanRevisionsController : WallAdminApiController
     public Task<IActionResult> List(Guid wallId) => RunAsync(wallId, async () =>
     {
         var revisions = await plans.GetRevisionsAsync(wallId);
-        return Ok(revisions.Select(r => new MarkerPlanRevisionResponse(
-            r.Revision, r.CreatedAt, r.Markers, r.IsCurrent, r.UsedByActiveModel, r.EffectiveFrom, r.IsOnWall)));
+        return Ok(revisions.Select(MarkerPlanRevisionResponse.From));
     });
 
     /// <summary>
@@ -48,13 +50,13 @@ public sealed class WallMarkerPlanRevisionsController : WallAdminApiController
     [HttpPut("{revision:int}/effective")]
     [Consumes("application/json")]
     public Task<IActionResult> SetEffective(Guid wallId, int revision, [FromBody] MarkerPlanEffectiveRequest body) =>
-        RunAsync(wallId, async () =>
+        RunAsync(wallId, () => audit.RunAsync(User, wallId, $"marker-plan.effective rev:{revision}", async () =>
         {
             DateTimeOffset? from = body.Clear ? null : body.EffectiveFrom ?? DateTimeOffset.UtcNow;
             return await plans.SetRevisionEffectiveAsync(wallId, revision, from)
                 ? NoContent()
                 : NotFound(new ApiErrorResponse($"The wall has no marker plan revision {revision}."));
-        });
+        }));
 }
 
 /// <summary>Body of <c>PUT …/marker-plan/revisions/{revision}/effective</c>.</summary>
@@ -64,4 +66,9 @@ public sealed record MarkerPlanEffectiveRequest(DateTimeOffset? EffectiveFrom = 
 
 /// <summary>One plan revision over the API.</summary>
 public sealed record MarkerPlanRevisionResponse(
-    int Revision, DateTimeOffset CreatedAt, int Markers, bool IsCurrent, bool UsedByActiveModel, DateTimeOffset? EffectiveFrom, bool IsOnWall);
+    int Revision, DateTimeOffset CreatedAt, int Markers, bool IsCurrent, bool UsedByActiveModel, DateTimeOffset? EffectiveFrom, bool IsOnWall)
+{
+    /// <summary>The API shape of <paramref name="r"/>.</summary>
+    public static MarkerPlanRevisionResponse From(MarkerPlanRevisionInfo r) =>
+        new(r.Revision, r.CreatedAt, r.Markers, r.IsCurrent, r.UsedByActiveModel, r.EffectiveFrom, r.IsOnWall);
+}

@@ -17,6 +17,18 @@ public interface IChangeJournal
     IDisposable BeginBatch(string label, ChangeJournalScopeKind scopeKind = ChangeJournalScopeKind.None, Guid? scopeId = null);
 
     /// <summary>
+    /// Starts one audited action (an automation API write): its batch row is persisted FIRST, as
+    /// <see cref="ChangeJournalStatus.Pending"/> with <paramref name="actor"/> as its only actor, so no write happens
+    /// without an audit row. <see cref="ChangeJournalAction.Enter"/> then makes it the ambient batch for the write's
+    /// journalled rows; <see cref="ChangeJournalAction.CompleteAsync"/> records it, <see cref="ChangeJournalAction.FailAsync"/>
+    /// removes it (or marks it <see cref="ChangeJournalStatus.Failed"/> when rows were journalled). With
+    /// <paramref name="append"/>, an existing batch with the same label and scope is reused (one batch for repeated
+    /// actions, e.g. every file of one upload) and stays open. Requires the registry context factory.
+    /// </summary>
+    Task<ChangeJournalAction> StartActionAsync(
+        string label, ChangeJournalScopeKind scopeKind, Guid? scopeId, string? actor, bool append = false);
+
+    /// <summary>
     /// Begins (or resumes) the single OPEN wall-update batch for a wall, so a whole wall update — the
     /// "run" that stages panels and inserts the next-generation holds AND the later "promote" that
     /// carries them over — records into ONE batch even though the two run on separate contexts. Finds

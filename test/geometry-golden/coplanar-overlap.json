@@ -1,0 +1,136 @@
+{
+ "name": "coplanar-overlap",
+ "description": "Two coplanar panels (5 mm apart) whose extents overlap by 250 mm: no seam cut, no occlusion between them (the solver clips such extents at the midline itself, overlaps.py).",
+ "model": {
+  "version": 1,
+  "units": "mm",
+  "world": {
+   "up": [0, 0, 1],
+   "referenceFacet": "0"
+  },
+  "segments": [
+   {
+    "index": 0,
+    "name": "Facet 0",
+    "facets": [
+     {
+      "id": "0",
+      "origin": [0, 0, 0],
+      "u": [1, 0, 0],
+      "v": [0, 0, 1],
+      "normal": [0, -1, 0],
+      "extentMm": {
+       "aMin": -50,
+       "aMax": 1600,
+       "bMin": -50,
+       "bMax": 2050
+      }
+     }
+    ]
+   },
+   {
+    "index": 1,
+    "name": "Facet 1",
+    "facets": [
+     {
+      "id": "1",
+      "origin": [1400, -5, 0],
+      "u": [1, 0, 0],
+      "v": [0, 0, 1],
+      "normal": [0, -1, 0],
+      "extentMm": {
+       "aMin": -50,
+       "aMax": 1000,
+       "bMin": -50,
+       "bMax": 2050
+      }
+     }
+    ]
+   }
+  ],
+  "markers": [
+   {
+    "id": 1,
+    "facet": "0",
+    "cornersPlaneMm": [
+     [337.5, 562.5],
+     [462.5, 562.5],
+     [462.5, 437.5],
+     [337.5, 437.5]
+    ]
+   },
+   {
+    "id": 2,
+    "facet": "0",
+    "cornersPlaneMm": [
+     [937.5, 1562.5],
+     [1062.5, 1562.5],
+     [1062.5, 1437.5],
+     [937.5, 1437.5]
+    ]
+   },
+   {
+    "id": 3,
+    "facet": "1",
+    "cornersPlaneMm": [
+     [237.5, 562.5],
+     [362.5, 562.5],
+     [362.5, 437.5],
+     [237.5, 437.5]
+    ]
+   },
+   {
+    "id": 4,
+    "facet": "1",
+    "cornersPlaneMm": [
+     [737.5, 1562.5],
+     [862.5, 1562.5],
+     [862.5, 1437.5],
+     [737.5, 1437.5]
+    ]
+   }
+  ]
+ },
+ "expect": {
+  "cuts": {
+   "0": [],
+   "1": []
+  }
+ },
+ "queries": [
+  {
+   "kind": "inShape",
+   "facet": "0",
+   "ab": [1550, 1000],
+   "insetMm": 0,
+   "expected": true,
+   "why": "the overlap belongs to both extents: parallel planes give no seam"
+  },
+  {
+   "kind": "inShape",
+   "facet": "1",
+   "ab": [50, 1000],
+   "insetMm": 0,
+   "expected": true,
+   "why": "the same overlap seen from the other facet"
+  },
+  {
+   "kind": "blocked",
+   "camera": [1500, -3000, 1000],
+   "target": [1500, 0, 1000],
+   "targetFacet": "0",
+   "insetMm": 0,
+   "expected": false,
+   "why": "the other facet's plane is 5 mm from the target: a coplanar neighbour never hides it"
+  },
+  {
+   "kind": "blocked",
+   "camera": [1500, -3000, 1000],
+   "target": [1500, -5, 1000],
+   "targetFacet": "1",
+   "insetMm": 0,
+   "expected": false,
+   "why": "and the other way round"
+  }
+ ]
+}

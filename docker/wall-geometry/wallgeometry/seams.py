@@ -11,6 +11,10 @@ is smoothed along the edge and fades out quickly with the distance from the edge
 at the edge (a vertical kickboard lit brighter than the overhang above it; see flatten.py for the
 even shading within facets of the same overhang).
 
+Only the facet's real shape takes part (occlusion.Occluder: its extent cut along its seams and fold clips,
+docs/geometry-kernel.md): the cut-away half of a triangle's rectangle is no wall, so its pixels are left out of
+the seam bands and never pair up with a neighbour's edge.
+
 Works on low-resolution copies (`seamDownscale`) and changes only covered pixels.
 """
 import cv2
@@ -37,10 +41,12 @@ def _ab(f, X):
     return (X - O) @ _vec(f, "u"), (X - O) @ _vec(f, "v")
 
 
-def _inside(f, X):
+def _inside(f, X, shape=None):
+    """Whether world points X lie in facet f's extent rectangle and, given its occlusion.Occluder, its shape."""
     a, b = _ab(f, X)
     e = f["extentMm"]
-    return (a >= e["aMin"]) & (a <= e["aMax"]) & (b >= e["bMin"]) & (b <= e["bMax"])
+    ok = (a >= e["aMin"]) & (a <= e["aMax"]) & (b >= e["bMin"]) & (b <= e["bMax"])
+    return ok if shape is None else ok & shape.within_cuts(a, b)
 
 
 def _dist_to(f, X):
@@ -55,7 +61,7 @@ def _dist_to(f, X):
 class _Tex:
     """One facet texture at low resolution: log colour, usable mask, world points."""
 
-    def __init__(self, f, r, ds):
+    def __init__(self, f, r, ds, shape=None):
         self.f, self.r, self.ds = f, r, ds
         img = r["image"]
         H, W = img.shape[:2]
@@ -68,7 +74,7 @@ class _Tex:
         self.g = {"aMin": b["aMin"], "bMax": b["bMax"], "res": r["mmPerPx"] * W / self.w}
         cols, rows = np.meshgrid(np.arange(self.w, dtype=float), np.arange(self.h, dtype=float))
         self.X = _plane(f, self.g, cols, rows)
-        self.ok &= _inside(f, self.X)
+        self.ok &= _inside(f, self.X, shape)
         self.field = np.zeros((self.h, self.w, 3), np.float32)
 
     def cur(self):
@@ -146,12 +152,13 @@ def _field(T, seam_vals, p):
     return out
 
 
-def harmonise(results, facets, params=None):
-    """results: render_textures' list (image BGR uint8, mask, bounds, mmPerPx); facets: id -> facet.
+def harmonise(results, facets, params=None, shapes=None):
+    """results: render_textures' list (image BGR uint8, mask, bounds, mmPerPx); facets: id -> facet; shapes:
+    id -> occlusion.Occluder (the facet's real shape; None: the extent rectangle).
     Corrects the images in place; returns a small report per seam (median |log step| before/after)."""
     p = {**SEAM_DEFAULTS, **(params or {})}
     ds = int(p["seamDownscale"])
-    texs = [_Tex(facets[r["facet"]], r, ds) for r in results]
+    texs = [_Tex(facets[r["facet"]], r, ds, (shapes or {}).get(r["facet"])) for r in results]
     pairs = _seam_pairs(texs, p)
     report = {f"{texs[i].r['facet']}-{texs[j].r['facet']}": {"before": _step(texs[i], texs[j], a, b, t, p)}
               for i, j, a, b, t in pairs}

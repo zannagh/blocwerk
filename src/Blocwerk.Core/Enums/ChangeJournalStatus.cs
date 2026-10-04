@@ -11,4 +11,10 @@ public enum ChangeJournalStatus
 
     /// <summary>The batch has been replayed onto another environment (a later phase sets this).</summary>
     Replayed = 2,
+
+    /// <summary>An audited action whose outcome is not known yet: written before the action runs, so none goes unrecorded.</summary>
+    Pending = 3,
+
+    /// <summary>An audited action that failed after journalling some rows; kept so those rows stay explained.</summary>
+    Failed = 4,
 }

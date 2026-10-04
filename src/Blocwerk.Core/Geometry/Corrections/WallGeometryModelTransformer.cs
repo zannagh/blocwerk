@@ -96,13 +96,10 @@ public static partial class WallGeometryModelTransformer
             GeometryJson.Set(facet, "normal", GeometryJson.Vec(facet["normal"]) is { } n ? t.Rotate(n) : null, 6);
             if (facet["extentMm"] is JsonObject extent)
             {
-                foreach (var key in new[] { "aMin", "aMax", "bMin", "bMax" })
-                {
-                    if (GeometryJson.Number(extent, key) is { } value)
-                    {
-                        extent[key] = Math.Round(value * t.Scale, 1) + 0.0;
-                    }
-                }
+                // Plane coordinates scale by s: the extent and, with it, the outline (FacetPlaneGeometry).
+                double Scaled(string key) => (GeometryJson.Number(extent, key) ?? 0) * t.Scale;
+                var scaled = new PlaneRectMm(Scaled("aMin"), Scaled("aMax"), Scaled("bMin"), Scaled("bMax"));
+                FacetPlaneGeometry.Rewrite(facet, p => [p[0] * t.Scale, p[1] * t.Scale], scaled);
             }
         }
 

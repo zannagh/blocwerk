@@ -24,6 +24,12 @@ public sealed record HoldOutlineUpgradeEntry
     /// <summary>Gets the replaced outline source.</summary>
     public HoldOutlineSource? PrevOutlineSource { get; init; }
 
+    /// <summary>Gets the radius the run replaced, or null when it did not change the radius.</summary>
+    public double? PrevRadius { get; init; }
+
+    /// <summary>Gets the radius the run wrote, or null when it did not change the radius.</summary>
+    public double? NewRadius { get; init; }
+
     /// <summary>Gets the hash of the fingerprint the run left behind, or null when the run did not change it.</summary>
     public string? FingerprintHash { get; init; }
 

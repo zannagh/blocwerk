@@ -12,6 +12,7 @@ public static class RefreshServices
     public static IServiceCollection AddWallRefresh(this IServiceCollection services)
     {
         services.AddSingleton<WallRefreshQueue>();
+        services.AddSingleton(_ => new WallRefreshLocks());
         services.AddSingleton<PanelPhotoPicker>();
         services.AddSingleton<ICaptureVideoJoiner, CaptureVideoJoiner>();
         services.AddSingleton<IWallRefreshActorFactory, ScopedWallRefreshActorFactory>();

@@ -47,9 +47,13 @@ public sealed partial class WallRefreshProcessor
         var matched = await actors.BigUpdate.ResumeAsync(refresh.WallId);
         var promotable = await RefreshDecisions.LoadAsync(refresh.WallId, actors, matched, await StagedHoldsByPanelAsync(refresh.WallId, ct));
         var summary = RefreshTimeline.Summary(refresh);
-        if (summary?.DecisionsVersion != promotable.Version)
+
+        // The version the user CONFIRMED, not the stored summary's: a summary rewritten after the confirm (a re-check, an
+        // older app) must not make unseen decisions promotable. Rows accepted before the column existed fall back.
+        var confirmed = refresh.ConfirmedDecisionsVersion ?? summary?.DecisionsVersion;
+        if (confirmed is null || confirmed != promotable.Version)
         {
-            // Not what the confirm screen showed (edited in the full review, or matched differently now): nothing is
+            // Not what the user confirmed (edited in the full review, or matched differently now): nothing is
             // promoted; the user sees the summary of what would be, and applies that.
             await ReconfirmAsync(refresh, summary, promotable, open, ct);
             return;

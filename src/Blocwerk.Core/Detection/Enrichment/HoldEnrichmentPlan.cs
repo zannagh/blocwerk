@@ -15,6 +15,9 @@ internal sealed class HoldEnrichmentPlan
     /// <summary>Gets this run's outline per hold (auto-detected holds without a shape only).</summary>
     public Dictionary<Hold, HoldOutlineResult> Outlines { get; } = [];
 
+    /// <summary>Gets the reduced radius of a hold whose traced shape fell back to a circle that still overlapped a neighbour.</summary>
+    public Dictionary<Hold, double> Radii { get; } = [];
+
     /// <summary>Gets this run's metric measurement per hold (glyph walls only).</summary>
     public Dictionary<Hold, HoldMetric> Metrics { get; } = [];
 
@@ -50,6 +53,10 @@ internal sealed class HoldEnrichmentPlan
             hold.OutlineSource = contour ? HoldOutlineSource.AutoContour : HoldOutlineSource.AutoCircle;
             hold.OutlineConfidence = contour ? outline.Confidence : null;
             hold.FingerprintJson = outline.Fingerprint.ToJson();
+            if (Radii.TryGetValue(hold, out var radius))
+            {
+                hold.Radius = radius;
+            }
         }
 
         foreach (var (hold, metric) in Metrics)

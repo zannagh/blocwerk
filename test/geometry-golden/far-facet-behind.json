@@ -1,0 +1,119 @@
+{
+ "name": "far-facet-behind",
+ "description": "A far perpendicular panel 3 m to the right of the wall whose plane passes behind it: only a line of sight through the panel itself is blocked, never 'behind its infinite plane'.",
+ "model": {
+  "version": 1,
+  "units": "mm",
+  "world": {
+   "up": [0, 0, 1],
+   "referenceFacet": "0"
+  },
+  "segments": [
+   {
+    "index": 0,
+    "name": "Facet 0",
+    "facets": [
+     {
+      "id": "0",
+      "origin": [0, 0, 0],
+      "u": [1, 0, 0],
+      "v": [0, 0, 1],
+      "normal": [0, -1, 0],
+      "extentMm": {
+       "aMin": -50,
+       "aMax": 3050,
+       "bMin": -50,
+       "bMax": 2050
+      }
+     }
+    ]
+   },
+   {
+    "index": 1,
+    "name": "Facet 1",
+    "facets": [
+     {
+      "id": "1",
+      "origin": [6000, -2000, 0],
+      "u": [0, 1, 0],
+      "v": [0, 0, 1],
+      "normal": [1, 0, 0],
+      "extentMm": {
+       "aMin": 0,
+       "aMax": 2000,
+       "bMin": 0,
+       "bMax": 2000
+      }
+     }
+    ]
+   }
+  ],
+  "markers": [
+   {
+    "id": 1,
+    "facet": "0",
+    "cornersPlaneMm": [
+     [437.5, 562.5],
+     [562.5, 562.5],
+     [562.5, 437.5],
+     [437.5, 437.5]
+    ]
+   },
+   {
+    "id": 2,
+    "facet": "0",
+    "cornersPlaneMm": [
+     [2437.5, 1562.5],
+     [2562.5, 1562.5],
+     [2562.5, 1437.5],
+     [2437.5, 1437.5]
+    ]
+   },
+   {
+    "id": 3,
+    "facet": "1",
+    "cornersPlaneMm": [
+     [937.5, 1062.5],
+     [1062.5, 1062.5],
+     [1062.5, 937.5],
+     [937.5, 937.5]
+    ]
+   }
+  ]
+ },
+ "expect": {
+  "cuts": {
+   "0": [],
+   "1": []
+  }
+ },
+ "queries": [
+  {
+   "kind": "blocked",
+   "camera": [500, -3000, 1000],
+   "target": [1500, 0, 1000],
+   "targetFacet": "0",
+   "insetMm": 0,
+   "expected": false,
+   "why": "the wall is behind the far panel's plane and inside its rectangle's (a, b) range, but no ray reaches it"
+  },
+  {
+   "kind": "blocked",
+   "camera": [9000, -3000, 1000],
+   "target": [1500, 0, 1000],
+   "targetFacet": "0",
+   "insetMm": 0,
+   "expected": true,
+   "why": "a camera beyond the far panel looks through it"
+  },
+  {
+   "kind": "blocked",
+   "camera": [9000, -6000, 1000],
+   "target": [1500, 0, 1000],
+   "targetFacet": "0",
+   "insetMm": 0,
+   "expected": false,
+   "why": "a ray crossing its plane beside it"
+  }
+ ]
+}

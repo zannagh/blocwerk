@@ -2,7 +2,6 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
-using System.Collections.Concurrent;
 using Blocwerk.Core.Capture;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
@@ -24,9 +23,10 @@ public sealed partial class WallRefreshProcessor(
     PanelPhotoPicker picker,
     ICaptureFileStore files,
     ILogger<WallRefreshProcessor> logger,
-    ICaptureVideoJoiner? videoJoiner = null)
+    ICaptureVideoJoiner? videoJoiner = null,
+    WallRefreshLocks? locks = null)
 {
-    private readonly ConcurrentDictionary<Guid, SemaphoreSlim> wallLocks = new();
+    private readonly WallRefreshLocks wallLocks = locks ?? new WallRefreshLocks();
 
     public async Task ProcessAsync(Guid refreshId, CancellationToken ct)
     {
@@ -36,19 +36,14 @@ public sealed partial class WallRefreshProcessor(
             return;
         }
 
-        var gate = wallLocks.GetOrAdd(wallId.Value, _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync(ct);
-        try
+        // Shared with the user's Apply: a re-check and an accepted apply of the run never interleave.
+        using (await wallLocks.AcquireAsync(wallId.Value, ct))
         {
-            // Read again under the wall's lock: an earlier step of this wall may have moved it on.
+            // Read again under the wall's lock: an earlier step of this wall (or an Apply) may have moved it on.
             if (await LoadAsync(refreshId, ct) is { } refresh)
             {
                 await ProcessLockedAsync(refresh, ct);
             }
-        }
-        finally
-        {
-            gate.Release();
         }
     }
 
@@ -137,6 +132,7 @@ public sealed partial class WallRefreshProcessor(
                 r.Status = applying ? WallRefreshStatus.ReadyToApply : WallRefreshStatus.Failed;
                 if (applying)
                 {
+                    r.ConfirmedDecisionsVersion = null;
                     RefreshTimeline.Set(r, RefreshTimeline.Review, RefreshStepState.Waiting, "Could not apply the update; try again.");
                 }
             },

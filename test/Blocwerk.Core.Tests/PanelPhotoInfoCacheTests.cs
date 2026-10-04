@@ -60,6 +60,37 @@ public class PanelPhotoInfoCacheTests
     }
 
     [Fact]
+    public async Task InPlaceEdit_WithSameLengthAndTail_IsANewKeyThroughPhotoRevision()
+    {
+        using var harness = new WallTestHarness();
+        await harness.SeedWallAsync(holdCount: 0);
+        var before = Photo(1008, 756, 14);
+        var after = Photo(1008, 756, 26);
+
+        // Only the header differs, so length and tail alone could not tell the edited photo from the old one.
+        Assert.Equal(before.Length, after.Length);
+        Assert.Equal(before[^PhotoInfoStamp.TailBytes..], after[^PhotoInfoStamp.TailBytes..]);
+        var panelId = await SeedPanelAsync(harness, before);
+        using var cache = new Wall3DViewCache(new Wall3DViewCacheSettings());
+        var counter = new PhotoHeaderQueryCounter();
+        var key = new Wall3DPhotoKey(panelId, 0);
+        Assert.Equal(14 / 36.0 * 1008, (await LoadAsync(harness, counter, cache, key))[key].FocalPx!.Value, 6);
+
+        // A crop rewrites the photo in place and bumps the revision, on the same row and generation.
+        await using (var db = harness.CreateContext())
+        {
+            var panel = await db.WallPanels.SingleAsync(p => p.Id == panelId);
+            panel.Photo = after;
+            panel.PhotoRevision++;
+            await db.SaveChangesAsync();
+        }
+
+        var info = (await LoadAsync(harness, counter, cache, key))[key];
+        Assert.Equal(26 / 36.0 * 1008, info.FocalPx!.Value, 6);
+        Assert.Equal(2, counter.Count);
+    }
+
+    [Fact]
     public async Task UncachedPanels_AreReadTogether_CachedOnesNot()
     {
         using var harness = new WallTestHarness();

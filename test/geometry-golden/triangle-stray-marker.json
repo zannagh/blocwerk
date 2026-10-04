@@ -1,0 +1,212 @@
+{
+ "name": "triangle-stray-marker",
+ "description": "The triangle side wall with a stray marker the solver left out of its extent (1 m away on the other side of the seam, like The Attic's marker 39): it does not vote, the cut stays.",
+ "model": {
+  "version": 1,
+  "units": "mm",
+  "world": {
+   "up": [0, 0, 1],
+   "referenceFacet": "0"
+  },
+  "segments": [
+   {
+    "index": 0,
+    "name": "overhang",
+    "facets": [
+     {
+      "id": "0",
+      "origin": [0, 0, 0],
+      "u": [1, 0, 0],
+      "v": [0, -0.7071067811865475, 0.7071067811865475],
+      "normal": [0, -0.7071067811865475, -0.7071067811865475],
+      "extentMm": {
+       "aMin": -50,
+       "aMax": 3050,
+       "bMin": -50,
+       "bMax": 2171.3
+      }
+     }
+    ]
+   },
+   {
+    "index": 1,
+    "name": "side wall",
+    "facets": [
+     {
+      "id": "2",
+      "origin": [0, 0, 0],
+      "u": [0, 1, 0],
+      "v": [0, 0, 1],
+      "normal": [1, 0, 0],
+      "extentMm": {
+       "aMin": -1550,
+       "aMax": 50,
+       "bMin": -50,
+       "bMax": 1550
+      }
+     }
+    ]
+   }
+  ],
+  "markers": [
+   {
+    "id": 1,
+    "facet": "0",
+    "cornersPlaneMm": [
+     [437.5, 662.5],
+     [562.5, 662.5],
+     [562.5, 537.5],
+     [437.5, 537.5]
+    ]
+   },
+   {
+    "id": 2,
+    "facet": "0",
+    "cornersPlaneMm": [
+     [2437.5, 1662.5],
+     [2562.5, 1662.5],
+     [2562.5, 1537.5],
+     [2437.5, 1537.5]
+    ]
+   },
+   {
+    "id": 10,
+    "facet": "2",
+    "cornersPlaneMm": [
+     [-1162.5, 362.5],
+     [-1037.5, 362.5],
+     [-1037.5, 237.5],
+     [-1162.5, 237.5]
+    ]
+   },
+   {
+    "id": 11,
+    "facet": "2",
+    "cornersPlaneMm": [
+     [-1362.5, 1062.5],
+     [-1237.5, 1062.5],
+     [-1237.5, 937.5],
+     [-1362.5, 937.5]
+    ]
+   },
+   {
+    "id": 12,
+    "facet": "2",
+    "cornersPlaneMm": [
+     [-562.5, 212.5],
+     [-437.5, 212.5],
+     [-437.5, 87.5],
+     [-562.5, 87.5]
+    ]
+   },
+   {
+    "id": 13,
+    "facet": "2",
+    "cornersPlaneMm": [
+     [337.5, 1262.5],
+     [462.5, 1262.5],
+     [462.5, 1137.5],
+     [337.5, 1137.5]
+    ],
+    "extentExcluded": true
+   }
+  ]
+ },
+ "expect": {
+  "cuts": {
+   "0": [
+    [1, 0, 0]
+   ],
+   "2": [
+    [-0.7071067811865475, -0.7071067811865475, 0]
+   ]
+  }
+ },
+ "queries": [
+  {
+   "kind": "inShape",
+   "facet": "2",
+   "ab": [-1000, 300],
+   "insetMm": 0,
+   "expected": true,
+   "why": "under the overhang: the side wall's real half"
+  },
+  {
+   "kind": "inShape",
+   "facet": "2",
+   "ab": [-300, 1000],
+   "insetMm": 0,
+   "expected": false,
+   "why": "above the seam with the overhang: the cut-away half of the rectangle"
+  },
+  {
+   "kind": "inShape",
+   "facet": "0",
+   "ab": [-30, 500],
+   "insetMm": 0,
+   "expected": false,
+   "why": "the overhang's margin left of the side wall is cut at their seam"
+  },
+  {
+   "kind": "inShape",
+   "facet": "0",
+   "ab": [1000, 1000],
+   "insetMm": 0,
+   "expected": true,
+   "why": "the middle of the overhang"
+  },
+  {
+   "kind": "blockedBy",
+   "occluder": "2",
+   "camera": [500, -1000, 1300],
+   "target": [-500, -1000, 1300],
+   "insetMm": 0,
+   "expected": false,
+   "why": "crosses the side wall's plane at (a, b) = (-1000, 1300): in its rectangle but in the cut-away half"
+  },
+  {
+   "kind": "blockedBy",
+   "occluder": "2",
+   "camera": [500, -1000, 400],
+   "target": [-500, -1000, 400],
+   "insetMm": 0,
+   "expected": true,
+   "why": "crosses at (-1000, 400): the side wall's real half"
+  },
+  {
+   "kind": "blockedBy",
+   "occluder": "2",
+   "camera": [500, -1000, 400],
+   "target": [-500, -1000, 400],
+   "insetMm": 60,
+   "expected": true,
+   "why": "the same with the coverage report's 60 mm inset: 424 mm inside the seam"
+  },
+  {
+   "kind": "blockedBy",
+   "occluder": "2",
+   "camera": [500, -700, 650],
+   "target": [-500, -700, 650],
+   "insetMm": 60,
+   "expected": false,
+   "why": "crosses 35 mm inside the seam: blocked with the exact shape, not with a 60 mm inset"
+  },
+  {
+   "kind": "blockedBy",
+   "occluder": "2",
+   "camera": [500, -700, 650],
+   "target": [-500, -700, 650],
+   "insetMm": 0,
+   "expected": true,
+   "why": "... and blocked with the exact shape"
+  },
+  {
+   "kind": "inShape",
+   "facet": "2",
+   "ab": [-1500, 1400],
+   "insetMm": 0,
+   "expected": true,
+   "why": "the real half next to the hypotenuse, near the right-angle corner's column"
+  }
+ ]
+}

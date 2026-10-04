@@ -11,6 +11,7 @@ public sealed partial class HoldOutlineUpgradeService
     /// <inheritdoc/>
     public async Task<HoldOutlineRevertResult> RevertAsync(Guid wallId, Guid runId, CancellationToken ct = default)
     {
+        using var holdWrite = await WallHoldWriteLock.AcquireAsync(wallId, ct: ct);
         var (db, userId) = await OpenForAdminAsync(wallId, ct);
         await using (db)
         {
@@ -71,7 +72,8 @@ public sealed partial class HoldOutlineUpgradeService
         var shapeIntact = entry.ShapeHash is not null && HoldOutlineUpgradeEntry.HashShape(hold) == entry.ShapeHash;
         var fingerprintIntact = entry.FingerprintHash is not null
                                 && HoldOutlineUpgradeEntry.HashFingerprint(hold.FingerprintJson) == entry.FingerprintHash;
-        if (entry.ShapeHash is not null ? !shapeIntact : !fingerprintIntact)
+        var radiusIntact = entry.NewRadius is { } written && hold.Radius == written;
+        if (entry.ShapeHash is not null ? !shapeIntact : !(fingerprintIntact || radiusIntact))
         {
             return false;
         }
@@ -83,6 +85,11 @@ public sealed partial class HoldOutlineUpgradeService
             hold.OutlineSource = entry.PrevOutlineSource;
             hold.OutlineConfidence = null;
             entry.PrevMetric?.RestoreTo(hold);
+        }
+
+        if (radiusIntact && entry.PrevRadius is { } prevRadius)
+        {
+            hold.Radius = prevRadius;
         }
 
         if (fingerprintIntact)

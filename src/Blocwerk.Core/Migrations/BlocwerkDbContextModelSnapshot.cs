@@ -2619,6 +2619,9 @@ namespace Blocwerk.Core.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<int>("PhotoRevision")
+                        .HasColumnType("integer");
+
                     b.Property<int>("Row")
                         .HasColumnType("integer");
 
@@ -2646,6 +2649,42 @@ namespace Blocwerk.Core.Migrations
                     b.ToTable("WallPanels");
                 });
 
+            modelBuilder.Entity("Blocwerk.Core.Entities.WallPanelCrop", b =>
+                {
+                    b.Property<Guid>("WallPanelId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CroppedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CroppedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<double>("Height")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("Left")
+                        .HasColumnType("double precision");
+
+                    b.Property<byte[]>("OriginalPhoto")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("OriginalPhotoContentType")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<double>("Top")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("Width")
+                        .HasColumnType("double precision");
+
+                    b.HasKey("WallPanelId");
+
+                    b.ToTable("WallPanelCrops");
+                });
+
             modelBuilder.Entity("Blocwerk.Core.Entities.WallRefresh", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2660,6 +2699,10 @@ namespace Blocwerk.Core.Migrations
 
                     b.Property<DateTimeOffset?>("CompletedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ConfirmedDecisionsVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -3911,6 +3954,17 @@ namespace Blocwerk.Core.Migrations
                         .IsRequired();
 
                     b.Navigation("Wall");
+                });
+
+            modelBuilder.Entity("Blocwerk.Core.Entities.WallPanelCrop", b =>
+                {
+                    b.HasOne("Blocwerk.Core.Entities.WallPanel", "WallPanel")
+                        .WithOne()
+                        .HasForeignKey("Blocwerk.Core.Entities.WallPanelCrop", "WallPanelId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("WallPanel");
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallRefresh", b =>

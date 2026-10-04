@@ -18,6 +18,8 @@ FROM base AS test
 COPY docker/wall-geometry/requirements-dev.lock .
 RUN pip install --require-hashes --no-deps -r requirements-dev.lock
 COPY docker/wall-geometry/tests/ tests/
+# The geometry kernel's golden cases, shared with the C# tests (docs/geometry-kernel.md; test_geometry_golden.py).
+COPY test/geometry-golden/ tests/geometry-golden/
 COPY docker/compute-jobs-py/tests/ tests-shared/
 RUN python -m pytest -q -p no:cacheprovider tests tests-shared
 

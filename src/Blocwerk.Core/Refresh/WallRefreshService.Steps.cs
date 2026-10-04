@@ -2,6 +2,7 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
@@ -75,27 +76,12 @@ public sealed partial class WallRefreshService
         var (db, refresh) = await OpenRefreshAsync(refreshId);
         await using (db)
         {
-            if (refresh.Status != WallRefreshStatus.ReadyToApply)
+            // Under the wall's lock, so no background step (a 3D re-check rewriting the decisions) runs meanwhile.
+            using (await locks.AcquireForApplyAsync(refresh.WallId))
             {
-                throw new UserFacingException("There is nothing to apply yet.");
+                await db.Entry(refresh).ReloadAsync();
+                await AcceptApplyAsync(db, refresh, confirmedVersion);
             }
-
-            if (confirmedVersion is not null && RefreshTimeline.Summary(refresh)?.DecisionsVersion != confirmedVersion)
-            {
-                throw new UserFacingException("The summary changed while you were looking at it. Check it again, then apply.");
-            }
-
-            if (WallRefreshProcessor.IsRechecking(refresh, DateTimeOffset.UtcNow)
-                || WallRefreshProcessor.NeedsRecheck(refresh, await WallRefreshProcessor.Ready3DModelAsync(db, refresh, CancellationToken.None), DateTimeOffset.UtcNow))
-            {
-                queue.Enqueue(refreshId);
-                throw new UserFacingException("The update is being checked against the new 3D model. Try again in a moment.");
-            }
-
-            refresh.Status = WallRefreshStatus.Applying;
-            refresh.Error = null;
-            RefreshTimeline.Set(refresh, RefreshTimeline.Apply, RefreshStepState.Running, "Applying the panel update");
-            await db.SaveChangesAsync();
         }
 
         queue.Enqueue(refreshId);
@@ -131,6 +117,34 @@ public sealed partial class WallRefreshService
         }
 
         return result;
+    }
+
+    private async Task AcceptApplyAsync(BlocwerkDbContext db, WallRefresh refresh, string? confirmedVersion)
+    {
+        if (refresh.Status != WallRefreshStatus.ReadyToApply)
+        {
+            throw new UserFacingException("There is nothing to apply yet.");
+        }
+
+        var shown = RefreshTimeline.Summary(refresh)?.DecisionsVersion;
+        if (confirmedVersion is not null && shown != confirmedVersion)
+        {
+            throw new UserFacingException("The summary changed while you were looking at it. Check it again, then apply.");
+        }
+
+        if (WallRefreshProcessor.IsRechecking(refresh, DateTimeOffset.UtcNow)
+            || WallRefreshProcessor.NeedsRecheck(refresh, await WallRefreshProcessor.Ready3DModelAsync(db, refresh, CancellationToken.None), DateTimeOffset.UtcNow))
+        {
+            queue.Enqueue(refresh.Id);
+            throw new UserFacingException(BeingChecked);
+        }
+
+        // The background apply promotes only decisions with exactly this version.
+        refresh.ConfirmedDecisionsVersion = confirmedVersion ?? shown;
+        refresh.Status = WallRefreshStatus.Applying;
+        refresh.Error = null;
+        RefreshTimeline.Set(refresh, RefreshTimeline.Apply, RefreshStepState.Running, "Applying the panel update");
+        await db.SaveChangesAsync();
     }
 
     private static (int Col, int Row) TowardCentre(int col, int row) =>

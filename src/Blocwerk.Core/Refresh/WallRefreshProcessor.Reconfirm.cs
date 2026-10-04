@@ -56,6 +56,7 @@ public sealed partial class WallRefreshProcessor
             {
                 r.SummaryJson = RefreshTimeline.Write(fresh);
                 r.Status = WallRefreshStatus.ReadyToApply;
+                r.ConfirmedDecisionsVersion = null;
                 r.Error = message;
                 RefreshTimeline.Set(r, RefreshTimeline.Apply, RefreshStepState.Pending);
                 RefreshTimeline.Set(r, RefreshTimeline.Review, RefreshStepState.Waiting, "Check the updated summary, then apply");
