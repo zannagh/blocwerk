@@ -101,6 +101,11 @@ public class LookOverFindingBuilderTests
         var sameSpot = Assert.Single(LookOverFindingBuilder.Build(plain));
         Assert.Equal((LookOverFindingKind.SameSpot, (Guid?)copy.Id, (Guid?)fresh.Id, (Guid?)old.Id), (sameSpot.Kind, sameSpot.HoldId, sameSpot.OtherHoldId, sameSpot.OldHoldId));
 
+        // Shown at the old hold's spot and at the larger hold's scale, so "before" and "now" can be compared.
+        fresh.Radius = 0.05;
+        var scaled = Assert.Single(LookOverFindingBuilder.Build(plain));
+        Assert.Equal((copy.X, copy.Y, 0.05), (scaled.X, scaled.Y, scaled.Radius));
+
         // The same spot under a hold that already has a finding: that finding learns the new hold, no second one.
         var notFound = plain with { NotFound = new Dictionary<Guid, HoldMoveOutcome> { [old.Id] = HoldMoveOutcome.NotFound }, Boulders = new Dictionary<Guid, int> { [copy.Id] = 1 } };
         var known = Assert.Single(LookOverFindingBuilder.Build(notFound));
@@ -220,5 +225,6 @@ public class LookOverFindingBuilderTests
             boulders ?? [],
             new Dictionary<Guid, (int Width, int Height)> { [Panel] = (2000, 1000) },
             (cardMarked ?? []).ToHashSet(),
-            (unaligned ?? []).ToHashSet());
+            (unaligned ?? []).ToHashSet(),
+            new Dictionary<Guid, List<Guid>>());
 }

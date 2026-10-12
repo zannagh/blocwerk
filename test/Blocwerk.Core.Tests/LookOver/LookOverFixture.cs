@@ -108,10 +108,16 @@ internal static class LookOverFixture
     }
 
     /// <summary>Seeds the wall, scripts the target's spot, records the quick decisions and applies them unanswered.</summary>
-    public static async Task<LookWall> ApplyAsync(WallTestHarness h, bool targetDetected, double score)
+    public static async Task<LookWall> ApplyAsync(WallTestHarness h, bool targetDetected, double score, bool boulderMarkedBefore = false)
     {
         var w = await SeedAsync(h, targetDetected);
         w.Probe.Set(TargetX, TargetY, score);
+        if (boulderMarkedBefore)
+        {
+            await using var db = h.CreateContext();
+            await db.Boulders.Where(b => b.Id == w.BoulderId).ExecuteUpdateAsync(s => s.SetProperty(b => b.NeedsReview, true));
+        }
+
         var session = await w.Service.ResumeAsync(w.WallId);
         await RecordAsync(w, session);
         await PromoteLikeApplyAsync(w, session);

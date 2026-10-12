@@ -97,6 +97,16 @@ public partial class WallBigUpdateService
             .GroupBy(bh => bh.HoldId)
             .ToDictionary(g => g.Key, g => g.Select(bh => bh.BoulderId).Distinct().Count());
         var carry = inputs.Confirmation.Carryover.GroupBy(d => d.OldHoldId).ToDictionary(g => g.Key, g => g.First());
+
+        // Marked by this promote and not before: the tracker still knows what the boulder was when it was loaded.
+        var marked = db.ChangeTracker.Entries<Boulder>()
+            .Where(e => e.Entity.NeedsReview && !e.Property(b => b.NeedsReview).OriginalValue)
+            .Select(e => e.Entity.Id)
+            .ToHashSet();
+        var newlyMarked = db.BoulderHolds.Local
+            .Where(bh => db.Entry(bh).State == EntityState.Added && marked.Contains(bh.BoulderId))
+            .GroupBy(bh => bh.HoldId)
+            .ToDictionary(g => g.Key, g => g.Select(bh => bh.BoulderId).Distinct().ToList());
         return new LookOverPromoteFacts(
             cards,
             carry,
@@ -107,6 +117,7 @@ public partial class WallBigUpdateService
             boulders,
             inputs.PhotoSizes,
             inputs.CardMarked,
-            unaligned);
+            unaligned,
+            newlyMarked);
     }
 }

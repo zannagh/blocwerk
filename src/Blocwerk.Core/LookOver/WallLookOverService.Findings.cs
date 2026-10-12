@@ -48,7 +48,19 @@ public sealed partial class WallLookOverService
                 .Select(bh => new { bh.HoldId, bh.BoulderId, bh.Boulder.Name, bh.Boulder.NeedsReview })
                 .ToListAsync(ct))
             .ToLookup(b => b.HoldId, b => new LookOverBoulder(b.BoulderId, b.Name, b.NeedsReview));
-        return findings.Select(f => ToView(f, holds, boulders, access)).ToList();
+        var answerers = findings.Select(f => f.AnsweredByUserId).OfType<Guid>().Distinct().ToList();
+        var names = answerers.Count == 0
+            ? []
+            : await db.Users.IgnoreQueryFilters().Where(u => answerers.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.DisplayName, ct);
+        return findings
+            .Select(f => ToView(f, holds, boulders, access) with
+            {
+                AnsweredBy = f.AnsweredByUserId is { } by ? names.GetValueOrDefault(by) : null,
+                AnswerBoulders = f.AnswerBoulders,
+                ClearedBoulders = f.ClearedBoulderIds?.Count ?? 0,
+                CanUndo = f is { Status: LookOverFindingStatus.Settled, Answer: LookOverAnswer.Settle },
+            })
+            .ToList();
     }
 
     private static LookOverFindingView ToView(

@@ -27,6 +27,10 @@ namespace Blocwerk.Core.LookOver;
 /// <param name="Boulders">The current boulders that use the hold.</param>
 /// <param name="Answers">The answers it takes now from this user (empty once it is not open).</param>
 /// <param name="MergeNeedsAdmin">A new hold sits on the spot, but merging holds is for wall admins and the user is not one.</param>
+/// <param name="AnsweredBy">Who answered it.</param>
+/// <param name="AnswerBoulders">How many boulders used the hold when it was answered.</param>
+/// <param name="ClearedBoulders">How many boulders the answer took the review mark off.</param>
+/// <param name="CanUndo">The answer changed nothing on the wall and can be taken back.</param>
 public sealed record LookOverFindingView(
     Guid Id,
     LookOverFindingKind Kind,
@@ -44,4 +48,8 @@ public sealed record LookOverFindingView(
     bool Converted,
     IReadOnlyList<LookOverBoulder> Boulders,
     IReadOnlyList<LookOverAnswer> Answers,
-    bool MergeNeedsAdmin = false);
+    bool MergeNeedsAdmin = false,
+    string? AnsweredBy = null,
+    int? AnswerBoulders = null,
+    int ClearedBoulders = 0,
+    bool CanUndo = false);

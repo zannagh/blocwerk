@@ -8,38 +8,12 @@ using Blocwerk.Core.LookOver;
 namespace Blocwerk.Web.Components.Shared.LookOver;
 
 /// <summary>
-/// The words of the look-over page: what each finding is, what each answer is called for it, and what the two answers
-/// that change the wall will do, said before they do it.
+/// The words of the look-over: what each finding is, what each answer is called for it, and what the answers that
+/// change the wall will do, said before they do it. A card only says what the update did and what it could not tell;
+/// whether a hold is really gone is the reader's to see in the pictures. The wall page's notice is in the Banner part.
 /// </summary>
-internal static class LookOverCopy
+internal static partial class LookOverCopy
 {
-    /// <summary>The wall page's notice for somebody who may look over the wall.</summary>
-    public static string BannerHeadline(int open) => open switch
-    {
-        0 => "This wall was updated. Nothing is open any more.",
-        1 => "This wall was updated. 1 finding is waiting for a look-over.",
-        _ => $"This wall was updated. {open} findings are waiting for a look-over.",
-    };
-
-    /// <summary>The line under <see cref="BannerHeadline"/>.</summary>
-    public static string BannerHint(int open) => open == 0
-        ? "Every finding is answered or was replaced by a later update. Finish the look-over to take this notice off the wall."
-        : "The update was unsure about them and nobody has checked them yet. Boulders that use one of these holds are marked for review.";
-
-    /// <summary>The look-over page's first line while the wall is flagged.</summary>
-    public static string PendingLine(string when, int listed, int open)
-    {
-        if (open == 0)
-        {
-            return listed == 0
-                ? $"Nothing of the panel update of {when} is open any more. Press Finish look-over to complete it."
-                : $"All {PlainCopy.Plural(listed, "finding")} since the panel update of {when} are answered. Press Finish look-over to complete it.";
-        }
-
-        return $"The panel update of {when} left findings nobody had checked: {(open == 1 ? "1 is" : $"{open} are")} open"
-            + (listed > open ? $", {listed - open} answered." : ".");
-    }
-
     /// <summary>The heading of a group of findings.</summary>
     public static string GroupTitle(LookOverFindingKind kind) => kind switch
     {
@@ -69,9 +43,9 @@ internal static class LookOverCopy
     /// <summary>What the update did about the hold, and what is asked now.</summary>
     public static string Detail(LookOverFindingView f)
     {
-        if (f.HoldId is null && f.Kind != LookOverFindingKind.ConflictingNew)
+        if (f.Status == LookOverFindingStatus.Open && f.HoldId is null && f.Kind != LookOverFindingKind.ConflictingNew)
         {
-            return "This hold has been removed from the wall since. Nothing is left to decide.";
+            return "This hold is no longer on the wall as the update left it. Nothing is left to decide.";
         }
 
         var hold = f.HoldName is { } name ? $"the {name} hold" : "this hold";
@@ -80,24 +54,25 @@ internal static class LookOverCopy
             LookOverFindingKind.ReplacedByOther when f.Converted =>
                 "You said this is not the hold that was here before. It is marked as changed and the boulders that use it are marked for review. Keep it, or remove it from the wall.",
             LookOverFindingKind.ReplacedByOther =>
-                $"A different hold now sits where {hold} was. The update kept the old hold in place and added the other one as a new hold.",
-            LookOverFindingKind.NotFound => $"The update did not find {hold} again, and its spot no longer looks like it. It was kept where it was.",
-            LookOverFindingKind.PossiblyRemoved => $"The new photo and the 3D texture show bare wall where {hold} was. It was kept where it was.",
-            LookOverFindingKind.UnsureMatch => $"The update carried {hold} onto a detection that may not be the same hold. Compare the old and the new photo.",
-            LookOverFindingKind.SameSpot => $"The update did not find {hold} again and kept it where it was, and a new hold was detected on the same spot. One of the two is probably one too many.",
+                $"To the update, the hold on this spot looks different from {hold} that was here. It kept the old hold in place and added the other one as a new hold.",
+            LookOverFindingKind.NotFound => $"The update did not find {hold} again on the new photo. It was kept where it was.",
+            LookOverFindingKind.PossiblyRemoved =>
+                $"The update did not find {hold} again, and to it the spot looks like bare wall on the new photo and in the 3D model. It was kept where it was.",
+            LookOverFindingKind.UnsureMatch => $"The update carried {hold} onto a detection that may not be the same hold. Compare the two photos.",
+            LookOverFindingKind.SameSpot => $"The update did not find {hold} again and kept it where it was, and it detected a new hold on the same spot. Both are on the wall now.",
             LookOverFindingKind.MatchedToHandPlaced =>
                 "A hold placed by hand was merged onto a detected hold: it kept its boulders and settings and took the detection's position and outline. "
                 + "It cannot be split again from here; if the merge is wrong, correct the hold in the hold editor.",
             LookOverFindingKind.HandPlacedAmbiguous =>
                 "More than one detection sits on this hand-placed hold. Nothing was merged and the hold stayed as it was. Remove a surplus detection in the hold editor.",
-            _ => "The photo check left a detection out here, but the 3D model sees a hold. Nothing was added. If there is a hold, add it in the hold editor.",
+            _ => "The photo check left a detection out here, while the 3D model suggests a hold. Nothing was added. If there is a hold, add it in the hold editor.",
         };
     }
 
     /// <summary>The name of "it is fine as it is" for this finding.</summary>
     public static string SettleLabel(LookOverFindingView f)
     {
-        if (f.HoldId is null)
+        if (f.Status == LookOverFindingStatus.Open && f.HoldId is null)
         {
             return "Understood";
         }
@@ -122,6 +97,9 @@ internal static class LookOverCopy
         LookOverFindingKind.SameSpot => "Old hold is gone",
         _ => "Remove hold",
     };
+
+    /// <summary>The name of the merge: about the boulders when there are any, about the two holds when there are none.</summary>
+    public static string MergeLabel(LookOverFindingView f) => f.Boulders.Count == 0 ? "Merge into the new hold" : "Boulders should use the new hold";
 
     /// <summary>What removing the hold does to its boulders, asked before it is done.</summary>
     public static string RemoveQuestion(LookOverFindingView f)
@@ -148,24 +126,47 @@ internal static class LookOverCopy
             + "boulders that use the same hold on a neighbouring panel are marked too. Nothing is removed.";
     }
 
-    /// <summary>What moving the boulders onto the new hold does, asked before it is done.</summary>
+    /// <summary>What the merge does, asked before it is done; it only talks about boulders when there are any.</summary>
     public static string UseNewQuestion(LookOverFindingView f)
     {
+        const string Undo = "The old hold is removed. A wall admin can undo this under Wall settings, Possible duplicate holds.";
         var count = f.Boulders.Count;
-        var boulders = count == 0
-            ? "No current boulder uses the old hold."
-            : $"{PlainCopy.Plural(count, "boulder")} ({Names(f)}) keep{(count == 1 ? "s" : string.Empty)} the same mark and use{(count == 1 ? "s" : string.Empty)} the new hold from now on, still marked for review.";
-        return $"Merge the old hold into the new hold on this spot? {boulders} The old hold is removed. "
-            + "A wall admin can undo this under Wall settings, Possible duplicate holds.";
+        if (count == 0)
+        {
+            return $"Merge the old hold into the new hold on this spot? {Undo}";
+        }
+
+        var s = count == 1 ? "s" : string.Empty;
+        return $"Merge the old hold into the new hold on this spot? {PlainCopy.Plural(count, "boulder")} ({Names(f)}) keep{s} the same mark "
+            + $"and use{s} the new hold from now on, still marked for review. {Undo}";
     }
 
-    /// <summary>How a settled finding was answered.</summary>
-    public static string AnsweredLabel(LookOverFindingView f) => f.Answer switch
+    /// <summary>How a settled finding was answered, and by whom.</summary>
+    public static string AnsweredLabel(LookOverFindingView f)
     {
-        LookOverAnswer.RemoveHold => "Hold removed",
-        LookOverAnswer.UseNewHold => "Boulders use the new hold",
-        _ => SettleLabel(f),
-    };
+        var what = f.Answer switch
+        {
+            LookOverAnswer.RemoveHold => "Hold removed",
+            LookOverAnswer.UseNewHold => "Merged into the new hold",
+            _ => SettleLabel(f),
+        };
+        return f.AnsweredBy is { } who ? $"{what} · {who}" : what;
+    }
+
+    /// <summary>What the answer did, in one line under the card; null when it did nothing worth saying.</summary>
+    public static string? ResultLine(LookOverFindingView f)
+    {
+        var boulders = f.AnswerBoulders ?? 0;
+        return f.Answer switch
+        {
+            LookOverAnswer.RemoveHold when boulders == 0 => "Hold removed; no boulder used it.",
+            LookOverAnswer.RemoveHold => $"Hold removed; {PlainCopy.Plural(boulders, "boulder")} {(boulders == 1 ? "is" : "are")} now historic.",
+            LookOverAnswer.UseNewHold => "Merged into the new hold. Undo under Wall settings › Possible duplicate holds.",
+            LookOverAnswer.Settle when f.ClearedBoulders > 0 =>
+                $"{PlainCopy.Plural(f.ClearedBoulders, "boulder")} {(f.ClearedBoulders == 1 ? "is" : "are")} no longer marked for review.",
+            _ => null,
+        };
+    }
 
     private static string Names(LookOverFindingView f)
     {

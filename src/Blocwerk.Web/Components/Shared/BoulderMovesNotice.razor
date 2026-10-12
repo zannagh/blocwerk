@@ -16,7 +16,7 @@
             @foreach (var move in moves)
             {
                 <li class="@(move.Outcome == HoldMoveOutcome.Removed ? "is-removed" : "is-kept")">
-                    <span class="bw-moves-hold">@(move.HoldName ?? "A hold")</span>
+                    <span class="bw-moves-hold">@HoldLabel(move)</span>
                     <span class="bw-moves-text">@move.Text</span>
                     @if (!NotFound(move))
                     {
@@ -31,7 +31,10 @@
         }
         @if (lookOverPending)
         {
-            <p class="bw-moves-hint">The wall is still waiting for a look-over after its update. <a href="/walls/@WallId/look-over">Look over the wall</a></p>
+            <p class="bw-moves-hint">
+                The wall is still waiting for a look-over after its update.
+                <a class="bw-moves-link" href="/walls/@WallId/look-over?boulder=@BoulderId">See this boulder's holds in the look-over</a>
+            </p>
         }
         @if (CanManage)
         {
@@ -73,6 +76,10 @@
         : moves.All(NotFound) ? "A hold of this boulder was not found again when the panels were updated."
         : moves.Any(NotFound) ? "Holds of this boulder moved or were not found again when the panels were updated."
         : "A hold of this boulder moved a little.";
+
+    /// <summary>Which hold a line is about: its name, else "The white hold", else "A hold".</summary>
+    internal static string HoldLabel(BoulderMoveView move) =>
+        move.HoldName ?? (string.IsNullOrWhiteSpace(move.HoldColor) ? "A hold" : $"The {move.HoldColor} hold");
 
     private static bool NotFound(BoulderMoveView move) => move.Outcome is HoldMoveOutcome.NotFound or HoldMoveOutcome.Replaced;
 

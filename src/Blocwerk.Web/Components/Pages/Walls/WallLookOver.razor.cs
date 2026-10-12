@@ -6,7 +6,6 @@ using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.LookOver;
 using Blocwerk.Core.Services;
-using Blocwerk.Web.Components.Shared;
 using Blocwerk.Web.Components.Shared.LookOver;
 using Microsoft.AspNetCore.Components;
 using Microsoft.EntityFrameworkCore;
@@ -16,7 +15,9 @@ namespace Blocwerk.Web.Components.Pages.Walls;
 /// <summary>
 /// Code-behind of the look-over page: loads the wall's findings, answers them through
 /// <see cref="IWallLookOverService"/> and finishes the look-over. Each group shows <see cref="PageSize"/> findings at
-/// a time (a big wall can leave a hundred unsure matches); the first group with something open starts expanded.
+/// a time (a big wall can leave a hundred unsure matches); the first group with something open starts expanded. The
+/// list keeps its order while the page is open (<see cref="LookOverListing"/>), and one answer runs at a time: a
+/// second tap while one is on its way is dropped, so a double tap never answers the next card.
 /// </summary>
 public partial class WallLookOver
 {
@@ -26,10 +27,13 @@ public partial class WallLookOver
     private const string NotOnKiosk = "The wall is looked over from your own device, not from this wall tablet.";
 
     private readonly Dictionary<LookOverFindingKind, int> shown = [];
-    private readonly HashSet<LookOverFindingKind> expanded = [];
+    private readonly HashSet<LookOverFindingKind> toggled = [];
+    private readonly LookOverListing listing = new();
     private WallLookOverState? state;
-    private IReadOnlyList<LookOverFindingView> findings = [];
+    private LookOverFindingKind? firstOpen;
     private Guid loadedWallId;
+    private Guid? lastTouched;
+    private bool onBouldersOnly = true;
     private bool loading = true;
     private bool busy;
     private bool finished;
@@ -39,15 +43,21 @@ public partial class WallLookOver
     [Parameter]
     public Guid WallId { get; set; }
 
+    /// <summary>Show only the findings on a hold of this boulder (the link on the boulder page).</summary>
+    [SupplyParameterFromQuery(Name = "boulder")]
+    public Guid? FilterBoulder { get; set; }
+
     [Inject]
     private IWallLookOverService LookOver { get; set; } = default!;
 
     [Inject]
     private IKioskContext KioskContext { get; set; } = default!;
 
-    private IEnumerable<IGrouping<LookOverFindingKind, LookOverFindingView>> Groups => findings.GroupBy(f => f.Kind);
+    private IReadOnlyList<LookOverFindingKind> Kinds => listing.Kinds(onBouldersOnly, FilterBoulder);
 
-    private int OpenCount => findings.Count(f => f.Status == LookOverFindingStatus.Open);
+    private int OnBoulderCount => listing.Findings.Count(listing.OnBoulder);
+
+    private int OpenCount => listing.Findings.Count(f => f.Status == LookOverFindingStatus.Open);
 
     private string OpenFindings => OpenCount == 1 ? "1 finding is" : $"{OpenCount} findings are";
 
@@ -59,7 +69,7 @@ public partial class WallLookOver
         {
             if (state is { Pending: true, PendingSince: { } since })
             {
-                return LookOverCopy.PendingLine(since.ToLocalTime().ToString("d MMM yyyy, HH:mm"), findings.Count, OpenCount);
+                return LookOverCopy.PendingLine(since.ToLocalTime().ToString("d MMM yyyy, HH:mm"), listing.Findings.Count, OpenCount);
             }
 
             if (state is { CompletedAt: { } done })
@@ -89,11 +99,11 @@ public partial class WallLookOver
         }
 
         await RunAsync(ReloadAsync);
-        if (Groups.FirstOrDefault(g => g.Any(f => f.Status == LookOverFindingStatus.Open)) is { } first)
-        {
-            expanded.Add(first.Key);
-        }
 
+        // With nothing on a boulder there is nothing to show first: open on everything.
+        onBouldersOnly = OnBoulderCount > 0;
+        firstOpen = Kinds.Cast<LookOverFindingKind?>()
+            .FirstOrDefault(k => listing.Visible(k!.Value, onBouldersOnly, FilterBoulder).Any(f => f.Status == LookOverFindingStatus.Open));
         loading = false;
     }
 
@@ -101,11 +111,14 @@ public partial class WallLookOver
 
     private void ShowMore(LookOverFindingKind kind) => shown[kind] = Shown(kind) + PageSize;
 
+    /// <summary>One boulder's findings are all open to see; otherwise the first group with something open, until the user says otherwise.</summary>
+    private bool IsExpanded(LookOverFindingKind kind) => (FilterBoulder is not null || kind == firstOpen) != toggled.Contains(kind);
+
     private void Toggle(LookOverFindingKind kind)
     {
-        if (!expanded.Remove(kind))
+        if (!toggled.Remove(kind))
         {
-            expanded.Add(kind);
+            toggled.Add(kind);
         }
     }
 
@@ -118,23 +131,35 @@ public partial class WallLookOver
             return;
         }
 
-        findings = await LookOver.ListAsync(WallId);
+        listing.Take(await LookOver.ListAsync(WallId));
     }
 
     private Task AnswerAsync(LookOverChoice choice) =>
-        ActAsync(() => LookOver.AnswerAsync(WallId, choice.FindingId, choice.Answer, choice.ShownBoulderIds));
+        ActAsync(choice.FindingId, () => LookOver.AnswerAsync(WallId, choice.FindingId, choice.Answer, choice.ShownBoulderIds));
 
-    private Task SettleUnsureAsync() => ActAsync(() => LookOver.SettleUnsureMatchesAsync(WallId));
+    private Task UndoAsync(Guid findingId) => ActAsync(findingId, () => LookOver.UndoAsync(WallId, findingId));
+
+    private Task SettleAllAsync(LookOverFindingKind kind, bool onlyWithoutBoulders) =>
+        ActAsync(null, () => LookOver.SettleAllAsync(WallId, kind, onlyWithoutBoulders));
 
     private async Task FinishAsync(bool leaveOpen)
     {
-        await ActAsync(() => LookOver.FinishAsync(WallId, leaveOpen));
+        await ActAsync(null, () => LookOver.FinishAsync(WallId, leaveOpen));
         finished = error is null && state is { Pending: false };
     }
 
-    /// <summary>Runs an answer, then shows the list as it is now: also after a refusal, which only the current list explains.</summary>
-    private async Task ActAsync(Func<Task> action)
+    /// <summary>
+    /// Runs an answer, then shows the list as it is now: also after a refusal, which only the current list explains.
+    /// While one is running every further tap is dropped.
+    /// </summary>
+    private async Task ActAsync(Guid? findingId, Func<Task> action)
     {
+        if (busy)
+        {
+            return;
+        }
+
+        lastTouched = findingId;
         await RunAsync(async () =>
         {
             try
@@ -173,8 +198,8 @@ public partial class WallLookOver
         catch (UnauthorizedAccessException)
         {
             // The look-over itself was allowed (the list loaded); a hold operation behind an answer said no.
-            error = findings.Count > 0 ? "You may not do that on this wall." : null;
-            blocked = findings.Count > 0 ? null : NotAllowed;
+            error = listing.Findings.Count > 0 ? "You may not do that on this wall." : null;
+            blocked = listing.Findings.Count > 0 ? null : NotAllowed;
         }
         finally
         {

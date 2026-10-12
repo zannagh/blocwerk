@@ -88,6 +88,22 @@ public class WallLookOverFinding
     /// </summary>
     public bool FlaggedHold { get; set; }
 
+    /// <summary>
+    /// The boulders on <see cref="HoldId"/> that this update marked for review and that were not marked before it: the
+    /// only boulders an answer saying "the update was wrong about this hold" may clear again. Null on a finding written
+    /// before this was recorded (unknown, so nothing is cleared).
+    /// </summary>
+    public List<Guid>? MarkedBoulderIds { get; set; }
+
+    /// <summary>The answer took the review mark off <see cref="HoldId"/> (undoing the answer puts it back).</summary>
+    public bool ClearedHoldMark { get; set; }
+
+    /// <summary>The boulders whose review mark the answer cleared (undoing the answer marks them again).</summary>
+    public List<Guid>? ClearedBoulderIds { get; set; }
+
+    /// <summary>How many current boulders used the hold when it was answered (shown with a removal or a merge).</summary>
+    public int? AnswerBoulders { get; set; }
+
     /// <summary>An unsure match a person called a different hold; it stays open as a replaced hold.</summary>
     public bool Converted { get; set; }
 

@@ -44,6 +44,22 @@ public static class LookOverRules
     public static bool CanHaveOther(LookOverFindingKind kind) =>
         kind is LookOverFindingKind.ReplacedByOther or LookOverFindingKind.NotFound or LookOverFindingKind.PossiblyRemoved or LookOverFindingKind.SameSpot;
 
+    /// <summary>
+    /// Settling this kind says the update's reason was wrong (the hold is the same one, the hold is still there), so
+    /// boulders that were marked only for it may be cleared. Keeping a replaced or a possibly removed hold does not
+    /// say that: the hold's situation did change.
+    /// </summary>
+    /// <param name="kind">The kind.</param>
+    /// <returns>True for an unsure match and a hold not found again.</returns>
+    public static bool SettlingWithdrawsTheReason(LookOverFindingKind kind) =>
+        kind is LookOverFindingKind.UnsureMatch or LookOverFindingKind.NotFound;
+
+    /// <summary>The kinds that can be settled all at once.</summary>
+    /// <param name="kind">The kind.</param>
+    /// <returns>True for unsure matches and for old and new holds on one spot.</returns>
+    public static bool CanSettleAll(LookOverFindingKind kind) =>
+        kind is LookOverFindingKind.UnsureMatch or LookOverFindingKind.SameSpot;
+
     /// <summary>The answers that change a hold or its boulders, so they ask first and say which boulders they saw.</summary>
     /// <param name="answer">The answer.</param>
     /// <returns>True for everything but settling.</returns>

@@ -26,8 +26,12 @@ public sealed partial class WallLookOverService(
     IHoldDuplicateService duplicates,
     ICaptureFileStore files,
     ILogger<WallLookOverService> logger,
-    IKioskContext? kioskContext = null) : IWallLookOverService
+    IKioskContext? kioskContext = null,
+    IChangeJournal? journal = null) : IWallLookOverService
 {
+    /// <summary>The journal batch label of an answer, an undo or a bulk answer.</summary>
+    public const string BatchLabel = "look-over-answer";
+
     private const string Action = "Looking over the wall";
 
     /// <inheritdoc/>
@@ -62,8 +66,10 @@ public sealed partial class WallLookOverService(
             : null;
         var kiosk = KioskGuard.ScopedWallId(kioskContext, db) is not null;
         var canLookOver = !kiosk && (appAdmin || await WallAdminGuard.IsWallModeratorOrAboveAsync(db, wallId, user.Id, ct));
+        var pending = wall.LookOverPendingSince is not null;
+        var (marked, more) = pending ? await BoulderCountsAsync(db, wallId, ct) : (0, 0);
         return new WallLookOverState(
-            wall.LookOverPendingSince is not null, wall.LookOverPendingSince, wall.LookOverGeneration, open, total, wall.LookOverCompletedAt, completedBy, canLookOver);
+            pending, wall.LookOverPendingSince, wall.LookOverGeneration, open, total, wall.LookOverCompletedAt, completedBy, canLookOver, marked, more);
     }
 
     /// <inheritdoc/>
@@ -113,6 +119,23 @@ public sealed partial class WallLookOverService(
             ? ofWall.Where(f => f.Status == LookOverFindingStatus.Open || (f.Status == LookOverFindingStatus.Settled && f.AnsweredAt >= since))
             : ofWall.Where(f => f.Status == LookOverFindingStatus.Open);
     }
+
+    /// <summary>
+    /// What the wall page says next to the findings: the current boulders that are marked for review, and those that
+    /// are not but use a hold an open finding is about (an unsure match marks the hold, not its boulders).
+    /// </summary>
+    private static async Task<(int Marked, int More)> BoulderCountsAsync(BlocwerkDbContext db, Guid wallId, CancellationToken ct)
+    {
+        var current = db.Boulders.Where(b => b.WallId == wallId && !b.IsArchived && !b.IsHistoric);
+        var marked = await current.CountAsync(b => b.NeedsReview, ct);
+        var more = await current.CountAsync(
+            b => !b.NeedsReview && db.BoulderHolds.Any(bh => bh.BoulderId == b.Id
+                && db.WallLookOverFindings.Any(f => f.WallId == wallId && f.Status == LookOverFindingStatus.Open && f.HoldId == bh.HoldId)),
+            ct);
+        return (marked, more);
+    }
+
+    private IDisposable? BeginBatch(Guid wallId) => journal?.BeginBatch(BatchLabel, ChangeJournalScopeKind.Wall, wallId);
 
     /// <summary>A context for the wall's owner, an admin or a moderator of it, or an installation admin; never a kiosk tablet.</summary>
     private async Task<(BlocwerkDbContext Db, LookOverAccess Access)> OpenAsync(Guid wallId, CancellationToken ct)

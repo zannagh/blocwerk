@@ -13,6 +13,8 @@ namespace Blocwerk.Core.LookOver;
 /// <param name="CompletedAt">When the last look-over was finished.</param>
 /// <param name="CompletedBy">Who finished it.</param>
 /// <param name="CanLookOver">The user may open the look-over (owner, wall admin, moderator, installation admin).</param>
+/// <param name="BouldersMarked">Current boulders of the wall that are marked for review (0 while the wall is not flagged).</param>
+/// <param name="MoreBoulders">Current boulders that are NOT marked but use a hold an open finding is about.</param>
 public sealed record WallLookOverState(
     bool Pending,
     DateTimeOffset? PendingSince,
@@ -21,4 +23,6 @@ public sealed record WallLookOverState(
     int TotalFindings,
     DateTimeOffset? CompletedAt,
     string? CompletedBy,
-    bool CanLookOver);
+    bool CanLookOver,
+    int BouldersMarked = 0,
+    int MoreBoulders = 0);

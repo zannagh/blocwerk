@@ -145,7 +145,8 @@ public class LookOverAnswerTests
         await service.AnswerAsync(w.WallId, view.Id, LookOverAnswer.Settle);
 
         var boulder = await BoulderAsync(h, w.BoulderId);
-        Assert.Equal((true, false, view.HoldId), (boulder.NeedsReview, boulder.IsHistoric, (Guid?)boulder.BoulderHolds.Single().HoldId));
+        // The boulder was only marked because this hold was not found: it is cleared (LookOverBoulderClearingTests has the rest).
+        Assert.Equal((false, false, view.HoldId), (boulder.NeedsReview, boulder.IsHistoric, (Guid?)boulder.BoulderHolds.Single().HoldId));
         Assert.Equal((LookOverFindingStatus.Settled, (LookOverAnswer?)LookOverAnswer.Settle), await StatusAsync(h, w.WallId));
     }
 

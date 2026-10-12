@@ -11,7 +11,7 @@ internal static partial class ApiDocsData
 
     private const string LookOverStateJson =
         "{\n  \"pending\": true,\n  \"pendingSince\": \"2026-10-12T08:15:00+00:00\",\n  \"generation\": 7,\n  \"openFindings\": 118,\n  "
-        + "\"totalFindings\": 131,\n  \"completedAt\": null,\n  \"completedBy\": null,\n  \"canLookOver\": true\n}";
+        + "\"totalFindings\": 131,\n  \"completedAt\": null,\n  \"completedBy\": null,\n  \"canLookOver\": true,\n  \"bouldersMarked\": 26,\n  \"moreBoulders\": 9\n}";
 
     private const string LookOverFindingsJson =
         "{\n  \"state\": { … },\n  \"findings\": [ { \"id\": \"<guid>\", \"kind\": 5, \"status\": 0, \"answer\": null, \"generation\": 7,\n    "

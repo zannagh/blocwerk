@@ -405,6 +405,12 @@ else
         <Page3>
             @* Overview (centre page — the wall itself) *@
             <div class="wall-main">
+                @* A pending look-over is the first thing an admin or moderator sees on a phone: above the photo, not
+                   below photo and stats. Renders nothing while none is waiting. *@
+                @if (_canEditHolds && !_isAnonymous && string.IsNullOrEmpty(ShareToken))
+                {
+                    <Blocwerk.Web.Components.Shared.LookOver.WallLookOverBanner WallId="WallId" />
+                }
                 <div class="wall-detail-card">
                     @if (_isAnonymous && KioskContext.IsKiosk)
                     {
@@ -637,9 +643,9 @@ else
                         View in 3D
                     </Wall3DLink>
 
-                    @* A panel update left findings nobody checked: admins and moderators get the way into the look-over,
-                       members a neutral note. Not behind a share link, where nobody is known. *@
-                    @if (!_isAnonymous && string.IsNullOrEmpty(ShareToken))
+                    @* A panel update left findings nobody checked: members read a neutral note down here; admins and
+                       moderators get theirs above the photo (see the top of this page). Not behind a share link. *@
+                    @if (!_isAnonymous && !_canEditHolds && string.IsNullOrEmpty(ShareToken))
                     {
                         <Blocwerk.Web.Components.Shared.LookOver.WallLookOverBanner WallId="WallId" />
                     }

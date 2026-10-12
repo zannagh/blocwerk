@@ -152,7 +152,9 @@ internal static class LookOverFindingBuilder
                 continue;
             }
 
-            var finding = About(facts, At(LookOverFindingKind.SameSpot, other), oldId, kept);
+            // Both pictures at the old hold's spot and at one scale (the larger hold's), so they can be compared.
+            var finding = About(facts, At(LookOverFindingKind.SameSpot, kept), oldId, kept);
+            finding.Radius = Math.Max(kept.Radius, other.Radius);
             finding.OtherHoldId = other.Id;
             findings.Add(finding);
         }
@@ -180,6 +182,7 @@ internal static class LookOverFindingBuilder
         finding.HoldId = live.Id;
         finding.PanelId ??= live.WallPanelId;
         finding.BouldersAtApply = facts.Boulders.GetValueOrDefault(live.Id);
+        finding.MarkedBoulderIds = facts.NewlyMarked.GetValueOrDefault(live.Id) ?? [];
         return finding;
     }
 }

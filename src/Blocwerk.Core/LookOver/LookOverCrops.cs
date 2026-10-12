@@ -6,9 +6,11 @@ using System.Collections.Concurrent;
 using Blocwerk.Core.Capture;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Enums;
 using Blocwerk.Core.Refresh;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
+using SkiaSharp;
 
 namespace Blocwerk.Core.LookOver;
 
@@ -71,7 +73,9 @@ internal static class LookOverCrops
         var photo = hold.WallPanelId is { } panelId
             ? await db.WallPanels.AsNoTracking().Where(p => p.Id == panelId).Select(p => p.Photo).FirstOrDefaultAsync(ct)
             : null;
-        return RefreshCheckCrops.Crop(photo, hold.X, hold.Y, hold.Radius).Bytes;
+        // An old and a new hold on one spot are compared: both pictures at the finding's one scale, not each hold's own.
+        var radius = finding.Kind == LookOverFindingKind.SameSpot ? Math.Max(hold.Radius, finding.Radius) : hold.Radius;
+        return RefreshCheckCrops.Crop(photo, hold.X, hold.Y, radius).Bytes;
     }
 
     private static async Task<byte[]?> NewAsync(BlocwerkDbContext db, WallLookOverFinding finding, CancellationToken ct)
@@ -97,7 +101,38 @@ internal static class LookOverCrops
             (facetId, a, b) = (f, pa, pb);
         }
 
-        return (await RefreshCheckCrops.TextureCropAsync(db, files, modelId, facetId, a, b, radiusMm)).Bytes;
+        var crop = (await RefreshCheckCrops.TextureCropAsync(db, files, modelId, facetId, a, b, radiusMm)).Bytes;
+        return crop is not null && MostlyEmpty(crop) ? null : crop;
+    }
+
+    /// <summary>
+    /// A texture picture that is mostly black shows the edge of the wall or a part the 3D model never painted: no
+    /// picture says more than a black tile. Sampled on a coarse grid; an image that does not decode counts as empty.
+    /// </summary>
+    internal static bool MostlyEmpty(byte[] jpeg)
+    {
+        const int Step = 8;
+        const int Dark = 24;
+        using var data = SKData.CreateCopy(jpeg);
+        using var codec = SKCodec.Create(data);
+        using var bitmap = codec is null ? null : SKBitmap.Decode(codec);
+        if (bitmap is null)
+        {
+            return true;
+        }
+
+        var (dark, all) = (0, 0);
+        for (var y = Step / 2; y < bitmap.Height; y += Step)
+        {
+            for (var x = Step / 2; x < bitmap.Width; x += Step)
+            {
+                var pixel = bitmap.GetPixel(x, y);
+                all++;
+                dark += pixel.Red < Dark && pixel.Green < Dark && pixel.Blue < Dark ? 1 : 0;
+            }
+        }
+
+        return all == 0 || dark * 2 > all;
     }
 
     private static Task<Hold?> HoldAsync(BlocwerkDbContext db, Guid? id, CancellationToken ct) =>

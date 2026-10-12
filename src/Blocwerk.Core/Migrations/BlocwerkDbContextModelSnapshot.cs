@@ -2629,6 +2629,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<int?>("Answer")
                         .HasColumnType("integer");
 
+                    b.Property<int?>("AnswerBoulders")
+                        .HasColumnType("integer");
+
                     b.Property<DateTimeOffset?>("AnsweredAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -2640,6 +2643,12 @@ namespace Blocwerk.Core.Migrations
 
                     b.Property<int>("BouldersAtApply")
                         .HasColumnType("integer");
+
+                    b.PrimitiveCollection<List<Guid>>("ClearedBoulderIds")
+                        .HasColumnType("uuid[]");
+
+                    b.Property<bool>("ClearedHoldMark")
+                        .HasColumnType("boolean");
 
                     b.Property<double?>("Confidence")
                         .HasColumnType("double precision");
@@ -2668,6 +2677,9 @@ namespace Blocwerk.Core.Migrations
 
                     b.Property<int>("Kind")
                         .HasColumnType("integer");
+
+                    b.PrimitiveCollection<List<Guid>>("MarkedBoulderIds")
+                        .HasColumnType("uuid[]");
 
                     b.Property<Guid?>("MergeBatchId")
                         .HasColumnType("uuid");

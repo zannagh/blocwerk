@@ -60,7 +60,7 @@ public class LookOverFinishTests
         using var h = new WallTestHarness();
         var w = await ApplyAsync(h, targetDetected: true, score: 0.4);
         var service = Service(h);
-        Assert.Equal(1, await service.SettleUnsureMatchesAsync(w.WallId));
+        Assert.Equal(1, await service.SettleAllAsync(w.WallId, LookOverFindingKind.UnsureMatch, onlyWithoutBoulders: false));
 
         await service.FinishAsync(w.WallId, leaveOpen: false);
 
@@ -83,7 +83,7 @@ public class LookOverFinishTests
             other = finding.Id;
         }
 
-        var settled = await Service(h).SettleUnsureMatchesAsync(w.WallId);
+        var settled = await Service(h).SettleAllAsync(w.WallId, LookOverFindingKind.UnsureMatch, onlyWithoutBoulders: false);
 
         Assert.Equal(1, settled);
         Assert.False((await HoldAsync(h, w.DetectionId))!.NeedsReview);
@@ -107,7 +107,7 @@ public class LookOverFinishTests
         Assert.Equal((true, false), (state.Pending, state.CanLookOver));
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.ListAsync(w.WallId));
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.AnswerAsync(w.WallId, findingId, LookOverAnswer.Settle));
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.SettleUnsureMatchesAsync(w.WallId));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.SettleAllAsync(w.WallId, LookOverFindingKind.UnsureMatch, onlyWithoutBoulders: false));
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.FinishAsync(w.WallId, leaveOpen: true));
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.GetCropAsync(w.WallId, findingId, Blocwerk.Core.Refresh.CheckCropView.New));
         Assert.Equal(LookOverFindingStatus.Open, (await FindingAsync(h, w.WallId)).Status);

@@ -40,11 +40,27 @@ public interface IWallLookOverService
     Task AnswerAsync(
         Guid wallId, Guid findingId, LookOverAnswer answer, IReadOnlyCollection<Guid>? expectedBoulderIds = null, CancellationToken ct = default);
 
-    /// <summary>Settles every open unsure match as "same hold". Nothing on the wall changes.</summary>
+    /// <summary>
+    /// Takes back an answer that changed nothing on the wall ("Same hold", "Still there", "Keep…", "Understood"): the
+    /// finding is open again, and a review mark the answer took off the hold or its boulders is back. A removed or
+    /// merged hold is not undone here.
+    /// </summary>
     /// <param name="wallId">The wall.</param>
+    /// <param name="findingId">The finding.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>A task.</returns>
+    Task UndoAsync(Guid wallId, Guid findingId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Settles every open finding of one kind as "it is fine as it is": the unsure matches as "same hold", the old and
+    /// new holds on one spot as "both are there". No hold is removed or merged.
+    /// </summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="kind"><see cref="LookOverFindingKind.UnsureMatch"/> or <see cref="LookOverFindingKind.SameSpot"/>.</param>
+    /// <param name="onlyWithoutBoulders">Only the findings whose hold no current boulder uses.</param>
     /// <param name="ct">Cancellation.</param>
     /// <returns>How many were settled.</returns>
-    Task<int> SettleUnsureMatchesAsync(Guid wallId, CancellationToken ct = default);
+    Task<int> SettleAllAsync(Guid wallId, LookOverFindingKind kind, bool onlyWithoutBoulders, CancellationToken ct = default);
 
     /// <summary>
     /// Finishes the look-over: records who and when and takes the flag off the wall. Refused while findings are open

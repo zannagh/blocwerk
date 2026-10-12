@@ -90,7 +90,7 @@ public class LookOverGuardTests
         Assert.False((await service.GetStateAsync(w.WallId))!.CanLookOver);
         await Assert.ThrowsAsync<KioskRestrictedException>(() => service.ListAsync(w.WallId));
         await Assert.ThrowsAsync<KioskRestrictedException>(() => service.AnswerAsync(w.WallId, findingId, LookOverAnswer.Settle));
-        await Assert.ThrowsAsync<KioskRestrictedException>(() => service.SettleUnsureMatchesAsync(w.WallId));
+        await Assert.ThrowsAsync<KioskRestrictedException>(() => service.SettleAllAsync(w.WallId, LookOverFindingKind.UnsureMatch, onlyWithoutBoulders: false));
         await Assert.ThrowsAsync<KioskRestrictedException>(() => service.FinishAsync(w.WallId, leaveOpen: true));
         await Assert.ThrowsAsync<KioskRestrictedException>(() => service.GetCropAsync(w.WallId, findingId, CheckCropView.New));
     }

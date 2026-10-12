@@ -18,7 +18,8 @@ namespace Blocwerk.Core.LookOver;
 /// (<see cref="IWallService.DeleteHoldAsync"/>: the boulders that use the hold become historic), and "use the new hold"
 /// is the duplicate review's merge (<see cref="IHoldDuplicateService.MergeAsync"/>: the boulders move over, undoable).
 /// Each of those checks the user again by its own rule, which is also what decides the answers a user is offered.
-/// An answer only ever reaches a hold that is live, and only with the boulders the user was shown.
+/// An answer only ever reaches a hold that is live, and only with the boulders the user was shown. Settling is in the
+/// Settle part.
 /// </summary>
 public sealed partial class WallLookOverService
 {
@@ -51,32 +52,11 @@ public sealed partial class WallLookOverService
                 throw new UserFacingException(BouldersChanged);
             }
 
+            using var batch = BeginBatch(wallId);
             await ApplyAsync(db, finding, view, answer, access.UserId, ct);
             await db.SaveChangesAsync(ct);
             logger.LogInformation(
                 "Look-over finding {FindingId} ({Kind}) on wall {WallId} answered {Answer} by {UserId}", findingId, finding.Kind, wallId, answer, access.UserId);
-        }
-    }
-
-    /// <inheritdoc/>
-    public async Task<int> SettleUnsureMatchesAsync(Guid wallId, CancellationToken ct = default)
-    {
-        var (db, access) = await OpenAsync(wallId, ct);
-        await using (db)
-        {
-            var open = await db.WallLookOverFindings
-                .Where(f => f.WallId == wallId && f.Status == LookOverFindingStatus.Open && f.Kind == LookOverFindingKind.UnsureMatch)
-                .ToListAsync(ct);
-            var views = (await ToViewsAsync(db, wallId, open, access, ct)).ToDictionary(v => v.Id);
-            foreach (var finding in open)
-            {
-                await ClearFlagAsync(db, finding, views[finding.Id], ct);
-                Settle(finding, LookOverAnswer.Settle, access.UserId);
-            }
-
-            await db.SaveChangesAsync(ct);
-            logger.LogInformation("{Count} unsure matches on wall {WallId} settled as the same hold by {UserId}", open.Count, wallId, access.UserId);
-            return open.Count;
         }
     }
 
@@ -100,11 +80,11 @@ public sealed partial class WallLookOverService
                 finding.MergeBatchId = merge.BatchId;
                 break;
             default:
-                await ClearFlagAsync(db, finding, view, ct);
-                break;
+                await SettleAsync(db, finding, view, userId, ct);
+                return;
         }
 
-        Settle(finding, answer, userId);
+        MarkSettled(finding, answer, userId, view.Boulders.Count);
     }
 
     /// <summary>
@@ -141,25 +121,12 @@ public sealed partial class WallLookOverService
         }
     }
 
-    /// <summary>Takes the review mark off the live hold when the update set it for this finding alone.</summary>
-    private static async Task ClearFlagAsync(BlocwerkDbContext db, WallLookOverFinding finding, LookOverFindingView view, CancellationToken ct)
-    {
-        if (!finding.FlaggedHold || view.HoldId is not { } holdId)
-        {
-            return;
-        }
-
-        if (await db.Holds.FirstOrDefaultAsync(h => h.Id == holdId, ct) is { } hold)
-        {
-            hold.NeedsReview = false;
-        }
-    }
-
-    private static void Settle(WallLookOverFinding finding, LookOverAnswer answer, Guid userId)
+    private static void MarkSettled(WallLookOverFinding finding, LookOverAnswer answer, Guid userId, int boulders)
     {
         finding.Status = LookOverFindingStatus.Settled;
         finding.Answer = answer;
         finding.AnsweredByUserId = userId;
         finding.AnsweredAt = DateTimeOffset.UtcNow;
+        finding.AnswerBoulders = boulders;
     }
 }

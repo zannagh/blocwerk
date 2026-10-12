@@ -18,8 +18,17 @@ namespace Blocwerk.Core.Services;
 /// <param name="Outcome">Kept on the boulder or removed from it.</param>
 /// <param name="Text">Plain language, for example "moved 6 cm, kept".</param>
 /// <param name="Type">The mark the boulder had on it.</param>
+/// <param name="HoldColor">The hold's colour, when it has one (says which hold when it has no name).</param>
 public sealed record BoulderMoveView(
-    Guid? OldHoldId, Guid? NewHoldId, string? HoldName, double DistanceMm, HoldMoveSource Source, HoldMoveOutcome Outcome, string Text, HoldType Type);
+    Guid? OldHoldId,
+    Guid? NewHoldId,
+    string? HoldName,
+    double DistanceMm,
+    HoldMoveSource Source,
+    HoldMoveOutcome Outcome,
+    string Text,
+    HoldType Type,
+    string? HoldColor = null);
 
 public partial class BoulderService
 {
@@ -51,15 +60,19 @@ public partial class BoulderService
                 m.OldHoldId, m.NewHoldId, m.DistanceMm, m.Source, m.RotationDeg, m.Outcome, m.Type, m.RemeasuredDistanceMm, m.RemeasuredOutcome,
                 OldName = m.OldHold == null ? null : m.OldHold.Name,
                 NewName = m.NewHold == null ? null : m.NewHold.Name,
+                OldColor = m.OldHold == null ? null : m.OldHold.Color,
+                NewColor = m.NewHold == null ? null : m.NewHold.Color,
             })
             .AsNoTracking()
             .ToListAsync(ct);
+        // A hold not found again that somebody saw is still there (the look-over's "Still there") is no reason any more.
         return rows
+            .Where(r => !(r.Outcome == HoldMoveOutcome.NotFound && r.RemeasuredOutcome == HoldMoveOutcome.Stayed))
             .OrderByDescending(r => Rank(r.Outcome))
             .ThenByDescending(r => r.DistanceMm)
             .Select(r => new BoulderMoveView(
                 r.OldHoldId, r.NewHoldId, r.NewName ?? r.OldName, r.DistanceMm, r.Source, r.Outcome,
-                Text(r.DistanceMm, r.RotationDeg, r.Outcome, r.RemeasuredDistanceMm, r.RemeasuredOutcome), r.Type))
+                Text(r.DistanceMm, r.RotationDeg, r.Outcome, r.RemeasuredDistanceMm, r.RemeasuredOutcome), r.Type, r.NewColor ?? r.OldColor))
             .ToList();
     }
 
