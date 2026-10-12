@@ -21,4 +21,15 @@ public enum HoldMoveOutcome
     /// or not confirmed by a person): the boulder keeps the hold and is marked for review ("possibly moved, check").
     /// </summary>
     Possible = 3,
+
+    /// <summary>
+    /// Not a move: the hold was not found again on the new photo and its spot no longer looks like it. The boulder keeps the
+    /// hold and is marked for review.
+    /// </summary>
+    NotFound = 4,
+
+    /// <summary>
+    /// Not a move: another hold sits where this one was. The boulder keeps the old hold and is marked for review.
+    /// </summary>
+    Replaced = 5,
 }

@@ -72,11 +72,64 @@ public static class HoldMoveRemeasurer
         }
 
         await db.SaveChangesAsync();
-        await ClearSettledBouldersAsync(db, cleared, generation, logger);
+        // A boulder with an open look-over finding on one of its holds is not done, whatever was measured.
+        await ClearSettledBouldersAsync(db, cleared, generation, logger, boulderId => HasOpenFindingAsync(db, wallId, boulderId, null, default));
         return marked;
     }
 
+    /// <summary>
+    /// Clears the review mark of a boulder whose every reason was withdrawn, when nothing else asks for a look. A reason
+    /// is withdrawn when its row says "stayed" after all: a move the 3D measurement took back, or a hold not found again
+    /// that a person saw is still there (the look-over's "Still there"). A hold taken off the boulder or replaced by
+    /// another is never withdrawn.
+    /// </summary>
+    /// <param name="db">The context (saved here).</param>
+    /// <param name="candidates">The boulders one of whose reasons was just withdrawn.</param>
+    /// <param name="generation">The generation of the update that gave the reasons.</param>
+    /// <param name="logger">Where a cleared mark is logged.</param>
+    /// <param name="alsoOpen">A further reason to keep a boulder marked, asked last (the look-over's other findings).</param>
+    /// <returns>The boulders whose mark was cleared.</returns>
+    internal static async Task<List<Guid>> ClearSettledBouldersAsync(
+        BlocwerkDbContext db, IReadOnlyCollection<Guid> candidates, int generation, ILogger logger, Func<Guid, Task<bool>>? alsoOpen = null)
+    {
+        var cleared = new List<Guid>();
+        foreach (var boulderId in candidates.Distinct())
+        {
+            var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId && b.NeedsReview && b.Generation == generation && !b.IsHistoric);
+            var open = boulder is null
+                || await db.BoulderHoldMoves.AnyAsync(m => m.BoulderId == boulderId && m.ToGeneration == generation && (m.Outcome == HoldMoveOutcome.Removed || m.Outcome == HoldMoveOutcome.Replaced || m.RemeasuredOutcome != HoldMoveOutcome.Stayed))
+                || await db.BoulderHolds.AnyAsync(bh => bh.BoulderId == boulderId
+                    && (bh.Hold.NeedsReview || db.HoldGenerationLinks.Any(l => l.NewHoldId == bh.HoldId && l.Kind == HoldGenerationLinkKind.Changed)))
+                || (alsoOpen is not null && await alsoOpen(boulderId));
+            if (!open)
+            {
+                boulder!.NeedsReview = false;
+                cleared.Add(boulderId);
+                logger.LogInformation("Boulder {BoulderId}: review mark cleared, every reason the update gave for it was withdrawn", boulderId);
+            }
+        }
+
+        await db.SaveChangesAsync();
+        return cleared;
+    }
+
+    /// <summary>An open look-over finding is about a hold the boulder uses: somebody still has to look at that hold.</summary>
+    /// <param name="db">The context.</param>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="boulderId">The boulder.</param>
+    /// <param name="exceptFindingId">A finding that does not count (the one being settled).</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>True when there is one.</returns>
+    internal static Task<bool> HasOpenFindingAsync(BlocwerkDbContext db, Guid wallId, Guid boulderId, Guid? exceptFindingId, CancellationToken ct) =>
+        db.WallLookOverFindings.AnyAsync(
+            f => f.WallId == wallId && f.Id != exceptFindingId && f.Status == LookOverFindingStatus.Open && f.HoldId != null
+                && db.BoulderHolds.Any(bh => bh.BoulderId == boulderId && bh.HoldId == f.HoldId),
+            ct);
+
     private static int Rank(HoldMoveOutcome o) => o == HoldMoveOutcome.Stayed ? 0 : 1;
+
+    /// <summary>A row that records a hold not found again or replaced, not a measured move: never settled or escalated.</summary>
+    private static bool IsNotFound(HoldMoveOutcome o) => o is HoldMoveOutcome.NotFound or HoldMoveOutcome.Replaced;
 
     private static async Task<int> EscalateAsync(
         BlocwerkDbContext db, HoldGenerationLink link, (double Mm, HoldMoveSource Source) told, HoldMoveMeasure measure, HoldMoveOutcome outcome, int generation, ILogger logger)
@@ -92,6 +145,12 @@ public static class HoldMoveRemeasurer
         foreach (var member in members)
         {
             var row = rows.FirstOrDefault(r => r.BoulderId == member.BoulderId);
+            if (row is not null && IsNotFound(row.Outcome))
+            {
+                // Not a move: the boulder was told the hold was not found again (or replaced) and is marked for that.
+                continue;
+            }
+
             if (row is null)
             {
                 row = NewRow(link, member, told, generation);
@@ -119,7 +178,8 @@ public static class HoldMoveRemeasurer
         BlocwerkDbContext db, HoldGenerationLink link, HoldMoveMeasure measure, HoldMoveOutcome outcome, int generation, List<Guid> cleared, ILogger logger)
     {
         var rows = await db.BoulderHoldMoves
-            .Where(m => m.OldHoldId == link.OldHoldId && m.NewHoldId == link.NewHoldId && m.ToGeneration == generation && m.Outcome != HoldMoveOutcome.Removed)
+            .Where(m => m.OldHoldId == link.OldHoldId && m.NewHoldId == link.NewHoldId && m.ToGeneration == generation && m.Outcome != HoldMoveOutcome.Removed
+                && m.Outcome != HoldMoveOutcome.NotFound && m.Outcome != HoldMoveOutcome.Replaced)
             .ToListAsync();
         foreach (var row in rows)
         {
@@ -129,26 +189,6 @@ public static class HoldMoveRemeasurer
                 "Hold move re-measured in 3D: boulder {BoulderId} hold {HoldId} stayed ({Mm} mm); the earlier move is withdrawn",
                 row.BoulderId, link.NewHoldId, Math.Round(measure.DistanceMm));
         }
-    }
-
-    /// <summary>Clears the review mark of a boulder whose every move was withdrawn, when nothing else asks for a look.</summary>
-    private static async Task ClearSettledBouldersAsync(BlocwerkDbContext db, List<Guid> candidates, int generation, ILogger logger)
-    {
-        foreach (var boulderId in candidates.Distinct())
-        {
-            var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId && b.NeedsReview && b.Generation == generation && !b.IsHistoric);
-            var open = boulder is null
-                || await db.BoulderHoldMoves.AnyAsync(m => m.BoulderId == boulderId && m.ToGeneration == generation && (m.Outcome == HoldMoveOutcome.Removed || m.RemeasuredOutcome != HoldMoveOutcome.Stayed))
-                || await db.BoulderHolds.AnyAsync(bh => bh.BoulderId == boulderId
-                    && (bh.Hold.NeedsReview || db.HoldGenerationLinks.Any(l => l.NewHoldId == bh.HoldId && l.Kind == HoldGenerationLinkKind.Changed)));
-            if (!open)
-            {
-                boulder!.NeedsReview = false;
-                logger.LogInformation("Boulder {BoulderId}: review mark cleared, the moved hold was measured again and stayed", boulderId);
-            }
-        }
-
-        await db.SaveChangesAsync();
     }
 
     private static BoulderHoldMove NewRow(HoldGenerationLink link, BoulderHold member, (double Mm, HoldMoveSource Source) told, int generation) => new()

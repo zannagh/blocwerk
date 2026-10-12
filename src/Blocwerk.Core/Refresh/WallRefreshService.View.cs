@@ -5,6 +5,7 @@
 using Blocwerk.Core.Capture;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Refresh;
@@ -38,7 +39,21 @@ public sealed partial class WallRefreshService
             refresh.CaptureId,
             refresh.UpdateSessionId,
             HasActiveModel: await db.WallGeometryModels.AnyAsync(m => m.WallId == refresh.WallId && m.IsActive),
-            SummaryUpdating: WallRefreshProcessor.IsResummarizing(refresh, DateTimeOffset.UtcNow));
+            SummaryUpdating: WallRefreshProcessor.IsResummarizing(refresh, DateTimeOffset.UtcNow),
+            LookOver: refresh.Status == WallRefreshStatus.Done ? await LookOverAsync(db, refresh.WallId) : null);
+    }
+
+    /// <summary>The wall's look-over flag with its open findings, or null while the wall is not flagged.</summary>
+    private static async Task<RefreshLookOver?> LookOverAsync(BlocwerkDbContext db, Guid wallId)
+    {
+        var since = await db.Walls.IgnoreQueryFilters().Where(w => w.Id == wallId).Select(w => w.LookOverPendingSince).FirstOrDefaultAsync();
+        if (since is not { } pendingSince)
+        {
+            return null;
+        }
+
+        var open = await db.WallLookOverFindings.CountAsync(f => f.WallId == wallId && f.Status == LookOverFindingStatus.Open);
+        return new RefreshLookOver(pendingSince, open);
     }
 
     private async Task<bool> CaptureAvailableAsync(BlocwerkDbContext db, Guid wallId)

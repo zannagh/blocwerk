@@ -1,0 +1,6 @@
+/* One look-over picture: the outlines lie exactly over the square picture, whatever the tile's width. */
+.lookover-picture { margin: 0; min-width: 0; }
+.lookover-picture-frame { position: relative; overflow: hidden; aspect-ratio: 1; border-radius: var(--r-md); background: var(--bg-surface-alt); }
+.lookover-picture-frame > img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.lookover-outlines { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+figcaption { font-size: 0.75rem; color: var(--text-secondary); text-align: center; }

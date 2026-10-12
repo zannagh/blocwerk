@@ -255,6 +255,7 @@ else
                     <WallShapeCleanup WallId="_wall.Id" ShareToken="@ShareToken" />
                     <WallDuplicateHolds WallId="_wall.Id" ShareToken="@ShareToken" />
                     <WallLinkedHoldSync WallId="_wall.Id" ShareToken="@ShareToken" />
+                    <WallHoldColorSuggestions WallId="_wall.Id" ShareToken="@ShareToken" />
                     <Wall3DHoldStats WallId="_wall.Id" ShareToken="@ShareToken" />
                     <WallPhotoPrivacy WallId="_wall.Id" ShareToken="@ShareToken" />
                     </div>
@@ -404,6 +405,13 @@ else
 
         <Page3>
             @* Overview (centre page — the wall itself) *@
+            @* A pending look-over is the first thing an admin or moderator sees: one strip above photo and stats, on a
+               phone and on a desktop (inside .wall-main it became a narrow column beside the photo). Renders nothing
+               while none is waiting. *@
+            @if (_canEditHolds && !_isAnonymous && string.IsNullOrEmpty(ShareToken))
+            {
+                <Blocwerk.Web.Components.Shared.LookOver.WallLookOverBanner WallId="WallId" />
+            }
             <div class="wall-main">
                 <div class="wall-detail-card">
                     @if (_isAnonymous && KioskContext.IsKiosk)
@@ -511,6 +519,7 @@ else
                                              ResetToken="_editingPanel?.Id"
                                              PhotoUrlOverride="@EditingPanelPhotoUrl"
                                              Holds="_editingPanelHolds"
+                                             ShowKeptHolds="_showKeptHolds"
                                              BorderPoints="new List<ShapePoint>()"
                                              CanEdit="true"
                                              BottomToolbar="true"
@@ -537,6 +546,7 @@ else
                                               StartCol="0" StartRow="0"
                                               ArrowMode="MultiPanelViewer.ArrowDisplayMode.AllNeighbours"
                                               HoldsProvider="LoadPanelHolds"
+                                              ShowKeptHolds="_showKeptHolds"
                                               EnableSwipe="true"
                                               UsageCounts="_usageCounts" />
                         }
@@ -550,6 +560,7 @@ else
                                who reaches it with zero live panels; virtual-hold tools stay too. *@
                             <WallPhotoEditor WallId="_wall.Id"
                                              Holds="_holds"
+                                             ShowKeptHolds="_showKeptHolds"
                                              BorderPoints="_borderPoints"
                                              CanEdit="_canEditHolds && _isEditing"
                                              CanEditShape="_isAdmin"
@@ -595,7 +606,9 @@ else
                                its old generation) plus, during an in-flight big update, the staged
                                (gen+1) holds. Everything at or below the wall generation is live; the
                                staged gen+1 rows must not inflate the stat. *@
-                            <span class="stat-value">@_holds.Count(h => h.Generation <= _wall.CurrentGeneration)</span>
+                            @* Holds the last update did not find are not counted either: they are not on the overlay,
+                               and the look-over notice carries their number until somebody has said what they are. *@
+                            <span class="stat-value">@_holds.Count(h => h.Generation <= _wall.CurrentGeneration && h.KeptUnconfirmedGeneration is null)</span>
                             <span class="stat-label">Holds</span>
                         </div>
                         <button type="button" class="stat clickable" @onclick="GoToBoulders">
@@ -636,6 +649,21 @@ else
                         </svg>
                         View in 3D
                     </Wall3DLink>
+
+                    @if (_canEditHolds && KeptHoldCount > 0 && string.IsNullOrEmpty(ShareToken))
+                    {
+                        <label class="filter-check kept-holds-toggle">
+                            <input type="checkbox" @bind="_showKeptHolds" />
+                            Show holds the last update did not find (@KeptHoldCount)
+                        </label>
+                    }
+
+                    @* A panel update left findings nobody checked: members read a neutral note down here; admins and
+                       moderators get theirs above the photo (see the top of this page). Not behind a share link. *@
+                    @if (!_isAnonymous && !_canEditHolds && string.IsNullOrEmpty(ShareToken))
+                    {
+                        <Blocwerk.Web.Components.Shared.LookOver.WallLookOverBanner WallId="WallId" />
+                    }
 
                     @if (_showInviteLink && !string.IsNullOrEmpty(_shareLink))
                     {
@@ -932,6 +960,11 @@ else
     private Dictionary<Guid, int>? _usageCounts;
     private bool _isAdmin;
     private bool _isModerator;
+
+    // Editors can switch the holds the last update did not find back on (they are off every overlay by default).
+    private bool _showKeptHolds;
+
+    private int KeptHoldCount => _holds.Count(h => h.KeptUnconfirmedGeneration is not null && h.Generation <= (_wall?.CurrentGeneration ?? 0));
     private bool _isMember;
     private bool _isAnonymous;
     private Guid _currentUserId;
@@ -1555,7 +1588,7 @@ else
             // tool's options and applied below, exactly as the per-panel editor has always done it.
             await WallService.UpdateHoldAsync(hold.Id, HoldEdit.FromEditorState(
                 hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.IsOnKickboard, hold.ShapePoints, hold.Name, hold.Material, hold.HandType,
-                flagBouldersOnMove: false));
+                flagBouldersOnMove: false, colorStillProposed: hold.HasProposedColor));
         }
 
         foreach (var holdId in changes.MarkedChanged)
@@ -1754,7 +1787,7 @@ else
             // Mark unchanged), surfaced by the panel editor's change-review overlay.
             await WallService.UpdateHoldAsync(hold.Id, HoldEdit.FromEditorState(
                 hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.IsOnKickboard, hold.ShapePoints, hold.Name, hold.Material, hold.HandType,
-                flagBouldersOnMove: false));
+                flagBouldersOnMove: false, colorStillProposed: hold.HasProposedColor));
         }
 
         // Drafted "Mark changed" decisions arrive ONLY here when a batch handler is attached (the

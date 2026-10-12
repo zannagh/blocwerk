@@ -62,6 +62,13 @@
         }
         @foreach (var hold in Holds)
         {
+            @* Not found again by the last update and not confirmed: off the overlay (and so not pickable), unless the
+               editor asked to see them. *@
+            if (hold.KeptUnconfirmedGeneration is not null && !ShowKeptHolds)
+            {
+                continue;
+            }
+
             var isSelected = _selectedHoldId == hold.Id;
             var isShapeEditing = _mode == HoldTouchupTool.Shape && _shapeEditHoldId == hold.Id;
             var isNaming = _mode == HoldTouchupTool.Name && _namingHoldId == hold.Id;
@@ -146,6 +153,7 @@
                would change the diff's identity rules for every overlay layered below. *@
             <HoldShape X="hold.X" Y="hold.Y" Radius="hold.Radius" ShapePoints="hold.ShapePoints" ShapeHoles="hold.ShapeHoles"
                        Foot="isFoot" Fill="@fillColor" Stroke="@strokeColor" StrokeWidth="@sw" Dash="@dash"
+                       Kept="hold.KeptUnconfirmedGeneration is not null"
                        PointerEvents="@hitEvents" Style="cursor: pointer"
                        OnClick="() => OnHoldClick(hold)" OnPointerDown="() => StartDrag(hold)" />
 
@@ -780,6 +788,11 @@
                     @foreach (var c in HoldPalette.ColorsFor(sel.Material)) { <option value="@c.Key">@c.DisplayName</option> }
                 </select>
                 <span class="color-dot" style="background: @GetCssColor(sel.Color);"></span>
+                @if (sel.HasProposedColor)
+                {
+                    <span class="option-hint" title="The detection suggested this colour from the photo. Nobody has confirmed it yet.">Suggested</span>
+                    <button class="opt-btn" title="Keep the suggested colour" @onclick="() => ConfirmProposedColor(sel)">Keep</button>
+                }
             </div>
             <div class="option-group"><label>Size:</label><input type="range" min="3" max="40" value="@((int)(_selectedRadius * 1000))" @oninput="OnRadiusChange" /></div>
             <button class="opt-btn danger" @onclick="DeleteSelected">Del</button>
@@ -1012,6 +1025,13 @@
     // ================= end unified toolbar =================
     [Parameter] public Guid WallId { get; set; }
     [Parameter] public List<Hold> Holds { get; set; } = [];
+
+    /// <summary>
+    /// Also draw the holds the last update did not find again and nobody confirmed (faded, dashed). Off by default:
+    /// they are asked about in the wall look-over. An admin switches it on to see or edit them here; any edit confirms.
+    /// </summary>
+    [Parameter] public bool ShowKeptHolds { get; set; }
+
     [Parameter] public List<ShapePoint> BorderPoints { get; set; } = [];
     [Parameter] public bool CanEdit { get; set; }
 
@@ -1769,6 +1789,7 @@
             case HoldTouchupTool.Paint:
                 TakeSnapshot();
                 hold.Color = _paintColor;
+                hold.ProposedColor = null;
                 SyncMaterialToColor(hold);
                 _updatedHoldIds.Add(hold.Id);
                 return;
@@ -2568,6 +2589,15 @@
         TakeSnapshot();
         var v = e.Value?.ToString();
         h.Color = v == "none" ? null : v;
+        h.ProposedColor = null;
+        _updatedHoldIds.Add(h.Id);
+    }
+
+    // The detection's colour is right: the hold keeps it and stops being marked as suggested.
+    private void ConfirmProposedColor(Hold h)
+    {
+        TakeSnapshot();
+        h.ProposedColor = null;
         _updatedHoldIds.Add(h.Id);
     }
 

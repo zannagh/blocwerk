@@ -31,6 +31,13 @@ public sealed record HoldEdit
     /// <summary>The hold's colour, or a <c>Set(null)</c> to clear it.</summary>
     public FieldUpdate<string?> Color { get; init; }
 
+    /// <summary>
+    /// True when <see cref="Color"/> is sent only because the caller sends the whole hold, and the hold's colour is
+    /// still the detection's proposal (<see cref="Hold.HasProposedColor"/>): the proposal then stays a proposal. False
+    /// (the default) means a person chose or confirmed the colour.
+    /// </summary>
+    public bool ColorStillProposed { get; init; }
+
     /// <summary>The hold's material, or a <c>Set(null)</c> to clear it.</summary>
     public FieldUpdate<HoldMaterial?> Material { get; init; }
 
@@ -76,8 +83,10 @@ public sealed record HoldEdit
         string? name,
         HoldMaterial? material,
         HoldHandType? handType,
-        bool flagBouldersOnMove = true) => new()
+        bool flagBouldersOnMove = true,
+        bool colorStillProposed = false) => new()
         {
+            ColorStillProposed = colorStillProposed,
             X = x,
             Y = y,
             Radius = radius,

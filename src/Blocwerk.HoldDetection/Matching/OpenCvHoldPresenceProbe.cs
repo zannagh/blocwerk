@@ -10,13 +10,12 @@ namespace Blocwerk.HoldDetection.Matching;
 /// <summary>
 /// <see cref="IHoldPresenceProbe"/> by template matching: the new photo's patch around the spot, resized to
 /// the old photo's scale, searched in a window of the old photo around the aligned spot (so a few
-/// pixels of alignment error do not matter). Both photos decode once per call, grey, in the RAW frame. Near a
+/// pixels of alignment error do not matter; patch and window grow with the hold when the query names its radius, see
+/// <see cref="PresencePatch"/>). Both photos decode once per call, grey, in the RAW frame. Near a
 /// photo edge the patch shrinks and the window is clipped to the photo, so a spot at the frame is still judged.
 /// </summary>
 public sealed class OpenCvHoldPresenceProbe : IHoldPresenceProbe
 {
-    private const int PatchRadius = 56;
-    private const int SearchSlack = 70;
     private const int MinPatchRadius = 24;
 
     public IReadOnlyList<double?> Score(byte[] oldImage, byte[] newImage, IReadOnlyList<PresenceQuery> queries)
@@ -36,7 +35,7 @@ public sealed class OpenCvHoldPresenceProbe : IHoldPresenceProbe
     {
         var x = (int)q.NewX;
         var y = (int)q.NewY;
-        var radius = Math.Min(PatchRadius, Math.Min(Math.Min(x, y), Math.Min(newGrey.Cols - 1 - x, newGrey.Rows - 1 - y)));
+        var radius = Math.Min(PresencePatch.Radius(q.RadiusPx), Math.Min(Math.Min(x, y), Math.Min(newGrey.Cols - 1 - x, newGrey.Rows - 1 - y)));
         if (radius < MinPatchRadius || q.Scale is <= 0.2 or >= 5)
         {
             return null;
@@ -45,7 +44,7 @@ public sealed class OpenCvHoldPresenceProbe : IHoldPresenceProbe
         using var source = new Mat(newGrey, new Rect(x - radius, y - radius, 2 * radius, 2 * radius));
         using var template = new Mat();
         Cv2.Resize(source, template, new Size(0, 0), q.Scale, q.Scale);
-        var half = (template.Rows / 2) + SearchSlack;
+        var half = (template.Rows / 2) + PresencePatch.Slack(q.RadiusPx);
         var window = Clip((int)q.OldX - half, (int)q.OldY - half, (int)q.OldX + half, (int)q.OldY + half, oldGrey);
         if (template.Rows >= window.Height || template.Cols >= window.Width)
         {

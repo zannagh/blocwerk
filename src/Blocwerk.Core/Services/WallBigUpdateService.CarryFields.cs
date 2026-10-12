@@ -31,6 +31,7 @@ public partial class WallBigUpdateService
     {
         to.Name = from.Name;
         to.Color = from.Color;
+        to.ProposedColor = from.HasProposedColor ? from.Color : null;
         to.Material = from.Material;
         to.Category = from.Category;
         to.HandType = from.HandType;

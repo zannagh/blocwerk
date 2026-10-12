@@ -1168,6 +1168,7 @@ a.wall3d-link {
 .bw-moves-list .bw-moves-hold { font-weight: 600; }
 .bw-moves-list .is-removed .bw-moves-text { font-weight: 600; }
 .bw-moves-list .bw-moves-source, .bw-moves-hint { font-size: 0.8rem; opacity: 0.85; }
+.bw-revision-notice .bw-moves-link { color: inherit; font-weight: 600; text-decoration: underline; }
 .btn-revise {
     display: inline-block; padding: 8px 16px; background: var(--warning-fill); color: var(--on-warning);
     text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 0.85rem;

@@ -1261,6 +1261,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<bool>("IsVirtual")
                         .HasColumnType("boolean");
 
+                    b.Property<int?>("KeptUnconfirmedGeneration")
+                        .HasColumnType("integer");
+
                     b.Property<int?>("Material")
                         .HasColumnType("integer");
 
@@ -1286,6 +1289,10 @@ namespace Blocwerk.Core.Migrations
 
                     b.Property<double?>("PlaneBMm")
                         .HasColumnType("double precision");
+
+                    b.Property<string>("ProposedColor")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.Property<string>("ProtrusionMm")
                         .HasColumnType("text");
@@ -2086,6 +2093,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
+                    b.Property<int?>("KeptHoldsGeneration")
+                        .HasColumnType("integer");
+
                     b.Property<DateTimeOffset?>("LastResetAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -2100,6 +2110,18 @@ namespace Blocwerk.Core.Migrations
 
                     b.Property<int?>("LinksFinalizedGeneration")
                         .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("LookOverCompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("LookOverCompletedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int?>("LookOverGeneration")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("LookOverPendingSince")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid?>("MaintenanceByUserId")
                         .HasColumnType("uuid");
@@ -2603,6 +2625,128 @@ namespace Blocwerk.Core.Migrations
                     b.HasIndex("WallId", "CapturedAt");
 
                     b.ToTable("WallImages");
+                });
+
+            modelBuilder.Entity("Blocwerk.Core.Entities.WallLookOverFinding", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<double?>("A")
+                        .HasColumnType("double precision");
+
+                    b.Property<int?>("Answer")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("AnswerBoulders")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("AnsweredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("AnsweredByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<double?>("B")
+                        .HasColumnType("double precision");
+
+                    b.Property<int>("BouldersAtApply")
+                        .HasColumnType("integer");
+
+                    b.PrimitiveCollection<List<Guid>>("ClearedBoulderIds")
+                        .HasColumnType("uuid[]");
+
+                    b.Property<bool>("ClearedHoldMark")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("ClearedKept")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset?>("ClosedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("ClosedReason")
+                        .HasColumnType("integer");
+
+                    b.Property<double?>("Confidence")
+                        .HasColumnType("double precision");
+
+                    b.Property<bool>("Converted")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("Covered")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FacetId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<bool>("FlaggedHold")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("Generation")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("GeometryModelId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("HoldId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("HoldKept")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer");
+
+                    b.PrimitiveCollection<List<Guid>>("MarkedBoulderIds")
+                        .HasColumnType("uuid[]");
+
+                    b.Property<Guid?>("MergeBatchId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("OldHoldId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("OtherHoldId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("PanelId")
+                        .HasColumnType("uuid");
+
+                    b.Property<double?>("PhotoScore")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("Radius")
+                        .HasColumnType("double precision");
+
+                    b.Property<Guid?>("SessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<double?>("TextureScore")
+                        .HasColumnType("double precision");
+
+                    b.Property<Guid>("WallId")
+                        .HasColumnType("uuid");
+
+                    b.Property<double>("X")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("Y")
+                        .HasColumnType("double precision");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WallId", "Status");
+
+                    b.ToTable("WallLookOverFindings");
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallMarkerObservation", b =>
@@ -4138,6 +4282,17 @@ namespace Blocwerk.Core.Migrations
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallImage", b =>
+                {
+                    b.HasOne("Blocwerk.Core.Entities.Wall", "Wall")
+                        .WithMany()
+                        .HasForeignKey("WallId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Wall");
+                });
+
+            modelBuilder.Entity("Blocwerk.Core.Entities.WallLookOverFinding", b =>
                 {
                     b.HasOne("Blocwerk.Core.Entities.Wall", "Wall")
                         .WithMany()

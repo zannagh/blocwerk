@@ -23,6 +23,7 @@ internal static partial class ApiDocsData
         JobsSurface,
         WallMarkersSurface,
         WallRefreshSurface,
+        WallHoldColorsSurface,
     };
 
     private static ApiSurfaceDoc UserSurface => new(

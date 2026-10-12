@@ -4,6 +4,7 @@ using Blocwerk.Core.Detection.Enrichment;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.HoldMoves;
+using Blocwerk.Core.LookOver;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -132,10 +133,11 @@ public partial class WallBigUpdateService
         // gen-N+1 rows, re-point the memberships on the re-shot holds, and record the lineage links.
         // Returns the staged centre holds that went live — now an identity set, since a promoted twin
         // keeps its own id.
+        var lookOver = new LookOverPromoteInputs(confirmation, movePlan, stagedTwins, liveUpdatedPanelIds, await LoadStagedPhotoSizesAsync(db, updatedPanelIds));
         var survivingCenterStaged = await CarryCentreHoldsAsync(
             db, wallId, centerPanel, newGen, oldHolds, stagedTwins, centerStaged, confirmation,
             confirmation.CarriedWarpPositions, confirmation.CarriedWarpShapes, panelPositions,
-            newGenPanelByPosition, await LoadStagedPhotoSizesAsync(db, updatedPanelIds), movePlan, user.Id);
+            newGenPanelByPosition, lookOver.PhotoSizes, movePlan, user.Id, lookOver.CardMarked);
 
         // Blind carries on a panel whose photo could not be aligned sit at their OLD coordinates: flag them.
         await FlagUnalignedCarriesAsync(db, wallId);
@@ -161,7 +163,11 @@ public partial class WallBigUpdateService
         wall.PhotoContentType = centerPanel.PhotoContentType;
         wall.UsesMultipleImages = true;
         wall.CurrentGeneration = newGen;
+        wall.KeptHoldsGeneration = newGen;
         wall.LastResetAt = DateTimeOffset.UtcNow;
+
+        // What nobody answered stays with the wall for the look-over, read before the session closes.
+        await RecordLookOverAsync(db, wall, newGen, lookOver);
 
         // The session becomes history in the SAME transaction as the promote: a committed update must
         // never leave an open session behind, or the wall would look permanently "in progress" and the
@@ -169,6 +175,7 @@ public partial class WallBigUpdateService
         await WallUpdateSessions.CloseOpenAsync(db, wallId, WallUpdateSessionStatus.Promoted, user.Id);
 
         await db.SaveChangesAsync();
+        await ProposeNewHoldColorsAfterPromoteAsync(db, wallId, newGen);
         await SyncLinkedHoldsAfterPromoteAsync(db, wallId);
 
         // Seal the batch now that the update is a complete, closed unit: the next update on this wall opens

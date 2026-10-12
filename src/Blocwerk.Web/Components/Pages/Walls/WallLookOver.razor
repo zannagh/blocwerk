@@ -1,0 +1,153 @@
+@page "/walls/{WallId:guid}/look-over"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@using Blocwerk.Core.LookOver
+@using Blocwerk.Web.Components.Shared.LookOver
+@* "Look over the wall": what an applied panel update was unsure about and nobody answered. First the holds it could
+   not find, asked about one at a time (LookOverMissing); then the rest as cards, grouped by kind with the ones that
+   touch boulders first. Wall admins and moderators answer them here, then finish the look-over. The cards open on
+   the findings whose hold a boulder uses (the rest is one tap away), or on one boulder's findings with ?boulder=. *@
+
+<PageTitle>Look over the wall - Blocwerk</PageTitle>
+
+<SectionContent SectionName="TopBarTitle">Look over the wall</SectionContent>
+
+<div class="lookover-page">
+    <a href="/walls/@WallId" class="back-link">&larr; Back to the wall</a>
+    <h1>Look over the wall</h1>
+
+    @if (blocked is not null)
+    {
+        <p class="empty-msg">@blocked</p>
+    }
+    else if (loading)
+    {
+        <p class="loading">Loading...</p>
+    }
+    else
+    {
+        <p class="lookover-status" role="status">@StatusLine</p>
+        @if (LookOverCopy.Breakdown(listing.Findings) is { } breakdown)
+        {
+            <p class="hint">@breakdown</p>
+        }
+        @if (state is { Pending: true })
+        {
+            <p class="hint">@LookOverCopy.PageHint</p>
+        }
+        @if (error is not null)
+        {
+            <p class="field-error" role="alert">@error</p>
+        }
+        @if (notice is not null)
+        {
+            <p class="lookover-chip" role="status">@notice</p>
+        }
+
+        @if (FilterBoulder is { } filtered)
+        {
+            <p class="lookover-chip" role="status">
+                <span>Showing findings for <strong>@(listing.BoulderName(filtered) ?? "this boulder")</strong></span>
+                <a href="/walls/@WallId/look-over">Show all</a>
+            </p>
+        }
+
+        @if (MissingQueue.Count > 0 || MissingAnswered.Count > 0)
+        {
+            <LookOverMissing WallId="WallId" Queue="MissingQueue" Answered="MissingAnswered" ForOneBoulder="FilterBoulder is not null"
+                             Disabled="busy" Version="loads" OnAnswer="AnswerAsync" OnAct="ActOnAsync" OnUndo="UndoAsync" />
+        }
+
+        @if (FilterBoulder is null && listing.Cards.Count > 0)
+        {
+            <div class="lookover-views" role="group" aria-label="Which findings to show">
+                <button type="button" class="@(onBouldersOnly ? "is-on" : null)" aria-pressed="@(onBouldersOnly ? "true" : "false")" @onclick="() => onBouldersOnly = true">
+                    On boulders (@OnBoulderCount)
+                </button>
+                <button type="button" class="@(onBouldersOnly ? null : "is-on")" aria-pressed="@(onBouldersOnly ? "false" : "true")" @onclick="() => onBouldersOnly = false">
+                    All findings (@listing.Cards.Count)
+                </button>
+            </div>
+        }
+
+        @if (listing.Cards.Count > 0 && Kinds.Count == 0 && (FilterBoulder is null || MissingQueue.Count + MissingAnswered.Count == 0))
+        {
+            <p class="empty-msg">@(FilterBoulder is null ? "No other finding is about a hold a boulder uses. See all findings above." : "No finding is about a hold of this boulder.")</p>
+        }
+
+        @foreach (var kind in Kinds)
+        {
+            var visible = listing.Visible(kind, onBouldersOnly, FilterBoulder);
+            var counts = listing.Counts(kind);
+            var openHere = visible.Count(f => f.Status == LookOverFindingStatus.Open);
+            <section class="lookover-group" @key="kind">
+                <button type="button" class="lookover-group-head" aria-expanded="@(IsExpanded(kind) ? "true" : "false")" @onclick="() => Toggle(kind)">
+                    <span class="lookover-group-title">
+                        @LookOverCopy.GroupTitle(kind)
+                        <span class="lookover-group-sub">@LookOverCopy.GroupSub(visible.Count, counts, onBouldersOnly, FilterBoulder is not null)</span>
+                    </span>
+                    <span class="lookover-group-count @(openHere == 0 ? "is-done" : null)">@(openHere == 0 ? "all answered" : $"{openHere} open")</span>
+                </button>
+                @if (IsExpanded(kind))
+                {
+                    @if (FilterBoulder is null && LookOverRules.CanSettleAll(kind))
+                    {
+                        @* A bulk answer settles what its button counts, and in the "on boulders" view that is what is listed. *@
+                        var unused = listing.BulkIds(kind, onBouldersOnly, withoutBoulders: true).Count;
+                        <div class="lookover-bulk">
+                            @if (!onBouldersOnly && unused > 1 && unused < listing.BulkIds(kind, false, false).Count)
+                            {
+                                <ConfirmAction Label="@LookOverCopy.BulkLabel(kind, unused, LookOverBulkScope.WithoutBoulders)"
+                                               Question="@LookOverCopy.BulkQuestion(kind, unused, LookOverBulkScope.WithoutBoulders)"
+                                               ConfirmLabel="@LookOverCopy.BulkLabel(kind, unused, LookOverBulkScope.WithoutBoulders)" ConfirmClass="btn-primary" Neutral="true"
+                                               Disabled="busy" OnConfirm="() => SettleAllAsync(kind, true)" />
+                            }
+                            @if (openHere > 1)
+                            {
+                                var scope = onBouldersOnly ? LookOverBulkScope.OnBoulders : LookOverBulkScope.All;
+                                <ConfirmAction Label="@LookOverCopy.BulkLabel(kind, openHere, scope)"
+                                               Question="@LookOverCopy.BulkQuestion(kind, openHere, scope)"
+                                               ConfirmLabel="@LookOverCopy.BulkLabel(kind, openHere, scope)" ConfirmClass="btn-primary" Neutral="true"
+                                               Disabled="busy" OnConfirm="() => SettleAllAsync(kind, false)" />
+                            }
+                        </div>
+                    }
+                    <ul class="refresh-check-list">
+                        @foreach (var finding in visible.Take(Shown(kind)))
+                        {
+                            <LookOverCard @key="finding.Id" WallId="WallId" Finding="finding" Disabled="busy" FocusFor="finding.Id == lastTouched ? touches : 0"
+                                          OnAnswer="AnswerAsync" OnUndo="UndoAsync" />
+                        }
+                    </ul>
+                    @if (visible.Count > Shown(kind))
+                    {
+                        <button type="button" class="btn-secondary lookover-more" @onclick="() => ShowMore(kind)">
+                            Show @Math.Min(PageSize, visible.Count - Shown(kind)) more (@(visible.Count - Shown(kind)) left)
+                        </button>
+                    }
+                }
+            </section>
+        }
+
+        @if (state is { Pending: true })
+        {
+            <div class="lookover-finish">
+                @if (OpenCount == 0)
+                {
+                    <button type="button" class="btn-primary" disabled="@busy" @onclick="() => FinishAsync(false)">Finish look-over</button>
+                }
+                else
+                {
+                    <ConfirmAction Label="Finish anyway"
+                                   Question="@($"{OpenFindings} still open. They stay listed on this page, but the wall is no longer shown as waiting for a look-over.")"
+                                   ConfirmLabel="@StayOpenLabel" ConfirmClass="btn-primary" Neutral="true" Disabled="busy" OnConfirm="() => FinishAsync(true)" />
+                }
+                <p class="hint">Finishing records that you looked over the wall and takes the notice off the wall page.</p>
+            </div>
+        }
+        else if (finished)
+        {
+            <p class="glyph-ok" role="status">The look-over is finished. <a href="/walls/@WallId">Back to the wall</a></p>
+        }
+    }
+</div>

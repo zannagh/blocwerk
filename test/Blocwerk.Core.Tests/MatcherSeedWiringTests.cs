@@ -50,6 +50,25 @@ public class MatcherSeedWiringTests
     }
 
     [Fact]
+    public async Task MarkerWall_CentreCarryoverIsSeeded_WhenTheCentrePanelPhotoIsNotTheWallPhoto()
+    {
+        using var h = new WallTestHarness();
+        var wallId = await SeedAsync(h, glyphs: true);
+        await using (var db = h.CreateContext())
+        {
+            // A cropped centre panel: the panel photo (and its markers and holds) moved on, Wall.Photo did not.
+            (await db.Walls.FindAsync(wallId))!.Photo = Png(5);
+            await db.SaveChangesAsync();
+        }
+
+        var matcher = new CapturingMatcher();
+        await Service(h, matcher).ResumeAsync(wallId);
+
+        Assert.Equal(3, matcher.Seeds.Count);
+        Assert.All(matcher.Seeds, Assert.NotNull);
+    }
+
+    [Fact]
     public async Task Loader_ReturnsNull_ForANonMarkerWall()
     {
         using var h = new WallTestHarness();

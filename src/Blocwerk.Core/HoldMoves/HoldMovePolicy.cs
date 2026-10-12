@@ -46,6 +46,11 @@ public static class HoldMovePolicy
     /// <returns>For example "moved 6 cm, kept" or "moved 34 cm, removed from this boulder".</returns>
     public static string Describe(double distanceMm, double? rotationDeg, HoldMoveOutcome outcome)
     {
+        if (NotFoundText(outcome) is { } notFound)
+        {
+            return $"{notFound}, check this hold";
+        }
+
         var cm = Math.Max(1, (int)Math.Round(distanceMm / 10));
         var turn = rotationDeg is { } r && r >= 45 ? (int)Math.Round(r) : 0;
         var how = (distanceMm, turn) switch
@@ -68,6 +73,11 @@ public static class HoldMovePolicy
     /// <returns>For example "hold moved 6 cm" or "hold moved 34 cm, removed".</returns>
     public static string Reason(double distanceMm, HoldMoveOutcome outcome)
     {
+        if (NotFoundText(outcome) is { } notFound)
+        {
+            return $"hold {notFound}";
+        }
+
         var cm = Math.Max(1, (int)Math.Round(distanceMm / 10));
         return outcome switch
         {
@@ -76,4 +86,14 @@ public static class HoldMovePolicy
             _ => $"hold moved {cm} cm",
         };
     }
+
+    /// <summary>The plain-language reason of a hold that did not move but was not found again, or null for a move.</summary>
+    /// <param name="outcome">The verdict.</param>
+    /// <returns>"not found again on the new photo", "another hold is here now", or null.</returns>
+    public static string? NotFoundText(HoldMoveOutcome outcome) => outcome switch
+    {
+        HoldMoveOutcome.NotFound => "not found again on the new photo",
+        HoldMoveOutcome.Replaced => "another hold is here now",
+        _ => null,
+    };
 }

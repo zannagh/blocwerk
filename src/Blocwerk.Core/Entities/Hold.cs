@@ -52,6 +52,18 @@ public partial class Hold
     public string? Color { get; set; }
 
     /// <summary>
+    /// The colour the detection proposed for this hold from its photo, when it did. The proposal is written to
+    /// <see cref="Color"/> too, so the hold is drawn in it; while both are equal nobody has confirmed the colour
+    /// (<see cref="HasProposedColor"/>). Cleared when a person sets the colour, also to the same value. Null on every
+    /// hold whose colour was never proposed.
+    /// </summary>
+    [MaxLength(32)]
+    public string? ProposedColor { get; set; }
+
+    /// <summary>True while <see cref="Color"/> is the detection's proposal and no person has set or confirmed it.</summary>
+    public bool HasProposedColor => !string.IsNullOrEmpty(ProposedColor) && ProposedColor == Color;
+
+    /// <summary>
     /// What the hold is made of. Restricts the selectable colors (wooden holds only
     /// come in brown tones). Null on holds created before materials were introduced.
     /// </summary>
@@ -82,6 +94,19 @@ public partial class Hold
     /// wall update.
     /// </summary>
     public bool IsVirtual { get; set; }
+
+    /// <summary>
+    /// "Kept, not confirmed": the generation of the panel update that carried this hold forward WITHOUT finding it
+    /// again on the new photo (no detection became it; it is a copy of the old hold at its predicted spot), while no
+    /// person has confirmed since that it is really there. Null for every other hold, and null again once somebody
+    /// confirms it: in the wall look-over ("Still there", "Keep…", "Both are there"), or by editing, marking or
+    /// merging it in the hold editor. Such a hold is drawn faded and cannot be newly chosen for a boulder.
+    /// </summary>
+    /// <remarks>
+    /// Not <see cref="NeedsReview"/>, which is set for many reasons ("changed", a lost outline, a blind carry, a new
+    /// detection) and is shown and cleared by its own tools. A hold can carry either, both or neither.
+    /// </remarks>
+    public int? KeptUnconfirmedGeneration { get; set; }
 
     /// <summary>
     /// On a manual-alignment staged clone (generation N+1), the id of the live
@@ -203,6 +228,7 @@ public partial class Hold
         ShapeHoles = ShapePoint.CloneRings(ShapeHoles),
         Name = Name,
         Color = Color,
+        ProposedColor = ProposedColor,
         Material = Material,
         Category = Category,
         HandType = HandType,
@@ -212,6 +238,7 @@ public partial class Hold
         Generation = Generation,
         NeedsReview = NeedsReview,
         IsVirtual = IsVirtual,
+        KeptUnconfirmedGeneration = KeptUnconfirmedGeneration,
         AlignmentSourceHoldId = AlignmentSourceHoldId,
         WidthMm = WidthMm,
         HeightMm = HeightMm,

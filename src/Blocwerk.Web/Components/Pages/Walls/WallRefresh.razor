@@ -50,6 +50,14 @@
             <p class="refresh-done" role="status">
                 Done. @(view.Capture is { IsRunning: true } ? "The 3D model keeps building in the background; you can leave this page." : string.Empty)
             </p>
+            @if (view.LookOver is { } lookOver)
+            {
+                <p class="refresh-3d-note" role="status">
+                    @(lookOver.OpenFindings == 1 ? "1 finding is" : $"{lookOver.OpenFindings} findings are") left for the wall look-over:
+                    holds the update was unsure about and nobody checked.
+                    <a href="/walls/@WallId/look-over">Look over the wall</a>
+                </p>
+            }
         }
 
         @if (view is not null && view.Status != WallRefreshStatus.Uploading)

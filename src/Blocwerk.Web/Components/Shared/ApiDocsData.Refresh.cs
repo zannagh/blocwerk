@@ -24,14 +24,22 @@ internal static partial class ApiDocsData
         + "\"summary\": { … },\n  \"error\": null,\n  \"check3DPending\": false\n}";
 
     private const string RefreshStatusNote =
-        "status: 0 uploading, 1 sorting, 2 ready to start, 3 running, 4 ready to apply, 5 applying, 6 done, 7 failed, 8 discarded.";
+        "status: 0 uploading, 1 sorting, 2 ready to start, 3 running, 4 ready to apply, 5 applying, 6 done, 7 failed, 8 discarded. "
+        + "On a finished run lookOver is {\"pendingSince\", \"openFindings\"} while the wall waits for a look-over, otherwise null.";
 
     private const string RefreshSummaryJson =
         "{\n  \"refreshId\": \"<guid>\",\n  \"status\": 4,\n  \"canApply\": true,\n  \"decisionsVersion\": \"9F2C41A07B3D5E61C8A4F0B2\",\n  "
         + "\"summary\": {\n    \"refound\": 812, \"keptInPlace\": 31, \"possiblyMoved\": 2, \"newHolds\": 14, \"droppedDetections\": 6,\n    "
         + "\"removed\": 0, \"overlapLinks\": 40, \"overlapsLeftOut\": 3, \"bouldersOnKeptHolds\": 5,\n    \"panels\": [ \"Centre panel\" ], "
+        + "\"replacedHolds\": 1, \"notFoundOnBoulders\": 2, \"bouldersMarkedNotFound\": 3,\n    \"notFoundHolds\": [ { \"oldHoldId\": \"<guid>\", "
+        + "\"holdName\": \"yellow\", \"outcome\": 5, \"text\": \"another hold is here now\", \"boulders\": [ \"Sloper traverse\" ] } ],\n    "
         + "\"decisionsVersion\": \"9F2C41A07B3D5E61C8A4F0B2\"\n  },\n  \"picks\": [ … ],\n  \"steps\": [ … ],\n  \"error\": null,\n  "
         + "\"check3DPending\": false\n}";
+
+    private const string RefreshSummaryNote =
+        "canApply is true when Apply would be taken now. Send decisionsVersion to Apply. Reads never start anything. "
+        + "notFoundHolds lists the old holds on boulders that were not found again (outcome 4) or have another hold on their spot now "
+        + "(outcome 5): they stay on their boulders, which Apply marks for review. movedHolds lists the holds that moved.";
 
     private const string RefreshApplyNote =
         "202 {\"refreshId\", \"decisionsVersion\"} when queued; poll GET /{refreshId} until status 6. 400 without decisionsVersion. "
@@ -67,7 +75,7 @@ internal static partial class ApiDocsData
             "{\n  \"choices\": [ { \"col\": 0, \"row\": 0, \"photoId\": \"<guid>\" } ],\n  \"keepModel\": false\n}", null,
             "202; poll until status 4. The body is optional; choices override the proposal per panel (photoId null keeps the current photo). keepModel true is the panels-only update: no 3D capture, the active model stays."),
         new("GET", RefreshBase + "/{refreshId}/summary", "The confirm screen (summary only, changes nothing).", RefreshOnWall, null,
-            RefreshSummaryJson, "canApply is true when Apply would be taken now. Send decisionsVersion to Apply. Reads never start anything."),
+            RefreshSummaryJson, RefreshSummaryNote),
         new("POST", RefreshBase + "/{refreshId}/recheck", "Starts the check against this visit's new 3D model when it is due.",
             RefreshOnWall, null, "{\n  \"pending\": true\n}",
             "202 when queued now (audited); 200 {\"pending\"} when already running or nothing is due. While check3DPending is true "
@@ -77,5 +85,6 @@ internal static partial class ApiDocsData
         new("GET", RefreshBase + "/{refreshId}", "The run, as the page shows it.", RefreshOnWall, null, RefreshViewJson, RefreshStatusNote),
         new("DELETE", RefreshBase + "/{refreshId}", "Discards the run and its prepared panel update.", RefreshOnWall, null, null,
             "204; 409 while a step is running."),
+        .. LookOverEndpoints(),
     ];
 }

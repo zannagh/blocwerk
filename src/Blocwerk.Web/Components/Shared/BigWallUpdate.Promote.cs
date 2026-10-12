@@ -135,6 +135,7 @@ public partial class BigWallUpdate
             Carryover = scoped.Decisions.ToList(),
             CarriedWarpPositions = matched.CarriedWarpPositions,
             CarriedWarpShapes = matched.CarriedWarpShapes,
+            NotFoundAgain = matched.NotFoundAgain,
         };
     }
 

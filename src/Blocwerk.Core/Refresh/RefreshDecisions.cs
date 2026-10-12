@@ -42,6 +42,7 @@ internal static class RefreshDecisions
         {
             ReviewOldHoldIds = review,
             HandPlacedMergeOldIds = (matched.HandPlacedMerges ?? []).Select(m => m.OldHoldId).ToList(),
+            NotFoundAgain = matched.NotFoundAgain,
         };
         var folded = RelocationFold.Apply(promotable, accepted);
         var moves = await actors.BigUpdate.PreviewHoldMovesAsync(
@@ -65,7 +66,8 @@ internal static class RefreshDecisions
     public static IReadOnlyCollection<Guid> ReviewOldHoldIds(IReadOnlyList<UpdateExceptionInfo> exceptions) =>
         exceptions
             .Where(e => e.Status == UpdateExceptionStatus.Pending
-                && e.Kind is UpdateExceptionKind.PossiblyRemoved or UpdateExceptionKind.LowConfidenceMatch or UpdateExceptionKind.HandPlacedAmbiguous)
+                && e.Kind is UpdateExceptionKind.PossiblyRemoved or UpdateExceptionKind.LowConfidenceMatch or UpdateExceptionKind.HandPlacedAmbiguous
+                    or UpdateExceptionKind.ReplacedByOther)
             .Select(e => e.OldHoldId)
             .OfType<Guid>()
             .ToHashSet();
@@ -79,6 +81,7 @@ internal static class RefreshDecisions
         {
             DecisionsVersion = decisions.Version,
             PossiblyRemovedHolds = decisions.Exceptions.Count(e => e.Kind == UpdateExceptionKind.PossiblyRemoved),
+            ReplacedHolds = decisions.Exceptions.Count(e => e.Kind == UpdateExceptionKind.ReplacedByOther),
             ChecksOpen = decisions.Exceptions.Count(e => e.Status == UpdateExceptionStatus.Pending),
         };
 

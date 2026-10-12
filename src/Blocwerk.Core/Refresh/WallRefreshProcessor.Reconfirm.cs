@@ -47,6 +47,7 @@ public sealed partial class WallRefreshProcessor
             r =>
             {
                 r.SummaryJson = RefreshTimeline.Write(fresh);
+                RefreshTimeline.Describe(r, RefreshTimeline.Match, RefreshTimeline.MatchDetail(fresh));
                 r.Status = WallRefreshStatus.ReadyToApply;
                 r.ConfirmedDecisionsVersion = null;
                 r.Error = message;

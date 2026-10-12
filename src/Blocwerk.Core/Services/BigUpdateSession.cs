@@ -59,6 +59,15 @@ namespace Blocwerk.Core.Services;
 /// Hand-placed or virtual old holds merged onto the one detection at their spot (already in <paramref name="Carryover"/>).
 /// </param>
 /// <param name="HandPlacedAmbiguous">Hand-placed or virtual old holds whose spot is contested; not merged, a person decides.</param>
+/// <param name="Looks">
+/// Matched pairs whose detection does not clearly look like the old hold (<see cref="HoldLookCheck"/>): unsure ones are
+/// still in <paramref name="Carryover"/>, replaced ones are not (the old hold is in <paramref name="RemovedCandidateHoldIds"/>,
+/// the detection is a new hold). Null before matching.
+/// </param>
+/// <param name="NotFoundAgain">
+/// Old holds without a twin whose boulders are marked for review at the promote, with why: another hold sits there now,
+/// or the spot no longer shows the hold. Holds that are demonstrably still there are not in it. Null before matching.
+/// </param>
 public record BigUpdateSession(
     Guid WallId,
     Guid CenterPanelId,
@@ -78,4 +87,6 @@ public record BigUpdateSession(
     IReadOnlyList<PossiblyRemovedHold>? PossiblyRemoved = null,
     IReadOnlyList<ConflictingNewHold>? ConflictingNew = null,
     IReadOnlyList<HandPlacedMerge>? HandPlacedMerges = null,
-    IReadOnlyList<HandPlacedAmbiguity>? HandPlacedAmbiguous = null);
+    IReadOnlyList<HandPlacedAmbiguity>? HandPlacedAmbiguous = null,
+    IReadOnlyList<HoldLookFinding>? Looks = null,
+    IReadOnlyDictionary<Guid, HoldMoveOutcome>? NotFoundAgain = null);

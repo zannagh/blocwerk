@@ -496,6 +496,7 @@ public class WallService : IWallService
                 .ToListAsync(ct);
             foreach (var cleared in clearedHolds)
             {
+                cleared.KeptUnconfirmedGeneration = null;
                 cleared.NeedsReview = false;
             }
 
@@ -607,6 +608,7 @@ public class WallService : IWallService
             if (!string.IsNullOrEmpty(actualHold.Color))
             {
                 virtualHold.Color = actualHold.Color;
+                virtualHold.ProposedColor = actualHold.HasProposedColor ? actualHold.Color : null;
             }
 
             virtualHold.Material = actualHold.Material;
@@ -1570,10 +1572,19 @@ public class WallService : IWallService
             bool reshaped = hold.IsReshape(radius, shapeChanged ? edit.ShapePoints.Value : hold.ShapePoints);
             hold.InvalidateGlyphForEdit(positionChanged, reshaped);
 
+            // An edit in the hold editor is a person looking at this hold: it is there (see Hold.KeptUnconfirmedGeneration).
+            hold.KeptUnconfirmedGeneration = null;
             hold.X = x;
             hold.Y = y;
             hold.Radius = radius;
             hold.Color = edit.Color.Or(hold.Color);
+
+            // A person set the colour (also to what was proposed): it is no longer the detection's proposal.
+            if (edit.Color.HasValue && !(edit.ColorStillProposed && edit.Color.Value == hold.ProposedColor))
+            {
+                hold.ProposedColor = null;
+            }
+
             hold.Material = edit.Material.Or(hold.Material);
             hold.HandType = edit.HandType.Or(hold.HandType);
             hold.Category = edit.Category.Or(hold.Category);
@@ -1709,6 +1720,8 @@ public class WallService : IWallService
     /// </summary>
     private async Task<HashSet<Guid>> FlagHoldAndPeripheralTwinsAsync(BlocwerkDbContext db, Hold hold)
     {
+        // "Changed" says a hold is there (another one than before): the clicked hold is confirmed by that.
+        hold.KeptUnconfirmedGeneration = null;
         hold.NeedsReview = true;
         hold.InvalidateGlyphMeasurements();
 

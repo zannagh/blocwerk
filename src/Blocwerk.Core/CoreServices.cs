@@ -4,6 +4,7 @@ using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.HoldMoves;
 using Blocwerk.Core.Detection.Enrichment;
+using Blocwerk.Core.LookOver;
 using Blocwerk.Core.MarkerPlanning;
 using Blocwerk.Core.Refresh;
 using Blocwerk.Core.Services;
@@ -168,7 +169,10 @@ public static class CoreServices
         builder.Services.AddScoped<IHoldOutlineUpgradeService, HoldOutlineUpgradeService>();
         builder.Services.AddScoped<IHoldShapeCleanupService, HoldShapeCleanupService>();
         builder.Services.AddScoped<IHoldDuplicateService, HoldDuplicateService>();
+        builder.Services.AddScoped<IWallLookOverService, WallLookOverService>();
         builder.Services.AddScoped<ILinkedHoldSyncService, LinkedHoldSyncService>();
+        builder.Services.AddSingleton<IHoldColorProposer, HoldColorProposer>();
+        builder.Services.AddScoped<IHoldColorProposalService, HoldColorProposalService>();
         builder.Services.AddScoped<IHoldFootprintService, HoldFootprintService>();
         builder.Services.AddScoped<IHoldTexturePlacementService, HoldTexturePlacementService>();
         builder.Services.AddScoped<IHoldProtrusionService, HoldProtrusionService>();
@@ -357,6 +361,18 @@ public static class CoreServices
         catch (Exception ex)
         {
             logger.LogError(ex, "Linked-hold startup sync failed; the wall page offers Sync linked holds.");
+        }
+
+        // One-time: a wall whose current generation was applied before holds the update could not find were marked
+        // gets them marked now (and their look-over findings), from what that update recorded. Per wall, once.
+        try
+        {
+            var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<BlocwerkDbContext>>();
+            KeptHoldBackfill.RunIfNeededAsync(factory, scope.ServiceProvider.GetService<IChangeJournal>(), logger).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Kept-hold backfill failed; it is retried on the next start.");
         }
 
         // Propagate appearance (Color/Material/Category/HandType) across linked holds so every copy of

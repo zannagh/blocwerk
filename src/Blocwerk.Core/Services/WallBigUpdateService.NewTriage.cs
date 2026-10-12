@@ -25,6 +25,7 @@ public partial class WallBigUpdateService
         IReadOnlyList<CarryoverProposal> carryover,
         IReadOnlyList<Hold> oldHolds,
         IReadOnlyDictionary<Guid, byte[]> oldPanelPhotosById,
+        byte[]? oldCentrePhoto,
         IReadOnlyList<NeighbourOverlap> neighbours,
         bool use3DEvidence,
         RemovalInputs removals)
@@ -37,7 +38,7 @@ public partial class WallBigUpdateService
                 .ToListAsync())
             .OrderBy(p => p is { Col: 0, Row: 0 } ? 0 : 1)
             .ToList();
-        var context = new TriageContext(wall, stagedGen, carryover, oldHolds.ToDictionary(h => h.Id), oldPanelPhotosById, neighbours, model3D, removals);
+        var context = new TriageContext(wall, stagedGen, carryover, oldHolds.ToDictionary(h => h.Id), oldPanelPhotosById, oldCentrePhoto, neighbours, model3D, removals);
         TriagedCentre? centre = null;
         foreach (var panel in panels)
         {
@@ -65,7 +66,7 @@ public partial class WallBigUpdateService
         var isCentre = panel is { Col: 0, Row: 0 };
         var removable = RemovableAt(context.Removals, panel.Col, panel.Row);
         var oldPhoto = isCentre
-            ? context.Wall.Photo
+            ? context.OldCentrePhoto
             : twins.Select(t => t.Old.WallPanelId).Concat(removable.Select(h => h.WallPanelId)).OfType<Guid>()
                 .Select(context.OldPanelPhotosById.GetValueOrDefault).FirstOrDefault(p => p is not null);
         var overlap = isCentre ? null : context.Neighbours.FirstOrDefault(n => n.PanelId == panel.Id);

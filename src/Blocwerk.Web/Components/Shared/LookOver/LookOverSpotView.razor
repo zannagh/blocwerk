@@ -1,0 +1,67 @@
+@using Blocwerk.Core.Entities
+@using Blocwerk.Core.Enums
+@using Blocwerk.Core.Holds
+@using Blocwerk.Core.Services
+@* A square look at one spot of a panel photo, cut out by the browser from the photo the wall view next to it has
+   already loaded (no second picture from the server), with one hold outlined on it by the app's hold renderer. The
+   photo is scaled so that the spot fills the tile and shifted by its own size, so the spot sits in the middle
+   whatever the photo's proportions are. *@
+
+<figure class="lookover-picture lookover-spot">
+    <div class="lookover-picture-frame">
+        <div class="lookover-spot-photo" style="width:@F(Scale * 100)%;transform:translate(-@F(X * 100)%,-@F(Y * 100)%)">
+            <img src="@ResponsiveImage.Initial(PhotoUrl)" alt="@Alt" />
+            @if (Hold is { } hold)
+            {
+                <svg class="lookover-outlines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                    <HoldShape X="X" Y="Y" Radius="hold.Radius" ShapePoints="hold.ShapePoints" ShapeHoles="hold.ShapeHoles"
+                               Foot="hold.Category == HoldCategory.Foot" FootScale="HoldShape.FullFoot"
+                               Fill="none" Stroke="@(Stroke ?? HoldPalette.StrokeHex(hold.Color))" StrokeWidth="@F(1.1 / Scale)" />
+                </svg>
+            }
+        </div>
+    </div>
+    <figcaption>@Caption</figcaption>
+</figure>
+
+@code {
+    [Parameter, EditorRequired]
+    public string PhotoUrl { get; set; } = string.Empty;
+
+    /// <summary>The hold to outline, drawn at <see cref="X"/>/<see cref="Y"/> (its own spot, or where it is moved to).</summary>
+    [Parameter]
+    public PanelHold? Hold { get; set; }
+
+    /// <summary>The middle of the tile on the photo, normalised.</summary>
+    [Parameter]
+    public double X { get; set; }
+
+    /// <summary>The middle of the tile on the photo, normalised.</summary>
+    [Parameter]
+    public double Y { get; set; }
+
+    [Parameter]
+    public string Caption { get; set; } = string.Empty;
+
+    [Parameter]
+    public string Alt { get; set; } = string.Empty;
+
+    /// <summary>The outline's colour when it is not the hold's own.</summary>
+    [Parameter]
+    public string? Stroke { get; set; }
+
+    /// <summary>
+    /// Three times the hold's reach fill the tile, as on the look-over's other pictures; never less than a twelfth of
+    /// the photo, and never so much that a wide photo no longer fills the square.
+    /// </summary>
+    private double Scale => 1 / (2 * Math.Clamp(3 * Reach, 0.04, 0.3));
+
+    private double Reach => Hold switch
+    {
+        null => 0.02,
+        { ShapePoints: { Count: >= 3 } outline } => outline.Max(p => Math.Abs(p.Dx)),
+        _ => Hold.Radius,
+    };
+
+    private static string F(double v) => v.ToString("F3", System.Globalization.CultureInfo.InvariantCulture);
+}

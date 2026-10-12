@@ -3,6 +3,7 @@
     border: 1px solid var(--danger-text); border-radius: var(--r-md); background: var(--danger-bg);
     scroll-margin-bottom: calc(var(--bottomnav-h) + var(--bw-banner-h, 0px) + env(safe-area-inset-bottom));
 }
+.confirm-action.is-neutral { border-color: var(--border-light); background: var(--bg-surface); }
 .confirm-action-question { margin: 0; font-size: 0.9rem; line-height: 1.45; color: var(--text); }
 .confirm-action-label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; color: var(--text); }
 .confirm-action-buttons { display: flex; flex-wrap: wrap; gap: 8px; }

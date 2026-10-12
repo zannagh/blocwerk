@@ -47,7 +47,16 @@ internal sealed class RefreshScenario : IDisposable
 
     public CaptureScenario Capture { get; }
 
+    /// <summary>The JPEG dropped as photo number i; tiny flat-coloured ones unless a test needs something on them.</summary>
+    public Func<int, byte[]> Photo { get; set; } = i => CaptureScenario.TinyJpeg(seed: 40 + i);
+
     public IHoldTexturePlacementService Placement { get; } = Substitute.For<IHoldTexturePlacementService>();
+
+    /// <summary>The matcher the big update gets; null is one that proposes nothing.</summary>
+    public IHoldOverlapMatcher? Matcher { get; set; }
+
+    /// <summary>The presence probe the big update gets; null is none (no look check).</summary>
+    public IHoldPresenceProbe? PresenceProbe { get; set; }
 
     public WallRefreshQueue Queue { get; } = new();
 
@@ -87,7 +96,7 @@ internal sealed class RefreshScenario : IDisposable
         var view = await Service.BeginAsync(harness.WallId);
         for (var i = 0; i < photos; i++)
         {
-            await Service.AddPhotoAsync(view.Id, $"IMG_{i}.jpg", ExifJpeg.Build(CaptureScenario.TinyJpeg(seed: 40 + i)), CancellationToken.None);
+            await Service.AddPhotoAsync(view.Id, $"IMG_{i}.jpg", ExifJpeg.Build(Photo(i)), CancellationToken.None);
         }
 
         return view.Id;
@@ -128,12 +137,13 @@ internal sealed class RefreshScenario : IDisposable
             harness.DbContextFactory, acting, Capture.Files, Capture.Queue, new FakeComputeJobClientFactory(Capture.Client, Capture.SplatClient),
             NullLogger<WallCaptureService>.Instance, null, Capture.Detector, Capture.MarkerPlans, Capture.Video, Capture.Options,
             textureQueue: Capture.TextureQueue, resolveQueue: Capture.ResolveQueue);
-        var matcher = Substitute.For<IHoldOverlapMatcher>();
+        var matcher = Matcher ?? Substitute.For<IHoldOverlapMatcher>();
         var panels = new WallPanelService(harness.DbContextFactory, acting, harness.HoldDetection, matcher, NullLogger<WallPanelService>.Instance);
         return Decorate(new WallRefreshActors(
             capture,
             new CapturePanelPhotoService(capture, panels, NullLogger<CapturePanelPhotoService>.Instance),
-            new WallBigUpdateService(harness.DbContextFactory, acting, harness.HoldDetection, matcher, NullLogger<WallBigUpdateService>.Instance),
+            new WallBigUpdateService(
+                harness.DbContextFactory, acting, harness.HoldDetection, matcher, NullLogger<WallBigUpdateService>.Instance, presenceProbe: PresenceProbe),
             new WallUpdateSessionService(harness.DbContextFactory, acting, NullLogger<WallUpdateSessionService>.Instance),
             Placement));
     }

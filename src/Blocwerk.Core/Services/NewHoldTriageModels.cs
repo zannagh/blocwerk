@@ -78,6 +78,7 @@ internal sealed record TriageContext(
     IReadOnlyList<CarryoverProposal> Carryover,
     IReadOnlyDictionary<Guid, Hold> OldById,
     IReadOnlyDictionary<Guid, byte[]> OldPanelPhotosById,
+    byte[]? OldCentrePhoto,
     IReadOnlyList<NeighbourOverlap> Neighbours,
     Evidence3DModel? Model3D,
     RemovalInputs Removals);
