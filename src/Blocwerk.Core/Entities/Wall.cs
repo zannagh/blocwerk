@@ -154,6 +154,22 @@ public class Wall
     /// </summary>
     public bool VolumesHaveFlatSides { get; set; }
 
+    /// <summary>
+    /// "Someone should look over this wall": set when an applied panel update left findings nobody answered
+    /// (<see cref="WallLookOverFinding"/>), and cleared only when a wall admin or moderator finishes the look-over.
+    /// Null means no look-over is waiting.
+    /// </summary>
+    public DateTimeOffset? LookOverPendingSince { get; set; }
+
+    /// <summary>The generation of the update that last set <see cref="LookOverPendingSince"/>.</summary>
+    public int? LookOverGeneration { get; set; }
+
+    /// <summary>When the last look-over was finished.</summary>
+    public DateTimeOffset? LookOverCompletedAt { get; set; }
+
+    /// <summary>Who finished it.</summary>
+    public Guid? LookOverCompletedByUserId { get; set; }
+
     public ICollection<WallMember> Members { get; set; } = [];
 
     public ICollection<Hold> Holds { get; set; } = [];

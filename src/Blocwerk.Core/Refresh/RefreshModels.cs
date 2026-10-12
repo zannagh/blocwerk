@@ -156,6 +156,11 @@ public sealed record MovedHoldLine(
 /// <summary>An uploaded file, as the drop zone lists it.</summary>
 public sealed record RefreshFile(Guid? PhotoId, string? FileName, bool IsVideo, string? Problem);
 
+/// <summary>What an applied update left for the wall look-over, on a finished run while the wall is flagged.</summary>
+/// <param name="PendingSince">Since when the wall waits for a look-over.</param>
+/// <param name="OpenFindings">Findings nobody answered yet.</param>
+public sealed record RefreshLookOver(DateTimeOffset PendingSince, int OpenFindings);
+
 /// <summary>Everything the "Update panels + 3D" page shows.</summary>
 public sealed record WallRefreshView(
     Guid Id,
@@ -174,7 +179,8 @@ public sealed record WallRefreshView(
     Guid? UpdateSessionId = null,
     bool Check3DPending = false,
     bool HasActiveModel = false,
-    bool SummaryUpdating = false)
+    bool SummaryUpdating = false,
+    RefreshLookOver? LookOver = null)
 {
     public bool IsWorking => Status is WallRefreshStatus.Sorting or WallRefreshStatus.Running or WallRefreshStatus.Applying;
 }

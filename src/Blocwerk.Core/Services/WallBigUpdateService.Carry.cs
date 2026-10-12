@@ -64,7 +64,8 @@ public partial class WallBigUpdateService
         IReadOnlyDictionary<(int Col, int Row), Guid> newGenPanelByPosition,
         IReadOnlyDictionary<Guid, (int Width, int Height)> photoSizes,
         HoldMovePlan movePlan,
-        Guid userId)
+        Guid userId,
+        ICollection<Guid>? cardMarked = null)
     {
         var survivingCenterStaged = new HashSet<Guid>();
 
@@ -110,6 +111,12 @@ public partial class WallBigUpdateService
             // The confirm screen asked about this hold and nobody answered: it goes live as decided, marked for a look.
             if (confirmation.ReviewOldHoldIds?.Contains(decision.OldHoldId) == true)
             {
+                // Only a mark set here, on a hold nothing else had marked, is the card's own (the look-over may clear it).
+                if (!successor.NeedsReview)
+                {
+                    cardMarked?.Add(decision.OldHoldId);
+                }
+
                 successor.NeedsReview = true;
             }
         }

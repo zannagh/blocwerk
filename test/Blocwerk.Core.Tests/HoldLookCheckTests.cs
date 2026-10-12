@@ -17,20 +17,21 @@ public class HoldLookCheckTests
     [InlineData(0.9, HoldLook.Same)]
     [InlineData(0.5, HoldLook.Same)]
     [InlineData(0.49, HoldLook.Unsure)]
-    [InlineData(0.3, HoldLook.Unsure)]
-    [InlineData(0.29, HoldLook.Replaced)]
+    [InlineData(0.28, HoldLook.Unsure)]
+    [InlineData(0.27, HoldLook.Replaced)]
     [InlineData(-0.2, HoldLook.Replaced)]
     public void Judge_UsesTheDefaultBands(double score, HoldLook expected) =>
         Assert.Equal(expected, HoldLookCheck.Judge(score, new HoldMoveOptions()));
 
-    // The same bar as the removal check's "bare wall": only a confidently low score says the hold is gone.
+    // Looser than the removal check's "bare wall" bar: up to the score a pair still counts as the same hold from.
     [Theory]
     [InlineData(0.3, true)]
-    [InlineData(0.31, false)]
+    [InlineData(0.5, true)]
+    [InlineData(0.51, false)]
     [InlineData(0.59, false)]
-    public void LooksGone_OnlyAtOrBelowTheBareWallBar(double score, bool gone)
+    public void LooksGone_OnlyAtOrBelowTheGoneBar(double score, bool gone)
     {
-        Assert.Equal(PossiblyRemovedJudge.BareWallMaxScore, new HoldMoveOptions().GoneMaxScore);
+        Assert.True(PossiblyRemovedJudge.BareWallMaxScore < new HoldMoveOptions().GoneMaxScore);
         Assert.Equal(gone, HoldLookCheck.LooksGone(score, new HoldMoveOptions()));
     }
 

@@ -1,6 +1,7 @@
 @using Blocwerk.Core.Enums
 @using Blocwerk.Core.Services
 @inject IBoulderService BoulderService
+@inject Blocwerk.Core.LookOver.IWallLookOverService LookOver
 @* Shown on a boulder that needs a look because a hold it used physically moved, or was not found again, when the
    panels were updated. The old position stays visible in "Then"; the setter can revise the boulder or archive it from here. *@
 
@@ -12,14 +13,14 @@
             Check that it still works.
         </p>
         <ul class="bw-moves-list">
-            @foreach (var move in moves)
+            @foreach (var line in BoulderMoveLines.Build(moves))
             {
-                <li class="@(move.Outcome == HoldMoveOutcome.Removed ? "is-removed" : "is-kept")">
-                    <span class="bw-moves-hold">@(move.HoldName ?? "A hold")</span>
-                    <span class="bw-moves-text">@move.Text</span>
-                    @if (!NotFound(move))
+                <li class="@(line.Outcome == HoldMoveOutcome.Removed ? "is-removed" : "is-kept")">
+                    <span class="bw-moves-hold">@line.Label</span>
+                    <span class="bw-moves-text">@line.Text</span>
+                    @if (line.Outcome is not (HoldMoveOutcome.NotFound or HoldMoveOutcome.Replaced))
                     {
-                        <span class="bw-moves-source">@(move.Source == HoldMoveSource.ThreeD ? "measured in 3D" : "estimated from the photo")</span>
+                        <span class="bw-moves-source">@(line.Source == HoldMoveSource.ThreeD ? "measured in 3D" : "estimated from the photo")</span>
                     }
                 </li>
             }
@@ -27,6 +28,13 @@
         @if (HasThen)
         {
             <p class="bw-moves-hint">Use "Then" to see the boulder where the hold used to be.</p>
+        }
+        @if (lookOverPending)
+        {
+            <p class="bw-moves-hint">
+                The wall is still waiting for a look-over after its update.
+                <a class="bw-moves-link" href="/walls/@WallId/look-over?boulder=@BoulderId">See this boulder's holds in the look-over</a>
+            </p>
         }
         @if (CanManage)
         {
@@ -40,6 +48,7 @@
 
 @code {
     private IReadOnlyList<BoulderMoveView> moves = [];
+    private bool lookOverPending;
 
     [Parameter]
     public Guid WallId { get; set; }
@@ -64,12 +73,29 @@
 
     private string Headline =>
         moves.Any(m => m.Outcome == HoldMoveOutcome.Removed) ? "A hold of this boulder moved and was taken off it."
+        : moves.All(NotFound) && moves.Count > 1 ? "Holds of this boulder were not found again when the panels were updated."
         : moves.All(NotFound) ? "A hold of this boulder was not found again when the panels were updated."
         : moves.Any(NotFound) ? "Holds of this boulder moved or were not found again when the panels were updated."
         : "A hold of this boulder moved a little.";
 
     private static bool NotFound(BoulderMoveView move) => move.Outcome is HoldMoveOutcome.NotFound or HoldMoveOutcome.Replaced;
 
-    protected override async Task OnParametersSetAsync() =>
+    protected override async Task OnParametersSetAsync()
+    {
         moves = NeedsReview ? await BoulderService.GetBoulderMovesAsync(BoulderId, ShareToken) : [];
+        lookOverPending = moves.Count > 0 && string.IsNullOrEmpty(ShareToken) && await LookOverPendingAsync();
+    }
+
+    /// <summary>The wall waits for a look-over and this user may do it (never for a visitor who is not signed in).</summary>
+    private async Task<bool> LookOverPendingAsync()
+    {
+        try
+        {
+            return await LookOver.GetStateAsync(WallId) is { Pending: true, CanLookOver: true };
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
 }

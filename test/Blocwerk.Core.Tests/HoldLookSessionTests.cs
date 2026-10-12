@@ -77,7 +77,8 @@ public class HoldLookSessionTests
     // triage finds too): the matcher paired the old hold with something that was always there. Not a replacement.
     [Theory]
     [InlineData(0.2, true)]
-    [InlineData(0.5, false)]
+    [InlineData(0.5, true)]
+    [InlineData(0.6, false)]
     public async Task APairWhoseDetectionWasAlwaysThere_IsNoReplacement_TheOldHoldIsJudgedByItsOwnSpot(double ownSpot, bool gone)
     {
         using var h = new WallTestHarness();
@@ -178,7 +179,7 @@ public class HoldLookSessionTests
 
     [Theory]
     [InlineData(0.2)]
-    [InlineData(0.3)]
+    [InlineData(0.5)]
     public async Task HoldNotFoundAgain_WhoseSpotLooksGone_StaysOnItsBoulder_WhichIsMarkedWithTheReason(double score)
     {
         using var h = new WallTestHarness();
@@ -202,8 +203,8 @@ public class HoldLookSessionTests
 
     [Theory]
     [InlineData(0.9)]
-    [InlineData(0.45)]
-    [InlineData(0.31)]
+    [InlineData(0.6)]
+    [InlineData(0.51)]
     [InlineData(null)]
     public async Task HoldNotFound_WhoseSpotIsUnclearStillThereOrNotMeasurable_IsKeptSilently(double? score)
     {

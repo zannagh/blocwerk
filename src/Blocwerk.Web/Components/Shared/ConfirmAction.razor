@@ -1,5 +1,5 @@
 @* A button that asks before it acts: the first tap opens an in-page question with Confirm and Cancel (no browser
-   dialog, nothing to scroll away on a phone). When RequiredText is set the confirm button stays disabled until the
+   dialog, nothing to scroll away on a phone). Red by default (it was made for deletions); Neutral for harmless ones. When RequiredText is set the confirm button stays disabled until the
    user has typed exactly that text (used for deleting a whole wall). Escape cancels. *@
 
 @if (!asking)
@@ -8,7 +8,7 @@
 }
 else
 {
-    <div class="confirm-action" @ref="panel" role="group" aria-label="@Question" @onkeydown="OnKeyDown">
+    <div class="confirm-action @(Neutral ? "is-neutral" : null)" @ref="panel" role="group" aria-label="@Question" @onkeydown="OnKeyDown">
         <p class="confirm-action-question">@Question</p>
         @if (!string.IsNullOrEmpty(RequiredText))
         {
@@ -47,6 +47,12 @@ else
 
     /// <summary>CSS class of the confirm button.</summary>
     [Parameter] public string ConfirmClass { get; set; } = "btn-danger";
+
+    /// <summary>
+    /// A question about something harmless or easily taken back: the box is plain instead of the danger red, which
+    /// stays for what removes or cannot be undone. Pair it with a non-danger <see cref="ConfirmClass"/>.
+    /// </summary>
+    [Parameter] public bool Neutral { get; set; }
 
     /// <summary>When set, the confirm button needs this text typed first.</summary>
     [Parameter] public string? RequiredText { get; set; }

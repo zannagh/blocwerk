@@ -1,0 +1,68 @@
+@using Blocwerk.Core.LookOver
+@* The wall page's line about a pending look-over. Admins and moderators get the count and the way in; everybody else
+   on the wall gets a neutral note that it was updated. Nothing renders while no look-over is waiting, and nothing at
+   all on a kiosk tablet (the look-over is done from one's own device; the wall page keeps it off share links). *@
+
+@if (state is { Pending: true })
+{
+    <div class="panel-link-callout lookover-banner" role="status">
+        <div class="panel-link-callout-text">
+            @if (state.CanLookOver)
+            {
+                <strong>@LookOverCopy.BannerHeadline(state.OpenFindings)</strong>
+                <span class="hint">@LookOverCopy.BannerHint(state)</span>
+            }
+            else
+            {
+                <strong>This wall was updated recently.</strong>
+                <span class="hint">Some boulders may be marked for review until the update has been looked over.</span>
+            }
+        </div>
+        @if (state.CanLookOver)
+        {
+            <a class="btn-secondary" href="/walls/@WallId/look-over">@(state.OpenFindings == 0 ? "Finish the look-over" : "Look over the wall")</a>
+        }
+    </div>
+}
+
+@code {
+    private WallLookOverState? state;
+    private Guid loadedWallId;
+
+    [Parameter]
+    public Guid WallId { get; set; }
+
+    [Inject]
+    private IWallLookOverService LookOver { get; set; } = default!;
+
+    [Inject]
+    private IKioskContext KioskContext { get; set; } = default!;
+
+    [Inject]
+    private ILogger<WallLookOverBanner> Logger { get; set; } = default!;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loadedWallId == WallId)
+        {
+            return;
+        }
+
+        loadedWallId = WallId;
+        state = null;
+        if (KioskContext.IsKiosk)
+        {
+            return;
+        }
+
+        try
+        {
+            state = await LookOver.GetStateAsync(WallId);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidOperationException)
+        {
+            // Nobody signed in, or the wall is gone: there is nothing to say, and the wall page must still render.
+            Logger.LogDebug(ex, "No look-over state for wall {WallId}", WallId);
+        }
+    }
+}

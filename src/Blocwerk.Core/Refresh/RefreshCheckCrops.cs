@@ -47,6 +47,51 @@ internal static class RefreshCheckCrops
         return await work.WaitAsync(ct);
     }
 
+    /// <summary>A crop of a model's facet texture around a plane spot. No spot or no texture is "none by design".</summary>
+    internal static async Task<(byte[]? Bytes, bool Remember)> TextureCropAsync(
+        BlocwerkDbContext db, ICaptureFileStore files, Guid? modelId, string? facetId, double? a, double? b, double radiusMm)
+    {
+        if (modelId is null || facetId is null || a is null || b is null)
+        {
+            return (null, true);
+        }
+
+        var texture = await db.WallGeometryTextures.AsNoTracking().FirstOrDefaultAsync(t => t.GeometryModelId == modelId && t.FacetId == facetId);
+        if (texture is null)
+        {
+            return (null, true);
+        }
+
+        // A texture row whose file does not read is a failure that may pass, not "no picture".
+        var image = await files.ReadAsync(texture.StoredPath, CancellationToken.None);
+        var frame = TexturePlaneFrame.Of(texture);
+        if (image is null || !frame.IsValid)
+        {
+            return (null, false);
+        }
+
+        var (px, py) = frame.ToPixel(a.Value, b.Value);
+        var crop = RingCrop.Render(image, px, py, radiusMm / frame.MmPerPxA);
+        return (crop, false);
+    }
+
+    /// <summary>A crop at a normalised point with a normalised radius (of the long side). No photo is "none by design"; one that does not decode is not.</summary>
+    internal static (byte[]? Bytes, bool Remember) Crop(byte[]? photo, double x, double y, double radius)
+    {
+        if (photo is null)
+        {
+            return (null, true);
+        }
+
+        if (OverlapSeedLoader.RawSize(photo) is not { } size)
+        {
+            return (null, false);
+        }
+
+        var crop = RingCrop.Render(photo, x * size.Width, y * size.Height, radius * Math.Max(size.Width, size.Height));
+        return (crop, false);
+    }
+
     private static async Task<byte[]?> MakeAsync(IDbContextFactory<BlocwerkDbContext> dbFactory, ICaptureFileStore files, CropKey key)
     {
         try
@@ -127,28 +172,7 @@ internal static class RefreshCheckCrops
             (facetId, a, b) = (f, pa, pb);
         }
 
-        if (modelId is null || facetId is null || a is null || b is null)
-        {
-            return (null, true);
-        }
-
-        var texture = await db.WallGeometryTextures.AsNoTracking().FirstOrDefaultAsync(t => t.GeometryModelId == modelId && t.FacetId == facetId);
-        if (texture is null)
-        {
-            return (null, true);
-        }
-
-        // A texture row whose file does not read is a failure that may pass, not "no picture".
-        var image = await files.ReadAsync(texture.StoredPath, CancellationToken.None);
-        var frame = TexturePlaneFrame.Of(texture);
-        if (image is null || !frame.IsValid)
-        {
-            return (null, false);
-        }
-
-        var (px, py) = frame.ToPixel(a.Value, b.Value);
-        var crop = RingCrop.Render(image, px, py, radiusMm / frame.MmPerPxA);
-        return (crop, false);
+        return await TextureCropAsync(db, files, modelId, facetId, a, b, radiusMm);
     }
 
     private static Task<Hold?> HoldAsync(BlocwerkDbContext db, Guid? id) =>
@@ -156,21 +180,4 @@ internal static class RefreshCheckCrops
 
     private static Task<byte[]?> StagedPhotoAsync(BlocwerkDbContext db, Guid panelId) =>
         db.WallPanels.AsNoTracking().Where(p => p.Id == panelId).Select(p => p.StagedPhoto).FirstOrDefaultAsync();
-
-    /// <summary>A crop at a normalised point with a normalised radius (of the long side). No photo is "none by design"; one that does not decode is not.</summary>
-    private static (byte[]? Bytes, bool Remember) Crop(byte[]? photo, double x, double y, double radius)
-    {
-        if (photo is null)
-        {
-            return (null, true);
-        }
-
-        if (OverlapSeedLoader.RawSize(photo) is not { } size)
-        {
-            return (null, false);
-        }
-
-        var crop = RingCrop.Render(photo, x * size.Width, y * size.Height, radius * Math.Max(size.Width, size.Height));
-        return (crop, false);
-    }
 }

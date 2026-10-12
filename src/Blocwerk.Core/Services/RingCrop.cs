@@ -18,15 +18,24 @@ public static class RingCrop
     /// <summary>The crop shows at least this many source pixels around the point (or three radii).</summary>
     public const double MinHalfPx = 120;
 
+    /// <summary>Half the side of the square a crop around a ring of this radius shows, px.</summary>
+    /// <param name="radius">The ring's radius, px.</param>
+    /// <returns>Three radii, at least <see cref="MinHalfPx"/>.</returns>
+    public static double HalfFor(double radius) => Math.Max(MinHalfPx, 3 * radius);
+
     /// <summary>The crop, or null when the image does not decode.</summary>
     /// <param name="image">The encoded image.</param>
     /// <param name="x">Centre x, px.</param>
     /// <param name="y">Centre y, px.</param>
     /// <param name="radius">The ring's radius, px.</param>
+    /// <param name="halfPx">
+    /// Half the side of the square of source pixels the crop shows, when the caller knows it (two pictures that have
+    /// to show the same piece of wall); null takes <see cref="HalfFor"/>.
+    /// </param>
     /// <returns>JPEG bytes, or null.</returns>
-    public static byte[]? Render(byte[] image, double x, double y, double radius)
+    public static byte[]? Render(byte[] image, double x, double y, double radius, double? halfPx = null)
     {
-        var half = Math.Max(MinHalfPx, 3 * radius);
+        var half = halfPx ?? HalfFor(radius);
         using var bitmap = SKBitmap.Decode(image);
         if (bitmap is null)
         {
