@@ -172,11 +172,12 @@ public partial class WallBigUpdateService : IWallBigUpdateService
         var stagedCentre = new OverlapSeedSide(centerPanelId, true, centerImage, centerHolds);
         var centreSeed = await CentreCarrySeedAsync(
             db, wall, centreOldHolds, oldPanelPhotosById, panelPositions, stagedCentre);
+        var oldCentrePhoto = OldCentrePhoto(wall, oldPanelPhotosById, panelPositions);
         try
         {
             var carry = MatchUnlessUnaligned(
                 recorded.Carry.Contains(centerPanelId),
-                wall.Photo!, oldMatcher, centerImage, centerMatcher, HoldOverlapDirection.Right, logger, centreSeed);
+                oldCentrePhoto!, oldMatcher, centerImage, centerMatcher, HoldOverlapDirection.Right, logger, centreSeed);
 
             // Suggestion only: pre-fill the NewHoldId mapping the review layer will offer. The matcher
             // never asserts a hold has changed — "changed" is a purely manual decision in the UI, so
@@ -284,7 +285,7 @@ public partial class WallBigUpdateService : IWallBigUpdateService
         }
 
         var removals = new RemovalInputs(oldByPosition, removedCandidates.ToHashSet(), carriedWarp);
-        var triage = await SuggestNewDiscardsAsync(db, wall, stagedGen, carryover, oldHolds, oldPanelPhotosById, neighbours, use3DEvidence, removals);
+        var triage = await SuggestNewDiscardsAsync(db, wall, stagedGen, carryover, oldHolds, oldPanelPhotosById, oldCentrePhoto, neighbours, use3DEvidence, removals);
         return new BigUpdateSession(
             wall.Id, centerPanelId, carryover, removedCandidates, newCenter, neighbours,
             autoMatchStatus, autoMatchMessage, carriedWarp, carriedShapes,

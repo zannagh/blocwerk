@@ -12,8 +12,9 @@ public partial class WallBigUpdateService
 {
     /// <summary>
     /// Seed for the centre carryover: old holds on the live centre photo vs. the staged centre. The
-    /// carryover's left image is <see cref="Wall.Photo"/>; observations are stored per PANEL photo, so the
-    /// seed is only used when the live centre panel's photo is byte-identical to it (same raw frame).
+    /// carryover's left image is the live centre PANEL photo (<see cref="OldCentrePhoto"/>), the frame the
+    /// panel's observations and holds are stored in — a crop re-maps both with the photo. A wall without a
+    /// live centre panel has no observations to seed from.
     /// </summary>
     private async Task<HoldOverlapSeed?> CentreCarrySeedAsync(
         BlocwerkDbContext db,
@@ -23,22 +24,13 @@ public partial class WallBigUpdateService
         IReadOnlyDictionary<Guid, (int Col, int Row)> panelPositions,
         OverlapSeedSide stagedCentre)
     {
-        if (!wall.GlyphsEnabled || wall.Photo is null)
-        {
-            return null;
-        }
-
-        var liveCentre = oldPanelPhotosById
-            .Where(kv => panelPositions.TryGetValue(kv.Key, out var pos) && pos == (0, 0))
-            .Select(kv => (Id: kv.Key, Photo: kv.Value))
-            .FirstOrDefault(p => p.Photo.AsSpan().SequenceEqual(wall.Photo));
-        if (liveCentre.Photo is null)
+        if (!wall.GlyphsEnabled || LiveCentrePanelPhoto(oldPanelPhotosById, panelPositions) is not { } liveCentre)
         {
             return null;
         }
 
         return await OverlapSeedLoader.LoadAsync(
-            db, wall, new OverlapSeedSide(liveCentre.Id, false, wall.Photo, centreOldHolds), stagedCentre, logger);
+            db, wall, new OverlapSeedSide(liveCentre.PanelId, false, liveCentre.Photo, centreOldHolds), stagedCentre, logger);
     }
 
     /// <summary>Seed for one neighbour's own carryover: its old holds on its live photo vs. its staged photo.</summary>

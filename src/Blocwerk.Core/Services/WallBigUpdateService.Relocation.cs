@@ -119,8 +119,8 @@ public partial class WallBigUpdateService
             .Select(p => p.StagedPhoto)
             .FirstOrDefaultAsync();
 
-        // The old centre photo is the one the carryover matcher read the old holds from (wall.Photo).
-        var fingerprints = Fingerprints(disappeared, wall.Photo);
+        // The old centre photo is the one the carryover matcher read the old holds from (the live centre panel's).
+        var fingerprints = Fingerprints(disappeared, await LoadOldCentrePhotoAsync(db, wall));
         foreach (var (id, fingerprint) in Fingerprints(appeared, stagedPhoto))
         {
             fingerprints[id] = fingerprint;
