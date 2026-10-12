@@ -52,7 +52,7 @@
 .lookover-page ::deep .lookover-zoom-pictures { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 10px; margin: 8px 0 12px; }
 .lookover-page ::deep .lookover-zoom-pictures figure { margin: 0; }
 .lookover-page ::deep .lookover-zoom-pictures img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--r-md); background: var(--bg-surface-alt); }
-.lookover-page ::deep .lookover-zoom > button { width: auto; }
+.lookover-page ::deep .lookover-zoom > .lookover-zoom-close { width: auto; margin: 0 0 4px; }
 .lookover-page ::deep .refresh-check-title { margin: 0 0 8px; overflow-wrap: anywhere; }
 .lookover-page ::deep .refresh-check-crops { display: grid; grid-template-columns: repeat(3, minmax(0, 220px)); gap: 8px; }
 .lookover-page ::deep .refresh-check-crops figure { margin: 0; min-width: 0; max-width: 220px; }

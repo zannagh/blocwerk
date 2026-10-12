@@ -71,32 +71,35 @@
         {
             var visible = listing.Visible(kind, onBouldersOnly, FilterBoulder);
             var counts = listing.Counts(kind);
+            var openHere = visible.Count(f => f.Status == LookOverFindingStatus.Open);
             <section class="lookover-group" @key="kind">
                 <button type="button" class="lookover-group-head" aria-expanded="@(IsExpanded(kind) ? "true" : "false")" @onclick="() => Toggle(kind)">
                     <span class="lookover-group-title">
                         @LookOverCopy.GroupTitle(kind)
-                        <span class="lookover-group-sub">@(FilterBoulder is null ? LookOverCopy.GroupCounts(counts.OnBoulders, counts.All) : $"{visible.Count} for this boulder · {counts.All} in all")</span>
+                        <span class="lookover-group-sub">@LookOverCopy.GroupSub(visible.Count, counts, onBouldersOnly, FilterBoulder is not null)</span>
                     </span>
-                    <span class="lookover-group-count @(counts.Open == 0 ? "is-done" : null)">@(counts.Open == 0 ? "all answered" : $"{counts.Open} open")</span>
+                    <span class="lookover-group-count @(openHere == 0 ? "is-done" : null)">@(openHere == 0 ? "all answered" : $"{openHere} open")</span>
                 </button>
                 @if (IsExpanded(kind))
                 {
                     @if (FilterBoulder is null && LookOverRules.CanSettleAll(kind))
                     {
-                        var scopes = listing.BulkScopes(kind);
+                        @* A bulk answer settles what its button counts, and in the "on boulders" view that is what is listed. *@
+                        var unused = listing.BulkIds(kind, onBouldersOnly, withoutBoulders: true).Count;
                         <div class="lookover-bulk">
-                            @if (scopes.OpenWithoutBoulders > 1 && scopes.OpenWithoutBoulders < scopes.Open)
+                            @if (!onBouldersOnly && unused > 1 && unused < listing.BulkIds(kind, false, false).Count)
                             {
-                                <ConfirmAction Label="@LookOverCopy.BulkLabel(kind, scopes.OpenWithoutBoulders, true)"
-                                               Question="@LookOverCopy.BulkQuestion(kind, scopes.OpenWithoutBoulders, true)"
-                                               ConfirmLabel="@LookOverCopy.BulkLabel(kind, scopes.OpenWithoutBoulders, true)" ConfirmClass="btn-primary" Neutral="true"
+                                <ConfirmAction Label="@LookOverCopy.BulkLabel(kind, unused, LookOverBulkScope.WithoutBoulders)"
+                                               Question="@LookOverCopy.BulkQuestion(kind, unused, LookOverBulkScope.WithoutBoulders)"
+                                               ConfirmLabel="@LookOverCopy.BulkLabel(kind, unused, LookOverBulkScope.WithoutBoulders)" ConfirmClass="btn-primary" Neutral="true"
                                                Disabled="busy" OnConfirm="() => SettleAllAsync(kind, true)" />
                             }
-                            @if (scopes.Open > 1)
+                            @if (openHere > 1)
                             {
-                                <ConfirmAction Label="@LookOverCopy.BulkLabel(kind, scopes.Open, false)"
-                                               Question="@LookOverCopy.BulkQuestion(kind, scopes.Open, false)"
-                                               ConfirmLabel="@LookOverCopy.BulkLabel(kind, scopes.Open, false)" ConfirmClass="btn-primary" Neutral="true"
+                                var scope = onBouldersOnly ? LookOverBulkScope.OnBoulders : LookOverBulkScope.All;
+                                <ConfirmAction Label="@LookOverCopy.BulkLabel(kind, openHere, scope)"
+                                               Question="@LookOverCopy.BulkQuestion(kind, openHere, scope)"
+                                               ConfirmLabel="@LookOverCopy.BulkLabel(kind, openHere, scope)" ConfirmClass="btn-primary" Neutral="true"
                                                Disabled="busy" OnConfirm="() => SettleAllAsync(kind, false)" />
                             }
                         </div>
@@ -104,7 +107,7 @@
                     <ul class="refresh-check-list">
                         @foreach (var finding in visible.Take(Shown(kind)))
                         {
-                            <LookOverCard @key="finding.Id" WallId="WallId" Finding="finding" Disabled="busy" Focus="finding.Id == lastTouched"
+                            <LookOverCard @key="finding.Id" WallId="WallId" Finding="finding" Disabled="busy" FocusFor="finding.Id == lastTouched ? touches : 0"
                                           OnAnswer="AnswerAsync" OnUndo="UndoAsync" />
                         }
                     </ul>

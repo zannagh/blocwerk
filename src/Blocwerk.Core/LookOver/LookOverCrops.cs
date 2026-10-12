@@ -20,11 +20,18 @@ namespace Blocwerk.Core.LookOver;
 /// live photo of the finding's panel at the spot stored with it. Made on request, kept in a small cache; a finding's
 /// spot and both photos never change. The caller has checked that the user may look over the wall.
 /// </summary>
-internal static class LookOverCrops
+internal static partial class LookOverCrops
 {
     private const int MaxCached = 256;
     private const double DefaultRadiusMm = 50;
     private static readonly ConcurrentDictionary<(Guid FindingId, CheckCropView View), byte[]> Cache = new();
+    private static readonly ConcurrentDictionary<Guid, bool> NoModelPicture = new();
+
+    /// <summary>
+    /// The finding's 3D picture was asked for and there is none worth showing (no texture there, or an empty one): the
+    /// list then stops offering it, so the page does not ask again. Remembered for the life of the process only.
+    /// </summary>
+    public static bool KnownToHaveNoModelPicture(Guid findingId) => NoModelPicture.ContainsKey(findingId);
 
     /// <summary>The JPEG of one picture of a finding of <paramref name="wallId"/>, or null when there is none.</summary>
     public static async Task<byte[]?> GetAsync(
@@ -59,6 +66,15 @@ internal static class LookOverCrops
             }
 
             Cache[(findingId, view)] = bytes;
+        }
+        else if (bytes is null && view == CheckCropView.Model)
+        {
+            if (NoModelPicture.Count >= MaxCached * 16)
+            {
+                NoModelPicture.Clear();
+            }
+
+            NoModelPicture[findingId] = true;
         }
 
         return bytes;
@@ -116,10 +132,7 @@ internal static class LookOverCrops
         var photo = hold.WallPanelId is { } panelId
             ? await db.WallPanels.AsNoTracking().Where(p => p.Id == panelId).Select(p => p.Photo).FirstOrDefaultAsync(ct)
             : null;
-
-        // An old and a new hold on one spot are compared: both pictures at the finding's one scale, not each hold's own.
-        var radius = finding.Kind == LookOverFindingKind.SameSpot ? Math.Max(hold.Radius, finding.Radius) : hold.Radius;
-        return RefreshCheckCrops.Crop(photo, hold.X, hold.Y, radius).Bytes;
+        return RefreshCheckCrops.Crop(photo, hold.X, hold.Y, BeforeRadius(finding, hold)).Bytes;
     }
 
     private static async Task<byte[]?> NewAsync(BlocwerkDbContext db, WallLookOverFinding finding, CancellationToken ct)
@@ -130,6 +143,12 @@ internal static class LookOverCrops
         }
 
         var photo = await db.WallPanels.AsNoTracking().Where(p => p.Id == panelId).Select(p => p.Photo).FirstOrDefaultAsync(ct);
+        if (photo is not null && OverlapSeedLoader.RawSize(photo) is { } size && await SameExtentAsync(db, finding, panelId, size, ct) is { } frame)
+        {
+            // The piece of wall the "before" picture shows, found again on this photo: same extent, same ring.
+            return RingCrop.Render(photo, finding.X * size.Width, finding.Y * size.Height, frame.RingPx, frame.HalfPx);
+        }
+
         return RefreshCheckCrops.Crop(photo, finding.X, finding.Y, finding.Radius > 0 ? finding.Radius : 0.02).Bytes;
     }
 

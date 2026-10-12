@@ -69,22 +69,15 @@ internal sealed class LookOverListing
         return (ofKind.Count(OnBoulder), ofKind.Count, ofKind.Count(f => f.Status == LookOverFindingStatus.Open));
     }
 
-    /// <summary>The open findings of a kind, and those of them no current boulder uses: the two scopes of a bulk answer.</summary>
-    /// <param name="kind">The kind.</param>
-    /// <returns>The two counts.</returns>
-    public (int Open, int OpenWithoutBoulders) BulkScopes(LookOverFindingKind kind)
-    {
-        var open = Findings.Where(f => f.Kind == kind && f.Status == LookOverFindingStatus.Open).ToList();
-        return (open.Count, open.Count(f => f.Boulders.Count == 0));
-    }
-
     /// <summary>The findings a bulk answer is about: exactly the ones its button counted, so the server settles those and no others.</summary>
     /// <param name="kind">The kind.</param>
-    /// <param name="withoutBoulders">Only the open findings no current boulder uses.</param>
+    /// <param name="onBouldersOnly">The "on boulders" view: only what it lists.</param>
+    /// <param name="withoutBoulders">Only the open findings no current boulder uses (nothing, in the "on boulders" view).</param>
     /// <returns>Their ids.</returns>
-    public IReadOnlyList<Guid> BulkIds(LookOverFindingKind kind, bool withoutBoulders) =>
+    public IReadOnlyList<Guid> BulkIds(LookOverFindingKind kind, bool onBouldersOnly, bool withoutBoulders) =>
         Findings
-            .Where(f => f.Kind == kind && f.Status == LookOverFindingStatus.Open && (!withoutBoulders || f.Boulders.Count == 0))
+            .Where(f => f.Kind == kind && f.Status == LookOverFindingStatus.Open && Shown(f, onBouldersOnly, null)
+                && (!withoutBoulders || (!onBouldersOnly && f.Boulders.Count == 0)))
             .Select(f => f.Id)
             .ToList();
 

@@ -101,6 +101,16 @@ public sealed partial class WallLookOverService(
     }
 
     /// <inheritdoc/>
+    public async Task<bool> HasFindingAsync(Guid wallId, Guid findingId, CancellationToken ct = default)
+    {
+        var (db, _) = await OpenAsync(wallId, ct);
+        await using (db)
+        {
+            return await db.WallLookOverFindings.AnyAsync(f => f.Id == findingId && f.WallId == wallId, ct);
+        }
+    }
+
+    /// <inheritdoc/>
     public async Task<byte[]?> GetCropAsync(Guid wallId, Guid findingId, CheckCropView view, CancellationToken ct = default)
     {
         var (db, _) = await OpenAsync(wallId, ct);

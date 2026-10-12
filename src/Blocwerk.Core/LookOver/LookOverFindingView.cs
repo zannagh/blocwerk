@@ -20,7 +20,10 @@ namespace Blocwerk.Core.LookOver;
 /// <param name="OtherHoldId">The new hold on the same spot, while it is a live hold.</param>
 /// <param name="HoldName">The hold's name, else its colour.</param>
 /// <param name="HasOld">There is an old photo of the hold.</param>
-/// <param name="HasModel">There may be a 3D texture picture.</param>
+/// <param name="HasModel">
+/// There may be a 3D texture picture: a spot on the model is known, and the picture was not found to be missing or
+/// empty when it was last asked for (the page then does not ask again).
+/// </param>
 /// <param name="PhotoScore">How well the new photo matches the old one at the spot (-1..1).</param>
 /// <param name="Confidence">The matcher's confidence (unsure match).</param>
 /// <param name="Converted">An unsure match a person called a different hold.</param>

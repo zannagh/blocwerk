@@ -87,7 +87,7 @@ public sealed partial class WallLookOverService
             other?.Id,
             hold?.Name ?? hold?.Color ?? old?.Name ?? old?.Color,
             old is not null,
-            f.FacetId is not null || hold is { Placed: true },
+            (f.FacetId is not null || hold is { Placed: true }) && !LookOverCrops.KnownToHaveNoModelPicture(f.Id),
             f.PhotoScore,
             f.Confidence,
             f.Converted,

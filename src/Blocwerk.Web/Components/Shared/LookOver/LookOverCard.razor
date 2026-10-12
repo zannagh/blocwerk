@@ -73,7 +73,10 @@
 
 @if (zoomed)
 {
+    @* Close comes first: the dialog moves the focus to its first control, and with Close at the bottom that scrolled
+       the first picture out of view. *@
     <Modal Title="@LookOverCopy.Heading(Finding)" PanelClass="lookover-zoom" OnClose="() => zoomed = false">
+        <button type="button" class="btn-secondary lookover-zoom-close" @onclick="() => zoomed = false">Close</button>
         <div class="lookover-zoom-pictures">
             @foreach (var (view, caption, alt) in Pictures)
             {
@@ -83,14 +86,13 @@
                 </figure>
             }
         </div>
-        <button type="button" class="btn-secondary" @onclick="() => zoomed = false">Close</button>
     </Modal>
 }
 
 @code {
     private ElementReference card;
     private bool zoomed;
-    private bool focused;
+    private int focusedFor;
 
     [Parameter, EditorRequired]
     public Guid WallId { get; set; }
@@ -101,9 +103,12 @@
     [Parameter]
     public bool Disabled { get; set; }
 
-    /// <summary>The card was just answered or reopened: it takes the focus, so no other card's button has it.</summary>
+    /// <summary>
+    /// Non-zero on the card that was just answered or reopened, and different each time: the card takes the focus once
+    /// per value, so no other card's button has it, also when the same card is answered, undone and answered again.
+    /// </summary>
     [Parameter]
-    public bool Focus { get; set; }
+    public int FocusFor { get; set; }
 
     [Parameter]
     public EventCallback<LookOverChoice> OnAnswer { get; set; }
@@ -132,18 +137,12 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!Focus)
-        {
-            focused = false;
-            return;
-        }
-
-        if (focused)
+        if (FocusFor == 0 || FocusFor == focusedFor)
         {
             return;
         }
 
-        focused = true;
+        focusedFor = FocusFor;
         try
         {
             await card.FocusAsync(preventScroll: true);

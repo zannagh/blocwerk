@@ -404,13 +404,14 @@ else
 
         <Page3>
             @* Overview (centre page — the wall itself) *@
+            @* A pending look-over is the first thing an admin or moderator sees: one strip above photo and stats, on a
+               phone and on a desktop (inside .wall-main it became a narrow column beside the photo). Renders nothing
+               while none is waiting. *@
+            @if (_canEditHolds && !_isAnonymous && string.IsNullOrEmpty(ShareToken))
+            {
+                <Blocwerk.Web.Components.Shared.LookOver.WallLookOverBanner WallId="WallId" />
+            }
             <div class="wall-main">
-                @* A pending look-over is the first thing an admin or moderator sees on a phone: above the photo, not
-                   below photo and stats. Renders nothing while none is waiting. *@
-                @if (_canEditHolds && !_isAnonymous && string.IsNullOrEmpty(ShareToken))
-                {
-                    <Blocwerk.Web.Components.Shared.LookOver.WallLookOverBanner WallId="WallId" />
-                }
                 <div class="wall-detail-card">
                     @if (_isAnonymous && KioskContext.IsKiosk)
                     {

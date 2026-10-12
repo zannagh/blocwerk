@@ -19,6 +19,8 @@ namespace Blocwerk.Core.Services;
 /// <param name="Text">Plain language, for example "moved 6 cm, kept".</param>
 /// <param name="Type">The mark the boulder had on it.</param>
 /// <param name="HoldColor">The hold's colour, when it has one (says which hold when it has no name).</param>
+/// <param name="HoldKind">The kind of hold in words ("crimp", "jug"), when it is set.</param>
+/// <param name="HoldSizeCm">Its longer side, cm, when it was measured (tells two holds of one colour apart).</param>
 public sealed record BoulderMoveView(
     Guid? OldHoldId,
     Guid? NewHoldId,
@@ -28,7 +30,9 @@ public sealed record BoulderMoveView(
     HoldMoveOutcome Outcome,
     string Text,
     HoldType Type,
-    string? HoldColor = null);
+    string? HoldColor = null,
+    string? HoldKind = null,
+    int? HoldSizeCm = null);
 
 public partial class BoulderService
 {
@@ -62,6 +66,9 @@ public partial class BoulderService
                 NewName = m.NewHold == null ? null : m.NewHold.Name,
                 OldColor = m.OldHold == null ? null : m.OldHold.Color,
                 NewColor = m.NewHold == null ? null : m.NewHold.Color,
+                Kind = m.NewHold != null ? m.NewHold.HandType : m.OldHold != null ? m.OldHold.HandType : null,
+                WidthMm = m.NewHold != null ? m.NewHold.WidthMm : m.OldHold != null ? m.OldHold.WidthMm : null,
+                HeightMm = m.NewHold != null ? m.NewHold.HeightMm : m.OldHold != null ? m.OldHold.HeightMm : null,
             })
             .AsNoTracking()
             .ToListAsync(ct);
@@ -73,9 +80,12 @@ public partial class BoulderService
             .ThenByDescending(r => r.DistanceMm)
             .Select(r => new BoulderMoveView(
                 r.OldHoldId, r.NewHoldId, r.NewName ?? r.OldName, r.DistanceMm, r.Source, r.Outcome,
-                Text(r.DistanceMm, r.RotationDeg, r.Outcome, r.RemeasuredDistanceMm, r.RemeasuredOutcome), r.Type, r.NewColor ?? r.OldColor))
+                Text(r.DistanceMm, r.RotationDeg, r.Outcome, r.RemeasuredDistanceMm, r.RemeasuredOutcome), r.Type, r.NewColor ?? r.OldColor, r.Kind?.ToString().ToLowerInvariant(), SizeCm(r.WidthMm, r.HeightMm)))
             .ToList();
     }
+
+    private static int? SizeCm(double? widthMm, double? heightMm) =>
+        widthMm is null && heightMm is null ? null : Math.Max(1, (int)Math.Round(Math.Max(widthMm ?? 0, heightMm ?? 0) / 10));
 
     /// <summary>Removed first, then replaced and not found again, then the holds that only moved.</summary>
     private static int Rank(HoldMoveOutcome outcome) => outcome switch

@@ -74,6 +74,13 @@ public interface IWallLookOverService
     /// <returns>A task.</returns>
     Task FinishAsync(Guid wallId, bool leaveOpen, CancellationToken ct = default);
 
+    /// <summary>Whether the wall has this finding (for whoever may look over the wall).</summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="findingId">The finding.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>True when it does.</returns>
+    Task<bool> HasFindingAsync(Guid wallId, Guid findingId, CancellationToken ct = default);
+
     /// <summary>One picture of a finding (the old photo, the new photo or the 3D texture), or null when there is none.</summary>
     /// <param name="wallId">The wall.</param>
     /// <param name="findingId">The finding.</param>

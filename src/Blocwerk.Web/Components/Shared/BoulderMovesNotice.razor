@@ -13,14 +13,14 @@
             Check that it still works.
         </p>
         <ul class="bw-moves-list">
-            @foreach (var move in moves)
+            @foreach (var line in BoulderMoveLines.Build(moves))
             {
-                <li class="@(move.Outcome == HoldMoveOutcome.Removed ? "is-removed" : "is-kept")">
-                    <span class="bw-moves-hold">@HoldLabel(move)</span>
-                    <span class="bw-moves-text">@move.Text</span>
-                    @if (!NotFound(move))
+                <li class="@(line.Outcome == HoldMoveOutcome.Removed ? "is-removed" : "is-kept")">
+                    <span class="bw-moves-hold">@line.Label</span>
+                    <span class="bw-moves-text">@line.Text</span>
+                    @if (line.Outcome is not (HoldMoveOutcome.NotFound or HoldMoveOutcome.Replaced))
                     {
-                        <span class="bw-moves-source">@(move.Source == HoldMoveSource.ThreeD ? "measured in 3D" : "estimated from the photo")</span>
+                        <span class="bw-moves-source">@(line.Source == HoldMoveSource.ThreeD ? "measured in 3D" : "estimated from the photo")</span>
                     }
                 </li>
             }
@@ -73,13 +73,10 @@
 
     private string Headline =>
         moves.Any(m => m.Outcome == HoldMoveOutcome.Removed) ? "A hold of this boulder moved and was taken off it."
+        : moves.All(NotFound) && moves.Count > 1 ? "Holds of this boulder were not found again when the panels were updated."
         : moves.All(NotFound) ? "A hold of this boulder was not found again when the panels were updated."
         : moves.Any(NotFound) ? "Holds of this boulder moved or were not found again when the panels were updated."
         : "A hold of this boulder moved a little.";
-
-    /// <summary>Which hold a line is about: its name, else "The white hold", else "A hold".</summary>
-    internal static string HoldLabel(BoulderMoveView move) =>
-        move.HoldName ?? (string.IsNullOrWhiteSpace(move.HoldColor) ? "A hold" : $"The {move.HoldColor} hold");
 
     private static bool NotFound(BoulderMoveView move) => move.Outcome is HoldMoveOutcome.NotFound or HoldMoveOutcome.Replaced;
 

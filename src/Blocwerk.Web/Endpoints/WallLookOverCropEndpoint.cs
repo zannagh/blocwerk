@@ -37,7 +37,9 @@ public static class WallLookOverCropEndpoint
             var bytes = await lookOver.GetCropAsync(wallId, findingId, which, ct);
             if (bytes is null)
             {
-                return Results.NotFound();
+                // A finding of the wall without a 3D picture (no texture there, or an empty one) is not an error: 204,
+                // which hides the tile without a failed request in the browser's console. Everything else is a 404.
+                return which == CheckCropView.Model && await lookOver.HasFindingAsync(wallId, findingId, ct) ? Results.NoContent() : Results.NotFound();
             }
 
             // Never in a shared cache (only who may look over the wall sees them). The two photo crops never change;

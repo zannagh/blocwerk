@@ -85,15 +85,30 @@ internal static partial class LookOverCopy
         return $"{PlainCopy.Plural(findings.Count, "finding")}: {string.Join(", ", parts)}.";
     }
 
-    /// <summary>A group header's two counts: "31 on boulders · 91 in all".</summary>
-    public static string GroupCounts(int onBoulders, int all) => $"{onBoulders} on boulders · {all} in all";
-
-    /// <summary>The bulk answer of a kind for everything open, or only what no boulder uses.</summary>
-    public static string BulkLabel(LookOverFindingKind kind, int count, bool withoutBoulders) => (kind, withoutBoulders) switch
+    /// <summary>
+    /// Under a group's title: how many of the kind the view lists against how many there are, with the whole kind's
+    /// open count when the badge beside it (what is open in THIS view) is not the whole story.
+    /// </summary>
+    public static string GroupSub(int listed, (int OnBoulders, int All, int Open) counts, bool onBouldersOnly, bool forOneBoulder)
     {
-        (LookOverFindingKind.SameSpot, true) => $"Keep both where no boulder uses the old hold ({count})",
-        (LookOverFindingKind.SameSpot, false) => $"Keep both everywhere ({count})",
-        (_, true) => $"Mark the {count} unsure matches that no boulder uses as same hold",
+        if (forOneBoulder)
+        {
+            return $"{listed} for this boulder · {counts.All} in all, {counts.Open} open";
+        }
+
+        return onBouldersOnly && counts.All > counts.OnBoulders
+            ? $"{counts.OnBoulders} on boulders · {counts.All} in all, {counts.Open} open"
+            : $"{counts.OnBoulders} on boulders · {counts.All} in all";
+    }
+
+    /// <summary>The bulk answer of a kind, saying exactly how many findings it settles and which.</summary>
+    public static string BulkLabel(LookOverFindingKind kind, int count, LookOverBulkScope scope) => (kind, scope) switch
+    {
+        (LookOverFindingKind.SameSpot, LookOverBulkScope.WithoutBoulders) => $"Keep both where no boulder uses the old hold ({count})",
+        (LookOverFindingKind.SameSpot, LookOverBulkScope.OnBoulders) => $"Keep both on the {count} spots a boulder uses",
+        (LookOverFindingKind.SameSpot, _) => $"Keep both everywhere ({count})",
+        (_, LookOverBulkScope.WithoutBoulders) => $"Mark the {count} unsure matches that no boulder uses as same hold",
+        (_, LookOverBulkScope.OnBoulders) => $"Mark the {count} unsure matches on boulders as same hold",
         _ => $"Mark all {count} unsure matches as same hold",
     };
 
@@ -103,9 +118,14 @@ internal static partial class LookOverCopy
         : $"{result.Settled} of {result.Asked} were answered now; the others had been answered meanwhile, or a boulder uses their hold by now.";
 
     /// <summary>What a bulk answer does, asked before it is done.</summary>
-    public static string BulkQuestion(LookOverFindingKind kind, int count, bool withoutBoulders)
+    public static string BulkQuestion(LookOverFindingKind kind, int count, LookOverBulkScope which)
     {
-        var scope = withoutBoulders ? " that no boulder uses" : string.Empty;
+        var scope = which switch
+        {
+            LookOverBulkScope.WithoutBoulders => " that no boulder uses",
+            LookOverBulkScope.OnBoulders => " that a boulder uses",
+            _ => string.Empty,
+        };
         return kind == LookOverFindingKind.SameSpot
             ? $"Keep the old and the new hold on {PlainCopy.Plural(count, "spot")}{scope} without looking at each? No hold is removed or merged; each answer can be undone on its card."
             : $"Mark {(count == 1 ? "1 unsure match" : $"{count} unsure matches")}{scope} as the same hold without looking at each? No hold changes; "

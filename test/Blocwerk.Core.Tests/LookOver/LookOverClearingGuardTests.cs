@@ -140,14 +140,21 @@ public class LookOverClearingGuardTests
     }
 
     [Fact]
-    public async Task TheStoredSpotsTexturePicture_IsAskedForOnce_NotAgainForTheLargeView()
+    public async Task AFindingWithoutATexturePicture_AnswersNoContent_AndIsNotAskedForAgain()
     {
         using var h = new WallTestHarness();
         var w = await ApplyAsync(h, targetDetected: false, score: 0.2);
         var findingId = (await FindingAsync(h, w.WallId)).Id;
 
-        // No texture here: there is no picture, and "none" is the answer both times without failing.
-        Assert.Null(await Service(h).GetCropAsync(w.WallId, findingId, CheckCropView.Model));
-        Assert.Null(await Service(h).GetCropAsync(w.WallId, findingId, CheckCropView.Model));
+        // No texture here: there is no picture. The route says so without an error (204, nothing in the browser's
+        // console), and the list stops offering the picture, so the page does not ask again.
+        var service = Service(h);
+        var none = await Blocwerk.Web.Endpoints.WallLookOverCropEndpoint.HandleAsync(
+            w.WallId, findingId, "model", new Microsoft.AspNetCore.Http.DefaultHttpContext(), service, CancellationToken.None);
+        Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.NoContent>(none);
+        Assert.False(Assert.Single(await service.ListAsync(w.WallId)).HasModel);
+        var unknown = await Blocwerk.Web.Endpoints.WallLookOverCropEndpoint.HandleAsync(
+            w.WallId, Guid.NewGuid(), "model", new Microsoft.AspNetCore.Http.DefaultHttpContext(), service, CancellationToken.None);
+        Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.NotFound>(unknown);
     }
 }
