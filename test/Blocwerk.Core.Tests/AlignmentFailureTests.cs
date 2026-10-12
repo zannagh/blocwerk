@@ -23,7 +23,7 @@ public class AlignmentFailureTests
         using var h = new WallTestHarness();
         var s = await SeedAsync(h);
 
-        var session = await s.BigUpdate(new UnalignableHoldMatcher((l, _) => Same(l, OldWallPhoto))).ResumeAsync(s.WallId);
+        var session = await s.BigUpdate(new UnalignableHoldMatcher((l, _) => Same(l, OldCentre))).ResumeAsync(s.WallId);
 
         Assert.Equal(AutoMatchStatus.Failed, session.AutoMatchStatus);
         Assert.DoesNotContain(session.Carryover, p => p.OldHoldId == s.OldC);
@@ -46,7 +46,7 @@ public class AlignmentFailureTests
     {
         using var h = new WallTestHarness();
         var s = await SeedAsync(h);
-        await s.BigUpdate(new UnalignableHoldMatcher((l, _) => Same(l, OldWallPhoto))).ResumeAsync(s.WallId);
+        await s.BigUpdate(new UnalignableHoldMatcher((l, _) => Same(l, OldCentre))).ResumeAsync(s.WallId);
 
         var healthy = new UnalignableHoldMatcher((_, _) => false);
         var resumed = await s.BigUpdate(healthy).ResumeAsync(s.WallId);

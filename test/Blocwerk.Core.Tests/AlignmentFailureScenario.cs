@@ -14,12 +14,13 @@ namespace Blocwerk.Core.Tests;
 /// <summary>
 /// A two-panel wall mid-update with an open session. Live gen 2: centre (0,0) photo [1] with hold C, right
 /// neighbour (1,0) photo [2] with hold N; boulder "Batman" on N. Staged gen 3: centre photo [7] with C' (C's
-/// twin by position) and right photo [8] with N' (N's twin). The wall photo is [1,2,3], which is the centre
-/// carryover's left image. Pick which pairs "cannot be aligned" through the matcher handed to <see cref="BigUpdate"/>.
+/// twin by position) and right photo [8] with N' (N's twin). The wall photo is [1,2,3]; the centre carryover's
+/// left image is the live centre PANEL photo. Pick which pairs "cannot be aligned" through the matcher handed to
+/// <see cref="BigUpdate"/>.
 /// </summary>
 internal sealed class AlignmentFailureScenario
 {
-    public static readonly byte[] OldWallPhoto = [1, 2, 3];
+    public static readonly byte[] OldCentre = [1];
     public static readonly byte[] OldRight = [2];
     public static readonly byte[] StagedCentre = [7];
     public static readonly byte[] StagedRight = [8];
@@ -57,11 +58,11 @@ internal sealed class AlignmentFailureScenario
         var wall = new Wall
         {
             Name = "Attic", OwnerId = h.Owner.Id, CurrentGeneration = 2,
-            Photo = OldWallPhoto, PhotoContentType = "image/jpeg", UsesMultipleImages = true,
+            Photo = [1, 2, 3], PhotoContentType = "image/jpeg", UsesMultipleImages = true,
         };
         db.Walls.Add(wall);
         db.WallMembers.Add(new WallMember { WallId = wall.Id, UserId = h.Owner.Id, Role = WallRole.Admin });
-        var liveCentre = Panel(wall.Id, 0, 2, photo: [1]);
+        var liveCentre = Panel(wall.Id, 0, 2, photo: OldCentre);
         var liveRight = Panel(wall.Id, 1, 2, photo: OldRight);
         var stagedCentre = Panel(wall.Id, 0, 3, staged: StagedCentre);
         var stagedRight = Panel(wall.Id, 1, 3, staged: StagedRight);
