@@ -23,6 +23,27 @@ public static class ResponsiveImage
     public const int InitialWidth = 1280;
 
     /// <summary>
+    /// Width of a thumbnail in a grid or list (the gallery). The smallest rendition: a tile is a few hundred CSS
+    /// pixels wide, and a page shows many of them at once.
+    /// </summary>
+    public const int ThumbnailWidth = 640;
+
+    /// <summary>
+    /// The url of one gallery item's bytes. A <paramref name="thumbnail"/> asks for the small rendition; without
+    /// it the stored photo is served, which is only for the photo opened full screen.
+    /// </summary>
+    public static string Gallery(Guid wallId, string source, Guid id, string? shareToken, bool thumbnail)
+    {
+        var url = $"/media/walls/{wallId}/gallery/{source.ToLowerInvariant()}/{id}";
+        if (!string.IsNullOrEmpty(shareToken))
+        {
+            url += "?token=" + Uri.EscapeDataString(shareToken);
+        }
+
+        return thumbnail ? AtWidth(url, ThumbnailWidth) : url;
+    }
+
+    /// <summary>
     /// <paramref name="url"/> with the initial width appended, preserving any query it already
     /// carries (the share token, in practice).
     /// </summary>

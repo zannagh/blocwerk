@@ -54,7 +54,7 @@ public class CircuitLifecycleLogHandlerTests
             logger.Entries,
             e => Assert.Equal("Circuit abcdefgh opened (phone)", e.Message),
             e => Assert.Equal("Circuit abcdefgh connected (phone)", e.Message),
-            e => Assert.Equal("Circuit abcdefgh connection down (phone) after 30 s up", e.Message),
+            e => Assert.Equal("Circuit abcdefgh connection down (phone) after 30 s up, reason: unknown", e.Message),
             e => Assert.Equal("Circuit abcdefgh reconnected (phone) after 1500 ms down, reconnect 1", e.Message),
             e => Assert.Equal("Circuit abcdefgh closed (phone) after 41 s, 1 reconnects, closed while connected", e.Message));
     }
@@ -99,6 +99,38 @@ public class CircuitLifecycleLogHandlerTests
         public override DateTimeOffset GetUtcNow() => now;
 
         public void Advance(TimeSpan by) => now += by;
+    }
+
+    [Fact]
+    public void ConnectionDown_NamesTheCloseReasonTheHubFilterSaw()
+    {
+        var logger = new ListLogger<CircuitLifecycleLogHandler>();
+        var handler = new CircuitLifecycleLogHandler(logger, Substitute.For<IHttpContextAccessor>(), Substitute.For<IKioskContext>(), new StepTime());
+        handler.Opened("id");
+
+        CircuitConnectionLogFilter.CloseReason.Value = CircuitConnectionLogFilter.Describe(new IOException("reset"), "WebSockets");
+        handler.ConnectionDown("id");
+        CircuitConnectionLogFilter.CloseReason.Value = null;
+
+        Assert.EndsWith("reason: IOException: reset, WebSockets", logger.Entries[^1].Message);
+        Assert.Equal(
+            "no error (closed by client or proxy, or client timeout), unknown transport",
+            CircuitConnectionLogFilter.Describe(null, null));
+    }
+
+    [Fact]
+    public void OnlyASlowInboundActivity_IsLogged_AtWarning()
+    {
+        var logger = new ListLogger<CircuitLifecycleLogHandler>();
+        var handler = new CircuitLifecycleLogHandler(logger, Substitute.For<IHttpContextAccessor>(), Substitute.For<IKioskContext>(), new StepTime());
+        handler.SetClient("phone");
+
+        handler.InboundActivity("abcdefghij", TimeSpan.FromMilliseconds(499));
+        handler.InboundActivity("abcdefghij", TimeSpan.FromMilliseconds(750));
+
+        var entry = Assert.Single(logger.Entries);
+        Assert.Equal(LogLevel.Warning, entry.Level);
+        Assert.Equal("Slow circuit activity: circuit abcdefgh (phone) took 750 ms to handle an event and render", entry.Message);
     }
 
     private sealed class ListLogger<T> : ILogger<T>

@@ -53,7 +53,9 @@ public static partial class RunnerApiEndpoints
 
         var group = app.MapGroup(Prefix).AllowAnonymous().DisableAntiforgery().RequireRateLimiting(RateLimitPolicy);
         group.MapPost("/hello", HelloAsync);
-        group.MapPost("/claim", ClaimAsync);
+
+        // The claim holds the request for the claim wait (about 25 s) when the queue is empty.
+        group.MapPost("/claim", ClaimAsync).WithMetadata(new LongPollEndpoint());
         group.MapGet("/jobs/{jobId:guid}/bundle", BundleAsync);
         group.MapPost("/jobs/{jobId:guid}/progress", ProgressAsync);
         group.MapPut("/jobs/{jobId:guid}/result", ResultAsync);

@@ -19,7 +19,7 @@
                 var index = i;
                 var item = items[i];
                 <button type="button" class="wall-gallery-thumb" @key="ItemKey(item)" @onclick="() => Open(index)">
-                    <img src="@ImageUrl(item)" alt="@(item.Caption ?? "Wall image")" loading="lazy" />
+                    <img src="@ImageUrl(item, thumbnail: true)" alt="@(item.Caption ?? "Wall image")" loading="lazy" />
                     <span class="wall-gallery-badge @SourceClass(item.Source)">@SourceLabel(item.Source)</span>
                     <span class="wall-gallery-when"><LocalTime Value="@item.CapturedAt" Format="LocalTimeFormat.Relative" /></span>
                 </button>
@@ -242,11 +242,9 @@
         }
     }
 
-    private string ImageUrl(WallGalleryItem item)
-    {
-        var url = $"/media/walls/{WallId}/gallery/{item.Source.ToString().ToLowerInvariant()}/{item.Id}";
-        return string.IsNullOrEmpty(ShareToken) ? url : $"{url}?token={Uri.EscapeDataString(ShareToken)}";
-    }
+    // The grid asks for the small rendition; only the photo opened in the lightbox is the stored one.
+    private string ImageUrl(WallGalleryItem item, bool thumbnail = false) =>
+        ResponsiveImage.Gallery(WallId, item.Source.ToString(), item.Id, ShareToken, thumbnail);
 
     private static string ItemKey(WallGalleryItem item) => $"{item.Source}:{item.Id}";
 

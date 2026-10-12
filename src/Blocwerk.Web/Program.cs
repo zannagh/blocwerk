@@ -21,6 +21,7 @@ using Microsoft.AspNetCore.Components.Server.Circuits;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -162,6 +163,9 @@ public static class Program
                 // silence before it's considered gone.
                 o.KeepAliveInterval = TimeSpan.FromSeconds(15);
                 o.ClientTimeoutInterval = EditActivityPolicy.ClientTimeout;
+
+                // Logging only: why a connection closed, and reconnects the server turned down.
+                o.AddFilter<CircuitConnectionLogFilter>();
             });
 
         builder.Services.AddRazorPages();

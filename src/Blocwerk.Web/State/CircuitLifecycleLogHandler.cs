@@ -1,6 +1,7 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using System.Diagnostics;
 using Blocwerk.Core.Abstractions;
 using Microsoft.AspNetCore.Components.Server.Circuits;
 
@@ -14,6 +15,9 @@ namespace Blocwerk.Web.State;
 /// </summary>
 public sealed class CircuitLifecycleLogHandler : CircuitHandler
 {
+    /// <summary>Handling one inbound circuit activity (a UI event, a JS interop call) for this long is logged at Warning.</summary>
+    public static readonly TimeSpan SlowActivityThreshold = TimeSpan.FromMilliseconds(500);
+
     private readonly ILogger<CircuitLifecycleLogHandler> logger;
     private readonly IHttpContextAccessor httpContextAccessor;
     private readonly IKioskContext kioskContext;
@@ -98,7 +102,38 @@ public sealed class CircuitLifecycleLogHandler : CircuitHandler
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Times every inbound activity of the circuit: the wait for the circuit's dispatcher plus the synchronous part of
+    /// the event handler and the render it causes. The framework does not say which component or event it was.
+    /// </summary>
+    public override Func<CircuitInboundActivityContext, Task> CreateInboundActivityHandler(
+        Func<CircuitInboundActivityContext, Task> next) =>
+        async context =>
+        {
+            var started = Stopwatch.GetTimestamp();
+            try
+            {
+                await next(context);
+            }
+            finally
+            {
+                InboundActivity(context.Circuit.Id, Stopwatch.GetElapsedTime(started));
+            }
+        };
+
     internal void SetClient(string value) => client = value;
+
+    internal void InboundActivity(string circuitId, TimeSpan elapsed)
+    {
+        if (elapsed >= SlowActivityThreshold)
+        {
+            logger.LogWarning(
+                "Slow circuit activity: circuit {CircuitId} ({Client}) took {ElapsedMs} ms to handle an event and render",
+                ShortId(circuitId),
+                client,
+                (long)elapsed.TotalMilliseconds);
+        }
+    }
 
     internal void Opened(string circuitId)
     {
@@ -134,10 +169,11 @@ public sealed class CircuitLifecycleLogHandler : CircuitHandler
         var now = time.GetUtcNow();
         downSince = now;
         logger.LogInformation(
-            "Circuit {CircuitId} connection down ({Client}) after {UpSeconds} s up",
+            "Circuit {CircuitId} connection down ({Client}) after {UpSeconds} s up, reason: {Reason}",
             ShortId(circuitId),
             client,
-            (long)(now - upSince).TotalSeconds);
+            (long)(now - upSince).TotalSeconds,
+            CircuitConnectionLogFilter.CloseReason.Value ?? "unknown");
     }
 
     internal void Closed(string circuitId)
