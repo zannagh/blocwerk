@@ -839,23 +839,6 @@ img.wall-photo {
     .bw-toolbar-row-inner .option-group > label { font-size: 0.78rem; }
 }
 
-/* A phone on its side is over 720px wide, so the bar is back in flow above the photo, and ~400px
-   tall: a bar that wraps to two lines over a 56px row left the photo and the row no room. There the
-   tools are ONE line that scrolls sideways and the row is a single short line (it already scrolls
-   sideways). The rail placement has its own, more specific rules and is not affected. */
-@media (max-height: 560px) and (min-width: 721px) and (max-width: 959.98px) {
-    .bw-toolbar .bw-toolbar-bar {
-        flex-wrap: nowrap; overflow-x: auto; overscroll-behavior: contain;
-        padding-top: 4px; padding-bottom: 4px; min-height: 0; scrollbar-width: none;
-    }
-    .bw-toolbar .bw-toolbar-bar::-webkit-scrollbar { display: none; }
-    .bw-toolbar .toolbar-left,
-    .bw-toolbar .toolbar-right { flex: 0 0 auto; flex-wrap: nowrap; }
-    .bw-toolbar .tb-btn { flex: 0 0 auto; min-width: 30px; min-height: 30px; padding: 4px; }
-    .bw-toolbar .bw-toolbar-row { height: 44px; overflow-y: auto; }
-    .bw-toolbar .bw-toolbar-row-inner .option-hint { white-space: nowrap; }
-}
-
 .legend-dot { display: inline-flex; align-items: center; gap: 0.3rem; font-style: normal; }
 .legend-swatch { width: 0.7rem; height: 0.7rem; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
 
@@ -920,6 +903,42 @@ img.wall-photo {
     .wall-carousel-root.editing .wall-photo-container .bw-toolbar .editor-toolbar { padding-right: 12px; }
     .wall-carousel-root.editing .editor-shell.with-sidebar > .bw-toolbar { margin-top: 0; }
 }
+
+/* A phone on its side is over 720px wide, so the bar is back in flow above the photo, and ~400px
+   tall: a bar that wraps to two lines over a 56px row left the photo and the row no room. Here the
+   tools are ONE line that scrolls sideways and the row is a single short line (it already scrolls
+   sideways). The rail placement has its own, more specific rules and is not affected. */
+@media (max-height: 560px) and (min-width: 721px) and (max-width: 959.98px) {
+    .bw-toolbar .bw-toolbar-bar {
+        flex-wrap: nowrap; overflow-x: auto; overscroll-behavior: contain;
+        padding-top: 4px; padding-bottom: 4px; min-height: 0; scrollbar-width: none;
+    }
+    .bw-toolbar .bw-toolbar-bar::-webkit-scrollbar { display: none; }
+    .bw-toolbar .toolbar-left,
+    .bw-toolbar .toolbar-right { flex: 0 0 auto; flex-wrap: nowrap; }
+    .bw-toolbar .tb-btn { flex: 0 0 auto; min-width: 30px; min-height: 30px; padding: 4px; }
+    .bw-toolbar .bw-toolbar-row { height: 44px; overflow-y: auto; }
+    .bw-toolbar .bw-toolbar-row-inner .option-hint { white-space: nowrap; }
+
+    /* The one-screen lock above cannot hold on a window this short: what was left for the photo was
+       nothing, the row and the photo hung out below the fold and the locked column could not scroll
+       to them. Here the column is as tall as its content and the slide scrolls, and the photo is
+       capped so that it and the toolbar above it share one screen. */
+    .wall-carousel-root.editing .wall-main,
+    .wall-carousel-root.editing .wall-detail-card,
+    .wall-carousel-root.editing .wall-photo-container,
+    .wall-carousel-root.editing .editor-shell,
+    .wall-carousel-root.editing .editor-stage { flex: 0 0 auto; }
+    .wall-carousel-root.editing .editor-stage { container-type: normal; }
+    .wall-carousel-root.editing .wall-main .photo-viewport {
+        --avail-h: calc(100dvh - var(--topbar-h) - 96px);
+        /* The phone tier switches the width cap off (the photo is width-bound upright); on its side
+           it is height-bound, so without the cap the box would crop the photo instead of fitting it. */
+        max-width: min(100%, calc(var(--avail-h) * var(--fit-aspect, 1.4)));
+        margin-inline: auto;
+    }
+}
+
 
 /* Possible duplicate holds (wall settings): two review crops side by side, stacked on a phone. */
 .dup-card { margin-top: 12px; padding: 10px; border: 1px solid var(--border-light); border-radius: 8px; }
