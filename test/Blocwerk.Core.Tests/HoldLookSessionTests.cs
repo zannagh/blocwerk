@@ -73,8 +73,9 @@ public class HoldLookSessionTests
         Assert.Equal(Anchors.Length + 2, await db.Holds.CountAsync(x => x.Generation == 3));
     }
 
-    // The detection's spot looks unchanged since the old photo (the second question asked about a low pair, and what the
-    // triage finds too): the matcher paired the old hold with something that was always there. Not a replacement.
+    // The detection's spot looks unchanged since the old photo (the second question asked about a low pair): the matcher
+    // paired the old hold with something that was always there. Not a replacement. The detection sits on the spot of an
+    // old hold that is no longer carried, so the triage keeps it as a new hold instead of dropping it as unchanged.
     [Theory]
     [InlineData(0.2, true)]
     [InlineData(0.5, true)]
@@ -90,7 +91,7 @@ public class HoldLookSessionTests
         Assert.DoesNotContain(session.Carryover, p => p.OldHoldId == w.TargetId);
         Assert.Contains(w.TargetId, session.RemovedCandidateHoldIds);
         Assert.Empty(session.Looks!);
-        Assert.Equal(NewHoldDiscardReason.UnchangedSinceOldPhoto, session.SuggestedNewDiscards![w.DetectionId!.Value]);
+        Assert.False(session.SuggestedNewDiscards!.ContainsKey(w.DetectionId!.Value));
         Assert.Equal(gone ? 1 : 0, session.NotFoundAgain!.Count(n => n.Key == w.TargetId && n.Value == HoldMoveOutcome.NotFound));
         Assert.Equal(gone ? 1 : 0, session.NotFoundAgain!.Count);
         await RecordAsync(w, session);

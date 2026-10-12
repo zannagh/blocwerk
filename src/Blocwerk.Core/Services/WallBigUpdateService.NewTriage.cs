@@ -73,7 +73,8 @@ public partial class WallBigUpdateService
         var unpaired = Unpaired(staged, twins);
         var evidence = await PanelEvidenceAsync(db, context.Model3D, panel.Id, twins, unpaired.Count + removable.Count > 0);
         var verdicts = Verdicts3D(evidence, unpaired);
-        var outcome = await TriagePanelAsync(db, panel.Id, staged, twins, oldPhoto, OwnerSource(centre, overlap, staged), verdicts);
+        var notFound = removable.Select(h => (context.Removals.Warp[h.Id], h.Radius)).ToList();
+        var outcome = await TriagePanelAsync(db, panel.Id, staged, twins, oldPhoto, OwnerSource(centre, overlap, staged), verdicts, notFound);
         Collect(result, outcome, verdicts);
         result.Evidence3DModelId ??= verdicts is null ? null : context.Model3D?.Id;
         if (evidence is not null && context.Model3D is { } model)
@@ -82,8 +83,19 @@ public partial class WallBigUpdateService
             await CheckRemovalsAsync(db, model, evidence, new RemovalScope(panel.Id, staged, twins, removable, oldPhoto), context.Removals.Warp, result);
         }
 
-        return isCentre && outcome is { } o ? new TriagedCentre(staged.ToDictionary(h => h.Id), o.Size, o.KeptNew) : null;
+        return isCentre && outcome is { } o ? new TriagedCentre(staged.ToDictionary(h => h.Id), o.Size, o.KeptNew, Settled(staged, unpaired, o)) : null;
     }
+
+    /// <summary>The staged holds of a panel that are not its kept new holds: carried, hand-placed or discarded by its triage.</summary>
+    private static List<TriageSpot> Settled(IReadOnlyList<Hold> staged, IReadOnlyList<Hold> unpaired, PanelTriage triage)
+    {
+        var keptNew = unpaired.Where(h => !triage.Discards.ContainsKey(h.Id)).Select(h => h.Id).ToHashSet();
+        return staged.Where(h => !h.IsVirtual && !keptNew.Contains(h.Id)).Select(h => Spot(h.X, h.Y, h.Radius, triage.Size)).ToList();
+    }
+
+    /// <summary>A normalized spot in RAW pixels (radii are normalized to the longer side).</summary>
+    private static TriageSpot Spot(double x, double y, double radius, (int Width, int Height) size) =>
+        new(x * size.Width, y * size.Height, radius * Math.Max(size.Width, size.Height));
 
     private static List<Hold> Unpaired(IReadOnlyList<Hold> staged, IReadOnlyList<(Hold Old, Hold New)> twins)
     {
@@ -119,7 +131,8 @@ public partial class WallBigUpdateService
         IReadOnlyList<(Hold Old, Hold New)> twins,
         byte[]? oldPhoto,
         Func<(int Width, int Height), OverlapOwner?> owner,
-        IReadOnlyDictionary<Guid, Evidence3DVerdict>? verdicts)
+        IReadOnlyDictionary<Guid, Evidence3DVerdict>? verdicts,
+        IReadOnlyList<(HoldPositionNorm At, double Radius)> notFound)
     {
         var newPhoto = await db.WallPanels.Where(p => p.Id == panelId).Select(p => p.StagedPhoto).FirstAsync();
         if (newPhoto is null || OverlapSeedLoader.RawSize(newPhoto) is not { } newSize)
@@ -129,7 +142,7 @@ public partial class WallBigUpdateService
 
         var oldSize = oldPhoto is null ? null : OverlapSeedLoader.RawSize(oldPhoto);
         var candidates = Unpaired(staged, twins)
-            .Select(h => new TriageCandidate(h.Id, h.X * newSize.Width, h.Y * newSize.Height))
+            .Select(h => new TriageCandidate(h.Id, h.X * newSize.Width, h.Y * newSize.Height, h.Radius * Math.Max(newSize.Width, newSize.Height)))
             .ToList();
         var pairs = oldSize is not { } os
             ? []
@@ -137,7 +150,10 @@ public partial class WallBigUpdateService
                 t.New.X * newSize.Width, t.New.Y * newSize.Height, t.Old.X * os.Width, t.Old.Y * os.Height)).ToList();
         var markers = await StagedMarkerQuadsAsync(db, panelId, newSize);
         markers.AddRange(await RescuedMarkerQuadsAsync(newPhoto));
-        var input = new NewHoldTriageInput(candidates, pairs, oldSize, markers, owner(newSize), verdicts);
+        var input = new NewHoldTriageInput(
+            candidates, pairs, oldSize, markers, owner(newSize), verdicts,
+            twins.Select(t => Spot(t.New.X, t.New.Y, t.New.Radius, newSize)).ToList(),
+            notFound.Select(n => Spot(n.At.X, n.At.Y, n.Radius, newSize)).ToList());
         Func<IReadOnlyList<PresenceQuery>, IReadOnlyList<double?>>? presence =
             presenceProbe is null || oldPhoto is null ? null : q => presenceProbe.Score(oldPhoto, newPhoto, q);
         var result = NewHoldTriage.Classify(input, presence);

@@ -7,8 +7,11 @@ using Blocwerk.Core.Enums;
 
 namespace Blocwerk.Core.Services;
 
-/// <summary>An unpaired staged detection, in RAW pixels of the staged photo.</summary>
-public readonly record struct TriageCandidate(Guid Id, double X, double Y);
+/// <summary>An unpaired staged detection, in RAW pixels of the staged photo (radius 0: size unknown).</summary>
+public readonly record struct TriageCandidate(Guid Id, double X, double Y, double RadiusPx = 0);
+
+/// <summary>A hold's spot on a staged photo, RAW pixels.</summary>
+public readonly record struct TriageSpot(double X, double Y, double RadiusPx);
 
 /// <summary>What the triage of one staged panel knows (all RAW pixels).</summary>
 /// <param name="Candidates">The unpaired auto-detected staged holds.</param>
@@ -17,19 +20,25 @@ public readonly record struct TriageCandidate(Guid Id, double X, double Y);
 /// <param name="MarkerQuads">Printed-marker corners detected on the staged photo.</param>
 /// <param name="Owner">For a neighbour panel: the centre panel that owns the overlap with it. Null for the centre.</param>
 /// <param name="Evidence3D">What the 3D model says per candidate; null (or a missing id) when there is no 3D evidence.</param>
+/// <param name="Carried">The staged detections an old hold is carried onto.</param>
+/// <param name="NotFound">The old holds no detection carries, at their predicted spot on the staged photo.</param>
 public sealed record NewHoldTriageInput(
     IReadOnlyList<TriageCandidate> Candidates,
     IReadOnlyList<PointPair> NewToOld,
     (int Width, int Height)? OldSize,
     IReadOnlyList<IReadOnlyList<(double X, double Y)>> MarkerQuads,
     OverlapOwner? Owner = null,
-    IReadOnlyDictionary<Guid, Evidence3DVerdict>? Evidence3D = null);
+    IReadOnlyDictionary<Guid, Evidence3DVerdict>? Evidence3D = null,
+    IReadOnlyList<TriageSpot>? Carried = null,
+    IReadOnlyList<TriageSpot>? NotFound = null);
 
 /// <summary>
 /// Picks the unpaired staged detections that are most likely NOT new holds, so the review discards them
 /// by default (the user can still keep any of them). Conservative on purpose: a detection is only
 /// suggested when it sits on a printed marker, when (on a neighbour panel) the centre photo shows that spot,
 /// when the aligned old photo did not cover it, or when the old photo shows the same thing at the aligned spot.
+/// A detection on the spot of an old hold that was NOT found again is never "known" or "unchanged": it is what is
+/// there now, so it stays a new hold. Nor is a detection "known" for a carried hold of a clearly different size.
 /// </summary>
 public static class NewHoldTriage
 {
@@ -42,7 +51,22 @@ public static class NewHoldTriage
     /// <summary>The marker quad grown by this factor also covers its white print border.</summary>
     public const double MarkerGrowth = 1.35;
 
+    /// <summary>Radii further apart than this factor (either way) are not the same hold.</summary>
+    public const double SameHoldSizeFactor = 1.8;
+
+    /// <summary>
+    /// From this many fixed patch half-sides on, the fixed patch lies wholly inside the hold and shows only its surface;
+    /// the presence question is then asked with the hold's radius, so its outline is compared.
+    /// </summary>
+    public const double LargeHoldPatches = 2;
+
     private const int MinimumPairs = 6;
+
+    /// <summary>The radius the presence question about a detection carries: its own when it is large, else none.</summary>
+    /// <param name="radiusPx">The detection's radius on the new photo, px.</param>
+    /// <returns>The radius for the <see cref="PresenceQuery"/>, 0 for the fixed patch.</returns>
+    public static double ProbeRadiusPx(double radiusPx) =>
+        radiusPx >= LargeHoldPatches * PresencePatch.DefaultRadius ? radiusPx : 0;
 
     public static Dictionary<Guid, NewHoldDiscardReason> Classify(
         NewHoldTriageInput input,
@@ -65,7 +89,9 @@ public static class NewHoldTriage
                 continue;
             }
 
-            if (Discard3D(input.Evidence3D, c.Id) is { } reason3D)
+            var onNotFound = OnSpot(input.NotFound, c).Any();
+            if (Discard3D(input.Evidence3D, c.Id) is { } reason3D
+                && !(reason3D == NewHoldDiscardReason.KnownHoldIn3D && (onNotFound || OtherSizeThanCarried(input.Carried, c))))
             {
                 result[c.Id] = reason3D;
                 continue;
@@ -84,8 +110,13 @@ public static class NewHoldTriage
                 continue;
             }
 
+            if (onNotFound)
+            {
+                continue;
+            }
+
             var scale = LocalAffine.Scale(input.NewToOld, c.X, c.Y) ?? 1;
-            queries.Add((c.Id, new PresenceQuery(c.X, c.Y, old.X, old.Y, scale)));
+            queries.Add((c.Id, new PresenceQuery(c.X, c.Y, old.X, old.Y, scale, ProbeRadiusPx(c.RadiusPx))));
         }
 
         AddUnchanged(result, queries, presence);
@@ -115,6 +146,19 @@ public static class NewHoldTriage
         }
 
         return inside;
+    }
+
+    /// <summary>The spots the candidate sits on: one centre lies within the other's radius.</summary>
+    private static IEnumerable<TriageSpot> OnSpot(IReadOnlyList<TriageSpot>? spots, TriageCandidate c) =>
+        (spots ?? []).Where(s =>
+            Math.Sqrt(((s.X - c.X) * (s.X - c.X)) + ((s.Y - c.Y) * (s.Y - c.Y))) <= Math.Max(s.RadiusPx, c.RadiusPx));
+
+    /// <summary>True when the candidate sits on carried holds and every one of them is of a clearly different size.</summary>
+    private static bool OtherSizeThanCarried(IReadOnlyList<TriageSpot>? carried, TriageCandidate c)
+    {
+        var under = OnSpot(carried, c).Where(s => s.RadiusPx > 0).ToList();
+        return c.RadiusPx > 0 && under.Count > 0 && under.All(s =>
+            Math.Max(s.RadiusPx, c.RadiusPx) > SameHoldSizeFactor * Math.Min(s.RadiusPx, c.RadiusPx));
     }
 
     private static NewHoldDiscardReason? Discard3D(IReadOnlyDictionary<Guid, Evidence3DVerdict>? evidence, Guid id) =>

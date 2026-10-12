@@ -75,14 +75,14 @@ internal sealed record LookFrame(
 
     /// <summary>
     /// The detection of a pair against where its spot maps to on the old photo by the OTHER pairs (<paramref name="others"/>):
-    /// the new-hold triage's question "was this already there?". No radius, exactly as the triage asks it.
+    /// the new-hold triage's question "was this already there?", with the radius the triage asks it with.
     /// </summary>
     public PresenceQuery? UnchangedQuery(CarryoverProposal pair, IReadOnlyList<PointPair> others)
     {
         var twin = Staged[pair.NewHoldId];
         var (x, y) = (twin.X * NewSize.Width, twin.Y * NewSize.Height);
         return LocalAffine.Predict(others, x, y) is { } old && LocalAffine.Scale(others, x, y) is { } scale and > 0
-            ? new PresenceQuery(x, y, old.X, old.Y, scale)
+            ? new PresenceQuery(x, y, old.X, old.Y, scale, NewHoldTriage.ProbeRadiusPx(RadiusPx(twin)))
             : null;
     }
 

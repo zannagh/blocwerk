@@ -63,6 +63,10 @@ public class ReplacedHoldEvidence3DTests
             Assert.Empty(session.NotFoundAgain!);
             Assert.Equal([NewHoldDiscardReason.KnownHoldIn3D], reasons);
         }
+
+        // The reason is on the staged detection itself, so the journal entry of its delete at the promote carries it.
+        var stored = db.Holds.Where(x => x.WallId == h.WallId && x.Generation == 1 && x.DiscardReason != null).ToDictionary(x => x.Id, x => x.DiscardReason);
+        Assert.Equal(session.SuggestedNewDiscards.ToDictionary(s => s.Key, s => (string?)s.Value.ToString()), stored);
     }
 
     /// <summary>Three anchors and one hold at <see cref="X"/> placed on facet "0"; the new photo detects all of them, the placed one twice.</summary>

@@ -93,6 +93,7 @@ public partial class WallBigUpdateService : IWallBigUpdateService
             ?? throw new InvalidOperationException("No in-flight big update to resume.");
 
         var session = await BuildSessionAsync(db, wall, centerPanel.Id, stagedGen, use3DEvidence);
+        await PersistDiscardReasonsAsync(db, wallId, stagedGen, session);
 
         // A panel the matcher could not align is recorded on the session: the banner survives a resume and
         // the promote flags that panel's blind carries.
