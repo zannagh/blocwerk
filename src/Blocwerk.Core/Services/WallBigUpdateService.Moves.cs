@@ -34,9 +34,10 @@ public partial class WallBigUpdateService
         var decisions = confirmation.Carryover
             .Where(d => d.Kind != CarryKind.Removed && d.NewHoldId is not null && !skip.Contains(d.OldHoldId))
             .ToList();
+        var notFound = NotFoundToMark(confirmation);
         if (decisions.Count == 0)
         {
-            return HoldMovePlan.Empty;
+            return notFound.Count == 0 ? HoldMovePlan.Empty : new HoldMovePlan([], notFound);
         }
 
         var ids = decisions.Select(d => d.OldHoldId).Concat(decisions.Select(d => d.NewHoldId!.Value)).Distinct().ToList();
@@ -73,7 +74,7 @@ public partial class WallBigUpdateService
             }
         }
 
-        return new HoldMovePlan(moves);
+        return new HoldMovePlan(moves, notFound);
     }
 
     /// <summary>
@@ -106,6 +107,26 @@ public partial class WallBigUpdateService
 
         var agree = Math.Abs(threeD.DistanceMm - photo.DistanceMm) <= Math.Max(options.AgreeMm, 0.5 * photo.DistanceMm);
         return agree ? threeD with { Corroborated = true } : withDiagnostics;
+    }
+
+    /// <summary>
+    /// The holds of <see cref="BigUpdateConfirmation.NotFoundAgain"/> that the promote carries in place without a twin,
+    /// i.e. whose boulders it marks. Left out: a hold a person removed or paired with a detection, and a hold not found
+    /// again that a person confirmed as kept (they looked). A replaced hold stays in even when kept: another hold is there.
+    /// </summary>
+    internal static IReadOnlyDictionary<Guid, HoldMoveOutcome> NotFoundToMark(BigUpdateConfirmation confirmation)
+    {
+        if (confirmation.NotFoundAgain is not { Count: > 0 } found)
+        {
+            return new Dictionary<Guid, HoldMoveOutcome>();
+        }
+
+        var settled = confirmation.Carryover
+            .Where(d => d.Kind == CarryKind.Removed || d.NewHoldId is not null
+                || (d.Confirmed && found.GetValueOrDefault(d.OldHoldId) == HoldMoveOutcome.NotFound))
+            .Select(d => d.OldHoldId)
+            .ToHashSet();
+        return found.Where(f => !settled.Contains(f.Key)).ToDictionary(f => f.Key, f => f.Value);
     }
 
     /// <summary>

@@ -27,4 +27,10 @@ public enum UpdateExceptionKind
     /// them: not merged automatically, a person decides.
     /// </summary>
     HandPlacedAmbiguous = 4,
+
+    /// <summary>
+    /// An old hold whose spot now shows a different hold: it is not carried onto that detection (which becomes a new
+    /// hold) but kept where it was, and its boulders are marked for review. Answered like a possibly removed hold.
+    /// </summary>
+    ReplacedByOther = 5,
 }

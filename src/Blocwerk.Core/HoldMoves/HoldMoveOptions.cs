@@ -55,6 +55,24 @@ public sealed class HoldMoveOptions
     /// <summary>A hold is only taken off its boulders at this multiple of the cutoff (and only when confirmed and confident).</summary>
     public double RemovalMargin { get; set; } = 1.5;
 
+    /// <summary>
+    /// A carried pair whose new photo matches the old photo of the hold at least this well (patch correlation, see
+    /// <see cref="Services.HoldLookCheck"/>) is the same hold: carried without asking.
+    /// </summary>
+    public double SameLookMinScore { get; set; } = 0.5;
+
+    /// <summary>
+    /// Below this correlation another hold sits where the old one was: the old hold is not carried onto the detection.
+    /// From here up to <see cref="SameLookMinScore"/> the pair is carried and shown as an unsure match.
+    /// </summary>
+    public double ReplacedBelowScore { get; set; } = 0.35;
+
+    /// <summary>
+    /// An old hold that was not found again but whose spot on the new photo matches its old photo at least this well is
+    /// still there: kept in place without marking its boulders.
+    /// </summary>
+    public double StillThereMinScore { get; set; } = 0.6;
+
     /// <summary>Two holds this similar (fingerprint, 0..1) may be the same kind of hold on the wall.</summary>
     public double SimilarityMin { get; set; } = 0.85;
 

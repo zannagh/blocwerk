@@ -49,6 +49,12 @@ internal sealed class RefreshScenario : IDisposable
 
     public IHoldTexturePlacementService Placement { get; } = Substitute.For<IHoldTexturePlacementService>();
 
+    /// <summary>The matcher the big update gets; null is one that proposes nothing.</summary>
+    public IHoldOverlapMatcher? Matcher { get; set; }
+
+    /// <summary>The presence probe the big update gets; null is none (no look check).</summary>
+    public IHoldPresenceProbe? PresenceProbe { get; set; }
+
     public WallRefreshQueue Queue { get; } = new();
 
     /// <summary>The wall locks the service and the processor share (Apply gives up after 100 ms here).</summary>
@@ -128,12 +134,13 @@ internal sealed class RefreshScenario : IDisposable
             harness.DbContextFactory, acting, Capture.Files, Capture.Queue, new FakeComputeJobClientFactory(Capture.Client, Capture.SplatClient),
             NullLogger<WallCaptureService>.Instance, null, Capture.Detector, Capture.MarkerPlans, Capture.Video, Capture.Options,
             textureQueue: Capture.TextureQueue, resolveQueue: Capture.ResolveQueue);
-        var matcher = Substitute.For<IHoldOverlapMatcher>();
+        var matcher = Matcher ?? Substitute.For<IHoldOverlapMatcher>();
         var panels = new WallPanelService(harness.DbContextFactory, acting, harness.HoldDetection, matcher, NullLogger<WallPanelService>.Instance);
         return Decorate(new WallRefreshActors(
             capture,
             new CapturePanelPhotoService(capture, panels, NullLogger<CapturePanelPhotoService>.Instance),
-            new WallBigUpdateService(harness.DbContextFactory, acting, harness.HoldDetection, matcher, NullLogger<WallBigUpdateService>.Instance),
+            new WallBigUpdateService(
+                harness.DbContextFactory, acting, harness.HoldDetection, matcher, NullLogger<WallBigUpdateService>.Instance, presenceProbe: PresenceProbe),
             new WallUpdateSessionService(harness.DbContextFactory, acting, NullLogger<WallUpdateSessionService>.Instance),
             Placement));
     }

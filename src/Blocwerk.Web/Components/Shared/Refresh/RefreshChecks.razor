@@ -76,6 +76,7 @@
     private static string Heading(RefreshCheck check) => check.Kind switch
     {
         UpdateExceptionKind.PossiblyRemoved => "Possibly removed",
+        UpdateExceptionKind.ReplacedByOther => "Another hold is here now",
         UpdateExceptionKind.LowConfidenceMatch => "Unsure match",
         UpdateExceptionKind.MatchedToHandPlaced => "Matched to hand-placed hold (now detected)",
         UpdateExceptionKind.HandPlacedAmbiguous => "Hand-placed hold, several detections",
@@ -87,7 +88,11 @@
         UpdateExceptionKind.PossiblyRemoved =>
             "The new photo and the 3D texture show bare wall where " + (check.HoldName is { } name ? $"the {name} hold" : "this hold") + " was."
             + (check.Boulders > 0 ? $" {check.Boulders} boulders use it." : string.Empty),
-        UpdateExceptionKind.LowConfidenceMatch => "This old hold was carried onto a detection the matcher is not sure about.",
+        UpdateExceptionKind.ReplacedByOther =>
+            "A different hold now sits where " + (check.HoldName is { } replaced ? $"the {replaced} hold" : "this hold") + " was. The old hold is kept where it was and the other one is added as a new hold."
+            + (check.Boulders > 0 ? $" {check.Boulders} boulders use the old hold and are marked for review." : string.Empty)
+            + " If it is the same hold after all, pair the two in the full review.",
+        UpdateExceptionKind.LowConfidenceMatch => "This old hold was carried onto a detection that may not be the same hold: the match is unsure, or it looks different on the new photo.",
         UpdateExceptionKind.MatchedToHandPlaced =>
             (check.HoldName is { } n ? $"The {n} hold" : "A hold you placed by hand") + " now sits on a detected hold. It keeps its boulders and settings and takes the detection's position and outline."
             + (check.Boulders > 0 ? $" {check.Boulders} boulders use it." : string.Empty),
@@ -97,7 +102,7 @@
 
     private static string KeepLabel(RefreshCheck check) => check.Kind switch
     {
-        UpdateExceptionKind.PossiblyRemoved => "Keep hold",
+        UpdateExceptionKind.PossiblyRemoved or UpdateExceptionKind.ReplacedByOther => "Keep hold",
         UpdateExceptionKind.LowConfidenceMatch => "Match is right",
         UpdateExceptionKind.MatchedToHandPlaced => "Merge is right",
         UpdateExceptionKind.HandPlacedAmbiguous => "Understood",
@@ -107,7 +112,7 @@
     private static string RemoveLabel(RefreshCheck check) =>
         check.Kind switch
         {
-            UpdateExceptionKind.PossiblyRemoved => "Remove hold",
+            UpdateExceptionKind.PossiblyRemoved or UpdateExceptionKind.ReplacedByOther => "Remove hold",
             UpdateExceptionKind.MatchedToHandPlaced => "Don't merge",
             _ => "Leave out",
         };

@@ -28,6 +28,10 @@ namespace Blocwerk.Core.Services;
 /// Old hand-placed or virtual holds merged onto a detection: the successor adopts the detection's outline instead of the
 /// old hold's warped one. Null/empty changes nothing.
 /// </param>
+/// <param name="NotFoundAgain">
+/// Carried straight from <see cref="BigUpdateSession.NotFoundAgain"/>: an old hold in it that is carried in place without
+/// a twin marks its live boulders for review and records why. The hold stays on them. Null/empty marks nothing.
+/// </param>
 /// <param name="ExpectedMovesVersion">
 /// The <see cref="HoldMoves.HoldMovePlan.Version"/> the user confirmed. When set, the promote refuses if the moves it
 /// derives now differ, so it only ever does what was shown. Null skips the check (wizard, tests).
@@ -41,4 +45,5 @@ public record BigUpdateConfirmation(
     IReadOnlyDictionary<Guid, IReadOnlyList<HoldPositionNorm>>? CarriedWarpShapes = null,
     IReadOnlyCollection<Guid>? ReviewOldHoldIds = null,
     IReadOnlyCollection<Guid>? HandPlacedMergeOldIds = null,
-    string? ExpectedMovesVersion = null);
+    string? ExpectedMovesVersion = null,
+    IReadOnlyDictionary<Guid, Enums.HoldMoveOutcome>? NotFoundAgain = null);

@@ -84,6 +84,16 @@ public sealed record RefreshVideo(string StoredName, string? FileName, long Size
 /// The update session's stamp when this summary was made again after answers on the confirm screen; session writes up
 /// to it are those answers, not changes made in the full review.
 /// </param>
+/// <param name="MovedHolds">The carried holds that physically moved, with their boulders.</param>
+/// <param name="ReplacedHolds">
+/// Old holds whose spot shows another hold now: not carried onto it (it is a new hold) but kept where they were.
+/// </param>
+/// <param name="NotFoundOnBoulders">
+/// Old holds used by a boulder that were not found again and do not show at their spot any more (the replaced ones
+/// included): they stay on their boulders, which are marked for review. The length of <paramref name="NotFoundHolds"/>.
+/// </param>
+/// <param name="BouldersMarkedNotFound">The boulders those holds mark for review.</param>
+/// <param name="NotFoundHolds">Those holds, each with why and with its boulders: the list to work through after the update.</param>
 public sealed record RefreshSummary(
     int Refound,
     int KeptInPlace,
@@ -105,7 +115,24 @@ public sealed record RefreshSummary(
     int PossiblyRemovedHolds = 0,
     int ChecksOpen = 0,
     DateTimeOffset? AnsweredAt = null,
-    IReadOnlyList<MovedHoldLine>? MovedHolds = null);
+    IReadOnlyList<MovedHoldLine>? MovedHolds = null,
+    int ReplacedHolds = 0,
+    int NotFoundOnBoulders = 0,
+    int BouldersMarkedNotFound = 0,
+    IReadOnlyList<NotFoundHoldLine>? NotFoundHolds = null);
+
+/// <summary>A hold on a boulder that was not found again, as the confirm screen lists it.</summary>
+/// <param name="OldHoldId">The hold before the update (it is kept; its copy on the new photo gets a new id).</param>
+/// <param name="HoldName">Its name, else its colour, when it has one.</param>
+/// <param name="Outcome">Not found again, or replaced by another hold.</param>
+/// <param name="Text">Plain language: "not found again on the new photo" or "another hold is here now".</param>
+/// <param name="Boulders">The boulders that use it; each is marked for review.</param>
+public sealed record NotFoundHoldLine(
+    Guid OldHoldId,
+    string? HoldName,
+    Enums.HoldMoveOutcome Outcome,
+    string Text,
+    IReadOnlyList<string> Boulders);
 
 /// <summary>A hold that physically moved, as the confirm screen lists it.</summary>
 /// <param name="OldHoldId">The hold before.</param>

@@ -33,6 +33,7 @@ public partial class WallUpdateSessionService
         switch (card.Kind)
         {
             case UpdateExceptionKind.PossiblyRemoved:
+            case UpdateExceptionKind.ReplacedByOther:
                 await AnswerPossiblyRemovedAsync(db, session.Id, card, answer, user.Id, now);
                 break;
             case UpdateExceptionKind.LowConfidenceMatch:

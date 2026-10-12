@@ -47,7 +47,7 @@ public sealed partial class WallRefreshProcessor
             {
                 r.SummaryJson = RefreshTimeline.Write(summary);
                 r.Status = WallRefreshStatus.ReadyToApply;
-                RefreshTimeline.Set(r, RefreshTimeline.Match, RefreshStepState.Done, $"{summary.Refound} old holds found again, {summary.KeptInPlace} kept where they were");
+                RefreshTimeline.Set(r, RefreshTimeline.Match, RefreshStepState.Done, RefreshTimeline.MatchDetail(summary));
                 RefreshTimeline.Set(r, RefreshTimeline.Review, RefreshStepState.Waiting, "Check the summary, then apply");
             },
             ct);
@@ -117,6 +117,7 @@ public sealed partial class WallRefreshProcessor
             .Select(bh => bh.BoulderId)
             .Distinct()
             .CountAsync(ct);
+        var notFound = await NotFoundLinesAsync(moves, ct);
         return new RefreshSummary(
             quick.Carryover.Count - kept.Count,
             kept.Count,
@@ -128,7 +129,10 @@ public sealed partial class WallRefreshProcessor
             quick.OverlapsLeftOut,
             boulders,
             panels,
-            MovedHolds: await MovedLinesAsync(moves, ct));
+            MovedHolds: await MovedLinesAsync(moves, ct),
+            NotFoundOnBoulders: notFound.Lines?.Count ?? 0,
+            BouldersMarkedNotFound: notFound.Boulders,
+            NotFoundHolds: notFound.Lines);
     }
 
     private async Task<int> CountNeighbourNewAsync(
