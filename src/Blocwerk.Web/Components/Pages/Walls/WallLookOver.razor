@@ -1,0 +1,96 @@
+@page "/walls/{WallId:guid}/look-over"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@using Blocwerk.Core.LookOver
+@using Blocwerk.Web.Components.Shared.LookOver
+@* "Look over the wall": what an applied panel update was unsure about and nobody answered, grouped by kind with the
+   ones that touch boulders first. Wall admins and moderators answer them here, then finish the look-over. *@
+
+<PageTitle>Look over the wall - Blocwerk</PageTitle>
+
+<SectionContent SectionName="TopBarTitle">Look over the wall</SectionContent>
+
+<div class="lookover-page">
+    <a href="/walls/@WallId" class="back-link">&larr; Back to the wall</a>
+    <h1>Look over the wall</h1>
+
+    @if (blocked is not null)
+    {
+        <p class="empty-msg">@blocked</p>
+    }
+    else if (loading)
+    {
+        <p class="loading">Loading...</p>
+    }
+    else
+    {
+        <p class="lookover-status" role="status">@StatusLine</p>
+        @if (state is { Pending: true })
+        {
+            <p class="hint">
+                Nothing here changes the wall unless you say so. Answering a finding does not touch the boulders marked for
+                review: those stay with their setters.
+            </p>
+        }
+        @if (error is not null)
+        {
+            <p class="field-error" role="alert">@error</p>
+        }
+
+        @foreach (var group in Groups)
+        {
+            var kind = group.Key;
+            var open = group.Count(f => f.Status == LookOverFindingStatus.Open);
+            <section class="lookover-group" @key="kind">
+                <button type="button" class="lookover-group-head" aria-expanded="@(expanded.Contains(kind) ? "true" : "false")" @onclick="() => Toggle(kind)">
+                    <span class="lookover-group-title">@LookOverCopy.GroupTitle(kind)</span>
+                    <span class="lookover-group-count @(open == 0 ? "is-done" : null)">@(open == 0 ? "all answered" : $"{open} open")</span>
+                </button>
+                @if (expanded.Contains(kind))
+                {
+                    @if (kind == LookOverFindingKind.UnsureMatch && open > 1)
+                    {
+                        <div class="lookover-bulk">
+                            <ConfirmAction Label="@($"Mark all {open} remaining unsure matches as same hold")"
+                                           Question="@($"Mark {open} unsure matches as the same hold without looking at each? Nothing on the wall changes; they are just no longer listed as open.")"
+                                           ConfirmLabel="@($"Mark {open} as same hold")" ConfirmClass="btn-primary" Disabled="busy" OnConfirm="SettleUnsureAsync" />
+                        </div>
+                    }
+                    <ul class="refresh-check-list">
+                        @foreach (var finding in group.Take(Shown(kind)))
+                        {
+                            <LookOverCard @key="finding.Id" WallId="WallId" Finding="finding" Disabled="busy" OnAnswer="AnswerAsync" />
+                        }
+                    </ul>
+                    @if (group.Count() > Shown(kind))
+                    {
+                        <button type="button" class="btn-secondary lookover-more" @onclick="() => ShowMore(kind)">
+                            Show @Math.Min(PageSize, group.Count() - Shown(kind)) more (@(group.Count() - Shown(kind)) left)
+                        </button>
+                    }
+                }
+            </section>
+        }
+
+        @if (state is { Pending: true })
+        {
+            <div class="lookover-finish">
+                @if (OpenCount == 0)
+                {
+                    <button type="button" class="btn-primary" disabled="@busy" @onclick="() => FinishAsync(false)">Finish look-over</button>
+                }
+                else
+                {
+                    <ConfirmAction Label="Finish anyway"
+                                   Question="@($"{OpenFindings} still open. They stay listed on this page, but the wall is no longer shown as waiting for a look-over.")"
+                                   ConfirmLabel="@StayOpenLabel" ConfirmClass="btn-primary" Disabled="busy" OnConfirm="() => FinishAsync(true)" />
+                }
+                <p class="hint">Finishing records that you looked over the wall and takes the notice off the wall page.</p>
+            </div>
+        }
+        else if (finished)
+        {
+            <p class="glyph-ok" role="status">The look-over is finished. <a href="/walls/@WallId">Back to the wall</a></p>
+        }
+    }
+</div>

@@ -637,6 +637,13 @@ else
                         View in 3D
                     </Wall3DLink>
 
+                    @* A panel update left findings nobody checked: admins and moderators get the way into the look-over,
+                       members a neutral note. Not behind a share link, where nobody is known. *@
+                    @if (!_isAnonymous && string.IsNullOrEmpty(ShareToken))
+                    {
+                        <Blocwerk.Web.Components.Shared.LookOver.WallLookOverBanner WallId="WallId" />
+                    }
+
                     @if (_showInviteLink && !string.IsNullOrEmpty(_shareLink))
                     {
                         <div class="share-link">

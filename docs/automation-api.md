@@ -74,10 +74,10 @@ Statuses: 0 uploading, 1 sorting, 2 ready to start, 3 running, 4 ready to apply,
 
 The quick review never takes a hold off a boulder. What it does on its own, and what the summary says about it before anything is applied:
 
-* An old hold is carried onto the detection at its spot only when that detection still looks like it. When another hold sits there now, the old hold is kept where it was, the detection becomes a new hold, and a card asks (`replacedHolds` counts them). A pair that is merely unclear is carried and also gets a card; a pair that cannot be measured is carried without one. Cards can only be answered on the page; unanswered ones mark the hold for review.
+* An old hold is carried onto the detection at its spot only when that detection still looks like it. When another hold sits there now, the old hold is kept where it was, the detection becomes a new hold, and a card asks (`replacedHolds` counts them). A pair that is merely unclear is carried and also gets a card; a pair that cannot be measured is carried without one. Cards can only be answered on the page; unanswered ones mark the hold for review and stay with the wall for the look-over (below).
 * `notFoundHolds` is the to-do list for after the update: every old hold used by a boulder that was not found again and confidently no longer shows at its spot (`outcome` 4, `"not found again on the new photo"`) or was replaced (`outcome` 5, `"another hold is here now"`), with `oldHoldId`, `holdName` (name, else colour), `text` and `boulders` (names). `notFoundOnBoulders` is its length and `bouldersMarkedNotFound` the number of boulders Apply marks for review because of it. Holds that were not detected but may still be there (the spot is unclear, cannot be measured, or another panel still shows the hold) are kept silently and are not listed.
 * `movedHolds` lists the carried holds that physically moved, in the same shape plus `newHoldId`, `distanceMm` and `source`.
-* The thresholds are the `HoldMoves` settings `SameLookMinScore` (0.5: at or above, the pair is the same hold), `ReplacedBelowScore` (0.3: below, another hold is there; in between, an unsure-match card) and `GoneMaxScore` (0.3: a hold not found again marks its boulders only at or below). What was measured is logged per panel as `[Looks] panel=…` (a score histogram), and per pair and spot at Debug.
+* The thresholds are the `HoldMoves` settings `SameLookMinScore` (0.5: at or above, the pair is the same hold), `ReplacedBelowScore` (0.28: below, another hold is there; in between, an unsure-match card) and `GoneMaxScore` (0.5: a hold not found again marks its boulders only at or below). What was measured is logged per panel as `[Looks] panel=…` (a score histogram), and per pair and spot at Debug.
 
 ### Consistency
 
@@ -86,6 +86,26 @@ The quick review never takes a hold off a boulder. What it does on its own, and 
 * `apply` needs the `decisionsVersion` of the summary that was checked (400 without one). The server refuses with 409 `{"error", "status", "currentDecisionsVersion"}` when the summary changed since, when there is nothing to apply yet, or while the 3D check runs.
 * The accepted version is stored with the run, and the background apply compares what it would promote against **that** version, never against a summary written later. If anything changed in between (the full review, a re-check), nothing is promoted and the run is back at status 4 with the new summary.
 * Apply and the background steps of a wall (sorting, preparing, the 3D re-check, applying) never overlap: they share one lock per wall. Apply waits a few seconds for a running step; while a 3D re-check (or another step) still holds the wall after that, Apply answers **409** with *"The update is being checked against the new 3D model. Try again in a moment."* and nothing changes. Scripts should treat that 409 as transient: read the summary again, and retry Apply with the (possibly new) `decisionsVersion` with backoff (for example 5 s, 10 s, 20 s, … capped at a minute), giving up after a few minutes.
+
+### After the apply: the wall look-over
+
+Cards can only be answered on the page, so an update applied from a script goes live with all of them open. They are not lost: every finding nobody answered is kept with the wall, and the wall is flagged as waiting for a look-over until a wall admin or moderator has finished it on the page (*Look over the wall*, `/walls/{wallId}/look-over`). The flag is set by every apply that leaves a finding (from a script, from the page, from the full review) and by nothing else; an update that leaves none does not flag the wall.
+
+```sh
+# The finished run says what it left behind (null when the wall is not flagged):
+curl -fsS -H "$AUTH" "$BASE/api/walls/$WALL/refresh/$RUN" | jq '.lookOver'   # { "pendingSince": "…", "openFindings": 118 }
+
+# The wall's flag at any time, and the findings:
+curl -fsS -H "$AUTH" "$BASE/api/walls/$WALL/look-over"
+curl -fsS -H "$AUTH" "$BASE/api/walls/$WALL/look-over/findings" \
+  | jq '.findings | group_by(.kind) | map({kind: .[0].kind, open: (map(select(.status == 0)) | length)})'
+```
+
+* `GET …/look-over` answers `pending`, `pendingSince`, `generation` (the wall generation the update produced), `openFindings`, `totalFindings` (since the last finished look-over), `completedAt` and `completedBy` (the last finished one).
+* Both routes are read-only and take the key of the panel update (a personal key with write access); its owner must be the wall's owner, an admin or a moderator of it, else 403. There is no route to answer a finding or to finish the look-over: that is a person's look at the wall.
+* A finding has `kind` (0 possibly removed, 1 unsure match, 2 new hold with conflicting evidence, 3 matched to a hand-placed hold, 4 hand-placed hold with several detections, 5 another hold is here now, 6 not found again on a boulder, 7 an old hold kept in place with a new hold on the same spot), `status` (0 open, 1 answered, 2 superseded by a later update of its panel), `holdId` (the live hold; null for kind 2 and once the hold was deleted), `oldHoldId`, `otherHoldId` (the new hold on the spot, kinds 0, 5, 6, 7), `boulders` (`id`, `name`, `needsReview`) and `answers`, the answers the page offers for it now (0 it is fine as it is, 1 different hold, 2 remove the hold, 3 the boulders should use the new hold).
+* What counts as a finding: every card that was still unanswered when the update was applied; every old hold on a boulder that was not found again (`notFoundHolds` of the summary); and every old hold kept in place that has a new hold on its spot. A hold a person decided before the apply (an answered card, a confirmed verdict in the full review) is not a finding.
+* A later update of the same panel supersedes what was still open on it (it has findings of its own). Finishing the look-over clears the flag and nothing else: boulders marked for review stay marked until their setter has checked them.
 
 ## Wall preparation, end to end
 
@@ -116,6 +136,7 @@ A plan can also be attached to a single capture (`PUT /api/walls/{wallId}/captur
 
 ## Still in the browser
 
+* Looking over the wall after an update: answering the findings and finishing the look-over (the API only reads them).
 * The full step-by-step review of a panel update (moved holds, removals, overlap links below the threshold, touch-up).
 * Generating or editing a marker plan and printing its PDF (the API stores a plan made in the planner).
 * Wall segments' marker bindings and importing a `wall-geometry.json` by hand.

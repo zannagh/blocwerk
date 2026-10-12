@@ -1,0 +1,83 @@
+@using Blocwerk.Core.LookOver
+@using Blocwerk.Core.Refresh
+@* One finding of the look-over, laid out like a card of the confirm screen (old photo, new photo, 3D texture), with
+   the boulders that use the hold and the answers it takes now. The two answers that change the wall ask first. *@
+
+<li class="refresh-check @(Open ? null : "is-answered")">
+    <p class="refresh-check-title"><strong>@LookOverCopy.Heading(Finding)</strong> @LookOverCopy.Detail(Finding)</p>
+    @if (Open)
+    {
+        <div class="refresh-check-crops">
+            @if (Finding.HasOld)
+            {
+                <figure><img loading="lazy" onerror="this.parentElement.style.display='none'" src="@Crop(CheckCropView.Old)" alt="The old photo around this hold" /><figcaption>Before the update</figcaption></figure>
+            }
+            <figure><img loading="lazy" onerror="this.parentElement.style.display='none'" src="@Crop(CheckCropView.New)" alt="The current photo around this spot" /><figcaption>Now</figcaption></figure>
+            @if (Finding.HasModel)
+            {
+                <figure><img loading="lazy" onerror="this.parentElement.style.display='none'" src="@Crop(CheckCropView.Model)" alt="The 3D texture around this spot" /><figcaption>3D texture</figcaption></figure>
+            }
+        </div>
+    }
+    @if (Finding.Boulders.Count > 0)
+    {
+        <p class="lookover-boulders">
+            <span>@(Finding.Boulders.Count == 1 ? "Boulder:" : "Boulders:")</span>
+            @foreach (var boulder in Finding.Boulders)
+            {
+                <a href="/walls/@WallId/boulders/@boulder.Id">@boulder.Name</a>
+            }
+        </p>
+    }
+    <div class="refresh-check-actions">
+        @if (!Open)
+        {
+            <span class="refresh-badge is-user">@LookOverCopy.AnsweredLabel(Finding)</span>
+        }
+        else
+        {
+            @if (Finding.Answers.Contains(LookOverAnswer.Settle))
+            {
+                <button class="btn-secondary" disabled="@Disabled" @onclick="() => AnswerAsync(LookOverAnswer.Settle)">@LookOverCopy.SettleLabel(Finding)</button>
+            }
+            @if (Finding.Answers.Contains(LookOverAnswer.DifferentHold))
+            {
+                <button class="btn-secondary" disabled="@Disabled" @onclick="() => AnswerAsync(LookOverAnswer.DifferentHold)">Different hold</button>
+            }
+            @if (Finding.Answers.Contains(LookOverAnswer.UseNewHold))
+            {
+                <ConfirmAction Label="Boulders should use the new hold" Question="@LookOverCopy.UseNewQuestion(Finding)" ConfirmLabel="Merge into the new hold"
+                               ConfirmClass="btn-primary" Disabled="Disabled" OnConfirm="() => AnswerAsync(LookOverAnswer.UseNewHold)" />
+            }
+            @if (Finding.Answers.Contains(LookOverAnswer.RemoveHold))
+            {
+                <ConfirmAction Label="@LookOverCopy.RemoveLabel(Finding)" Question="@LookOverCopy.RemoveQuestion(Finding)" ConfirmLabel="Remove the hold"
+                               Disabled="Disabled" OnConfirm="() => AnswerAsync(LookOverAnswer.RemoveHold)" />
+            }
+        }
+    </div>
+    @if (Open && Finding.MergeNeedsAdmin)
+    {
+        <p class="hint">A new hold sits on this spot. A wall admin can move the boulders onto it instead of removing the old hold.</p>
+    }
+</li>
+
+@code {
+    [Parameter, EditorRequired]
+    public Guid WallId { get; set; }
+
+    [Parameter, EditorRequired]
+    public LookOverFindingView Finding { get; set; } = default!;
+
+    [Parameter]
+    public bool Disabled { get; set; }
+
+    [Parameter]
+    public EventCallback<(LookOverFindingView Finding, LookOverAnswer Answer)> OnAnswer { get; set; }
+
+    private bool Open => Finding.Status == LookOverFindingStatus.Open;
+
+    private string Crop(CheckCropView view) => WallLookOverCropEndpoint.Url(WallId, Finding.Id, view);
+
+    private Task AnswerAsync(LookOverAnswer answer) => OnAnswer.InvokeAsync((Finding, answer));
+}

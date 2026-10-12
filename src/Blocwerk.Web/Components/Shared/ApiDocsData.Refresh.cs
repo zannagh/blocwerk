@@ -24,7 +24,8 @@ internal static partial class ApiDocsData
         + "\"summary\": { … },\n  \"error\": null,\n  \"check3DPending\": false\n}";
 
     private const string RefreshStatusNote =
-        "status: 0 uploading, 1 sorting, 2 ready to start, 3 running, 4 ready to apply, 5 applying, 6 done, 7 failed, 8 discarded.";
+        "status: 0 uploading, 1 sorting, 2 ready to start, 3 running, 4 ready to apply, 5 applying, 6 done, 7 failed, 8 discarded. "
+        + "On a finished run lookOver is {\"pendingSince\", \"openFindings\"} while the wall waits for a look-over, otherwise null.";
 
     private const string RefreshSummaryJson =
         "{\n  \"refreshId\": \"<guid>\",\n  \"status\": 4,\n  \"canApply\": true,\n  \"decisionsVersion\": \"9F2C41A07B3D5E61C8A4F0B2\",\n  "
@@ -84,5 +85,6 @@ internal static partial class ApiDocsData
         new("GET", RefreshBase + "/{refreshId}", "The run, as the page shows it.", RefreshOnWall, null, RefreshViewJson, RefreshStatusNote),
         new("DELETE", RefreshBase + "/{refreshId}", "Discards the run and its prepared panel update.", RefreshOnWall, null, null,
             "204; 409 while a step is running."),
+        .. LookOverEndpoints(),
     ];
 }

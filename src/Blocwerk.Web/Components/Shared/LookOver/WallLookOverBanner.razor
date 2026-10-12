@@ -1,0 +1,68 @@
+@using Blocwerk.Core.LookOver
+@* The wall page's line about a pending look-over. Admins and moderators get the count and the way in; everybody else
+   on the wall gets a neutral note that it was updated. Nothing renders while no look-over is waiting, behind a share
+   link, or on a kiosk tablet. *@
+
+@if (state is { Pending: true })
+{
+    <div class="panel-link-callout lookover-banner" role="status">
+        <div class="panel-link-callout-text">
+            @if (state.CanLookOver)
+            {
+                <strong>This wall was updated. @Waiting(state.OpenFindings)</strong>
+                <span class="hint">The update was unsure about them and nobody has checked them yet. Boulders that use one of these holds are marked for review.</span>
+            }
+            else
+            {
+                <strong>This wall was updated recently.</strong>
+                <span class="hint">Some boulders may be marked for review until the update has been looked over.</span>
+            }
+        </div>
+        @if (state.CanLookOver)
+        {
+            <a class="btn-secondary" href="/walls/@WallId/look-over">Look over the wall</a>
+        }
+    </div>
+}
+
+@code {
+    private WallLookOverState? state;
+    private Guid loadedWallId;
+
+    [Parameter]
+    public Guid WallId { get; set; }
+
+    [Inject]
+    private IWallLookOverService LookOver { get; set; } = default!;
+
+    [Inject]
+    private ILogger<WallLookOverBanner> Logger { get; set; } = default!;
+
+    /// <summary>"3 findings are waiting for a look-over." in the singular and plural, and when all are answered.</summary>
+    internal static string Waiting(int open) => open switch
+    {
+        0 => "Every finding is answered; the look-over still has to be finished.",
+        1 => "1 finding is waiting for a look-over.",
+        _ => $"{open} findings are waiting for a look-over.",
+    };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loadedWallId == WallId)
+        {
+            return;
+        }
+
+        loadedWallId = WallId;
+        try
+        {
+            state = await LookOver.GetStateAsync(WallId);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidOperationException)
+        {
+            // Nobody signed in, or the wall is gone: there is nothing to say, and the wall page must still render.
+            Logger.LogDebug(ex, "No look-over state for wall {WallId}", WallId);
+            state = null;
+        }
+    }
+}

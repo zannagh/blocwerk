@@ -4,6 +4,7 @@ using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.HoldMoves;
 using Blocwerk.Core.Detection.Enrichment;
+using Blocwerk.Core.LookOver;
 using Blocwerk.Core.MarkerPlanning;
 using Blocwerk.Core.Refresh;
 using Blocwerk.Core.Services;
@@ -168,6 +169,7 @@ public static class CoreServices
         builder.Services.AddScoped<IHoldOutlineUpgradeService, HoldOutlineUpgradeService>();
         builder.Services.AddScoped<IHoldShapeCleanupService, HoldShapeCleanupService>();
         builder.Services.AddScoped<IHoldDuplicateService, HoldDuplicateService>();
+        builder.Services.AddScoped<IWallLookOverService, WallLookOverService>();
         builder.Services.AddScoped<ILinkedHoldSyncService, LinkedHoldSyncService>();
         builder.Services.AddScoped<IHoldFootprintService, HoldFootprintService>();
         builder.Services.AddScoped<IHoldTexturePlacementService, HoldTexturePlacementService>();

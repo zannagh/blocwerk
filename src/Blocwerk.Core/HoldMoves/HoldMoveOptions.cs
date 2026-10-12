@@ -63,16 +63,18 @@ public sealed class HoldMoveOptions
 
     /// <summary>
     /// Below this correlation another hold sits where the old one was: the old hold is not carried onto the detection.
-    /// From here up to <see cref="SameLookMinScore"/> the pair is carried and shown as an unsure match.
+    /// From here up to <see cref="SameLookMinScore"/> the pair is carried and shown as an unsure match. Calibrated,
+    /// like <see cref="GoneMaxScore"/>, on a full update of a wall with 890 holds.
     /// </summary>
-    public double ReplacedBelowScore { get; set; } = 0.3;
+    public double ReplacedBelowScore { get; set; } = 0.28;
 
     /// <summary>
     /// An old hold that was not found again marks its boulders for review only when its spot on the new photo matches
-    /// its old photo at most this well: it confidently no longer shows there (the removal check's "bare wall" bar,
-    /// <see cref="Services.PossiblyRemovedJudge.BareWallMaxScore"/>). Anything above says nothing and marks nothing.
+    /// its old photo at most this well: it no longer shows there. Anything above says nothing and marks nothing. Looser
+    /// than the removal check's "bare wall" bar (<see cref="Services.PossiblyRemovedJudge.BareWallMaxScore"/>): marking a
+    /// boulder for review costs a look, missing a hold that is gone costs a broken boulder.
     /// </summary>
-    public double GoneMaxScore { get; set; } = 0.3;
+    public double GoneMaxScore { get; set; } = 0.5;
 
     /// <summary>Two holds this similar (fingerprint, 0..1) may be the same kind of hold on the wall.</summary>
     public double SimilarityMin { get; set; } = 0.85;

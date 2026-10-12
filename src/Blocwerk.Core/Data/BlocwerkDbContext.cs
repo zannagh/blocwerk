@@ -220,6 +220,7 @@ public partial class BlocwerkDbContext : DbContext
         ConfigureWallRefresh(modelBuilder);
         ConfigureHoldLinkSuggestions(modelBuilder);
         ConfigurePanelCrops(modelBuilder);
+        ConfigureLookOver(modelBuilder);
     }
 
     private static void ConfigureTopLogger(ModelBuilder modelBuilder)
