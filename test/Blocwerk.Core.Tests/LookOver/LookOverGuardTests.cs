@@ -166,7 +166,7 @@ public class LookOverGuardTests
         await using var db = h.CreateContext();
         var record = await db.BoulderHoldMoves.SingleAsync();
         Assert.Equal(
-            (HoldMoveOutcome.Replaced, w.BoulderId, (Guid?)w.TargetId, w.DetectionId, HoldType.Start, 3),
+            (HoldMoveOutcome.Replaced, w.BoulderId, w.TargetId, w.DetectionId, HoldType.Start, 3),
             (record.Outcome, record.BoulderId, record.OldHoldId, record.NewHoldId, record.Type, record.ToGeneration));
         var shown = Assert.Single(await h.BoulderService.GetBoulderMovesAsync(w.BoulderId));
         Assert.Equal(HoldMoveOutcome.Replaced, shown.Outcome);

@@ -42,7 +42,7 @@ public class LookOverRefreshTests
         var finding = await db.WallLookOverFindings.SingleAsync();
         var kept = (await db.BoulderHolds.SingleAsync(bh => bh.BoulderId == boulder)).HoldId;
         Assert.Equal(
-            (LookOverFindingKind.ReplacedByOther, (Guid?)target, (Guid?)kept, true, 1),
+            (LookOverFindingKind.ReplacedByOther, target, kept, true, 1),
             (finding.Kind, finding.OldHoldId, finding.HoldId, finding.FlaggedHold, finding.BouldersAtApply));
         Assert.NotNull(finding.OtherHoldId);
 

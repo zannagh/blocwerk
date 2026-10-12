@@ -44,7 +44,7 @@ public class LookOverFinishTests
         await service.FinishAsync(w.WallId, leaveOpen: true);
 
         var wall = await WallAsync(h, w.WallId);
-        Assert.Equal(((DateTimeOffset?)null, (Guid?)h.Owner.Id), (wall.LookOverPendingSince, wall.LookOverCompletedByUserId));
+        Assert.Equal((null, h.Owner.Id), (wall.LookOverPendingSince, wall.LookOverCompletedByUserId));
         Assert.NotNull(wall.LookOverCompletedAt);
         var state = (await service.GetStateAsync(w.WallId))!;
         Assert.Equal((false, 1, "Owner"), (state.Pending, state.OpenFindings, state.CompletedBy));

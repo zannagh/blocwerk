@@ -42,11 +42,11 @@ public class LookOverAnswerTests
 
         var finding = await FindingAsync(h, w.WallId);
         Assert.Equal(
-            (LookOverFindingStatus.Settled, (LookOverAnswer?)LookOverAnswer.Settle, (Guid?)h.Owner.Id),
+            (LookOverFindingStatus.Settled, (LookOverAnswer?)LookOverAnswer.Settle, h.Owner.Id),
             (finding.Status, finding.Answer, finding.AnsweredByUserId));
         Assert.False((await HoldAsync(h, view.HoldId))!.NeedsReview);
         var boulder = await BoulderAsync(h, w.BoulderId);
-        Assert.Equal((true, false, view.HoldId), (boulder.NeedsReview, boulder.IsHistoric, (Guid?)boulder.BoulderHolds.Single().HoldId));
+        Assert.Equal((true, false, view.HoldId), (boulder.NeedsReview, boulder.IsHistoric, boulder.BoulderHolds.Single().HoldId));
         Assert.NotNull(await HoldAsync(h, w.DetectionId));
 
         // Settled, not finished: the wall stays flagged until somebody finishes the look-over.
@@ -70,7 +70,7 @@ public class LookOverAnswerTests
         Assert.NotNull(await HoldAsync(h, w.DetectionId));
         Assert.Equal((LookOverFindingStatus.Settled, (LookOverAnswer?)LookOverAnswer.RemoveHold), await StatusAsync(h, w.WallId));
         var after = Assert.Single(await service.ListAsync(w.WallId));
-        Assert.Equal(((Guid?)null, 0), (after.HoldId, after.Boulders.Count));
+        Assert.Equal((null, 0), (after.HoldId, after.Boulders.Count));
     }
 
     [Fact]
@@ -86,7 +86,7 @@ public class LookOverAnswerTests
         Assert.Null(await HoldAsync(h, view.HoldId));
         var boulder = await BoulderAsync(h, w.BoulderId);
         var membership = Assert.Single(boulder.BoulderHolds);
-        Assert.Equal((w.DetectionId, HoldType.Start, false, true), ((Guid?)membership.HoldId, membership.Type, boulder.IsHistoric, boulder.NeedsReview));
+        Assert.Equal((w.DetectionId, HoldType.Start, false, true), (membership.HoldId, membership.Type, boulder.IsHistoric, boulder.NeedsReview));
         var finding = await FindingAsync(h, w.WallId);
         Assert.Equal((LookOverFindingStatus.Settled, (LookOverAnswer?)LookOverAnswer.UseNewHold), (finding.Status, finding.Answer));
         await using var db = h.CreateContext();
@@ -107,7 +107,7 @@ public class LookOverAnswerTests
 
         Assert.False((await HoldAsync(h, w.DetectionId))!.NeedsReview);
         var boulder = await BoulderAsync(h, w.BoulderId);
-        Assert.Equal((false, false, w.DetectionId), (boulder.NeedsReview, boulder.IsHistoric, (Guid?)boulder.BoulderHolds.Single().HoldId));
+        Assert.Equal((false, false, w.DetectionId), (boulder.NeedsReview, boulder.IsHistoric, boulder.BoulderHolds.Single().HoldId));
         Assert.Equal((LookOverFindingStatus.Settled, (LookOverAnswer?)LookOverAnswer.Settle), await StatusAsync(h, w.WallId));
     }
 
@@ -122,7 +122,7 @@ public class LookOverAnswerTests
         await service.AnswerAsync(w.WallId, view.Id, LookOverAnswer.DifferentHold, Shown(view));
 
         var boulder = await BoulderAsync(h, w.BoulderId);
-        Assert.Equal((true, false, w.DetectionId), (boulder.NeedsReview, boulder.IsHistoric, (Guid?)boulder.BoulderHolds.Single().HoldId));
+        Assert.Equal((true, false, w.DetectionId), (boulder.NeedsReview, boulder.IsHistoric, boulder.BoulderHolds.Single().HoldId));
         Assert.True((await HoldAsync(h, w.DetectionId))!.NeedsReview);
         var next = Assert.Single(await service.ListAsync(w.WallId));
         Assert.Equal((LookOverFindingKind.ReplacedByOther, LookOverFindingStatus.Open, true), (next.Kind, next.Status, next.Converted));
@@ -147,7 +147,7 @@ public class LookOverAnswerTests
         var boulder = await BoulderAsync(h, w.BoulderId);
 
         // The boulder was only marked because this hold was not found: it is cleared (LookOverBoulderClearingTests has the rest).
-        Assert.Equal((false, false, view.HoldId), (boulder.NeedsReview, boulder.IsHistoric, (Guid?)boulder.BoulderHolds.Single().HoldId));
+        Assert.Equal((false, false, view.HoldId), (boulder.NeedsReview, boulder.IsHistoric, boulder.BoulderHolds.Single().HoldId));
         Assert.Equal((LookOverFindingStatus.Settled, (LookOverAnswer?)LookOverAnswer.Settle), await StatusAsync(h, w.WallId));
     }
 
@@ -164,7 +164,7 @@ public class LookOverAnswerTests
         await Assert.ThrowsAsync<UserFacingException>(() => service.AnswerAsync(w.WallId, Guid.NewGuid(), LookOverAnswer.Settle));
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.AnswerAsync(Guid.NewGuid(), view.Id, LookOverAnswer.Settle));
         Assert.NotNull(await HoldAsync(h, w.DetectionId));
-        Assert.Equal((LookOverFindingStatus.Open, (LookOverAnswer?)null), await StatusAsync(h, w.WallId));
+        Assert.Equal((LookOverFindingStatus.Open, null), await StatusAsync(h, w.WallId));
 
         await service.AnswerAsync(w.WallId, view.Id, LookOverAnswer.Settle);
         await Assert.ThrowsAsync<UserFacingException>(() => service.AnswerAsync(w.WallId, view.Id, LookOverAnswer.Settle));

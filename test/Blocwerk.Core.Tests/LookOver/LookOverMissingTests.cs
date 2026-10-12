@@ -31,12 +31,12 @@ public class LookOverMissingTests
 
         Assert.Null(await HoldAsync(h, k.UsedId));
         var target = (await HoldAsync(h, k.FoundId))!;
-        Assert.Equal(("Yellow crimp", (int?)null), (target.Name, target.KeptUnconfirmedGeneration));
+        Assert.Equal(("Yellow crimp", null), (target.Name, target.KeptUnconfirmedGeneration));
         var boulder = await BoulderAsync(h, k.Wall.BoulderId);
         Assert.Equal((k.FoundId, false), (boulder.BoulderHolds.Single().HoldId, boulder.IsHistoric));
         var finding = (await FindingsAsync(h, k.Wall.WallId)).Single(f => f.Id == view.Id);
         Assert.Equal(
-            (LookOverFindingStatus.Settled, (LookOverAnswer?)LookOverAnswer.Reassign, (Guid?)k.FoundId, 1),
+            (LookOverFindingStatus.Settled, (LookOverAnswer?)LookOverAnswer.Reassign, k.FoundId, 1),
             (finding.Status, finding.Answer, finding.OtherHoldId, finding.AnswerBoulders));
         await using var db = h.CreateContext();
         Assert.True(await db.ChangeJournalBatches.AnyAsync(b => b.Id == finding.MergeBatchId && b.Label == HoldDuplicateService.BatchLabel));
@@ -77,7 +77,7 @@ public class LookOverMissingTests
         await service.MoveAsync(k.Wall.WallId, view.Id, 0.7, 0.35);
 
         var hold = (await HoldAsync(h, k.UsedId))!;
-        Assert.Equal((0.7, 0.35, 0.03, true, (int?)null), (hold.X, hold.Y, hold.Radius, hold.NeedsReview, hold.KeptUnconfirmedGeneration));
+        Assert.Equal((0.7, 0.35, 0.03, true, null), (hold.X, hold.Y, hold.Radius, hold.NeedsReview, hold.KeptUnconfirmedGeneration));
         var boulder = await BoulderAsync(h, k.Wall.BoulderId);
         Assert.Equal((k.UsedId, false), (boulder.BoulderHolds.Single().HoldId, boulder.IsHistoric));
         var finding = (await FindingsAsync(h, k.Wall.WallId)).Single(f => f.Id == view.Id);

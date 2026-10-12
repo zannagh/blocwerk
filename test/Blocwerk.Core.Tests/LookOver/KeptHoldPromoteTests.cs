@@ -28,7 +28,7 @@ public class KeptHoldPromoteTests
         var copy = (await HoldAsync(h, boulder.BoulderHolds.Single().HoldId))!;
         Assert.Equal((3, 3), (copy.KeptUnconfirmedGeneration, (await WallAsync(h, w.WallId)).KeptHoldsGeneration));
         var finding = await FindingAsync(h, w.WallId);
-        Assert.Equal((LookOverFindingKind.NotFound, (Guid?)copy.Id, true, false), (finding.Kind, finding.HoldId, finding.HoldKept, finding.Covered));
+        Assert.Equal((LookOverFindingKind.NotFound, copy.Id, true, false), (finding.Kind, finding.HoldId, finding.HoldKept, finding.Covered));
         Assert.NotNull((await WallAsync(h, w.WallId)).LookOverPendingSince);
 
         // Every other hold was found again.

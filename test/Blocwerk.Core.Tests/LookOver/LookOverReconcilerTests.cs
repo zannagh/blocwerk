@@ -28,7 +28,7 @@ public class LookOverReconcilerTests
 
         var view = (await service.ListAsync(k.Wall.WallId)).Single(v => v.HoldId == k.UnusedId);
         Assert.Equal(
-            (LookOverFindingKind.NotFound, LookOverFindingStatus.Open, (Guid?)null, false, true),
+            (LookOverFindingKind.NotFound, LookOverFindingStatus.Open, null, false, true),
             (view.Kind, view.Status, view.OtherHoldId, view.Covered, view.Missing));
         Assert.Equal(3, (await HoldAsync(h, k.UnusedId))!.KeptUnconfirmedGeneration);
         Assert.Equal(2, (await service.GetStateAsync(k.Wall.WallId))!.OpenFindings);
@@ -46,7 +46,7 @@ public class LookOverReconcilerTests
 
         var views = await service.ListAsync(k.Wall.WallId);
         var view = views.Single(v => v.HoldId == k.UnusedId);
-        Assert.Equal(((Guid?)added.Id, true, true), (view.OtherHoldId, view.Covered, view.Missing));
+        Assert.Equal((added.Id, true, true), (view.OtherHoldId, view.Covered, view.Missing));
         Assert.Null(views.Single(v => v.HoldId == k.UsedId).OtherHoldId);
 
         // Reading it again changes nothing.
