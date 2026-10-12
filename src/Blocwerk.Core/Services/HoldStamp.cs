@@ -109,6 +109,7 @@ public sealed record HoldStamp
         var edit = ToEdit(target);
         target.Radius = edit.Radius;
         target.Color = edit.Color.Or(target.Color);
+        target.ProposedColor = edit.Color.HasValue ? null : target.ProposedColor;
         target.Material = edit.Material.Or(target.Material);
         target.HandType = edit.HandType.Or(target.HandType);
         target.Category = edit.Category.Or(target.Category);

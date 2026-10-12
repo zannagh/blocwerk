@@ -52,6 +52,18 @@ public partial class Hold
     public string? Color { get; set; }
 
     /// <summary>
+    /// The colour the detection proposed for this hold from its photo, when it did. The proposal is written to
+    /// <see cref="Color"/> too, so the hold is drawn in it; while both are equal nobody has confirmed the colour
+    /// (<see cref="HasProposedColor"/>). Cleared when a person sets the colour, also to the same value. Null on every
+    /// hold whose colour was never proposed.
+    /// </summary>
+    [MaxLength(32)]
+    public string? ProposedColor { get; set; }
+
+    /// <summary>True while <see cref="Color"/> is the detection's proposal and no person has set or confirmed it.</summary>
+    public bool HasProposedColor => !string.IsNullOrEmpty(ProposedColor) && ProposedColor == Color;
+
+    /// <summary>
     /// What the hold is made of. Restricts the selectable colors (wooden holds only
     /// come in brown tones). Null on holds created before materials were introduced.
     /// </summary>
@@ -203,6 +215,7 @@ public partial class Hold
         ShapeHoles = ShapePoint.CloneRings(ShapeHoles),
         Name = Name,
         Color = Color,
+        ProposedColor = ProposedColor,
         Material = Material,
         Category = Category,
         HandType = HandType,

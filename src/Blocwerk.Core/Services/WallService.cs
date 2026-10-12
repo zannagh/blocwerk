@@ -607,6 +607,7 @@ public class WallService : IWallService
             if (!string.IsNullOrEmpty(actualHold.Color))
             {
                 virtualHold.Color = actualHold.Color;
+                virtualHold.ProposedColor = actualHold.HasProposedColor ? actualHold.Color : null;
             }
 
             virtualHold.Material = actualHold.Material;
@@ -1574,6 +1575,13 @@ public class WallService : IWallService
             hold.Y = y;
             hold.Radius = radius;
             hold.Color = edit.Color.Or(hold.Color);
+
+            // A person set the colour (also to what was proposed): it is no longer the detection's proposal.
+            if (edit.Color.HasValue && !(edit.ColorStillProposed && edit.Color.Value == hold.ProposedColor))
+            {
+                hold.ProposedColor = null;
+            }
+
             hold.Material = edit.Material.Or(hold.Material);
             hold.HandType = edit.HandType.Or(hold.HandType);
             hold.Category = edit.Category.Or(hold.Category);

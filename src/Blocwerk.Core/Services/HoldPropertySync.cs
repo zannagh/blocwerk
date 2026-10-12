@@ -43,11 +43,14 @@ public static class HoldPropertySync
             changed = true;
         }
 
-        if (target.Color != source.Color)
+        if (target.Color != source.Color || target.HasProposedColor != source.HasProposedColor)
         {
             target.Color = source.Color;
             changed = true;
         }
+
+        // The mark goes with the colour: the source's proposal is a proposal on the target, anything else is not.
+        target.ProposedColor = source.HasProposedColor ? source.Color : null;
 
         if (target.Material != source.Material)
         {
@@ -96,10 +99,20 @@ public static class HoldPropertySync
             changed = true;
         }
 
-        if (before.Color != edited.Color && target.Color != edited.Color)
+        var colorEdited = before.Color != edited.Color || before.HasProposedColor != edited.HasProposedColor;
+        if (colorEdited && target.Color != edited.Color)
         {
             target.Color = edited.Color;
             changed = true;
+        }
+
+        // The mark goes with the colour. Keeping a proposed colour changes no colour, but the twins stop being
+        // proposals with it; and a mark the twin still carries from an earlier proposal must not come back to life
+        // when a person sets that very colour.
+        if (colorEdited && target.Color == edited.Color)
+        {
+            changed |= target.HasProposedColor != edited.HasProposedColor;
+            target.ProposedColor = edited.HasProposedColor ? edited.Color : null;
         }
 
         if (before.Material != edited.Material && target.Material != edited.Material)
@@ -170,6 +183,7 @@ public static class HoldPropertySync
         if (string.IsNullOrWhiteSpace(target.Color) && !string.IsNullOrWhiteSpace(source.Color))
         {
             target.Color = source.Color;
+            target.ProposedColor = source.HasProposedColor ? source.Color : null;
             changed = true;
         }
 
@@ -214,7 +228,8 @@ public static class HoldPropertySync
         }
 
         var name = ordered.FirstOrDefault(h => !string.IsNullOrWhiteSpace(h.Name))?.Name;
-        var color = ordered.FirstOrDefault(h => !string.IsNullOrWhiteSpace(h.Color))?.Color;
+        var colorSource = ordered.FirstOrDefault(h => !string.IsNullOrWhiteSpace(h.Color));
+        var color = colorSource?.Color;
         var material = ordered.FirstOrDefault(h => h.Material is not null)?.Material;
         var handType = ordered.FirstOrDefault(h => h.HandType is not null)?.HandType;
 
@@ -232,6 +247,7 @@ public static class HoldPropertySync
             if (string.IsNullOrWhiteSpace(hold.Color) && !string.IsNullOrWhiteSpace(color))
             {
                 hold.Color = color;
+                hold.ProposedColor = colorSource is { HasProposedColor: true } ? color : null;
                 holdChanged = true;
             }
 

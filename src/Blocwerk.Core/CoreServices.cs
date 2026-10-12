@@ -171,6 +171,8 @@ public static class CoreServices
         builder.Services.AddScoped<IHoldDuplicateService, HoldDuplicateService>();
         builder.Services.AddScoped<IWallLookOverService, WallLookOverService>();
         builder.Services.AddScoped<ILinkedHoldSyncService, LinkedHoldSyncService>();
+        builder.Services.AddSingleton<IHoldColorProposer, HoldColorProposer>();
+        builder.Services.AddScoped<IHoldColorProposalService, HoldColorProposalService>();
         builder.Services.AddScoped<IHoldFootprintService, HoldFootprintService>();
         builder.Services.AddScoped<IHoldTexturePlacementService, HoldTexturePlacementService>();
         builder.Services.AddScoped<IHoldProtrusionService, HoldProtrusionService>();
