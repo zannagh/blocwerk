@@ -10,8 +10,9 @@ namespace Blocwerk.Core.LookOver;
 
 /// <summary>
 /// The findings an applied update leaves for the look-over: every card nobody answered whose default is what went live,
-/// the holds on boulders that were not found again, and old holds kept in place under a new hold. One finding per old
-/// hold; a hold a person decided (an answered card, a confirmed verdict in the full review) is not a finding. Pure.
+/// and every old hold that was kept in place without being found again, whether a boulder uses it, a new hold sits
+/// on its spot, or neither. One finding per old hold; a hold a person decided (an answered card, a confirmed verdict
+/// in the full review) is not a finding. Pure.
 /// </summary>
 internal static class LookOverFindingBuilder
 {
@@ -36,6 +37,7 @@ internal static class LookOverFindingBuilder
 
         AddNotFound(facts, findings);
         AddSameSpots(facts, findings);
+        AddKept(facts, findings);
         return findings;
     }
 
@@ -135,28 +137,49 @@ internal static class LookOverFindingBuilder
             }
 
             var known = findings.FirstOrDefault(f => f.OldHoldId == oldId);
-            if (known is null ? Confirmed(facts, oldId) : known.OtherHoldId is not null || !LookOverRules.CanHaveOther(known.Kind))
+            var size = facts.PhotoSizes.TryGetValue(panel, out var s) ? s : ((int Width, int Height)?)null;
+            if (known is { OtherHoldId: { } named })
+            {
+                // The card already says which new hold it is: only whether the old one lies under it is still to tell.
+                known.Covered = facts.LiveHolds.TryGetValue(named, out var given) && SameSpotFinder.Covers(given, kept, size);
+                continue;
+            }
+
+            if (known is null ? Confirmed(facts, oldId) : !LookOverRules.CanHaveOther(known.Kind))
             {
                 continue;
             }
 
-            var size = facts.PhotoSizes.TryGetValue(panel, out var s) ? s : ((int Width, int Height)?)null;
             if (SameSpotFinder.Nearest(kept, fresh[panel].OrderBy(h => h.Id), size) is not { } other)
             {
                 continue;
             }
 
-            if (known is not null)
-            {
-                known.OtherHoldId = other.Id;
-                continue;
-            }
-
             // Both pictures at the old hold's spot and at one scale (the larger hold's), so they can be compared.
-            var finding = About(facts, At(LookOverFindingKind.SameSpot, kept), oldId, kept);
-            finding.Radius = Math.Max(kept.Radius, other.Radius);
+            var finding = known ?? About(facts, At(LookOverFindingKind.SameSpot, kept), oldId, kept);
             finding.OtherHoldId = other.Id;
-            findings.Add(finding);
+            finding.Covered = SameSpotFinder.Covers(other, kept, size);
+            if (known is null)
+            {
+                finding.Radius = Math.Max(kept.Radius, other.Radius);
+                findings.Add(finding);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Every hold the update kept without finding it again is a finding, also when no boulder uses it and nothing sits
+    /// on its spot: it is on the wall as a copy nobody has confirmed (<see cref="Hold.KeptUnconfirmedGeneration"/>).
+    /// </summary>
+    private static void AddKept(LookOverPromoteFacts facts, List<WallLookOverFinding> findings)
+    {
+        var known = findings.Select(f => f.OldHoldId).OfType<Guid>().ToHashSet();
+        foreach (var (oldId, liveId) in facts.Successors.OrderBy(s => s.Key))
+        {
+            if (!known.Contains(oldId) && facts.LiveHolds.TryGetValue(liveId, out var kept) && kept.KeptUnconfirmedGeneration is not null)
+            {
+                findings.Add(About(facts, At(LookOverFindingKind.NotFound, kept), oldId, kept));
+            }
         }
     }
 
@@ -182,6 +205,7 @@ internal static class LookOverFindingBuilder
         finding.HoldId = live.Id;
         finding.PanelId ??= live.WallPanelId;
         finding.BouldersAtApply = facts.Boulders.GetValueOrDefault(live.Id);
+        finding.HoldKept = live.KeptUnconfirmedGeneration is not null;
 
         // Only a hold not found again marks boulders by itself; every other kind explains no boulder's mark.
         finding.MarkedBoulderIds = finding.Kind == LookOverFindingKind.NotFound ? facts.NewlyMarked.GetValueOrDefault(live.Id) ?? [] : [];

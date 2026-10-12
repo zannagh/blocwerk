@@ -3,9 +3,10 @@
 @attribute [Authorize]
 @using Blocwerk.Core.LookOver
 @using Blocwerk.Web.Components.Shared.LookOver
-@* "Look over the wall": what an applied panel update was unsure about and nobody answered, grouped by kind with the
-   ones that touch boulders first. Wall admins and moderators answer them here, then finish the look-over. It opens
-   on the findings whose hold a boulder uses (the rest is one tap away), or on one boulder's findings with ?boulder=. *@
+@* "Look over the wall": what an applied panel update was unsure about and nobody answered. First the holds it could
+   not find, asked about one at a time (LookOverMissing); then the rest as cards, grouped by kind with the ones that
+   touch boulders first. Wall admins and moderators answer them here, then finish the look-over. The cards open on
+   the findings whose hold a boulder uses (the rest is one tap away), or on one boulder's findings with ?boulder=. *@
 
 <PageTitle>Look over the wall - Blocwerk</PageTitle>
 
@@ -50,21 +51,28 @@
                 <a href="/walls/@WallId/look-over">Show all</a>
             </p>
         }
-        else if (listing.Findings.Count > 0)
+
+        @if (MissingQueue.Count > 0 || MissingAnswered.Count > 0)
+        {
+            <LookOverMissing WallId="WallId" Queue="MissingQueue" Answered="MissingAnswered" ForOneBoulder="FilterBoulder is not null"
+                             Disabled="busy" Version="loads" OnAnswer="AnswerAsync" OnAct="ActOnAsync" OnUndo="UndoAsync" />
+        }
+
+        @if (FilterBoulder is null && listing.Cards.Count > 0)
         {
             <div class="lookover-views" role="group" aria-label="Which findings to show">
                 <button type="button" class="@(onBouldersOnly ? "is-on" : null)" aria-pressed="@(onBouldersOnly ? "true" : "false")" @onclick="() => onBouldersOnly = true">
                     On boulders (@OnBoulderCount)
                 </button>
                 <button type="button" class="@(onBouldersOnly ? null : "is-on")" aria-pressed="@(onBouldersOnly ? "false" : "true")" @onclick="() => onBouldersOnly = false">
-                    All findings (@listing.Findings.Count)
+                    All findings (@listing.Cards.Count)
                 </button>
             </div>
         }
 
-        @if (listing.Findings.Count > 0 && Kinds.Count == 0)
+        @if (listing.Cards.Count > 0 && Kinds.Count == 0 && (FilterBoulder is null || MissingQueue.Count + MissingAnswered.Count == 0))
         {
-            <p class="empty-msg">@(FilterBoulder is null ? "No finding is about a hold a boulder uses. See all findings above." : "No finding is about a hold of this boulder.")</p>
+            <p class="empty-msg">@(FilterBoulder is null ? "No other finding is about a hold a boulder uses. See all findings above." : "No finding is about a hold of this boulder.")</p>
         }
 
         @foreach (var kind in Kinds)

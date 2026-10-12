@@ -57,6 +57,12 @@ public sealed partial class WallLookOverService(
             return null;
         }
 
+        // What was dealt with in the hold editor since is no longer open: the count on the wall page drops as holds are edited.
+        if (wall.LookOverPendingSince is not null)
+        {
+            await LookOverReconciler.ReconcileAsync(db, wallId, ct);
+        }
+
         // Counted, not loaded: the wall page and every boulder page ask this.
         var round = CurrentRound(db, wallId, wall.LookOverPendingSince);
         var open = await round.CountAsync(f => f.Status == LookOverFindingStatus.Open, ct);
@@ -69,8 +75,11 @@ public sealed partial class WallLookOverService(
         // The boulder counts are for the notice of whoever may look over the wall; nobody else is shown them.
         var pending = wall.LookOverPendingSince is not null;
         var (marked, more) = pending && canLookOver ? await BoulderCountsAsync(db, wallId, ct) : (0, 0);
+        var missing = pending
+            ? await round.CountAsync(f => f.Status == LookOverFindingStatus.Open && db.Holds.Any(h => h.Id == f.HoldId && h.KeptUnconfirmedGeneration != null), ct)
+            : 0;
         return new WallLookOverState(
-            pending, wall.LookOverPendingSince, wall.LookOverGeneration, open, total, wall.LookOverCompletedAt, completedBy, canLookOver, marked, more);
+            pending, wall.LookOverPendingSince, wall.LookOverGeneration, open, total, wall.LookOverCompletedAt, completedBy, canLookOver, marked, more, missing);
     }
 
     /// <inheritdoc/>
@@ -111,15 +120,16 @@ public sealed partial class WallLookOverService(
     }
 
     /// <inheritdoc/>
-    public async Task<byte[]?> GetCropAsync(Guid wallId, Guid findingId, CheckCropView view, CancellationToken ct = default)
+    public async Task<byte[]?> GetCropAsync(Guid wallId, Guid findingId, CheckCropView view, bool plain = false, CancellationToken ct = default)
     {
         var (db, _) = await OpenAsync(wallId, ct);
         await db.DisposeAsync();
-        return await LookOverCrops.GetAsync(dbContextFactory, files, wallId, findingId, view, ct);
+        return await LookOverCrops.GetAsync(dbContextFactory, files, wallId, findingId, view, plain, ct);
     }
 
     /// <summary>
-    /// The findings of the current round: everything open, and what was answered since the wall was flagged. A round
+    /// The findings of the current round: everything open, and what was answered (or closed by an edit in the hold
+    /// editor) since the wall was flagged. A round
     /// starts with the first update that leaves a finding and ends with Finish, so what an earlier round settled never
     /// comes back with the next update; while the wall is not flagged only what was left open is listed.
     /// </summary>
@@ -127,7 +137,9 @@ public sealed partial class WallLookOverService(
     {
         var ofWall = db.WallLookOverFindings.AsNoTracking().Where(f => f.WallId == wallId);
         return pendingSince is { } since
-            ? ofWall.Where(f => f.Status == LookOverFindingStatus.Open || (f.Status == LookOverFindingStatus.Settled && f.AnsweredAt >= since))
+            ? ofWall.Where(f => f.Status == LookOverFindingStatus.Open
+                || (f.Status == LookOverFindingStatus.Settled && f.AnsweredAt >= since)
+                || (f.Status == LookOverFindingStatus.Closed && f.ClosedAt >= since))
             : ofWall.Where(f => f.Status == LookOverFindingStatus.Open);
     }
 

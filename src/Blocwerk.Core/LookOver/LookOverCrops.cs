@@ -6,7 +6,6 @@ using System.Collections.Concurrent;
 using Blocwerk.Core.Capture;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
-using Blocwerk.Core.Enums;
 using Blocwerk.Core.Refresh;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
@@ -20,11 +19,11 @@ namespace Blocwerk.Core.LookOver;
 /// live photo of the finding's panel at the spot stored with it. Made on request, kept in a small cache; a finding's
 /// spot and both photos never change. The caller has checked that the user may look over the wall.
 /// </summary>
-internal static partial class LookOverCrops
+internal static class LookOverCrops
 {
     private const int MaxCached = 256;
     private const double DefaultRadiusMm = 50;
-    private static readonly ConcurrentDictionary<(Guid FindingId, CheckCropView View), byte[]> Cache = new();
+    private static readonly ConcurrentDictionary<(Guid FindingId, CheckCropView View, bool Plain), byte[]> Cache = new();
     private static readonly ConcurrentDictionary<Guid, bool> NoModelPicture = new();
 
     /// <summary>
@@ -33,10 +32,14 @@ internal static partial class LookOverCrops
     /// </summary>
     public static bool KnownToHaveNoModelPicture(Guid findingId) => NoModelPicture.ContainsKey(findingId);
 
-    /// <summary>The JPEG of one picture of a finding of <paramref name="wallId"/>, or null when there is none.</summary>
+    /// <summary>
+    /// The JPEG of one picture of a finding of <paramref name="wallId"/>, or null when there is none.
+    /// <paramref name="plain"/> leaves the ring off the two photo pictures: the page draws the holds' outlines instead.
+    /// </summary>
     public static async Task<byte[]?> GetAsync(
-        IDbContextFactory<BlocwerkDbContext> dbFactory, ICaptureFileStore files, Guid wallId, Guid findingId, CheckCropView view, CancellationToken ct)
+        IDbContextFactory<BlocwerkDbContext> dbFactory, ICaptureFileStore files, Guid wallId, Guid findingId, CheckCropView view, bool plain, CancellationToken ct)
     {
+        plain &= view != CheckCropView.Model;
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         var finding = await db.WallLookOverFindings.AsNoTracking().FirstOrDefaultAsync(f => f.Id == findingId && f.WallId == wallId, ct);
         if (finding is null)
@@ -44,15 +47,15 @@ internal static partial class LookOverCrops
             return null;
         }
 
-        if (Cache.TryGetValue((findingId, view), out var cached))
+        if (Cache.TryGetValue((findingId, view, plain), out var cached))
         {
             return cached;
         }
 
         var bytes = view switch
         {
-            CheckCropView.Old => await OldAsync(db, finding, ct),
-            CheckCropView.New => await NewAsync(db, finding, ct),
+            CheckCropView.Old => await PhotoAsync(db, finding, before: true, plain, ct),
+            CheckCropView.New => await PhotoAsync(db, finding, before: false, plain, ct),
             _ => await ModelAsync(db, files, finding, ct),
         };
 
@@ -65,7 +68,7 @@ internal static partial class LookOverCrops
                 Cache.Clear();
             }
 
-            Cache[(findingId, view)] = bytes;
+            Cache[(findingId, view, plain)] = bytes;
         }
         else if (bytes is null && view == CheckCropView.Model)
         {
@@ -122,34 +125,21 @@ internal static partial class LookOverCrops
         return dark > all * 0.85 && deviation < 10;
     }
 
-    private static async Task<byte[]?> OldAsync(BlocwerkDbContext db, WallLookOverFinding finding, CancellationToken ct)
+    /// <summary>
+    /// "Before": the old hold on its retired panel's photo. "Now": the same piece of wall on the finding's live photo.
+    /// Both are cut where <see cref="LookOverFrameSource"/> says, which is also where the page lays the outlines.
+    /// </summary>
+    private static async Task<byte[]?> PhotoAsync(BlocwerkDbContext db, WallLookOverFinding finding, bool before, bool plain, CancellationToken ct)
     {
-        if (await HoldAsync(db, finding.OldHoldId, ct) is not { } hold)
-        {
-            return null;
-        }
-
-        var photo = hold.WallPanelId is { } panelId
-            ? await db.WallPanels.AsNoTracking().Where(p => p.Id == panelId).Select(p => p.Photo).FirstOrDefaultAsync(ct)
-            : null;
-        return RefreshCheckCrops.Crop(photo, hold.X, hold.Y, BeforeRadius(finding, hold)).Bytes;
-    }
-
-    private static async Task<byte[]?> NewAsync(BlocwerkDbContext db, WallLookOverFinding finding, CancellationToken ct)
-    {
-        if (finding.PanelId is not { } panelId)
+        var frames = await LookOverFrameSource.LoadAsync(db, finding.WallId, [finding], ct);
+        var panelId = before ? frames.Hold(finding.OldHoldId)?.WallPanelId : finding.PanelId;
+        if (panelId is null || (before ? frames.Before(finding) : frames.Now(finding)) is not { } frame)
         {
             return null;
         }
 
         var photo = await db.WallPanels.AsNoTracking().Where(p => p.Id == panelId).Select(p => p.Photo).FirstOrDefaultAsync(ct);
-        if (photo is not null && OverlapSeedLoader.RawSize(photo) is { } size && await SameExtentAsync(db, finding, panelId, size, ct) is { } frame)
-        {
-            // The piece of wall the "before" picture shows, found again on this photo: same extent, same ring.
-            return RingCrop.Render(photo, finding.X * size.Width, finding.Y * size.Height, frame.RingPx, frame.HalfPx);
-        }
-
-        return RefreshCheckCrops.Crop(photo, finding.X, finding.Y, finding.Radius > 0 ? finding.Radius : 0.02).Bytes;
+        return photo is null ? null : RingCrop.Render(photo, frame.CentreX, frame.CentreY, frame.RingPx, frame.HalfPx, ring: !plain);
     }
 
     /// <summary>The spot stored with the finding (this visit's model), else where the live hold sits on the active model.</summary>

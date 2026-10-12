@@ -32,6 +32,13 @@
                     {
                         @foreach (var h in Holds)
                         {
+                            @* A hold the last update did not find is not on the wall's overlays (and so no pick
+                               target); the look-over draws the one it asks about itself, as Ghost below. *@
+                            if (h.Kept)
+                            {
+                                continue;
+                            }
+
                             var g = Geo(h);
                             var isHighlight = HighlightHoldId == h.Id;
                             var isSelected = SelectedHoldId == h.Id;
@@ -79,6 +86,23 @@
                                 <circle cx="@F(g.X * 100)" cy="@F(g.Y * 100)" r="@F(g.Radius * 100 * VirtualInnerRing)"
                                         fill="none" stroke="@stroke" stroke-width="@sw"
                                         style="pointer-events: none" />
+                            }
+                        }
+
+                        @if (Ghost is { } ghost)
+                        {
+                            @* The look-over's "where it was": the old hold's own outline, dashed, at its old spot;
+                               and once more, solid green, where the user says it is now. Never a pick target. *@
+                            <HoldShape X="ghost.X" Y="ghost.Y" Radius="ghost.Radius" ShapePoints="ghost.ShapePoints" ShapeHoles="ghost.ShapeHoles"
+                                       Foot="ghost.Category == HoldCategory.Foot" FootScale="HoldShape.FullFoot"
+                                       Fill="transparent" Stroke="var(--status-warning)" StrokeWidth="@F3(0.8 * StrokeScale)"
+                                       Dash="@($"{F3(1.2 * StrokeScale)} {F3(0.9 * StrokeScale)}")" PointerEvents="none" />
+                            @if (GhostMovedTo is { } to)
+                            {
+                                <HoldShape X="to.X" Y="to.Y" Radius="ghost.Radius" ShapePoints="ghost.ShapePoints" ShapeHoles="ghost.ShapeHoles"
+                                           Foot="ghost.Category == HoldCategory.Foot" FootScale="HoldShape.FullFoot"
+                                           Fill="rgba(51,221,102,0.25)" Stroke="var(--status-success)" StrokeWidth="@F3(0.9 * StrokeScale)"
+                                           PointerEvents="none" />
                             }
                         }
 
@@ -163,6 +187,13 @@
 
     /// <summary>Moved-mode hint (proposed position) drawn on this image, or null.</summary>
     [Parameter] public (double X, double Y)? HintPoint { get; set; }
+
+    /// <summary>
+    /// A hold that is not on the photo's overlay, drawn as a dashed outline where it was (the look-over's hold the
+    /// update could not find); with <see cref="GhostMovedTo"/> also, solid, where the user says it is now.
+    /// </summary>
+    [Parameter] public PanelHold? Ghost { get; set; }
+    [Parameter] public (double X, double Y)? GhostMovedTo { get; set; }
 
     /// <summary>The user-chosen hold in moved-mode, highlighted green.</summary>
     [Parameter] public Guid? SelectedHoldId { get; set; }

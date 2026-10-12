@@ -546,7 +546,7 @@ else
                            ShapePoints="bh.Hold.ShapePoints" ShapeHoles="bh.Hold.ShapeHoles"
                            Fill="@BoulderHoldColors.FillFor(bh.Type, bh.Usage)"
                            Stroke="@BoulderHoldColors.Stroke(bh.Type)" StrokeWidth="0.5"
-                           Dash="@dash" />
+                           Dash="@dash" Kept="bh.Hold.KeptUnconfirmedGeneration is not null" />
             }
         </svg>
     </text>;
@@ -1428,7 +1428,8 @@ else
             .ToDictionary(
                 g => g.Key,
                 g => g.Select(bh => new PanelHold(
-                    bh.HoldId, bh.Hold.X, bh.Hold.Y, bh.Hold.Radius, bh.Hold.Color, bh.Hold.Category, bh.Hold.ShapePoints, bh.Hold.IsVirtual, bh.Hold.ShapeHoles)).ToList());
+                    bh.HoldId, bh.Hold.X, bh.Hold.Y, bh.Hold.Radius, bh.Hold.Color, bh.Hold.Category, bh.Hold.ShapePoints, bh.Hold.IsVirtual, bh.Hold.ShapeHoles,
+                    bh.Hold.KeptUnconfirmedGeneration is not null)).ToList());
         foreach (var bh in onPanels)
         {
             _highlightedHoldIds.Add(bh.HoldId);

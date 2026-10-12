@@ -1,9 +1,9 @@
 /* The look-over page. Phone first: one column, groups as full-width rows that open in place, cards as on the confirm
    screen of "Update panels + 3D" (same class names, so the two read alike). Colours come from the shared tokens. */
-.lookover-page { max-width: 960px; margin: 0 auto; padding: 12px 16px calc(48px + var(--bottomnav-h, 0px)); }
+.lookover-page { max-width: 1100px; margin: 0 auto; padding: 12px 16px calc(48px + var(--bottomnav-h, 0px)); }
 .lookover-page h1 { margin: 8px 0 12px; }
 .lookover-status { margin: 0 0 8px; font-weight: 600; }
-.lookover-group { margin: 12px 0; border: 1px solid var(--border-light); border-radius: var(--r-md); background: var(--bg-surface); }
+.lookover-page ::deep .lookover-group { margin: 12px 0; border: 1px solid var(--border-light); border-radius: var(--r-md); background: var(--bg-surface); }
 .lookover-group-head {
     display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 48px; margin: 0;
     padding: 10px 12px; border: 0; border-radius: var(--r-md); background: none; color: var(--text-heading, var(--text));
@@ -18,17 +18,17 @@
     background: var(--bg-surface); color: var(--text); font: inherit; font-size: 0.9rem; cursor: pointer;
 }
 .lookover-views button.is-on { border-color: var(--accent); background: var(--accent); color: var(--on-accent); font-weight: 600; }
-.lookover-chip {
+.lookover-page ::deep .lookover-chip {
     display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin: 12px 0 4px; padding: 8px 12px;
     border-radius: var(--r-md); background: var(--info-bg); color: var(--info-text); font-size: 0.9rem;
 }
-.lookover-chip a { color: inherit; font-weight: 600; }
-.lookover-group-count {
+.lookover-page ::deep .lookover-chip a { color: inherit; font-weight: 600; }
+.lookover-page ::deep .lookover-group-count {
     flex: none; white-space: nowrap; font-size: 0.8rem; font-weight: 600; padding: 2px 10px; border-radius: 999px;
     color: var(--warning-text); background: var(--warning-bg);
 }
-.lookover-group-count.is-done { color: var(--success-text); background: var(--success-bg); }
-.lookover-bulk { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 0 12px 4px; }
+.lookover-page ::deep .lookover-group-count.is-done { color: var(--success-text); background: var(--success-bg); }
+.lookover-page ::deep .lookover-bulk { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 0 12px 4px; }
 .lookover-page ::deep .lookover-bulk > button { white-space: normal; text-align: left; }
 .lookover-page ::deep .lookover-bulk > .confirm-action { align-self: stretch; }
 .lookover-more { width: auto; margin: 0 12px 12px; }
@@ -50,14 +50,10 @@
 .lookover-page ::deep .refresh-check-actions > .lookover-undo { width: auto; margin: 0 0 0 auto; min-height: 40px; padding: 4px 10px; }
 .lookover-page ::deep .lookover-zoom { width: min(100%, 720px); }
 .lookover-page ::deep .lookover-zoom-pictures { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 10px; margin: 8px 0 12px; }
-.lookover-page ::deep .lookover-zoom-pictures figure { margin: 0; }
-.lookover-page ::deep .lookover-zoom-pictures img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--r-md); background: var(--bg-surface-alt); }
 .lookover-page ::deep .lookover-zoom > .lookover-zoom-close { width: auto; margin: 0 0 4px; }
 .lookover-page ::deep .refresh-check-title { margin: 0 0 8px; overflow-wrap: anywhere; }
 .lookover-page ::deep .refresh-check-crops { display: grid; grid-template-columns: repeat(3, minmax(0, 220px)); gap: 8px; }
 .lookover-page ::deep .refresh-check-crops figure { margin: 0; min-width: 0; max-width: 220px; }
-.lookover-page ::deep .refresh-check-crops img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--r-md); background: var(--bg-surface); }
-.lookover-page ::deep figcaption { font-size: 0.75rem; color: var(--text-secondary); text-align: center; }
 .lookover-page ::deep .refresh-check-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
 .lookover-page ::deep .refresh-check-actions > button { width: auto; margin: 0; min-height: 40px; }
 .lookover-page ::deep .refresh-check-actions > .confirm-action { flex: 1 1 100%; }

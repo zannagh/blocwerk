@@ -56,7 +56,10 @@ public static class LookOverRules
 
     /// <summary>The kinds that can be settled all at once.</summary>
     /// <param name="kind">The kind.</param>
-    /// <returns>True for unsure matches and for old and new holds on one spot.</returns>
+    /// <returns>
+    /// True for unsure matches and for old and new holds on one spot. Never for holds the update could not find:
+    /// "still here" for all of them at once would put back whatever really is gone.
+    /// </returns>
     public static bool CanSettleAll(LookOverFindingKind kind) =>
         kind is LookOverFindingKind.UnsureMatch or LookOverFindingKind.SameSpot;
 

@@ -85,7 +85,53 @@ public interface IWallLookOverService
     /// <param name="wallId">The wall.</param>
     /// <param name="findingId">The finding.</param>
     /// <param name="view">Which picture.</param>
+    /// <param name="plain">Without the ring around the spot: for a picture the page outlines the holds on itself.</param>
     /// <param name="ct">Cancellation.</param>
     /// <returns>JPEG bytes.</returns>
-    Task<byte[]?> GetCropAsync(Guid wallId, Guid findingId, CheckCropView view, CancellationToken ct = default);
+    Task<byte[]?> GetCropAsync(Guid wallId, Guid findingId, CheckCropView view, bool plain = false, CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes, in one step, holds the update could not find and that no current boulder uses: only those of
+    /// <paramref name="findingIds"/> that are still open and still so. One journal batch, so it can be reverted as one.
+    /// </summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="findingIds">The findings the user was shown and confirmed.</param>
+    /// <param name="onlyCovered">Only the holds that lie under a new hold.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>How many of the confirmed holds were removed.</returns>
+    Task<LookOverBulkResult> RemoveUnusedAsync(Guid wallId, IReadOnlyCollection<Guid> findingIds, bool onlyCovered, CancellationToken ct = default);
+
+    /// <summary>
+    /// "It is this hold": merges the kept hold of a finding into <paramref name="targetHoldId"/>, a hold of the same
+    /// photo that is not itself kept. Wall admins only (it is the duplicate review's merge, and is undone there).
+    /// </summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="findingId">The finding.</param>
+    /// <param name="targetHoldId">The hold on the new photo that the old hold really is.</param>
+    /// <param name="expectedBoulderIds">The boulders the user was shown on the old hold.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>A task.</returns>
+    Task ReassignAsync(Guid wallId, Guid findingId, Guid targetHoldId, IReadOnlyCollection<Guid> expectedBoulderIds, CancellationToken ct = default);
+
+    /// <summary>
+    /// "It is here": moves the kept hold of a finding to a spot on its photo (the hold editor's move), keeping its
+    /// outline; the hold is confirmed by that and marked for review so the outline can be refined.
+    /// </summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="findingId">The finding.</param>
+    /// <param name="x">The spot across the photo, 0..1.</param>
+    /// <param name="y">The spot down the photo, 0..1.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>A task.</returns>
+    Task MoveAsync(Guid wallId, Guid findingId, double x, double y, CancellationToken ct = default);
+
+    /// <summary>
+    /// The live holds of a finding's photo. Those that are not <see cref="Services.PanelHold.Kept"/> are what an old
+    /// hold can be reassigned to; the kept ones are there so the page can draw the one it asks about.
+    /// </summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="panelId">The panel photo.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>The holds.</returns>
+    Task<IReadOnlyList<Services.PanelHold>> GetPanelHoldsAsync(Guid wallId, Guid panelId, CancellationToken ct = default);
 }

@@ -74,6 +74,14 @@
             {
                 var selection = SelectedEntryFor(hold.Id);
                 var isSelected = selection != null;
+                @* A hold the last update did not find cannot be chosen: it is not drawn. The boulder being edited
+                   keeps the ones it already uses, faded (the server refuses adding one as well). *@
+                var kept = hold.KeptUnconfirmedGeneration is not null;
+                if (kept && !isSelected)
+                {
+                    continue;
+                }
+
                 var isColorFoot = IsColorRuleFoot(hold);
                 var fillColor = isSelected
                     ? BoulderHoldColors.FillFor(selection!.Type, selection.Usage)
@@ -87,7 +95,7 @@
                 var isFoot = hold.Category == HoldCategory.Foot;
 
                 <HoldShape @key="hold.Id" X="hold.X" Y="hold.Y" Radius="hold.Radius" ShapePoints="hold.ShapePoints" ShapeHoles="hold.ShapeHoles"
-                           Foot="isFoot" Fill="@fillColor" Stroke="@strokeColor" StrokeWidth="@sw" Dash="@dash"
+                           Foot="isFoot" Fill="@fillColor" Stroke="@strokeColor" StrokeWidth="@sw" Dash="@dash" Kept="kept"
                            Style="cursor: pointer"
                            OnClick="(e) => OnHoldClicked(hold, e)" />
             }

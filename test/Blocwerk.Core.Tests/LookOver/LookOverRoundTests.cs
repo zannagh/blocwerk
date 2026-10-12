@@ -123,7 +123,8 @@ public class LookOverRoundTests
             WallId = w.WallId, Generation = 2, Kind = LookOverFindingKind.NotFound, HoldId = w.TargetId, OtherHoldId = liveHold, PanelId = livePanel,
         });
 
-        var view = Assert.Single(await service.ListAsync(w.WallId));
+        // (The update's own finding, about the copy it kept, is the other one.)
+        var view = (await service.ListAsync(w.WallId)).Single(v => v.Id == stale);
 
         Assert.Equal(((Guid?)null, 0), (view.HoldId, view.Boulders.Count));
         Assert.Equal([LookOverAnswer.Settle], view.Answers);

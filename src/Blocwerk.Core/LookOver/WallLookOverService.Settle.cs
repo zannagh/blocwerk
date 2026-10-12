@@ -86,7 +86,7 @@ public sealed partial class WallLookOverService
 
             await RestoreMarksAsync(db, finding, view.HoldId, ct);
             (finding.Status, finding.Answer, finding.AnsweredByUserId, finding.AnsweredAt) = (LookOverFindingStatus.Open, null, null, null);
-            (finding.ClearedHoldMark, finding.ClearedBoulderIds, finding.AnswerBoulders) = (false, null, null);
+            (finding.ClearedHoldMark, finding.ClearedKept, finding.ClearedBoulderIds, finding.AnswerBoulders) = (false, false, null, null);
             await db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
             logger.LogInformation("Look-over finding {FindingId} on wall {WallId} reopened by {UserId}", findingId, wallId, access.UserId);
@@ -119,10 +119,18 @@ public sealed partial class WallLookOverService
     /// <summary>Settles one claimed finding (the caller's transaction): the hold's own mark first, since a marked hold keeps its boulders marked.</summary>
     private async Task SettleAsync(BlocwerkDbContext db, WallLookOverFinding finding, LookOverFindingView view, Guid userId, CancellationToken ct)
     {
-        if (finding.FlaggedHold && view.HoldId is { } flagged && await db.Holds.FirstOrDefaultAsync(h => h.Id == flagged, ct) is { NeedsReview: true } hold)
+        var hold = view.HoldId is { } live ? await db.Holds.FirstOrDefaultAsync(h => h.Id == live, ct) : null;
+        if (finding.FlaggedHold && hold is { NeedsReview: true })
         {
             hold.NeedsReview = false;
             finding.ClearedHoldMark = true;
+        }
+
+        // "Still there", "Keep…", "Both are there": a person says the hold the update could not find is on the wall.
+        if (hold is { KeptUnconfirmedGeneration: not null } && LookOverRules.CanHaveOther(finding.Kind))
+        {
+            hold.KeptUnconfirmedGeneration = null;
+            finding.ClearedKept = true;
         }
 
         MarkSettled(finding, LookOverAnswer.Settle, userId, view.Boulders.Count);

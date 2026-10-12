@@ -69,14 +69,12 @@ public class LookOverPromoteTests
         Assert.True(boulder.NeedsReview);
     }
 
-    [Theory]
-    [InlineData(true, 0.9)]
-    [InlineData(false, 0.9)]
-    public async Task AnUpdateWithNothingUnsure_LeavesNoFinding_AndNoFlag(bool targetDetected, double score)
+    [Fact]
+    public async Task AnUpdateWithNothingUnsure_LeavesNoFinding_AndNoFlag()
     {
         using var h = new WallTestHarness();
 
-        var w = await ApplyAsync(h, targetDetected, score);
+        var w = await ApplyAsync(h, targetDetected: true, score: 0.9);
 
         await using var db = h.CreateContext();
         Assert.Empty(await db.WallLookOverFindings.ToListAsync());
@@ -103,6 +101,9 @@ public class LookOverPromoteTests
         await using var db = h.CreateContext();
         Assert.Empty(await db.WallLookOverFindings.ToListAsync());
         Assert.Null((await WallAsync(h, w.WallId)).LookOverPendingSince);
+
+        // A hold a person said to keep is confirmed by that: it is not hidden from the wall afterwards.
+        Assert.False(await db.Holds.AnyAsync(x => x.KeptUnconfirmedGeneration != null));
     }
 
     [Fact]

@@ -45,7 +45,7 @@ public sealed partial class WallLookOverService
     }
 
     /// <summary>
-    /// Puts back what settling took off, on the live hold only: the hold's mark, its "not found again" reason, and the
+    /// Puts back what settling took off, on the live hold only: the hold's mark and its kept-unconfirmed state, its "not found again" reason, and the
     /// mark of every boulder on it that a look-over answer cleared — by this answer or by a later one on another of
     /// the boulder's holds, which is where the clearing is recorded when this finding was not the last to be settled.
     /// </summary>
@@ -56,9 +56,10 @@ public sealed partial class WallLookOverService
             return;
         }
 
-        if (finding.ClearedHoldMark && await db.Holds.FirstOrDefaultAsync(h => h.Id == holdId, ct) is { } hold)
+        if ((finding.ClearedHoldMark || finding.ClearedKept) && await db.Holds.FirstOrDefaultAsync(h => h.Id == holdId, ct) is { } hold)
         {
-            hold.NeedsReview = true;
+            hold.NeedsReview |= finding.ClearedHoldMark;
+            hold.KeptUnconfirmedGeneration = finding.ClearedKept ? finding.Generation : hold.KeptUnconfirmedGeneration;
         }
 
         if (!LookOverRules.SettlingWithdrawsTheReason(finding.Kind))

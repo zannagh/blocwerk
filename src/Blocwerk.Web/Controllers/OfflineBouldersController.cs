@@ -36,6 +36,7 @@ public sealed class OfflineBouldersController : ControllerBase
         [BoulderService.CreatorOrAdminRevisionMessage] = StatusCodes.Status403Forbidden,
         [BoulderService.SentByOthersRevisionMessage] = StatusCodes.Status403Forbidden,
         ["Select at least one hold"] = StatusCodes.Status400BadRequest,
+        [BoulderService.UnconfirmedHoldMessage] = StatusCodes.Status400BadRequest,
     };
 
     private readonly IBoulderService boulderService;

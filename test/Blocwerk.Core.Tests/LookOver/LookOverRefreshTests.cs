@@ -45,6 +45,10 @@ public class LookOverRefreshTests
             (LookOverFindingKind.ReplacedByOther, (Guid?)target, (Guid?)kept, true, 1),
             (finding.Kind, finding.OldHoldId, finding.HoldId, finding.FlaggedHold, finding.BouldersAtApply));
         Assert.NotNull(finding.OtherHoldId);
+
+        // "Update panels + 3D" marks the copy it kept, like the step-by-step update does.
+        Assert.Equal((true, (int?)wall.CurrentGeneration), (finding.HoldKept, wall.KeptHoldsGeneration));
+        Assert.Equal([kept], await db.Holds.Where(x => x.KeptUnconfirmedGeneration == wall.CurrentGeneration).Select(x => x.Id).ToListAsync());
     }
 
     [Fact]

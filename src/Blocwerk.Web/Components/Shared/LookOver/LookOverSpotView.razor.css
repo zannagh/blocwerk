@@ -1,0 +1,8 @@
+/* A spot of the panel photo, cut out by the browser: the photo is scaled inside the square frame and shifted by its
+   own size so that the spot is in the middle. */
+.lookover-picture { margin: 0; min-width: 0; }
+.lookover-picture-frame { position: relative; overflow: hidden; aspect-ratio: 1; border-radius: var(--r-md); background: var(--bg-surface-alt); }
+.lookover-spot-photo { position: absolute; left: 50%; top: 50%; }
+.lookover-spot-photo > img { display: block; width: 100%; }
+.lookover-outlines { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+figcaption { font-size: 0.75rem; color: var(--text-secondary); text-align: center; }

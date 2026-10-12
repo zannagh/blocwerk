@@ -93,6 +93,9 @@ public static class HoldMergeRules
         kept.HandType ??= removed.HandType;
         kept.IsOnKickboard |= removed.IsOnKickboard;
         kept.NeedsReview |= removed.NeedsReview;
+
+        // Merging is a person saying which hold stays: the one that stays is confirmed.
+        kept.KeptUnconfirmedGeneration = null;
         kept.Confidence = Math.Max(kept.Confidence, removed.Confidence);
         kept.IsAutoDetected &= removed.IsAutoDetected;
     }

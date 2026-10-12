@@ -364,6 +364,7 @@ public partial class BoulderService : IBoulderService
                 PublishedAt = isDraft ? null : DateTimeOffset.UtcNow,
             };
 
+            await EnsureNoUnconfirmedHoldAddedAsync(db, holds, []);
             db.Boulders.Add(boulder);
 
             foreach (var h in holds)
@@ -977,6 +978,7 @@ public partial class BoulderService : IBoulderService
 
             if (holds != null)
             {
+                await EnsureNoUnconfirmedHoldAddedAsync(db, holds, boulder.BoulderHolds.Select(bh => bh.HoldId).ToList());
                 db.BoulderHolds.RemoveRange(boulder.BoulderHolds);
                 foreach (var h in EnforceHandsFollowFeet(holds, boulder.HandsFollowFeet))
                 {
@@ -1172,6 +1174,7 @@ public partial class BoulderService : IBoulderService
 
             boulder.NoMatch = noMatch;
 
+            await EnsureNoUnconfirmedHoldAddedAsync(db, updatedHolds, boulder.BoulderHolds.Select(bh => bh.HoldId).ToList());
             db.BoulderHolds.RemoveRange(boulder.BoulderHolds);
             foreach (var h in EnforceHandsFollowFeet(updatedHolds, boulder.HandsFollowFeet))
             {

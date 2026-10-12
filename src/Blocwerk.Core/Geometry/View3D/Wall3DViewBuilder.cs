@@ -157,6 +157,13 @@ public static class Wall3DViewBuilder
         var unplaced = 0;
         foreach (var hold in live)
         {
+            // A hold the last update did not find is not drawn on the wall (see Hold.KeptUnconfirmedGeneration); the
+            // boulder that uses it still shows it, so no boulder is drawn with a hold missing.
+            if (hold.KeptUnconfirmedGeneration is not null && !boulderHolds.ContainsKey(hold.Id))
+            {
+                continue;
+            }
+
             var role = RoleOf(hold, boulder, boulderHolds);
             if (hold.FacetId is null || hold.PlaneAMm is not { } a || hold.PlaneBMm is not { } b
                 || !frames.TryGetValue(hold.FacetId, out var frame))

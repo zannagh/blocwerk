@@ -144,11 +144,18 @@ internal static partial class LookOverCopy
     /// <summary>How a settled finding was answered, and by whom.</summary>
     public static string AnsweredLabel(LookOverFindingView f)
     {
+        if (f.Status == LookOverFindingStatus.Closed)
+        {
+            return ClosedLabel(f.ClosedReason);
+        }
+
         var what = f.Answer switch
         {
+            LookOverAnswer.Reassign => "Is a hold on the new photo",
+            LookOverAnswer.Moved => "Moved to where it is",
             LookOverAnswer.RemoveHold => "Hold removed",
             LookOverAnswer.UseNewHold => "Merged into the new hold",
-            _ => SettleLabel(f),
+            _ => f.KeptAtUpdate ? "Still here" : SettleLabel(f),
         };
         return f.AnsweredBy is { } who ? $"{what} · {who}" : what;
     }
@@ -161,7 +168,8 @@ internal static partial class LookOverCopy
         {
             LookOverAnswer.RemoveHold when boulders == 0 => "Hold removed; no boulder used it.",
             LookOverAnswer.RemoveHold => $"Hold removed; {PlainCopy.Plural(boulders, "boulder")} {(boulders == 1 ? "is" : "are")} now historic.",
-            LookOverAnswer.UseNewHold => "Merged into the new hold. Undo under Wall settings › Possible duplicate holds.",
+            LookOverAnswer.UseNewHold or LookOverAnswer.Reassign => "Merged into the new hold. Undo under Wall settings › Possible duplicate holds.",
+            LookOverAnswer.Moved => "Marked for review: check its outline in the hold editor.",
             LookOverAnswer.Settle when f.ClearedBoulders > 0 =>
                 $"{PlainCopy.Plural(f.ClearedBoulders, "boulder")} {(f.ClearedBoulders == 1 ? "is" : "are")} no longer marked for review.",
             _ => null,

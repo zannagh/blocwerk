@@ -1,0 +1,44 @@
+/* "Holds the update could not find". Phone first: the old hold sits in a strip that stays under the top bar while the
+   wall photo below it is panned; from 900px the two stand side by side. */
+.lookover-missing { padding: 10px 12px 12px; }
+.lookover-missing-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.lookover-missing-title h2 { margin: 0; font-size: 1rem; }
+.lookover-missing > .hint { margin: 4px 0 8px; }
+.lookover-missing > .lookover-bulk { padding: 10px 0 0; margin: 12px 0 0; border-top: 1px solid var(--border-light); }
+.lookover-missing-body { display: grid; gap: 10px; }
+.lookover-missing-old {
+    position: sticky; top: var(--topbar-h, 0px); z-index: 5; margin: 0 -12px; padding: 6px 12px 8px;
+    background: var(--bg-surface); border-bottom: 1px solid var(--border-light);
+}
+.lookover-stepper { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; font-weight: 600; font-size: 0.9rem; }
+.lookover-stepper > button { width: 44px; min-height: 36px; margin: 0; padding: 0; font-size: 1.2rem; line-height: 1; }
+.lookover-missing-was { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 10px; align-items: start; }
+.lookover-missing-was ::deep figcaption { display: none; }
+.lookover-missing-about { min-width: 0; font-size: 0.9rem; }
+.lookover-missing-about p { margin: 2px 0 0; }
+.lookover-missing-wall { min-width: 0; }
+.lookover-missing-wall > .hint { margin: 0 0 6px; }
+.lookover-missing-wall ::deep .panel-step-viewport { --panel-step-max-h: 52vh; }
+.lookover-ask {
+    display: grid; gap: 8px; margin-top: 8px; padding: 10px; border: 1px solid var(--accent); border-radius: var(--r-md); background: var(--bg-surface-alt);
+}
+.lookover-ask > p { margin: 0; font-size: 0.9rem; line-height: 1.45; }
+.lookover-ask-pictures { display: grid; grid-template-columns: repeat(2, minmax(0, 150px)); gap: 8px; }
+.lookover-ask-buttons, .lookover-missing-answers { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.lookover-missing-answers { margin-top: 10px; }
+.lookover-ask-buttons > button, .lookover-missing-answers > button, .lookover-missing ::deep .lookover-missing-answers > button { width: auto; margin: 0; min-height: 40px; }
+.lookover-missing ::deep .lookover-missing-answers > .confirm-action { flex: 1 1 100%; order: 9; }
+.lookover-missing-answers > .btn-link { margin-left: auto; }
+.lookover-last { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; margin: 10px 0 0; font-size: 0.85rem; color: var(--text-secondary); }
+.lookover-last > button, .lookover-answered-toggle { width: auto; margin: 0; min-height: 36px; padding: 4px 0; }
+.lookover-answered-toggle { display: block; margin-top: 6px; }
+.lookover-missing ::deep .refresh-check-list { padding: 0; }
+.lookover-boulders { margin: 4px 0 0; }
+
+@media (min-width: 900px) {
+    .lookover-missing-body { grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 16px; align-items: start; }
+    .lookover-missing-old { top: calc(var(--topbar-h, 0px) + 8px); margin: 0; padding: 0; border-bottom: 0; }
+    .lookover-missing-was { grid-template-columns: minmax(0, 1fr); }
+    .lookover-missing-was ::deep figcaption { display: block; }
+    .lookover-missing-wall ::deep .panel-step-viewport { --panel-step-max-h: 68vh; }
+}

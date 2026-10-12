@@ -62,6 +62,13 @@
         }
         @foreach (var hold in Holds)
         {
+            @* Not found again by the last update and not confirmed: off the overlay (and so not pickable), unless the
+               editor asked to see them. *@
+            if (hold.KeptUnconfirmedGeneration is not null && !ShowKeptHolds)
+            {
+                continue;
+            }
+
             var isSelected = _selectedHoldId == hold.Id;
             var isShapeEditing = _mode == HoldTouchupTool.Shape && _shapeEditHoldId == hold.Id;
             var isNaming = _mode == HoldTouchupTool.Name && _namingHoldId == hold.Id;
@@ -146,6 +153,7 @@
                would change the diff's identity rules for every overlay layered below. *@
             <HoldShape X="hold.X" Y="hold.Y" Radius="hold.Radius" ShapePoints="hold.ShapePoints" ShapeHoles="hold.ShapeHoles"
                        Foot="isFoot" Fill="@fillColor" Stroke="@strokeColor" StrokeWidth="@sw" Dash="@dash"
+                       Kept="hold.KeptUnconfirmedGeneration is not null"
                        PointerEvents="@hitEvents" Style="cursor: pointer"
                        OnClick="() => OnHoldClick(hold)" OnPointerDown="() => StartDrag(hold)" />
 
@@ -1017,6 +1025,13 @@
     // ================= end unified toolbar =================
     [Parameter] public Guid WallId { get; set; }
     [Parameter] public List<Hold> Holds { get; set; } = [];
+
+    /// <summary>
+    /// Also draw the holds the last update did not find again and nobody confirmed (faded, dashed). Off by default:
+    /// they are asked about in the wall look-over. An admin switches it on to see or edit them here; any edit confirms.
+    /// </summary>
+    [Parameter] public bool ShowKeptHolds { get; set; }
+
     [Parameter] public List<ShapePoint> BorderPoints { get; set; } = [];
     [Parameter] public bool CanEdit { get; set; }
 
