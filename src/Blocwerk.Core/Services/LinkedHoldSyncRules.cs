@@ -48,13 +48,18 @@ public static class LinkedHoldSyncRules
     {
         var setFirst = ordered.OrderBy(h => h.HasProposedColor ? 1 : 0).ToList();
         var before = ordered.ToDictionary(h => h.Id, h => h.Color);
+        var shown = ordered.ToDictionary(h => h.Id, h => h.HasProposedColor);
         var winner = setFirst.FirstOrDefault(h => !string.IsNullOrWhiteSpace(h.Color));
         var proposed = winner is { HasProposedColor: true } ? winner.Color : null;
         Sync(setFirst, report, "Color", h => h.Color, (h, v) => h.Color = v, v => !string.IsNullOrWhiteSpace(v));
-        foreach (var hold in ordered.Where(h => !string.IsNullOrWhiteSpace(h.Color) && h.HasProposedColor != (proposed is not null)))
+
+        // Every member now has the winner's colour (or none), and the mark follows the winner. A mark left over from an
+        // earlier proposal is dropped, so a hold later set to that same colour does not read as suggested again.
+        foreach (var hold in ordered)
         {
-            hold.ProposedColor = proposed;
-            if (before[hold.Id] == hold.Color)
+            var shownBefore = shown[hold.Id];
+            hold.ProposedColor = string.IsNullOrWhiteSpace(hold.Color) ? null : proposed;
+            if (shownBefore != hold.HasProposedColor && before[hold.Id] == hold.Color)
             {
                 report.Updated("Color", hold.Id);
             }

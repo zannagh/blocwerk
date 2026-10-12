@@ -88,17 +88,26 @@ public static class HoldMergeRules
     public static void MergeFlags(Hold kept, Hold removed)
     {
         kept.Name = string.IsNullOrWhiteSpace(kept.Name) ? removed.Name : kept.Name;
-        if (string.IsNullOrWhiteSpace(kept.Color))
-        {
-            kept.Color = removed.Color;
-            kept.ProposedColor = removed.ProposedColor;
-        }
-
+        MergeColor(kept, removed);
         kept.Material ??= removed.Material;
         kept.HandType ??= removed.HandType;
         kept.IsOnKickboard |= removed.IsOnKickboard;
         kept.NeedsReview |= removed.NeedsReview;
         kept.Confidence = Math.Max(kept.Confidence, removed.Confidence);
         kept.IsAutoDetected &= removed.IsAutoDetected;
+    }
+
+    /// <summary>
+    /// The colour after a merge. A colour a person set comes first: the keeper's, else the removed hold's (also when the
+    /// keeper only has the detection's proposal). Without one, the keeper's proposal stays, else the removed hold's.
+    /// </summary>
+    private static void MergeColor(Hold kept, Hold removed)
+    {
+        var removedSet = !string.IsNullOrWhiteSpace(removed.Color) && !removed.HasProposedColor;
+        if (string.IsNullOrWhiteSpace(kept.Color) || (kept.HasProposedColor && removedSet))
+        {
+            kept.Color = removed.Color;
+            kept.ProposedColor = removed.HasProposedColor ? removed.Color : null;
+        }
     }
 }

@@ -59,6 +59,32 @@ public class HoldColorSamplerTests
     }
 
     [Fact]
+    public void ACShapedHold_IsNotReadFromWhatSitsInItsHollow()
+    {
+        // A blue C open to the right, with a red hold filling its hollow. The outline's centre lies in the hollow, so
+        // shrinking the outline about it pulls the arms' inner edges into the red; a rim off all the way round does not.
+        var hold = new Hold { X = 0.5, Y = 0.5, Radius = 0.2, ShapePoints = CShape() };
+        bool InHollow(int x, int y) => x >= 170 && x <= 262 && Math.Abs(y - 150) <= 30;
+        bool InC(int x, int y) => Math.Abs(x - 200) <= 60 && Math.Abs(y - 150) <= 60 && !InHollow(x, y);
+        var red = OklabColor.FromRgb(200, 45, 50);
+
+        var estimate = HoldColorSampler.Estimate(hold, 400, 300, (x, y) => InC(x, y) ? Blue : InHollow(x, y) ? red : Wood);
+
+        Assert.Equal("blue", estimate.Color);
+    }
+
+    [Fact]
+    public void AnOutlineTooThinToKeepACore_IsReadWhole()
+    {
+        var hold = new Hold { X = 0.5, Y = 0.5, Radius = 0.2, ShapePoints = Ring(0.2, 0.012) };
+
+        var estimate = HoldColorSampler.Estimate(
+            hold, 400, 300, (x, y) => Math.Abs(x - 200) <= 80 && Math.Abs(y - 150) <= 4 ? Blue : Wood);
+
+        Assert.Equal("blue", estimate.Color);
+    }
+
+    [Fact]
     public void AHoldAtThePhotoEdge_ReadsOnlyPixelsThatExist_AndALargeHoldIsSampledSparsely()
     {
         var atEdge = new Hold { X = 0.0, Y = 0.0, Radius = 0.1 };
@@ -96,6 +122,12 @@ public class HoldColorSamplerTests
     }
 
     private static double Distance(int x, int y, double cx, double cy) => Math.Sqrt(((x - cx) * (x - cx)) + ((y - cy) * (y - cy)));
+
+    // A square C, 120 px wide and high on a 400x300 photo, 30 px thick, open to the right.
+    private static List<ShapePoint> CShape() =>
+        new (double X, double Y)[] { (-60, -60), (60, -60), (60, -30), (-30, -30), (-30, 30), (60, 30), (60, 60), (-60, 60) }
+            .Select(p => new ShapePoint { Dx = p.X / 400, Dy = p.Y / 300 })
+            .ToList();
 
     // An axis-aligned box around the hold centre, as offsets in fractions of the photo's width and height.
     private static List<ShapePoint> Ring(double halfWidth, double halfHeight) =>

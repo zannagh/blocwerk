@@ -119,12 +119,13 @@ For holds that are already live without a colour (an update applied before this 
 
 ```sh
 curl -fsS -X POST -H "$AUTH" "$BASE/api/walls/$WALL/holds/suggest-colors" | jq
-# { "considered": 124, "proposed": 71, "fromLinked": 3, "leftUnset": 50,
+# { "considered": 124, "proposed": 71, "fromLinked": 3, "leftUnset": 50, "changedMeanwhile": 0,
 #   "proposedByColor": { "blue": 14, "yellow": 19, … }, "leftUnsetByReason": { "BetweenColors": 12, "MostlyChalk": 9, … } }
 ```
 
 * The key of the panel update (a personal key with write access, owner an admin of the wall). On the page it is *Wall settings → Suggest hold colours*.
 * It never touches a hold that has a colour, and it can be repeated: what was left unset stays unset until the photo changes.
+* The photos are read without holding the wall up; each hold is looked at again just before it is written, and one that got a colour in between is left alone (`changedMeanwhile`). A wooden hold never gets a plastic colour.
 * `fromLinked` are holds that took the colour of the same hold on another panel. One change-journal batch per run (`hold-color-proposals`).
 
 ## Wall preparation, end to end

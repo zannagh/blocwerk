@@ -21,6 +21,7 @@ internal static class HoldColorSampler
         var (left, top, right, bottom) = mask.Bounds(width, height);
         var stride = mask.Stride;
         var own = new List<OklabColor>();
+        var rim = new List<OklabColor>();
         var surroundings = new List<OklabColor>();
         for (var y = top; y < bottom; y += stride)
         {
@@ -30,11 +31,21 @@ internal static class HoldColorSampler
                 {
                     own.Add(pixel(x, y));
                 }
+                else if (mask.IsOnHold(x + 0.5, y + 0.5))
+                {
+                    rim.Add(pixel(x, y));
+                }
                 else if (mask.IsSurroundings(x + 0.5, y + 0.5))
                 {
                     surroundings.Add(pixel(x, y));
                 }
             }
+        }
+
+        // An outline too thin to keep a core after its rim is taken off is read whole.
+        if (own.Count < HoldColorEstimator.MinPixels)
+        {
+            own.AddRange(rim);
         }
 
         return HoldColorEstimator.Estimate(own, surroundings, own.Count * (double)stride * stride);

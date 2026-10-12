@@ -11,40 +11,22 @@ using Microsoft.Extensions.Logging;
 namespace Blocwerk.Core.Services;
 
 /// <summary><see cref="IHoldColorProposalService"/>: the Wall Settings action and its API route.</summary>
-public sealed class HoldColorProposalService : IHoldColorProposalService
+/// <param name="dbContextFactory">Context factory.</param>
+/// <param name="currentUserService">The acting user.</param>
+/// <param name="proposer">Estimates the colours.</param>
+/// <param name="logger">Logger.</param>
+/// <param name="journal">Opens the named journal batch, when the host has a journal.</param>
+/// <param name="kioskContext">The kiosk context, when the host has one.</param>
+public sealed class HoldColorProposalService(
+    IDbContextFactory<BlocwerkDbContext> dbContextFactory,
+    ICurrentUserService currentUserService,
+    IHoldColorProposer proposer,
+    ILogger<HoldColorProposalService> logger,
+    IChangeJournal? journal = null,
+    IKioskContext? kioskContext = null) : IHoldColorProposalService
 {
     /// <summary>The journal batch label of an admin run.</summary>
     public const string BatchLabel = "hold-color-proposals";
-
-    private readonly IDbContextFactory<BlocwerkDbContext> dbContextFactory;
-    private readonly ICurrentUserService currentUserService;
-    private readonly IHoldColorProposer proposer;
-    private readonly ILogger<HoldColorProposalService> logger;
-    private readonly IChangeJournal? journal;
-    private readonly IKioskContext? kioskContext;
-
-    /// <summary>Initializes a new instance of the <see cref="HoldColorProposalService"/> class.</summary>
-    /// <param name="dbContextFactory">Context factory.</param>
-    /// <param name="currentUserService">The acting user.</param>
-    /// <param name="proposer">Estimates the colours.</param>
-    /// <param name="logger">Logger.</param>
-    /// <param name="journal">Opens the named journal batch, when the host has a journal.</param>
-    /// <param name="kioskContext">The kiosk context, when the host has one.</param>
-    public HoldColorProposalService(
-        IDbContextFactory<BlocwerkDbContext> dbContextFactory,
-        ICurrentUserService currentUserService,
-        IHoldColorProposer proposer,
-        ILogger<HoldColorProposalService> logger,
-        IChangeJournal? journal = null,
-        IKioskContext? kioskContext = null)
-    {
-        this.dbContextFactory = dbContextFactory;
-        this.currentUserService = currentUserService;
-        this.proposer = proposer;
-        this.logger = logger;
-        this.journal = journal;
-        this.kioskContext = kioskContext;
-    }
 
     /// <inheritdoc/>
     public async Task<HoldColorProposalStatus> GetStatusAsync(Guid wallId, CancellationToken ct = default)
@@ -68,9 +50,12 @@ public sealed class HoldColorProposalService : IHoldColorProposalService
         var (db, userId) = await OpenForAdminAsync(wallId, ct);
         await using (db)
         {
+            // Reading the photos takes seconds and changes nothing, so it runs without the wall's hold lock: a panel
+            // update that starts meanwhile is not held up. Only the write takes the lock, and it looks at each hold again.
+            var plan = await proposer.PlanAsync(db, wallId, ct: ct);
             using var wallLock = WallHoldWriteLock.TryAcquire(
                 wallId, "Another update of this wall's holds is running. Try again in a moment.");
-            var report = await proposer.ProposeAsync(db, wallId, ct: ct);
+            var report = await proposer.ApplyAsync(db, wallId, plan, ct);
             if (report.Any)
             {
                 using var scope = journal?.BeginBatch(BatchLabel, ChangeJournalScopeKind.Wall, wallId);

@@ -39,4 +39,7 @@ public enum HoldColorVerdict
 
     /// <summary>The same hold on two panels gave two different colours.</summary>
     ViewsDisagree = 10,
+
+    /// <summary>The hold's material does not come in the colour (a wooden hold only has the wood tones).</summary>
+    NotForMaterial = 11,
 }

@@ -11,15 +11,17 @@ namespace Blocwerk.Core.Services;
 /// <summary>
 /// Colour proposals for the holds a panel update added. The detector finds holds but not their colour, so a new hold
 /// used to go live without one; here each gets the colour its new panel photo shows, when that can be told
-/// (<see cref="IHoldColorProposer"/>). Carried holds keep what they had and are not looked at.
+/// (<see cref="IHoldColorProposer"/>). A carried hold keeps what it had. The one case in which a carried hold gets a
+/// colour here: it had none and is linked to a new hold, so it takes the colour proposed for that hold (the same hold on
+/// two panels gets one colour).
 /// </summary>
 public partial class WallBigUpdateService
 {
     /// <summary>
     /// Proposes colours for the holds that are new in <paramref name="newGen"/> (no old hold behind them) and have no
-    /// colour. Runs after the promote is committed, inside the still-open wall-update batch, and before the linked-hold
-    /// sync. Best effort: a failure only logs and leaves the holds as the promote wrote them; the wall page's "Suggest
-    /// colours" does the same later.
+    /// colour, together with the holds linked to them that have none either. Runs after the promote is committed,
+    /// inside the still-open wall-update batch, and before the linked-hold sync. Best effort: a failure only logs and
+    /// leaves the holds as the promote wrote them; the wall page's "Suggest colours" does the same later.
     /// </summary>
     private async Task ProposeNewHoldColorsAfterPromoteAsync(BlocwerkDbContext db, Guid wallId, int newGen)
     {
@@ -36,7 +38,7 @@ public partial class WallBigUpdateService
                 return;
             }
 
-            var report = await colorProposer.ProposeAsync(db, wallId, newHoldIds);
+            var report = await colorProposer.ApplyAsync(db, wallId, await colorProposer.PlanAsync(db, wallId, newHoldIds));
             if (report.Any)
             {
                 await db.SaveChangesAsync();

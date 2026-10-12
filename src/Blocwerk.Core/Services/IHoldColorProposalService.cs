@@ -4,11 +4,6 @@
 
 namespace Blocwerk.Core.Services;
 
-/// <summary>How many of a wall's live holds have no colour, and how many carry an unconfirmed proposal.</summary>
-/// <param name="WithoutColor">Live holds without a colour.</param>
-/// <param name="Proposed">Live holds whose colour is still the detection's proposal.</param>
-public sealed record HoldColorProposalStatus(int WithoutColor, int Proposed);
-
 /// <summary>
 /// The wall-admin action "Suggest colours for holds without one": runs <see cref="IHoldColorProposer"/> over every live
 /// hold of the wall that has no colour, in one journal batch. Safe to repeat: a hold that has a colour is never touched,

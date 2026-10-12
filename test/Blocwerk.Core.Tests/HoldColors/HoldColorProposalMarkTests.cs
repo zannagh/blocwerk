@@ -94,6 +94,71 @@ public class HoldColorProposalMarkTests
         Assert.Equal(("blue", true), Mark(Proposed("blue").Clone()));
     }
 
+    [Theory]
+    [InlineData(null, false, "blue", false)]
+    [InlineData("green", true, "blue", false)]
+    [InlineData("green", false, "green", false)]
+    public void MergingAHoldSetByAPerson_IntoABlankProposedOrSetKeeper_KeepsAPersonsColour(
+        string? keptColor, bool keptProposed, string expected, bool expectedProposed)
+    {
+        // "It is this hold": the old hold (blue, set by a person) is merged into a keeper in each colour state.
+        var kept = new Hold { Color = keptColor, ProposedColor = keptProposed ? keptColor : null };
+
+        Detection.Outlines.HoldMergeRules.MergeFlags(kept, new Hold { Color = "blue" });
+
+        Assert.Equal((expected, expectedProposed), Mark(kept));
+        Assert.Null(kept.ProposedColor);
+    }
+
+    [Fact]
+    public void MergingAProposal_NeverReplacesWhatTheKeeperHas()
+    {
+        var keptProposal = Proposed("green");
+        var keptSet = new Hold { Color = "yellow" };
+
+        Detection.Outlines.HoldMergeRules.MergeFlags(keptProposal, Proposed("blue"));
+        Detection.Outlines.HoldMergeRules.MergeFlags(keptSet, Proposed("blue"));
+
+        Assert.Equal(("green", true), Mark(keptProposal));
+        Assert.Equal(("yellow", false), Mark(keptSet));
+    }
+
+    [Fact]
+    public void AMarkLeftFromAnEarlierProposal_DoesNotComeBack_WhenTheHoldIsLaterSetToThatColour()
+    {
+        // Each hold was proposed red once and then set to blue by a path that left the old proposal behind.
+        Hold Stale() => new() { Color = "blue", ProposedColor = "red" };
+        var viaSync = Stale();
+        var viaEdit = Stale();
+        var viaCopy = Stale();
+        var before = new Hold { Color = "blue" };
+        var edited = new Hold { Color = "red" };
+
+        LinkedHoldSyncRules.Apply([new Hold { Color = "red" }, viaSync], new HoldSyncReport());
+        HoldPropertySync.CopyChangedAppearance(before, edited, viaEdit);
+        HoldPropertySync.CopyAppearance(new Hold { Color = "red" }, viaCopy);
+
+        Assert.All(new[] { viaSync, viaEdit, viaCopy }, h => Assert.Equal(("red", false), Mark(h)));
+        Assert.All(new[] { viaSync, viaEdit, viaCopy }, h => Assert.Null(h.ProposedColor));
+    }
+
+    [Fact]
+    public void LinkedSync_DropsAStaleMark_AndCopyingAProposalMarksATwinThatAlreadyHasTheColour()
+    {
+        var stale = new Hold { Color = "blue", ProposedColor = "red" };
+        var twin = new Hold { Color = "blue" };
+        var sameColour = new Hold { Color = "green" };
+        var report = new HoldSyncReport();
+
+        LinkedHoldSyncRules.Apply([twin, stale], report);
+        var changed = HoldPropertySync.CopyAppearance(Proposed("green"), sameColour);
+
+        Assert.Null(stale.ProposedColor);
+        Assert.False(report.Any);
+        Assert.True(changed);
+        Assert.Equal(("green", true), Mark(sameColour));
+    }
+
     private static (string? Color, bool Proposed) Mark(Hold hold) => (hold.Color, hold.HasProposedColor);
 
     private static Hold Proposed(string color) => new() { Color = color, ProposedColor = color };

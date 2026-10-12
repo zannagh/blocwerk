@@ -13,13 +13,19 @@ public sealed class HoldColorProposalReport
     private readonly Dictionary<HoldColorVerdict, int> unsetByVerdict = new();
 
     /// <summary>Gets how many holds without a colour were looked at.</summary>
-    public int Considered => Proposed + FromLinked + LeftUnset;
+    public int Considered => Proposed + FromLinked + LeftUnset + ChangedMeanwhile;
 
     /// <summary>Gets how many holds got a colour proposed from their photo.</summary>
     public int Proposed => proposedByColor.Values.Sum();
 
-    /// <summary>Gets or sets how many holds took the colour of the same hold on another panel.</summary>
-    public int FromLinked { get; set; }
+    /// <summary>Gets how many holds took the colour of the same hold on another panel.</summary>
+    public int FromLinked { get; private set; }
+
+    /// <summary>
+    /// Gets or sets how many holds were left alone because they got a colour, or stopped being live, between the
+    /// estimate and the write.
+    /// </summary>
+    public int ChangedMeanwhile { get; set; }
 
     /// <summary>Gets how many holds stayed without a colour because the estimate was not sure.</summary>
     public int LeftUnset => unsetByVerdict.Values.Sum();
@@ -37,9 +43,18 @@ public sealed class HoldColorProposalReport
     /// <returns>The summary.</returns>
     public string Summary() =>
         $"{Considered} holds without a colour: {Proposed} proposed ({Join(proposedByColor)}), {FromLinked} from a linked hold, "
-        + $"{LeftUnset} left unset ({Join(unsetByVerdict)})";
+        + $"{LeftUnset} left unset ({Join(unsetByVerdict)}), {ChangedMeanwhile} changed meanwhile";
 
-    internal void AddProposed(string color, int holds) => proposedByColor[color] = proposedByColor.GetValueOrDefault(color) + holds;
+    internal void AddWritten(HoldColorPlanEntry entry)
+    {
+        if (entry.FromLinked)
+        {
+            FromLinked++;
+            return;
+        }
+
+        proposedByColor[entry.Color!] = proposedByColor.GetValueOrDefault(entry.Color!) + 1;
+    }
 
     internal void AddUnset(HoldColorVerdict verdict, int holds) => unsetByVerdict[verdict] = unsetByVerdict.GetValueOrDefault(verdict) + holds;
 

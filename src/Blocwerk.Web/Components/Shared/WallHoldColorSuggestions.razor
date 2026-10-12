@@ -22,7 +22,7 @@
     </p>
 
     <div class="staged-actions">
-        <button class="btn-secondary" disabled="@(busy || status.WithoutColor == 0)" @onclick="SuggestAsync">Suggest colours for holds without one</button>
+        <button class="btn-secondary" disabled="@(busy || status.WithoutColor == 0)" @onclick="SuggestAsync">@(busy ? "Working…" : "Suggest colours for holds without one")</button>
     </div>
 
     @if (failure is not null)

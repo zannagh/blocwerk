@@ -5,7 +5,9 @@
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
+using Blocwerk.Core.Tests.LookOver;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 namespace Blocwerk.Core.Tests.HoldColors;
@@ -77,7 +79,9 @@ public class HoldColorPromoteTests
         var panel = await s.AddPanelAsync(0, generation: 1, staged: true);
         var fresh = await s.AddHoldAsync(panel, HoldColorScenario.BlueSpot, generation: 1);
         var proposer = Substitute.For<IHoldColorProposer>();
-        proposer.ProposeAsync(Arg.Any<BlocwerkDbContext>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<CancellationToken>())
+        proposer.PlanAsync(Arg.Any<BlocwerkDbContext>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<CancellationToken>())
+            .Returns(new HoldColorPlan([]));
+        proposer.ApplyAsync(Arg.Any<BlocwerkDbContext>(), Arg.Any<Guid>(), Arg.Any<HoldColorPlan>(), Arg.Any<CancellationToken>())
             .Returns<Task<HoldColorProposalReport>>(async call =>
             {
                 (await call.Arg<BlocwerkDbContext>().Holds.FirstAsync(h => h.Id == fresh)).Color = "black";
@@ -90,8 +94,39 @@ public class HoldColorPromoteTests
         Assert.Equal(1, (await db.Walls.FirstAsync(w => w.Id == s.WallId)).CurrentGeneration);
         var hold = await s.GetAsync(fresh);
         Assert.Equal((1, null), (hold.Generation, hold.Color));
-        await proposer.Received(1).ProposeAsync(
+        await proposer.Received(1).PlanAsync(
             Arg.Any<BlocwerkDbContext>(), s.WallId, Arg.Is<IReadOnlyCollection<Guid>?>(ids => ids!.Single() == fresh), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task AFailingProposalStep_StillLeavesTheLookOverFindings()
+    {
+        using var h = new WallTestHarness();
+        var proposer = Substitute.For<IHoldColorProposer>();
+        proposer.PlanAsync(Arg.Any<BlocwerkDbContext>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<CancellationToken>())
+            .Returns<Task<HoldColorPlan>>(_ => throw new InvalidOperationException("the photo store is down"));
+
+        // Another hold sits on the old hold's spot now: the detection becomes a new hold (no colour) and a finding.
+        var w = await HoldLookFixture.SeedAsync(h, targetDetected: true);
+        w = w with
+        {
+            Service = new WallBigUpdateService(
+                h.DbContextFactory, h.CurrentUser, h.HoldDetection, new SameFrameHoldMatcher(), NullLogger<WallBigUpdateService>.Instance,
+                presenceProbe: w.Probe, colorProposer: proposer),
+        };
+        w.Probe.Set(HoldLookFixture.TargetX, HoldLookFixture.TargetY, 0.1);
+        var session = await w.Service.ResumeAsync(w.WallId);
+        await HoldLookFixture.RecordAsync(w, session);
+        await LookOverFixture.PromoteLikeApplyAsync(w, session);
+
+        await proposer.Received(1).PlanAsync(
+            Arg.Any<BlocwerkDbContext>(), w.WallId, Arg.Is<IReadOnlyCollection<Guid>?>(ids => ids!.Contains(w.DetectionId!.Value)), Arg.Any<CancellationToken>());
+        var finding = await LookOverFixture.FindingAsync(h, w.WallId);
+        Assert.Equal((LookOverFindingKind.ReplacedByOther, LookOverFindingStatus.Open), (finding.Kind, finding.Status));
+        var wall = await LookOverFixture.WallAsync(h, w.WallId);
+        Assert.Equal(3, wall.CurrentGeneration);
+        Assert.NotNull(wall.LookOverPendingSince);
+        Assert.Null((await LookOverFixture.HoldAsync(h, w.DetectionId))!.Color);
     }
 
     private static async Task<List<Guid>> OldHoldIdsAsync(HoldColorScenario s)

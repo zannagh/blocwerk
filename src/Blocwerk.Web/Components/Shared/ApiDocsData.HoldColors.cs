@@ -14,7 +14,7 @@ internal static partial class ApiDocsData
         + "write access whose owner is an admin of the wall; wall, kiosk and installation keys get 403.";
 
     private const string HoldColorsJson =
-        "{\n  \"considered\": 124,\n  \"proposed\": 71,\n  \"fromLinked\": 3,\n  \"leftUnset\": 50,\n  "
+        "{\n  \"considered\": 124,\n  \"proposed\": 71,\n  \"fromLinked\": 3,\n  \"leftUnset\": 50,\n  \"changedMeanwhile\": 0,\n  "
         + "\"proposedByColor\": { \"blue\": 14, \"yellow\": 19 },\n  \"leftUnsetByReason\": { \"BetweenColors\": 12, \"MostlyChalk\": 9 }\n}";
 
     private const string HoldColorsNote =

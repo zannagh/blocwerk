@@ -607,7 +607,7 @@ public class WallService : IWallService
             if (!string.IsNullOrEmpty(actualHold.Color))
             {
                 virtualHold.Color = actualHold.Color;
-                virtualHold.ProposedColor = actualHold.ProposedColor;
+                virtualHold.ProposedColor = actualHold.HasProposedColor ? actualHold.Color : null;
             }
 
             virtualHold.Material = actualHold.Material;

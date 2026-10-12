@@ -11,6 +11,7 @@ namespace Blocwerk.Web.Controllers;
 /// <param name="Proposed">Holds that got a colour proposed from their photo.</param>
 /// <param name="FromLinked">Holds that took the colour of the same hold on another panel.</param>
 /// <param name="LeftUnset">Holds left without a colour because the estimate was not sure.</param>
+/// <param name="ChangedMeanwhile">Holds left alone because they got a colour or went away while the photos were read.</param>
 /// <param name="ProposedByColor">The proposals per colour.</param>
 /// <param name="LeftUnsetByReason">The holds left unset, per reason.</param>
 public sealed record HoldColorSuggestionResponse(
@@ -18,6 +19,7 @@ public sealed record HoldColorSuggestionResponse(
     int Proposed,
     int FromLinked,
     int LeftUnset,
+    int ChangedMeanwhile,
     IReadOnlyDictionary<string, int> ProposedByColor,
     IReadOnlyDictionary<string, int> LeftUnsetByReason)
 {
@@ -29,6 +31,7 @@ public sealed record HoldColorSuggestionResponse(
         report.Proposed,
         report.FromLinked,
         report.LeftUnset,
+        report.ChangedMeanwhile,
         report.ProposedByColor,
         report.UnsetByVerdict.ToDictionary(v => v.Key.ToString(), v => v.Value));
 }

@@ -8,9 +8,10 @@ namespace Blocwerk.Core.Holds.Colors;
 
 /// <summary>
 /// Which photo pixels belong to a hold for the colour estimate, and which to the ring of surroundings around it. A
-/// traced outline is pulled in a little (its rim is shadow and wall); a hold that is only a circle uses the circle's
-/// core, because the circle encloses the hold and most of its rim is wall. Pocket holes are left out. Pure geometry in
-/// photo pixels.
+/// traced outline loses a rim all the way round (its edge is shadow and wall): a pixel counts only when the points a
+/// rim's width away from it are inside too, which follows a C-shaped or hooked outline where shrinking it about its
+/// centre would reach into the hollow. A hold that is only a circle uses the circle's core, because the circle
+/// encloses the hold and most of its rim is wall. Pocket holes are left out. Pure geometry in photo pixels.
 /// </summary>
 internal sealed class HoldColorMask
 {
@@ -18,9 +19,14 @@ internal sealed class HoldColorMask
     private const int MaxSteps = 96;
 
     private const double CircleCore = 0.55;
-    private const double OutlineCore = 0.8;
+
+    /// <summary>The rim taken off a traced outline, as a share of the outline's reach, and at least a pixel.</summary>
+    private const double OutlineRim = 0.08;
     private const double RingFrom = 1.3;
     private const double RingTo = 1.9;
+
+    private static readonly (double X, double Y)[] RimSteps =
+        [(1, 0), (0.7071, 0.7071), (0, 1), (-0.7071, 0.7071), (-1, 0), (-0.7071, -0.7071), (0, -1), (0.7071, -0.7071)];
 
     private readonly double centreX;
     private readonly double centreY;
@@ -28,13 +34,13 @@ internal sealed class HoldColorMask
     private readonly (double X, double Y)[]? outline;
     private readonly (double X, double Y)[][] holes;
 
-    private HoldColorMask(double centreX, double centreY, double radius, (double X, double Y)[]? outline, (double X, double Y)[][] holes)
+    private HoldColorMask(double x, double y, double reach, (double X, double Y)[]? ring, (double X, double Y)[][] pockets)
     {
-        this.centreX = centreX;
-        this.centreY = centreY;
-        this.radius = radius;
-        this.outline = outline;
-        this.holes = holes;
+        centreX = x;
+        centreY = y;
+        radius = reach;
+        outline = ring;
+        holes = pockets;
     }
 
     /// <summary>The distance between two sampled pixels, so a large hold costs no more than a small one.</summary>
@@ -89,8 +95,15 @@ internal sealed class HoldColorMask
             return Distance(x, y) <= CircleCore * radius;
         }
 
-        return InsideScaled(x, y, OutlineCore) && !holes.Any(h => Inside(h, x, y));
+        var rim = Math.Max(1.0, OutlineRim * radius);
+        return IsOnHold(x, y) && RimSteps.All(step => IsOnHold(x + (step.X * rim), y + (step.Y * rim)));
     }
+
+    /// <summary>Whether the pixel is anywhere inside the outline, rim included: what a hold too thin to have a core is read from.</summary>
+    /// <param name="x">Pixel centre x.</param>
+    /// <param name="y">Pixel centre y.</param>
+    /// <returns>True inside the outline and outside its pockets; false for a hold without an outline.</returns>
+    public bool IsOnHold(double x, double y) => outline is not null && Inside(outline, x, y) && !holes.Any(h => Inside(h, x, y));
 
     /// <summary>Whether the pixel counts as the hold's surroundings.</summary>
     /// <param name="x">Pixel centre x.</param>

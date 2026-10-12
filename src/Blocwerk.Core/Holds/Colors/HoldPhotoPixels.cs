@@ -15,9 +15,9 @@ internal sealed class HoldPhotoPixels : IDisposable
 {
     private readonly SKBitmap bitmap;
 
-    private HoldPhotoPixels(SKBitmap bitmap)
+    private HoldPhotoPixels(SKBitmap upright)
     {
-        this.bitmap = bitmap;
+        bitmap = upright;
     }
 
     /// <summary>Photo width in pixels.</summary>
