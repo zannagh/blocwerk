@@ -23,6 +23,10 @@ public enum CheckCropView
 /// <param name="Boulders">Live boulders that use the old hold.</param>
 /// <param name="HoldName">The old hold's name or colour, when it has one.</param>
 /// <param name="Confidence">The matcher's confidence (low-confidence match).</param>
+/// <param name="CanRemove">
+/// "Remove" can be answered here. Not for a replaced hold on a panel other than the centre: a removal there is only
+/// kept when it is made in the full review (<see cref="Services.CarryoverScope"/>).
+/// </param>
 public sealed record RefreshCheck(
     Guid Id,
     UpdateExceptionKind Kind,
@@ -31,4 +35,5 @@ public sealed record RefreshCheck(
     bool HasModel,
     int Boulders,
     string? HoldName,
-    double? Confidence);
+    double? Confidence,
+    bool CanRemove = true);

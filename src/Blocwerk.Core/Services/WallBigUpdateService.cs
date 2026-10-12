@@ -207,14 +207,6 @@ public partial class WallBigUpdateService : IWallBigUpdateService
                 autoMatchStatus, wall.Id, ex.Message, centreOldHolds.Count);
         }
 
-        // Matched by position is not yet the same hold: pairs whose detection shows another hold are taken apart here,
-        // before the hand-placed merge and the new-hold triage read the pairs.
-        var looks = new LookOutcome();
-        if (autoMatchStatus == AutoMatchStatus.Ok)
-        {
-            JudgeLooks(looks, new LookPanel(centerPanelId, centreOldHolds, centerHolds, oldCentrePhoto, centerImage), carryover, removedCandidates, carriedWarp, newCenter);
-        }
-
         var neighbours = new List<NeighbourOverlap>();
         var handMerges = new List<HandPlacedMerge>();
         var handAmbiguous = new List<HandPlacedAmbiguity>();
@@ -253,8 +245,6 @@ public partial class WallBigUpdateService : IWallBigUpdateService
 
             if (aligned)
             {
-                var oldNeighbourPhoto = OldPanelPhoto(oldNeighbourHolds, oldPanelPhotosById);
-                JudgeLooks(looks, new LookPanel(panel.Id, oldNeighbourHolds ?? [], neighbourHolds, oldNeighbourPhoto, panel.StagedPhoto!), carryover, removedCandidates, carriedWarp, null);
                 MergeHandPlaced(neighbourHolds, oldNeighbourHolds ?? [], panel.StagedPhoto!, carryover, removedCandidates, null, carriedWarp, handMerges, handAmbiguous);
             }
 
@@ -289,15 +279,17 @@ public partial class WallBigUpdateService : IWallBigUpdateService
             neighbours.Add(new NeighbourOverlap(panel.Id, panel.Col, panel.Row, proposals, overlapFailed));
         }
 
+        // Matched by position is not yet the same hold: pairs whose detection shows another hold are taken apart again.
+        var looks = await JudgeLooksAsync(
+            db, wall, stagedGen, new LookInputs(oldByPosition, oldPanelPhotosById, oldCentrePhoto, unalignedCarry), carryover, removedCandidates, carriedWarp, newCenter);
         if (autoMatchStatus == AutoMatchStatus.Ok)
         {
             MergeHandPlaced(centerHolds, centreOldHolds, centerImage, carryover, removedCandidates, newCenter, carriedWarp, handMerges, handAmbiguous);
         }
 
-        var notFoundAgain = CollectNotFoundAgain(looks, removedCandidates);
+        CollectNotFoundAgain(looks, removedCandidates);
         var removals = new RemovalInputs(oldByPosition, removedCandidates.ToHashSet(), carriedWarp);
         var triage = await SuggestNewDiscardsAsync(db, wall, stagedGen, carryover, oldHolds, oldPanelPhotosById, oldCentrePhoto, neighbours, use3DEvidence, removals);
-        KeepReplacements(looks, triage.Discards);
         return new BigUpdateSession(
             wall.Id, centerPanelId, carryover, removedCandidates, newCenter, neighbours,
             autoMatchStatus, autoMatchMessage, carriedWarp, carriedShapes,
@@ -311,7 +303,7 @@ public partial class WallBigUpdateService : IWallBigUpdateService
             handMerges,
             handAmbiguous,
             looks.Findings,
-            notFoundAgain);
+            looks.NotFoundAgain);
     }
 
     /// <summary>

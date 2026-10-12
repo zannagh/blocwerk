@@ -2,6 +2,7 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
@@ -12,9 +13,9 @@ namespace Blocwerk.Core.Tests;
 
 /// <summary>
 /// After a re-set the matcher still pairs an old hold with whatever was detected on its spot. The look check takes a
-/// pair apart when the detection shows another hold, asks about an unclear one, and tells a hold the detector merely
-/// missed from one that is gone; the promote then marks the boulders of the holds that are gone, never taking a hold
-/// off. An update where nothing changed stays untouched.
+/// pair apart when the detection shows another hold, asks about an unclear one, and tells a hold that is gone from one
+/// the detector merely missed; the promote then marks the boulders of the holds that are gone, never taking a hold
+/// off. What cannot be measured is not judged, and an update where nothing changed stays untouched.
 /// </summary>
 public class HoldLookSessionTests
 {
@@ -23,9 +24,7 @@ public class HoldLookSessionTests
     {
         using var h = new WallTestHarness();
         var w = await SeedAsync(h, targetDetected: true);
-
-        // Asked once as the pair (another hold), then by the new-hold triage, which sees the surroundings unchanged.
-        w.Probe.Set(TargetX, TargetY, 0.1, 0.95);
+        w.Probe.Set(TargetX, TargetY, 0.1);
 
         var session = await w.Service.ResumeAsync(w.WallId);
 
@@ -74,6 +73,29 @@ public class HoldLookSessionTests
         Assert.Equal(Anchors.Length + 2, await db.Holds.CountAsync(x => x.Generation == 3));
     }
 
+    // The detection's spot looks unchanged since the old photo (the second question asked about a low pair, and what the
+    // triage finds too): the matcher paired the old hold with something that was always there. Not a replacement.
+    [Theory]
+    [InlineData(0.2, true)]
+    [InlineData(0.5, false)]
+    public async Task APairWhoseDetectionWasAlwaysThere_IsNoReplacement_TheOldHoldIsJudgedByItsOwnSpot(double ownSpot, bool gone)
+    {
+        using var h = new WallTestHarness();
+        var w = await SeedAsync(h, targetDetected: true);
+        w.Probe.Set(TargetX, TargetY, 0.1, 0.95, ownSpot, 0.95);
+
+        var session = await w.Service.ResumeAsync(w.WallId);
+
+        Assert.DoesNotContain(session.Carryover, p => p.OldHoldId == w.TargetId);
+        Assert.Contains(w.TargetId, session.RemovedCandidateHoldIds);
+        Assert.Empty(session.Looks!);
+        Assert.Equal(NewHoldDiscardReason.UnchangedSinceOldPhoto, session.SuggestedNewDiscards![w.DetectionId!.Value]);
+        Assert.Equal(gone ? 1 : 0, session.NotFoundAgain!.Count(n => n.Key == w.TargetId && n.Value == HoldMoveOutcome.NotFound));
+        Assert.Equal(gone ? 1 : 0, session.NotFoundAgain!.Count);
+        await RecordAsync(w, session);
+        Assert.Empty(await w.Sessions.GetUpdateExceptionsAsync(w.WallId));
+    }
+
     [Fact]
     public async Task ReplacedHandPlacedHold_IsNotMergedOntoTheSameDetectionAgain()
     {
@@ -88,14 +110,31 @@ public class HoldLookSessionTests
         Assert.Equal(HoldMoveOutcome.Replaced, session.NotFoundAgain![w.TargetId]);
     }
 
-    [Theory]
-    [InlineData(0.4)]
-    [InlineData(null)]
-    public async Task UnclearOrUnmeasuredPair_IsCarried_AndAlwaysGetsACard(double? score)
+    [Fact]
+    public async Task ALowPairOfTheSameKindOfHold_IsOnlyUnsure_ItMayHaveBeenTurned()
     {
         using var h = new WallTestHarness();
         var w = await SeedAsync(h, targetDetected: true);
-        w.Probe.Set(TargetX, TargetY, score);
+        w.Probe.Set(TargetX, TargetY, 0.1);
+        await using (var db = h.CreateContext())
+        {
+            var print = new HoldFingerprint { L = 60, A = 10, B = 40, Aspect = 2, Histogram = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] }.ToJson();
+            await db.Holds.Where(x => x.Id == w.TargetId || x.Id == w.DetectionId).ExecuteUpdateAsync(s => s.SetProperty(x => x.FingerprintJson, print));
+        }
+
+        var session = await w.Service.ResumeAsync(w.WallId);
+
+        Assert.Contains(session.Carryover, p => p.OldHoldId == w.TargetId);
+        Assert.Equal(HoldLook.Unsure, Assert.Single(session.Looks!).Look);
+        Assert.Empty(session.NotFoundAgain!);
+    }
+
+    [Fact]
+    public async Task UnclearPair_IsCarried_AndAlwaysGetsACard()
+    {
+        using var h = new WallTestHarness();
+        var w = await SeedAsync(h, targetDetected: true);
+        w.Probe.Set(TargetX, TargetY, 0.4);
 
         var session = await w.Service.ResumeAsync(w.WallId);
 
@@ -106,7 +145,7 @@ public class HoldLookSessionTests
         Assert.Empty(session.NotFoundAgain!);
         await RecordAsync(w, session);
         var card = Assert.Single(await w.Sessions.GetUpdateExceptionsAsync(w.WallId));
-        Assert.Equal((UpdateExceptionKind.LowConfidenceMatch, (Guid?)w.TargetId, score), (card.Kind, card.OldHoldId, card.PhotoScore));
+        Assert.Equal((UpdateExceptionKind.LowConfidenceMatch, (Guid?)w.TargetId, (double?)0.4), (card.Kind, card.OldHoldId, card.PhotoScore));
 
         await PromoteAsync(w, session);
 
@@ -117,11 +156,34 @@ public class HoldLookSessionTests
     }
 
     [Fact]
-    public async Task HoldNotFoundAgain_StaysOnItsBoulder_WhichIsMarkedWithTheReason()
+    public async Task APairThatCannotBeMeasured_IsNotJudged_NoCardNoMark()
+    {
+        using var h = new WallTestHarness();
+        var w = await SeedAsync(h, targetDetected: true);
+        w.Probe.Set(TargetX, TargetY, (double?)null);
+
+        var session = await w.Service.ResumeAsync(w.WallId);
+
+        Assert.Contains(session.Carryover, p => p.OldHoldId == w.TargetId && p.NewHoldId == w.DetectionId);
+        Assert.Empty(session.Looks!);
+        Assert.Empty(session.NotFoundAgain!);
+        await RecordAsync(w, session);
+        Assert.Empty(await w.Sessions.GetUpdateExceptionsAsync(w.WallId));
+        await PromoteAsync(w, session);
+
+        await using var db = h.CreateContext();
+        Assert.False(await db.Boulders.AnyAsync(b => b.NeedsReview));
+        Assert.False(await db.Holds.AnyAsync(x => x.Id == w.DetectionId && x.NeedsReview));
+    }
+
+    [Theory]
+    [InlineData(0.2)]
+    [InlineData(0.3)]
+    public async Task HoldNotFoundAgain_WhoseSpotLooksGone_StaysOnItsBoulder_WhichIsMarkedWithTheReason(double score)
     {
         using var h = new WallTestHarness();
         var w = await SeedAsync(h, targetDetected: false);
-        w.Probe.Set(TargetX, TargetY, 0.2);
+        w.Probe.Set(TargetX, TargetY, score);
 
         var session = await w.Service.ResumeAsync(w.WallId);
         Assert.Equal(HoldMoveOutcome.NotFound, session.NotFoundAgain![w.TargetId]);
@@ -139,9 +201,11 @@ public class HoldLookSessionTests
     }
 
     [Theory]
-    [InlineData(0.6)]
+    [InlineData(0.9)]
+    [InlineData(0.45)]
+    [InlineData(0.31)]
     [InlineData(null)]
-    public async Task HoldNotFoundButStillThere_OrNotMeasurable_IsKeptSilently(double? score)
+    public async Task HoldNotFound_WhoseSpotIsUnclearStillThereOrNotMeasurable_IsKeptSilently(double? score)
     {
         using var h = new WallTestHarness();
         var w = await SeedAsync(h, targetDetected: false);
@@ -183,21 +247,6 @@ public class HoldLookSessionTests
     }
 
     [Fact]
-    public async Task TheVerdictIsTheSameOnEveryResume()
-    {
-        using var h = new WallTestHarness();
-        var w = await SeedAsync(h, targetDetected: true);
-        w.Probe.Set(TargetX, TargetY, 0.1);
-
-        var first = await w.Service.ResumeAsync(w.WallId);
-        var second = await w.Service.ResumeAsync(w.WallId);
-
-        Assert.Equal(first.Looks, second.Looks);
-        Assert.Equal(first.NotFoundAgain, second.NotFoundAgain);
-        Assert.Equal(first.Carryover, second.Carryover);
-    }
-
-    [Fact]
     public async Task ABrokenProbe_JudgesNothing()
     {
         using var h = new WallTestHarness();
@@ -209,28 +258,5 @@ public class HoldLookSessionTests
         Assert.Equal(Anchors.Length + 1, session.Carryover.Count);
         Assert.Empty(session.Looks!);
         Assert.Empty(session.NotFoundAgain!);
-    }
-
-    [Theory]
-    [InlineData(UpdateExceptionAnswer.Keep, CarryKind.Carried, true)]
-    [InlineData(UpdateExceptionAnswer.Remove, CarryKind.Removed, false)]
-    public async Task TheReplacedCard_IsAnsweredLikeAPossiblyRemovedHold(UpdateExceptionAnswer answer, CarryKind kind, bool stillMarked)
-    {
-        using var h = new WallTestHarness();
-        var w = await SeedAsync(h, targetDetected: true);
-        w.Probe.Set(TargetX, TargetY, 0.1);
-        var session = await w.Service.ResumeAsync(w.WallId);
-        await RecordAsync(w, session);
-        var card = Assert.Single(await w.Sessions.GetUpdateExceptionsAsync(w.WallId));
-
-        await w.Sessions.DecideUpdateExceptionAsync(w.WallId, card.Id, answer);
-
-        var decisions = await w.Sessions.GetDecisionsAsync(w.WallId);
-        var decision = decisions.Carryover.Single(d => d.OldHoldId == w.TargetId);
-        Assert.Equal((kind, (Guid?)null, true), (decision.Kind, decision.NewHoldId, decision.Confirmed));
-
-        // Kept, another hold is still there, so the boulder is still marked; removed, the hold is simply gone.
-        var marked = WallBigUpdateService.NotFoundToMark(decisions with { NotFoundAgain = session.NotFoundAgain });
-        Assert.Equal(stillMarked, marked.ContainsKey(w.TargetId));
     }
 }

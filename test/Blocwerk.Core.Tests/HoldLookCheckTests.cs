@@ -2,6 +2,7 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.HoldMoves;
 using Blocwerk.Core.Refresh;
@@ -9,30 +10,50 @@ using Blocwerk.Core.Services;
 
 namespace Blocwerk.Core.Tests;
 
-/// <summary>The look check's rules on their own: the bands, what cannot be measured, and which holds mark their boulders.</summary>
+/// <summary>The look check's rules on their own: the bands, the probe's patch, linked holds, and which holds mark their boulders.</summary>
 public class HoldLookCheckTests
 {
     [Theory]
     [InlineData(0.9, HoldLook.Same)]
     [InlineData(0.5, HoldLook.Same)]
     [InlineData(0.49, HoldLook.Unsure)]
-    [InlineData(0.35, HoldLook.Unsure)]
-    [InlineData(0.34, HoldLook.Replaced)]
+    [InlineData(0.3, HoldLook.Unsure)]
+    [InlineData(0.29, HoldLook.Replaced)]
     [InlineData(-0.2, HoldLook.Replaced)]
-    [InlineData(null, HoldLook.Unsure)]
-    public void Judge_UsesTheDefaultBands_AndNeverCallsAnUnmeasuredPairReplaced(double? score, HoldLook expected) =>
+    public void Judge_UsesTheDefaultBands(double score, HoldLook expected) =>
         Assert.Equal(expected, HoldLookCheck.Judge(score, new HoldMoveOptions()));
 
-    [Fact]
-    public void Judge_FollowsTheConfiguredThresholds()
+    // The same bar as the removal check's "bare wall": only a confidently low score says the hold is gone.
+    [Theory]
+    [InlineData(0.3, true)]
+    [InlineData(0.31, false)]
+    [InlineData(0.59, false)]
+    public void LooksGone_OnlyAtOrBelowTheBareWallBar(double score, bool gone)
     {
-        var options = new HoldMoveOptions { SameLookMinScore = 0.8, ReplacedBelowScore = 0.6, StillThereMinScore = 0.9 };
+        Assert.Equal(PossiblyRemovedJudge.BareWallMaxScore, new HoldMoveOptions().GoneMaxScore);
+        Assert.Equal(gone, HoldLookCheck.LooksGone(score, new HoldMoveOptions()));
+    }
+
+    [Fact]
+    public void TheThresholds_AreConfigurable()
+    {
+        var options = new HoldMoveOptions { SameLookMinScore = 0.8, ReplacedBelowScore = 0.6, GoneMaxScore = 0.5 };
 
         Assert.Equal(HoldLook.Unsure, HoldLookCheck.Judge(0.7, options));
         Assert.Equal(HoldLook.Replaced, HoldLookCheck.Judge(0.55, options));
-        Assert.False(HoldLookCheck.StillThere(0.85, options));
-        Assert.True(HoldLookCheck.StillThere(0.6, new HoldMoveOptions()));
-        Assert.False(HoldLookCheck.StillThere(0.59, new HoldMoveOptions()));
+        Assert.True(HoldLookCheck.LooksGone(0.45, options));
+    }
+
+    // Callers that name no radius (the removal check, the new-hold triage) get exactly the sizes they always had.
+    [Fact]
+    public void ThePatch_IsTheFixedOneWithoutARadius_AndGrowsWithTheHoldWithinLimits()
+    {
+        Assert.Equal(0, new PresenceQuery(1, 2, 3, 4, 1).RadiusPx);
+        Assert.Equal((56, 70), (PresencePatch.Radius(0), PresencePatch.Slack(0)));
+        Assert.Equal((56, 70), (PresencePatch.Radius(-1), PresencePatch.Slack(-1)));
+        Assert.Equal((56, 70), (PresencePatch.Radius(30), PresencePatch.Slack(30)));
+        Assert.Equal((130, 162), (PresencePatch.Radius(100), PresencePatch.Slack(100)));
+        Assert.Equal((200, 250), (PresencePatch.Radius(400), PresencePatch.Slack(400)));
     }
 
     [Fact]
@@ -40,12 +61,41 @@ public class HoldLookCheckTests
     {
         PointPair[] pairs = [new(100, 100, 110, 110), new(900, 100, 990, 110), new(100, 700, 110, 770), new(900, 700, 990, 770)];
 
-        var inside = HoldLookCheck.Query(pairs, (500, 400), (550, 440), (1000, 800));
-        Assert.Equal(1.1, inside!.Value.Scale, 3);
-        Assert.Null(HoldLookCheck.Query(pairs, (-5, 400), (0, 440), (1000, 800)));
-        Assert.Null(HoldLookCheck.Query(pairs, (500, 800), (550, 880), (1000, 800)));
-        Assert.Null(HoldLookCheck.Query(pairs[..2], (500, 400), (550, 440), (1000, 800)));
+        var inside = HoldLookCheck.Query(pairs, (500, 400), (550, 440), (1000, 800), 80);
+        Assert.Equal((1.1, 80.0), (Math.Round(inside!.Value.Scale, 3), inside.Value.RadiusPx));
+        Assert.Null(HoldLookCheck.Query(pairs, (-5, 400), (0, 440), (1000, 800), 80));
+        Assert.Null(HoldLookCheck.Query(pairs, (500, 800), (550, 880), (1000, 800), 80));
+        Assert.Null(HoldLookCheck.Query(pairs[..2], (500, 400), (550, 440), (1000, 800), 80));
     }
+
+    [Fact]
+    public void SameKind_NeedsBothFingerprints_AndThatTheyAreAlike()
+    {
+        var yellow = new HoldFingerprint { L = 80, A = 0, B = 70, Aspect = 2, Histogram = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] }.ToJson();
+        var blue = new HoldFingerprint { L = 30, A = 10, B = -60, Aspect = 1, Histogram = [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0] }.ToJson();
+
+        Assert.True(HoldLookCheck.SameKind(yellow, yellow, new HoldMoveOptions()));
+        Assert.False(HoldLookCheck.SameKind(yellow, blue, new HoldMoveOptions()));
+        Assert.False(HoldLookCheck.SameKind(yellow, null, new HoldMoveOptions()));
+    }
+
+    [Fact]
+    public void Components_JoinHoldsLinkedDirectlyOrThroughAnother()
+    {
+        var (a, b, c, d, e) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+
+        var components = HoldLookCheck.Components([(a, b), (c, b), (d, e)]);
+
+        Assert.Equal(components[a], components[b]);
+        Assert.Equal(components[a], components[c]);
+        Assert.Equal(components[d], components[e]);
+        Assert.NotEqual(components[a], components[d]);
+        Assert.False(components.ContainsKey(Guid.NewGuid()));
+    }
+
+    [Fact]
+    public void Histogram_CountsPerTenth() =>
+        Assert.Equal("<0:1,0.0:1,0.1:0,0.2:2,0.3:0,0.4:0,0.5:0,0.6:0,0.7:0,0.8:0,0.9:2", HoldLookCheck.Histogram([-0.1, 0.05, 0.2, 0.29, 0.95, 1.0]));
 
     [Fact]
     public void NotFoundToMark_LeavesOutWhatAPersonSettled()

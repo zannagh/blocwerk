@@ -67,7 +67,7 @@ public class WallRefreshNotFoundTests
             $"{Anchors.Length} old holds found again, 1 kept where they were, 1 replaced by another hold; 1 boulder will be marked for review",
             MatchLine(view));
         var check = Assert.Single(await s.Service.GetChecksAsync(view.Id));
-        Assert.Equal((UpdateExceptionKind.ReplacedByOther, 1, "Yellow crimp"), (check.Kind, check.Boulders, check.HoldName));
+        Assert.Equal((UpdateExceptionKind.ReplacedByOther, 1, "Yellow crimp", true), (check.Kind, check.Boulders, check.HoldName, check.CanRemove));
 
         await s.Service.DecideCheckAsync(view.Id, check.Id, UpdateExceptionAnswer.Remove);
         await s.RunQueuedAsync();

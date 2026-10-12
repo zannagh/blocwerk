@@ -34,7 +34,7 @@
                         @if (check.Status == UpdateExceptionStatus.Pending)
                         {
                             <button class="btn-secondary" disabled="@Disabled" @onclick="() => AnswerAsync(check, UpdateExceptionAnswer.Keep)">@KeepLabel(check)</button>
-                            @if (check.Kind is not (UpdateExceptionKind.LowConfidenceMatch or UpdateExceptionKind.HandPlacedAmbiguous))
+                            @if (check.CanRemove && check.Kind is not (UpdateExceptionKind.LowConfidenceMatch or UpdateExceptionKind.HandPlacedAmbiguous))
                             {
                                 <button class="btn-secondary" disabled="@Disabled" @onclick="() => AnswerAsync(check, UpdateExceptionAnswer.Remove)">@RemoveLabel(check)</button>
                             }

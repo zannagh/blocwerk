@@ -25,7 +25,7 @@ public partial class BoulderService
 {
     /// <summary>
     /// The holds of this boulder that moved at the update that put it where it is now, while it still needs review:
-    /// removed ones first, then the farthest. Empty once the setter signed the boulder off or when nothing moved.
+    /// removed ones first, then replaced and not found again, then the farthest. Empty once the setter signed the boulder off or when nothing moved.
     /// </summary>
     /// <param name="boulderId">The boulder.</param>
     /// <param name="shareToken">The wall's share token, for the read-only share view.</param>
@@ -55,13 +55,22 @@ public partial class BoulderService
             .AsNoTracking()
             .ToListAsync(ct);
         return rows
-            .OrderByDescending(r => r.Outcome)
+            .OrderByDescending(r => Rank(r.Outcome))
             .ThenByDescending(r => r.DistanceMm)
             .Select(r => new BoulderMoveView(
                 r.OldHoldId, r.NewHoldId, r.NewName ?? r.OldName, r.DistanceMm, r.Source, r.Outcome,
                 Text(r.DistanceMm, r.RotationDeg, r.Outcome, r.RemeasuredDistanceMm, r.RemeasuredOutcome), r.Type))
             .ToList();
     }
+
+    /// <summary>Removed first, then replaced and not found again, then the holds that only moved.</summary>
+    private static int Rank(HoldMoveOutcome outcome) => outcome switch
+    {
+        HoldMoveOutcome.Removed => 3,
+        HoldMoveOutcome.Replaced => 2,
+        HoldMoveOutcome.NotFound => 1,
+        _ => 0,
+    };
 
     private static string Text(double mm, double? rotation, HoldMoveOutcome outcome, double? later, HoldMoveOutcome? laterOutcome)
     {
