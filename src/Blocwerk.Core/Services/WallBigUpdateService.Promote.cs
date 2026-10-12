@@ -174,6 +174,7 @@ public partial class WallBigUpdateService
         await WallUpdateSessions.CloseOpenAsync(db, wallId, WallUpdateSessionStatus.Promoted, user.Id);
 
         await db.SaveChangesAsync();
+        await ProposeNewHoldColorsAfterPromoteAsync(db, wallId, newGen);
         await SyncLinkedHoldsAfterPromoteAsync(db, wallId);
 
         // Seal the batch now that the update is a complete, closed unit: the next update on this wall opens

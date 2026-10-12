@@ -47,6 +47,9 @@ internal sealed class RefreshScenario : IDisposable
 
     public CaptureScenario Capture { get; }
 
+    /// <summary>The JPEG dropped as photo number i; tiny flat-coloured ones unless a test needs something on them.</summary>
+    public Func<int, byte[]> Photo { get; set; } = i => CaptureScenario.TinyJpeg(seed: 40 + i);
+
     public IHoldTexturePlacementService Placement { get; } = Substitute.For<IHoldTexturePlacementService>();
 
     /// <summary>The matcher the big update gets; null is one that proposes nothing.</summary>
@@ -93,7 +96,7 @@ internal sealed class RefreshScenario : IDisposable
         var view = await Service.BeginAsync(harness.WallId);
         for (var i = 0; i < photos; i++)
         {
-            await Service.AddPhotoAsync(view.Id, $"IMG_{i}.jpg", ExifJpeg.Build(CaptureScenario.TinyJpeg(seed: 40 + i)), CancellationToken.None);
+            await Service.AddPhotoAsync(view.Id, $"IMG_{i}.jpg", ExifJpeg.Build(Photo(i)), CancellationToken.None);
         }
 
         return view.Id;

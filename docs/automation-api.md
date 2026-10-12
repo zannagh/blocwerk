@@ -9,6 +9,7 @@ Every route calls the same service the page calls, so the rules are the page's r
 | Flow | Personal key with write access | Wall key with write access (for that wall) | Read-only keys, kiosk, installation keys |
 | --- | --- | --- | --- |
 | Panel update (`/api/walls/{wallId}/refresh`, `/api/refreshes/{id}/files`) | yes | **no** (403) | no (403) |
+| Colours for holds without one (`/api/walls/{wallId}/holds/suggest-colors`) | yes | **no** (403) | no (403) |
 | Wall preparation (`/api/walls/{wallId}/markers`, `…/marker-plan`, `…/marker-plan/revisions`) | yes | yes | no (403) |
 
 * "Write access" is the *Allow this key to change walls* box when creating the key under *Settings → API keys*.
@@ -25,7 +26,7 @@ Every write through these routes is recorded in the change journal, scoped to th
 * All the files of one upload go into one batch per run (and key): `api:refresh.upload run:<id> key:<id>`.
 * Every write, refused or not, is also in the server log with the key id.
 
-Actions: `refresh.begin`, `refresh.upload run:<id>`, `refresh.sort`, `refresh.recheck`, `refresh.start`, `refresh.apply`, `refresh.discard`, `markers.set`, `marker-plan.save`, `marker-plan.effective rev:<n>`.
+Actions: `refresh.begin`, `refresh.upload run:<id>`, `refresh.sort`, `refresh.recheck`, `refresh.start`, `refresh.apply`, `refresh.discard`, `holds.suggest-colors`, `markers.set`, `marker-plan.save`, `marker-plan.effective rev:<n>`.
 
 ## Panel update, end to end
 
@@ -109,6 +110,22 @@ curl -fsS -H "$AUTH" "$BASE/api/walls/$WALL/look-over/findings" \
 * On the page, "Still there" (kind 6) and "Same hold" (kind 1) say the update was wrong about the hold: a boulder that this update marked only for that hold loses its mark. No other answer clears a boulder, and a boulder that was marked before the update is never cleared. An answer that changed nothing on the wall can be undone on its card; a removed or merged hold cannot.
 * What counts as a finding: every card that was still unanswered when the update was applied; every old hold on a boulder that was not found again (`notFoundHolds` of the summary); and every old hold kept in place that has a new hold on its spot. A hold a person decided before the apply (an answered card, a confirmed verdict in the full review) is not a finding.
 * A later update of the same panel supersedes what was still open on it (it has findings of its own). Finishing the look-over clears the flag and nothing else: boulders marked for review stay marked until their setter has checked them.
+
+### Colours for new holds
+
+The detector finds holds, not their colour. When an update is applied, every hold that is new in it gets the colour its new panel photo shows, when that can be told: clear yellow, red, pink, orange, blue, green, purple, white or black. A hold the estimate is not sure about (chalked over, between two colours, grey, wooden, or looking like the wall) stays without a colour. Carried holds keep what they had. A proposed colour is drawn like any other; in the hold editor it says *Suggested* until somebody keeps or changes it. The same hold on two panels gets one colour.
+
+For holds that are already live without a colour (an update applied before this existed, or older holds), run the same estimate on the wall's live panel photos:
+
+```sh
+curl -fsS -X POST -H "$AUTH" "$BASE/api/walls/$WALL/holds/suggest-colors" | jq
+# { "considered": 124, "proposed": 71, "fromLinked": 3, "leftUnset": 50,
+#   "proposedByColor": { "blue": 14, "yellow": 19, … }, "leftUnsetByReason": { "BetweenColors": 12, "MostlyChalk": 9, … } }
+```
+
+* The key of the panel update (a personal key with write access, owner an admin of the wall). On the page it is *Wall settings → Suggest hold colours*.
+* It never touches a hold that has a colour, and it can be repeated: what was left unset stays unset until the photo changes.
+* `fromLinked` are holds that took the colour of the same hold on another panel. One change-journal batch per run (`hold-color-proposals`).
 
 ## Wall preparation, end to end
 

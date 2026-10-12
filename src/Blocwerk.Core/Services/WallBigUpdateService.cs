@@ -35,6 +35,7 @@ public partial class WallBigUpdateService : IWallBigUpdateService
     private readonly ICaptureFileStore? captureFiles;
     private readonly HoldMoveOptions moveOptions;
     private readonly IStagedHoldPlacer? stagedPlacer;
+    private readonly IHoldColorProposer colorProposer;
 
     public WallBigUpdateService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
@@ -52,8 +53,10 @@ public partial class WallBigUpdateService : IWallBigUpdateService
         IPhotoTextureMatcher? textureMatcher = null,
         ICaptureFileStore? captureFiles = null,
         HoldMoveOptions? moveOptions = null,
-        IStagedHoldPlacer? stagedPlacer = null)
+        IStagedHoldPlacer? stagedPlacer = null,
+        IHoldColorProposer? colorProposer = null)
     {
+        this.colorProposer = colorProposer ?? new HoldColorProposer();
         this.stagedPlacer = stagedPlacer;
         this.moveOptions = moveOptions ?? new HoldMoveOptions();
         this.textureMatcher = textureMatcher;

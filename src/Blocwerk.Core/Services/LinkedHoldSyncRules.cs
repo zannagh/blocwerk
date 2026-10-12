@@ -32,11 +32,33 @@ public static class LinkedHoldSyncRules
 
         report.Groups++;
         Sync(ordered, report, "Name", h => h.Name, (h, v) => h.Name = v, v => !string.IsNullOrWhiteSpace(v));
-        Sync(ordered, report, "Color", h => h.Color, (h, v) => h.Color = v, v => !string.IsNullOrWhiteSpace(v));
+        SyncColor(ordered, report);
         Sync(ordered, report, "Material", h => h.Material, (h, v) => h.Material = v, v => v is not null);
         Sync(ordered, report, "GripType", h => h.HandType, (h, v) => h.HandType = v, v => v is not null);
         Sync(ordered, report, "Usage", h => h.Category, (h, v) => h.Category = v, v => v != HoldCategory.Hand);
         Sync(ordered, report, "Kickboard", h => h.IsOnKickboard, (h, v) => h.IsOnKickboard = v, v => v);
+    }
+
+    /// <summary>
+    /// Colour, with one addition to the rule: a colour a person set outranks one the detection only proposed
+    /// (<see cref="Hold.HasProposedColor"/>), whatever the panel order, and a hold that takes its colour from a proposal
+    /// is a proposal too. So a proposal never replaces a set colour, and one physical hold has one proposal.
+    /// </summary>
+    private static void SyncColor(IReadOnlyList<Hold> ordered, HoldSyncReport report)
+    {
+        var setFirst = ordered.OrderBy(h => h.HasProposedColor ? 1 : 0).ToList();
+        var before = ordered.ToDictionary(h => h.Id, h => h.Color);
+        var winner = setFirst.FirstOrDefault(h => !string.IsNullOrWhiteSpace(h.Color));
+        var proposed = winner is { HasProposedColor: true } ? winner.Color : null;
+        Sync(setFirst, report, "Color", h => h.Color, (h, v) => h.Color = v, v => !string.IsNullOrWhiteSpace(v));
+        foreach (var hold in ordered.Where(h => !string.IsNullOrWhiteSpace(h.Color) && h.HasProposedColor != (proposed is not null)))
+        {
+            hold.ProposedColor = proposed;
+            if (before[hold.Id] == hold.Color)
+            {
+                report.Updated("Color", hold.Id);
+            }
+        }
     }
 
     private static void Sync<T>(

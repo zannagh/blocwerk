@@ -1287,6 +1287,10 @@ namespace Blocwerk.Core.Migrations
                     b.Property<double?>("PlaneBMm")
                         .HasColumnType("double precision");
 
+                    b.Property<string>("ProposedColor")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
                     b.Property<string>("ProtrusionMm")
                         .HasColumnType("text");
 

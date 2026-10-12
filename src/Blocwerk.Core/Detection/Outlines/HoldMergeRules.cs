@@ -88,7 +88,12 @@ public static class HoldMergeRules
     public static void MergeFlags(Hold kept, Hold removed)
     {
         kept.Name = string.IsNullOrWhiteSpace(kept.Name) ? removed.Name : kept.Name;
-        kept.Color = string.IsNullOrWhiteSpace(kept.Color) ? removed.Color : kept.Color;
+        if (string.IsNullOrWhiteSpace(kept.Color))
+        {
+            kept.Color = removed.Color;
+            kept.ProposedColor = removed.ProposedColor;
+        }
+
         kept.Material ??= removed.Material;
         kept.HandType ??= removed.HandType;
         kept.IsOnKickboard |= removed.IsOnKickboard;

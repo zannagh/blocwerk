@@ -255,6 +255,7 @@ else
                     <WallShapeCleanup WallId="_wall.Id" ShareToken="@ShareToken" />
                     <WallDuplicateHolds WallId="_wall.Id" ShareToken="@ShareToken" />
                     <WallLinkedHoldSync WallId="_wall.Id" ShareToken="@ShareToken" />
+                    <WallHoldColorSuggestions WallId="_wall.Id" ShareToken="@ShareToken" />
                     <Wall3DHoldStats WallId="_wall.Id" ShareToken="@ShareToken" />
                     <WallPhotoPrivacy WallId="_wall.Id" ShareToken="@ShareToken" />
                     </div>
@@ -1569,7 +1570,7 @@ else
             // tool's options and applied below, exactly as the per-panel editor has always done it.
             await WallService.UpdateHoldAsync(hold.Id, HoldEdit.FromEditorState(
                 hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.IsOnKickboard, hold.ShapePoints, hold.Name, hold.Material, hold.HandType,
-                flagBouldersOnMove: false));
+                flagBouldersOnMove: false, colorStillProposed: hold.HasProposedColor));
         }
 
         foreach (var holdId in changes.MarkedChanged)
@@ -1768,7 +1769,7 @@ else
             // Mark unchanged), surfaced by the panel editor's change-review overlay.
             await WallService.UpdateHoldAsync(hold.Id, HoldEdit.FromEditorState(
                 hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.IsOnKickboard, hold.ShapePoints, hold.Name, hold.Material, hold.HandType,
-                flagBouldersOnMove: false));
+                flagBouldersOnMove: false, colorStillProposed: hold.HasProposedColor));
         }
 
         // Drafted "Mark changed" decisions arrive ONLY here when a batch handler is attached (the

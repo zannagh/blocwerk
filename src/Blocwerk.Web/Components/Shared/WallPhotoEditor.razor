@@ -780,6 +780,11 @@
                     @foreach (var c in HoldPalette.ColorsFor(sel.Material)) { <option value="@c.Key">@c.DisplayName</option> }
                 </select>
                 <span class="color-dot" style="background: @GetCssColor(sel.Color);"></span>
+                @if (sel.HasProposedColor)
+                {
+                    <span class="option-hint" title="The detection suggested this colour from the photo. Nobody has confirmed it yet.">Suggested</span>
+                    <button class="opt-btn" title="Keep the suggested colour" @onclick="() => ConfirmProposedColor(sel)">Keep</button>
+                }
             </div>
             <div class="option-group"><label>Size:</label><input type="range" min="3" max="40" value="@((int)(_selectedRadius * 1000))" @oninput="OnRadiusChange" /></div>
             <button class="opt-btn danger" @onclick="DeleteSelected">Del</button>
@@ -1769,6 +1774,7 @@
             case HoldTouchupTool.Paint:
                 TakeSnapshot();
                 hold.Color = _paintColor;
+                hold.ProposedColor = null;
                 SyncMaterialToColor(hold);
                 _updatedHoldIds.Add(hold.Id);
                 return;
@@ -2568,6 +2574,15 @@
         TakeSnapshot();
         var v = e.Value?.ToString();
         h.Color = v == "none" ? null : v;
+        h.ProposedColor = null;
+        _updatedHoldIds.Add(h.Id);
+    }
+
+    // The detection's colour is right: the hold keeps it and stops being marked as suggested.
+    private void ConfirmProposedColor(Hold h)
+    {
+        TakeSnapshot();
+        h.ProposedColor = null;
         _updatedHoldIds.Add(h.Id);
     }
 
