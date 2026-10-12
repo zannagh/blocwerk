@@ -5,6 +5,7 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Capture;
 using Blocwerk.Core.Data;
+using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Refresh;
 using Blocwerk.Core.Services;
@@ -52,27 +53,23 @@ public sealed partial class WallLookOverService(
             return null;
         }
 
-        var rows = await CurrentRoundAsync(db, wallId, wall.LookOverCompletedAt, ct);
+        // Counted, not loaded: the wall page and every boulder page ask this.
+        var round = CurrentRound(db, wallId, wall.LookOverPendingSince);
+        var open = await round.CountAsync(f => f.Status == LookOverFindingStatus.Open, ct);
+        var total = await round.CountAsync(ct);
         var completedBy = wall.LookOverCompletedByUserId is { } by
             ? await db.Users.IgnoreQueryFilters().Where(u => u.Id == by).Select(u => u.DisplayName).FirstOrDefaultAsync(ct)
             : null;
-        var kiosk = kioskContext?.IsKiosk == true || db.KioskWallId is not null;
+        var kiosk = KioskGuard.ScopedWallId(kioskContext, db) is not null;
         var canLookOver = !kiosk && (appAdmin || await WallAdminGuard.IsWallModeratorOrAboveAsync(db, wallId, user.Id, ct));
         return new WallLookOverState(
-            wall.LookOverPendingSince is not null,
-            wall.LookOverPendingSince,
-            wall.LookOverGeneration,
-            rows.Count(f => f.Status == LookOverFindingStatus.Open),
-            rows.Count,
-            wall.LookOverCompletedAt,
-            completedBy,
-            canLookOver);
+            wall.LookOverPendingSince is not null, wall.LookOverPendingSince, wall.LookOverGeneration, open, total, wall.LookOverCompletedAt, completedBy, canLookOver);
     }
 
     /// <inheritdoc/>
     public async Task FinishAsync(Guid wallId, bool leaveOpen, CancellationToken ct = default)
     {
-        var (db, userId, _) = await OpenAsync(wallId, ct);
+        var (db, access) = await OpenAsync(wallId, ct);
         await using (db)
         {
             var wall = await db.Walls.IgnoreQueryFilters().FirstOrDefaultAsync(w => w.Id == wallId, ct)
@@ -90,37 +87,35 @@ public sealed partial class WallLookOverService(
 
             wall.LookOverPendingSince = null;
             wall.LookOverCompletedAt = DateTimeOffset.UtcNow;
-            wall.LookOverCompletedByUserId = userId;
+            wall.LookOverCompletedByUserId = access.UserId;
             await db.SaveChangesAsync(ct);
-            logger.LogInformation("Look-over of wall {WallId} finished by {UserId} with {Open} findings left open", wallId, userId, open);
+            logger.LogInformation("Look-over of wall {WallId} finished by {UserId} with {Open} findings left open", wallId, access.UserId, open);
         }
     }
 
     /// <inheritdoc/>
     public async Task<byte[]?> GetCropAsync(Guid wallId, Guid findingId, CheckCropView view, CancellationToken ct = default)
     {
-        var (db, _, _) = await OpenAsync(wallId, ct);
+        var (db, _) = await OpenAsync(wallId, ct);
         await db.DisposeAsync();
         return await LookOverCrops.GetAsync(dbContextFactory, files, wallId, findingId, view, ct);
     }
 
     /// <summary>
-    /// The findings of the current round: everything open, and what was answered since the last finished look-over.
-    /// Filtered in memory (a wall has a few hundred at most, and SQLite cannot compare a DateTimeOffset).
+    /// The findings of the current round: everything open, and what was answered since the wall was flagged. A round
+    /// starts with the first update that leaves a finding and ends with Finish, so what an earlier round settled never
+    /// comes back with the next update; while the wall is not flagged only what was left open is listed.
     /// </summary>
-    private static async Task<List<Entities.WallLookOverFinding>> CurrentRoundAsync(
-        BlocwerkDbContext db, Guid wallId, DateTimeOffset? completedAt, CancellationToken ct)
+    private static IQueryable<WallLookOverFinding> CurrentRound(BlocwerkDbContext db, Guid wallId, DateTimeOffset? pendingSince)
     {
-        var rows = await db.WallLookOverFindings.AsNoTracking()
-            .Where(f => f.WallId == wallId && f.Status != LookOverFindingStatus.Superseded)
-            .ToListAsync(ct);
-        return rows
-            .Where(f => f.Status == LookOverFindingStatus.Open || completedAt is not { } done || f.AnsweredAt > done)
-            .ToList();
+        var ofWall = db.WallLookOverFindings.AsNoTracking().Where(f => f.WallId == wallId);
+        return pendingSince is { } since
+            ? ofWall.Where(f => f.Status == LookOverFindingStatus.Open || (f.Status == LookOverFindingStatus.Settled && f.AnsweredAt >= since))
+            : ofWall.Where(f => f.Status == LookOverFindingStatus.Open);
     }
 
     /// <summary>A context for the wall's owner, an admin or a moderator of it, or an installation admin; never a kiosk tablet.</summary>
-    private async Task<(BlocwerkDbContext Db, Guid UserId, bool IsWallAdmin)> OpenAsync(Guid wallId, CancellationToken ct)
+    private async Task<(BlocwerkDbContext Db, LookOverAccess Access)> OpenAsync(Guid wallId, CancellationToken ct)
     {
         var user = await currentUserService.GetCurrentUserAsync();
         var db = await dbContextFactory.CreateDbContextAsync(ct);
@@ -128,15 +123,14 @@ public sealed partial class WallLookOverService(
         {
             db.CurrentUserId = user.Id;
             KioskGuard.EnsureNotKiosk(kioskContext, db, Action);
-            var wallAdmin = await WallAdminGuard.IsWallAdminAsync(db, wallId, user.Id, ct);
-            if (!wallAdmin
-                && !await WallAdminGuard.IsWallModeratorOrAboveAsync(db, wallId, user.Id, ct)
-                && !await AppAdminGuard.IsAppAdminAsync(db, user.Id, ct))
+            var canMerge = await WallAdminGuard.IsWallAdminAsync(db, wallId, user.Id, ct);
+            var canEdit = canMerge || await WallAdminGuard.IsWallModeratorOrAboveAsync(db, wallId, user.Id, ct);
+            if (!canEdit && !await AppAdminGuard.IsAppAdminAsync(db, user.Id, ct))
             {
                 throw new UnauthorizedAccessException($"User {user.Id} may not look over wall {wallId}.");
             }
 
-            return (db, user.Id, wallAdmin);
+            return (db, new LookOverAccess(user.Id, canEdit, canMerge));
         }
         catch
         {

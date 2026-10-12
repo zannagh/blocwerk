@@ -49,8 +49,3 @@ public sealed class WallLookOverApiController(
             ? RunAsync(wallId, read)
             : Task.FromResult<IActionResult>(StatusCode(StatusCodes.Status403Forbidden, new ApiErrorResponse(WallRefreshApiController.PersonalKeyOnly)));
 }
-
-/// <summary>What <c>GET …/look-over/findings</c> answers.</summary>
-/// <param name="State">The wall's look-over flag and counts.</param>
-/// <param name="Findings">The findings, the ones that touch boulders first.</param>
-public sealed record LookOverFindingsResponse(WallLookOverState State, IReadOnlyList<LookOverFindingView> Findings);

@@ -3,6 +3,7 @@
 // </copyright>
 
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.LookOver;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 using static Blocwerk.Core.Tests.LookOver.LookOverFixture;
@@ -61,7 +62,7 @@ public class LookOverAnswerTests
         var service = Service(h);
         var view = Assert.Single(await service.ListAsync(w.WallId));
 
-        await service.AnswerAsync(w.WallId, view.Id, LookOverAnswer.RemoveHold);
+        await service.AnswerAsync(w.WallId, view.Id, LookOverAnswer.RemoveHold, Shown(view));
 
         Assert.Null(await HoldAsync(h, view.HoldId));
         var boulder = await BoulderAsync(h, w.BoulderId);
@@ -80,7 +81,7 @@ public class LookOverAnswerTests
         var service = Service(h);
         var view = Assert.Single(await service.ListAsync(w.WallId));
 
-        await service.AnswerAsync(w.WallId, view.Id, LookOverAnswer.UseNewHold);
+        await service.AnswerAsync(w.WallId, view.Id, LookOverAnswer.UseNewHold, Shown(view));
 
         Assert.Null(await HoldAsync(h, view.HoldId));
         var boulder = await BoulderAsync(h, w.BoulderId);
@@ -118,7 +119,7 @@ public class LookOverAnswerTests
         var service = Service(h);
         var view = Assert.Single(await service.ListAsync(w.WallId));
 
-        await service.AnswerAsync(w.WallId, view.Id, LookOverAnswer.DifferentHold);
+        await service.AnswerAsync(w.WallId, view.Id, LookOverAnswer.DifferentHold, Shown(view));
 
         var boulder = await BoulderAsync(h, w.BoulderId);
         Assert.Equal((true, false, w.DetectionId), (boulder.NeedsReview, boulder.IsHistoric, (Guid?)boulder.BoulderHolds.Single().HoldId));
@@ -156,8 +157,8 @@ public class LookOverAnswerTests
         var service = Service(h);
         var view = Assert.Single(await service.ListAsync(w.WallId));
 
-        await Assert.ThrowsAsync<UserFacingException>(() => service.AnswerAsync(w.WallId, view.Id, LookOverAnswer.RemoveHold));
-        await Assert.ThrowsAsync<UserFacingException>(() => service.AnswerAsync(w.WallId, view.Id, LookOverAnswer.UseNewHold));
+        await Assert.ThrowsAsync<UserFacingException>(() => service.AnswerAsync(w.WallId, view.Id, LookOverAnswer.RemoveHold, Shown(view)));
+        await Assert.ThrowsAsync<UserFacingException>(() => service.AnswerAsync(w.WallId, view.Id, LookOverAnswer.UseNewHold, Shown(view)));
         await Assert.ThrowsAsync<UserFacingException>(() => service.AnswerAsync(w.WallId, Guid.NewGuid(), LookOverAnswer.Settle));
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.AnswerAsync(Guid.NewGuid(), view.Id, LookOverAnswer.Settle));
         Assert.NotNull(await HoldAsync(h, w.DetectionId));
@@ -182,6 +183,8 @@ public class LookOverAnswerTests
         await service.AnswerAsync(w.WallId, view.Id, LookOverAnswer.Settle);
         Assert.Equal((LookOverFindingStatus.Settled, (LookOverAnswer?)LookOverAnswer.Settle), await StatusAsync(h, w.WallId));
     }
+
+    private static Guid[] Shown(LookOverFindingView view) => [.. view.Boulders.Select(b => b.Id)];
 
     private static async Task<(LookOverFindingStatus Status, LookOverAnswer? Answer)> StatusAsync(WallTestHarness h, Guid wallId)
     {

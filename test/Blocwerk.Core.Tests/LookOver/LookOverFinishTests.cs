@@ -144,9 +144,9 @@ public class LookOverFinishTests
         Assert.True((await service.GetStateAsync(w.WallId))!.CanLookOver);
         Assert.Equal([LookOverAnswer.Settle, LookOverAnswer.RemoveHold], view.Answers);
         Assert.True(view.MergeNeedsAdmin);
-        await Assert.ThrowsAsync<UserFacingException>(() => service.AnswerAsync(w.WallId, view.Id, LookOverAnswer.UseNewHold));
+        await Assert.ThrowsAsync<UserFacingException>(() => service.AnswerAsync(w.WallId, view.Id, LookOverAnswer.UseNewHold, [.. view.Boulders.Select(b => b.Id)]));
 
-        await service.AnswerAsync(w.WallId, view.Id, LookOverAnswer.RemoveHold);
+        await service.AnswerAsync(w.WallId, view.Id, LookOverAnswer.RemoveHold, [.. view.Boulders.Select(b => b.Id)]);
         await service.FinishAsync(w.WallId, leaveOpen: false);
 
         Assert.Null(await HoldAsync(h, view.HoldId));

@@ -31,9 +31,14 @@ public interface IWallLookOverService
     /// <param name="wallId">The wall.</param>
     /// <param name="findingId">The finding.</param>
     /// <param name="answer">The answer.</param>
+    /// <param name="expectedBoulderIds">
+    /// The boulders the user was shown on the hold. Required for every answer but <see cref="LookOverAnswer.Settle"/>:
+    /// when other boulders use the hold by now, the answer is refused and the user looks again.
+    /// </param>
     /// <param name="ct">Cancellation.</param>
     /// <returns>A task.</returns>
-    Task AnswerAsync(Guid wallId, Guid findingId, LookOverAnswer answer, CancellationToken ct = default);
+    Task AnswerAsync(
+        Guid wallId, Guid findingId, LookOverAnswer answer, IReadOnlyCollection<Guid>? expectedBoulderIds = null, CancellationToken ct = default);
 
     /// <summary>Settles every open unsure match as "same hold". Nothing on the wall changes.</summary>
     /// <param name="wallId">The wall.</param>
@@ -59,65 +64,3 @@ public interface IWallLookOverService
     /// <returns>JPEG bytes.</returns>
     Task<byte[]?> GetCropAsync(Guid wallId, Guid findingId, CheckCropView view, CancellationToken ct = default);
 }
-
-/// <summary>The wall's look-over flag, as the wall page and scripts read it.</summary>
-/// <param name="Pending">The wall waits for a look-over.</param>
-/// <param name="PendingSince">Since when (the update that set the flag).</param>
-/// <param name="Generation">The wall generation that update produced.</param>
-/// <param name="OpenFindings">Findings nobody answered yet.</param>
-/// <param name="TotalFindings">All findings of the updates since the last finished look-over.</param>
-/// <param name="CompletedAt">When the last look-over was finished.</param>
-/// <param name="CompletedBy">Who finished it.</param>
-/// <param name="CanLookOver">The user may open the look-over (owner, wall admin, moderator, installation admin).</param>
-public sealed record WallLookOverState(
-    bool Pending,
-    DateTimeOffset? PendingSince,
-    int? Generation,
-    int OpenFindings,
-    int TotalFindings,
-    DateTimeOffset? CompletedAt,
-    string? CompletedBy,
-    bool CanLookOver);
-
-/// <summary>A boulder that uses a finding's hold.</summary>
-/// <param name="Id">The boulder.</param>
-/// <param name="Name">Its name.</param>
-/// <param name="NeedsReview">It is marked for review.</param>
-public sealed record LookOverBoulder(Guid Id, string Name, bool NeedsReview);
-
-/// <summary>One finding, as the look-over page and the API show it.</summary>
-/// <param name="Id">The finding.</param>
-/// <param name="Kind">Why it needs a look.</param>
-/// <param name="Status">Open, settled or superseded.</param>
-/// <param name="Answer">The answer that settled it.</param>
-/// <param name="Generation">The wall generation of the update it came from.</param>
-/// <param name="OldHoldId">The hold before the update.</param>
-/// <param name="HoldId">The live hold it is about (null: a detection that was left out, or a hold deleted since).</param>
-/// <param name="OtherHoldId">The new hold on the same spot, while it exists.</param>
-/// <param name="HoldName">The hold's name, else its colour.</param>
-/// <param name="HasOld">There is an old photo of the hold.</param>
-/// <param name="HasModel">There may be a 3D texture picture.</param>
-/// <param name="PhotoScore">How well the new photo matches the old one at the spot (-1..1).</param>
-/// <param name="Confidence">The matcher's confidence (unsure match).</param>
-/// <param name="Converted">An unsure match a person called a different hold.</param>
-/// <param name="Boulders">The current boulders that use the hold.</param>
-/// <param name="Answers">The answers it takes now (empty once it is not open).</param>
-/// <param name="MergeNeedsAdmin">A new hold sits on the spot, but merging holds is for wall admins and the user is a moderator.</param>
-public sealed record LookOverFindingView(
-    Guid Id,
-    LookOverFindingKind Kind,
-    LookOverFindingStatus Status,
-    LookOverAnswer? Answer,
-    int Generation,
-    Guid? OldHoldId,
-    Guid? HoldId,
-    Guid? OtherHoldId,
-    string? HoldName,
-    bool HasOld,
-    bool HasModel,
-    double? PhotoScore,
-    double? Confidence,
-    bool Converted,
-    IReadOnlyList<LookOverBoulder> Boulders,
-    IReadOnlyList<LookOverAnswer> Answers,
-    bool MergeNeedsAdmin = false);

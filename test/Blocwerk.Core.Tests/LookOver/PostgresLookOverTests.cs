@@ -25,7 +25,7 @@ public class PostgresLookOverTests
         var view = Assert.Single(await service.ListAsync(w.WallId));
         Assert.Equal((true, 1, LookOverFindingKind.ReplacedByOther, w.DetectionId), (state.Pending, state.OpenFindings, view.Kind, view.OtherHoldId));
 
-        await service.AnswerAsync(w.WallId, view.Id, LookOverAnswer.UseNewHold);
+        await service.AnswerAsync(w.WallId, view.Id, LookOverAnswer.UseNewHold, [.. view.Boulders.Select(b => b.Id)]);
         await service.FinishAsync(w.WallId, leaveOpen: false);
 
         var boulder = await BoulderAsync(h, w.BoulderId);
@@ -44,7 +44,7 @@ public class PostgresLookOverTests
         var service = Service(h);
         var view = Assert.Single(await service.ListAsync(w.WallId));
 
-        await service.AnswerAsync(w.WallId, view.Id, LookOverAnswer.RemoveHold);
+        await service.AnswerAsync(w.WallId, view.Id, LookOverAnswer.RemoveHold, [.. view.Boulders.Select(b => b.Id)]);
 
         var finding = await FindingAsync(h, w.WallId);
         Assert.Equal((LookOverFindingStatus.Settled, view.HoldId), (finding.Status, finding.HoldId));

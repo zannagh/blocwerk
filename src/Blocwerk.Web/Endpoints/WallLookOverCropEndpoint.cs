@@ -11,7 +11,7 @@ namespace Blocwerk.Web.Endpoints;
 
 /// <summary>
 /// The pictures of a look-over finding: <c>old</c>, <c>new</c> or <c>model</c> (the 3D texture). Made when the page
-/// asks and cached by the service; who may look over the wall is the service's own check.
+/// asks; who may look over the wall is the service's own check, and a finding of another wall is not found.
 /// </summary>
 public static class WallLookOverCropEndpoint
 {
@@ -26,7 +26,8 @@ public static class WallLookOverCropEndpoint
     internal static async Task<IResult> HandleAsync(
         Guid wallId, Guid findingId, string view, HttpContext http, IWallLookOverService lookOver, CancellationToken ct)
     {
-        if (!Enum.TryParse<CheckCropView>(view, ignoreCase: true, out var which))
+        // A name only: Enum.TryParse would also take "7" and hand an undefined value to the service.
+        if (!Enum.GetNames<CheckCropView>().Contains(view, StringComparer.OrdinalIgnoreCase) || !Enum.TryParse<CheckCropView>(view, ignoreCase: true, out var which))
         {
             return Results.NotFound();
         }
@@ -39,7 +40,9 @@ public static class WallLookOverCropEndpoint
                 return Results.NotFound();
             }
 
-            http.Response.Headers.CacheControl = "private, max-age=3600";
+            // Never in a shared cache (only who may look over the wall sees them). The two photo crops never change;
+            // the 3D picture follows the hold's placement, so the browser asks again each time.
+            http.Response.Headers.CacheControl = which == CheckCropView.Model ? "private, no-store" : "private, max-age=3600";
             return Results.File(bytes, "image/jpeg");
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or KioskRestrictedException)

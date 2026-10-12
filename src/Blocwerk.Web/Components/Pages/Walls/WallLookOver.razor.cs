@@ -7,7 +7,9 @@ using Blocwerk.Core.Enums;
 using Blocwerk.Core.LookOver;
 using Blocwerk.Core.Services;
 using Blocwerk.Web.Components.Shared;
+using Blocwerk.Web.Components.Shared.LookOver;
 using Microsoft.AspNetCore.Components;
+using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Web.Components.Pages.Walls;
 
@@ -20,6 +22,7 @@ public partial class WallLookOver
 {
     private const int PageSize = 20;
     private const string NotAllowed = "Only the owner, admins and moderators of this wall can look it over.";
+    private const string SomeoneElse = "Someone else just changed this. The list below is the current one; check it and answer again.";
     private const string NotOnKiosk = "The wall is looked over from your own device, not from this wall tablet.";
 
     private readonly Dictionary<LookOverFindingKind, int> shown = [];
@@ -56,10 +59,7 @@ public partial class WallLookOver
         {
             if (state is { Pending: true, PendingSince: { } since })
             {
-                var when = since.ToLocalTime().ToString("d MMM yyyy, HH:mm");
-                return findings.Count == 0
-                    ? $"The panel update of {when} left nothing open any more. Finish the look-over to take the notice off the wall."
-                    : $"The panel update of {when} left {PlainCopy.Plural(findings.Count, "finding")}; {OpenFindings} open.";
+                return LookOverCopy.PendingLine(since.ToLocalTime().ToString("d MMM yyyy, HH:mm"), findings.Count, OpenCount);
             }
 
             if (state is { CompletedAt: { } done })
@@ -121,8 +121,8 @@ public partial class WallLookOver
         findings = await LookOver.ListAsync(WallId);
     }
 
-    private Task AnswerAsync((LookOverFindingView Finding, LookOverAnswer Answer) answer) =>
-        ActAsync(() => LookOver.AnswerAsync(WallId, answer.Finding.Id, answer.Answer));
+    private Task AnswerAsync(LookOverChoice choice) =>
+        ActAsync(() => LookOver.AnswerAsync(WallId, choice.FindingId, choice.Answer, choice.ShownBoulderIds));
 
     private Task SettleUnsureAsync() => ActAsync(() => LookOver.SettleUnsureMatchesAsync(WallId));
 
@@ -160,9 +160,15 @@ public partial class WallLookOver
         {
             blocked = NotOnKiosk;
         }
+        catch (DbUpdateException)
+        {
+            // Two people answering at once: the other one's change (a hold just deleted, say) got there first.
+            error = SomeoneElse;
+        }
         catch (InvalidOperationException ex)
         {
-            error = ex is UserFacingException ? ex.Message : UserFacingException.GenericMessage;
+            // Not written for the user means a hold operation found something else than the list showed.
+            error = ex is UserFacingException ? ex.Message : SomeoneElse;
         }
         catch (UnauthorizedAccessException)
         {

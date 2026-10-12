@@ -13,6 +13,33 @@ namespace Blocwerk.Web.Components.Shared.LookOver;
 /// </summary>
 internal static class LookOverCopy
 {
+    /// <summary>The wall page's notice for somebody who may look over the wall.</summary>
+    public static string BannerHeadline(int open) => open switch
+    {
+        0 => "This wall was updated. Nothing is open any more.",
+        1 => "This wall was updated. 1 finding is waiting for a look-over.",
+        _ => $"This wall was updated. {open} findings are waiting for a look-over.",
+    };
+
+    /// <summary>The line under <see cref="BannerHeadline"/>.</summary>
+    public static string BannerHint(int open) => open == 0
+        ? "Every finding is answered or was replaced by a later update. Finish the look-over to take this notice off the wall."
+        : "The update was unsure about them and nobody has checked them yet. Boulders that use one of these holds are marked for review.";
+
+    /// <summary>The look-over page's first line while the wall is flagged.</summary>
+    public static string PendingLine(string when, int listed, int open)
+    {
+        if (open == 0)
+        {
+            return listed == 0
+                ? $"Nothing of the panel update of {when} is open any more. Press Finish look-over to complete it."
+                : $"All {PlainCopy.Plural(listed, "finding")} since the panel update of {when} are answered. Press Finish look-over to complete it.";
+        }
+
+        return $"The panel update of {when} left findings nobody had checked: {(open == 1 ? "1 is" : $"{open} are")} open"
+            + (listed > open ? $", {listed - open} answered." : ".");
+    }
+
     /// <summary>The heading of a group of findings.</summary>
     public static string GroupTitle(LookOverFindingKind kind) => kind switch
     {
@@ -108,6 +135,17 @@ internal static class LookOverCopy
         var (them, become) = count == 1 ? ("it", "it becomes") : ("them", "they become");
         return $"Remove this hold from the wall? {PlainCopy.Plural(count, "boulder")} use{(count == 1 ? "s" : string.Empty)} it ({Names(f)}). "
             + $"The hold is taken off {them} and {become} historic: kept for the record, no longer among the current boulders. This cannot be undone here.";
+    }
+
+    /// <summary>What calling an unsure match a different hold does, asked before it is done.</summary>
+    public static string DifferentQuestion(LookOverFindingView f)
+    {
+        var count = f.Boulders.Count;
+        var boulders = count == 0
+            ? "No current boulder uses it here"
+            : $"{PlainCopy.Plural(count, "boulder")} ({Names(f)}) {(count == 1 ? "is" : "are")} marked for review";
+        return $"Not the hold that was here before? The hold is marked as changed. {boulders}; "
+            + "boulders that use the same hold on a neighbouring panel are marked too. Nothing is removed.";
     }
 
     /// <summary>What moving the boulders onto the new hold does, asked before it is done.</summary>

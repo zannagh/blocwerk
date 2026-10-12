@@ -17,14 +17,19 @@ namespace Blocwerk.Core.LookOver;
 /// editor's "mark as changed" (<see cref="IWallService.MarkHoldModifiedAsync"/>), "gone" is the editor's delete
 /// (<see cref="IWallService.DeleteHoldAsync"/>: the boulders that use the hold become historic), and "use the new hold"
 /// is the duplicate review's merge (<see cref="IHoldDuplicateService.MergeAsync"/>: the boulders move over, undoable).
-/// Each of those checks the user again by its own rule; the merge is for wall admins.
+/// Each of those checks the user again by its own rule, which is also what decides the answers a user is offered.
+/// An answer only ever reaches a hold that is live, and only with the boulders the user was shown.
 /// </summary>
 public sealed partial class WallLookOverService
 {
+    /// <summary>The refusal when other boulders use the hold than the user was shown.</summary>
+    public const string BouldersChanged = "The boulders that use this hold have changed. Reload the page and check again.";
+
     /// <inheritdoc/>
-    public async Task AnswerAsync(Guid wallId, Guid findingId, LookOverAnswer answer, CancellationToken ct = default)
+    public async Task AnswerAsync(
+        Guid wallId, Guid findingId, LookOverAnswer answer, IReadOnlyCollection<Guid>? expectedBoulderIds = null, CancellationToken ct = default)
     {
-        var (db, userId, wallAdmin) = await OpenAsync(wallId, ct);
+        var (db, access) = await OpenAsync(wallId, ct);
         await using (db)
         {
             var finding = await db.WallLookOverFindings.FirstOrDefaultAsync(f => f.Id == findingId && f.WallId == wallId, ct)
@@ -34,68 +39,112 @@ public sealed partial class WallLookOverService
                 throw new UserFacingException("That finding was already answered. Reload the page.");
             }
 
-            var view = (await ToViewsAsync(db, [finding], wallAdmin, ct))[0];
+            // The view is the one place that says what the hold is NOW and what this user may do with it.
+            var view = (await ToViewsAsync(db, wallId, [finding], access, ct))[0];
             if (!view.Answers.Contains(answer))
             {
                 throw new UserFacingException("That answer does not fit this finding any more. Reload the page.");
             }
 
-            await ApplyAsync(db, finding, answer, userId, ct);
+            if (LookOverRules.ChangesTheWall(answer) && expectedBoulderIds?.ToHashSet().SetEquals(view.Boulders.Select(b => b.Id)) != true)
+            {
+                throw new UserFacingException(BouldersChanged);
+            }
+
+            await ApplyAsync(db, finding, view, answer, access.UserId, ct);
             await db.SaveChangesAsync(ct);
             logger.LogInformation(
-                "Look-over finding {FindingId} ({Kind}) on wall {WallId} answered {Answer} by {UserId}", findingId, finding.Kind, wallId, answer, userId);
+                "Look-over finding {FindingId} ({Kind}) on wall {WallId} answered {Answer} by {UserId}", findingId, finding.Kind, wallId, answer, access.UserId);
         }
     }
 
     /// <inheritdoc/>
     public async Task<int> SettleUnsureMatchesAsync(Guid wallId, CancellationToken ct = default)
     {
-        var (db, userId, _) = await OpenAsync(wallId, ct);
+        var (db, access) = await OpenAsync(wallId, ct);
         await using (db)
         {
             var open = await db.WallLookOverFindings
                 .Where(f => f.WallId == wallId && f.Status == LookOverFindingStatus.Open && f.Kind == LookOverFindingKind.UnsureMatch)
                 .ToListAsync(ct);
+            var views = (await ToViewsAsync(db, wallId, open, access, ct)).ToDictionary(v => v.Id);
             foreach (var finding in open)
             {
-                await ClearFlagAsync(db, finding, ct);
-                Settle(finding, LookOverAnswer.Settle, userId);
+                await ClearFlagAsync(db, finding, views[finding.Id], ct);
+                Settle(finding, LookOverAnswer.Settle, access.UserId);
             }
 
             await db.SaveChangesAsync(ct);
-            logger.LogInformation("{Count} unsure matches on wall {WallId} settled as the same hold by {UserId}", open.Count, wallId, userId);
+            logger.LogInformation("{Count} unsure matches on wall {WallId} settled as the same hold by {UserId}", open.Count, wallId, access.UserId);
             return open.Count;
         }
     }
 
-    private async Task ApplyAsync(BlocwerkDbContext db, WallLookOverFinding finding, LookOverAnswer answer, Guid userId, CancellationToken ct)
+    /// <summary>Acts on <see cref="LookOverFindingView.HoldId"/>, which is only ever a live hold; never on the stored id.</summary>
+    private async Task ApplyAsync(
+        BlocwerkDbContext db, WallLookOverFinding finding, LookOverFindingView view, LookOverAnswer answer, Guid userId, CancellationToken ct)
     {
         switch (answer)
         {
             case LookOverAnswer.DifferentHold:
                 // Not settled: what to do with the hold is the replaced case's question, asked next.
-                await walls.MarkHoldModifiedAsync(finding.HoldId!.Value);
+                await walls.MarkHoldModifiedAsync(view.HoldId!.Value);
+                await RecordReplacedAsync(db, finding, view.HoldId.Value, ct);
                 (finding.Kind, finding.Converted, finding.FlaggedHold) = (LookOverFindingKind.ReplacedByOther, true, false);
                 return;
             case LookOverAnswer.RemoveHold:
-                await walls.DeleteHoldAsync(finding.HoldId!.Value);
+                await walls.DeleteHoldAsync(view.HoldId!.Value);
                 break;
             case LookOverAnswer.UseNewHold:
-                var merge = await duplicates.MergeAsync(finding.WallId, finding.OtherHoldId!.Value, finding.HoldId!.Value, HoldMergeMode.KeepLeft, ct);
+                var merge = await duplicates.MergeAsync(finding.WallId, view.OtherHoldId!.Value, view.HoldId!.Value, HoldMergeMode.KeepLeft, ct);
                 finding.MergeBatchId = merge.BatchId;
                 break;
             default:
-                await ClearFlagAsync(db, finding, ct);
+                await ClearFlagAsync(db, finding, view, ct);
                 break;
         }
 
         Settle(finding, answer, userId);
     }
 
-    /// <summary>Takes the review mark off the hold when the update set it for this finding alone.</summary>
-    private static async Task ClearFlagAsync(BlocwerkDbContext db, WallLookOverFinding finding, CancellationToken ct)
+    /// <summary>
+    /// Tells the boulders on the hold why they are marked, the way the update itself does for a replaced hold
+    /// (<see cref="BoulderHoldMove"/> with <see cref="HoldMoveOutcome.Replaced"/>): the boulder page then reads
+    /// "another hold is here now" instead of a mark without a reason. A boulder the update already told something
+    /// about this hold keeps that.
+    /// </summary>
+    private static async Task RecordReplacedAsync(BlocwerkDbContext db, WallLookOverFinding finding, Guid holdId, CancellationToken ct)
     {
-        if (!finding.FlaggedHold || finding.HoldId is not { } holdId)
+        var uses = await db.BoulderHolds
+            .Where(bh => bh.HoldId == holdId && !bh.Boulder.IsArchived && !bh.Boulder.IsHistoric)
+            .Select(bh => new { bh.BoulderId, bh.Type, bh.Usage, bh.Boulder.Generation })
+            .ToListAsync(ct);
+        var told = (await db.BoulderHoldMoves.Where(m => m.NewHoldId == holdId).Select(m => new { m.BoulderId, m.ToGeneration }).ToListAsync(ct))
+            .Select(m => (m.BoulderId, m.ToGeneration))
+            .ToHashSet();
+        var old = await db.Holds.Where(h => h.Id == finding.OldHoldId).Select(h => new { h.Id, h.Generation }).FirstOrDefaultAsync(ct);
+        foreach (var use in uses.Where(u => !told.Contains((u.BoulderId, u.Generation))))
+        {
+            db.BoulderHoldMoves.Add(new BoulderHoldMove
+            {
+                WallId = finding.WallId,
+                BoulderId = use.BoulderId,
+                OldHoldId = old?.Id,
+                NewHoldId = holdId,
+                Type = use.Type,
+                Usage = use.Usage,
+                Source = HoldMoveSource.TwoD,
+                Outcome = HoldMoveOutcome.Replaced,
+                FromGeneration = old?.Generation ?? finding.Generation - 1,
+                ToGeneration = use.Generation,
+            });
+        }
+    }
+
+    /// <summary>Takes the review mark off the live hold when the update set it for this finding alone.</summary>
+    private static async Task ClearFlagAsync(BlocwerkDbContext db, WallLookOverFinding finding, LookOverFindingView view, CancellationToken ct)
+    {
+        if (!finding.FlaggedHold || view.HoldId is not { } holdId)
         {
             return;
         }

@@ -11,4 +11,8 @@ namespace Blocwerk.Core.LookOver;
 /// <param name="PanelId">The panel photo it is on.</param>
 /// <param name="Generation">Its generation.</param>
 /// <param name="Placed">It has a position on the 3D model.</param>
-internal sealed record LookOverHoldNow(Guid Id, string? Name, string? Color, Guid? PanelId, int Generation, bool Placed);
+/// <param name="Live">
+/// It is on one of the wall's live photos at that photo's generation. A row that is not is history (its panel was
+/// photographed again): it can be shown, never changed.
+/// </param>
+internal sealed record LookOverHoldNow(Guid Id, string? Name, string? Color, Guid? PanelId, int Generation, bool Placed, bool Live = false);

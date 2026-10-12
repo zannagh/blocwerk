@@ -42,7 +42,7 @@ public class LookOverFindingBuilderTests
         var (old, copy) = (Hold(0.5, 0.5), Hold(0.52, 0.5));
         var card = new WallUpdateException { Kind = UpdateExceptionKind.PossiblyRemoved, OldHoldId = old.Id, PanelId = Panel, X = 0.51, Y = 0.49, TextureScore = 0.1 };
 
-        var finding = Assert.Single(LookOverFindingBuilder.Build(Facts([card], old: [old], live: [copy], successors: [(old, copy)])));
+        var finding = Assert.Single(LookOverFindingBuilder.Build(Facts([card], live: [copy], successors: [(old, copy)])));
 
         Assert.Equal(
             (LookOverFindingKind.PossiblyRemoved, (Guid?)old.Id, (Guid?)copy.Id, 0.51, 0.49, (double?)0.1),
@@ -59,7 +59,7 @@ public class LookOverFindingBuilderTests
         var card = new WallUpdateException { Kind = cardKind, OldHoldId = old.Id, StagedHoldId = detection.Id };
         var carry = new CarryoverDecision(old.Id, CarryKind.Carried, merged ? detection.Id : null);
 
-        var facts = Facts([card], old: [old], staged: [detection], live: [live, detection], successors: [(old, live)], carry: [carry]);
+        var facts = Facts([card], staged: [detection], live: [live, detection], successors: [(old, live)], carry: [carry]);
         var finding = Assert.Single(LookOverFindingBuilder.Build(facts));
 
         Assert.Equal((kind, (Guid?)live.Id, merged ? null : (Guid?)detection.Id), (finding.Kind, finding.HoldId, finding.OtherHoldId));
@@ -71,7 +71,7 @@ public class LookOverFindingBuilderTests
         var (old, detection, other) = (Hold(0.5, 0.5), Hold(0.5, 0.5), Hold(0.7, 0.5));
         var card = new WallUpdateException { Kind = UpdateExceptionKind.LowConfidenceMatch, OldHoldId = old.Id, StagedHoldId = detection.Id };
         LookOverPromoteFacts With(CarryoverDecision decision) =>
-            Facts([card], old: [old], staged: [detection, other], live: [detection, other], successors: [(old, detection)], carry: [decision]);
+            Facts([card], staged: [detection, other], live: [detection, other], successors: [(old, detection)], carry: [decision]);
 
         Assert.Single(LookOverFindingBuilder.Build(With(new CarryoverDecision(old.Id, CarryKind.Carried, detection.Id))));
         Assert.Empty(LookOverFindingBuilder.Build(With(new CarryoverDecision(old.Id, CarryKind.Carried, detection.Id, Confirmed: true))));
@@ -85,9 +85,9 @@ public class LookOverFindingBuilderTests
         var (old, copy) = (Hold(0.5, 0.5), Hold(0.5, 0.5));
         var notFound = new Dictionary<Guid, HoldMoveOutcome> { [old.Id] = HoldMoveOutcome.NotFound };
 
-        Assert.Empty(LookOverFindingBuilder.Build(Facts([], old: [old], live: [copy], successors: [(old, copy)], notFound: notFound)));
+        Assert.Empty(LookOverFindingBuilder.Build(Facts([], live: [copy], successors: [(old, copy)], notFound: notFound)));
 
-        var withBoulder = Facts([], old: [old], live: [copy], successors: [(old, copy)], notFound: notFound, boulders: new() { [copy.Id] = 2 });
+        var withBoulder = Facts([], live: [copy], successors: [(old, copy)], notFound: notFound, boulders: new() { [copy.Id] = 2 });
         var finding = Assert.Single(LookOverFindingBuilder.Build(withBoulder));
         Assert.Equal((LookOverFindingKind.NotFound, (Guid?)copy.Id, 2), (finding.Kind, finding.HoldId, finding.BouldersAtApply));
     }
@@ -96,7 +96,7 @@ public class LookOverFindingBuilderTests
     public void ANewHoldOnTheSpotOfAKeptOldHold_IsAFinding_OrCompletesTheOneAboutThatHold()
     {
         var (old, copy, fresh, far) = (Hold(0.5, 0.5), Hold(0.5, 0.5), Hold(0.51, 0.5), Hold(0.9, 0.9));
-        var plain = Facts([], old: [old], live: [copy, fresh, far], successors: [(old, copy)]);
+        var plain = Facts([], live: [copy, fresh, far], successors: [(old, copy)]);
 
         var sameSpot = Assert.Single(LookOverFindingBuilder.Build(plain));
         Assert.Equal((LookOverFindingKind.SameSpot, (Guid?)copy.Id, (Guid?)fresh.Id, (Guid?)old.Id), (sameSpot.Kind, sameSpot.HoldId, sameSpot.OtherHoldId, sameSpot.OldHoldId));
@@ -116,7 +116,7 @@ public class LookOverFindingBuilderTests
     {
         var (old, detection, fresh) = (Hold(0.5, 0.5), Hold(0.5, 0.5), Hold(0.5, 0.51));
 
-        Assert.Empty(LookOverFindingBuilder.Build(Facts([], old: [old], staged: [detection], live: [detection, fresh], successors: [(old, detection)])));
+        Assert.Empty(LookOverFindingBuilder.Build(Facts([], staged: [detection], live: [detection, fresh], successors: [(old, detection)])));
     }
 
     [Theory]
@@ -132,17 +132,69 @@ public class LookOverFindingBuilderTests
     }
 
     [Fact]
-    public void TheAnswers_FollowTheKind_AndAHoldThatIsGoneCanOnlyBeSettled()
+    public void TheAnswers_FollowTheKindAndTheUsersRights_AndAHoldThatIsNotLiveCanOnlyBeAcknowledged()
     {
-        Assert.Equal([LookOverAnswer.Settle, LookOverAnswer.DifferentHold], LookOverRules.AnswersFor(LookOverFindingKind.UnsureMatch, true, true));
-        Assert.Equal([LookOverAnswer.Settle, LookOverAnswer.RemoveHold], LookOverRules.AnswersFor(LookOverFindingKind.NotFound, true, false));
+        Assert.Equal([LookOverAnswer.Settle, LookOverAnswer.DifferentHold], LookOverRules.AnswersFor(LookOverFindingKind.UnsureMatch, true, true, true));
+        Assert.Equal([LookOverAnswer.Settle, LookOverAnswer.RemoveHold], LookOverRules.AnswersFor(LookOverFindingKind.NotFound, true, true, false));
         Assert.Equal(
             [LookOverAnswer.Settle, LookOverAnswer.UseNewHold, LookOverAnswer.RemoveHold],
-            LookOverRules.AnswersFor(LookOverFindingKind.SameSpot, true, true));
-        Assert.Equal([LookOverAnswer.Settle], LookOverRules.AnswersFor(LookOverFindingKind.MatchedToHandPlaced, true, true));
-        Assert.Equal([LookOverAnswer.Settle], LookOverRules.AnswersFor(LookOverFindingKind.ConflictingNew, false, false));
-        Assert.Equal([LookOverAnswer.Settle], LookOverRules.AnswersFor(LookOverFindingKind.ReplacedByOther, false, true));
+            LookOverRules.AnswersFor(LookOverFindingKind.SameSpot, true, true, true));
+        Assert.Equal([LookOverAnswer.Settle], LookOverRules.AnswersFor(LookOverFindingKind.MatchedToHandPlaced, true, true, true));
+        Assert.Equal([LookOverAnswer.Settle], LookOverRules.AnswersFor(LookOverFindingKind.ConflictingNew, false, true, false));
+        Assert.Equal([LookOverAnswer.Settle], LookOverRules.AnswersFor(LookOverFindingKind.ReplacedByOther, false, true, true));
+
+        // Somebody who may not edit holds on the wall (an installation admin who is not on it) acknowledges, nothing else.
+        Assert.All(Enum.GetValues<LookOverFindingKind>(), k => Assert.Equal([LookOverAnswer.Settle], LookOverRules.AnswersFor(k, true, false, false)));
         Assert.Equal(Enum.GetValues<LookOverFindingKind>().Order(), LookOverRules.Order.Order());
+    }
+
+    // The mark on the live hold belongs to the finding only when the carry set it for the unanswered card on a hold
+    // nothing else had marked, and nothing marks that hold afterwards.
+    [Theory]
+    [InlineData(true, false, false, true)]
+    [InlineData(false, false, false, false)]
+    [InlineData(true, true, false, false)]
+    [InlineData(true, false, true, false)]
+    public void TheFinding_OwnsTheHoldsMark_OnlyWhenTheCardSetItAndNothingElseMarksTheHold(bool cardMarked, bool unalignedPanel, bool secondOldHold, bool owns)
+    {
+        var (old, other, detection) = (Hold(0.5, 0.5), Hold(0.52, 0.5), Hold(0.5, 0.5));
+        detection.NeedsReview = true;
+        var card = new WallUpdateException { Kind = UpdateExceptionKind.LowConfidenceMatch, OldHoldId = old.Id, StagedHoldId = detection.Id };
+        (Hold Old, Hold Live)[] successors = secondOldHold ? [(old, detection), (other, detection)] : [(old, detection)];
+
+        var facts = Facts(
+            [card], staged: [detection], live: [detection], successors: successors, carry: [new CarryoverDecision(old.Id, CarryKind.Carried, detection.Id)],
+            cardMarked: cardMarked ? [old.Id] : [], unaligned: unalignedPanel ? [Panel] : []);
+
+        Assert.Equal(owns, LookOverFindingBuilder.Build(facts).Single(f => f.OldHoldId == old.Id).FlaggedHold);
+    }
+
+    [Fact]
+    public void AHoldNotFoundAgain_OrUnderANewHold_NeverOwnsTheMark_ThoughTheHoldIsMarked()
+    {
+        var (old, copy, fresh) = (Hold(0.5, 0.5), Hold(0.5, 0.5), Hold(0.51, 0.5));
+        copy.NeedsReview = true;
+        var sameSpot = Facts([], live: [copy, fresh], successors: [(old, copy)], cardMarked: [old.Id]);
+        var notFound = Facts(
+            [], live: [copy], successors: [(old, copy)], cardMarked: [old.Id],
+            notFound: new() { [old.Id] = HoldMoveOutcome.NotFound }, boulders: new() { [copy.Id] = 1 });
+
+        Assert.False(Assert.Single(LookOverFindingBuilder.Build(sameSpot)).FlaggedHold);
+        Assert.False(Assert.Single(LookOverFindingBuilder.Build(notFound)).FlaggedHold);
+    }
+
+    [Fact]
+    public void TwoCardsAboutOneOldHold_GiveOneFinding_OfTheMoreConsequentialKind_WhateverTheirOrder()
+    {
+        var (old, copy) = (Hold(0.5, 0.5), Hold(0.5, 0.5));
+        var removed = new WallUpdateException { Kind = UpdateExceptionKind.PossiblyRemoved, OldHoldId = old.Id };
+        var replaced = new WallUpdateException { Kind = UpdateExceptionKind.ReplacedByOther, OldHoldId = old.Id };
+
+        foreach (var cards in new[] { new[] { removed, replaced }, new[] { replaced, removed } })
+        {
+            var finding = Assert.Single(LookOverFindingBuilder.Build(Facts(cards, live: [copy], successors: [(old, copy)])));
+            Assert.Equal(LookOverFindingKind.ReplacedByOther, finding.Kind);
+        }
     }
 
     private static Hold Hold(double x, double y) =>
@@ -150,21 +202,23 @@ public class LookOverFindingBuilderTests
 
     private static LookOverPromoteFacts Facts(
         IReadOnlyList<WallUpdateException> cards,
-        Hold[]? old = null,
         Hold[]? staged = null,
         Hold[]? live = null,
         (Hold Old, Hold Live)[]? successors = null,
         CarryoverDecision[]? carry = null,
         Dictionary<Guid, HoldMoveOutcome>? notFound = null,
-        Dictionary<Guid, int>? boulders = null) =>
+        Dictionary<Guid, int>? boulders = null,
+        Guid[]? cardMarked = null,
+        Guid[]? unaligned = null) =>
         new(
             cards,
             (carry ?? []).ToDictionary(d => d.OldHoldId),
             (successors ?? []).ToDictionary(s => s.Old.Id, s => s.Live.Id),
-            (old ?? []).ToDictionary(h => h.Id),
             (live ?? []).Distinct().ToDictionary(h => h.Id),
             (staged ?? []).ToDictionary(h => h.Id),
             notFound ?? [],
             boulders ?? [],
-            new Dictionary<Guid, (int Width, int Height)> { [Panel] = (2000, 1000) });
+            new Dictionary<Guid, (int Width, int Height)> { [Panel] = (2000, 1000) },
+            (cardMarked ?? []).ToHashSet(),
+            (unaligned ?? []).ToHashSet());
 }

@@ -8,27 +8,6 @@ using Blocwerk.Core.Services;
 
 namespace Blocwerk.Core.LookOver;
 
-/// <summary>What a promote knows when it is about to commit, as far as the look-over needs it.</summary>
-/// <param name="Cards">The confirm screen's cards of the promoted session.</param>
-/// <param name="Carry">The promoted carry decision per old hold.</param>
-/// <param name="Successors">Old hold to the live hold it became.</param>
-/// <param name="OldHolds">The old holds of the re-photographed panels.</param>
-/// <param name="LiveHolds">Every hold of the new generation, after the promote.</param>
-/// <param name="StagedHolds">Every staged hold of the re-photographed panels, whether it went live or was left out.</param>
-/// <param name="NotFound">Old holds kept in place whose boulders the promote marked (not found again, or replaced).</param>
-/// <param name="Boulders">Live hold to the number of current boulders the promote moved onto it.</param>
-/// <param name="PhotoSizes">The new photos' pixel sizes per panel.</param>
-internal sealed record LookOverPromoteFacts(
-    IReadOnlyList<WallUpdateException> Cards,
-    IReadOnlyDictionary<Guid, CarryoverDecision> Carry,
-    IReadOnlyDictionary<Guid, Guid> Successors,
-    IReadOnlyDictionary<Guid, Hold> OldHolds,
-    IReadOnlyDictionary<Guid, Hold> LiveHolds,
-    IReadOnlyDictionary<Guid, Hold> StagedHolds,
-    IReadOnlyDictionary<Guid, HoldMoveOutcome> NotFound,
-    IReadOnlyDictionary<Guid, int> Boulders,
-    IReadOnlyDictionary<Guid, (int Width, int Height)> PhotoSizes);
-
 /// <summary>
 /// The findings an applied update leaves for the look-over: every card nobody answered whose default is what went live,
 /// the holds on boulders that were not found again, and old holds kept in place under a new hold. One finding per old
@@ -41,8 +20,13 @@ internal static class LookOverFindingBuilder
     /// <returns>The findings.</returns>
     public static List<WallLookOverFinding> Build(LookOverPromoteFacts facts)
     {
+        // Two cards about one old hold: the more consequential kind wins, whatever order the rows come in.
+        var cards = facts.Cards
+            .Where(c => c.Status == UpdateExceptionStatus.Pending)
+            .OrderBy(c => LookOverRules.Rank((LookOverFindingKind)(int)c.Kind))
+            .ThenBy(c => c.Id);
         var findings = new List<WallLookOverFinding>();
-        foreach (var card in facts.Cards.Where(c => c.Status == UpdateExceptionStatus.Pending))
+        foreach (var card in cards)
         {
             if (FromCard(facts, card) is { } finding && !findings.Any(f => f.OldHoldId is { } o && o == finding.OldHoldId))
             {
@@ -83,7 +67,9 @@ internal static class LookOverFindingBuilder
             finding.OtherHoldId = staged.Id;
         }
 
-        return About(facts, finding, oldId, live);
+        About(facts, finding, oldId, live);
+        finding.FlaggedHold = OwnsTheMark(facts, oldId, live);
+        return finding;
     }
 
     /// <summary>The card still describes what was promoted: nobody confirmed, removed or re-paired the hold since.</summary>
@@ -99,6 +85,16 @@ internal static class LookOverFindingBuilder
             ? decision.NewHoldId == card.StagedHoldId
             : decision.NewHoldId is null;
     }
+
+    /// <summary>
+    /// The hold's review mark is this finding's alone, so settling it may take the mark off: the carry set it for the
+    /// unanswered card on a hold nothing had marked, and nothing marks it afterwards (a second old hold merged onto
+    /// the same detection, a panel whose photo could not be lined up).
+    /// </summary>
+    private static bool OwnsTheMark(LookOverPromoteFacts facts, Guid oldId, Hold live) =>
+        facts.CardMarked.Contains(oldId)
+        && facts.Successors.Count(s => s.Value == live.Id) == 1
+        && (live.WallPanelId is not { } panel || !facts.UnalignedPanelIds.Contains(panel));
 
     private static void AddNotFound(LookOverPromoteFacts facts, List<WallLookOverFinding> findings)
     {
@@ -145,7 +141,7 @@ internal static class LookOverFindingBuilder
             }
 
             var size = facts.PhotoSizes.TryGetValue(panel, out var s) ? s : ((int Width, int Height)?)null;
-            if (SameSpotFinder.Nearest(kept, fresh[panel], size) is not { } other)
+            if (SameSpotFinder.Nearest(kept, fresh[panel].OrderBy(h => h.Id), size) is not { } other)
             {
                 continue;
             }
@@ -177,15 +173,13 @@ internal static class LookOverFindingBuilder
         return finding;
     }
 
+    /// <summary>Ties a finding to the old hold and what it became. The review mark stays the hold's own unless a card says otherwise.</summary>
     private static WallLookOverFinding About(LookOverPromoteFacts facts, WallLookOverFinding finding, Guid oldId, Hold live)
     {
-        var decision = facts.Carry.GetValueOrDefault(oldId);
-        var wasFlagged = facts.OldHolds.GetValueOrDefault(oldId)?.NeedsReview ?? true;
         finding.OldHoldId = oldId;
         finding.HoldId = live.Id;
         finding.PanelId ??= live.WallPanelId;
         finding.BouldersAtApply = facts.Boulders.GetValueOrDefault(live.Id);
-        finding.FlaggedHold = live.NeedsReview && !wasFlagged && decision?.Kind != CarryKind.Changed;
         return finding;
     }
 }

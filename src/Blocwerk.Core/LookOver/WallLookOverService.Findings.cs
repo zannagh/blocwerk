@@ -10,21 +10,21 @@ using Microsoft.EntityFrameworkCore;
 namespace Blocwerk.Core.LookOver;
 
 /// <summary>
-/// The list: each finding with the hold as it is NOW (it may have been edited or deleted since the update), the current
-/// boulders on it and the answers it takes.
+/// The list: each finding with the hold as it is NOW (it may have been edited or deleted since the update, or its panel
+/// photographed again), the current boulders on it and the answers it takes from this user.
 /// </summary>
 public sealed partial class WallLookOverService
 {
     /// <inheritdoc/>
     public async Task<IReadOnlyList<LookOverFindingView>> ListAsync(Guid wallId, CancellationToken ct = default)
     {
-        var (db, _, wallAdmin) = await OpenAsync(wallId, ct);
+        var (db, access) = await OpenAsync(wallId, ct);
         await using (db)
         {
-            var completedAt = await db.Walls.IgnoreQueryFilters().Where(w => w.Id == wallId).Select(w => w.LookOverCompletedAt).FirstOrDefaultAsync(ct);
-            var views = await ToViewsAsync(db, await CurrentRoundAsync(db, wallId, completedAt, ct), wallAdmin, ct);
+            var since = await db.Walls.IgnoreQueryFilters().Where(w => w.Id == wallId).Select(w => w.LookOverPendingSince).FirstOrDefaultAsync(ct);
+            var views = await ToViewsAsync(db, wallId, await CurrentRound(db, wallId, since).ToListAsync(ct), access, ct);
             return views
-                .OrderBy(v => LookOverRules.Order.ToList().IndexOf(v.Kind))
+                .OrderBy(v => LookOverRules.Rank(v.Kind))
                 .ThenBy(v => v.Status)
                 .ThenByDescending(v => v.Boulders.Count)
                 .ThenBy(v => v.Confidence ?? 1)
@@ -34,26 +34,29 @@ public sealed partial class WallLookOverService
     }
 
     private static async Task<List<LookOverFindingView>> ToViewsAsync(
-        BlocwerkDbContext db, IReadOnlyList<WallLookOverFinding> findings, bool wallAdmin, CancellationToken ct)
+        BlocwerkDbContext db, Guid wallId, IReadOnlyList<WallLookOverFinding> findings, LookOverAccess access, CancellationToken ct)
     {
         var ids = findings.SelectMany(f => new[] { f.HoldId, f.OtherHoldId, f.OldHoldId }).OfType<Guid>().Distinct().ToList();
-        var holds = await db.Holds.AsNoTracking()
-            .Where(h => ids.Contains(h.Id))
-            .Select(h => new LookOverHoldNow(h.Id, h.Name, h.Color, h.WallPanelId, h.Generation, h.FacetId != null))
-            .ToDictionaryAsync(h => h.Id, ct);
+        var live = await LivePhotosAsync(db, wallId, ct);
+        var rows = await db.Holds.AsNoTracking()
+            .Where(h => h.WallId == wallId && ids.Contains(h.Id))
+            .Select(h => new LookOverHoldNow(h.Id, h.Name, h.Color, h.WallPanelId, h.Generation, h.FacetId != null, false))
+            .ToListAsync(ct);
+        var holds = rows.ToDictionary(h => h.Id, h => h with { Live = live.Contains((h.PanelId, h.Generation)) });
         var boulders = (await db.BoulderHolds.AsNoTracking()
                 .Where(bh => ids.Contains(bh.HoldId) && !bh.Boulder.IsArchived && !bh.Boulder.IsHistoric)
                 .Select(bh => new { bh.HoldId, bh.BoulderId, bh.Boulder.Name, bh.Boulder.NeedsReview })
                 .ToListAsync(ct))
             .ToLookup(b => b.HoldId, b => new LookOverBoulder(b.BoulderId, b.Name, b.NeedsReview));
-        return findings.Select(f => ToView(f, holds, f.HoldId is { } id ? boulders[id] : [], wallAdmin)).ToList();
+        return findings.Select(f => ToView(f, holds, boulders, access)).ToList();
     }
 
     private static LookOverFindingView ToView(
-        WallLookOverFinding f, Dictionary<Guid, LookOverHoldNow> holds, IEnumerable<LookOverBoulder> boulders, bool wallAdmin)
+        WallLookOverFinding f, Dictionary<Guid, LookOverHoldNow> holds, ILookup<Guid, LookOverBoulder> boulders, LookOverAccess access)
     {
-        var hold = f.HoldId is { } id ? holds.GetValueOrDefault(id) : null;
-        var other = f.OtherHoldId is { } otherId ? holds.GetValueOrDefault(otherId) : null;
+        // Only a LIVE hold is "the hold": a retained row of an earlier generation is history and is never changed from here.
+        var hold = f.HoldId is { } id && holds.GetValueOrDefault(id) is { Live: true } liveHold ? liveHold : null;
+        var other = f.OtherHoldId is { } otherId && holds.GetValueOrDefault(otherId) is { Live: true } liveOther ? liveOther : null;
         var old = f.OldHoldId is { } oldId ? holds.GetValueOrDefault(oldId) : null;
 
         // The merge works on two holds of one photo; anything else cannot be merged and is not offered.
@@ -75,8 +78,28 @@ public sealed partial class WallLookOverService
             f.PhotoScore,
             f.Confidence,
             f.Converted,
-            [.. boulders.OrderBy(b => b.Name)],
-            open ? LookOverRules.AnswersFor(f.Kind, hold is not null, mergeable && wallAdmin) : [],
-            open && mergeable && !wallAdmin);
+            hold is null ? [] : [.. boulders[hold.Id].OrderBy(b => b.Name).ThenBy(b => b.Id)],
+            open ? LookOverRules.AnswersFor(f.Kind, hold is not null, access.CanEdit, mergeable && access.CanMerge) : [],
+            open && mergeable && access.CanEdit && !access.CanMerge);
+    }
+
+    /// <summary>
+    /// The wall's live photos as (panel, generation): per grid position the newest committed panel (the rule the live
+    /// viewers use), plus the wall's own photo at its current generation for holds without a panel.
+    /// </summary>
+    private static async Task<HashSet<(Guid? PanelId, int Generation)>> LivePhotosAsync(BlocwerkDbContext db, Guid wallId, CancellationToken ct)
+    {
+        var panels = await db.WallPanels.AsNoTracking()
+            .Where(p => p.WallId == wallId && p.Photo != null)
+            .Select(p => new { p.Id, p.Col, p.Row, p.Generation })
+            .ToListAsync(ct);
+        var live = panels
+            .GroupBy(p => (p.Col, p.Row))
+            .Select(g => g.OrderByDescending(p => p.Generation).ThenBy(p => p.Id).First())
+            .Select(p => ((Guid?)p.Id, p.Generation))
+            .ToHashSet();
+        var current = await db.Walls.IgnoreQueryFilters().Where(w => w.Id == wallId).Select(w => w.CurrentGeneration).FirstOrDefaultAsync(ct);
+        live.Add((null, current));
+        return live;
     }
 }

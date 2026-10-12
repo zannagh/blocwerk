@@ -1,7 +1,7 @@
 @using Blocwerk.Core.LookOver
 @* The wall page's line about a pending look-over. Admins and moderators get the count and the way in; everybody else
-   on the wall gets a neutral note that it was updated. Nothing renders while no look-over is waiting, behind a share
-   link, or on a kiosk tablet. *@
+   on the wall gets a neutral note that it was updated. Nothing renders while no look-over is waiting, and nothing at
+   all on a kiosk tablet (the look-over is done from one's own device; the wall page keeps it off share links). *@
 
 @if (state is { Pending: true })
 {
@@ -9,8 +9,8 @@
         <div class="panel-link-callout-text">
             @if (state.CanLookOver)
             {
-                <strong>This wall was updated. @Waiting(state.OpenFindings)</strong>
-                <span class="hint">The update was unsure about them and nobody has checked them yet. Boulders that use one of these holds are marked for review.</span>
+                <strong>@LookOverCopy.BannerHeadline(state.OpenFindings)</strong>
+                <span class="hint">@LookOverCopy.BannerHint(state.OpenFindings)</span>
             }
             else
             {
@@ -20,7 +20,7 @@
         </div>
         @if (state.CanLookOver)
         {
-            <a class="btn-secondary" href="/walls/@WallId/look-over">Look over the wall</a>
+            <a class="btn-secondary" href="/walls/@WallId/look-over">@(state.OpenFindings == 0 ? "Finish the look-over" : "Look over the wall")</a>
         }
     </div>
 }
@@ -36,15 +36,10 @@
     private IWallLookOverService LookOver { get; set; } = default!;
 
     [Inject]
-    private ILogger<WallLookOverBanner> Logger { get; set; } = default!;
+    private IKioskContext KioskContext { get; set; } = default!;
 
-    /// <summary>"3 findings are waiting for a look-over." in the singular and plural, and when all are answered.</summary>
-    internal static string Waiting(int open) => open switch
-    {
-        0 => "Every finding is answered; the look-over still has to be finished.",
-        1 => "1 finding is waiting for a look-over.",
-        _ => $"{open} findings are waiting for a look-over.",
-    };
+    [Inject]
+    private ILogger<WallLookOverBanner> Logger { get; set; } = default!;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -54,6 +49,12 @@
         }
 
         loadedWallId = WallId;
+        state = null;
+        if (KioskContext.IsKiosk)
+        {
+            return;
+        }
+
         try
         {
             state = await LookOver.GetStateAsync(WallId);
@@ -62,7 +63,6 @@
         {
             // Nobody signed in, or the wall is gone: there is nothing to say, and the wall page must still render.
             Logger.LogDebug(ex, "No look-over state for wall {WallId}", WallId);
-            state = null;
         }
     }
 }
