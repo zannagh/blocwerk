@@ -6,6 +6,7 @@ using System.Text.Json;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -53,8 +54,31 @@ public partial class WallBigUpdateService
                 }
             }
 
-            return new OverlapOwner(pairs, centre.Size, centre.KeptNew, size);
+            return new OverlapOwner(pairs, centre.Size, centre.KeptNew, size, centre.Settled);
         };
+
+    /// <summary>
+    /// Writes each suggested discard's reason onto its staged hold (and clears it where the triage no longer suggests
+    /// one), so the reason survives the promote in the journal entry of the deleted detection. Set-based, outside the
+    /// change journal: a staged detection's reason is no edit to undo.
+    /// </summary>
+    private static async Task PersistDiscardReasonsAsync(BlocwerkDbContext db, Guid wallId, int stagedGen, BigUpdateSession session)
+    {
+        var suggested = session.SuggestedNewDiscards ?? new Dictionary<Guid, NewHoldDiscardReason>();
+        foreach (var group in suggested.GroupBy(s => s.Value, s => s.Key))
+        {
+            var reason = group.Key.ToString();
+            var ids = group.ToList();
+            await db.Holds
+                .Where(h => h.WallId == wallId && h.Generation == stagedGen && ids.Contains(h.Id) && h.DiscardReason != reason)
+                .ExecuteUpdateAsync(s => s.SetProperty(h => h.DiscardReason, reason));
+        }
+
+        var all = suggested.Keys.ToList();
+        await db.Holds
+            .Where(h => h.WallId == wallId && h.Generation == stagedGen && h.DiscardReason != null && !all.Contains(h.Id))
+            .ExecuteUpdateAsync(s => s.SetProperty(h => h.DiscardReason, (string?)null));
+    }
 
     private async Task<List<IReadOnlyList<(double X, double Y)>>> RescuedMarkerQuadsAsync(byte[] photo)
     {

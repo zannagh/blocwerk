@@ -12,17 +12,23 @@ namespace Blocwerk.Core.Services;
 /// <param name="OwnerSize">The owner's photo size.</param>
 /// <param name="OwnerNewHolds">The owner's unpaired detections its own triage kept (genuinely new holds).</param>
 /// <param name="PhotoSize">This panel's photo size.</param>
+/// <param name="OwnerHolds">
+/// What the owner settled itself: the detections it carries an old hold onto, its hand-placed holds and the detections
+/// its own triage discarded. Null when unknown: every spot the owner shows then counts as settled.
+/// </param>
 public sealed record OverlapOwner(
     IReadOnlyList<PointPair> ToOwner,
     (int Width, int Height) OwnerSize,
     IReadOnlyList<(double X, double Y)> OwnerNewHolds,
-    (int Width, int Height) PhotoSize);
+    (int Width, int Height) PhotoSize,
+    IReadOnlyList<TriageSpot>? OwnerHolds = null);
 
 /// <summary>
 /// A neighbour photo usually shows part of the centre panel (an oblique shot sees the main wall at its
 /// edge). A detection there that the overlap maps inside the centre photo belongs to the centre: either a
 /// hold the centre already has, or nothing the centre's detector saw. The one exception is a new hold the
-/// centre kept as new — the same hold seen twice, which the overlaps step links.
+/// centre kept as new — the same hold seen twice, which the overlaps step links. When the owner's holds are known, the
+/// rule only applies where the owner has one: a detection on a spot the owner has nothing for stays a new hold.
 /// </summary>
 public static class NeighbourPanelRule
 {
@@ -34,7 +40,7 @@ public static class NeighbourPanelRule
 
     private const int MinimumPairs = 6;
 
-    /// <summary>True when the owner photo shows this spot and has no kept new hold there.</summary>
+    /// <summary>True when the owner photo shows this spot, settled it with a hold of its own and has no kept new hold there.</summary>
     public static bool ShownByOwner(OverlapOwner owner, double x, double y)
     {
         if (owner.ToOwner.Count < MinimumPairs)
@@ -60,7 +66,12 @@ public static class NeighbourPanelRule
         }
 
         var twin = TwinDistance * Math.Max(w, h);
-        return !owner.OwnerNewHolds.Any(n => Distance(n.X, n.Y, m.X, m.Y) <= twin);
+        if (owner.OwnerNewHolds.Any(n => Distance(n.X, n.Y, m.X, m.Y) <= twin))
+        {
+            return false;
+        }
+
+        return owner.OwnerHolds is null || owner.OwnerHolds.Any(o => Distance(o.X, o.Y, m.X, m.Y) <= twin + o.RadiusPx);
     }
 
     private static double Distance(double ax, double ay, double bx, double by) =>

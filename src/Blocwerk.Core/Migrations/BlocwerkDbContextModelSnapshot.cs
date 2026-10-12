@@ -1233,6 +1233,10 @@ namespace Blocwerk.Core.Migrations
                     b.Property<double>("Confidence")
                         .HasColumnType("double precision");
 
+                    b.Property<string>("DiscardReason")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
                     b.Property<string>("FacetId")
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)");

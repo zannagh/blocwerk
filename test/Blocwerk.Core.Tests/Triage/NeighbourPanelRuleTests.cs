@@ -9,7 +9,7 @@ namespace Blocwerk.Core.Tests.Triage;
 /// <summary>
 /// A neighbour photo's detection that the overlap maps inside the centre photo belongs to the centre —
 /// unless the centre kept a new hold right there (the same new hold seen twice), or the spot is far from
-/// every overlap pair (the mapping is not trusted there).
+/// every overlap pair (the mapping is not trusted there), or the centre has no hold of its own on that spot.
 /// </summary>
 public class NeighbourPanelRuleTests
 {
@@ -40,6 +40,23 @@ public class NeighbourPanelRuleTests
     public void ShownByOwner_FarFromEveryOverlapPair_IsNotJudged()
     {
         Assert.False(NeighbourPanelRule.ShownByOwner(Owner([]), 850, 2600));
+    }
+
+    [Theory]
+    [InlineData(3400, 1200, true)]
+    [InlineData(3470, 1260, true)]
+    [InlineData(3400, 1500, false)]
+    public void ShownByOwner_OnlyWhereTheCentreHasAHoldOfItsOwn(double centreX, double centreY, bool shown)
+    {
+        var owner = Owner([]) with { OwnerHolds = [new TriageSpot(centreX, centreY, 60)] };
+
+        Assert.Equal(shown, NeighbourPanelRule.ShownByOwner(owner, 400, 1200));
+    }
+
+    [Fact]
+    public void ShownByOwner_WhereTheCentreHasNothing_StaysANewHold()
+    {
+        Assert.False(NeighbourPanelRule.ShownByOwner(Owner([]) with { OwnerHolds = [] }, 400, 1200));
     }
 
     private static OverlapOwner Owner(IReadOnlyList<(double X, double Y)> keptNew) =>

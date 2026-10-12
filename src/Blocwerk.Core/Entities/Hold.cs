@@ -83,6 +83,14 @@ public partial class Hold
 
     public double Confidence { get; set; }
 
+    /// <summary>
+    /// Why a panel update's triage suggested to discard this staged detection (a <see cref="NewHoldDiscardReason"/> name),
+    /// written while the update is staged so the change journal's delete entry of the promote carries it. Null on every
+    /// hold the triage kept; a hold that is live with one was kept by a person against the suggestion.
+    /// </summary>
+    [MaxLength(32)]
+    public string? DiscardReason { get; set; }
+
     public int Generation { get; set; }
 
     public bool NeedsReview { get; set; }
@@ -235,6 +243,7 @@ public partial class Hold
         IsOnKickboard = IsOnKickboard,
         IsAutoDetected = IsAutoDetected,
         Confidence = Confidence,
+        DiscardReason = DiscardReason,
         Generation = Generation,
         NeedsReview = NeedsReview,
         IsVirtual = IsVirtual,
