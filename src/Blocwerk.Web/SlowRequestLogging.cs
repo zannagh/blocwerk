@@ -37,8 +37,10 @@ public static class SlowRequestLogging
     }
 
     // A circuit's websocket and long polling, and an upload of a few MB over a phone connection, legitimately take long.
-    private static bool IsMeasurable(HttpContext context) =>
+    // So does a route that is a long poll by design: it says so itself with LongPollEndpoint metadata.
+    internal static bool IsMeasurable(HttpContext context) =>
         !context.WebSockets.IsWebSocketRequest &&
+        context.GetEndpoint()?.Metadata.GetMetadata<LongPollEndpoint>() is null &&
         !context.Request.Path.StartsWithSegments("/_blazor") &&
         !(context.Request.ContentLength > 1_000_000);
 }
