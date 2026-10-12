@@ -27,7 +27,8 @@ public sealed partial class WallLookOverService(
     ICaptureFileStore files,
     ILogger<WallLookOverService> logger,
     IKioskContext? kioskContext = null,
-    IChangeJournal? journal = null) : IWallLookOverService
+    IChangeJournal? journal = null,
+    IHoldColorProposer? colors = null) : IWallLookOverService
 {
     /// <summary>The journal batch label of an answer, an undo or a bulk answer.</summary>
     public const string BatchLabel = "look-over-answer";

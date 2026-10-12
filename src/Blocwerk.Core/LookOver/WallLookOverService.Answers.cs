@@ -13,8 +13,8 @@ using Microsoft.Extensions.Logging;
 namespace Blocwerk.Core.LookOver;
 
 /// <summary>
-/// Answering a finding after the update is live. Nothing here has hold semantics of its own: "different hold" is the
-/// editor's "mark as changed" (<see cref="IWallService.MarkHoldModifiedAsync"/>), "gone" is the editor's delete
+/// Answering a finding after the update is live. "Different hold" is the editor's "mark as changed"
+/// (<see cref="IWallService.MarkHoldModifiedAsync"/>) and then takes the pair apart (the Split part), "gone" is the editor's delete
 /// (<see cref="IWallService.DeleteHoldAsync"/>: the boulders that use the hold become historic), and "use the new hold"
 /// is the duplicate review's merge (<see cref="IHoldDuplicateService.MergeAsync"/>: the boulders move over, undoable).
 /// Each of those checks the user again by its own rule, which is also what decides the answers a user is offered.
@@ -85,9 +85,10 @@ public sealed partial class WallLookOverService
             throw new UserFacingException(AnsweredMeanwhile);
         }
 
+        Hold? added;
         try
         {
-            await ApplyAsync(db, finding, view, answer, ct);
+            added = await ApplyAsync(db, finding, view, answer, ct);
         }
         catch
         {
@@ -107,23 +108,37 @@ public sealed partial class WallLookOverService
         }
 
         await db.SaveChangesAsync(ct);
+        if (added is not null)
+        {
+            await SuggestColorAsync(db, finding.WallId, added.Id, ct);
+        }
     }
 
-    private async Task ApplyAsync(BlocwerkDbContext db, WallLookOverFinding finding, LookOverFindingView view, LookOverAnswer answer, CancellationToken ct)
+    /// <summary>Runs the hold operation of an answer. Returns the new hold when the answer took a pair apart.</summary>
+    private async Task<Hold?> ApplyAsync(BlocwerkDbContext db, WallLookOverFinding finding, LookOverFindingView view, LookOverAnswer answer, CancellationToken ct)
     {
         switch (answer)
         {
             case LookOverAnswer.DifferentHold:
                 await walls.MarkHoldModifiedAsync(view.HoldId!.Value);
                 await RecordReplacedAsync(db, finding, view.HoldId.Value, ct);
-                break;
+                return await SplitAsync(db, finding, view.HoldId.Value, ct);
             case LookOverAnswer.RemoveHold:
+                // Called a different hold before the pair was taken apart: the hold still is the new one on the wall.
+                // Split first, so only the old hold goes and the detection stays as a new hold.
+                Hold? detection = null;
+                if (IsUnsplit(finding))
+                {
+                    detection = await SplitAsync(db, finding, view.HoldId!.Value, ct);
+                    await db.SaveChangesAsync(ct);
+                }
+
                 await walls.DeleteHoldAsync(view.HoldId!.Value);
-                break;
+                return detection;
             default:
                 var merge = await duplicates.MergeAsync(finding.WallId, view.OtherHoldId!.Value, view.HoldId!.Value, HoldMergeMode.KeepLeft, ct);
                 finding.MergeBatchId = merge.BatchId;
-                break;
+                return null;
         }
     }
 

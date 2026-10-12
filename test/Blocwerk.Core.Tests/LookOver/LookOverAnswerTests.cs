@@ -126,7 +126,7 @@ public class LookOverAnswerTests
         Assert.True((await HoldAsync(h, w.DetectionId))!.NeedsReview);
         var next = Assert.Single(await service.ListAsync(w.WallId));
         Assert.Equal((LookOverFindingKind.ReplacedByOther, LookOverFindingStatus.Open, true), (next.Kind, next.Status, next.Converted));
-        Assert.Equal([LookOverAnswer.Settle, LookOverAnswer.RemoveHold], next.Answers);
+        Assert.Equal([LookOverAnswer.Settle, LookOverAnswer.UseNewHold, LookOverAnswer.RemoveHold], next.Answers);
 
         // Keeping it afterwards settles the finding and leaves the "changed" mark a person just set.
         await service.AnswerAsync(w.WallId, view.Id, LookOverAnswer.Settle);
