@@ -21,8 +21,10 @@ public sealed partial class WallLookOverService
         var (db, access) = await OpenAsync(wallId, ct);
         await using (db)
         {
+            await LookOverReconciler.ReconcileAsync(db, wallId, ct);
             var since = await db.Walls.IgnoreQueryFilters().Where(w => w.Id == wallId).Select(w => w.LookOverPendingSince).FirstOrDefaultAsync(ct);
-            var views = await ToViewsAsync(db, wallId, await CurrentRound(db, wallId, since).ToListAsync(ct), access, ct);
+            var round = await CurrentRound(db, wallId, since).ToListAsync(ct);
+            var views = await WithPicturesAsync(db, wallId, round, await ToViewsAsync(db, wallId, round, access, ct), ct);
             return views
                 .OrderBy(v => LookOverRules.Rank(v.Kind))
                 .ThenBy(v => v.Status)
@@ -40,7 +42,7 @@ public sealed partial class WallLookOverService
         var live = await LivePhotosAsync(db, wallId, ct);
         var rows = await db.Holds.AsNoTracking()
             .Where(h => h.WallId == wallId && ids.Contains(h.Id))
-            .Select(h => new LookOverHoldNow(h.Id, h.Name, h.Color, h.WallPanelId, h.Generation, h.FacetId != null, false))
+            .Select(h => new LookOverHoldNow(h.Id, h.Name, h.Color, h.WallPanelId, h.Generation, h.FacetId != null, false, h.KeptUnconfirmedGeneration != null))
             .ToListAsync(ct);
         var holds = rows.ToDictionary(h => h.Id, h => h with { Live = live.Contains((h.PanelId, h.Generation)) });
         var boulders = (await db.BoulderHolds.AsNoTracking()
@@ -54,15 +56,30 @@ public sealed partial class WallLookOverService
             ? []
             : await db.Users.IgnoreQueryFilters().Where(u => answerers.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.DisplayName, ct);
         return findings
-            .Select(f => ToView(f, holds, boulders, access) with
+            .Select(f => (Finding: f, Kept: f.HoldId is { } id && holds.GetValueOrDefault(id) is { Live: true, Kept: true }))
+            .Select(x => (x.Finding, x.Kept, View: ToView(x.Finding, holds, boulders, access)))
+            .Select(x => Detailed(x.View, x.Finding, x.Kept, access) with
             {
-                AnsweredBy = f.AnsweredByUserId is { } by ? names.GetValueOrDefault(by) : null,
-                AnswerBoulders = f.AnswerBoulders,
-                ClearedBoulders = f.ClearedBoulderIds?.Count ?? 0,
-                CanUndo = CanUndo(f, holds, since),
+                AnsweredBy = x.Finding.AnsweredByUserId is { } by ? names.GetValueOrDefault(by) : null,
+                CanUndo = CanUndo(x.Finding, holds, since),
             })
             .ToList();
     }
+
+    private static LookOverFindingView Detailed(LookOverFindingView view, WallLookOverFinding f, bool kept, LookOverAccess access) =>
+        view with
+        {
+            AnswerBoulders = f.AnswerBoulders,
+            ClearedBoulders = f.ClearedBoulderIds?.Count ?? 0,
+            HoldKept = kept,
+            KeptAtUpdate = f.HoldKept,
+            CanReassign = kept && f.Status == LookOverFindingStatus.Open && access.CanMerge,
+            Covered = f.Covered,
+            ClosedReason = f.ClosedReason,
+            PanelId = f.PanelId,
+            SpotX = f.X,
+            SpotY = f.Y,
+        };
 
     private static LookOverFindingView ToView(
         WallLookOverFinding f, Dictionary<Guid, LookOverHoldNow> holds, ILookup<Guid, LookOverBoulder> boulders, LookOverAccess access)

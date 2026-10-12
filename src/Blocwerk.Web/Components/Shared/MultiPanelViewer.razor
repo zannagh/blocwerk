@@ -115,6 +115,14 @@ else
                         @foreach (var h in _holds)
                         {
                             var isHi = HighlightedHoldIds?.Contains(h.Id) == true;
+                            @* A hold the last update did not find is not on the wall's overlay; a boulder that uses
+                               it still shows it (faded), so the boulder never draws with a hold missing, and an
+                               editor can ask to see them all. *@
+                            if (h.Kept && !isHi && !ShowKeptHolds)
+                            {
+                                continue;
+                            }
+
                             var fill = FillOf(h, isHi);
                             var stroke = StrokeOf(h, isHi);
                             var sw = isHi ? "0.5" : "0.25";
@@ -130,7 +138,7 @@ else
                             var isFoot = h.Category == HoldCategory.Foot;
                             <HoldShape @key="h.Id" X="h.X" Y="h.Y" Radius="h.Radius" ShapePoints="h.ShapePoints" ShapeHoles="h.ShapeHoles"
                                        Foot="isFoot" FootScale="HoldShape.FullFoot"
-                                       Fill="@fill" Stroke="@stroke" StrokeWidth="@sw" Dash="@dash" />
+                                       Fill="@fill" Stroke="@stroke" StrokeWidth="@sw" Dash="@dash" Kept="h.Kept" />
 
                             @if (_heatOn && UsageCount(h.Id) is > 0 and var usageCount)
                             {
@@ -180,6 +188,9 @@ else
 
     /// <summary>Holds drawn prominently (a boulder's own holds). Everything else is context.</summary>
     [Parameter] public HashSet<Guid>? HighlightedHoldIds { get; set; }
+
+    /// <summary>Also draw the holds the last update did not find and nobody confirmed (faded, dashed). Off by default.</summary>
+    [Parameter] public bool ShowKeptHolds { get; set; }
 
     /// <summary>Highlighted holds that are footholds — used only for the default colour.</summary>
     [Parameter] public HashSet<Guid>? FootHoldIds { get; set; }

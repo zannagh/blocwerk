@@ -17,14 +17,14 @@ public static class WallLookOverCropEndpoint
 {
     public const string Route = "/api/walls/{wallId:guid}/look-over/findings/{findingId:guid}/{view}";
 
-    public static string Url(Guid wallId, Guid findingId, CheckCropView view) =>
-        $"/api/walls/{wallId}/look-over/findings/{findingId}/{view.ToString().ToLowerInvariant()}";
+    public static string Url(Guid wallId, Guid findingId, CheckCropView view, bool plain = false) =>
+        $"/api/walls/{wallId}/look-over/findings/{findingId}/{view.ToString().ToLowerInvariant()}{(plain ? "?plain=true" : string.Empty)}";
 
     public static void MapWallLookOverCrops(this WebApplication app) =>
         app.MapGet(Route, HandleAsync).RequireAuthorization(BlocwerkPolicies.HumanOrUserApiKey);
 
     internal static async Task<IResult> HandleAsync(
-        Guid wallId, Guid findingId, string view, HttpContext http, IWallLookOverService lookOver, CancellationToken ct)
+        Guid wallId, Guid findingId, string view, HttpContext http, IWallLookOverService lookOver, CancellationToken ct, bool plain = false)
     {
         // A name only: Enum.TryParse would also take "7" and hand an undefined value to the service.
         if (!Enum.GetNames<CheckCropView>().Contains(view, StringComparer.OrdinalIgnoreCase) || !Enum.TryParse<CheckCropView>(view, ignoreCase: true, out var which))
@@ -34,7 +34,7 @@ public static class WallLookOverCropEndpoint
 
         try
         {
-            var bytes = await lookOver.GetCropAsync(wallId, findingId, which, ct);
+            var bytes = await lookOver.GetCropAsync(wallId, findingId, which, plain, ct);
             if (bytes is null)
             {
                 // A finding of the wall without a 3D picture (no texture there, or an empty one) is not an error: 204,

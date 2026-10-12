@@ -107,6 +107,7 @@ public partial class WallBigUpdateService
                 db, wallId, destinationPanelId, newGen, oldHold, decision.Kind, decision.NewHoldId,
                 stagedTwins, claimedTwins, survivingCenterStaged, warpPositions, warpShapes, photoSizes, movePlan, userId,
                 confirmation.HandPlacedMergeOldIds?.Contains(decision.OldHoldId) == true);
+            MarkKeptUnconfirmed(successor, oldHold, stagedTwins, newGen, decision.Confirmed);
 
             // The confirm screen asked about this hold and nobody answered: it goes live as decided, marked for a look.
             if (confirmation.ReviewOldHoldIds?.Contains(decision.OldHoldId) == true)
@@ -138,6 +139,7 @@ public partial class WallBigUpdateService
 
             // Nobody decided this hold: it is carried so nothing is lost, but flagged so a person looks at it.
             blind.NeedsReview = true;
+            MarkKeptUnconfirmed(blind, oldHold, stagedTwins, newGen, confirmed: false);
         }
 
         await ReconcileNewCentreHolds(db, centerStaged, confirmation, newGen, survivingCenterStaged);
@@ -230,6 +232,22 @@ public partial class WallBigUpdateService
             AddGenerationLink(db, wallId, oldHold.Id, clone.Id, linkKind, oldHold.Generation, newGen, userId);
             return clone;
         }
+    }
+
+    /// <summary>
+    /// "Kept, not confirmed" (<see cref="Hold.KeptUnconfirmedGeneration"/>): the successor is a COPY of the old hold,
+    /// because no detection on the new photo became it, and no person confirmed in the review that it stays. A hold
+    /// carried onto a detection was found again and is never marked; a virtual hold is not on the photo to begin with.
+    /// The copy inherits nothing here: whatever the old hold carried, this update decides anew.
+    /// </summary>
+    private static void MarkKeptUnconfirmed(Hold successor, Hold oldHold, IReadOnlyDictionary<Guid, Hold> stagedTwins, int newGen, bool confirmed)
+    {
+        if (stagedTwins.ContainsKey(successor.Id))
+        {
+            return;
+        }
+
+        successor.KeptUnconfirmedGeneration = oldHold.IsVirtual || confirmed ? null : newGen;
     }
 
     /// <summary>

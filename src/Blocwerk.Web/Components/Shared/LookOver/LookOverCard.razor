@@ -3,20 +3,19 @@
 @* One finding of the look-over, laid out like a card of the confirm screen (old photo, new photo, 3D texture), with
    the boulders that use the hold and the answers it takes now from this user. Every answer that changes the wall
    asks first, naming the boulders, and is sent with exactly those boulders; only what removes or merges asks in red.
+   The pictures show the holds' real outlines, as on the wall (LookOverPictureView).
    An answered card keeps its place and its pictures, says what was answered and by whom, and offers Undo when the
-   answer changed nothing on the wall. Undo sits at the far end of the row, away from where the answer was tapped. *@
+   answer changed nothing on the wall. A finding the hold editor dealt with says so and takes no answer. Undo sits at
+   the far end of the row, away from where the answer was tapped. *@
 
 <li class="refresh-check @(Open ? null : "is-answered")" tabindex="-1" @ref="card">
     <p class="refresh-check-title"><strong>@LookOverCopy.Heading(Finding)</strong> @LookOverCopy.Detail(Finding)</p>
     <div class="refresh-check-crops">
-        @foreach (var (view, caption, alt) in Pictures)
+        @foreach (var picture in Pictures)
         {
-            <figure>
-                <button type="button" class="lookover-crop" @onclick="() => zoomed = true" aria-label="@($"Show larger: {alt}")">
-                    <img loading="lazy" onerror="this.closest('figure').style.display='none'" src="@Crop(view)" alt="@alt" />
-                </button>
-                <figcaption>@caption</figcaption>
-            </figure>
+            <button type="button" class="lookover-crop" @onclick="() => zoomed = true" aria-label="Show the pictures larger">
+                <LookOverPictureView WallId="WallId" FindingId="Finding.Id" Picture="picture" />
+            </button>
         }
     </div>
     @if (Finding.Boulders.Count > 0)
@@ -78,12 +77,9 @@
     <Modal Title="@LookOverCopy.Heading(Finding)" PanelClass="lookover-zoom" OnClose="() => zoomed = false">
         <button type="button" class="btn-secondary lookover-zoom-close" @onclick="() => zoomed = false">Close</button>
         <div class="lookover-zoom-pictures">
-            @foreach (var (view, caption, alt) in Pictures)
+            @foreach (var picture in Pictures)
             {
-                <figure>
-                    <img onerror="this.closest('figure').style.display='none'" src="@Crop(view)" alt="@alt" />
-                    <figcaption>@caption</figcaption>
-                </figure>
+                <LookOverPictureView WallId="WallId" FindingId="Finding.Id" Picture="picture" Eager="true" />
             }
         </div>
     </Modal>
@@ -118,21 +114,24 @@
 
     private bool Open => Finding.Status == LookOverFindingStatus.Open;
 
-    private IEnumerable<(CheckCropView View, string Caption, string Alt)> Pictures
-    {
-        get
-        {
-            if (Finding.HasOld)
-            {
-                yield return (CheckCropView.Old, "Before the update", "the old photo around this hold");
-            }
+    /// <summary>The pictures as the list sends them (with the holds to outline); the plain three when it sent none.</summary>
+    private IReadOnlyList<LookOverPicture> Pictures => Finding.Pictures ?? Fallback();
 
-            yield return (CheckCropView.New, "Now", "the current photo around this spot");
-            if (Finding.HasModel)
-            {
-                yield return (CheckCropView.Model, "3D texture", "the 3D texture around this spot");
-            }
+    private List<LookOverPicture> Fallback()
+    {
+        var pictures = new List<LookOverPicture>();
+        if (Finding.HasOld)
+        {
+            pictures.Add(new LookOverPicture(CheckCropView.Old, []));
         }
+
+        pictures.Add(new LookOverPicture(CheckCropView.New, []));
+        if (Finding.HasModel)
+        {
+            pictures.Add(new LookOverPicture(CheckCropView.Model, []));
+        }
+
+        return pictures;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -152,8 +151,6 @@
             // Cosmetic: the answer is saved whether or not the card could take the focus.
         }
     }
-
-    private string Crop(CheckCropView view) => WallLookOverCropEndpoint.Url(WallId, Finding.Id, view);
 
     /// <summary>The answer goes out with the boulders this card shows: the server refuses when they are not the ones on the hold any more.</summary>
     private Task AnswerAsync(LookOverAnswer answer) =>

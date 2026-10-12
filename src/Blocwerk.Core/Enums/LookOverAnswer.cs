@@ -24,4 +24,14 @@ public enum LookOverAnswer
 
     /// <summary>The boulders should use the new hold on the spot: the old hold is merged into it (can be undone).</summary>
     UseNewHold = 3,
+
+    /// <summary>
+    /// "It is this hold": a hold the update could not find IS a hold that is on the new photo. The kept copy is merged
+    /// into that hold (its boulders move over, its name and other attributes fill what the hold lacks); can be undone
+    /// like any duplicate merge.
+    /// </summary>
+    Reassign = 4,
+
+    /// <summary>"It is here": the kept hold is moved to where it really is, which also confirms it.</summary>
+    Moved = 5,
 }

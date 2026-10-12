@@ -106,6 +106,27 @@ public class WallLookOverFinding
     /// <summary>How many current boulders used the hold when it was answered (shown with a removal or a merge).</summary>
     public int? AnswerBoulders { get; set; }
 
+    /// <summary>
+    /// The old hold lies UNDER the new hold of <see cref="OtherHoldId"/>: its centre is inside that hold's outline
+    /// (or circle). Only such a hold, and only while no boulder uses it, can be removed in bulk.
+    /// </summary>
+    public bool Covered { get; set; }
+
+    /// <summary>
+    /// The hold was "kept, not confirmed" when the finding was written (<see cref="Hold.KeptUnconfirmedGeneration"/>).
+    /// When the hold has lost that state without an answer here, a person confirmed it in the hold editor.
+    /// </summary>
+    public bool HoldKept { get; set; }
+
+    /// <summary>The answer confirmed the hold (took its kept-unconfirmed state off); undoing the answer puts it back.</summary>
+    public bool ClearedKept { get; set; }
+
+    /// <summary>Why the finding was closed without an answer here (<see cref="LookOverFindingStatus.Closed"/>).</summary>
+    public LookOverCloseReason? ClosedReason { get; set; }
+
+    /// <summary>When it was closed that way. Who did the edit that closed it is not known here.</summary>
+    public DateTimeOffset? ClosedAt { get; set; }
+
     /// <summary>An unsure match a person called a different hold; it stays open as a replaced hold.</summary>
     public bool Converted { get; set; }
 

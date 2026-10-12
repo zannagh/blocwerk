@@ -12,8 +12,9 @@ internal static partial class LookOverCopy
 {
     /// <summary>What settling does to boulders, said once at the top of the page.</summary>
     public const string PageHint =
-        "Nothing here changes the wall unless you say so. Answering \"Still there\" or \"Same hold\" clears the mark on boulders "
-        + "that were only marked because of that hold; every other boulder marked for review stays with its setter.";
+        "Nothing here changes the wall unless you say so, and what you change in the hold editor is picked up here. "
+        + "Boulders marked for review mostly stay marked: a mark is only cleared for a boulder that was marked solely because holds "
+        + "were not found again or were unsure matches, once all of those are answered \"Still here\" or \"Same hold\".";
 
     /// <summary>The wall page's notice for somebody who may look over the wall.</summary>
     public static string BannerHeadline(int open) => open switch
@@ -38,7 +39,13 @@ internal static partial class LookOverCopy
             1 => "; 1 more uses a hold the update was unsure about",
             _ => $"; {state.MoreBoulders} more use a hold the update was unsure about",
         };
-        return $"Holds the update was unsure about, which nobody has checked yet. {marked}{more}.";
+        var missing = state.MissingHolds switch
+        {
+            0 => string.Empty,
+            1 => " 1 hold was not found on the new photos and is not drawn on the wall.",
+            _ => $" {state.MissingHolds} holds were not found on the new photos and are not drawn on the wall.",
+        };
+        return $"Holds the update was unsure about, which nobody has checked yet. {marked}{more}.{missing}";
     }
 
     /// <summary>The look-over page's first line while the wall is flagged.</summary>
@@ -55,7 +62,7 @@ internal static partial class LookOverCopy
             + (listed > open ? $", {listed - open} answered." : ".");
     }
 
-    /// <summary>Where the findings come from, said once: "159 findings: 117 from the update's review cards, 18 holds not found again, 24 spots…".</summary>
+    /// <summary>Where the findings come from, said once: "285 findings: 183 holds the update could not find, 102 from the update's review cards".</summary>
     public static string? Breakdown(IReadOnlyList<LookOverFindingView> findings)
     {
         if (findings.Count == 0)
@@ -63,18 +70,18 @@ internal static partial class LookOverCopy
             return null;
         }
 
-        var notFound = findings.Count(f => f.Kind == LookOverFindingKind.NotFound);
-        var sameSpot = findings.Count(f => f.Kind == LookOverFindingKind.SameSpot);
-        var cards = findings.Count - notFound - sameSpot;
+        var missing = findings.Count(f => f.KeptAtUpdate);
+        var sameSpot = findings.Count(f => f is { KeptAtUpdate: false, Kind: LookOverFindingKind.SameSpot });
+        var cards = findings.Count - missing - sameSpot;
         var parts = new List<string>();
+        if (missing > 0)
+        {
+            parts.Add(missing == 1 ? "1 hold the update could not find" : $"{missing} holds the update could not find");
+        }
+
         if (cards > 0)
         {
             parts.Add($"{cards} from the update's review cards");
-        }
-
-        if (notFound > 0)
-        {
-            parts.Add(notFound == 1 ? "1 hold on a boulder not found again" : $"{notFound} holds on boulders not found again");
         }
 
         if (sameSpot > 0)

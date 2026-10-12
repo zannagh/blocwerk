@@ -34,6 +34,7 @@ public partial class WallLookOver
     private Guid loadedWallId;
     private Guid? lastTouched;
     private int touches;
+    private int loads;
     private bool onBouldersOnly = true;
     private bool loading = true;
     private bool busy;
@@ -57,7 +58,11 @@ public partial class WallLookOver
 
     private IReadOnlyList<LookOverFindingKind> Kinds => listing.Kinds(onBouldersOnly, FilterBoulder);
 
-    private int OnBoulderCount => listing.Findings.Count(listing.OnBoulder);
+    private int OnBoulderCount => listing.Cards.Count(listing.OnBoulder);
+
+    private IReadOnlyList<LookOverFindingView> MissingQueue => listing.Missing(FilterBoulder);
+
+    private IReadOnlyList<LookOverFindingView> MissingAnswered => listing.MissingAnswered(FilterBoulder);
 
     private int OpenCount => listing.Findings.Count(f => f.Status == LookOverFindingStatus.Open);
 
@@ -134,12 +139,15 @@ public partial class WallLookOver
         }
 
         listing.Take(await LookOver.ListAsync(WallId));
+        loads++;
     }
 
     private Task AnswerAsync(LookOverChoice choice) =>
         ActAsync(choice.FindingId, () => LookOver.AnswerAsync(WallId, choice.FindingId, choice.Answer, choice.ShownBoulderIds));
 
     private Task UndoAsync(Guid findingId) => ActAsync(findingId, () => LookOver.UndoAsync(WallId, findingId));
+
+    private Task ActOnAsync(LookOverAction action) => ActAsync(action.FindingId, action.Run);
 
     /// <summary>Sends the very findings the button counted; what was answered meanwhile is said, not silently skipped.</summary>
     private async Task SettleAllAsync(LookOverFindingKind kind, bool onlyWithoutBoulders)

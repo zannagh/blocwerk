@@ -1261,6 +1261,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<bool>("IsVirtual")
                         .HasColumnType("boolean");
 
+                    b.Property<int?>("KeptUnconfirmedGeneration")
+                        .HasColumnType("integer");
+
                     b.Property<int?>("Material")
                         .HasColumnType("integer");
 
@@ -2090,6 +2093,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
+                    b.Property<int?>("KeptHoldsGeneration")
+                        .HasColumnType("integer");
+
                     b.Property<DateTimeOffset?>("LastResetAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -2654,10 +2660,22 @@ namespace Blocwerk.Core.Migrations
                     b.Property<bool>("ClearedHoldMark")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("ClearedKept")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset?>("ClosedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("ClosedReason")
+                        .HasColumnType("integer");
+
                     b.Property<double?>("Confidence")
                         .HasColumnType("double precision");
 
                     b.Property<bool>("Converted")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("Covered")
                         .HasColumnType("boolean");
 
                     b.Property<DateTimeOffset>("CreatedAt")
@@ -2678,6 +2696,9 @@ namespace Blocwerk.Core.Migrations
 
                     b.Property<Guid?>("HoldId")
                         .HasColumnType("uuid");
+
+                    b.Property<bool>("HoldKept")
+                        .HasColumnType("boolean");
 
                     b.Property<int>("Kind")
                         .HasColumnType("integer");

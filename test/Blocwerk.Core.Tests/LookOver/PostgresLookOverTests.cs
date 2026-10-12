@@ -2,7 +2,10 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using Blocwerk.Core.Detection.Outlines;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.LookOver;
+using Microsoft.Extensions.Logging.Abstractions;
 using static Blocwerk.Core.Tests.LookOver.LookOverFixture;
 
 namespace Blocwerk.Core.Tests.LookOver;
@@ -71,5 +74,37 @@ public class PostgresLookOverTests
         Assert.Equal((LookOverFindingStatus.Settled, view.HoldId), (finding.Status, finding.HoldId));
         Assert.True((await BoulderAsync(h, w.BoulderId)).IsHistoric);
         Assert.Equal([], Assert.Single(await service.ListAsync(w.WallId)).Answers);
+    }
+
+    [PostgresFact]
+    public async Task HoldsTheUpdateCouldNotFind_AreMarked_BackfilledForAnEarlierApply_AndRemovedAtOnce()
+    {
+        using var h = new WallTestHarness(PostgresTestDatabase.Create());
+        var k = await KeptHoldFixture.ApplyAsync(h, covered: true);
+        var service = Service(h);
+        Assert.Equal(2, (await service.GetStateAsync(k.Wall.WallId))!.MissingHolds);
+
+        await KeptHoldFixture.ForgetKeptStateAsync(h, k);
+        Assert.Equal(0, (await service.GetStateAsync(k.Wall.WallId))!.MissingHolds);
+        await KeptHoldBackfill.RunIfNeededAsync(h.DbContextFactory, null, NullLogger.Instance);
+
+        var views = await service.ListAsync(k.Wall.WallId);
+        Assert.Equal([true, true], views.Select(v => v.Missing));
+        var removed = await service.RemoveUnusedAsync(k.Wall.WallId, [.. views.Select(v => v.Id)], onlyCovered: true);
+        Assert.Equal(new LookOverBulkResult(1, 2), removed);
+        Assert.Null(await HoldAsync(h, k.UnusedId));
+        Assert.Equal(1, (await service.GetStateAsync(k.Wall.WallId))!.MissingHolds);
+    }
+
+    [PostgresFact]
+    public async Task AHoldMergedInTheDuplicateReview_ClosesItsFindingAsMerged()
+    {
+        using var h = new WallTestHarness(PostgresTestDatabase.Create());
+        var k = await KeptHoldFixture.ApplyAsync(h);
+
+        await Duplicates(h).MergeAsync(k.Wall.WallId, k.FoundId, k.UnusedId, HoldMergeMode.KeepLeft);
+
+        var view = (await Service(h).ListAsync(k.Wall.WallId)).Single(v => v.OldHoldId == k.UnusedOldId);
+        Assert.Equal((LookOverFindingStatus.Closed, (LookOverCloseReason?)LookOverCloseReason.MergedInEditor), (view.Status, view.ClosedReason));
     }
 }

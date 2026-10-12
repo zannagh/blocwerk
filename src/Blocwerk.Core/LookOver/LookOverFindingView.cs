@@ -34,6 +34,18 @@ namespace Blocwerk.Core.LookOver;
 /// <param name="AnswerBoulders">How many boulders used the hold when it was answered.</param>
 /// <param name="ClearedBoulders">How many boulders the answer took the review mark off.</param>
 /// <param name="CanUndo">The answer changed nothing on the wall and can be taken back.</param>
+/// <param name="HoldKept">The hold is kept, not confirmed: the update did not find it again and nobody has said it is there.</param>
+/// <param name="KeptAtUpdate">
+/// The update could not find the hold and kept a copy of it: the finding belongs to the look-over's "holds the update
+/// could not find", whatever was answered since.
+/// </param>
+/// <param name="CanReassign">The user may say which hold of the new photo it is (a merge: wall admins only).</param>
+/// <param name="Covered">The old hold lies under the new hold on its spot (and can be removed in bulk while no boulder uses it).</param>
+/// <param name="ClosedReason">Why it was closed without an answer here (status 3): what was done in the hold editor.</param>
+/// <param name="Pictures">The pictures to show, each with the holds to outline on it.</param>
+/// <param name="PanelId">The panel photo the finding's spot is on.</param>
+/// <param name="SpotX">The spot across that photo, 0..1.</param>
+/// <param name="SpotY">The spot down that photo, 0..1.</param>
 public sealed record LookOverFindingView(
     Guid Id,
     LookOverFindingKind Kind,
@@ -55,4 +67,20 @@ public sealed record LookOverFindingView(
     string? AnsweredBy = null,
     int? AnswerBoulders = null,
     int ClearedBoulders = 0,
-    bool CanUndo = false);
+    bool CanUndo = false,
+    bool HoldKept = false,
+    bool KeptAtUpdate = false,
+    bool CanReassign = false,
+    bool Covered = false,
+    LookOverCloseReason? ClosedReason = null,
+    IReadOnlyList<LookOverPicture>? Pictures = null,
+    Guid? PanelId = null,
+    double SpotX = 0,
+    double SpotY = 0)
+{
+    /// <summary>
+    /// Gets a value indicating whether this is a hold the update could not find and nobody has confirmed: it is asked
+    /// about in the look-over's own section ("is it still on the wall, and where?"), not as a card.
+    /// </summary>
+    public bool Missing => Status == LookOverFindingStatus.Open && HoldKept;
+}

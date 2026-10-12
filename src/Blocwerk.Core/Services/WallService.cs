@@ -496,6 +496,7 @@ public class WallService : IWallService
                 .ToListAsync(ct);
             foreach (var cleared in clearedHolds)
             {
+                cleared.KeptUnconfirmedGeneration = null;
                 cleared.NeedsReview = false;
             }
 
@@ -1571,6 +1572,8 @@ public class WallService : IWallService
             bool reshaped = hold.IsReshape(radius, shapeChanged ? edit.ShapePoints.Value : hold.ShapePoints);
             hold.InvalidateGlyphForEdit(positionChanged, reshaped);
 
+            // An edit in the hold editor is a person looking at this hold: it is there (see Hold.KeptUnconfirmedGeneration).
+            hold.KeptUnconfirmedGeneration = null;
             hold.X = x;
             hold.Y = y;
             hold.Radius = radius;
@@ -1717,6 +1720,8 @@ public class WallService : IWallService
     /// </summary>
     private async Task<HashSet<Guid>> FlagHoldAndPeripheralTwinsAsync(BlocwerkDbContext db, Hold hold)
     {
+        // "Changed" says a hold is there (another one than before): the clicked hold is confirmed by that.
+        hold.KeptUnconfirmedGeneration = null;
         hold.NeedsReview = true;
         hold.InvalidateGlyphMeasurements();
 

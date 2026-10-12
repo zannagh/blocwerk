@@ -1,0 +1,56 @@
+@using Blocwerk.Core.Holds
+@using Blocwerk.Core.LookOver
+@using Blocwerk.Core.Refresh
+@* One picture of a finding. With holds to outline it is a plain crop with the holds' real outlines drawn over it by
+   the app's one hold renderer, in the hold's own colour as on the wall (faded and dashed for a hold the update could
+   not find); without, it is the server's crop with its ring. A picture that does not load hides its whole tile. *@
+
+<figure class="lookover-picture">
+    <div class="lookover-picture-frame">
+        <img loading="@(Eager ? "eager" : "lazy")" onerror="this.closest('figure').style.display='none'"
+             src="@WallLookOverCropEndpoint.Url(WallId, FindingId, Picture.View, Outlined)" alt="@Alt" />
+        @if (Outlined)
+        {
+            <svg class="lookover-outlines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                @foreach (var hold in Picture.Outlines)
+                {
+                    <HoldShape X="hold.X" Y="hold.Y" Radius="hold.Radius" ShapePoints="hold.Shape" ShapeHoles="hold.Holes"
+                               Foot="hold.Foot" FootScale="HoldShape.FullFoot" Kept="hold.Kept"
+                               Fill="none" Stroke="@HoldPalette.StrokeHex(hold.Color)" StrokeWidth="1.1" />
+                }
+            </svg>
+        }
+    </div>
+    <figcaption>@Caption</figcaption>
+</figure>
+
+@code {
+    [Parameter, EditorRequired]
+    public Guid WallId { get; set; }
+
+    [Parameter, EditorRequired]
+    public Guid FindingId { get; set; }
+
+    [Parameter, EditorRequired]
+    public LookOverPicture Picture { get; set; } = default!;
+
+    /// <summary>Load at once (the large view, the one hold being asked about) instead of when scrolled to.</summary>
+    [Parameter]
+    public bool Eager { get; set; }
+
+    private bool Outlined => Picture.Outlines.Count > 0;
+
+    private string Caption => Picture.View switch
+    {
+        CheckCropView.Old => "Before the update",
+        CheckCropView.New => "Now",
+        _ => "3D texture",
+    };
+
+    private string Alt => Picture.View switch
+    {
+        CheckCropView.Old => "the old photo around this hold",
+        CheckCropView.New => "the current photo around this spot",
+        _ => "the 3D texture around this spot",
+    };
+}

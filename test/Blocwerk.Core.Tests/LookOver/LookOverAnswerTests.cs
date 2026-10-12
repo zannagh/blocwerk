@@ -171,7 +171,7 @@ public class LookOverAnswerTests
     }
 
     [Fact]
-    public async Task AFindingWhoseHoldWasDeletedInTheEditor_CanOnlyBeSettled()
+    public async Task AFindingWhoseHoldWasDeletedInTheEditor_IsClosed_AndTakesNoAnswer()
     {
         using var h = new WallTestHarness();
         var w = await ApplyAsync(h, targetDetected: true, score: 0.1);
@@ -181,9 +181,10 @@ public class LookOverAnswerTests
 
         var after = Assert.Single(await service.ListAsync(w.WallId));
 
-        Assert.Equal([LookOverAnswer.Settle], after.Answers);
-        await service.AnswerAsync(w.WallId, view.Id, LookOverAnswer.Settle);
-        Assert.Equal((LookOverFindingStatus.Settled, (LookOverAnswer?)LookOverAnswer.Settle), await StatusAsync(h, w.WallId));
+        Assert.Equal((LookOverFindingStatus.Closed, (LookOverCloseReason?)LookOverCloseReason.RemovedInEditor), (after.Status, after.ClosedReason));
+        Assert.Empty(after.Answers);
+        await Assert.ThrowsAsync<UserFacingException>(() => service.AnswerAsync(w.WallId, view.Id, LookOverAnswer.Settle));
+        Assert.Equal(0, (await service.GetStateAsync(w.WallId))!.OpenFindings);
     }
 
     private static Guid[] Shown(LookOverFindingView view) => [.. view.Boulders.Select(b => b.Id)];

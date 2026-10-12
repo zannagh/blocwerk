@@ -96,6 +96,19 @@ public partial class Hold
     public bool IsVirtual { get; set; }
 
     /// <summary>
+    /// "Kept, not confirmed": the generation of the panel update that carried this hold forward WITHOUT finding it
+    /// again on the new photo (no detection became it; it is a copy of the old hold at its predicted spot), while no
+    /// person has confirmed since that it is really there. Null for every other hold, and null again once somebody
+    /// confirms it: in the wall look-over ("Still there", "Keep…", "Both are there"), or by editing, marking or
+    /// merging it in the hold editor. Such a hold is drawn faded and cannot be newly chosen for a boulder.
+    /// </summary>
+    /// <remarks>
+    /// Not <see cref="NeedsReview"/>, which is set for many reasons ("changed", a lost outline, a blind carry, a new
+    /// detection) and is shown and cleared by its own tools. A hold can carry either, both or neither.
+    /// </remarks>
+    public int? KeptUnconfirmedGeneration { get; set; }
+
+    /// <summary>
     /// On a manual-alignment staged clone (generation N+1), the id of the live
     /// hold it was copied from. Null for normal holds and holds added during
     /// alignment. Preserves boulder-hold continuity when the staged set is promoted.
@@ -225,6 +238,7 @@ public partial class Hold
         Generation = Generation,
         NeedsReview = NeedsReview,
         IsVirtual = IsVirtual,
+        KeptUnconfirmedGeneration = KeptUnconfirmedGeneration,
         AlignmentSourceHoldId = AlignmentSourceHoldId,
         WidthMm = WidthMm,
         HeightMm = HeightMm,

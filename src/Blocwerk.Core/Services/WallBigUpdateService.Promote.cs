@@ -163,6 +163,7 @@ public partial class WallBigUpdateService
         wall.PhotoContentType = centerPanel.PhotoContentType;
         wall.UsesMultipleImages = true;
         wall.CurrentGeneration = newGen;
+        wall.KeptHoldsGeneration = newGen;
         wall.LastResetAt = DateTimeOffset.UtcNow;
 
         // What nobody answered stays with the wall for the look-over, read before the session closes.

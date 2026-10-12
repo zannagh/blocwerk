@@ -24,6 +24,10 @@ namespace Blocwerk.Core.Services;
 /// True when the hold is a user-placed placeholder that isn't visible in the wall photo (e.g. a
 /// virtual TOP). Drawn with a dashed outline so it doesn't read as a real hold on the image.
 /// </param>
+/// <param name="Kept">
+/// The last update did not find the hold again and nobody has confirmed it (<see cref="Entities.Hold.KeptUnconfirmedGeneration"/>):
+/// it is not drawn on the wall's overlays, except faded on a boulder that uses it.
+/// </param>
 public record PanelHold(
     Guid Id,
     double X,
@@ -33,4 +37,5 @@ public record PanelHold(
     HoldCategory Category,
     List<ShapePoint>? ShapePoints = null,
     bool IsVirtual = false,
-    List<List<ShapePoint>>? ShapeHoles = null);
+    List<List<ShapePoint>>? ShapeHoles = null,
+    bool Kept = false);

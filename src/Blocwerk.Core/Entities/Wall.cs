@@ -164,6 +164,13 @@ public class Wall
     /// <summary>The generation of the update that last set <see cref="LookOverPendingSince"/>.</summary>
     public int? LookOverGeneration { get; set; }
 
+    /// <summary>
+    /// The generation whose kept-unconfirmed holds (<see cref="Hold.KeptUnconfirmedGeneration"/>) are established:
+    /// set by the update that produces the generation, or by the one-time startup step for a generation applied
+    /// before the state existed. Guards that step, so a hold a person confirmed is never marked again.
+    /// </summary>
+    public int? KeptHoldsGeneration { get; set; }
+
     /// <summary>When the last look-over was finished.</summary>
     public DateTimeOffset? LookOverCompletedAt { get; set; }
 

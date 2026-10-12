@@ -363,6 +363,18 @@ public static class CoreServices
             logger.LogError(ex, "Linked-hold startup sync failed; the wall page offers Sync linked holds.");
         }
 
+        // One-time: a wall whose current generation was applied before holds the update could not find were marked
+        // gets them marked now (and their look-over findings), from what that update recorded. Per wall, once.
+        try
+        {
+            var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<BlocwerkDbContext>>();
+            KeptHoldBackfill.RunIfNeededAsync(factory, scope.ServiceProvider.GetService<IChangeJournal>(), logger).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Kept-hold backfill failed; it is retried on the next start.");
+        }
+
         // Propagate appearance (Color/Material/Category/HandType) across linked holds so every copy of
         // one physical hold matches its most-central source. Idempotent (write-if-changed), so it is
         // safe to run on every start and no-ops once all components are converged.

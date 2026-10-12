@@ -148,12 +148,12 @@ public class LookOverListingTests
     {
         LookOverFindingView[] findings =
         [
-            View(LookOverFindingKind.UnsureMatch), View(LookOverFindingKind.ReplacedByOther), View(LookOverFindingKind.NotFound),
+            View(LookOverFindingKind.UnsureMatch), View(LookOverFindingKind.ReplacedByOther), View(LookOverFindingKind.NotFound) with { KeptAtUpdate = true },
             View(LookOverFindingKind.SameSpot), View(LookOverFindingKind.SameSpot),
         ];
 
         Assert.Equal(
-            "5 findings: 2 from the update's review cards, 1 hold on a boulder not found again, 2 spots where an old and a new hold now sit together.",
+            "5 findings: 1 hold the update could not find, 2 from the update's review cards, 2 spots where an old and a new hold now sit together.",
             LookOverCopy.Breakdown(findings));
         Assert.Null(LookOverCopy.Breakdown([]));
     }
