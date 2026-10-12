@@ -3805,7 +3805,7 @@ html.bw-fullscreen .panel-link-dialog .panel-step-viewport {
  */
 @media (max-height: 560px) and (max-width: 959.98px) {
     html body {
-        --topbar-h: 40px;
+        --topbar-h: calc(40px + var(--bw-safe-top, 0px));
         --bw-tabbar-h: calc(44px + max(2px, env(safe-area-inset-bottom, 0px)));
         --bottomnav-h: calc(var(--bw-tabbar-h) + var(--bw-banner-h, 0px));
         --fold-peek: 44px;
@@ -3825,7 +3825,7 @@ html.bw-fullscreen .panel-link-dialog .panel-step-viewport {
     }
 
     /* Make the chrome actually fit the budget above. */
-    .bw-topbar { padding-top: 4px; padding-bottom: 4px; }
+    .bw-topbar { padding-top: calc(4px + var(--bw-safe-top, 0px)); padding-bottom: 4px; }
     .bw-topbar-title { font-size: 0.95rem; }
 
     .bw-tabbar { padding-top: 2px; padding-bottom: max(2px, env(safe-area-inset-bottom)); }
