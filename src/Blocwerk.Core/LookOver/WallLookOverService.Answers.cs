@@ -19,7 +19,7 @@ namespace Blocwerk.Core.LookOver;
 /// is the duplicate review's merge (<see cref="IHoldDuplicateService.MergeAsync"/>: the boulders move over, undoable).
 /// Each of those checks the user again by its own rule, which is also what decides the answers a user is offered.
 /// An answer only ever reaches a hold that is live, and only with the boulders the user was shown. Settling is in the
-/// Settle part.
+/// Settle part; what it does to boulders in the Boulders part.
 /// </summary>
 public sealed partial class WallLookOverService
 {
@@ -53,38 +53,78 @@ public sealed partial class WallLookOverService
             }
 
             using var batch = BeginBatch(wallId);
-            await ApplyAsync(db, finding, view, answer, access.UserId, ct);
-            await db.SaveChangesAsync(ct);
+            if (answer == LookOverAnswer.Settle)
+            {
+                await SettleOneAsync(db, finding, view, access.UserId, ct);
+            }
+            else
+            {
+                await ChangeAsync(db, finding, view, answer, access.UserId, ct);
+            }
+
             logger.LogInformation(
                 "Look-over finding {FindingId} ({Kind}) on wall {WallId} answered {Answer} by {UserId}", findingId, finding.Kind, wallId, answer, access.UserId);
         }
     }
 
-    /// <summary>Acts on <see cref="LookOverFindingView.HoldId"/>, which is only ever a live hold; never on the stored id.</summary>
-    private async Task ApplyAsync(
+    /// <summary>
+    /// An answer that changes the wall. The hold operations run on their own contexts and commit by themselves, so the
+    /// finding is claimed first with a conditional update (only one of two people gets it) and released again when the
+    /// operation refuses. Acts on <see cref="LookOverFindingView.HoldId"/>, which is only ever a live hold.
+    /// </summary>
+    private async Task ChangeAsync(
         BlocwerkDbContext db, WallLookOverFinding finding, LookOverFindingView view, LookOverAnswer answer, Guid userId, CancellationToken ct)
+    {
+        var mine = db.WallLookOverFindings.Where(f => f.Id == finding.Id);
+        var different = answer == LookOverAnswer.DifferentHold;
+        var claimed = different
+            ? await mine.Where(f => f.Status == LookOverFindingStatus.Open && !f.Converted).ExecuteUpdateAsync(s => s.SetProperty(f => f.Converted, true), ct)
+            : await mine.Where(f => f.Status == LookOverFindingStatus.Open).ExecuteUpdateAsync(s => s.SetProperty(f => f.Status, LookOverFindingStatus.Settled), ct);
+        if (claimed != 1)
+        {
+            throw new UserFacingException(AnsweredMeanwhile);
+        }
+
+        try
+        {
+            await ApplyAsync(db, finding, view, answer, ct);
+        }
+        catch
+        {
+            await mine.ExecuteUpdateAsync(
+                s => s.SetProperty(f => f.Status, LookOverFindingStatus.Open).SetProperty(f => f.Converted, finding.Converted), CancellationToken.None);
+            throw;
+        }
+
+        if (different)
+        {
+            // Not settled: what to do with the hold is the replaced case's question, asked next.
+            (finding.Kind, finding.Converted, finding.FlaggedHold) = (LookOverFindingKind.ReplacedByOther, true, false);
+        }
+        else
+        {
+            MarkSettled(finding, answer, userId, view.Boulders.Count);
+        }
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    private async Task ApplyAsync(BlocwerkDbContext db, WallLookOverFinding finding, LookOverFindingView view, LookOverAnswer answer, CancellationToken ct)
     {
         switch (answer)
         {
             case LookOverAnswer.DifferentHold:
-                // Not settled: what to do with the hold is the replaced case's question, asked next.
                 await walls.MarkHoldModifiedAsync(view.HoldId!.Value);
                 await RecordReplacedAsync(db, finding, view.HoldId.Value, ct);
-                (finding.Kind, finding.Converted, finding.FlaggedHold) = (LookOverFindingKind.ReplacedByOther, true, false);
-                return;
+                break;
             case LookOverAnswer.RemoveHold:
                 await walls.DeleteHoldAsync(view.HoldId!.Value);
                 break;
-            case LookOverAnswer.UseNewHold:
+            default:
                 var merge = await duplicates.MergeAsync(finding.WallId, view.OtherHoldId!.Value, view.HoldId!.Value, HoldMergeMode.KeepLeft, ct);
                 finding.MergeBatchId = merge.BatchId;
                 break;
-            default:
-                await SettleAsync(db, finding, view, userId, ct);
-                return;
         }
-
-        MarkSettled(finding, answer, userId, view.Boulders.Count);
     }
 
     /// <summary>

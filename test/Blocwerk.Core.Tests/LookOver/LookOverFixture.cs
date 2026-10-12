@@ -25,14 +25,57 @@ namespace Blocwerk.Core.Tests.LookOver;
 internal static class LookOverFixture
 {
     /// <summary>The look-over service over the harness's database, acting as <see cref="WallTestHarness.ActingUser"/>.</summary>
-    public static WallLookOverService Service(WallTestHarness h, IKioskContext? kiosk = null)
+    public static WallLookOverService Service(WallTestHarness h, IKioskContext? kiosk = null, IWallService? walls = null)
     {
         var journal = new ChangeJournal();
         var factory = new JournalledFactory(h.DbContextFactory.ConnectionString, journal);
         var duplicates = new HoldDuplicateService(
             factory, h.CurrentUser, journal, new ChangeJournalReverter(factory, journal), NullLogger<HoldDuplicateService>.Instance);
         return new WallLookOverService(
-            h.DbContextFactory, h.CurrentUser, h.WallService, duplicates, Substitute.For<ICaptureFileStore>(), NullLogger<WallLookOverService>.Instance, kiosk);
+            factory, h.CurrentUser, walls ?? h.WallService, duplicates, Substitute.For<ICaptureFileStore>(), NullLogger<WallLookOverService>.Instance, kiosk, journal);
+    }
+
+    /// <summary>The duplicate-holds review over the harness's database, with a journal of its own (its batches land in the same tables).</summary>
+    public static HoldDuplicateService Duplicates(WallTestHarness h)
+    {
+        var journal = new ChangeJournal();
+        var factory = new JournalledFactory(h.DbContextFactory.ConnectionString, journal);
+        return new HoldDuplicateService(factory, h.CurrentUser, journal, new ChangeJournalReverter(factory, journal), NullLogger<HoldDuplicateService>.Instance);
+    }
+
+    /// <summary>The open findings of a kind: what a page that had just loaded would send with a bulk answer.</summary>
+    public static async Task<List<Guid>> OpenIdsAsync(WallTestHarness h, Guid wallId, LookOverFindingKind kind)
+    {
+        await using var db = h.CreateContext();
+        return await db.WallLookOverFindings.Where(f => f.WallId == wallId && f.Kind == kind && f.Status == LookOverFindingStatus.Open).Select(f => f.Id).ToListAsync();
+    }
+
+    /// <summary>
+    /// The update with TWO holds of the boulder not found again: the target and one anchor (which the boulder is put
+    /// on first). Both are real findings of the promote. Returns the wall and the anchor's old hold.
+    /// </summary>
+    public static async Task<(LookWall Wall, Guid OtherOldHoldId)> ApplyTwoMissingAsync(WallTestHarness h)
+    {
+        var w = await SeedAsync(h, targetDetected: false);
+        var (x, y) = Anchors[^1];
+        Guid otherOld;
+        await using (var db = h.CreateContext())
+        {
+            var staged = await db.Holds.SingleAsync(s => s.Generation == 3 && s.X == x && s.Y == y);
+            otherOld = (await db.Holds.SingleAsync(s => s.Generation == 2 && s.X == x && s.Y == y)).Id;
+            db.Holds.Remove(staged);
+            db.BoulderHolds.Add(new BoulderHold { BoulderId = w.BoulderId, HoldId = otherOld });
+            await db.SaveChangesAsync();
+            var panel = w.StagedByPanel.Keys.Single();
+            w.StagedByPanel[panel] = w.StagedByPanel[panel].Where(id => id != staged.Id).ToList();
+        }
+
+        w.Probe.Set(TargetX, TargetY, 0.2);
+        w.Probe.Set(x, y, 0.2);
+        var session = await w.Service.ResumeAsync(w.WallId);
+        await RecordAsync(w, session);
+        await PromoteLikeApplyAsync(w, session);
+        return (w, otherOld);
     }
 
     /// <summary>
@@ -162,6 +205,12 @@ internal static class LookOverFixture
     {
         await using var db = h.CreateContext();
         return await db.Holds.AsNoTracking().SingleOrDefaultAsync(x => x.Id == holdId);
+    }
+
+    public static async Task<List<WallLookOverFinding>> FindingsAsync(WallTestHarness h, Guid wallId)
+    {
+        await using var db = h.CreateContext();
+        return await db.WallLookOverFindings.AsNoTracking().Where(f => f.WallId == wallId).ToListAsync();
     }
 
     public static async Task<WallLookOverFinding> FindingAsync(WallTestHarness h, Guid wallId)

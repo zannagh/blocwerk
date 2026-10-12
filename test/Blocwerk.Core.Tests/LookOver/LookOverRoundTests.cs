@@ -24,7 +24,7 @@ public class LookOverRoundTests
         using var h = new WallTestHarness();
         var w = await ApplyAsync(h, targetDetected: true, score: 0.4);
         var service = Service(h);
-        await service.SettleAllAsync(w.WallId, LookOverFindingKind.UnsureMatch, onlyWithoutBoulders: false);
+        await service.SettleAllAsync(w.WallId, LookOverFindingKind.UnsureMatch, await OpenIdsAsync(h, w.WallId, LookOverFindingKind.UnsureMatch), onlyWithoutBoulders: false);
         await service.FinishAsync(w.WallId, leaveOpen: false);
         var finishedAt = (await WallAsync(h, w.WallId)).LookOverCompletedAt;
 
@@ -48,7 +48,7 @@ public class LookOverRoundTests
         var w = await ApplyAsync(h, targetDetected: true, score: 0.4);
         var service = Service(h);
         var since = (await WallAsync(h, w.WallId)).LookOverPendingSince;
-        await service.SettleAllAsync(w.WallId, LookOverFindingKind.UnsureMatch, onlyWithoutBoulders: false);
+        await service.SettleAllAsync(w.WallId, LookOverFindingKind.UnsureMatch, await OpenIdsAsync(h, w.WallId, LookOverFindingKind.UnsureMatch), onlyWithoutBoulders: false);
 
         await ApplyAgainAsync(await StageAgainAsync(h, w), score: 0.4);
 

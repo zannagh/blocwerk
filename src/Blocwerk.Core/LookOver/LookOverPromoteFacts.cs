@@ -22,7 +22,10 @@ namespace Blocwerk.Core.LookOver;
 /// (<see cref="LookOverPromoteInputs.CardMarked"/>).
 /// </param>
 /// <param name="UnalignedPanelIds">Panels whose holds the promote marks anyway (their photo could not be lined up).</param>
-/// <param name="NewlyMarked">Live hold to the boulders on it that the promote marked for review and that were not marked before.</param>
+/// <param name="NewlyMarked">
+/// Live hold to the boulders the promote marked BECAUSE that hold was not found again: not marked before, told
+/// "not found again" about this hold, and given no other reason by the same promote.
+/// </param>
 internal sealed record LookOverPromoteFacts(
     IReadOnlyList<WallUpdateException> Cards,
     IReadOnlyDictionary<Guid, CarryoverDecision> Carry,

@@ -78,6 +78,16 @@ internal sealed class LookOverListing
         return (open.Count, open.Count(f => f.Boulders.Count == 0));
     }
 
+    /// <summary>The findings a bulk answer is about: exactly the ones its button counted, so the server settles those and no others.</summary>
+    /// <param name="kind">The kind.</param>
+    /// <param name="withoutBoulders">Only the open findings no current boulder uses.</param>
+    /// <returns>Their ids.</returns>
+    public IReadOnlyList<Guid> BulkIds(LookOverFindingKind kind, bool withoutBoulders) =>
+        Findings
+            .Where(f => f.Kind == kind && f.Status == LookOverFindingStatus.Open && (!withoutBoulders || f.Boulders.Count == 0))
+            .Select(f => f.Id)
+            .ToList();
+
     /// <summary>The name of a boulder the list is filtered to, as any finding on one of its holds knows it.</summary>
     /// <param name="boulderId">The boulder.</param>
     /// <returns>The name, or null when no finding lists it.</returns>

@@ -38,6 +38,7 @@ public partial class WallLookOver
     private bool busy;
     private bool finished;
     private string? error;
+    private string? notice;
     private string? blocked;
 
     [Parameter]
@@ -139,8 +140,14 @@ public partial class WallLookOver
 
     private Task UndoAsync(Guid findingId) => ActAsync(findingId, () => LookOver.UndoAsync(WallId, findingId));
 
-    private Task SettleAllAsync(LookOverFindingKind kind, bool onlyWithoutBoulders) =>
-        ActAsync(null, () => LookOver.SettleAllAsync(WallId, kind, onlyWithoutBoulders));
+    /// <summary>Sends the very findings the button counted; what was answered meanwhile is said, not silently skipped.</summary>
+    private async Task SettleAllAsync(LookOverFindingKind kind, bool onlyWithoutBoulders)
+    {
+        var ids = listing.BulkIds(kind, onlyWithoutBoulders);
+        LookOverBulkResult? result = null;
+        await ActAsync(null, async () => result = await LookOver.SettleAllAsync(WallId, kind, ids, onlyWithoutBoulders));
+        notice = result is null ? null : LookOverCopy.BulkShortfall(result);
+    }
 
     private async Task FinishAsync(bool leaveOpen)
     {
@@ -160,6 +167,7 @@ public partial class WallLookOver
         }
 
         lastTouched = findingId;
+        notice = null;
         await RunAsync(async () =>
         {
             try

@@ -41,8 +41,9 @@ public static class WallLookOverCropEndpoint
             }
 
             // Never in a shared cache (only who may look over the wall sees them). The two photo crops never change;
-            // the 3D picture follows the hold's placement, so the browser asks again each time.
-            http.Response.Headers.CacheControl = which == CheckCropView.Model ? "private, no-store" : "private, max-age=3600";
+            // the 3D picture can follow the hold's placement, so the browser keeps it for a few minutes only: long
+            // enough that opening the large view does not fetch it again.
+            http.Response.Headers.CacheControl = which == CheckCropView.Model ? "private, max-age=300" : "private, max-age=3600";
             return Results.File(bytes, "image/jpeg");
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or KioskRestrictedException)

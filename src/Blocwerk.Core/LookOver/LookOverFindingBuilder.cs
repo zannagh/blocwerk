@@ -182,7 +182,9 @@ internal static class LookOverFindingBuilder
         finding.HoldId = live.Id;
         finding.PanelId ??= live.WallPanelId;
         finding.BouldersAtApply = facts.Boulders.GetValueOrDefault(live.Id);
-        finding.MarkedBoulderIds = facts.NewlyMarked.GetValueOrDefault(live.Id) ?? [];
+
+        // Only a hold not found again marks boulders by itself; every other kind explains no boulder's mark.
+        finding.MarkedBoulderIds = finding.Kind == LookOverFindingKind.NotFound ? facts.NewlyMarked.GetValueOrDefault(live.Id) ?? [] : [];
         return finding;
     }
 }

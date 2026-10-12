@@ -66,8 +66,9 @@ public sealed partial class WallLookOverService(
             : null;
         var kiosk = KioskGuard.ScopedWallId(kioskContext, db) is not null;
         var canLookOver = !kiosk && (appAdmin || await WallAdminGuard.IsWallModeratorOrAboveAsync(db, wallId, user.Id, ct));
+        // The boulder counts are for the notice of whoever may look over the wall; nobody else is shown them.
         var pending = wall.LookOverPendingSince is not null;
-        var (marked, more) = pending ? await BoulderCountsAsync(db, wallId, ct) : (0, 0);
+        var (marked, more) = pending && canLookOver ? await BoulderCountsAsync(db, wallId, ct) : (0, 0);
         return new WallLookOverState(
             pending, wall.LookOverPendingSince, wall.LookOverGeneration, open, total, wall.LookOverCompletedAt, completedBy, canLookOver, marked, more);
     }

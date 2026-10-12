@@ -63,8 +63,8 @@ public class LookOverGuardTests
 
     [Theory]
     [InlineData("old", "private, max-age=3600")]
-    [InlineData("Model", "private, no-store")]
-    public async Task ThePictures_AreNeverPubliclyCached_AndTheModelPictureNotAtAll(string view, string cacheControl)
+    [InlineData("Model", "private, max-age=300")]
+    public async Task ThePictures_AreNeverPubliclyCached_AndTheModelPictureOnlyBriefly(string view, string cacheControl)
     {
         var service = Substitute.For<IWallLookOverService>();
         service.GetCropAsync(default, default, default, default).ReturnsForAnyArgs(new byte[] { 1 });
@@ -90,7 +90,7 @@ public class LookOverGuardTests
         Assert.False((await service.GetStateAsync(w.WallId))!.CanLookOver);
         await Assert.ThrowsAsync<KioskRestrictedException>(() => service.ListAsync(w.WallId));
         await Assert.ThrowsAsync<KioskRestrictedException>(() => service.AnswerAsync(w.WallId, findingId, LookOverAnswer.Settle));
-        await Assert.ThrowsAsync<KioskRestrictedException>(() => service.SettleAllAsync(w.WallId, LookOverFindingKind.UnsureMatch, onlyWithoutBoulders: false));
+        await Assert.ThrowsAsync<KioskRestrictedException>(() => service.SettleAllAsync(w.WallId, LookOverFindingKind.UnsureMatch, [], onlyWithoutBoulders: false));
         await Assert.ThrowsAsync<KioskRestrictedException>(() => service.FinishAsync(w.WallId, leaveOpen: true));
         await Assert.ThrowsAsync<KioskRestrictedException>(() => service.GetCropAsync(w.WallId, findingId, CheckCropView.New));
     }

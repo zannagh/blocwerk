@@ -37,6 +37,27 @@ public class PostgresLookOverTests
     }
 
     [PostgresFact]
+    public async Task TwoMissingHoldsOfOneBoulder_AreClearedByTheLastAnswer_AndUndoMarksTheBoulderAgain()
+    {
+        using var h = new WallTestHarness(PostgresTestDatabase.Create());
+        var (w, _) = await ApplyTwoMissingAsync(h);
+        var service = Service(h);
+        var listed = await service.ListAsync(w.WallId);
+
+        // The uuid[] columns round-trip: what the promote recorded, and what an answer cleared.
+        Assert.Equal([w.BoulderId], (await FindingsAsync(h, w.WallId)).Select(f => f.MarkedBoulderIds!.Single()).Distinct());
+        await service.AnswerAsync(w.WallId, listed[0].Id, LookOverAnswer.Settle);
+        await service.AnswerAsync(w.WallId, listed[1].Id, LookOverAnswer.Settle);
+        Assert.False((await BoulderAsync(h, w.BoulderId)).NeedsReview);
+        Assert.Equal([w.BoulderId], (await FindingsAsync(h, w.WallId)).Single(f => f.Id == listed[1].Id).ClearedBoulderIds);
+
+        await service.UndoAsync(w.WallId, listed[0].Id);
+
+        Assert.True((await BoulderAsync(h, w.BoulderId)).NeedsReview);
+        Assert.Equal(LookOverFindingStatus.Open, (await FindingsAsync(h, w.WallId)).Single(f => f.Id == listed[0].Id).Status);
+    }
+
+    [PostgresFact]
     public async Task RemovingTheHoldOfAFinding_LeavesTheFindingBehind_Settled()
     {
         using var h = new WallTestHarness(PostgresTestDatabase.Create());

@@ -89,9 +89,11 @@ public class WallLookOverFinding
     public bool FlaggedHold { get; set; }
 
     /// <summary>
-    /// The boulders on <see cref="HoldId"/> that this update marked for review and that were not marked before it: the
-    /// only boulders an answer saying "the update was wrong about this hold" may clear again. Null on a finding written
-    /// before this was recorded (unknown, so nothing is cleared).
+    /// The boulders this update marked for review BECAUSE <see cref="HoldId"/> was not found again: not marked before
+    /// it, and given no other reason by it (no other moved or missing hold, no two holds that became one, no hold
+    /// marked as changed). The only boulders an answer saying "the update was wrong about this hold" may clear again.
+    /// Empty for every other kind of finding; null on a finding written before this was recorded (unknown, so
+    /// nothing is cleared).
     /// </summary>
     public List<Guid>? MarkedBoulderIds { get; set; }
 

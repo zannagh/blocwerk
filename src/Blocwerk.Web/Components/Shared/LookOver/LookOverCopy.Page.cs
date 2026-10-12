@@ -97,6 +97,11 @@ internal static partial class LookOverCopy
         _ => $"Mark all {count} unsure matches as same hold",
     };
 
+    /// <summary>Said after a bulk answer that found fewer findings open than were confirmed; null when it did all of them.</summary>
+    public static string? BulkShortfall(LookOverBulkResult result) => result.Settled >= result.Asked
+        ? null
+        : $"{result.Settled} of {result.Asked} were answered now; the others had been answered meanwhile, or a boulder uses their hold by now.";
+
     /// <summary>What a bulk answer does, asked before it is done.</summary>
     public static string BulkQuestion(LookOverFindingKind kind, int count, bool withoutBoulders)
     {

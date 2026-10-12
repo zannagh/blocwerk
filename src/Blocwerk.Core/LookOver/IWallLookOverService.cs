@@ -57,10 +57,12 @@ public interface IWallLookOverService
     /// </summary>
     /// <param name="wallId">The wall.</param>
     /// <param name="kind"><see cref="LookOverFindingKind.UnsureMatch"/> or <see cref="LookOverFindingKind.SameSpot"/>.</param>
-    /// <param name="onlyWithoutBoulders">Only the findings whose hold no current boulder uses.</param>
+    /// <param name="findingIds">The findings the user was shown and confirmed; only those of them that are still open are settled.</param>
+    /// <param name="onlyWithoutBoulders">Of those, only the findings whose hold no current boulder uses (still, now).</param>
     /// <param name="ct">Cancellation.</param>
-    /// <returns>How many were settled.</returns>
-    Task<int> SettleAllAsync(Guid wallId, LookOverFindingKind kind, bool onlyWithoutBoulders, CancellationToken ct = default);
+    /// <returns>How many of the confirmed findings were settled.</returns>
+    Task<LookOverBulkResult> SettleAllAsync(
+        Guid wallId, LookOverFindingKind kind, IReadOnlyCollection<Guid> findingIds, bool onlyWithoutBoulders, CancellationToken ct = default);
 
     /// <summary>
     /// Finishes the look-over: records who and when and takes the flag off the wall. Refused while findings are open

@@ -65,6 +65,7 @@ public partial class BoulderService
             })
             .AsNoTracking()
             .ToListAsync(ct);
+
         // A hold not found again that somebody saw is still there (the look-over's "Still there") is no reason any more.
         return rows
             .Where(r => !(r.Outcome == HoldMoveOutcome.NotFound && r.RemeasuredOutcome == HoldMoveOutcome.Stayed))

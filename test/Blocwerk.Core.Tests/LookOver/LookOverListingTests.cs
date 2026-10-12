@@ -76,15 +76,15 @@ public class LookOverListingTests
         var sameSpot = await AddFindingAsync(h, new() { WallId = w.WallId, Generation = 3, Kind = LookOverFindingKind.SameSpot });
         var service = Service(h);
 
-        Assert.Equal(1, await service.SettleAllAsync(w.WallId, LookOverFindingKind.UnsureMatch, onlyWithoutBoulders: true));
+        Assert.Equal(1, (await service.SettleAllAsync(w.WallId, LookOverFindingKind.UnsureMatch, await OpenIdsAsync(h, w.WallId, LookOverFindingKind.UnsureMatch), onlyWithoutBoulders: true)).Settled);
 
         var after = (await service.ListAsync(w.WallId)).ToDictionary(f => f.Id, f => f.Status);
         Assert.Equal(LookOverFindingStatus.Settled, after[unused]);
         Assert.Equal(2, after.Values.Count(s => s == LookOverFindingStatus.Open));
-        Assert.Equal(1, await service.SettleAllAsync(w.WallId, LookOverFindingKind.SameSpot, onlyWithoutBoulders: false));
-        Assert.Equal(1, await service.SettleAllAsync(w.WallId, LookOverFindingKind.UnsureMatch, onlyWithoutBoulders: false));
+        Assert.Equal(1, (await service.SettleAllAsync(w.WallId, LookOverFindingKind.SameSpot, await OpenIdsAsync(h, w.WallId, LookOverFindingKind.SameSpot), onlyWithoutBoulders: false)).Settled);
+        Assert.Equal(1, (await service.SettleAllAsync(w.WallId, LookOverFindingKind.UnsureMatch, await OpenIdsAsync(h, w.WallId, LookOverFindingKind.UnsureMatch), onlyWithoutBoulders: false)).Settled);
         Assert.Equal(LookOverFindingStatus.Settled, (await service.ListAsync(w.WallId)).Single(f => f.Id == sameSpot).Status);
-        await Assert.ThrowsAsync<UserFacingException>(() => service.SettleAllAsync(w.WallId, LookOverFindingKind.NotFound, onlyWithoutBoulders: false));
+        await Assert.ThrowsAsync<UserFacingException>(() => service.SettleAllAsync(w.WallId, LookOverFindingKind.NotFound, [], onlyWithoutBoulders: false));
     }
 
     [Fact]
@@ -167,6 +167,19 @@ public class LookOverListingTests
 
         Assert.True(LookOverCrops.MostlyEmpty(data.ToArray()));
         Assert.False(LookOverCrops.MostlyEmpty(CaptureScenario.TinyJpeg(1)));
+
+        // A matte-black hold on a dark wall is dark all over but not flat: it stays.
+        using var hold = new SkiaSharp.SKBitmap(64, 64);
+        hold.Erase(new SkiaSharp.SKColor(12, 12, 12));
+        using (var canvas = new SkiaSharp.SKCanvas(hold))
+        using (var paint = new SkiaSharp.SKPaint { Color = new SkiaSharp.SKColor(70, 66, 60) })
+        {
+            canvas.DrawCircle(32, 32, 14, paint);
+        }
+
+        using var holdImage = SkiaSharp.SKImage.FromBitmap(hold);
+        using var holdData = holdImage.Encode(SkiaSharp.SKEncodedImageFormat.Jpeg, 90);
+        Assert.False(LookOverCrops.MostlyEmpty(holdData.ToArray()));
         Assert.True(LookOverCrops.MostlyEmpty([1, 2, 3]));
     }
 

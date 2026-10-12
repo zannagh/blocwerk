@@ -38,6 +38,10 @@
         {
             <p class="field-error" role="alert">@error</p>
         }
+        @if (notice is not null)
+        {
+            <p class="lookover-chip" role="status">@notice</p>
+        }
 
         @if (FilterBoulder is { } filtered)
         {

@@ -49,8 +49,9 @@ internal static class LookOverCrops
             _ => await ModelAsync(db, files, finding, ct),
         };
 
-        // The 3D picture follows the live hold's placement, which a later placement run may move: not cached.
-        if (bytes is not null && view != CheckCropView.Model)
+        // The 3D picture of a spot stored with the finding never changes either. Without one it follows the live hold's
+        // placement, which a later placement run may move: that one is made again each time.
+        if (bytes is not null && (view != CheckCropView.Model || finding.FacetId is not null))
         {
             if (Cache.Count >= MaxCached)
             {
@@ -63,6 +64,48 @@ internal static class LookOverCrops
         return bytes;
     }
 
+    /// <summary>
+    /// A texture picture with nothing on it: the edge of the wall or a part the 3D model never painted, which comes out
+    /// as one flat black tile. Only a picture that is almost entirely near-black AND almost uniform counts, so a
+    /// matte-black hold on a dark wall (dark, but with texture and edges) is still shown. Sampled on a coarse grid; an
+    /// image that does not decode counts as empty.
+    /// </summary>
+    internal static bool MostlyEmpty(byte[] jpeg)
+    {
+        const int Step = 8;
+        const int Dark = 24;
+        using var data = SKData.CreateCopy(jpeg);
+        using var codec = SKCodec.Create(data);
+        using var bitmap = codec is null ? null : SKBitmap.Decode(codec);
+        if (bitmap is null)
+        {
+            return true;
+        }
+
+        var (dark, all, sum, squares) = (0, 0, 0.0, 0.0);
+        for (var y = Step / 2; y < bitmap.Height; y += Step)
+        {
+            for (var x = Step / 2; x < bitmap.Width; x += Step)
+            {
+                var pixel = bitmap.GetPixel(x, y);
+                var light = (pixel.Red + pixel.Green + pixel.Blue) / 3.0;
+                all++;
+                dark += light < Dark ? 1 : 0;
+                sum += light;
+                squares += light * light;
+            }
+        }
+
+        if (all == 0)
+        {
+            return true;
+        }
+
+        var mean = sum / all;
+        var deviation = Math.Sqrt(Math.Max(0, (squares / all) - (mean * mean)));
+        return dark > all * 0.85 && deviation < 10;
+    }
+
     private static async Task<byte[]?> OldAsync(BlocwerkDbContext db, WallLookOverFinding finding, CancellationToken ct)
     {
         if (await HoldAsync(db, finding.OldHoldId, ct) is not { } hold)
@@ -73,6 +116,7 @@ internal static class LookOverCrops
         var photo = hold.WallPanelId is { } panelId
             ? await db.WallPanels.AsNoTracking().Where(p => p.Id == panelId).Select(p => p.Photo).FirstOrDefaultAsync(ct)
             : null;
+
         // An old and a new hold on one spot are compared: both pictures at the finding's one scale, not each hold's own.
         var radius = finding.Kind == LookOverFindingKind.SameSpot ? Math.Max(hold.Radius, finding.Radius) : hold.Radius;
         return RefreshCheckCrops.Crop(photo, hold.X, hold.Y, radius).Bytes;
@@ -103,36 +147,6 @@ internal static class LookOverCrops
 
         var crop = (await RefreshCheckCrops.TextureCropAsync(db, files, modelId, facetId, a, b, radiusMm)).Bytes;
         return crop is not null && MostlyEmpty(crop) ? null : crop;
-    }
-
-    /// <summary>
-    /// A texture picture that is mostly black shows the edge of the wall or a part the 3D model never painted: no
-    /// picture says more than a black tile. Sampled on a coarse grid; an image that does not decode counts as empty.
-    /// </summary>
-    internal static bool MostlyEmpty(byte[] jpeg)
-    {
-        const int Step = 8;
-        const int Dark = 24;
-        using var data = SKData.CreateCopy(jpeg);
-        using var codec = SKCodec.Create(data);
-        using var bitmap = codec is null ? null : SKBitmap.Decode(codec);
-        if (bitmap is null)
-        {
-            return true;
-        }
-
-        var (dark, all) = (0, 0);
-        for (var y = Step / 2; y < bitmap.Height; y += Step)
-        {
-            for (var x = Step / 2; x < bitmap.Width; x += Step)
-            {
-                var pixel = bitmap.GetPixel(x, y);
-                all++;
-                dark += pixel.Red < Dark && pixel.Green < Dark && pixel.Blue < Dark ? 1 : 0;
-            }
-        }
-
-        return all == 0 || dark * 2 > all;
     }
 
     private static Task<Hold?> HoldAsync(BlocwerkDbContext db, Guid? id, CancellationToken ct) =>

@@ -48,6 +48,7 @@ public sealed partial class WallLookOverService
                 .Select(bh => new { bh.HoldId, bh.BoulderId, bh.Boulder.Name, bh.Boulder.NeedsReview })
                 .ToListAsync(ct))
             .ToLookup(b => b.HoldId, b => new LookOverBoulder(b.BoulderId, b.Name, b.NeedsReview));
+        var since = await db.Walls.IgnoreQueryFilters().Where(w => w.Id == wallId).Select(w => w.LookOverPendingSince).FirstOrDefaultAsync(ct);
         var answerers = findings.Select(f => f.AnsweredByUserId).OfType<Guid>().Distinct().ToList();
         var names = answerers.Count == 0
             ? []
@@ -58,7 +59,7 @@ public sealed partial class WallLookOverService
                 AnsweredBy = f.AnsweredByUserId is { } by ? names.GetValueOrDefault(by) : null,
                 AnswerBoulders = f.AnswerBoulders,
                 ClearedBoulders = f.ClearedBoulderIds?.Count ?? 0,
-                CanUndo = f is { Status: LookOverFindingStatus.Settled, Answer: LookOverAnswer.Settle },
+                CanUndo = CanUndo(f, holds, since),
             })
             .ToList();
     }
@@ -94,6 +95,16 @@ public sealed partial class WallLookOverService
             open ? LookOverRules.AnswersFor(f.Kind, hold is not null, access.CanEdit, mergeable && access.CanMerge) : [],
             open && mergeable && access.CanEdit && !access.CanMerge);
     }
+
+    /// <summary>
+    /// An answer can be taken back while that still means something: it changed nothing on the wall, it was given in
+    /// the round that is still running (not before the last Finish), and the hold it was about is still a live hold
+    /// (not removed, and its panel not photographed again since).
+    /// </summary>
+    private static bool CanUndo(WallLookOverFinding f, Dictionary<Guid, LookOverHoldNow> holds, DateTimeOffset? pendingSince) =>
+        f is { Status: LookOverFindingStatus.Settled, Answer: LookOverAnswer.Settle }
+        && pendingSince is { } since && f.AnsweredAt >= since
+        && (f.HoldId is not { } id || holds.GetValueOrDefault(id) is { Live: true });
 
     /// <summary>
     /// The wall's live photos as (panel, generation): per grid position the newest committed panel (the rule the live

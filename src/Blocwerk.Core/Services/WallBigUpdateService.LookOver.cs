@@ -80,6 +80,41 @@ public partial class WallBigUpdateService
         }
     }
 
+    /// <summary>
+    /// Live hold to the boulders this promote marked only because holds of theirs were not found again (this hold, and
+    /// maybe others: each has its own finding, and all of them have to be answered "still there" before the boulder is
+    /// cleared). Read from the tracker, which still knows what a boulder was when it was loaded. Left out, so that
+    /// nothing clears them later: a boulder that was marked before, one told anything else (a hold moved, was replaced
+    /// or taken off), one that lost a membership (two of its holds became one), and one that uses a hold carried as
+    /// "changed".
+    /// </summary>
+    private static Dictionary<Guid, List<Guid>> MarkedForAMissingHold(BlocwerkDbContext db)
+    {
+        var marked = db.ChangeTracker.Entries<Boulder>()
+            .Where(e => e.Entity.NeedsReview && !e.Property(b => b.NeedsReview).OriginalValue)
+            .Select(e => e.Entity.Id)
+            .ToHashSet();
+        var reasons = db.BoulderHoldMoves.Local.Where(m => db.Entry(m).State == EntityState.Added).ToList();
+        var memberships = db.ChangeTracker.Entries<BoulderHold>().ToList();
+        var changedHolds = db.HoldGenerationLinks.Local
+            .Where(l => l.Kind == HoldGenerationLinkKind.Changed && l.NewHoldId is not null && db.Entry(l).State == EntityState.Added)
+            .Select(l => l.NewHoldId!.Value)
+            .ToHashSet();
+        bool OnlyThisReason(Guid boulderId)
+        {
+            var mine = memberships.Where(e => e.Entity.BoulderId == boulderId).ToList();
+            return marked.Contains(boulderId)
+                && reasons.Where(m => m.BoulderId == boulderId).All(m => m.Outcome == HoldMoveOutcome.NotFound)
+                && mine.Count(e => e.State == EntityState.Added) == mine.Count(e => e.State == EntityState.Deleted)
+                && !mine.Any(e => e.State == EntityState.Added && changedHolds.Contains(e.Entity.HoldId));
+        }
+
+        return reasons
+            .Where(m => m.Outcome == HoldMoveOutcome.NotFound && m.NewHoldId is not null && OnlyThisReason(m.BoulderId))
+            .GroupBy(m => m.NewHoldId!.Value)
+            .ToDictionary(g => g.Key, g => g.Select(m => m.BoulderId).Distinct().ToList());
+    }
+
     /// <summary>What the promote did, read from its change tracker: nothing of it is saved yet.</summary>
     private static LookOverPromoteFacts ReadPromoteFacts(
         BlocwerkDbContext db, Guid wallId, int newGen, IReadOnlyList<WallUpdateException> cards, HashSet<Guid> unaligned, LookOverPromoteInputs inputs)
@@ -97,16 +132,7 @@ public partial class WallBigUpdateService
             .GroupBy(bh => bh.HoldId)
             .ToDictionary(g => g.Key, g => g.Select(bh => bh.BoulderId).Distinct().Count());
         var carry = inputs.Confirmation.Carryover.GroupBy(d => d.OldHoldId).ToDictionary(g => g.Key, g => g.First());
-
-        // Marked by this promote and not before: the tracker still knows what the boulder was when it was loaded.
-        var marked = db.ChangeTracker.Entries<Boulder>()
-            .Where(e => e.Entity.NeedsReview && !e.Property(b => b.NeedsReview).OriginalValue)
-            .Select(e => e.Entity.Id)
-            .ToHashSet();
-        var newlyMarked = db.BoulderHolds.Local
-            .Where(bh => db.Entry(bh).State == EntityState.Added && marked.Contains(bh.BoulderId))
-            .GroupBy(bh => bh.HoldId)
-            .ToDictionary(g => g.Key, g => g.Select(bh => bh.BoulderId).Distinct().ToList());
+        var newlyMarked = MarkedForAMissingHold(db);
         return new LookOverPromoteFacts(
             cards,
             carry,
