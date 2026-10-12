@@ -93,14 +93,15 @@ public class NewHoldTriageKeepsNewHoldsTests
     [Fact]
     public void OnAWallThatDidNotChange_SecondDetectionsAreDropped_AndOnlyTheNewHoldsStay()
     {
-        var carried = Enumerable.Range(0, 882).Select(i => new TriageSpot(100 + (i % 42 * 90), 100 + (i / 42 * 180), 30)).ToList();
+        var carried = Enumerable.Range(0, 882).Select(i => new TriageSpot(100.0 + (i % 42 * 90.0), 100.0 + (Math.Floor(i / 42.0) * 180.0), 30)).ToList();
         var seconds = carried.Select(s => new TriageCandidate(Guid.NewGuid(), s.X + 6, s.Y - 4, 28)).ToList();
         var known = seconds.Where((_, i) => i % 2 == 0).Select(c => c.Id).ToList();
-        var fresh = Enumerable.Range(0, 5).Select(i => new TriageCandidate(Guid.NewGuid(), 145 + (i * 630), 190, 30)).ToList();
+        var fresh = Enumerable.Range(0, 5).Select(i => new TriageCandidate(Guid.NewGuid(), 145.0 + (i * 630.0), 190, 30)).ToList();
 
+        // The new holds sit on the row at y 190, between the carried ones: only there the old photo showed something else.
         var result = NewHoldTriage.Classify(
             Input([.. seconds, .. fresh], carried: carried, known: known),
-            queries => queries.Select(q => (double?)(fresh.Any(f => f.X == q.NewX && f.Y == q.NewY) ? 0.2 : 0.9)).ToList());
+            queries => queries.Select(q => (double?)(Math.Abs(q.NewY - 190) < 1 ? 0.2 : 0.9)).ToList());
 
         Assert.Equal(882, result.Count);
         Assert.All(seconds, s => Assert.True(result.ContainsKey(s.Id)));
@@ -136,7 +137,7 @@ public class NewHoldTriageKeepsNewHoldsTests
         IReadOnlyList<Guid>? known = null)
     {
         var pairs = Enumerable.Range(0, 5).SelectMany(i => Enumerable.Range(0, 5).Select(j =>
-            new PointPair(i * 1000, j * 1000, i * 1000, j * 1000))).ToList();
+            new PointPair(i * 1000.0, j * 1000.0, i * 1000.0, j * 1000.0))).ToList();
         return new NewHoldTriageInput(
             candidates, pairs, (Side, Side), [], null,
             (known ?? []).ToDictionary(id => id, _ => Evidence3DVerdict.KnownHold),
