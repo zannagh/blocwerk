@@ -29,7 +29,7 @@ public class LookOverFindingBuilderTests
         var finding = Assert.Single(LookOverFindingBuilder.Build(Facts([card], staged: [detection])));
 
         Assert.Equal(
-            (LookOverFindingKind.ConflictingNew, (Guid?)null, (Guid?)null, (Guid?)Panel, 0.3, 0.4, "f1"),
+            (LookOverFindingKind.ConflictingNew, null, null, Panel, 0.3, 0.4, "f1"),
             (finding.Kind, finding.HoldId, finding.OldHoldId, finding.PanelId, finding.X, finding.Y, finding.FacetId));
 
         // Somebody kept the detection after all: it is a normal new hold, not a finding.
@@ -45,7 +45,7 @@ public class LookOverFindingBuilderTests
         var finding = Assert.Single(LookOverFindingBuilder.Build(Facts([card], live: [copy], successors: [(old, copy)])));
 
         Assert.Equal(
-            (LookOverFindingKind.PossiblyRemoved, (Guid?)old.Id, (Guid?)copy.Id, 0.51, 0.49, (double?)0.1),
+            (LookOverFindingKind.PossiblyRemoved, old.Id, copy.Id, 0.51, 0.49, (double?)0.1),
             (finding.Kind, finding.OldHoldId, finding.HoldId, finding.X, finding.Y, finding.TextureScore));
     }
 
@@ -62,7 +62,7 @@ public class LookOverFindingBuilderTests
         var facts = Facts([card], staged: [detection], live: [live, detection], successors: [(old, live)], carry: [carry]);
         var finding = Assert.Single(LookOverFindingBuilder.Build(facts));
 
-        Assert.Equal((kind, (Guid?)live.Id, merged ? null : (Guid?)detection.Id), (finding.Kind, finding.HoldId, finding.OtherHoldId));
+        Assert.Equal((kind, live.Id, merged ? null : (Guid?)detection.Id), (finding.Kind, finding.HoldId, finding.OtherHoldId));
     }
 
     [Fact]
@@ -89,7 +89,7 @@ public class LookOverFindingBuilderTests
 
         var withBoulder = Facts([], live: [copy], successors: [(old, copy)], notFound: notFound, boulders: new() { [copy.Id] = 2 });
         var finding = Assert.Single(LookOverFindingBuilder.Build(withBoulder));
-        Assert.Equal((LookOverFindingKind.NotFound, (Guid?)copy.Id, 2), (finding.Kind, finding.HoldId, finding.BouldersAtApply));
+        Assert.Equal((LookOverFindingKind.NotFound, copy.Id, 2), (finding.Kind, finding.HoldId, finding.BouldersAtApply));
     }
 
     [Fact]
@@ -99,7 +99,7 @@ public class LookOverFindingBuilderTests
         var plain = Facts([], live: [copy, fresh, far], successors: [(old, copy)]);
 
         var sameSpot = Assert.Single(LookOverFindingBuilder.Build(plain));
-        Assert.Equal((LookOverFindingKind.SameSpot, (Guid?)copy.Id, (Guid?)fresh.Id, (Guid?)old.Id), (sameSpot.Kind, sameSpot.HoldId, sameSpot.OtherHoldId, sameSpot.OldHoldId));
+        Assert.Equal((LookOverFindingKind.SameSpot, copy.Id, fresh.Id, old.Id), (sameSpot.Kind, sameSpot.HoldId, sameSpot.OtherHoldId, sameSpot.OldHoldId));
 
         // Shown at the old hold's spot and at the larger hold's scale, so "before" and "now" can be compared.
         fresh.Radius = 0.05;
@@ -109,7 +109,7 @@ public class LookOverFindingBuilderTests
         // The same spot under a hold that already has a finding: that finding learns the new hold, no second one.
         var notFound = plain with { NotFound = new Dictionary<Guid, HoldMoveOutcome> { [old.Id] = HoldMoveOutcome.NotFound }, Boulders = new Dictionary<Guid, int> { [copy.Id] = 1 } };
         var known = Assert.Single(LookOverFindingBuilder.Build(notFound));
-        Assert.Equal((LookOverFindingKind.NotFound, (Guid?)fresh.Id), (known.Kind, known.OtherHoldId));
+        Assert.Equal((LookOverFindingKind.NotFound, fresh.Id), (known.Kind, known.OtherHoldId));
 
         // A person confirmed the old hold where it is: they saw both.
         var confirmed = plain with { Carry = new Dictionary<Guid, CarryoverDecision> { [old.Id] = new(old.Id, CarryKind.Carried, null, Confirmed: true) } };

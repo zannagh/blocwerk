@@ -27,13 +27,13 @@ public class LookOverPromoteTests
 
         var wall = await WallAsync(h, w.WallId);
         Assert.True(wall.LookOverPendingSince >= before);
-        Assert.Equal((3, (DateTimeOffset?)null), (wall.LookOverGeneration, wall.LookOverCompletedAt));
+        Assert.Equal((3, null), (wall.LookOverGeneration, wall.LookOverCompletedAt));
         var finding = await FindingAsync(h, w.WallId);
         var kept = (await BoulderAsync(h, w.BoulderId)).BoulderHolds.Single().HoldId;
         Assert.Equal(
-            (LookOverFindingKind.ReplacedByOther, LookOverFindingStatus.Open, 3, (Guid?)w.TargetId, (Guid?)kept, w.DetectionId, 1),
+            (LookOverFindingKind.ReplacedByOther, LookOverFindingStatus.Open, 3, w.TargetId, kept, w.DetectionId, 1),
             (finding.Kind, finding.Status, finding.Generation, finding.OldHoldId, finding.HoldId, finding.OtherHoldId, finding.BouldersAtApply));
-        Assert.Equal(((Guid?)w.SessionId, TargetX, TargetY, (double?)0.1), (finding.SessionId, finding.X, finding.Y, finding.PhotoScore));
+        Assert.Equal((w.SessionId, TargetX, TargetY, (double?)0.1), (finding.SessionId, finding.X, finding.Y, finding.PhotoScore));
 
         // The card asked about the old hold and nobody answered: its copy was marked, by this finding alone.
         Assert.True((await HoldAsync(h, kept))!.NeedsReview);
@@ -49,7 +49,7 @@ public class LookOverPromoteTests
 
         var finding = await FindingAsync(h, w.WallId);
         Assert.Equal(
-            (LookOverFindingKind.UnsureMatch, (Guid?)w.TargetId, w.DetectionId, (Guid?)null, (double?)0.4, 1),
+            (LookOverFindingKind.UnsureMatch, w.TargetId, w.DetectionId, null, (double?)0.4, 1),
             (finding.Kind, finding.OldHoldId, finding.HoldId, finding.OtherHoldId, finding.PhotoScore, finding.BouldersAtApply));
         Assert.NotNull((await WallAsync(h, w.WallId)).LookOverPendingSince);
     }
@@ -64,7 +64,7 @@ public class LookOverPromoteTests
         var finding = await FindingAsync(h, w.WallId);
         var boulder = await BoulderAsync(h, w.BoulderId);
         Assert.Equal(
-            (LookOverFindingKind.NotFound, (Guid?)w.TargetId, (Guid?)boulder.BoulderHolds.Single().HoldId, 1),
+            (LookOverFindingKind.NotFound, w.TargetId, boulder.BoulderHolds.Single().HoldId, 1),
             (finding.Kind, finding.OldHoldId, finding.HoldId, finding.BouldersAtApply));
         Assert.True(boulder.NeedsReview);
     }

@@ -35,7 +35,7 @@ public class KeptHoldBackfillTests
         Assert.All(findings, f => Assert.True(f.HoldKept));
         var added = findings.Single(f => f.HoldId == k.UnusedId);
         Assert.Equal(
-            (LookOverFindingKind.NotFound, LookOverFindingStatus.Open, 3, 0, (Guid?)k.UnusedOldId),
+            (LookOverFindingKind.NotFound, LookOverFindingStatus.Open, 3, 0, k.UnusedOldId),
             (added.Kind, added.Status, added.Generation, added.BouldersAtApply, added.OldHoldId));
         Assert.Empty(added.MarkedBoulderIds!);
         Assert.Equal(3, (await WallAsync(h, k.Wall.WallId)).KeptHoldsGeneration);

@@ -42,7 +42,7 @@ public class HoldLookSessionTests
         Assert.Null(quick.Carryover.Single(d => d.OldHoldId == w.TargetId).NewHoldId);
         Assert.Contains(w.DetectionId.Value, quick.AcceptedNewCentreHoldIds);
         var card = Assert.Single(await w.Sessions.GetUpdateExceptionsAsync(w.WallId));
-        Assert.Equal((UpdateExceptionKind.ReplacedByOther, (Guid?)w.TargetId, w.DetectionId), (card.Kind, card.OldHoldId, card.StagedHoldId));
+        Assert.Equal((UpdateExceptionKind.ReplacedByOther, w.TargetId, w.DetectionId), (card.Kind, card.OldHoldId, card.StagedHoldId));
     }
 
     [Fact]
@@ -65,11 +65,11 @@ public class HoldLookSessionTests
         var kept = await db.Holds.SingleAsync(x => x.Id == membership.HoldId);
         Assert.Equal((3, "Yellow crimp"), (kept.Generation, kept.Name));
         var record = await db.BoulderHoldMoves.SingleAsync(m => m.BoulderId == w.BoulderId);
-        Assert.Equal((HoldMoveOutcome.Replaced, (Guid?)w.TargetId, (Guid?)kept.Id, 3), (record.Outcome, record.OldHoldId, record.NewHoldId, record.ToGeneration));
+        Assert.Equal((HoldMoveOutcome.Replaced, w.TargetId, kept.Id, 3), (record.Outcome, record.OldHoldId, record.NewHoldId, record.ToGeneration));
 
         // The other hold is live as a new hold of its own, without the old hold's name.
         var added = await db.Holds.SingleAsync(x => x.Id == w.DetectionId);
-        Assert.Equal((3, (string?)null), (added.Generation, added.Name));
+        Assert.Equal((3, null), (added.Generation, added.Name));
         Assert.Equal(Anchors.Length + 2, await db.Holds.CountAsync(x => x.Generation == 3));
     }
 
@@ -146,7 +146,7 @@ public class HoldLookSessionTests
         Assert.Empty(session.NotFoundAgain!);
         await RecordAsync(w, session);
         var card = Assert.Single(await w.Sessions.GetUpdateExceptionsAsync(w.WallId));
-        Assert.Equal((UpdateExceptionKind.LowConfidenceMatch, (Guid?)w.TargetId, (double?)0.4), (card.Kind, card.OldHoldId, card.PhotoScore));
+        Assert.Equal((UpdateExceptionKind.LowConfidenceMatch, w.TargetId, (double?)0.4), (card.Kind, card.OldHoldId, card.PhotoScore));
 
         await PromoteAsync(w, session);
 
@@ -161,7 +161,7 @@ public class HoldLookSessionTests
     {
         using var h = new WallTestHarness();
         var w = await SeedAsync(h, targetDetected: true);
-        w.Probe.Set(TargetX, TargetY, (double?)null);
+        w.Probe.Set(TargetX, TargetY, null);
 
         var session = await w.Service.ResumeAsync(w.WallId);
 
@@ -198,7 +198,7 @@ public class HoldLookSessionTests
         var kept = await db.Holds.SingleAsync(x => x.Id == membership.HoldId);
         Assert.Equal((3, TargetX, TargetY), (kept.Generation, kept.X, kept.Y));
         var record = await db.BoulderHoldMoves.SingleAsync();
-        Assert.Equal((HoldMoveOutcome.NotFound, w.BoulderId, (Guid?)kept.Id, HoldType.Start), (record.Outcome, record.BoulderId, record.NewHoldId, record.Type));
+        Assert.Equal((HoldMoveOutcome.NotFound, w.BoulderId, kept.Id, HoldType.Start), (record.Outcome, record.BoulderId, record.NewHoldId, record.Type));
     }
 
     [Theory]

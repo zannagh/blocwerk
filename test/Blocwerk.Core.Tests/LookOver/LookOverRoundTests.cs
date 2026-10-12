@@ -96,7 +96,7 @@ public class LookOverRoundTests
         await PromoteLikeApplyAsync(w, session);
 
         var wall = await WallAsync(h, w.WallId);
-        Assert.Equal((3, (DateTimeOffset?)null), (wall.CurrentGeneration, wall.LookOverPendingSince));
+        Assert.Equal((3, null), (wall.CurrentGeneration, wall.LookOverPendingSince));
         await using var after = h.CreateContext();
         var finding = await after.WallLookOverFindings.SingleAsync();
         Assert.Equal((earlier, LookOverFindingStatus.Superseded), (finding.Id, finding.Status));
@@ -126,7 +126,7 @@ public class LookOverRoundTests
         // (The update's own finding, about the copy it kept, is the other one.)
         var view = (await service.ListAsync(w.WallId)).Single(v => v.Id == stale);
 
-        Assert.Equal(((Guid?)null, 0), (view.HoldId, view.Boulders.Count));
+        Assert.Equal((null, 0), (view.HoldId, view.Boulders.Count));
         Assert.Equal([LookOverAnswer.Settle], view.Answers);
         foreach (var answer in new[] { LookOverAnswer.RemoveHold, LookOverAnswer.UseNewHold, LookOverAnswer.DifferentHold })
         {

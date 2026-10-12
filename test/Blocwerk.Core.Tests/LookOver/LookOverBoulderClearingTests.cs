@@ -188,7 +188,7 @@ public class LookOverBoulderClearingTests
 
         Assert.True((await HoldAsync(h, w.DetectionId))!.NeedsReview);
         var finding = await FindingAsync(h, w.WallId);
-        Assert.Equal((LookOverFindingStatus.Open, (LookOverAnswer?)null, (Guid?)null, false), (finding.Status, finding.Answer, finding.AnsweredByUserId, finding.ClearedHoldMark));
+        Assert.Equal((LookOverFindingStatus.Open, null, null, false), (finding.Status, finding.Answer, finding.AnsweredByUserId, finding.ClearedHoldMark));
 
         // A removed hold is not brought back from here.
         var again = Assert.Single(await service.ListAsync(w.WallId));

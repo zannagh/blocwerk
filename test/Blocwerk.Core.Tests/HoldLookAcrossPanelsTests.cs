@@ -125,7 +125,7 @@ public class HoldLookAcrossPanelsTests
 
         var decisions = await w.Sessions.GetDecisionsAsync(w.WallId);
         var decision = decisions.Carryover.Single(d => d.OldHoldId == w.TargetId);
-        Assert.Equal((kind, (Guid?)null, true), (decision.Kind, decision.NewHoldId, decision.Confirmed));
+        Assert.Equal((kind, null, true), (decision.Kind, decision.NewHoldId, decision.Confirmed));
 
         // Kept, another hold is still there, so the boulder is still marked; removed, the hold is simply gone.
         var marked = WallBigUpdateService.NotFoundToMark(decisions with { NotFoundAgain = session.NotFoundAgain });

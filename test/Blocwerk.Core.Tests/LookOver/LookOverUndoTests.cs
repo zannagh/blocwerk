@@ -86,7 +86,7 @@ public class LookOverUndoTests
         await ApplyAgainAsync(await StageAgainAsync(h, w), score: 0.4);
 
         var old = (await service.ListAsync(w.WallId)).Single(f => f.Id == view.Id);
-        Assert.Equal((false, (Guid?)null), (old.CanUndo, old.HoldId));
+        Assert.Equal((false, null), (old.CanUndo, old.HoldId));
         await Assert.ThrowsAsync<UserFacingException>(() => service.UndoAsync(w.WallId, view.Id));
 
         // The retained row of the earlier generation is not touched.
@@ -159,7 +159,7 @@ public class LookOverUndoTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => Service(h, walls: failing).AnswerAsync(w.WallId, view.Id, LookOverAnswer.RemoveHold, [w.BoulderId]));
 
         var finding = await FindingAsync(h, w.WallId);
-        Assert.Equal((LookOverFindingStatus.Open, (LookOverAnswer?)null), (finding.Status, finding.Answer));
+        Assert.Equal((LookOverFindingStatus.Open, null), (finding.Status, finding.Answer));
         await Service(h).AnswerAsync(w.WallId, view.Id, LookOverAnswer.RemoveHold, [w.BoulderId]);
         Assert.Null(await HoldAsync(h, view.HoldId));
     }

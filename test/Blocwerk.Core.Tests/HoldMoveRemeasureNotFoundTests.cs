@@ -56,7 +56,7 @@ public class HoldMoveRemeasureNotFoundTests
         await using var check = h.CreateContext();
         Assert.True((await check.Boulders.SingleAsync(b => b.Id == s.BoulderId)).NeedsReview);
         var row = await check.BoulderHoldMoves.SingleAsync();
-        Assert.Equal((outcome, (HoldMoveOutcome?)null, (double?)null), (row.Outcome, row.RemeasuredOutcome, row.RemeasuredDistanceMm));
+        Assert.Equal((outcome, null, null), (row.Outcome, row.RemeasuredOutcome, row.RemeasuredDistanceMm));
         Assert.DoesNotContain("Measured again", Assert.Single(await h.BoulderService.GetBoulderMovesAsync(s.BoulderId)).Text);
     }
 
