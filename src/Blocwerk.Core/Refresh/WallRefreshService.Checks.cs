@@ -29,7 +29,8 @@ public sealed partial class WallRefreshService
             var cards = await WallUpdateSessionService.ReadExceptionsAsync(db, sessionId);
             var oldIds = cards.Select(c => c.OldHoldId).OfType<Guid>().ToList();
             var holds = await db.Holds.AsNoTracking().Where(h => oldIds.Contains(h.Id))
-                .Select(h => new { h.Id, h.Name, h.Color }).ToDictionaryAsync(h => h.Id);
+                .Select(h => new { h.Id, h.Name, h.Color, OnCentre = h.WallPanel == null || (h.WallPanel.Col == 0 && h.WallPanel.Row == 0) })
+                .ToDictionaryAsync(h => h.Id);
             var boulders = (await db.BoulderHolds.AsNoTracking()
                     .Where(bh => oldIds.Contains(bh.HoldId) && !bh.Boulder.IsHistoric)
                     .Select(bh => new { bh.HoldId, bh.BoulderId })
@@ -41,7 +42,8 @@ public sealed partial class WallRefreshService
                 var hold = c.OldHoldId is { } id ? holds.GetValueOrDefault(id) : null;
                 return new RefreshCheck(
                     c.Id, c.Kind, c.Status, hold is not null, c.HasTexture,
-                    c.OldHoldId is { } o ? boulders.GetValueOrDefault(o) : 0, hold?.Name ?? hold?.Color, c.Confidence);
+                    c.OldHoldId is { } o ? boulders.GetValueOrDefault(o) : 0, hold?.Name ?? hold?.Color, c.Confidence,
+                    c.Kind != UpdateExceptionKind.ReplacedByOther || hold is not { OnCentre: false });
             }).ToList();
         }
     }

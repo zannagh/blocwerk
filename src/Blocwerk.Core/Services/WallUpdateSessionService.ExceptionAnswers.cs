@@ -32,6 +32,10 @@ public partial class WallUpdateSessionService
         var now = DateTimeOffset.UtcNow;
         switch (card.Kind)
         {
+            case UpdateExceptionKind.ReplacedByOther:
+                await EnsureRemovableHereAsync(db, card, answer);
+                await AnswerPossiblyRemovedAsync(db, session.Id, card, answer, user.Id, now);
+                break;
             case UpdateExceptionKind.PossiblyRemoved:
                 await AnswerPossiblyRemovedAsync(db, session.Id, card, answer, user.Id, now);
                 break;
@@ -59,6 +63,24 @@ public partial class WallUpdateSessionService
         WallUpdateSessions.Touch(session, user.Id);
         await db.SaveChangesAsync();
         await transaction.CommitAsync();
+    }
+
+    /// <summary>
+    /// A removal is only promoted for a hold on the centre panel (<see cref="CarryoverScope"/> resets any other to
+    /// "carried"), so it is refused for a replaced hold elsewhere instead of being undone unseen.
+    /// </summary>
+    private static async Task EnsureRemovableHereAsync(BlocwerkDbContext db, WallUpdateException card, UpdateExceptionAnswer answer)
+    {
+        if (answer != UpdateExceptionAnswer.Remove)
+        {
+            return;
+        }
+
+        var onCentre = await db.Holds.AnyAsync(h => h.Id == card.OldHoldId && (h.WallPanel == null || (h.WallPanel.Col == 0 && h.WallPanel.Row == 0)));
+        if (!onCentre)
+        {
+            throw new InvalidOperationException("A hold on this panel is removed in the full review.");
+        }
     }
 
     /// <summary>Keep: carried where it was, confirmed. Remove: removed, confirmed. Undo: carried in place, unconfirmed.</summary>

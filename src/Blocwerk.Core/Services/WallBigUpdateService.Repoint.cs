@@ -39,6 +39,11 @@ public partial class WallBigUpdateService
     /// comes from a Changed carry decision, so a plain carried correction never forces review.
     /// </para>
     /// </summary>
+    /// <remarks>
+    /// <paramref name="move"/> is also how a hold that was not found again reaches its boulders
+    /// (<see cref="HoldMovePlan.NotFoundFor"/>): the membership moves onto the copy as for any carried hold, the boulder is
+    /// marked for review and the reason is recorded. The hold is never taken off.
+    /// </remarks>
     private static async Task RepointBouldersAsync(
         BlocwerkDbContext db, Guid oldHoldId, Guid newHoldId, int newGen, bool changed, PlannedMove? move = null)
     {
@@ -94,7 +99,7 @@ public partial class WallBigUpdateService
             }
 
             link.Boulder.Generation = newGen;
-            if (changed || outcome is HoldMoveOutcome.Kept or HoldMoveOutcome.Possible)
+            if (changed || outcome is HoldMoveOutcome.Kept or HoldMoveOutcome.Possible or HoldMoveOutcome.NotFound or HoldMoveOutcome.Replaced)
             {
                 link.Boulder.NeedsReview = true;
             }

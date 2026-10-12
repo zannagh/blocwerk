@@ -53,6 +53,7 @@ public sealed partial class WallRefreshProcessor
                 if (fresh is not null)
                 {
                     r.SummaryJson = RefreshTimeline.Write(fresh);
+                    RefreshTimeline.Describe(r, RefreshTimeline.Match, RefreshTimeline.MatchDetail(fresh));
                 }
 
                 RefreshTimeline.Set(r, RefreshTimeline.Review, RefreshStepState.Waiting, "Check the summary, then apply");

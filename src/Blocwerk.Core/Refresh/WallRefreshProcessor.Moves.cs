@@ -9,7 +9,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core.Refresh;
 
-/// <summary>The confirm screen's "Moved holds" list: what the plan will do to which boulders.</summary>
+/// <summary>The confirm screen's "Moved holds" and "not found again" lists: what the plan will do to which boulders.</summary>
 public sealed partial class WallRefreshProcessor
 {
     /// <summary>
@@ -63,5 +63,36 @@ public sealed partial class WallRefreshProcessor
                 HoldMovePolicy.Describe(m.Measure.DistanceMm, m.Measure.RotationDeg, m.Outcome).Replace("this boulder", "its boulders", StringComparison.Ordinal),
                 uses.GetValueOrDefault(m.OldHoldId) ?? []))
             .ToList();
+    }
+
+    /// <summary>
+    /// The holds of <paramref name="plan"/> that were not found again and are used by a live boulder, with those boulders,
+    /// and how many boulders they mark in all. A hold no boulder uses marks nothing and is not listed.
+    /// </summary>
+    private async Task<(IReadOnlyList<NotFoundHoldLine>? Lines, int Boulders)> NotFoundLinesAsync(HoldMovePlan? plan, CancellationToken ct)
+    {
+        if (plan?.NotFound is not { Count: > 0 } notFound)
+        {
+            return (null, 0);
+        }
+
+        var oldIds = notFound.Keys.ToList();
+        await using var db = dbContextFactory.CreateDbContext();
+        var uses = await db.BoulderHolds.AsNoTracking()
+            .Where(bh => oldIds.Contains(bh.HoldId) && !bh.Boulder.IsArchived && !bh.Boulder.IsHistoric)
+            .Select(bh => new { bh.HoldId, bh.BoulderId, bh.Boulder.Name, HoldName = bh.Hold.Name, bh.Hold.Color })
+            .ToListAsync(ct);
+        var lines = uses
+            .GroupBy(u => u.HoldId)
+            .OrderByDescending(g => notFound[g.Key])
+            .ThenBy(g => g.Key)
+            .Select(g => new NotFoundHoldLine(
+                g.Key,
+                g.First().HoldName ?? g.First().Color,
+                notFound[g.Key],
+                HoldMovePolicy.NotFoundText(notFound[g.Key]) ?? string.Empty,
+                g.Select(u => u.Name).Order(StringComparer.OrdinalIgnoreCase).ToList()))
+            .ToList();
+        return (lines.Count == 0 ? null : lines, uses.Select(u => u.BoulderId).Distinct().Count());
     }
 }

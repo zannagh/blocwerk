@@ -1,14 +1,14 @@
 @using Blocwerk.Core.Enums
 @using Blocwerk.Core.Services
 @inject IBoulderService BoulderService
-@* Shown on a boulder that needs a look because a hold it used physically moved when the panels were updated.
-   The old position stays visible in "Then"; the setter can revise the boulder or archive it from here. *@
+@* Shown on a boulder that needs a look because a hold it used physically moved, or was not found again, when the
+   panels were updated. The old position stays visible in "Then"; the setter can revise the boulder or archive it from here. *@
 
 @if (moves.Count > 0)
 {
     <div class="bw-revision-notice bw-moves-notice" role="status">
         <p>
-            <strong>@(moves.Any(m => m.Outcome == HoldMoveOutcome.Removed) ? "A hold of this boulder moved and was taken off it." : "A hold of this boulder moved a little.")</strong>
+            <strong>@Headline</strong>
             Check that it still works.
         </p>
         <ul class="bw-moves-list">
@@ -17,7 +17,10 @@
                 <li class="@(move.Outcome == HoldMoveOutcome.Removed ? "is-removed" : "is-kept")">
                     <span class="bw-moves-hold">@(move.HoldName ?? "A hold")</span>
                     <span class="bw-moves-text">@move.Text</span>
-                    <span class="bw-moves-source">@(move.Source == HoldMoveSource.ThreeD ? "measured in 3D" : "estimated from the photo")</span>
+                    @if (!NotFound(move))
+                    {
+                        <span class="bw-moves-source">@(move.Source == HoldMoveSource.ThreeD ? "measured in 3D" : "estimated from the photo")</span>
+                    }
                 </li>
             }
         </ul>
@@ -58,6 +61,14 @@
 
     [Parameter]
     public EventCallback OnArchive { get; set; }
+
+    private string Headline =>
+        moves.Any(m => m.Outcome == HoldMoveOutcome.Removed) ? "A hold of this boulder moved and was taken off it."
+        : moves.All(NotFound) ? "A hold of this boulder was not found again when the panels were updated."
+        : moves.Any(NotFound) ? "Holds of this boulder moved or were not found again when the panels were updated."
+        : "A hold of this boulder moved a little.";
+
+    private static bool NotFound(BoulderMoveView move) => move.Outcome is HoldMoveOutcome.NotFound or HoldMoveOutcome.Replaced;
 
     protected override async Task OnParametersSetAsync() =>
         moves = NeedsReview ? await BoulderService.GetBoulderMovesAsync(BoulderId, ShareToken) : [];

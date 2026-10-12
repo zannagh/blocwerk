@@ -78,6 +78,9 @@ public static class HoldMoveRemeasurer
 
     private static int Rank(HoldMoveOutcome o) => o == HoldMoveOutcome.Stayed ? 0 : 1;
 
+    /// <summary>A row that records a hold not found again or replaced, not a measured move: never settled or escalated.</summary>
+    private static bool IsNotFound(HoldMoveOutcome o) => o is HoldMoveOutcome.NotFound or HoldMoveOutcome.Replaced;
+
     private static async Task<int> EscalateAsync(
         BlocwerkDbContext db, HoldGenerationLink link, (double Mm, HoldMoveSource Source) told, HoldMoveMeasure measure, HoldMoveOutcome outcome, int generation, ILogger logger)
     {
@@ -92,6 +95,12 @@ public static class HoldMoveRemeasurer
         foreach (var member in members)
         {
             var row = rows.FirstOrDefault(r => r.BoulderId == member.BoulderId);
+            if (row is not null && IsNotFound(row.Outcome))
+            {
+                // Not a move: the boulder was told the hold was not found again (or replaced) and is marked for that.
+                continue;
+            }
+
             if (row is null)
             {
                 row = NewRow(link, member, told, generation);
@@ -119,7 +128,8 @@ public static class HoldMoveRemeasurer
         BlocwerkDbContext db, HoldGenerationLink link, HoldMoveMeasure measure, HoldMoveOutcome outcome, int generation, List<Guid> cleared, ILogger logger)
     {
         var rows = await db.BoulderHoldMoves
-            .Where(m => m.OldHoldId == link.OldHoldId && m.NewHoldId == link.NewHoldId && m.ToGeneration == generation && m.Outcome != HoldMoveOutcome.Removed)
+            .Where(m => m.OldHoldId == link.OldHoldId && m.NewHoldId == link.NewHoldId && m.ToGeneration == generation && m.Outcome != HoldMoveOutcome.Removed
+                && m.Outcome != HoldMoveOutcome.NotFound && m.Outcome != HoldMoveOutcome.Replaced)
             .ToListAsync();
         foreach (var row in rows)
         {
@@ -138,7 +148,7 @@ public static class HoldMoveRemeasurer
         {
             var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId && b.NeedsReview && b.Generation == generation && !b.IsHistoric);
             var open = boulder is null
-                || await db.BoulderHoldMoves.AnyAsync(m => m.BoulderId == boulderId && m.ToGeneration == generation && (m.Outcome == HoldMoveOutcome.Removed || m.RemeasuredOutcome != HoldMoveOutcome.Stayed))
+                || await db.BoulderHoldMoves.AnyAsync(m => m.BoulderId == boulderId && m.ToGeneration == generation && (m.Outcome == HoldMoveOutcome.Removed || m.Outcome == HoldMoveOutcome.NotFound || m.Outcome == HoldMoveOutcome.Replaced || m.RemeasuredOutcome != HoldMoveOutcome.Stayed))
                 || await db.BoulderHolds.AnyAsync(bh => bh.BoulderId == boulderId
                     && (bh.Hold.NeedsReview || db.HoldGenerationLinks.Any(l => l.NewHoldId == bh.HoldId && l.Kind == HoldGenerationLinkKind.Changed)));
             if (!open)

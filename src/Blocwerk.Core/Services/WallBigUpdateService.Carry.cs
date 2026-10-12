@@ -219,7 +219,7 @@ public partial class WallBigUpdateService
             ApplyWarpedShape(clone, oldHold, warpShapes);
 
             db.Holds.Add(clone);
-            await RepointBouldersAsync(db, oldHold.Id, clone.Id, newGen, changed);
+            await RepointBouldersAsync(db, oldHold.Id, clone.Id, newGen, changed, movePlan.NotFoundFor(oldHold.Id, clone.Id));
             AddGenerationLink(db, wallId, oldHold.Id, clone.Id, linkKind, oldHold.Generation, newGen, userId);
             return clone;
         }

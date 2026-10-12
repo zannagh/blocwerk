@@ -34,6 +34,26 @@
                 </ul>
             </section>
         }
+        @if (s.NotFoundHolds is { Count: > 0 } missing)
+        {
+            <section class="refresh-moves" aria-labelledby="refresh-missing-title">
+                <h3 id="refresh-missing-title">@(missing.Count == 1 ? "1 hold on a boulder was not found again" : $"{missing.Count} holds on boulders were not found again")</h3>
+                <p class="hint">
+                    Nothing is taken off a boulder: these holds stay where they were, and the
+                    @(s.BouldersMarkedNotFound == 1 ? "boulder that uses" : $"{s.BouldersMarkedNotFound} boulders that use") them
+                    @(s.BouldersMarkedNotFound == 1 ? "is" : "are") marked for review.
+                </p>
+                <ul class="refresh-moves-list">
+                    @foreach (var m in missing)
+                    {
+                        <li class="is-kept">
+                            <strong>@(m.HoldName ?? "A hold")</strong> @m.Text
+                            <div class="refresh-moves-boulders">Boulders: @string.Join(", ", m.Boulders)</div>
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
         <details class="refresh-summary-details" open="@(!HasCards)">
             <summary>Everything else: what the update does</summary>
         <ul class="refresh-summary">
@@ -63,6 +83,10 @@
             @if (s.PossiblyRemovedHolds > 0)
             {
                 <li class="is-attention"><strong>@s.PossiblyRemovedHolds</strong> of the holds not found again look removed (bare wall on the new photo and in the 3D model); they stay unless you remove them above</li>
+            }
+            @if (s.ReplacedHolds > 0)
+            {
+                <li class="is-attention"><strong>@s.ReplacedHolds</strong> of the holds not found again have another hold on their spot now; the old hold stays unless you remove it above, and the other one is added as a new hold</li>
             }
             <li><strong>@s.Removed</strong> holds removed</li>
         </ul>
@@ -110,7 +134,7 @@
     [Parameter]
     public EventCallback OnAnswered { get; set; }
 
-    private bool HasCards => View.Summary is { ChecksOpen: > 0 } or { PossiblyRemovedHolds: > 0 } or { MovedHolds.Count: > 0 };
+    private bool HasCards => View.Summary is { ChecksOpen: > 0 } or { PossiblyRemovedHolds: > 0 } or { MovedHolds.Count: > 0 } or { NotFoundHolds.Count: > 0 };
 
     private bool Waiting3D => View.Capture is { IsRunning: true } && View.Summary is { Attempted3DModelId: null };
 }

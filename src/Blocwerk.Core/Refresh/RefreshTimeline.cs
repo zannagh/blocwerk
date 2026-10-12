@@ -46,6 +46,28 @@ public static class RefreshTimeline
         refresh.UpdatedAt = DateTimeOffset.UtcNow;
     }
 
+    /// <summary>Rewrites one step's detail, keeping its state: for a line that sums up numbers which were worked out again.</summary>
+    public static void Describe(WallRefresh refresh, string key, string? detail)
+    {
+        var steps = Steps(refresh).Select(s => s.Key == key ? s with { Detail = detail } : s).ToList();
+        refresh.StepsJson = Write(steps);
+        refresh.UpdatedAt = DateTimeOffset.UtcNow;
+    }
+
+    /// <summary>The <see cref="Match"/> step's line for <paramref name="summary"/>; written again whenever the summary is.</summary>
+    public static string MatchDetail(RefreshSummary summary)
+    {
+        var text = $"{summary.Refound} old holds found again, {summary.KeptInPlace} kept where they were";
+        if (summary.ReplacedHolds > 0)
+        {
+            text += $", {summary.ReplacedHolds} replaced by another hold";
+        }
+
+        return summary.BouldersMarkedNotFound > 0
+            ? $"{text}; {summary.BouldersMarkedNotFound} {(summary.BouldersMarkedNotFound == 1 ? "boulder" : "boulders")} will be marked for review"
+            : text;
+    }
+
     public static IReadOnlyList<PanelPick> Picks(WallRefresh refresh) => Read<List<PanelPick>>(refresh.PanelPicksJson) ?? [];
 
     public static IReadOnlyList<RefreshVideo> Videos(WallRefresh refresh) => Read<List<RefreshVideo>>(refresh.VideosJson) ?? [];

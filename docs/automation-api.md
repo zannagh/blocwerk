@@ -72,6 +72,13 @@ Statuses: 0 uploading, 1 sorting, 2 ready to start, 3 running, 4 ready to apply,
 
 `start` takes an optional body `{"choices":[{"col":0,"row":0,"photoId":"<id>"}]}` to override the proposal per panel (`photoId: null` keeps that panel's current photo). Without it the run uses the sorter's picks and the quick review's decisions (every old hold carried, only sure overlap links), the same as pressing *Start* and *Apply* on the page without changing anything. Anything finer (moved holds, removals) remains the full review in the browser.
 
+The quick review never takes a hold off a boulder. What it does on its own, and what the summary says about it before anything is applied:
+
+* An old hold is carried onto the detection at its spot only when that detection still looks like it. When another hold sits there now, the old hold is kept where it was, the detection becomes a new hold, and a card asks (`replacedHolds` counts them). A pair that is merely unclear is carried and also gets a card; a pair that cannot be measured is carried without one. Cards can only be answered on the page; unanswered ones mark the hold for review.
+* `notFoundHolds` is the to-do list for after the update: every old hold used by a boulder that was not found again and confidently no longer shows at its spot (`outcome` 4, `"not found again on the new photo"`) or was replaced (`outcome` 5, `"another hold is here now"`), with `oldHoldId`, `holdName` (name, else colour), `text` and `boulders` (names). `notFoundOnBoulders` is its length and `bouldersMarkedNotFound` the number of boulders Apply marks for review because of it. Holds that were not detected but may still be there (the spot is unclear, cannot be measured, or another panel still shows the hold) are kept silently and are not listed.
+* `movedHolds` lists the carried holds that physically moved, in the same shape plus `newHoldId`, `distanceMm` and `source`.
+* The thresholds are the `HoldMoves` settings `SameLookMinScore` (0.5: at or above, the pair is the same hold), `ReplacedBelowScore` (0.3: below, another hold is there; in between, an unsure-match card) and `GoneMaxScore` (0.3: a hold not found again marks its boulders only at or below). What was measured is logged per panel as `[Looks] panel=…` (a score histogram), and per pair and spot at Debug.
+
 ### Consistency
 
 * Reads (`GET …/refresh`, `…/{id}`, `…/summary`) change nothing: polling is side-effect free. `canApply` is true once the summary is ready and no check against this visit's new 3D model is pending.

@@ -10,8 +10,8 @@ namespace Blocwerk.Core.Refresh;
 /// <summary>
 /// The confirm screen's cards for the quick review's decisions: what needs a person's look, everything else stays in the
 /// summary. Only holds whose default decision the evidence is about become cards: an old hold possibly removed that is
-/// carried in place, a match carried onto an unsure twin, a detection the photo check leaves out while the 3D model sees
-/// a hold there. Pure.
+/// carried in place, an old hold whose spot shows another hold now, a match carried onto an unsure twin, a detection
+/// the photo check leaves out while the 3D model sees a hold there. Pure.
 /// </summary>
 public static class UpdateExceptionBuilder
 {
@@ -36,13 +36,7 @@ public static class UpdateExceptionBuilder
             }
         }
 
-        foreach (var p in session.Carryover.Where(p => p.Confidence < LowConfidence).OrderBy(p => p.Confidence))
-        {
-            if (carry.GetValueOrDefault(p.OldHoldId) is { Kind: CarryKind.Carried } d && d.NewHoldId == p.NewHoldId)
-            {
-                drafts.Add(new UpdateExceptionDraft(UpdateExceptionKind.LowConfidenceMatch, p.OldHoldId, p.NewHoldId, Confidence: p.Confidence));
-            }
-        }
+        AddMatchCards(session, carry, drafts);
 
         foreach (var m in session.HandPlacedMerges ?? [])
         {
@@ -65,5 +59,31 @@ public static class UpdateExceptionBuilder
         }
 
         return drafts;
+    }
+
+    /// <summary>
+    /// The cards about what an old hold was paired with: another hold sits at its spot now (not carried onto it, kept in
+    /// place), or the pair is carried although the matcher or the look check (<see cref="HoldLookCheck"/>) is unsure.
+    /// </summary>
+    private static void AddMatchCards(BigUpdateSession session, Dictionary<Guid, CarryoverDecision> carry, List<UpdateExceptionDraft> drafts)
+    {
+        var looks = session.Looks ?? [];
+        foreach (var f in looks.Where(f => f.Look == HoldLook.Replaced))
+        {
+            if (carry.GetValueOrDefault(f.OldHoldId) is { Kind: CarryKind.Carried, NewHoldId: null })
+            {
+                drafts.Add(new UpdateExceptionDraft(UpdateExceptionKind.ReplacedByOther, f.OldHoldId, f.NewHoldId, f.PanelId, PhotoScore: f.Score));
+            }
+        }
+
+        var unsure = looks.Where(f => f.Look == HoldLook.Unsure).ToLookup(f => (f.OldHoldId, f.NewHoldId));
+        foreach (var p in session.Carryover.Where(p => p.Confidence < LowConfidence || unsure.Contains((p.OldHoldId, p.NewHoldId))).OrderBy(p => p.Confidence))
+        {
+            if (carry.GetValueOrDefault(p.OldHoldId) is { Kind: CarryKind.Carried } d && d.NewHoldId == p.NewHoldId)
+            {
+                var score = unsure[(p.OldHoldId, p.NewHoldId)].FirstOrDefault()?.Score;
+                drafts.Add(new UpdateExceptionDraft(UpdateExceptionKind.LowConfidenceMatch, p.OldHoldId, p.NewHoldId, PhotoScore: score, Confidence: p.Confidence));
+            }
+        }
     }
 }
