@@ -16,7 +16,7 @@
 .mplan-help ol { margin: 8px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
 
 .mplan-layout { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; align-items: start; }
-.mplan-stage { position: sticky; top: 64px; min-width: 0; }
+.mplan-stage { position: sticky; top: calc(var(--topbar-h, 56px) + 8px); min-width: 0; }
 .mplan-side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 @media (max-width: 960px) {
     .mplan-layout { grid-template-columns: minmax(0, 1fr); }
