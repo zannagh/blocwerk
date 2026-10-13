@@ -55,5 +55,5 @@ internal static class ShapeProposalOverlaps
     }
 
     private static HoldShapeInput Locked(Hold hold) =>
-        new(hold.Id, hold.X, hold.Y, hold.Radius, hold.ShapePoints, Locked: true, HoldStacks.HoldStacking.MayCarry(hold), hold.StackedOnHoldId);
+        new(hold.Id, hold.X, hold.Y, hold.Radius, hold.ShapePoints, Locked: true, StackedOn: hold.StackedOnHoldId);
 }

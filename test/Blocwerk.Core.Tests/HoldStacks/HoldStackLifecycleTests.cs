@@ -125,38 +125,45 @@ public class HoldStackLifecycleTests
     }
 
     [Fact]
-    public async Task TheStartupBackfill_StacksTheLiveHoldsOnce_AndNeverAgainWhatAPersonTookApart()
+    public async Task StackingAWallsExistingHolds_IsAnAdminsAction_ThatSaysFirstWhatItWouldDo_AndASecondRunChangesNothing()
     {
         using var s = await HoldColorScenario.CreateAsync();
         var panel = await s.AddPanelAsync(0);
         var volume = await s.AddHoldAsync(panel, Spot, configure: h => (h.Radius, h.ShapePoints) = (0.12, Entities.ShapePoint.DefaultOctagon(0.12)));
         var small = await s.AddHoldAsync(panel, OnIt, configure: h => h.Radius = 0.02);
+        var other = await s.AddHoldAsync(panel, (0.47, 0.52), configure: h => h.Radius = 0.02);
         var plain = await s.AddHoldAsync(panel, (0.2, 0.8), configure: h => h.Radius = 0.12);
         var inPlain = await s.AddHoldAsync(panel, (0.21, 0.8), configure: h => h.Radius = 0.02);
-        var hidden = await s.AddHoldAsync(panel, (0.47, 0.5), configure: h => (h.Radius, h.KeptUnconfirmedGeneration) = (0.02, 0));
-        var apart = await s.AddHoldAsync(panel, (0.9, 0.9), configure: h => h.Radius = 0.02);
+        var hidden = await s.AddHoldAsync(panel, (0.5, 0.45), configure: h => (h.Radius, h.KeptUnconfirmedGeneration) = (0.02, 0));
+        var service = new HoldStackService(s.Harness.DbContextFactory, s.Harness.CurrentUser, NullLogger<HoldStackService>.Instance);
 
-        await HoldStackBackfill.RunIfNeededAsync(s.Harness.DbContextFactory, null, NullLogger.Instance);
-
-        Assert.Equal(volume, (await s.GetAsync(small)).StackedOnHoldId);
-        Assert.Null((await s.GetAsync(hidden)).StackedOnHoldId);
-        Assert.Null((await s.GetAsync(apart)).StackedOnHoldId);
-        Assert.Null((await s.GetAsync(volume)).StackedOnHoldId);
-
-        // A detection without an outline is a rough circle: what lies in it is not stacked on it.
-        Assert.Null((await s.GetAsync(inPlain)).StackedOnHoldId);
-        Assert.Null((await s.GetAsync(plain)).StackedOnHoldId);
-        await using (var db = s.Harness.CreateContext())
-        {
-            Assert.NotNull((await db.Walls.IgnoreQueryFilters().SingleAsync(w => w.Id == s.WallId)).HoldStacksBackfilledAt);
-            Assert.Equal((0, 6), await HoldStackBackfill.BackfillWallAsync(db, s.WallId, CancellationToken.None));
-        }
-
-        // Somebody takes the hold off the volume: the next start leaves it off.
-        await s.SetAsync(small, h => h.StackedOnHoldId = null);
-        await HoldStackBackfill.RunIfNeededAsync(s.Harness.DbContextFactory, null, NullLogger.Instance);
-
+        // The preview names both small holds on the volume and writes nothing. A detection without an outline is a
+        // rough circle (what lies in it is not stacked on it), and a hold the last update did not find is left alone.
+        var preview = await service.PreviewAsync(s.WallId);
+        Assert.Equal((false, 6, 0), (preview.Applied, preview.LiveHolds, preview.AlreadyStacked));
+        Assert.Equal(new[] { small, other }.Order(), preview.Stacks.Select(p => p.HoldId).Order());
+        Assert.All(preview.Stacks, p => Assert.Equal((volume, 100), (p.BaseHoldId, p.InsidePercent)));
         Assert.Null((await s.GetAsync(small)).StackedOnHoldId);
+
+        // Only the accepted one is stacked; then the rest; then there is nothing left to do.
+        Assert.Equal([small], (await service.ApplyAsync(s.WallId, [small])).Stacks.Select(p => p.HoldId));
+        Assert.Equal((volume, null), ((await s.GetAsync(small)).StackedOnHoldId, (await s.GetAsync(other)).StackedOnHoldId));
+        var rest = await service.ApplyAsync(s.WallId);
+        Assert.Equal((true, 1, other), (rest.Applied, rest.AlreadyStacked, Assert.Single(rest.Stacks).HoldId));
+        Assert.Empty((await service.ApplyAsync(s.WallId)).Stacks);
+        Assert.Empty((await service.PreviewAsync(s.WallId)).Stacks);
+        Assert.All(new[] { volume, plain, inPlain, hidden }, id => Assert.Null(s.GetAsync(id).GetAwaiter().GetResult().StackedOnHoldId));
+    }
+
+    [Fact]
+    public async Task OnlyAWallAdminStacksAWallsHolds()
+    {
+        using var s = await HoldColorScenario.CreateAsync();
+        s.Harness.ActingUser = await s.Harness.AddMemberAsync("member@example.org", WallRole.Member);
+        var service = new HoldStackService(s.Harness.DbContextFactory, s.Harness.CurrentUser, NullLogger<HoldStackService>.Instance);
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.ApplyAsync(s.WallId));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.PreviewAsync(s.WallId));
     }
 
     private static async Task StackAsync(WallTestHarness harness, params (Guid Upper, Guid Lower)[] pairs)

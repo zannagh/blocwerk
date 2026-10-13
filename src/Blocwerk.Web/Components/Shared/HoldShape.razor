@@ -30,10 +30,10 @@
 
 @if (HoldShapeMarkup.HasPocket(ShapePoints, ShapeHoles))
 {
-    <path class="hold-pocket" data-hold="@HoldId" d="@HoldShapeMarkup.PocketPath(X, Y, ShapePoints!, ShapeHoles!)" fill-rule="evenodd"
+    <path class="hold-pocket" data-hold="@HoldId" data-hold-on="@StackKeys" d="@HoldShapeMarkup.PocketPath(X, Y, ShapePoints!, ShapeHoles!)" fill-rule="evenodd"
           fill="@Fill" stroke="@Stroke" stroke-width="@StrokeWidth" stroke-dasharray="@EffectiveDash" @attributes="KeptLook"
           pointer-events="none" />
-    <polygon class="hold-hit" data-hold="@HoldId" points="@PolygonPoints()"
+    <polygon class="hold-hit" data-hold="@HoldId" data-hold-on="@StackKeys" points="@PolygonPoints()"
              fill="transparent" stroke="transparent" stroke-width="@StrokeWidth" stroke-dasharray="@EffectiveDash" @attributes="KeptLook"
              pointer-events="@PointerEvents" style="@Style"
              @onclick="OnClick" @onclick:stopPropagation="OnClick.HasDelegate"
@@ -42,7 +42,7 @@
 }
 else if (ShapePoints is { Count: >= 3 })
 {
-    <polygon data-hold="@HoldId" points="@PolygonPoints()"
+    <polygon data-hold="@HoldId" data-hold-on="@StackKeys" points="@PolygonPoints()"
              fill="@Fill" stroke="@Stroke" stroke-width="@StrokeWidth" stroke-dasharray="@EffectiveDash" @attributes="KeptLook"
              pointer-events="@PointerEvents" style="@Style"
              @onclick="OnClick" @onclick:stopPropagation="OnClick.HasDelegate"
@@ -51,7 +51,7 @@ else if (ShapePoints is { Count: >= 3 })
 }
 else if (Foot)
 {
-    <rect data-hold="@HoldId" x="@F((X - R / 100.0) * 100)" y="@F((Y - R / 100.0) * 100)"
+    <rect data-hold="@HoldId" data-hold-on="@StackKeys" x="@F((X - R / 100.0) * 100)" y="@F((Y - R / 100.0) * 100)"
           width="@F(R * 2 / 100.0 * 100)" height="@F(R * 2 / 100.0 * 100)" rx="0.3"
           fill="@Fill" stroke="@Stroke" stroke-width="@StrokeWidth" stroke-dasharray="@EffectiveDash" @attributes="KeptLook"
           pointer-events="@PointerEvents" style="@Style"
@@ -61,7 +61,7 @@ else if (Foot)
 }
 else
 {
-    <circle data-hold="@HoldId" cx="@F(X * 100)" cy="@F(Y * 100)" r="@F(R)"
+    <circle data-hold="@HoldId" data-hold-on="@StackKeys" cx="@F(X * 100)" cy="@F(Y * 100)" r="@F(R)"
             fill="@Fill" stroke="@Stroke" stroke-width="@StrokeWidth" stroke-dasharray="@EffectiveDash" @attributes="KeptLook"
             pointer-events="@PointerEvents" style="@Style"
             @onclick="OnClick" @onclick:stopPropagation="OnClick.HasDelegate"
@@ -75,6 +75,12 @@ else
     /// wall-hold-drag.js finds the elements of the hold being dragged by it. Null leaves the attribute off.
     /// </summary>
     [Parameter] public Guid? HoldId { get; set; }
+
+    /// <summary>
+    /// The ids of the holds this one sits on (space separated), rendered as <c>data-hold-on</c>: wall-hold-drag.js
+    /// moves a hold along while any of them is dragged. Null leaves the attribute off.
+    /// </summary>
+    [Parameter] public string? StackKeys { get; set; }
 
     /// <summary>The hold's normalized centre X (0..1) in its image's own space.</summary>
     [Parameter] public double X { get; set; }

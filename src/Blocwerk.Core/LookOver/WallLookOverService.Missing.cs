@@ -117,7 +117,8 @@ public sealed partial class WallLookOverService
             .ToListAsync(ct);
         return holds
             .Where(h => live.Contains((h.WallPanelId, h.Generation)))
-            .Select(h => new PanelHold(h.Id, h.X, h.Y, h.Radius, h.Color, h.Category, h.ShapePoints, h.IsVirtual, h.ShapeHoles, h.KeptUnconfirmedGeneration is not null))
+            .Select(h => new PanelHold(
+                h.Id, h.X, h.Y, h.Radius, h.Color, h.Category, h.ShapePoints, h.IsVirtual, h.ShapeHoles, h.KeptUnconfirmedGeneration is not null, h.StackedOnHoldId))
             .ToList();
     }
 

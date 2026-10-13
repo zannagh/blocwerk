@@ -169,6 +169,7 @@ public static class CoreServices
         builder.Services.AddScoped<IWallGlyphService, WallGlyphService>();
         builder.Services.AddScoped<IHoldOutlineUpgradeService, HoldOutlineUpgradeService>();
         builder.Services.AddScoped<IHoldShapeCleanupService, HoldShapeCleanupService>();
+        builder.Services.AddScoped<IHoldStackService, HoldStackService>();
         builder.Services.AddScoped<IHoldDuplicateService, HoldDuplicateService>();
         builder.Services.AddScoped<IWallLookOverService, WallLookOverService>();
         builder.Services.AddScoped<ILinkedHoldSyncService, LinkedHoldSyncService>();
@@ -386,18 +387,6 @@ public static class CoreServices
         catch (Exception ex)
         {
             logger.LogError(ex, "Discarded-detection backfill failed; it is retried on the next start.");
-        }
-
-        // One-time: a wall from before holds could sit on holds gets its live holds stacked by their outlines
-        // (a hold inside a clearly larger one sits on it). Per wall, once.
-        try
-        {
-            var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<BlocwerkDbContext>>();
-            HoldStackBackfill.RunIfNeededAsync(factory, scope.ServiceProvider.GetService<IChangeJournal>(), logger).GetAwaiter().GetResult();
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Hold-stack backfill failed; it is retried on the next start.");
         }
 
         // Propagate appearance (Color/Material/Category/HandType) across linked holds so every copy of

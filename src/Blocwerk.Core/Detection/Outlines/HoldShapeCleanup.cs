@@ -164,7 +164,7 @@ public static class HoldShapeCleanup
             : outline with { ShapePoints = r.Shape.ToList(), ShapeHoles = HoldShapeHoles.Inside(outline.ShapeHoles, r.Shape) };
     }
 
-    private static HoldShapeInput Locked(Hold h) => new(h.Id, h.X, h.Y, h.Radius, h.ShapePoints, Locked: true, HoldStacks.HoldStacking.MayCarry(h), h.StackedOnHoldId);
+    private static HoldShapeInput Locked(Hold h) => new(h.Id, h.X, h.Y, h.Radius, h.ShapePoints, Locked: true, StackedOn: h.StackedOnHoldId);
 
     private static bool IsContour(HoldOutlineResult o) =>
         o.Method != HoldOutlineMethod.CircleFallback && o.ShapePoints is { Count: >= 3 };

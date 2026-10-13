@@ -2100,9 +2100,6 @@ namespace Blocwerk.Core.Migrations
                     b.Property<bool>("GlyphsEnabled")
                         .HasColumnType("boolean");
 
-                    b.Property<DateTimeOffset?>("HoldStacksBackfilledAt")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 

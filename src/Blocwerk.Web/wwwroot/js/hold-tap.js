@@ -1,12 +1,13 @@
 /*
  * Outlines on demand for the wall view. The panel photo is shown without the hold overlay; this finds
- * the hold under a tap in the browser, from a compact list sent once per panel (HoldTapList.cs), and
- * draws only that hold's outline — plus, darker, the holds that overlap it — into svg.hold-tap-layer.
+ * the hold under a tap in the browser (hold-tap-hit.js), from a compact list sent once per panel
+ * (HoldTapList.cs), and draws only that hold's outline into svg.hold-tap-layer: with, darker, the holds
+ * that sit on it and the holds that overlap it, and, subdued, the hold it sits on itself.
  * No server round-trip per tap and no SVG node per hold.
  *
- * An item is { x, y, r, p, h, f, c, n, u, o }: centre and radius, outline and holes as flat x,y lists,
- * foot, colour, colour name, boulders using it, positions of the overlapping holds. Coordinates are in
- * 1/10000 of the photo; the layer's viewBox is 0-100.
+ * An item is { x, y, r, p, h, f, c, n, u, o, s }: centre and radius, outline and holes as flat x,y
+ * lists, foot, colour, colour name, boulders using it, positions of the overlapping holds, position of
+ * the hold it sits on. Coordinates are in 1/10000 of the photo; the layer's viewBox is 0-100.
  */
 (function () {
     'use strict';
@@ -16,7 +17,6 @@
     const SHOW_ALL_KEY = 'blocwerk-show-all-holds';
     const TAP_MOVE_PX = 8;    // further than this and the press was a pan
     const TAP_MS = 500;       // longer than this and it was a long press (the magnifier)
-    const NEAR_PX = 10;       // a tap this close to a hold still picks it
     const LABEL_FLIP = 0.12;  // a hold this near the top gets its label underneath
 
     const states = new WeakMap();
@@ -56,14 +56,15 @@
         return node;
     }
 
-    function shine(item, dark) {
+    /** The outline of one hold: look '' is the tapped hold, 'dark' a hold on or over it, 'base' the hold under it. */
+    function shine(item, look) {
         const group = document.createElementNS(NS, 'g');
-        group.setAttribute('class', dark ? 'hold-shine dark' : 'hold-shine');
+        group.setAttribute('class', look ? 'hold-shine ' + look : 'hold-shine');
         if (item.c) {
             group.style.setProperty('--hold-c', item.c);
         }
 
-        (dark ? ['case', 'main'] : ['glow', 'case', 'main', 'light']).forEach(function (layer) {
+        (look ? ['case', 'main'] : ['glow', 'case', 'main', 'light']).forEach(function (layer) {
             const g = document.createElementNS(NS, 'g');
             g.setAttribute('class', 'hold-shine-' + layer);
             g.appendChild(shapeNode(item));
@@ -72,93 +73,8 @@
         return group;
     }
 
-    function box(item) {
-        if (!item.p) {
-            return { minX: item.x - item.r, maxX: item.x + item.r, minY: item.y - item.r, maxY: item.y + item.r };
-        }
-
-        const b = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
-        for (let i = 0; i < item.p.length; i += 2) {
-            b.minX = Math.min(b.minX, item.p[i]);
-            b.maxX = Math.max(b.maxX, item.p[i]);
-            b.minY = Math.min(b.minY, item.p[i + 1]);
-            b.maxY = Math.max(b.maxY, item.p[i + 1]);
-        }
-
-        return b;
-    }
-
-    function inRing(ring, x, y) {
-        let inside = false;
-        for (let i = 0, j = ring.length - 2; i < ring.length; j = i, i += 2) {
-            const xi = ring[i], yi = ring[i + 1], xj = ring[j], yj = ring[j + 1];
-            if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) {
-                inside = !inside;
-            }
-        }
-
-        return inside;
-    }
-
-    function contains(item, x, y) {
-        if (item.p) {
-            return inRing(item.p, x, y);
-        }
-
-        const dx = x - item.x;
-        const dy = y - item.y;
-        return item.f ? Math.abs(dx) <= item.r && Math.abs(dy) <= item.r : dx * dx + dy * dy <= item.r * item.r;
-    }
-
-    /** Screen distance from the point to the hold's edge (its outline's nearest corner), in pixels. */
-    function distancePx(item, x, y, sx, sy) {
-        if (!item.p) {
-            return Math.hypot((x - item.x) * sx, (y - item.y) * sy) - item.r * Math.min(sx, sy);
-        }
-
-        let best = Infinity;
-        for (let i = 0; i < item.p.length; i += 2) {
-            best = Math.min(best, Math.hypot((x - item.p[i]) * sx, (y - item.p[i + 1]) * sy));
-        }
-
-        return best;
-    }
-
-    /**
-     * The hold at a point: the SMALLEST one containing it (so a hold sitting on a larger one can be
-     * picked), else the nearest within NEAR_PX on screen. -1 for empty wall. Exposed for tests.
-     */
-    function findAt(items, x, y, sx, sy) {
-        let hit = -1;
-        let hitArea = Infinity;
-        let near = -1;
-        let nearPx = NEAR_PX;
-        items.forEach(function (item, i) {
-            const b = item.b || (item.b = box(item));
-            const padX = NEAR_PX / sx;
-            const padY = NEAR_PX / sy;
-            if (x < b.minX - padX || x > b.maxX + padX || y < b.minY - padY || y > b.maxY + padY) {
-                return;
-            }
-
-            if (contains(item, x, y)) {
-                const area = (b.maxX - b.minX) * (b.maxY - b.minY);
-                if (area < hitArea) {
-                    hit = i;
-                    hitArea = area;
-                }
-            } else {
-                const d = distancePx(item, x, y, sx, sy);
-                if (d <= nearPx) {
-                    near = i;
-                    nearPx = d;
-                }
-            }
-        });
-        return hit >= 0 ? hit : near;
-    }
-
-    function labelText(item) {
+    function labelText(items, index) {
+        const item = items[index];
         const parts = [];
         if (item.n) {
             parts.push(item.n);
@@ -170,6 +86,17 @@
             parts.push('used by ' + item.u + (item.u === 1 ? ' boulder' : ' boulders'));
         }
 
+        const under = window.bwHoldHit.below(items, index);
+        if (under.length) {
+            const name = items[under[0]].n;
+            parts.push(name ? 'on the ' + name.toLowerCase() + ' hold' : 'on another hold');
+        }
+
+        const onIt = window.bwHoldHit.above(items, index).length;
+        if (onIt) {
+            parts.push(onIt + (onIt === 1 ? ' hold on it' : ' holds on it'));
+        }
+
         if (item.o && item.o.length) {
             parts.push(item.o.length + ' overlapping');
         }
@@ -177,18 +104,19 @@
         return parts.join(' · ');
     }
 
-    function showLabel(label, item) {
+    function showLabel(label, items, index) {
         if (!label) {
             return;
         }
 
-        const text = item ? labelText(item) : '';
+        const item = index >= 0 ? items[index] : null;
+        const text = item ? labelText(items, index) : '';
         label.hidden = !text;
         if (!text) {
             return;
         }
 
-        const b = item.b || (item.b = box(item));
+        const b = window.bwHoldHit.box(item);
         const below = b.minY / SCALE < LABEL_FLIP;
         label.classList.toggle('below', below);
         label.style.top = ((below ? b.maxY : b.minY) / 100).toFixed(2) + '%';
@@ -214,15 +142,21 @@
         const item = state.selected >= 0 ? state.items[state.selected] : null;
         layer.replaceChildren();
         if (item) {
-            (item.o || []).forEach(function (i) {
+            // Back to front: the hold it sits on, the hold itself, then what overlaps it and what sits on it.
+            const under = window.bwHoldHit.below(state.items, state.selected);
+            if (under.length) {
+                layer.appendChild(shine(state.items[under[0]], 'base'));
+            }
+
+            layer.appendChild(shine(item, ''));
+            (item.o || []).concat(window.bwHoldHit.above(state.items, state.selected)).forEach(function (i) {
                 if (state.items[i]) {
-                    layer.appendChild(shine(state.items[i], true));
+                    layer.appendChild(shine(state.items[i], 'dark'));
                 }
             });
-            layer.appendChild(shine(item, false));
         }
 
-        showLabel(viewport.querySelector('.hold-tap-label'), item);
+        showLabel(viewport.querySelector('.hold-tap-label'), state.items, state.selected);
     }
 
     function onTap(viewport, state, e) {
@@ -238,7 +172,7 @@
 
         const x = (e.clientX - rect.left) / rect.width * SCALE;
         const y = (e.clientY - rect.top) / rect.height * SCALE;
-        state.selected = findAt(state.items, x, y, rect.width / SCALE, rect.height / SCALE);
+        state.selected = window.bwHoldHit.findAt(state.items, x, y, rect.width / SCALE, rect.height / SCALE);
         draw(viewport, state);
     }
 
@@ -272,8 +206,6 @@
     }
 
     window.bwHoldTap = {
-        findAt: findAt,
-
         /** Gives the viewport its panel's tappable holds; a new list clears the outline. */
         setHolds: function (viewport, items) {
             if (!viewport) {

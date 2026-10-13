@@ -171,12 +171,6 @@ public class Wall
     /// </summary>
     public int? KeptHoldsGeneration { get; set; }
 
-    /// <summary>
-    /// When the one-time startup step stacked this wall's existing holds (<see cref="Hold.StackedOnHoldId"/>). Guards
-    /// that step, so a hold a person took off another hold since is never stacked again by it.
-    /// </summary>
-    public DateTimeOffset? HoldStacksBackfilledAt { get; set; }
-
     /// <summary>When the last look-over was finished.</summary>
     public DateTimeOffset? LookOverCompletedAt { get; set; }
 

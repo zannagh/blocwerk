@@ -1,5 +1,6 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.HoldStacks;
 using Blocwerk.Core.Services.PanelCrop;
 using Microsoft.EntityFrameworkCore;
 
@@ -193,11 +194,13 @@ public partial class WallPanelService
         //            CurrentGeneration + 1 would miss the add-panel holds.
         var effectiveGeneration = panel.Generation;
 
-        return await db.Holds
+        var holds = await db.Holds
             .AsNoTracking()
             .Where(h => h.WallPanelId == panelId && h.Generation == effectiveGeneration)
-            .Select(h => new PanelHold(h.Id, h.X, h.Y, h.Radius, h.Color, h.Category, h.ShapePoints, h.IsVirtual, h.ShapeHoles, h.KeptUnconfirmedGeneration != null))
+            .Select(h => new PanelHold(
+                h.Id, h.X, h.Y, h.Radius, h.Color, h.Category, h.ShapePoints, h.IsVirtual, h.ShapeHoles, h.KeptUnconfirmedGeneration != null, h.StackedOnHoldId))
             .ToListAsync();
+        return HoldStackOrder.BackToFront(holds, h => h.Id, h => h.StackedOn);
     }
 
     /// <inheritdoc/>

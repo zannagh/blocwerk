@@ -19,7 +19,8 @@ namespace Blocwerk.Web.Components.Shared;
 /// <param name="Color">The outline colour as #rrggbb, or null for a hold without a known colour.</param>
 /// <param name="ColorName">The colour's display name, or null.</param>
 /// <param name="Uses">How many boulders use the hold, or null when that is not known here.</param>
-/// <param name="Overlaps">Positions in the list of the holds that overlap this one substantially.</param>
+/// <param name="Overlaps">Positions in the list of the holds that overlap this one substantially without being stacked with it.</param>
+/// <param name="On">Position in the list of the hold this one sits on, or null for a hold on the wall.</param>
 public record HoldTapItem(
     [property: JsonPropertyName("x")] int X,
     [property: JsonPropertyName("y")] int Y,
@@ -30,4 +31,5 @@ public record HoldTapItem(
     [property: JsonPropertyName("c")] string? Color,
     [property: JsonPropertyName("n")] string? ColorName,
     [property: JsonPropertyName("u")] int? Uses,
-    [property: JsonPropertyName("o")] IReadOnlyList<int> Overlaps);
+    [property: JsonPropertyName("o")] IReadOnlyList<int> Overlaps,
+    [property: JsonPropertyName("s"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? On = null);

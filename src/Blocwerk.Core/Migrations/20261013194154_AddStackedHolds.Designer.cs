@@ -13,7 +13,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Blocwerk.Core.Migrations
 {
     [DbContext(typeof(BlocwerkDbContext))]
-    [Migration("20261013184904_AddStackedHolds")]
+    [Migration("20261013194154_AddStackedHolds")]
     partial class AddStackedHolds
     {
         /// <inheritdoc />
@@ -2102,9 +2102,6 @@ namespace Blocwerk.Core.Migrations
 
                     b.Property<bool>("GlyphsEnabled")
                         .HasColumnType("boolean");
-
-                    b.Property<DateTimeOffset?>("HoldStacksBackfilledAt")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
