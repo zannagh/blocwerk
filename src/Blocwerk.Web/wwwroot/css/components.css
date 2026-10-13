@@ -607,6 +607,10 @@ img.wall-photo {
 .bw-toolbar-row::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.28); border-radius: 999px; }
 
 .bw-toolbar-row-inner { min-height: 100%; display: flex; align-items: stretch; }
+
+/* An open confirm (HoldActionPrompt) states its outcome in full sentences. The row keeps its height,
+   so on a narrow window the sentences scroll inside it rather than being cut off. */
+.bw-toolbar-row:has(.hold-action-confirm) { overflow-y: auto; }
 .bw-toolbar-row-inner > .option-bar { flex: 1; flex-wrap: nowrap; white-space: nowrap; align-items: center; }
 .bw-toolbar-row-inner .option-hint { white-space: normal; }
 

@@ -137,6 +137,11 @@
                 strokeColor = "#c86dff";
                 dash = "0.6 0.4";
             }
+            if (ModelActionPreview(hold) is { } preview)
+            {
+                (strokeColor, dash) = preview;
+                sw = "0.6";
+            }
 
             // The usage tool overrides every other styling: used holds light up, unused
             // ones recede, so "is this hold free?" is answerable at a glance.
@@ -711,7 +716,9 @@
         string.Join(", ", StampProperties.Where(p => stamp.Has(p.Property)).Select(p => p.Label.ToLowerInvariant()));
 
     private RenderFragment RowDelete => @<div class="option-bar">
-        <span class="option-hint">Tap a hold to delete it. Nothing is written until you save.</span>
+        <HoldActionPrompt Compact="true" What="@($"Tap a hold to delete it. {HoldActionOutcomes.DeleteWhat} Discard takes it back until you save.")"
+                          Outcome="DeleteOutcome" ConfirmLabel="Delete on save" PreviewHint="On the photo: red dashed disappears."
+                          OnConfirm="ConfirmDelete" OnCancel="() => pendingDeleteHoldId = null" />
     </div>;
 
     private RenderFragment RowBorder => @<div class="option-bar">
@@ -780,6 +787,11 @@
         @if (sel == null)
         {
             <span class="option-hint">Tap a hold to select it, then drag to move it.</span>
+        }
+        else if (pendingDeleteHoldId == sel.Id)
+        {
+            <HoldActionPrompt Compact="true" Outcome="DeleteOutcome" ConfirmLabel="Delete on save" PreviewHint="On the photo: red dashed disappears."
+                              OnConfirm="ConfirmDelete" OnCancel="() => pendingDeleteHoldId = null" />
         }
         else
         {
@@ -853,9 +865,13 @@
                         title="@(_markChangedHoldIds.Contains(sel.Id)
                             ? "This hold will be marked as physically changed when you save. Click to take it back."
                             : "Say the PHYSICAL hold was swapped, turned or re-set. Boulders using it are flagged for review on save. Moving or resizing alone does not do this.")"
-                        @onclick="() => ToggleMarkChanged(sel.Id)">
+                        @onclick="() => ToggleMarkChangedAsync(sel.Id)">
                     @(_markChangedHoldIds.Contains(sel.Id) ? "Changed on save ✓" : sel.NeedsReview ? "Changed ✓" : "Mark as changed")
                 </button>
+                @if (_markChangedHoldIds.Contains(sel.Id))
+                {
+                    <HoldActionPrompt What="@HoldActionOutcomes.MarkChanged(sel, UsageOrNull(sel.Id), onSave: true).Sentence" />
+                }
             }
         }
     </div>;
@@ -889,110 +905,63 @@
     </div>;
 
     private RenderFragment RowMakeActual => @<div class="option-bar">
-        @if (_makeActualVirtualId is { } virtualId)
-        {
-            var virtualHold = Holds.FirstOrDefault(h => h.Id == virtualId);
-            @if (_makeActualTargetId is { } targetId)
-            {
-                var target = Holds.FirstOrDefault(h => h.Id == targetId);
-                <span class="option-hint">Merge virtual <strong>@(virtualHold?.Name ?? "hold")</strong> into detected <strong>@(target?.Name ?? "hold")</strong>? Boulders using it will be flagged for review.</span>
-                <button class="opt-btn active" @onclick="ConfirmMakeActualMerge">Confirm merge</button>
-                <button class="opt-btn" @onclick="CancelMakeActual">Cancel</button>
-            }
-            else
-            {
-                <span class="option-hint">Virtual <strong>@(virtualHold?.Name ?? "hold")</strong> selected. Tap a detected hold to merge into it, or make it actual where it is.</span>
-                <button class="opt-btn active" @onclick="MakeActualAsIs">Make actual as-is</button>
-                <button class="opt-btn" @onclick="CancelMakeActual">Cancel</button>
-            }
-        }
-        else
-        {
-            <span class="option-hint">Tap a <strong style="color:#c86dff">virtual</strong> (dotted) hold to make it actual.</span>
-        }
+        <HoldActionPrompt Compact="true" What="@($"Tap a virtual (dotted) hold. {HoldActionOutcomes.MakeActualWhat}")"
+                          Outcome="MakeActualOutcome"
+                          PreviewHint="@(_makeActualTargetId is null ? "Or tap a detected hold to merge into it instead." : PreviewHintText)"
+                          ConfirmLabel="@(_makeActualTargetId is null ? "Make actual as-is" : "Confirm merge")"
+                          OnConfirm="ConfirmMakeActual" OnCancel="CancelMakeActual" />
     </div>;
 
     private RenderFragment RowJoinVirtual => @<div class="option-bar">
-        @if (_joinSurvivorId is { } keepId)
+        @if (_joinSurvivorId is not null && _joinDuplicateId is null)
         {
-            var keep = Holds.FirstOrDefault(h => h.Id == keepId);
-            @if (_joinDuplicateId is { } dropId)
-            {
-                var drop = Holds.FirstOrDefault(h => h.Id == dropId);
-                <span class="option-hint">
-                    Keep <strong style="color:#33dd66">@(keep?.Name ?? "hold")</strong> and absorb
-                    <strong style="color:#ff5566">@(drop?.Name ?? "hold")</strong> into it? Boulders on the absorbed
-                    hold move over; nothing is flagged historic.
-                </span>
-                <button class="opt-btn active" @onclick="ConfirmJoinVirtual">Confirm join</button>
-                <button class="opt-btn" @onclick="CancelJoinVirtual">Cancel</button>
-            }
-            else
-            {
-                <span class="option-hint">
-                    Keeping <strong style="color:#33dd66">@(keep?.Name ?? "hold")</strong>. Tap the duplicate
-                    <strong style="color:#c86dff">virtual</strong> hold to absorb into it.
-                </span>
-                <button class="opt-btn" @onclick="CancelJoinVirtual">Cancel</button>
-            }
+            <span class="option-hint">
+                Keeping <strong style="color:#33dd66">@(HoldById(_joinSurvivorId)?.Name ?? "this hold")</strong>. Now tap the duplicate
+                <strong style="color:#c86dff">virtual</strong> hold that should disappear.
+            </span>
+            <button class="opt-btn" @onclick="CancelJoinVirtual">Cancel</button>
         }
         else
         {
-            <span class="option-hint">Tap the <strong style="color:#c86dff">virtual</strong> hold to KEEP, then the duplicate virtual hold to absorb.</span>
+            <HoldActionPrompt Compact="true" What="@($"Tap the virtual hold to KEEP, then its duplicate. {HoldActionOutcomes.JoinVirtualWhat}")"
+                              Outcome="JoinVirtualOutcome" ConfirmLabel="Confirm join" PreviewHint="@PreviewHintText"
+                              OnConfirm="ConfirmJoinVirtual" OnCancel="CancelJoinVirtual" />
         }
     </div>;
 
     private RenderFragment RowMarkUnchanged => @<div class="option-bar">
-        @if (_markUnchangedHoldId is { } uid)
-        {
-            var uh = Holds.FirstOrDefault(h => h.Id == uid);
-            var hasBaseline = _manualBaseline.ContainsKey(uid);
-            <span class="option-hint"><strong>@(uh?.Name ?? "This hold")</strong> — mark as physically unchanged.</span>
-            @if (ManualAlignment && hasBaseline)
+        <HoldActionPrompt Compact="true" What="@($"Tap a hold. {HoldActionOutcomes.MarkUnchangedWhat}")"
+                          Outcome="MarkUnchangedOutcome" ConfirmLabel="Restore its boulders"
+                          OnConfirm="@(() => RestoreUnchangedBoulders(_markUnchangedHoldId!.Value))" OnCancel="() => _markUnchangedHoldId = null">
+            @if (ManualAlignment && _markUnchangedHoldId is { } uid && _manualBaseline.ContainsKey(uid))
             {
                 <button class="opt-btn active"
                         title="Snap this staged hold back to its previous-generation position and clear its changed flag, so confirming won't flag its boulders."
                         @onclick="() => ResetHoldToUnchanged(uid)">Reset — didn't move</button>
             }
-            <button class="opt-btn"
-                    title="Pull boulders that went historic in a past update back out of historic state, when all their holds still exist."
-                    @onclick="() => RestoreUnchangedBoulders(uid)">Restore its boulders</button>
-            <button class="opt-btn" @onclick="() => _markUnchangedHoldId = null">Done</button>
-        }
-        else
+        </HoldActionPrompt>
+        @if (_markUnchangedHoldId is null && ChangeReview && !ManualAlignment)
         {
-            <span class="option-hint">Tap a hold that didn't physically change. You can reset a falsely-moved staged hold and pull its boulders back out of historic state.</span>
-            @if (ChangeReview && !ManualAlignment)
-            {
-                <span class="option-hint legend-dot"><span class="legend-swatch" style="background:var(--status-review);"></span> needs review</span>
-            }
+            <span class="option-hint legend-dot"><span class="legend-swatch" style="background:var(--status-review);"></span> needs review</span>
         }
     </div>;
 
     private RenderFragment RowMarkChanged => @<div class="option-bar">
-        @if (_markChangedHoldId is { } cid)
+        @if (_markChangedHoldId is not null && _pendingChanges > 0)
         {
-            var ch = Holds.FirstOrDefault(h => h.Id == cid);
-            <span class="option-hint"><strong>@(ch?.Name ?? "This hold")</strong> &mdash; mark as physically changed.</span>
-            @if (_pendingChanges > 0)
-            {
-                <span class="option-hint">Save your pending edits first.</span>
-            }
-            else
-            {
-                <button class="opt-btn active"
-                        title="Flag this hold as changed, so every boulder still using it is flagged for review."
-                        @onclick="() => ConfirmMarkChanged(cid)">@(ch?.NeedsReview == true ? "Flag again" : "Mark changed")</button>
-            }
-            <button class="opt-btn" @onclick="() => _markChangedHoldId = null">Done</button>
+            <span class="option-hint">Save your pending edits first, then mark this hold changed.</span>
+            <button class="opt-btn" @onclick="() => _markChangedHoldId = null">Cancel</button>
         }
         else
         {
-            <span class="option-hint">Tap a hold that was physically swapped, turned or re-set. Confirming flags it and every boulder using it for review. A nearer-centre panel's verdict carries to its overlap twins.</span>
-            @if (ChangeReview && !ManualAlignment)
-            {
-                <span class="option-hint legend-dot"><span class="legend-swatch" style="background:var(--status-review);"></span> needs review</span>
-            }
+            <HoldActionPrompt Compact="true" What="@($"Tap a hold. {HoldActionOutcomes.MarkChangedWhat}")"
+                              Outcome="MarkChangedOutcome"
+                              ConfirmLabel="@(HoldById(_markChangedHoldId)?.NeedsReview == true ? "Flag again" : "Mark changed")"
+                              OnConfirm="@(() => ConfirmMarkChanged(_markChangedHoldId!.Value))" OnCancel="() => _markChangedHoldId = null" />
+        }
+        @if (_markChangedHoldId is null && ChangeReview && !ManualAlignment)
+        {
+            <span class="option-hint legend-dot"><span class="legend-swatch" style="background:var(--status-review);"></span> needs review</span>
         }
     </div>;
 
@@ -1744,6 +1713,8 @@
     {
         _showUsage = false;
         _usageHoldId = null;
+        _holdUsage = null;
+        pendingDeleteHoldId = null;
         if (mode != HoldTouchupTool.ShapeTilt)
         {
             _shapeTiltHoldId = null;
@@ -1848,6 +1819,11 @@
             return;
         }
 
+        if (ChangesModel(_mode))
+        {
+            await RefreshHoldUsageAsync();
+        }
+
         switch (_mode)
         {
             case HoldTouchupTool.Paint:
@@ -1874,9 +1850,7 @@
 
                 return;
             case HoldTouchupTool.Delete:
-                TakeSnapshot();
-                _deletedHoldIds.Add(hold.Id);
-                Holds.RemoveAll(h => h.Id == hold.Id);
+                await RequestDeleteAsync(hold.Id);
                 return;
             case HoldTouchupTool.Shape:
                 _shapeEditHoldId = hold.Id;
@@ -2493,14 +2467,7 @@
         }
     }
 
-    private void DeleteSelected()
-    {
-        if (_selectedHoldId == null) return;
-        TakeSnapshot();
-        _deletedHoldIds.Add(_selectedHoldId.Value);
-        Holds.RemoveAll(h => h.Id == _selectedHoldId.Value);
-        _selectedHoldId = null;
-    }
+    private Task DeleteSelected() => _selectedHoldId is { } id ? RequestDeleteAsync(id) : Task.CompletedTask;
 
     private async Task MarkSelectedModified(Guid holdId)
     {
@@ -2511,11 +2478,12 @@
     /// Drafts (or takes back) the "this hold physically changed" verdict for one hold. Nothing
     /// reaches the server until the save, so it can be toggled freely alongside a move or a resize.
     /// </summary>
-    private void ToggleMarkChanged(Guid holdId)
+    private async Task ToggleMarkChangedAsync(Guid holdId)
     {
         if (!_markChangedHoldIds.Remove(holdId))
         {
             _markChangedHoldIds.Add(holdId);
+            await EnsureHoldUsageAsync();
         }
     }
 
@@ -3070,6 +3038,7 @@
                || _joinDuplicateId != null
                || _markUnchangedHoldId.HasValue
                || _markChangedHoldId.HasValue
+               || pendingDeleteHoldId.HasValue
                || (_mode == HoldTouchupTool.ShapeTilt && _shapeTiltHoldId.HasValue));
 
     /// <summary>
@@ -3134,6 +3103,12 @@
         if (_markChangedHoldId.HasValue)
         {
             _markChangedHoldId = null;
+            return;
+        }
+
+        if (pendingDeleteHoldId.HasValue)
+        {
+            pendingDeleteHoldId = null;
             return;
         }
 

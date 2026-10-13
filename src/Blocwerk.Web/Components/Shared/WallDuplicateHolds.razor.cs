@@ -22,6 +22,12 @@ public partial class WallDuplicateHolds
     private string? failure;
     private HoldDuplicatePage? page;
 
+    /// <summary>The merge that was asked for and waits for a yes.</summary>
+    private (HoldDuplicateItem Item, HoldMergeMode Mode)? pending;
+
+    /// <summary>The journal batch of the merge just done, while its Undo button is offered.</summary>
+    private Guid? undoBatchId;
+
     /// <summary>The wall being administered.</summary>
     [Parameter]
     public Guid WallId { get; set; }
@@ -106,9 +112,14 @@ public partial class WallDuplicateHolds
         await ReloadAsync();
     });
 
+    private void AskMerge(HoldDuplicateItem item, HoldMergeMode mode) => pending = (item, mode);
+
+    private Task ConfirmMergeAsync() => pending is { } ask ? MergeAsync(ask.Item, ask.Mode) : Task.CompletedTask;
+
     private Task MergeAsync(HoldDuplicateItem item, HoldMergeMode mode) => RunAsync(async () =>
     {
         var result = await Duplicates.MergeAsync(WallId, item.Left.Id, item.Right.Id, mode);
+        undoBatchId = result.BatchId;
         message = "Merged into one hold."
             + (result.MovedBoulders > 0 ? $" {PlainCopy.Plural(result.MovedBoulders, "boulder")} moved over." : string.Empty)
             + (result.FlaggedForReview > 0 ? $" {PlainCopy.Plural(result.FlaggedForReview, "boulder")} used both holds and now need a quick check." : string.Empty);
@@ -141,6 +152,8 @@ public partial class WallDuplicateHolds
         busy = true;
         message = null;
         failure = null;
+        pending = null;
+        undoBatchId = null;
         try
         {
             await action();

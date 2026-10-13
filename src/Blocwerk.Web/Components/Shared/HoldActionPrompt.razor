@@ -1,0 +1,143 @@
+@* The one way an action that changes the wall MODEL talks to the person about to use it (merge, make
+   actual, join, mark changed / unchanged, delete, the duplicate review's merge). Three states, always
+   the same wording order so they can be read at a glance:
+     1. nothing picked yet    -> What: one sentence saying what the tool does;
+     2. a pick is waiting     -> Outcome: what happens to the holds, to the boulders, and whether it
+                                 can be undone, with the confirm and cancel buttons. Red when
+                                 something disappears or it cannot be taken back, plain otherwise
+                                 (the same split ConfirmAction makes);
+     3. just done, undoable   -> UndoMessage with an Undo button, for a few seconds.
+   Compact is the wall editor's options row: a fixed-height dark strip, so everything sits on one
+   wrapping line with the editor's own small buttons. *@
+@implements IDisposable
+
+@if (Outcome is { } outcome)
+{
+    <div class="hold-action-confirm @(outcome.Danger ? "is-danger" : "is-neutral") @(Compact ? "is-compact" : null)"
+         role="group" aria-label="@outcome.Sentence" @onkeydown="OnKeyDown">
+        <p class="hold-action-text">
+            <span class="hold-action-holds">@outcome.Holds</span>
+            <span>@outcome.Boulders</span>
+            <span class="hold-action-undo">@outcome.Undo</span>
+            @if (!string.IsNullOrEmpty(PreviewHint))
+            {
+                <span class="hold-action-preview">@(" " + PreviewHint)</span>
+            }
+        </p>
+        <div class="hold-action-buttons">
+            <button type="button" class="@ConfirmClass(outcome)" disabled="@Disabled" @onclick="OnConfirm">@ConfirmLabel</button>
+            @ChildContent
+            <button type="button" class="@(Compact ? "opt-btn" : "btn-secondary")" disabled="@Disabled" @onclick="OnCancel">Cancel</button>
+        </div>
+    </div>
+}
+else if (UndoKey is not null && !expired && !string.IsNullOrEmpty(UndoMessage))
+{
+    <div class="hold-action-done @(Compact ? "is-compact" : null)" role="status">
+        <span>@UndoMessage</span>
+        <button type="button" class="@(Compact ? "opt-btn active" : "btn-secondary")" disabled="@Disabled" @onclick="OnUndo">Undo</button>
+    </div>
+}
+else if (!string.IsNullOrEmpty(What))
+{
+    <span class="option-hint hold-action-what">@What</span>
+}
+
+@code {
+    /// <summary>How long the Undo button stays after an action.</summary>
+    internal static readonly TimeSpan UndoVisibleFor = TimeSpan.FromSeconds(10);
+
+    private Guid? armedKey;
+    private bool expired;
+    private CancellationTokenSource? expiry;
+
+    /// <summary>One sentence saying what the tool does, shown while nothing is picked.</summary>
+    [Parameter] public string? What { get; set; }
+
+    /// <summary>The concrete outcome for the current pick; while set, the confirm is open.</summary>
+    [Parameter] public HoldActionOutcome? Outcome { get; set; }
+
+    /// <summary>Text of the button that performs the action.</summary>
+    [Parameter] public string ConfirmLabel { get; set; } = "Confirm";
+
+    /// <summary>What the highlight on the photo means while the confirm is open, if there is one.</summary>
+    [Parameter] public string? PreviewHint { get; set; }
+
+    /// <summary>The wall editor's options row: one wrapping line with the editor's small buttons.</summary>
+    [Parameter] public bool Compact { get; set; }
+
+    [Parameter] public bool Disabled { get; set; }
+
+    /// <summary>Further buttons between confirm and cancel (a second way to carry the action out).</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    [Parameter] public EventCallback OnConfirm { get; set; }
+
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    /// <summary>Identifies the action that can be undone; a new value shows the Undo button afresh.</summary>
+    [Parameter] public Guid? UndoKey { get; set; }
+
+    /// <summary>What was just done, shown next to the Undo button.</summary>
+    [Parameter] public string? UndoMessage { get; set; }
+
+    [Parameter] public EventCallback OnUndo { get; set; }
+
+    public void Dispose()
+    {
+        expiry?.Cancel();
+        expiry?.Dispose();
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (UndoKey == armedKey)
+        {
+            return;
+        }
+
+        armedKey = UndoKey;
+        expired = false;
+        expiry?.Cancel();
+        expiry?.Dispose();
+        expiry = null;
+        if (UndoKey is not null)
+        {
+            expiry = new CancellationTokenSource();
+            _ = ExpireAsync(expiry.Token);
+        }
+    }
+
+    private string ConfirmClass(HoldActionOutcome outcome)
+    {
+        if (Compact)
+        {
+            return outcome.Danger ? "opt-btn danger" : "opt-btn active";
+        }
+
+        return outcome.Danger ? "btn-danger" : "btn-primary";
+    }
+
+    private async Task ExpireAsync(CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(UndoVisibleFor, ct);
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+
+        expired = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            await OnCancel.InvokeAsync();
+        }
+    }
+}
