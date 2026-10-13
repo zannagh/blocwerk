@@ -118,6 +118,12 @@ public partial class WallBigUpdateService : IWallBigUpdateService
     private async Task<BigUpdateSession> BuildSessionAsync(
         BlocwerkDbContext db, Wall wall, Guid centerPanelId, int stagedGen, bool use3DEvidence)
     {
+        // The wall was fully reset: nothing old is matched or carried, every detection is a new hold.
+        if (await IsFullRevisionAsync(db, wall.Id))
+        {
+            return await BuildFullRevisionSessionAsync(db, wall, centerPanelId, stagedGen, use3DEvidence);
+        }
+
         // Panel-scoped carryover: match only the OLD holds that live on a re-photographed panel against
         // the new centre. A centre-only update therefore never pulls (and never warp-carries) the holds
         // on a non-updated panel onto the centre — they are left entirely alone. Null-panel legacy holds
@@ -252,34 +258,11 @@ public partial class WallBigUpdateService : IWallBigUpdateService
                 MergeHandPlaced(neighbourHolds, oldNeighbourHolds ?? [], panel.StagedPhoto!, carryover, removedCandidates, null, carriedWarp, handMerges, handAmbiguous);
             }
 
-            var proposals = new List<OverlapProposalDto>();
-            var overlapFailed = false;
-            try
-            {
-                var result = MatchUnlessUnaligned(
-                    recorded.Overlap.Contains(panel.Id),
-                    centerImage, centerMatcher, panel.StagedPhoto!, neighbourMatcher, direction, null, overlapSeed);
-                foreach (var p in result.Proposals)
-                {
-                    // NeighborPanelId is the panel HoldAId belongs to — here the staged CENTRE panel,
-                    // NOT this non-centre panel. HoldAId is a staged centre hold (centerIndex) and the
-                    // stepper draws the "existing neighbour" (left) image + its holds from NeighborPanelId,
-                    // so it must resolve to the centre. Passing panel.Id made the left request this
-                    // staged-only panel's committed /photo, which 404s, and overlaid a foreign hold.
-                    proposals.Add(new OverlapProposalDto(
-                        centerPanelId, centerIndex[p.LeftHoldId], neighbourIndex[p.RightHoldId],
-                        p.Confidence, p.Moved, p.ResidualPx));
-                }
-            }
-            catch (Exception ex)
-            {
-                overlapFailed = true;
-                logger.LogWarning(
-                    ex,
-                    "Overlap alignment failed for panel {PanelId} ({Col},{Row}) vs the staged centre on wall {WallId}: {Reason}. No link proposals for it",
-                    panel.Id, panel.Col, panel.Row, wall.Id, ex.Message);
-            }
-
+            var proposals = ProposeOverlapLinks(
+                recorded.Overlap.Contains(panel.Id), centerImage, centerMatcher, centerIndex,
+                panel.StagedPhoto!, neighbourMatcher, neighbourIndex, direction, overlapSeed, (wall.Id, centerPanelId, panel.Id, panel.Col, panel.Row));
+            var overlapFailed = proposals is null;
+            proposals ??= [];
             neighbours.Add(new NeighbourOverlap(panel.Id, panel.Col, panel.Row, proposals, overlapFailed));
         }
 

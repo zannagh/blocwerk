@@ -15,6 +15,9 @@ public sealed partial class WallRefreshService
     /// <summary>The 3D step's note for a panels-only run.</summary>
     public const string KeptModelNote = "Panels only: the current 3D model is kept as it is.";
 
+    /// <summary>The match step's title in a full revision, which matches nothing.</summary>
+    public const string FullRevisionStepTitle = "Wall started over, nothing carried";
+
     public async Task SortAsync(Guid refreshId)
     {
         var (db, refresh) = await OpenRefreshAsync(refreshId);
@@ -37,7 +40,7 @@ public sealed partial class WallRefreshService
         queue.Enqueue(refreshId);
     }
 
-    public async Task StartAsync(Guid refreshId, IReadOnlyList<PanelChoice> choices, bool keepModel = false)
+    public async Task StartAsync(Guid refreshId, IReadOnlyList<PanelChoice> choices, bool keepModel = false, bool fullRevision = false)
     {
         var (db, refresh) = await OpenRefreshAsync(refreshId);
         await using (db)
@@ -51,6 +54,18 @@ public sealed partial class WallRefreshService
             if (keepModel && picks.All(p => p.PhotoId is null))
             {
                 throw new UserFacingException("Choose a new photo for at least one panel to update the panels only.");
+            }
+
+            if (fullRevision && (picks.Count == 0 || picks.Any(p => p.PhotoId is null)))
+            {
+                // Checked here, before anything runs: a panel left out would keep its old holds on a wall that starts over.
+                throw new UserFacingException(WallBigUpdateService.FullRevisionNeedsEveryPanel);
+            }
+
+            refresh.FullRevision = fullRevision;
+            if (fullRevision)
+            {
+                RefreshTimeline.Retitle(refresh, RefreshTimeline.Match, FullRevisionStepTitle);
             }
 
             refresh.PanelPicksJson = RefreshTimeline.Write(picks);

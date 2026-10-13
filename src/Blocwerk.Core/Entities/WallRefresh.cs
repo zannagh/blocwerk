@@ -34,6 +34,12 @@ public class WallRefresh
     /// <summary>The big-update session the panel update runs in.</summary>
     public Guid? UpdateSessionId { get; set; }
 
+    /// <summary>
+    /// The wall was fully reset: the panel update carries nothing over, every detection becomes a new hold and every
+    /// boulder is archived (<see cref="WallUpdateSession.FullRevision"/>).
+    /// </summary>
+    public bool FullRevision { get; set; }
+
     /// <summary>The uploaded videos (stored names, file names, sizes), as JSON.</summary>
     public string? VideosJson { get; set; }
 

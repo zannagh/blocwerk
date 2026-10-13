@@ -40,7 +40,7 @@ public partial class WallBigUpdateService
         // Accepted "this hold moved" suggestions become Changed carry verdicts (decision D-A). Read from
         // the session just verified as the caller's, so every accept is honoured once, by the one path
         // that carries every other hold.
-        confirmation = await FoldAcceptedRelocationsAsync(db, wallId, confirmation);
+        confirmation = await WithoutCarryInFullRevisionAsync(db, wallId, await FoldAcceptedRelocationsAsync(db, wallId, confirmation));
 
         // Which carried holds physically moved, derived BEFORE the staged twins are touched. Refused when it differs from
         // what the user confirmed: the promote does only what was shown.
@@ -81,8 +81,11 @@ public partial class WallBigUpdateService
 
         // Drop crash-mat / floor false holds BEFORE the carry so a mat accepted at an earlier generation
         // never gets a successor or a lineage link (the boulder-membership guard keeps referenced holds).
-        var oldHolds = (await FilterCarriedMatFalseHoldsAsync(db, carriedOldHolds))
-            .ToDictionary(h => h.Id);
+        // A full revision carries nothing: every old hold in scope retires without a successor.
+        var fullRevision = await IsFullRevisionAsync(db, wallId);
+        var oldHolds = fullRevision
+            ? new Dictionary<Guid, Hold>()
+            : (await FilterCarriedMatFalseHoldsAsync(db, carriedOldHolds)).ToDictionary(h => h.Id);
 
         // The mat/floor false holds this just dropped are still IN SCOPE of the promote: they live on a
         // re-shot panel and go historic with no successor, exactly like a hold the user removed. The link
@@ -138,6 +141,11 @@ public partial class WallBigUpdateService
             db, wallId, centerPanel, newGen, oldHolds, stagedTwins, centerStaged, confirmation,
             confirmation.CarriedWarpPositions, confirmation.CarriedWarpShapes, panelPositions,
             newGenPanelByPosition, lookOver.PhotoSizes, movePlan, user.Id, lookOver.CardMarked);
+
+        if (fullRevision)
+        {
+            await ArchiveBouldersForFullRevisionAsync(db, wallId, oldGen);
+        }
 
         // Blind carries on a panel whose photo could not be aligned sit at their OLD coordinates: flag them.
         await FlagUnalignedCarriesAsync(db, wallId);

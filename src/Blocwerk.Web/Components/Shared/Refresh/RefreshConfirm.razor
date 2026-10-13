@@ -11,6 +11,10 @@
             <p class="refresh-3d-note">Includes the changes made in the full review.</p>
         }
         <RefreshChecks View="View" OnAnswered="OnAnswered" />
+        @if (s.FullRevision is { } revision)
+        {
+            <RefreshRevisionSummary Summary="s" Revision="revision" />
+        }
         @if (s.MovedHolds is { Count: > 0 } moved)
         {
             <section class="refresh-moves" aria-labelledby="refresh-moves-title">
@@ -54,6 +58,8 @@
                 </ul>
             </section>
         }
+        @if (s.FullRevision is null)
+        {
         <details class="refresh-summary-details" open="@(!HasCards)">
             <summary>Everything else: what the update does</summary>
         <ul class="refresh-summary">
@@ -91,6 +97,7 @@
             <li><strong>@s.Removed</strong> holds removed</li>
         </ul>
         </details>
+        }
     }
 
     @if (View.SummaryUpdating)
@@ -115,13 +122,23 @@
         <p class="refresh-3d-note">Checked against the 3D model from this visit.</p>
     }
 
-    <p class="hint">
-        Nothing is live yet. "Open full review" shows every step of the update with these choices already filled in.
-    </p>
-    <div class="refresh-actions">
-        <button class="btn-primary" @onclick="OnApply" disabled="@(View.Check3DPending || View.SummaryUpdating)">Apply update</button>
-        <a class="btn-secondary" href="/walls/@View.WallId?update=review&amp;session=@View.UpdateSessionId">Open full review</a>
-    </div>
+    @if (View.Summary?.FullRevision is not null)
+    {
+        <p class="hint">Nothing is live yet. Applying cannot be undone from the app; "Discard this update" below leaves the wall as it is.</p>
+        <div class="refresh-actions">
+            <button class="btn-danger" @onclick="OnApply" disabled="@(View.Check3DPending || View.SummaryUpdating)">Apply: start the wall over</button>
+        </div>
+    }
+    else
+    {
+        <p class="hint">
+            Nothing is live yet. "Open full review" shows every step of the update with these choices already filled in.
+        </p>
+        <div class="refresh-actions">
+            <button class="btn-primary" @onclick="OnApply" disabled="@(View.Check3DPending || View.SummaryUpdating)">Apply update</button>
+            <a class="btn-secondary" href="/walls/@View.WallId?update=review&amp;session=@View.UpdateSessionId">Open full review</a>
+        </div>
+    }
 </div>
 
 @code {

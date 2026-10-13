@@ -80,6 +80,24 @@ The quick review never takes a hold off a boulder. What it does on its own, and 
 * `movedHolds` lists the carried holds that physically moved, in the same shape plus `newHoldId`, `distanceMm` and `source`.
 * The thresholds are the `HoldMoves` settings `SameLookMinScore` (0.5: at or above, the pair is the same hold), `ReplacedBelowScore` (0.28: below, another hold is there; in between, an unsure-match card) and `GoneMaxScore` (0.5: a hold not found again marks its boulders only at or below). What was measured is logged per panel as `[Looks] panel=…` (a score histogram), and per pair and spot at Debug.
 
+### The wall was fully reset: start over
+
+When every hold was taken off and the wall was set again, matching the old holds makes no sense. Start the run with `fullRevision`:
+
+```sh
+curl -fsS -X POST -H "$AUTH" -H 'Content-Type: application/json' \
+  -d '{"fullRevision": true}' "$BASE/api/walls/$WALL/refresh/$RUN/start"
+```
+
+* Nothing is matched, looked at or carried over. Every detection that passes the usual checks (not on a marker, not the same hold seen again on a neighbouring panel) becomes a new hold with a suggested colour; holds seen on two panels are linked as usual.
+* The old holds are not copied forward. They stay as the history of their generation.
+* Every boulder of the wall that is not archived yet is archived (live and historic ones alike). Archived boulders keep their sends and still open on the old photo with their old holds.
+* It needs a new photo for **every** panel: a panel left out would keep its old holds on a wall that starts over. Otherwise `start` answers 409 and the run stays at status 2.
+* `keepModel` works as usual. The holds are placed on the 3D model after the apply either way.
+* The summary then carries `fullRevision`: `panels` (`panel`, `detected` per new photo), `holdsCreated`, `oldHoldsRetired` and `bouldersArchived` (names). `refound`, `keptInPlace`, `removed`, `movedHolds` and `notFoundHolds` are empty. Apply takes the `decisionsVersion` as always.
+* Nothing is left for the look-over about old holds; the wall is flagged only if a new-hold finding remains.
+* It is one change-journal batch like any other update, but there is no undo in the app. Until Apply, `DELETE …/refresh/{id}` discards it and the wall stays as it is.
+
 ### Consistency
 
 * Reads (`GET …/refresh`, `…/{id}`, `…/summary`) change nothing: polling is side-effect free. `canApply` is true once the summary is ready and no check against this visit's new 3D model is pending.

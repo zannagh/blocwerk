@@ -16,7 +16,12 @@ namespace Blocwerk.Web.Controllers;
 /// Panels only: no 3D capture is started and the wall's active 3D model stays as it is, like the page's panels-only
 /// start. Defaults to false (the full update with a new 3D model).
 /// </param>
-public sealed record RefreshStartRequest(IReadOnlyList<PanelChoice>? Choices = null, bool KeepModel = false);
+/// <param name="FullRevision">
+/// The wall was fully reset: nothing is matched or carried over, every detection becomes a new hold and every boulder
+/// of the wall is archived when the update is applied. Refused (409) unless every panel gets a new photo. It cannot be
+/// undone from the app. Defaults to false.
+/// </param>
+public sealed record RefreshStartRequest(IReadOnlyList<PanelChoice>? Choices = null, bool KeepModel = false, bool FullRevision = false);
 
 /// <summary>Body of <c>POST …/refresh/{refreshId}/apply</c>.</summary>
 /// <param name="DecisionsVersion">

@@ -41,6 +41,12 @@ internal static partial class ApiDocsData
         + "notFoundHolds lists the old holds on boulders that were not found again (outcome 4) or have another hold on their spot now "
         + "(outcome 5): they stay on their boulders, which Apply marks for review. movedHolds lists the holds that moved.";
 
+    private const string RefreshFullRevisionNote =
+        "fullRevision true is for a wall that was fully reset: nothing is matched or carried over, every detection becomes a new hold, "
+        + "and Apply archives every boulder of the wall (they stay viewable on the old photo). It needs a new photo for every panel "
+        + "(409 otherwise), cannot be undone from the app, and the summary then carries fullRevision {panels, holdsCreated, "
+        + "oldHoldsRetired, bouldersArchived}.";
+
     private const string RefreshApplyNote =
         "202 {\"refreshId\", \"decisionsVersion\"} when queued; poll GET /{refreshId} until status 6. 400 without decisionsVersion. "
         + "409 {\"error\", \"status\", \"currentDecisionsVersion\"} when the summary changed since (check it again), there is nothing to "
@@ -72,8 +78,8 @@ internal static partial class ApiDocsData
         new("POST", RefreshBase + "/{refreshId}/sort", "Done uploading: the photos are sorted to the panels.", RefreshOnWall, null, null,
             "202; poll until status 2."),
         new("POST", RefreshBase + "/{refreshId}/start", "Accepts the quick defaults: starts with the proposed photos.", RefreshOnWall,
-            "{\n  \"choices\": [ { \"col\": 0, \"row\": 0, \"photoId\": \"<guid>\" } ],\n  \"keepModel\": false\n}", null,
-            "202; poll until status 4. The body is optional; choices override the proposal per panel (photoId null keeps the current photo). keepModel true is the panels-only update: no 3D capture, the active model stays."),
+            "{\n  \"choices\": [ { \"col\": 0, \"row\": 0, \"photoId\": \"<guid>\" } ],\n  \"keepModel\": false,\n  \"fullRevision\": false\n}", null,
+            "202; poll until status 4. The body is optional; choices override the proposal per panel (photoId null keeps the current photo). keepModel true is the panels-only update: no 3D capture, the active model stays. " + RefreshFullRevisionNote),
         new("GET", RefreshBase + "/{refreshId}/summary", "The confirm screen (summary only, changes nothing).", RefreshOnWall, null,
             RefreshSummaryJson, RefreshSummaryNote),
         new("POST", RefreshBase + "/{refreshId}/recheck", "Starts the check against this visit's new 3D model when it is due.",

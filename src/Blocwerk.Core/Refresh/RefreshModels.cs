@@ -94,6 +94,7 @@ public sealed record RefreshVideo(string StoredName, string? FileName, long Size
 /// </param>
 /// <param name="BouldersMarkedNotFound">The boulders those holds mark for review.</param>
 /// <param name="NotFoundHolds">Those holds, each with why and with its boulders: the list to work through after the update.</param>
+/// <param name="FullRevision">Set when the wall is started over (it was fully reset): what that does instead of carrying holds.</param>
 public sealed record RefreshSummary(
     int Refound,
     int KeptInPlace,
@@ -119,7 +120,30 @@ public sealed record RefreshSummary(
     int ReplacedHolds = 0,
     int NotFoundOnBoulders = 0,
     int BouldersMarkedNotFound = 0,
-    IReadOnlyList<NotFoundHoldLine>? NotFoundHolds = null);
+    IReadOnlyList<NotFoundHoldLine>? NotFoundHolds = null,
+    RefreshFullRevision? FullRevision = null);
+
+/// <summary>What a full revision (the wall was fully reset) does when it is applied; the carry counts are all zero then.</summary>
+/// <param name="Panels">The holds detected on each new panel photo.</param>
+/// <param name="HoldsCreated">The new holds the update creates (detections minus the ones left out).</param>
+/// <param name="OldHoldsRetired">The wall's current holds: none is carried over, all stay as history only.</param>
+/// <param name="BouldersArchived">The names of the boulders that are archived (every boulder not archived yet).</param>
+public sealed record RefreshFullRevision(
+    IReadOnlyList<RevisionPanelLine> Panels,
+    int HoldsCreated,
+    int OldHoldsRetired,
+    IReadOnlyList<string> BouldersArchived);
+
+/// <summary>One new panel photo of a full revision.</summary>
+/// <param name="Panel">The panel, named for people.</param>
+/// <param name="Detected">The holds detected on its new photo.</param>
+public sealed record RevisionPanelLine(string Panel, int Detected);
+
+/// <summary>What starting over would replace, for the question before a full revision is started.</summary>
+/// <param name="WallName">The wall's name (typed to confirm).</param>
+/// <param name="Holds">The wall's current holds.</param>
+/// <param name="Boulders">The boulders that would be archived.</param>
+public sealed record RefreshRevisionPreview(string WallName, int Holds, int Boulders);
 
 /// <summary>A hold on a boulder that was not found again, as the confirm screen lists it.</summary>
 /// <param name="OldHoldId">The hold before the update (it is kept; its copy on the new photo gets a new id).</param>
@@ -180,7 +204,9 @@ public sealed record WallRefreshView(
     bool Check3DPending = false,
     bool HasActiveModel = false,
     bool SummaryUpdating = false,
-    RefreshLookOver? LookOver = null)
+    RefreshLookOver? LookOver = null,
+    bool FullRevision = false,
+    RefreshRevisionPreview? Revision = null)
 {
     public bool IsWorking => Status is WallRefreshStatus.Sorting or WallRefreshStatus.Running or WallRefreshStatus.Applying;
 }

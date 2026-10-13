@@ -30,8 +30,12 @@ public interface IWallBigUpdateService
     /// <param name="takeOverExisting">
     /// True to abandon another admin's in-flight update and start fresh. Default false: refuse.
     /// </param>
+    /// <param name="fullRevision">
+    /// The wall was fully reset: nothing is matched or carried over, every detection becomes a new hold and every boulder
+    /// is archived at the promote. Needs a new photo for every panel of the wall. Default false.
+    /// </param>
     Task<BigUpdateSession> StageAsync(
-        Guid wallId, IReadOnlyList<BigUpdatePhoto> photos, bool takeOverExisting = false);
+        Guid wallId, IReadOnlyList<BigUpdatePhoto> photos, bool takeOverExisting = false, bool fullRevision = false);
 
     /// <summary>
     /// The pre-match staged state of an in-flight update, read back from the DB without detecting or
