@@ -28,7 +28,10 @@ internal static class LookOverReconciler
     /// <returns>The number of findings closed or updated.</returns>
     public static async Task<int> ReconcileAsync(BlocwerkDbContext db, Guid wallId, CancellationToken ct)
     {
-        var open = await db.WallLookOverFindings.Where(f => f.WallId == wallId && f.Status == LookOverFindingStatus.Open).ToListAsync(ct);
+        // A discarded detection is about no hold until it is added, so no edit in the hold editor closes it.
+        var open = await db.WallLookOverFindings
+            .Where(f => f.WallId == wallId && f.Status == LookOverFindingStatus.Open && f.Kind != LookOverFindingKind.DiscardedDetection)
+            .ToListAsync(ct);
         if (open.Count == 0)
         {
             return 0;

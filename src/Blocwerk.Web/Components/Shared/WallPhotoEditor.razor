@@ -214,6 +214,8 @@
                 </g>
             }
 
+            <SuggestedColorBadge Hold="hold" R="r" />
+
             @if (isSelected && hold.ShapePoints == null)
             {
                 <circle data-hold="@hold.Id" cx="@F(hold.X * 100)" cy="@F(hold.Y * 100)" r="@F(r + 0.5)"

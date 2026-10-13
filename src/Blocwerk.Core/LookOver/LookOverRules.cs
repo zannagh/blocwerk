@@ -9,6 +9,15 @@ namespace Blocwerk.Core.LookOver;
 /// <summary>Which answers fit which finding, and the order the page works through them. Pure.</summary>
 public static class LookOverRules
 {
+    /// <summary>A discarded detection the detector was at least this sure of may be a missed hold.</summary>
+    public const double SureDetection = 0.9;
+
+    /// <summary>A discarded detection that live holds cover by less than this overlaps no hold (outlines that only touch do not count).</summary>
+    public const double NoOverlapBelow = 0.05;
+
+    /// <summary>A discarded detection that live holds cover by at least this is probably a second detection of a hold that is there.</summary>
+    public const double DuplicateOverlap = 0.5;
+
     /// <summary>The kinds in the order they are shown: what touches boulders first, the noisy and the harmless last.</summary>
     public static readonly IReadOnlyList<LookOverFindingKind> Order =
     [
@@ -20,6 +29,7 @@ public static class LookOverRules
         LookOverFindingKind.MatchedToHandPlaced,
         LookOverFindingKind.HandPlacedAmbiguous,
         LookOverFindingKind.ConflictingNew,
+        LookOverFindingKind.DiscardedDetection,
     ];
 
     /// <summary>Where a kind stands in <see cref="Order"/> (lower is more consequential).</summary>
@@ -57,11 +67,20 @@ public static class LookOverRules
     /// <summary>The kinds that can be settled all at once.</summary>
     /// <param name="kind">The kind.</param>
     /// <returns>
-    /// True for unsure matches and for old and new holds on one spot. Never for holds the update could not find:
-    /// "still here" for all of them at once would put back whatever really is gone.
+    /// True for unsure matches, for old and new holds on one spot and for discarded detections ("not a hold"). Never
+    /// for holds the update could not find: "still here" for all of them at once would put back whatever really is gone.
     /// </returns>
     public static bool CanSettleAll(LookOverFindingKind kind) =>
-        kind is LookOverFindingKind.UnsureMatch or LookOverFindingKind.SameSpot;
+        kind is LookOverFindingKind.UnsureMatch or LookOverFindingKind.SameSpot or LookOverFindingKind.DiscardedDetection;
+
+    /// <summary>
+    /// A discarded detection that is likely a hold the update missed: the detector was sure of it and no live hold is
+    /// on its spot. Only these count as open findings and flag the wall.
+    /// </summary>
+    /// <param name="confidence">The detector's confidence.</param>
+    /// <param name="overlap">How much of it live holds cover, 0..1.</param>
+    /// <returns>True when it is.</returns>
+    public static bool LikelyMissed(double? confidence, double? overlap) => confidence >= SureDetection && overlap < NoOverlapBelow;
 
     /// <summary>The answers that change a hold or its boulders, so they ask first and say which boulders they saw.</summary>
     /// <param name="answer">The answer.</param>
@@ -76,6 +95,11 @@ public static class LookOverRules
     /// <returns>The answers; settling is always one of them.</returns>
     public static IReadOnlyList<LookOverAnswer> AnswersFor(LookOverFindingKind kind, bool holdIsLive, bool canEdit, bool canMerge)
     {
+        if (kind == LookOverFindingKind.DiscardedDetection)
+        {
+            return canEdit && !holdIsLive ? [LookOverAnswer.Settle, LookOverAnswer.AddHold] : [LookOverAnswer.Settle];
+        }
+
         if (!holdIsLive || !canEdit)
         {
             return [LookOverAnswer.Settle];

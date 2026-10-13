@@ -42,7 +42,7 @@
                     <button type="button" class="@(item.Id == Current?.Id ? "is-current" : null)" aria-current="@(item.Id == Current?.Id ? "true" : null)"
                             @onclick="() => JumpTo(item.Id)">
                         <span>@LookOverCopy.QueueLabel(item)</span>
-                        <small>@(item.HoldName ?? "hold")@(item.Boulders.Count > 0 ? $" · {PlainCopy.Plural(item.Boulders.Count, "boulder")}" : null)</small>
+                        <small>@(item.Discarded ? LookOverCopy.DiscardedRow(item) : item.HoldName ?? "hold")@(item.Boulders.Count > 0 ? $" · {PlainCopy.Plural(item.Boulders.Count, "boulder")}" : null)</small>
                     </button>
                 </li>
             }

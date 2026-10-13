@@ -102,6 +102,17 @@ public interface IWallLookOverService
     Task<LookOverBulkResult> RemoveUnusedAsync(Guid wallId, IReadOnlyCollection<Guid> findingIds, bool onlyCovered, CancellationToken ct = default);
 
     /// <summary>
+    /// Adds, in one step, discarded detections as holds: only those of <paramref name="findingIds"/> that are still
+    /// open, that the detector was sure of (<see cref="LookOverRules.SureDetection"/>) and that overlap no live hold
+    /// when it runs. Each becomes a hold as with <see cref="LookOverAnswer.AddHold"/>; one journal batch.
+    /// </summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="findingIds">The findings the user was shown and confirmed.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>How many of the confirmed detections were added.</returns>
+    Task<LookOverBulkResult> AddDetectionsAsync(Guid wallId, IReadOnlyCollection<Guid> findingIds, CancellationToken ct = default);
+
+    /// <summary>
     /// "It is this hold": merges the kept hold of a finding into <paramref name="targetHoldId"/>, a hold of the same
     /// photo that is not itself kept. Wall admins only (it is the duplicate review's merge, and is undone there).
     /// </summary>

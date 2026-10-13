@@ -65,7 +65,8 @@ public sealed partial class WallLookOverService(
         }
 
         // Counted, not loaded: the wall page and every boulder page ask this.
-        var round = CurrentRound(db, wallId, wall.LookOverPendingSince);
+        // Discarded detections only count while they are likely a missed hold.
+        var round = CurrentRound(db, wallId, wall.LookOverPendingSince).Where(DiscardedDetections.Counts);
         var open = await round.CountAsync(f => f.Status == LookOverFindingStatus.Open, ct);
         var total = await round.CountAsync(ct);
         var completedBy = wall.LookOverCompletedByUserId is { } by
@@ -96,7 +97,7 @@ public sealed partial class WallLookOverService(
                 return;
             }
 
-            var open = await db.WallLookOverFindings.CountAsync(f => f.WallId == wallId && f.Status == LookOverFindingStatus.Open, ct);
+            var open = await db.WallLookOverFindings.Where(DiscardedDetections.Counts).CountAsync(f => f.WallId == wallId && f.Status == LookOverFindingStatus.Open, ct);
             if (open > 0 && !leaveOpen)
             {
                 throw new UserFacingException($"{open} findings are still open. Answer them, or finish anyway.");
@@ -132,16 +133,18 @@ public sealed partial class WallLookOverService(
     /// The findings of the current round: everything open, and what was answered (or closed by an edit in the hold
     /// editor) since the wall was flagged. A round
     /// starts with the first update that leaves a finding and ends with Finish, so what an earlier round settled never
-    /// comes back with the next update; while the wall is not flagged only what was left open is listed.
+    /// comes back with the next update; while the wall is not flagged only what was left open is listed. The answered
+    /// discarded detections are always listed: their answers can be taken back until the panel is photographed again.
     /// </summary>
     private static IQueryable<WallLookOverFinding> CurrentRound(BlocwerkDbContext db, Guid wallId, DateTimeOffset? pendingSince)
     {
+        const LookOverFindingKind Discarded = LookOverFindingKind.DiscardedDetection;
         var ofWall = db.WallLookOverFindings.AsNoTracking().Where(f => f.WallId == wallId);
         return pendingSince is { } since
             ? ofWall.Where(f => f.Status == LookOverFindingStatus.Open
-                || (f.Status == LookOverFindingStatus.Settled && f.AnsweredAt >= since)
+                || (f.Status == LookOverFindingStatus.Settled && (f.AnsweredAt >= since || f.Kind == Discarded))
                 || (f.Status == LookOverFindingStatus.Closed && f.ClosedAt >= since))
-            : ofWall.Where(f => f.Status == LookOverFindingStatus.Open);
+            : ofWall.Where(f => f.Status == LookOverFindingStatus.Open || (f.Status == LookOverFindingStatus.Settled && f.Kind == Discarded));
     }
 
     /// <summary>

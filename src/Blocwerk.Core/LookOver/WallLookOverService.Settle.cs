@@ -78,6 +78,15 @@ public sealed partial class WallLookOverService
             }
 
             using var batch = BeginBatch(wallId);
+
+            // An added detection is taken off the wall again first, by the editor's delete on its own context: when
+            // that refuses, nothing here has changed.
+            if (finding is { Answer: LookOverAnswer.AddHold, HoldId: { } addedId })
+            {
+                await walls.DeleteHoldAsync(addedId);
+                finding.HoldId = null;
+            }
+
             await using var transaction = await db.Database.BeginTransactionAsync(ct);
             if (!await ClaimAsync(db, finding.Id, LookOverFindingStatus.Settled, ct))
             {

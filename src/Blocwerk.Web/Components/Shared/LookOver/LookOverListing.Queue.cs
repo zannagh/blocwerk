@@ -11,7 +11,8 @@ namespace Blocwerk.Web.Components.Shared.LookOver;
 /// The card deck's one queue: every open finding, asked about one at a time. What a boulder uses comes first, then
 /// the groups in the order they matter (the holds the update could not find, then the kinds as
 /// <see cref="LookOverRules.Order"/> ranks them), and within a group the order the page has kept since it opened, so
-/// answering a card never reshuffles what comes next.
+/// answering a card never reshuffles what comes next. The discarded detections come last, those most likely to be a
+/// missed hold first (the service's order); the ones a hold on the wall covers are only in their own queue.
 /// </summary>
 public sealed partial class LookOverListing
 {
@@ -56,11 +57,27 @@ public sealed partial class LookOverListing
             Add(new LookOverFilter(Kind: kind), LookOverCopy.ChipLabel(kind));
         }
 
+        Add(LookOverFilter.Duplicates, LookOverCopy.DuplicatesChip);
         return chips;
     }
 
+    /// <summary>The open discarded detections a hold on the wall covers: what "not a hold for all" is about.</summary>
+    /// <returns>Their ids.</returns>
+    public IReadOnlyList<Guid> DuplicateIds() =>
+        Findings.Where(f => f.Status == LookOverFindingStatus.Open && f.ProbablyDuplicate).Select(f => f.Id).ToList();
+
+    /// <summary>The open discarded detections that are likely a missed hold (sure, on no hold): what "add all" is about.</summary>
+    /// <returns>Their ids.</returns>
+    public IReadOnlyList<Guid> LikelyMissedIds() =>
+        Findings.Where(f => f is { Status: LookOverFindingStatus.Open, Discarded: true, CountsAsOpen: true }).Select(f => f.Id).ToList();
+
     private static bool InGroup(LookOverFindingView finding, LookOverFilter filter)
     {
+        if (filter.DuplicatesOnly || finding.ProbablyDuplicate)
+        {
+            return filter.DuplicatesOnly && finding.ProbablyDuplicate;
+        }
+
         if (filter.MissingOnly)
         {
             return finding.Missing;

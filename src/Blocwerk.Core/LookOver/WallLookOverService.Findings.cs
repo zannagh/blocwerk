@@ -22,6 +22,7 @@ public sealed partial class WallLookOverService
         await using (db)
         {
             await LookOverReconciler.ReconcileAsync(db, wallId, ct);
+            await DiscardedDetections.RefreshOverlapAsync(db, wallId, ct);
             var since = await db.Walls.IgnoreQueryFilters().Where(w => w.Id == wallId).Select(w => w.LookOverPendingSince).FirstOrDefaultAsync(ct);
             var round = await CurrentRound(db, wallId, since).ToListAsync(ct);
             var views = await WithPicturesAsync(db, wallId, round, await ToViewsAsync(db, wallId, round, access, ct), ct);
@@ -29,6 +30,7 @@ public sealed partial class WallLookOverService
                 .OrderBy(v => LookOverRules.Rank(v.Kind))
                 .ThenBy(v => v.Status)
                 .ThenByDescending(v => v.Boulders.Count)
+                .ThenBy(v => v.DiscardedOrder)
                 .ThenBy(v => v.Confidence ?? 1)
                 .ThenBy(v => v.Id)
                 .ToList();
@@ -61,7 +63,9 @@ public sealed partial class WallLookOverService
             .Select(x => Detailed(x.View, x.Finding, x.Kept, access) with
             {
                 AnsweredBy = x.Finding.AnsweredByUserId is { } by ? names.GetValueOrDefault(by) : null,
-                CanUndo = CanUndo(x.Finding, holds, since),
+                CanUndo = x.Finding.Kind == LookOverFindingKind.DiscardedDetection
+                    ? CanUndoDiscarded(x.Finding, holds, boulders)
+                    : CanUndo(x.Finding, holds, since),
             })
             .ToList();
     }
@@ -79,6 +83,8 @@ public sealed partial class WallLookOverService
             PanelId = f.PanelId,
             SpotX = f.X,
             SpotY = f.Y,
+            DiscardReason = f.DiscardReason,
+            Overlap = f.Overlap ?? 0,
         };
 
     private static LookOverFindingView ToView(

@@ -30,6 +30,7 @@ public partial class WallBigUpdateService
     private async Task RecordLookOverAsync(BlocwerkDbContext db, Wall wall, int newGen, LookOverPromoteInputs inputs)
     {
         await SupersedeLookOverAsync(db, wall.Id, inputs.ReplacedPanelIds);
+        KeepDiscardedDetections(db, wall, newGen);
         try
         {
             var session = await WallUpdateSessions.FindOpenAsync(db, wall.Id);
@@ -68,15 +69,60 @@ public partial class WallBigUpdateService
     {
         try
         {
+            const LookOverFindingKind Discarded = LookOverFindingKind.DiscardedDetection;
             var stale = await db.WallLookOverFindings
-                .Where(f => f.WallId == wallId && f.Status == LookOverFindingStatus.Open && f.PanelId != null && replacedPanelIds.Contains(f.PanelId.Value))
+                .Where(f => f.WallId == wallId && (f.Status == LookOverFindingStatus.Open || f.Kind == Discarded) && f.PanelId != null && replacedPanelIds.Contains(f.PanelId.Value))
                 .ToListAsync();
-            stale.ForEach(f => f.Status = LookOverFindingStatus.Superseded);
+            stale.Where(f => f.Kind != Discarded).ToList().ForEach(f => f.Status = LookOverFindingStatus.Superseded);
+
+            // The discarded detections of the old photo cannot be added any more: they go with it, answered or not.
+            db.WallLookOverFindings.RemoveRange(stale.Where(f => f.Kind == Discarded));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // The page still refuses to change a hold that is no longer live, so a finding left open here is harmless.
             logger.LogError(ex, "The open look-over findings of wall {WallId} could not be retired; the update is applied all the same.", wallId);
+        }
+    }
+
+    /// <summary>
+    /// Keeps the staged detections this promote deletes because the triage discarded them (their rows carry the
+    /// reason), as findings of their own kind: read from the change tracker before the promote saves, saved with it.
+    /// They never flag the wall here; see <see cref="FlagForDiscardedDetectionsAsync"/>.
+    /// </summary>
+    private void KeepDiscardedDetections(BlocwerkDbContext db, Wall wall, int newGen)
+    {
+        try
+        {
+            var kept = db.ChangeTracker.Entries<Hold>()
+                .Where(e => e.State == EntityState.Deleted && DiscardedDetections.IsOne(e.Entity, wall.Id, newGen))
+                .Select(e => DiscardedDetections.From(e.Entity))
+                .ToList();
+            db.WallLookOverFindings.AddRange(kept);
+            logger.LogInformation("The update of wall {WallId} to generation {Generation} keeps {Count} discarded detections", wall.Id, newGen, kept.Count);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "The discarded detections of the update of wall {WallId} could not be kept; the update is applied without them.", wall.Id);
+        }
+    }
+
+    /// <summary>
+    /// After the promote is saved: works out which discarded detections a live hold covers, and flags the wall when
+    /// one of them is likely a missed hold. Best effort, like the findings themselves.
+    /// </summary>
+    private async Task FlagForDiscardedDetectionsAsync(BlocwerkDbContext db, Wall wall, int newGen)
+    {
+        try
+        {
+            if (await DiscardedDetections.FlagIfLikelyMissedAsync(db, wall, newGen, CancellationToken.None))
+            {
+                logger.LogInformation("Wall {WallId} is flagged for a look-over: a discarded detection of generation {Generation} may be a missed hold", wall.Id, newGen);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "The discarded detections of wall {WallId} could not be compared with its holds.", wall.Id);
         }
     }
 

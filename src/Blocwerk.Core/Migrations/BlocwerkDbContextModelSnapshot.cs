@@ -2688,6 +2688,10 @@ namespace Blocwerk.Core.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("DiscardReason")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
                     b.Property<string>("FacetId")
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
@@ -2722,6 +2726,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<Guid?>("OtherHoldId")
                         .HasColumnType("uuid");
 
+                    b.Property<double?>("Overlap")
+                        .HasColumnType("double precision");
+
                     b.Property<Guid?>("PanelId")
                         .HasColumnType("uuid");
 
@@ -2733,6 +2740,12 @@ namespace Blocwerk.Core.Migrations
 
                     b.Property<Guid?>("SessionId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("ShapeHoles")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ShapePoints")
+                        .HasColumnType("text");
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");

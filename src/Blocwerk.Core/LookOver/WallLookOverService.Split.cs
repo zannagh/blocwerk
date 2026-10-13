@@ -58,22 +58,22 @@ public sealed partial class WallLookOverService
     /// Suggests a colour for the new hold from its photo, when that can be read. Never part of the answer: a hold
     /// without a suggestion simply has no colour, as any new hold the proposer cannot read.
     /// </summary>
-    private async Task SuggestColorAsync(BlocwerkDbContext db, Guid wallId, Guid holdId, CancellationToken ct)
+    private async Task SuggestColorAsync(BlocwerkDbContext db, Guid wallId, IReadOnlyCollection<Guid> holdIds, CancellationToken ct)
     {
-        if (colors is null)
+        if (colors is null || holdIds.Count == 0)
         {
             return;
         }
 
         try
         {
-            var plan = await colors.PlanAsync(db, wallId, [holdId], ct);
+            var plan = await colors.PlanAsync(db, wallId, holdIds, ct);
             await colors.ApplyAsync(db, wallId, plan, ct);
             await db.SaveChangesAsync(ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogWarning(ex, "No colour suggestion for the new hold {HoldId} on wall {WallId}", holdId, wallId);
+            logger.LogWarning(ex, "No colour suggestion for the new hold {HoldId} on wall {WallId}", holdIds.First(), wallId);
         }
     }
 }

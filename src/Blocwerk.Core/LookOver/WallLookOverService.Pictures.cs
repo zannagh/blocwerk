@@ -43,13 +43,14 @@ public sealed partial class WallLookOverService
 
     /// <summary>
     /// What is on the spot now: the live hold the finding is about (faded while it is kept, not confirmed) and the new
-    /// hold on its spot, the faded one first so it lies below. A detection that was left out is only a spot.
+    /// hold on its spot, the faded one first so it lies below. A detection that was left out is only a spot; a
+    /// discarded detection is drawn with the outline it was detected with.
     /// </summary>
     private static List<LookOverOutline> NowOutlines(WallLookOverFinding finding, LookOverFindingView view, LookOverFrameSource frames, CropFrame now)
     {
         if (finding.HoldId is null)
         {
-            return [now.Spot()];
+            return [finding.Kind == Enums.LookOverFindingKind.DiscardedDetection ? now.Outline(DiscardedDetections.AsHold(finding), kept: false) : now.Spot()];
         }
 
         var outlines = new List<LookOverOutline>();

@@ -1,0 +1,67 @@
+@using Blocwerk.Core.Enums
+@using Blocwerk.Core.LookOver
+@* The bulk steps of the discarded detections, above the deck while one of their two chips is picked: add every
+   detection that is likely a missed hold (sure, on no hold), or leave out every one a hold on the wall covers.
+   Both ask first and name the count; the server takes only what still fits when it runs. *@
+
+@if (Filter.DuplicatesOnly && Duplicates.Count > 1)
+{
+    <div class="deck-bulk">
+        <ConfirmAction Label="@LookOverCopy.NotHoldsLabel(Duplicates.Count)" Question="@LookOverCopy.NotHoldsQuestion(Duplicates.Count)"
+                       ConfirmLabel="@LookOverCopy.NotHoldsLabel(Duplicates.Count)" ConfirmClass="btn-primary" Neutral="true" Disabled="Disabled"
+                       OnConfirm="NotHoldsAsync" />
+    </div>
+}
+else if (Filter.Kind == LookOverFindingKind.DiscardedDetection && Likely.Count > 1)
+{
+    <div class="deck-bulk">
+        <ConfirmAction Label="@LookOverCopy.AddAllLabel(Likely.Count)" Question="@LookOverCopy.AddAllQuestion(Likely.Count)"
+                       ConfirmLabel="@($"Add {Likely.Count} holds")" ConfirmClass="btn-primary" Neutral="true" Disabled="Disabled"
+                       OnConfirm="AddAllAsync" />
+    </div>
+}
+@if (notice is not null)
+{
+    <p class="hint deck-bulk-note" role="status">@notice</p>
+}
+
+@code {
+    private string? notice;
+
+    [Parameter, EditorRequired]
+    public Guid WallId { get; set; }
+
+    [Parameter, EditorRequired]
+    public LookOverListing Listing { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public LookOverFilter Filter { get; set; } = default!;
+
+    [Parameter]
+    public bool Disabled { get; set; }
+
+    [Parameter]
+    public EventCallback<LookOverAction> OnAct { get; set; }
+
+    [Inject]
+    private IWallLookOverService LookOver { get; set; } = default!;
+
+    private IReadOnlyList<Guid> Duplicates => Listing.DuplicateIds();
+
+    private IReadOnlyList<Guid> Likely => Listing.LikelyMissedIds();
+
+    private Task AddAllAsync()
+    {
+        var ids = Likely;
+        notice = null;
+        return OnAct.InvokeAsync(new LookOverAction(null, async () => notice = LookOverCopy.AddedAll(await LookOver.AddDetectionsAsync(WallId, ids))));
+    }
+
+    private Task NotHoldsAsync()
+    {
+        var ids = Duplicates;
+        notice = null;
+        return OnAct.InvokeAsync(new LookOverAction(
+            null, async () => notice = LookOverCopy.BulkShortfall(await LookOver.SettleAllAsync(WallId, LookOverFindingKind.DiscardedDetection, ids, false))));
+    }
+}

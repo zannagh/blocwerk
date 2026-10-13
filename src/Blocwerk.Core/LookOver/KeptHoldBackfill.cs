@@ -78,7 +78,9 @@ public static class KeptHoldBackfill
                 .ToListAsync(ct))
             .OrderByDescending(s => s.ClosedAt)
             .FirstOrDefault();
-        var findings = await db.WallLookOverFindings.Where(f => f.WallId == wallId && f.Generation == generation).ToListAsync(ct);
+        var findings = await db.WallLookOverFindings
+            .Where(f => f.WallId == wallId && f.Generation == generation && f.Kind != LookOverFindingKind.DiscardedDetection)
+            .ToListAsync(ct);
         var copies = await CopiesAsync(db, wallId, session, links, live, ct);
         var confirmed = await ConfirmedAsync(db, session, findings, ct);
         var kept = links

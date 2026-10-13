@@ -110,7 +110,7 @@ public sealed partial class WallLookOverService
         await db.SaveChangesAsync(ct);
         if (added is not null)
         {
-            await SuggestColorAsync(db, finding.WallId, added.Id, ct);
+            await SuggestColorAsync(db, finding.WallId, [added.Id], ct);
         }
     }
 
@@ -135,6 +135,8 @@ public sealed partial class WallLookOverService
 
                 await walls.DeleteHoldAsync(view.HoldId!.Value);
                 return detection;
+            case LookOverAnswer.AddHold:
+                return await AddDetectionAsync(db, finding, ct);
             default:
                 var merge = await duplicates.MergeAsync(finding.WallId, view.OtherHoldId!.Value, view.HoldId!.Value, HoldMergeMode.KeepLeft, ct);
                 finding.MergeBatchId = merge.BatchId;

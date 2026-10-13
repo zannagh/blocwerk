@@ -46,6 +46,8 @@ namespace Blocwerk.Core.LookOver;
 /// <param name="PanelId">The panel photo the finding's spot is on.</param>
 /// <param name="SpotX">The spot across that photo, 0..1.</param>
 /// <param name="SpotY">The spot down that photo, 0..1.</param>
+/// <param name="DiscardReason">Why the update discarded the detection (a <see cref="NewHoldDiscardReason"/> name), when that was recorded.</param>
+/// <param name="Overlap">How much of a discarded detection the live holds of its photo cover, 0..1.</param>
 public sealed record LookOverFindingView(
     Guid Id,
     LookOverFindingKind Kind,
@@ -76,8 +78,22 @@ public sealed record LookOverFindingView(
     IReadOnlyList<LookOverPicture>? Pictures = null,
     Guid? PanelId = null,
     double SpotX = 0,
-    double SpotY = 0)
+    double SpotY = 0,
+    string? DiscardReason = null,
+    double Overlap = 0)
 {
+    /// <summary>Gets a value indicating whether this is a detection the update discarded.</summary>
+    public bool Discarded => Kind == LookOverFindingKind.DiscardedDetection;
+
+    /// <summary>Gets a value indicating whether a live hold covers most of the discarded detection: probably a second detection of that hold.</summary>
+    public bool ProbablyDuplicate => Discarded && Overlap >= LookOverRules.DuplicateOverlap;
+
+    /// <summary>Gets a value indicating whether it counts as an open finding: everything but a discarded detection that is not likely a missed hold.</summary>
+    public bool CountsAsOpen => !Discarded || LookOverRules.LikelyMissed(Confidence, Overlap);
+
+    /// <summary>Gets where a discarded detection stands among its kind: what overlaps no hold first, then the surest; 0 for every other finding.</summary>
+    public double DiscardedOrder => Discarded ? (Overlap < LookOverRules.NoOverlapBelow ? 0 : ProbablyDuplicate ? 4 : 2) - (Confidence ?? 0) : 0;
+
     /// <summary>
     /// Gets a value indicating whether this is a hold the update could not find and nobody has confirmed: it is asked
     /// about in the look-over's own section ("is it still on the wall, and where?"), not as a card.

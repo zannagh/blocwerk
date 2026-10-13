@@ -9,17 +9,17 @@ using Microsoft.Extensions.Logging;
 namespace Blocwerk.Core.Services;
 
 /// <summary>
-/// Colour proposals for the holds a panel update added. The detector finds holds but not their colour, so a new hold
-/// used to go live without one; here each gets the colour its new panel photo shows, when that can be told
-/// (<see cref="IHoldColorProposer"/>). A carried hold keeps what it had. The one case in which a carried hold gets a
-/// colour here: it had none and is linked to a new hold, so it takes the colour proposed for that hold (the same hold on
-/// two panels gets one colour).
+/// Colour proposals for the holds of a panel update that have no colour. The detector finds holds but not their
+/// colour, so a new hold used to go live without one; here each gets the colour its new panel photo shows, when that
+/// can be told (<see cref="IHoldColorProposer"/>). A carried hold keeps the colour it had; one that never had a colour
+/// gets a suggestion like a new hold, marked as suggested. Holds linked across panels get one colour.
 /// </summary>
 public partial class WallBigUpdateService
 {
     /// <summary>
-    /// Proposes colours for the holds that are new in <paramref name="newGen"/> (no old hold behind them) and have no
-    /// colour, together with the holds linked to them that have none either. Runs after the promote is committed,
+    /// Proposes colours for the holds of <paramref name="newGen"/> that have no colour, new or carried, together with
+    /// the holds linked to them that have none either. A hold that has a colour is never touched (the proposer reads
+    /// each hold again before it writes). Runs after the promote is committed,
     /// inside the still-open wall-update batch, and before the linked-hold sync. Best effort: a failure only logs and
     /// leaves the holds as the promote wrote them; the wall page's "Suggest colours" does the same later.
     /// </summary>
@@ -30,7 +30,7 @@ public partial class WallBigUpdateService
             var newHoldIds = await db.Holds
                 .Where(h => h.WallId == wallId && h.Generation == newGen && !h.IsVirtual
                     && (h.Color == null || h.Color == string.Empty)
-                    && !db.HoldGenerationLinks.Any(l => l.NewHoldId == h.Id && l.OldHoldId != null))
+                    && (h.KeptUnconfirmedGeneration == null || !db.HoldGenerationLinks.Any(l => l.NewHoldId == h.Id && l.OldHoldId != null)))
                 .Select(h => h.Id)
                 .ToListAsync();
             if (newHoldIds.Count == 0)
