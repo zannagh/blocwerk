@@ -22,7 +22,7 @@ import {
 } from './wall3d-splat-ladder.js';
 import { storeDetail, storedDetail } from './wall3d-splat-detail.js';
 import { createLadderPolicy, createReprobe } from './wall3d-splat-policy.js';
-import { deviceFacts, report } from './wall3d-splat-diag.js';
+import { deviceFacts, report, watchPage } from './wall3d-splat-diag.js';
 import { PHOTO_REAL_FAILED } from './wall3d-modes.js';
 import { createRecovery, createRenderScale, prefersLightSplat, supportsPhotoReal as supported } from './wall3d-splat-recover.js';
 import { releaseTextures } from './wall3d-stage.js';
@@ -106,7 +106,12 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
             policy.shown(loader.index < cap && detailMode !== 'ultra');
             onLevel?.();
         },
+        onStage: (stage, level, text) => say(`level-${stage}`, { level, detail: text }),
     });
+    const unwatchPage = watchPage(say, () => active || stepping !== null);
+    /** What failed and where: "decode: no answer for 30 s". */
+    const failureOf = err => `${err?.stage ? `${err.stage}: ` : ''}${String(err?.message || err)}`;
+    let noteTimer = 0;
 
     /** Loads level `i` behind the one showing and swaps it in; a failure caps the ladder where it is. */
     function stepTo(i, recovering = false) {
@@ -114,6 +119,8 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
         if (stepping === loader.epoch || disposed || broken) return;
         const myEpoch = loader.epoch;
         stepping = myEpoch;
+        let failed = false;
+        clearTimeout(noteTimer);
         detail.show(recovering ? 'Restoring detail…' : 'Loading detail…');
         loader.load(i, null)
             .then(ok => {
@@ -129,13 +136,19 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
                 console.warn('wall3d: photo-real level failed', err);
                 retryCap = Math.max(retryCap, cap);
                 cap = Math.max(0, Math.min(cap, loader.index));
-                say('level-failed', { detail: String(err?.message || err), level: i });
+                say('level-failed', { detail: failureOf(err), level: i });
+                failed = !disposed;
                 scheduleReprobe();
             })
             .finally(() => {
                 if (stepping !== myEpoch) return;
                 stepping = null;
-                if (!recovery.recovering) detail.hide();
+                if (recovery.recovering) return;
+                detail.hide();
+                if (!failed || !active) return;
+                // The level on show stays; a short note instead of a silent stop.
+                detail.show('Could not load more detail');
+                noteTimer = setTimeout(() => { if (stepping === null && !recovery.recovering) detail.hide(); }, 4000);
             });
     }
 
@@ -176,7 +189,7 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
             shown = await loader.load(first, onProgress);
         } catch (err) {
             if (disposed || myEpoch !== loader.epoch) throw new PhotoRealCancelledError('Cancelled.');
-            say('level-failed', { level: first, detail: String(err?.message || err) });
+            say('level-failed', { level: first, detail: failureOf(err) });
             if (err instanceof PhotoRealStalledError) throw err;   // a stall again would only double the wait
             shown = await loader.load(first, onProgress);      // one retry: a flaky phone connection
         }
@@ -311,6 +324,8 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
             disposed = true;
             active = false;
             clearTimeout(reprobeTimer);
+            clearTimeout(noteTimer);
+            unwatchPage();
             firstLoad.cancel(true);
             recovery.cancel();
             apply();

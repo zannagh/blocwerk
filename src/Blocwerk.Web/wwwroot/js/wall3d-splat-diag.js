@@ -1,12 +1,13 @@
 // Diagnostics beacon of the photo-real view (wall3d-splat.js): what the device is and what happened
-// (start, a level shown, a lost / restored WebGL context, a failure), POSTed to
+// (start, a level downloaded / decoded / shown, the page hidden / visible, a lost / restored WebGL
+// context, a failure with its stage), POSTed to
 // /api/diagnostics/photo-real, which only logs it. A phone has no console to read, so this is how a
 // real device's limits reach the server log. Nothing personal is sent (no user agent, no ids); a
 // signed-out viewer's reports are refused by the server and ignored here.
 
 const ENDPOINT = '/api/diagnostics/photo-real';
 /** Reports per page load; the server rate-limits per user too. */
-const MAX_REPORTS = 40;
+const MAX_REPORTS = 80;
 /** Characters of `detail` (a shader link log is long) and of `shader` (numbered shader source). */
 const MAX_DETAIL = 4000;
 const MAX_SHADER = 16000;
@@ -68,4 +69,16 @@ export function report(event, renderer, facts, state = {}) {
     } catch {
         // fetch itself unavailable: nothing to report with.
     }
+}
+
+/**
+ * Reports the page going hidden / visible while `on()` says the view is busy (iOS pauses a hidden tab, so
+ * a gap in the log is explained). Returns the function that stops watching.
+ */
+export function watchPage(say, on) {
+    const changed = () => {
+        if (on()) say(document.visibilityState === 'hidden' ? 'page-hidden' : 'page-visible');
+    };
+    document.addEventListener('visibilitychange', changed);
+    return () => document.removeEventListener('visibilitychange', changed);
 }
