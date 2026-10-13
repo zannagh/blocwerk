@@ -67,14 +67,6 @@ public interface IWallPanelService
     Task DiscardPanelAsync(Guid wallId, Guid panelId);
 
     /// <summary>
-    /// Re-runs auto hold detection on a live panel's own image, replacing only the panel's
-    /// auto-detected holds at the current generation that no boulder uses; manual and
-    /// boulder-referenced holds are kept, so a redetect can never orphan a boulder. A panel with no
-    /// live photo is a no-op. Returns the number of freshly detected holds.
-    /// </summary>
-    Task<int> RedetectPanelHoldsAsync(Guid wallId, Guid panelId);
-
-    /// <summary>
     /// The live photo bytes of a panel, or null when the panel has none / is not on this wall.
     /// </summary>
     Task<WallPhoto?> GetPanelPhotoAsync(Guid wallId, Guid panelId);

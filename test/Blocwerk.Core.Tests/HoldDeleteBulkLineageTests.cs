@@ -1,9 +1,7 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
-using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 namespace Blocwerk.Core.Tests;
@@ -28,7 +26,7 @@ public class HoldDeleteBulkLineageTests
         var predecessorId = await SeedWallHoldAsync(h, x: 0.9, generation: 0);
         var (panelId, autoId) = await SeedLivePanelWithAutoHoldAsync(h, generation: 1);
 
-        // The exact case PrepareRemovableAsync's comment names: an auto-detected hold a promote carried
+        // A removal the re-detect makes: an auto-detected hold a promote carried
         // forward from an earlier generation, so it owns lineage even though no boulder uses it. Before
         // the lineage rows were handled, this redetect took the whole SaveChanges down on the Restrict FK.
         await SeedGenerationLinkAsync(h, predecessorId, autoId, fromGeneration: 0, toGeneration: 1);
@@ -37,9 +35,10 @@ public class HoldDeleteBulkLineageTests
             .DetectHoldsAsync(Arg.Any<byte[]>(), Arg.Any<HoldDetectionParameters?>())
             .Returns(new List<DetectedHold> { new(0.5, 0.5, 0.02, null, 0.9) });
 
-        var detected = await CreatePanelService(h).RedetectPanelHoldsAsync(h.WallId, panelId);
+        var done = await RedetectRun.Service(h).RunAsync(h.WallId, panelId);
 
-        Assert.Equal(1, detected);
+        Assert.Equal(1, done.NewHolds);
+        Assert.Equal(1, done.Removed);
 
         await using var db = h.CreateContext();
         Assert.False(await db.Holds.AnyAsync(x => x.Id == autoId));
@@ -170,14 +169,6 @@ public class HoldDeleteBulkLineageTests
         var boulder = await db.Boulders.AsNoTracking().SingleAsync(b => b.Id == boulderId);
         Assert.False(boulder.IsHistoric);
     }
-
-    private static WallPanelService CreatePanelService(WallTestHarness h) =>
-        new(
-            h.DbContextFactory,
-            h.CurrentUser,
-            h.HoldDetection,
-            Substitute.For<IHoldOverlapMatcher>(),
-            NullLogger<WallPanelService>.Instance);
 
     private static async Task<Guid> SeedWallHoldAsync(
         WallTestHarness h, double x, int generation, bool isAutoDetected = false)

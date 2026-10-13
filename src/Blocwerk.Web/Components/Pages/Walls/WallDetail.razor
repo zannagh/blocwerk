@@ -495,6 +495,14 @@ else
                                     </button>
                                 }
                             </div>
+                            @if (redetectPlan is { } redetect)
+                            {
+                                @* One confirm with the concrete outcome before a re-detect changes anything (WallDetail.Redetect.cs). *@
+                                <Modal Title="Re-detect holds on this panel" OnClose="CancelRedetect">
+                                    <HoldActionPrompt Outcome="@RedetectOutcomes.Confirm(redetect.Summary)" ConfirmLabel="Re-detect"
+                                                      Disabled="@redetectBusy" OnConfirm="ConfirmRedetect" OnCancel="CancelRedetect" />
+                                </Modal>
+                            }
                             @if (croppingPanel && CanCropPanel)
                             {
                                 <PanelCropTool WallId="_wall.Id" PanelId="_editingPanel.Id" PhotoUrl="@EditingPanelPhotoUrl"
@@ -1836,28 +1844,6 @@ else
     private async Task OnBorderChanged(List<ShapePoint> points)
     {
         await WallService.SetBorderPointsAsync(WallId, points);
-    }
-
-    // Redetect and clean operate on the panel currently being edited: its own image and its own
-    // holds, in that panel's coordinate space. The Core methods only ever remove auto-detected holds
-    // no boulder depends on, so neither can orphan a boulder.
-    private async Task OnRedetectPanel()
-    {
-        if (_editingPanel is null)
-        {
-            return;
-        }
-
-        try
-        {
-            var count = await WallPanelService.RedetectPanelHoldsAsync(WallId, _editingPanel.Id);
-            await LoadEditingPanelHolds();
-            await ShowToast($"Detected {count} holds on this panel");
-        }
-        catch (Exception ex)
-        {
-            await ShowToast($"Redetect failed: {ex.Message}");
-        }
     }
 
     private async Task ToggleEditing()

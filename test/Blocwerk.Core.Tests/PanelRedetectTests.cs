@@ -1,17 +1,15 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
-using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 namespace Blocwerk.Core.Tests;
 
 /// <summary>
-/// Per-panel redetect must operate only on the panel's own auto-detected holds and must never orphan
-/// a boulder: manual holds and any hold a boulder depends on survive it. These tests pin that
-/// boulder-safety contract.
+/// Per-panel re-detect must operate only on the panel's own holds and must never orphan a boulder: of the
+/// holds it does not find again only automatic ones that no boulder uses go; manual holds and any hold a
+/// boulder depends on survive it. These tests pin that boulder-safety contract.
 /// </summary>
 public class PanelRedetectTests
 {
@@ -31,10 +29,9 @@ public class PanelRedetectTests
                 new(0.7, 0.7, 0.02, null, 0.9),
             });
 
-        var service = CreateService(h);
-        var detected = await service.RedetectPanelHoldsAsync(h.WallId, panelId);
+        var done = await RedetectRun.Service(h).RunAsync(h.WallId, panelId);
 
-        Assert.Equal(2, detected);
+        Assert.Equal((2, 1), (done.NewHolds, done.Removed));
 
         await using var db = h.CreateContext();
         var holds = await db.Holds.Where(x => x.WallPanelId == panelId).ToListAsync();
@@ -90,22 +87,13 @@ public class PanelRedetectTests
             stagedPanelId = panel.Id;
         }
 
-        var service = CreateService(h);
-        var detected = await service.RedetectPanelHoldsAsync(h.WallId, stagedPanelId);
+        var done = await RedetectRun.Service(h).RunAsync(h.WallId, stagedPanelId);
 
-        Assert.Equal(0, detected);
+        Assert.False(done.Any);
 
         await using var check = h.CreateContext();
         Assert.Equal(1, await check.Holds.CountAsync(x => x.WallPanelId == stagedPanelId));
     }
-
-    private static WallPanelService CreateService(WallTestHarness h) =>
-        new(
-            h.DbContextFactory,
-            h.CurrentUser,
-            h.HoldDetection,
-            Substitute.For<IHoldOverlapMatcher>(),
-            NullLogger<WallPanelService>.Instance);
 
     /// <summary>
     /// Seeds a live centre panel carrying three holds — an unreferenced auto hold, a boulder-referenced

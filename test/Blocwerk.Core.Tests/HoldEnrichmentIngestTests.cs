@@ -2,6 +2,7 @@ using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Detection.Enrichment;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Redetect;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -48,7 +49,7 @@ public class HoldEnrichmentIngestTests
         var markers = EnrichmentFakes.Markers();
         var service = Panels(h, EnrichmentFakes.Service(EnrichmentFakes.Outlines(), markers));
 
-        Assert.Equal(1, await service.RedetectPanelHoldsAsync(h.WallId, panelId));
+        Assert.Equal(1, (await service.RunAsync(h.WallId, panelId)).NewHolds);
 
         await using var db = h.CreateContext();
         var hold = await db.Holds.SingleAsync(x => x.WallPanelId == panelId);
@@ -68,7 +69,7 @@ public class HoldEnrichmentIngestTests
         broken.EnrichAsync(default!, default!, default)
             .ReturnsForAnyArgs<Task<HoldEnrichmentSummary>>(_ => throw new InvalidOperationException("boom"));
 
-        Assert.Equal(2, await Panels(h, broken).RedetectPanelHoldsAsync(h.WallId, panelId));
+        Assert.Equal(2, (await Panels(h, broken).RunAsync(h.WallId, panelId)).NewHolds);
 
         await using var db = h.CreateContext();
         var holds = await db.Holds.Where(x => x.WallPanelId == panelId).ToListAsync();
@@ -99,9 +100,7 @@ public class HoldEnrichmentIngestTests
     private static IHoldEnrichmentService Enrichment() => EnrichmentFakes.Service(
         EnrichmentFakes.Outlines(), EnrichmentFakes.Markers(EnrichmentFakes.Square(0, 100, 100, 100)));
 
-    private static WallPanelService Panels(WallTestHarness h, IHoldEnrichmentService enrichment) => new(
-        h.DbContextFactory, h.CurrentUser, h.HoldDetection, Substitute.For<IHoldOverlapMatcher>(),
-        NullLogger<WallPanelService>.Instance, holdEnrichment: enrichment);
+    private static IPanelRedetectService Panels(WallTestHarness h, IHoldEnrichmentService enrichment) => RedetectRun.Service(h, enrichment);
 
     private static void Detects(WallTestHarness h, params (double X, double Y)[] positions)
     {
