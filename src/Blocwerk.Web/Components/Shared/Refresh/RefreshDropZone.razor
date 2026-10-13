@@ -3,7 +3,7 @@
 
 <div class="refresh-drop">
     <label for="refresh-files" class="refresh-drop-zone @(uploading ? "is-busy" : null)">
-        <strong>Drop all photos and videos from this visit</strong>
+        <strong>Add all photos and videos from this visit</strong>
         <span class="hint">Panel photos and 3D photos together, HEIC is fine, several videos too. The app sorts them.</span>
         <input type="file" id="refresh-files" multiple
                accept="image/*,.heic,.heif,video/mp4,video/quicktime,.mp4,.mov,.m4v"
@@ -13,13 +13,13 @@
     @if (uploading)
     {
         <progress class="refresh-progress" max="100" value="@percent" aria-label="Upload"></progress>
-        <p class="loading-small" role="status">Uploading: @percent% (@sentMb.ToString("0") of @totalMb.ToString("0") MB)</p>
+        <p class="refresh-status" role="status">Uploading: @percent% (@sentMb.ToString("0") of @totalMb.ToString("0") MB)</p>
     }
 
     @if (View is not null)
     {
         <p class="refresh-counts" role="status">
-            @View.Photos.Count photos@(View.Videos.Count > 0 ? $", {View.Videos.Count} videos" : string.Empty) uploaded.
+            <strong>@Counts</strong> uploaded.
             @if (!View.CaptureAvailable)
             {
                 <span class="hint">3D is not set up for this wall, so only the panel photos will be used.</span>
@@ -27,14 +27,32 @@
         </p>
     }
 
+    @* What went wrong comes first and open; the files that are fine are one line that opens on request. *@
     @if (problems.Count > 0)
     {
         <details class="refresh-problems" open>
-            <summary>@problems.Count files were not used</summary>
+            <summary>@PlainCopy.Plural(problems.Count, "file") @(problems.Count == 1 ? "was" : "were") not used</summary>
             <ul>
                 @foreach (var file in problems)
                 {
                     <li><strong>@(file.FileName ?? "A file")</strong>: @file.Problem</li>
+                }
+            </ul>
+        </details>
+    }
+
+    @if (View is { Photos.Count: > 0 } or { Videos.Count: > 0 })
+    {
+        <details class="refresh-files">
+            <summary>Show the @(View.Photos.Count + View.Videos.Count) files</summary>
+            <ul>
+                @foreach (var video in View.Videos)
+                {
+                    <li>@(video.FileName ?? "A video") · @Megabytes(video.SizeBytes)</li>
+                }
+                @foreach (var photo in View.Photos)
+                {
+                    <li>@(photo.FileName ?? $"Photo {photo.Index}")</li>
                 }
             </ul>
         </details>

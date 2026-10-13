@@ -1,157 +1,79 @@
 @using Blocwerk.Core.Refresh
-@* The quick review's one confirm: what the panel update will do, before anything goes live. *@
+@* The check step: what the panel update will do, before anything goes live. On one screen: the headline numbers, the
+   cards that need a look one at a time on the card deck (what boulders use first; an answered card leaves the queue,
+   and "Change" in the bar above the answers takes the last answer back), and at the bottom Apply, which says how
+   many cards are still open and asks before it applies. "List" on the page's header shows everything as lists
+   instead (RefreshSummaryLists): all cards, the holds that moved, the holds not found again, every count. *@
 
-<div class="refresh-confirm">
-    <h2>Check and apply</h2>
+<div class="refresh-confirm @(ListView ? "is-list" : null)">
     @if (View.Summary is { } s)
     {
-        <p>New photos for: @string.Join(", ", s.Panels)</p>
-        @if (s.EditedInFullReview)
+        <dl class="refresh-numbers" aria-label="What the update does">
+            @foreach (var number in RefreshFlow.Numbers(s))
+            {
+                <div class="@(number.Attention ? "is-attention" : null)">
+                    <dt>@number.Label</dt>
+                    <dd>@number.Value</dd>
+                </div>
+            }
+        </dl>
+        @if (error is not null)
         {
-            <p class="refresh-3d-note">Includes the changes made in the full review.</p>
+            <p class="field-error" role="alert">@error</p>
         }
-        <RefreshChecks View="View" OnAnswered="OnAnswered" />
-        @if (s.FullRevision is { } revision)
+
+        @if (ListView)
         {
-            <RefreshRevisionSummary Summary="s" Revision="revision" />
+            <RefreshSummaryLists View="View" Summary="s" Checks="checks" Disabled="AnswersOff" OnAnswer="AnswerAsync" />
         }
-        @if (s.MovedHolds is { Count: > 0 } moved)
+        else
         {
-            <section class="refresh-moves" aria-labelledby="refresh-moves-title">
-                <h3 id="refresh-moves-title">@(moved.Count == 1 ? "1 hold moved" : $"{moved.Count} holds moved")</h3>
-                <p class="hint">
-                    A hold that moved up to 10 cm stays on its boulders, which are marked for review. A hold that moved farther
-                    is taken off its boulders; they are marked for revision, and nothing is deleted.
-                </p>
-                <ul class="refresh-moves-list">
-                    @foreach (var m in moved)
+            <CardDeck Count="Queue.Count" Index="cursor.Index" Label="@(Current is { } shown ? RefreshCheckCopy.Short(shown) : null)" OnStep="Step" OnKey="OnKeyAsync"
+                      Note="@(LastAnswered is null ? null : LastAnswerNote)" QueueList="QueueRows">
+                <ChildContent>
+                    @if (Current is { } check)
                     {
-                        <li class="@(m.Outcome == Blocwerk.Core.Enums.HoldMoveOutcome.Removed ? "is-removed" : "is-kept")">
-                            <strong>@(m.HoldName ?? "A hold")</strong> @m.Text
-                            <span class="refresh-moves-source">(@(m.Source == Blocwerk.Core.Enums.HoldMoveSource.ThreeD ? "measured in 3D" : "estimated from the photo"))</span>
-                            @if (m.Boulders.Count > 0)
-                            {
-                                <div class="refresh-moves-boulders">Boulders: @string.Join(", ", m.Boulders)</div>
-                            }
-                        </li>
+                        <RefreshCheckCard @key="check.Id" @ref="card" RefreshId="View.Id" Check="check" Disabled="AnswersOff"
+                                          OnAnswer="answer => AnswerAsync(new RefreshCheckAnswer(check.Id, answer))" />
                     }
-                </ul>
-            </section>
+                </ChildContent>
+                <Empty>
+                    <p class="glyph-ok" role="status">@(checks.Count == 0 ? "The update is sure about every hold: no card needs a look." : "Every card is answered.")</p>
+                    <p class="hint">Apply below when you are ready, or open the list to see everything the update does.</p>
+                </Empty>
+            </CardDeck>
         }
-        @if (s.NotFoundHolds is { Count: > 0 } missing)
-        {
-            <section class="refresh-moves" aria-labelledby="refresh-missing-title">
-                <h3 id="refresh-missing-title">@(missing.Count == 1 ? "1 hold on a boulder was not found again" : $"{missing.Count} holds on boulders were not found again")</h3>
-                <p class="hint">
-                    Nothing is taken off a boulder: these holds stay where they were, and the
-                    @(s.BouldersMarkedNotFound == 1 ? "boulder that uses" : $"{s.BouldersMarkedNotFound} boulders that use") them
-                    @(s.BouldersMarkedNotFound == 1 ? "is" : "are") marked for review.
-                </p>
-                <ul class="refresh-moves-list">
-                    @foreach (var m in missing)
-                    {
-                        <li class="is-kept">
-                            <strong>@(m.HoldName ?? "A hold")</strong> @m.Text
-                            <div class="refresh-moves-boulders">Boulders: @string.Join(", ", m.Boulders)</div>
-                        </li>
-                    }
-                </ul>
-            </section>
-        }
-        @if (s.FullRevision is null)
-        {
-        <details class="refresh-summary-details" open="@(!HasCards)">
-            <summary>Everything else: what the update does</summary>
-        <ul class="refresh-summary">
-            <li><strong>@s.Refound</strong> holds found again on the new photos</li>
-            <li class="@(s.KeptInPlace > 0 ? "is-attention" : null)">
-                <strong>@s.KeptInPlace</strong> holds were not recognised in the new photos; they stay where they were
-                @if (s.BouldersOnKeptHolds > 0)
-                {
-                    <span> (@s.BouldersOnKeptHolds boulders use one of them)</span>
-                }
-            </li>
-            <li>
-                <strong>@s.NewHolds</strong> new holds@(s.NewSeenIn3D > 0 ? $", {s.NewSeenIn3D} of them also seen in the 3D model" : string.Empty)
-            </li>
-            <li>
-                <strong>@s.DroppedDetections</strong> photo detections ignored (on a marker, outside the old photo or already known)
-                @if (s.DroppedByThe3DModel > 0)
-                {
-                    <span>; @s.DroppedByThe3DModel of them the 3D model shows as a hold you already have, or off the wall</span>
-                }
-            </li>
-            @if (s.PossiblyMoved > 0)
-            {
-                <li class="is-attention"><strong>@s.PossiblyMoved</strong> holds may have moved; the quick review leaves them in place</li>
-            }
-            <li><strong>@s.OverlapLinks</strong> holds linked between neighbouring panels@(s.OverlapsLeftOut > 0 ? $", {s.OverlapsLeftOut} unsure overlaps left unlinked" : string.Empty)</li>
-            @if (s.PossiblyRemovedHolds > 0)
-            {
-                <li class="is-attention"><strong>@s.PossiblyRemovedHolds</strong> of the holds not found again look removed (bare wall on the new photo and in the 3D model); they stay unless you remove them above</li>
-            }
-            @if (s.ReplacedHolds > 0)
-            {
-                <li class="is-attention"><strong>@s.ReplacedHolds</strong> of the holds not found again have another hold on their spot now; the old hold stays unless you remove it above, and the other one is added as a new hold</li>
-            }
-            <li><strong>@s.Removed</strong> holds removed</li>
-        </ul>
-        </details>
-        }
-    }
 
-    @if (View.SummaryUpdating)
-    {
-        <p class="refresh-3d-note" role="status">Updating the summary with your answer.</p>
-    }
-
-    @if (View.Check3DPending)
-    {
-        <p class="refresh-3d-note" role="status">The new 3D model is ready. Checking the new detections against it; this takes a minute or two.</p>
-    }
-    else if (Waiting3D)
-    {
-        <p class="refresh-3d-note">
-            The 3D model is still being built@(View.Capture?.Stage is { } stage ? $" ({stage})" : string.Empty).
-            When it is ready, this check runs again with it and leaves out detections of holds you already have.
-            You can apply now, or wait here.
-        </p>
-    }
-    else if (View.Summary?.CheckedWithModelId is not null)
-    {
-        <p class="refresh-3d-note">Checked against the 3D model from this visit.</p>
-    }
-
-    @if (View.Summary?.FullRevision is not null)
-    {
-        <p class="hint">Nothing is live yet. Applying cannot be undone from the app; "Discard this update" below leaves the wall as it is.</p>
-        <div class="refresh-actions">
-            <button class="btn-danger" @onclick="OnApply" disabled="@(View.Check3DPending || View.SummaryUpdating)">Apply: start the wall over</button>
-        </div>
-    }
-    else
-    {
-        <p class="hint">
-            Nothing is live yet. "Open full review" shows every step of the update with these choices already filled in.
-        </p>
-        <div class="refresh-actions">
-            <button class="btn-primary" @onclick="OnApply" disabled="@(View.Check3DPending || View.SummaryUpdating)">Apply update</button>
-            <a class="btn-secondary" href="/walls/@View.WallId?update=review&amp;session=@View.UpdateSessionId">Open full review</a>
+        <div class="refresh-apply">
+            <span class="refresh-apply-note">@ApplyNote(s)</span>
+            <ConfirmAction Label="@RefreshFlow.ApplyLabel(s.ChecksOpen, s.FullRevision is not null)" Question="@RefreshFlow.ApplyQuestion(s)"
+                           ConfirmLabel="@(s.FullRevision is null ? "Apply update" : "Start the wall over")"
+                           TriggerClass="@(s.FullRevision is null ? "btn-primary" : "btn-danger")" ConfirmClass="@(s.FullRevision is null ? "btn-primary" : "btn-danger")"
+                           Neutral="@(s.FullRevision is null)" Disabled="@(View.Check3DPending || View.SummaryUpdating)" OnConfirm="OnApply" />
         </div>
     }
 </div>
 
 @code {
-    [Parameter]
-    public WallRefreshView View { get; set; } = default!;
+    private RenderFragment LastAnswerNote => @<p class="deck-undo" role="status">
+        @if (LastAnswered is { } last)
+        {
+            <span>@RefreshCheckCopy.AnsweredLabel(last)</span>
+            <button type="button" class="btn-link" disabled="@AnswersOff" @onclick="() => ChangeLastAsync(last.Id)">Change</button>
+            <button type="button" class="btn-link deck-undo-close" @onclick="() => lastId = null" aria-label="Hide this note">&times;</button>
+        }
+    </p>;
 
-    [Parameter]
-    public EventCallback OnApply { get; set; }
-
-    [Parameter]
-    public EventCallback OnAnswered { get; set; }
-
-    private bool HasCards => View.Summary is { ChecksOpen: > 0 } or { PossiblyRemovedHolds: > 0 } or { MovedHolds.Count: > 0 } or { NotFoundHolds.Count: > 0 };
-
-    private bool Waiting3D => View.Capture is { IsRunning: true } && View.Summary is { Attempted3DModelId: null };
+    private RenderFragment QueueRows => @<ol>
+        @foreach (var item in Queue)
+        {
+            <li @key="item.Id">
+                <button type="button" class="@(item.Id == Current?.Id ? "is-current" : null)" aria-current="@(item.Id == Current?.Id ? "true" : null)"
+                        @onclick="() => cursor.JumpTo(item.Id)">
+                    <span>@RefreshCheckCopy.Short(item)</span>
+                    <small>@(item.HoldName ?? "hold")@(item.Boulders > 0 ? $" · {PlainCopy.Plural(item.Boulders, "boulder")}" : null)</small>
+                </button>
+            </li>
+        }
+    </ol>;
 }
