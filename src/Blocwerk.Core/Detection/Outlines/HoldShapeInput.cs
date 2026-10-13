@@ -12,7 +12,13 @@ namespace Blocwerk.Core.Detection.Outlines;
 /// True for anything the resolver must never change: hand-drawn shapes, manually placed holds, plain circles it
 /// has no business with. Locked holds are obstacles that always win.
 /// </param>
-public sealed record HoldShapeInput(Guid Id, double X, double Y, double Radius, IReadOnlyList<ShapePoint>? Shape, bool Locked);
+/// <param name="MayCarry">
+/// Whether another hold can lie ON this one (<see cref="HoldStacks.HoldStacking.MayCarry"/>): false for a plain circle
+/// a person placed. A hold and what it carries overlap on purpose and are never fitted against each other.
+/// </param>
+/// <param name="StackedOn">The hold this one is stacked on (<see cref="Hold.StackedOnHoldId"/>), when that is stored.</param>
+public sealed record HoldShapeInput(
+    Guid Id, double X, double Y, double Radius, IReadOnlyList<ShapePoint>? Shape, bool Locked, bool MayCarry = true, Guid? StackedOn = null);
 
 /// <summary>How the resolver fitted one unlocked hold.</summary>
 public enum HoldShapeFit

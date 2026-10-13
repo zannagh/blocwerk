@@ -1,3 +1,5 @@
+using Blocwerk.Core.Abstractions;
+
 namespace Blocwerk.HoldDetection.Matching;
 
 /// <summary>
@@ -18,6 +20,12 @@ internal static class MatchGate
 
     /// <summary>Floor on the local field error, so a near-perfect field does not shrink the tolerance to nothing.</summary>
     internal const double MinSpreadPx = 4.0;
+
+    /// <summary>
+    /// Sizes (each normalized to its own photo's long side) further apart than this factor are not the same hold: a hold
+    /// on a volume and the volume lie on one spot. Generous, so a photo framed a little differently never trips it.
+    /// </summary>
+    internal const double OtherSizeFactor = 2.5;
 
     /// <summary>Number of neighbouring mutual candidates the local field error is estimated from.</summary>
     internal const int SpreadNeighbours = 8;
@@ -55,6 +63,51 @@ internal static class MatchGate
         }
 
         return spread;
+    }
+
+    /// <summary>
+    /// A hold's size for <see cref="OtherSize"/>, normalized to its photo's long side: half the larger extent of its
+    /// outline when it has one (a hand-drawn hold's radius need not follow its outline), else its radius.
+    /// </summary>
+    /// <param name="hold">The hold.</param>
+    /// <param name="width">Its photo's width, px.</param>
+    /// <param name="height">Its photo's height, px.</param>
+    public static double? SizeOf(MatcherHold hold, double width, double height)
+    {
+        if (hold.Shape is not { Count: >= 3 } shape || width <= 0 || height <= 0)
+        {
+            return hold.SizeNorm;
+        }
+
+        double w = (shape.Max(p => p.X) - shape.Min(p => p.X)) * width;
+        double h = (shape.Max(p => p.Y) - shape.Min(p => p.Y)) * height;
+        return Math.Max(w, h) / 2 / Math.Max(width, height);
+    }
+
+    /// <summary>True when both sizes are known and differ by more than <see cref="OtherSizeFactor"/>.</summary>
+    /// <param name="oldSize">The old hold's normalized size, or null.</param>
+    /// <param name="newSize">The detection's normalized size, or null.</param>
+    public static bool OtherSize(double? oldSize, double? newSize) =>
+        oldSize is > 0 && newSize is > 0 && Math.Max(oldSize.Value, newSize.Value) > OtherSizeFactor * Math.Min(oldSize.Value, newSize.Value);
+
+    /// <summary>
+    /// The nearest candidate of an old hold that is not of a clearly different size: the nearest one, else the second
+    /// nearest when the nearest is (the old hold's base, or a hold sitting on it), else none.
+    /// </summary>
+    /// <param name="oldSize">The old hold's normalized size, or null.</param>
+    /// <param name="candidateSizes">The normalized sizes of its nearest detections, nearest first.</param>
+    /// <returns>The position in <paramref name="candidateSizes"/>, or -1.</returns>
+    public static int NearestOfItsSize(double? oldSize, IReadOnlyList<double?> candidateSizes)
+    {
+        for (int n = 0; n < candidateSizes.Count; n++)
+        {
+            if (!OtherSize(oldSize, candidateSizes[n]))
+            {
+                return n;
+            }
+        }
+
+        return -1;
     }
 
     /// <summary>

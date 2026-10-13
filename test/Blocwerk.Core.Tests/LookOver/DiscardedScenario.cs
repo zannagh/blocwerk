@@ -37,6 +37,12 @@ internal sealed class DiscardedScenario : IDisposable
     /// <summary>The one new hold the update kept, on the blue spot.</summary>
     public Guid KeptId { get; }
 
+    /// <summary>
+    /// The kept hold's radius: about the size of a discarded detection, so a detection on its spot is a second detection
+    /// of it. A clearly smaller detection would be a hold ON it (<see cref="Blocwerk.Core.HoldStacks.HoldStacking"/>).
+    /// </summary>
+    public const double KeptRadius = 0.055;
+
     /// <summary>The octagon every discarded detection of the scenario was detected with.</summary>
     public static List<ShapePoint> Outline => ShapePoint.DefaultOctagon(0.05);
 
@@ -47,7 +53,7 @@ internal sealed class DiscardedScenario : IDisposable
     {
         var colors = await HoldColorScenario.CreateAsync();
         var panel = await colors.AddPanelAsync(0, generation: 1, staged: true);
-        var kept = await colors.AddHoldAsync(panel, HoldColorScenario.BlueSpot, generation: 1);
+        var kept = await colors.AddHoldAsync(panel, HoldColorScenario.BlueSpot, generation: 1, h => h.Radius = KeptRadius);
         var removed = new List<Guid>();
         foreach (var (spot, confidence, reason) in discarded)
         {

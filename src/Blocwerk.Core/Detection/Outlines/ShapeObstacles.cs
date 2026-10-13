@@ -5,7 +5,7 @@ internal sealed class ShapeObstacles(double tolerance)
 {
     private const int CircleSegments = 48;
 
-    private readonly List<(P2[] Poly, double MinX, double MinY, double MaxX, double MaxY)> items = [];
+    private readonly List<(P2[] Poly, double MinX, double MinY, double MaxX, double MaxY, Guid Owner)> items = [];
 
     /// <summary>A circle as a polygon whose edges are tangent (circumscribed), so it never under-reports an overlap.</summary>
     public static P2[] Circle(P2 centre, double radius)
@@ -21,9 +21,23 @@ internal sealed class ShapeObstacles(double tolerance)
         return poly;
     }
 
-    public void Add(IReadOnlyList<P2> poly)
+    public void Add(IReadOnlyList<P2> poly, Guid owner = default)
     {
-        items.Add((poly.ToArray(), poly.Min(p => p.X), poly.Min(p => p.Y), poly.Max(p => p.X), poly.Max(p => p.Y)));
+        items.Add((poly.ToArray(), poly.Min(p => p.X), poly.Min(p => p.Y), poly.Max(p => p.X), poly.Max(p => p.Y), owner));
+    }
+
+    /// <summary>The footprints without those of some holds: what a hold has to clear when it sits on (or carries) those.</summary>
+    /// <param name="owners">The holds whose footprints do not count; null or empty returns this set itself.</param>
+    public ShapeObstacles Without(IReadOnlySet<Guid>? owners)
+    {
+        if (owners is not { Count: > 0 })
+        {
+            return this;
+        }
+
+        var rest = new ShapeObstacles(tolerance);
+        rest.items.AddRange(items.Where(i => !owners.Contains(i.Owner)));
+        return rest;
     }
 
     /// <summary>True when the polygon is closer than the tolerance to (or inside) any claimed footprint.</summary>

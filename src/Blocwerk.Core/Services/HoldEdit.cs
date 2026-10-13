@@ -64,6 +64,12 @@ public sealed record HoldEdit
     public FieldUpdate<string?> Name { get; init; }
 
     /// <summary>
+    /// The hold this one sits on (<see cref="Hold.StackedOnHoldId"/>), or a <c>Set(null)</c> to put it back on the
+    /// wall. Refused for a base on another photo or one that sits on this hold itself.
+    /// </summary>
+    public FieldUpdate<Guid?> StackedOn { get; init; }
+
+    /// <summary>
     /// Whether a move retires the boulders that use this hold. Big-wall panel edits pass false,
     /// because parallax between two panel photos moves a hold without anything having changed.
     /// </summary>
@@ -94,8 +100,10 @@ public sealed record HoldEdit
         bool flagBouldersOnMove = true,
         bool colorStillProposed = false,
         bool resetToCircle = false,
-        List<ShapePoint>? shapeControlPoints = null) => new()
+        List<ShapePoint>? shapeControlPoints = null,
+        FieldUpdate<Guid?> stackedOn = default) => new()
         {
+            StackedOn = stackedOn,
             ShapeControlPoints = shapePoints is null ? null : shapeControlPoints,
             ColorStillProposed = colorStillProposed,
             X = x,

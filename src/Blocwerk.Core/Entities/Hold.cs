@@ -132,6 +132,14 @@ public partial class Hold
     /// </summary>
     public Guid? AlignmentSourceHoldId { get; set; }
 
+    /// <summary>
+    /// The hold this one is mounted ON (a hold on a volume, a small hold on a larger one): a hold of the same photo
+    /// that lies behind it as seen from in front of the wall. Null for a hold on the wall itself. A base can carry
+    /// several holds and be stacked itself; a chain never loops (<c>HoldStacker</c>). No foreign key: a base that is
+    /// deleted un-stacks its holds (<c>HoldDeletion</c>), and an id that points nowhere reads as "not stacked".
+    /// </summary>
+    public Guid? StackedOnHoldId { get; set; }
+
     // ── Glyph wall geometry (experimental, additive) ─────────────────────────────────────────────
     // Everything below is METRIC and optional. None of it reinterprets X/Y/Radius/ShapePoints, which
     // stay normalized 0..1 per panel image. All null until the glyph pipeline measures the hold on a
@@ -259,6 +267,7 @@ public partial class Hold
         IsVirtual = IsVirtual,
         KeptUnconfirmedGeneration = KeptUnconfirmedGeneration,
         AlignmentSourceHoldId = AlignmentSourceHoldId,
+        StackedOnHoldId = StackedOnHoldId,
         WidthMm = WidthMm,
         HeightMm = HeightMm,
         AreaMm2 = AreaMm2,

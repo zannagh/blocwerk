@@ -1,6 +1,7 @@
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.HoldStacks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -74,6 +75,7 @@ public partial class WallPanelService
             hold.Category = category.Value;
         }
         db.Holds.Add(hold);
+        await HoldStacker.StackNewAsync(db, [hold]);
         await db.SaveChangesAsync();
         if (!stagedPanel)
         {

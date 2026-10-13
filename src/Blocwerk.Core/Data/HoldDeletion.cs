@@ -7,7 +7,8 @@ namespace Blocwerk.Core.Data;
 /// <summary>
 /// The one place that prepares holds for a hard delete. Three FK families reference
 /// <see cref="Hold"/> with <c>Restrict</c>, so every one of them has to be dealt with in the SAME
-/// SaveChanges as the delete or the whole unit of work (the change journal included) rolls back:
+/// SaveChanges as the delete or the whole unit of work (the change journal included) rolls back
+/// (and, without a key, what sits ON a dying hold is un-stacked: it stays, as a hold on the wall):
 /// <list type="bullet">
 /// <item><see cref="BoulderHold"/> — membership rows, handled per <see cref="HoldDeleteBoulderPolicy"/>.</item>
 /// <item><see cref="HoldLink"/> — same physical hold across two panels; meaningless once an end dies, removed.</item>
@@ -65,6 +66,7 @@ public static class HoldDeletion
 
         await RemoveHoldLinksAsync(db, ids, ct);
         await TombstoneGenerationLinksAsync(db, ids, ct);
+        await UnstackAsync(db, ids, ct);
         return historic;
     }
 
@@ -77,6 +79,24 @@ public static class HoldDeletion
         CancellationToken ct = default)
     {
         return PrepareHoldsForDeleteAsync(db, new[] { holdId }, boulderPolicy, clearNeedsReview, ct);
+    }
+
+    /// <summary>
+    /// The holds that sit on a dying hold (<see cref="Hold.StackedOnHoldId"/>) stay, as holds on the wall. Tracked, so
+    /// the change journal records it and a revert that brings the base back stacks them again.
+    /// </summary>
+    /// <param name="db">The context; the caller commits.</param>
+    /// <param name="ids">The holds about to be removed.</param>
+    /// <param name="ct">Cancellation token.</param>
+    internal static async Task UnstackAsync(BlocwerkDbContext db, IReadOnlyCollection<Guid> ids, CancellationToken ct = default)
+    {
+        var bases = ids.Select(id => (Guid?)id).ToList();
+
+        // By what the context holds now: a merge has already moved these holds onto the hold that stays.
+        foreach (var upper in (await db.Holds.Where(h => bases.Contains(h.StackedOnHoldId)).ToListAsync(ct)).Where(h => bases.Contains(h.StackedOnHoldId)))
+        {
+            upper.StackedOnHoldId = null;
+        }
     }
 
     private static async Task<int> DetachBoulderHoldsAsync(

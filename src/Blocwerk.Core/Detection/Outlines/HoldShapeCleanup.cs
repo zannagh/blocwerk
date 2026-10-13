@@ -74,7 +74,7 @@ public static class HoldShapeCleanup
         var resolvable = panelHolds.Where(IsResolvable).ToDictionary(h => h.Id);
         var smoothed = resolvable.Values.ToDictionary(h => h.Id, h => h.ShapePoints is { Count: >= 3 } shape ? HoldShapeSmoother.Smooth(shape, aspect) : null);
         var current = panelHolds.Select(h => resolvable.ContainsKey(h.Id)
-            ? new HoldShapeInput(h.Id, h.X, h.Y, h.Radius, smoothed[h.Id], Locked: false)
+            ? new HoldShapeInput(h.Id, h.X, h.Y, h.Radius, smoothed[h.Id], Locked: false, StackedOn: h.StackedOnHoldId)
             : Locked(h)).ToList();
 
         // Run to a fixpoint: every pass only shrinks things, so it converges, and a re-run on the result changes nothing.
@@ -126,7 +126,7 @@ public static class HoldShapeCleanup
         ArgumentNullException.ThrowIfNull(outlines);
         var inputs = panelHolds
             .Select(h => outlines.TryGetValue(h, out var o)
-                ? new HoldShapeInput(h.Id, h.X, h.Y, h.Radius, IsContour(o) ? o.ShapePoints : null, Locked: false)
+                ? new HoldShapeInput(h.Id, h.X, h.Y, h.Radius, IsContour(o) ? o.ShapePoints : null, Locked: false, StackedOn: h.StackedOnHoldId)
                 : Locked(h))
             .ToList();
         var byId = outlines.Keys.ToDictionary(h => h.Id);
@@ -164,7 +164,7 @@ public static class HoldShapeCleanup
             : outline with { ShapePoints = r.Shape.ToList(), ShapeHoles = HoldShapeHoles.Inside(outline.ShapeHoles, r.Shape) };
     }
 
-    private static HoldShapeInput Locked(Hold h) => new(h.Id, h.X, h.Y, h.Radius, h.ShapePoints, Locked: true);
+    private static HoldShapeInput Locked(Hold h) => new(h.Id, h.X, h.Y, h.Radius, h.ShapePoints, Locked: true, HoldStacks.HoldStacking.MayCarry(h), h.StackedOnHoldId);
 
     private static bool IsContour(HoldOutlineResult o) =>
         o.Method != HoldOutlineMethod.CircleFallback && o.ShapePoints is { Count: >= 3 };

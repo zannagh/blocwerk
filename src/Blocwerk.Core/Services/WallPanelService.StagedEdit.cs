@@ -1,6 +1,7 @@
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.HoldStacks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -66,6 +67,7 @@ public partial class WallPanelService
         }
 
         db.Holds.Add(hold);
+        await HoldStacker.StackNewAsync(db, [hold]);
         await db.SaveChangesAsync();
 
         logger.LogInformation(
@@ -112,6 +114,7 @@ public partial class WallPanelService
 
         // Staged rows carry no boulders, so no boulder rescue is required before removal.
         var hold = await LoadStagedHoldAsync(db, wallId, holdId);
+        await HoldDeletion.UnstackAsync(db, [hold.Id]);
         db.Holds.Remove(hold);
         await db.SaveChangesAsync();
 

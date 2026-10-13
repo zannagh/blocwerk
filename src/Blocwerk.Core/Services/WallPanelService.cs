@@ -5,6 +5,7 @@ using Blocwerk.Core.Detection.Enrichment;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Helpers;
+using Blocwerk.Core.HoldStacks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -139,6 +140,7 @@ public partial class WallPanelService : IWallPanelService
         var enrichment = await holdEnrichment.EnrichSafelyAsync(
             db, new HoldEnrichmentRequest(image, wall, newHolds, panel.Id, panel.Generation, FromStagedPhoto: true), logger);
         newHolds.RemoveAll(enrichment.DroppedMarkerHolds.Contains);
+        await HoldStacker.StackNewAsync(db, newHolds);
         await db.SaveChangesAsync();
 
         var unaligned = new List<Guid>();

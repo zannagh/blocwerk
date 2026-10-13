@@ -48,7 +48,7 @@ public sealed partial class WallLookOverService
                 // Against the holds as they are NOW, those just added included: of two detections of one hold only the surer is added.
                 var (size, holds) = areas[finding.PanelId!.Value];
                 var area = DiscardedDetections.Area(finding, size);
-                if (area.CoveredBy(holds) >= LookOverRules.NoOverlapBelow)
+                if (DiscardedDetections.Overlap(area, holds) >= LookOverRules.NoOverlapBelow)
                 {
                     continue;
                 }

@@ -154,7 +154,8 @@ public partial class WallBigUpdateService
             panel, low.Select(i => frame.UnchangedQuery(pairs[i], others)).Concat(own.Select(i => frame.SpotQuery(pairs[i].OldHoldId))).ToList());
         for (var k = 0; k < low.Count; k++)
         {
-            judged[low[k]].Mispaired = more[k] >= NewHoldTriage.SameAsOldScore;
+            judged[low[k]].Mispaired = more[k] >= NewHoldTriage.SameAsOldScore
+                || HoldLookCheck.OtherSize(judged[low[k]].OldRadiusPx, judged[low[k]].TwinRadiusPx);
         }
 
         looks.Spots.AddRange(own.Select((i, k) => new JudgedSpot(pairs[i].OldHoldId, panel, more[low.Count + k], judged[i].OldRadiusPx)));

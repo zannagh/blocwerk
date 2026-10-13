@@ -1,5 +1,6 @@
 using System.Globalization;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.HoldStacks;
 
 namespace Blocwerk.Core.Detection.Outlines;
 
@@ -8,6 +9,10 @@ namespace Blocwerk.Core.Detection.Outlines;
 /// Three rules (a virtual hold counts as hand-made; against an automatic hold it also matches when its own centre lies inside the detection): an automatic hold whose CENTRE lies inside a hand-made hold; two automatic
 /// holds with IoU >= <see cref="AutoIou"/> or one mostly inside the other (>= <see cref="AutoContainment"/>) and a similar
 /// colour; two hand-made holds with IoU >= <see cref="HandIou"/> or containment >= <see cref="HandContainment"/>.
+/// A hold that sits ON the other is never a candidate (a hold on a volume and the volume are two holds): a pair that
+/// is stacked (<see cref="Hold.StackedOnHoldId"/>), and two automatic or two hand-made holds of which one lies inside the
+/// clearly larger other (<see cref="HoldStacking.AreStack"/>). A detection inside a hand-made hold stays a candidate
+/// until somebody stacks the two: that is the same hold recorded twice far more often than a hold on a hold.
 /// </summary>
 public static class HoldDuplicateFinder
 {
@@ -44,7 +49,8 @@ public static class HoldDuplicateFinder
                     continue;
                 }
 
-                if (Judge(items[i].Hold, items[i].Poly, items[j].Hold, items[j].Poly) is not var (kind, confidence, iou, containment))
+                if (Stacked(items[i].Hold, items[j].Hold)
+                    || Judge(items[i].Hold, items[i].Poly, items[j].Hold, items[j].Poly) is not var (kind, confidence, iou, containment))
                 {
                     continue;
                 }
@@ -79,6 +85,10 @@ public static class HoldDuplicateFinder
     }
 
     private static double Square(double d) => d * d;
+
+    private static bool Stacked(Hold a, Hold b) =>
+        a.StackedOnHoldId == b.Id || b.StackedOnHoldId == a.Id
+        || (HoldMergeRules.IsHandMade(a) == HoldMergeRules.IsHandMade(b) && HoldStacking.AreStack(a, b));
 
     private static int Count(IReadOnlyDictionary<Guid, int>? counts, Hold hold) =>
         counts is not null && counts.TryGetValue(hold.Id, out var n) ? n : 0;

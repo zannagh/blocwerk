@@ -6,6 +6,7 @@ using Blocwerk.Core.Detection.Outlines;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Helpers;
+using Blocwerk.Core.HoldStacks;
 using Blocwerk.Core.Telemetry;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -398,6 +399,7 @@ public class WallService : IWallService
             var kept = newHolds.Count - enrichment.DroppedMarkerHolds.Count;
 
             await EnsureCenterPanelAsync(db, wall);
+            await HoldStacker.StackNewAsync(db, newHolds);
             await db.SaveChangesAsync();
             await _activityLogService.LogAsync(wallId, null, ActivityType.WallPhotoUploaded, $"{kept} holds detected");
             _logger.LogInformation("Photo uploaded to wall {WallId} by {UserId} with {DetectedHoldCount} holds detected", wallId, user.Id, kept);
@@ -658,6 +660,9 @@ public class WallService : IWallService
                 .ToListAsync(ct);
             db.HoldLinks.RemoveRange(actualHoldLinks);
 
+            // The survivor took the detected hold's place on the photo: what that hold sat on, and what sat on it.
+            virtualHold.StackedOnHoldId = actualHold.StackedOnHoldId == virtualHold.Id ? null : actualHold.StackedOnHoldId;
+            await HoldStacker.MergeAsync(db, virtualHold, actualHold, ct);
             db.Holds.Remove(actualHold);
 
             await db.SaveChangesAsync(ct);
@@ -694,6 +699,7 @@ public class WallService : IWallService
             // curated facts about the physical hold, so they are re-pointed onto the survivor.
             await RepointDuplicateHoldLinksAsync(db, survivorHoldId, duplicateHoldId, ct);
             await RepointDuplicateGenerationLinksAsync(db, survivorHoldId, duplicateHoldId, ct);
+            await HoldStacker.MergeAsync(db, survivor, duplicate, ct);
 
             db.Holds.Remove(duplicate);
 
@@ -1407,6 +1413,7 @@ public class WallService : IWallService
             };
 
             db.Holds.Add(hold);
+            await HoldStacker.StackNewAsync(db, [hold]);
             await db.SaveChangesAsync();
             if (!isVirtual && hold.WallPanelId is not null)
             {
@@ -1599,6 +1606,10 @@ public class WallService : IWallService
             }
 
             hold.Name = edit.Name.Or(hold.Name);
+            if (edit.StackedOn.HasValue && edit.StackedOn.Value != hold.StackedOnHoldId)
+            {
+                await HoldStacker.SetBaseAsync(db, hold, edit.StackedOn.Value);
+            }
 
             // Re-place / re-size in the same save: a reshape keeps the facet position, a move gets a new one
             // from the photo's markers or its placed neighbours, so the hold never drops out of 3D.

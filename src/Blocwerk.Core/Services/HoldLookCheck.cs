@@ -32,6 +32,18 @@ public static class HoldLookCheck
         return score >= options.ReplacedBelowScore ? HoldLook.Unsure : HoldLook.Replaced;
     }
 
+    /// <summary>
+    /// Whether a pair that does not look alike is two holds of clearly different size (<see cref="NewHoldTriage.SameHoldSizeFactor"/>):
+    /// a hold and the volume it sits on, paired because the other one was not detected. Such a pair is taken apart
+    /// without "another hold is here now": the old hold is judged by its own spot, the detection is a hold of its own.
+    /// </summary>
+    /// <param name="oldRadiusPx">The old hold's radius on the new photo.</param>
+    /// <param name="twinRadiusPx">The detection's radius.</param>
+    /// <returns>True when both sizes are known and clearly differ.</returns>
+    public static bool OtherSize(double oldRadiusPx, double twinRadiusPx) =>
+        oldRadiusPx > 0 && twinRadiusPx > 0
+        && Math.Max(oldRadiusPx, twinRadiusPx) > NewHoldTriage.SameHoldSizeFactor * Math.Min(oldRadiusPx, twinRadiusPx);
+
     /// <summary>Whether an old hold with no twin is gone from its predicted spot; anything above the bar says nothing.</summary>
     /// <param name="score">The correlation at the spot.</param>
     /// <param name="options">The thresholds.</param>

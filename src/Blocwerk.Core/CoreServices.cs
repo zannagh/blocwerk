@@ -3,6 +3,7 @@ using Blocwerk.Core.Capture;
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.HoldMoves;
+using Blocwerk.Core.HoldStacks;
 using Blocwerk.Core.Detection.Enrichment;
 using Blocwerk.Core.LookOver;
 using Blocwerk.Core.MarkerPlanning;
@@ -385,6 +386,18 @@ public static class CoreServices
         catch (Exception ex)
         {
             logger.LogError(ex, "Discarded-detection backfill failed; it is retried on the next start.");
+        }
+
+        // One-time: a wall from before holds could sit on holds gets its live holds stacked by their outlines
+        // (a hold inside a clearly larger one sits on it). Per wall, once.
+        try
+        {
+            var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<BlocwerkDbContext>>();
+            HoldStackBackfill.RunIfNeededAsync(factory, scope.ServiceProvider.GetService<IChangeJournal>(), logger).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Hold-stack backfill failed; it is retried on the next start.");
         }
 
         // Propagate appearance (Color/Material/Category/HandType) across linked holds so every copy of

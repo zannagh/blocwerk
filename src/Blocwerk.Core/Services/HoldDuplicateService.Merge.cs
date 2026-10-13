@@ -2,6 +2,7 @@ using Blocwerk.Core.Data;
 using Blocwerk.Core.Detection.Outlines;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.HoldStacks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -47,6 +48,7 @@ public sealed partial class HoldDuplicateService
             }
 
             HoldMergeRules.MergeFlags(kept, removed);
+            await HoldStacker.MergeAsync(db, kept, removed, ct);
             await HoldDeletion.PrepareHoldForDeleteAsync(db, removed.Id, HoldDeleteBoulderPolicy.LeaveUntouched, ct: ct);
             db.Holds.Remove(removed);
             ct.ThrowIfCancellationRequested();

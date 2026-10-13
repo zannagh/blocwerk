@@ -2,6 +2,7 @@ using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.HoldStacks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -80,6 +81,7 @@ public partial class WallPanelService
         var enrichment = await holdEnrichment.EnrichSafelyAsync(
             db, new HoldEnrichmentRequest(panel.Photo, wall, fresh, panel.Id, panel.Generation), logger);
         var kept = fresh.Count - enrichment.DroppedMarkerHolds.Count;
+        await HoldStacker.StackNewAsync(db, fresh);
 
         // The panel's holds were just replaced, so the links pointing at the old ones stopped meaning
         // anything: the editor has to look at cross-panel linking again.

@@ -24,7 +24,9 @@ public sealed class HoldShapeCleanupStressTests(ITestOutputHelper output)
         Assert.True(sw.Elapsed < TimeSpan.FromSeconds(60), $"planning took {sw.Elapsed.TotalSeconds:F1}s");
         Assert.NotEmpty(plan.Changes);
         Apply(holds, plan);
-        var offenders = OverlappingPairs(holds).Where(p => IsAuto(p.A) && IsAuto(p.B)).ToList();
+
+        // A hold that sits on a clearly larger one overlaps it on purpose (HoldStacking): such a pair is no offender.
+        var offenders = OverlappingPairs(holds).Where(p => IsAuto(p.A) && IsAuto(p.B) && !Blocwerk.Core.HoldStacks.HoldStacking.AreStack(p.A, p.B)).ToList();
         var unresolved = plan.Unresolved.ToHashSet();
         Assert.All(offenders, p => Assert.True(unresolved.Contains(p.A.Id) || unresolved.Contains(p.B.Id), $"{p.A.Id} x {p.B.Id}"));
     }
