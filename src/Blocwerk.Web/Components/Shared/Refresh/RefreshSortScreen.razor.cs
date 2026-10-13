@@ -22,6 +22,16 @@ public partial class RefreshSortScreen
     [Parameter]
     public EventCallback<IReadOnlyList<PanelChoice>> OnStartPanelsOnly { get; set; }
 
+    /// <summary>Full revision (the wall was fully reset), with a new 3D capture when one is available.</summary>
+    [Parameter]
+    public EventCallback<IReadOnlyList<PanelChoice>> OnStartOver { get; set; }
+
+    /// <summary>Full revision, panels only.</summary>
+    [Parameter]
+    public EventCallback<IReadOnlyList<PanelChoice>> OnStartOverPanelsOnly { get; set; }
+
+    private List<string> PanelsKeepingPhoto => View.Picks.Where(p => Chosen(p) is null).Select(PanelName).ToList();
+
     private string VideoText => View.Videos.Count == 0 ? string.Empty : $" and {View.Videos.Count} videos";
 
     private static string PanelName(PanelPick pick) => PanelPositionName.Describe(pick.Col, pick.Row);
@@ -78,4 +88,14 @@ public partial class RefreshSortScreen
     private Task StartAsync() => OnStart.InvokeAsync(Choices());
 
     private Task StartPanelsOnlyAsync() => OnStartPanelsOnly.InvokeAsync(Choices());
+
+    private Task StartOverAsync() => OnStartOver.InvokeAsync(Choices());
+
+    private Task StartOverPanelsOnlyAsync() => OnStartOverPanelsOnly.InvokeAsync(Choices());
+
+    private static string RevisionQuestion(RefreshRevisionPreview revision) =>
+        $"Start {revision.WallName} over? When you apply the update, {Count(revision.Holds, "hold is", "holds are")} replaced by a fresh "
+        + $"detection and {Count(revision.Boulders, "boulder is", "boulders are")} archived. Nothing is carried over, and it cannot be undone from the app.";
+
+    private static string Count(int n, string one, string many) => $"{n} {(n == 1 ? one : many)}";
 }

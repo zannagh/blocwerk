@@ -24,7 +24,7 @@ public sealed partial class WallRefreshProcessor
         var owned = await OwnedSessionIdAsync(refresh, actors);
         var staged = owned is not null
             ? await actors.BigUpdate.GetStagedAsync(refresh.WallId)
-            : await actors.BigUpdate.StageAsync(refresh.WallId, photos);
+            : await actors.BigUpdate.StageAsync(refresh.WallId, photos, fullRevision: refresh.FullRevision);
         var sessionId = owned ?? (await actors.Sessions.GetOpenSessionAsync(refresh.WallId))?.Id;
         await SaveAsync(refresh, r => r.UpdateSessionId = sessionId, ct);
 
@@ -34,7 +34,7 @@ public sealed partial class WallRefreshProcessor
             r =>
             {
                 RefreshTimeline.Set(r, RefreshTimeline.Detect, RefreshStepState.Done, $"{byPanel.Values.Sum(v => v.Count)} holds found on {staged.Neighbours.Count + 1} {(staged.Neighbours.Count == 0 ? "panel" : "panels")}");
-                RefreshTimeline.Set(r, RefreshTimeline.Match, RefreshStepState.Running, "Finding the old holds on the new photos");
+                RefreshTimeline.Set(r, RefreshTimeline.Match, RefreshStepState.Running, refresh.FullRevision ? "Starting over: nothing old is matched" : "Finding the old holds on the new photos");
             },
             ct);
 
@@ -132,7 +132,8 @@ public sealed partial class WallRefreshProcessor
             MovedHolds: await MovedLinesAsync(moves, ct),
             NotFoundOnBoulders: notFound.Lines?.Count ?? 0,
             BouldersMarkedNotFound: notFound.Boulders,
-            NotFoundHolds: notFound.Lines);
+            NotFoundHolds: notFound.Lines,
+            FullRevision: await FullRevisionFactsAsync(wallId, quick, ct));
     }
 
     private async Task<int> CountNeighbourNewAsync(

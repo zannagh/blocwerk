@@ -18,7 +18,7 @@ public partial class WallBigUpdateService
 {
     /// <inheritdoc/>
     public async Task<BigUpdateSession> StageAsync(
-        Guid wallId, IReadOnlyList<BigUpdatePhoto> photos, bool takeOverExisting = false)
+        Guid wallId, IReadOnlyList<BigUpdatePhoto> photos, bool takeOverExisting = false, bool fullRevision = false)
     {
         var user = await currentUserService.GetCurrentUserAsync();
         await using var db = await dbContextFactory.CreateDbContextAsync();
@@ -29,6 +29,11 @@ public partial class WallBigUpdateService
             ?? throw new InvalidOperationException("Wall not found");
 
         ValidateStagedPhotos(wall, photos);
+        if (fullRevision)
+        {
+            await EnsureFullRevisionCoversWallAsync(db, wall, photos);
+        }
+
         photos = await PrepareStagedPhotosAsync(photos);
 
         var stagedGen = wall.CurrentGeneration + 1;
@@ -46,7 +51,7 @@ public partial class WallBigUpdateService
         using var journalBatch = changeJournal?.BeginWallUpdateBatch(wallId);
 
         var centerPanelId = await StageAndDetectAsync(db, wall, photos, stagedGen, user.Id);
-        WallUpdateSessions.Open(db, wallId, stagedGen, user.Id);
+        WallUpdateSessions.Open(db, wallId, stagedGen, user.Id).FullRevision = fullRevision;
         await SaveStagedOrReportRaceAsync(db, wallId, user.Id);
 
         // Stop at the staged state: the detections are persisted but NOT yet matched. The user reviews

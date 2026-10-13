@@ -2998,6 +2998,9 @@ namespace Blocwerk.Core.Migrations
                         .HasMaxLength(2048)
                         .HasColumnType("character varying(2048)");
 
+                    b.Property<bool>("FullRevision")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("PanelPicksJson")
                         .HasColumnType("text");
 
@@ -3363,6 +3366,9 @@ namespace Blocwerk.Core.Migrations
 
                     b.Property<Guid?>("CreatedByUserId")
                         .HasColumnType("uuid");
+
+                    b.Property<bool>("FullRevision")
+                        .HasColumnType("boolean");
 
                     b.Property<Guid?>("LastActiveByUserId")
                         .HasColumnType("uuid");

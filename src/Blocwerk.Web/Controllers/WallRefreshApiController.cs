@@ -100,7 +100,7 @@ public sealed partial class WallRefreshApiController(
     public Task<IActionResult> Start(Guid wallId, Guid refreshId, [FromBody] RefreshStartRequest? body) =>
         WriteAsync(wallId, "refresh.start", () => ForRunAsync(wallId, refreshId, async _ =>
         {
-            await refreshes.StartAsync(refreshId, body?.Choices ?? [], body?.KeepModel ?? false);
+            await refreshes.StartAsync(refreshId, body?.Choices ?? [], body?.KeepModel ?? false, body?.FullRevision ?? false);
             return Accepted();
         }));
 

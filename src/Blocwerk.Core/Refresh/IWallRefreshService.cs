@@ -66,7 +66,11 @@ public interface IWallRefreshService
     /// Panels only: no 3D capture is started (so no GPU runner is involved and the wall's active 3D model stays
     /// exactly as it is); the confirmed holds are still placed on that model's textures in the background.
     /// </param>
-    Task StartAsync(Guid refreshId, IReadOnlyList<PanelChoice> choices, bool keepModel = false);
+    /// <param name="fullRevision">
+    /// The wall was fully reset: nothing is carried over, every detection becomes a new hold and every boulder is
+    /// archived when the update is applied. Refused unless every panel gets a new photo.
+    /// </param>
+    Task StartAsync(Guid refreshId, IReadOnlyList<PanelChoice> choices, bool keepModel = false, bool fullRevision = false);
 
     /// <summary>The user's confirm: applies the prepared panel update, then places the holds on the 3D model.</summary>
     /// <param name="refreshId">The run.</param>

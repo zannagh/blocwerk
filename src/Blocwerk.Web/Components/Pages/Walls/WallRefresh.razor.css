@@ -75,5 +75,11 @@
 .refresh-page ::deep .refresh-check-crops figure { margin: 0; min-width: 0; max-width: 220px; }
 .refresh-page ::deep .refresh-check-crops img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--r-md); background: var(--bg-surface); }
 .refresh-page ::deep .refresh-check-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+.refresh-page ::deep .refresh-revision {
+    margin: 32px 0 8px; padding: 12px 14px; border: 1px solid var(--status-danger); border-radius: var(--r-md); background: var(--bg-surface-alt);
+}
+.refresh-page ::deep .refresh-revision h2 { margin: 0 0 6px; font-size: 1.05rem; }
+.refresh-page ::deep .refresh-revision-blocked { font-weight: 600; }
+.refresh-page ::deep .refresh-revision-boulders { columns: 2 180px; padding-left: 1.25rem; margin: 6px 0; font-size: 0.9rem; }
 .refresh-page ::deep .refresh-summary-details { margin: 12px 0; }
 .refresh-page ::deep .refresh-summary-details > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }

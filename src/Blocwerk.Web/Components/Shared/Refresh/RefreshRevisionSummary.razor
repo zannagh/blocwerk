@@ -1,0 +1,49 @@
+@using Blocwerk.Core.Refresh
+@* The confirm screen of a full revision (the wall was fully reset): what is detected, created, retired and archived. *@
+
+<section class="refresh-revision" aria-labelledby="refresh-revision-summary-title">
+    <h2 id="refresh-revision-summary-title">Starting the wall over</h2>
+    <p>The wall was fully reset, so nothing is matched or carried over from before.</p>
+    <ul class="refresh-summary">
+        @foreach (var panel in Revision.Panels)
+        {
+            <li>@panel.Panel: <strong>@panel.Detected</strong> holds detected on its new photo</li>
+        }
+        <li>
+            <strong>@Revision.HoldsCreated</strong> new holds are created@(Summary.NewSeenIn3D > 0 ? $", {Summary.NewSeenIn3D} of them also seen in the 3D model" : string.Empty)
+        </li>
+        <li>
+            <strong>@Summary.DroppedDetections</strong> photo detections ignored (on a marker, or the same hold seen on a neighbouring panel)
+            @if (Summary.DroppedByThe3DModel > 0)
+            {
+                <span>; @Summary.DroppedByThe3DModel of them the 3D model shows off the wall</span>
+            }
+        </li>
+        <li><strong>@Summary.OverlapLinks</strong> holds linked between neighbouring panels@(Summary.OverlapsLeftOut > 0 ? $", {Summary.OverlapsLeftOut} unsure overlaps left unlinked" : string.Empty)</li>
+        <li class="is-attention"><strong>@Revision.OldHoldsRetired</strong> old holds are retired; none is carried over</li>
+        <li class="is-attention">
+            <strong>@Revision.BouldersArchived.Count</strong> @(Revision.BouldersArchived.Count == 1 ? "boulder is" : "boulders are") archived
+        </li>
+    </ul>
+    @if (Revision.BouldersArchived.Count > 0)
+    {
+        <details>
+            <summary>The boulders that are archived</summary>
+            <ul class="refresh-revision-boulders">
+                @foreach (var name in Revision.BouldersArchived)
+                {
+                    <li>@name</li>
+                }
+            </ul>
+        </details>
+        <p class="hint">Archived boulders keep their sends and can still be opened on the old photo.</p>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired]
+    public RefreshSummary Summary { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public RefreshFullRevision Revision { get; set; } = default!;
+}

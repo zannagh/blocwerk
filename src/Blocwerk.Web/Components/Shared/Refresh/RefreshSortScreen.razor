@@ -92,4 +92,46 @@
             This wall has no 3D model yet. Panels only starts no 3D capture, so the wall stays 2D until you capture it.
         </p>
     }
+
+    @if (View.Revision is { } revision && View.Picks.Count > 0)
+    {
+        <section class="refresh-revision" aria-labelledby="refresh-revision-title">
+            <h2 id="refresh-revision-title">The wall was fully reset</h2>
+            <p>
+                Only when every hold was taken off and the wall was set again. Starting over does not look for the old holds
+                on the new photos: nothing is matched and nothing is carried over.
+            </p>
+            <ul class="refresh-summary">
+                <li><strong>@revision.Holds</strong> @(revision.Holds == 1 ? "hold is" : "holds are") replaced by a fresh detection on the new photos</li>
+                <li>
+                    <strong>@revision.Boulders</strong> @(revision.Boulders == 1 ? "boulder is" : "boulders are") archived.
+                    They stay in the archive with their sends and can still be opened on the old photo.
+                </li>
+                <li>No hold is left to look over as "not found again"</li>
+            </ul>
+            <p class="hint">
+                You see a summary first, and nothing changes until you apply it. Once applied, it cannot be undone from the app.
+            </p>
+            @if (PanelsKeepingPhoto is { Count: > 0 } keeping)
+            {
+                <p class="refresh-revision-blocked" role="note">
+                    Starting over needs a new photo for every panel. Still keeping its photo: @string.Join(", ", keeping).
+                </p>
+            }
+            else
+            {
+                <div class="refresh-actions">
+                    <ConfirmAction Label="@(View.CaptureAvailable ? "Start over (panels + 3D)" : "Start over")" TriggerClass="btn-danger"
+                                   Question="@RevisionQuestion(revision)" RequiredText="@revision.WallName" ConfirmLabel="Start over"
+                                   OnConfirm="StartOverAsync" />
+                    @if (View.CaptureAvailable)
+                    {
+                        <ConfirmAction Label="Start over, panels only" TriggerClass="btn-secondary"
+                                       Question="@RevisionQuestion(revision)" RequiredText="@revision.WallName" ConfirmLabel="Start over"
+                                       OnConfirm="StartOverPanelsOnlyAsync" />
+                    }
+                </div>
+            }
+        </section>
+    }
 </div>

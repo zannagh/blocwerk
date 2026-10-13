@@ -117,6 +117,30 @@ public class WallRefreshApiControllerTests
         Assert.StartsWith($"api:refresh.upload run:{run.Id} ", batches[1].Label);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Start_TakesTheFullRevisionFlag_OffUnlessSent(bool fullRevision)
+    {
+        using var h = new WallTestHarness();
+        using var s = new RefreshScenario(h);
+        s.Capture.Client.IsConfigured = false;
+        await s.SeedWallAsync();
+        var id = await s.DropPhotosAsync();
+        await s.Service.SortAsync(id);
+        await s.RunQueuedAsync();
+        var api = Api(h, s.Service).As(ApiKeys.Personal());
+
+        var started = await api.Start(h.WallId, id, fullRevision ? new RefreshStartRequest(FullRevision: true) : null);
+        await s.RunQueuedAsync();
+
+        Assert.Equal(StatusCodes.Status202Accepted, AutomationApiFixture.Status(started));
+        var summary = Value<RefreshSummaryResponse>(await api.Summary(h.WallId, id));
+        Assert.Equal(fullRevision, (await s.CurrentAsync()).FullRevision);
+        Assert.Equal(fullRevision, summary.Summary!.FullRevision is not null);
+        Assert.Equal(fullRevision ? 2 : null, summary.Summary.FullRevision?.OldHoldsRetired);
+    }
+
     [Fact]
     public async Task Apply_WithAStaleVersion_IsRefused_PromotesNothing_AndNamesTheCurrentVersion()
     {

@@ -54,9 +54,23 @@ public static class RefreshTimeline
         refresh.UpdatedAt = DateTimeOffset.UtcNow;
     }
 
+    /// <summary>Renames one step, keeping its state and detail (a full revision matches nothing, so its match step says so).</summary>
+    public static void Retitle(WallRefresh refresh, string key, string title)
+    {
+        var steps = Steps(refresh).Select(s => s.Key == key ? s with { Title = title } : s).ToList();
+        refresh.StepsJson = Write(steps);
+        refresh.UpdatedAt = DateTimeOffset.UtcNow;
+    }
+
     /// <summary>The <see cref="Match"/> step's line for <paramref name="summary"/>; written again whenever the summary is.</summary>
     public static string MatchDetail(RefreshSummary summary)
     {
+        if (summary.FullRevision is { } revision)
+        {
+            return $"Starting over: {revision.HoldsCreated} new holds, {revision.OldHoldsRetired} old holds retired, "
+                + $"{revision.BouldersArchived.Count} {(revision.BouldersArchived.Count == 1 ? "boulder" : "boulders")} archived";
+        }
+
         var text = $"{summary.Refound} old holds found again, {summary.KeptInPlace} kept where they were";
         if (summary.ReplacedHolds > 0)
         {

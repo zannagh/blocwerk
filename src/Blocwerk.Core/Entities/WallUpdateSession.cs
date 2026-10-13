@@ -89,4 +89,10 @@ public partial class WallUpdateSession
     /// because of it, it only drives the overlap step's banner.
     /// </summary>
     public List<Guid> UnalignedOverlapPanelIds { get; set; } = [];
+
+    /// <summary>
+    /// The wall was fully reset: this update matches and carries nothing, every detection becomes a new hold and every
+    /// boulder of the wall is archived at the promote.
+    /// </summary>
+    public bool FullRevision { get; set; }
 }
