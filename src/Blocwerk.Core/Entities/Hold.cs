@@ -37,6 +37,15 @@ public partial class Hold
     public List<ShapePoint>? ShapePoints { get; set; }
 
     /// <summary>
+    /// Set for a SMOOTH outline: the few points the user placed, in the same convention as
+    /// <see cref="ShapePoints"/>, which then holds the closed curve through them
+    /// (<c>HoldOutlineSpline</c>). Everything that reads an outline keeps reading <see cref="ShapePoints"/>;
+    /// only the shape editor reads these, and only while the stored outline still is their curve.
+    /// Null for a plain polygon or circle.
+    /// </summary>
+    public List<ShapePoint>? ShapeControlPoints { get; set; }
+
+    /// <summary>
     /// Interior holes of the outline (a pocket or donut hold): each ring is a list of offsets in the SAME
     /// convention as <see cref="ShapePoints"/> (fractions of the image width/height, relative to
     /// <see cref="X"/>/<see cref="Y"/>). Null (or empty) for a solid hold. Only meaningful together with
@@ -233,6 +242,7 @@ public partial class Hold
         Y = Y,
         Radius = Radius,
         ShapePoints = ShapePoints?.Select(sp => new ShapePoint { Dx = sp.Dx, Dy = sp.Dy }).ToList(),
+        ShapeControlPoints = ShapeControlPoints?.Select(sp => new ShapePoint { Dx = sp.Dx, Dy = sp.Dy }).ToList(),
         ShapeHoles = ShapePoint.CloneRings(ShapeHoles),
         Name = Name,
         Color = Color,

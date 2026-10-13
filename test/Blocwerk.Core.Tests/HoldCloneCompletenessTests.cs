@@ -56,6 +56,12 @@ public class HoldCloneCompletenessTests
                 continue;
             }
 
+            if (property.Name == nameof(Hold.ShapeControlPoints))
+            {
+                AssertShapePointsDeepCopied(source.ShapeControlPoints, clone.ShapeControlPoints);
+                continue;
+            }
+
             if (property.Name == nameof(Hold.ShapeHoles))
             {
                 Assert.NotSame(source.ShapeHoles, clone.ShapeHoles);

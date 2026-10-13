@@ -53,6 +53,13 @@ public sealed record HoldEdit
     /// <summary>The traced outline, or a <c>Set(null)</c> to drop it back to the plain circle.</summary>
     public FieldUpdate<List<ShapePoint>?> ShapePoints { get; init; }
 
+    /// <summary>
+    /// The control points of a smooth outline, sent together with <see cref="ShapePoints"/>: the stored
+    /// outline is then the curve through them. Null with a written outline means a plain polygon; ignored
+    /// when the outline is not written.
+    /// </summary>
+    public List<ShapePoint>? ShapeControlPoints { get; init; }
+
     /// <summary>The hold's name, or a <c>Set(null)</c> to clear it.</summary>
     public FieldUpdate<string?> Name { get; init; }
 
@@ -86,8 +93,10 @@ public sealed record HoldEdit
         HoldHandType? handType,
         bool flagBouldersOnMove = true,
         bool colorStillProposed = false,
-        bool resetToCircle = false) => new()
+        bool resetToCircle = false,
+        List<ShapePoint>? shapeControlPoints = null) => new()
         {
+            ShapeControlPoints = shapePoints is null ? null : shapeControlPoints,
             ColorStillProposed = colorStillProposed,
             X = x,
             Y = y,
