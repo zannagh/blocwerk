@@ -77,8 +77,8 @@ internal static class DiscardedDetections
         new(finding.X, finding.Y, finding.Radius, finding.ShapePoints, size);
 
     /// <summary>
-    /// How much of a detection live holds of its own kind cover, 0..1. A hold that is clearly larger than the detection
-    /// does not count: the detection would sit ON it (a hold on a volume), so it is no second detection of that hold.
+    /// How much of a detection live holds of its own kind cover, 0..1. An outlined hold that is clearly larger than the
+    /// detection does not count: the detection would sit ON it (a hold on a volume), so it is no second detection of it.
     /// </summary>
     /// <param name="detection">The detection's area.</param>
     /// <param name="holds">The live holds' areas on the same photo.</param>
@@ -101,7 +101,7 @@ internal static class DiscardedDetections
         var sizes = await LookOverFrameSource.SizesAsync(db, panelIds, ct);
         var live = await (await LiveWallHolds.QueryAsync(db, wallId, ct)).AsNoTracking()
             .Where(h => h.WallPanelId != null && panelIds.Contains(h.WallPanelId.Value) && !h.IsVirtual && h.KeptUnconfirmedGeneration == null)
-            .Select(h => new { PanelId = h.WallPanelId!.Value, h.X, h.Y, h.Radius, h.ShapePoints, h.IsAutoDetected })
+            .Select(h => new { PanelId = h.WallPanelId!.Value, h.X, h.Y, h.Radius, h.ShapePoints })
             .ToListAsync(ct);
         var byPanel = live.ToLookup(h => h.PanelId);
         return panelIds.ToDictionary(
@@ -109,9 +109,7 @@ internal static class DiscardedDetections
             id =>
             {
                 (int Width, int Height)? size = sizes.TryGetValue(id, out var known) ? known : null;
-                return (size, byPanel[id]
-                    .Select(h => new HoldArea(h.X, h.Y, h.Radius, h.ShapePoints, size) { MayCarry = h.IsAutoDetected || h.ShapePoints is { Count: >= 3 } })
-                    .ToList());
+                return (size, byPanel[id].Select(h => new HoldArea(h.X, h.Y, h.Radius, h.ShapePoints, size)).ToList());
             });
     }
 

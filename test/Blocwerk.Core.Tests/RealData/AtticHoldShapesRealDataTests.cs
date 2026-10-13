@@ -42,10 +42,10 @@ public sealed class AtticHoldShapesRealDataTests
             overlapping += offenders.Count;
         }
 
-        // The snapshot: 34 holds the plan cannot clear (jammed between locked manual holds and each other) and, among them,
-        // 10 pairs of automatic holds that still touch. (37 and 12 before a hold on a clearly larger hold was left on it.) A change here is a change of the clean-up on the real wall: look at
+        // The snapshot: 35 holds the plan cannot clear (jammed between locked manual holds and each other) and, among them,
+        // 12 pairs of automatic holds that still touch. (37 holds before a hold on a much larger hold was left on it.) A change here is a change of the clean-up on the real wall: look at
         // it before updating the numbers (the dense synthetic test cannot show a regression on real holds).
-        Assert.Equal((34, 10), (unresolved, overlapping));
+        Assert.Equal((35, 12), (unresolved, overlapping));
     }
 
     [Fact]
@@ -61,10 +61,11 @@ public sealed class AtticHoldShapesRealDataTests
             stillOn += plan.Count(p => Blocwerk.Core.HoldStacks.HoldStacking.SitsOn(p.Upper, p.Base));
         }
 
-        // The snapshot of the real wall: 11 holds the startup backfill stacks there (small holds on a hold about twice
-        // their size, no large volumes). After a clean-up 5 of them still lie on their base by their outlines; the
-        // bases of the others are cut or shrunk for a THIRD hold next to them, never for the hold they carry.
-        Assert.Equal((11, 5), (stacked, stillOn));
+        // The snapshot of the real wall: 5 holds the startup backfill stacks there (small things on a much larger,
+        // outlined hold; the wall has no volumes with holds on them). After a clean-up 3 of them still lie on their
+        // base by their outlines; the bases of the others are cut or shrunk for a THIRD hold next to them, never for
+        // the hold they carry.
+        Assert.Equal((5, 3), (stacked, stillOn));
     }
 
     [Fact]

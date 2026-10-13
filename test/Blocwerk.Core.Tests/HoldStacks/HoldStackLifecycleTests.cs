@@ -129,8 +129,10 @@ public class HoldStackLifecycleTests
     {
         using var s = await HoldColorScenario.CreateAsync();
         var panel = await s.AddPanelAsync(0);
-        var volume = await s.AddHoldAsync(panel, Spot, configure: h => h.Radius = 0.12);
+        var volume = await s.AddHoldAsync(panel, Spot, configure: h => (h.Radius, h.ShapePoints) = (0.12, Entities.ShapePoint.DefaultOctagon(0.12)));
         var small = await s.AddHoldAsync(panel, OnIt, configure: h => h.Radius = 0.02);
+        var plain = await s.AddHoldAsync(panel, (0.2, 0.8), configure: h => h.Radius = 0.12);
+        var inPlain = await s.AddHoldAsync(panel, (0.21, 0.8), configure: h => h.Radius = 0.02);
         var hidden = await s.AddHoldAsync(panel, (0.47, 0.5), configure: h => (h.Radius, h.KeptUnconfirmedGeneration) = (0.02, 0));
         var apart = await s.AddHoldAsync(panel, (0.9, 0.9), configure: h => h.Radius = 0.02);
 
@@ -140,10 +142,14 @@ public class HoldStackLifecycleTests
         Assert.Null((await s.GetAsync(hidden)).StackedOnHoldId);
         Assert.Null((await s.GetAsync(apart)).StackedOnHoldId);
         Assert.Null((await s.GetAsync(volume)).StackedOnHoldId);
+
+        // A detection without an outline is a rough circle: what lies in it is not stacked on it.
+        Assert.Null((await s.GetAsync(inPlain)).StackedOnHoldId);
+        Assert.Null((await s.GetAsync(plain)).StackedOnHoldId);
         await using (var db = s.Harness.CreateContext())
         {
             Assert.NotNull((await db.Walls.IgnoreQueryFilters().SingleAsync(w => w.Id == s.WallId)).HoldStacksBackfilledAt);
-            Assert.Equal((0, 4), await HoldStackBackfill.BackfillWallAsync(db, s.WallId, CancellationToken.None));
+            Assert.Equal((0, 6), await HoldStackBackfill.BackfillWallAsync(db, s.WallId, CancellationToken.None));
         }
 
         // Somebody takes the hold off the volume: the next start leaves it off.
