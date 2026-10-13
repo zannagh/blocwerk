@@ -19,7 +19,7 @@ public partial class WallDetail
     /// Off until the detector stops re-adding things a person already turned down: on a real wall one press added
     /// hundreds of holds on markers, mats and spots answered "Not a hold" (see issue #127).
     /// </summary>
-    private const bool RedetectAvailable = false;
+    private static readonly bool RedetectAvailable = false;
 
     private PanelRedetectPlan? redetectPlan;
     private bool redetectBusy;
