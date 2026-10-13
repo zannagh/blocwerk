@@ -34,12 +34,12 @@ internal static class LookOverCrops
 
     /// <summary>
     /// The JPEG of one picture of a finding of <paramref name="wallId"/>, or null when there is none.
-    /// <paramref name="plain"/> leaves the ring off the two photo pictures: the page draws the holds' outlines instead.
+    /// <paramref name="plain"/> leaves the ring off: the page draws the holds' outlines on the two photos instead, and shows the 3D
+    /// texture bare (a hold's outline is not known on it, and a ring of another size than the hold misleads).
     /// </summary>
     public static async Task<byte[]?> GetAsync(
         IDbContextFactory<BlocwerkDbContext> dbFactory, ICaptureFileStore files, Guid wallId, Guid findingId, CheckCropView view, bool plain, CancellationToken ct)
     {
-        plain &= view != CheckCropView.Model;
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         var finding = await db.WallLookOverFindings.AsNoTracking().FirstOrDefaultAsync(f => f.Id == findingId && f.WallId == wallId, ct);
         if (finding is null)
@@ -56,7 +56,7 @@ internal static class LookOverCrops
         {
             CheckCropView.Old => await PhotoAsync(db, finding, before: true, plain, ct),
             CheckCropView.New => await PhotoAsync(db, finding, before: false, plain, ct),
-            _ => await ModelAsync(db, files, finding, ct),
+            _ => await ModelAsync(db, files, finding, plain, ct),
         };
 
         // The 3D picture of a spot stored with the finding never changes either. Without one it follows the live hold's
@@ -143,7 +143,7 @@ internal static class LookOverCrops
     }
 
     /// <summary>The spot stored with the finding (this visit's model), else where the live hold sits on the active model.</summary>
-    private static async Task<byte[]?> ModelAsync(BlocwerkDbContext db, ICaptureFileStore files, WallLookOverFinding finding, CancellationToken ct)
+    private static async Task<byte[]?> ModelAsync(BlocwerkDbContext db, ICaptureFileStore files, WallLookOverFinding finding, bool plain, CancellationToken ct)
     {
         var hold = await HoldAsync(db, finding.HoldId, ct) ?? await HoldAsync(db, finding.OldHoldId, ct);
         var radiusMm = hold is { WidthMm: { } w, HeightMm: { } h } ? Math.Max(w, h) / 2 : DefaultRadiusMm;
@@ -154,7 +154,7 @@ internal static class LookOverCrops
             (facetId, a, b) = (f, pa, pb);
         }
 
-        var crop = (await RefreshCheckCrops.TextureCropAsync(db, files, modelId, facetId, a, b, radiusMm)).Bytes;
+        var crop = (await RefreshCheckCrops.TextureCropAsync(db, files, modelId, facetId, a, b, radiusMm, ring: !plain)).Bytes;
         return crop is not null && MostlyEmpty(crop) ? null : crop;
     }
 

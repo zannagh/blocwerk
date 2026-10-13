@@ -1,0 +1,39 @@
+@using Blocwerk.Core.LookOver
+@* The boulders that use a card's hold, in one line: "Used by 7 boulders", with their names a tap away. One boulder is
+   named at once. The names are links, as on the cards before. *@
+
+<div class="lookover-used">
+    @if (Boulders.Count == 0)
+    {
+        <span class="lookover-used-none">@LookOverCopy.UsedBy(0)</span>
+    }
+    else if (Boulders.Count == 1)
+    {
+        <span>Used by <a href="/walls/@WallId/boulders/@Boulders[0].Id">@Boulders[0].Name</a></span>
+    }
+    else
+    {
+        <button type="button" class="btn-link lookover-used-toggle" aria-expanded="@(open ? "true" : "false")" @onclick="() => open = !open">
+            @LookOverCopy.UsedBy(Boulders.Count) <span aria-hidden="true">@(open ? "▴" : "▾")</span>
+        </button>
+        @if (open)
+        {
+            <p class="lookover-boulders">
+                @foreach (var boulder in Boulders)
+                {
+                    <a href="/walls/@WallId/boulders/@boulder.Id">@boulder.Name</a>
+                }
+            </p>
+        }
+    }
+</div>
+
+@code {
+    private bool open;
+
+    [Parameter, EditorRequired]
+    public Guid WallId { get; set; }
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<LookOverBoulder> Boulders { get; set; } = [];
+}

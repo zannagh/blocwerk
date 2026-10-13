@@ -14,7 +14,7 @@ namespace Blocwerk.Web.Components.Shared.LookOver;
 /// the hold. A reload sorts again. The holds the update could not find are not cards: they are asked about one by one
 /// in their own section (<see cref="Missing"/>), in an order that is likewise fixed when they are first seen. Pure.
 /// </summary>
-internal sealed class LookOverListing
+public sealed partial class LookOverListing
 {
     private const int RowsPerPhoto = 8;
     private readonly List<Guid> order = [];

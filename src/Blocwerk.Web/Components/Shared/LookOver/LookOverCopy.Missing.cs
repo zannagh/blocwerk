@@ -36,19 +36,19 @@ internal static partial class LookOverCopy
         var count = f.Boulders.Count;
         if (count == 0)
         {
-            return $"Is the hold from before the update the one marked green? The old hold is merged into it. {Rest}";
+            return $"Is the hold from before the update the one you tapped, outlined on the photo? The old hold is merged into it. {Rest}";
         }
 
         var s = count == 1 ? "s" : string.Empty;
-        return $"Is the hold from before the update the one marked green? The old hold is merged into it: {PlainCopy.Plural(count, "boulder")} "
-            + $"({Names(f)}) use{s} the marked hold from now on. {Rest}";
+        return $"Is the hold from before the update the one you tapped, outlined on the photo? The old hold is merged into it: {PlainCopy.Plural(count, "boulder")} "
+            + $"({Names(f)}) use{s} the tapped hold from now on. {Rest}";
     }
 
     /// <summary>What "it is here" does, asked before it is done.</summary>
     public static string MoveQuestion(LookOverFindingView f)
     {
         var boulders = f.Boulders.Count == 0 ? string.Empty : $" and its {(f.Boulders.Count == 1 ? "boulder" : "boulders")}";
-        return $"Is the hold at the spot marked green now? It is moved there with its outline{boulders}, drawn on the wall again, "
+        return $"Is the hold at the spot you tapped now? It is moved there with its outline{boulders}, drawn on the wall again, "
             + "and marked for review so that the outline can be checked in the hold editor.";
     }
 

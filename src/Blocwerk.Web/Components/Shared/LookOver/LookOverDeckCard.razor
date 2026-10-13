@@ -1,0 +1,139 @@
+@using Blocwerk.Core.LookOver
+@using Blocwerk.Core.Refresh
+@* One open finding on the card deck: what it is and whose boulders it touches, the photo from before the update and
+   the one from now side by side as wide as the card (the 3D texture and the large view a tap away), what the update
+   did, and below the card, where the thumb is, the answers this user may give. They are the answers of LookOverCard,
+   with the same questions before anything changes the wall; a number key gives the answer with that number. *@
+
+<div class="deck-body">
+    <div class="deck-about">
+        <strong>@LookOverCopy.Heading(Finding)</strong>
+        <LookOverBoulders WallId="WallId" Boulders="Finding.Boulders" />
+    </div>
+    <div class="deck-pictures @(Photos.Count == 1 ? "is-single" : null)">
+        @foreach (var picture in Photos)
+        {
+            <button type="button" class="lookover-crop" @onclick="() => zoomed = true" aria-label="Show the pictures larger">
+                <LookOverPictureView WallId="WallId" FindingId="Finding.Id" Picture="picture" Eager="true" />
+            </button>
+        }
+    </div>
+    @if (Pictures.Count > Photos.Count)
+    {
+        <button type="button" class="btn-link deck-3d" @onclick="() => zoomed = true">Show the 3D texture</button>
+    }
+    <p class="deck-detail">@LookOverCopy.Detail(Finding)</p>
+    @if (Finding.MergeNeedsAdmin)
+    {
+        <p class="hint">A new hold sits on this spot. A wall admin can merge the old hold into it instead of removing it.</p>
+    }
+</div>
+
+<div class="deck-answers" role="group" aria-label="Answer">
+    @if (Takes(LookOverAnswer.Settle))
+    {
+        <button type="button" class="btn-secondary" disabled="@Disabled" @onclick="() => AnswerAsync(LookOverAnswer.Settle)">@LookOverCopy.SettleLabel(Finding)</button>
+    }
+    @if (Takes(LookOverAnswer.DifferentHold))
+    {
+        <ConfirmAction @ref="different" Label="Different hold" Question="@LookOverCopy.DifferentQuestion(Finding)"
+                       ConfirmLabel="Mark as a different hold" ConfirmClass="btn-primary" Neutral="true" Disabled="Disabled"
+                       OnConfirm="() => AnswerAsync(LookOverAnswer.DifferentHold)" />
+    }
+    @if (Takes(LookOverAnswer.UseNewHold))
+    {
+        <ConfirmAction @ref="merge" Label="@LookOverCopy.MergeLabel(Finding)" Question="@LookOverCopy.UseNewQuestion(Finding)"
+                       ConfirmLabel="Merge into the new hold" Disabled="Disabled" OnConfirm="() => AnswerAsync(LookOverAnswer.UseNewHold)" />
+    }
+    @if (Takes(LookOverAnswer.RemoveHold))
+    {
+        <ConfirmAction @ref="remove" Label="@LookOverCopy.RemoveLabel(Finding)" Question="@LookOverCopy.RemoveQuestion(Finding)"
+                       ConfirmLabel="Remove the hold" Disabled="Disabled" OnConfirm="() => AnswerAsync(LookOverAnswer.RemoveHold)" />
+    }
+</div>
+
+@if (zoomed)
+{
+    @* Close comes first: the dialog moves the focus to its first control, and with Close at the bottom that scrolled
+       the first picture out of view. *@
+    <Modal Title="@LookOverCopy.Heading(Finding)" PanelClass="lookover-zoom" OnClose="() => zoomed = false">
+        <button type="button" class="btn-secondary lookover-zoom-close" @onclick="() => zoomed = false">Close</button>
+        <div class="lookover-zoom-pictures">
+            @foreach (var picture in Pictures)
+            {
+                <LookOverPictureView WallId="WallId" FindingId="Finding.Id" Picture="picture" Eager="true" />
+            }
+        </div>
+    </Modal>
+}
+
+@code {
+    private static readonly LookOverAnswer[] Order = [LookOverAnswer.Settle, LookOverAnswer.DifferentHold, LookOverAnswer.UseNewHold, LookOverAnswer.RemoveHold];
+    private ConfirmAction? different;
+    private ConfirmAction? merge;
+    private ConfirmAction? remove;
+    private bool zoomed;
+
+    [Parameter, EditorRequired]
+    public Guid WallId { get; set; }
+
+    [Parameter, EditorRequired]
+    public LookOverFindingView Finding { get; set; } = default!;
+
+    [Parameter]
+    public bool Disabled { get; set; }
+
+    [Parameter]
+    public EventCallback<LookOverChoice> OnAnswer { get; set; }
+
+    /// <summary>The pictures as the list sends them (with the holds to outline); the plain ones when it sent none.</summary>
+    private IReadOnlyList<LookOverPicture> Pictures => Finding.Pictures ?? Fallback();
+
+    /// <summary>The two photos, shown on the card; the 3D texture is in the large view.</summary>
+    private List<LookOverPicture> Photos => Pictures.Where(p => p.View != CheckCropView.Model).ToList();
+
+    private List<LookOverAnswer> Offered => Order.Where(Finding.Answers.Contains).ToList();
+
+    /// <summary>Gives the answer with this number (1 is the first button), asking first where the button would.</summary>
+    /// <param name="number">The number key that was pressed.</param>
+    /// <returns>A task that ends when the answer is sent or its question is open.</returns>
+    public Task PressAsync(int number)
+    {
+        if (Disabled || number < 1 || number > Offered.Count)
+        {
+            return Task.CompletedTask;
+        }
+
+        var answer = Offered[number - 1];
+        if (answer == LookOverAnswer.Settle)
+        {
+            return AnswerAsync(answer);
+        }
+
+        (answer == LookOverAnswer.DifferentHold ? different : answer == LookOverAnswer.UseNewHold ? merge : remove)?.Open();
+        return Task.CompletedTask;
+    }
+
+    private bool Takes(LookOverAnswer answer) => Finding.Answers.Contains(answer);
+
+    private List<LookOverPicture> Fallback()
+    {
+        var pictures = new List<LookOverPicture>();
+        if (Finding.HasOld)
+        {
+            pictures.Add(new LookOverPicture(CheckCropView.Old, []));
+        }
+
+        pictures.Add(new LookOverPicture(CheckCropView.New, []));
+        if (Finding.HasModel)
+        {
+            pictures.Add(new LookOverPicture(CheckCropView.Model, []));
+        }
+
+        return pictures;
+    }
+
+    /// <summary>The answer goes out with the boulders this card shows: the server refuses when they are not the ones on the hold any more.</summary>
+    private Task AnswerAsync(LookOverAnswer answer) =>
+        OnAnswer.InvokeAsync(new LookOverChoice(Finding.Id, answer, [.. Finding.Boulders.Select(b => b.Id)]));
+}

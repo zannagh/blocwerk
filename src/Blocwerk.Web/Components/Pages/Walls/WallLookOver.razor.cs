@@ -14,33 +14,33 @@ namespace Blocwerk.Web.Components.Pages.Walls;
 
 /// <summary>
 /// Code-behind of the look-over page: loads the wall's findings, answers them through
-/// <see cref="IWallLookOverService"/> and finishes the look-over. Each group shows <see cref="PageSize"/> findings at
-/// a time (a big wall can leave a hundred unsure matches); the first group with something open starts expanded. The
-/// list keeps its order while the page is open (<see cref="LookOverListing"/>), and one answer runs at a time: a
-/// second tap while one is on its way is dropped, so a double tap never answers the next card.
+/// <see cref="IWallLookOverService"/> and finishes the look-over. The card deck asks about the queue of the chosen
+/// filter (<see cref="LookOverListing.Queue"/>); the list view shows everything in groups. The findings keep their
+/// order while the page is open (<see cref="LookOverListing"/>), and one answer runs at a time: a second tap while one
+/// is on its way is dropped, so a double tap never answers the next card.
 /// </summary>
 public partial class WallLookOver
 {
-    private const int PageSize = 20;
     private const string NotAllowed = "Only the owner, admins and moderators of this wall can look it over.";
     private const string SomeoneElse = "Someone else just changed this. The list below is the current one; check it and answer again.";
     private const string NotOnKiosk = "The wall is looked over from your own device, not from this wall tablet.";
 
-    private readonly Dictionary<LookOverFindingKind, int> shown = [];
-    private readonly HashSet<LookOverFindingKind> toggled = [];
     private readonly LookOverListing listing = new();
     private WallLookOverState? state;
-    private LookOverFindingKind? firstOpen;
+    private LookOverDeck? deck;
+    private LookOverFilter filter = LookOverFilter.All;
+    private Guid? openOnRender;
+    private int queueKey;
+    private bool listView;
+    private bool detailsOpen;
     private Guid loadedWallId;
     private Guid? lastTouched;
     private int touches;
     private int loads;
-    private bool onBouldersOnly = true;
     private bool loading = true;
     private bool busy;
     private bool finished;
     private string? error;
-    private string? notice;
     private string? blocked;
 
     [Parameter]
@@ -56,13 +56,7 @@ public partial class WallLookOver
     [Inject]
     private IKioskContext KioskContext { get; set; } = default!;
 
-    private IReadOnlyList<LookOverFindingKind> Kinds => listing.Kinds(onBouldersOnly, FilterBoulder);
-
-    private int OnBoulderCount => listing.Cards.Count(listing.OnBoulder);
-
-    private IReadOnlyList<LookOverFindingView> MissingQueue => listing.Missing(FilterBoulder);
-
-    private IReadOnlyList<LookOverFindingView> MissingAnswered => listing.MissingAnswered(FilterBoulder);
+    private IReadOnlyList<LookOverFindingView> Queue => listing.Queue(filter, FilterBoulder);
 
     private int OpenCount => listing.Findings.Count(f => f.Status == LookOverFindingStatus.Open);
 
@@ -106,27 +100,30 @@ public partial class WallLookOver
         }
 
         await RunAsync(ReloadAsync);
-
-        // With nothing on a boulder there is nothing to show first: open on everything.
-        onBouldersOnly = OnBoulderCount > 0;
-        firstOpen = Kinds.Cast<LookOverFindingKind?>()
-            .FirstOrDefault(k => listing.Visible(k!.Value, onBouldersOnly, FilterBoulder).Any(f => f.Status == LookOverFindingStatus.Open));
         loading = false;
     }
 
-    private int Shown(LookOverFindingKind kind) => shown.GetValueOrDefault(kind, PageSize);
-
-    private void ShowMore(LookOverFindingKind kind) => shown[kind] = Shown(kind) + PageSize;
-
-    /// <summary>One boulder's findings are all open to see; otherwise the first group with something open, until the user says otherwise.</summary>
-    private bool IsExpanded(LookOverFindingKind kind) => (FilterBoulder is not null || kind == firstOpen) != toggled.Contains(kind);
-
-    private void Toggle(LookOverFindingKind kind)
+    protected override void OnAfterRender(bool firstRender)
     {
-        if (!toggled.Remove(kind))
+        // The deck exists only once the card view has rendered again: a card opened from the list is turned to then.
+        if (openOnRender is { } findingId && deck is not null)
         {
-            toggled.Add(kind);
+            openOnRender = null;
+            deck.JumpTo(findingId);
+            StateHasChanged();
         }
+    }
+
+    private void Pick(LookOverFilter picked)
+    {
+        (filter, queueKey) = (picked, queueKey + 1);
+    }
+
+    /// <summary>Turns from the list to the card of one finding, among everything that is open.</summary>
+    private void OpenCard(Guid findingId)
+    {
+        Pick(LookOverFilter.All);
+        (listView, openOnRender) = (false, findingId);
     }
 
     private async Task ReloadAsync()
@@ -149,15 +146,6 @@ public partial class WallLookOver
 
     private Task ActOnAsync(LookOverAction action) => ActAsync(action.FindingId, action.Run);
 
-    /// <summary>Sends the very findings the button counted; what was answered meanwhile is said, not silently skipped.</summary>
-    private async Task SettleAllAsync(LookOverFindingKind kind, bool onlyWithoutBoulders)
-    {
-        var ids = listing.BulkIds(kind, onBouldersOnly, onlyWithoutBoulders);
-        LookOverBulkResult? result = null;
-        await ActAsync(null, async () => result = await LookOver.SettleAllAsync(WallId, kind, ids, onlyWithoutBoulders));
-        notice = result is null ? null : LookOverCopy.BulkShortfall(result);
-    }
-
     private async Task FinishAsync(bool leaveOpen)
     {
         await ActAsync(null, () => LookOver.FinishAsync(WallId, leaveOpen));
@@ -176,7 +164,6 @@ public partial class WallLookOver
         }
 
         (lastTouched, touches) = (findingId, touches + 1);
-        notice = null;
         await RunAsync(async () =>
         {
             try

@@ -1,0 +1,81 @@
+@using Blocwerk.Core.LookOver
+@* The look-over's card deck: the open findings one at a time, in one queue. The card fills the screen between the
+   page's header and the answers, which stay at the bottom within reach of the thumb; nothing on the page scrolls.
+   An answered card leaves the queue and the next one is shown; the last answer stays in a bar above the answers,
+   with Undo where it can be taken back, next to Skip. Previous and next by the arrows, a swipe, or the arrow keys; a number key
+   gives the answer with that number. On a wide screen the queue is listed beside the card. *@
+
+<div class="lookover-deck" @ref="root">
+    @if (Queue.Count > 0)
+    {
+        <nav class="deck-queue" aria-label="Open findings">
+            @if (WindowStart > 0)
+            {
+                <p class="deck-queue-more">@WindowStart earlier</p>
+            }
+            <ol start="@(WindowStart + 1)">
+                @foreach (var item in Window)
+                {
+                    <li @key="item.Id">
+                        <button type="button" class="@(item.Id == Current?.Id ? "is-current" : null)" aria-current="@(item.Id == Current?.Id ? "true" : null)"
+                                @onclick="() => JumpTo(item.Id)">
+                            <span>@LookOverCopy.QueueLabel(item)</span>
+                            <small>@(item.HoldName ?? "hold")@(item.Boulders.Count > 0 ? $" · {PlainCopy.Plural(item.Boulders.Count, "boulder")}" : null)</small>
+                        </button>
+                    </li>
+                }
+            </ol>
+            @if (WindowStart + Window.Count < Queue.Count)
+            {
+                <p class="deck-queue-more">@(Queue.Count - WindowStart - Window.Count) more</p>
+            }
+        </nav>
+    }
+
+    <div class="deck-main">
+        @if (Current is { } finding)
+        {
+            <div class="deck-head">
+                <button type="button" class="btn-secondary" disabled="@(Queue.Count < 2)" @onclick="() => Step(-1)" aria-label="Previous finding">&lsaquo;</button>
+                <span role="status"><strong>@(Index + 1) of @Queue.Count</strong> <span class="deck-kind">@LookOverCopy.QueueLabel(finding)</span></span>
+                <button type="button" class="btn-secondary" disabled="@(Queue.Count < 2)" @onclick="() => Step(1)" aria-label="Next finding">&rsaquo;</button>
+            </div>
+            @if (finding.Missing)
+            {
+                <LookOverMissing @key="finding.Id" @ref="missingCard" WallId="WallId" Finding="finding" Disabled="Disabled" Version="Version"
+                                 OnAnswer="AnswerAsync" OnAct="ActAsync" />
+            }
+            else
+            {
+                <LookOverDeckCard @key="finding.Id" @ref="card" WallId="WallId" Finding="finding" Disabled="Disabled" OnAnswer="AnswerAsync" />
+            }
+        }
+        else
+        {
+            <div class="deck-empty">
+                @Empty
+            </div>
+        }
+
+        @if (LastAnswered is not null || Queue.Count > 1)
+        {
+            <div class="deck-meta">
+                @if (LastAnswered is { } last)
+                {
+                    <p class="deck-undo" role="status">
+                        <span>@LookOverCopy.AnsweredLabel(last)@(LookOverCopy.ResultLine(last) is { } result ? $". {result}" : null)</span>
+                        @if (last.CanUndo)
+                        {
+                            <button type="button" class="btn-link" disabled="@Disabled" @onclick="() => UndoLastAsync(last.Id)">Undo</button>
+                        }
+                        <button type="button" class="btn-link deck-undo-close" @onclick="() => lastId = null" aria-label="Hide this note">&times;</button>
+                    </p>
+                }
+                @if (Queue.Count > 1)
+                {
+                    <button type="button" class="btn-link deck-skip" @onclick="() => Step(1)">Skip</button>
+                }
+            </div>
+        }
+    </div>
+</div>

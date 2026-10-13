@@ -1,23 +1,61 @@
-/* The look-over page. Phone first: one column, groups as full-width rows that open in place, cards as on the confirm
-   screen of "Update panels + 3D" (same class names, so the two read alike). Colours come from the shared tokens. */
-.lookover-page { max-width: 1100px; margin: 0 auto; padding: 12px 16px calc(48px + var(--bottomnav-h, 0px)); }
-.lookover-page h1 { margin: 8px 0 12px; }
-.lookover-status { margin: 0 0 8px; font-weight: 600; }
+/* The look-over page. Phone first. In the card view the page is exactly one screen between the top bar and the tab
+   bar and never scrolls: header, chips, then the deck, which takes what is left. The list view is an ordinary page
+   that scrolls: groups as full-width rows that open in place, cards as on the confirm screen of "Update panels + 3D"
+   (same class names, so the two read alike). Colours come from the shared tokens. */
+.lookover-page {
+    max-width: 1280px; margin: 0 auto; padding: 6px 12px 8px; display: flex; flex-direction: column; gap: 8px;
+    height: calc(100dvh - var(--topbar-h, 0px) - var(--bottomnav-h, 0px)); min-height: 420px;
+}
+.lookover-page.is-list { height: auto; min-height: 0; padding-bottom: calc(48px + var(--bottomnav-h, 0px)); }
+.lookover-page > p { margin: 0; }
+.lookover-header { position: relative; flex: none; }
+.lookover-page.is-list .lookover-header { position: sticky; top: var(--topbar-h, 0px); z-index: 6; margin: -6px -12px 0; padding: 6px 12px; background: var(--bg); }
+.lookover-page ::deep .lookover-tool {
+    flex: none; width: auto; min-width: 36px; min-height: 36px; margin: 0; padding: 4px 9px; border: 1px solid var(--border-light); border-radius: 999px;
+    background: var(--bg-surface); color: var(--text); font: inherit; font-size: 0.82rem; font-weight: 600; cursor: pointer;
+}
+.lookover-page ::deep .lookover-tool.is-on { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
+.lookover-page ::deep .lookover-finish-now { flex: none; width: auto; min-height: 36px; margin: 0; padding: 4px 14px; font-size: 0.9rem; }
+.lookover-details {
+    position: absolute; top: 100%; left: 0; right: 0; z-index: 8; max-height: 70dvh; overflow-y: auto; margin-top: 4px; padding: 12px;
+    border: 1px solid var(--border-light); border-radius: var(--r-md); background: var(--bg-surface); box-shadow: 0 12px 32px -12px var(--shadow-sm, rgba(0, 0, 0, 0.3));
+}
+.lookover-details > p { margin: 0 0 8px; }
+.lookover-keys { display: none; }
+.lookover-status { font-weight: 600; }
+.deck-chips { flex: none; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 0 -12px; padding: 0 12px 2px; }
+.deck-chips::-webkit-scrollbar { display: none; }
+.deck-chips button {
+    flex: none; width: auto; min-height: 36px; margin: 0; padding: 4px 12px; border: 1px solid var(--border-light); border-radius: 999px;
+    background: var(--bg-surface); color: var(--text); font: inherit; font-size: 0.85rem; white-space: nowrap; cursor: pointer;
+}
+.deck-chips button > span { margin-left: 4px; font-weight: 700; }
+.deck-chips button.is-on { border-color: var(--accent); background: var(--accent); color: var(--on-accent); font-weight: 600; }
+.lookover-page ::deep .lookover-rows { list-style: none; margin: 0; padding: 0 12px 8px; display: grid; gap: 6px; }
+.lookover-page ::deep .lookover-rows li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; border-top: 1px solid var(--border-light); }
+.lookover-page ::deep .lookover-rows li > span { min-width: 0; display: grid; }
+.lookover-page ::deep .lookover-rows small { color: var(--text-secondary); }
+.lookover-page ::deep .lookover-rows button { flex: none; width: auto; margin: 0; min-height: 36px; padding: 4px 14px; }
+.lookover-page ::deep .lookover-answered-toggle { display: block; width: auto; margin: 0 12px 8px; min-height: 36px; padding: 4px 0; }
+@media (hover: hover) and (pointer: fine) {
+    .lookover-keys { display: block; }
+}
 .lookover-page ::deep .lookover-group { margin: 12px 0; border: 1px solid var(--border-light); border-radius: var(--r-md); background: var(--bg-surface); }
-.lookover-group-head {
+.lookover-page ::deep .lookover-group-head {
     display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 48px; margin: 0;
     padding: 10px 12px; border: 0; border-radius: var(--r-md); background: none; color: var(--text-heading, var(--text));
     font: inherit; font-weight: 600; text-align: left; cursor: pointer;
 }
-.lookover-group-head:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.lookover-group-title { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.lookover-group-sub { font-size: 0.8rem; font-weight: 400; color: var(--text-secondary); }
-.lookover-views { display: flex; gap: 6px; margin: 12px 0 4px; }
-.lookover-views button {
+.lookover-page ::deep .lookover-group-head.is-static { cursor: default; }
+.lookover-page ::deep .lookover-group-head:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.lookover-page ::deep .lookover-group-title { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.lookover-page ::deep .lookover-group-sub { font-size: 0.8rem; font-weight: 400; color: var(--text-secondary); }
+.lookover-page ::deep .lookover-views { display: flex; gap: 6px; margin: 12px 0 4px; }
+.lookover-page ::deep .lookover-views button {
     flex: 1 1 0; min-height: 40px; margin: 0; padding: 6px 10px; border: 1px solid var(--border-light); border-radius: 999px;
     background: var(--bg-surface); color: var(--text); font: inherit; font-size: 0.9rem; cursor: pointer;
 }
-.lookover-views button.is-on { border-color: var(--accent); background: var(--accent); color: var(--on-accent); font-weight: 600; }
+.lookover-page ::deep .lookover-views button.is-on { border-color: var(--accent); background: var(--accent); color: var(--on-accent); font-weight: 600; }
 .lookover-page ::deep .lookover-chip {
     display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin: 12px 0 4px; padding: 8px 12px;
     border-radius: var(--r-md); background: var(--info-bg); color: var(--info-text); font-size: 0.9rem;
@@ -31,12 +69,11 @@
 .lookover-page ::deep .lookover-bulk { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 0 12px 4px; }
 .lookover-page ::deep .lookover-bulk > button { white-space: normal; text-align: left; }
 .lookover-page ::deep .lookover-bulk > .confirm-action { align-self: stretch; }
-.lookover-more { width: auto; margin: 0 12px 12px; }
-.lookover-finish { margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--border-light); }
+.lookover-page ::deep .lookover-more { width: auto; margin: 0 12px 12px; }
+.lookover-finish { margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--border-light); }
 .lookover-finish > button,
 .lookover-page ::deep .lookover-finish > button,
 .lookover-page ::deep .lookover-bulk > button { width: auto; }
-.lookover-finish > button { scroll-margin-bottom: calc(24px + var(--bottomnav-h, 0px)); }
 
 .lookover-page ::deep .refresh-check-list { list-style: none; padding: 0 12px; margin: 4px 0 12px; display: grid; gap: 12px; }
 .lookover-page ::deep .refresh-check { padding: 10px; border: 1px solid var(--border-light); border-radius: var(--r-md); background: var(--bg-surface-alt); min-width: 0; }

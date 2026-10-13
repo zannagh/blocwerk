@@ -1,155 +1,77 @@
 @using Blocwerk.Core.LookOver
 @using Blocwerk.Core.Refresh
-@* "Holds the update could not find": one hold at a time. On the left (on a phone: in a strip that stays in view) the
-   hold as it was, with its real outline on the photo from before the update; on the right the photo of its panel as
-   it is now, to pan and zoom, with the holds the update found and a dashed outline where the old hold was. The user
-   says it is still here, taps the hold it is, taps where it is, or says it is not there any more; every answer but
-   "still here" asks first. Below that, the holds no boulder uses that lie under a new hold can be removed at once, after a
-   question that says how many. Holds are asked about on their own panel's photo only (a merge works within one photo). *@
+@* A hold the update could not find, as a card of the deck. At the top, small, the hold as it was (its real outline on
+   the photo from before the update) with whose boulders use it; below it, in all the height that is left, the photo
+   of its panel as it is now, to pan and zoom, with the holds the update found and a dashed outline where the old hold
+   was. The user says it is still here, taps the hold it is, taps where it is, or says it is not there any more; every
+   answer but "still here" asks first, in the answer bar under the card. Holds are asked about on their own panel's
+   photo only (a merge works within one photo). *@
 
-<section class="lookover-group lookover-missing">
-    <div class="lookover-missing-title">
-        <h2>@LookOverCopy.MissingTitle</h2>
-        <span class="lookover-group-count @(Queue.Count == 0 ? "is-done" : null)">@(Queue.Count == 0 ? "all answered" : $"{Queue.Count} open")</span>
+<div class="deck-body deck-missing">
+    <div class="deck-was">
+        @if (Before(Finding) is { } before)
+        {
+            <LookOverPictureView WallId="WallId" FindingId="Finding.Id" Picture="before" Eager="true" />
+        }
+        <div class="deck-about">
+            <strong>@LookOverCopy.HoldLabel(Finding)@(Finding.Covered ? ", under a new hold" : null)</strong>
+            <LookOverBoulders WallId="WallId" Boulders="Finding.Boulders" />
+            <p class="deck-detail">@LookOverCopy.MissingQuestion</p>
+        </div>
     </div>
-    <p class="hint">@LookOverCopy.MissingHint</p>
-    @if (notice is not null)
+    @if (CanMove(Finding))
     {
-        <p class="lookover-chip" role="status">@notice</p>
+        <p class="hint deck-tap-hint">@(Finding.CanReassign ? LookOverCopy.TapHint : LookOverCopy.ReassignNeedsAdmin)</p>
     }
-
-    @if (Current is { } finding)
+    @if (Finding.PanelId is { } panelId)
     {
-        <div class="lookover-missing-body">
-            <div class="lookover-missing-old">
-                <div class="lookover-stepper">
-                    <button type="button" class="btn-secondary" disabled="@(Queue.Count < 2)" @onclick="() => Step(-1)" aria-label="Previous hold">&lsaquo;</button>
-                    <span role="status">Hold @(Index + 1) of @Queue.Count</span>
-                    <button type="button" class="btn-secondary" disabled="@(Queue.Count < 2)" @onclick="() => Step(1)" aria-label="Next hold">&rsaquo;</button>
-                </div>
-                <div class="lookover-missing-was">
-                    @if (Before(finding) is { } before)
-                    {
-                        <LookOverPictureView @key="finding.Id" WallId="WallId" FindingId="finding.Id" Picture="before" Eager="true" />
-                    }
-                    <div class="lookover-missing-about">
-                        <strong>@(finding.HoldName is { } name ? $"The {name} hold" : "This hold")@(finding.Covered ? ", under a new hold" : null)</strong>
-                        <p>@LookOverCopy.MissingQuestion</p>
-                        @if (finding.Boulders.Count > 0)
-                        {
-                            <p class="lookover-boulders">
-                                <span>@(finding.Boulders.Count == 1 ? "Boulder:" : "Boulders:")</span>
-                                @foreach (var boulder in finding.Boulders)
-                                {
-                                    <a href="/walls/@WallId/boulders/@boulder.Id">@boulder.Name</a>
-                                }
-                            </p>
-                        }
-                        else
-                        {
-                            <p class="hint">No boulder uses it.</p>
-                        }
-                    </div>
-                </div>
-            </div>
+        <div class="deck-wall">
+            <PanelImageView WallId="WallId" Caption="The wall now" PhotoUrl="@PhotoUrl(panelId)" Holds="PanelHolds(panelId)"
+                            Ghost="Ghost(Finding)" GhostMovedTo="movedTo" SelectedHoldId="targetId"
+                            Interactive="Finding.CanReassign" AddMode="CanMove(Finding)" OnHoldTap="ChooseHold" OnEmptyTap="ChooseSpot"
+                            FocusKey="focusKey" FocusPoint="Spot(Finding)" FocusZoom="3" />
+        </div>
+    }
+</div>
 
-            <div class="lookover-missing-wall">
-                @if (CanMove(finding))
+<div class="deck-answers" role="group" aria-label="Answer">
+    @if (Target(Finding) is { } target)
+    {
+        <div class="lookover-ask" role="group" aria-label="It is this hold">
+            <p>@LookOverCopy.ReassignQuestion(Finding)</p>
+            <div class="lookover-ask-row">
+                @if (Before(Finding) is { } was)
                 {
-                    <p class="hint">@(finding.CanReassign ? LookOverCopy.TapHint : LookOverCopy.ReassignNeedsAdmin)</p>
+                    <LookOverPictureView WallId="WallId" FindingId="Finding.Id" Picture="was" Eager="true" />
                 }
-                @if (finding.PanelId is { } panelId)
-                {
-                    <PanelImageView WallId="WallId" Caption="The wall now" PhotoUrl="@PhotoUrl(panelId)" Holds="PanelHolds(panelId)"
-                                    Ghost="Ghost(finding)" GhostMovedTo="movedTo" SelectedHoldId="targetId"
-                                    Interactive="finding.CanReassign" AddMode="CanMove(finding)" OnHoldTap="ChooseHold" OnEmptyTap="ChooseSpot"
-                                    FocusKey="focusKey" FocusPoint="Spot(finding)" FocusZoom="3" />
-                }
-
-                @if (Target(finding) is { } target)
-                {
-                    <div class="lookover-ask" role="group" aria-label="It is this hold">
-                        <p>@LookOverCopy.ReassignQuestion(finding)</p>
-                        <div class="lookover-ask-pictures">
-                            @if (Before(finding) is { } was)
-                            {
-                                <LookOverPictureView WallId="WallId" FindingId="finding.Id" Picture="was" Eager="true" />
-                            }
-                            <LookOverSpotView PhotoUrl="@PhotoUrl(finding.PanelId!.Value)" Hold="target" X="target.X" Y="target.Y" Caption="The hold you tapped" Alt="the hold you tapped on the new photo" />
-                        </div>
-                        <div class="lookover-ask-buttons">
-                            <button type="button" class="btn-primary" disabled="@Disabled" @onclick="() => ReassignAsync(finding, target.Id)">It is this hold</button>
-                            <button type="button" class="btn-secondary" disabled="@Disabled" @onclick="ClearChoice">Cancel</button>
-                        </div>
-                    </div>
-                }
-                else if (movedTo is { } to && Ghost(finding) is { } ghost)
-                {
-                    <div class="lookover-ask" role="group" aria-label="It is here">
-                        <p>@LookOverCopy.MoveQuestion(finding)</p>
-                        <div class="lookover-ask-pictures">
-                            <LookOverSpotView PhotoUrl="@PhotoUrl(finding.PanelId!.Value)" Hold="ghost" X="to.X" Y="to.Y" Stroke="var(--status-success)" Caption="Where you tapped" Alt="the spot you tapped on the new photo" />
-                        </div>
-                        <div class="lookover-ask-buttons">
-                            <button type="button" class="btn-primary" disabled="@Disabled" @onclick="() => MoveAsync(finding, to)">It is here</button>
-                            <button type="button" class="btn-secondary" disabled="@Disabled" @onclick="ClearChoice">Cancel</button>
-                        </div>
-                    </div>
-                }
-
-                <div class="lookover-missing-answers">
-                    <button type="button" class="btn-secondary" disabled="@Disabled" @onclick="() => AnswerAsync(finding, LookOverAnswer.Settle)">Still here</button>
-                    @if (finding.Answers.Contains(LookOverAnswer.RemoveHold))
-                    {
-                        <ConfirmAction @key="finding.Id" Label="Not there any more" Question="@LookOverCopy.RemoveQuestion(finding)" ConfirmLabel="Remove the hold"
-                                       Disabled="Disabled" OnConfirm="() => AnswerAsync(finding, LookOverAnswer.RemoveHold)" />
-                    }
-                    <button type="button" class="btn-link" disabled="@(Queue.Count < 2)" @onclick="() => Step(1)">Skip</button>
+                <LookOverSpotView PhotoUrl="@PhotoUrl(Finding.PanelId!.Value)" Hold="target" X="target.X" Y="target.Y" Caption="You tapped" Alt="the hold you tapped on the new photo" />
+                <div class="lookover-ask-buttons">
+                    <button type="button" class="btn-primary" disabled="@Disabled" @onclick="() => ReassignAsync(target.Id)">It is this hold</button>
+                    <button type="button" class="btn-secondary" disabled="@Disabled" @onclick="ClearChoice">Cancel</button>
                 </div>
             </div>
         </div>
-
-        @if (!ForOneBoulder && CoveredUnused.Count > 0)
-        {
-            <div class="lookover-bulk">
-                <ConfirmAction Label="@LookOverCopy.BulkRemoveLabel(CoveredUnused.Count, true)" Question="@LookOverCopy.BulkRemoveQuestion(CoveredUnused.Count, true)"
-                               ConfirmLabel="@($"Remove {PlainCopy.Plural(CoveredUnused.Count, "hold")}")" Disabled="Disabled" OnConfirm="() => RemoveUnusedAsync(true)" />
+    }
+    else if (movedTo is { } to && Ghost(Finding) is { } ghost)
+    {
+        <div class="lookover-ask" role="group" aria-label="It is here">
+            <p>@LookOverCopy.MoveQuestion(Finding)</p>
+            <div class="lookover-ask-row">
+                <LookOverSpotView PhotoUrl="@PhotoUrl(Finding.PanelId!.Value)" Hold="ghost" X="to.X" Y="to.Y" Caption="You tapped" Alt="the spot you tapped on the new photo" />
+                <div class="lookover-ask-buttons">
+                    <button type="button" class="btn-primary" disabled="@Disabled" @onclick="() => MoveAsync(to)">It is here</button>
+                    <button type="button" class="btn-secondary" disabled="@Disabled" @onclick="ClearChoice">Cancel</button>
+                </div>
             </div>
-        }
+        </div>
     }
     else
     {
-        <p class="glyph-ok" role="status">Every hold the update could not find is answered.</p>
-    }
-
-    @if (LastAnswered is { } last)
-    {
-        <p class="lookover-last" role="status">
-            <span>Last answer: @LookOverCopy.AnsweredLabel(last)@(LookOverCopy.ResultLine(last) is { } result ? $". {result}" : null)</span>
-            @if (last.CanUndo)
-            {
-                <button type="button" class="btn-link" disabled="@Disabled" @onclick="() => UndoLastAsync(last.Id)">Undo last</button>
-            }
-        </p>
-    }
-
-    @if (Answered.Count > 0)
-    {
-        <button type="button" class="btn-link lookover-answered-toggle" aria-expanded="@(showAnswered ? "true" : "false")" @onclick="() => showAnswered = !showAnswered">
-            @(showAnswered ? "Hide" : "Show") the @Answered.Count answered
-        </button>
-        @if (showAnswered)
+        <button type="button" class="btn-secondary" disabled="@Disabled" @onclick="() => AnswerAsync(LookOverAnswer.Settle)">Still here</button>
+        @if (Finding.Answers.Contains(LookOverAnswer.RemoveHold))
         {
-            <ul class="refresh-check-list">
-                @foreach (var answered in Answered.Take(AnsweredShown))
-                {
-                    <LookOverCard @key="answered.Id" WallId="WallId" Finding="answered" Disabled="Disabled" OnUndo="OnUndo" />
-                }
-            </ul>
-            @if (Answered.Count > AnsweredShown)
-            {
-                <p class="hint">The @AnsweredShown most recent of @Answered.Count are shown.</p>
-            }
+            <ConfirmAction @ref="remove" Label="Not there any more" Question="@LookOverCopy.RemoveQuestion(Finding)" ConfirmLabel="Remove the hold"
+                           Disabled="Disabled" OnConfirm="() => AnswerAsync(LookOverAnswer.RemoveHold)" />
         }
     }
-</section>
+</div>
