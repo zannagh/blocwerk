@@ -872,10 +872,10 @@ body.bw-tabbar-collapsed .tabbar-restore { display: flex; }
 }
 .bw-install-dismiss:hover { color: var(--text-heading); }
 
-/* Task pages (the update flow, the 3D view, the hold editor, the marker planner, the crop dialog)
+/* Task pages (the update flow and its look-over, the 3D view, the hold editor, the marker planner, the crop dialog)
    need every pixel and every button: no install prompt there. It is display:none, so
    bottom-banners.js stops reserving its height too. The cookie banner stays (it has to be answered). */
-.app-shell:has(.refresh-page, .wall3d-page, .wall-carousel-root.editing, .panel-crop-modal, .mplan-page) .bw-install { display: none; }
+.app-shell:has(.refresh-page, .lookover-page, .wall3d-page, .wall-carousel-root.editing, .panel-crop-modal, .mplan-page) .bw-install { display: none; }
 
 
 /* ---------------------------------------------------------------------------

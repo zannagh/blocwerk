@@ -86,7 +86,7 @@ public class LookOverMissingListingTests
             LookOverCopy.AnsweredLabel(finding with { Status = LookOverFindingStatus.Closed, ClosedReason = LookOverCloseReason.MergedInEditor }));
         Assert.Equal("Not there any more: the 24 holds under a new hold that no boulder uses", LookOverCopy.BulkRemoveLabel(24, onlyCovered: true));
         Assert.Equal("Not there any more: all 131 holds that no boulder uses", LookOverCopy.BulkRemoveLabel(131, onlyCovered: false));
-        Assert.Contains("1 boulder (Crimp line) uses the marked hold", LookOverCopy.ReassignQuestion(finding));
+        Assert.Contains("1 boulder (Crimp line) uses the tapped hold", LookOverCopy.ReassignQuestion(finding));
         Assert.Equal("3 of 5 holds removed; the others were answered meanwhile, or a boulder uses them by now.", LookOverCopy.BulkRemoved(new(3, 5)));
         Assert.EndsWith(
             "61 holds were not found on the new photos and are not drawn on the wall.",

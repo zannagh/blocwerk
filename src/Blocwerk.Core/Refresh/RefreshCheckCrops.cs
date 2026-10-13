@@ -49,7 +49,7 @@ internal static class RefreshCheckCrops
 
     /// <summary>A crop of a model's facet texture around a plane spot. No spot or no texture is "none by design".</summary>
     internal static async Task<(byte[]? Bytes, bool Remember)> TextureCropAsync(
-        BlocwerkDbContext db, ICaptureFileStore files, Guid? modelId, string? facetId, double? a, double? b, double radiusMm)
+        BlocwerkDbContext db, ICaptureFileStore files, Guid? modelId, string? facetId, double? a, double? b, double radiusMm, bool ring = true)
     {
         if (modelId is null || facetId is null || a is null || b is null)
         {
@@ -71,7 +71,7 @@ internal static class RefreshCheckCrops
         }
 
         var (px, py) = frame.ToPixel(a.Value, b.Value);
-        var crop = RingCrop.Render(image, px, py, radiusMm / frame.MmPerPxA);
+        var crop = RingCrop.Render(image, px, py, radiusMm / frame.MmPerPxA, ring: ring);
         return (crop, false);
     }
 

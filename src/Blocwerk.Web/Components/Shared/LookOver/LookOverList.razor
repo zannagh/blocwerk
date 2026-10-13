@@ -1,0 +1,139 @@
+@using Blocwerk.Core.LookOver
+@* The look-over as a list, for the overview and for answering many at once: the holds the update could not find
+   (each opens as a card; those under a new hold that no boulder uses can be removed together), then the other
+   findings grouped by kind with the ones that touch boulders first, each group with its bulk answers and its cards,
+   answered ones included (with Undo). The groups open on the findings whose hold a boulder uses (the rest is one tap
+   away), or on one boulder's findings. *@
+
+@if (notice is not null)
+{
+    <p class="lookover-chip" role="status">@notice</p>
+}
+
+@if (MissingQueue.Count > 0 || MissingAnswered.Count > 0)
+{
+    <section class="lookover-group lookover-missing-list">
+        <div class="lookover-group-head is-static">
+            <span class="lookover-group-title">
+                @LookOverCopy.MissingTitle
+                <span class="lookover-group-sub">@LookOverCopy.MissingHint</span>
+            </span>
+            <span class="lookover-group-count @(MissingQueue.Count == 0 ? "is-done" : null)">@(MissingQueue.Count == 0 ? "all answered" : $"{MissingQueue.Count} open")</span>
+        </div>
+        @if (FilterBoulder is null && CoveredUnused.Count > 0)
+        {
+            <div class="lookover-bulk">
+                <ConfirmAction Label="@LookOverCopy.BulkRemoveLabel(CoveredUnused.Count, true)" Question="@LookOverCopy.BulkRemoveQuestion(CoveredUnused.Count, true)"
+                               ConfirmLabel="@($"Remove {PlainCopy.Plural(CoveredUnused.Count, "hold")}")" Disabled="Disabled" OnConfirm="RemoveUnusedAsync" />
+            </div>
+        }
+        <ul class="lookover-rows">
+            @foreach (var finding in MissingQueue.Take(missingShown))
+            {
+                <li @key="finding.Id">
+                    <span>
+                        <strong>@LookOverCopy.HoldLabel(finding)</strong>@(finding.Covered ? ", under a new hold" : null)
+                        <small>@LookOverCopy.UsedBy(finding.Boulders.Count)</small>
+                    </span>
+                    <button type="button" class="btn-secondary" @onclick="() => OnOpen.InvokeAsync(finding.Id)">Open</button>
+                </li>
+            }
+        </ul>
+        @if (MissingQueue.Count > missingShown)
+        {
+            <button type="button" class="btn-secondary lookover-more" @onclick="() => missingShown += PageSize">
+                Show @Math.Min(PageSize, MissingQueue.Count - missingShown) more (@(MissingQueue.Count - missingShown) left)
+            </button>
+        }
+        @if (MissingAnswered.Count > 0)
+        {
+            <button type="button" class="btn-link lookover-answered-toggle" aria-expanded="@(showAnswered ? "true" : "false")" @onclick="() => showAnswered = !showAnswered">
+                @(showAnswered ? "Hide" : "Show") the @MissingAnswered.Count answered
+            </button>
+            @if (showAnswered)
+            {
+                <ul class="refresh-check-list">
+                    @foreach (var answered in MissingAnswered.Take(AnsweredShown))
+                    {
+                        <LookOverCard @key="answered.Id" WallId="WallId" Finding="answered" Disabled="Disabled" OnUndo="OnUndo" />
+                    }
+                </ul>
+                @if (MissingAnswered.Count > AnsweredShown)
+                {
+                    <p class="hint">The @AnsweredShown most recent of @MissingAnswered.Count are shown.</p>
+                }
+            }
+        }
+    </section>
+}
+
+@if (FilterBoulder is null && Listing.Cards.Count > 0)
+{
+    <div class="lookover-views" role="group" aria-label="Which findings to show">
+        <button type="button" class="@(onBouldersOnly ? "is-on" : null)" aria-pressed="@(onBouldersOnly ? "true" : "false")" @onclick="() => onBouldersOnly = true">
+            On boulders (@OnBoulderCount)
+        </button>
+        <button type="button" class="@(onBouldersOnly ? null : "is-on")" aria-pressed="@(onBouldersOnly ? "false" : "true")" @onclick="() => onBouldersOnly = false">
+            All findings (@Listing.Cards.Count)
+        </button>
+    </div>
+}
+
+@if (Listing.Cards.Count > 0 && Kinds.Count == 0 && (FilterBoulder is null || MissingQueue.Count + MissingAnswered.Count == 0))
+{
+    <p class="empty-msg">@(FilterBoulder is null ? "No other finding is about a hold a boulder uses. See all findings above." : "No finding is about a hold of this boulder.")</p>
+}
+
+@foreach (var kind in Kinds)
+{
+    var visible = Listing.Visible(kind, onBouldersOnly, FilterBoulder);
+    var counts = Listing.Counts(kind);
+    var openHere = visible.Count(f => f.Status == LookOverFindingStatus.Open);
+    <section class="lookover-group" @key="kind">
+        <button type="button" class="lookover-group-head" aria-expanded="@(IsExpanded(kind) ? "true" : "false")" @onclick="() => Toggle(kind)">
+            <span class="lookover-group-title">
+                @LookOverCopy.GroupTitle(kind)
+                <span class="lookover-group-sub">@LookOverCopy.GroupSub(visible.Count, counts, onBouldersOnly, FilterBoulder is not null)</span>
+            </span>
+            <span class="lookover-group-count @(openHere == 0 ? "is-done" : null)">@(openHere == 0 ? "all answered" : $"{openHere} open")</span>
+        </button>
+        @if (IsExpanded(kind))
+        {
+            @if (FilterBoulder is null && LookOverRules.CanSettleAll(kind))
+            {
+                @* A bulk answer settles what its button counts, and in the "on boulders" view that is what is listed. *@
+                var unused = Listing.BulkIds(kind, onBouldersOnly, withoutBoulders: true).Count;
+                <div class="lookover-bulk">
+                    @if (!onBouldersOnly && unused > 1 && unused < Listing.BulkIds(kind, false, false).Count)
+                    {
+                        <ConfirmAction Label="@LookOverCopy.BulkLabel(kind, unused, LookOverBulkScope.WithoutBoulders)"
+                                       Question="@LookOverCopy.BulkQuestion(kind, unused, LookOverBulkScope.WithoutBoulders)"
+                                       ConfirmLabel="@LookOverCopy.BulkLabel(kind, unused, LookOverBulkScope.WithoutBoulders)" ConfirmClass="btn-primary" Neutral="true"
+                                       Disabled="Disabled" OnConfirm="() => SettleAllAsync(kind, true)" />
+                    }
+                    @if (openHere > 1)
+                    {
+                        var scope = onBouldersOnly ? LookOverBulkScope.OnBoulders : LookOverBulkScope.All;
+                        <ConfirmAction Label="@LookOverCopy.BulkLabel(kind, openHere, scope)"
+                                       Question="@LookOverCopy.BulkQuestion(kind, openHere, scope)"
+                                       ConfirmLabel="@LookOverCopy.BulkLabel(kind, openHere, scope)" ConfirmClass="btn-primary" Neutral="true"
+                                       Disabled="Disabled" OnConfirm="() => SettleAllAsync(kind, false)" />
+                    }
+                </div>
+            }
+            <ul class="refresh-check-list">
+                @foreach (var finding in visible.Take(Shown(kind)))
+                {
+                    <LookOverCard @key="finding.Id" WallId="WallId" Finding="finding" Disabled="Disabled" FocusFor="finding.Id == LastTouched ? Touches : 0"
+                                  OnAnswer="OnAnswer" OnUndo="OnUndo" />
+                }
+            </ul>
+            @if (visible.Count > Shown(kind))
+            {
+                <button type="button" class="btn-secondary lookover-more" @onclick="() => ShowMore(kind)">
+                    Show @Math.Min(PageSize, visible.Count - Shown(kind)) more (@(visible.Count - Shown(kind)) left)
+                </button>
+            }
+        }
+    </section>
+}

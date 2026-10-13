@@ -1,0 +1,6 @@
+/* "Used by 7 boulders": one line, the names behind a tap. */
+.lookover-used { font-size: 0.9rem; color: var(--text-secondary); }
+.lookover-used a { color: var(--accent); font-weight: 600; text-decoration: none; }
+.lookover-used a:hover { text-decoration: underline; }
+.lookover-used-toggle { width: auto; min-height: 32px; margin: 0; padding: 2px 0; font-size: inherit; }
+.lookover-boulders { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 2px 0 0; }

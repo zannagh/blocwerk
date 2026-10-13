@@ -64,6 +64,16 @@ else
     private bool Matches => string.IsNullOrEmpty(RequiredText)
         || string.Equals(typed.Trim(), RequiredText.Trim(), StringComparison.Ordinal);
 
+    /// <summary>Opens the question as a tap on the button would (a keyboard shortcut of the page that hosts it).</summary>
+    public void Open()
+    {
+        if (!asking && !Disabled)
+        {
+            Ask();
+            StateHasChanged();
+        }
+    }
+
     private void Ask()
     {
         typed = string.Empty;

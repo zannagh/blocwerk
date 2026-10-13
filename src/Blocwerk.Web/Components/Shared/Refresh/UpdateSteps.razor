@@ -1,0 +1,60 @@
+@* The one header of a wall update, on the update page and on the look-over: the way back to the wall and the four
+   steps in a row, the current one highlighted and the ones before it ticked. A step that lives on the other page is a
+   link to it. Whatever the page wants beside the steps (a view switch, a menu) goes in ChildContent. *@
+
+<div class="update-steps @(Compact ? "is-compact" : null)">
+    <a href="/walls/@WallId" class="update-steps-back" aria-label="Back to the wall">&larr;</a>
+    <ol aria-label="Steps of the wall update">
+        @foreach (var step in Enum.GetValues<UpdateStep>())
+        {
+            var state = step == Current ? "is-current" : step < Current ? "is-done" : null;
+            <li class="@state" aria-current="@(step == Current ? "step" : null)">
+                @if (Href(step) is { } href)
+                {
+                    <a href="@href">@Name(step)</a>
+                }
+                else
+                {
+                    <span>@Name(step)</span>
+                }
+            </li>
+        }
+    </ol>
+    @ChildContent
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public Guid WallId { get; set; }
+
+    [Parameter, EditorRequired]
+    public UpdateStep Current { get; set; }
+
+    /// <summary>The look-over has something to show (the wall waits for one): its step links there from the update page.</summary>
+    [Parameter]
+    public bool LookOverOpen { get; set; }
+
+    /// <summary>The page needs the row for its own buttons: a phone then shows only the current step.</summary>
+    [Parameter]
+    public bool Compact { get; set; }
+
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+
+    private static string Name(UpdateStep step) => step == UpdateStep.LookOver ? "Look over" : step.ToString();
+
+    private string? Href(UpdateStep step)
+    {
+        if (step == Current)
+        {
+            return null;
+        }
+
+        if (Current == UpdateStep.LookOver)
+        {
+            return $"/walls/{WallId}/update";
+        }
+
+        return step == UpdateStep.LookOver && LookOverOpen ? $"/walls/{WallId}/look-over" : null;
+    }
+}

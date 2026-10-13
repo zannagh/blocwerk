@@ -8,7 +8,7 @@
 <figure class="lookover-picture">
     <div class="lookover-picture-frame">
         <img loading="@(Eager ? "eager" : "lazy")" onerror="this.closest('figure').style.display='none'"
-             src="@WallLookOverCropEndpoint.Url(WallId, FindingId, Picture.View, Outlined)" alt="@Alt" />
+             src="@WallLookOverCropEndpoint.Url(WallId, FindingId, Picture.View, Plain)" alt="@Alt" />
         @if (Outlined)
         {
             <svg class="lookover-outlines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
@@ -39,6 +39,9 @@
     public bool Eager { get; set; }
 
     private bool Outlined => Picture.Outlines.Count > 0;
+
+    /// <summary>The 3D texture comes bare too: nothing is known to outline on it, and a ring of another size than the hold misleads.</summary>
+    private bool Plain => Outlined || Picture.View == CheckCropView.Model;
 
     private string Caption => Picture.View switch
     {
