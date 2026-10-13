@@ -30,14 +30,18 @@
    clamps scrollLeft/scrollTop, i.e. the view pans by itself. Never reintroduce an inline style here. *@
 <div class="photo-viewport@(_frame != null ? " bw-framed" : string.Empty) @CursorClassForMode()" @ref="_viewportRef">
 <div class="photo-editor" @ref="_containerRef"
-     data-hold-drag="@(CanEdit && _mode == HoldTouchupTool.Move ? "true" : null)">
+     data-hold-drag="@(CanEdit && _mode == HoldTouchupTool.Move ? "true" : null)"
+     data-hold-drag-key="@holdDragKey">
     <img src="@ResponsiveImage.Initial(EffectivePhotoUrl)" data-bw-res alt="Wall" class="wall-photo" />
-    @* Hold drag uses POINTER events so mouse, touch and pen share one path. PointerEventArgs
-       derives from MouseEventArgs, so OnSvgMouseMove/OnSvgMouseUp bind unchanged. *@
+    @* Moving a HOLD never comes through here: wall-hold-drag.js runs that drag in the browser and
+       calls CommitHoldMove once on release. The pointer events below serve the handle drags (border,
+       shape points, alignment, tilt), which are few elements and stay on the server. The move listener
+       exists only while one of those is running, so a pointer merely crossing the overlay sends
+       nothing; each event used to cost a round-trip and a re-render of every hold. *@
     <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none"
          @onclick="OnSvgClick"
          @onmousedown="OnSvgMouseDown"
-         @onpointermove="OnSvgMouseMove"
+         @onpointermove="HandleDragMove"
          @onpointerup="OnSvgMouseUp"
          @onpointercancel="OnSvgMouseUp">
 
@@ -151,7 +155,7 @@
 
             @* No @key here, deliberately: this loop has never had one, and keying it on the hold id
                would change the diff's identity rules for every overlay layered below. *@
-            <HoldShape X="hold.X" Y="hold.Y" Radius="hold.Radius" ShapePoints="hold.ShapePoints" ShapeHoles="hold.ShapeHoles"
+            <HoldShape HoldId="hold.Id" X="hold.X" Y="hold.Y" Radius="hold.Radius" ShapePoints="hold.ShapePoints" ShapeHoles="hold.ShapeHoles"
                        Foot="isFoot" Fill="@fillColor" Stroke="@strokeColor" StrokeWidth="@sw" Dash="@dash"
                        Kept="hold.KeptUnconfirmedGeneration is not null"
                        PointerEvents="@hitEvents" Style="cursor: pointer"
@@ -159,7 +163,7 @@
 
             @if (_showUsage && usageRefs.Count > 0)
             {
-                <g pointer-events="none">
+                <g pointer-events="none" data-hold="@hold.Id">
                     <circle cx="@F(hold.X * 100 + r * 0.85)" cy="@F(hold.Y * 100 - r * 0.85)" r="1.4"
                             fill="#4CAF50" stroke="white" stroke-width="0.25" />
                     <text x="@F(hold.X * 100 + r * 0.85)" y="@F(hold.Y * 100 - r * 0.85)"
@@ -179,7 +183,7 @@
             @if (_showChanges && !IsNewThisGeneration(hold)
                  && (ManualAlignment ? _changedHoldIds.Contains(hold.Id) : (ChangeReview && hold.NeedsReview)))
             {
-                <g pointer-events="none">
+                <g pointer-events="none" data-hold="@hold.Id">
                     <circle cx="@F(hold.X * 100)" cy="@F(hold.Y * 100)" r="@F(r + 1.3)"
                             fill="none" stroke="var(--status-review)" stroke-width="0.4" stroke-dasharray="0.9 0.5" opacity="0.95" />
                     <circle cx="@F(hold.X * 100 + r * 0.9)" cy="@F(hold.Y * 100 - r * 0.9)" r="1.1"
@@ -193,7 +197,7 @@
                (Select/Move + the selected-hold option bar). *@
             @if (HoldCompleteness.IsIncomplete(hold, _incompleteCriteria))
             {
-                <g pointer-events="none">
+                <g pointer-events="none" data-hold="@hold.Id">
                     <circle cx="@F(hold.X * 100)" cy="@F(hold.Y * 100)" r="@F(r + 0.8)"
                             fill="none" stroke="#ffb300" stroke-width="0.35" opacity="0.95" />
                     <circle cx="@F(hold.X * 100 - r * 0.9)" cy="@F(hold.Y * 100 + r * 0.9)" r="1.3"
@@ -206,14 +210,14 @@
 
             @if (isSelected && hold.ShapePoints == null)
             {
-                <circle cx="@F(hold.X * 100)" cy="@F(hold.Y * 100)" r="@F(r + 0.5)"
+                <circle data-hold="@hold.Id" cx="@F(hold.X * 100)" cy="@F(hold.Y * 100)" r="@F(r + 0.5)"
                         fill="none" stroke="white" stroke-width="0.15"
                         stroke-dasharray="0.5 0.3" style="pointer-events: none" />
             }
 
             @if (!string.IsNullOrEmpty(hold.Name) && (_showNames || _revealNameHoldId == hold.Id || isNaming))
             {
-                <foreignObject x="@F((hold.X - 0.08) * 100)" y="@F((hold.Y - hold.Radius - 0.025) * 100)"
+                <foreignObject data-hold="@hold.Id" x="@F((hold.X - 0.08) * 100)" y="@F((hold.Y - hold.Radius - 0.025) * 100)"
                                width="16" height="3" style="pointer-events: none; overflow: visible;">
                     <span style="font-size: 1.8px; color: white; text-shadow: 0 0 1px #000, 0 0 1px #000;
                                  font-family: sans-serif; font-weight: 600; white-space: nowrap;
@@ -738,7 +742,24 @@
                 <button class="opt-btn" @onclick="AddShapePoint" title="Add a point on the longest edge">+</button>
             </div>
         }
+        @if (shapeHold != null)
+        {
+            @ResetToCircleButton(shapeHold)
+        }
     </div>;
+
+    /// <summary>
+    /// "Reset shape to circle" for a hold drawn from an outline, in the options of the tools that select
+    /// one hold (Move and Shape). Not offered where a save cannot erase an outline: the staged editors and
+    /// the shape review's adjust overlay, which hands an outline back.
+    /// </summary>
+    private RenderFragment ResetToCircleButton(Hold hold) => @<text>
+        @if (CanResetToCircle && HoldGeometryEdits.HasOutline(hold))
+        {
+            <button class="opt-btn" title="Replace this hold's outline with a plain circle of its size. Discard undoes it until you save."
+                    @onclick="() => ResetShapeToCircle(hold)">Reset shape to circle</button>
+        }
+    </text>;
 
     private RenderFragment RowName => @<div class="option-bar">
         <span class="option-hint">Click a hold to name it.</span>
@@ -795,6 +816,7 @@
                 }
             </div>
             <div class="option-group"><label>Size:</label><input type="range" min="3" max="40" value="@((int)(_selectedRadius * 1000))" @oninput="OnRadiusChange" /></div>
+            @ResetToCircleButton(sel)
             <button class="opt-btn danger" @onclick="DeleteSelected">Del</button>
             @if (ManualAlignment)
             {
@@ -1261,7 +1283,15 @@
     private Guid? _shapeEditHoldId;
     private double _selectedRadius = 0.015;
     private HoldTouchupTool _mode => tools.Tool;
-    private Guid? _draggingHoldId;
+
+    // Holds whose outline "Reset shape to circle" removed and no later edit redrew. The save names
+    // them, because a missing outline alone means "keep the stored one" (HoldEdit.FromEditorState).
+    private readonly HashSet<Guid> circleResetIds = [];
+
+    // wall-hold-drag.js finds this editor by the key on its .photo-editor and reports a finished
+    // move to CommitHoldMove through the reference registered under it.
+    private readonly string holdDragKey = Guid.NewGuid().ToString("N");
+    private DotNetObjectReference<WallPhotoEditor>? holdDragRef;
     private int? _draggingShapePointIdx;
     private Hold? _draggingShapeHold;
     private int? _draggingBorderIdx;
@@ -1364,7 +1394,14 @@
     /// <paramref name="Updated"/> on purpose: moving or resizing a circle only corrects where we
     /// think a hold IS, and must not retire the boulders that use it.
     /// </summary>
-    public record BatchChanges(List<Hold> Added, List<Hold> Updated, List<Guid> Deleted, List<Guid> MarkedChanged);
+    public record BatchChanges(List<Hold> Added, List<Hold> Updated, List<Guid> Deleted, List<Guid> MarkedChanged)
+    {
+        /// <summary>
+        /// The <see cref="Updated"/> holds whose outline was reset to a plain circle. Their null
+        /// <c>ShapePoints</c> means "erase the outline", not "leave it alone".
+        /// </summary>
+        public IReadOnlySet<Guid> ResetToCircle { get; init; } = new HashSet<Guid>();
+    }
 
     public WallPhotoEditor()
     {
@@ -1531,6 +1568,13 @@
         // later replaced by a structural re-render, disabled zoom permanently for this editor.
         try
         {
+            if (holdDragRef == null)
+            {
+                // Keyed, not bound to the element: a re-render that replaces .photo-editor keeps the key.
+                holdDragRef = DotNetObjectReference.Create(this);
+                await JS.InvokeVoidAsync("wallHoldDrag.register", holdDragKey, holdDragRef);
+            }
+
             await JS.InvokeVoidAsync("bwViewport.setupScroll", _viewportRef, _zoomState.Reference);
 
             // In the read-only view the box is framed to the wall region (_frame), so it pins that
@@ -1560,7 +1604,11 @@
         }
     }
 
-    public void Dispose() => _zoomState.Dispose();
+    public void Dispose()
+    {
+        _zoomState.Dispose();
+        holdDragRef?.Dispose();
+    }
 
     /// <remarks>
     /// The renderer prefers <see cref="IAsyncDisposable"/> over <see cref="IDisposable"/>, so this
@@ -1575,6 +1623,20 @@
         }
 
         _zoomState.Dispose();
+        if (holdDragRef != null)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("wallHoldDrag.unregister", holdDragKey);
+            }
+            catch (Exception ex) when (ex is JSDisconnectedException or JSException or OperationCanceledException)
+            {
+                // The circuit is gone and the page with it.
+            }
+
+            holdDragRef.Dispose();
+            holdDragRef = null;
+        }
     }
 
     protected override void OnParametersSet()
@@ -1602,6 +1664,7 @@
             _changedHoldIds.Clear();
             _addedHolds.Clear();
             _updatedHoldIds.Clear();
+            circleResetIds.Clear();
             _deletedHoldIds.Clear();
             _markChangedHoldIds.Clear();
             _alignmentChangedIds.Clear();
@@ -1630,6 +1693,7 @@
             {
                 _addedHolds.Clear();
                 _updatedHoldIds.Clear();
+                circleResetIds.Clear();
                 _deletedHoldIds.Clear();
                 _markChangedHoldIds.Clear();
                 _snapshotHolds = null;
@@ -2267,9 +2331,72 @@
         if (!CanEdit || _mode != HoldTouchupTool.Move) return;
         _selectedHoldId = hold.Id;
         _selectedRadius = hold.Radius;
-        _draggingHoldId = hold.Id;
         TakeSnapshot();
     }
+
+    /// <summary>
+    /// The end of a hold drag, which ran entirely in the browser (wall-hold-drag.js): the one call a move
+    /// makes. Moves the hold in the working copy by the dragged distance and marks it for the save, exactly
+    /// as the per-pointer-move handler used to on release.
+    /// </summary>
+    /// <param name="holdId">The dragged hold's id as rendered in <c>data-hold</c>.</param>
+    /// <param name="dx">Distance moved along X, in the photo's 0..1 space.</param>
+    /// <param name="dy">Distance moved along Y.</param>
+    /// <returns>False when the move was refused; the browser then puts the hold back.</returns>
+    [JSInvokable]
+    public bool CommitHoldMove(string holdId, double dx, double dy)
+    {
+        if (!CanEdit || _mode != HoldTouchupTool.Move || !Guid.TryParse(holdId, out var id))
+        {
+            return false;
+        }
+
+        var hold = Holds.FirstOrDefault(h => h.Id == id);
+        if (hold == null)
+        {
+            return false;
+        }
+
+        TakeSnapshot();
+        if (!HoldGeometryEdits.TryMoveBy(hold, dx, dy))
+        {
+            return false;
+        }
+
+        _selectedHoldId = hold.Id;
+        _selectedRadius = hold.Radius;
+        _updatedHoldIds.Add(hold.Id);
+        StateHasChanged();
+        return true;
+    }
+
+    private bool CanResetToCircle => CanEdit && !IsStaging && !ManualAlignment && !InitialShapeEditHoldId.HasValue
+        && OnBatchSave.HasDelegate;
+
+    private void ResetShapeToCircle(Hold hold)
+    {
+        TakeSnapshot();
+        if (!HoldGeometryEdits.ResetToCircle(hold))
+        {
+            return;
+        }
+
+        circleResetIds.Add(hold.Id);
+        TrackUpdate(hold);
+    }
+
+    // A handle drag the server follows move by move. Hold moves are not among them.
+    private bool HandleDragActive => _alignDragHandle.HasValue
+        || _shapeTiltDragging
+        || _draggingBorderIdx.HasValue
+        || _draggingShapePointIdx.HasValue;
+
+    private EventCallback<PointerEventArgs> handleDragMove;
+
+    // Unset while no handle is dragged, which leaves the overlay without a pointermove listener at all.
+    private EventCallback<PointerEventArgs> HandleDragMove => HandleDragActive
+        ? (handleDragMove.HasDelegate ? handleDragMove : handleDragMove = EventCallback.Factory.Create<PointerEventArgs>(this, OnSvgMouseMove))
+        : default;
 
     private void StartShapePointDrag(Hold hold, int idx)
     {
@@ -2311,14 +2438,9 @@
 
     private async Task OnSvgMouseMove(MouseEventArgs e)
     {
-        // Nothing is being dragged: don't pay a SignalR interop round-trip just to follow a hovering
-        // cursor. Only once a drag is active do we resolve the pointer's wall-relative position.
-        var dragging = _alignDragHandle.HasValue
-            || _shapeTiltDragging
-            || _draggingBorderIdx.HasValue
-            || _draggingShapePointIdx.HasValue
-            || _draggingHoldId != null;
-        if (!dragging)
+        // The listener is only attached during a handle drag (HandleDragMove); a move that was already
+        // on its way when the drag ended finds nothing to do.
+        if (!HandleDragActive)
         {
             return;
         }
@@ -2355,14 +2477,8 @@
 
             sp.Dx = nx;
             sp.Dy = ny;
-            StateHasChanged(); return;
+            StateHasChanged();
         }
-        if (_draggingHoldId == null) return;
-        var hold = Holds.FirstOrDefault(h => h.Id == _draggingHoldId);
-        if (hold == null) return;
-        hold.X = Math.Clamp(pos.X, 0, 1);
-        hold.Y = Math.Clamp(pos.Y, 0, 1);
-        StateHasChanged();
     }
 
     private async Task OnSvgMouseUp(EventArgs e)
@@ -2373,12 +2489,8 @@
         if (_draggingShapePointIdx.HasValue && _draggingShapeHold != null)
         {
             var h = _draggingShapeHold; _draggingShapePointIdx = null; _draggingShapeHold = null;
-            _updatedHoldIds.Add(h.Id); return;
+            _updatedHoldIds.Add(h.Id);
         }
-        if (_draggingHoldId == null) return;
-        var hold = Holds.FirstOrDefault(h => h.Id == _draggingHoldId);
-        _draggingHoldId = null;
-        if (hold != null) _updatedHoldIds.Add(hold.Id);
     }
 
     private void DeleteSelected()
@@ -2696,7 +2808,9 @@
 
         if (OnBatchSave.HasDelegate)
         {
-            await OnBatchSave.InvokeAsync(new BatchChanges(added, updated, deleted, markedChanged));
+            // Only a hold that still has no outline is a reset: one redrawn afterwards saves its new outline.
+            var resetToCircle = updated.Where(h => circleResetIds.Contains(h.Id) && h.ShapePoints == null).Select(h => h.Id).ToHashSet();
+            await OnBatchSave.InvokeAsync(new BatchChanges(added, updated, deleted, markedChanged) { ResetToCircle = resetToCircle });
         }
         else
         {
@@ -2712,6 +2826,7 @@
 
         _addedHolds.Clear();
         _updatedHoldIds.Clear();
+        circleResetIds.Clear();
         _deletedHoldIds.Clear();
         _markChangedHoldIds.Clear();
         _alignmentChangedIds.Clear();
@@ -2728,6 +2843,7 @@
 
         _addedHolds.Clear();
         _updatedHoldIds.Clear();
+        circleResetIds.Clear();
         _deletedHoldIds.Clear();
         _markChangedHoldIds.Clear();
         _alignmentChangedIds.Clear();

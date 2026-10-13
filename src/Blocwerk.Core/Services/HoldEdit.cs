@@ -69,7 +69,8 @@ public sealed record HoldEdit
     /// <para>
     /// Shape and name stay conditional on purpose: the editors send null for them to mean "I have
     /// nothing to say about this one", never "erase it". That was the old parameter list's reading of
-    /// them too, and it is the behaviour those savers still rely on.
+    /// them too, and it is the behaviour those savers still rely on. The one exception is
+    /// <c>resetToCircle</c>: the editor's "Reset shape to circle" says "erase the outline" outright.
     /// </para>
     /// </summary>
     public static HoldEdit FromEditorState(
@@ -84,7 +85,8 @@ public sealed record HoldEdit
         HoldMaterial? material,
         HoldHandType? handType,
         bool flagBouldersOnMove = true,
-        bool colorStillProposed = false) => new()
+        bool colorStillProposed = false,
+        bool resetToCircle = false) => new()
         {
             ColorStillProposed = colorStillProposed,
             X = x,
@@ -93,7 +95,7 @@ public sealed record HoldEdit
             Color = FieldUpdate<string?>.Set(color),
             Category = FieldUpdate<HoldCategory>.Set(category),
             IsOnKickboard = FieldUpdate<bool>.Set(isOnKickboard),
-            ShapePoints = shapePoints is null ? FieldUpdate<List<ShapePoint>?>.Keep : FieldUpdate<List<ShapePoint>?>.Set(shapePoints),
+            ShapePoints = shapePoints is null && !resetToCircle ? FieldUpdate<List<ShapePoint>?>.Keep : FieldUpdate<List<ShapePoint>?>.Set(shapePoints),
             Name = name is null ? FieldUpdate<string?>.Keep : FieldUpdate<string?>.Set(name),
             Material = FieldUpdate<HoldMaterial?>.Set(material),
             HandType = FieldUpdate<HoldHandType?>.Set(handType),
