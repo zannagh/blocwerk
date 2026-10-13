@@ -16,7 +16,6 @@ internal sealed class HoldArea
     private readonly double centreX;
     private readonly double centreY;
     private readonly double radiusPx;
-    private readonly bool mayCarry = true;
 
     /// <summary>Initializes a new instance of the <see cref="HoldArea"/> class.</summary>
     /// <param name="x">Centre across the photo, 0..1.</param>
@@ -36,15 +35,11 @@ internal sealed class HoldArea
     /// <summary>The area in square pixels: the outline's own (a concave one too), else the circle's.</summary>
     public double Area => polygon is null ? Math.PI * radiusPx * radiusPx : Math.Abs(SignedArea(polygon));
 
-    /// <summary>
-    /// Whether another hold can lie ON this one (<see cref="HoldStacks.HoldStacking.MayCarry"/>): only an area with
-    /// an outline, and not when the caller says no.
-    /// </summary>
-    public bool MayCarry
-    {
-        get => mayCarry && polygon is not null;
-        init => mayCarry = value;
-    }
+    /// <summary>Whether the area is a traced or drawn outline, not a plain circle.</summary>
+    public bool HasOutline => polygon is not null;
+
+    /// <summary>False when the caller says nothing can lie ON this area, whatever its outline. True unless said otherwise.</summary>
+    public bool MayCarry { get; init; } = true;
 
     public double MinX { get; }
 

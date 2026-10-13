@@ -13,9 +13,9 @@ namespace Blocwerk.Core.Detection.Outlines;
 /// has no business with. Locked holds are obstacles that always win.
 /// </param>
 /// <param name="MayCarry">
-/// False when another hold can never lie ON this one, whatever its outline (a plain circle never carries anything,
-/// see <see cref="HoldStacks.HoldStacking.MayCarry"/>). A hold and what it carries overlap on purpose and are never
-/// fitted against each other.
+/// False when another hold can never lie ON this one, whatever its outline (a plain circle carries nothing by
+/// default, see <see cref="HoldStacks.HoldStackingOptions"/>). A hold and what it carries overlap on purpose and are
+/// never fitted against each other.
 /// </param>
 /// <param name="StackedOn">The hold this one is stacked on (<see cref="Hold.StackedOnHoldId"/>), when that is stored.</param>
 public sealed record HoldShapeInput(

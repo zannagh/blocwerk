@@ -48,20 +48,20 @@ internal static class HoldStacker
         return stacked;
     }
 
-    /// <summary>Stacks every hold of some photos that has no base yet (the one-time backfill, and tests).</summary>
+    /// <summary>What stacking every hold of some photos that has no base yet would do; nothing is written.</summary>
     /// <param name="db">The context (for the photos' sizes).</param>
-    /// <param name="holds">Tracked holds, of any number of photos.</param>
+    /// <param name="holds">Holds of any number of photos.</param>
     /// <param name="ct">Cancellation.</param>
-    /// <returns>How many holds got a base.</returns>
-    public static async Task<int> StackAllAsync(BlocwerkDbContext db, IReadOnlyCollection<Hold> holds, CancellationToken ct = default)
+    /// <returns>The planned stacks.</returns>
+    public static async Task<List<HoldStackPlan>> PlanAllAsync(BlocwerkDbContext db, IReadOnlyCollection<Hold> holds, CancellationToken ct = default)
     {
-        var stacked = 0;
+        var plan = new List<HoldStackPlan>();
         foreach (var photo in holds.GroupBy(h => (h.WallPanelId, Generation: h.WallPanelId is null ? h.Generation : 0)))
         {
-            stacked += Apply(HoldStacking.Plan([.. photo], null, await SizeAsync(db, photo.Key.WallPanelId, ct)));
+            plan.AddRange(HoldStacking.Plan([.. photo], null, await SizeAsync(db, photo.Key.WallPanelId, ct)));
         }
 
-        return stacked;
+        return plan;
     }
 
     /// <summary>
@@ -143,7 +143,10 @@ internal static class HoldStacker
         hold.StackedOnHoldId = id;
     }
 
-    private static int Apply(List<(Hold Upper, Hold Base)> plan)
+    /// <summary>Writes planned stacks onto their (tracked) upper holds.</summary>
+    /// <param name="plan">The plan.</param>
+    /// <returns>How many holds got a base.</returns>
+    public static int Apply(List<HoldStackPlan> plan)
     {
         plan.ForEach(p => p.Upper.StackedOnHoldId = p.Base.Id);
         return plan.Count;

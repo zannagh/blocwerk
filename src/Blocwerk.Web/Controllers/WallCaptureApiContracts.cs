@@ -56,6 +56,10 @@ public sealed record CapturePhotoUploadResponse(int Stored, int Refused, IReadOn
 /// <param name="IncludeManual">Also outline circles drawn by hand (default: auto-detected ones only).</param>
 public sealed record OutlineUpgradeRequest(bool IncludeManual = false);
 
+/// <summary>Body of <c>POST /api/walls/{wallId}/holds/stacks</c>.</summary>
+/// <param name="HoldIds">Only these holds of the preview are stacked; null or absent stacks every one of them.</param>
+public sealed record HoldStackRequest(IReadOnlyList<Guid>? HoldIds = null);
+
 /// <summary>A surface of the active model, named by its facet id (the model corrections).</summary>
 /// <param name="FacetId">The facet id, e.g. "1b".</param>
 public sealed record GeometryFacetRequest(string FacetId);

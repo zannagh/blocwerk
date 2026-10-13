@@ -5,6 +5,7 @@
 using Blocwerk.Authentication.Authorization;
 using Blocwerk.Authentication.Handlers;
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.HoldStacks;
 using Blocwerk.Core.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -31,6 +32,7 @@ public sealed class WallHoldShapesController(
     IHoldOutlineUpgradeService outlines,
     IHoldFootprintService footprints,
     IHoldShapeCleanupService cleanup,
+    IHoldStackService stacks,
     ILogger<WallHoldShapesController> logger) : WallAdminApiController(logger)
 {
     /// <summary>Whether the outline upgrade is available here, and the wall's latest run (for a revert).</summary>
@@ -72,6 +74,16 @@ public sealed class WallHoldShapesController(
     [HttpPost("shape-cleanup/{batchId:guid}/revert")]
     public Task<IActionResult> RevertCleanup(Guid wallId, Guid batchId, CancellationToken ct) =>
         RunAsync(wallId, async () => Ok(await cleanup.RevertAsync(wallId, batchId, ct)));
+
+    /// <summary>Which existing holds sit on another hold by their outlines (a hold on a volume); writes nothing.</summary>
+    [HttpPost("stacks/preview")]
+    public Task<IActionResult> PreviewStacks(Guid wallId, CancellationToken ct) =>
+        RunAsync(wallId, async () => Ok(await stacks.PreviewAsync(wallId, ct)));
+
+    /// <summary>Stacks those holds (all of the preview, or only <c>holdIds</c>) as one change-journal batch; a second run changes nothing.</summary>
+    [HttpPost("stacks")]
+    public Task<IActionResult> ApplyStacks(Guid wallId, [FromBody] HoldStackRequest? request, CancellationToken ct) =>
+        RunAsync(wallId, async () => Ok(await stacks.ApplyAsync(wallId, request?.HoldIds, ct)));
 
     /// <summary>"Refine 3D hold shapes": the holds' contact footprints on the active model, from the capture photos.</summary>
     [HttpPost("refine-shapes")]

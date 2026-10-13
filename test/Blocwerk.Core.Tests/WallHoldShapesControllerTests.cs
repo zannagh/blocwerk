@@ -92,7 +92,8 @@ public class WallHoldShapesControllerTests
 
     private static int? Status(IActionResult result) => Assert.IsAssignableFrom<ObjectResult>(result).StatusCode;
 
-    private WallHoldShapesController Api(ClaimsPrincipal key) => new(outlines, footprints, cleanup, NullLogger<WallHoldShapesController>.Instance)
+    private WallHoldShapesController Api(ClaimsPrincipal key) => new(
+        outlines, footprints, cleanup, Substitute.For<Blocwerk.Core.HoldStacks.IHoldStackService>(), NullLogger<WallHoldShapesController>.Instance)
     {
         ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = key } },
     };
