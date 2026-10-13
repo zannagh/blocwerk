@@ -2245,7 +2245,7 @@ public class WallService : IWallService
             // The prior detection set already parented to this panel would otherwise survive alongside the
             // fresh set and double up. Drop the panel's current-generation auto-detected holds that no
             // boulder references before adopting the new ones — boulder-safe: manual holds and any hold a
-            // BoulderHold points at stay put (mirrors WallPanelService.Detection's redetect contract). On a
+            // BoulderHold points at stay put (mirrors the re-detect contract of PanelRedetectService). On a
             // first upload no live center panel exists yet, so this path never runs and nothing is removed.
             await RemoveReplacedCenterPanelAutoHoldsAsync(db, wall, liveCenter.Id);
 
@@ -2266,7 +2266,7 @@ public class WallService : IWallService
     /// Removes the center panel's current-generation auto-detected holds that no boulder references, so a
     /// re-upload's fresh detection set replaces the previous one instead of layering on top of it. Manual
     /// holds and any hold a <see cref="BoulderHold"/> points at are always kept, so no boulder is orphaned
-    /// (same boulder-safe contract as WallPanelService's redetect/clean). The caller commits.
+    /// (same boulder-safe contract as the panel re-detect). The caller commits.
     /// </summary>
     private static async Task RemoveReplacedCenterPanelAutoHoldsAsync(BlocwerkDbContext db, Wall wall, Guid centerPanelId)
     {

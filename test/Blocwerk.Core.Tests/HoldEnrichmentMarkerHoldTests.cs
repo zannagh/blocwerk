@@ -4,9 +4,7 @@
 
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Entities;
-using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 namespace Blocwerk.Core.Tests;
@@ -94,11 +92,9 @@ public class HoldEnrichmentMarkerHoldTests
                 new(OnMarker.X, OnMarker.Y, 0.02, null, 0.9),
                 new(FarAway.X, FarAway.Y, 0.02, null, 0.9),
             }));
-        var panels = new WallPanelService(
-            h.DbContextFactory, h.CurrentUser, h.HoldDetection, Substitute.For<IHoldOverlapMatcher>(),
-            NullLogger<WallPanelService>.Instance, holdEnrichment: Service());
+        var panels = RedetectRun.Service(h, Service());
 
-        Assert.Equal(1, await panels.RedetectPanelHoldsAsync(h.WallId, panelId));
+        Assert.Equal(1, (await panels.RunAsync(h.WallId, panelId)).NewHolds);
 
         await using var check = h.CreateContext();
         var only = await check.Holds.SingleAsync(x => x.WallPanelId == panelId);

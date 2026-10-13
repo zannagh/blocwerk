@@ -3,6 +3,7 @@
 
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Redetect;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -35,6 +36,15 @@ internal sealed class HoldDuplicateScenario
         var factory = new InterceptedFactory(connection, journal);
         return new HoldDuplicateService(
             factory, harness.CurrentUser, journal, new ChangeJournalReverter(factory, journal), NullLogger<HoldDuplicateService>.Instance);
+    }
+
+    /// <summary>The wall editor's re-detect on the same journalled contexts, merging through <see cref="Service"/>.</summary>
+    public PanelRedetectService Redetect()
+    {
+        var connection = ((TestDbContextFactory)harness.DbContextFactory).ConnectionString;
+        return new PanelRedetectService(
+            new InterceptedFactory(connection, journal), harness.CurrentUser, harness.HoldDetection, new HoldSamenessOptions(),
+            NullLogger<PanelRedetectService>.Instance, duplicates: Service(), journal: journal);
     }
 
     public async Task<Guid> AddHoldAsync(
