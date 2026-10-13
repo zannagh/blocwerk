@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The detector half of the hold evaluation harness: runs the app's own detector, outliner and shape
+       clean-up on a photo file and writes what they produced as JSON. Runs on Linux only (OpenCV), see
+       ../run-detector.sh. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Blocwerk.HoldEval</RootNamespace>
+    <AssemblyName>Blocwerk.HoldEval</AssemblyName>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Stands in for the signed-in user and the merge service when the app's re-detect is planned on a database copy. -->
+    <PackageReference Include="NSubstitute" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Blocwerk.HoldDetection\Blocwerk.HoldDetection.csproj" />
+    <ProjectReference Include="..\..\..\src\Blocwerk.Core\Blocwerk.Core.csproj" />
+  </ItemGroup>
+
+</Project>

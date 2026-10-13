@@ -1,0 +1,53 @@
+@using Blocwerk.Core.Redetect
+@* The re-detect review: every change a re-detect would make is a card with the wall as it is and as it would be,
+   answered with "Accept" or "Keep mine". Nothing is written while the cards are answered; the answers are applied
+   together at the end, and an unanswered card changes nothing. The shape updates that keep a hold where and about
+   as large as it is can be accepted in one step; splits, merges, stacks, new and lost holds and the offers for
+   hand-made shapes are always answered one by one. Number keys: 1 keeps, 2 accepts. *@
+
+<div class="redetect-review">
+    <p class="redetect-intro">@RedetectCopy.Intro(Plan)</p>
+    @if (SafeOpen > 0)
+    {
+        <button type="button" class="btn-secondary redetect-bulk" disabled="@Busy" @onclick="AcceptSafe">
+            Accept the @SafeOpen.ToString("N0") shape @(SafeOpen == 1 ? "update" : "updates") that @(SafeOpen == 1 ? "keeps its" : "keep their") hold in place
+        </button>
+    }
+
+    <CardDeck Count="cards.Count" Index="index" Label="@(Current is null ? null : RedetectCopy.Kind(Current.Proposal))" OnStep="Step" OnKey="OnKey">
+        <ChildContent>
+            @if (Current is { } card)
+            {
+                <div class="deck-body">
+                    <div class="deck-about">
+                        <strong>@RedetectCopy.Heading(card.Proposal)</strong>
+                        @if (Answer(card) is { } given)
+                        {
+                            <span class="redetect-answer @(given ? "is-accepted" : null)">@(given ? "Accepted" : "Kept as it is")</span>
+                        }
+                    </div>
+                    <div class="deck-pictures">
+                        <RedetectPicture PhotoUrl="@PhotoUrl" Frame="card.Frame" Outlines="card.Now" Caption="@RedetectCopy.NowCaption" />
+                        <RedetectPicture PhotoUrl="@PhotoUrl" Frame="card.Frame" Outlines="card.Then" Caption="@RedetectCopy.ThenCaption" />
+                    </div>
+                    <p class="deck-detail">@RedetectCopy.Detail(card.Proposal)</p>
+                </div>
+                <div class="deck-answers" role="group" aria-label="Answer">
+                    <button type="button" class="btn-secondary" disabled="@Busy" @onclick="() => Give(card, false)">@RedetectCopy.KeepLabelFor(card.Proposal)</button>
+                    <button type="button" class="btn-primary" disabled="@Busy" @onclick="() => Give(card, true)">@RedetectCopy.AcceptLabel(card.Proposal)</button>
+                </div>
+            }
+        </ChildContent>
+        <Empty>
+            <p>Re-detect proposes nothing for this panel.</p>
+        </Empty>
+    </CardDeck>
+
+    <div class="redetect-finish">
+        <span role="status">@Accepted.ToString("N0") accepted, @Kept.ToString("N0") kept, @Open.ToString("N0") not answered</span>
+        <button type="button" class="btn-secondary" disabled="@Busy" @onclick="OnCancel">Change nothing</button>
+        <button type="button" class="btn-primary" disabled="@(Busy || Accepted == 0)" @onclick="Apply">
+            Apply @Accepted.ToString("N0") accepted @(Accepted == 1 ? "change" : "changes")
+        </button>
+    </div>
+</div>

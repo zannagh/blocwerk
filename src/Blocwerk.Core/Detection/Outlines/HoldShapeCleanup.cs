@@ -124,9 +124,12 @@ public static class HoldShapeCleanup
     {
         ArgumentNullException.ThrowIfNull(panelHolds);
         ArgumentNullException.ThrowIfNull(outlines);
+
+        // The new outlines take their turn in the order they lie on the photo: their holds are fresh, with random ids.
+        var turns = outlines.Keys.OrderBy(h => h.Y).ThenBy(h => h.X).ThenBy(h => h.Radius).Select((h, i) => (h, i)).ToDictionary(t => t.h, t => t.i + 1);
         var inputs = panelHolds
             .Select(h => outlines.TryGetValue(h, out var o)
-                ? new HoldShapeInput(h.Id, h.X, h.Y, h.Radius, IsContour(o) ? o.ShapePoints : null, Locked: false, StackedOn: h.StackedOnHoldId)
+                ? new HoldShapeInput(h.Id, h.X, h.Y, h.Radius, IsContour(o) ? o.ShapePoints : null, Locked: false, StackedOn: h.StackedOnHoldId) { Turn = turns[h] }
                 : Locked(h))
             .ToList();
         var byId = outlines.Keys.ToDictionary(h => h.Id);

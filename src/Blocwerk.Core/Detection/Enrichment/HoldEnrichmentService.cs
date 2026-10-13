@@ -95,9 +95,10 @@ public sealed partial class HoldEnrichmentService : IHoldEnrichmentService
         }
 
         using var session = outlineService.OpenSession(request.Image);
-        foreach (var hold in targets)
+        var outlined = session.OutlineEach([.. targets.Select(h => HoldSeeds.Of(h, settings.BoxSeeds))]);
+        for (int i = 0; i < targets.Count; i++)
         {
-            plan.Outlines[hold] = session.Outline(new HoldSeed(hold.X, hold.Y, hold.Radius));
+            plan.Outlines[targets[i]] = outlined[i];
         }
 
         // The panel's shapes must not overlap each other or a hand-placed hold: clip, else circle, else a smaller circle.

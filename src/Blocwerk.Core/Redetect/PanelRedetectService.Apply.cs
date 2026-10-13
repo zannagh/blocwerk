@@ -22,7 +22,10 @@ public sealed partial class PanelRedetectService
     private const string Busy = "Another update of this wall's holds (a clean-up, an outline upgrade, a merge or a wall update) is running. Try again in a moment.";
 
     /// <inheritdoc/>
-    public async Task<PanelRedetectSummary> ApplyAsync(PanelRedetectPlan plan, CancellationToken ct = default)
+    public Task<PanelRedetectSummary> ApplyAsync(PanelRedetectPlan plan, CancellationToken ct = default) => ApplyAsync(plan, null, ct);
+
+    /// <inheritdoc/>
+    public async Task<PanelRedetectSummary> ApplyAsync(PanelRedetectPlan plan, IReadOnlySet<string>? accepted, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(plan);
         PanelRedetectSummary summary;
@@ -38,6 +41,7 @@ public sealed partial class PanelRedetectService
 
             var input = await LoadInputAsync(db, panel, plan.Detections, userId, ct);
             var decisions = RedetectPlanner.Plan(input, options);
+            decisions = accepted is null ? decisions : RedetectProposals.Accepted(decisions, accepted);
             summary = Summarize(input, decisions);
             if (decisions.Shapes.Count + decisions.NewDetections.Count + decisions.Removed.Count > 0)
             {
@@ -46,7 +50,7 @@ public sealed partial class PanelRedetectService
         }
 
         var merged = await MergeAsync(plan.WallId, summary.Merges, ct);
-        summary = summary with { Merges = merged, FailedMerges = summary.Merges.Count - merged.Count };
+        summary = summary with { Merges = merged, FailedMerges = summary.Merges.Count - merged.Count, Stacked = await StackAsync(plan.WallId, accepted, ct) };
         logger.LogInformation(
             "Panel {PanelId} re-detected on wall {WallId} by {UserId}: {Detected} detections, {Shapes} shapes replaced, {Filled} outlines filled, "
             + "{New} new holds, {Removed} removed, {Merged} merged ({Failed} failed), {Review} left for review, {Skipped} skipped",
@@ -95,6 +99,26 @@ public sealed partial class PanelRedetectService
         await HoldStacker.StackNewAsync(db, added, ct);
         ct.ThrowIfCancellationRequested();
         await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Records the accepted stacks through the stack service (its own lock and journal batch); returns how many it wrote.</summary>
+    private async Task<int> StackAsync(Guid wallId, IReadOnlySet<string>? accepted, CancellationToken ct)
+    {
+        var uppers = accepted is null ? [] : RedetectProposals.AcceptedStacks(accepted).Select(s => s.Upper).ToList();
+        if (stacks is null || uppers.Count == 0)
+        {
+            return 0;
+        }
+
+        try
+        {
+            return (await stacks.ApplyAsync(wallId, uppers, ct)).Stacks.Count;
+        }
+        catch (Exception ex) when (ex is UserFacingException or KioskRestrictedException or UnauthorizedAccessException)
+        {
+            logger.LogWarning(ex, "Re-detect on wall {WallId}: the accepted stacks could not be recorded", wallId);
+            return 0;
+        }
     }
 
     /// <summary>Merges the sure pairs one by one; a pair that cannot be merged any more is left as it is.</summary>

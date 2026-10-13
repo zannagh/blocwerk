@@ -40,6 +40,11 @@ public sealed record RedetectShapeUpdate(Guid HoldId, int Detection, RedetectSha
 /// <param name="Score">How sure, 0..1.</param>
 public sealed record RedetectMerge(Guid KeptId, Guid RemovedId, double Score);
 
+/// <summary>One stored hold where the detector sees several holds.</summary>
+/// <param name="HoldId">The stored hold.</param>
+/// <param name="Detections">Indexes of the detections inside it, the one covering most of it first.</param>
+public sealed record RedetectSplit(Guid HoldId, IReadOnlyList<int> Detections);
+
 /// <summary>Everything one re-detect decided, before anything is written.</summary>
 /// <param name="Shapes">Stored holds that take a shape from their detection.</param>
 /// <param name="NewDetections">Indexes of the detections that become new holds.</param>
@@ -57,6 +62,27 @@ public sealed record RedetectDecisions(
     int HandShapesKept,
     int SkippedDetections)
 {
+    /// <summary>Gets the hand-made outlines the detector offers another shape for; nothing changes unless a person takes one.</summary>
+    public IReadOnlyList<RedetectShapeUpdate> HandOffers { get; init; } = [];
+
+    /// <summary>
+    /// Gets the stored pairs that share one detection and are likely the same hold recorded twice, without being sure
+    /// enough to merge unasked: only ever a proposal.
+    /// </summary>
+    public IReadOnlyList<RedetectMerge> LikelyMerges { get; init; } = [];
+
+    /// <summary>Gets the stored holds the detector sees as several holds; their detections are in none of the other lists.</summary>
+    public IReadOnlyList<RedetectSplit> Splits { get; init; } = [];
+
+    /// <summary>Gets the number of detections left out because a person already said there is no hold on that spot.</summary>
+    public int TurnedDown { get; init; }
+
+    /// <summary>
+    /// Gets the number of detections on an empty spot that were left out because nothing could be traced there: only a
+    /// circle or a rough shape. A crash mat, bare wood or a shadow gives such a detection; a hold gives an outline.
+    /// </summary>
+    public int Untraced { get; init; }
+
     /// <summary>Gets a value indicating whether anything would be written.</summary>
     public bool Any => Shapes.Count + NewDetections.Count + Merges.Count + Removed.Count > 0;
 }
@@ -70,4 +96,16 @@ public sealed record RedetectInput(
     IReadOnlyList<RedetectExisting> Existing,
     IReadOnlyList<RedetectDetection> Detections,
     IReadOnlySet<(Guid, Guid)> Dismissed,
-    bool CanMerge);
+    bool CanMerge)
+{
+    /// <summary>
+    /// Gets the spots on this photo where a person already said "no hold": a detection answered "Not a hold" or still
+    /// waiting in the look-over, and holds a person deleted. A detection on one of them never becomes a new hold.
+    /// </summary>
+    public IReadOnlyList<Hold> TurnedDown { get; init; } = [];
+
+    /// <summary>
+    /// Gets the holds a person moved or resized by hand without that being flagged on the hold: they count as hand-made.
+    /// </summary>
+    public IReadOnlySet<Guid> HandEdited { get; init; } = new HashSet<Guid>();
+}

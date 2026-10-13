@@ -84,6 +84,21 @@ public sealed class YoloHoldDetectionService : IHoldDetectionService, IDisposabl
         }
     }
 
+    /// <summary>
+    /// Loads the model now when it is there. Whoever else uses the ONNX runtime in this process calls this first:
+    /// the detector's library has to be the one that creates the runtime.
+    /// </summary>
+    public void Warm()
+    {
+        lock (gate)
+        {
+            if (File.Exists(_modelPath))
+            {
+                EnsureModelLoaded();
+            }
+        }
+    }
+
     /// <inheritdoc/>
     public void Dispose()
     {
@@ -107,7 +122,9 @@ public sealed class YoloHoldDetectionService : IHoldDetectionService, IDisposabl
                 Y: Math.Round(b.CenterY / height, 4),
                 Radius: Math.Round(Math.Max(b.Width, b.Height) / (2.0 * longSide), 4),
                 Color: b.Label == "volume" ? "white" : null,
-                Confidence: Math.Round(b.Confidence, 3)))
+                Confidence: Math.Round(b.Confidence, 3),
+                BoxWidth: Math.Round((double)b.Width / width, 5),
+                BoxHeight: Math.Round((double)b.Height / height, 5)))
             .Where(h => h.X is >= 0 and <= 1 && h.Y is >= 0 and <= 1)
             .ToList();
 

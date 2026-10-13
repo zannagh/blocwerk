@@ -17,8 +17,17 @@ internal sealed class RedetectDraft
     /// <summary>Gets the shape updates.</summary>
     public List<RedetectShapeUpdate> Shapes { get; } = [];
 
+    /// <summary>Gets the shapes offered for hand-made outlines.</summary>
+    public List<RedetectShapeUpdate> HandOffers { get; } = [];
+
+    /// <summary>Gets, per detection a stored hold takes or is offered, that hold.</summary>
+    public Dictionary<int, Guid> Owners { get; } = [];
+
     /// <summary>Gets the merges.</summary>
     public List<RedetectMerge> Merges { get; } = [];
+
+    /// <summary>Gets the pairs on one detection that are likely one hold, but not sure enough to merge unasked.</summary>
+    public List<RedetectMerge> LikelyMerges { get; } = [];
 
     /// <summary>Gets the pairs left for the review.</summary>
     public List<(Guid A, Guid B)> ForReview { get; } = [];

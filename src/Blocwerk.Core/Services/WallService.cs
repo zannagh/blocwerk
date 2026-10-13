@@ -389,6 +389,7 @@ public class WallService : IWallService
                 X = detected.X,
                 Y = detected.Y,
                 Radius = detected.Radius,
+                DetectedBox = HoldDetectedBox.Of(detected),
                 Color = detected.Color,
                 Confidence = detected.Confidence,
                 IsAutoDetected = true,

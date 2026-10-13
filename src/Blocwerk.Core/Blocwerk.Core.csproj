@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Blocwerk.Core.Tests" />
+    <InternalsVisibleTo Include="Blocwerk.HoldEval" />
   </ItemGroup>
 
   <ItemGroup>

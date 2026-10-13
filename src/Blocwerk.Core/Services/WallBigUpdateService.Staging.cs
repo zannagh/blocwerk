@@ -275,6 +275,7 @@ public partial class WallBigUpdateService
                     X = d.X,
                     Y = d.Y,
                     Radius = d.Radius,
+                    DetectedBox = HoldDetectedBox.Of(d),
                     Color = d.Color,
                     Confidence = d.Confidence,
                     IsAutoDetected = true,

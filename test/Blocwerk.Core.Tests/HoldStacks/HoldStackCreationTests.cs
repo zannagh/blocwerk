@@ -53,7 +53,10 @@ public class HoldStackCreationTests
         var panel = await s.AddPanelAsync(0);
         Detects(s, (0.5, 0.5, 0.12), (0.53, 0.5, 0.02), (0.47, 0.52, 0.02), (0.9, 0.2, 0.02));
 
-        await Panels(s, OutlinesLargeHolds()).RedetectPanelHoldsAsync(s.WallId, panel);
+        var redetect = new Blocwerk.Core.Redetect.PanelRedetectService(
+            s.Harness.DbContextFactory, s.Harness.CurrentUser, s.Harness.HoldDetection, new Blocwerk.Core.Redetect.HoldSamenessOptions(),
+            NullLogger<Blocwerk.Core.Redetect.PanelRedetectService>.Instance, holdEnrichment: OutlinesLargeHolds(from: 0));
+        await redetect.ApplyAsync(await redetect.PlanAsync(s.WallId, panel));
 
         await using var db = s.Harness.CreateContext();
         var holds = await db.Holds.Where(h => h.WallPanelId == panel).OrderByDescending(h => h.Radius).ThenBy(h => h.Y).ToListAsync();
@@ -102,12 +105,12 @@ public class HoldStackCreationTests
         NullLogger<WallPanelService>.Instance, holdEnrichment: enrichment);
 
     /// <summary>An enrichment that traces the large detections (an octagon) and leaves the small ones plain circles.</summary>
-    private static IHoldEnrichmentService OutlinesLargeHolds()
+    private static IHoldEnrichmentService OutlinesLargeHolds(double from = 0.1)
     {
         var enrichment = Substitute.For<IHoldEnrichmentService>();
         enrichment.EnrichAsync(default!, default!, default).ReturnsForAnyArgs(call =>
         {
-            foreach (var hold in call.Arg<HoldEnrichmentRequest>().Holds.Where(h => h.Radius >= 0.1))
+            foreach (var hold in call.Arg<HoldEnrichmentRequest>().Holds.Where(h => h.Radius >= from))
             {
                 hold.ShapePoints = Entities.ShapePoint.DefaultOctagon(hold.Radius);
             }

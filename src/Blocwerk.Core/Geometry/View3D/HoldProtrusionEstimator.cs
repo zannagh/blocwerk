@@ -27,6 +27,15 @@ public static class HoldProtrusionEstimator
     /// <summary>Fewest points inside a footprint for a measurement (splat centres).</summary>
     public const int MinPoints = 15;
 
+    /// <summary>
+    /// A hold does not stand out of its surface further than this many times its larger side. Beyond it the points
+    /// over the hold are not the hold: the crash mat or the floor in front of a kickboard, a neighbouring structure.
+    /// </summary>
+    public const double MaxHeightPerSize = 1.2;
+
+    /// <summary>...but a small hold may always be measured up to this height.</summary>
+    public const double MinHeightLimitMm = 60;
+
     private const double CellMm = 50;
     private const double RingInnerMm = 25;
     private const double MaxOffPlaneMm = 400;
@@ -124,7 +133,14 @@ public static class HoldProtrusionEstimator
 
         var heights = inside.Select(p => p.D).Order().ToArray();
         var body = Percentile(heights, tuning.BodyQuantile);
-        var apexH = Percentile(heights, 0.95);
+        var limit = baseMm + Math.Max(MinHeightLimitMm, MaxHeightPerSize * Math.Max(width, height));
+        if (body > limit)
+        {
+            // Not this hold's body: drawing it would put a long tube on the wall.
+            return HoldProtrusion.Estimate(width, height, hold.OutlineKey);
+        }
+
+        var apexH = Math.Min(Percentile(heights, 0.95), limit);
         var topCut = Percentile(heights, 0.9);
         var top = inside.Where(p => p.D >= topCut).ToList();
         return new HoldProtrusion(

@@ -8,6 +8,9 @@
     <Project Path="test/Blocwerk.Core.Tests/Blocwerk.Core.Tests.csproj" />
     <Project Path="test/Blocwerk.HoldDetection.Tests/Blocwerk.HoldDetection.Tests.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/hold-eval/HoldEval/HoldEval.csproj" />
+  </Folder>
   <Project Path="src/Blocwerk.Authentication/Blocwerk.Authentication.csproj" />
   <Project Path="src/Blocwerk.Core/Blocwerk.Core.csproj" />
   <Project Path="src/Blocwerk.HoldDetection/Blocwerk.HoldDetection.csproj" />

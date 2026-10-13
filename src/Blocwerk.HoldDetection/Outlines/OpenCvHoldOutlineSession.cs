@@ -1,5 +1,6 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Detection.Outlines;
+using Blocwerk.HoldDetection.Segmentation;
 using OpenCvSharp;
 
 namespace Blocwerk.HoldDetection.Outlines;
@@ -19,7 +20,7 @@ namespace Blocwerk.HoldDetection.Outlines;
 /// wall; GrabCut only runs for contrast ≥ <see cref="MinGrabCutContrast"/>. Wooden volumes the colour of the
 /// wall therefore end as <see cref="HoldOutlineMethod.CircleFallback"/>.
 /// </remarks>
-public sealed class OpenCvHoldOutlineSession : IHoldOutlineSession
+public sealed class OpenCvHoldOutlineSession : IHoldBatchOutlineSession
 {
     /// <summary>Hold/wall contrast (lightness-weighted ΔE) below which no segmentation is attempted.</summary>
     public const double MinContrast = 9;
@@ -42,16 +43,33 @@ public sealed class OpenCvHoldOutlineSession : IHoldOutlineSession
     /// <summary>A low-contrast GrabCut outline this close to the seed ellipse is the seed, not a hold.</summary>
     public const double MaxSeedEllipseIoU = 0.85;
 
+    /// <summary>An outline covering less than this share of its detector box's area is a fragment of the hold.</summary>
+    public const double MinBoxArea = 0.25;
+
+    /// <summary>...and so is one spanning less than this share of the box's width or of its height.</summary>
+    public const double MinBoxExtent = 0.6;
+
     private static readonly double[] ThresholdFactors = [0.45, 0.7];
 
     private readonly Mat image;
     private readonly bool ownsImage;
+    private readonly SegmentedOutliner? segmenter;
 
     /// <summary>Initializes a new instance of the <see cref="OpenCvHoldOutlineSession"/> class.</summary>
     /// <param name="bgr">A decoded 8-bit BGR photo.</param>
     /// <param name="ownsImage">Whether disposing the session disposes <paramref name="bgr"/>.</param>
     public OpenCvHoldOutlineSession(Mat bgr, bool ownsImage)
+        : this(bgr, ownsImage, null)
     {
+    }
+
+    /// <summary>Initializes a new instance of the <see cref="OpenCvHoldOutlineSession"/> class.</summary>
+    /// <param name="bgr">A decoded 8-bit BGR photo.</param>
+    /// <param name="ownsImage">Whether disposing the session disposes <paramref name="bgr"/>.</param>
+    /// <param name="segmenter">The segmentation model for <see cref="OutlineAll"/>; null outlines everything by colour.</param>
+    internal OpenCvHoldOutlineSession(Mat bgr, bool ownsImage, SegmentedOutliner? segmenter)
+    {
+        this.segmenter = segmenter;
         ArgumentNullException.ThrowIfNull(bgr);
         if (bgr.Empty() || bgr.Type() != MatType.CV_8UC3)
         {
@@ -75,6 +93,18 @@ public sealed class OpenCvHoldOutlineSession : IHoldOutlineSession
 
         // Every consumer (ingest, circle upgrade, wall-update shapes) gets the same smoothed-or-circle result.
         return HoldOutlineRefiner.Refine(OutlineRaw(seed), (double)image.Width / image.Height);
+    }
+
+    /// <inheritdoc/>
+    public IReadOnlyList<HoldOutlineResult> OutlineAll(IReadOnlyList<HoldSeed> seeds)
+    {
+        ArgumentNullException.ThrowIfNull(seeds);
+        double aspect = (double)image.Width / image.Height;
+
+        // The model answers for the seeds that have a detector box; whatever it cannot outline believably, and a
+        // seed that is only a circle, is outlined by colour as before.
+        var segmented = segmenter?.Outline(image, seeds) ?? new HoldOutlineResult?[seeds.Count];
+        return [.. seeds.Select((seed, i) => Best(seed, segmented[i], aspect))];
     }
 
     private HoldOutlineResult OutlineRaw(HoldSeed seed)
@@ -127,6 +157,49 @@ public sealed class OpenCvHoldOutlineSession : IHoldOutlineSession
         {
             image.Dispose();
         }
+    }
+
+    /// <summary>
+    /// The first outline that is believable for the seed: the model's, else the colour pass's. With a detector box,
+    /// believable means consistent with the box (<see cref="FitsBox"/>): a bolt hole or half a pale hold is a failure,
+    /// not a result, and the hold then gets the box's own ellipse as a rough shape instead of a fragment.
+    /// </summary>
+    private HoldOutlineResult Best(HoldSeed seed, HoldOutlineResult? segmented, double aspect)
+    {
+        var model = segmented is null ? null : HoldOutlineRefiner.Refine(segmented, aspect);
+        if (model is not null && model.Method != HoldOutlineMethod.CircleFallback && FitsBox(seed, model))
+        {
+            return model;
+        }
+
+        var colour = HoldOutlineRefiner.Refine(OutlineRaw(seed), aspect);
+        bool boxed = seed.BoxWidth is > 0 && seed.BoxHeight is > 0;
+        if (!boxed || (colour.Method != HoldOutlineMethod.CircleFallback && FitsBox(seed, colour)))
+        {
+            return colour;
+        }
+
+        using OutlineCrop? crop = OutlineCrop.Create(image, seed);
+        return crop is null
+            ? colour
+            : HoldOutlineRefiner.Refine(OutlineResultBuilder.Circle(crop, seed, image.Width, image.Height, colour.Confidence / HoldOutlineRefiner.CircleConfidenceCeiling, rough: true), aspect);
+    }
+
+    /// <summary>
+    /// True when an outline covers enough of its detector box: at least <see cref="MinBoxArea"/> of its area and
+    /// <see cref="MinBoxExtent"/> of its width and of its height. Always true for a seed without a box.
+    /// </summary>
+    private bool FitsBox(HoldSeed seed, HoldOutlineResult result)
+    {
+        if (seed.BoxWidth is not > 0 || seed.BoxHeight is not > 0)
+        {
+            return true;
+        }
+
+        double boxArea = seed.BoxWidth.Value * image.Width * seed.BoxHeight.Value * image.Height;
+        return result.AreaPx >= MinBoxArea * boxArea
+            && result.Bounds.Width >= MinBoxExtent * seed.BoxWidth.Value
+            && result.Bounds.Height >= MinBoxExtent * seed.BoxHeight.Value;
     }
 
     /// <summary>

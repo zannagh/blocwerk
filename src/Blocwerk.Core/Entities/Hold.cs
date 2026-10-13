@@ -93,6 +93,13 @@ public partial class Hold
     public double Confidence { get; set; }
 
     /// <summary>
+    /// The detector's box around a fresh detection, which the outliner traces inside. Not stored: it only lives from
+    /// the detection to the outlining in the same request. Null on every hold read from the database.
+    /// </summary>
+    [NotMapped]
+    public HoldDetectedBox? DetectedBox { get; set; }
+
+    /// <summary>
     /// Why a panel update's triage suggested to discard this staged detection (a <see cref="NewHoldDiscardReason"/> name),
     /// written while the update is staged so the change journal's delete entry of the promote carries it. Null on every
     /// hold the triage kept; a hold that is live with one was kept by a person against the suggestion.
@@ -261,6 +268,7 @@ public partial class Hold
         IsOnKickboard = IsOnKickboard,
         IsAutoDetected = IsAutoDetected,
         Confidence = Confidence,
+        DetectedBox = DetectedBox,
         DiscardReason = DiscardReason,
         Generation = Generation,
         NeedsReview = NeedsReview,

@@ -497,10 +497,10 @@ else
                             </div>
                             @if (redetectPlan is { } redetect)
                             {
-                                @* One confirm with the concrete outcome before a re-detect changes anything (WallDetail.Redetect.cs). *@
-                                <Modal Title="Re-detect holds on this panel" OnClose="CancelRedetect">
-                                    <HoldActionPrompt Outcome="@RedetectOutcomes.Confirm(redetect.Summary)" ConfirmLabel="Re-detect"
-                                                      Disabled="@redetectBusy" OnConfirm="ConfirmRedetect" OnCancel="CancelRedetect" />
+                                @* Every change a re-detect would make is accepted or left, one by one (WallDetail.Redetect.cs). *@
+                                <Modal Title="Re-detect: what would change" PanelClass="redetect-modal" OnClose="CancelRedetect">
+                                    <Blocwerk.Web.Components.Shared.Redetect.RedetectReview Plan="redetect" PhotoUrl="@EditingPanelPhotoUrl" Busy="redetectBusy"
+                                                                                           OnApply="ConfirmRedetect" OnCancel="CancelRedetect" />
                                 </Modal>
                             }
                             @if (croppingPanel && CanCropPanel)

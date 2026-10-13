@@ -6,6 +6,8 @@ using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Holds.Colors;
+using Blocwerk.Core.HoldStacks;
+using Blocwerk.Core.LookOver;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -42,6 +44,7 @@ public sealed partial class PanelRedetectService : IPanelRedetectService
     private readonly IHoldDuplicateService? duplicates;
     private readonly IChangeJournal? journal;
     private readonly IKioskContext? kioskContext;
+    private readonly IHoldStackService? stacks;
 
     /// <summary>Initializes a new instance of the <see cref="PanelRedetectService"/> class.</summary>
     /// <param name="dbContextFactory">Context factory.</param>
@@ -53,6 +56,7 @@ public sealed partial class PanelRedetectService : IPanelRedetectService
     /// <param name="duplicates">Merges two holds; without it nothing is merged.</param>
     /// <param name="journal">Names the journal batch; optional as on the other hold services.</param>
     /// <param name="kioskContext">The kiosk context, when the host has one.</param>
+    /// <param name="stacks">Records that a hold sits on another; without it accepted stacks are not written.</param>
     public PanelRedetectService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
         ICurrentUserService currentUserService,
@@ -62,8 +66,10 @@ public sealed partial class PanelRedetectService : IPanelRedetectService
         IHoldEnrichmentService? holdEnrichment = null,
         IHoldDuplicateService? duplicates = null,
         IChangeJournal? journal = null,
-        IKioskContext? kioskContext = null)
+        IKioskContext? kioskContext = null,
+        IHoldStackService? stacks = null)
     {
+        this.stacks = stacks;
         this.dbContextFactory = dbContextFactory;
         this.currentUserService = currentUserService;
         this.holdDetectionService = holdDetectionService;
@@ -89,9 +95,27 @@ public sealed partial class PanelRedetectService : IPanelRedetectService
 
             var detections = await DetectAsync(db, wall, panel, ct);
             var input = await LoadInputAsync(db, panel, detections, userId, ct);
-            return new PanelRedetectPlan(wallId, panelId, detections, Summarize(input, RedetectPlanner.Plan(input, options)));
+            var decisions = RedetectPlanner.Plan(input, options);
+            var size = (await LookOverFrameSource.SizesAsync(db, [panel.Id], ct)).TryGetValue(panel.Id, out var known) ? known : ((int Width, int Height)?)null;
+            var proposals = RedetectProposals.Build(input, decisions, Stacks(input, size), options);
+            var involved = proposals.SelectMany(p => p.OtherHoldIds.Concat(p.HoldId is { } id ? [id] : [])).ToHashSet();
+            return new PanelRedetectPlan(wallId, panelId, detections, Summarize(input, decisions))
+            {
+                Proposals = proposals,
+                Holds = input.Existing.Where(e => involved.Contains(e.Hold.Id)).ToDictionary(e => e.Hold.Id, e => e.Hold.Clone()),
+                TurnedDown = decisions.TurnedDown,
+                Untraced = decisions.Untraced,
+                PhotoAspect = size is { Height: > 0 } s ? (double)s.Width / s.Height : 1,
+            };
         }
     }
+
+    /// <summary>
+    /// The stored holds of the panel that sit on another stored hold and are not recorded as such. Stacking is a wall
+    /// admin's decision, like a merge: for anybody else nothing is proposed.
+    /// </summary>
+    private static List<HoldStackPlan> Stacks(RedetectInput input, (int Width, int Height)? size) =>
+        input.CanMerge ? HoldStacking.Plan([.. input.Existing.Select(e => e.Hold).Where(RedetectPlanner.IsMatchable)], null, size) : [];
 
     private static PanelRedetectSummary Summarize(RedetectInput input, RedetectDecisions decisions)
     {
@@ -151,6 +175,7 @@ public sealed partial class PanelRedetectService : IPanelRedetectService
             X = d.X,
             Y = d.Y,
             Radius = d.Radius,
+            DetectedBox = HoldDetectedBox.Of(d),
             Color = d.Color,
             Confidence = d.Confidence,
             IsAutoDetected = true,
@@ -190,7 +215,11 @@ public sealed partial class PanelRedetectService : IPanelRedetectService
             byHold[h.Id].Select(u => u.BoulderId).ToHashSet(),
             byHold[h.Id].Count(u => u.Active),
             linked.Contains(h.Id))).ToList();
-        return new RedetectInput(existing, detections, dismissed, await CanMergeAsync(db, panel.WallId, userId, ct));
+        return new RedetectInput(existing, detections, dismissed, await CanMergeAsync(db, panel.WallId, userId, ct))
+        {
+            TurnedDown = await RedetectHistory.TurnedDownAsync(db, panel, ct),
+            HandEdited = await RedetectHistory.HandEditedAsync(db, panel, ct),
+        };
     }
 
     /// <summary>Merging is the duplicate review's operation: a wall admin's, and never a kiosk tablet's.</summary>

@@ -45,45 +45,65 @@ public static class RedetectPlanner
         var found = candidates.Select(c => c.Existing.Hold.Id).ToHashSet();
         var gone = input.Detections.Count == 0
             ? []
-            : input.Existing.Where(e => !found.Contains(e.Hold.Id) && IsRemovable(e)).Select(e => e.Hold.Id).ToList();
+            : input.Existing.Where(e => !found.Contains(e.Hold.Id) && IsRemovable(e, input)).Select(e => e.Hold.Id).ToList();
+
+        // A stored hold that is several detections is one question for a person; nothing else is decided about it.
+        var splits = RedetectSplits.Find(input, draft.Owners);
+        var split = splits.Select(s => s.HoldId).ToHashSet();
+        var pieces = splits.SelectMany(s => s.Detections).ToHashSet();
+        var fresh = Enumerable.Range(0, input.Detections.Count).Where(i => !taken.Contains(i) && !pieces.Contains(i)).ToList();
+        var turnedDown = fresh.Where(i => RedetectRules.OnTurnedDown(input, i, options)).ToHashSet();
+
+        // Where the outliner ran at all (some detection has a traced outline), a new hold needs one too.
+        var traces = input.Detections.Any(d => RedetectRules.IsTraced(d.Shape));
+        var untraced = fresh.Where(i => traces && !turnedDown.Contains(i) && !RedetectRules.IsTraced(input.Detections[i].Shape)).ToHashSet();
         return new RedetectDecisions(
-            draft.Shapes,
-            [.. Enumerable.Range(0, input.Detections.Count).Where(i => !taken.Contains(i))],
+            [.. draft.Shapes.Where(s => !split.Contains(s.HoldId))],
+            [.. fresh.Where(i => !turnedDown.Contains(i) && !untraced.Contains(i))],
             draft.Merges,
             draft.ForReview,
-            gone,
+            [.. gone.Where(id => !split.Contains(id))],
             draft.HandShapesKept,
-            taken.Count - groups.Count);
+            taken.Count - groups.Count)
+        {
+            HandOffers = [.. draft.HandOffers.Where(o => !split.Contains(o.HoldId))],
+            LikelyMerges = draft.LikelyMerges,
+            Splits = splits,
+            TurnedDown = turnedDown.Count,
+            Untraced = untraced.Count,
+        };
+    }
+
+    /// <summary>True when a person made the hold's shape or position: flagged on the hold, or moved or resized by hand.</summary>
+    /// <param name="hold">The hold.</param>
+    /// <param name="input">The planner's input, which knows the holds edited by hand.</param>
+    /// <returns>Whether it is hand-made.</returns>
+    public static bool IsHandShaped(Hold hold, RedetectInput input)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        return IsHandShaped(hold) || input.HandEdited.Contains(hold.Id);
     }
 
     /// <summary>True for a hold a re-detect may look at: not virtual and not hidden as kept but not confirmed.</summary>
     /// <param name="hold">The hold.</param>
     /// <returns>Whether it takes part.</returns>
-    public static bool IsMatchable(Hold hold)
-    {
-        ArgumentNullException.ThrowIfNull(hold);
-        return !hold.IsVirtual && hold.KeptUnconfirmedGeneration is null;
-    }
+    public static bool IsMatchable(Hold hold) => RedetectRules.IsMatchable(hold);
 
     /// <summary>True when a person placed the hold or drew or edited its shape: that shape is never replaced.</summary>
     /// <param name="hold">The hold.</param>
     /// <returns>Whether its shape is hand-made.</returns>
-    public static bool IsHandShaped(Hold hold)
-    {
-        ArgumentNullException.ThrowIfNull(hold);
-        return HoldMergeRules.IsHandMade(hold) || hold.ShapeControlPoints is { Count: > 0 };
-    }
+    public static bool IsHandShaped(Hold hold) => RedetectRules.IsHandShaped(hold);
 
     /// <summary>
     /// An automatic hold that may go when it is not found again: no boulder uses it, it is not linked to another panel,
     /// and no person named it, set its colour or touched its shape.
     /// </summary>
-    private static bool IsRemovable(RedetectExisting existing)
+    private static bool IsRemovable(RedetectExisting existing, RedetectInput input)
     {
         var hold = existing.Hold;
         return IsMatchable(hold)
             && hold.IsAutoDetected
-            && !IsHandShaped(hold)
+            && !IsHandShaped(hold, input)
             && existing.Boulders.Count == 0
             && !existing.Linked
             && string.IsNullOrWhiteSpace(hold.Name)
@@ -115,6 +135,10 @@ public static class RedetectPlanner
                     var color = HoldColorAgreement.Compare(existing.Hold.Color, input.Detections[i].Color);
                     found.Add(new RedetectCandidate(existing, i, overlap, HoldSameness.Judge(overlap, color, options)));
                 }
+                else if (!outlined && RedetectRules.IsPlaceholderOf(existing.Hold, input.Detections[i].Shape, overlap, options))
+                {
+                    found.Add(new RedetectCandidate(existing, i, overlap, HoldSamenessVerdict.Likely));
+                }
             }
         }
 
@@ -141,7 +165,8 @@ public static class RedetectPlanner
             primary = merged ? keeper : primary;
         }
 
-        DecideShape(primary, input.Detections[primary.Detection].Shape, options, draft);
+        draft.Owners[primary.Detection] = primary.Existing.Hold.Id;
+        DecideShape(primary, input, options, draft);
     }
 
     /// <summary>Two stored holds on one detection: merged when sure, left for the review when the review lists them.</summary>
@@ -173,15 +198,24 @@ public static class RedetectPlanner
             draft.ForReview.Add(key);
         }
 
+        // Two stored holds on one detection that nothing tells apart: one question for a person, never a silent merge.
+        if (input.CanMerge && verdict is HoldSamenessVerdict.Same or HoldSamenessVerdict.Likely && !keeper.Boulders.Overlaps(other.Boulders))
+        {
+            draft.LikelyMerges.Add(new RedetectMerge(keeper.Hold.Id, other.Hold.Id, overlap.Score));
+        }
+
         return false;
     }
 
-    private static void DecideShape(RedetectCandidate match, Hold fresh, HoldSamenessOptions options, RedetectDraft draft)
+    private static void DecideShape(RedetectCandidate match, RedetectInput input, HoldSamenessOptions options, RedetectDraft draft)
     {
         var hold = match.Existing.Hold;
+        var fresh = input.Detections[match.Detection].Shape;
         var outlined = hold.ShapePoints is { Count: >= 3 };
-        var freshOutlined = fresh.ShapePoints is { Count: >= 3 };
-        if (IsHandShaped(hold))
+
+        // A rough shape (the detector box's ellipse) is better than a circle, and never better than a stored outline.
+        var freshOutlined = fresh.ShapePoints is { Count: >= 3 } && (!outlined || RedetectRules.IsTraced(fresh));
+        if (IsHandShaped(hold, input))
         {
             if (!outlined && freshOutlined)
             {
@@ -189,7 +223,12 @@ public static class RedetectPlanner
             }
             else
             {
+                // The hand-made shape stays; a clearly different detected outline is only offered.
                 draft.HandShapesKept++;
+                if (freshOutlined && !SameShape(hold, fresh, sameKind: true, options))
+                {
+                    draft.HandOffers.Add(new RedetectShapeUpdate(hold.Id, match.Detection, RedetectShapeChange.Replace));
+                }
             }
 
             return;

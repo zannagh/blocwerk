@@ -64,7 +64,7 @@ public static class HoldShapeOverlapResolver
 
         var starts = allowRadiusShrink ? ShapeCirclePrepass.Shrink(holds, FloorOf, stacks) : [];
         var results = new List<HoldShapeResolution>();
-        foreach (var hold in holds.Where(h => !h.Locked).OrderBy(h => h.Id))
+        foreach (var hold in holds.Where(h => !h.Locked).OrderBy(h => h.Turn).ThenBy(h => h.Id))
         {
             var around = obstacles.Without(stacks.GetValueOrDefault(hold.Id));
             var resolution = FitOne(hold, starts.GetValueOrDefault(hold.Id, hold.Radius), around, allowRadiusShrink, aspect);

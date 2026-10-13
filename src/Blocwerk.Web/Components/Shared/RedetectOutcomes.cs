@@ -61,6 +61,7 @@ internal static class RedetectOutcomes
         Add(parts, summary.NewHolds, "new hold", "new holds", string.Empty);
         Add(parts, summary.Merges.Count, "pair merged", "pairs merged", string.Empty);
         Add(parts, summary.Removed, "hold removed", "holds removed", string.Empty);
+        Add(parts, summary.Stacked, "hold recorded as sitting on another", "holds recorded as sitting on another", string.Empty);
         Add(parts, summary.FailedMerges, "merge not done", "merges not done", string.Empty);
         return parts.Count == 0 ? "Re-detect changed nothing" : $"Re-detect: {string.Join(", ", parts)}";
     }

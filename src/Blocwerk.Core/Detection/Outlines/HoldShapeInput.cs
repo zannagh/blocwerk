@@ -19,7 +19,15 @@ namespace Blocwerk.Core.Detection.Outlines;
 /// </param>
 /// <param name="StackedOn">The hold this one is stacked on (<see cref="Hold.StackedOnHoldId"/>), when that is stored.</param>
 public sealed record HoldShapeInput(
-    Guid Id, double X, double Y, double Radius, IReadOnlyList<ShapePoint>? Shape, bool Locked, bool MayCarry = true, Guid? StackedOn = null);
+    Guid Id, double X, double Y, double Radius, IReadOnlyList<ShapePoint>? Shape, bool Locked, bool MayCarry = true, Guid? StackedOn = null)
+{
+    /// <summary>
+    /// Gets the hold's turn among the adjustable holds: lower goes first and keeps its outline where two overlap; the
+    /// id settles a tie. Stored holds leave it at 0 (their ids are their order). Fresh detections get random ids, so
+    /// they are given their order on the photo instead: the same photo then always resolves the same way.
+    /// </summary>
+    public int Turn { get; init; }
+}
 
 /// <summary>How the resolver fitted one unlocked hold.</summary>
 public enum HoldShapeFit
