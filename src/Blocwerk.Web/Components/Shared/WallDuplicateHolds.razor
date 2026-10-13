@@ -36,20 +36,28 @@
                         <figcaption><strong>Right</strong>, @SideKind(item.Right)@(string.IsNullOrWhiteSpace(item.Right.Name) ? "" : " - " + item.Right.Name)<br />@BoulderText(item.Right)</figcaption>
                     </figure>
                 </div>
+                @if (pending is { } ask && ReferenceEquals(ask.Item, item))
+                {
+                    <HoldActionPrompt Outcome="@HoldActionOutcomes.DuplicateMerge(item, ask.Mode)" ConfirmLabel="Merge" Disabled="@busy"
+                                      OnConfirm="ConfirmMergeAsync" OnCancel="() => pending = null" />
+                }
+                else
+                {
                 <div class="dup-actions">
                     @if (item.SuggestedMode == HoldMergeMode.KeepHandUseDetectedShape)
                     {
-                        <button class="btn-primary" disabled="@busy" @onclick="() => MergeAsync(item, HoldMergeMode.KeepHandUseDetectedShape)">Keep the hand-placed hold, use the detected shape</button>
-                        <button class="btn-secondary" disabled="@busy" @onclick="() => MergeAsync(item, HoldMergeMode.KeepLeft)">Merge (keep left as it is)</button>
-                        <button class="btn-secondary" disabled="@busy" @onclick="() => MergeAsync(item, HoldMergeMode.KeepRight)">Merge (keep right as it is)</button>
+                        <button class="btn-primary" disabled="@busy" @onclick="() => AskMerge(item, HoldMergeMode.KeepHandUseDetectedShape)">Keep the hand-placed hold, use the detected shape</button>
+                        <button class="btn-secondary" disabled="@busy" @onclick="() => AskMerge(item, HoldMergeMode.KeepLeft)">Merge (keep left as it is)</button>
+                        <button class="btn-secondary" disabled="@busy" @onclick="() => AskMerge(item, HoldMergeMode.KeepRight)">Merge (keep right as it is)</button>
                     }
                     else
                     {
-                        <button class="btn-primary" disabled="@busy" @onclick="() => MergeAsync(item, HoldMergeMode.KeepLeft)">Merge (keep left)</button>
-                        <button class="btn-secondary" disabled="@busy" @onclick="() => MergeAsync(item, HoldMergeMode.KeepRight)">Merge (keep right)</button>
+                        <button class="btn-primary" disabled="@busy" @onclick="() => AskMerge(item, HoldMergeMode.KeepLeft)">Merge (keep left)</button>
+                        <button class="btn-secondary" disabled="@busy" @onclick="() => AskMerge(item, HoldMergeMode.KeepRight)">Merge (keep right)</button>
                     }
                     <button class="btn-secondary" disabled="@busy" @onclick="() => DismissAsync(item)">Not a duplicate</button>
                 </div>
+                }
             </div>
         }
 
@@ -69,6 +77,8 @@
     else if (message is not null)
     {
         <p class="glyph-ok" role="status">@message</p>
+        <HoldActionPrompt UndoKey="undoBatchId" UndoMessage="Changed your mind?" Disabled="@busy"
+                          OnUndo="@(() => UndoAsync(undoBatchId!.Value))" />
     }
 
     @if (open && page is { RecentMerges.Count: > 0 })
