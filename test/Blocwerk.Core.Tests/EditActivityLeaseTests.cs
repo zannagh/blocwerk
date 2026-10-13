@@ -124,7 +124,7 @@ public class EditActivityLeaseTests
         var registry = new EditActivityRegistry();
         registry.Acquire(EditKind.BoulderCreate, Wall, userId: null, Now);
 
-        var later = Now + TimeSpan.FromMinutes(10);
+        var later = Now + EditActivityPolicy.LeaseTimeToLive + TimeSpan.FromMinutes(1);
         var survivor = registry.Acquire(EditKind.BoulderRevise, Wall, userId: null, later);
 
         var snapshot = registry.Snapshot(later);

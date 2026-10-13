@@ -11,6 +11,19 @@
  * with id `components-reconnect-modal` — so we keep the framework's retry logic and only observe
  * it. States: show | retrying | paused | hide | failed | rejected.
  *
+ * What the framework does on its own, and what this file adds:
+ *   - The framework retries on a backoff, and on a refused reconnect (the server no longer has the
+ *     circuit) it resumes into a new circuit in place before it reports 'rejected'.
+ *   - Its backoff only ends early when the tab becomes visible, so a phone that walks back into
+ *     signal with the app open waits out the current step. The steps are therefore kept short
+ *     (3s at most): the wait after the network returns is what the user feels.
+ *   - Once its retries are used up it stops for good. From then on this file asks GET /alive
+ *     and gets the circuit back itself as soon as the server answers. The two never run at the
+ *     same time, so there is only ever one attempt in flight.
+ *   - A resume renders the page again from the top; bwScrollKeeper puts it back where it was.
+ *   - A page the browser hid away and brought back without loading it has no circuit any more
+ *     and the framework does not notice. That is reported as 'rejected' as well.
+ *
  * Exposes `window.blocwerkConnection`:
  *   isUp()            -> bool
  *   status()          -> 'connected' | 'reconnecting' | 'failed' | 'rejected'
@@ -20,16 +33,38 @@
  */
 (function () {
     const MODAL_ID = 'components-reconnect-modal';
-    const MAX_RETRIES = 30;
+    const MAX_RETRIES = 40;
+    const PROBE_URL = '/alive';
     const subscribers = [];
 
+    // The longest the framework waits between two of its own retries.
+    const RETRY_MAX_MS = 3000;
+
+    // After the framework gave up: how often the server is asked whether it is reachable.
+    const PROBE_MS = 2000;
+    const PROBE_MAX_MS = 5000;
+    const PROBE_TIMEOUT_MS = 4000;
+
     let status = 'connected';
+    let probeTimer = null;
+    let probeDelay = PROBE_MS;
+    let attempting = false;
+    let hiddenAway = false;
+
+    /** True once the framework has stopped retrying and getting the circuit back is up to us. */
+    function isOurs() {
+        return status === 'failed';
+    }
 
     function publish(next) {
         if (status === next) {
             return;
         }
         status = next;
+
+        // Starts the probe on 'failed' and stops it on anything else.
+        probeDelay = PROBE_MS;
+        scheduleProbe(PROBE_MS);
         subscribers.forEach(cb => {
             try {
                 cb(status);
@@ -37,6 +72,84 @@
                 console.error('[blocwerk-connection] subscriber failed', err);
             }
         });
+    }
+
+    /** True when the server answers a plain request, so a websocket is worth opening. */
+    function serverReachable() {
+        const abort = typeof AbortController === 'function' ? new AbortController() : null;
+        const timer = abort ? setTimeout(() => abort.abort(), PROBE_TIMEOUT_MS) : null;
+
+        return fetch(PROBE_URL, { cache: 'no-store', credentials: 'omit', signal: abort ? abort.signal : undefined })
+            .then(response => response.ok, () => false)
+            .then(ok => {
+                clearTimeout(timer);
+                return ok;
+            });
+    }
+
+    /**
+     * One attempt to get the circuit back, in the framework's own order: reconnect to the circuit
+     * the server still holds, else resume into a new one, else report that the session is gone.
+     * Resolves false when the server could not be reached at all.
+     */
+    async function attempt() {
+        if (attempting || !isOurs() || !window.Blazor || !window.Blazor.reconnect) {
+            return false;
+        }
+
+        attempting = true;
+        try {
+            if (await window.Blazor.reconnect()) {
+                // The framework raises 'hide' itself unless the socket was open already.
+                if (status !== 'connected') {
+                    onStateChanged({ detail: { state: 'hide' } });
+                }
+                return true;
+            }
+            if (window.Blazor.resumeCircuit && await window.Blazor.resumeCircuit()) {
+                return true;
+            }
+
+            publish('rejected');
+            return true;
+        } catch (err) {
+            // The websocket did not open; the next probe tries again.
+            return false;
+        } finally {
+            attempting = false;
+        }
+    }
+
+    function scheduleProbe(delay) {
+        clearTimeout(probeTimer);
+        probeTimer = isOurs() ? setTimeout(probe, delay) : null;
+    }
+
+    function probe() {
+        probeTimer = null;
+        if (!isOurs()) {
+            return;
+        }
+
+        serverReachable()
+            .then(reachable => (reachable ? attempt() : false))
+            .then(done => {
+                probeDelay = done ? PROBE_MS : Math.min(Math.round(probeDelay * 1.5), PROBE_MAX_MS);
+                scheduleProbe(probeDelay);
+            });
+    }
+
+    /** The device says it is back (network, foreground): check now instead of on the next tick. */
+    function wake() {
+        if (hiddenAway) {
+            // Hidden away and running again: the circuit is gone (see the pagehide listener).
+            // maintenance.js reloads the page quietly once the server answers.
+            hiddenAway = false;
+            publish('rejected');
+        } else if (isOurs()) {
+            probeDelay = PROBE_MS;
+            scheduleProbe(0);
+        }
     }
 
     window.blocwerkConnection = {
@@ -88,19 +201,21 @@
             return;
         }
 
+        if (status === 'rejected') {
+            // The session is gone for good; only a real 'hide' above leaves this state. Without
+            // this the framework's still-running countdown would flip the pill back and forth.
+            return;
+        }
+
         if (next === 'show' || next === 'retrying' || next === 'paused') {
             publish('reconnecting');
             return;
         }
 
         if (next === 'failed') {
+            // Blazor stops on its own after maxRetries. The probe takes over from here (publish
+            // starts it), so a phone that regains signal ten minutes later still recovers.
             publish('failed');
-
-            // Blazor stops on its own after maxRetries; keep nudging it so a phone that
-            // regains signal ten minutes later recovers without a manual refresh.
-            if (navigator.onLine !== false) {
-                setTimeout(() => window.blocwerkConnection.reconnect(), 5000);
-            }
             return;
         }
 
@@ -119,11 +234,21 @@
         }
     }
 
-    // A phone that regains connectivity should try the circuit immediately, not wait out the
-    // current backoff step.
-    window.addEventListener('online', function () {
-        if (status !== 'connected') {
-            window.blocwerkConnection.reconnect();
+    // A phone that regains connectivity, or is taken out of the pocket, should try the circuit
+    // immediately, not wait out the current probe step. While the framework is still retrying it
+    // handles the foreground case itself and its steps are short, so this acts after it gave up.
+    //
+    // pagehide is where Blazor tells the server to drop the circuit, and it never starts one again
+    // on the same page. A page the browser kept anyway (frozen on a phone, or in the back/forward
+    // cache) comes back looking alive with nothing behind it. Remember it so wake() can act.
+    window.addEventListener('pagehide', function () {
+        hiddenAway = true;
+    });
+    window.addEventListener('online', wake);
+    window.addEventListener('pageshow', wake);
+    document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'visible') {
+            wake();
         }
     });
 
@@ -141,6 +266,19 @@
 
     window.Blazor.start({
         circuit: {
+            // Called around a resume only: the old circuit is closed and a new one opened in place.
+            circuitHandlers: [{
+                onCircuitClosed: function () {
+                    if (window.bwScrollKeeper) {
+                        window.bwScrollKeeper.keep();
+                    }
+                },
+                onCircuitOpened: function () {
+                    if (window.bwScrollKeeper) {
+                        window.bwScrollKeeper.restore();
+                    }
+                }
+            }],
             reconnectionOptions: {
                 maxRetries: MAX_RETRIES,
                 retryIntervalMilliseconds: function (previousAttempts, maxRetries) {
@@ -148,9 +286,9 @@
                         return null;
                     }
 
-                    // Fast at first (a dropped websocket usually comes straight back), then
-                    // backing off to 15s with jitter so a restarting server is not stampeded.
-                    const step = Math.min(1000 * Math.pow(1.6, previousAttempts), 15000);
+                    // Fast at first (a dropped websocket usually comes straight back), then every
+                    // few seconds, with jitter so a restarting server is not hit in lockstep.
+                    const step = Math.min(1000 * Math.pow(1.6, previousAttempts), RETRY_MAX_MS);
                     return Math.round(step * (0.75 + Math.random() * 0.5));
                 }
             }

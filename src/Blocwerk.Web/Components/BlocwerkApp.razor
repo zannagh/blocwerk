@@ -3,7 +3,6 @@
 @using Blocwerk.Web.Components.Layout
 @using Blocwerk.Core.Abstractions
 @inject ICurrentUserService CurrentUserService
-@inject IKioskContext KioskContext
 
 <!DOCTYPE html>
 <html lang="en">
@@ -86,12 +85,7 @@
    real page load: the header Login/Logout links and the kiosk act-as/release forms all carry
    data-enhance-nav="false". *@
 
-   @* data-bw-kiosk marks a kiosk tablet so the client can tell one apart — the kiosk cookie itself
-      is HttpOnly and unreadable from JS. It gates ONE thing: the maintenance watchdog's new
-      auto-reconnect reload, which reloads a kiosk off a rejected circuit once the server is reachable
-      again (maintenance.js isKiosk()). It grants nothing and is only ever emitted when true, so a
-      regular device simply never carries it. *@
-<body data-bw-user="@ActingUserId" data-bw-kiosk="@(KioskContext.IsKiosk ? "true" : null)">
+<body data-bw-user="@ActingUserId">
     <Routes />
 
     @* Blazor sets components-reconnect-* classes and raises components-reconnect-state-changed on
@@ -171,6 +165,8 @@
     <script src="@Assets["js/offline-queue.js"]"></script>
     <script src="@Assets["js/offline-actions.js"]"></script>
     <script src="@Assets["js/offline-boulder.js"]"></script>
+    @* Before blazor-boot.js, which calls it around a resume; maintenance.js calls it before a reload. *@
+    <script src="@Assets["js/scroll-keeper.js"]"></script>
     <script src="@Assets["js/blazor-boot.js"]"></script>
     @* Defines bwEditGuard before any editor component (which loads with the circuit, later) can call
        it, and before maintenance.js reads it in safeToReload(). Order is otherwise not load-bearing:

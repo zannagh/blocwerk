@@ -147,7 +147,7 @@ public static class Program
                 // from this period (a lease must outlive every window in which its circuit could
                 // still resume in place), so the two numbers must not be able to drift.
                 options.DisconnectedCircuitRetentionPeriod = EditActivityPolicy.DisconnectedCircuitRetention;
-                options.DisconnectedCircuitMaxRetained = 200;
+                options.DisconnectedCircuitMaxRetained = EditActivityPolicy.DisconnectedCircuitMaxRetained;
             })
             .AddHubOptions(o =>
             {

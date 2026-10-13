@@ -45,6 +45,19 @@ public class EditActivityLeasePolicyTests
     }
 
     /// <summary>
+    /// The retention is sized for a rest between two attempts at a wall, which is what puts a phone in
+    /// a pocket. It must not grow past what the deploy gate can absorb: two lease lifetimes have to
+    /// fit inside the inactivity window, or a lease restored by a late reconnect is cut short.
+    /// </summary>
+    [Fact]
+    public void ACircuitIsKeptForARestAtTheWallWithoutOutlastingTheDeployGate()
+    {
+        Assert.True(EditActivityPolicy.DisconnectedCircuitRetention >= TimeSpan.FromMinutes(10));
+        Assert.True(EditActivityPolicy.LeaseTimeToLive + EditActivityPolicy.LeaseTimeToLive < EditActivityPolicy.InactivityTimeToLive);
+        Assert.InRange(EditActivityPolicy.DisconnectedCircuitMaxRetained, 50, 500);
+    }
+
+    /// <summary>
     /// F2: every editing component acquires once, in its initialisation. A reconnect after the TTL
     /// therefore used to leave the user editing with no protection at all, and invisible to the
     /// health check.
