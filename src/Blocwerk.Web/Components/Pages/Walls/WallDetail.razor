@@ -17,6 +17,7 @@
 @inject ILogger<WallDetail> Logger
 @implements IDisposable
 @using Blocwerk.Web.Components.Shared
+@using Blocwerk.Core.Detection.Outlines
 @using Blocwerk.Core.Helpers
 
 <PageTitle>@(_wall?.Name ?? "Wall") - Blocwerk</PageTitle>
@@ -1589,7 +1590,8 @@ else
             await WallService.UpdateHoldAsync(hold.Id, HoldEdit.FromEditorState(
                 hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.IsOnKickboard, hold.ShapePoints, hold.Name, hold.Material, hold.HandType,
                 flagBouldersOnMove: false, colorStillProposed: hold.HasProposedColor,
-                resetToCircle: changes.ResetToCircle.Contains(hold.Id)));
+                resetToCircle: changes.ResetToCircle.Contains(hold.Id),
+                shapeControlPoints: HoldOutlineSpline.CurrentControlPoints(hold)));
         }
 
         foreach (var holdId in changes.MarkedChanged)
@@ -1789,7 +1791,8 @@ else
             await WallService.UpdateHoldAsync(hold.Id, HoldEdit.FromEditorState(
                 hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.IsOnKickboard, hold.ShapePoints, hold.Name, hold.Material, hold.HandType,
                 flagBouldersOnMove: false, colorStillProposed: hold.HasProposedColor,
-                resetToCircle: changes.ResetToCircle.Contains(hold.Id)));
+                resetToCircle: changes.ResetToCircle.Contains(hold.Id),
+                shapeControlPoints: HoldOutlineSpline.CurrentControlPoints(hold)));
         }
 
         // Drafted "Mark changed" decisions arrive ONLY here when a batch handler is attached (the

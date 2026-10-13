@@ -2,6 +2,7 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Capture;
 using Blocwerk.Core.Data;
+using Blocwerk.Core.Detection.Outlines;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Helpers;
@@ -1569,7 +1570,10 @@ public class WallService : IWallService
             // Stale glyph measurements: a move invalidates the plane position, a real reshape the metric
             // size and pocket holes too (a radius change only counts on a plain circle). Evaluated against
             // the geometry BEFORE it is overwritten below.
-            bool reshaped = hold.IsReshape(radius, shapeChanged ? edit.ShapePoints.Value : hold.ShapePoints);
+            // A smooth outline is stored as the curve through its control points, so that curve is what the
+            // reshape test compares.
+            var newShape = shapeChanged ? HoldOutlineSpline.Outline(edit.ShapePoints.Value, edit.ShapeControlPoints) : hold.ShapePoints;
+            bool reshaped = hold.IsReshape(radius, newShape);
             hold.InvalidateGlyphForEdit(positionChanged, reshaped);
 
             // An edit in the hold editor is a person looking at this hold: it is there (see Hold.KeptUnconfirmedGeneration).
@@ -1589,7 +1593,11 @@ public class WallService : IWallService
             hold.HandType = edit.HandType.Or(hold.HandType);
             hold.Category = edit.Category.Or(hold.Category);
             hold.IsOnKickboard = edit.IsOnKickboard.Or(hold.IsOnKickboard);
-            hold.ShapePoints = edit.ShapePoints.Or(hold.ShapePoints);
+            if (shapeChanged)
+            {
+                HoldOutlineSpline.Store(hold, edit.ShapePoints.Value, edit.ShapeControlPoints);
+            }
+
             hold.Name = edit.Name.Or(hold.Name);
 
             // Re-place / re-size in the same save: a reshape keeps the facet position, a move gets a new one

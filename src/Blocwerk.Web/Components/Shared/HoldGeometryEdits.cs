@@ -60,6 +60,7 @@ public static class HoldGeometryEdits
         }
 
         hold.ShapePoints = null;
+        hold.ShapeControlPoints = null;
         hold.ShapeHoles = null;
         return true;
     }

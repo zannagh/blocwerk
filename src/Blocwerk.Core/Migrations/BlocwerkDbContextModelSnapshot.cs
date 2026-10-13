@@ -1304,6 +1304,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<double>("Radius")
                         .HasColumnType("double precision");
 
+                    b.Property<string>("ShapeControlPoints")
+                        .HasColumnType("text");
+
                     b.Property<string>("ShapeHoles")
                         .HasColumnType("text");
 

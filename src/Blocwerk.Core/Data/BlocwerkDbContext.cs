@@ -711,6 +711,12 @@ public partial class BlocwerkDbContext : DbContext
                     v => v == null ? null : JsonSerializer.Deserialize<List<ShapePoint>>(v, (JsonSerializerOptions?)null),
                     NullableShapePointsComparer);
 
+            entity.Property(h => h.ShapeControlPoints)
+                .HasConversion(
+                    v => v == null ? null : JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+                    v => v == null ? null : JsonSerializer.Deserialize<List<ShapePoint>>(v, (JsonSerializerOptions?)null),
+                    NullableShapePointsComparer);
+
             // Same JSON column convention as ShapePoints: a list of rings, each ring a ShapePoint list.
             entity.Property(h => h.ShapeHoles)
                 .HasConversion(
