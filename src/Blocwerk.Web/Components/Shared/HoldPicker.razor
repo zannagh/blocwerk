@@ -93,13 +93,30 @@
                 var dash = hold.IsVirtual ? "0.6 0.4" : string.Empty;
                 if (hold.IsVirtual && !isSelected && !isColorFoot) { strokeColor = "#c86dff"; }
                 var isFoot = hold.Category == HoldCategory.Foot;
+                @* A hold that is not part of the boulder is not drawn: it stays in the overlay, transparent, as the
+                   tap target it always was, and gets its outline with the tap (the layer below). A virtual hold is
+                   the exception — it is not on the photo, so without its outline there is nothing to aim at. *@
+                if (!isSelected && !isColorFoot && !hold.IsVirtual)
+                {
+                    fillColor = "transparent";
+                    strokeColor = "transparent";
+                }
 
-                <HoldShape @key="hold.Id" X="hold.X" Y="hold.Y" Radius="hold.Radius" ShapePoints="hold.ShapePoints" ShapeHoles="hold.ShapeHoles"
+                <HoldShape @key="hold.Id" HoldId="hold.Id" X="hold.X" Y="hold.Y" Radius="hold.Radius" ShapePoints="hold.ShapePoints" ShapeHoles="hold.ShapeHoles"
                            Foot="isFoot" Fill="@fillColor" Stroke="@strokeColor" StrokeWidth="@sw" Dash="@dash" Kept="kept"
                            Style="cursor: pointer"
                            OnClick="(e) => OnHoldClicked(hold, e)" />
             }
         </svg>
+        @if (_overlayHold is { } tapped)
+        {
+            @* The hold just tapped, outlined so it is plain which one the role menu next to it is about. *@
+            <svg class="hold-tap-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                <HoldShine @key="tapped.Id" X="tapped.X" Y="tapped.Y" Radius="tapped.Radius"
+                           ShapePoints="tapped.ShapePoints" ShapeHoles="tapped.ShapeHoles"
+                           Foot="tapped.Category == HoldCategory.Foot" Color="@TappedColor(tapped)" />
+            </svg>
+        }
     </text>;
 
     /// <summary>
@@ -246,13 +263,45 @@
 
     private record RelativePos(double X, double Y);
 
-    /// <summary>A tap on a hold opens the radial classify overlay centred on the tap point.</summary>
-    private void OnHoldClicked(Hold hold, MouseEventArgs e)
+    /// <summary>
+    /// A tap on a hold outlines it and opens the radial classify overlay NEXT TO it (under it when there is room),
+    /// so the hold stays in view and it is plain which one was hit. Without the browser's answer the overlay falls
+    /// back to the tap point.
+    /// </summary>
+    private async Task OnHoldClicked(Hold hold, MouseEventArgs e)
     {
+        var spot = new RelativePos(e.ClientX, e.ClientY);
+        try
+        {
+            var box = _stageOpen && _stage is not null ? _stage.WorldElement : _photoPickerRef;
+            spot = await JS.InvokeAsync<RelativePos>(
+                "bwHoldDial.spot", box, hold.Id, SelectedEntryFor(hold.Id) is not null, e.ClientX, e.ClientY);
+        }
+        catch (JSException)
+        {
+            // Placement is a nicety; the overlay still opens, on the tap point.
+        }
+        catch (JSDisconnectedException)
+        {
+            return;
+        }
+
         _overlayHold = hold;
-        _overlayX = e.ClientX;
-        _overlayY = e.ClientY;
+        _overlayX = spot.X;
+        _overlayY = spot.Y;
     }
+
+    /// <summary>The tapped hold's outline colour: its role colour once it is in the boulder, else its own colour.</summary>
+    private string TappedColor(Hold hold)
+    {
+        if (SelectedEntryFor(hold.Id) is { } selection)
+        {
+            return BoulderHoldColors.Stroke(selection.Type);
+        }
+
+        return string.IsNullOrEmpty(hold.Color) ? "var(--accent)" : HoldPalette.Hex(hold.Color);
+    }
+
 
     /// <summary>The quadrant the overlay's hold currently sits in, or null when it isn't set.</summary>
     private RadialQuadrant? OverlayCurrent

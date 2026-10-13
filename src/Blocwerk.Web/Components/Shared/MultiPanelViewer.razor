@@ -43,6 +43,17 @@ else
                               OnToggle="ToggleHeat" OnToggleCounts="ToggleCounts" />
         }
 
+        @if (OutlinesOnDemand)
+        {
+            <button type="button" class="heat-tool holds-all-tool @(showAllHolds ? "active" : null)"
+                    aria-pressed="@(showAllHolds ? "true" : "false")"
+                    aria-label="Show all holds" title="Show all holds" @onclick="ToggleShowAllHolds">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22" aria-hidden="true">
+                    <circle cx="7" cy="8" r="3.5" /><circle cx="17" cy="9" r="2.5" /><circle cx="11" cy="17" r="3" />
+                </svg>
+            </button>
+        }
+
         @* Full-screen landscape takeover. Steps aside for the usage toggle when that one is shown,
            since both float in the same corner. *@
         @if (Fullscreen)
@@ -123,6 +134,11 @@ else
                                 continue;
                             }
 
+                            @* The wall view draws no hold until it is tapped (OutlinesOnDemand; the tapped one is
+                               outlined in the browser, see the layer below) unless "Show all holds" is on. A boulder's
+                               own holds, and the not-found holds an editor asked to see, are drawn either way. The
+                               heat map's count badges do not depend on it. *@
+                            var drawn = isHi || h.Kept || DrawsEveryHold;
                             var fill = FillOf(h, isHi);
                             var stroke = StrokeOf(h, isHi);
                             var sw = isHi ? "0.5" : "0.25";
@@ -136,9 +152,12 @@ else
                                editor and the hold picker — at FULL radius: on a viewing surface the shrink
                                only made feet hard to see, and the shape alone tells them from hands. *@
                             var isFoot = h.Category == HoldCategory.Foot;
-                            <HoldShape @key="h.Id" X="h.X" Y="h.Y" Radius="h.Radius" ShapePoints="h.ShapePoints" ShapeHoles="h.ShapeHoles"
-                                       Foot="isFoot" FootScale="HoldShape.FullFoot"
-                                       Fill="@fill" Stroke="@stroke" StrokeWidth="@sw" Dash="@dash" Kept="h.Kept" />
+                            @if (drawn)
+                            {
+                                <HoldShape @key="h.Id" X="h.X" Y="h.Y" Radius="h.Radius" ShapePoints="h.ShapePoints" ShapeHoles="h.ShapeHoles"
+                                           Foot="isFoot" FootScale="HoldShape.FullFoot"
+                                           Fill="@fill" Stroke="@stroke" StrokeWidth="@sw" Dash="@dash" Kept="h.Kept" />
+                            }
 
                             @if (_heatOn && UsageCount(h.Id) is > 0 and var usageCount)
                             {
@@ -151,6 +170,13 @@ else
                             }
                         }
                     </svg>
+                    @if (OutlinesOnDemand)
+                    {
+                        @* Filled by hold-tap.js with the tapped hold's outline and its label; both stay
+                           empty in the render tree, so a re-render never touches what is drawn in them. *@
+                        <svg class="hold-tap-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg>
+                        <div class="hold-tap-label" hidden></div>
+                    }
                     }
     </text>;
 
@@ -469,6 +495,7 @@ else
             }
 
             await PaintHeatAsync();
+            await SyncHoldTapAsync();
 
             if (_recenterPending)
             {
@@ -481,10 +508,12 @@ else
         catch (JSException)
         {
             _fitBoxForPanelId = null;
+            tapSentKey = null;
         }
         catch (JSDisconnectedException)
         {
             _fitBoxForPanelId = null;
+            tapSentKey = null;
         }
     }
 
