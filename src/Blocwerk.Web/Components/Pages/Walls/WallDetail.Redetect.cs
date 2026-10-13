@@ -15,6 +15,12 @@ namespace Blocwerk.Web.Components.Pages.Walls;
 /// </summary>
 public partial class WallDetail
 {
+    /// <summary>
+    /// Off until the detector stops re-adding things a person already turned down: on a real wall one press added
+    /// hundreds of holds on markers, mats and spots answered "Not a hold" (see issue #127).
+    /// </summary>
+    private const bool RedetectAvailable = false;
+
     private PanelRedetectPlan? redetectPlan;
     private bool redetectBusy;
 
@@ -25,6 +31,12 @@ public partial class WallDetail
     {
         if (_editingPanel is null)
         {
+            return;
+        }
+
+        if (!RedetectAvailable)
+        {
+            await ShowToast("Re-detect is switched off for now. It is being reworked");
             return;
         }
 
