@@ -42,10 +42,28 @@ public static class EditActivityPolicy
     /// Configured onto <c>CircuitOptions.DisconnectedCircuitRetentionPeriod</c> in <c>Program.cs</c>.
     /// </summary>
     /// <remarks>
-    /// Phones on gym wifi drop the websocket constantly and the client retries for minutes, so the
-    /// circuit is held long enough that walking out of signal and back in recovers in place.
+    /// <para>A phone drops its websocket within seconds of being locked or put in a pocket, and at a
+    /// wall that is what happens between two attempts: a rest is routinely longer than five minutes.
+    /// With the earlier five-minute value most returns found the circuit gone and came back into a
+    /// new one with the page state lost (sort, filters, the open card). Twelve minutes covers a rest
+    /// and a chat.</para>
+    /// <para>The cost is memory, bounded by <see cref="DisconnectedCircuitMaxRetained"/>, and a longer
+    /// <see cref="LeaseTimeToLive"/>. Two of those must still fit inside <see cref="InactivityTimeToLive"/>
+    /// (the deploy script's own patience), so that a lease restored by a late reconnect runs its full
+    /// time before the inactivity window ends it; that is what caps this value.</para>
     /// </remarks>
-    public static readonly TimeSpan DisconnectedCircuitRetention = TimeSpan.FromMinutes(5);
+    public static readonly TimeSpan DisconnectedCircuitRetention = TimeSpan.FromMinutes(12);
+
+    /// <summary>
+    /// The most disconnected circuits kept at once; beyond it the oldest is dropped early. Configured
+    /// onto <c>CircuitOptions.DisconnectedCircuitMaxRetained</c> in <c>Program.cs</c>.
+    /// </summary>
+    /// <remarks>
+    /// A wall session is a few dozen devices, so this is a ceiling for a bad day rather than a number
+    /// that is ever reached. At a few megabytes for a circuit with a wall page open it bounds the
+    /// retained state to about a gigabyte on a host with 23.
+    /// </remarks>
+    public static readonly int DisconnectedCircuitMaxRetained = 200;
 
     /// <summary>
     /// How long a lease survives without a heartbeat before it stops counting as busy.

@@ -57,12 +57,16 @@
     // a wall of simultaneous full page loads. See jittered() and doReload().
     const JITTER_MS = 700;
 
+    // The self-heal reload is one device coming back to a session the server no longer has, not a
+    // whole gym following a deploy, so it gets only a token spread.
+    const SELF_HEAL_SPREAD_MS = 500;
+
     // How far the reload itself is spread. Bigger than the poll jitter on purpose: a poll is one
     // small JSON response, a reload is a whole page plus its assets against a container that is
     // still warming up.
     const RELOAD_SPREAD_MS = 4000;
 
-    // The kiosk SAME-instanceId self-heal (consider(), the same-id branch) needs a brake the
+    // The SAME-instanceId self-heal (consider(), the same-id branch) needs a brake the
     // CHANGED-instanceId path does not. That path reloads onto a genuinely new build and adopts its
     // id as the new baseline, so it self-limits — a client takes it once per real deploy. The
     // same-id self-heal has no such brake: the baseline never moves, so a server that answers
@@ -70,14 +74,18 @@
     // eviction under memory pressure, a proxy killing the WebSocket) would reload, come back
     // rejected, /alive 200 again, reload again — a tight loop across the whole fleet. A persisted
     // cooldown plus a rolling cap turn that into a few spaced retries, then park on the manual
-    // "Session ended — Reload" pill. sessionStorage is the right scope: it survives location.reload()
-    // (so the count accumulates across the loop) but not a fresh navigation, so a genuinely fixed
-    // instance starts clean.
-    const KIOSK_RELOAD_COOLDOWN_MS = 60 * 1000;      // no second same-instance auto-reload within this
-    const KIOSK_RELOAD_WINDOW_MS = 5 * 60 * 1000;    // rolling window the cap counts within
-    const KIOSK_RELOAD_MAX = 3;                       // this many within the window -> stop, park on the pill
-    const KIOSK_RELOAD_AT_KEY = 'bwKioskReloadAt';
-    const KIOSK_RELOAD_COUNT_KEY = 'bwKioskReloadCount';
+    // "Session ended — Reload" pill. A page that then holds its circuit for SELF_HEAL_PROVEN_MS has
+    // shown the instance is fine and starts a fresh count, so a phone that is put away and taken
+    // out all afternoon is not mistaken for a loop. sessionStorage is the right scope: it survives
+    // location.reload() (so the count accumulates across the loop) but not a fresh navigation, so a
+    // genuinely fixed instance starts clean. The stored key names still say "kiosk": the self-heal began as a
+    // kiosk-only path and a rename would only orphan the stamps of pages that are open right now.
+    const SELF_HEAL_COOLDOWN_MS = 60 * 1000;      // no second same-instance auto-reload within this
+    const SELF_HEAL_WINDOW_MS = 5 * 60 * 1000;    // rolling window the cap counts within
+    const SELF_HEAL_MAX = 3;                       // this many within the window -> stop, park on the pill
+    const SELF_HEAL_PROVEN_MS = 90 * 1000;           // longer than the cooldown, so it cannot shorten it
+    const SELF_HEAL_AT_KEY = 'bwKioskReloadAt';
+    const SELF_HEAL_COUNT_KEY = 'bwKioskReloadCount';
 
     // A cancelled or failed deploy must not leave a spinner on a kiosk forever. When nothing has
     // changed by here we drop the notice; the connection pill's ordinary offline/reconnecting
@@ -123,21 +131,6 @@
     let reloaded = false;
 
     /**
-     * True on a kiosk tablet only. The kiosk cookie is HttpOnly and unreadable here, so the server
-     * stamps <body data-bw-kiosk="true"> in BlocwerkApp.razor when IKioskContext.IsKiosk. This gates
-     * the ONE new reload path — a rejected circuit that can reach the server again on the SAME
-     * instance — so a regular user's phone never reloads on an ordinary WiFi blip. Read live: the
-     * body element and its dataset always exist by the time any poll runs.
-     */
-    function isKiosk() {
-        try {
-            return document.body != null && document.body.dataset.bwKiosk === 'true';
-        } catch (e) {
-            return false;
-        }
-    }
-
-    /**
      * Reads a sessionStorage integer. Returns NaN when the key is absent, unparseable, or storage
      * throws (Safari private browsing, a locked-down profile). Callers treat NaN conservatively.
      */
@@ -167,25 +160,25 @@
         }
     }
 
-    function clearKioskReloadStamps() {
+    function clearSelfHealStamps() {
         try {
-            window.sessionStorage.removeItem(KIOSK_RELOAD_AT_KEY);
-            window.sessionStorage.removeItem(KIOSK_RELOAD_COUNT_KEY);
+            window.sessionStorage.removeItem(SELF_HEAL_AT_KEY);
+            window.sessionStorage.removeItem(SELF_HEAL_COUNT_KEY);
         } catch (e) {
             // Nothing to clear, or storage is unavailable; either way there is nothing to do.
         }
     }
 
     /**
-     * Decides whether the kiosk same-instance self-heal may reload NOW, and if it may, records the
+     * Decides whether the same-instance self-heal may reload NOW, and if it may, records the
      * attempt so the cooldown and cap hold across the reload. Fails toward NOT looping: if storage
      * cannot be read or written, if the cooldown has not elapsed, or if the rolling cap is reached,
-     * it returns false and the kiosk stays on the manual "Session ended — Reload" pill.
+     * it returns false and the page stays on the manual "Session ended — Reload" pill.
      */
-    function takeKioskSelfHeal() {
+    function takeSelfHeal() {
         var now = Date.now();
-        var lastAt = readStamp(KIOSK_RELOAD_AT_KEY);
-        var count = readStamp(KIOSK_RELOAD_COUNT_KEY);
+        var lastAt = readStamp(SELF_HEAL_AT_KEY);
+        var count = readStamp(SELF_HEAL_COUNT_KEY);
 
         if (!isFinite(lastAt)) {
             // No prior stamp: either the first self-heal on this page lineage, or storage is
@@ -197,28 +190,28 @@
             if (!isFinite(count) || count < 0) {
                 count = 0;
             }
-            if (now - lastAt < KIOSK_RELOAD_COOLDOWN_MS) {
+            if (now - lastAt < SELF_HEAL_COOLDOWN_MS) {
                 // Too soon after the last auto-reload — never hammer.
                 return false;
             }
-            if (now - lastAt > KIOSK_RELOAD_WINDOW_MS) {
+            if (now - lastAt > SELF_HEAL_WINDOW_MS) {
                 // The rolling window elapsed with no auto-reload: start counting fresh.
                 count = 0;
             }
         }
 
-        if (count >= KIOSK_RELOAD_MAX) {
+        if (count >= SELF_HEAL_MAX) {
             // A persistently-broken instance: stop auto-reloading and leave the manual pill.
             return false;
         }
 
         // Record BEFORE reloading. If the write is not known to have landed we cannot trust the
-        // cooldown to hold on the next page, so refuse: a kiosk parked on the manual pill is better
+        // cooldown to hold on the next page, so refuse: a page parked on the manual pill is better
         // than one looping with no brake.
-        if (!writeStamp(KIOSK_RELOAD_AT_KEY, now)) {
+        if (!writeStamp(SELF_HEAL_AT_KEY, now)) {
             return false;
         }
-        writeStamp(KIOSK_RELOAD_COUNT_KEY, count + 1);
+        writeStamp(SELF_HEAL_COUNT_KEY, count + 1);
         return true;
     }
 
@@ -352,7 +345,7 @@
         return true;
     }
 
-    function doReload() {
+    function doReload(spreadMs) {
         if (reloaded) {
             return;
         }
@@ -367,8 +360,18 @@
         // reloading immediately means a cold container's first job is serving the whole gym at
         // once. A few seconds of spread costs one user nothing and costs the container everything.
         setTimeout(function () {
+            // The reload keeps the route by itself; this keeps the scroll offsets as well, so the
+            // page comes back where it was (scroll-keeper.js applies them after the load).
+            try {
+                if (window.bwScrollKeeper) {
+                    window.bwScrollKeeper.keepForReload();
+                }
+            } catch (e) {
+                // Landing at the top is the worst that can happen; the reload is the point.
+            }
+
             location.reload();
-        }, Math.round(Math.random() * RELOAD_SPREAD_MS));
+        }, Math.round(Math.random() * (typeof spreadMs === 'number' ? spreadMs : RELOAD_SPREAD_MS)));
     }
 
     function stopPolling() {
@@ -400,28 +403,28 @@
         }
 
         if (body.instanceId === baselineId) {
-            // Same process still answering. Normally nothing to do — but a KIOSK whose circuit is
-            // REJECTED RIGHT NOW (not merely 'failed', which Blazor may still recover — see the
+            // Same process still answering. Normally nothing to do — but a page whose circuit is
+            // REJECTED RIGHT NOW (not merely 'failed', which may still recover — see the
             // subscription below) and that can reach the server again has proved the connection is
-            // back. That successful fetch IS the "back online" signal: reload it off the dead circuit
-            // instead of leaving the manual "Session ended — Reload" pill for nobody to tap.
+            // back. 'rejected' means the reconnect was refused AND the resume into a new circuit
+            // failed, so nothing on this page can work again. That successful fetch IS the "back
+            // online" signal: reload it off the dead circuit instead of leaving a "Session ended —
+            // Reload" pill to tap. This was kiosk-only at first; a phone taken out of the pocket is
+            // the same case, and an ordinary WiFi blip never gets here because it reconnects.
             //
             // Gate on the LIVE circuit state, not the latched `reason`: `reason` is set in begin()
             // and CLEARED by stop() at MAX_WATCH_MS, so keying on it permanently disarms this heal
             // while an editor holds the guard (the circuit is already terminally 'rejected', so
             // `reason` never re-arms). blocwerkConnection.status() self-clears if the circuit ever
             // recovers and survives stop(). Unlike the changed-instance path this one is NOT
-            // self-limiting — the baseline never moves — so takeKioskSelfHeal() adds a persisted
+            // self-limiting — the baseline never moves — so takeSelfHeal() adds a persisted
             // cooldown + rolling cap so a server that is 200 on /alive but keeps evicting the circuit
-            // cannot drive a reload loop. Same edit-safety guard as the changed-instance path, and
-            // spread by the same reload jitter. A regular user's phone is not a kiosk, so a WiFi blip
-            // never reloads it here.
-            if (isKiosk()
-                && window.blocwerkConnection
+            // cannot drive a reload loop. Same edit-safety guard as the changed-instance path.
+            if (window.blocwerkConnection
                 && window.blocwerkConnection.status() === 'rejected'
                 && safeToReload()
-                && takeKioskSelfHeal()) {
-                doReload();
+                && takeSelfHeal()) {
+                doReload(SELF_HEAL_SPREAD_MS);
                 return 'reloaded';
             }
 
@@ -680,9 +683,16 @@
             if (status !== 'connected') {
                 sawDisconnect = true;
             } else if (sawDisconnect) {
-                clearKioskReloadStamps();
+                clearSelfHealStamps();
             }
         });
+
+        // The other proof: this page has held its circuit, undisturbed, for longer than the cooldown.
+        setTimeout(function () {
+            if (!sawDisconnect && window.blocwerkConnection.status() === 'connected') {
+                clearSelfHealStamps();
+            }
+        }, SELF_HEAL_PROVEN_MS);
     }
 
     // Enhanced navigation morphs the server DOM over ours and can strip the JS-appended pill.
