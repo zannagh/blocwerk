@@ -10,18 +10,24 @@ namespace Blocwerk.Core.HoldStacks;
 /// <summary>
 /// The one rule that says a hold sits ON another hold of the same photo (a hold on a volume): at least
 /// <see cref="MinInside"/> of its area lies inside the other hold's outline, and the other hold is at least
-/// <see cref="MinAreaRatio"/> times as large. Two holds of about the same size on one spot are never a stack (they are
-/// the same hold twice, or one replaced the other). A circle a person placed by hand is never taken for a base: it
-/// marks roughly where a hold is, and a detection inside it is that hold (the duplicate review's case), not a hold on
-/// top of it. Pure: reads outlines, writes nothing.
+/// <see cref="MinAreaRatio"/> times as large. Only a hold with a traced or drawn OUTLINE is taken for a base: a plain
+/// circle (placed by hand, or a detection that could not be outlined) marks roughly where a hold is, and what lies in
+/// it is usually that hold again or its neighbour. Pure: reads outlines, writes nothing.
 /// </summary>
+/// <remarks>
+/// Both numbers and the outline rule were set on the real wall (the Attic, 1111 live holds, 2026-10-13). With 1.8 times
+/// the area and circles as bases, 15 holds were stacked there and 9 of them wrongly: a second record of the same hold
+/// (area ratios 2 to 3.5), or a neighbour that a coarse circle happens to cover. A hold that really sits on another one
+/// is far smaller than it; from 4 times the area on, with an outlined base, none of the wrong ones is left. A person
+/// can still stack any two holds in the editor.
+/// </remarks>
 public static class HoldStacking
 {
     /// <summary>The share of the upper hold's area that must lie inside the base.</summary>
     public const double MinInside = 0.7;
 
     /// <summary>How many times larger (by area) the base must be.</summary>
-    public const double MinAreaRatio = 1.8;
+    public const double MinAreaRatio = 4;
 
     /// <summary>Whether <paramref name="upper"/> sits on <paramref name="lower"/> by their outlines.</summary>
     /// <param name="upper">The hold that would be on top.</param>
@@ -47,10 +53,10 @@ public static class HoldStacking
     /// <returns>False for a virtual hold and for one the last update did not find.</returns>
     public static bool CanStackAutomatically(Hold hold) => hold is { IsVirtual: false, KeptUnconfirmedGeneration: null };
 
-    /// <summary>A hold whose outline says where it really is, so another hold can lie on it: a detection, or a drawn outline.</summary>
+    /// <summary>A hold whose outline says where it really is, so another hold can lie on it.</summary>
     /// <param name="hold">The hold.</param>
-    /// <returns>False for a plain circle placed by hand.</returns>
-    public static bool MayCarry(Hold hold) => hold.IsAutoDetected || hold.ShapePoints is { Count: >= 3 };
+    /// <returns>False for a plain circle, whoever placed it.</returns>
+    public static bool MayCarry(Hold hold) => hold.ShapePoints is { Count: >= 3 };
 
     /// <summary>
     /// Which holds of one photo to stack on which: every hold without a base that sits on another one goes on the

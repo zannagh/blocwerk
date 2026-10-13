@@ -20,7 +20,7 @@ internal static class ShapeStacks
     public static Dictionary<Guid, HashSet<Guid>> Find(IReadOnlyList<HoldShapeInput> holds)
     {
         var areas = holds
-            .Select(h => (h.Id, Area: new HoldArea(h.X, h.Y, h.Radius, h.Shape, null) { MayCarry = h.MayCarry }))
+            .Select(h => (h.Id, Area: new HoldArea(h.X, h.Y, h.Radius, h.Shape is { Count: >= 3 } ? h.Shape : null, null) { MayCarry = h.MayCarry }))
             .OrderBy(a => a.Area.MinX)
             .ToList();
         var found = new Dictionary<Guid, HashSet<Guid>>();

@@ -23,7 +23,7 @@ public class HoldStackCreationTests
     {
         using var s = await HoldColorScenario.CreateAsync();
         var panel = await s.AddPanelAsync(0);
-        var volume = await s.AddHoldAsync(panel, Spot, configure: h => h.Radius = 0.12);
+        var volume = await s.AddHoldAsync(panel, Spot, configure: h => (h.Radius, h.ShapePoints) = (0.12, Entities.ShapePoint.DefaultOctagon(0.12)));
 
         var added = await s.Harness.WallService.AddHoldAsync(s.WallId, 0.52, 0.5, 0.02, null, wallPanelId: panel);
         var virt = await s.Harness.WallService.AddHoldAsync(s.WallId, 0.48, 0.5, 0.02, null, isVirtual: true, wallPanelId: panel);
@@ -53,7 +53,7 @@ public class HoldStackCreationTests
         var panel = await s.AddPanelAsync(0);
         Detects(s, (0.5, 0.5, 0.12), (0.53, 0.5, 0.02), (0.47, 0.52, 0.02), (0.9, 0.2, 0.02));
 
-        await Panels(s).RedetectPanelHoldsAsync(s.WallId, panel);
+        await Panels(s, OutlinesLargeHolds()).RedetectPanelHoldsAsync(s.WallId, panel);
 
         await using var db = s.Harness.CreateContext();
         var holds = await db.Holds.Where(h => h.WallPanelId == panel).OrderByDescending(h => h.Radius).ThenBy(h => h.Y).ToListAsync();
@@ -65,7 +65,9 @@ public class HoldStackCreationTests
     {
         using var s = await HoldColorScenario.CreateAsync();
         Detects(s, (0.5, 0.5, 0.12), (0.53, 0.5, 0.02));
-        var update = s.BigUpdate();
+        var update = new WallBigUpdateService(
+            s.Harness.DbContextFactory, s.Harness.CurrentUser, s.Harness.HoldDetection, Substitute.For<IHoldOverlapMatcher>(),
+            NullLogger<WallBigUpdateService>.Instance, holdEnrichment: OutlinesLargeHolds());
 
         await update.StageAsync(s.WallId, WallUpdateSessionFixture.CentrePhoto());
 
@@ -82,7 +84,8 @@ public class HoldStackCreationTests
     public async Task ADiscardedDetectionOnAVolume_IsNoDuplicateOfIt_AndAddedAsAHoldItSitsOnIt()
     {
         using var s = await DiscardedScenario.ApplyAsync((HoldColorScenario.YellowSpot, 0.97, NewHoldDiscardReason.UnchangedSinceOldPhoto));
-        var volume = await s.Colors.AddHoldAsync(s.PanelId, HoldColorScenario.YellowSpot, generation: 1, h => h.Radius = 0.15);
+        var volume = await s.Colors.AddHoldAsync(
+            s.PanelId, HoldColorScenario.YellowSpot, generation: 1, h => (h.Radius, h.ShapePoints) = (0.15, Entities.ShapePoint.DefaultOctagon(0.15)));
         var service = s.LookOver();
 
         // The volume covers the detection completely, and still it is a hold the update may have missed, not a duplicate.
@@ -94,9 +97,25 @@ public class HoldStackCreationTests
         Assert.Equal(volume, (await s.Colors.GetAsync(added)).StackedOnHoldId);
     }
 
-    private static WallPanelService Panels(HoldColorScenario s) => new(
+    private static WallPanelService Panels(HoldColorScenario s, IHoldEnrichmentService? enrichment = null) => new(
         s.Harness.DbContextFactory, s.Harness.CurrentUser, s.Harness.HoldDetection, Substitute.For<IHoldOverlapMatcher>(),
-        NullLogger<WallPanelService>.Instance);
+        NullLogger<WallPanelService>.Instance, holdEnrichment: enrichment);
+
+    /// <summary>An enrichment that traces the large detections (an octagon) and leaves the small ones plain circles.</summary>
+    private static IHoldEnrichmentService OutlinesLargeHolds()
+    {
+        var enrichment = Substitute.For<IHoldEnrichmentService>();
+        enrichment.EnrichAsync(default!, default!, default).ReturnsForAnyArgs(call =>
+        {
+            foreach (var hold in call.Arg<HoldEnrichmentRequest>().Holds.Where(h => h.Radius >= 0.1))
+            {
+                hold.ShapePoints = Entities.ShapePoint.DefaultOctagon(hold.Radius);
+            }
+
+            return Task.FromResult(HoldEnrichmentSummary.None);
+        });
+        return enrichment;
+    }
 
     private static void Detects(HoldColorScenario s, params (double X, double Y, double Radius)[] holds)
     {

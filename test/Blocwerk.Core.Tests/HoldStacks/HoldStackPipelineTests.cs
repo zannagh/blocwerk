@@ -20,9 +20,9 @@ public class HoldStackPipelineTests
     [Fact]
     public void TheDuplicateReview_LeavesAHoldOnAVolumeAlone_AndStillFindsTheSameHoldTwice()
     {
-        var volume = Auto(0.5, 0.5, 0.12, "red");
+        var volume = Outlined(0.5, 0.5, 0.12, "red");
         var onIt = Auto(0.53, 0.5, 0.02, "red");
-        var twice = Auto(0.505, 0.5, 0.12, "red");
+        var twice = Outlined(0.505, 0.5, 0.12, "red");
 
         Assert.Empty(HoldDuplicateFinder.Find([volume, onIt]));
         Assert.Single(HoldDuplicateFinder.Find([volume, onIt, twice]));
@@ -65,14 +65,14 @@ public class HoldStackPipelineTests
     public void ADiscardedDetection_IsADuplicateOfAHoldOfItsSize_NotOfTheVolumeUnderIt()
     {
         var detection = new HoldArea(0.53, 0.5, 0.02, null, null);
-        var volume = new HoldArea(0.5, 0.5, 0.12, null, null);
+        var volume = new HoldArea(0.5, 0.5, 0.12, ShapePoint.DefaultOctagon(0.12), null);
         var sameHold = new HoldArea(0.532, 0.5, 0.022, null, null);
-        var placedCircle = new HoldArea(0.5, 0.5, 0.12, null, null) { MayCarry = false };
+        var placedCircle = new HoldArea(0.5, 0.5, 0.12, null, null);
 
         Assert.Equal(0, DiscardedDetections.Overlap(detection, [volume]));
         Assert.True(DiscardedDetections.Overlap(detection, [volume, sameHold]) >= LookOverRules.DuplicateOverlap);
 
-        // A circle somebody placed around the hold is that hold: the detection doubles it.
+        // A plain circle around the detection is that hold: the detection doubles it.
         Assert.Equal(1, DiscardedDetections.Overlap(detection, [placedCircle]));
     }
 
@@ -122,6 +122,13 @@ public class HoldStackPipelineTests
         Assert.Equal((HoldShapeFit.Unchanged, HoldShapeFit.Unchanged), (resolved[volume.Id].Fit, resolved[onIt.Id].Fit));
         Assert.Equal(0.02, resolved[onIt.Id].Radius);
         Assert.NotEqual(HoldShapeFit.Unchanged, resolved[beside.Id].Fit);
+    }
+
+    private static Hold Outlined(double x, double y, double radius, string? color)
+    {
+        var hold = Auto(x, y, radius, color);
+        (hold.ShapePoints, hold.OutlineSource) = (ShapePoint.DefaultOctagon(radius), HoldOutlineSource.AutoContour);
+        return hold;
     }
 
     private static Hold Auto(double x, double y, double radius, string? color) => new()
