@@ -6,24 +6,29 @@ using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Refresh;
 using Blocwerk.Core.Services;
+using Blocwerk.Web.Components.Shared.Refresh;
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
 
 namespace Blocwerk.Web.Components.Pages.Walls;
 
 /// <summary>
-/// The "Update panels + 3D" page of a wall: shows the run's current screen (drop zone, sort, confirm) and its
-/// timeline, polling while the worker is busy or the 3D capture is still running. It survives reloads: the run
+/// The "Update panels + 3D" page of a wall: the update's header with its steps, one status line while something is
+/// being worked on, and the run's current screen (drop zone, sort, check and apply); the timeline is behind
+/// "Details". It polls while the worker is busy or the 3D capture is still running, and survives reloads: the run
 /// lives on the server.
 /// </summary>
 public partial class WallRefresh : IDisposable
 {
     private static readonly TimeSpan PollEvery = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan SummaryRecheck = TimeSpan.FromMilliseconds(400);
 
     private WallRefreshView? view;
     private bool loading = true;
     private bool busy;
     private bool confirmDiscard;
+    private bool listView;
+    private bool detailsOpen;
     private bool focusDiscard;
     private ElementReference discardButton;
     private string? error;
@@ -44,35 +49,15 @@ public partial class WallRefresh : IDisposable
     [Inject]
     private IJSRuntime JS { get; set; } = default!;
 
+    /// <summary>Starting the wall over is checked on its summary, which is a list: there is nothing to compare card by card.</summary>
+    private bool StartsOver => view is { Summary.FullRevision: not null };
+
+    /// <summary>The check step's card deck is exactly one screen: the page then does not scroll.</summary>
+    private bool OneScreen => view is { Status: WallRefreshStatus.ReadyToApply } && !listView && !StartsOver && blocked is null;
+
     private bool CanDiscard => view is { Status: WallRefreshStatus.Uploading or WallRefreshStatus.ReadyToStart or WallRefreshStatus.ReadyToApply };
 
-    private string DiscardQuestion
-    {
-        get
-        {
-            if (view is { Status: WallRefreshStatus.ReadyToApply })
-            {
-                return "Discard this panel update? The panels keep their current photos and holds.";
-            }
-
-            var photos = view?.Photos.Count ?? 0;
-            var videos = view?.Videos.Count ?? 0;
-            var parts = new List<string>();
-            if (photos > 0)
-            {
-                parts.Add(photos == 1 ? "1 photo" : $"{photos} photos");
-            }
-
-            if (videos > 0)
-            {
-                parts.Add(videos == 1 ? "1 video" : $"{videos} videos");
-            }
-
-            return parts.Count == 0
-                ? "Discard this update?"
-                : $"Discard {string.Join(" and ", parts)}? They are deleted; the wall stays as it is.";
-        }
-    }
+    private string DiscardQuestion => RefreshFlow.DiscardQuestion(view);
 
     public void Dispose()
     {
@@ -155,10 +140,20 @@ public partial class WallRefresh : IDisposable
         return view?.Id;
     }
 
+    /// <summary>
+    /// Shows the run right after an answer, and again shortly after while its summary is being made: Apply is back
+    /// sooner than the next poll would bring it.
+    /// </summary>
     private async Task ReloadAfterAnswerAsync()
     {
         await ReloadAsync();
         StateHasChanged();
+        for (var i = 0; i < 4 && view is { SummaryUpdating: true } && polling is { IsCancellationRequested: false }; i++)
+        {
+            await Task.Delay(SummaryRecheck);
+            await ReloadAsync();
+            StateHasChanged();
+        }
     }
 
     private Task SortAsync() => ActAsync(id => Refreshes.SortAsync(id));

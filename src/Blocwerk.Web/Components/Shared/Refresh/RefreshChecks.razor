@@ -1,24 +1,18 @@
-@using Blocwerk.Core.Abstractions
-@using Blocwerk.Core.Services
-@using Blocwerk.Core.Enums
 @using Blocwerk.Core.Refresh
 @using Blocwerk.Web.Endpoints
-@* The confirm screen's cards: only the holds whose evidence needs a look, each with the old photo, the new photo and this visit's 3D texture. *@
+@* The check step's cards as a list (the list view): every card, answered ones included, each with the old photo, the
+   new photo and this visit's 3D texture, its two answers, and "Change" on an answered one. *@
 
-@if (checks.Count > 0)
+@if (Checks.Count > 0)
 {
     <section class="refresh-checks" aria-labelledby="refresh-checks-title">
         <h3 id="refresh-checks-title">@Title</h3>
-        <p class="hint">Nothing here is decided for you: if you leave a card alone, the old hold stays and is marked for review.</p>
-        @if (error is not null)
-        {
-            <p class="field-error" role="alert">@error</p>
-        }
+        <p class="hint">@RefreshCheckCopy.LeftAlone</p>
         <ul class="refresh-check-list">
-            @foreach (var check in checks)
+            @foreach (var check in Checks)
             {
                 <li class="refresh-check @(check.Status != UpdateExceptionStatus.Pending ? "is-answered" : null)" @key="check.Id">
-                    <p class="refresh-check-title"><strong>@Heading(check)</strong> @Detail(check)</p>
+                    <p class="refresh-check-title"><strong>@RefreshCheckCopy.Heading(check)</strong> @RefreshCheckCopy.Detail(check)</p>
                     <div class="refresh-check-crops">
                         @if (check.HasOld)
                         {
@@ -33,16 +27,16 @@
                     <div class="refresh-check-actions">
                         @if (check.Status == UpdateExceptionStatus.Pending)
                         {
-                            <button class="btn-secondary" disabled="@Disabled" @onclick="() => AnswerAsync(check, UpdateExceptionAnswer.Keep)">@KeepLabel(check)</button>
-                            @if (check.CanRemove && check.Kind is not (UpdateExceptionKind.LowConfidenceMatch or UpdateExceptionKind.HandPlacedAmbiguous))
+                            <button class="btn-secondary" disabled="@Disabled" @onclick="() => OnAnswer.InvokeAsync(new RefreshCheckAnswer(check.Id, UpdateExceptionAnswer.Keep))">@RefreshCheckCopy.KeepLabel(check)</button>
+                            @if (RefreshCheckCopy.TakesRemove(check))
                             {
-                                <button class="btn-secondary" disabled="@Disabled" @onclick="() => AnswerAsync(check, UpdateExceptionAnswer.Remove)">@RemoveLabel(check)</button>
+                                <button class="btn-secondary" disabled="@Disabled" @onclick="() => OnAnswer.InvokeAsync(new RefreshCheckAnswer(check.Id, UpdateExceptionAnswer.Remove))">@RefreshCheckCopy.RemoveLabel(check)</button>
                             }
                         }
                         else
                         {
-                            <span class="refresh-badge is-user">@(check.Status == UpdateExceptionStatus.Kept ? KeepLabel(check) : RemoveLabel(check))</span>
-                            <button class="btn-link" disabled="@Disabled" @onclick="() => AnswerAsync(check, UpdateExceptionAnswer.Undo)">Change</button>
+                            <span class="refresh-badge is-user">@RefreshCheckCopy.AnsweredLabel(check)</span>
+                            <button class="btn-link" disabled="@Disabled" @onclick="() => OnAnswer.InvokeAsync(new RefreshCheckAnswer(check.Id, UpdateExceptionAnswer.Undo))">Change</button>
                         }
                     </div>
                 </li>
@@ -52,83 +46,20 @@
 }
 
 @code {
-    private IReadOnlyList<RefreshCheck> checks = [];
-    private string? error;
+    [Parameter, EditorRequired]
+    public Guid RefreshId { get; set; }
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<RefreshCheck> Checks { get; set; } = [];
 
     [Parameter]
-    public WallRefreshView View { get; set; } = default!;
+    public bool Disabled { get; set; }
 
-    /// <summary>Raised after an answer was written, so the page shows the summary that is being made again.</summary>
+    /// <summary>An answer was picked on a card; the step writes it and shows the summary that is being made again.</summary>
     [Parameter]
-    public EventCallback OnAnswered { get; set; }
+    public EventCallback<RefreshCheckAnswer> OnAnswer { get; set; }
 
-    [Inject]
-    private IWallRefreshService Refreshes { get; set; } = default!;
+    private string Title => Checks.Count == 1 ? "1 hold needs a look" : $"{Checks.Count} holds need a look";
 
-    private bool Disabled => View.SummaryUpdating || View.Check3DPending;
-
-    private string Title => checks.Count == 1 ? "1 hold needs a look" : $"{checks.Count} holds need a look";
-
-    protected override async Task OnParametersSetAsync() => checks = await Refreshes.GetChecksAsync(View.Id);
-
-    private string Crop(RefreshCheck check, CheckCropView view) => WallRefreshCheckCropEndpoint.Url(View.Id, check.Id, view);
-
-    private static string Heading(RefreshCheck check) => check.Kind switch
-    {
-        UpdateExceptionKind.PossiblyRemoved => "Possibly removed",
-        UpdateExceptionKind.ReplacedByOther => "Another hold is here now",
-        UpdateExceptionKind.LowConfidenceMatch => "Unsure match",
-        UpdateExceptionKind.MatchedToHandPlaced => "Matched to hand-placed hold (now detected)",
-        UpdateExceptionKind.HandPlacedAmbiguous => "Hand-placed hold, several detections",
-        _ => "New hold, conflicting evidence",
-    };
-
-    private static string Detail(RefreshCheck check) => check.Kind switch
-    {
-        UpdateExceptionKind.PossiblyRemoved =>
-            "The new photo and the 3D texture show bare wall where " + (check.HoldName is { } name ? $"the {name} hold" : "this hold") + " was."
-            + (check.Boulders > 0 ? $" {check.Boulders} boulders use it." : string.Empty),
-        UpdateExceptionKind.ReplacedByOther =>
-            "A different hold now sits where " + (check.HoldName is { } replaced ? $"the {replaced} hold" : "this hold") + " was. The old hold is kept where it was and the other one is added as a new hold."
-            + (check.Boulders > 0 ? $" {check.Boulders} boulders use the old hold and are marked for review." : string.Empty)
-            + " If it is the same hold after all, pair the two in the full review.",
-        UpdateExceptionKind.LowConfidenceMatch => "This old hold was carried onto a detection that may not be the same hold: the match is unsure, or it looks different on the new photo.",
-        UpdateExceptionKind.MatchedToHandPlaced =>
-            (check.HoldName is { } n ? $"The {n} hold" : "A hold you placed by hand") + " now sits on a detected hold. It keeps its boulders and settings and takes the detection's position and outline."
-            + (check.Boulders > 0 ? $" {check.Boulders} boulders use it." : string.Empty),
-        UpdateExceptionKind.HandPlacedAmbiguous => "More than one detection sits on this hand-placed hold, or one detection overlaps several. Nothing was merged: the hold stays as it is, marked for review.",
-        _ => "The photo check leaves this detection out, but the 3D model sees a hold there.",
-    };
-
-    private static string KeepLabel(RefreshCheck check) => check.Kind switch
-    {
-        UpdateExceptionKind.PossiblyRemoved or UpdateExceptionKind.ReplacedByOther => "Keep hold",
-        UpdateExceptionKind.LowConfidenceMatch => "Match is right",
-        UpdateExceptionKind.MatchedToHandPlaced => "Merge is right",
-        UpdateExceptionKind.HandPlacedAmbiguous => "Understood",
-        _ => "Add as new hold",
-    };
-
-    private static string RemoveLabel(RefreshCheck check) =>
-        check.Kind switch
-        {
-            UpdateExceptionKind.PossiblyRemoved or UpdateExceptionKind.ReplacedByOther => "Remove hold",
-            UpdateExceptionKind.MatchedToHandPlaced => "Don't merge",
-            _ => "Leave out",
-        };
-
-    private async Task AnswerAsync(RefreshCheck check, UpdateExceptionAnswer answer)
-    {
-        error = null;
-        try
-        {
-            await Refreshes.DecideCheckAsync(View.Id, check.Id, answer);
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or UserFacingException)
-        {
-            error = ex.Message;
-        }
-
-        await OnAnswered.InvokeAsync();
-    }
+    private string Crop(RefreshCheck check, CheckCropView view) => WallRefreshCheckCropEndpoint.Url(RefreshId, check.Id, view);
 }

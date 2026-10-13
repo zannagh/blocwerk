@@ -1,0 +1,143 @@
+@using Blocwerk.Core.Refresh
+@* The check step's list view: everything the update will do, for the overview. All cards with their answers
+   (RefreshChecks), what starting the wall over does (RefreshRevisionSummary), the holds that moved, the holds on
+   boulders that were not found again, every count of the summary, how the 3D model was used, and the way into the
+   full review. *@
+
+<div class="refresh-lists">
+    <p>New photos for: @string.Join(", ", Summary.Panels)</p>
+    @if (Summary.EditedInFullReview)
+    {
+        <p class="refresh-3d-note">Includes the changes made in the full review.</p>
+    }
+    <RefreshChecks RefreshId="View.Id" Checks="Checks" Disabled="Disabled" OnAnswer="OnAnswer" />
+    @if (Summary.FullRevision is { } revision)
+    {
+        <RefreshRevisionSummary Summary="Summary" Revision="revision" />
+    }
+    @if (Summary.MovedHolds is { Count: > 0 } moved)
+    {
+        <section class="refresh-moves" aria-labelledby="refresh-moves-title">
+            <h3 id="refresh-moves-title">@(moved.Count == 1 ? "1 hold moved" : $"{moved.Count} holds moved")</h3>
+            <p class="hint">
+                A hold that moved up to 10 cm stays on its boulders, which are marked for review. A hold that moved farther
+                is taken off its boulders; they are marked for revision, and nothing is deleted.
+            </p>
+            <ul class="refresh-moves-list">
+                @foreach (var m in moved)
+                {
+                    <li class="@(m.Outcome == HoldMoveOutcome.Removed ? "is-removed" : "is-kept")">
+                        <strong>@(m.HoldName ?? "A hold")</strong> @m.Text
+                        <span class="refresh-moves-source">(@(m.Source == HoldMoveSource.ThreeD ? "measured in 3D" : "estimated from the photo"))</span>
+                        @if (m.Boulders.Count > 0)
+                        {
+                            <div class="refresh-moves-boulders">Boulders: @string.Join(", ", m.Boulders)</div>
+                        }
+                    </li>
+                }
+            </ul>
+        </section>
+    }
+    @if (Summary.NotFoundHolds is { Count: > 0 } missing)
+    {
+        <section class="refresh-moves" aria-labelledby="refresh-missing-title">
+            <h3 id="refresh-missing-title">@(missing.Count == 1 ? "1 hold on a boulder was not found again" : $"{missing.Count} holds on boulders were not found again")</h3>
+            <p class="hint">
+                Nothing is taken off a boulder: these holds stay where they were, and the
+                @(Summary.BouldersMarkedNotFound == 1 ? "boulder that uses" : $"{Summary.BouldersMarkedNotFound} boulders that use") them
+                @(Summary.BouldersMarkedNotFound == 1 ? "is" : "are") marked for review.
+            </p>
+            <ul class="refresh-moves-list">
+                @foreach (var m in missing)
+                {
+                    <li class="is-kept">
+                        <strong>@(m.HoldName ?? "A hold")</strong> @m.Text
+                        <div class="refresh-moves-boulders">Boulders: @string.Join(", ", m.Boulders)</div>
+                    </li>
+                }
+            </ul>
+        </section>
+    }
+    @if (Summary.FullRevision is null)
+    {
+        <details class="refresh-summary-details" open>
+            <summary>Everything else: what the update does</summary>
+            <ul class="refresh-summary">
+                <li><strong>@Summary.Refound</strong> holds found again on the new photos</li>
+                <li class="@(Summary.KeptInPlace > 0 ? "is-attention" : null)">
+                    <strong>@Summary.KeptInPlace</strong> holds were not recognised in the new photos; they stay where they were
+                    @if (Summary.BouldersOnKeptHolds > 0)
+                    {
+                        <span> (@Summary.BouldersOnKeptHolds boulders use one of them)</span>
+                    }
+                </li>
+                <li>
+                    <strong>@Summary.NewHolds</strong> new holds@(Summary.NewSeenIn3D > 0 ? $", {Summary.NewSeenIn3D} of them also seen in the 3D model" : string.Empty)
+                </li>
+                <li>
+                    <strong>@Summary.DroppedDetections</strong> photo detections ignored (on a marker, outside the old photo or already known)
+                    @if (Summary.DroppedByThe3DModel > 0)
+                    {
+                        <span>; @Summary.DroppedByThe3DModel of them the 3D model shows as a hold you already have, or off the wall</span>
+                    }
+                </li>
+                @if (Summary.PossiblyMoved > 0)
+                {
+                    <li class="is-attention"><strong>@Summary.PossiblyMoved</strong> holds may have moved; the quick review leaves them in place</li>
+                }
+                <li><strong>@Summary.OverlapLinks</strong> holds linked between neighbouring panels@(Summary.OverlapsLeftOut > 0 ? $", {Summary.OverlapsLeftOut} unsure overlaps left unlinked" : string.Empty)</li>
+                @if (Summary.PossiblyRemovedHolds > 0)
+                {
+                    <li class="is-attention"><strong>@Summary.PossiblyRemovedHolds</strong> of the holds not found again look removed (bare wall on the new photo and in the 3D model); they stay unless you remove them on their card</li>
+                }
+                @if (Summary.ReplacedHolds > 0)
+                {
+                    <li class="is-attention"><strong>@Summary.ReplacedHolds</strong> of the holds not found again have another hold on their spot now; the old hold stays unless you remove it on its card, and the other one is added as a new hold</li>
+                }
+                <li><strong>@Summary.Removed</strong> holds removed</li>
+            </ul>
+        </details>
+    }
+
+    @if (Waiting3D)
+    {
+        <p class="refresh-3d-note">
+            The 3D model is still being built@(View.Capture?.Stage is { } stage ? $" ({stage})" : string.Empty).
+            When it is ready, this check runs again with it and leaves out detections of holds you already have.
+            You can apply now, or wait here.
+        </p>
+    }
+    else if (Summary.CheckedWithModelId is not null)
+    {
+        <p class="refresh-3d-note">Checked against the 3D model from this visit.</p>
+    }
+
+    @if (Summary.FullRevision is null)
+    {
+        <p class="hint">
+            "Open full review" shows every step of the update with these choices already filled in.
+        </p>
+        <div class="refresh-actions">
+            <a class="btn-secondary" href="/walls/@View.WallId?update=review&amp;session=@View.UpdateSessionId">Open full review</a>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public WallRefreshView View { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public RefreshSummary Summary { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<RefreshCheck> Checks { get; set; } = [];
+
+    [Parameter]
+    public bool Disabled { get; set; }
+
+    [Parameter]
+    public EventCallback<RefreshCheckAnswer> OnAnswer { get; set; }
+
+    private bool Waiting3D => View.Capture is { IsRunning: true } && Summary is { Attempted3DModelId: null };
+}

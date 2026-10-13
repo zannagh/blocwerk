@@ -39,6 +39,23 @@ public partial class RefreshDropZone : IDisposable
     [Inject]
     private IJSRuntime JS { get; set; } = default!;
 
+    /// <summary>"12 photos, 2 videos (310 MB)": the count, and the size where it is known (videos; the upload that just ran).</summary>
+    private string Counts
+    {
+        get
+        {
+            if (View is null)
+            {
+                return string.Empty;
+            }
+
+            var videoMb = View.Videos.Sum(v => v.SizeBytes) / 1048576d;
+            var videos = View.Videos.Count == 0 ? string.Empty : $", {PlainCopy.Plural(View.Videos.Count, "video")} ({videoMb:0} MB)";
+            var sent = !uploading && totalMb >= 1 ? $" · {totalMb:0} MB sent just now" : string.Empty;
+            return $"{PlainCopy.Plural(View.Photos.Count, "photo")}{videos}{sent}";
+        }
+    }
+
     public void Dispose() => selfRef?.Dispose();
 
     [JSInvokable]
@@ -63,6 +80,8 @@ public partial class RefreshDropZone : IDisposable
 
         await InvokeAsync(StateHasChanged);
     }
+
+    private static string Megabytes(long bytes) => $"{bytes / 1048576d:0} MB";
 
     private async Task UploadAsync()
     {

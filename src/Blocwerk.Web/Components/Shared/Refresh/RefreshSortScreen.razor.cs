@@ -8,10 +8,11 @@ using Microsoft.AspNetCore.Components;
 
 namespace Blocwerk.Web.Components.Shared.Refresh;
 
-/// <summary>The sort screen: the proposed photo per panel with a confidence badge, changeable before "Start".</summary>
+/// <summary>The sort screen: the proposed photo per panel with a confidence badge, changeable (behind "Change") before "Start".</summary>
 public partial class RefreshSortScreen
 {
     private readonly Dictionary<(int Col, int Row), Guid?> changes = [];
+    private readonly HashSet<(int Col, int Row)> editing = [];
 
     [Parameter]
     public WallRefreshView View { get; set; } = default!;
@@ -78,6 +79,14 @@ public partial class RefreshSortScreen
     {
         var photo = View.Photos.FirstOrDefault(p => p.PhotoId == photoId);
         return photo?.FileName ?? $"Photo {photo?.Index}";
+    }
+
+    private void ToggleEdit(PanelPick pick)
+    {
+        if (!editing.Remove((pick.Col, pick.Row)))
+        {
+            editing.Add((pick.Col, pick.Row));
+        }
     }
 
     private void Choose(PanelPick pick, string? value) =>

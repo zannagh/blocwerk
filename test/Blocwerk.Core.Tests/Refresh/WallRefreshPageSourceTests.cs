@@ -81,13 +81,35 @@ public class WallRefreshPageSourceTests
         var page = Read("src/Blocwerk.Web/Components/Pages/Walls/WallRefresh.razor");
         var drop = Read("src/Blocwerk.Web/Components/Shared/Refresh/RefreshDropZone.razor.cs");
         var confirm = Read("src/Blocwerk.Web/Components/Shared/Refresh/RefreshConfirm.razor");
+        var lists = Read("src/Blocwerk.Web/Components/Shared/Refresh/RefreshSummaryLists.razor");
         var app = Read("src/Blocwerk.Web/Components/BlocwerkApp.razor");
 
         Assert.Contains("@page \"/walls/{WallId:guid}/update\"", page);
         Assert.Contains("bwRefreshUpload.upload", drop);
         Assert.Contains("js/refresh-upload.js", app);
-        Assert.Contains("@onclick=\"OnApply\" disabled=\"@(View.Check3DPending || View.SummaryUpdating)\">Apply update</button>", confirm);
-        Assert.Contains("?update=review&amp;session=@View.UpdateSessionId\">Open full review</a>", confirm);
+
+        // Apply is one button, which asks first and waits for a summary that is still being made.
+        Assert.Contains("Disabled=\"@(View.Check3DPending || View.SummaryUpdating)\" OnConfirm=\"OnApply\" />", confirm);
+        Assert.Contains("Question=\"@RefreshFlow.ApplyQuestion(s)\"", confirm);
+        Assert.Equal(confirm.IndexOf("OnApply", StringComparison.Ordinal), confirm.LastIndexOf("OnApply", StringComparison.Ordinal));
+        Assert.DoesNotContain("OnApply", lists);
+        Assert.Contains("?update=review&amp;session=@View.UpdateSessionId\">Open full review</a>", lists);
+    }
+
+    [Fact]
+    public void TheTimelineAndDiscard_AreBehindDetails_AndTheCheckStepIsOneScreen()
+    {
+        var page = Read("src/Blocwerk.Web/Components/Pages/Walls/WallRefresh.razor");
+        var css = Read("src/Blocwerk.Web/Components/Pages/Walls/WallRefresh.razor.css");
+
+        var details = page.IndexOf("@if (detailsOpen && view is not null)", StringComparison.Ordinal);
+        var timeline = page.IndexOf("<RefreshTimelineView View=\"view\" />", StringComparison.Ordinal);
+        var discard = page.IndexOf("Discard this update</button>", StringComparison.Ordinal);
+        var headerEnd = page.IndexOf("</header>", StringComparison.Ordinal);
+        Assert.True(details > 0 && timeline > details && discard > timeline && headerEnd > discard, "the timeline and Discard belong inside the Details panel");
+        Assert.Equal(timeline, page.LastIndexOf("<RefreshTimelineView", StringComparison.Ordinal));
+        Assert.Contains("<UpdateSteps WallId=\"WallId\" Current=\"RefreshFlow.StepOf(view?.Status)\"", page);
+        Assert.Contains(".refresh-page.is-one-screen { height: calc(100dvh - var(--topbar-h, 0px) - var(--bottomnav-h, 0px));", css);
     }
 
     [Fact]

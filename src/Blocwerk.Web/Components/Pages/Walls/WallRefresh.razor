@@ -4,18 +4,19 @@
 @using Blocwerk.Core.Entities
 @using Blocwerk.Core.Refresh
 @using Blocwerk.Web.Components.Shared.Refresh
-@* "Update panels + 3D": one drop of a visit's photos and videos, one sort screen, one confirm, one timeline. *@
+@* "Update panels + 3D": one header with the steps of the update (photos, check, apply, look over), one line about
+   what is being worked on, and one screen per step: the drop of a visit's photos and videos, the photo per panel
+   with the two ways to start, then the check with Apply. The timeline and "Discard this update" are behind
+   "Details". The check step is one screen that does not scroll. *@
 
 <PageTitle>Update panels + 3D - Blocwerk</PageTitle>
 
 <SectionContent SectionName="TopBarTitle">Update panels + 3D</SectionContent>
 
-<div class="refresh-page">
-    <a href="/walls/@WallId" class="back-link">&larr; Back to the wall</a>
-    <h1>Update panels + 3D</h1>
-
+<div class="refresh-page @(OneScreen ? "is-one-screen" : null)">
     @if (blocked is not null)
     {
+        <a href="/walls/@WallId" class="back-link">&larr; Back to the wall</a>
         <p class="empty-msg">@blocked</p>
     }
     else if (loading)
@@ -24,6 +25,45 @@
     }
     else
     {
+        <header class="refresh-header">
+            <UpdateSteps WallId="WallId" Current="RefreshFlow.StepOf(view?.Status)" LookOverOpen="view?.LookOver is not null">
+                @if (view is { Status: WallRefreshStatus.ReadyToApply } && !StartsOver)
+                {
+                    <button type="button" class="refresh-tool @(listView ? "is-on" : null)" aria-pressed="@(listView ? "true" : "false")" @onclick="() => listView = !listView">List</button>
+                }
+                @if (view is not null)
+                {
+                    <button type="button" class="refresh-tool" aria-expanded="@(detailsOpen ? "true" : "false")" @onclick="() => detailsOpen = !detailsOpen">Details</button>
+                }
+            </UpdateSteps>
+            @if (detailsOpen && view is not null)
+            {
+                @* The timeline, as it always was, and what ends the run: out of the way until asked for. *@
+                <div class="refresh-details">
+                    @if (view.Status != WallRefreshStatus.Uploading)
+                    {
+                        <RefreshTimelineView View="view" />
+                    }
+                    <div class="refresh-actions">
+                        @if (CanDiscard && confirmDiscard)
+                        {
+                            <span class="refresh-discard-question" role="alert">@DiscardQuestion</span>
+                            <button class="btn-danger" @ref="discardButton" @onclick="DiscardAsync" disabled="@busy">Discard</button>
+                            <button class="btn-secondary" @onclick="() => confirmDiscard = false" disabled="@busy">Keep</button>
+                        }
+                        else if (CanDiscard)
+                        {
+                            <button class="btn-secondary" @onclick="AskDiscard" disabled="@busy">Discard this update</button>
+                        }
+                        @if (view is { Status: WallRefreshStatus.Done or WallRefreshStatus.Failed })
+                        {
+                            <button class="btn-secondary" @onclick="StartOverAsync" disabled="@busy">Start another update</button>
+                        }
+                    </div>
+                </div>
+            }
+        </header>
+
         @if (error is not null)
         {
             <p class="field-error" role="alert">@error</p>
@@ -31,6 +71,11 @@
         else if (view?.Error is { } failure)
         {
             <p class="field-error" role="alert">@failure</p>
+        }
+
+        @if (view is not null && RefreshFlow.StatusLine(view) is { } status)
+        {
+            <p class="refresh-status" role="status"><span class="refresh-status-mark" aria-hidden="true"></span>@status</p>
         }
 
         @if (view is null || view.Status == WallRefreshStatus.Uploading)
@@ -44,43 +89,42 @@
         }
         else if (view.Status == WallRefreshStatus.ReadyToApply)
         {
-            <RefreshConfirm View="view" OnApply="ApplyAsync" OnAnswered="ReloadAfterAnswerAsync" />
+            <RefreshConfirm View="view" ListView="listView || StartsOver" OnApply="ApplyAsync" OnAnswered="ReloadAfterAnswerAsync" />
         }
         else if (view.Status == WallRefreshStatus.Done)
         {
-            <p class="refresh-done" role="status">
-                Done. @(view.Capture is { IsRunning: true } ? "The 3D model keeps building in the background; you can leave this page." : string.Empty)
-            </p>
-            @if (view.LookOver is { } lookOver)
-            {
-                <p class="refresh-3d-note" role="status">
-                    @(lookOver.OpenFindings == 1 ? "1 finding is" : $"{lookOver.OpenFindings} findings are") left for the wall look-over:
-                    holds the update was unsure about and nobody checked.
-                    <a href="/walls/@WallId/look-over">Look over the wall</a>
+            <div class="refresh-working">
+                <p class="refresh-done" role="status">
+                    Done. @(view.Capture is { IsRunning: true } ? "The 3D model keeps building in the background; you can leave this page." : string.Empty)
                 </p>
-            }
-        }
-
-        @if (view is not null && view.Status != WallRefreshStatus.Uploading)
-        {
-            <RefreshTimelineView View="view" />
-        }
-
-        <div class="refresh-actions">
-            @if (CanDiscard && confirmDiscard)
-            {
-                <span class="refresh-discard-question" role="alert">@DiscardQuestion</span>
-                <button class="btn-danger" @ref="discardButton" @onclick="DiscardAsync" disabled="@busy">Discard</button>
-                <button class="btn-secondary" @onclick="() => confirmDiscard = false" disabled="@busy">Keep</button>
-            }
-            else if (CanDiscard)
-            {
-                <button class="btn-secondary" @onclick="AskDiscard" disabled="@busy">Discard this update</button>
-            }
-            @if (view is { Status: WallRefreshStatus.Done or WallRefreshStatus.Failed })
-            {
+                @if (view.LookOver is { } lookOver)
+                {
+                    <p class="refresh-3d-note" role="status">
+                        @(lookOver.OpenFindings == 1 ? "1 finding is" : $"{lookOver.OpenFindings} findings are") left for the wall look-over:
+                        holds the update was unsure about and nobody checked.
+                    </p>
+                    <a class="btn-primary" href="/walls/@WallId/look-over">Look over the wall</a>
+                }
+                else
+                {
+                    <a class="btn-secondary" href="/walls/@WallId">Back to the wall</a>
+                }
                 <button class="btn-secondary" @onclick="StartOverAsync" disabled="@busy">Start another update</button>
-            }
-        </div>
+            </div>
+        }
+        else
+        {
+            <div class="refresh-working">
+                @if (view.Status == WallRefreshStatus.Failed)
+                {
+                    <p class="hint">This update did not work. "Details" shows the step that failed; you can start another update.</p>
+                    <button class="btn-secondary" @onclick="StartOverAsync" disabled="@busy">Start another update</button>
+                }
+                else
+                {
+                    <p class="hint">This runs on the server: you can leave this page and come back. "Details" shows every step.</p>
+                }
+            </div>
+        }
     }
 </div>

@@ -1,0 +1,87 @@
+@using Blocwerk.Core.Refresh
+@using Blocwerk.Web.Components.Shared.LookOver
+@using Blocwerk.Web.Endpoints
+@* One open card of the check step on the card deck: the old photo and the new one side by side as wide as the card
+   (this visit's 3D texture and the large view a tap away), what the update saw, and below the card the two answers.
+   They are the answers of the list (RefreshChecks); a number key gives the answer with that number. *@
+
+<div class="deck-body">
+    <div class="deck-about">
+        <strong>@RefreshCheckCopy.Heading(Check)</strong>
+        <span class="deck-used">@LookOverCopy.UsedBy(Check.Boulders)</span>
+    </div>
+    <div class="deck-pictures @(Check.HasOld ? null : "is-single")">
+        @if (Check.HasOld)
+        {
+            <button type="button" class="lookover-crop" @onclick="() => zoomed = true" aria-label="Show the pictures larger">
+                <figure><img src="@Crop(CheckCropView.Old)" alt="The old photo around this hold" /><figcaption>Old photo</figcaption></figure>
+            </button>
+        }
+        <button type="button" class="lookover-crop" @onclick="() => zoomed = true" aria-label="Show the pictures larger">
+            <figure><img onerror="this.closest('button').style.display='none'" src="@Crop(CheckCropView.New)" alt="The new photo around this spot" /><figcaption>New photo</figcaption></figure>
+        </button>
+    </div>
+    @if (Check.HasModel)
+    {
+        <button type="button" class="btn-link deck-3d" @onclick="() => zoomed = true">Show the 3D texture</button>
+    }
+    <p class="deck-detail">@RefreshCheckCopy.Detail(Check)</p>
+</div>
+
+<div class="deck-answers" role="group" aria-label="Answer">
+    <button type="button" class="btn-secondary" disabled="@Disabled" @onclick="() => OnAnswer.InvokeAsync(UpdateExceptionAnswer.Keep)">@RefreshCheckCopy.KeepLabel(Check)</button>
+    @if (RefreshCheckCopy.TakesRemove(Check))
+    {
+        <button type="button" class="btn-secondary" disabled="@Disabled" @onclick="() => OnAnswer.InvokeAsync(UpdateExceptionAnswer.Remove)">@RefreshCheckCopy.RemoveLabel(Check)</button>
+    }
+</div>
+
+@if (zoomed)
+{
+    @* Close comes first: the dialog moves the focus to its first control. *@
+    <Modal Title="@RefreshCheckCopy.Heading(Check)" PanelClass="lookover-zoom" OnClose="() => zoomed = false">
+        <button type="button" class="btn-secondary lookover-zoom-close" @onclick="() => zoomed = false">Close</button>
+        <div class="lookover-zoom-pictures">
+            @if (Check.HasOld)
+            {
+                <figure><img src="@Crop(CheckCropView.Old)" alt="The old photo around this hold" /><figcaption>Old photo</figcaption></figure>
+            }
+            <figure><img src="@Crop(CheckCropView.New)" alt="The new photo around this spot" /><figcaption>New photo</figcaption></figure>
+            @if (Check.HasModel)
+            {
+                <figure><img onerror="this.parentElement.style.display='none'" src="@Crop(CheckCropView.Model)" alt="The 3D texture around this spot" /><figcaption>3D texture</figcaption></figure>
+            }
+        </div>
+    </Modal>
+}
+
+@code {
+    private bool zoomed;
+
+    [Parameter, EditorRequired]
+    public Guid RefreshId { get; set; }
+
+    [Parameter, EditorRequired]
+    public RefreshCheck Check { get; set; } = default!;
+
+    [Parameter]
+    public bool Disabled { get; set; }
+
+    [Parameter]
+    public EventCallback<UpdateExceptionAnswer> OnAnswer { get; set; }
+
+    /// <summary>Gives the answer with this number: 1 is the first button, 2 the second where the card has one.</summary>
+    /// <param name="number">The number key that was pressed.</param>
+    /// <returns>A task that ends when the answer is sent.</returns>
+    public Task PressAsync(int number)
+    {
+        if (Disabled || number is < 1 or > 2 || (number == 2 && !RefreshCheckCopy.TakesRemove(Check)))
+        {
+            return Task.CompletedTask;
+        }
+
+        return OnAnswer.InvokeAsync(number == 1 ? UpdateExceptionAnswer.Keep : UpdateExceptionAnswer.Remove);
+    }
+
+    private string Crop(CheckCropView view) => WallRefreshCheckCropEndpoint.Url(RefreshId, Check.Id, view);
+}

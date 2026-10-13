@@ -1,0 +1,40 @@
+@* A card deck: a queue of cards shown one at a time, as the wall look-over and the update's check step ask their
+   questions. It fills the height its page gives it and never makes the page scroll: a row with the progress
+   ("12 of 96") and previous/next, the card, a row for a note about the last answer with Skip, and the answers at the
+   bottom within reach of the thumb. The card itself is the caller's: it renders a .deck-body (the only part that may
+   scroll) and a .deck-answers. Previous and next also by a swipe or the arrow keys; other keys go to the caller. On a
+   wide screen the caller's list of the queue stands beside the card. *@
+
+<div class="card-deck" @ref="root">
+    @if (QueueList is not null && Count > 0)
+    {
+        <nav class="deck-queue" aria-label="The queue">@QueueList</nav>
+    }
+
+    <div class="deck-main">
+        @if (Count > 0)
+        {
+            <div class="deck-head">
+                <button type="button" class="btn-secondary" disabled="@(Count < 2)" @onclick="() => OnStep.InvokeAsync(-1)" aria-label="Previous card">&lsaquo;</button>
+                <span role="status"><strong>@(Index + 1) of @Count</strong> <span class="deck-kind">@Label</span></span>
+                <button type="button" class="btn-secondary" disabled="@(Count < 2)" @onclick="() => OnStep.InvokeAsync(1)" aria-label="Next card">&rsaquo;</button>
+            </div>
+            @ChildContent
+        }
+        else
+        {
+            <div class="deck-empty">@Empty</div>
+        }
+
+        @if (Note is not null || Count > 1)
+        {
+            <div class="deck-meta">
+                @Note
+                @if (Count > 1)
+                {
+                    <button type="button" class="btn-link deck-skip" @onclick="() => OnStep.InvokeAsync(1)">Skip</button>
+                }
+            </div>
+        }
+    </div>
+</div>

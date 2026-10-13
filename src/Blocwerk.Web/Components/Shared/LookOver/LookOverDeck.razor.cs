@@ -5,30 +5,22 @@
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.LookOver;
 using Microsoft.AspNetCore.Components;
-using Microsoft.JSInterop;
 
 namespace Blocwerk.Web.Components.Shared.LookOver;
 
 /// <summary>
-/// Code-behind of the look-over's card deck: which card of the queue is shown, and the last answer. The page runs
-/// every answer and hands back the queue as it is then; the card that was answered has left it by that, so the next
-/// one is shown without a tap. A card whose answer was just taken back is turned to again.
+/// Code-behind of the look-over's card deck: which card of the queue is shown (<see cref="DeckCursor"/>), and the
+/// last answer. The page runs every answer and hands back the queue as it is then; the card that was answered has
+/// left it by that, so the next one is shown without a tap. A card whose answer was just taken back is turned to again.
 /// </summary>
-public partial class LookOverDeck : IAsyncDisposable
+public partial class LookOverDeck
 {
     private const int WindowSize = 60;
-    private static readonly string[] Keys = ["ArrowLeft", "ArrowRight", "1", "2", "3", "4", "u"];
 
-    private ElementReference root;
+    private readonly DeckCursor cursor = new();
     private LookOverDeckCard? card;
     private LookOverMissing? missingCard;
-    private KeyboardShortcutScope? keys;
-    private IJSObjectReference? swipe;
-    private DotNetObjectReference<LookOverDeck>? self;
-    private Guid? currentId;
     private Guid? lastId;
-    private Guid? returnTo;
-    private int index;
     private int shownQueueKey;
 
     [Parameter]
@@ -69,10 +61,7 @@ public partial class LookOverDeck : IAsyncDisposable
     [Parameter]
     public EventCallback<Guid> OnUndo { get; set; }
 
-    [Inject]
-    private IJSRuntime JS { get; set; } = default!;
-
-    private int Index => Math.Clamp(index, 0, Math.Max(0, Queue.Count - 1));
+    private int Index => cursor.Index;
 
     private LookOverFindingView? Current => Queue.Count == 0 ? null : Queue[Index];
 
@@ -86,92 +75,23 @@ public partial class LookOverDeck : IAsyncDisposable
 
     /// <summary>Turns to a finding of the queue (from the list view, say).</summary>
     /// <param name="findingId">The finding.</param>
-    public void JumpTo(Guid findingId)
-    {
-        var at = Queue.ToList().FindIndex(f => f.Id == findingId);
-        if (at >= 0)
-        {
-            (index, currentId) = (at, findingId);
-        }
-    }
-
-    /// <summary>A swipe across the card: to the left is the next card, to the right the previous one.</summary>
-    /// <param name="by">1 or -1.</param>
-    [JSInvokable]
-    public void OnSwipe(int by)
-    {
-        Step(by);
-        StateHasChanged();
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        if (keys is not null)
-        {
-            await keys.DisposeAsync();
-        }
-
-        try
-        {
-            if (swipe is not null)
-            {
-                await swipe.InvokeVoidAsync("detach", root);
-                await swipe.DisposeAsync();
-            }
-        }
-        catch (Exception ex) when (ex is JSException or JSDisconnectedException or TaskCanceledException or InvalidOperationException)
-        {
-            // The page is gone; so is its listener.
-        }
-
-        self?.Dispose();
-    }
+    public void JumpTo(Guid findingId) => cursor.JumpTo(findingId);
 
     protected override void OnParametersSet()
     {
-        // The card being asked about keeps its place while it is in the queue; once it has left, the one that took
-        // its place is next. A card whose answer was just taken back is turned to again.
-        var queue = Queue.ToList();
         if (shownQueueKey != QueueKey)
         {
-            (shownQueueKey, currentId, index) = (QueueKey, null, 0);
+            shownQueueKey = QueueKey;
+            cursor.Reset();
         }
 
-        var back = returnTo is { } undone ? queue.FindIndex(f => f.Id == undone) : -1;
-        var at = back >= 0 ? back : currentId is { } id ? queue.FindIndex(f => f.Id == id) : -1;
-        index = at >= 0 ? at : Index;
-        returnTo = back >= 0 ? null : returnTo;
-        currentId = Current?.Id;
+        cursor.Sync([.. Queue.Select(f => f.Id)]);
     }
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    /// <summary>A number key gives the answer with that number; U takes the last answer back.</summary>
+    private async Task OnKeyAsync(string key)
     {
-        if (!firstRender)
-        {
-            return;
-        }
-
-        keys = new KeyboardShortcutScope(JS, OnShortcutAsync);
-        await keys.RegisterAsync(Keys);
-        try
-        {
-            self = DotNetObjectReference.Create(this);
-            swipe = await JS.InvokeAsync<IJSObjectReference>("import", "/js/deck-swipe.js");
-            await swipe.InvokeVoidAsync("attach", root, self);
-        }
-        catch (Exception ex) when (ex is JSException or JSDisconnectedException or TaskCanceledException or InvalidOperationException)
-        {
-            // Without the swipe the arrows still turn the cards.
-        }
-    }
-
-    private async Task OnShortcutAsync(string key)
-    {
-        if (key is "ArrowLeft" or "ArrowRight")
-        {
-            Step(key == "ArrowLeft" ? -1 : 1);
-        }
-        else if (key == "u")
+        if (key == "u")
         {
             if (LastAnswered is { CanUndo: true } last && !Disabled)
             {
@@ -186,20 +106,9 @@ public partial class LookOverDeck : IAsyncDisposable
                 await press;
             }
         }
-
-        StateHasChanged();
     }
 
-    private void Step(int by)
-    {
-        if (Queue.Count == 0)
-        {
-            return;
-        }
-
-        index = (Index + by + Queue.Count) % Queue.Count;
-        currentId = Current?.Id;
-    }
+    private void Step(int by) => cursor.Step(by);
 
     private Task AnswerAsync(LookOverChoice choice)
     {
@@ -216,7 +125,7 @@ public partial class LookOverDeck : IAsyncDisposable
     /// <summary>Takes the last answer back and turns to that card again: it returns to its place in the queue.</summary>
     private Task UndoLastAsync(Guid findingId)
     {
-        returnTo = findingId;
+        cursor.ReturnTo(findingId);
         return OnUndo.InvokeAsync(findingId);
     }
 }
