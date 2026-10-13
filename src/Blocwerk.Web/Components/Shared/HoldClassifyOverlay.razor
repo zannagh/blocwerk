@@ -4,7 +4,7 @@
    ring wraps the quadrants and carries a bin control that removes the hold. The picker positions this
    via the fixed Left/Top of the tapped hold. *@
 
-<div class="classify-backdrop" @onclick="OnCancel"></div>
+<div class="classify-backdrop" @onclick="OnOutside"></div>
 
 <div class="classify-root @(ShowRing ? "has-ring" : string.Empty)"
      style="--x: @F(Left)px; --y: @F(Top)px;"
@@ -62,6 +62,12 @@
     /// <summary>Raised on the inner X or an outside tap — no change.</summary>
     [Parameter] public EventCallback Cancel { get; set; }
 
+    /// <summary>
+    /// Raised instead of <see cref="Cancel"/> for a tap outside the menu, with where it landed: the picker closes the
+    /// menu, or opens it for the hold underneath when the tap is on the same spot again.
+    /// </summary>
+    [Parameter] public EventCallback<MouseEventArgs> OutsideTap { get; set; }
+
     /// <summary>The bin ring only appears once the hold is already part of the boulder.</summary>
     private bool ShowRing => Current.HasValue;
 
@@ -75,6 +81,8 @@
     private Task OnRemove() => Remove.InvokeAsync();
 
     private Task OnCancel() => Cancel.InvokeAsync();
+
+    private Task OnOutside(MouseEventArgs e) => OutsideTap.HasDelegate ? OutsideTap.InvokeAsync(e) : Cancel.InvokeAsync();
 
     private Task OnKeyDown(KeyboardEventArgs e)
     {

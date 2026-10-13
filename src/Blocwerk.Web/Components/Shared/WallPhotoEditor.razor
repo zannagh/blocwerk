@@ -65,7 +65,14 @@
             var exactHit = _mode is HoldTouchupTool.Delete or HoldTouchupTool.Paint or HoldTouchupTool.Pipette;
             var hitEvents = exactHit ? "fill" : null;
         }
-        @foreach (var hold in Holds)
+        @{
+            // A base is drawn before what sits on it, so the upper hold is the one a tap meets.
+            var stackOn = StackMap();
+            var selectedBaseId = _mode == HoldTouchupTool.Move && _selectedHoldId is { } stackedSel
+                ? Holds.FirstOrDefault(h => h.Id == stackedSel)?.StackedOnHoldId
+                : null;
+        }
+        @foreach (var hold in HoldsBackToFront)
         {
             @* Not found again by the last update and not confirmed: off the overlay (and so not pickable), unless the
                editor asked to see them. *@
@@ -138,6 +145,11 @@
                 strokeColor = "#c86dff";
                 dash = "0.6 0.4";
             }
+            if (selectedBaseId == hold.Id)
+            {
+                // What the selected hold sits on.
+                (strokeColor, dash, sw) = ("#ffd700", "0.9 0.6", "0.4");
+            }
             if (ModelActionPreview(hold) is { } preview)
             {
                 (strokeColor, dash) = preview;
@@ -163,7 +175,7 @@
                would change the diff's identity rules for every overlay layered below. *@
             <HoldShape HoldId="hold.Id" X="hold.X" Y="hold.Y" Radius="hold.Radius" ShapePoints="hold.ShapePoints" ShapeHoles="hold.ShapeHoles"
                        Foot="isFoot" Fill="@fillColor" Stroke="@strokeColor" StrokeWidth="@sw" Dash="@dash"
-                       Kept="hold.KeptUnconfirmedGeneration is not null"
+                       Kept="hold.KeptUnconfirmedGeneration is not null" StackKeys="@StackKeys(stackOn, hold)"
                        PointerEvents="@hitEvents" Style="cursor: pointer"
                        OnClick="() => OnHoldClick(hold)" OnPointerDown="() => StartDrag(hold)" />
 
@@ -835,6 +847,7 @@
             </div>
             <div class="option-group"><label>Size:</label><input type="range" min="3" max="40" value="@((int)(_selectedRadius * 1000))" @oninput="OnRadiusChange" /></div>
             @ResetToCircleButton(sel)
+            @StackControls(sel)
             <button class="opt-btn danger" @onclick="DeleteSelected">Del</button>
             @if (ManualAlignment)
             {
@@ -881,6 +894,40 @@
             }
         }
     </div>;
+
+    /// <summary>
+    /// What the selected hold sits on, with the two ways to change it. No confirm: it changes the working copy only,
+    /// Discard takes it back, and it can be put back the same way.
+    /// </summary>
+    private RenderFragment StackControls(Hold sel) => @<text>
+        @if (CanStack)
+        {
+            var lower = BaseOf(sel);
+            var onIt = HoldStackOrder.Above(StackMap(), sel.Id).Count;
+            <div class="option-group hold-stack-controls"><label>Sits on:</label>
+                @if (stackPickHoldId == sel.Id)
+                {
+                    <HoldActionPrompt Compact="true" What="@(stackPickRefusal ?? "Tap the hold it sits on. Discard takes it back until you save.")" />
+                    <button class="opt-btn" @onclick="CancelStackPick">Cancel</button>
+                }
+                else
+                {
+                    <span class="option-hint hold-stack-base">@(lower is null ? "the wall" : StackLabel(lower))</span>
+                    <button class="opt-btn" title="Say that this hold is mounted ON another hold (a hold on a volume): tap that hold next. It is then in front of it and moves with it."
+                            @onclick="() => StartStackPick(sel)">Put on another hold…</button>
+                    @if (sel.StackedOnHoldId is not null)
+                    {
+                        <button class="opt-btn" title="This hold is on the wall itself, not on another hold."
+                                @onclick="() => TakeOffBase(sel)">Not on a hold</button>
+                    }
+                }
+                @if (onIt > 0)
+                {
+                    <span class="option-hint">@(onIt == 1 ? "1 hold on it" : $"{onIt} holds on it")</span>
+                }
+            </div>
+        }
+    </text>;
 
     private RenderFragment RowShapeTilt => @<div class="option-bar">
         <span class="option-hint">Click a hold to select, then drag the violet handle to tilt its polygon outline in X/Y.</span>
@@ -1376,6 +1423,12 @@
         /// <c>ShapePoints</c> means "erase the outline", not "leave it alone".
         /// </summary>
         public IReadOnlySet<Guid> ResetToCircle { get; init; } = new HashSet<Guid>();
+
+        /// <summary>
+        /// The <see cref="Updated"/> holds that were put on another hold or taken off one here: only for those
+        /// <c>StackedOnHoldId</c> is to be written (its base may be an <see cref="Added"/> hold).
+        /// </summary>
+        public IReadOnlySet<Guid> Restacked { get; init; } = new HashSet<Guid>();
     }
 
     public WallPhotoEditor()
@@ -1640,6 +1693,7 @@
             _addedHolds.Clear();
             _updatedHoldIds.Clear();
             circleResetIds.Clear();
+            restackedIds.Clear();
             _deletedHoldIds.Clear();
             _markChangedHoldIds.Clear();
             _alignmentChangedIds.Clear();
@@ -1669,6 +1723,7 @@
                 _addedHolds.Clear();
                 _updatedHoldIds.Clear();
                 circleResetIds.Clear();
+                restackedIds.Clear();
                 _deletedHoldIds.Clear();
                 _markChangedHoldIds.Clear();
                 _snapshotHolds = null;
@@ -1727,6 +1782,7 @@
             ClearShapeTiltSnapshot();
         }
         if (mode != HoldTouchupTool.Move) _selectedHoldId = null;
+        CancelStackPick();
         if (mode != HoldTouchupTool.Shape) _shapeEditHoldId = null;
         if (mode != HoldTouchupTool.Name) _namingHoldId = null;
         if (mode != HoldTouchupTool.MakeActual)
@@ -1757,7 +1813,7 @@
             Id = h.Id, WallId = h.WallId, X = h.X, Y = h.Y, Radius = h.Radius,
             Color = h.Color, Material = h.Material, Category = h.Category, HandType = h.HandType, IsOnKickboard = h.IsOnKickboard,
             IsAutoDetected = h.IsAutoDetected, Confidence = h.Confidence, Generation = h.Generation,
-            Name = h.Name,
+            Name = h.Name, StackedOnHoldId = h.StackedOnHoldId,
             ShapePoints = h.ShapePoints?.Select(sp => new ShapePoint { Dx = sp.Dx, Dy = sp.Dy }).ToList(),
             ShapeControlPoints = h.ShapeControlPoints?.Select(sp => new ShapePoint { Dx = sp.Dx, Dy = sp.Dy }).ToList(),
             ShapeHoles = ShapePoint.CloneRings(h.ShapeHoles),
@@ -1815,6 +1871,12 @@
 
     private async Task OnHoldClick(Hold hold)
     {
+        // A hold is waiting for the hold it sits on: this tap names it.
+        if (TryPickBase(hold))
+        {
+            return;
+        }
+
         // Tapping a hold reveals its name even when the labels are hidden.
         _revealNameHoldId = _revealNameHoldId == hold.Id ? null : hold.Id;
 
@@ -2338,15 +2400,17 @@
             return false;
         }
 
+        // What sits on the hold moves with it and keeps its place on it.
         TakeSnapshot();
-        if (!HoldGeometryEdits.TryMoveBy(hold, dx, dy))
+        var moved = HoldGeometryEdits.MoveWithStack(Holds, hold, dx, dy);
+        if (moved.Count == 0)
         {
             return false;
         }
 
         _selectedHoldId = hold.Id;
         _selectedRadius = hold.Radius;
-        _updatedHoldIds.Add(hold.Id);
+        moved.ForEach(TrackUpdate);
         StateHasChanged();
         return true;
     }
@@ -2787,7 +2851,8 @@
         {
             // Only a hold that still has no outline is a reset: one redrawn afterwards saves its new outline.
             var resetToCircle = updated.Where(h => circleResetIds.Contains(h.Id) && h.ShapePoints == null).Select(h => h.Id).ToHashSet();
-            await OnBatchSave.InvokeAsync(new BatchChanges(added, updated, deleted, markedChanged) { ResetToCircle = resetToCircle });
+            var restacked = updated.Select(h => h.Id).Where(restackedIds.Contains).ToHashSet();
+            await OnBatchSave.InvokeAsync(new BatchChanges(added, updated, deleted, markedChanged) { ResetToCircle = resetToCircle, Restacked = restacked });
         }
         else
         {
@@ -2804,6 +2869,7 @@
         _addedHolds.Clear();
         _updatedHoldIds.Clear();
         circleResetIds.Clear();
+        restackedIds.Clear();
         _deletedHoldIds.Clear();
         _markChangedHoldIds.Clear();
         _alignmentChangedIds.Clear();
@@ -2821,6 +2887,7 @@
         _addedHolds.Clear();
         _updatedHoldIds.Clear();
         circleResetIds.Clear();
+        restackedIds.Clear();
         _deletedHoldIds.Clear();
         _markChangedHoldIds.Clear();
         _alignmentChangedIds.Clear();

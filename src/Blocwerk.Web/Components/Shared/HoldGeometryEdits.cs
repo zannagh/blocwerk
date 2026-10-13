@@ -3,6 +3,7 @@
 // </copyright>
 
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.HoldStacks;
 
 namespace Blocwerk.Web.Components.Shared;
 
@@ -38,6 +39,30 @@ public static class HoldGeometryEdits
         hold.X = x;
         hold.Y = y;
         return true;
+    }
+
+    /// <summary>
+    /// Moves a hold and, with it, every hold that sits on it (at any depth): they keep their place on it. The hold
+    /// stays on the photo, and what sits on it moves by the distance the hold really moved. Their sizes do not change.
+    /// </summary>
+    /// <param name="holds">The holds of the photo.</param>
+    /// <param name="hold">The hold that was dragged.</param>
+    /// <param name="dx">Distance along X.</param>
+    /// <param name="dy">Distance along Y.</param>
+    /// <returns>The holds that moved, the dragged one first; empty when it did not move.</returns>
+    public static List<Hold> MoveWithStack(IReadOnlyList<Hold> holds, Hold hold, double dx, double dy)
+    {
+        var (fromX, fromY) = (hold.X, hold.Y);
+        if (!TryMoveBy(hold, dx, dy))
+        {
+            return [];
+        }
+
+        var on = holds.GroupBy(h => h.Id).ToDictionary(g => g.Key, g => g.First().StackedOnHoldId);
+        var above = HoldStackOrder.Above(on, hold.Id).ToHashSet();
+        var moved = new List<Hold> { hold };
+        moved.AddRange(holds.Where(h => above.Contains(h.Id) && TryMoveBy(h, hold.X - fromX, hold.Y - fromY)));
+        return moved;
     }
 
     /// <summary>Whether the hold is drawn from an outline (drawn by hand or detected) instead of as a plain circle.</summary>

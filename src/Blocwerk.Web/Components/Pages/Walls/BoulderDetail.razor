@@ -534,7 +534,7 @@ else
                dedicated orange footholds) are drawn here. *@
             @* _renderHolds, not the boulder's raw holds: in the historic view they are the SAME
                holds translated to the generation on screen. *@
-            @foreach (var bh in _renderHolds)
+            @foreach (var bh in HoldStackOrder.BackToFront(_renderHolds, bh => bh.HoldId, bh => bh.Hold.StackedOnHoldId))
             {
                 @* A virtual hold isn't visible on the photo: dash its outline, as the pickers and
                    MultiPanelViewer do, so it doesn't read as a real hold. *@
@@ -1427,9 +1427,12 @@ else
             .GroupBy(bh => RenderPanelId(bh.Hold, livePanelIds, centrePanelId)!.Value)
             .ToDictionary(
                 g => g.Key,
-                g => g.Select(bh => new PanelHold(
-                    bh.HoldId, bh.Hold.X, bh.Hold.Y, bh.Hold.Radius, bh.Hold.Color, bh.Hold.Category, bh.Hold.ShapePoints, bh.Hold.IsVirtual, bh.Hold.ShapeHoles,
-                    bh.Hold.KeptUnconfirmedGeneration is not null)).ToList());
+                g => HoldStackOrder.BackToFront(
+                    g.Select(bh => new PanelHold(
+                        bh.HoldId, bh.Hold.X, bh.Hold.Y, bh.Hold.Radius, bh.Hold.Color, bh.Hold.Category, bh.Hold.ShapePoints, bh.Hold.IsVirtual, bh.Hold.ShapeHoles,
+                        bh.Hold.KeptUnconfirmedGeneration is not null, bh.Hold.StackedOnHoldId)),
+                    h => h.Id,
+                    h => h.StackedOn));
         foreach (var bh in onPanels)
         {
             _highlightedHoldIds.Add(bh.HoldId);

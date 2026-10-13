@@ -3,7 +3,8 @@
  *
  * A drag never talks to the server while it runs: the pointer moves translate the dragged hold's own
  * SVG elements (every element carrying data-hold="<id>") once per animation frame, and the server
- * hears about it once, on release, as the distance moved. The server writes the hold, re-renders and
+ * hears about it once, on release, as the distance moved. Holds that sit ON the dragged hold (their
+ * elements name it in data-hold-on) are translated along: they keep their place on it. The server writes the hold, re-renders and
  * answers; only then is the translate taken off again, so the hold never jumps. If the server says no,
  * or the call fails, taking the translate off puts the hold back where it was.
  *
@@ -21,7 +22,13 @@ window.wallHoldDrag = (function () {
     const pending = new Set();
 
     function elementsOf(d) {
-        return d.svg.querySelectorAll('[data-hold="' + d.id + '"]');
+        return d.svg.querySelectorAll('[data-hold="' + d.id + '"], [data-hold-on~="' + d.id + '"]');
+    }
+
+    /** True while the server has not answered the last move of this hold, or of a hold it sits on. */
+    function waits(shape) {
+        const below = (shape.getAttribute('data-hold-on') || '').split(' ');
+        return pending.has(shape.getAttribute('data-hold')) || below.some(function (id) { return pending.has(id); });
     }
 
     function clear(d) {
@@ -89,7 +96,7 @@ window.wallHoldDrag = (function () {
         }
 
         // The server has not answered this hold's last move yet: its place is not known here.
-        if (pending.has(shape.getAttribute('data-hold'))) {
+        if (waits(shape)) {
             return;
         }
 

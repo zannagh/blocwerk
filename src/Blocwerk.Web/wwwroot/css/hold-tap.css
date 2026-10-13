@@ -28,12 +28,21 @@
 .hold-shine-main > * { stroke: var(--hold-c, var(--accent)); stroke-width: 3.5px; }
 .hold-shine-light > * { stroke: rgba(255, 255, 255, 0.75); stroke-width: 1px; animation: hold-shine-flash 0.7s ease-out 1; }
 
-/* A hold that overlaps the tapped one: the same outline, darker and without the shine. The light casing
+/* A hold that sits on the tapped one, or overlaps it: the same outline, darker and without the shine. The light casing
    keeps it readable on a dark panel. */
 .hold-shine.dark .hold-shine-case > * { stroke: rgba(255, 255, 255, 0.45); stroke-width: 4.5px; }
 .hold-shine.dark .hold-shine-main > * {
     stroke: color-mix(in srgb, var(--hold-c, var(--accent)) 42%, black);
     stroke-width: 2.5px;
+}
+
+/* The hold the tapped one sits ON: subdued, a thin dashed line in its colour, so it reads as "underneath". */
+.hold-shine.base .hold-shine-case > * { stroke: rgba(0, 0, 0, 0.5); stroke-width: 4px; }
+.hold-shine.base .hold-shine-main > * {
+    stroke: color-mix(in srgb, var(--hold-c, var(--accent)) 65%, white);
+    stroke-width: 2px;
+    stroke-opacity: 0.85;
+    stroke-dasharray: 7 5;
 }
 
 @keyframes hold-shine-flash {

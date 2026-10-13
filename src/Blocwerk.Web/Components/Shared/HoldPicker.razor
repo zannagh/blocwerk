@@ -48,7 +48,7 @@
 @if (_overlayHold != null)
 {
     <HoldClassifyOverlay Left="_overlayX" Top="_overlayY" Current="OverlayCurrent"
-                         Chosen="OnOverlayChosen" Remove="OnOverlayRemove" Cancel="CloseOverlay" />
+                         Chosen="OnOverlayChosen" Remove="OnOverlayRemove" Cancel="CloseOverlay" OutsideTap="OnOverlayOutsideTap" />
 }
 
 @code {
@@ -70,7 +70,8 @@
         <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none"
              @onclick="OnSvgClick"
              style="cursor: @(_placingVirtual ? "crosshair" : "default");">
-            @foreach (var hold in AllHolds)
+            @* A base before what sits on it: the upper hold is drawn last, so it is the one a tap meets first. *@
+            @foreach (var hold in HoldStackOrder.BackToFront(AllHolds, h => h.Id, h => h.StackedOnHoldId))
             {
                 var selection = SelectedEntryFor(hold.Id);
                 var isSelected = selection != null;
@@ -112,6 +113,13 @@
         {
             @* The hold just tapped, outlined so it is plain which one the role menu next to it is about. *@
             <svg class="hold-tap-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                @if (BaseOf(tapped) is { } lower)
+                {
+                    @* The hold it sits on, subdued: a second tap on the same spot picks that one. *@
+                    <HoldShine @key="lower.Id" Look="base" X="lower.X" Y="lower.Y" Radius="lower.Radius"
+                               ShapePoints="lower.ShapePoints" ShapeHoles="lower.ShapeHoles"
+                               Foot="lower.Category == HoldCategory.Foot" Color="@TappedColor(lower)" />
+                }
                 <HoldShine @key="tapped.Id" X="tapped.X" Y="tapped.Y" Radius="tapped.Radius"
                            ShapePoints="tapped.ShapePoints" ShapeHoles="tapped.ShapeHoles"
                            Foot="tapped.Category == HoldCategory.Foot" Color="@TappedColor(tapped)" />
@@ -186,7 +194,14 @@
     // Radial classify overlay state. Positioned at the tapped hold's on-screen
     // pixel via the click's client coordinates, so it lives outside the zoomed viewport and never
     // scales with pinch zoom.
+    /// <summary>A tap this close (px) to the one that opened the menu is "the same spot again".</summary>
+    private const double SameSpotPx = 24;
+
     private Hold? _overlayHold;
+
+    // Where the tap that opened the menu landed (viewport pixels).
+    private double tapX;
+    private double tapY;
     private double _overlayX;
     private double _overlayY;
 
@@ -268,7 +283,35 @@
     /// so the hold stays in view and it is plain which one was hit. Without the browser's answer the overlay falls
     /// back to the tap point.
     /// </summary>
-    private async Task OnHoldClicked(Hold hold, MouseEventArgs e)
+    private Task OnHoldClicked(Hold hold, MouseEventArgs e)
+    {
+        (tapX, tapY) = (e.ClientX, e.ClientY);
+        return OpenOverlayAsync(hold, e);
+    }
+
+    /// <summary>
+    /// A tap outside the menu closes it. On the spot of the tap that opened it, and with the tapped hold sitting on
+    /// another one, it goes one hold down instead: the upper hold first, then the hold under it.
+    /// </summary>
+    private async Task OnOverlayOutsideTap(MouseEventArgs e)
+    {
+        var tapped = _overlayHold;
+        _overlayHold = null;
+        var sameSpot = Math.Abs(e.ClientX - tapX) <= SameSpotPx && Math.Abs(e.ClientY - tapY) <= SameSpotPx;
+        if (tapped is not null && sameSpot && BaseOf(tapped) is { } lower)
+        {
+            await OpenOverlayAsync(lower, e);
+        }
+    }
+
+    /// <summary>The hold a hold sits on, when the picker shows it (one the last update did not find only on this boulder).</summary>
+    private Hold? BaseOf(Hold hold) =>
+        hold.StackedOnHoldId is { } id && AllHolds.FirstOrDefault(h => h.Id == id) is { } lower
+        && (lower.KeptUnconfirmedGeneration is null || SelectedEntryFor(lower.Id) is not null)
+            ? lower
+            : null;
+
+    private async Task OpenOverlayAsync(Hold hold, MouseEventArgs e)
     {
         var spot = new RelativePos(e.ClientX, e.ClientY);
         try

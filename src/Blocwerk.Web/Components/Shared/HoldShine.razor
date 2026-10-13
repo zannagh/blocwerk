@@ -5,8 +5,8 @@
    The server-rendered twin of what hold-tap.js draws on the wall view, so both look the same. Display only:
    it never takes a pointer event. *@
 
-<g class="hold-shine" style="--hold-c: @Color" pointer-events="none">
-    @foreach (var layer in Layers)
+<g class="hold-shine @Look" style="--hold-c: @Color" pointer-events="none">
+    @foreach (var layer in string.IsNullOrEmpty(Look) ? Layers : PlainLayers)
     {
         <g @key="layer" class="hold-shine-@layer">
             <HoldShape X="X" Y="Y" Radius="Radius" ShapePoints="ShapePoints" ShapeHoles="ShapeHoles"
@@ -17,6 +17,13 @@
 
 @code {
     private static readonly string[] Layers = ["glow", "case", "main", "light"];
+    private static readonly string[] PlainLayers = ["case", "main"];
+
+    /// <summary>
+    /// Null for the tapped hold itself; <c>base</c> for the hold it sits on (subdued, dashed) and <c>dark</c> for a
+    /// hold on it, as hold-tap.js draws them (hold-tap.css).
+    /// </summary>
+    [Parameter] public string? Look { get; set; }
 
     /// <summary>The hold's normalized centre X (0..1).</summary>
     [Parameter] public double X { get; set; }
