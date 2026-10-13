@@ -19,7 +19,7 @@ public static class PhotoRealDiagnosticsEndpoints
     public const string Route = "/api/diagnostics/photo-real";
 
     /// <summary>Reports per user per <see cref="Window"/>; more are dropped with 429.</summary>
-    public const int MaxReports = 60;
+    public const int MaxReports = 120;
 
     /// <summary>Longest detail logged: a shader link log (e.g. an iOS Metal translation error) in full.</summary>
     public const int MaxDetail = 4000;

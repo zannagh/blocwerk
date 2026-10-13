@@ -168,14 +168,17 @@ export function createSplatCull(body, matrix, mode = 'full') {
         return true;
     };
 
-    /** A SplatMesh of the splats of `fileBytes` that survive `keep`; `mesh.cullStats` = { kept, total }. */
+    /** A SplatMesh of the splats of `fileBytes` that survive `keep`; `mesh.cullStats` = { kept, total, decodeMs, cullMs }. */
     function mesh(spark, fileBytes, options) {
-        const stats = { kept: 0, total: 0 };
+        const stats = { kept: 0, total: 0, decodeMs: 0, cullMs: 0 };
         const next = new spark.SplatMesh({
             ...options,
             constructSplats: async splats => {
+                const startedAt = performance.now();
                 const source = new spark.PackedSplats({ fileBytes, fileType: 'spz' });
                 await source.initialized;
+                const decodedAt = performance.now();
+                stats.decodeMs = Math.round(decodedAt - startedAt);
                 stats.total = source.numSplats;
                 source.forEachSplat((i, center, scales, quaternion, opacity, color) => {
                     if (keep(center.x, center.y, center.z)) {
@@ -184,6 +187,7 @@ export function createSplatCull(body, matrix, mode = 'full') {
                     }
                 });
                 source.dispose();
+                stats.cullMs = Math.round(performance.now() - decodedAt);
             },
         });
         next.cullStats = stats;

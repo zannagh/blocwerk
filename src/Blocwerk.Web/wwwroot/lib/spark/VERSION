@@ -13,3 +13,8 @@ The script routes each such call through plain locals, marked /* bw-ios-outargs 
   packSplatExt / packSplatExtCov  (fragment outputs target, target2)
   applyPackedRgbaDisplaceEdit x2 (${gsplat}.center, .rgba; inout)
   applyGsplatSkinning, applyCovSplatDQSkinning, applyCovSplatLBSkinning (${splat}.center/quaternion/xxyyzz/xyxzyz; inout)
+
+Worker patch (re-apply after every upgrade): `python3 tools/vendor/patch-spark-worker.py spark.module.min.js`.
+The decode worker read `fileBytes` through a ReadableStream; in WebKit the worker thread sometimes never returns from the
+reader's `releaseLock()` at the end, so a level never finishes decoding (no result, no error; blocwerk#100). The patch hands
+bytes that are already there straight to the decoder, marked /* bw-worker-bytes */, and asserts the one site.
