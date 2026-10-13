@@ -55,7 +55,7 @@ public sealed partial class WallRefreshService
             return null;
         }
 
-        var open = await db.WallLookOverFindings.CountAsync(f => f.WallId == wallId && f.Status == LookOverFindingStatus.Open);
+        var open = await db.WallLookOverFindings.Where(LookOver.DiscardedDetections.Counts).CountAsync(f => f.WallId == wallId && f.Status == LookOverFindingStatus.Open);
         return new RefreshLookOver(pendingSince, open);
     }
 

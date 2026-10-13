@@ -72,7 +72,8 @@ internal static partial class LookOverCopy
 
         var missing = findings.Count(f => f.KeptAtUpdate);
         var sameSpot = findings.Count(f => f is { KeptAtUpdate: false, Kind: LookOverFindingKind.SameSpot });
-        var cards = findings.Count - missing - sameSpot;
+        var discarded = findings.Count(f => f.Discarded);
+        var cards = findings.Count - missing - sameSpot - discarded;
         var parts = new List<string>();
         if (missing > 0)
         {
@@ -87,6 +88,11 @@ internal static partial class LookOverCopy
         if (sameSpot > 0)
         {
             parts.Add(sameSpot == 1 ? "1 spot where an old and a new hold now sit together" : $"{sameSpot} spots where an old and a new hold now sit together");
+        }
+
+        if (discarded > 0)
+        {
+            parts.Add(discarded == 1 ? "1 detection the update discarded" : $"{discarded} detections the update discarded");
         }
 
         return $"{PlainCopy.Plural(findings.Count, "finding")}: {string.Join(", ", parts)}.";

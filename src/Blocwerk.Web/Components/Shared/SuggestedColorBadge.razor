@@ -1,0 +1,37 @@
+@using System.Globalization
+@using Blocwerk.Core.Entities
+@using Blocwerk.Core.Holds
+@* The wall editor's mark on a hold whose colour is only suggested (the detection read it from the photo and nobody
+   has confirmed it): a small dot in that colour with a question mark, at the hold's lower right. Same shape as the
+   missing-information badge, pointer-events off, so the hold under it stays tappable; "Keep" in the selected-hold
+   bar confirms the colour and takes the mark off. *@
+
+@if (Shows(Hold))
+{
+    <g pointer-events="none" data-hold="@Hold.Id" class="hold-suggested-color">
+        <title>Suggested colour, not confirmed yet</title>
+        <circle cx="@F(Cx)" cy="@F(Cy)" r="1.3" fill="@HoldPalette.StrokeHex(Hold.Color)" stroke="white" stroke-width="0.25" />
+        <text x="@F(Cx)" y="@F(Cy)" text-anchor="middle" dominant-baseline="central" font-size="1.9" font-weight="700"
+              fill="white" stroke="#1a1a1a" stroke-width="0.35" paint-order="stroke">?</text>
+    </g>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public Hold Hold { get; set; } = default!;
+
+    /// <summary>The hold's radius in the overlay's 0..100 units.</summary>
+    [Parameter]
+    public double R { get; set; }
+
+    private double Cx => (Hold.X * 100) + (R * 0.9);
+
+    private double Cy => (Hold.Y * 100) + (R * 0.9);
+
+    /// <summary>Whether a hold gets the mark: its colour is the detection's suggestion and nobody has set or confirmed it.</summary>
+    /// <param name="hold">The hold.</param>
+    /// <returns>True for a real hold with a suggested colour.</returns>
+    public static bool Shows(Hold hold) => hold is { HasProposedColor: true, IsVirtual: false };
+
+    private static string F(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
+}

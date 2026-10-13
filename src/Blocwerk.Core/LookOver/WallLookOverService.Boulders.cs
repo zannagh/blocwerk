@@ -84,7 +84,7 @@ public sealed partial class WallLookOverService
         BlocwerkDbContext db, WallLookOverFinding finding, Func<WallLookOverFinding, List<Guid>?> list, CancellationToken ct)
     {
         var sameUpdate = await db.WallLookOverFindings.AsNoTracking()
-            .Where(f => f.WallId == finding.WallId && f.Generation == finding.Generation && f.Id != finding.Id)
+            .Where(f => f.WallId == finding.WallId && f.Generation == finding.Generation && f.Id != finding.Id && f.Kind != LookOverFindingKind.DiscardedDetection)
             .ToListAsync(ct);
         return sameUpdate.Append(finding).SelectMany(f => list(f) ?? []).ToHashSet();
     }

@@ -8,7 +8,8 @@
    answered. The page is one screen that does not scroll: the update's header, a row of filter chips with what is
    open in each group, and the card deck (LookOverDeck), which asks about one finding at a time in one queue, what
    boulders use first. "List" shows the same findings as lists instead, with the bulk answers and the answered cards
-   (LookOverList). Wall admins and moderators answer; Finish is in the header once nothing is open, and under "..."
+   (LookOverList). The detections the update discarded are deck cards of their own chip, with their bulk steps above
+   the deck (LookOverDiscardedBulk); they count as open only while likely a missed hold. Wall admins and moderators answer; Finish is in the header once nothing is open, and under "..."
    before that. With ?boulder= everything is about one boulder's holds. *@
 
 <PageTitle>Look over the wall - Blocwerk</PageTitle>
@@ -102,6 +103,7 @@
                     }
                 </div>
             }
+            <LookOverDiscardedBulk WallId="WallId" Listing="listing" Filter="filter" Disabled="busy" OnAct="ActOnAsync" />
             <LookOverDeck @ref="deck" WallId="WallId" Queue="Queue" All="listing.Findings" Disabled="busy" Version="loads" QueueKey="queueKey"
                           OnAnswer="AnswerAsync" OnAct="ActOnAsync" OnUndo="UndoAsync">
                 <Empty>

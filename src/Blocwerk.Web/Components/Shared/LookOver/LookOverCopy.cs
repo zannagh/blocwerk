@@ -24,6 +24,7 @@ internal static partial class LookOverCopy
         LookOverFindingKind.SameSpot => "Old and new hold on the same spot",
         LookOverFindingKind.MatchedToHandPlaced => "Hand-placed holds merged onto a detection",
         LookOverFindingKind.HandPlacedAmbiguous => "Hand-placed holds with several detections",
+        LookOverFindingKind.DiscardedDetection => DiscardedChip,
         _ => "New holds with conflicting evidence",
     };
 
@@ -37,12 +38,18 @@ internal static partial class LookOverCopy
         LookOverFindingKind.SameSpot => "Old and new hold on the same spot",
         LookOverFindingKind.MatchedToHandPlaced => "Matched to hand-placed hold (now detected)",
         LookOverFindingKind.HandPlacedAmbiguous => "Hand-placed hold, several detections",
+        LookOverFindingKind.DiscardedDetection => "Discarded detection",
         _ => "New hold, conflicting evidence",
     };
 
     /// <summary>What the update did about the hold, and what is asked now.</summary>
     public static string Detail(LookOverFindingView f)
     {
+        if (f.Discarded)
+        {
+            return DiscardedDetail(f);
+        }
+
         if (f.Status == LookOverFindingStatus.Open && f.HoldId is null && f.Kind != LookOverFindingKind.ConflictingNew)
         {
             return "This hold is no longer on the wall as the update left it. Nothing is left to decide.";
@@ -72,6 +79,11 @@ internal static partial class LookOverCopy
     /// <summary>The name of "it is fine as it is" for this finding.</summary>
     public static string SettleLabel(LookOverFindingView f)
     {
+        if (f.Discarded)
+        {
+            return NotAHoldLabel;
+        }
+
         if (f.Status == LookOverFindingStatus.Open && f.HoldId is null)
         {
             return "Understood";
@@ -155,6 +167,7 @@ internal static partial class LookOverCopy
             LookOverAnswer.Moved => "Moved to where it is",
             LookOverAnswer.RemoveHold => "Hold removed",
             LookOverAnswer.UseNewHold => "Merged into the new hold",
+            LookOverAnswer.AddHold => "Added as a hold",
             _ => f.KeptAtUpdate ? "Still here" : SettleLabel(f),
         };
         return f.AnsweredBy is { } who ? $"{what} · {who}" : what;
@@ -170,6 +183,7 @@ internal static partial class LookOverCopy
             LookOverAnswer.RemoveHold => $"Hold removed; {PlainCopy.Plural(boulders, "boulder")} {(boulders == 1 ? "is" : "are")} now historic.",
             LookOverAnswer.UseNewHold or LookOverAnswer.Reassign => "Merged into the new hold. Undo under Wall settings › Possible duplicate holds.",
             LookOverAnswer.Moved => "Marked for review: check its outline in the hold editor.",
+            LookOverAnswer.AddHold => f.CanUndo ? "It is on the wall now, marked for review." : "It is on the wall now; remove it in the hold editor if it is wrong.",
             LookOverAnswer.Settle when f.ClearedBoulders > 0 =>
                 $"{PlainCopy.Plural(f.ClearedBoulders, "boulder")} {(f.ClearedBoulders == 1 ? "is" : "are")} no longer marked for review.",
             _ => null,

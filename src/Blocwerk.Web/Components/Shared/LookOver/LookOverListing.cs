@@ -24,7 +24,10 @@ public sealed partial class LookOverListing
     /// <summary>Gets the findings in the page's order: as first loaded, anything new at the end.</summary>
     public IReadOnlyList<LookOverFindingView> Findings { get; private set; } = [];
 
-    /// <summary>Gets the findings shown as cards: all but the holds the update could not find.</summary>
+    /// <summary>
+    /// Gets the findings the list view shows as cards: all but the holds the update could not find and the discarded
+    /// detections (hundreds per update, asked about on the deck only).
+    /// </summary>
     public IReadOnlyList<LookOverFindingView> Cards { get; private set; } = [];
 
     /// <summary>Takes a (re)loaded list, keeping every known finding in its place.</summary>
@@ -55,7 +58,7 @@ public sealed partial class LookOverListing
 
         var byId = loaded.ToDictionary(f => f.Id);
         Findings = order.Where(byId.ContainsKey).Select(id => byId[id]).ToList();
-        Cards = Findings.Where(f => !InSection(f)).ToList();
+        Cards = Findings.Where(f => !InSection(f) && !f.Discarded).ToList();
     }
 
     /// <summary>The holds the update could not find that are still to be answered, in the order they are asked.</summary>

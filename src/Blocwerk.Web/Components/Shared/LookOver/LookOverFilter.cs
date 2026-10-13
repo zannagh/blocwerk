@@ -10,7 +10,11 @@ namespace Blocwerk.Web.Components.Shared.LookOver;
 /// <param name="OnBouldersOnly">Only findings on a hold a boulder uses.</param>
 /// <param name="MissingOnly">Only the holds the update could not find.</param>
 /// <param name="Kind">Only the cards of this kind.</param>
-public sealed record LookOverFilter(bool OnBouldersOnly = false, bool MissingOnly = false, LookOverFindingKind? Kind = null)
+/// <param name="DuplicatesOnly">
+/// Only the discarded detections a hold on the wall covers. They are in no other queue: probably second detections of
+/// holds that are there, kept out of the way behind their own chip.
+/// </param>
+public sealed record LookOverFilter(bool OnBouldersOnly = false, bool MissingOnly = false, LookOverFindingKind? Kind = null, bool DuplicatesOnly = false)
 {
     /// <summary>Everything that is open.</summary>
     public static readonly LookOverFilter All = new();
@@ -20,4 +24,7 @@ public sealed record LookOverFilter(bool OnBouldersOnly = false, bool MissingOnl
 
     /// <summary>The holds the update could not find.</summary>
     public static readonly LookOverFilter Missing = new(MissingOnly: true);
+
+    /// <summary>The discarded detections that are probably duplicates of a hold on the wall.</summary>
+    public static readonly LookOverFilter Duplicates = new(DuplicatesOnly: true);
 }

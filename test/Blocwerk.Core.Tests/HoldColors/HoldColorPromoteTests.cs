@@ -14,7 +14,8 @@ namespace Blocwerk.Core.Tests.HoldColors;
 
 /// <summary>
 /// The promote of a panel update (the browser's Apply calls it directly): its new holds get the colour the new photo
-/// shows, carried holds keep what they had, linked holds get one colour, and a failing proposal step never fails it.
+/// shows, carried holds keep the colour they had (one without a colour gets a suggestion too), linked holds get one
+/// colour, and a failing proposal step never fails it.
 /// </summary>
 public class HoldColorPromoteTests
 {
@@ -43,11 +44,12 @@ public class HoldColorPromoteTests
         Assert.Equal((1, "yellow", true), (proposed.Generation, proposed.Color, proposed.HasProposedColor));
         Assert.Null((await s.GetAsync(freshOnTheWall)).Color);
 
-        // The carried holds sit on other colours in the photo: a colour somebody set stays, an unset one stays unset,
-        // and a proposal nobody confirmed is still a proposal.
+        // The carried holds sit on other colours in the photo: a colour somebody set stays, an unset one gets the
+        // colour its photo shows as a suggestion, and a proposal nobody confirmed is still a proposal.
         var set = await s.GetAsync(twinOfSet);
         Assert.Equal(("yellow", false), (set.Color, set.HasProposedColor));
-        Assert.Null((await s.GetAsync(twinOfUnset)).Color);
+        var unset = await s.GetAsync(twinOfUnset);
+        Assert.Equal(("red", true), (unset.Color, unset.HasProposedColor));
         var carriedProposal = await s.GetAsync(twinOfProposed);
         Assert.Equal(("pink", true), (carriedProposal.Color, carriedProposal.HasProposedColor));
     }

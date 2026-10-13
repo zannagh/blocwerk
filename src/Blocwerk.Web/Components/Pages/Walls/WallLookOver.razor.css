@@ -30,6 +30,9 @@
     background: var(--bg-surface); color: var(--text); font: inherit; font-size: 0.85rem; white-space: nowrap; cursor: pointer;
 }
 .deck-chips button > span { margin-left: 4px; font-weight: 700; }
+.lookover-page ::deep .deck-bulk { flex: none; }
+.lookover-page ::deep .deck-bulk button { width: auto; min-height: 36px; margin: 0; padding: 4px 12px; font-size: 0.85rem; }
+.lookover-page ::deep .deck-bulk-note { flex: none; margin: 0; }
 .deck-chips button.is-on { border-color: var(--accent); background: var(--accent); color: var(--on-accent); font-weight: 600; }
 .lookover-page ::deep .lookover-rows { list-style: none; margin: 0; padding: 0 12px 8px; display: grid; gap: 6px; }
 .lookover-page ::deep .lookover-rows li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; border-top: 1px solid var(--border-light); }

@@ -34,4 +34,7 @@ public enum LookOverAnswer
 
     /// <summary>"It is here": the kept hold is moved to where it really is, which also confirms it.</summary>
     Moved = 5,
+
+    /// <summary>"Add as a hold": a discarded detection becomes a live hold with its detected outline; can be undone while no boulder uses it.</summary>
+    AddHold = 6,
 }

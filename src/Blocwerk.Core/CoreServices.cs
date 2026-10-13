@@ -375,6 +375,18 @@ public static class CoreServices
             logger.LogError(ex, "Kept-hold backfill failed; it is retried on the next start.");
         }
 
+        // One-time: a wall whose last update was applied before discarded detections were kept gets them back
+        // from that update's journal batch, so they can still be added as holds in the look-over.
+        try
+        {
+            var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<BlocwerkDbContext>>();
+            DiscardedDetectionBackfill.RunIfNeededAsync(factory, logger).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Discarded-detection backfill failed; it is retried on the next start.");
+        }
+
         // Propagate appearance (Color/Material/Category/HandType) across linked holds so every copy of
         // one physical hold matches its most-central source. Idempotent (write-if-changed), so it is
         // safe to run on every start and no-ops once all components are converged.

@@ -127,6 +127,22 @@ public class WallLookOverFinding
     /// <summary>When it was closed that way. Who did the edit that closed it is not known here.</summary>
     public DateTimeOffset? ClosedAt { get; set; }
 
+    /// <summary>The detected outline of a discarded detection, as offsets from <see cref="X"/>/<see cref="Y"/> (the convention of <see cref="Hold.ShapePoints"/>).</summary>
+    public List<ShapePoint>? ShapePoints { get; set; }
+
+    /// <summary>The holes of that outline (<see cref="Hold.ShapeHoles"/>).</summary>
+    public List<List<ShapePoint>>? ShapeHoles { get; set; }
+
+    /// <summary>Why the triage discarded the detection (a <see cref="NewHoldDiscardReason"/> name); null when that was not recorded.</summary>
+    [MaxLength(32)]
+    public string? DiscardReason { get; set; }
+
+    /// <summary>
+    /// How much of a discarded detection the live holds of its photo cover, 0..1, as last worked out
+    /// (<see cref="LookOver.DiscardedDetections.RefreshOverlapAsync"/>). Null on every other finding.
+    /// </summary>
+    public double? Overlap { get; set; }
+
     /// <summary>An unsure match a person called a different hold; it stays open as a replaced hold.</summary>
     public bool Converted { get; set; }
 

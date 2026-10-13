@@ -2,6 +2,7 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using System.Text.Json;
 using Blocwerk.Core.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -22,6 +23,18 @@ public partial class BlocwerkDbContext
                 .HasForeignKey(f => f.WallId)
                 .OnDelete(DeleteBehavior.Cascade);
             entity.HasIndex(f => new { f.WallId, f.Status });
+
+            // A discarded detection's outline, in the JSON column convention of Hold.ShapePoints.
+            entity.Property(f => f.ShapePoints)
+                .HasConversion(
+                    v => v == null ? null : JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+                    v => v == null ? null : JsonSerializer.Deserialize<List<ShapePoint>>(v, (JsonSerializerOptions?)null),
+                    NullableShapePointsComparer);
+            entity.Property(f => f.ShapeHoles)
+                .HasConversion(
+                    v => v == null ? null : JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+                    v => v == null ? null : JsonSerializer.Deserialize<List<List<ShapePoint>>>(v, (JsonSerializerOptions?)null),
+                    NullableShapeRingsComparer);
         });
     }
 }

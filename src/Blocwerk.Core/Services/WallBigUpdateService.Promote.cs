@@ -183,6 +183,7 @@ public partial class WallBigUpdateService
         await WallUpdateSessions.CloseOpenAsync(db, wallId, WallUpdateSessionStatus.Promoted, user.Id);
 
         await db.SaveChangesAsync();
+        await FlagForDiscardedDetectionsAsync(db, wall, newGen);
         await ProposeNewHoldColorsAfterPromoteAsync(db, wallId, newGen);
         await SyncLinkedHoldsAfterPromoteAsync(db, wallId);
 

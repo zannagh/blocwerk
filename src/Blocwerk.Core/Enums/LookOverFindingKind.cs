@@ -34,4 +34,10 @@ public enum LookOverFindingKind
 
     /// <summary>An old hold kept in place with a new hold on the same spot, which no other finding is about.</summary>
     SameSpot = 7,
+
+    /// <summary>
+    /// A detection the update's triage discarded, kept so it can still be added as a hold. It is about no hold until
+    /// somebody adds it, and it only counts as open while it is likely a missed hold (<see cref="LookOver.LookOverRules.LikelyMissed"/>).
+    /// </summary>
+    DiscardedDetection = 8,
 }

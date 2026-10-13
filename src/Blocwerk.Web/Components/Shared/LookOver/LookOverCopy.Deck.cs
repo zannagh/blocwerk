@@ -23,11 +23,12 @@ internal static partial class LookOverCopy
         LookOverFindingKind.SameSpot => "Same spot",
         LookOverFindingKind.MatchedToHandPlaced => "Hand-placed, merged",
         LookOverFindingKind.HandPlacedAmbiguous => "Hand-placed, several",
+        LookOverFindingKind.DiscardedDetection => DiscardedChip,
         _ => "Conflicting new",
     };
 
     /// <summary>What a card is about, in the queue list beside the deck and above a card.</summary>
-    public static string QueueLabel(LookOverFindingView f) => f.Missing ? MissingChip : ChipLabel(f.Kind);
+    public static string QueueLabel(LookOverFindingView f) => f.Missing ? MissingChip : f.ProbablyDuplicate ? DuplicatesChip : ChipLabel(f.Kind);
 
     /// <summary>The hold a card is about, named as the cards name it.</summary>
     public static string HoldLabel(LookOverFindingView f) => f.HoldName is { } name ? $"The {name} hold" : "This hold";

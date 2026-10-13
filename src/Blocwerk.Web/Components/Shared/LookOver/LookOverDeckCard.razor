@@ -3,13 +3,19 @@
 @* One open finding on the card deck: what it is and whose boulders it touches, the photo from before the update and
    the one from now side by side as wide as the card (the 3D texture and the large view a tap away), what the update
    did, and below the card, where the thumb is, the answers this user may give. They are the answers of LookOverCard,
-   with the same questions before anything changes the wall; a number key gives the answer with that number. *@
+   with the same questions before anything changes the wall; a number key gives the answer with that number. A
+   discarded detection has one photo, its detected outline, and "Add as a hold", which is undone from the bar above. *@
 
 <div class="deck-body">
     <div class="deck-about">
         <strong>@LookOverCopy.Heading(Finding)</strong>
         <LookOverBoulders WallId="WallId" Boulders="Finding.Boulders" />
     </div>
+    @if (Finding.Discarded)
+    {
+        @* Why it was left out and how sure the detector was is what the answer turns on: said before the photo. *@
+        <p class="deck-detail">@LookOverCopy.Detail(Finding)</p>
+    }
     <div class="deck-pictures @(Photos.Count == 1 ? "is-single" : null)">
         @foreach (var picture in Photos)
         {
@@ -22,7 +28,10 @@
     {
         <button type="button" class="btn-link deck-3d" @onclick="() => zoomed = true">Show the 3D texture</button>
     }
-    <p class="deck-detail">@LookOverCopy.Detail(Finding)</p>
+    @if (!Finding.Discarded)
+    {
+        <p class="deck-detail">@LookOverCopy.Detail(Finding)</p>
+    }
     @if (Finding.MergeNeedsAdmin)
     {
         <p class="hint">A new hold sits on this spot. A wall admin can merge the old hold into it instead of removing it.</p>
@@ -33,6 +42,10 @@
     @if (Takes(LookOverAnswer.Settle))
     {
         <button type="button" class="btn-secondary" disabled="@Disabled" @onclick="() => AnswerAsync(LookOverAnswer.Settle)">@LookOverCopy.SettleLabel(Finding)</button>
+    }
+    @if (Takes(LookOverAnswer.AddHold))
+    {
+        <button type="button" class="btn-primary" disabled="@Disabled" @onclick="() => AnswerAsync(LookOverAnswer.AddHold)">@LookOverCopy.AddHoldLabel</button>
     }
     @if (Takes(LookOverAnswer.DifferentHold))
     {
@@ -68,7 +81,8 @@
 }
 
 @code {
-    private static readonly LookOverAnswer[] Order = [LookOverAnswer.Settle, LookOverAnswer.DifferentHold, LookOverAnswer.UseNewHold, LookOverAnswer.RemoveHold];
+    private static readonly LookOverAnswer[] Order =
+        [LookOverAnswer.Settle, LookOverAnswer.AddHold, LookOverAnswer.DifferentHold, LookOverAnswer.UseNewHold, LookOverAnswer.RemoveHold];
     private ConfirmAction? different;
     private ConfirmAction? merge;
     private ConfirmAction? remove;
@@ -105,7 +119,7 @@
         }
 
         var answer = Offered[number - 1];
-        if (answer == LookOverAnswer.Settle)
+        if (answer is LookOverAnswer.Settle or LookOverAnswer.AddHold)
         {
             return AnswerAsync(answer);
         }

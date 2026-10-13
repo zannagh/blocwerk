@@ -58,7 +58,8 @@ public partial class WallLookOver
 
     private IReadOnlyList<LookOverFindingView> Queue => listing.Queue(filter, FilterBoulder);
 
-    private int OpenCount => listing.Findings.Count(f => f.Status == LookOverFindingStatus.Open);
+    /// <summary>What is open and has to be answered: a discarded detection only while it is likely a missed hold.</summary>
+    private int OpenCount => listing.Findings.Count(f => f.Status == LookOverFindingStatus.Open && f.CountsAsOpen);
 
     private string OpenFindings => OpenCount == 1 ? "1 finding is" : $"{OpenCount} findings are";
 
