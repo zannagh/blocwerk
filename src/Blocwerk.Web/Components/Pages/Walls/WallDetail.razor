@@ -1588,7 +1588,8 @@ else
             // tool's options and applied below, exactly as the per-panel editor has always done it.
             await WallService.UpdateHoldAsync(hold.Id, HoldEdit.FromEditorState(
                 hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.IsOnKickboard, hold.ShapePoints, hold.Name, hold.Material, hold.HandType,
-                flagBouldersOnMove: false, colorStillProposed: hold.HasProposedColor));
+                flagBouldersOnMove: false, colorStillProposed: hold.HasProposedColor,
+                resetToCircle: changes.ResetToCircle.Contains(hold.Id)));
         }
 
         foreach (var holdId in changes.MarkedChanged)
@@ -1787,7 +1788,8 @@ else
             // Mark unchanged), surfaced by the panel editor's change-review overlay.
             await WallService.UpdateHoldAsync(hold.Id, HoldEdit.FromEditorState(
                 hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.IsOnKickboard, hold.ShapePoints, hold.Name, hold.Material, hold.HandType,
-                flagBouldersOnMove: false, colorStillProposed: hold.HasProposedColor));
+                flagBouldersOnMove: false, colorStillProposed: hold.HasProposedColor,
+                resetToCircle: changes.ResetToCircle.Contains(hold.Id)));
         }
 
         // Drafted "Mark changed" decisions arrive ONLY here when a batch handler is attached (the
