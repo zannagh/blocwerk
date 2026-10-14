@@ -52,6 +52,7 @@ blocwerk:env:prod:RUNNERS__MODE
 blocwerk:env:prod:BLOCWERK__SERVER__TRUSTEDPROXIES__0
 blocwerk:env:prod:BLOCWERK__AUTH__APIKEYLOGIN__ENABLED
 blocwerk:env:prod:BLOCWERK__AUTH__APIKEYLOGIN__ALLOWEDUSERIDS__0
+blocwerk:env:prod:HOLDDETECTION__REDETECT__ENABLED
 blocwerk:env:prod:Logging__LogLevel__Default
 blocwerk:env:prod:Logging__LogLevel__Microsoft.AspNetCore.Components.Server.Circuits.CircuitRegistry
 blocwerk:volume:base:/data/beta-videos
@@ -59,6 +60,8 @@ blocwerk:volume:base:/data/wall-images
 blocwerk:volume:prod:/app/beta-videos
 blocwerk:volume:prod:/app/wall-images
 blocwerk:volume:prod:/app/models/climbingcrux.onnx
+blocwerk:volume:prod:/app/models/hold-segmenter-encoder.onnx
+blocwerk:volume:prod:/app/models/hold-segmenter-decoder.onnx
 blocwerk:port:base:5050
 postgres:healthcheck:prod
 "
