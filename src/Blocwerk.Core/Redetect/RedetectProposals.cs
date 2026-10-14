@@ -56,7 +56,10 @@ public static class RedetectProposals
         var existing = input.Existing.ToDictionary(e => e.Hold.Id);
         var safety = new RedetectSafety(input, aspect);
         var proposals = new List<RedetectProposal>();
-        proposals.AddRange(decisions.Splits.Select(s => new RedetectProposal($"split:{s.HoldId}", RedetectProposalKind.Split, s.HoldId, [], s.Detections, false, 0)));
+        proposals.AddRange(decisions.Splits.Select(s => new RedetectProposal($"split:{s.HoldId}", RedetectProposalKind.Split, s.HoldId, [], s.Detections, false, 0)
+        {
+            Doubt = RedetectSafety.CheckSplit(byId[s.HoldId], [.. s.Detections.Select(i => input.Detections[i].Shape)]),
+        }));
         proposals.AddRange(decisions.Merges.Concat(decisions.LikelyMerges).Select(m =>
             new RedetectProposal($"merge:{m.KeptId}:{m.RemovedId}", RedetectProposalKind.Merge, m.KeptId, [m.RemovedId], [], false, m.Score)));
         proposals.AddRange(stacks.Select(s =>
@@ -66,7 +69,7 @@ public static class RedetectProposals
         proposals.AddRange(decisions.HandOffers.Select(o =>
             new RedetectProposal($"hand:{o.HoldId}", RedetectProposalKind.HandShape, o.HoldId, [], [o.Detection], false, Overlap(byId[o.HoldId], input, o.Detection).Iou)
             {
-                Unsure = safety.Check(existing[o.HoldId], input.Detections[o.Detection].Shape).Unsure,
+                Doubt = safety.Check(existing[o.HoldId], input.Detections[o.Detection].Shape).Doubt,
             }));
 
         // A circle a person placed marks the spot, not a shape: an outline for it is safe when the detector is sure
@@ -78,7 +81,7 @@ public static class RedetectProposals
             var check = safety.Check(existing[o.HoldId], detection);
             var safe = check.Clean && detection.Confidence >= options.SafeDetectorConfidence && overlap.SizeRatio <= options.MaxSizeRatio
                 && detection.OutlineCorroborated && detection.OutlineDistinct;
-            return new RedetectProposal($"hand:{o.HoldId}", RedetectProposalKind.HandShape, o.HoldId, [], [o.Detection], safe, overlap.Iou) { Unsure = check.Unsure };
+            return new RedetectProposal($"hand:{o.HoldId}", RedetectProposalKind.HandShape, o.HoldId, [], [o.Detection], safe, overlap.Iou) { Doubt = check.Doubt };
         }));
         foreach (var update in decisions.Shapes.Where(s => s.Change == RedetectShapeChange.Replace))
         {
@@ -87,7 +90,7 @@ public static class RedetectProposals
             var safe = check.Clean && overlap.Iou >= SafeIou && overlap.SizeRatio <= SafeSizeRatio && input.Detections[update.Detection].Shape.OutlineCorroborated;
             proposals.Add(new RedetectProposal($"shape:{update.HoldId}", RedetectProposalKind.BetterShape, update.HoldId, [], [update.Detection], safe, overlap.Iou)
             {
-                Unsure = check.Unsure,
+                Doubt = check.Doubt,
             });
         }
 

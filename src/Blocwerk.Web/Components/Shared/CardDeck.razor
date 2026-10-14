@@ -26,11 +26,11 @@
             <div class="deck-empty">@Empty</div>
         }
 
-        @if (Note is not null || Count > 1)
+        @if (Note is not null || (Count > 1 && ShowSkip))
         {
             <div class="deck-meta">
                 @Note
-                @if (Count > 1)
+                @if (Count > 1 && ShowSkip)
                 {
                     <button type="button" class="btn-link deck-skip" @onclick="() => OnStep.InvokeAsync(1)">Skip</button>
                 }

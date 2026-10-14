@@ -29,6 +29,31 @@ public enum RedetectProposalKind
     NotFound = 6,
 }
 
+/// <summary>Why the detector is unsure about a proposal; the card says it in one sentence.</summary>
+public enum RedetectDoubt
+{
+    /// <summary>Nothing speaks against it.</summary>
+    None = 0,
+
+    /// <summary>The new shape leaves out a clear part of the stored one.</summary>
+    DropsPart = 1,
+
+    /// <summary>The new shape is much larger than the stored one.</summary>
+    MuchLarger = 2,
+
+    /// <summary>The new shape has a thin tail or hook, or is a thin strip where only a circle stood.</summary>
+    ThinPart = 3,
+
+    /// <summary>The new shape reaches over another hold.</summary>
+    TakesInAnotherHold = 4,
+
+    /// <summary>The hold hardly stands out from the wall, and it has only a circle so far.</summary>
+    PaleHold = 5,
+
+    /// <summary>The pieces of a split leave out a part of the stored hold.</summary>
+    PiecesMissPart = 6,
+}
+
 /// <summary>
 /// One thing a re-detect would change, for a person to accept or leave. Nothing of a re-detect is written without
 /// its proposal being accepted.
@@ -53,11 +78,13 @@ public sealed record RedetectProposal(
     double Score)
 {
     /// <summary>
-    /// Gets a value indicating whether the detected shape is likely worse than what is stored: it drops a clear part
-    /// of the stored outline, has a hook or a tail, or takes in another hold. The card says so and is answered
+    /// Gets why the detected shape is likely worse than what is stored, if it is. The card says so and is answered
     /// "keep" from the start; only a person accepting it changes the hold.
     /// </summary>
-    public bool Unsure { get; init; }
+    public RedetectDoubt Doubt { get; init; }
+
+    /// <summary>Gets a value indicating whether the detector is unsure about this proposal (<see cref="Doubt"/>).</summary>
+    public bool Unsure => Doubt != RedetectDoubt.None;
 
     /// <summary>Gets the stamp of what the card shows (<see cref="RedetectStamps"/>); applying checks it again.</summary>
     public string Stamp { get; init; } = string.Empty;

@@ -19,7 +19,7 @@ public class RedetectFollowUpTests
     private static readonly HoldSamenessOptions Options = new();
 
     [Fact]
-    public async Task AHoldThatTakesANewOutline_GetsItsThreeDShapeMadeAgain()
+    public async Task AHoldThatTakesANewOutline_GetsItsThreeDShapeMadeAgain_AndKeepsTheOldOneUntilThen()
     {
         using var s = await HoldColorScenario.CreateAsync();
         var panel = await s.AddPanelAsync(0);
@@ -33,7 +33,7 @@ public class RedetectFollowUpTests
 
         await redetect.ApplyAsync(await redetect.PlanAsync(s.WallId, panel));
 
-        Assert.Null((await s.GetAsync(hold)).FootprintMm);
+        Assert.Equal("{}", (await s.GetAsync(hold)).FootprintMm);
         queue.Received(1).Enqueue(s.WallId, Arg.Is<IEnumerable<Guid>>(ids => ids.Single() == hold));
     }
 

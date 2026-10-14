@@ -98,6 +98,12 @@ public sealed class HoldFootprintService(
             () => HoldFootprintRefiner.Refine(live, doc, usable, c => Open(c, photos, ct), projector, only, panelPhotos, volumes), ct);
         LogPanelCameras(wallId, refinement);
         LogGuarded(wallId, refinement);
+        foreach (var (holdId, why) in refinement.NoFootprint.OrderBy(n => n.Key))
+        {
+            // The hold keeps the footprint it had; the 3D view shows that, or its outline.
+            logger.LogInformation("Footprints on wall {WallId}: hold {HoldId} got no new footprint: {Why}", wallId, holdId, why);
+        }
+
         var written = await WriteAsync(db, wallId, refinement, Wall3DFallbackPlacement.FacetExtents(doc), ct);
         logger.LogInformation(
             "Footprints on wall {WallId}: {Multi} multi-view, {Single} single-view, {Skipped} skipped, {Written} written, {Photos} capture photos",

@@ -54,6 +54,7 @@ internal sealed class HoldEnrichmentPlan
             hold.OutlineConfidence = contour ? outline.Confidence : null;
             hold.OutlineCorroborated = contour && outline.Corroborated;
             hold.OutlineDistinct = contour && outline.Distinct;
+            hold.OutlinePale = outline.Pale;
             hold.FingerprintJson = outline.Fingerprint.ToJson();
             if (Radii.TryGetValue(hold, out var radius))
             {

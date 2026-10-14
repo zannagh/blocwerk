@@ -12,10 +12,6 @@ internal static class RedetectCopy
     /// <summary>The answer that leaves the wall as it is.</summary>
     public const string KeepLabel = "Keep mine";
 
-    /// <summary>The line on a card whose detected shape is likely worse than the stored one.</summary>
-    public const string Unsure =
-        "The detector is unsure here: the new shape leaves out part of the old one, is much larger, has a thin tail, or reaches over another hold. It stays as it is unless you accept.";
-
     /// <summary>The caption of the picture that shows the wall as it is stored.</summary>
     public const string NowCaption = "On the wall now";
 
@@ -41,10 +37,10 @@ internal static class RedetectCopy
             "Accepting gives the stored hold the shape of the largest one and adds the others as new holds. Name, colour and boulders stay with the stored hold.",
         RedetectProposalKind.Merge => "Accepting merges them into one hold. The boulders of both move to it. A merge can be undone in the duplicate review.",
         RedetectProposalKind.Stack => "Accepting records that it is mounted on the larger hold. Both stay two holds.",
-        RedetectProposalKind.NewHold => "Accepting adds it with a suggested colour.",
+        RedetectProposalKind.NewHold => "It is not added unless you accept. Accepting adds it with a suggested colour.",
         RedetectProposalKind.NotFound => "No boulder uses it and nobody named or coloured it. Accepting removes it.",
-        RedetectProposalKind.HandShape => "Accepting replaces your shape with the detected one. Name, colour and boulders stay.",
-        _ => "Accepting gives the hold the detected shape and position. Name, colour and boulders stay.",
+        RedetectProposalKind.HandShape => "Accepting replaces your shape with the detected one. Name, colour and boulders stay. Its 3D shape is made again.",
+        _ => "Accepting gives the hold the detected shape and position. Name, colour and boulders stay. Its 3D shape is made again.",
     };
 
     /// <summary>The label of the accepting answer.</summary>
@@ -61,7 +57,7 @@ internal static class RedetectCopy
     /// <summary>The label of the answer that changes nothing.</summary>
     public static string KeepLabelFor(RedetectProposal proposal) => proposal.Kind switch
     {
-        RedetectProposalKind.NewHold => "Not a hold",
+        RedetectProposalKind.NewHold => "Do not add",
         RedetectProposalKind.NotFound => "Keep it",
         RedetectProposalKind.Merge or RedetectProposalKind.Stack => "Leave as it is",
         _ => KeepLabel,
@@ -79,35 +75,67 @@ internal static class RedetectCopy
         _ => "shape",
     };
 
-    /// <summary>The line above the cards: how much there is to look at, and what was left out.</summary>
-    public static string Intro(PanelRedetectPlan plan)
+    /// <summary>Why the detector is unsure, in one sentence.</summary>
+    public static string Why(RedetectDoubt doubt) => doubt switch
     {
-        var safe = plan.Proposals.Count(p => p.Safe);
-        var parts = new List<string>
-        {
-            $"{PlainCopy.Plural(plan.Proposals.Count, "proposal")}. Nothing changes until you apply your answers. A hold that gets a new outline gets its 3D shape made again afterwards, in the background.",
-        };
-        if (safe > 0)
-        {
-            parts.Add($"{PlainCopy.Plural(safe, "shape update")} keep the hold where and about as large as it is and can be accepted together.");
-        }
+        RedetectDoubt.DropsPart => "The new shape leaves out part of the old one.",
+        RedetectDoubt.MuchLarger => "The new shape is much larger than the old one.",
+        RedetectDoubt.ThinPart => "The new shape is a thin strip or has a thin tail.",
+        RedetectDoubt.TakesInAnotherHold => "The new shape reaches over another hold.",
+        RedetectDoubt.PaleHold => "The hold hardly stands out from the wall.",
+        RedetectDoubt.PiecesMissPart => "The pieces leave out part of the hold.",
+        _ => string.Empty,
+    };
 
-        var unsure = plan.Proposals.Count(p => p.Unsure);
-        if (unsure > 0)
-        {
-            parts.Add($"On {PlainCopy.Plural(unsure, "card")} the detector is unsure; {(unsure == 1 ? "it stays" : "they stay")} as {(unsure == 1 ? "it is" : "they are")} unless you accept {(unsure == 1 ? "it" : "them")}.");
-        }
+    /// <summary>The state of a card, beside its heading.</summary>
+    public static string State(RedetectProposal proposal, bool? answer) => answer switch
+    {
+        true => "Accepted",
+        false => proposal.Kind == RedetectProposalKind.NewHold ? "Not added" : "Kept as it is",
+        _ => "Not answered",
+    };
 
+    /// <summary>The label of the step that accepts the safe shape updates together.</summary>
+    public static string BulkLabel(int count) => $"Accept the {count:N0} safe shape {(count == 1 ? "update" : "updates")}";
+
+    /// <summary>The label of a filter chip.</summary>
+    public static string FilterLabel(RedetectFilter filter) => filter switch
+    {
+        RedetectFilter.Open => "Not answered",
+        RedetectFilter.Safe => "Safe",
+        RedetectFilter.Unsure => "Unsure",
+        RedetectFilter.Shape => "Shape",
+        RedetectFilter.YourShape => "Your shape",
+        RedetectFilter.Split => "Two holds in one",
+        RedetectFilter.Merge => "Same hold twice",
+        RedetectFilter.Stack => "Hold on a hold",
+        RedetectFilter.NewHold => "New hold",
+        RedetectFilter.NotFound => "Not found",
+        _ => "All",
+    };
+
+    /// <summary>The count under the cards.</summary>
+    public static string Progress(int answered, int total, int accepted) =>
+        $"{answered:N0} of {total:N0} answered, {accepted:N0} accepted";
+
+    /// <summary>The two sentences above the cards.</summary>
+    public static string Intro(PanelRedetectPlan plan) =>
+        $"{PlainCopy.Plural(plan.Proposals.Count, "proposal")} for this photo. Nothing changes until you apply.";
+
+    /// <summary>What the review does not show, or null when nothing was left out.</summary>
+    public static string? LeftOut(PanelRedetectPlan plan)
+    {
+        var parts = new List<string>();
         if (plan.TurnedDown > 0)
         {
-            parts.Add($"{PlainCopy.Plural(plan.TurnedDown, "detection")} on spots where somebody already said there is no hold {(plan.TurnedDown == 1 ? "was" : "were")} left out.");
+            parts.Add($"{PlainCopy.Plural(plan.TurnedDown, "detection")} on spots where somebody already said there is no hold.");
         }
 
         if (plan.Untraced > 0)
         {
-            parts.Add($"{PlainCopy.Plural(plan.Untraced, "detection")} on an empty spot without a traceable outline {(plan.Untraced == 1 ? "was" : "were")} left out as well.");
+            parts.Add($"{PlainCopy.Plural(plan.Untraced, "detection")} on an empty spot without a traceable outline.");
         }
 
-        return string.Join(" ", parts);
+        return parts.Count == 0 ? null : string.Join(" ", parts);
     }
 }

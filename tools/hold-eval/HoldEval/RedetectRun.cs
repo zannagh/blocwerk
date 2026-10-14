@@ -86,6 +86,6 @@ public static class RedetectRun
             ShapeHoles = d.Shape.ShapeHoles?.Select(ring => ring.Select(p => new[] { p.Dx, p.Dy }).ToList()).ToList(),
             Color = d.Color,
         }),
-        Proposals = plan.Proposals.Select(p => new { p.Key, Kind = p.Kind.ToString(), p.HoldId, p.OtherHoldIds, p.Detections, p.Safe, p.Unsure, p.Score }),
+        Proposals = plan.Proposals.Select(p => new { p.Key, Kind = p.Kind.ToString(), p.HoldId, p.OtherHoldIds, p.Detections, p.Safe, p.Unsure, Doubt = p.Doubt.ToString(), p.Score }),
     };
 }

@@ -125,6 +125,30 @@ public class RedetectSafetyTests
     }
 
     [Fact]
+    public void ASplitWhosePiecesLeaveOutPartOfTheHold_IsMarkedUnsure_AndOneThatCoversItIsNot()
+    {
+        var stored = Outlined(0.5, 0.5, 0.04, 0.02);
+        Hold Piece(double x, double halfWidth) => Outlined(x, 0.5, halfWidth, 0.02);
+
+        Assert.Equal(RedetectDoubt.None, RedetectSafety.CheckSplit(stored, [Piece(0.48, 0.019), Piece(0.52, 0.019)]));
+        Assert.Equal(RedetectDoubt.PiecesMissPart, RedetectSafety.CheckSplit(stored, [Piece(0.47, 0.01), Piece(0.52, 0.012)]));
+    }
+
+    [Fact]
+    public void AnOutlineForACircle_OnAHoldThatHardlyStandsOut_IsMarkedUnsure_WithItsReason()
+    {
+        var placed = new Hold { X = 0.5, Y = 0.5, Radius = 0.03, IsAutoDetected = false };
+        var pale = Detected(0.5, 0.5, 0.024, 0.024);
+        (pale.Shape.OutlineDistinct, pale.Shape.OutlinePale) = (false, true);
+        var inset = Outlined(0.5, 0.5, 0.03, 0.03);
+
+        Assert.Equal(RedetectDoubt.PaleHold, Shape(Input([placed], [pale]), placed).Doubt);
+        Assert.Equal(RedetectDoubt.ThinPart, Shape(Input([placed], [Detected(0.5, 0.5, 0.028, 0.006)]), placed).Doubt);
+        Assert.Equal(RedetectDoubt.None, Shape(Input([placed], [Detected(0.5, 0.5, 0.024, 0.024)]), placed).Doubt);
+        Assert.Equal(RedetectDoubt.DropsPart, Shape(Input([inset], [Detected(0.5, 0.5, 0.023, 0.03)]), inset).Doubt);
+    }
+
+    [Fact]
     public void AHookOrATail_ShowsAsAThinPart_AndACompactOutlineDoesNot()
     {
         P2[] square = [new(0, 0), new(1, 0), new(1, 1), new(0, 1)];

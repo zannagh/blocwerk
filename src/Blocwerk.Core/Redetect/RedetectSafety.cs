@@ -9,8 +9,8 @@ namespace Blocwerk.Core.Redetect;
 
 /// <summary>What the checks say about one proposed outline.</summary>
 /// <param name="Clean">True when nothing speaks against accepting it together with others.</param>
-/// <param name="Unsure">True when it is likely worse than what is stored: it is shown, and kept as it is unless a person accepts it.</param>
-public readonly record struct RedetectShapeCheck(bool Clean, bool Unsure);
+/// <param name="Doubt">Why it is likely worse than what is stored, if it is: it is shown, and kept as it is unless a person accepts it.</param>
+public readonly record struct RedetectShapeCheck(bool Clean, RedetectDoubt Doubt);
 
 /// <summary>
 /// The checks a proposed outline has to pass before it may be accepted together with others, on top of "both outline
@@ -60,6 +60,12 @@ internal sealed class RedetectSafety
 
     /// <summary>From this much added, as a share of the stored outline, the new one likely took in a neighbour, a shadow or bare wall.</summary>
     public const double UnsureGain = 0.6;
+
+    /// <summary>An outline for a plain circle that is this many times longer than wide is a strip: an edge or a gap, seldom the hold.</summary>
+    public const double StripElongation = 4;
+
+    /// <summary>The share of a stored outline the pieces of a split have to cover together.</summary>
+    public const double MinSplitCover = 0.8;
 
     /// <summary>The overlap (IoU) with the stored outline a hold that boulders use needs.</summary>
     public const double BoulderIou = 0.85;
@@ -143,7 +149,43 @@ internal sealed class RedetectSafety
             : shared >= MinInsideCircle * newArea;
         bool clean = !centre && !overlap && !thin && InsideBox(detection) && fits
             && (existing.Boulders.Count == 0 || !traced || iou >= BoulderIou);
-        return new RedetectShapeCheck(clean, centre || thin || lost >= UnsureLost || gain >= UnsureGain);
+        var doubt = centre ? RedetectDoubt.TakesInAnotherHold
+            : thin || (!traced && Elongation(outline, aspect) >= StripElongation) ? RedetectDoubt.ThinPart
+            : lost >= UnsureLost ? RedetectDoubt.DropsPart
+            : gain >= UnsureGain ? RedetectDoubt.MuchLarger
+            : !traced && detection.OutlinePale ? RedetectDoubt.PaleHold
+            : RedetectDoubt.None;
+        return new RedetectShapeCheck(clean, doubt);
+    }
+
+    /// <summary>
+    /// The doubt about a split: its pieces together have to cover the stored outline (<see cref="MinSplitCover"/>), or
+    /// a part of the hold, a horn or a lobe, is in none of them.
+    /// </summary>
+    /// <param name="hold">The stored hold.</param>
+    /// <param name="pieces">The detections it would be split into.</param>
+    /// <returns>The doubt, or none.</returns>
+    public static RedetectDoubt CheckSplit(Hold hold, IReadOnlyList<Hold> pieces)
+    {
+        var outline = HoldShapePolygon.Of(hold);
+        double area = ShapeGeometry.Area(outline);
+        double covered = pieces.Sum(p => ShapeOverlapArea.Measure(outline, HoldShapePolygon.Of(p)).Shared);
+        return area > 0 && covered < MinSplitCover * area ? RedetectDoubt.PiecesMissPart : RedetectDoubt.None;
+    }
+
+    /// <summary>The longest extent of an outline over its thinnest, over directions 15 degrees apart.</summary>
+    private static double Elongation(IReadOnlyList<P2> outline, double aspect)
+    {
+        double thinnest = double.MaxValue, longest = 0;
+        for (int k = 0; k < 12; k++)
+        {
+            double angle = k * Math.PI / 12, cos = Math.Cos(angle), sin = Math.Sin(angle);
+            var along = outline.Select(p => (p.X * aspect * cos) + (p.Y * sin)).ToList();
+            double extent = along.Max() - along.Min();
+            (thinnest, longest) = (Math.Min(thinnest, extent), Math.Max(longest, extent));
+        }
+
+        return longest / Math.Max(1e-12, thinnest);
     }
 
     /// <summary>The share of its convex hull an outline fills: 1 for a convex one, less with every notch.</summary>

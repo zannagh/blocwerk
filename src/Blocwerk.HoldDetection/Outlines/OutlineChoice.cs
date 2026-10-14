@@ -84,7 +84,9 @@ internal sealed class OutlineChoice
         if (!modelFits)
         {
             // As before the model: the colour outline, corroborated by nothing but also changed by nothing.
-            return colourFits || !boxed ? colour with { Corroborated = !modelAsked && colourFits, Distinct = colour.Confidence >= ConfirmingConfidence } : null;
+            return colourFits || !boxed
+                ? colour with { Corroborated = !modelAsked && colourFits && OutlineContent.IsOneHold(image, seed, colour), Distinct = colour.Confidence >= ConfirmingConfidence }
+                : null;
         }
 
         if (!colourFits)
@@ -97,7 +99,8 @@ internal sealed class OutlineChoice
         double ratio = model!.AreaPx / Math.Max(1, colour.AreaPx);
         if (iou >= AgreeIoU && ratio <= AgreeArea && ratio >= 1 / AgreeArea)
         {
-            return model with { Corroborated = true, Distinct = colour.Confidence >= ConfirmingConfidence };
+            // Two methods agreeing on an outline that takes in the shadow under the hold or a patch of wall is still one to look at.
+            return model with { Corroborated = OutlineContent.IsOneHold(image, seed, model), Distinct = colour.Confidence >= ConfirmingConfidence };
         }
 
         bool clearly = (ratio >= DisagreeArea && colourInside >= DisagreeInside) || (ratio <= 1 / DisagreeArea && modelInside >= DisagreeInside);

@@ -1,14 +1,30 @@
-/* The re-detect review fills its dialog: the intro and the bulk step on top, the card deck in the middle (the only
-   part that may scroll), and the count with the two closing buttons at the bottom within reach of the thumb. */
-.redetect-review { display: flex; flex-direction: column; gap: 8px; height: min(86dvh, 860px); min-height: 0; }
-.redetect-intro { flex: none; margin: 0; font-size: 0.85rem; line-height: 1.4; color: var(--text-secondary); }
-.redetect-bulk { flex: none; width: 100%; min-height: 44px; margin: 0; }
-.redetect-review ::deep .redetect-answer { font-size: 0.8rem; color: var(--text-secondary); }
-.redetect-review ::deep .redetect-answer.is-accepted { color: var(--status-success); }
+/* The re-detect review fills its dialog: two short sentences, the bulk step and the chips on top, the card deck in
+   the middle (the only part that may scroll), and the count with the two closing buttons at the bottom within reach
+   of the thumb. The chosen answer is filled with the accent and carries a tick; the other one stays an outline. */
+.redetect-review { display: flex; flex-direction: column; gap: 8px; height: min(88dvh, 900px); min-height: 0; }
+.redetect-intro { flex: none; margin: 0; font-size: 0.95rem; line-height: 1.35; color: var(--text-heading); }
+.redetect-left-out { flex: none; font-size: 0.8rem; color: var(--text-secondary); }
+.redetect-left-out > summary { cursor: pointer; }
+.redetect-left-out > p { margin: 4px 0 0; }
+.redetect-bulk { flex: none; display: flex; flex-wrap: wrap; gap: 8px; }
+.redetect-bulk > button { flex: 1 1 200px; min-height: 44px; margin: 0; padding: 10px 14px; font-size: 0.95rem; }
+.redetect-filters { flex: none; display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: thin; }
+.redetect-chip { flex: none; min-height: 36px; padding: 4px 12px; border: 1.5px solid var(--border-light); border-radius: var(--r-pill); background: var(--bg-surface); color: var(--text-heading); font-size: 0.85rem; font-weight: 600; cursor: pointer; }
+.redetect-chip > span { margin-left: 4px; font-weight: 400; color: var(--text-secondary); }
+.redetect-chip.is-on { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
+.redetect-chip.is-on > span { color: var(--on-accent); }
+.redetect-review ::deep .redetect-answer { justify-self: start; width: fit-content; padding: 2px 10px; border-radius: var(--r-pill); font-size: 0.8rem; font-weight: 700; white-space: nowrap; }
+.redetect-review ::deep .redetect-answer.is-open { border: 1.5px dashed var(--border-light); color: var(--text-secondary); font-weight: 600; }
+.redetect-review ::deep .redetect-answer.is-kept { background: var(--text-heading); color: var(--bg-surface); }
+.redetect-review ::deep .redetect-answer.is-accepted { background: var(--accent); color: var(--on-accent); }
+.redetect-review ::deep .redetect-unsure { margin: 0; padding: 8px 10px; border-left: 4px solid var(--status-warning); border-radius: var(--r-sm); background: var(--bg-surface-alt); color: var(--text-heading); font-size: 0.9rem; line-height: 1.35; }
+.redetect-review ::deep .redetect-choice { border-width: 2px; }
+.redetect-review ::deep .redetect-choice.is-chosen { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
+.redetect-review ::deep .redetect-choice.is-chosen::before { content: "\2713\00a0"; }
 .redetect-review ::deep .redetect-picture { margin: 0; min-width: 0; }
 .redetect-review ::deep .redetect-picture > svg { display: block; width: 100%; aspect-ratio: 1; border-radius: var(--r-md); background: var(--bg-surface-alt); }
 .redetect-review ::deep .redetect-picture > figcaption { font-size: 0.75rem; color: var(--text-secondary); text-align: center; }
-.redetect-review ::deep .redetect-unsure { color: var(--status-warning, var(--text-primary)); font-weight: 600; }
 .redetect-finish { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.redetect-finish > span { flex: 1 1 100%; font-size: 0.8rem; color: var(--text-secondary); }
+.redetect-progress { flex: 1 1 100%; display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--text-heading); }
+.redetect-progress > progress { flex: 1 1 auto; height: 8px; accent-color: var(--accent); }
 .redetect-finish > button { flex: 1 1 0; min-height: 44px; margin: 0; }

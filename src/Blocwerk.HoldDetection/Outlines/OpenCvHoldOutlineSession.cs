@@ -166,13 +166,20 @@ public sealed class OpenCvHoldOutlineSession : IHoldBatchOutlineSession
         var colour = HoldOutlineRefiner.Refine(OutlineRaw(new HoldSeed(seed.X, seed.Y, seed.Radius)), aspect);
         if (new OutlineChoice(image).Pick(seed, model, colour, segmenter is not null) is { } chosen)
         {
-            return chosen;
+            return chosen with { Pale = IsPale(seed) };
         }
 
         using OutlineCrop? crop = OutlineCrop.Create(image, seed);
         return crop is null
             ? colour
             : HoldOutlineRefiner.Refine(OutlineResultBuilder.Circle(crop, seed, image.Width, image.Height, colour.Confidence / HoldOutlineRefiner.CircleConfidenceCeiling, rough: true), aspect);
+    }
+
+    /// <summary>True when the hold's colour is close to the wall's around it (under <see cref="MinGrabCutContrast"/>), or cannot be read.</summary>
+    private bool IsPale(HoldSeed seed)
+    {
+        using OutlineCrop? crop = OutlineCrop.Create(image, new HoldSeed(seed.X, seed.Y, seed.Radius));
+        return crop is null || LocalColourModel.Sample(CropPixels.From(crop.Bgr), crop) is not { } colours || colours.Contrast < MinGrabCutContrast;
     }
 
     /// <summary>

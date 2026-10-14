@@ -73,6 +73,28 @@ public class OutlineConfidenceScoringTests
     }
 
     [Fact]
+    public void AnOutlineThatTakesInTheShadowUnderTheHold_OrAPatchOfWall_IsNotOneHold()
+    {
+        using Mat img = SyntheticWall.Wood(600, 500);
+        Point[] hold = [new(240, 180), new(360, 180), new(360, 260), new(240, 260)];
+        SyntheticWall.PaintHold(img, hold, new Scalar(40, 40, 200), 0);
+        Cv2.FillConvexPoly(img, [new Point(250, 260), new Point(360, 260), new Point(372, 290), new Point(262, 290)], new Scalar(35, 45, 60));
+        var seed = HoldSeed.FromPixelBox(240, 180, 132, 110, img.Width, img.Height);
+        HoldOutlineResult Outline(params Point[] points) => new(
+            [.. points.Select(p => new NormalizedPoint((double)p.X / img.Width, (double)p.Y / img.Height))],
+            seed.X, seed.Y, null, 0, default!, 0.9, HoldOutlineMethod.Contour, default!);
+
+        var clean = Outline(hold);
+        var withShadow = Outline(new(240, 180), new(360, 180), new(372, 290), new(262, 290), new(240, 260));
+        var withWall = Outline(new(180, 180), new(360, 180), new(360, 260), new(180, 260));
+
+        Assert.True(OutlineContent.IsOneHold(img, seed, clean));
+        Assert.True(OutlineContent.Measure(img, seed, withShadow).DarkLower >= OutlineContent.MaxDarkLowerShare);
+        Assert.False(OutlineContent.IsOneHold(img, seed, withShadow));
+        Assert.True(OutlineContent.Measure(img, seed, withWall).Foreign >= OutlineContent.MaxForeignShare);
+    }
+
+    [Fact]
     public void LessContrast_NeverScoresHigher()
     {
         var strong = OutlineOnWood(new Scalar(40, 40, 200));

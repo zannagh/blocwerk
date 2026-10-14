@@ -50,4 +50,7 @@ public sealed record HoldOutlineResult(
     /// On a pale or chalked hold two methods agreeing proves little.
     /// </summary>
     public bool Distinct { get; init; }
+
+    /// <summary>Gets a value indicating whether the hold's colour is close to the colour of the wall around it.</summary>
+    public bool Pale { get; init; }
 }

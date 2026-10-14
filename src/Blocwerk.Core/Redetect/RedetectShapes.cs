@@ -46,7 +46,9 @@ public static class RedetectShapes
         // Measured from the old outline: taken from the detection when it was measured, else unknown until measured again.
         hold.InvalidateGlyphPosition();
         hold.InvalidateGlyphSize();
-        hold.FootprintMm = null;
+
+        // The 3D footprint was traced from the old outline. It stays until the refine that follows has a new one: a
+        // hold the refine cannot solve keeps the shape it had instead of losing it.
         hold.FingerprintJson = fresh.FingerprintJson ?? hold.FingerprintJson;
         if (fresh.MetricSource is not null)
         {

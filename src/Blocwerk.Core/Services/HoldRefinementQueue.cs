@@ -101,7 +101,7 @@ public sealed class HoldRefinementQueue(IServiceScopeFactory scopes, ILogger<Hol
     /// The edited holds whose volume placement is missing or stale, placed again on the active model's visible volumes; the
     /// replaced placements are recorded in the model's rolling edit run, so reverting it restores them too.
     /// </summary>
-    private static async Task PlaceOnVolumesAsync(BlocwerkDbContext db, Guid wallId, IReadOnlyCollection<Guid> holdIds, CancellationToken ct)
+    private async Task PlaceOnVolumesAsync(BlocwerkDbContext db, Guid wallId, IReadOnlyCollection<Guid> holdIds, CancellationToken ct)
     {
         var modelId = await db.WallGeometryModels.AsNoTracking()
             .Where(m => m.WallId == wallId && m.IsActive).Select(m => (Guid?)m.Id).FirstOrDefaultAsync(ct);
@@ -124,6 +124,15 @@ public sealed class HoldRefinementQueue(IServiceScopeFactory scopes, ILogger<Hol
         var changed = new List<Guid>();
         await WallVolumeService.PlaceHoldsAsync(db, wallId, active, changed, ct, stale.Keys.ToHashSet());
         await HoldTexturePlacementService.RecordVolumePlacementsAsync(db, wallId, active, changed.ToDictionary(id => id, id => stale[id]), ct);
+        var lost = changed.Where(id => stale[id] is not null).ToList();
+        var still = await db.Holds.AsNoTracking().Where(h => lost.Contains(h.Id) && h.VolumePlacementJson != null).Select(h => h.Id).ToListAsync(ct);
+        foreach (var id in lost.Except(still).Order())
+        {
+            // By the placer's rule: from its new position the hold's ray meets no visible volume, so it counts as on the facet.
+            logger.LogInformation(
+                "Hold {HoldId} on wall {WallId} is no longer placed on a volume: from its new position its ray meets none. The old placement is in the model's edit run",
+                id, wallId);
+        }
     }
 
     /// <inheritdoc />

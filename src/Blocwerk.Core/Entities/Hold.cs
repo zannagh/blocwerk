@@ -114,6 +114,10 @@ public partial class Hold
     [NotMapped]
     public bool OutlineDistinct { get; set; }
 
+    /// <summary>True on a fresh detection of a hold whose colour is close to the wall's (see <c>HoldOutlineResult.Pale</c>). Not stored.</summary>
+    [NotMapped]
+    public bool OutlinePale { get; set; }
+
     /// <summary>
     /// Why a panel update's triage suggested to discard this staged detection (a <see cref="NewHoldDiscardReason"/> name),
     /// written while the update is staged so the change journal's delete entry of the promote carries it. Null on every
@@ -286,6 +290,7 @@ public partial class Hold
         DetectedBox = DetectedBox,
         OutlineCorroborated = OutlineCorroborated,
         OutlineDistinct = OutlineDistinct,
+        OutlinePale = OutlinePale,
         DiscardReason = DiscardReason,
         Generation = Generation,
         NeedsReview = NeedsReview,
