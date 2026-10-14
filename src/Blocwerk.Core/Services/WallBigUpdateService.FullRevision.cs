@@ -93,7 +93,7 @@ public partial class WallBigUpdateService
             wall.Id, centerPanelId, [], [], centerHolds.Select(h => h.Id).ToList(), neighbours,
             CarriedPanels: [],
             CarriedOldHoldIds: [],
-            SuggestedNewDiscards: triage.Discards,
+            SuggestedNewDiscards: FullRevisionNeighbours.WithPairedTwins(triage.Discards, neighbours),
             SeenIn3DHoldIds: triage.SeenIn3D,
             Evidence3DModelId: triage.Evidence3DModelId,
             ConflictingNew: use3DEvidence ? triage.ConflictingNew : null);
