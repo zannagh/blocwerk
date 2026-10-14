@@ -1,5 +1,6 @@
-@* The 3D schematic inline on the wall / boulder page (WallViewSwitch's "3D" side): plain facets with
-   every hold as its real outline, the boulder highlighted when BoulderId is set. The view is built
+@* The 3D schematic inline on the wall / boulder page (the 3D side of their photo / 3D switch): plain facets
+   with every hold as its real outline, the boulder highlighted (glowing outlines, with the focus lightbulb)
+   when BoulderId is set. The view is built
    through IWall3DViewService, which reads the wall exactly as the host page does (members, the
    kiosk on its own wall, share tokens), so it can show nothing the page could not. *@
 @using Blocwerk.Core.Geometry.View3D
@@ -17,7 +18,8 @@
     else
     {
         <div class="wall3d-inline-stage">
-            <Wall3DStage View="result.View" InitialMode="schematic" HintOnce="true" />
+            <Wall3DStage View="result.View" InitialMode="schematic" HintOnce="true"
+                         BoulderFocus="BoulderId is not null" Tools="Tools" />
         </div>
         @if (result.View.BoulderName is not null)
         {
@@ -44,6 +46,9 @@
 
     /// <summary>The share token, when the host page is a share-link route.</summary>
     [Parameter] public string? ShareToken { get; set; }
+
+    /// <summary>Round tool buttons for the viewer's tool column (the wall page's switch back to the photos).</summary>
+    [Parameter] public RenderFragment? Tools { get; set; }
 
     private string StatusMessage => result?.Status switch
     {

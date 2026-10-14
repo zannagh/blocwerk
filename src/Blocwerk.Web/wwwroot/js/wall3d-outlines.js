@@ -8,7 +8,8 @@ import * as THREE from '../lib/three/three.module.min.js';
 import { holdColor, holdFrame, outlineOf, volumeBase, volumeShift } from './wall3d-holds.js';
 import { raisedSegments } from './wall3d-relief.js';
 
-function rings(h) {
+/** A hold's traced outline and its pocket holes. */
+export function rings(h) {
     const holes = (h.shape && h.shape.holes ? h.shape.holes : []).filter(r => r.length >= 3);
     return [outlineOf(h), ...holes];
 }
@@ -20,7 +21,7 @@ const centroid = ring => ring.reduce((s, p) => [s[0] + p[0] / ring.length, s[1] 
  * map: a protruding hold is seen from the photo that painted it), its pocket holes moved along; the
  * traced shape when the payload has none (older textures).
  */
-function photoRings(h) {
+export function photoRings(h) {
     const o = h.photoOutline;
     if (!o || o.length < 3) return rings(h);
     const [c0, c1] = [centroid(outlineOf(h)), centroid(o)];

@@ -28,6 +28,19 @@ public static class BoulderHoldColors
     /// </summary>
     public const string Foot = "#FF9800";
 
+    /// <summary>
+    /// The role colours of the 3D view (wwwroot/js/wall3d.js), keyed by its hold roles: the colours
+    /// <see cref="Outline"/> gives the boulder view's outlines.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> Wall3DRoles { get; } = new Dictionary<string, string>
+    {
+        ["Start"] = Start,
+        ["Top"] = Top,
+        ["Hand"] = Normal,
+        ["Foot"] = Foot,
+        ["ColorFoot"] = Foot,
+    };
+
     /// <summary>The stroke color for a hold of the given type.</summary>
     public static string Stroke(HoldType type) => type switch
     {

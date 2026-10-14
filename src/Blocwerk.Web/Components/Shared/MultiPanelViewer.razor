@@ -54,6 +54,8 @@ else
             </button>
         }
 
+        @PhotoTools
+
         @if (BoulderFocus)
         {
             <BoulderFocusButton />
@@ -269,6 +271,9 @@ else
     /// Left false on the wall page, so its panels are never dimmed.
     /// </summary>
     [Parameter] public bool BoulderFocus { get; set; }
+
+    /// <summary>A round tool to the left of "Show all holds" on the photo: the wall page's photo / 3D switch.</summary>
+    [Parameter] public RenderFragment? PhotoTools { get; set; }
 
     /// <summary>
     /// When true, show the "open in full screen" button that lifts the panel into the landscape

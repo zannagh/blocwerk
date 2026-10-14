@@ -2,7 +2,7 @@
 // (Wall3DHoldShape, mm relative to its plane centre, pocket holes included) becomes a shallow
 // bevelled slab lying on its facet. ~880 holds would be ~880 draw calls as separate meshes, so every
 // slab is baked into world space and merged into ONE geometry per state (lit / dimmed) with
-// per-vertex colour; the boulder rings stay one InstancedMesh. Picking goes through a separate,
+// per-vertex colour (a highlighted boulder's holds are glowing outlines instead, wall3d-glow.js). Picking goes through a separate,
 // never-drawn geometry: each hold's outer outline WITHOUT its holes (a tap inside a pocket still
 // selects the hold, as in the 2D views) as a prism from the surface it sits on up to its cap
 // (wall3d-relief.js), the shape the photo-real overlay draws.
@@ -14,7 +14,6 @@ const BASE_LIFT = 3.5;            // slab base above the facet: over the photo (
 /** Height of the Photos-mode outline lines above their facet (wall3d-outlines.js). */
 export const OUTLINE_LIFT = BASE_LIFT + 1.5;
 const FOOT_DARKEN = 0.28;         // feet read darker than hand holds
-const RING_SCALE = 1.3;           // boulder-role ring, relative to the outline's bounding box
 const CIRCLE_SEGMENTS = 24;
 /** Opacity of a ghosted facet's holds (wall3d-ghost.js). */
 export const GHOST_OPACITY = 0.18;
@@ -194,24 +193,21 @@ export function holdColor(h, dimmed) {
     return c;
 }
 
-/**
- * A flat ring matrix around a hold's outline, `scale` × its bounding box, just above its slab / cap;
- * `raised`: around the photo-real overlay's cap instead (a hold on a volume moved onto it).
- */
-export function ringMatrix(h, facet, scale, raised = false) {
+/** A flat ring matrix around a hold's outline (the selection halo), `scale` × its bounding box, just above its slab / cap. */
+export function ringMatrix(h, facet, scale) {
     const f = footprint(h);
-    const r = reliefOf(h);
-    const m = raised || volumeShift(h) ? holdFrame(h, facet, (raised ? r.cap : topOf(h)) + 1.5, r.shift) : holdFrame(h, facet, topOf(h) + 1.5);
+    const m = volumeShift(h) ? holdFrame(h, facet, topOf(h) + 1.5, reliefOf(h).shift) : holdFrame(h, facet, topOf(h) + 1.5);
     m.multiply(new THREE.Matrix4().makeTranslation(f.ca, f.cb, 0));
     return m.scale(new THREE.Vector3(f.w * scale, f.h * scale, 1));
 }
 
 /**
- * Holds as outline slabs: `lit` (normal, or the highlighted boulder's holds), `dim` (everything else
- * while a boulder is highlighted), `rings` (boulder roles) and `pick` (never drawn). `holdAt(intersection)` maps a pick hit to its hold.
+ * Holds as outline slabs: `lit` (every hold; none while a boulder is highlighted, whose holds wall3d-glow.js
+ * draws), `dim` (everything else while a boulder is highlighted) and `pick` (never drawn); `litHolds` are
+ * the boulder's holds while one is highlighted. `holdAt(intersection)` maps a pick hit to its hold.
  * `sides` (wall3d-sides.js) hides the slabs of facets the camera is behind.
  */
-export function buildHolds(view, roleColors, sides) {
+export function buildHolds(view, sides) {
     const facets = new Map(view.facets.map(f => [f.id, f]));
     const holds = view.holds.filter(h => facets.has(h.facetId));
     const highlighting = !!view.boulderId;
@@ -221,7 +217,8 @@ export function buildHolds(view, roleColors, sides) {
     const slabs = (list, dimmed) => merge(list.map(h => ({
         geo: slab(h, facets.get(h.facetId)), color: holdColor(h, dimmed), slot: sides.index.get(h.facetId),
     })));
-    const litGeo = slabs(lit, false).geometry;
+    // A highlighted boulder's holds have no slab: they are drawn as glowing outlines (wall3d-glow.js).
+    const litGeo = slabs(highlighting ? [] : lit, false).geometry;
     const litMesh = new THREE.Mesh(litGeo, sides.cullBehind(
         new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.02, side: THREE.DoubleSide }), 'solid'));
     // The same slabs, faded, for a facet ghosted out of the camera's way (wall3d-ghost.js).
@@ -233,33 +230,12 @@ export function buildHolds(view, roleColors, sides) {
     })));
     dimMesh.renderOrder = 2;
 
-    const ringGeo = new THREE.RingGeometry(0.44, 0.5, 40);
-    // Front side only: a ring lies flat on its facet, facing out, so from behind the wall it is culled.
-    // Transparent (drawn late): in photo-real the rings go over the splat (wall3d-overlay.js).
-    const ringMesh = new THREE.InstancedMesh(ringGeo, new THREE.MeshBasicMaterial({ side: THREE.FrontSide, transparent: true }),
-        Math.max(1, highlighting ? lit.length : 0));
-    ringMesh.renderOrder = 6;
-    ringMesh.count = highlighting ? lit.length : 0;
-    const color = new THREE.Color();
-    // Photo-real puts the rings around the raised overlay (wall3d-overlay.js); the other modes around the slabs.
-    ringMesh.userData.setRaised = raised => {
-        if (!highlighting) return;
-        lit.forEach((h, i) => ringMesh.setMatrixAt(i, ringMatrix(h, facets.get(h.facetId), RING_SCALE, raised)));
-        ringMesh.instanceMatrix.needsUpdate = true;
-        ringMesh.computeBoundingSphere();
-    };
-    if (highlighting) {
-        lit.forEach((h, i) => ringMesh.setColorAt(i, color.set(roleColors[h.role] || roleColors.Hand)));
-        if (ringMesh.instanceColor) ringMesh.instanceColor.needsUpdate = true;
-        ringMesh.userData.setRaised(false);
-    }
-
     const ordered = [...lit, ...dim];
     const picked = merge(ordered.map(h => ({ geo: pickPrism(h, facets.get(h.facetId)) })));
     const pick = new THREE.Mesh(picked.geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, visible: false }));
 
     return {
-        lit: litMesh, dim: dimMesh, rings: ringMesh, pick, facets,
+        lit: litMesh, dim: dimMesh, pick, facets,
         litHolds: lit, dimHolds: dim, all: ordered,
         holdAt: hit => (hit && hit.faceIndex != null ? ordered[partOf(picked.starts, hit.faceIndex)] : null),
     };

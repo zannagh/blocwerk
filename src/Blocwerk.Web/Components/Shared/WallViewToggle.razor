@@ -1,0 +1,75 @@
+@* The photo / 3D switch of the wall and boulder pages: one button that flips between the photos and the
+   inline 3D view (Wall3DInline). Renders only when the wall has an active geometry model, so a wall
+   without a 3D view never shows it.
+     Pill  — the boulder page's header button (.btn-view3d): a cube and "3D" on the photos, a photo and
+             "Photos" on the 3D view. Named after what it does, so its label and its name always agree.
+     round — the wall page's tool next to "Show all holds" (.heat-tool): a stable name and aria-pressed,
+             like that button; the icon shows where a tap goes. *@
+@inject IWall3DViewService ViewService
+
+@if (available)
+{
+    @if (Pill)
+    {
+        <button type="button" class="btn-view3d" aria-label="@(Show3D ? "Show the photos" : "Show in 3D")"
+                title="@(Show3D ? "Back to the photos" : "The measured 3D model, this boulder highlighted")"
+                @onclick="Toggle">
+            @Icon(16)
+            @(Show3D ? "Photos" : "3D")
+        </button>
+    }
+    else
+    {
+        <button type="button" class="heat-tool view3d-tool @(Show3D ? "active" : null)" aria-label="3D view"
+                aria-pressed="@(Show3D ? "true" : "false")"
+                title="@(Show3D ? "Back to the photos" : "The measured 3D model, every hold as its real outline")"
+                @onclick="Toggle">
+            @Icon(22)
+        </button>
+    }
+}
+
+@code {
+    private bool available;
+    private Guid checkedWallId;
+
+    [Parameter, EditorRequired] public Guid WallId { get; set; }
+
+    /// <summary>True while the host shows the 3D view.</summary>
+    [Parameter] public bool Show3D { get; set; }
+
+    [Parameter] public EventCallback<bool> Show3DChanged { get; set; }
+
+    /// <summary>The boulder page's labelled header pill instead of the round photo tool.</summary>
+    [Parameter] public bool Pill { get; set; }
+
+    // Parameters, not OnInitializedAsync: the host page may be reused for another wall.
+    protected override async Task OnParametersSetAsync()
+    {
+        if (checkedWallId == WallId)
+        {
+            return;
+        }
+
+        checkedWallId = WallId;
+        available = false;
+        available = WallId != Guid.Empty && await ViewService.HasActiveGeometryAsync(WallId);
+    }
+
+    private Task Toggle() => Show3DChanged.InvokeAsync(!Show3D);
+
+    // On the photos a cube (go to 3D); on the 3D view a photo (go back to the photos).
+    private RenderFragment Icon(int size) => Show3D
+        ? @<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="@size" height="@size"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <circle cx="8.5" cy="8.5" r="1.5" />
+              <path d="M21 15l-5-5L5 21" />
+          </svg>
+        : @<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="@size" height="@size"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 2 3 7v10l9 5 9-5V7z" />
+              <path d="M3 7l9 5 9-5" />
+              <path d="M12 12v10" />
+          </svg>;
+}
