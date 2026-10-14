@@ -283,6 +283,7 @@ give the job memory to match (`SPLAT_MAX_MEMORY_MB` unset, container limit ≥ 1
 | `RUNNER_TEXTURES` | 1 | `0` = never advertise the `textures` capability (below) |
 | `TEXTURES_BLEND_MAX_BYTES` | 50 % of the machine's memory | the multi-view blend's budget for a wall-textures job (the wall-geometry service's own variable); advertised as `texturesMemoryMb`. `RUNNER_TEXTURES_MEMORY_FRACTION` (0.1 to 0.9) changes the 50 % |
 | `RUNNER_TEXTURES_MAX_IMAGE_MP` | 200 | OpenCV's decode limit per photo of a textures job |
+| `RUNNER_HOLDS` | 1 | `0` = never advertise the `detect-holds` capability (hold detection, below) |
 
 ## Run natively on a Mac (the "external GPU")
 
@@ -596,6 +597,19 @@ and uploads a flat zip with `textures.json` (the manifest) and every `facet_*.jp
 it names, uncompressed again, to the usual `PUT .../result`. The server installs those files exactly like a render on the
 host. A pause kills the child and hands the job back free; a job that needs more than the runner's budget goes back as its
 (retryable) failure; inconsistent inputs fail for good.
+
+### Hold detection (`detect-holds` jobs)
+
+After a capture the server searches every capture photo for holds it does not know yet (the hold proposals); in the app
+that is its YOLO detector on the CPU, photo after photo. A runner whose Python has ONNX Runtime (in `requirements.txt`)
+advertises `"detect-holds"` in `capabilities` (`RUNNER_HOLDS=0` turns it off) and gets the job instead (`kind:
+"detect-holds"`): a zip of `holds-job.json` (the app's tiling settings), `model.onnx` (the app's own model) and
+`photos/<camera name>.jpg|png`. `gpurunner/holds_detect.py` replays the app's tiled detection box for box (YoloDotNet's
+letterbox, decode and NMS, the server's window merge) and uploads `{"version": 1, "photos": {camera: {"width", "height",
+"boxes": [[left, top, right, bottom, confidence, label], ...]}}}` (gzip) to `PUT .../result`. The server turns the boxes
+into holds itself. It waits `RUNNERS__HOLDSCLAIMMINUTES` (10) for a claim and `RUNNERS__HOLDSMAXMINUTES` (180) overall,
+then detects in the app; an older runner never advertises the kind, so nothing changes for it.
+`RUNNER_HOLDS_THREADS` sets ONNX Runtime's threads, `RUNNER_HOLDS_MAX_IMAGE_MP` (200) the largest photo it decodes.
 
 ### Status page and pause switch
 

@@ -101,16 +101,18 @@ public sealed partial class GpuJobQueue
 
     /// <summary>
     /// The queued jobs this runner is offered: splat jobs unless it advertises only <c>textures</c>, and textures jobs only
-    /// when it advertises <c>textures</c> and has the memory the job needs. A runner without capabilities (an older version)
-    /// never sees a textures job.
+    /// when it advertises <c>textures</c> and has the memory the job needs, hold detection jobs only when it advertises
+    /// <c>detect-holds</c>. A runner without capabilities (an older version) never sees a textures or hold detection job.
     /// </summary>
     private static IQueryable<GpuJob> OfferedKinds(IQueryable<GpuJob> queued, GpuRunner runner)
     {
         var splat = RunnerCapabilities.Allows(runner.Capabilities, GpuJobKind.Splat);
         var textures = RunnerCapabilities.Allows(runner.Capabilities, GpuJobKind.Textures);
+        var holds = RunnerCapabilities.Allows(runner.Capabilities, GpuJobKind.DetectHolds);
         var memory = runner.TexturesMemoryMb ?? 0;
         return queued.Where(j => (splat && j.Kind == GpuJobKind.Splat)
-                                 || (textures && j.Kind == GpuJobKind.Textures && (j.RequiredMemoryMb ?? 0) <= memory));
+                                 || (textures && j.Kind == GpuJobKind.Textures && (j.RequiredMemoryMb ?? 0) <= memory)
+                                 || (holds && j.Kind == GpuJobKind.DetectHolds));
     }
 
     /// <summary>Whether a runner with these reported facts could take <paramref name="job"/> (quality, kind, memory).</summary>

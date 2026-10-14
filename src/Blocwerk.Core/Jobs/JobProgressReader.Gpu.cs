@@ -62,10 +62,15 @@ public sealed partial class JobProgressReader
             return null;
         }
 
-        var textures = job.Kind == GpuJobKind.Textures;
-        var kind = textures ? JobKinds.GpuTextures : JobKinds.GpuTraining;
+        var training = job.Kind == GpuJobKind.Splat;
+        var kind = job.Kind switch
+        {
+            GpuJobKind.Textures => JobKinds.GpuTextures,
+            GpuJobKind.DetectHolds => JobKinds.GpuHolds,
+            _ => JobKinds.GpuTraining,
+        };
         var stage = TrainingStage(job, state);
-        var (eta, source) = state == JobStates.Running && !textures ? TrainingEta(job, stage, context) : (null, null);
+        var (eta, source) = state == JobStates.Running && training ? TrainingEta(job, stage, context) : (null, null);
         return new JobProgressItem
         {
             Id = $"{kind}:{job.Id}",
@@ -87,7 +92,7 @@ public sealed partial class JobProgressReader
             GpuJobId = job.Id,
             RunnerName = state == JobStates.Running ? runner : null,
             Attempts = job.Attempts,
-            Training = textures ? null : Facts(job, context.Now),
+            Training = training ? Facts(job, context.Now) : null,
         };
     }
 
@@ -128,7 +133,12 @@ public sealed partial class JobProgressReader
 
         return job.Status == GpuJobStatus.Claimed || (job.Step is null && job.Stage?.Contains("download", StringComparison.Ordinal) == true)
             ? "download"
-            : job.Kind == GpuJobKind.Textures ? "rendering" : "training";
+            : job.Kind switch
+            {
+                GpuJobKind.Textures => "rendering",
+                GpuJobKind.DetectHolds => "detecting",
+                _ => "training",
+            };
     }
 
     private static JobTrainingFacts Facts(GpuJob job, DateTimeOffset now)

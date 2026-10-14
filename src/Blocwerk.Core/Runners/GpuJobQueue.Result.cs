@@ -67,7 +67,12 @@ public sealed partial class GpuJobQueue
             return refused;
         }
 
-        var format = claimed.Kind == GpuJobKind.Textures ? ValidateStoredTextures(stored, runner, jobId) : ValidateStored(stored, runner, jobId);
+        var format = claimed.Kind switch
+        {
+            GpuJobKind.Textures => ValidateStoredTextures(stored, runner, jobId),
+            GpuJobKind.DetectHolds => ValidateStoredHolds(stored, runner, jobId),
+            _ => ValidateStored(stored, runner, jobId),
+        };
         if (format is null)
         {
             files.Delete(stored);
@@ -198,7 +203,7 @@ public sealed partial class GpuJobQueue
                     .SetProperty(j => j.ResultBytes, bytes)
                     .SetProperty(j => j.ResultStatsJson, stats)
                     .SetProperty(j => j.Progress, 1)
-                    .SetProperty(j => j.Stage, kind == GpuJobKind.Textures ? "rendered; installing on the server" : "trained; finishing on the server")
+                    .SetProperty(j => j.Stage, DeliveredStage(kind))
                     .SetProperty(j => j.LeaseExpiresAt, retryAt)
                     .SetProperty(j => j.CompletedAt, now)
                     .SetProperty(j => j.Error, (string?)null),
@@ -216,6 +221,12 @@ public sealed partial class GpuJobQueue
         if (kind == GpuJobKind.Textures)
         {
             NotifyTextures(captureId);
+            return RunnerJobOutcome.Ok;
+        }
+
+        if (kind == GpuJobKind.DetectHolds)
+        {
+            // The hold search that queued it is polling for it; nothing goes back to the capture pipeline.
             return RunnerJobOutcome.Ok;
         }
 

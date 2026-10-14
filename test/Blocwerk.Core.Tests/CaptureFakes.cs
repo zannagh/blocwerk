@@ -73,8 +73,16 @@ internal sealed class FakeComputeJobClient : IComputeJobClient
         return Submit(kind);
     }
 
-    public Task<ComputeJobStatus> GetStatusAsync(string jobId, CancellationToken ct)
+    /// <summary>Awaited before every status answer, ignoring cancellation (a stage busy in a call that does not stop at once).</summary>
+    public Func<Task>? StatusGate { get; set; }
+
+    public async Task<ComputeJobStatus> GetStatusAsync(string jobId, CancellationToken ct)
     {
+        if (StatusGate is { } gate)
+        {
+            await gate();
+        }
+
         if (Forgotten.Contains(jobId) || !kinds.TryGetValue(jobId, out var kind))
         {
             throw new ComputeJobException(ComputeFailureKind.JobNotFound, "gone");
@@ -83,10 +91,10 @@ internal sealed class FakeComputeJobClient : IComputeJobClient
         polls[jobId] = polls.GetValueOrDefault(jobId) + 1;
         if (polls[jobId] == 1 || NeverFinish.Contains(kind))
         {
-            return Task.FromResult(new ComputeJobStatus { JobId = jobId, Status = ComputeJobStates.Running, Progress = 0.5, Stage = "working" });
+            return new ComputeJobStatus { JobId = jobId, Status = ComputeJobStates.Running, Progress = 0.5, Stage = "working" };
         }
 
-        return Task.FromResult(Terminal.TryGetValue(kind, out var scripted) ? scripted : Succeeded(jobId, kind));
+        return Terminal.TryGetValue(kind, out var scripted) ? scripted : Succeeded(jobId, kind);
     }
 
     /// <summary>

@@ -34,11 +34,31 @@ public sealed partial class WallCaptureProcessor
     }
 
     /// <summary>
-    /// Once the capture shows as done (its model ready, its photo-real view stored or waiting for a runner): the
-    /// slow proposal steps, still on this background worker. A capture handed back to the photo-real stage in the
-    /// meantime skips them here and runs them when it is done again.
+    /// Once the capture shows as done (its model ready, its photo-real view stored or waiting for a runner): the slow
+    /// proposal steps. They are marked on the record and handed to <see cref="AfterCompletionWorker"/>, so this worker
+    /// takes the next capture at once (without that queue, in tests, they run here as before). A capture handed back to the
+    /// photo-real stage in the meantime skips them and runs them when it is done again.
     /// </summary>
-    private Task AfterCompletionAsync(CaptureRun run, CancellationToken ct) => FollowUpAsync(run, CaptureFollowUpPhase.AfterCompletion, ct);
+    private async Task AfterCompletionAsync(CaptureRun run, CancellationToken ct)
+    {
+        if (followUps is null || afterCompletion is null)
+        {
+            await FollowUpAsync(run, CaptureFollowUpPhase.AfterCompletion, ct);
+            return;
+        }
+
+        try
+        {
+            if (await followUps.MarkAfterCompletionAsync(run.Capture.Id, ct) is not null)
+            {
+                afterCompletion.Enqueue(run.Capture.Id);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Capture {CaptureId}: the after-completion steps could not be queued", run.Capture.Id);
+        }
+    }
 
     /// <summary>
     /// Puts a plain-words note on the capture's follow-up record (e.g. why there is no photo-real view), as a conditional

@@ -11,6 +11,7 @@ using Blocwerk.Core.Enums;
 using Blocwerk.Core.Geometry;
 using Blocwerk.Core.Geometry.Footprints;
 using Blocwerk.Core.Geometry.Proposals;
+using Blocwerk.Core.Runners;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -57,12 +58,17 @@ public sealed partial class HoldProposalService(
     }
 
     /// <inheritdoc />
-    public async Task<HoldProposalRunResult?> FindFromPipelineAsync(Guid wallId, CancellationToken ct = default)
+    public Task<HoldProposalRunResult?> FindFromPipelineAsync(Guid wallId, CancellationToken ct = default) =>
+        FindFromPipelineAsync(wallId, null, ct);
+
+    /// <inheritdoc />
+    public async Task<HoldProposalRunResult?> FindFromPipelineAsync(
+        Guid wallId, IReadOnlyDictionary<string, RunnerPhotoHolds>? detected, CancellationToken ct = default)
     {
         await Gate.WaitAsync(ct);
         try
         {
-            return await RunAsync(wallId, ct);
+            return await RunAsync(wallId, ct, detected: detected);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -75,6 +81,31 @@ public sealed partial class HoldProposalService(
         }
     }
 
+    /// <summary>
+    /// A runner's detections of a photo on its solved camera's grid, with the same checks as a photo decoded here: none when
+    /// the photo's orientation differs from the camera's, else scaled from the runner's decoded size.
+    /// </summary>
+    internal static List<CaptureDetection> OnSolvedGrid(RunnerPhotoHolds found, SolvedCamera camera)
+    {
+        if ((found.Width >= found.Height) != (camera.Width >= camera.Height))
+        {
+            return [];
+        }
+
+        var sx = camera.Width > 0 ? (double)camera.Width / found.Width : 1;
+        return found.Detections.Select(d => d with { Px = d.Px * sx, Py = d.Py * sx, RadiusPx = d.RadiusPx * sx }).ToList();
+    }
+
+    /// <summary>The stored photo of every camera name the model's captures have (what the search reads, and a runner gets).</summary>
+    internal static async Task<Dictionary<string, string>> CapturePhotosAsync(BlocwerkDbContext db, Guid modelId, CancellationToken ct)
+    {
+        var rows = await db.WallCapturePhotos.AsNoTracking()
+            .Where(p => p.Capture.GeometryModelId == modelId)
+            .Select(p => new { p.Index, p.OriginalFileName, p.StoredPath })
+            .ToListAsync(ct);
+        return CameraPhotoNames.Map(rows.Select(r => (r.Index, r.OriginalFileName, r.StoredPath)));
+    }
+
     private async Task EnsureAdminAsync(Guid wallId, CancellationToken ct)
     {
         var user = await currentUserService.GetCurrentUserAsync();
@@ -84,7 +115,8 @@ public sealed partial class HoldProposalService(
         await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, ct);
     }
 
-    private async Task<HoldProposalRunResult?> RunAsync(Guid wallId, CancellationToken ct, IProgress<HoldSearchProgress>? progress = null)
+    private async Task<HoldProposalRunResult?> RunAsync(
+        Guid wallId, CancellationToken ct, IProgress<HoldSearchProgress>? progress = null, IReadOnlyDictionary<string, RunnerPhotoHolds>? detected = null)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);
         var model = await db.WallGeometryModels.AsNoTracking()
@@ -104,16 +136,17 @@ public sealed partial class HoldProposalService(
         }
 
         var watch = Stopwatch.StartNew();
-        var detections = await DetectAllAsync(detector, cameras, photos, progress, ct);
+        var detections = await DetectAllAsync(detector, cameras, photos, progress, detected, ct);
         var inputs = await ProposalInputs.LoadAsync(db, wallId, model.Id, WallGeometryDocument.Parse(model.Json), ct);
         var reviewed = await db.HoldProposals.AsNoTracking()
             .Where(p => p.WallId == wallId && p.Status != HoldProposalStatus.Pending)
             .Select(p => new[] { p.X, p.Y, p.Z }).ToListAsync(ct);
         var (candidates, clusters) = await Task.Run(() => HoldProposalFinder.Find(cameras, detections, inputs.Facets, inputs.Known, reviewed), ct);
         var onPanels = await ReplacePendingAsync(db, wallId, model.Id, candidates, inputs, ct);
+        var by = detected is null ? detector.Name : $"{detector.Name}, {detected.Count} on a 3D runner";
         logger.LogInformation(
             "Hold proposals on wall {WallId}: {Photos} photos ({Detector}), {Detections} detections, {Clusters} multi-view holds, {Proposals} proposed ({OnPanels} on a panel photo), {Ms} ms",
-            wallId, cameras.Count, detector.Name, detections.Count, clusters, candidates.Count, onPanels, watch.ElapsedMilliseconds);
+            wallId, cameras.Count, by, detections.Count, clusters, candidates.Count, onPanels, watch.ElapsedMilliseconds);
         return new HoldProposalRunResult(cameras.Count, detections.Count, clusters, candidates.Count, onPanels, detector.Name);
     }
 
@@ -130,10 +163,13 @@ public sealed partial class HoldProposalService(
         return null;
     }
 
-    /// <summary>Detections of every photo whose decoded size matches its solved camera (rotated photos are skipped).</summary>
+    /// <summary>
+    /// Detections of every photo whose decoded size matches its solved camera (rotated photos are skipped). A photo a 3D runner
+    /// already searched (<paramref name="detected"/>) is taken from there; the others are detected here.
+    /// </summary>
     private async Task<List<CaptureDetection>> DetectAllAsync(
         ICaptureHoldDetector detector, Dictionary<string, SolvedCamera> cameras, Dictionary<string, string> photos,
-        IProgress<HoldSearchProgress>? progress, CancellationToken ct)
+        IProgress<HoldSearchProgress>? progress, IReadOnlyDictionary<string, RunnerPhotoHolds>? detected, CancellationToken ct)
     {
         var all = new List<CaptureDetection>();
         var done = 0;
@@ -142,6 +178,14 @@ public sealed partial class HoldProposalService(
         {
             ct.ThrowIfCancellationRequested();
             progress?.Report(new HoldSearchProgress(done++, cameras.Count));
+            if (detected is not null && detected.TryGetValue(name, out var onRunner))
+            {
+                var fromRunner = OnSolvedGrid(onRunner, camera);
+                CaptureDetectionCache.Put(photos[name], detector.Name, fromRunner);
+                all.AddRange(fromRunner);
+                continue;
+            }
+
             if (CaptureDetectionCache.Get(photos[name], detector.Name) is { } cached)
             {
                 all.AddRange(cached);
@@ -163,14 +207,5 @@ public sealed partial class HoldProposalService(
         }
 
         return all;
-    }
-
-    private static async Task<Dictionary<string, string>> CapturePhotosAsync(BlocwerkDbContext db, Guid modelId, CancellationToken ct)
-    {
-        var rows = await db.WallCapturePhotos.AsNoTracking()
-            .Where(p => p.Capture.GeometryModelId == modelId)
-            .Select(p => new { p.Index, p.OriginalFileName, p.StoredPath })
-            .ToListAsync(ct);
-        return CameraPhotoNames.Map(rows.Select(r => (r.Index, r.OriginalFileName, r.StoredPath)));
     }
 }
