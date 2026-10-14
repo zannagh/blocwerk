@@ -17,7 +17,8 @@ public static class RedetectProposals
     public const double SafeIou = 0.5;
 
     /// <summary>...and the two are at most this far apart in size, measured across. The detected outline also has to be
-    /// corroborated (<see cref="Entities.Hold.OutlineCorroborated"/>): what only one method traced is looked at.</summary>
+    /// corroborated (<see cref="Entities.Hold.OutlineCorroborated"/>): what only one method traced is looked at.
+    /// On top of that it has to pass every check of <see cref="RedetectSafety"/>.</summary>
     public const double SafeSizeRatio = 1.35;
 
     /// <summary>Builds the proposals of one planned re-detect.</summary>
@@ -34,13 +35,26 @@ public static class RedetectProposals
     /// <param name="stacks">Stored holds of this photo that sit on another stored hold and are not recorded as such.</param>
     /// <param name="options">The thresholds.</param>
     /// <returns>The proposals.</returns>
-    public static List<RedetectProposal> Build(RedetectInput input, RedetectDecisions decisions, IReadOnlyList<HoldStackPlan> stacks, HoldSamenessOptions options)
+    public static List<RedetectProposal> Build(RedetectInput input, RedetectDecisions decisions, IReadOnlyList<HoldStackPlan> stacks, HoldSamenessOptions options) =>
+        Build(input, decisions, stacks, options, 1);
+
+    /// <summary>Builds the proposals of one planned re-detect.</summary>
+    /// <param name="input">What the planner worked on.</param>
+    /// <param name="decisions">What it decided.</param>
+    /// <param name="stacks">Stored holds of this photo that sit on another stored hold and are not recorded as such.</param>
+    /// <param name="options">The thresholds.</param>
+    /// <param name="aspect">Photo width / height.</param>
+    /// <returns>The proposals, each with the stamp of what it shows.</returns>
+    public static List<RedetectProposal> Build(
+        RedetectInput input, RedetectDecisions decisions, IReadOnlyList<HoldStackPlan> stacks, HoldSamenessOptions options, double aspect)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(decisions);
         ArgumentNullException.ThrowIfNull(stacks);
         var byId = input.Existing.ToDictionary(e => e.Hold.Id, e => e.Hold);
+        var existing = input.Existing.ToDictionary(e => e.Hold.Id);
+        var safety = new RedetectSafety(input, aspect);
         var proposals = new List<RedetectProposal>();
         proposals.AddRange(decisions.Splits.Select(s => new RedetectProposal($"split:{s.HoldId}", RedetectProposalKind.Split, s.HoldId, [], s.Detections, false, 0)));
         proposals.AddRange(decisions.Merges.Concat(decisions.LikelyMerges).Select(m =>
@@ -50,7 +64,10 @@ public static class RedetectProposals
         proposals.AddRange(decisions.NewDetections.Select(i => new RedetectProposal($"new:{i}", RedetectProposalKind.NewHold, null, [], [i], false, 0)));
         proposals.AddRange(decisions.Removed.Select(id => new RedetectProposal($"gone:{id}", RedetectProposalKind.NotFound, id, [], [], false, 0)));
         proposals.AddRange(decisions.HandOffers.Select(o =>
-            new RedetectProposal($"hand:{o.HoldId}", RedetectProposalKind.HandShape, o.HoldId, [], [o.Detection], false, Overlap(byId[o.HoldId], input, o.Detection).Iou)));
+            new RedetectProposal($"hand:{o.HoldId}", RedetectProposalKind.HandShape, o.HoldId, [], [o.Detection], false, Overlap(byId[o.HoldId], input, o.Detection).Iou)
+            {
+                Unsure = safety.Check(existing[o.HoldId], input.Detections[o.Detection].Shape).Unsure,
+            }));
 
         // A circle a person placed marks the spot, not a shape: an outline for it is safe when the detector is sure
         // and the outline is about the circle's size. The hold keeps its position, name, colour and boulders.
@@ -58,17 +75,23 @@ public static class RedetectProposals
         {
             var detection = input.Detections[o.Detection].Shape;
             var overlap = HoldSameness.Measure(byId[o.HoldId], new Entities.Hold { X = detection.X, Y = detection.Y, Radius = detection.Radius });
-            var safe = detection.Confidence >= options.SafeDetectorConfidence && overlap.SizeRatio <= options.MaxSizeRatio && detection.OutlineCorroborated;
-            return new RedetectProposal($"hand:{o.HoldId}", RedetectProposalKind.HandShape, o.HoldId, [], [o.Detection], safe, overlap.Iou);
+            var check = safety.Check(existing[o.HoldId], detection);
+            var safe = check.Clean && detection.Confidence >= options.SafeDetectorConfidence && overlap.SizeRatio <= options.MaxSizeRatio
+                && detection.OutlineCorroborated && detection.OutlineDistinct;
+            return new RedetectProposal($"hand:{o.HoldId}", RedetectProposalKind.HandShape, o.HoldId, [], [o.Detection], safe, overlap.Iou) { Unsure = check.Unsure };
         }));
         foreach (var update in decisions.Shapes.Where(s => s.Change == RedetectShapeChange.Replace))
         {
             var overlap = Overlap(byId[update.HoldId], input, update.Detection);
-            var safe = overlap.Iou >= SafeIou && overlap.SizeRatio <= SafeSizeRatio && input.Detections[update.Detection].Shape.OutlineCorroborated;
-            proposals.Add(new RedetectProposal($"shape:{update.HoldId}", RedetectProposalKind.BetterShape, update.HoldId, [], [update.Detection], safe, overlap.Iou));
+            var check = safety.Check(existing[update.HoldId], input.Detections[update.Detection].Shape);
+            var safe = check.Clean && overlap.Iou >= SafeIou && overlap.SizeRatio <= SafeSizeRatio && input.Detections[update.Detection].Shape.OutlineCorroborated;
+            proposals.Add(new RedetectProposal($"shape:{update.HoldId}", RedetectProposalKind.BetterShape, update.HoldId, [], [update.Detection], safe, overlap.Iou)
+            {
+                Unsure = check.Unsure,
+            });
         }
 
-        return proposals;
+        return [.. proposals.Select(p => p with { Stamp = RedetectStamps.Of(p, byId, input.Detections) })];
     }
 
     /// <summary>The decisions that are written when only the given proposals were accepted.</summary>
@@ -93,6 +116,24 @@ public static class RedetectProposals
             [.. decisions.Removed.Where(id => accepted.Contains($"gone:{id}"))],
             decisions.HandShapesKept,
             decisions.SkippedDetections);
+    }
+
+    /// <summary>
+    /// The accepted keys that may not be applied any more: the proposal is gone, or what it would write now is not what
+    /// its card showed (a hold was edited in between, or another detection now stands for it).
+    /// </summary>
+    /// <param name="shown">The proposals the person answered.</param>
+    /// <param name="current">The proposals worked out again against the holds as they are now.</param>
+    /// <param name="accepted">The keys of the accepted proposals.</param>
+    /// <returns>The stale keys, in order.</returns>
+    public static List<string> Stale(IReadOnlyList<RedetectProposal> shown, IReadOnlyList<RedetectProposal> current, IReadOnlySet<string> accepted)
+    {
+        ArgumentNullException.ThrowIfNull(shown);
+        ArgumentNullException.ThrowIfNull(current);
+        ArgumentNullException.ThrowIfNull(accepted);
+        var was = shown.ToDictionary(p => p.Key, p => p.Stamp);
+        var now = current.ToDictionary(p => p.Key, p => p.Stamp);
+        return [.. accepted.Where(k => !was.TryGetValue(k, out var stamp) || !now.TryGetValue(k, out var again) || stamp != again).Order(StringComparer.Ordinal)];
     }
 
     /// <summary>The upper holds of the accepted stack proposals.</summary>

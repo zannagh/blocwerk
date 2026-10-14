@@ -20,8 +20,8 @@ namespace Blocwerk.HoldDetection.Outlines;
 /// two-tone hold, and the colour outline stays.</item>
 /// <item>With neither, the hold gets the box's ellipse as a rough shape, never a fragment.</item>
 /// </list>
-/// Only a corroborated outline, or the model's alone where the colour pass found nothing and the outline spans the
-/// box, counts as safe to accept without a look.
+/// Only a corroborated outline (both methods agree) counts as safe to accept without a look, and for a hold that has
+/// only a circle so far the colour pass also has to be sure of its own (<see cref="ConfirmingConfidence"/>).
 /// </summary>
 internal sealed class OutlineChoice
 {
@@ -45,6 +45,12 @@ internal sealed class OutlineChoice
 
     /// <summary>...and the smaller one lies inside the larger by at least this share of its own area.</summary>
     public const double DisagreeInside = 0.85;
+
+    /// <summary>
+    /// From this confidence of the colour pass the hold counts as standing out from the wall (traced at the first
+    /// threshold, clear contrast). On a pale or chalked hold two methods agreeing proves little.
+    /// </summary>
+    public const double ConfirmingConfidence = 0.8;
 
     /// <summary>A model outline clearly smaller than the colour outline needs this share of its edge strength.</summary>
     public const double MinEdgeShare = 0.75;
@@ -78,19 +84,20 @@ internal sealed class OutlineChoice
         if (!modelFits)
         {
             // As before the model: the colour outline, corroborated by nothing but also changed by nothing.
-            return colourFits || !boxed ? colour with { Corroborated = !modelAsked && colourFits } : null;
+            return colourFits || !boxed ? colour with { Corroborated = !modelAsked && colourFits, Distinct = colour.Confidence >= ConfirmingConfidence } : null;
         }
 
         if (!colourFits)
         {
-            return model! with { Corroborated = BoxCover(seed, model!) >= FullBoxCover };
+            // Only one method traced it: never confirmed, whatever it covers.
+            return model! with { Corroborated = false };
         }
 
         var (iou, modelInside, colourInside) = Overlap(model!, colour);
         double ratio = model!.AreaPx / Math.Max(1, colour.AreaPx);
         if (iou >= AgreeIoU && ratio <= AgreeArea && ratio >= 1 / AgreeArea)
         {
-            return model with { Corroborated = true };
+            return model with { Corroborated = true, Distinct = colour.Confidence >= ConfirmingConfidence };
         }
 
         bool clearly = (ratio >= DisagreeArea && colourInside >= DisagreeInside) || (ratio <= 1 / DisagreeArea && modelInside >= DisagreeInside);

@@ -151,7 +151,7 @@ public class RedetectProposalTests
     {
         var near = Outlined(0.3, 0.3, 0.03, 0.03);
         var far = Outlined(0.6, 0.6, 0.03, 0.03);
-        var input = Input([near, far], [Square(0.303, 0.3, 0.024, 0.03), Square(0.612, 0.6, 0.016, 0.02)]);
+        var input = Input([near, far], [Square(0.304, 0.3, 0.03, 0.03), Square(0.612, 0.6, 0.016, 0.02)]);
 
         var proposals = RedetectProposals.Build(input, RedetectPlanner.Plan(input, Options), []);
 
@@ -257,6 +257,7 @@ public class RedetectProposalTests
         Radius = Math.Max(halfWidth, halfHeight),
         IsAutoDetected = true,
         OutlineCorroborated = true,
+        OutlineDistinct = true,
         OutlineSource = HoldOutlineSource.AutoContour,
         ShapePoints =
         [

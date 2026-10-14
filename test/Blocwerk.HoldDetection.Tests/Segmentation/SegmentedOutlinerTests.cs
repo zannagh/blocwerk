@@ -19,6 +19,44 @@ public class SegmentedOutlinerTests(OnnxRuntimeFixture onnx)
 {
     private static readonly HoldSegmenterSettings Settings = new() { Threads = 2 };
 
+    [Fact]
+    public void ModelFilesThatCannotBeLoaded_AreLogged_AndTheHoldIsOutlinedByColour()
+    {
+        _ = onnx;
+        string folder = Directory.CreateTempSubdirectory("segmenter").FullName;
+        try
+        {
+            var settings = new HoldSegmenterSettings
+            {
+                Threads = 1,
+                EncoderPath = Path.Join(folder, "encoder.onnx"),
+                DecoderPath = Path.Join(folder, "decoder.onnx"),
+            };
+            File.WriteAllBytes(settings.EncoderPath, [1, 2, 3, 4]);
+            File.WriteAllText(settings.DecoderPath, "not a model");
+            var log = new ListLogger();
+            using Mat img = SyntheticWall.Wood(600, 500);
+            Point[] truth = SyntheticWall.Blob(new Point(300, 240), 80, 60, seed: 11);
+            SyntheticWall.PaintHold(img, truth, new Scalar(40, 40, 200), 0);
+            Rect box = Cv2.BoundingRect(truth);
+            var seed = HoldSeed.FromPixelBox(box.X, box.Y, box.Width, box.Height, img.Width, img.Height);
+            var service = HoldDetectionServices.Outliner(settings, null, log);
+
+            using var first = service.OpenSession(img);
+            var outline = first.OutlineEach([seed])[0];
+            using var second = service.OpenSession(img);
+            _ = second.OutlineEach([seed]);
+
+            Assert.Equal(HoldOutlineMethod.Contour, outline.Method);
+            Assert.NotNull(outline.ShapePoints);
+            Assert.Single(log.Warnings);
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
     [SkippableFact]
     public void TwoTouchingHolds_GetTwoOutlines_AndNeitherSwallowsTheOther()
     {

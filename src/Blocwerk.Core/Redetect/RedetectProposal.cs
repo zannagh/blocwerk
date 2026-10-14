@@ -50,4 +50,15 @@ public sealed record RedetectProposal(
     IReadOnlyList<Guid> OtherHoldIds,
     IReadOnlyList<int> Detections,
     bool Safe,
-    double Score);
+    double Score)
+{
+    /// <summary>
+    /// Gets a value indicating whether the detected shape is likely worse than what is stored: it drops a clear part
+    /// of the stored outline, has a hook or a tail, or takes in another hold. The card says so and is answered
+    /// "keep" from the start; only a person accepting it changes the hold.
+    /// </summary>
+    public bool Unsure { get; init; }
+
+    /// <summary>Gets the stamp of what the card shows (<see cref="RedetectStamps"/>); applying checks it again.</summary>
+    public string Stamp { get; init; } = string.Empty;
+}

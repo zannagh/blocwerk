@@ -8,6 +8,7 @@
 .redetect-review ::deep .redetect-picture { margin: 0; min-width: 0; }
 .redetect-review ::deep .redetect-picture > svg { display: block; width: 100%; aspect-ratio: 1; border-radius: var(--r-md); background: var(--bg-surface-alt); }
 .redetect-review ::deep .redetect-picture > figcaption { font-size: 0.75rem; color: var(--text-secondary); text-align: center; }
+.redetect-review ::deep .redetect-unsure { color: var(--status-warning, var(--text-primary)); font-weight: 600; }
 .redetect-finish { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .redetect-finish > span { flex: 1 1 100%; font-size: 0.8rem; color: var(--text-secondary); }
 .redetect-finish > button { flex: 1 1 0; min-height: 44px; margin: 0; }

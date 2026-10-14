@@ -12,6 +12,10 @@ internal static class RedetectCopy
     /// <summary>The answer that leaves the wall as it is.</summary>
     public const string KeepLabel = "Keep mine";
 
+    /// <summary>The line on a card whose detected shape is likely worse than the stored one.</summary>
+    public const string Unsure =
+        "The detector is unsure here: the new shape leaves out part of the old one, is much larger, has a thin tail, or reaches over another hold. It stays as it is unless you accept.";
+
     /// <summary>The caption of the picture that shows the wall as it is stored.</summary>
     public const string NowCaption = "On the wall now";
 
@@ -86,6 +90,12 @@ internal static class RedetectCopy
         if (safe > 0)
         {
             parts.Add($"{PlainCopy.Plural(safe, "shape update")} keep the hold where and about as large as it is and can be accepted together.");
+        }
+
+        var unsure = plan.Proposals.Count(p => p.Unsure);
+        if (unsure > 0)
+        {
+            parts.Add($"On {PlainCopy.Plural(unsure, "card")} the detector is unsure; {(unsure == 1 ? "it stays" : "they stay")} as {(unsure == 1 ? "it is" : "they are")} unless you accept {(unsure == 1 ? "it" : "them")}.");
         }
 
         if (plan.TurnedDown > 0)

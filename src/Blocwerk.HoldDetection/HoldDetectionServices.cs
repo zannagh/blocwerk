@@ -6,6 +6,7 @@ using Blocwerk.HoldDetection.Outlines;
 using Blocwerk.HoldDetection.Segmentation;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.HoldDetection;
 
@@ -29,7 +30,8 @@ public static class HoldDetectionServices
         // ArUco markers ("glyphs") and hold outlines + fingerprints. Registration only: marker work runs
         // solely for walls that declare markers; outlines apply to every wall.
         builder.Services.AddMarkerDetection();
-        builder.Services.AddSingleton<IHoldOutlineService>(Outliner(settings.HoldDetection.Segmenter, detector));
+        builder.Services.AddSingleton<IHoldOutlineService>(services =>
+            Outliner(settings.HoldDetection.Segmenter, detector, services.GetRequiredService<ILoggerFactory>().CreateLogger<HoldSegmenter>()));
         builder.Services.AddHoldOutlines();
 
         return builder;
@@ -41,13 +43,14 @@ public static class HoldDetectionServices
     /// </summary>
     /// <param name="settings">The segmenter settings.</param>
     /// <param name="detector">The hold detector, or null when the caller has none.</param>
-    /// <returns>The service; it outlines by colour while the model is switched off or its files are missing.</returns>
-    public static OpenCvHoldOutlineService Outliner(HoldSegmenterSettings settings, YoloHoldDetectionService? detector = null)
+    /// <param name="logger">Hears about model files that cannot be loaded.</param>
+    /// <returns>The service; it outlines by colour while the model is switched off, its files are missing or they cannot be loaded.</returns>
+    public static OpenCvHoldOutlineService Outliner(HoldSegmenterSettings settings, YoloHoldDetectionService? detector = null, ILogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         return settings.Enabled
             ? new OpenCvHoldOutlineService(new HoldSegmenter(
-                ResolveModelPath(settings.EncoderPath), ResolveModelPath(settings.DecoderPath), settings.Threads, detector is null ? null : detector.Warm))
+                ResolveModelPath(settings.EncoderPath), ResolveModelPath(settings.DecoderPath), settings.Threads, detector is null ? null : detector.Warm, logger))
             : new OpenCvHoldOutlineService();
     }
 

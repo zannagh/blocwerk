@@ -3,7 +3,8 @@
    answered with "Accept" or "Keep mine". Nothing is written while the cards are answered; the answers are applied
    together at the end, and an unanswered card changes nothing. The shape updates that keep a hold where and about
    as large as it is can be accepted in one step; splits, merges, stacks, new and lost holds and the offers for
-   hand-made shapes are always answered one by one. Number keys: 1 keeps, 2 accepts. *@
+   hand-made shapes are always answered one by one. A card the detector is unsure about says so and starts out
+   answered "keep". Number keys: 1 keeps, 2 accepts. *@
 
 <div class="redetect-review">
     <p class="redetect-intro">@RedetectCopy.Intro(Plan)</p>
@@ -30,6 +31,11 @@
                         <RedetectPicture PhotoUrl="@PhotoUrl" Frame="card.Frame" Outlines="card.Now" Caption="@RedetectCopy.NowCaption" />
                         <RedetectPicture PhotoUrl="@PhotoUrl" Frame="card.Frame" Outlines="card.Then" Caption="@RedetectCopy.ThenCaption" />
                     </div>
+                    @if (card.Proposal.Unsure)
+                    {
+                        <p class="deck-detail redetect-unsure">@RedetectCopy.Unsure</p>
+                    }
+
                     <p class="deck-detail">@RedetectCopy.Detail(card.Proposal)</p>
                 </div>
                 <div class="deck-answers" role="group" aria-label="Answer">

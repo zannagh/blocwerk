@@ -41,8 +41,13 @@ public sealed record HoldOutlineResult(
     List<List<ShapePoint>>? ShapeHoles = null)
 {
     /// <summary>
-    /// Gets a value indicating whether a second, independent method found the same outline (or, where the second method
-    /// found nothing, the outline spans the detector box): such an outline can be accepted without a look.
+    /// Gets a value indicating whether a second, independent method found the same outline.
     /// </summary>
     public bool Corroborated { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether the hold stands out from the wall: the colour pass was sure of its own outline.
+    /// On a pale or chalked hold two methods agreeing proves little.
+    /// </summary>
+    public bool Distinct { get; init; }
 }

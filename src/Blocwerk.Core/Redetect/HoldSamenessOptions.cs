@@ -51,7 +51,7 @@ public sealed class HoldSamenessOptions
     public double MaxPlaceholderSizeRatio { get; set; } = 5;
 
     /// <summary>The detector confidence from which an outline for a plain circle can be accepted together with the others.</summary>
-    public double SafeDetectorConfidence { get; set; } = 0.5;
+    public double SafeDetectorConfidence { get; set; } = 0.9;
 
     /// <summary>A detection whose outline matches the stored one at least this well (IoU) changes nothing.</summary>
     public double UnchangedIou { get; set; } = 0.9;

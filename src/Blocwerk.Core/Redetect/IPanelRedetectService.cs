@@ -32,7 +32,8 @@ public interface IPanelRedetectService
 
     /// <summary>
     /// Applies the accepted proposals of a plan and nothing else. The decisions are worked out again against the holds
-    /// as they are now, so a proposal that no longer holds is skipped.
+    /// as they are now; an accepted proposal whose holds changed since, or that would now write another outline than
+    /// its card showed, is skipped and named in <see cref="PanelRedetectSummary.Stale"/>.
     /// </summary>
     /// <param name="plan">The plan of <see cref="PlanAsync"/>.</param>
     /// <param name="accepted">
@@ -102,6 +103,12 @@ public sealed record PanelRedetectSummary(
 {
     /// <summary>Gets the number of holds that were recorded as sitting on another hold.</summary>
     public int Stacked { get; init; }
+
+    /// <summary>
+    /// Gets the accepted proposals that were not applied because the hold changed after the plan was made, or because
+    /// what would be written is no longer what the card showed.
+    /// </summary>
+    public IReadOnlyList<string> Stale { get; init; } = [];
 
     /// <summary>Gets a summary of a run that found and changes nothing.</summary>
     public static PanelRedetectSummary Nothing { get; } = new(0, 0, 0, 0, [], 0, 0, 0, 0);

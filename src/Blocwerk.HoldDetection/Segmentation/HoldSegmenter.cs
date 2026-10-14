@@ -3,6 +3,7 @@
 // </copyright>
 
 using Blocwerk.HoldDetection.Outlines;
+using Microsoft.Extensions.Logging;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 using OpenCvSharp;
@@ -29,25 +30,61 @@ internal sealed class HoldSegmenter : IDisposable
     private readonly string decoderPath;
     private readonly int threads;
     private readonly Action? beforeLoad;
+    private readonly ILogger? logger;
     private readonly Lock gate = new();
     private InferenceSession? encoder;
     private InferenceSession? decoder;
+    private bool broken;
 
     /// <summary>Initializes a new instance of the <see cref="HoldSegmenter"/> class.</summary>
     /// <param name="encoderPath">The encoder file.</param>
     /// <param name="decoderPath">The decoder file.</param>
     /// <param name="threads">Threads one inference may use.</param>
     /// <param name="beforeLoad">Runs once before the model is loaded (the detector has to create the ONNX runtime first).</param>
-    public HoldSegmenter(string encoderPath, string decoderPath, int threads, Action? beforeLoad = null)
+    /// <param name="logger">Hears about model files that cannot be loaded.</param>
+    public HoldSegmenter(string encoderPath, string decoderPath, int threads, Action? beforeLoad = null, ILogger? logger = null)
     {
+        this.logger = logger;
         this.encoderPath = encoderPath;
         this.decoderPath = decoderPath;
         this.threads = Math.Max(1, threads);
         this.beforeLoad = beforeLoad;
     }
 
-    /// <summary>Gets a value indicating whether both model files are there.</summary>
-    public bool Available => File.Exists(encoderPath) && File.Exists(decoderPath);
+    /// <summary>Gets a value indicating whether both model files are there and did not fail to load.</summary>
+    public bool Available => !broken && File.Exists(encoderPath) && File.Exists(decoderPath);
+
+    /// <summary>
+    /// Loads the model when it is not loaded yet. Files that are there but cannot be loaded (cut off, corrupt, another
+    /// format) are logged once and the segmenter counts as not available from then on: holds are outlined by colour.
+    /// </summary>
+    /// <returns>Whether the model is ready.</returns>
+    public bool TryLoad()
+    {
+        lock (gate)
+        {
+            if (!Available)
+            {
+                return false;
+            }
+
+            try
+            {
+                EnsureLoaded();
+                return true;
+            }
+            catch (Exception ex) when (ex is OnnxRuntimeException or IOException or UnauthorizedAccessException or InvalidOperationException)
+            {
+                broken = true;
+                encoder?.Dispose();
+                decoder?.Dispose();
+                (encoder, decoder) = (null, null);
+                logger?.LogWarning(
+                    ex, "The hold segmenter model ({Encoder}, {Decoder}) could not be loaded; holds are outlined by colour", encoderPath, decoderPath);
+                return false;
+            }
+        }
+    }
 
     /// <summary>Encodes one window of the photo.</summary>
     /// <param name="image">The full BGR photo.</param>

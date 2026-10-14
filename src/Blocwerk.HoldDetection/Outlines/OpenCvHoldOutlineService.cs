@@ -51,5 +51,5 @@ public sealed class OpenCvHoldOutlineService : IHoldOutlineService
     /// <returns>The session.</returns>
     public IHoldOutlineSession OpenSession(Mat bgr) => new OpenCvHoldOutlineSession(bgr, ownsImage: false, Segmented());
 
-    private SegmentedOutliner? Segmented() => segmenter is { Available: true } ? new SegmentedOutliner(segmenter) : null;
+    private SegmentedOutliner? Segmented() => segmenter is { Available: true } && segmenter.TryLoad() ? new SegmentedOutliner(segmenter) : null;
 }

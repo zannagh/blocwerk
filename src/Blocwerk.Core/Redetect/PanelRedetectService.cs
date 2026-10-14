@@ -3,6 +3,7 @@
 // </copyright>
 
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Holds.Colors;
@@ -46,6 +47,7 @@ public sealed partial class PanelRedetectService : IPanelRedetectService
     private readonly IKioskContext? kioskContext;
     private readonly IHoldStackService? stacks;
     private readonly IHoldRefinementQueue? refinement;
+    private readonly BlocwerkSettings? settings;
 
     /// <summary>Initializes a new instance of the <see cref="PanelRedetectService"/> class.</summary>
     /// <param name="dbContextFactory">Context factory.</param>
@@ -59,6 +61,7 @@ public sealed partial class PanelRedetectService : IPanelRedetectService
     /// <param name="kioskContext">The kiosk context, when the host has one.</param>
     /// <param name="stacks">Records that a hold sits on another; without it accepted stacks are not written.</param>
     /// <param name="refinement">Refines the 3D shapes of the holds whose outline changed, in the background.</param>
+    /// <param name="settings">The installation's settings: with them, re-detect only runs where it is switched on.</param>
     public PanelRedetectService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
         ICurrentUserService currentUserService,
@@ -70,8 +73,10 @@ public sealed partial class PanelRedetectService : IPanelRedetectService
         IChangeJournal? journal = null,
         IKioskContext? kioskContext = null,
         IHoldStackService? stacks = null,
-        IHoldRefinementQueue? refinement = null)
+        IHoldRefinementQueue? refinement = null,
+        BlocwerkSettings? settings = null)
     {
+        this.settings = settings;
         this.stacks = stacks;
         this.refinement = refinement;
         this.dbContextFactory = dbContextFactory;
@@ -88,6 +93,7 @@ public sealed partial class PanelRedetectService : IPanelRedetectService
     /// <inheritdoc/>
     public async Task<PanelRedetectPlan> PlanAsync(Guid wallId, Guid panelId, CancellationToken ct = default)
     {
+        EnsureSwitchedOn();
         var (db, userId) = await OpenForEditorAsync(wallId, ct);
         await using (db)
         {
@@ -100,8 +106,7 @@ public sealed partial class PanelRedetectService : IPanelRedetectService
             var detections = await DetectAsync(db, wall, panel, ct);
             var input = await LoadInputAsync(db, panel, detections, userId, ct);
             var decisions = RedetectPlanner.Plan(input, options);
-            var size = (await LookOverFrameSource.SizesAsync(db, [panel.Id], ct)).TryGetValue(panel.Id, out var known) ? known : ((int Width, int Height)?)null;
-            var proposals = RedetectProposals.Build(input, decisions, Stacks(input, size), options);
+            var (proposals, size) = await ProposalsAsync(db, panel, input, decisions, ct);
             var involved = proposals.SelectMany(p => p.OtherHoldIds.Concat(p.HoldId is { } id ? [id] : [])).ToHashSet();
             return new PanelRedetectPlan(wallId, panelId, detections, Summarize(input, decisions))
             {
@@ -111,6 +116,24 @@ public sealed partial class PanelRedetectService : IPanelRedetectService
                 Untraced = decisions.Untraced,
                 PhotoAspect = size is { Height: > 0 } s ? (double)s.Width / s.Height : 1,
             };
+        }
+    }
+
+    /// <summary>The proposals for the decisions, with the photo's size when it is known.</summary>
+    private async Task<(List<RedetectProposal> Proposals, (int Width, int Height)? Size)> ProposalsAsync(
+        BlocwerkDbContext db, WallPanel panel, RedetectInput input, RedetectDecisions decisions, CancellationToken ct)
+    {
+        var size = (await LookOverFrameSource.SizesAsync(db, [panel.Id], ct)).TryGetValue(panel.Id, out var known) ? known : ((int Width, int Height)?)null;
+        double aspect = size is { Height: > 0 } s ? (double)s.Width / s.Height : 1;
+        return (RedetectProposals.Build(input, decisions, Stacks(input, size), options, aspect), size);
+    }
+
+    /// <summary>Re-detect runs only where the installation switched it on; a host without settings (a tool, a test) decides for itself.</summary>
+    private void EnsureSwitchedOn()
+    {
+        if (settings is { HoldDetection.RedetectEnabled: false })
+        {
+            throw new UserFacingException("Re-detect is switched off on this installation.");
         }
     }
 

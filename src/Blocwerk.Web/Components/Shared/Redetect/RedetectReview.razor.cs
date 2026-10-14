@@ -55,6 +55,13 @@ public partial class RedetectReview
             built = Plan;
             cards = RedetectCard.Build(Plan, Plan.PhotoAspect);
             answers.Clear();
+
+            // Where the detector is unsure the hold stays as it is unless a person accepts the card.
+            foreach (var card in cards.Where(c => c.Proposal.Unsure))
+            {
+                answers[card.Proposal.Key] = false;
+            }
+
             index = 0;
         }
     }

@@ -28,7 +28,9 @@ public sealed partial class PanelRedetectService
     public async Task<PanelRedetectSummary> ApplyAsync(PanelRedetectPlan plan, IReadOnlySet<string>? accepted, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(plan);
+        EnsureSwitchedOn();
         PanelRedetectSummary summary;
+        List<string> stale = [];
         var (db, userId) = await OpenForEditorAsync(plan.WallId, ct);
         await using (db)
         {
@@ -41,7 +43,15 @@ public sealed partial class PanelRedetectService
 
             var input = await LoadInputAsync(db, panel, plan.Detections, userId, ct);
             var decisions = RedetectPlanner.Plan(input, options);
-            decisions = accepted is null ? decisions : RedetectProposals.Accepted(decisions, accepted);
+            if (accepted is not null)
+            {
+                // Only what the card showed is written: an answer about a hold that changed since is dropped and reported.
+                var (current, _) = await ProposalsAsync(db, panel, input, decisions, ct);
+                stale = RedetectProposals.Stale(plan.Proposals, current, accepted);
+                accepted = accepted.Except(stale).ToHashSet();
+                decisions = RedetectProposals.Accepted(decisions, accepted);
+            }
+
             summary = Summarize(input, decisions);
             if (decisions.Shapes.Count + decisions.NewDetections.Count + decisions.Removed.Count > 0)
             {
@@ -53,12 +63,12 @@ public sealed partial class PanelRedetectService
         }
 
         var merged = await MergeAsync(plan.WallId, summary.Merges, ct);
-        summary = summary with { Merges = merged, FailedMerges = summary.Merges.Count - merged.Count, Stacked = await StackAsync(plan.WallId, accepted, ct) };
+        summary = summary with { Merges = merged, FailedMerges = summary.Merges.Count - merged.Count, Stacked = await StackAsync(plan.WallId, accepted, ct), Stale = stale };
         logger.LogInformation(
             "Panel {PanelId} re-detected on wall {WallId} by {UserId}: {Detected} detections, {Shapes} shapes replaced, {Filled} outlines filled, "
-            + "{New} new holds, {Removed} removed, {Merged} merged ({Failed} failed), {Review} left for review, {Skipped} skipped",
+            + "{New} new holds, {Removed} removed, {Merged} merged ({Failed} failed), {Review} left for review, {Skipped} skipped, {Stale} answers dropped as stale",
             plan.PanelId, plan.WallId, userId, summary.Detected, summary.BetterShapes, summary.FilledOutlines,
-            summary.NewHolds, summary.Removed, merged.Count, summary.FailedMerges, summary.ForReview, summary.Skipped);
+            summary.NewHolds, summary.Removed, merged.Count, summary.FailedMerges, summary.ForReview, summary.Skipped, stale.Count);
         return summary;
     }
 

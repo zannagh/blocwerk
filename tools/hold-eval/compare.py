@@ -95,7 +95,7 @@ def panel_entries(truth: dict, old: dict, new: dict, photo: Image.Image, spots: 
             "id": hold["id"], "panel": name, "name": hold["name"], "colour": hold["colour"], "boulders": hold["boulders"],
             "handMade": hold["trust"].startswith("hand") or bool(hold["provenance"]), "status": status,
             "verdict": "not judged", "note": "", "reviewed": False,
-            "tags": (["bulk-safe"] if (proposal or {}).get("safe") else []) + (["shares-detection"] if shares else [])
+            "tags": (["bulk-safe"] if (proposal or {}).get("safe") else []) + (["detector-unsure"] if (proposal or {}).get("unsure") else []) + (["shares-detection"] if shares else [])
             + (["hand-proposal"] if (proposal or {}).get("kind") == "HandShape" else []) + (["used-by-boulder"] if hold["boulders"] else [])
             + [f"hand-{p}" for p in hold["provenance"]],
             "size": geo.size_class(tp[ti], max(width, height)), "contrast": round(geo.contrast(bgr, tp[ti]), 1),

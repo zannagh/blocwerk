@@ -108,6 +108,13 @@ public partial class Hold
     public bool OutlineCorroborated { get; set; }
 
     /// <summary>
+    /// True on a fresh detection of a hold that stands out from the wall (see <c>HoldOutlineResult.Distinct</c>). Not
+    /// stored: a re-detect reads it before it lets an outline replace a plain circle without a look.
+    /// </summary>
+    [NotMapped]
+    public bool OutlineDistinct { get; set; }
+
+    /// <summary>
     /// Why a panel update's triage suggested to discard this staged detection (a <see cref="NewHoldDiscardReason"/> name),
     /// written while the update is staged so the change journal's delete entry of the promote carries it. Null on every
     /// hold the triage kept; a hold that is live with one was kept by a person against the suggestion.
@@ -278,6 +285,7 @@ public partial class Hold
         Confidence = Confidence,
         DetectedBox = DetectedBox,
         OutlineCorroborated = OutlineCorroborated,
+        OutlineDistinct = OutlineDistinct,
         DiscardReason = DiscardReason,
         Generation = Generation,
         NeedsReview = NeedsReview,
