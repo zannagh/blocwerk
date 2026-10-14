@@ -55,7 +55,7 @@ internal static class HoldColorSampleCache
     private static HoldColorSample Sample(Hold hold, HoldPhotoPixels pixels)
     {
         var (own, surroundings, _) = HoldColorSampler.Sample(hold, pixels.Width, pixels.Height, pixels.At);
-        return new HoldColorSample(hold.Id, hold.Color!, own, surroundings);
+        return new HoldColorSample(hold.Id, hold.Color!, hold.WallPanelId ?? Guid.Empty, own, surroundings);
     }
 
     private static void Write(string file, List<HoldColorSample> samples)
@@ -66,6 +66,7 @@ internal static class HoldColorSampleCache
         {
             writer.Write(s.HoldId.ToString());
             writer.Write(s.Stored);
+            writer.Write(s.PanelId.ToString());
             WritePixels(writer, s.Own);
             WritePixels(writer, s.Surroundings);
         }
@@ -78,7 +79,7 @@ internal static class HoldColorSampleCache
         var samples = new List<HoldColorSample>(count);
         for (var i = 0; i < count; i++)
         {
-            samples.Add(new HoldColorSample(Guid.Parse(reader.ReadString()), reader.ReadString(), ReadPixels(reader), ReadPixels(reader)));
+            samples.Add(new HoldColorSample(Guid.Parse(reader.ReadString()), reader.ReadString(), Guid.Parse(reader.ReadString()), ReadPixels(reader), ReadPixels(reader)));
         }
 
         return samples;

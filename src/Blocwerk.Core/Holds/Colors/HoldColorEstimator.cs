@@ -94,7 +94,10 @@ public static class HoldColorEstimator
         return new HoldColorEstimate(color, verdict, area);
     }
 
-    private static OklabColor MedianOf(IReadOnlyList<OklabColor> pixels) =>
+    /// <summary>The per-channel median of some pixels.</summary>
+    /// <param name="pixels">The pixels; at least one.</param>
+    /// <returns>The median colour.</returns>
+    internal static OklabColor MedianOf(IReadOnlyList<OklabColor> pixels) =>
         new(Median(pixels.Select(p => p.L)), Median(pixels.Select(p => p.A)), Median(pixels.Select(p => p.B)));
 
     private static (string? Color, HoldColorVerdict Verdict) ByHue(List<OklabColor> colored)

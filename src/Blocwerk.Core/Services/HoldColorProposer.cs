@@ -40,7 +40,7 @@ public sealed partial class HoldColorProposer : IHoldColorProposer
                 new HoldColorPlanEntry(h.Id, source.Color, source.HasProposedColor, FromLinked: true, HoldColorVerdict.Proposed)));
         }
 
-        var estimates = await EstimateAsync(db, wallId, open.SelectMany(g => g).ToList(), ct);
+        var estimates = await EstimateAsync(db, wallId, open.SelectMany(g => g).ToList(), live, ct);
         foreach (var group in open)
         {
             var choice = LinkedHoldColorRule.Choose(group.Select(h => estimates[h.Id]).ToList());

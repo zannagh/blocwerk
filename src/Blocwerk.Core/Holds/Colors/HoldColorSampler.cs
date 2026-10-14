@@ -31,7 +31,19 @@ internal static class HoldColorSampler
         return HoldColorEstimator.Estimate(own, surroundings, area);
     }
 
-    /// <summary>The pixels <see cref="Estimate"/> reads: the hold's, its surroundings' and the hold's area in pixels.</summary>
+    /// <summary>The estimate of one hold together with its <see cref="HoldColorSignature"/> (null when too little of it is coloured).</summary>
+    /// <param name="hold">The hold, positioned on this photo.</param>
+    /// <param name="width">Photo width in pixels.</param>
+    /// <param name="height">Photo height in pixels.</param>
+    /// <param name="pixel">The photo's pixel at (x, y).</param>
+    /// <returns>The estimate and the signature.</returns>
+    public static (HoldColorEstimate Estimate, HoldColorSignature? Signature) Read(Hold hold, int width, int height, Func<int, int, OklabColor> pixel)
+    {
+        var (own, surroundings, area) = Sample(hold, width, height, pixel);
+        return (HoldColorEstimator.Estimate(own, surroundings, area), HoldColorSignature.Of(own, surroundings));
+    }
+
+    /// <summary>The pixels <see cref="Read"/> reads: the hold's, its surroundings' and the hold's area in pixels.</summary>
     /// <param name="hold">The hold, positioned on this photo.</param>
     /// <param name="width">Photo width in pixels.</param>
     /// <param name="height">Photo height in pixels.</param>
