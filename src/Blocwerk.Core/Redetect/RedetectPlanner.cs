@@ -63,7 +63,7 @@ public static class RedetectPlanner
         var untraced = fresh.Where(i => traces && !RedetectRules.IsTraced(input.Detections[i].Shape)).ToHashSet();
         var median = input.Detections.Count == 0 ? 0 : input.Detections.Select(d => d.Shape.Radius).Order().ElementAt(input.Detections.Count / 2);
         var parts = fresh.Where(i => traces && !untraced.Contains(i) && RedetectRules.IsNoHold(input, i, median)).ToHashSet();
-        var added = fresh.Where(i => !untraced.Contains(i) && !parts.Contains(i)).ToList();
+        var added = RedetectRules.WithoutDuplicates(input, [.. fresh.Where(i => !untraced.Contains(i) && !parts.Contains(i))]);
         return new RedetectDecisions(
             [.. draft.Shapes.Where(s => !split.Contains(s.HoldId))],
             added,

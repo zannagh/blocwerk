@@ -231,7 +231,7 @@ public sealed partial class PanelRedetectService : IPanelRedetectService
         db.ChangeTracker.Clear();
         var kept = fresh.Except(enrichment.DroppedMarkerHolds).ToList();
         var colors = await Task.Run(() => ReadColors(photo, kept), ct);
-        return [.. kept.Select((h, i) => new RedetectDetection(h, colors[i] ?? h.Color))];
+        return [.. kept.Select((h, i) => new RedetectDetection(h, colors[i] ?? h.Color, colors[i] is not null))];
     }
 
     /// <summary>The panel's stored holds (tracked) with their boulders and links, and what a person already ruled out.</summary>

@@ -98,7 +98,18 @@ public sealed class OpenCvHoldOutlineSession : IHoldBatchOutlineSession
         // The model answers for the seeds that have a detector box; whatever it cannot outline believably, and a
         // seed that is only a circle, is outlined by colour as before.
         var segmented = segmenter?.Outline(image, seeds) ?? new HoldOutlineResult?[seeds.Count];
-        return [.. seeds.Select((seed, i) => Best(seed, segmented[i], aspect))];
+        var chosen = seeds.Select((seed, i) => (HoldOutlineResult?)Best(seed, segmented[i], aspect)).ToArray();
+        var before = chosen.ToArray();
+
+        // A large hold's outline runs under the holds screwed onto it (after the choice, so the choice is not swayed).
+        if (segmenter is not null)
+        {
+            var boxed = Enumerable.Range(0, seeds.Count).Where(i => seeds[i].BoxWidth is > 0 && seeds[i].BoxHeight is > 0).ToList();
+            var boxes = boxed.Select(i => SegmentBox.Of(seeds[i], image.Width, image.Height)).ToList();
+            BaseCompletion.Complete(image, seeds, boxed, boxes, chosen);
+        }
+
+        return [.. chosen.Select((r, i) => ReferenceEquals(r, before[i]) ? r! : HoldOutlineRefiner.Refine(r!, aspect) with { Corroborated = false })];
     }
 
     private HoldOutlineResult OutlineRaw(HoldSeed seed)

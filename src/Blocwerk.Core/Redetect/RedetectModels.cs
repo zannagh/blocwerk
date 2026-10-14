@@ -9,7 +9,8 @@ namespace Blocwerk.Core.Redetect;
 /// <summary>One fresh detection on the panel photo: a hold that is not stored, with its outline when one was traced.</summary>
 /// <param name="Shape">Position, radius, outline and measurements as the detector and the outliner produced them.</param>
 /// <param name="Color">The colour read off the photo for it, or null when it could not be told.</param>
-public sealed record RedetectDetection(Hold Shape, string? Color);
+/// <param name="ColorRead">False when the colour could not be read off the photo and <paramref name="Color"/> is only the detector's label.</param>
+public sealed record RedetectDetection(Hold Shape, string? Color, bool ColorRead = true);
 
 /// <summary>One stored hold of the panel with what the decision needs to know about it.</summary>
 /// <param name="Hold">The hold.</param>

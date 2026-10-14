@@ -160,18 +160,68 @@ internal static class RedetectRules
     public static List<int> OnBase(RedetectInput input, int detection)
     {
         var baseHold = input.Detections[detection];
-        if (baseHold.Shape.ShapePoints is not { Count: >= 3 } || !IsColoured(baseHold.Color))
+        if (baseHold.Shape.ShapePoints is not { Count: >= 3 } || (baseHold.ColorRead && !IsColoured(baseHold.Color)))
         {
             return [];
         }
 
         var outline = HoldShapePolygon.Of(baseHold.Shape);
         double area = ShapeGeometry.Area(outline);
-        return [.. Enumerable.Range(0, input.Detections.Count).Where(i => i != detection
+        List<int> on = [.. Enumerable.Range(0, input.Detections.Count).Where(i => i != detection
             && input.Detections[i].Shape is var other
             && ShapeGeometry.Contains(outline, new P2(other.X, other.Y))
             && ShapeGeometry.Area(HoldShapePolygon.Of(other)) * BaseAreaFactor <= area)];
+        return baseHold.ColorRead || on.Count >= MinHoldsOnUnreadBase ? on : [];
     }
+
+    /// <summary>
+    /// Where the colour could not be read off the photo (only the detector's "volume" label), a base needs this many
+    /// holds on it: a wooden volume with one hold on it is common, a large hold with several is not.
+    /// </summary>
+    public const int MinHoldsOnUnreadBase = 2;
+
+    /// <summary>Two new detections are the same hold from this overlap (IoU) of their outlines on.</summary>
+    public const double DuplicateIou = 0.5;
+
+    /// <summary>
+    /// The new detections without the second detection of one hold: of two whose outlines overlap by
+    /// <see cref="DuplicateIou"/> or more, the one the detector is surer of stays.
+    /// </summary>
+    /// <param name="input">The planner's input.</param>
+    /// <param name="detections">Indexes of the new detections.</param>
+    /// <returns>The indexes that stay, in order.</returns>
+    public static List<int> WithoutDuplicates(RedetectInput input, List<int> detections)
+    {
+        var order = detections.OrderByDescending(i => input.Detections[i].Shape.Confidence).ThenBy(i => i).ToList();
+        var kept = new List<int>();
+        foreach (int i in order)
+        {
+            var shape = input.Detections[i].Shape;
+            if (!kept.Any(k => input.Detections[k].Shape is var other
+                && Math.Abs(other.X - shape.X) <= other.Radius + shape.Radius && Math.Abs(other.Y - shape.Y) <= 2 * (other.Radius + shape.Radius)
+                && HoldSameness.Measure(other, shape).Iou >= DuplicateIou))
+            {
+                kept.Add(i);
+            }
+        }
+
+        return [.. kept.Order()];
+    }
+
+    /// <summary>True when the detection lies on another detection that is a base (<see cref="OnBase"/>).</summary>
+    /// <param name="input">The planner's input.</param>
+    /// <param name="detection">Index of the detection.</param>
+    /// <returns>Whether it is a hold on a base.</returns>
+    public static bool IsOnABase(RedetectInput input, int detection)
+    {
+        var shape = input.Detections[detection].Shape;
+        return Enumerable.Range(0, input.Detections.Count).Any(b => b != detection
+            && input.Detections[b].Shape is { ShapePoints.Count: >= 3 } other && other.Radius > shape.Radius
+            && ShapeGeometry.Contains(HoldShapePolygon.Of(other), new P2(shape.X, shape.Y))
+            && OnBase(input, b).Contains(detection));
+    }
+
+    private static bool IsDark(string? colour) => colour is "black" or "gray" or "grey";
 
     /// <summary>True for a colour a hold is cast in; bare wood, white (volumes, boards) and unknown are not.</summary>
     private static bool IsColoured(string? colour) =>
@@ -190,6 +240,14 @@ internal static class RedetectRules
     {
         var shape = input.Detections[detection].Shape;
         bool isBase = OnBase(input, detection).Count > 0;
+
+        // A small coloured hold screwed onto a large hold is a hold: neither a part of the base nor a screw hole.
+        // A dark spot on a base (a bolt hole) is not exempt.
+        if (IsOnABase(input, detection) && IsColoured(input.Detections[detection].Color) && !IsDark(input.Detections[detection].Color))
+        {
+            return IsSliver(shape, medianRadius) || RedetectMarkers.On(input.Markers, shape);
+        }
+
         return IsPartOfAHold(input, detection, medianRadius) || IsInsideAHold(shape, input) || IsTooSmall(shape) || IsSliver(shape, medianRadius)
             || shape is { WidthMm: > 0, HeightMm: > 0 } && Math.Max(shape.WidthMm.Value, shape.HeightMm.Value) < NewHoldMinMm
             || RedetectMarkers.On(input.Markers, shape)

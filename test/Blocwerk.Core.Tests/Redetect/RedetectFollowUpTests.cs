@@ -145,6 +145,28 @@ public class RedetectFollowUpTests
         Assert.Equal(onRed.Select(h => h.Id).Order(), proposal.OtherHoldIds.Order());
     }
 
+    [Fact]
+    public void ASmallColouredHoldOnABase_IsAHold_ADarkSpotOnItIsNot_AndTheBaseFoundTwiceIsProposedOnce()
+    {
+        var far = new[] { Traced(0.1, 0.1, 0.03, 0.03), Traced(0.9, 0.1, 0.03, 0.03), Traced(0.1, 0.9, 0.03, 0.03) };
+        var red = Traced(0.5, 0.5, 0.1, 0.05) with { Color = "red" };
+        var twice = Traced(0.501, 0.5, 0.1, 0.05) with { Color = "red" };
+        twice.Shape.Confidence = 0.5;
+        var small = Traced(0.45, 0.5, 0.006, 0.006) with { Color = "red" };
+        (small.Shape.WidthMm, small.Shape.HeightMm) = (30, 28);
+        var bolt = Traced(0.55, 0.5, 0.006, 0.006) with { Color = "black" };
+        (bolt.Shape.WidthMm, bolt.Shape.HeightMm) = (30, 28);
+        red.Shape.Confidence = 0.9;
+        var input = new RedetectInput([], [.. far, red, twice, small, bolt], new HashSet<(Guid, Guid)>(), CanMerge: true);
+
+        var added = RedetectPlanner.Plan(input, Options).NewDetections;
+
+        Assert.Contains(3, added);
+        Assert.DoesNotContain(4, added);
+        Assert.Contains(5, added);
+        Assert.DoesNotContain(6, added);
+    }
+
     private static RedetectDetection Traced(double x, double y, double halfWidth, double halfHeight) => new(
         new Hold
         {

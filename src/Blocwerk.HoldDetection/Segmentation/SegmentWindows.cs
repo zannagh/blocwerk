@@ -11,6 +11,18 @@ namespace Blocwerk.HoldDetection.Segmentation;
 /// <param name="Bottom">Bottom edge.</param>
 internal readonly record struct SegmentBox(double Left, double Top, double Right, double Bottom)
 {
+    /// <summary>The detector box of a seed in full-image pixels.</summary>
+    /// <param name="seed">A seed with a box.</param>
+    /// <param name="width">Image width.</param>
+    /// <param name="height">Image height.</param>
+    /// <returns>The box.</returns>
+    public static SegmentBox Of(Blocwerk.Core.Abstractions.HoldSeed seed, int width, int height)
+    {
+        double w = seed.BoxWidth!.Value * width, h = seed.BoxHeight!.Value * height;
+        double cx = seed.X * width, cy = seed.Y * height;
+        return new SegmentBox(cx - (w / 2), cy - (h / 2), cx + (w / 2), cy + (h / 2));
+    }
+
     /// <summary>Gets the longer side.</summary>
     public double LongSide => Math.Max(Right - Left, Bottom - Top);
 }
