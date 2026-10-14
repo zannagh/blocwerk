@@ -1,5 +1,5 @@
 // The hold overlay of the photo-real mode (wall3d.js): the outline layer (wall3d-outlines.js), raised
-// to each hold's relief (wall3d-relief.js), and the boulder role rings drawn over the splat, with a
+// to each hold's relief (wall3d-relief.js), and the boulder's glowing outlines (wall3d-glow.js) drawn over the splat, with a
 // "Show holds" toggle (on by default, remembered per browser) and the "Detail: Auto / High / Ultra"
 // toggle of the photo-real ladder (wall3d-splat-detail.js; remembered per browser; High only where
 // it lifts a phone's cap). Its label names the level drawn, e.g. "Ultra · 1.6M".
@@ -41,10 +41,10 @@ function button(cls, text, title, onClick) {
 
 /**
  * `root`: the view's container (the toggles go in its overlay), `outlines`: buildOutlines' group,
- * `rings`: the boulder role rings, `request`: asks for a frame, `photo`: the photo-real controller (its detail choice).
+ * `glow`: the boulder's glow (wall3d-glow.js, `userData.setMode`), `request`: asks for a frame, `photo`: the photo-real controller (its detail choice).
  * Returns { apply(mode), get showing, dispose() }.
  */
-export function createPhotoOverlay({ root, outlines, rings, request, photo }) {
+export function createPhotoOverlay({ root, outlines, glow, request, photo }) {
     let show = storedShow();
     let mode = null;
 
@@ -92,8 +92,8 @@ export function createPhotoOverlay({ root, outlines, rings, request, photo }) {
         const holds = !photoReal || show;
         outlines.visible = mode === 'photos' || (photoReal && show);
         outlines.userData.setRaised?.(photoReal);
-        rings.userData.setRaised?.(photoReal);
-        rings.visible = holds;
+        glow.userData.setMode?.(mode);
+        glow.visible = holds;
         tools.hidden = !photoReal;
         toggle.setAttribute('aria-pressed', show ? 'true' : 'false');
         toggle.classList.toggle('active', show);

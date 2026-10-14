@@ -437,13 +437,6 @@ else
                         <p class="description">@_wall.Description</p>
                     }
 
-                    @if (!_isEditing)
-                    {
-                        @* Photos | 3D: renders only for a wall with a measured 3D model (kiosk and
-                           share links included — the inline view reads the wall as this page does). *@
-                        <WallViewSwitch WallId="_wall.Id" @bind-Show3D="_show3D" />
-                    }
-
                     <div class="wall-photo-container">
                         @* Edit pencil overlaid on the image's top-right, co-located with the editor's
                            usage "lens" button — not in a separate row above. Rendered at the WallDetail
@@ -471,7 +464,7 @@ else
                         }
                         @if (_show3D && !_isEditing)
                         {
-                            <Wall3DInline WallId="_wall.Id" ShareToken="@ShareToken" />
+                            <Wall3DInline WallId="_wall.Id" ShareToken="@ShareToken" Tools="ViewToggle" />
                         }
                         else if (_livePanels.Count > 0 && _canEditHolds && _isEditing && _editingPanel != null)
                         {
@@ -558,7 +551,8 @@ else
                                               ShowKeptHolds="_showKeptHolds"
                                               EnableSwipe="true"
                                               OutlinesOnDemand="true"
-                                              UsageCounts="_usageCounts" />
+                                              UsageCounts="_usageCounts"
+                                              PhotoTools="ViewToggle" />
                         }
                         else if (_wall.PhotoContentType != null)
                         {
@@ -585,6 +579,10 @@ else
                                              OnJoinVirtualHolds="OnJoinVirtualHolds"
                                              OnRestoreUnchangedHold="OnRestoreUnchangedHold"
                                              OnRequestHoldUsage="@(_isAnonymous ? null : LoadHoldUsage)" />
+                            @if (!_isEditing)
+                            {
+                                @ViewToggle
+                            }
                         }
                         else if (_isAdmin && _isEditing)
                         {
@@ -983,6 +981,11 @@ else
     // The "3D" side of the Photos | 3D switch: the inline schematic replaces the photo viewer. Edit
     // mode always shows the photos (holds are edited on them), and a wall change resets it.
     private bool _show3D;
+
+    // Photo / 3D: a round tool on the image, next to "Show all holds" (on the 3D view, under its
+    // full-screen button). Renders only for a wall with a measured 3D model (kiosk and share links
+    // included: the inline view reads the wall as this page does).
+    private RenderFragment ViewToggle => @<WallViewToggle WallId="_wall!.Id" @bind-Show3D="_show3D" />;
 
     // Hold-editor access: owner, admin, or moderator. Mirrors WallAdminGuard.EnsureWallEditorAsync
     // on the server. Settings/photos/shape/API keys/border stay on _isAdmin.

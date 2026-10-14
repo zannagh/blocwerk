@@ -19,6 +19,18 @@
     {
         <StageOpenButton RealFullscreen="false" OnOpen="() => SetFullscreen(true)" />
     }
+    @if (BoulderFocus || Tools is not null)
+    {
+        @* Round tools down the right edge, under the full-screen (or close) button: clear of the mode
+           switch top left, the camera presets along the bottom and the hold card above them. *@
+        <div class="wall3d-stage-tools">
+            @Tools
+            @if (BoulderFocus)
+            {
+                <BoulderFocusButton />
+            }
+        </div>
+    }
     @if (fullscreen)
     {
         <button type="button" class="bw-stage-close" title="Close full screen" aria-label="Close full screen"

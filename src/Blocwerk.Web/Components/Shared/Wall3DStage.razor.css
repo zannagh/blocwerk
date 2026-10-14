@@ -43,3 +43,24 @@
     font-size: 0.85rem;
     color: var(--text-secondary);
 }
+
+/* The round tools (the boulder focus lightbulb, the photo / 3D switch): a column on the right edge under
+   the full-screen button (38px at the top right), above the camera presets and the hold card. */
+.wall3d-stage-tools {
+    position: absolute;
+    z-index: 3;
+    top: 58px;
+    right: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+}
+
+/* In full screen, under the 56px close button. */
+.wall3d-fs .wall3d-stage-tools {
+    top: calc(max(24px, env(safe-area-inset-top, 0px)) + 68px);
+    right: max(24px, env(safe-area-inset-right, 0px));
+}
+
+.wall3d-stage-tools ::deep > .heat-tool { position: static; }

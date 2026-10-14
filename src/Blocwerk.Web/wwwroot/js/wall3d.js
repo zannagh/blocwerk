@@ -17,6 +17,8 @@ import { OrbitControls } from '../lib/three/controls/OrbitControls.js';
 import { buildFacets, buildMarkers, buildTextures } from './wall3d-scene.js';
 import { buildHolds, buildSelection, OUTLINE_LIFT, placeSelection } from './wall3d-holds.js';
 import { buildOutlines } from './wall3d-outlines.js';
+import { buildGlow, OVERLAY_LAYER } from './wall3d-glow.js';
+import { createFocus } from './wall3d-focus.js';
 import { availableModes, createModeController, normalizeMode, PHOTO_REAL_FAILED, watchRenderFailures } from './wall3d-modes.js';
 import { createTweener, presetPose, wallFrame } from './wall3d-camera.js';
 import { buildOverlay, chromeInsets } from './wall3d-ui.js';
@@ -73,9 +75,13 @@ function build(container, renderer, view, options) {
 
     const sides = createFacetSides(view.facets);
     const facets = buildFacets(view, renderer);
-    const holds = buildHolds(view, roleColors, sides);
-    const outlines = buildOutlines(holds.litHolds, holds.dimHolds, holds.facets, OUTLINE_LIFT, sides);
+    const holds = buildHolds(view, sides);
+    // A highlighted boulder's holds are glowing outlines (wall3d-glow.js), like the boulder's photo.
+    const boulder = view.boulderId ? holds.litHolds : [];
+    const outlines = buildOutlines(view.boulderId ? [] : holds.litHolds, holds.dimHolds, holds.facets, OUTLINE_LIFT, sides);
+    const glow = buildGlow(boulder, holds.facets, roleColors, sides);
     const selection = buildSelection();
+    selection.layers.set(OVERLAY_LAYER);
     const photos = createPhotoLoader(() => request());   // the facet photos load on the first switch to Photos
     const textures = buildTextures(view, renderer, photos);
     const markers = buildMarkers(view, sides);
@@ -83,7 +89,7 @@ function build(container, renderer, view, options) {
     const body = buildBody(view);                             // solid in every mode, photo-real too
     const locator = buildLocator(view, options.highlight);       // "Show on wall": one marked spot
     if (locator) scene.add(locator.group);
-    scene.add(body.group, facets.group, textures, markers, holds.lit, holds.dim, volumes.plain, outlines, holds.rings, holds.pick, selection);
+    scene.add(body.group, facets.group, textures, markers, holds.lit, holds.dim, volumes.plain, outlines, glow, holds.pick, selection);
     const frame = wallFrame(view, facets.group, body);
     const ghosts = createGhosting({
         facets, textures, quads: frame.quads, sides,
@@ -104,6 +110,8 @@ function build(container, renderer, view, options) {
     const tweener = createTweener(camera, controls, () => reducedMq.matches);
 
     let disposed = false;
+    // The lightbulb's dim (wall3d-focus.js): only on a boulder's view that shows the lightbulb.
+    const focus = createFocus({ renderer, enabled: !!options.boulderFocus && boulder.length > 0, request: () => request() });
     const loop = createRenderLoop({
         container, draw: tick,
         more: () => photo.wantsFrames,
@@ -113,7 +121,7 @@ function build(container, renderer, view, options) {
     const request = () => { if (!disposed) loop.request(); };
 
     // Photo-real mode swaps the modelled wall for the captured splat; the hold outlines and boulder
-    // rings (wall3d-overlay.js), the selection and hold taps stay.
+    // glow (wall3d-overlay.js), the selection and hold taps stay.
     const photo = createPhotoReal({
         renderer, scene, view, clip, body: view.splatMatrix?.length === 16 ? body : null,
         facetParts: [facets.group, textures, markers, holds.lit, holds.dim, volumes.plain, ...surroundings],
@@ -129,7 +137,7 @@ function build(container, renderer, view, options) {
         closeCard: () => { ui.hideCard(); selection.visible = false; request(); },
         mode: name => modeCtl.set(name),
     }, modes, { hintOnce: !!options.hintOnce });
-    const overlay = createPhotoOverlay({ root: container, outlines, rings: holds.rings, request: () => request(), photo });
+    const overlay = createPhotoOverlay({ root: container, outlines, glow, request: () => request(), photo });
     const modeCtl = createModeController({
         modes, photo, ui, request: () => request(), onMode: m => overlay.apply(m),
         parts: { textures, outlines, photos, slabs: [holds.lit, holds.dim, volumes.plain] },
@@ -180,7 +188,7 @@ function build(container, renderer, view, options) {
         // The selection halo draws over everything (no depth test), so it hides behind its facet.
         if (selection.userData.facet) selection.material.visible = sides.inFront(selection.userData.facet, camera.position);
         try {
-            renderer.render(scene, camera);
+            focus.render(scene, camera);
         } catch (err) {
             console.warn('wall3d: render failed', err);
             modeCtl.fail(PHOTO_REAL_FAILED, `render: ${err?.message || err}`);
@@ -320,6 +328,7 @@ function build(container, renderer, view, options) {
             keyboard.dispose();
             pickListeners.clear();
             overlay.dispose();
+            focus.dispose();
             ghosts.dispose();
             occluders.dispose();
             failures.dispose();

@@ -1173,12 +1173,13 @@ a.wall3d-link {
     display: inline-block; padding: 8px 16px; background: var(--warning-fill); color: var(--on-warning);
     text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 0.85rem;
 }
-/* "3D" next to Revise on the boulder page (Wall3DLink): an outlined pill, secondary to Revise. */
+/* "3D" / "Photos" next to Revise on the boulder page (WallViewToggle): an outlined pill, secondary to Revise. */
 .btn-view3d {
     display: inline-flex; align-items: center; gap: 5px; min-height: 36px; padding: 6px 12px;
     background: var(--bg-surface); color: var(--text-heading); border: 1px solid var(--border);
-    text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 0.85rem;
+    text-decoration: none; border-radius: 6px; font: inherit; font-weight: 600; font-size: 0.85rem; cursor: pointer;
 }
+.btn-view3d:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .btn-view3d:hover { background: var(--bg-surface-alt); }
 
 .bw-grade-proposal-notice {
@@ -1277,13 +1278,10 @@ a.wall3d-link {
 .rule-chip .rule-warn { color: var(--warning-text); }
 .view-toggle .toggle-sep { width: 1px; align-self: stretch; background: var(--border); margin: 0 4px; }
 
-/* Boulder view: the Then/Now and Photos/3D groups share ONE row (two stacked rows were ~100px of
-   a phone screen). Each group keeps its own pill and takes half the width; the buttons stay 40px
-   tall for a thumb. A group that is not offered (no older state, no 3D model) simply leaves the
-   other with the whole row, and an empty row takes no space at all. */
+/* Boulder view: the Then/Now row (the photo / 3D switch is the header's "3D" button). The buttons stay
+   44px tall for a thumb; without an older state to show the row takes no space at all. */
 .boulder-toggle-row { display: flex; gap: 8px; margin-bottom: 8px; }
 .boulder-toggle-row:not(:has(.view-toggle)) { display: none; }
-.boulder-toggle-row .view-toggle.pending { visibility: hidden; }
 .boulder-toggle-row .view-toggle { flex: 1 1 0; min-width: 0; margin-bottom: 0; padding: 2px; }
 .boulder-toggle-row .toggle-btn { min-height: 44px; padding: 0 8px; font-size: 0.8rem; white-space: nowrap; }
 
@@ -3962,8 +3960,9 @@ html.bw-fullscreen .panel-link-dialog .panel-step-viewport {
         flex-direction: column;
         gap: 8px;
         padding: 8px 12px 16px;
-        /* padding 8 + header 44 + toggles 44 + attempt 52 + three 8px gaps = 172, plus slack for borders */
-        --boulder-first-screen-chrome: 196px;
+        /* padding 8 + header 44 + toggles 44 + attempt 52 + three 8px gaps = 172, plus slack for borders.
+           Without the Then/Now row (nothing older to show) its 44px and a gap go to the view. */
+        --boulder-first-screen-chrome: calc(144px + var(--boulder-toggles-h, 52px));
         --boulder-view-h: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - var(--boulder-first-screen-chrome));
         --boulder-photo-chrome: var(--boulder-first-screen-chrome);
         --photo-fit-floor: 120px;
@@ -3972,6 +3971,7 @@ html.bw-fullscreen .panel-link-dialog .panel-step-viewport {
     .boulder-detail :is(.boulder-main-row, .boulder-photo-col, .boulder-side-col, .boulder-wide-col) > * { order: 20; margin-top: 0; margin-bottom: 0; }
     .boulder-detail .page-header { order: 1; margin: 0; }
     .boulder-detail .boulder-toggle-row { order: 2; margin: 0; }
+    .boulder-detail:has(.boulder-toggle-row:not(:has(.view-toggle))) { --boulder-toggles-h: 0px; }
     .boulder-detail .boulder-view-slot { order: 3; }
     .boulder-detail .attempt-section { order: 4; margin: 0; }
     /* The moved-hold notice sits right above the action row (same order, earlier in the page), never under the tab bar. */
@@ -3986,7 +3986,9 @@ html.bw-fullscreen .panel-link-dialog .panel-step-viewport {
     .boulder-detail .title-row h1 { font-size: 1.15rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 1 auto; }
     .boulder-detail .title-row > :is(.draft-badge, .historic-badge, .archived-badge) { display: none; }
     .boulder-detail .title-actions { flex: 0 0 auto; }
-    .boulder-detail .title-actions :is(.btn-view3d, .btn-revise) { display: none; }
+    .boulder-detail .title-actions .btn-revise { display: none; }
+    /* The photo / 3D switch stays: it is the only one on the boulder page. */
+    .boulder-detail .title-actions .btn-view3d { min-height: 40px; padding: 6px 10px; }
     .boulder-detail .page-header .meta { display: none; }
 
     /* The view: exactly the leftover height, image contained, zoom engine untouched. */

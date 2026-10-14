@@ -18,15 +18,6 @@ public partial class Wall3DStage : IAsyncDisposable
     // wall3d.js's MODEL_FAILED: the model could not be drawn, as opposed to WebGL missing.
     private const string ModelFailedPrefix = "wall3d-model:";
 
-    private static readonly Dictionary<string, string> RoleColors = new()
-    {
-        ["Start"] = BoulderHoldColors.Start,
-        ["Top"] = BoulderHoldColors.Top,
-        ["Hand"] = BoulderHoldColors.Normal,
-        ["Foot"] = BoulderHoldColors.Foot,
-        ["ColorFoot"] = BoulderHoldColors.Foot,
-    };
-
     private ElementReference stage;
     private IJSObjectReference? module;
     private IJSObjectReference? viewer;
@@ -69,6 +60,14 @@ public partial class Wall3DStage : IAsyncDisposable
     /// <summary>Show the full-screen icon button over the viewer (same look as on the photo views).</summary>
     [Parameter]
     public bool ShowFullscreen { get; set; } = true;
+
+    /// <summary>Show the boulder focus lightbulb over the viewer; it dims the scene around the highlighted boulder.</summary>
+    [Parameter]
+    public bool BoulderFocus { get; set; }
+
+    /// <summary>More round tool buttons for the column under the full-screen button (the photo / 3D switch).</summary>
+    [Parameter]
+    public RenderFragment? Tools { get; set; }
 
     [Inject]
     private IJSRuntime JS { get; set; } = null!;
@@ -290,7 +289,8 @@ public partial class Wall3DStage : IAsyncDisposable
 
     private Dictionary<string, object?> MountOptions() => new()
     {
-        ["roleColors"] = RoleColors,
+        ["roleColors"] = BoulderHoldColors.Wall3DRoles,
+        ["boulderFocus"] = BoulderFocus,
         ["initialPreset"] = InitialPreset,
         ["initialMode"] = InitialMode ?? "schematic",
         ["hintOnce"] = HintOnce,

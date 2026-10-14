@@ -90,6 +90,10 @@
    buttons (top right), the "needs update" chip (top left) and the heat legend (bottom left). */
 .holds-all-tool { position: absolute; z-index: 3; bottom: 10px; right: 10px; }
 
+/* The wall page's photo / 3D switch (WallViewToggle): left of "Show all holds", or in its corner without it. */
+.view3d-tool { position: absolute; z-index: 3; bottom: 10px; right: 62px; }
+:not(:has(> .holds-all-tool)) > .view3d-tool { right: 10px; }
+
 /* Boulder designer: a hold that is not part of the boulder is a tap target only. A mouse shows what it
    would pick; a finger gets the outline with the tap. */
 @media (hover: hover) {
