@@ -40,13 +40,13 @@ public class RedetectSafetyTests
     }
 
     [Fact]
-    public void AnOutlineThatDropsPartOfTheStoredOne_IsNotAcceptedTogether_AndFromAFifthItIsMarkedUnsure()
+    public void AnOutlineThatDropsPartOfTheStoredOne_IsNotAcceptedTogether_AndFromAThirdItIsMarkedUnsure()
     {
         var stored = Outlined(0.5, 0.5, 0.03, 0.03);
 
         var same = Shape(Input([stored], [Detected(0.504, 0.5, 0.03, 0.03)]), stored);
         var smaller = Shape(Input([stored], [Detected(0.5, 0.5, 0.026, 0.03)]), stored);
-        var inset = Shape(Input([stored], [Detected(0.5, 0.5, 0.023, 0.03)]), stored);
+        var inset = Shape(Input([stored], [Detected(0.5, 0.5, 0.019, 0.03)]), stored);
 
         Assert.True(same.Safe);
         Assert.False(smaller.Safe);
@@ -135,18 +135,19 @@ public class RedetectSafetyTests
     }
 
     [Fact]
-    public void AnOutlineForACircle_OnAHoldThatHardlyStandsOut_IsMarkedUnsure_WithItsReason()
+    public void AnOutlineForACircle_OnAPaleHold_IsNotAcceptedTogether_ButNotMarkedUnsure()
     {
         var placed = new Hold { X = 0.5, Y = 0.5, Radius = 0.03, IsAutoDetected = false };
         var pale = Detected(0.5, 0.5, 0.024, 0.024);
         (pale.Shape.OutlineDistinct, pale.Shape.OutlinePale) = (false, true);
         var inset = Outlined(0.5, 0.5, 0.03, 0.03);
 
-        Assert.Equal(RedetectDoubt.PaleHold, Shape(Input([placed], [pale]), placed).Doubt);
+        Assert.Equal(RedetectDoubt.None, Shape(Input([placed], [pale]), placed).Doubt);
         Assert.False(Shape(Input([placed], [pale]), placed).Safe);
         Assert.Equal(RedetectDoubt.ThinPart, Shape(Input([placed], [Detected(0.5, 0.5, 0.028, 0.006)]), placed).Doubt);
         Assert.Equal(RedetectDoubt.None, Shape(Input([placed], [Detected(0.5, 0.5, 0.024, 0.024)]), placed).Doubt);
-        Assert.Equal(RedetectDoubt.DropsPart, Shape(Input([inset], [Detected(0.5, 0.5, 0.023, 0.03)]), inset).Doubt);
+        Assert.Equal(RedetectDoubt.None, Shape(Input([inset], [Detected(0.5, 0.5, 0.023, 0.03)]), inset).Doubt);
+        Assert.Equal(RedetectDoubt.DropsPart, Shape(Input([inset], [Detected(0.5, 0.5, 0.019, 0.03)]), inset).Doubt);
     }
 
     [Fact]

@@ -41,7 +41,10 @@ public static class RedetectPlanner
             DecideGroup([.. group], input, options, listed, draft);
         }
 
-        var taken = candidates.Select(c => c.Detection).ToHashSet();
+        // A detection is taken when a stored hold went to it, or when it only overlaps a stored hold that went to another
+        // detection. A base is the exception: the stored holds inside it are the holds screwed onto it, not the base.
+        var owners = groups.Select(g => g.Key).ToHashSet();
+        var taken = candidates.Select(c => c.Detection).Where(d => owners.Contains(d) || RedetectRules.OnBase(input, d).Count == 0).ToHashSet();
         var found = candidates.Select(c => c.Existing.Hold.Id).ToHashSet();
         var gone = input.Detections.Count == 0
             ? []

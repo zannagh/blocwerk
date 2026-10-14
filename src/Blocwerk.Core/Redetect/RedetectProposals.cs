@@ -64,7 +64,7 @@ public static class RedetectProposals
             new RedetectProposal($"merge:{m.KeptId}:{m.RemovedId}", RedetectProposalKind.Merge, m.KeptId, [m.RemovedId], [], false, m.Score)));
         proposals.AddRange(stacks.Select(s =>
             new RedetectProposal($"stack:{s.Upper.Id}:{s.Base.Id}", RedetectProposalKind.Stack, s.Upper.Id, [s.Base.Id], [], false, s.Inside)));
-        proposals.AddRange(decisions.NewDetections.Select(i => new RedetectProposal($"new:{i}", RedetectProposalKind.NewHold, null, [], [i], false, 0)
+        proposals.AddRange(decisions.NewDetections.Select(i => new RedetectProposal($"new:{i}", RedetectProposalKind.NewHold, null, HoldsOn(input, i), [i], false, 0)
         {
             Earlier = decisions.Earlier.GetValueOrDefault(i),
             Doubt = RedetectSafety.CheckNewHold(input.Detections[i].Shape),
@@ -162,6 +162,23 @@ public static class RedetectProposals
         }
 
         return stacks;
+    }
+
+    /// <summary>The stored holds that lie on a new detection that is a base (<see cref="RedetectRules.OnBase"/>).</summary>
+    private static List<Guid> HoldsOn(RedetectInput input, int detection)
+    {
+        if (RedetectRules.OnBase(input, detection).Count == 0)
+        {
+            return [];
+        }
+
+        var outline = Detection.Outlines.HoldShapePolygon.Of(input.Detections[detection].Shape);
+        double area = Detection.Outlines.ShapeGeometry.Area(outline);
+        return [.. input.Existing.Select(e => e.Hold).Where(h => RedetectRules.IsMatchable(h)
+            && Detection.Outlines.ShapeGeometry.Contains(outline, new Detection.Outlines.P2(h.X, h.Y))
+            && Detection.Outlines.ShapeGeometry.Area(Detection.Outlines.HoldShapePolygon.Of(h)) * RedetectRules.BaseAreaFactor <= area)
+            .OrderBy(h => h.Id)
+            .Select(h => h.Id)];
     }
 
     private static bool CoversHolds(RedetectProposal proposal, RedetectInput input, Dictionary<Guid, Entities.Hold> byId) =>

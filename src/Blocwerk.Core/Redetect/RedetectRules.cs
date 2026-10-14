@@ -146,6 +146,38 @@ internal static class RedetectRules
             || input.Existing.Any(e => IsMatchable(e.Hold) && Near(e.Hold) && ShapeGeometry.Contains(HoldShapePolygon.Of(e.Hold), centre));
     }
 
+    /// <summary>A base is at least this many times the area of each detection on it.</summary>
+    public const double BaseAreaFactor = 3;
+
+    /// <summary>
+    /// The detections lying on a detection that is a base: a large coloured hold with smaller holds screwed onto it.
+    /// Each of them has its centre inside the base's outline and is at most a third of its area. A board or volume
+    /// (bare wood or white, as read off the photo) is no base: what lies on it are pockets or holds on the wall.
+    /// </summary>
+    /// <param name="input">The planner's input.</param>
+    /// <param name="detection">Index of the detection.</param>
+    /// <returns>The indexes of the detections on it; empty when it is no base.</returns>
+    public static List<int> OnBase(RedetectInput input, int detection)
+    {
+        var baseHold = input.Detections[detection];
+        if (baseHold.Shape.ShapePoints is not { Count: >= 3 } || !IsColoured(baseHold.Color))
+        {
+            return [];
+        }
+
+        var outline = HoldShapePolygon.Of(baseHold.Shape);
+        double area = ShapeGeometry.Area(outline);
+        return [.. Enumerable.Range(0, input.Detections.Count).Where(i => i != detection
+            && input.Detections[i].Shape is var other
+            && ShapeGeometry.Contains(outline, new P2(other.X, other.Y))
+            && ShapeGeometry.Area(HoldShapePolygon.Of(other)) * BaseAreaFactor <= area)];
+    }
+
+    /// <summary>True for a colour a hold is cast in; bare wood, white (volumes, boards) and unknown are not.</summary>
+    private static bool IsColoured(string? colour) =>
+        colour is { Length: > 0 } && !colour.StartsWith("wood", StringComparison.OrdinalIgnoreCase)
+        && !colour.Equals("white", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>
     /// True for a detection on an empty spot that is a part of a hold, a screw or bolt hole (<see cref="NewHoldMinMm"/>),
     /// a sliver, a printed marker, or a board or volume that covers several holds.
@@ -157,10 +189,11 @@ internal static class RedetectRules
     public static bool IsNoHold(RedetectInput input, int detection, double medianRadius)
     {
         var shape = input.Detections[detection].Shape;
+        bool isBase = OnBase(input, detection).Count > 0;
         return IsPartOfAHold(input, detection, medianRadius) || IsInsideAHold(shape, input) || IsTooSmall(shape) || IsSliver(shape, medianRadius)
             || shape is { WidthMm: > 0, HeightMm: > 0 } && Math.Max(shape.WidthMm.Value, shape.HeightMm.Value) < NewHoldMinMm
             || RedetectMarkers.On(input.Markers, shape)
-            || (shape.ShapePoints is { Count: >= 3 } && RedetectSafety.CoveredHolds(input, HoldShapePolygon.Of(shape), null) >= RedetectSafety.MaxCoveredHolds);
+            || (!isBase && shape.ShapePoints is { Count: >= 3 } && RedetectSafety.CoveredHolds(input, HoldShapePolygon.Of(shape), null) >= RedetectSafety.MaxCoveredHolds);
     }
 
     /// <summary>True when a detection was measured and is smaller than any hold (<see cref="PartSizeMm"/>): a bolt hole, a screw head, a knot.</summary>

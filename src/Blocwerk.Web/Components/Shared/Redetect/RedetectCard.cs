@@ -23,6 +23,9 @@ public enum RedetectOutlineRole
 
     /// <summary>A hold that goes when the proposal is accepted.</summary>
     Going,
+
+    /// <summary>A hold that sits on the hold the proposal is about.</summary>
+    OnIt,
 }
 
 /// <summary>The square part of the photo a card shows, in the 0..100 units the hold overlay is drawn in.</summary>
@@ -74,6 +77,11 @@ public sealed record RedetectCard(RedetectProposal Proposal, RedetectFrame Frame
                 then.Add(new RedetectOutline(hold!, RedetectOutlineRole.Focus));
                 break;
             case RedetectProposalKind.NotFound:
+                break;
+            case RedetectProposalKind.NewHold:
+                now.AddRange(others.Select(o => new RedetectOutline(o, RedetectOutlineRole.OnIt)));
+                then.AddRange(detected.Select(d => new RedetectOutline(d, RedetectOutlineRole.Base)));
+                then.AddRange(others.Select(o => new RedetectOutline(o, RedetectOutlineRole.OnIt)));
                 break;
             default:
                 then.AddRange(detected.Select(d => new RedetectOutline(d, RedetectOutlineRole.Focus)));

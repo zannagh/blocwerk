@@ -124,6 +124,27 @@ public class RedetectFollowUpTests
         Assert.DoesNotContain(6, added);
     }
 
+    [Fact]
+    public void ALargeColouredHoldWithHoldsOnIt_IsProposedAsANewHold_NamingTheHoldsOnIt_AndABoardIsNot()
+    {
+        // A red base with two stored holds screwed on (one of them only a circle), and a white board with two pockets.
+        var far = new[] { Traced(0.1, 0.1, 0.03, 0.03), Traced(0.9, 0.1, 0.03, 0.03), Traced(0.1, 0.9, 0.03, 0.03) };
+        var onRed = new[] { new Hold { X = 0.45, Y = 0.5, Radius = 0.012, IsAutoDetected = true }, Traced(0.55, 0.5, 0.012, 0.012).Shape };
+        var pockets = new[] { Traced(0.45, 0.8, 0.01, 0.01).Shape, Traced(0.55, 0.8, 0.01, 0.01).Shape };
+        var red = Traced(0.5, 0.5, 0.1, 0.05) with { Color = "red" };
+        var board = Traced(0.5, 0.8, 0.1, 0.04) with { Color = "white" };
+        var detections = new[] { far[0], far[1], far[2], red, Traced(0.45, 0.5, 0.011, 0.011), Traced(0.55, 0.5, 0.012, 0.012), board };
+        var input = new RedetectInput(
+            [.. onRed.Concat(pockets).Select(h => new RedetectExisting(h, new HashSet<Guid>(), 0, false))], detections, new HashSet<(Guid, Guid)>(), CanMerge: true);
+
+        var decisions = RedetectPlanner.Plan(input, Options);
+        var proposal = RedetectProposals.Build(input, decisions, []).Single(p => p.Key == "new:3");
+
+        Assert.Contains(3, decisions.NewDetections);
+        Assert.DoesNotContain(6, decisions.NewDetections);
+        Assert.Equal(onRed.Select(h => h.Id).Order(), proposal.OtherHoldIds.Order());
+    }
+
     private static RedetectDetection Traced(double x, double y, double halfWidth, double halfHeight) => new(
         new Hold
         {

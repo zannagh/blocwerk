@@ -47,7 +47,7 @@ internal sealed class RedetectSafety
     public const double MaxGain = 0.15;
 
     /// <summary>From this share of the stored outline dropped, the new one is likely an inset or a part of the hold.</summary>
-    public const double UnsureLost = 0.2;
+    public const double UnsureLost = 0.3;
 
     /// <summary>
     /// How much more of its convex hull the new outline may fill than the stored one: beyond it, a notch of the stored
@@ -156,7 +156,6 @@ internal sealed class RedetectSafety
             : thin || (!traced && Elongation(outline, aspect) >= StripElongation) ? RedetectDoubt.ThinPart
             : lost >= UnsureLost ? RedetectDoubt.DropsPart
             : gain >= UnsureGain ? RedetectDoubt.MuchLarger
-            : !traced && detection.OutlinePale ? RedetectDoubt.PaleHold
             : RedetectDoubt.None;
         return new RedetectShapeCheck(clean, doubt);
     }

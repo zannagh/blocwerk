@@ -24,6 +24,7 @@ internal static class RedetectCopy
         RedetectProposalKind.Split => $"The detector sees {proposal.Detections.Count:N0} holds here",
         RedetectProposalKind.Merge => "These two look like the same hold recorded twice",
         RedetectProposalKind.Stack => "This hold sits on the larger one",
+        RedetectProposalKind.NewHold when proposal.OtherHoldIds.Count > 0 => $"A large hold with {PlainCopy.Plural(proposal.OtherHoldIds.Count, "hold")} on it, not on the wall yet",
         RedetectProposalKind.NewHold => "A hold that is not on the wall yet",
         RedetectProposalKind.NotFound => "This hold was not found again",
         RedetectProposalKind.HandShape => "A different shape for a hold you placed or drew",
@@ -37,6 +38,8 @@ internal static class RedetectCopy
             "Accepting gives the stored hold the shape of the largest one and adds the others as new holds. Name, colour and boulders stay with the stored hold.",
         RedetectProposalKind.Merge => "Accepting merges them into one hold. The boulders of both move to it. A merge can be undone in the duplicate review.",
         RedetectProposalKind.Stack => "Accepting records that it is mounted on the larger hold. Both stay two holds.",
+        RedetectProposalKind.NewHold when proposal.OtherHoldIds.Count > 0 =>
+            "Yellow: the large hold. Blue: the holds on it, which stay as they are. Accepting adds the large hold and records the holds on it as sitting on it.",
         RedetectProposalKind.NewHold => "It is not added unless you accept. Accepting adds it with a suggested colour.",
         RedetectProposalKind.NotFound => "No boulder uses it and nobody named or coloured it. Accepting removes it.",
         RedetectProposalKind.HandShape => "Accepting replaces your shape with the detected one. Name, colour and boulders stay. Its 3D shape is made again.",
