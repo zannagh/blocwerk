@@ -60,6 +60,15 @@ internal sealed class FakeComputeJobClient : IComputeJobClient
     public Task<ComputeHealth> GetHealthAsync(CancellationToken ct) =>
         Task.FromResult(new ComputeHealth { Status = "ok", Kinds = Kinds, PrepareOutputs = PrepareOutputs });
 
+    /// <summary>What the worker reports it takes per job (<c>/v1/info</c>); null = it does not say.</summary>
+    public int? MaxImages { get; set; }
+
+    /// <summary>What the worker reports it takes per request, bytes (<c>/v1/info</c>); null = it does not say.</summary>
+    public long? MaxRequestBytes { get; set; }
+
+    public Task<ComputeLimits?> GetLimitsAsync(CancellationToken ct) =>
+        Task.FromResult<ComputeLimits?>(MaxImages is null && MaxRequestBytes is null ? null : new ComputeLimits(MaxImages, MaxRequestBytes));
+
     public Task<string> SubmitJsonAsync(string kind, string json, CancellationToken ct)
     {
         JsonSubmissions.Add((kind, json));
@@ -73,8 +82,16 @@ internal sealed class FakeComputeJobClient : IComputeJobClient
         return Submit(kind);
     }
 
-    public Task<ComputeJobStatus> GetStatusAsync(string jobId, CancellationToken ct)
+    /// <summary>Awaited before every status answer, ignoring cancellation (a stage busy in a call that does not stop at once).</summary>
+    public Func<Task>? StatusGate { get; set; }
+
+    public async Task<ComputeJobStatus> GetStatusAsync(string jobId, CancellationToken ct)
     {
+        if (StatusGate is { } gate)
+        {
+            await gate();
+        }
+
         if (Forgotten.Contains(jobId) || !kinds.TryGetValue(jobId, out var kind))
         {
             throw new ComputeJobException(ComputeFailureKind.JobNotFound, "gone");
@@ -83,10 +100,10 @@ internal sealed class FakeComputeJobClient : IComputeJobClient
         polls[jobId] = polls.GetValueOrDefault(jobId) + 1;
         if (polls[jobId] == 1 || NeverFinish.Contains(kind))
         {
-            return Task.FromResult(new ComputeJobStatus { JobId = jobId, Status = ComputeJobStates.Running, Progress = 0.5, Stage = "working" });
+            return new ComputeJobStatus { JobId = jobId, Status = ComputeJobStates.Running, Progress = 0.5, Stage = "working" };
         }
 
-        return Task.FromResult(Terminal.TryGetValue(kind, out var scripted) ? scripted : Succeeded(jobId, kind));
+        return Terminal.TryGetValue(kind, out var scripted) ? scripted : Succeeded(jobId, kind);
     }
 
     /// <summary>

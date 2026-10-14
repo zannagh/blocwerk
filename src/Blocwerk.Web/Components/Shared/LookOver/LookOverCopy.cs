@@ -25,6 +25,7 @@ internal static partial class LookOverCopy
         LookOverFindingKind.MatchedToHandPlaced => "Hand-placed holds merged onto a detection",
         LookOverFindingKind.HandPlacedAmbiguous => "Hand-placed holds with several detections",
         LookOverFindingKind.DiscardedDetection => DiscardedChip,
+        LookOverFindingKind.UnsureLink => "Linked across the two photos, unsure",
         _ => "New holds with conflicting evidence",
     };
 
@@ -39,6 +40,7 @@ internal static partial class LookOverCopy
         LookOverFindingKind.MatchedToHandPlaced => "Matched to hand-placed hold (now detected)",
         LookOverFindingKind.HandPlacedAmbiguous => "Hand-placed hold, several detections",
         LookOverFindingKind.DiscardedDetection => "Discarded detection",
+        LookOverFindingKind.UnsureLink => "Same hold on both photos?",
         _ => "New hold, conflicting evidence",
     };
 
@@ -70,6 +72,9 @@ internal static partial class LookOverCopy
             LookOverFindingKind.MatchedToHandPlaced =>
                 "A hold placed by hand was merged onto a detected hold: it kept its boulders and settings and took the detection's position and outline. "
                 + "It cannot be split again from here; if the merge is wrong, correct the hold in the hold editor.",
+            LookOverFindingKind.UnsureLink =>
+                $"The update linked {hold} to the hold the other photo shows on this spot, without being sure they are one hold. "
+                + "Linked holds count as one hold. Compare the two photos: keep the link, or keep them as two holds.",
             LookOverFindingKind.HandPlacedAmbiguous =>
                 "More than one detection sits on this hand-placed hold. Nothing was merged and the hold stayed as it was. Remove a surplus detection in the hold editor.",
             _ => "The photo check left a detection out here, while the 3D model suggests a hold. Nothing was added. If there is a hold, add it in the hold editor.",
@@ -97,9 +102,13 @@ internal static partial class LookOverCopy
             LookOverFindingKind.PossiblyRemoved => "Keep hold",
             LookOverFindingKind.SameSpot => "Both are there",
             LookOverFindingKind.MatchedToHandPlaced => "Merge is right",
+            LookOverFindingKind.UnsureLink => "Yes",
             _ => "Understood",
         };
     }
+
+    /// <summary>The name of "take the link apart" for an unsure link.</summary>
+    public const string UnlinkLabel = "No, two holds";
 
     /// <summary>The name of "remove the hold" for this finding.</summary>
     public static string RemoveLabel(LookOverFindingView f) => f.Kind switch
@@ -168,6 +177,7 @@ internal static partial class LookOverCopy
             LookOverAnswer.RemoveHold => "Hold removed",
             LookOverAnswer.UseNewHold => "Merged into the new hold",
             LookOverAnswer.AddHold => "Added as a hold",
+            LookOverAnswer.Unlink => "Two holds",
             _ => f.KeptAtUpdate ? "Still here" : SettleLabel(f),
         };
         return f.AnsweredBy is { } who ? $"{what} · {who}" : what;
@@ -183,6 +193,7 @@ internal static partial class LookOverCopy
             LookOverAnswer.RemoveHold => $"Hold removed; {PlainCopy.Plural(boulders, "boulder")} {(boulders == 1 ? "is" : "are")} now historic.",
             LookOverAnswer.UseNewHold or LookOverAnswer.Reassign => "Merged into the new hold. Undo under Wall settings › Possible duplicate holds.",
             LookOverAnswer.Moved => "Marked for review: check its outline in the hold editor.",
+            LookOverAnswer.Unlink => "The link is taken apart; both holds stay. Link them again in the hold editor if they are one hold.",
             LookOverAnswer.AddHold => f.CanUndo ? "It is on the wall now, marked for review." : "It is on the wall now; remove it in the hold editor if it is wrong.",
             LookOverAnswer.Settle when f.ClearedBoulders > 0 =>
                 $"{PlainCopy.Plural(f.ClearedBoulders, "boulder")} {(f.ClearedBoulders == 1 ? "is" : "are")} no longer marked for review.",

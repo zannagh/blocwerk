@@ -40,4 +40,11 @@ public enum LookOverFindingKind
     /// somebody adds it, and it only counts as open while it is likely a missed hold (<see cref="LookOver.LookOverRules.LikelyMissed"/>).
     /// </summary>
     DiscardedDetection = 8,
+
+    /// <summary>
+    /// A full revision linked a neighbour photo's hold (<see cref="Entities.WallLookOverFinding.HoldId"/>) to the centre
+    /// hold the overlap matcher paired it with (<see cref="Entities.WallLookOverFinding.OtherHoldId"/>) without being sure:
+    /// is it the same hold on both photos? "Yes" keeps the link, "No, two holds" takes it apart and both holds stay.
+    /// </summary>
+    UnsureLink = 9,
 }

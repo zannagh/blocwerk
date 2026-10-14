@@ -29,6 +29,9 @@ internal static class HoldLookFixture
     public const double TargetX = 0.6;
     public const double TargetY = 0.5;
 
+    /// <summary>How close a stored coordinate has to be to count as the seeded one.</summary>
+    public const double Tolerance = 1e-9;
+
     /// <summary>Where the anchors sit: spread over the photo, so the local scale between the photos is known everywhere.</summary>
     public static readonly (double X, double Y)[] Anchors =
         [(0.15, 0.2), (0.5, 0.15), (0.85, 0.2), (0.15, 0.8), (0.5, 0.85), (0.85, 0.8), (0.3, 0.5)];

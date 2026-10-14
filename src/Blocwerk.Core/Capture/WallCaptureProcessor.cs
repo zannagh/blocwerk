@@ -31,15 +31,21 @@ public sealed partial class WallCaptureProcessor(
     IDeployBusyGate? busyGate = null,
     CaptureFollowUpChain? followUps = null,
     Runners.GpuJobQueue? gpuJobs = null,
-    IHoldDetectionService? holdDetection = null)
+    IHoldDetectionService? holdDetection = null,
+    AfterCompletionQueue? afterCompletion = null)
 {
     private readonly ILogger logger = loggerFactory.CreateLogger<WallCaptureProcessor>();
 
     /// <summary>Processes a capture. Returns normally on success or on a handled failure.</summary>
-    /// <remarks>Cancellation (app shutdown) propagates and leaves the row as is, to be resumed.</remarks>
+    /// <remarks>
+    /// Cancellation (app shutdown) propagates and leaves the row as is, to be resumed. The attempt is given back the moment
+    /// the shutdown starts (<see cref="CaptureAttemptRefund"/>), not once the stage has unwound: a stage busy in a long call
+    /// may still be running when the container is stopped hard, and a deploy must not cost an attempt.
+    /// </remarks>
     public async Task ProcessAsync(Guid captureId, CancellationToken ct)
     {
         CaptureRun? context = null;
+        var refund = new CaptureAttemptRefund(() => RefundAttemptAsync(captureId));
         try
         {
             context = await BeginAsync(captureId, ct);
@@ -48,7 +54,10 @@ public sealed partial class WallCaptureProcessor(
                 return;
             }
 
-            await RunStagesAsync(context, ct);
+            using (ct.Register(refund.Start))
+            {
+                await RunStagesAsync(context, ct);
+            }
         }
         catch (CaptureNotActivatedException ex)
         {
@@ -67,7 +76,7 @@ public sealed partial class WallCaptureProcessor(
             // A clean shutdown (a deploy) is not a failed attempt; only a process that dies keeps it.
             if (context is not null)
             {
-                await RefundAttemptAsync(captureId);
+                await refund.WaitAsync();
             }
 
             throw;

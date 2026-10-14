@@ -206,7 +206,7 @@ public class LookOverBoulderClearingTests
     {
         await using var db = h.CreateContext();
         var panel = await db.WallPanels.SingleAsync(p => p.WallId == w.WallId && p.Generation == 3);
-        var anchor = await db.Holds.FirstAsync(x => x.WallPanelId == panel.Id && x.Generation == 3 && x.X == Anchors[0].X && x.Y == Anchors[0].Y);
+        var anchor = await db.Holds.FirstAsync(x => x.WallPanelId == panel.Id && x.Generation == 3 && Math.Abs(x.X - Anchors[0].X) < Tolerance && Math.Abs(x.Y - Anchors[0].Y) < Tolerance);
         db.BoulderHolds.Add(new BoulderHold { BoulderId = w.BoulderId, HoldId = anchor.Id });
         anchor.NeedsReview = false;
         await db.SaveChangesAsync();

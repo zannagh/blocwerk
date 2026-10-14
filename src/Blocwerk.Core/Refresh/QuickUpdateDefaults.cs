@@ -10,7 +10,8 @@ namespace Blocwerk.Core.Refresh;
 /// <summary>
 /// The quick review's decisions: exactly what the step-by-step review starts from when nobody changes anything
 /// (every old hold carried, onto the matcher's twin where there is one; new detections kept unless the service
-/// suggested dropping them), plus the overlap links the matcher is at least <see cref="OverlapThreshold"/> sure of.
+/// suggested dropping them), plus the overlap links the matcher is at least <see cref="OverlapThreshold"/> sure of; in a
+/// full revision every other overlap pair too, marked unsure (no twin of a new centre hold is dropped or left unlinked).
 /// Nothing is ever removed or marked as moved here: that stays a person's decision in the full review.
 /// </summary>
 public static class QuickUpdateDefaults
@@ -34,21 +35,27 @@ public static class QuickUpdateDefaults
         var removed = free.Where(suggested.ContainsKey).ToList();
 
         var neighbours = session.Neighbours
-            .Select(n => NeighbourDefaults(n, stagedHoldsByPanel.GetValueOrDefault(n.PanelId) ?? [], suggested))
+            .Select(n => NeighbourDefaults(n, stagedHoldsByPanel.GetValueOrDefault(n.PanelId) ?? [], suggested, session.FullRevision))
             .ToList();
         var leftOut = session.Neighbours.Sum(n => n.Proposals.Count) - neighbours.Sum(n => n.Links.Count);
         return new QuickDecisions(carry, accepted, removed, neighbours, Math.Max(0, leftOut));
     }
 
     private static NeighbourLinkSet NeighbourDefaults(
-        NeighbourOverlap overlap, IReadOnlyList<Guid> stagedHolds, IReadOnlyDictionary<Guid, NewHoldDiscardReason> suggested)
+        NeighbourOverlap overlap, IReadOnlyList<Guid> stagedHolds, IReadOnlyDictionary<Guid, NewHoldDiscardReason> suggested, bool linkUnsure)
     {
         var removed = stagedHolds.Where(suggested.ContainsKey).ToList();
         var removedSet = removed.ToHashSet();
         var usedA = new HashSet<Guid>();
         var usedB = new HashSet<Guid>();
         var links = new List<ConfirmedLink>();
-        foreach (var p in overlap.Proposals.Where(p => p.Confidence >= OverlapThreshold && !p.Moved).OrderByDescending(p => p.Confidence))
+
+        // The sure pairs first; in a full revision then the unsure ones, best first, as links the look-over asks about.
+        var sure = overlap.Proposals.Where(p => p.Confidence >= OverlapThreshold && !p.Moved).OrderByDescending(p => p.Confidence);
+        var unsure = linkUnsure
+            ? overlap.Proposals.Where(p => p.Confidence < OverlapThreshold && !p.Moved).OrderByDescending(p => p.Confidence)
+            : Enumerable.Empty<OverlapProposalDto>();
+        foreach (var p in sure.Concat(unsure))
         {
             if (suggested.ContainsKey(p.HoldAId) || removedSet.Contains(p.HoldBId) || !usedA.Add(p.HoldAId))
             {
@@ -61,7 +68,7 @@ public static class QuickUpdateDefaults
                 continue;
             }
 
-            links.Add(new ConfirmedLink(p.HoldAId, p.HoldBId, Moved: false));
+            links.Add(new ConfirmedLink(p.HoldAId, p.HoldBId, Moved: false, Unsure: p.Confidence < OverlapThreshold));
         }
 
         return new NeighbourLinkSet(overlap.PanelId, links, removed);

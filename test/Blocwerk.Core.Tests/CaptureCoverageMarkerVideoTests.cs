@@ -68,7 +68,8 @@ public class CaptureCoverageMarkerVideoTests
     [Fact]
     public void PhotosOnlyAtChestHeight_MissTheKneeAndOverheadPasses_TheEndArcsAndTheVolumeSemicircle()
     {
-        var report = CaptureCoverageAnalyzer.Analyze(Inputs(Document(), ChestHeight, [Block(1, 1500, 2200)]), DateTimeOffset.UnixEpoch);
+        var report = CaptureCoverageAnalyzer.Analyze(
+            Inputs(Document(), ChestHeight, [Block(1, 1500, 2200)], video: new CoverageVideoInput(false, 0, null)), DateTimeOffset.UnixEpoch);
 
         var passes = report.Video.Passes.ToDictionary(p => p.Key);
         Assert.Equal(CoveragePoseSource.Photos, report.Video.PosesFrom);
@@ -80,6 +81,18 @@ public class CaptureCoverageMarkerVideoTests
         Assert.Contains("Add a knee-height pass aimed up to the video: no photo was taken like that", video);
         Assert.Contains("Add an overhead pass aimed down to the video: no photo was taken like that", video);
         Assert.Contains("Walk a semicircle under volume 1 in the video: the photos do not see it from below all round", video);
+    }
+
+    [Fact]
+    public void AVideoWhoseFramePositionsAreNotReported_GetsNoRecipeTips()
+    {
+        // The Attic capture of 2026-10-12: 398 of 400 frames placed, but frame.json has no positions for them.
+        var report = CaptureCoverageAnalyzer.Analyze(
+            Inputs(Document(), ChestHeight, [Block(1, 1500, 2200)], video: new CoverageVideoInput(true, 400, 398)), DateTimeOffset.UnixEpoch);
+
+        Assert.Equal(CoveragePoseSource.Photos, report.Video.PosesFrom);
+        Assert.False(report.Video.Passes.ToDictionary(p => p.Key)["knee"].Present);
+        Assert.DoesNotContain(report.Advice, a => a.Kind == "video");
     }
 
     [Fact]

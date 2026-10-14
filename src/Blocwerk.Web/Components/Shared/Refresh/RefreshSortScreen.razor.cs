@@ -3,7 +3,9 @@
 // </copyright>
 
 using Blocwerk.Core.Capture;
+using Blocwerk.Core.Entities;
 using Blocwerk.Core.Refresh;
+using Blocwerk.Core.Runners;
 using Microsoft.AspNetCore.Components;
 
 namespace Blocwerk.Web.Components.Shared.Refresh;
@@ -13,6 +15,7 @@ public partial class RefreshSortScreen
 {
     private readonly Dictionary<(int Col, int Row), Guid?> changes = [];
     private readonly HashSet<(int Col, int Row)> editing = [];
+    private bool ultraAvailable;
 
     [Parameter]
     public WallRefreshView View { get; set; } = default!;
@@ -30,6 +33,30 @@ public partial class RefreshSortScreen
     /// <summary>Full revision, panels only.</summary>
     [Parameter]
     public EventCallback<IReadOnlyList<PanelChoice>> OnStartOverPanelsOnly { get; set; }
+
+    /// <summary>The photo-real view's quality the 3D capture is started with (the page keeps it for the start).</summary>
+    [Parameter]
+    public SplatQuality Quality { get; set; } = SplatQuality.High;
+
+    [Parameter]
+    public EventCallback<SplatQuality> QualityChanged { get; set; }
+
+    [Inject]
+    private IWallCaptureService Captures { get; set; } = default!;
+
+    [Inject]
+    private SplatQualityOffer QualityOffer { get; set; } = default!;
+
+    private bool QualityChoice => View.CaptureAvailable && Captures.IsSplatConfigured;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Ultra only when a 3D runner (or the splat worker) can really train it, as on the capture panel.
+        ultraAvailable = QualityChoice && await QualityOffer.UltraAvailableAsync(View.WallId, CancellationToken.None);
+    }
+
+    private Task SetQualityAsync(ChangeEventArgs e) =>
+        Enum.TryParse<SplatQuality>(e.Value?.ToString(), out var chosen) ? QualityChanged.InvokeAsync(chosen) : Task.CompletedTask;
 
     private List<string> PanelsKeepingPhoto => View.Picks.Where(p => Chosen(p) is null).Select(PanelName).ToList();
 

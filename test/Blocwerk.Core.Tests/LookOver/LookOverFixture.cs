@@ -61,8 +61,8 @@ internal static class LookOverFixture
         Guid otherOld;
         await using (var db = h.CreateContext())
         {
-            var staged = await db.Holds.SingleAsync(s => s.Generation == 3 && s.X == x && s.Y == y);
-            otherOld = (await db.Holds.SingleAsync(s => s.Generation == 2 && s.X == x && s.Y == y)).Id;
+            var staged = await db.Holds.SingleAsync(s => s.Generation == 3 && Math.Abs(s.X - x) < Tolerance && Math.Abs(s.Y - y) < Tolerance);
+            otherOld = (await db.Holds.SingleAsync(s => s.Generation == 2 && Math.Abs(s.X - x) < Tolerance && Math.Abs(s.Y - y) < Tolerance)).Id;
             db.Holds.Remove(staged);
             db.BoulderHolds.Add(new BoulderHold { BoulderId = w.BoulderId, HoldId = otherOld });
             await db.SaveChangesAsync();

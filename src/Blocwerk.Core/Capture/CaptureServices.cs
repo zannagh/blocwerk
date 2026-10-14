@@ -33,6 +33,10 @@ public static class CaptureServices
         services.AddScoped<ICaptureFollowUpStep, CoverageReportFollowUpStep>();
         services.AddScoped<Coverage.ICaptureCoverageService, Coverage.CaptureCoverageService>();
 
+        // The slow after-completion steps run beside the capture worker, so the next capture never waits for them.
+        services.AddSingleton<AfterCompletionQueue>();
+        services.AddHostedService<AfterCompletionWorker>();
+
         // Corrections of the active model (new model versions) and the chain re-run on the corrected version.
         services.AddSingleton<Corrections.CorrectionFollowUpQueue>();
         services.AddHostedService<Corrections.CorrectionFollowUpWorker>();
@@ -43,6 +47,9 @@ public static class CaptureServices
         services.AddSingleton<Runners.GpuJobSignal>();
         services.AddSingleton<Runners.GpuJobQueue>();
         services.AddHostedService<Runners.GpuJobSweepWorker>();
+
+        // The hold proposal search's detection on a runner that finds holds (the app detects itself without one).
+        services.AddSingleton<Runners.RunnerHoldDetection>();
 
         // Photo-real previews a runner uploads while it trains: installed beside the capture worker (GpuPreviewWorker).
         services.AddSingleton<Runners.GpuPreviewQueue>();

@@ -119,15 +119,15 @@ public partial class WallBigUpdateService
                 && updatedPanelIds.Contains(h.WallPanelId.Value))
             .ToDictionaryAsync(h => h.Id);
 
-        // Archive the outgoing photo before the generation is bumped.
-        if (wall.Photo is not null)
+        // Archive the outgoing photo before the generation is bumped: the one its centre holds sit on.
+        if (await LoadRetiringCentrePhotoAsync(db, wall) is { } retiring)
         {
             db.WallResets.Add(new WallReset
             {
                 WallId = wall.Id,
                 Generation = oldGen,
-                PreviousPhoto = wall.Photo,
-                PreviousPhotoContentType = wall.PhotoContentType,
+                PreviousPhoto = retiring.Photo,
+                PreviousPhotoContentType = retiring.ContentType,
                 ResetByUserId = user.Id,
             });
         }

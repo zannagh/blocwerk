@@ -39,6 +39,7 @@ public partial class WallBigUpdateService
                 : await db.WallUpdateExceptions.AsNoTracking().Where(e => e.SessionId == session.Id).ToListAsync();
             var unaligned = session?.UnalignedCarryPanelIds.ToHashSet() ?? [];
             var findings = LookOverBuilder(ReadPromoteFacts(db, wall.Id, newGen, cards, unaligned, inputs));
+            findings.AddRange(UnsureLinkFindings(db, wall.Id, inputs.Confirmation));
             if (findings.Count == 0)
             {
                 return;

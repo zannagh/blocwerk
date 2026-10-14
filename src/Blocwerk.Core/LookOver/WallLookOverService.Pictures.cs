@@ -28,7 +28,7 @@ public sealed partial class WallLookOverService
         var pictures = new List<LookOverPicture>();
         if (view.HasOld)
         {
-            var old = frames.Hold(finding.OldHoldId);
+            var old = frames.Hold(LookOverFrameSource.BeforeHoldId(finding));
             pictures.Add(new LookOverPicture(CheckCropView.Old, frames.Before(finding) is { } before && old is not null ? [before.Outline(old, kept: false)] : []));
         }
 
@@ -59,7 +59,8 @@ public sealed partial class WallLookOverService
             outlines.Add(now.Outline(hold, kept: hold.KeptUnconfirmedGeneration is not null));
         }
 
-        if (frames.Hold(view.OtherHoldId) is { } other)
+        // An unsure link's other hold is on the other photo: it has the first picture to itself.
+        if (finding.Kind != Enums.LookOverFindingKind.UnsureLink && frames.Hold(view.OtherHoldId) is { } other)
         {
             outlines.Add(now.Outline(other, kept: false));
         }

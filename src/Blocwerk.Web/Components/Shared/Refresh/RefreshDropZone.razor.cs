@@ -2,6 +2,7 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using Blocwerk.Core.Capture;
 using Blocwerk.Core.Refresh;
 using Blocwerk.Web.Endpoints;
 using Microsoft.AspNetCore.Components;
@@ -38,6 +39,9 @@ public partial class RefreshDropZone : IDisposable
 
     [Inject]
     private IJSRuntime JS { get; set; } = default!;
+
+    [Inject]
+    private WallCapturePipelineOptions PipelineOptions { get; set; } = default!;
 
     /// <summary>"12 photos, 2 videos (310 MB)": the count, and the size where it is known (videos; the upload that just ran).</summary>
     private string Counts
@@ -100,8 +104,12 @@ public partial class RefreshDropZone : IDisposable
             }
 
             selfRef ??= DotNetObjectReference.Create(this);
+
+            // Photos the capture would refuse are not sent at all (the browser stops them before the upload).
+            var room = Math.Max(0, PipelineOptions.MaxPhotos - (View?.Photos.Count ?? 0));
             await JS.InvokeAsync<int>(
-                "bwRefreshUpload.upload", TimeSpan.FromHours(3), "refresh-files", WallRefreshUploadEndpoint.Url(refreshId), selfRef);
+                "bwRefreshUpload.upload", TimeSpan.FromHours(3), "refresh-files", WallRefreshUploadEndpoint.Url(refreshId), selfRef,
+                room, PipelineOptions.MaxPhotos);
         }
         catch (JSException ex)
         {

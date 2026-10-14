@@ -26,14 +26,12 @@ internal static class LookOverFindingBuilder
             .Where(c => c.Status == UpdateExceptionStatus.Pending)
             .OrderBy(c => LookOverRules.Rank((LookOverFindingKind)(int)c.Kind))
             .ThenBy(c => c.Id);
-        var findings = new List<WallLookOverFinding>();
-        foreach (var card in cards)
-        {
-            if (FromCard(facts, card) is { } finding && !findings.Any(f => f.OldHoldId is { } o && o == finding.OldHoldId))
-            {
-                findings.Add(finding);
-            }
-        }
+        var seenOldHolds = new HashSet<Guid>();
+        var findings = cards
+            .Select(card => FromCard(facts, card))
+            .OfType<WallLookOverFinding>()
+            .Where(f => f.OldHoldId is not { } old || seenOldHolds.Add(old))
+            .ToList();
 
         AddNotFound(facts, findings);
         AddSameSpots(facts, findings);

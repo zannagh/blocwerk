@@ -69,7 +69,7 @@ internal sealed class LookOverFrameSource
     /// <returns>The frame, or null without an old hold or a readable photo.</returns>
     public CropFrame? Before(WallLookOverFinding finding)
     {
-        if (Hold(finding.OldHoldId) is not { WallPanelId: { } panel } old || !PhotoSizes.TryGetValue(panel, out var size))
+        if (Hold(BeforeHoldId(finding)) is not { WallPanelId: { } panel } old || !PhotoSizes.TryGetValue(panel, out var size))
         {
             return null;
         }
@@ -79,6 +79,15 @@ internal sealed class LookOverFrameSource
         var ring = radius * Math.Max(size.Width, size.Height);
         return new CropFrame(old.X * size.Width, old.Y * size.Height, RingCrop.HalfFor(ring), ring, size.Width, size.Height);
     }
+
+    /// <summary>
+    /// The hold the first picture is about: the old hold, or for an unsure link the centre hold, so the two pictures are
+    /// the same hold (or not) on the two photos.
+    /// </summary>
+    /// <param name="finding">The finding.</param>
+    /// <returns>The hold's id, or null.</returns>
+    public static Guid? BeforeHoldId(WallLookOverFinding finding) =>
+        finding.Kind == LookOverFindingKind.UnsureLink ? finding.OtherHoldId : finding.OldHoldId;
 
     /// <summary>Where the "now" picture is cut: the piece of wall "before" shows, found on the new photo.</summary>
     /// <param name="finding">The finding.</param>

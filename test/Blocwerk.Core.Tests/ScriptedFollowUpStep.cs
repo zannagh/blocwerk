@@ -10,7 +10,8 @@ namespace Blocwerk.Core.Tests;
 /// A scripted post-capture step: records every call in a shared log, then does what <see cref="Run"/> says
 /// (by default: done, with <see cref="Summary"/>).
 /// </summary>
-internal sealed class ScriptedFollowUpStep(string key, int order, List<string> log, bool needsPhotoReal = false) : ICaptureFollowUpStep
+internal sealed class ScriptedFollowUpStep(string key, int order, List<string> log, bool needsPhotoReal = false, bool afterCompletion = false)
+    : ICaptureFollowUpStep
 {
     public string Key => key;
 
@@ -19,6 +20,8 @@ internal sealed class ScriptedFollowUpStep(string key, int order, List<string> l
     public string Title => $"Step {key}";
 
     public bool NeedsPhotoReal => needsPhotoReal;
+
+    public bool RunsAfterCompletion => afterCompletion;
 
     public string Summary { get; set; } = string.Empty;
 

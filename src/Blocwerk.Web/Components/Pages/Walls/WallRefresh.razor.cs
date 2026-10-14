@@ -36,6 +36,7 @@ public partial class WallRefresh : IDisposable
     private PeriodicTimer? timer;
     private CancellationTokenSource? polling;
     private Task? beginning;
+    private SplatQuality splatQuality = SplatQuality.High;
 
     [Parameter]
     public Guid WallId { get; set; }
@@ -158,13 +159,13 @@ public partial class WallRefresh : IDisposable
 
     private Task SortAsync() => ActAsync(id => Refreshes.SortAsync(id));
 
-    private Task StartAsync(IReadOnlyList<PanelChoice> choices) => ActAsync(id => Refreshes.StartAsync(id, choices));
+    private Task StartAsync(IReadOnlyList<PanelChoice> choices) => ActAsync(id => Refreshes.StartAsync(id, choices, quality: splatQuality));
 
     private Task StartPanelsOnlyAsync(IReadOnlyList<PanelChoice> choices) =>
         ActAsync(id => Refreshes.StartAsync(id, choices, keepModel: true));
 
     private Task StartFullRevisionAsync(IReadOnlyList<PanelChoice> choices) =>
-        ActAsync(id => Refreshes.StartAsync(id, choices, fullRevision: true));
+        ActAsync(id => Refreshes.StartAsync(id, choices, fullRevision: true, quality: splatQuality));
 
     private Task StartFullRevisionPanelsOnlyAsync(IReadOnlyList<PanelChoice> choices) =>
         ActAsync(id => Refreshes.StartAsync(id, choices, keepModel: true, fullRevision: true));

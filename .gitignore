@@ -2,6 +2,7 @@
 .nodeterm
 
 docker/pgdata
+docker/logs
 docker/blocwerk.tar.gz
 
 # ONNX models (large binary files)

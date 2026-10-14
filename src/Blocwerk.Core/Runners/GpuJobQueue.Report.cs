@@ -190,8 +190,14 @@ public sealed partial class GpuJobQueue
         var stage = report.Stage switch
         {
             "download" => "is downloading the photos",
+            "upload" when kind == GpuJobKind.DetectHolds => "is uploading the holds it found",
             "upload" => kind == GpuJobKind.Textures ? UploadingTexturesStage : UploadingStage,
-            _ => kind == GpuJobKind.Textures ? "is rendering the wall textures" : "is training",
+            _ => kind switch
+            {
+                GpuJobKind.Textures => "is rendering the wall textures",
+                GpuJobKind.DetectHolds => "is finding holds in the photos",
+                _ => "is training",
+            },
         };
         if (report is { Step: { } step, TotalSteps: > 0 })
         {

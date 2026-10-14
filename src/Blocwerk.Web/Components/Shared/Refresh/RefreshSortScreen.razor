@@ -100,6 +100,21 @@
         <section class="refresh-start" aria-labelledby="refresh-start-title">
             <h2 id="refresh-start-title">Update the wall</h2>
             <p class="hint">The old holds are looked for on the new photos. You check the result before anything is live.</p>
+            @if (QualityChoice)
+            {
+                <div class="form-group">
+                    <label for="refresh-splat-quality">Photo-real view quality (3D)</label>
+                    <select id="refresh-splat-quality" class="form-input" value="@Quality" @onchange="SetQualityAsync">
+                        <option value="@SplatQuality.Draft">Draft: fast, soft (minutes)</option>
+                        <option value="@SplatQuality.High">High: sharp (about an hour on a laptop)</option>
+                        <option value="@SplatQuality.Max">Max: sharpest, needs a strong GPU</option>
+                        @if (ultraAvailable)
+                        {
+                            <option value="@SplatQuality.Ultra">Ultra: finest detail, on a 3D runner with a 12 GB NVIDIA GPU</option>
+                        }
+                    </select>
+                </div>
+            }
             <div class="refresh-actions">
                 <button class="btn-primary" @onclick="StartAsync">@(View.CaptureAvailable ? "Start (panels + 3D)" : "Start")</button>
                 @if (View.CaptureAvailable)

@@ -96,7 +96,8 @@ public partial class WallBigUpdateService
             SuggestedNewDiscards: triage.Discards,
             SeenIn3DHoldIds: triage.SeenIn3D,
             Evidence3DModelId: triage.Evidence3DModelId,
-            ConflictingNew: use3DEvidence ? triage.ConflictingNew : null);
+            ConflictingNew: use3DEvidence ? triage.ConflictingNew : null,
+            FullRevision: true);
     }
 
     /// <summary>

@@ -68,22 +68,22 @@ public static class UpdateExceptionBuilder
     private static void AddMatchCards(BigUpdateSession session, Dictionary<Guid, CarryoverDecision> carry, List<UpdateExceptionDraft> drafts)
     {
         var looks = session.Looks ?? [];
-        foreach (var f in looks.Where(f => f.Look == HoldLook.Replaced))
+        var keptInPlace = looks.Where(f => f.Look == HoldLook.Replaced
+            && carry.GetValueOrDefault(f.OldHoldId) is { Kind: CarryKind.Carried, NewHoldId: null });
+        foreach (var f in keptInPlace)
         {
-            if (carry.GetValueOrDefault(f.OldHoldId) is { Kind: CarryKind.Carried, NewHoldId: null })
-            {
-                drafts.Add(new UpdateExceptionDraft(UpdateExceptionKind.ReplacedByOther, f.OldHoldId, f.NewHoldId, f.PanelId, PhotoScore: f.Score));
-            }
+            drafts.Add(new UpdateExceptionDraft(UpdateExceptionKind.ReplacedByOther, f.OldHoldId, f.NewHoldId, f.PanelId, PhotoScore: f.Score));
         }
 
         var unsure = looks.Where(f => f.Look == HoldLook.Unsure).ToLookup(f => (f.OldHoldId, f.NewHoldId));
-        foreach (var p in session.Carryover.Where(p => p.Confidence < LowConfidence || unsure.Contains((p.OldHoldId, p.NewHoldId))).OrderBy(p => p.Confidence))
+        var doubtful = session.Carryover
+            .Where(p => p.Confidence < LowConfidence || unsure.Contains((p.OldHoldId, p.NewHoldId)))
+            .Where(p => carry.GetValueOrDefault(p.OldHoldId) is { Kind: CarryKind.Carried } d && d.NewHoldId == p.NewHoldId)
+            .OrderBy(p => p.Confidence);
+        foreach (var p in doubtful)
         {
-            if (carry.GetValueOrDefault(p.OldHoldId) is { Kind: CarryKind.Carried } d && d.NewHoldId == p.NewHoldId)
-            {
-                var score = unsure[(p.OldHoldId, p.NewHoldId)].FirstOrDefault()?.Score;
-                drafts.Add(new UpdateExceptionDraft(UpdateExceptionKind.LowConfidenceMatch, p.OldHoldId, p.NewHoldId, PhotoScore: score, Confidence: p.Confidence));
-            }
+            var score = unsure[(p.OldHoldId, p.NewHoldId)].FirstOrDefault()?.Score;
+            drafts.Add(new UpdateExceptionDraft(UpdateExceptionKind.LowConfidenceMatch, p.OldHoldId, p.NewHoldId, PhotoScore: score, Confidence: p.Confidence));
         }
     }
 }

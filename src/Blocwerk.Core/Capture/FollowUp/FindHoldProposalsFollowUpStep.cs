@@ -6,18 +6,21 @@ using System.Security.Cryptography;
 using System.Text;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
+using Blocwerk.Core.Runners;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Capture.FollowUp;
 
 /// <summary>
 /// Step 5 (after the capture completed): holds seen in several capture photos that match no existing hold become
-/// proposals for a wall admin to review (<see cref="IHoldProposalService.FindFromPipelineAsync"/>). It only
+/// proposals for a wall admin to review (<see cref="IHoldProposalService.FindFromPipelineAsync(Guid, CancellationToken)"/>). It only
 /// proposes: accepting one adds the hold to its panel (panel truth), so nothing live changes here. Minutes on the
 /// CPU, so it runs once the capture already shows as done; it runs again only when the visible volumes changed
-/// (known holds are subtracted at their volume points), and a re-run reuses the cached photo detections.
+/// (known holds are subtracted at their volume points), and a re-run reuses the cached photo detections. The detection goes
+/// to a 3D runner that finds holds when one is online (<see cref="RunnerHoldDetection"/>); without one it runs in the app.
 /// </summary>
-public sealed class FindHoldProposalsFollowUpStep(IHoldProposalService proposals, IDbContextFactory<BlocwerkDbContext> dbContextFactory)
+public sealed class FindHoldProposalsFollowUpStep(
+    IHoldProposalService proposals, IDbContextFactory<BlocwerkDbContext> dbContextFactory, RunnerHoldDetection? runners = null)
     : ICaptureFollowUpStep
 {
     /// <summary>The step's key in the follow-up record.</summary>
@@ -58,7 +61,10 @@ public sealed class FindHoldProposalsFollowUpStep(IHoldProposalService proposals
     /// <inheritdoc />
     public async Task<CaptureFollowUpStepResult> RunAsync(CaptureFollowUpContext context, CancellationToken ct)
     {
-        var result = await proposals.FindFromPipelineAsync(context.WallId, ct);
+        var detected = runners is null ? null : await runners.DetectAsync(context, ct);
+        var result = detected is null
+            ? await proposals.FindFromPipelineAsync(context.WallId, ct)
+            : await proposals.FindFromPipelineAsync(context.WallId, detected, ct);
         if (result is null)
         {
             return CaptureFollowUpStepResult.Skipped("the capture photos could not be searched for holds");

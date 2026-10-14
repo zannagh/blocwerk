@@ -45,9 +45,15 @@ public static class Program
             .Enrich.FromLogContext()
             .WriteTo.Console()
 
-            // Two days of files on top of today's, so a container that lives for weeks does not keep a month of logs
-            // (the files sit in the container's writable layer, which a redeploy resets anyway).
-            .WriteTo.File("logs/blocwerk.log", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 3);
+            // One file per day, a new one after 10 MB, at most 7 files (70 MB), so about a week at normal volume and a
+            // busy day can only shorten that. Production mounts logs/ from the host (docker-compose.prod.yml), so the
+            // files outlive a redeploy and a session can be compared with the one before it.
+            .WriteTo.File(
+                "logs/blocwerk.log",
+                rollingInterval: RollingInterval.Day,
+                fileSizeLimitBytes: 10 * 1024 * 1024,
+                rollOnFileSizeLimit: true,
+                retainedFileCountLimit: 7);
 
         // Levels per category: defaults in LoggingLevels, overridable with Logging__LogLevel__<Category> (compose/env).
         // The framework categories stay at Warning so only genuine problems (and our own Information logs) ship; Debug

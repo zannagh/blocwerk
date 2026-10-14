@@ -68,6 +68,10 @@ namespace Blocwerk.Core.Services;
 /// Old holds without a twin whose boulders are marked for review at the promote, with why: another hold sits there now,
 /// or the spot no longer shows the hold. Holds that are demonstrably still there are not in it. Null before matching.
 /// </param>
+/// <param name="FullRevision">
+/// The wall starts over (<see cref="Entities.WallUpdateSession.FullRevision"/>): the quick review links every overlap pair, the
+/// unsure ones to be asked about in the look-over, because every centre hold is new and none of its twins may be lost.
+/// </param>
 public record BigUpdateSession(
     Guid WallId,
     Guid CenterPanelId,
@@ -89,4 +93,5 @@ public record BigUpdateSession(
     IReadOnlyList<HandPlacedMerge>? HandPlacedMerges = null,
     IReadOnlyList<HandPlacedAmbiguity>? HandPlacedAmbiguous = null,
     IReadOnlyList<HoldLookFinding>? Looks = null,
-    IReadOnlyDictionary<Guid, HoldMoveOutcome>? NotFoundAgain = null);
+    IReadOnlyDictionary<Guid, HoldMoveOutcome>? NotFoundAgain = null,
+    bool FullRevision = false);
