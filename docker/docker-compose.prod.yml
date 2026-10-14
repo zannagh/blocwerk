@@ -127,9 +127,14 @@ services:
       # While off the route is not mapped (404). An empty allow-list means nobody.
       BLOCWERK__AUTH__APIKEYLOGIN__ENABLED: ${APIKEYLOGIN_ENABLED:-false}
       BLOCWERK__AUTH__APIKEYLOGIN__ALLOWEDUSERIDS__0: ${APIKEYLOGIN_USER_ID:-}
+      # Re-detect in the wall editor (proposals to accept or keep). OFF unless .env says otherwise.
+      HOLDDETECTION__REDETECT__ENABLED: ${REDETECT_ENABLED:-false}
     volumes:
       - ./appsettings.json:/app/appsettings.json:ro
       - ./climbingcrux.onnx:/app/models/climbingcrux.onnx:ro
+      # Box-prompted hold outlines (tools/hold-eval/export_segmenter.py). Missing files: holds are outlined by colour.
+      - ./hold-segmenter-encoder.onnx:/app/models/hold-segmenter-encoder.onnx:ro
+      - ./hold-segmenter-decoder.onnx:/app/models/hold-segmenter-decoder.onnx:ro
       # DataProtection keys, carried over verbatim. Losing these invalidates every kiosk
       # device registration, TOTP secret and stored TopLogger token.
       - ./dpkeys:/app/keys
