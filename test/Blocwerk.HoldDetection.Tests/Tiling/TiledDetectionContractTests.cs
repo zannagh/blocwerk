@@ -21,8 +21,8 @@ public class TiledDetectionContractTests(OnnxRuntimeFixture onnx)
         var (holds, outOfBounds, _) = YoloHoldDetectionService.ToHolds(boxes, 4000, 3000);
 
         Assert.Equal(0, outOfBounds);
-        Assert.Equal(new(0.0325, 0.0733, 0.0075, null, 0.9), holds[0]);
-        Assert.Equal(new(0.2875, 0.3667, 0.0375, "white", 0.8), holds[1]);
+        Assert.Equal(new(0.0325, 0.0733, 0.0075, null, 0.9, 0.015, 0.01333), holds[0]);
+        Assert.Equal(new(0.2875, 0.3667, 0.0375, "white", 0.8, 0.075, 0.06667), holds[1]);
     }
 
     [SkippableFact]

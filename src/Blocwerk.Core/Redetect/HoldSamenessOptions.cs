@@ -44,6 +44,15 @@ public sealed class HoldSamenessOptions
     /// <summary>The score two stored holds need to be merged without asking when a colour is unknown or only close.</summary>
     public double SureScoreUnknownColor { get; set; } = 0.85;
 
+    /// <summary>
+    /// A stored hold that is only a circle says "there is a hold here", not how large it is: a traced detection around
+    /// its centre is that hold while the two are at most this far apart in size, measured across.
+    /// </summary>
+    public double MaxPlaceholderSizeRatio { get; set; } = 5;
+
+    /// <summary>The detector confidence from which an outline for a plain circle can be accepted together with the others.</summary>
+    public double SafeDetectorConfidence { get; set; } = 0.9;
+
     /// <summary>A detection whose outline matches the stored one at least this well (IoU) changes nothing.</summary>
     public double UnchangedIou { get; set; } = 0.9;
 }

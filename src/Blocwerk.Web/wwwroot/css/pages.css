@@ -1653,6 +1653,8 @@ body:has(.panel-crop-modal) .bw-toolbar { display: none; }
 /* The dialog is a column: title, a scrolling middle (.panel-crop-body) and a footer with the buttons that never
    scrolls away, so every button stays visible however long the hold/boulder list is. */
 .bw-modal.panel-crop-modal { max-width: 960px; max-height: 100%; overflow: hidden; }
+/* The re-detect review: wide enough for two pictures side by side, and it never scrolls as a whole (its card does). */
+.bw-modal.redetect-modal { width: min(100%, 760px); max-width: 760px; overflow: hidden; }
 @media (max-width: 600px), (max-height: 500px) {
     .bw-modal-backdrop:has(.panel-crop-modal) {
         padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right))

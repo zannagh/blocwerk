@@ -23,7 +23,8 @@ public partial class WallBigUpdateService
     /// and on a brightened copy (markers on a dark kickboard or volume only decode there). A quad still has
     /// to be a dark square on white paper (the plan-print quiet-zone floor), so a dark hold is not taken for one.
     /// </summary>
-    private static readonly MarkerDetectionOptions RescueMarkerOptions = new()
+    /// <summary>The lenient marker pass: every id, small and steep quads, duplicates kept. Re-detect uses it too.</summary>
+    internal static readonly MarkerDetectionOptions RescueMarkerOptions = new()
     {
         AllowedIds = Enumerable.Range(0, 50).ToHashSet(),
         MinSidePx = 8,

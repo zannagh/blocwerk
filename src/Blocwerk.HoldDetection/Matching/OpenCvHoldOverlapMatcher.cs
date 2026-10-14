@@ -101,7 +101,8 @@ public sealed class OpenCvHoldOverlapMatcher : IHoldOverlapMatcher
 
         var radiusRb = ri.Select(j => rightHolds[j].SizeNorm * (double?)Math.Max(wr, hr)).ToList();
         var stats = new MatchStats();
-        var (proposals, diags) = ScoreAndAssign(li, ri, cRb, radiusRb, descLb, descRb, qmap, nnR, nnL, effL, effR, stats);
+        var sizes = (Left: li.Select(i => MatchGate.SizeOf(leftHolds[i], wl, hl)).ToList(), Right: ri.Select(j => MatchGate.SizeOf(rightHolds[j], wr, hr)).ToList());
+        var (proposals, diags) = ScoreAndAssign(li, ri, cRb, radiusRb, sizes, descLb, descRb, qmap, nnR, nnL, effL, effR, stats);
         var usedL = new HashSet<int>(proposals.Select(p => p.LeftIdx));
         var usedR = new HashSet<int>(proposals.Select(p => p.RightIdx));
 
@@ -142,13 +143,13 @@ public sealed class OpenCvHoldOverlapMatcher : IHoldOverlapMatcher
                 "[Matcher] homography ka={KaKeypoints} kb={KbKeypoints} ratio={RatioMatches} inliers={Inliers} | "
                 + "band old={OldHolds} new={NewHolds} inbandL={InBandLeft} inbandR={InBandRight} | "
                 + "warp tex={TextureAnchors} boot={BootAnchors} | "
-                + "resid p50={ResidP50} p90={ResidP90} gatedOut={GatedOut} colourGated={ColourGated} offHold={OffHold} unsupported={Unsupported} | "
+                + "resid p50={ResidP50} p90={ResidP90} gatedOut={GatedOut} colourGated={ColourGated} offHold={OffHold} otherSize={OtherSize} unsupported={Unsupported} | "
                 + "match proposals={Proposals} mutual={MutualNn} rescued={Rescued} unmatchedL={UnmatchedLeft} unmatchedR={UnmatchedRight}",
                 coarse.KaKeypoints, coarse.KbKeypoints, coarse.RatioMatches, coarse.Inliers,
                 leftHolds.Count, rightHolds.Count, li.Count, ri.Count,
                 build.TextureAnchors, build.BootAnchors,
                 Percentile(stats.Residuals, 0.50), Percentile(stats.Residuals, 0.90), stats.GatedOut, stats.ColourGated,
-                stats.OffHold, unsupported, proposals.Count, stats.MutualNn, rescued, unmatchedL.Count, unmatchedR.Count);
+                stats.OffHold, stats.OtherSize, unsupported, proposals.Count, stats.MutualNn, rescued, unmatchedL.Count, unmatchedR.Count);
         }
 
         return new HoldOverlapResult(outProposals, unmatchedL, unmatchedR, warpedLeft, warpedShapes);
@@ -255,7 +256,7 @@ public sealed class OpenCvHoldOverlapMatcher : IHoldOverlapMatcher
     }
 
     private static (List<Proposal> Proposals, List<MatchDiag> Diags) ScoreAndAssign(
-        List<int> li, List<int> ri, List<Pt> cRb, List<double?> radiusRb,
+        List<int> li, List<int> ri, List<Pt> cRb, List<double?> radiusRb, (List<double?> Left, List<double?> Right) sizes,
         List<float[]?> descLb, List<float[]?> descRb, ColorQuantileMap qmap,
         (int[] Idx, double[] Dist)[] nnR, (int[] Idx, double[] Dist)[] nnL,
         double[]?[] effL, double[]?[] effR, MatchStats stats)
@@ -263,8 +264,20 @@ public sealed class OpenCvHoldOverlapMatcher : IHoldOverlapMatcher
         var raw = new List<Candidate>();
         for (int a = 0; a < nnR.Length; a++)
         {
-            int b = nnR[a].Idx[0];
-            double resid = nnR[a].Dist[0];
+            // A hold on a volume and the volume share a spot: the nearest detection of the old hold's own size is asked.
+            int n = MatchGate.NearestOfItsSize(sizes.Left[a], nnR[a].Idx.Select(c => sizes.Right[c]).ToList());
+            if (n != 0)
+            {
+                stats.OtherSize++;
+            }
+
+            if (n < 0)
+            {
+                continue;
+            }
+
+            int b = nnR[a].Idx[n];
+            double resid = nnR[a].Dist[n];
             if (resid >= GatePx)
             {
                 stats.GatedOut++;

@@ -38,4 +38,19 @@ public sealed record HoldOutlineResult(
     double Confidence,
     HoldOutlineMethod Method,
     HoldFingerprint Fingerprint,
-    List<List<ShapePoint>>? ShapeHoles = null);
+    List<List<ShapePoint>>? ShapeHoles = null)
+{
+    /// <summary>
+    /// Gets a value indicating whether a second, independent method found the same outline.
+    /// </summary>
+    public bool Corroborated { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether the hold stands out from the wall: the colour pass was sure of its own outline.
+    /// On a pale or chalked hold two methods agreeing proves little.
+    /// </summary>
+    public bool Distinct { get; init; }
+
+    /// <summary>Gets a value indicating whether the hold's colour is close to the colour of the wall around it.</summary>
+    public bool Pale { get; init; }
+}

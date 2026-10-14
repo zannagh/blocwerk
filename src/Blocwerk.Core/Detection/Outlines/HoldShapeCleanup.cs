@@ -74,7 +74,7 @@ public static class HoldShapeCleanup
         var resolvable = panelHolds.Where(IsResolvable).ToDictionary(h => h.Id);
         var smoothed = resolvable.Values.ToDictionary(h => h.Id, h => h.ShapePoints is { Count: >= 3 } shape ? HoldShapeSmoother.Smooth(shape, aspect) : null);
         var current = panelHolds.Select(h => resolvable.ContainsKey(h.Id)
-            ? new HoldShapeInput(h.Id, h.X, h.Y, h.Radius, smoothed[h.Id], Locked: false)
+            ? new HoldShapeInput(h.Id, h.X, h.Y, h.Radius, smoothed[h.Id], Locked: false, StackedOn: h.StackedOnHoldId)
             : Locked(h)).ToList();
 
         // Run to a fixpoint: every pass only shrinks things, so it converges, and a re-run on the result changes nothing.
@@ -115,18 +115,23 @@ public static class HoldShapeCleanup
     /// <param name="outlines">The new outlines by hold.</param>
     /// <param name="allowRadiusShrink">False when radii must not change.</param>
     /// <param name="aspect">Photo width / height.</param>
+    /// <param name="keepTraced">True to keep a traced outline that cannot be cleared of a neighbour instead of making it a circle.</param>
     /// <returns>The adjusted outline and radius per hold in <paramref name="outlines"/>.</returns>
     public static Dictionary<Hold, (HoldOutlineResult Outline, double Radius)> ResolveOutlines(
         IReadOnlyList<Hold> panelHolds,
         IReadOnlyDictionary<Hold, HoldOutlineResult> outlines,
         bool allowRadiusShrink,
-        double aspect = 1)
+        double aspect = 1,
+        bool keepTraced = false)
     {
         ArgumentNullException.ThrowIfNull(panelHolds);
         ArgumentNullException.ThrowIfNull(outlines);
+
+        // The new outlines take their turn in the order they lie on the photo: their holds are fresh, with random ids.
+        var turns = outlines.Keys.OrderBy(h => h.Y).ThenBy(h => h.X).ThenBy(h => h.Radius).Select((h, i) => (h, i)).ToDictionary(t => t.h, t => t.i + 1);
         var inputs = panelHolds
             .Select(h => outlines.TryGetValue(h, out var o)
-                ? new HoldShapeInput(h.Id, h.X, h.Y, h.Radius, IsContour(o) ? o.ShapePoints : null, Locked: false)
+                ? new HoldShapeInput(h.Id, h.X, h.Y, h.Radius, IsContour(o) ? o.ShapePoints : null, Locked: false, StackedOn: h.StackedOnHoldId) { Turn = turns[h], KeepsOutline = keepTraced }
                 : Locked(h))
             .ToList();
         var byId = outlines.Keys.ToDictionary(h => h.Id);
@@ -159,12 +164,12 @@ public static class HoldShapeCleanup
             };
         }
 
-        return r.Fit == HoldShapeFit.Unchanged
+        return r.Fit is HoldShapeFit.Unchanged or HoldShapeFit.Unresolved
             ? outline
-            : outline with { ShapePoints = r.Shape.ToList(), ShapeHoles = HoldShapeHoles.Inside(outline.ShapeHoles, r.Shape) };
+            : outline with { ShapePoints = r.Shape.ToList(), ShapeHoles = HoldShapeHoles.Inside(outline.ShapeHoles, r.Shape), Corroborated = false };
     }
 
-    private static HoldShapeInput Locked(Hold h) => new(h.Id, h.X, h.Y, h.Radius, h.ShapePoints, Locked: true);
+    private static HoldShapeInput Locked(Hold h) => new(h.Id, h.X, h.Y, h.Radius, h.ShapePoints, Locked: true, StackedOn: h.StackedOnHoldId);
 
     private static bool IsContour(HoldOutlineResult o) =>
         o.Method != HoldOutlineMethod.CircleFallback && o.ShapePoints is { Count: >= 3 };

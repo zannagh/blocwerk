@@ -3,9 +3,13 @@
 // </copyright>
 
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Data;
+using Blocwerk.Core.Detection.Outlines;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Holds.Colors;
+using Blocwerk.Core.HoldStacks;
+using Blocwerk.Core.LookOver;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -42,6 +46,10 @@ public sealed partial class PanelRedetectService : IPanelRedetectService
     private readonly IHoldDuplicateService? duplicates;
     private readonly IChangeJournal? journal;
     private readonly IKioskContext? kioskContext;
+    private readonly IHoldStackService? stacks;
+    private readonly IHoldRefinementQueue? refinement;
+    private readonly BlocwerkSettings? settings;
+    private readonly IMarkerDetectionService? markers;
 
     /// <summary>Initializes a new instance of the <see cref="PanelRedetectService"/> class.</summary>
     /// <param name="dbContextFactory">Context factory.</param>
@@ -53,6 +61,10 @@ public sealed partial class PanelRedetectService : IPanelRedetectService
     /// <param name="duplicates">Merges two holds; without it nothing is merged.</param>
     /// <param name="journal">Names the journal batch; optional as on the other hold services.</param>
     /// <param name="kioskContext">The kiosk context, when the host has one.</param>
+    /// <param name="stacks">Records that a hold sits on another; without it accepted stacks are not written.</param>
+    /// <param name="refinement">Refines the 3D shapes of the holds whose outline changed, in the background.</param>
+    /// <param name="settings">The installation's settings: with them, re-detect only runs where it is switched on.</param>
+    /// <param name="markers">Finds the printed markers on the photo that are not stored for it; without it only the stored ones are avoided.</param>
     public PanelRedetectService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
         ICurrentUserService currentUserService,
@@ -62,8 +74,16 @@ public sealed partial class PanelRedetectService : IPanelRedetectService
         IHoldEnrichmentService? holdEnrichment = null,
         IHoldDuplicateService? duplicates = null,
         IChangeJournal? journal = null,
-        IKioskContext? kioskContext = null)
+        IKioskContext? kioskContext = null,
+        IHoldStackService? stacks = null,
+        IHoldRefinementQueue? refinement = null,
+        BlocwerkSettings? settings = null,
+        IMarkerDetectionService? markers = null)
     {
+        this.markers = markers;
+        this.settings = settings;
+        this.stacks = stacks;
+        this.refinement = refinement;
         this.dbContextFactory = dbContextFactory;
         this.currentUserService = currentUserService;
         this.holdDetectionService = holdDetectionService;
@@ -78,6 +98,7 @@ public sealed partial class PanelRedetectService : IPanelRedetectService
     /// <inheritdoc/>
     public async Task<PanelRedetectPlan> PlanAsync(Guid wallId, Guid panelId, CancellationToken ct = default)
     {
+        EnsureSwitchedOn();
         var (db, userId) = await OpenForEditorAsync(wallId, ct);
         await using (db)
         {
@@ -89,8 +110,54 @@ public sealed partial class PanelRedetectService : IPanelRedetectService
 
             var detections = await DetectAsync(db, wall, panel, ct);
             var input = await LoadInputAsync(db, panel, detections, userId, ct);
-            return new PanelRedetectPlan(wallId, panelId, detections, Summarize(input, RedetectPlanner.Plan(input, options)));
+            var decisions = RedetectPlanner.Plan(input, options);
+            var (proposals, size) = await ProposalsAsync(db, panel, input, decisions, ct);
+            var involved = proposals.SelectMany(p => p.OtherHoldIds.Concat(p.HoldId is { } id ? [id] : [])).ToHashSet();
+            return new PanelRedetectPlan(wallId, panelId, detections, Summarize(input, decisions))
+            {
+                Proposals = proposals,
+                Holds = input.Existing.Where(e => involved.Contains(e.Hold.Id)).ToDictionary(e => e.Hold.Id, e => e.Hold.Clone()),
+                TurnedDown = decisions.TurnedDown,
+                Untraced = decisions.Untraced,
+                PhotoAspect = size is { Height: > 0 } s ? (double)s.Width / s.Height : 1,
+            };
         }
+    }
+
+    /// <summary>The proposals for the decisions, with the photo's size when it is known.</summary>
+    private async Task<(List<RedetectProposal> Proposals, (int Width, int Height)? Size)> ProposalsAsync(
+        BlocwerkDbContext db, WallPanel panel, RedetectInput input, RedetectDecisions decisions, CancellationToken ct)
+    {
+        var size = (await LookOverFrameSource.SizesAsync(db, [panel.Id], ct)).TryGetValue(panel.Id, out var known) ? known : ((int Width, int Height)?)null;
+        double aspect = size is { Height: > 0 } s ? (double)s.Width / s.Height : 1;
+        return (RedetectProposals.Build(input, decisions, Stacks(input, size), options, aspect), size);
+    }
+
+    /// <summary>Re-detect runs only where the installation switched it on; a host without settings (a tool, a test) decides for itself.</summary>
+    private void EnsureSwitchedOn()
+    {
+        if (settings is { HoldDetection.RedetectEnabled: false })
+        {
+            throw new UserFacingException("Re-detect is switched off on this installation.");
+        }
+    }
+
+    /// <summary>
+    /// The stored holds of the panel that sit on another stored hold and are not recorded as such. Stacking is a wall
+    /// admin's decision, like a merge: for anybody else nothing is proposed.
+    /// </summary>
+    private static List<HoldStackPlan> Stacks(RedetectInput input, (int Width, int Height)? size)
+    {
+        if (!input.CanMerge)
+        {
+            return [];
+        }
+
+        // A bolt hole or a pocket that was recorded as a hold lies inside its hold too: that is no hold on a hold.
+        var radii = input.Existing.Select(e => e.Hold.Radius).Order().ToList();
+        var median = radii.Count == 0 ? 0 : radii[radii.Count / 2];
+        return [.. HoldStacking.Plan([.. input.Existing.Select(e => e.Hold).Where(RedetectPlanner.IsMatchable)], null, size)
+            .Where(s => !RedetectRules.IsPart(s.Upper, input, median))];
     }
 
     private static PanelRedetectSummary Summarize(RedetectInput input, RedetectDecisions decisions)
@@ -122,7 +189,25 @@ public sealed partial class PanelRedetectService : IPanelRedetectService
     private static List<string?> ReadColors(byte[] photo, List<Hold> holds)
     {
         using var pixels = HoldPhotoPixels.TryOpen(photo);
-        return [.. holds.Select(h => pixels is null ? null : HoldColorSampler.Estimate(h, pixels.Width, pixels.Height, pixels.At).Color)];
+        // A large hold with holds screwed onto it is read without them: their colours are not its colour.
+        return [.. holds.Select(h => pixels is null ? null : HoldColorSampler.Estimate(h, pixels.Width, pixels.Height, pixels.At, OnIt(h, holds)).Color)];
+    }
+
+    /// <summary>A test for the pixels of the smaller holds lying on a hold; null when none does.</summary>
+    private static Func<double, double, bool>? OnIt(Hold hold, List<Hold> holds)
+    {
+        if (hold.ShapePoints is not { Count: >= 3 })
+        {
+            return null;
+        }
+
+        var outline = HoldShapePolygon.Of(hold);
+        double area = ShapeGeometry.Area(outline);
+        var on = holds.Where(o => !ReferenceEquals(o, hold) && o.ShapePoints is { Count: >= 3 }
+            && ShapeGeometry.Contains(outline, new P2(o.X, o.Y))
+            && ShapeGeometry.Area(HoldShapePolygon.Of(o)) * RedetectRules.BaseAreaFactor <= area)
+            .Select(HoldShapePolygon.Of).ToList();
+        return on.Count == 0 ? null : (x, y) => on.Any(p => ShapeGeometry.Contains(p, new P2(x, y)));
     }
 
     /// <summary>The wall and the panel, tracked; the panel is null when it is not one of the wall's live panels.</summary>
@@ -143,7 +228,9 @@ public sealed partial class PanelRedetectService : IPanelRedetectService
     private async Task<List<RedetectDetection>> DetectAsync(BlocwerkDbContext db, Wall wall, WallPanel panel, CancellationToken ct)
     {
         var photo = panel.Photo!;
-        var detected = await holdDetectionService.DetectHoldsAsync(photo);
+
+        // The detector works for seconds on the calling thread; from the editor that thread is the page's own.
+        var detected = await Task.Run(() => holdDetectionService.DetectHoldsAsync(photo), ct);
         var fresh = detected.Select(d => new Hold
         {
             WallId = wall.Id,
@@ -151,6 +238,7 @@ public sealed partial class PanelRedetectService : IPanelRedetectService
             X = d.X,
             Y = d.Y,
             Radius = d.Radius,
+            DetectedBox = HoldDetectedBox.Of(d),
             Color = d.Color,
             Confidence = d.Confidence,
             IsAutoDetected = true,
@@ -162,7 +250,7 @@ public sealed partial class PanelRedetectService : IPanelRedetectService
         db.ChangeTracker.Clear();
         var kept = fresh.Except(enrichment.DroppedMarkerHolds).ToList();
         var colors = await Task.Run(() => ReadColors(photo, kept), ct);
-        return [.. kept.Select((h, i) => new RedetectDetection(h, colors[i] ?? h.Color))];
+        return [.. kept.Select((h, i) => new RedetectDetection(h, colors[i] ?? h.Color, colors[i] is not null))];
     }
 
     /// <summary>The panel's stored holds (tracked) with their boulders and links, and what a person already ruled out.</summary>
@@ -190,7 +278,12 @@ public sealed partial class PanelRedetectService : IPanelRedetectService
             byHold[h.Id].Select(u => u.BoulderId).ToHashSet(),
             byHold[h.Id].Count(u => u.Active),
             linked.Contains(h.Id))).ToList();
-        return new RedetectInput(existing, detections, dismissed, await CanMergeAsync(db, panel.WallId, userId, ct));
+        return new RedetectInput(existing, detections, dismissed, await CanMergeAsync(db, panel.WallId, userId, ct))
+        {
+            TurnedDown = await RedetectHistory.TurnedDownAsync(db, panel, ct),
+            HandEdited = await RedetectHistory.HandEditedAsync(db, panel, ct),
+            Markers = panel.Photo is { } photo ? await RedetectMarkers.LoadAsync(db, panel, photo, markers, logger, ct) : [],
+        };
     }
 
     /// <summary>Merging is the duplicate review's operation: a wall admin's, and never a kiosk tablet's.</summary>

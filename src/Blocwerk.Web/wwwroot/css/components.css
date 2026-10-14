@@ -613,6 +613,8 @@ img.wall-photo {
 .bw-toolbar-row:has(.hold-action-confirm) { overflow-y: auto; }
 .bw-toolbar-row-inner > .option-bar { flex: 1; flex-wrap: nowrap; white-space: nowrap; align-items: center; }
 .bw-toolbar-row-inner .option-hint { white-space: normal; }
+/* "Sits on: the purple hold" and "3 holds on it" are a few words each: they stay on one line. */
+.bw-toolbar-row-inner .hold-stack-controls > .option-hint { white-space: nowrap; }
 
 /* Leave the last control clear of the right-hand shadow, so a control is never half-shaded at rest. */
 .bw-toolbar-row-inner > .option-bar { padding-right: 20px; }

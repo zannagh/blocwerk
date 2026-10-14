@@ -14,6 +14,12 @@ internal static class GrabCutSegmenter
     /// <summary>Largest seed radius, in pixels, GrabCut is run at.</summary>
     public const double MaxRadius = 32;
 
+    /// <summary>
+    /// GrabCut starts its colour models from a random pick, taken from a generator OpenCV keeps per thread. Without a
+    /// fixed start a hold's outline depends on what ran on that thread before, so the same photo gave two answers.
+    /// </summary>
+    private const ulong RandomStart = 0x426C6F63;
+
     /// <summary>Segments and returns a mask at the crop's working resolution (caller disposes), or null.</summary>
     /// <param name="crop">The working crop.</param>
     /// <returns>A binary mask the size of <see cref="OutlineCrop.Bgr"/>, or null when GrabCut fails.</returns>
@@ -35,6 +41,7 @@ internal static class GrabCutSegmenter
         using var fgModel = new Mat();
         try
         {
+            Cv2.SetTheRNG(RandomStart);
             Cv2.GrabCut(small, gc, new Rect(0, 0, small.Width, small.Height), bgModel, fgModel, 3, GrabCutModes.InitWithMask);
         }
         catch (OpenCVException)

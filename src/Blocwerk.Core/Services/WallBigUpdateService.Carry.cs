@@ -2,6 +2,7 @@ using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.HoldMoves;
+using Blocwerk.Core.HoldStacks;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Services;
@@ -88,6 +89,7 @@ public partial class WallBigUpdateService
         // PASS 1 — advance: carried/changed decisions create successors and repoint STILL-advancing
         // boulders. A Removed decision now means only "no successor" — Pass 0 already did the freeze.
         var decided = new HashSet<Guid>();
+        var successors = new List<(Hold Old, Hold Successor)>();
         foreach (var decision in confirmation.Carryover)
         {
             if (!oldHolds.TryGetValue(decision.OldHoldId, out var oldHold))
@@ -108,6 +110,7 @@ public partial class WallBigUpdateService
                 stagedTwins, claimedTwins, survivingCenterStaged, warpPositions, warpShapes, photoSizes, movePlan, userId,
                 confirmation.HandPlacedMergeOldIds?.Contains(decision.OldHoldId) == true);
             MarkKeptUnconfirmed(successor, oldHold, stagedTwins, newGen, decision.Confirmed);
+            successors.Add((oldHold, successor));
 
             // The confirm screen asked about this hold and nobody answered: it goes live as decided, marked for a look.
             if (confirmation.ReviewOldHoldIds?.Contains(decision.OldHoldId) == true)
@@ -140,7 +143,11 @@ public partial class WallBigUpdateService
             // Nobody decided this hold: it is carried so nothing is lost, but flagged so a person looks at it.
             blind.NeedsReview = true;
             MarkKeptUnconfirmed(blind, oldHold, stagedTwins, newGen, confirmed: false);
+            successors.Add((oldHold, blind));
         }
+
+        // A hold that sat on another hold sits on that hold's successor.
+        HoldStacker.CarryForward(successors);
 
         await ReconcileNewCentreHolds(db, centerStaged, confirmation, newGen, survivingCenterStaged);
         return survivingCenterStaged;

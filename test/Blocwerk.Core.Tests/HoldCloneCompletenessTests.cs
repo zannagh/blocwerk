@@ -169,6 +169,11 @@ public class HoldCloneCompletenessTests
             };
         }
 
+        if (type == typeof(HoldDetectedBox))
+        {
+            return new HoldDetectedBox(0.01 * (index + 1), 0.02 * (index + 1));
+        }
+
         throw new InvalidOperationException(
             $"Hold.{property.Name} has type {property.PropertyType}, which this test cannot populate. Teach DistinctValue about it.");
     }

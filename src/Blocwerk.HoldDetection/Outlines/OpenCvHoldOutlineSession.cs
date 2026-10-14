@@ -1,5 +1,6 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Detection.Outlines;
+using Blocwerk.HoldDetection.Segmentation;
 using OpenCvSharp;
 
 namespace Blocwerk.HoldDetection.Outlines;
@@ -19,7 +20,7 @@ namespace Blocwerk.HoldDetection.Outlines;
 /// wall; GrabCut only runs for contrast ≥ <see cref="MinGrabCutContrast"/>. Wooden volumes the colour of the
 /// wall therefore end as <see cref="HoldOutlineMethod.CircleFallback"/>.
 /// </remarks>
-public sealed class OpenCvHoldOutlineSession : IHoldOutlineSession
+public sealed class OpenCvHoldOutlineSession : IHoldBatchOutlineSession
 {
     /// <summary>Hold/wall contrast (lightness-weighted ΔE) below which no segmentation is attempted.</summary>
     public const double MinContrast = 9;
@@ -46,12 +47,23 @@ public sealed class OpenCvHoldOutlineSession : IHoldOutlineSession
 
     private readonly Mat image;
     private readonly bool ownsImage;
+    private readonly SegmentedOutliner? segmenter;
 
     /// <summary>Initializes a new instance of the <see cref="OpenCvHoldOutlineSession"/> class.</summary>
     /// <param name="bgr">A decoded 8-bit BGR photo.</param>
     /// <param name="ownsImage">Whether disposing the session disposes <paramref name="bgr"/>.</param>
     public OpenCvHoldOutlineSession(Mat bgr, bool ownsImage)
+        : this(bgr, ownsImage, null)
     {
+    }
+
+    /// <summary>Initializes a new instance of the <see cref="OpenCvHoldOutlineSession"/> class.</summary>
+    /// <param name="bgr">A decoded 8-bit BGR photo.</param>
+    /// <param name="ownsImage">Whether disposing the session disposes <paramref name="bgr"/>.</param>
+    /// <param name="segmenter">The segmentation model for <see cref="OutlineAll"/>; null outlines everything by colour.</param>
+    internal OpenCvHoldOutlineSession(Mat bgr, bool ownsImage, SegmentedOutliner? segmenter)
+    {
+        this.segmenter = segmenter;
         ArgumentNullException.ThrowIfNull(bgr);
         if (bgr.Empty() || bgr.Type() != MatType.CV_8UC3)
         {
@@ -75,6 +87,29 @@ public sealed class OpenCvHoldOutlineSession : IHoldOutlineSession
 
         // Every consumer (ingest, circle upgrade, wall-update shapes) gets the same smoothed-or-circle result.
         return HoldOutlineRefiner.Refine(OutlineRaw(seed), (double)image.Width / image.Height);
+    }
+
+    /// <inheritdoc/>
+    public IReadOnlyList<HoldOutlineResult> OutlineAll(IReadOnlyList<HoldSeed> seeds)
+    {
+        ArgumentNullException.ThrowIfNull(seeds);
+        double aspect = (double)image.Width / image.Height;
+
+        // The model answers for the seeds that have a detector box; whatever it cannot outline believably, and a
+        // seed that is only a circle, is outlined by colour as before.
+        var segmented = segmenter?.Outline(image, seeds) ?? new HoldOutlineResult?[seeds.Count];
+        var chosen = seeds.Select((seed, i) => (HoldOutlineResult?)Best(seed, segmented[i], aspect)).ToArray();
+        var before = chosen.ToArray();
+
+        // A large hold's outline runs under the holds screwed onto it (after the choice, so the choice is not swayed).
+        if (segmenter is not null)
+        {
+            var boxed = Enumerable.Range(0, seeds.Count).Where(i => seeds[i].BoxWidth is > 0 && seeds[i].BoxHeight is > 0).ToList();
+            var boxes = boxed.Select(i => SegmentBox.Of(seeds[i], image.Width, image.Height)).ToList();
+            BaseCompletion.Complete(image, seeds, boxed, boxes, chosen);
+        }
+
+        return [.. chosen.Select((r, i) => ReferenceEquals(r, before[i]) ? r! : HoldOutlineRefiner.Refine(r!, aspect) with { Corroborated = false })];
     }
 
     private HoldOutlineResult OutlineRaw(HoldSeed seed)
@@ -127,6 +162,35 @@ public sealed class OpenCvHoldOutlineSession : IHoldOutlineSession
         {
             image.Dispose();
         }
+    }
+
+    /// <summary>
+    /// The outline of one seed: the model's and the colour pass's, chosen between by <see cref="OutlineChoice"/>; with a
+    /// detector box and neither believable, the box's own ellipse as a rough shape instead of a fragment.
+    /// </summary>
+    private HoldOutlineResult Best(HoldSeed seed, HoldOutlineResult? segmented, double aspect)
+    {
+        var model = segmented is null ? null : HoldOutlineRefiner.Refine(segmented, aspect);
+
+        // The colour pass exactly as it ran before the model existed (inside the circle around the box's longer
+        // side): that outline is what the hold would have got, so it is the one the model's has to hold up against.
+        var colour = HoldOutlineRefiner.Refine(OutlineRaw(new HoldSeed(seed.X, seed.Y, seed.Radius)), aspect);
+        if (new OutlineChoice(image).Pick(seed, model, colour, segmenter is not null) is { } chosen)
+        {
+            return chosen with { Pale = IsPale(seed) };
+        }
+
+        using OutlineCrop? crop = OutlineCrop.Create(image, seed);
+        return crop is null
+            ? colour
+            : HoldOutlineRefiner.Refine(OutlineResultBuilder.Circle(crop, seed, image.Width, image.Height, colour.Confidence / HoldOutlineRefiner.CircleConfidenceCeiling, rough: true), aspect);
+    }
+
+    /// <summary>True when the hold's colour is close to the wall's around it (under <see cref="MinGrabCutContrast"/>), or cannot be read.</summary>
+    private bool IsPale(HoldSeed seed)
+    {
+        using OutlineCrop? crop = OutlineCrop.Create(image, new HoldSeed(seed.X, seed.Y, seed.Radius));
+        return crop is null || LocalColourModel.Sample(CropPixels.From(crop.Bgr), crop) is not { } colours || colours.Contrast < MinGrabCutContrast;
     }
 
     /// <summary>

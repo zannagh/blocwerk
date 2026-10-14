@@ -21,6 +21,9 @@ namespace Blocwerk.Core.Detection.Outlines;
 /// about 2 px on a 4000 px photo, or a 1.5 px hairline gap on screen). It is far above the 1e-5 rounding of stored
 /// points, so a resolved result never flips back to "touching" through rounding, and it leaves a visible gap
 /// between neighbours so a tap lands on exactly one of them. Circles are tested as circumscribed 48-gons.</para>
+/// <para><b>Stacked holds</b> overlap on purpose: a hold that sits on a clearly larger one (<see cref="ShapeStacks"/>,
+/// the rule of <see cref="HoldStacks.HoldStacking"/>) and that hold are never fitted against each other, so the volume is
+/// not cut around the hold on it and the hold is not shrunk off the volume.</para>
 /// </remarks>
 public static class HoldShapeOverlapResolver
 {
@@ -52,18 +55,20 @@ public static class HoldShapeOverlapResolver
     public static List<HoldShapeResolution> Resolve(IReadOnlyList<HoldShapeInput> holds, bool allowRadiusShrink = true, double aspect = 1)
     {
         ArgumentNullException.ThrowIfNull(holds);
+        var stacks = ShapeStacks.Find(holds);
         var obstacles = new ShapeObstacles(Tolerance);
         foreach (var locked in holds.Where(h => h.Locked))
         {
-            obstacles.Add(Footprint(locked, locked.Shape, locked.Radius));
+            obstacles.Add(Footprint(locked, locked.Shape, locked.Radius), locked.Id);
         }
 
-        var starts = allowRadiusShrink ? ShapeCirclePrepass.Shrink(holds, FloorOf) : [];
+        var starts = allowRadiusShrink ? ShapeCirclePrepass.Shrink(holds, FloorOf, stacks) : [];
         var results = new List<HoldShapeResolution>();
-        foreach (var hold in holds.Where(h => !h.Locked).OrderBy(h => h.Id))
+        foreach (var hold in holds.Where(h => !h.Locked).OrderBy(h => h.Turn).ThenBy(h => h.Id))
         {
-            var resolution = FitOne(hold, starts.GetValueOrDefault(hold.Id, hold.Radius), obstacles, allowRadiusShrink, aspect);
-            obstacles.Add(Footprint(hold, resolution.Shape, resolution.Radius));
+            var around = obstacles.Without(stacks.GetValueOrDefault(hold.Id));
+            var resolution = FitOne(hold, starts.GetValueOrDefault(hold.Id, hold.Radius), around, allowRadiusShrink, aspect);
+            obstacles.Add(Footprint(hold, resolution.Shape, resolution.Radius), hold.Id);
             results.Add(resolution);
         }
 
@@ -82,6 +87,11 @@ public static class HoldShapeOverlapResolver
             if (TryPullIn(hold, shape, obstacles, aspect) is { } pulled)
             {
                 return new HoldShapeResolution(hold.Id, HoldShapeFit.Shrunk, pulled, hold.Radius);
+            }
+
+            if (hold.KeepsOutline)
+            {
+                return new HoldShapeResolution(hold.Id, HoldShapeFit.Unresolved, shape, hold.Radius);
             }
         }
 

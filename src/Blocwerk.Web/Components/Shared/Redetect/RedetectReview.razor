@@ -1,0 +1,88 @@
+@using Blocwerk.Core.Redetect
+@* The re-detect review: every change a re-detect would make is a card with the wall as it is and as it would be,
+   answered with "Accept" or "Keep mine". Nothing is written while the cards are answered; the answers are applied
+   together at the end, and a card without an answer changes nothing. The safe shape updates can be accepted in one
+   step, after a look through them. A card the detector is unsure about says why and starts out answered "keep", and
+   so does every new hold: holds are added on purpose. Chips show one kind of card at a time. Number keys: 1 keeps,
+   2 accepts. *@
+
+<div class="redetect-review">
+    <p class="redetect-intro">@RedetectCopy.Intro(Plan)</p>
+    @if (RedetectCopy.LeftOut(Plan) is { } leftOut)
+    {
+        <details class="redetect-left-out">
+            <summary>What was left out</summary>
+            <p>@leftOut</p>
+        </details>
+    }
+
+    @if (SafeOpen > 0)
+    {
+        <div class="redetect-bulk">
+            <button type="button" class="btn-primary" disabled="@Busy" @onclick="AcceptSafe">@RedetectCopy.BulkLabel(SafeOpen)</button>
+            <button type="button" class="btn-secondary" disabled="@Busy" @onclick="@(() => Show(RedetectFilter.Safe))">Look through them first</button>
+        </div>
+    }
+
+    <div class="redetect-filters" role="group" aria-label="Which cards to show">
+        @foreach (var chip in Chips)
+        {
+            <button type="button" class="redetect-chip @(filter == chip.Filter ? "is-on" : null)" aria-pressed="@(filter == chip.Filter ? "true" : "false")"
+                    disabled="@Busy" @onclick="@(() => Show(chip.Filter))">
+                @chip.Label <span>@chip.Count.ToString("N0")</span>
+            </button>
+        }
+    </div>
+
+    <CardDeck Count="shown.Count" Index="index" Label="@(Current is null ? null : RedetectCopy.Kind(Current.Proposal))" ShowSkip="false" OnStep="Step" OnKey="OnKey">
+        <ChildContent>
+            @if (Current is { } card)
+            {
+                var given = Answer(card);
+                <div class="deck-body">
+                    <div class="deck-about">
+                        <strong>@RedetectCopy.Heading(card.Proposal)</strong>
+                        <span class="redetect-answer @(given switch { true => "is-accepted", false => "is-kept", _ => "is-open" })">@RedetectCopy.State(card.Proposal, given)</span>
+                    </div>
+                    @if (RedetectCopy.Earlier(card.Proposal.Earlier) is { } earlier)
+                    {
+                        <p class="redetect-earlier" role="note">@earlier</p>
+                    }
+
+                    @if (card.Proposal.Unsure)
+                    {
+                        <p class="redetect-unsure" role="note"><strong>The detector is unsure.</strong> @RedetectCopy.Why(card.Proposal.Doubt)</p>
+                    }
+
+                    <div class="deck-pictures">
+                        <RedetectPicture PhotoUrl="@PhotoUrl" Frame="card.Frame" Outlines="card.Now" Caption="@RedetectCopy.NowCaption" />
+                        <RedetectPicture PhotoUrl="@PhotoUrl" Frame="card.Frame" Outlines="card.Then" Caption="@RedetectCopy.ThenCaption" />
+                    </div>
+                    <p class="deck-detail">@RedetectCopy.Detail(card.Proposal)</p>
+                </div>
+                <div class="deck-answers" role="group" aria-label="Answer">
+                    <button type="button" class="btn-secondary redetect-choice @(given == false ? "is-chosen" : null)" aria-pressed="@(given == false ? "true" : "false")"
+                            disabled="@Busy" @onclick="() => Give(card, false)">@RedetectCopy.KeepLabelFor(card.Proposal)</button>
+                    <button type="button" class="btn-secondary redetect-choice @(given == true ? "is-chosen" : null)" aria-pressed="@(given == true ? "true" : "false")"
+                            disabled="@Busy" @onclick="() => Give(card, true)">@RedetectCopy.AcceptLabel(card.Proposal)</button>
+                </div>
+            }
+        </ChildContent>
+        <Empty>
+            <p>@(cards.Count == 0 ? "Re-detect proposes nothing for this panel." : "No cards of this kind.")</p>
+        </Empty>
+    </CardDeck>
+
+    <div class="redetect-finish">
+        <div class="redetect-progress" role="status">
+            <progress max="@cards.Count" value="@answers.Count"></progress>
+            <span class="redetect-wide">@RedetectCopy.Progress(answers.Count, cards.Count, Accepted)</span>
+            <span class="redetect-narrow">@RedetectCopy.ShortProgress(answers.Count, cards.Count)</span>
+        </div>
+        <button type="button" class="btn-secondary" disabled="@Busy" @onclick="OnCancel">Change nothing</button>
+        <button type="button" class="btn-primary" disabled="@(Busy || Accepted == 0)" @onclick="Apply">
+            <span class="redetect-wide">Apply @Accepted.ToString("N0") accepted @(Accepted == 1 ? "change" : "changes")</span>
+            <span class="redetect-narrow">Apply @Accepted.ToString("N0")</span>
+        </button>
+    </div>
+</div>

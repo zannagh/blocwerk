@@ -497,10 +497,10 @@ else
                             </div>
                             @if (redetectPlan is { } redetect)
                             {
-                                @* One confirm with the concrete outcome before a re-detect changes anything (WallDetail.Redetect.cs). *@
-                                <Modal Title="Re-detect holds on this panel" OnClose="CancelRedetect">
-                                    <HoldActionPrompt Outcome="@RedetectOutcomes.Confirm(redetect.Summary)" ConfirmLabel="Re-detect"
-                                                      Disabled="@redetectBusy" OnConfirm="ConfirmRedetect" OnCancel="CancelRedetect" />
+                                @* Every change a re-detect would make is accepted or left, one by one (WallDetail.Redetect.cs). *@
+                                <Modal Title="Re-detect: what would change" PanelClass="redetect-modal" OnClose="CancelRedetect">
+                                    <Blocwerk.Web.Components.Shared.Redetect.RedetectReview Plan="redetect" PhotoUrl="@EditingPanelPhotoUrl" Busy="redetectBusy"
+                                                                                           OnApply="ConfirmRedetect" OnCancel="CancelRedetect" />
                                 </Modal>
                             }
                             @if (croppingPanel && CanCropPanel)
@@ -1582,9 +1582,11 @@ else
 
     private async Task OnBatchSave(WallPhotoEditor.BatchChanges changes)
     {
+        var savedIds = new Dictionary<Guid, Guid>();
         foreach (var hold in changes.Added)
         {
             var saved = await WallService.AddHoldAsync(WallId, hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.ShapePoints, material: hold.Material, handType: hold.HandType);
+            savedIds[hold.Id] = saved.Id;
             var local = _holds.FirstOrDefault(h => h.Id == hold.Id);
             if (local != null) local.Id = saved.Id;
         }
@@ -1600,7 +1602,8 @@ else
                 hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.IsOnKickboard, hold.ShapePoints, hold.Name, hold.Material, hold.HandType,
                 flagBouldersOnMove: false, colorStillProposed: hold.HasProposedColor,
                 resetToCircle: changes.ResetToCircle.Contains(hold.Id),
-                shapeControlPoints: HoldOutlineSpline.CurrentControlPoints(hold)));
+                shapeControlPoints: HoldOutlineSpline.CurrentControlPoints(hold),
+                stackedOn: StackedOnFor(hold, changes, savedIds)));
         }
 
         foreach (var holdId in changes.MarkedChanged)
@@ -1770,6 +1773,20 @@ else
     }
 
     /// <summary>
+    /// What a batch save writes as the hold a hold sits on: nothing unless the editor changed it, and a base that
+    /// was added in the same batch under the id it was saved with.
+    /// </summary>
+    private static FieldUpdate<Guid?> StackedOnFor(Hold hold, WallPhotoEditor.BatchChanges changes, Dictionary<Guid, Guid> savedIds)
+    {
+        if (!changes.Restacked.Contains(hold.Id))
+        {
+            return FieldUpdate<Guid?>.Keep;
+        }
+
+        return FieldUpdate<Guid?>.Set(hold.StackedOnHoldId is { } on && savedIds.TryGetValue(on, out var saved) ? saved : hold.StackedOnHoldId);
+    }
+
+    /// <summary>
     /// Batch-saves per-panel hold edits. Mirrors <see cref="OnBatchSave"/>, except added holds go
     /// through <c>AddPanelHoldAsync</c> so they stay parented to the edited panel; updates and
     /// deletes reuse the by-id wall APIs (which preserve <c>WallPanelId</c>).
@@ -1781,10 +1798,12 @@ else
             return;
         }
 
+        var savedIds = new Dictionary<Guid, Guid>();
         foreach (var hold in changes.Added)
         {
             var savedId = await WallPanelService.AddPanelHoldAsync(
                 WallId, _editingPanel.Id, hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.ShapePoints, hold.Material, hold.HandType);
+            savedIds[hold.Id] = savedId;
             var local = _editingPanelHolds.FirstOrDefault(h => h.Id == hold.Id);
             if (local != null)
             {
@@ -1801,7 +1820,8 @@ else
                 hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.IsOnKickboard, hold.ShapePoints, hold.Name, hold.Material, hold.HandType,
                 flagBouldersOnMove: false, colorStillProposed: hold.HasProposedColor,
                 resetToCircle: changes.ResetToCircle.Contains(hold.Id),
-                shapeControlPoints: HoldOutlineSpline.CurrentControlPoints(hold)));
+                shapeControlPoints: HoldOutlineSpline.CurrentControlPoints(hold),
+                stackedOn: StackedOnFor(hold, changes, savedIds)));
         }
 
         // Drafted "Mark changed" decisions arrive ONLY here when a batch handler is attached (the

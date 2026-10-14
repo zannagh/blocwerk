@@ -1313,6 +1313,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<string>("ShapePoints")
                         .HasColumnType("text");
 
+                    b.Property<Guid?>("StackedOnHoldId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("VolumePlacementJson")
                         .HasColumnType("text");
 

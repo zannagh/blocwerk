@@ -93,6 +93,32 @@ public partial class Hold
     public double Confidence { get; set; }
 
     /// <summary>
+    /// The detector's box around a fresh detection, which the outliner traces inside. Not stored: it only lives from
+    /// the detection to the outlining in the same request. Null on every hold read from the database.
+    /// </summary>
+    [NotMapped]
+    public HoldDetectedBox? DetectedBox { get; set; }
+
+    /// <summary>
+    /// True on a fresh detection whose outline two independent methods agree on (see
+    /// <c>HoldOutlineResult.Corroborated</c>). Not stored: a re-detect reads it to tell which shape changes can be
+    /// accepted together.
+    /// </summary>
+    [NotMapped]
+    public bool OutlineCorroborated { get; set; }
+
+    /// <summary>
+    /// True on a fresh detection of a hold that stands out from the wall (see <c>HoldOutlineResult.Distinct</c>). Not
+    /// stored: a re-detect reads it before it lets an outline replace a plain circle without a look.
+    /// </summary>
+    [NotMapped]
+    public bool OutlineDistinct { get; set; }
+
+    /// <summary>True on a fresh detection of a hold whose colour is close to the wall's (see <c>HoldOutlineResult.Pale</c>). Not stored.</summary>
+    [NotMapped]
+    public bool OutlinePale { get; set; }
+
+    /// <summary>
     /// Why a panel update's triage suggested to discard this staged detection (a <see cref="NewHoldDiscardReason"/> name),
     /// written while the update is staged so the change journal's delete entry of the promote carries it. Null on every
     /// hold the triage kept; a hold that is live with one was kept by a person against the suggestion.
@@ -131,6 +157,14 @@ public partial class Hold
     /// alignment. Preserves boulder-hold continuity when the staged set is promoted.
     /// </summary>
     public Guid? AlignmentSourceHoldId { get; set; }
+
+    /// <summary>
+    /// The hold this one is mounted ON (a hold on a volume, a small hold on a larger one): a hold of the same photo
+    /// that lies behind it as seen from in front of the wall. Null for a hold on the wall itself. A base can carry
+    /// several holds and be stacked itself; a chain never loops (<c>HoldStacker</c>). No foreign key: a base that is
+    /// deleted un-stacks its holds (<c>HoldDeletion</c>), and an id that points nowhere reads as "not stacked".
+    /// </summary>
+    public Guid? StackedOnHoldId { get; set; }
 
     // ── Glyph wall geometry (experimental, additive) ─────────────────────────────────────────────
     // Everything below is METRIC and optional. None of it reinterprets X/Y/Radius/ShapePoints, which
@@ -253,12 +287,17 @@ public partial class Hold
         IsOnKickboard = IsOnKickboard,
         IsAutoDetected = IsAutoDetected,
         Confidence = Confidence,
+        DetectedBox = DetectedBox,
+        OutlineCorroborated = OutlineCorroborated,
+        OutlineDistinct = OutlineDistinct,
+        OutlinePale = OutlinePale,
         DiscardReason = DiscardReason,
         Generation = Generation,
         NeedsReview = NeedsReview,
         IsVirtual = IsVirtual,
         KeptUnconfirmedGeneration = KeptUnconfirmedGeneration,
         AlignmentSourceHoldId = AlignmentSourceHoldId,
+        StackedOnHoldId = StackedOnHoldId,
         WidthMm = WidthMm,
         HeightMm = HeightMm,
         AreaMm2 = AreaMm2,

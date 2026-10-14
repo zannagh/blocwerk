@@ -51,9 +51,9 @@ internal static class ShapeProposalOverlaps
     private static HoldShapeInput Candidate(Hold hold, WallUpdateShapeProposal p)
     {
         var shape = ShapeJson.Rebase(ShapeJson.Read(p.ShapeJson)!, p.AnchorX, p.AnchorY, hold.X, hold.Y);
-        return new HoldShapeInput(hold.Id, hold.X, hold.Y, hold.Radius, shape, Locked: false);
+        return new HoldShapeInput(hold.Id, hold.X, hold.Y, hold.Radius, shape, Locked: false, StackedOn: hold.StackedOnHoldId);
     }
 
     private static HoldShapeInput Locked(Hold hold) =>
-        new(hold.Id, hold.X, hold.Y, hold.Radius, hold.ShapePoints, Locked: true);
+        new(hold.Id, hold.X, hold.Y, hold.Radius, hold.ShapePoints, Locked: true, StackedOn: hold.StackedOnHoldId);
 }

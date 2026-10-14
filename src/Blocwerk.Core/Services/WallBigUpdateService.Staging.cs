@@ -3,6 +3,7 @@ using Blocwerk.Core.Capture;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.HoldStacks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -274,6 +275,7 @@ public partial class WallBigUpdateService
                     X = d.X,
                     Y = d.Y,
                     Radius = d.Radius,
+                    DetectedBox = HoldDetectedBox.Of(d),
                     Color = d.Color,
                     Confidence = d.Confidence,
                     IsAutoDetected = true,
@@ -285,6 +287,7 @@ public partial class WallBigUpdateService
             db.Holds.AddRange(staged);
             await holdEnrichment.EnrichSafelyAsync(
                 db, new HoldEnrichmentRequest(image, wall, staged, panel.Id, stagedGen, FromStagedPhoto: true), logger);
+            await HoldStacker.StackNewAsync(db, staged);
         }
 
         return centerPanelId;

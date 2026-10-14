@@ -24,7 +24,11 @@ public sealed record HoldFootprintRefinement(
     int SingleView,
     int Skipped,
     IReadOnlyDictionary<Wall3DPhotoKey, PanelCameraEstimate>? PanelCameras = null,
-    IReadOnlyList<(Guid HoldId, double OffsetMm, bool FellBack)>? Guarded = null);
+    IReadOnlyList<(Guid HoldId, double OffsetMm, bool FellBack)>? Guarded = null)
+{
+    /// <summary>Gets why each asked-for hold got no footprint, in plain words (for the log).</summary>
+    public IReadOnlyDictionary<Guid, string> NoFootprint { get; init; } = new Dictionary<Guid, string>();
+}
 
 /// <summary>
 /// Batch step: for every placed, traced hold, its silhouette in the panel photo (mapped onto the facet
@@ -66,6 +70,7 @@ public static class HoldFootprintRefiner
         var panelCams = estimates.Where(e => e.Value.Centre is not null).ToDictionary(e => e.Key, e => e.Value.Centre!);
         var primaries = new Dictionary<Guid, Traced>();
         var skipped = 0;
+        var none = new Dictionary<Guid, string>();
         foreach (var hold in live.Where(h => only is null || only.Contains(h.Id)))
         {
             if (Primary(hold, frames, panelCams, projector) is { } p)
@@ -75,6 +80,7 @@ public static class HoldFootprintRefiner
             else if (hold.ShapePoints is { Count: >= 3 })
             {
                 skipped++;
+                none[hold.Id] = WhyNoPrimary(hold, frames, panelCams, projector);
             }
         }
 
@@ -93,11 +99,37 @@ public static class HoldFootprintRefiner
                 // On a volume the footprint is in the tangent frame; a position shift there is not a facet shift.
                 result[id] = t.OnVolume ? fp with { ShiftA = 0, ShiftB = 0 } : fp;
             }
+            else
+            {
+                none[id] = "its silhouette gave no footprint that lies on its placement";
+            }
         }
 
         var multi = result.Values.Count(f => f.Source == HoldFootprintSource.MultiView);
         return new HoldFootprintRefinement(
-            result, multi, result.Count - multi, skipped + (primaries.Count - result.Count), estimates, guarded);
+            result, multi, result.Count - multi, skipped + (primaries.Count - result.Count), estimates, guarded) { NoFootprint = none };
+    }
+
+    /// <summary>Why a traced hold has no silhouette on its facet to start from.</summary>
+    private static string WhyNoPrimary(
+        Hold hold, Dictionary<string, FacetFrame> frames, Dictionary<Wall3DPhotoKey, double[]> panelCams, HoldPlaneProjector projector)
+    {
+        if (hold.FacetId is not { } facetId || hold.PlaneAMm is null || hold.PlaneBMm is null)
+        {
+            return "it is not placed on the 3D model (no facet or no position on it)";
+        }
+
+        if (!frames.ContainsKey(facetId))
+        {
+            return "its facet is not in the active 3D model";
+        }
+
+        if (!panelCams.ContainsKey(HoldPlaneProjector.PhotoOf(hold)))
+        {
+            return "the camera of its photo could not be estimated";
+        }
+
+        return projector.For(hold) is null ? "its photo is not mapped onto its facet" : "its outline does not map onto its facet";
     }
 
     /// <summary>The camera centre of each hold photo, estimated from its placed holds (all facets).</summary>

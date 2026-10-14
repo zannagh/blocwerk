@@ -1,0 +1,46 @@
+@using Blocwerk.Core.Holds
+@* One picture of a re-detect proposal: a square part of the panel photo with outlines drawn by the app's one hold
+   renderer. The photo is the panel's own image, shown through the frame, so both pictures of a card show exactly
+   the same part at the same scale. A hold that would go is dashed, the hold under a stacked one is yellow. *@
+
+<figure class="redetect-picture">
+    <svg viewBox="@ViewBox" preserveAspectRatio="none" role="img" aria-label="@Caption">
+        <image href="@PhotoUrl" x="0" y="0" width="100" height="100" preserveAspectRatio="none" />
+        @foreach (var outline in Outlines)
+        {
+            <HoldShape X="outline.Hold.X" Y="outline.Hold.Y" Radius="outline.Hold.Radius" ShapePoints="outline.Hold.ShapePoints"
+                       ShapeHoles="outline.Hold.ShapeHoles" FootScale="HoldShape.FullFoot" Fill="none" Stroke="#000" StrokeWidth="@Width(0.022)" />
+            <HoldShape X="outline.Hold.X" Y="outline.Hold.Y" Radius="outline.Hold.Radius" ShapePoints="outline.Hold.ShapePoints"
+                       ShapeHoles="outline.Hold.ShapeHoles" FootScale="HoldShape.FullFoot" Fill="none" Stroke="@Stroke(outline)"
+                       StrokeWidth="@Width(0.012)" Dash="@(outline.Role == RedetectOutlineRole.Going ? Width(0.03) : null)" />
+        }
+    </svg>
+    <figcaption>@Caption@(Outlines.Count == 0 ? " (nothing)" : null)</figcaption>
+</figure>
+
+@code {
+    [Parameter, EditorRequired]
+    public string PhotoUrl { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired]
+    public RedetectFrame Frame { get; set; }
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<RedetectOutline> Outlines { get; set; } = [];
+
+    [Parameter, EditorRequired]
+    public string Caption { get; set; } = string.Empty;
+
+    private string ViewBox => FormattableString.Invariant($"{Frame.X:0.###} {Frame.Y:0.###} {Frame.Width:0.###} {Frame.Height:0.###}");
+
+    private static string Stroke(RedetectOutline outline) => outline.Role switch
+    {
+        RedetectOutlineRole.Base => "#ffc400",
+        RedetectOutlineRole.Going => "#ff6b6b",
+        RedetectOutlineRole.OnIt => "#4fc3ff",
+        _ => "#fff",
+    };
+
+    // A line as a share of the frame, so it is equally strong on a foot chip and on a volume.
+    private string Width(double share) => (share * Frame.Width).ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
+}

@@ -1,5 +1,6 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Helpers;
+using Blocwerk.HoldDetection.Segmentation;
 using OpenCvSharp;
 
 namespace Blocwerk.HoldDetection.Outlines;
@@ -9,6 +10,20 @@ namespace Blocwerk.HoldDetection.Outlines;
 /// </summary>
 public sealed class OpenCvHoldOutlineService : IHoldOutlineService
 {
+    private readonly HoldSegmenter? segmenter;
+
+    /// <summary>Initializes a new instance of the <see cref="OpenCvHoldOutlineService"/> class that outlines by colour only.</summary>
+    public OpenCvHoldOutlineService()
+    {
+    }
+
+    /// <summary>Initializes a new instance of the <see cref="OpenCvHoldOutlineService"/> class.</summary>
+    /// <param name="segmenter">The segmentation model; used while its files are there.</param>
+    internal OpenCvHoldOutlineService(HoldSegmenter? segmenter)
+    {
+        this.segmenter = segmenter;
+    }
+
     /// <inheritdoc/>
     public IHoldOutlineSession OpenSession(byte[] encodedImage)
     {
@@ -25,7 +40,7 @@ public sealed class OpenCvHoldOutlineService : IHoldOutlineService
             throw new ArgumentException("The image could not be decoded.", nameof(encodedImage));
         }
 
-        return new OpenCvHoldOutlineSession(bgr, ownsImage: true);
+        return new OpenCvHoldOutlineSession(bgr, ownsImage: true, Segmented());
     }
 
     /// <summary>
@@ -34,5 +49,7 @@ public sealed class OpenCvHoldOutlineService : IHoldOutlineService
     /// </summary>
     /// <param name="bgr">A decoded 8-bit BGR image.</param>
     /// <returns>The session.</returns>
-    public IHoldOutlineSession OpenSession(Mat bgr) => new OpenCvHoldOutlineSession(bgr, ownsImage: false);
+    public IHoldOutlineSession OpenSession(Mat bgr) => new OpenCvHoldOutlineSession(bgr, ownsImage: false, Segmented());
+
+    private SegmentedOutliner? Segmented() => segmenter is { Available: true } && segmenter.TryLoad() ? new SegmentedOutliner(segmenter) : null;
 }

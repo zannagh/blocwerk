@@ -31,7 +31,9 @@ public sealed class AtticHoldShapesRealDataTests
         {
             var plan = HoldShapeCleanup.PlanDetailed(holds, AtticRealData.PhotoAspect);
             Apply(holds, plan);
-            var offenders = OverlappingPairs(holds).Where(p => IsAuto(p.A) && IsAuto(p.B)).ToList();
+
+            // A hold that sits on a clearly larger one overlaps it on purpose (HoldStacking): such a pair is no offender.
+            var offenders = OverlappingPairs(holds).Where(p => IsAuto(p.A) && IsAuto(p.B) && !Blocwerk.Core.HoldStacks.HoldStacking.AreStack(p.A, p.B)).ToList();
 
             // Every remaining overlap involves a hold the plan itself reports as unresolved.
             var known = plan.Unresolved.ToHashSet();
@@ -40,10 +42,30 @@ public sealed class AtticHoldShapesRealDataTests
             overlapping += offenders.Count;
         }
 
-        // The snapshot: 37 holds the plan cannot clear (jammed between locked manual holds and each other) and, among them,
-        // 12 pairs of automatic holds that still touch. A change here is a change of the clean-up on the real wall: look at
+        // The snapshot: 35 holds the plan cannot clear (jammed between locked manual holds and each other) and, among them,
+        // 12 pairs of automatic holds that still touch. (37 holds before a hold on a much larger hold was left on it.) A change here is a change of the clean-up on the real wall: look at
         // it before updating the numbers (the dense synthetic test cannot show a regression on real holds).
-        Assert.Equal((37, 12), (unresolved, overlapping));
+        Assert.Equal((35, 12), (unresolved, overlapping));
+    }
+
+    [Fact]
+    public void TheHoldsThatLieOnAClearlyLargerHold_AreStacked_AndTheCleanUpDoesNotCutThePairApart()
+    {
+        var (stacked, stillOn) = (0, 0);
+        foreach (var holds in AtticRealData.HoldPanels())
+        {
+            var plan = Blocwerk.Core.HoldStacks.HoldStacking.Plan(holds);
+            plan.ForEach(p => p.Upper.StackedOnHoldId = p.Base.Id);
+            stacked += plan.Count;
+            Apply(holds, HoldShapeCleanup.PlanDetailed(holds, AtticRealData.PhotoAspect));
+            stillOn += plan.Count(p => Blocwerk.Core.HoldStacks.HoldStacking.SitsOn(p.Upper, p.Base));
+        }
+
+        // The snapshot of the real wall: 5 holds the startup backfill stacks there (small things on a much larger,
+        // outlined hold; the wall has no volumes with holds on them). After a clean-up 3 of them still lie on their
+        // base by their outlines; the bases of the others are cut or shrunk for a THIRD hold next to them, never for
+        // the hold they carry.
+        Assert.Equal((5, 3), (stacked, stillOn));
     }
 
     [Fact]

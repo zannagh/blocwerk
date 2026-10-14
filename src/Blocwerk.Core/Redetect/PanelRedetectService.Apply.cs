@@ -6,6 +6,7 @@ using Blocwerk.Core.Data;
 using Blocwerk.Core.Detection.Outlines;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.HoldStacks;
 using Blocwerk.Core.Services;
 using Microsoft.Extensions.Logging;
 
@@ -21,10 +22,15 @@ public sealed partial class PanelRedetectService
     private const string Busy = "Another update of this wall's holds (a clean-up, an outline upgrade, a merge or a wall update) is running. Try again in a moment.";
 
     /// <inheritdoc/>
-    public async Task<PanelRedetectSummary> ApplyAsync(PanelRedetectPlan plan, CancellationToken ct = default)
+    public Task<PanelRedetectSummary> ApplyAsync(PanelRedetectPlan plan, CancellationToken ct = default) => ApplyAsync(plan, null, ct);
+
+    /// <inheritdoc/>
+    public async Task<PanelRedetectSummary> ApplyAsync(PanelRedetectPlan plan, IReadOnlySet<string>? accepted, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(plan);
+        EnsureSwitchedOn();
         PanelRedetectSummary summary;
+        List<string> stale = [];
         var (db, userId) = await OpenForEditorAsync(plan.WallId, ct);
         await using (db)
         {
@@ -37,31 +43,45 @@ public sealed partial class PanelRedetectService
 
             var input = await LoadInputAsync(db, panel, plan.Detections, userId, ct);
             var decisions = RedetectPlanner.Plan(input, options);
+            if (accepted is not null)
+            {
+                // Only what the card showed is written: an answer about a hold that changed since is dropped and reported.
+                var (current, _) = await ProposalsAsync(db, panel, input, decisions, ct);
+                stale = RedetectProposals.Stale(plan.Proposals, current, accepted);
+                accepted = accepted.Except(stale).ToHashSet();
+                decisions = RedetectProposals.Accepted(decisions, accepted);
+            }
+
             summary = Summarize(input, decisions);
             if (decisions.Shapes.Count + decisions.NewDetections.Count + decisions.Removed.Count > 0)
             {
                 await WriteAsync(db, wall, panel, input, decisions, ct);
+
+                // A new outline drops the hold's 3D shape, which was traced from the old one: it is made again.
+                refinement?.Enqueue(plan.WallId, decisions.Shapes.Select(s => s.HoldId));
             }
         }
 
         var merged = await MergeAsync(plan.WallId, summary.Merges, ct);
-        summary = summary with { Merges = merged, FailedMerges = summary.Merges.Count - merged.Count };
+        summary = summary with { Merges = merged, FailedMerges = summary.Merges.Count - merged.Count, Stacked = await StackAsync(plan.WallId, accepted, ct), Stale = stale };
         logger.LogInformation(
             "Panel {PanelId} re-detected on wall {WallId} by {UserId}: {Detected} detections, {Shapes} shapes replaced, {Filled} outlines filled, "
-            + "{New} new holds, {Removed} removed, {Merged} merged ({Failed} failed), {Review} left for review, {Skipped} skipped",
+            + "{New} new holds, {Removed} removed, {Merged} merged ({Failed} failed), {Review} left for review, {Skipped} skipped, {Stale} answers dropped as stale",
             plan.PanelId, plan.WallId, userId, summary.Detected, summary.BetterShapes, summary.FilledOutlines,
-            summary.NewHolds, summary.Removed, merged.Count, summary.FailedMerges, summary.ForReview, summary.Skipped);
+            summary.NewHolds, summary.Removed, merged.Count, summary.FailedMerges, summary.ForReview, summary.Skipped, stale.Count);
         return summary;
     }
 
     /// <summary>A detection as a new stored hold of the panel, with the colour read off the photo as its proposal.</summary>
-    private static Hold NewHold(RedetectDetection detection, WallPanel panel)
+    private static Hold NewHold(RedetectDetection detection, WallPanel panel, bool isBase)
     {
         var hold = detection.Shape.Clone();
         hold.Id = Guid.NewGuid();
         hold.Generation = panel.Generation;
-        hold.Color = detection.Color;
-        hold.ProposedColor = detection.Color;
+
+        // A large hold with holds on it whose colour the reader could not tell gets no suggestion: the detector's "volume" label is no colour of it.
+        hold.Color = isBase && !detection.ColorRead ? null : detection.Color;
+        hold.ProposedColor = hold.Color;
         return hold;
     }
 
@@ -75,7 +95,8 @@ public sealed partial class PanelRedetectService
             RedetectShapes.Apply(byId[update.HoldId], input.Detections[update.Detection].Shape, update.Change);
         }
 
-        db.Holds.AddRange(decisions.NewDetections.Select(i => NewHold(input.Detections[i], panel)));
+        var added = decisions.NewDetections.Select(i => NewHold(input.Detections[i], panel, RedetectRules.OnBase(input, i).Count > 0)).ToList();
+        db.Holds.AddRange(added);
         if (decisions.Removed.Count > 0)
         {
             // No boulder uses these (the planner's rule), so only lineage rows can still point at them.
@@ -89,8 +110,30 @@ public sealed partial class PanelRedetectService
             wall.LinksFinalizedGeneration = null;
         }
 
+        // A new hold inside a clearly larger one sits on it, as after any other detection.
+        await HoldStacker.StackNewAsync(db, added, ct);
         ct.ThrowIfCancellationRequested();
         await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Records the accepted stacks through the stack service (its own lock and journal batch); returns how many it wrote.</summary>
+    private async Task<int> StackAsync(Guid wallId, IReadOnlySet<string>? accepted, CancellationToken ct)
+    {
+        var uppers = accepted is null ? [] : RedetectProposals.AcceptedStacks(accepted).Select(s => s.Upper).ToList();
+        if (stacks is null || uppers.Count == 0)
+        {
+            return 0;
+        }
+
+        try
+        {
+            return (await stacks.ApplyAsync(wallId, uppers, ct)).Stacks.Count;
+        }
+        catch (Exception ex) when (ex is UserFacingException or KioskRestrictedException or UnauthorizedAccessException)
+        {
+            logger.LogWarning(ex, "Re-detect on wall {WallId}: the accepted stacks could not be recorded", wallId);
+            return 0;
+        }
     }
 
     /// <summary>Merges the sure pairs one by one; a pair that cannot be merged any more is left as it is.</summary>

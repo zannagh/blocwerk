@@ -6,7 +6,7 @@ namespace Blocwerk.Core.Redetect;
 
 /// <summary>
 /// Re-detect of one live panel photo from the wall editor, in two steps so the person sees what will happen first.
-/// <see cref="PlanAsync"/> runs the detector and changes nothing; <see cref="ApplyAsync"/> writes. A detection that is a
+/// <see cref="PlanAsync"/> runs the detector and changes nothing; <see cref="ApplyAsync(PanelRedetectPlan, IReadOnlySet{string}?, CancellationToken)"/> writes. A detection that is a
 /// stored hold gives that hold its shape and leaves everything else of it alone; stored holds that are the same hold
 /// twice are merged like in the duplicate review; only the rest becomes new holds. Wall editors (owner, admin,
 /// moderator); merging needs a wall admin, for anybody else sure pairs are only left for the duplicate review.
@@ -29,6 +29,20 @@ public interface IPanelRedetectService
     /// <param name="ct">Cancellation.</param>
     /// <returns>What was done.</returns>
     Task<PanelRedetectSummary> ApplyAsync(PanelRedetectPlan plan, CancellationToken ct = default);
+
+    /// <summary>
+    /// Applies the accepted proposals of a plan and nothing else. The decisions are worked out again against the holds
+    /// as they are now; an accepted proposal whose holds changed since, or that would now write another outline than
+    /// its card showed, is skipped and named in <see cref="PanelRedetectSummary.Stale"/>.
+    /// </summary>
+    /// <param name="plan">The plan of <see cref="PlanAsync"/>.</param>
+    /// <param name="accepted">
+    /// The keys of the accepted proposals (<see cref="RedetectProposal.Key"/>). Null stands for every shape update, new
+    /// hold, merge and removal of the plan; splits, stacks and offers for hand-made shapes are never applied unasked.
+    /// </param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>What was done.</returns>
+    Task<PanelRedetectSummary> ApplyAsync(PanelRedetectPlan plan, IReadOnlySet<string>? accepted, CancellationToken ct = default);
 }
 
 /// <summary>A planned re-detect: the detections, and what applying them would do right now.</summary>
@@ -37,7 +51,23 @@ public interface IPanelRedetectService
 /// <param name="Detections">The fresh detections with their outlines.</param>
 /// <param name="Summary">What applying would do.</param>
 public sealed record PanelRedetectPlan(
-    Guid WallId, Guid PanelId, IReadOnlyList<RedetectDetection> Detections, PanelRedetectSummary Summary);
+    Guid WallId, Guid PanelId, IReadOnlyList<RedetectDetection> Detections, PanelRedetectSummary Summary)
+{
+    /// <summary>Gets what the re-detect proposes, one entry per spot, the ones that need a look first.</summary>
+    public IReadOnlyList<RedetectProposal> Proposals { get; init; } = [];
+
+    /// <summary>Gets copies of the stored holds the proposals are about, as they were when the plan was made.</summary>
+    public IReadOnlyDictionary<Guid, Entities.Hold> Holds { get; init; } = new Dictionary<Guid, Entities.Hold>();
+
+    /// <summary>Gets the number of detections left out because a person already said there is no hold on that spot.</summary>
+    public int TurnedDown { get; init; }
+
+    /// <summary>Gets the number of detections on an empty spot left out because nothing could be traced there.</summary>
+    public int Untraced { get; init; }
+
+    /// <summary>Gets the photo's width divided by its height; 1 when it is not known.</summary>
+    public double PhotoAspect { get; init; } = 1;
+}
 
 /// <summary>One pair of stored holds a re-detect merges.</summary>
 /// <param name="KeptId">The hold that stays.</param>
@@ -71,6 +101,15 @@ public sealed record PanelRedetectSummary(
     int Skipped,
     int FailedMerges = 0)
 {
+    /// <summary>Gets the number of holds that were recorded as sitting on another hold.</summary>
+    public int Stacked { get; init; }
+
+    /// <summary>
+    /// Gets the accepted proposals that were not applied because the hold changed after the plan was made, or because
+    /// what would be written is no longer what the card showed.
+    /// </summary>
+    public IReadOnlyList<string> Stale { get; init; } = [];
+
     /// <summary>Gets a summary of a run that found and changes nothing.</summary>
     public static PanelRedetectSummary Nothing { get; } = new(0, 0, 0, 0, [], 0, 0, 0, 0);
 

@@ -59,8 +59,9 @@ internal static class OutlineResultBuilder
     /// <param name="imageWidth">Full image width.</param>
     /// <param name="imageHeight">Full image height.</param>
     /// <param name="contrast01">The hold/wall contrast score 0..1 (0 for a wall-coloured volume).</param>
+    /// <param name="rough">True to hand the ellipse back as the hold's outline, a <see cref="HoldOutlineMethod.RoughShape"/>.</param>
     /// <returns>The result.</returns>
-    public static HoldOutlineResult Circle(OutlineCrop crop, HoldSeed seed, int imageWidth, int imageHeight, double contrast01)
+    public static HoldOutlineResult Circle(OutlineCrop crop, HoldSeed seed, int imageWidth, int imageHeight, double contrast01, bool rough = false)
     {
         var disc = new Point[16];
         for (int k = 0; k < disc.Length; k++)
@@ -86,7 +87,7 @@ internal static class OutlineResultBuilder
             .ToList();
         double area = Math.PI * crop.RadiusX * crop.RadiusY / (crop.Scale * crop.Scale);
         double confidence = Math.Round(0.05 + (0.15 * Math.Clamp(contrast01, 0, 1)), 3);
-        return Build(polygon, seed, area, confidence, HoldOutlineMethod.CircleFallback, fp, withShape: false);
+        return Build(polygon, seed, area, confidence, rough ? HoldOutlineMethod.RoughShape : HoldOutlineMethod.CircleFallback, fp, withShape: rough);
     }
 
     /// <summary>A seed that lies off the image: an empty, zero-confidence fallback.</summary>

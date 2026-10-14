@@ -3,6 +3,7 @@ using Blocwerk.Core.Capture;
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.HoldMoves;
+using Blocwerk.Core.HoldStacks;
 using Blocwerk.Core.Detection.Enrichment;
 using Blocwerk.Core.LookOver;
 using Blocwerk.Core.MarkerPlanning;
@@ -170,6 +171,7 @@ public static class CoreServices
         builder.Services.AddScoped<IWallGlyphService, WallGlyphService>();
         builder.Services.AddScoped<IHoldOutlineUpgradeService, HoldOutlineUpgradeService>();
         builder.Services.AddScoped<IHoldShapeCleanupService, HoldShapeCleanupService>();
+        builder.Services.AddScoped<IHoldStackService, HoldStackService>();
         builder.Services.AddScoped<IHoldDuplicateService, HoldDuplicateService>();
         builder.Services.AddScoped<IPanelRedetectService, PanelRedetectService>();
         builder.Services.AddScoped<IWallLookOverService, WallLookOverService>();

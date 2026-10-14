@@ -45,6 +45,13 @@ public partial class CardDeck : IAsyncDisposable
     [Parameter]
     public RenderFragment? Note { get; set; }
 
+    /// <summary>
+    /// Whether "Skip" is offered beside the note. Off where a card without an answer and a card answered "keep" come to
+    /// the same thing: the arrows still move on.
+    /// </summary>
+    [Parameter]
+    public bool ShowSkip { get; set; } = true;
+
     /// <summary>The queue as a list, shown beside the card on a wide screen; null for none.</summary>
     [Parameter]
     public RenderFragment? QueueList { get; set; }

@@ -32,6 +32,15 @@ internal sealed class HoldArea
         (MinY, MaxY) = polygon is null ? (centreY - radiusPx, centreY + radiusPx) : (polygon.Min(p => p.Y), polygon.Max(p => p.Y));
     }
 
+    /// <summary>The area in square pixels: the outline's own (a concave one too), else the circle's.</summary>
+    public double Area => polygon is null ? Math.PI * radiusPx * radiusPx : Math.Abs(SignedArea(polygon));
+
+    /// <summary>Whether the area is a traced or drawn outline, not a plain circle.</summary>
+    public bool HasOutline => polygon is not null;
+
+    /// <summary>False when the caller says nothing can lie ON this area, whatever its outline. True unless said otherwise.</summary>
+    public bool MayCarry { get; init; } = true;
+
     public double MinX { get; }
 
     public double MaxX { get; }
@@ -97,5 +106,16 @@ internal sealed class HoldArea
         }
 
         return inside == 0 ? 0 : (double)covered / inside;
+    }
+
+    private static double SignedArea((double X, double Y)[] ring)
+    {
+        var sum = 0d;
+        for (int i = 0, j = ring.Length - 1; i < ring.Length; j = i++)
+        {
+            sum += (ring[j].X * ring[i].Y) - (ring[i].X * ring[j].Y);
+        }
+
+        return sum / 2;
     }
 }

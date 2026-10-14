@@ -3,6 +3,7 @@
 // </copyright>
 
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.HoldStacks;
 
 namespace Blocwerk.Core.LookOver;
 
@@ -13,6 +14,10 @@ namespace Blocwerk.Core.LookOver;
 /// different strength: a new hold is ON THE SPOT when the two centres are within the larger radius of each other or
 /// the old centre is inside the new outline; the old hold lies UNDER the new one (<see cref="Covers"/>) only when its
 /// centre is inside the new hold's own outline or circle. The second is what a bulk removal may rely on.
+/// A hold and what it is stacked on (<see cref="Hold.StackedOnHoldId"/>, at any depth) are never each other's "hold on
+/// the spot": the hold that sat on a volume before the update is not under that volume, and the volume did not take
+/// its place. Only the stored relation counts here, never the outlines: an old hold that was NOT found again, with a
+/// new larger hold over its spot, is exactly what "lies under the new one" is for.
 /// </summary>
 internal static class SameSpotFinder
 {
@@ -25,7 +30,10 @@ internal static class SameSpotFinder
     {
         var (width, height) = Size(size);
         var longSide = Math.Max(width, height);
-        return fresh
+        var others = fresh as IReadOnlyList<Hold> ?? [.. fresh];
+        var on = others.Append(kept).GroupBy(h => h.Id).ToDictionary(g => g.Key, g => g.First().StackedOnHoldId);
+        return others
+            .Where(other => !HoldStackOrder.Below(on, kept.Id).Contains(other.Id) && !HoldStackOrder.Below(on, other.Id).Contains(kept.Id))
             .Select(other => (Other: other, Distance: Distance(kept, other, width, height), Covers: Covers(other, kept, size)))
             .Where(c => c.Covers || c.Distance <= Math.Max(kept.Radius, c.Other.Radius) * longSide)
             .OrderByDescending(c => c.Covers)
@@ -41,6 +49,11 @@ internal static class SameSpotFinder
     /// <returns>True when the old hold lies under the new one.</returns>
     public static bool Covers(Hold newHold, Hold old, (int Width, int Height)? size)
     {
+        if (newHold.StackedOnHoldId == old.Id || old.StackedOnHoldId == newHold.Id)
+        {
+            return false;
+        }
+
         if (newHold.ShapePoints is { Count: >= 3 } outline)
         {
             // Containment survives the per-axis scaling, so the normalised coordinates are tested as they are.

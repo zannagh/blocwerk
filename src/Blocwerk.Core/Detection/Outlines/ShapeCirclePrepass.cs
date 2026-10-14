@@ -10,8 +10,10 @@ internal static class ShapeCirclePrepass
     /// <summary>The radius each circle starts the sequential fit with (only circles that changed are listed).</summary>
     /// <param name="holds">Every hold of the panel (only unlocked, outline-less ones take part).</param>
     /// <param name="floorOf">The smallest radius allowed for a circle of the given original radius.</param>
+    /// <param name="stacks">Per hold, the holds it is stacked with (<see cref="ShapeStacks"/>): such a pair shares nothing.</param>
     /// <returns>The shrunk radii by hold id.</returns>
-    public static Dictionary<Guid, double> Shrink(IReadOnlyList<HoldShapeInput> holds, Func<double, double> floorOf)
+    public static Dictionary<Guid, double> Shrink(
+        IReadOnlyList<HoldShapeInput> holds, Func<double, double> floorOf, IReadOnlyDictionary<Guid, HashSet<Guid>>? stacks = null)
     {
         var circles = holds.Where(h => !h.Locked && h.Shape is not { Count: >= 3 }).OrderBy(h => h.X).ToList();
         var radius = circles.ToDictionary(h => h.Id, h => h.Radius);
@@ -26,13 +28,16 @@ internal static class ShapeCirclePrepass
         {
             for (int j = i + 1; j < circles.Count && circles[j].X - circles[i].X <= reach; j++)
             {
-                pairs.Add(circles[i].Id.CompareTo(circles[j].Id) < 0 ? (circles[i], circles[j]) : (circles[j], circles[i]));
+                pairs.Add(Before(circles[i], circles[j]) ? (circles[i], circles[j]) : (circles[j], circles[i]));
             }
         }
 
-        foreach (var (a, b) in pairs.OrderBy(p => p.A.Id).ThenBy(p => p.B.Id))
+        foreach (var (a, b) in pairs.OrderBy(p => p.A.Turn).ThenBy(p => p.A.Id).ThenBy(p => p.B.Turn).ThenBy(p => p.B.Id))
         {
-            Share(a, b, radius, floorOf);
+            if (stacks is null || !stacks.TryGetValue(a.Id, out var with) || !with.Contains(b.Id))
+            {
+                Share(a, b, radius, floorOf);
+            }
         }
 
         var original = circles.ToDictionary(h => h.Id, h => h.Radius);
@@ -62,4 +67,7 @@ internal static class ShapeCirclePrepass
         radius[a.Id] = Math.Floor(na * 1e6) / 1e6;
         radius[b.Id] = Math.Floor(nb * 1e6) / 1e6;
     }
+
+    /// <summary>True when a comes before b: by its turn, then by id.</summary>
+    private static bool Before(HoldShapeInput a, HoldShapeInput b) => a.Turn != b.Turn ? a.Turn < b.Turn : a.Id.CompareTo(b.Id) < 0;
 }

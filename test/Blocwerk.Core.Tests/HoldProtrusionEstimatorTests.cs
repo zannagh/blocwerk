@@ -37,6 +37,48 @@ public class HoldProtrusionEstimatorTests
     }
 
     [Fact]
+    public void AMatInFrontOfAKickboardHold_IsNotTheHoldsHeight()
+    {
+        // A low board: the splat keeps the crash mat that lies 150 to 380 mm in front of it, over the hold's outline.
+        var points = Surface(volumeMm: 0, holdA: 500, holdB: 800, apexOffsetA: 0);
+        for (var a = 300.0; a <= 700; a += 5)
+        {
+            for (var b = 600.0; b <= 1000; b += 5)
+            {
+                var w = HoldFootprintEstimatorTests.Wall.ToWorld(a, b, 150 + ((a + b) % 230));
+                points.Add(((float)w[0], (float)w[1], (float)w[2]));
+            }
+        }
+
+        var hold = new ProtrusionHold(Guid.NewGuid(), "0", 500, 800, Square, "k");
+
+        var p = HoldProtrusionEstimator.Measure(points, Frames, [hold])[hold.Id];
+
+        Assert.Equal(HoldProtrusionSource.Estimate, p.Source);
+        Assert.InRange(p.ApexMm, 0, HoldProtrusionEstimator.MaxHeightPerSize * 80);
+    }
+
+    [Fact]
+    public void ASingleStrayPointHighOverAHold_DoesNotStretchItsApex()
+    {
+        var points = Surface(volumeMm: 0, holdA: 500, holdB: 800, apexOffsetA: 0);
+        for (var a = 480.0; a < 520; a += 2)
+        {
+            for (var b = 780.0; b < 820; b += 2)
+            {
+                var w = HoldFootprintEstimatorTests.Wall.ToWorld(a, b, 380);
+                points.Add(((float)w[0], (float)w[1], (float)w[2]));
+            }
+        }
+
+        var hold = new ProtrusionHold(Guid.NewGuid(), "0", 500, 800, Square, "k");
+
+        var p = HoldProtrusionEstimator.Measure(points, Frames, [hold])[hold.Id];
+
+        Assert.InRange(p.ApexMm, 0, 96);
+    }
+
+    [Fact]
     public void HoldOnAVolume_HasTheVolumeAsItsBase()
     {
         var points = Surface(volumeMm: 100, holdA: 500, holdB: 800, apexOffsetA: 0);

@@ -31,6 +31,9 @@ internal sealed class MatchStats
     /// <summary>Candidates whose predicted centre falls off the detection (see <see cref="MatchGate"/>).</summary>
     public int OffHold { get; set; }
 
+    /// <summary>Old holds whose nearest detection was of a clearly different size (see <see cref="MatchGate.OtherSize"/>).</summary>
+    public int OtherSize { get; set; }
+
     /// <summary>Assigned (mutual) proposals.</summary>
     public int MutualNn { get; set; }
 }

@@ -15,4 +15,13 @@ public enum HoldOutlineMethod
     /// rendering as a plain circle.
     /// </summary>
     CircleFallback,
+
+    /// <summary>Cut out by the segmentation model as the object in the hold's detector box.</summary>
+    Segmenter,
+
+    /// <summary>
+    /// A rough shape: nothing traced was consistent with the hold's detector box (only a fragment of it, a bolt hole,
+    /// half the hold), so the outline is the smooth ellipse of the box, at low confidence.
+    /// </summary>
+    RoughShape,
 }

@@ -32,6 +32,28 @@ public static class HoldLookCheck
         return score >= options.ReplacedBelowScore ? HoldLook.Unsure : HoldLook.Replaced;
     }
 
+    /// <summary>
+    /// Whether a pair that does not look alike is two holds of clearly different size (<see cref="NewHoldTriage.SameHoldSizeFactor"/>):
+    /// a hold and the volume it sits on, paired because the other one was not detected. Such a pair is taken apart
+    /// without "another hold is here now": the old hold is judged by its own spot, the detection is a hold of its own.
+    /// </summary>
+    /// <param name="oldRadiusPx">The old hold's size (<see cref="SizePx"/>).</param>
+    /// <param name="twinRadiusPx">The detection's size.</param>
+    /// <returns>True when both sizes are known and clearly differ.</returns>
+    public static bool OtherSize(double oldRadiusPx, double twinRadiusPx) =>
+        oldRadiusPx > 0 && twinRadiusPx > 0
+        && Math.Max(oldRadiusPx, twinRadiusPx) > NewHoldTriage.SameHoldSizeFactor * Math.Min(oldRadiusPx, twinRadiusPx);
+
+    /// <summary>
+    /// A hold's size on its photo for <see cref="OtherSize"/>: the radius of the circle with its outline's area, so a
+    /// hand-drawn hold whose stored radius does not follow its outline is measured by what is drawn.
+    /// </summary>
+    /// <param name="hold">The hold.</param>
+    /// <param name="photo">Its photo's pixel size.</param>
+    /// <returns>The size in pixels.</returns>
+    public static double SizePx(Entities.Hold hold, (int Width, int Height) photo) =>
+        Math.Sqrt(HoldStacks.HoldStacking.Area(hold, photo).Area / Math.PI);
+
     /// <summary>Whether an old hold with no twin is gone from its predicted spot; anything above the bar says nothing.</summary>
     /// <param name="score">The correlation at the spot.</param>
     /// <param name="options">The thresholds.</param>

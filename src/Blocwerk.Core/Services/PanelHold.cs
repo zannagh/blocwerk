@@ -28,6 +28,11 @@ namespace Blocwerk.Core.Services;
 /// The last update did not find the hold again and nobody has confirmed it (<see cref="Entities.Hold.KeptUnconfirmedGeneration"/>):
 /// it is not drawn on the wall's overlays, except faded on a boulder that uses it.
 /// </param>
+/// <param name="StackedOn">
+/// The hold of the same photo this one sits on (<see cref="Entities.Hold.StackedOnHoldId"/>), or null for a hold on the
+/// wall. A list of a panel's holds comes with every base before what sits on it, so an overlay draws the upper hold
+/// last and a tap meets it first.
+/// </param>
 public record PanelHold(
     Guid Id,
     double X,
@@ -38,4 +43,5 @@ public record PanelHold(
     List<ShapePoint>? ShapePoints = null,
     bool IsVirtual = false,
     List<List<ShapePoint>>? ShapeHoles = null,
-    bool Kept = false);
+    bool Kept = false,
+    Guid? StackedOn = null);

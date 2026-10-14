@@ -2,6 +2,7 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using Blocwerk.Core.Detection.Outlines;
 using Blocwerk.Core.Entities;
 
 namespace Blocwerk.Core.Services;
@@ -50,6 +51,13 @@ public static class HandPlacedMerger
     /// <summary>The detection's radius must be within this factor of a real hold's radius.</summary>
     public const double SizeFactor = 2.0;
 
+    /// <summary>
+    /// A plain circle placed by hand only marks the spot of a hold. A detection the detector is sure of, with a traced
+    /// outline around that spot, is that hold as long as it is at most this many times the circle's size (or the
+    /// circle this many times the detection's).
+    /// </summary>
+    public const double PlaceholderSizeFactor = 5.0;
+
     /// <summary>Finds the merges and the contested spots.</summary>
     /// <param name="unpairedOld">Old holds on the panel the matcher found no twin for.</param>
     /// <param name="unpairedNew">Detections on the panel no old hold was paired with.</param>
@@ -89,6 +97,11 @@ public static class HandPlacedMerger
         Hold old, Hold detection, IReadOnlyDictionary<Guid, HoldPositionNorm>? warp, (int Width, int Height)? size)
     {
         var expected = warp is not null && warp.TryGetValue(old.Id, out var w) ? (w.X, w.Y) : (old.X, old.Y);
+        if (IsPlaceholderOf(old, detection, expected))
+        {
+            return SameColour(old, detection);
+        }
+
         var (sx, sy, sr) = size is { } s ? (s.Width, s.Height, Math.Max(s.Width, s.Height)) : (1.0, 1.0, 1.0);
         var dx = (detection.X - expected.Item1) * sx;
         var dy = (detection.Y - expected.Item2) * sy;
@@ -105,6 +118,23 @@ public static class HandPlacedMerger
             return false;
         }
 
-        return old.Color is null || detection.Color is null || string.Equals(old.Color, detection.Color, StringComparison.OrdinalIgnoreCase);
+        return SameColour(old, detection);
     }
+
+    private static bool SameColour(Hold old, Hold detection) =>
+        old.Color is null || detection.Color is null || string.Equals(old.Color, detection.Color, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// True when the old hold is a plain hand-placed circle and the detection is a confident one whose traced outline
+    /// lies around the spot the circle is expected at: the circle stood for that hold (<see cref="PlaceholderSizeFactor"/>).
+    /// </summary>
+    private static bool IsPlaceholderOf(Hold old, Hold detection, (double X, double Y) expected) =>
+        !old.IsVirtual
+        && old.ShapePoints is not { Count: >= 3 }
+        && detection.ShapePoints is { Count: >= 3 }
+        && NewHoldTriage.IsConfident(detection.Confidence, outlined: true, detection.OutlineConfidence)
+        && old.Radius > 0
+        && detection.Radius <= old.Radius * PlaceholderSizeFactor
+        && detection.Radius >= old.Radius / PlaceholderSizeFactor
+        && ShapeGeometry.Contains(HoldShapePolygon.Of(detection), new P2(expected.X, expected.Y));
 }
