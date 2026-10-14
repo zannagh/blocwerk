@@ -75,6 +75,10 @@ class FinishRun(Run):
             self.timings["train"] = stats["trainingSeconds"]
         # the export cut applies to a scene trained WITH the zones (gsplat), exactly as in the all-in-one job
         self.zones = state.get("zones") if stats.get("zoned") else None
+        self.saved_frame_cameras = state.get("frameCameras") or []  # additive: older prepare jobs have none
+
+    def frame_cameras(self):
+        return self.saved_frame_cameras
 
 
 def as_ply(job_dir, name):

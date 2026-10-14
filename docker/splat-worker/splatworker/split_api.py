@@ -47,8 +47,25 @@ def check_prepared(doc):
                 raise OptionsError(f"{key} must map stems to [x, y, z]")
         if not isinstance(doc["photoStems"], list) or not isinstance(doc["frameStems"], list):
             raise OptionsError("photoStems / frameStems must be lists")
+        check_frame_cameras(doc.get("frameCameras"))
     except OptionsError as e:
         bad(f"prepared: {e}", 422)
+
+
+def _numbers(v, n):
+    return isinstance(v, list) and len(v) == n and all(isinstance(x, (int, float)) for x in v)
+
+
+def check_frame_cameras(cams):
+    """prepared.json frameCameras (video_cameras.frame_cameras; additive, may be absent)."""
+    if cams is None:
+        return
+    if not isinstance(cams, list) or any(
+            not isinstance(c, dict) or not isinstance(c.get("image"), str) or not _numbers(c.get("K"), 9)
+            or not _numbers(c.get("R"), 9) or not _numbers(c.get("t"), 3)
+            or not isinstance(c.get("dist"), list) or not _numbers(c["dist"], len(c["dist"]))
+            or not all(isinstance(c.get(k), int) and c[k] > 0 for k in ("width", "height")) for c in cams):
+        raise OptionsError("frameCameras must be a list of cameras {image, width, height, K, dist, R, t}")
 
 
 async def finish_job(svc, request, tools):

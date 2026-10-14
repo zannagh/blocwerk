@@ -116,6 +116,29 @@ public class CaptureCoverageMarkerVideoTests
     }
 
     [Fact]
+    public void TheSplatWorkersVideoCameras_AreReadAsPosedVideoFrames()
+    {
+        // The shape docker/splat-worker/splatworker/video_cameras.py writes into frame.json (world mm): a frame at
+        // (1500, -2500, 1400) looking straight into the wall.
+        const string frameJson = """
+            {"version": 1, "aligned": true, "toWorldMm": [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]],
+             "stats": {"videoFrames": 2, "videoFramesRegistered": 1},
+             "videoCameras": [{"image": "vf_0007", "width": 1280, "height": 720,
+               "K": [900.0, 0.0, 640.0, 0.0, 900.0, 360.0, 0.0, 0.0, 1.0], "dist": [0.01, 0.0, 0.0, 0.0],
+               "R": [1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.0], "t": [-1500.0, 1400.0, 2500.0]}]}
+            """;
+
+        var camera = Assert.Single(CoverageCamera.FromSplatFrame(frameJson));
+
+        Assert.True(camera.IsVideoFrame);
+        Assert.Equal("vf_0007", camera.Camera.Image);
+        Assert.Equal(new[] { 1500.0, -2500, 1400 }, camera.Centre);
+        Assert.Equal(new[] { 0.0, 1, 0 }, camera.Forward);
+        Assert.True(camera.InFrame([1500, 0, 1400]));
+        Assert.Equal(1, CaptureCoverageService.RegisteredFrames(frameJson));
+    }
+
+    [Fact]
     public void NoVideo_OrFewPlacedFrames_IsCalledOut()
     {
         var none = CaptureCoverageAnalyzer.Analyze(

@@ -26,7 +26,8 @@ from .sparse_export import export_sparse
 PREPARE_BANDS = {"ingest": (0.0, 0.05), "sfm-features": (0.05, 0.25), "sfm-matching": (0.25, 0.7),
                  "sfm-mapping": (0.7, 0.8), "undistort": (0.8, 0.9), "bundle": (0.9, 1.0)}
 # prepared.json: version 2 adds frameCentres (the finish's clean-up looks through every camera) and zones;
-# anchorCentres / anchorStems (anchors.py) are additive (absent from older prepare jobs).
+# anchorCentres / anchorStems (anchors.py) and frameCameras (video_cameras.py) are additive (absent from
+# older prepare jobs: the finish then reports no videoCameras).
 PREPARED_VERSION = 2
 PREPARED_KEYS = ("version", "quality", "options", "photoCentres", "frameCentres", "photoStems", "frameStems",
                  "points", "meanReprojErrorPx", "matcher", "cameraGroups", "sfm")
@@ -99,7 +100,7 @@ class PrepareRun(Run):
                 "meanTrackLength": self.model.get("meanTrackLength"), "matcher": self.matcher,
                 "cameraGroups": len(self.groups), "sfm": self.sfm_run.stats(), "stageSeconds": dict(self.timings),
                 "zones": self.zones, "anchorStems": self.anchor_stems, "anchorCentres": self.anchor_centres,
-                "sparse": self.sparse}
+                "sparse": self.sparse, "frameCameras": self.frame_cameras()}
 
 
 def keep_only(job_dir, files):

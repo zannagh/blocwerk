@@ -104,7 +104,7 @@ public static partial class WallGeometryModelTransformer
         }
 
         TransformMarkers(root, t);
-        TransformCameras(root, t);
+        TransformCameras(root["cameras"] as JsonArray, t);
         if (root["world"] is JsonObject world && GeometryJson.Vec(world["up"]) is { } up)
         {
             world["up"] = GeometryJson.Array(GeometrySimilarity.Unit(t.Rotate(up)), 6);
@@ -142,10 +142,10 @@ public static partial class WallGeometryModelTransformer
     /// A camera maps world → camera as <c>x = R·X + t</c>. With <c>X = Qᵀ(X' − T)/s</c> and the camera frame scaled by s
     /// (so it stays metric): <c>R' = R·Qᵀ</c>, <c>t' = s·t − R'·T</c>. The projection is unchanged.
     /// </summary>
-    private static void TransformCameras(JsonObject root, GeometrySimilarity t)
+    private static void TransformCameras(JsonArray? cameras, GeometrySimilarity t)
     {
         var q = t.Rotation;
-        foreach (var camera in (root["cameras"] as JsonArray ?? []).OfType<JsonObject>())
+        foreach (var camera in (cameras ?? []).OfType<JsonObject>())
         {
             if (GeometryJson.Numbers(camera["R"]) is not { Length: 9 } r || GeometryJson.Vec(camera["t"]) is not { } tc)
             {
