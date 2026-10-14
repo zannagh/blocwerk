@@ -17,6 +17,21 @@ public sealed partial class HoldOutlineUpgradeService
     {
         ArgumentNullException.ThrowIfNull(options);
         EnsureEnabled();
+        var (result, outlined) = await WriteUnderLockAsync(wallId, options, ct);
+
+        // New outlines: their 3D footprints are refined in the background, outside the hold lock, for those holds only.
+        // A whole-wall refinement traces every hold in every capture photo and takes many minutes.
+        if (outlined.Count > 0)
+        {
+            refinementQueue?.Enqueue(wallId, outlined);
+        }
+
+        return result;
+    }
+
+    private async Task<(HoldOutlineUpgradeResult Result, List<Guid> Outlined)> WriteUnderLockAsync(
+        Guid wallId, HoldOutlineUpgradeOptions options, CancellationToken ct)
+    {
         using var holdWrite = await WallHoldWriteLock.AcquireAsync(wallId, ct: ct);
         var (db, userId) = await OpenForAdminAsync(wallId, ct);
         await using (db)
@@ -49,20 +64,15 @@ public sealed partial class HoldOutlineUpgradeService
             }
 
             await db.SaveChangesAsync(ct);
-            if (footprints is not null && run.OutlinedCount > 0)
-            {
-                // New outlines: refresh the 3D footprints they feed (a batch step, never per view).
-                await footprints.RefineFromPipelineAsync(wallId, ct);
-            }
-
             logger.LogInformation(
                 "Outline upgrade {RunId} on wall {WallId} by {UserId}: {Eligible} circle holds, {Outlined} outlined, "
                 + "{Holes} with holes, {Fingerprinted} fingerprinted, {Measured} measured, {Skipped} skipped (changed meanwhile)",
                 run.Id, wallId, userId, run.EligibleCount, run.OutlinedCount, run.WithHolesCount,
                 run.FingerprintedCount, run.MeasuredCount, skipped);
-            return new HoldOutlineUpgradeResult(
+            var result = new HoldOutlineUpgradeResult(
                 run.Id, run.EligibleCount, run.OutlinedCount, run.KeptCircleCount, run.WithHolesCount,
                 run.FingerprintedCount, run.MeasuredCount, skipped);
+            return (result, entries.Where(e => e.ShapeHash is not null).Select(e => e.HoldId).ToList());
         }
     }
 

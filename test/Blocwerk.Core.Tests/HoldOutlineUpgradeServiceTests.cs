@@ -1,7 +1,9 @@
+using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
+using NSubstitute;
 
 namespace Blocwerk.Core.Tests;
 
@@ -88,6 +90,39 @@ public class HoldOutlineUpgradeServiceTests
         Assert.Equal((1, 0, 0), (again.Eligible, again.Outlined, again.Fingerprinted));
         var second = await s.LoadHoldsAsync();
         Assert.All(first.Values, f => AssertUnchanged(f, second[f.Id]));
+    }
+
+    [Fact]
+    public async Task Apply_QueuesTheFootprintsOfTheNewOutlinesOnlyAfterReleasingTheWallLock()
+    {
+        using var h = new WallTestHarness();
+        var s = await OutlineUpgradeScenario.CreateAsync(h);
+        var queue = Substitute.For<IHoldRefinementQueue>();
+        var queued = new List<Guid>();
+        var lockFree = true;
+        queue.When(q => q.Enqueue(h.WallId, Arg.Any<IEnumerable<Guid>>())).Do(call =>
+        {
+            queued.AddRange(call.Arg<IEnumerable<Guid>>());
+            try
+            {
+                WallHoldWriteLock.TryAcquire(h.WallId, "busy").Dispose();
+            }
+            catch (UserFacingException)
+            {
+                lockFree = false;
+            }
+        });
+
+        var result = await s.Service(refinementQueue: queue).ApplyAsync(h.WallId, new HoldOutlineUpgradeOptions());
+
+        Assert.True(lockFree);
+        Assert.Equal(result.Outlined, queued.Count);
+        Assert.Contains(s.AutoOutlined, queued);
+        Assert.DoesNotContain(s.AutoKeepsCircle, queued);
+
+        queue.ClearReceivedCalls();
+        await s.Service(refinementQueue: queue).ApplyAsync(h.WallId, new HoldOutlineUpgradeOptions());
+        queue.DidNotReceive().Enqueue(Arg.Any<Guid>(), Arg.Any<IEnumerable<Guid>>());
     }
 
     [Fact]
