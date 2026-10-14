@@ -137,11 +137,24 @@ public sealed partial class WallLookOverService
                 return detection;
             case LookOverAnswer.AddHold:
                 return await AddDetectionAsync(db, finding, ct);
+            case LookOverAnswer.Unlink:
+                await UnlinkAsync(db, finding, ct);
+                return null;
             default:
                 var merge = await duplicates.MergeAsync(finding.WallId, view.OtherHoldId!.Value, view.HoldId!.Value, HoldMergeMode.KeepLeft, ct);
                 finding.MergeBatchId = merge.BatchId;
                 return null;
         }
+    }
+
+    /// <summary>"No, two holds": the link between the two holds goes; both holds stay as they are. Saved with the answer.</summary>
+    private static async Task UnlinkAsync(BlocwerkDbContext db, WallLookOverFinding finding, CancellationToken ct)
+    {
+        var (a, b) = (finding.HoldId, finding.OtherHoldId);
+        var links = await db.HoldLinks
+            .Where(l => l.WallId == finding.WallId && ((l.HoldAId == a && l.HoldBId == b) || (l.HoldAId == b && l.HoldBId == a)))
+            .ToListAsync(ct);
+        db.HoldLinks.RemoveRange(links);
     }
 
     /// <summary>

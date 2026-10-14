@@ -132,7 +132,7 @@ internal static class LookOverCrops
     private static async Task<byte[]?> PhotoAsync(BlocwerkDbContext db, WallLookOverFinding finding, bool before, bool plain, CancellationToken ct)
     {
         var frames = await LookOverFrameSource.LoadAsync(db, finding.WallId, [finding], ct);
-        var panelId = before ? frames.Hold(finding.OldHoldId)?.WallPanelId : finding.PanelId;
+        var panelId = before ? frames.Hold(LookOverFrameSource.BeforeHoldId(finding))?.WallPanelId : finding.PanelId;
         if (panelId is null || (before ? frames.Before(finding) : frames.Now(finding)) is not { } frame)
         {
             return null;

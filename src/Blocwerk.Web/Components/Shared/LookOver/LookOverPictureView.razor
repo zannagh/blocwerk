@@ -38,6 +38,10 @@
     [Parameter]
     public bool Eager { get; set; }
 
+    /// <summary>The finding is an unsure link: the two pictures are the two photos the linked holds are on, not before and now.</summary>
+    [Parameter]
+    public bool Linked { get; set; }
+
     private bool Outlined => Picture.Outlines.Count > 0;
 
     /// <summary>The 3D texture comes bare too: nothing is known to outline on it, and a ring of another size than the hold misleads.</summary>
@@ -45,14 +49,14 @@
 
     private string Caption => Picture.View switch
     {
-        CheckCropView.Old => "Before the update",
-        CheckCropView.New => "Now",
+        CheckCropView.Old => Linked ? "The other photo" : "Before the update",
+        CheckCropView.New => Linked ? "This photo" : "Now",
         _ => "3D texture",
     };
 
     private string Alt => Picture.View switch
     {
-        CheckCropView.Old => "the old photo around this hold",
+        CheckCropView.Old => Linked ? "the other photo around the linked hold" : "the old photo around this hold",
         CheckCropView.New => "the current photo around this spot",
         _ => "the 3D texture around this spot",
     };

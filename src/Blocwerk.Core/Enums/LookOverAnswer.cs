@@ -37,4 +37,7 @@ public enum LookOverAnswer
 
     /// <summary>"Add as a hold": a discarded detection becomes a live hold with its detected outline; can be undone while no boulder uses it.</summary>
     AddHold = 6,
+
+    /// <summary>"No, two holds": the link between the two holds of an unsure link is removed; both holds stay.</summary>
+    Unlink = 7,
 }

@@ -119,7 +119,7 @@ internal static class RefreshDecisions
         foreach (var n in c.Neighbours.OrderBy(n => n.PanelId.ToString(), StringComparer.Ordinal))
         {
             text.Append("n:").Append(n.PanelId).Append('\n');
-            Append(text, "l", n.Links.Select(l => $"{l.NeighborHoldId}>{l.NewHoldId}:{l.Moved}"));
+            Append(text, "l", n.Links.Select(l => $"{l.NeighborHoldId}>{l.NewHoldId}:{l.Moved}{(l.Unsure ? ":unsure" : string.Empty)}"));
             Append(text, "x", n.RemovedNeighbourHoldIds);
         }
 

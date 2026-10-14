@@ -29,6 +29,7 @@ public static class LookOverRules
         LookOverFindingKind.MatchedToHandPlaced,
         LookOverFindingKind.HandPlacedAmbiguous,
         LookOverFindingKind.ConflictingNew,
+        LookOverFindingKind.UnsureLink,
         LookOverFindingKind.DiscardedDetection,
     ];
 
@@ -67,11 +68,12 @@ public static class LookOverRules
     /// <summary>The kinds that can be settled all at once.</summary>
     /// <param name="kind">The kind.</param>
     /// <returns>
-    /// True for unsure matches, for old and new holds on one spot and for discarded detections ("not a hold"). Never
+    /// True for unsure matches, for old and new holds on one spot, for unsure links ("same hold") and for discarded
+    /// detections ("not a hold"). Never
     /// for holds the update could not find: "still here" for all of them at once would put back whatever really is gone.
     /// </returns>
     public static bool CanSettleAll(LookOverFindingKind kind) =>
-        kind is LookOverFindingKind.UnsureMatch or LookOverFindingKind.SameSpot or LookOverFindingKind.DiscardedDetection;
+        kind is LookOverFindingKind.UnsureMatch or LookOverFindingKind.SameSpot or LookOverFindingKind.DiscardedDetection or LookOverFindingKind.UnsureLink;
 
     /// <summary>
     /// A discarded detection that is likely a hold the update missed: the detector was sure of it and no live hold is
@@ -103,6 +105,11 @@ public static class LookOverRules
         if (!holdIsLive || !canEdit)
         {
             return [LookOverAnswer.Settle];
+        }
+
+        if (kind == LookOverFindingKind.UnsureLink)
+        {
+            return [LookOverAnswer.Settle, LookOverAnswer.Unlink];
         }
 
         if (kind == LookOverFindingKind.UnsureMatch)

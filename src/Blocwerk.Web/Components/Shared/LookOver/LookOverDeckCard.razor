@@ -20,7 +20,7 @@
         @foreach (var picture in Photos)
         {
             <button type="button" class="lookover-crop" @onclick="() => zoomed = true" aria-label="Show the pictures larger">
-                <LookOverPictureView WallId="WallId" FindingId="Finding.Id" Picture="picture" Eager="true" />
+                <LookOverPictureView WallId="WallId" FindingId="Finding.Id" Picture="picture" Linked="@(Finding.Kind == LookOverFindingKind.UnsureLink)" Eager="true" />
             </button>
         }
     </div>
@@ -46,6 +46,10 @@
     @if (Takes(LookOverAnswer.AddHold))
     {
         <button type="button" class="btn-primary" disabled="@Disabled" @onclick="() => AnswerAsync(LookOverAnswer.AddHold)">@LookOverCopy.AddHoldLabel</button>
+    }
+    @if (Takes(LookOverAnswer.Unlink))
+    {
+        <button type="button" class="btn-secondary" disabled="@Disabled" @onclick="() => AnswerAsync(LookOverAnswer.Unlink)">@LookOverCopy.UnlinkLabel</button>
     }
     @if (Takes(LookOverAnswer.DifferentHold))
     {
@@ -74,7 +78,7 @@
         <div class="lookover-zoom-pictures">
             @foreach (var picture in Pictures)
             {
-                <LookOverPictureView WallId="WallId" FindingId="Finding.Id" Picture="picture" Eager="true" />
+                <LookOverPictureView WallId="WallId" FindingId="Finding.Id" Picture="picture" Linked="@(Finding.Kind == LookOverFindingKind.UnsureLink)" Eager="true" />
             }
         </div>
     </Modal>
@@ -82,7 +86,7 @@
 
 @code {
     private static readonly LookOverAnswer[] Order =
-        [LookOverAnswer.Settle, LookOverAnswer.AddHold, LookOverAnswer.DifferentHold, LookOverAnswer.UseNewHold, LookOverAnswer.RemoveHold];
+        [LookOverAnswer.Settle, LookOverAnswer.AddHold, LookOverAnswer.Unlink, LookOverAnswer.DifferentHold, LookOverAnswer.UseNewHold, LookOverAnswer.RemoveHold];
     private ConfirmAction? different;
     private ConfirmAction? merge;
     private ConfirmAction? remove;
@@ -119,7 +123,7 @@
         }
 
         var answer = Offered[number - 1];
-        if (answer is LookOverAnswer.Settle or LookOverAnswer.AddHold)
+        if (answer is LookOverAnswer.Settle or LookOverAnswer.AddHold or LookOverAnswer.Unlink)
         {
             return AnswerAsync(answer);
         }

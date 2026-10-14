@@ -14,7 +14,7 @@
         @foreach (var picture in Pictures)
         {
             <button type="button" class="lookover-crop" @onclick="() => zoomed = true" aria-label="Show the pictures larger">
-                <LookOverPictureView WallId="WallId" FindingId="Finding.Id" Picture="picture" />
+                <LookOverPictureView WallId="WallId" FindingId="Finding.Id" Picture="picture" Linked="@(Finding.Kind == LookOverFindingKind.UnsureLink)" />
             </button>
         }
     </div>
@@ -42,6 +42,10 @@
             @if (Finding.Answers.Contains(LookOverAnswer.Settle))
             {
                 <button type="button" class="btn-secondary" disabled="@Disabled" @onclick="() => AnswerAsync(LookOverAnswer.Settle)">@LookOverCopy.SettleLabel(Finding)</button>
+            }
+            @if (Finding.Answers.Contains(LookOverAnswer.Unlink))
+            {
+                <button type="button" class="btn-secondary" disabled="@Disabled" @onclick="() => AnswerAsync(LookOverAnswer.Unlink)">@LookOverCopy.UnlinkLabel</button>
             }
             @if (Finding.Answers.Contains(LookOverAnswer.DifferentHold))
             {
@@ -79,7 +83,7 @@
         <div class="lookover-zoom-pictures">
             @foreach (var picture in Pictures)
             {
-                <LookOverPictureView WallId="WallId" FindingId="Finding.Id" Picture="picture" Eager="true" />
+                <LookOverPictureView WallId="WallId" FindingId="Finding.Id" Picture="picture" Linked="@(Finding.Kind == LookOverFindingKind.UnsureLink)" Eager="true" />
             }
         </div>
     </Modal>

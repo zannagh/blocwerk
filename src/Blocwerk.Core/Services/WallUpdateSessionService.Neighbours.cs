@@ -61,7 +61,7 @@ public partial class WallUpdateSessionService
             db.WallUpdateNeighbourDecisions.Add(new WallUpdateNeighbourDecision
             {
                 SessionId = sessionId,
-                Kind = WallUpdateNeighbourDecisionKind.Link,
+                Kind = link.Unsure ? WallUpdateNeighbourDecisionKind.UnsureLink : WallUpdateNeighbourDecisionKind.Link,
                 PanelId = linkSet.PanelId,
                 HoldId = link.NewHoldId,
                 CentreHoldId = link.NeighborHoldId,

@@ -24,6 +24,7 @@ internal static partial class LookOverCopy
         LookOverFindingKind.MatchedToHandPlaced => "Hand-placed, merged",
         LookOverFindingKind.HandPlacedAmbiguous => "Hand-placed, several",
         LookOverFindingKind.DiscardedDetection => DiscardedChip,
+        LookOverFindingKind.UnsureLink => "Linked, unsure",
         _ => "Conflicting new",
     };
 
