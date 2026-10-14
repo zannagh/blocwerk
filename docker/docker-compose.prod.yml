@@ -136,13 +136,16 @@ services:
       # Wall gallery uploads AND the derived image-variant cache. Without this mount both
       # land in the container writable layer and are destroyed by every autodeploy.
       - ./wall-images:/app/wall-images
+      # The app's own log files (logs/blocwerk<day>.log, at most 7 files of 10 MB, Program.cs). Mounted so they survive a
+      # redeploy: the docker log goes with the old container, these stay and let one session be compared with the last.
+      - ./logs:/app/logs
     depends_on:
       postgres:
         condition: service_healthy
       otel-dashboard:
         condition: service_started
     restart: unless-stopped
-    # Also writes logs/blocwerk<day>.log inside the container, three files kept (today + 2 days).
+    # Also writes logs/blocwerk<day>.log to ./logs (mounted above).
     logging: *logging-app
     networks:
       - default
