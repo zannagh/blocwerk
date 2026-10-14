@@ -53,8 +53,8 @@ public partial class WallUpdateSessionService
             .GroupBy(d => d.PanelId)
             .Select(g => new NeighbourLinkSet(
                 g.Key,
-                g.Where(d => d.Kind == WallUpdateNeighbourDecisionKind.Link && d.CentreHoldId is not null)
-                    .Select(d => new ConfirmedLink(d.CentreHoldId!.Value, d.HoldId, d.Moved))
+                g.Where(d => d.Kind is WallUpdateNeighbourDecisionKind.Link or WallUpdateNeighbourDecisionKind.UnsureLink && d.CentreHoldId is not null)
+                    .Select(d => new ConfirmedLink(d.CentreHoldId!.Value, d.HoldId, d.Moved, d.Kind == WallUpdateNeighbourDecisionKind.UnsureLink))
                     .ToList(),
                 g.Where(d => d.Kind == WallUpdateNeighbourDecisionKind.Removed)
                     .Select(d => d.HoldId)

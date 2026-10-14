@@ -40,10 +40,18 @@ internal static class LookOverReconciler
         var ids = open.SelectMany(f => new[] { f.HoldId, f.OtherHoldId }).OfType<Guid>().Distinct().ToList();
         var holds = await db.Holds.AsNoTracking().Where(h => ids.Contains(h.Id)).ToDictionaryAsync(h => h.Id, ct);
         var placed = await PlacedByHandAsync(db, wallId, ct);
+        var linked = await LinkedPairsAsync(db, wallId, open, ct);
         var changed = 0;
         foreach (var finding in open)
         {
             var before = (finding.Status, finding.OtherHoldId);
+            if (finding.Kind == LookOverFindingKind.UnsureLink)
+            {
+                CloseUnsureLink(finding, holds, linked);
+                changed += before == (finding.Status, finding.OtherHoldId) ? 0 : 1;
+                continue;
+            }
+
             if (finding.OtherHoldId is { } other && !holds.ContainsKey(other))
             {
                 ForgetNewHold(finding);
@@ -80,6 +88,39 @@ internal static class LookOverReconciler
         }
 
         return changed;
+    }
+
+    /// <summary>
+    /// An unsure link is settled by the editor too: either hold removed (or merged away), or the link taken apart there.
+    /// </summary>
+    private static void CloseUnsureLink(WallLookOverFinding finding, Dictionary<Guid, Hold> holds, HashSet<(Guid A, Guid B)> linked)
+    {
+        if (finding.HoldId is not { } a || finding.OtherHoldId is not { } b || !holds.ContainsKey(a) || !holds.ContainsKey(b))
+        {
+            Close(finding, LookOverCloseReason.RemovedInEditor);
+        }
+        else if (!linked.Contains((a, b)) && !linked.Contains((b, a)))
+        {
+            Close(finding, LookOverCloseReason.CheckedInEditor);
+        }
+    }
+
+    /// <summary>The wall's hold links between the two holds of the open unsure-link findings.</summary>
+    private static async Task<HashSet<(Guid A, Guid B)>> LinkedPairsAsync(
+        BlocwerkDbContext db, Guid wallId, IReadOnlyList<WallLookOverFinding> open, CancellationToken ct)
+    {
+        var ids = open.Where(f => f.Kind == LookOverFindingKind.UnsureLink).Select(f => f.HoldId).OfType<Guid>().ToList();
+        if (ids.Count == 0)
+        {
+            return [];
+        }
+
+        return (await db.HoldLinks.AsNoTracking()
+                .Where(l => l.WallId == wallId && (ids.Contains(l.HoldAId) || ids.Contains(l.HoldBId)))
+                .Select(l => new { l.HoldAId, l.HoldBId })
+                .ToListAsync(ct))
+            .Select(l => (l.HoldAId, l.HoldBId))
+            .ToHashSet();
     }
 
     private static void Close(WallLookOverFinding finding, LookOverCloseReason reason) =>

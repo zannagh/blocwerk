@@ -7,4 +7,5 @@ namespace Blocwerk.Core.Services;
 /// <param name="NeighborHoldId">The live neighbour panel's hold (link end A).</param>
 /// <param name="NewHoldId">The newly staged panel's hold (link end B).</param>
 /// <param name="Moved">True to record the link as <see cref="Blocwerk.Core.Enums.HoldLinkKind.Moved"/>.</param>
-public record ConfirmedLink(Guid NeighborHoldId, Guid NewHoldId, bool Moved);
+/// <param name="Unsure">True when the overlap matcher was not sure of the pair: the look-over asks about the link.</param>
+public record ConfirmedLink(Guid NeighborHoldId, Guid NewHoldId, bool Moved, bool Unsure = false);

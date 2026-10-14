@@ -8,4 +8,7 @@ public enum WallUpdateNeighbourDecisionKind
 
     /// <summary>The hold was marked physically absent and is deleted on promote.</summary>
     Removed = 1,
+
+    /// <summary>A correspondence the overlap matcher was not sure of, linked all the same (a full revision); asked about in the look-over.</summary>
+    UnsureLink = 2,
 }

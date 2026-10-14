@@ -120,6 +120,9 @@ internal static partial class LookOverCopy
         (LookOverFindingKind.SameSpot, LookOverBulkScope.WithoutBoulders) => $"Keep both where no boulder uses the old hold ({count})",
         (LookOverFindingKind.SameSpot, LookOverBulkScope.OnBoulders) => $"Keep both on the {count} spots a boulder uses",
         (LookOverFindingKind.SameSpot, _) => $"Keep both everywhere ({count})",
+        (LookOverFindingKind.UnsureLink, LookOverBulkScope.WithoutBoulders) => $"Keep the {count} links that no boulder uses",
+        (LookOverFindingKind.UnsureLink, LookOverBulkScope.OnBoulders) => $"Keep the {count} links a boulder uses",
+        (LookOverFindingKind.UnsureLink, _) => $"Keep all {count} links: same hold on both photos",
         (_, LookOverBulkScope.WithoutBoulders) => $"Mark the {count} unsure matches that no boulder uses as same hold",
         (_, LookOverBulkScope.OnBoulders) => $"Mark the {count} unsure matches on boulders as same hold",
         _ => $"Mark all {count} unsure matches as same hold",
@@ -139,6 +142,11 @@ internal static partial class LookOverCopy
             LookOverBulkScope.OnBoulders => " that a boulder uses",
             _ => string.Empty,
         };
+        if (kind == LookOverFindingKind.UnsureLink)
+        {
+            return $"Keep {(count == 1 ? "1 link" : $"{count} links")}{scope} as the same hold on both photos without looking at each? Nothing changes on the wall; each answer can be undone on its card.";
+        }
+
         return kind == LookOverFindingKind.SameSpot
             ? $"Keep the old and the new hold on {PlainCopy.Plural(count, "spot")}{scope} without looking at each? No hold is removed or merged; each answer can be undone on its card."
             : $"Mark {(count == 1 ? "1 unsure match" : $"{count} unsure matches")}{scope} as the same hold without looking at each? No hold changes; "
