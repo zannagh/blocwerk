@@ -73,7 +73,7 @@ else
             @* ContentKey: a panel switch under the open takeover must re-fit the stage — the world
                is sized from the image's natural dimensions, read once per photo. *@
             <StageOverlay OnClose="() => _stageOpen = false" Label="Wall panel in full screen"
-                          ContentKey="@_panel.Id.ToString()">
+                          ContentKey="@_panel.Id.ToString()" Chrome="@(BoulderFocus ? FocusChrome : null)">
                 @PhotoLayers
             </StageOverlay>
         }
@@ -260,6 +260,9 @@ else
     /// detail view; left false in the wall view, whose editor stays photo-only in the lens.
     /// </summary>
     [Parameter] public bool LensOverlay { get; set; }
+
+    /// <summary>The focus lightbulb inside the full-screen takeover (boulder view only).</summary>
+    private static RenderFragment FocusChrome => @<BoulderFocusButton />;
 
     /// <summary>
     /// The boulder view: shows the focus lightbulb and marks the photo as one it dims (boulder-focus.css).

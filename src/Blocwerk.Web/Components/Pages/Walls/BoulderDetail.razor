@@ -356,7 +356,7 @@ else
                        reads the image rect directly and cannot survive a rotated stage — never arms
                        in there. *@
                     <StageOverlay OnClose="() => _stageOpen = false" Label="Boulder in full screen"
-                                  ContentKey="@PhotoUrl">
+                                  ContentKey="@PhotoUrl" Chrome="FocusChrome">
                         @PhotoLayers
                     </StageOverlay>
                 }
@@ -546,6 +546,9 @@ else
             }
         </svg>
     </text>;
+
+    /// <summary>The focus lightbulb, again inside the full-screen takeover so focus can be toggled there.</summary>
+    private static RenderFragment FocusChrome => @<BoulderFocusButton />;
 
     [Parameter] public Guid WallId { get; set; }
     [Parameter] public Guid BoulderId { get; set; }
