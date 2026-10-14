@@ -28,7 +28,7 @@ public enum HoldColorVerdict
     /// <summary>Some colour under a lot of grey or white: chalk, or a hold that is partly hidden.</summary>
     MostlyChalk = 6,
 
-    /// <summary>Grey with a colour cast: a dark blue hold reads like this, and so does bleached wood.</summary>
+    /// <summary>Dark or light with a colour cast that is not the lamps' or blue: a dark purple hold, bleached wood.</summary>
     TintedGrey = 7,
 
     /// <summary>Neither clearly white nor clearly black (grey, a shadowed white, a chalked black).</summary>

@@ -11,7 +11,9 @@ namespace Blocwerk.Core.Holds.Colors;
 /// Pixels that look like the hold's surroundings (the wall showing inside a loose outline) are dropped first. Of what is
 /// left, the grey and white pixels (chalk, highlights) are ignored when enough coloured pixels remain; those vote with
 /// their hue, weighted by how colourful they are, because chalk and shadow change how light and how strong a colour is
-/// but hardly its hue. A hold with almost no colour is white or black only when nearly all of it is light or dark.
+/// but hardly its hue. A hold with almost no colour is judged by <see cref="HoldColorGreys"/>: white, black or dark
+/// blue only when nearly all of it is light or dark. Red needs a strong colour: a weak red is as often a pink, salmon
+/// or orange hold.
 /// </para>
 /// <para>
 /// Never proposed: grey (a shadowed white and a chalked black look the same), salmon (it sits between pink and red) and
@@ -45,18 +47,6 @@ public static class HoldColorEstimator
     /// <summary>The median chroma a coloured hold needs at the least.</summary>
     private const double MinChroma = 4.5;
 
-    private const double BlackBelowL = 34.0;
-    private const double WhiteAboveL = 66.0;
-
-    /// <summary>The share of the pixels that must be dark (black) or light (white).</summary>
-    private const double LightnessShare = 0.75;
-
-    /// <summary>The colour cast a black hold may have; above it the hold is more likely dark blue.</summary>
-    private const double BlackCast = 0.7;
-
-    /// <summary>The colour cast a white hold may have; warm light gives white holds a little.</summary>
-    private const double WhiteCast = 1.5;
-
     /// <summary>
     /// The hue ranges (degrees, from inclusive, to exclusive) with the chroma each needs. The gaps between them are
     /// where two colours cannot be told apart. Wood sits between orange and yellow (hue 56 to 84), so orange ends where
@@ -65,7 +55,7 @@ public static class HoldColorEstimator
     private static readonly (string Color, double From, double To, double Chroma)[] Hues =
     [
         ("pink", 338, 12, MinChroma),
-        ("red", 19, 30, 6.0),
+        ("red", 19, 30, 9.0),
         ("orange", 38, 56, 7.0),
         ("yellow", 84, 112, 5.0),
         ("green", 120, 185, MinChroma),
@@ -88,7 +78,8 @@ public static class HoldColorEstimator
             return HoldColorEstimate.Unset(HoldColorVerdict.TooFewPixels);
         }
 
-        var own = WithoutSurroundings(hold, surroundings);
+        OklabColor? wall = surroundings.Count < MinPixels ? null : MedianOf(surroundings);
+        var own = wall is { } w ? hold.Where(p => p.DistanceTo(w) > SurroundingsDistance).ToList() : [.. hold];
         if (own.Count < Math.Max(MinPixels, MinOwnShare * hold.Count))
         {
             return HoldColorEstimate.Unset(HoldColorVerdict.LikeSurroundings);
@@ -97,22 +88,14 @@ public static class HoldColorEstimator
         var colored = own.Where(p => p.Chroma >= GreyChroma).ToList();
         var share = colored.Count / (double)own.Count;
         var (color, verdict) = share >= ColoredShare ? ByHue(colored)
-            : share <= GreyShare ? WhiteOrBlack(own)
+            : share <= GreyShare ? HoldColorGreys.Judge(own, wall)
+            : HoldColorGreys.IsChalkedWhite(own, wall) ? ("white", HoldColorVerdict.Proposed)
             : (null, HoldColorVerdict.MostlyChalk);
         return new HoldColorEstimate(color, verdict, area);
     }
 
-    private static List<OklabColor> WithoutSurroundings(IReadOnlyList<OklabColor> hold, IReadOnlyList<OklabColor> surroundings)
-    {
-        if (surroundings.Count < MinPixels)
-        {
-            return [.. hold];
-        }
-
-        var median = new OklabColor(
-            Median(surroundings.Select(p => p.L)), Median(surroundings.Select(p => p.A)), Median(surroundings.Select(p => p.B)));
-        return hold.Where(p => p.DistanceTo(median) > SurroundingsDistance).ToList();
-    }
+    private static OklabColor MedianOf(IReadOnlyList<OklabColor> pixels) =>
+        new(Median(pixels.Select(p => p.L)), Median(pixels.Select(p => p.A)), Median(pixels.Select(p => p.B)));
 
     private static (string? Color, HoldColorVerdict Verdict) ByHue(List<OklabColor> colored)
     {
@@ -136,23 +119,10 @@ public static class HoldColorEstimator
             : (range.Color, HoldColorVerdict.Proposed);
     }
 
-    private static (string? Color, HoldColorVerdict Verdict) WhiteOrBlack(List<OklabColor> own)
-    {
-        var cast = new OklabColor(0, own.Average(p => p.A), own.Average(p => p.B)).Chroma;
-        if (own.Count(p => p.L < BlackBelowL) >= LightnessShare * own.Count)
-        {
-            return cast < BlackCast ? ("black", HoldColorVerdict.Proposed) : (null, HoldColorVerdict.TintedGrey);
-        }
-
-        if (own.Count(p => p.L > WhiteAboveL) >= LightnessShare * own.Count)
-        {
-            return cast < WhiteCast ? ("white", HoldColorVerdict.Proposed) : (null, HoldColorVerdict.TintedGrey);
-        }
-
-        return (null, HoldColorVerdict.UnclearGrey);
-    }
-
-    private static double Median(IEnumerable<double> values)
+    /// <summary>The median of some values.</summary>
+    /// <param name="values">The values; at least one.</param>
+    /// <returns>The median.</returns>
+    internal static double Median(IEnumerable<double> values)
     {
         var sorted = values.Order().ToList();
         return sorted.Count % 2 == 1 ? sorted[sorted.Count / 2] : (sorted[(sorted.Count / 2) - 1] + sorted[sorted.Count / 2]) / 2.0;

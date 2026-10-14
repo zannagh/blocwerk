@@ -94,15 +94,54 @@ public class HoldColorEstimatorTests
     }
 
     [Fact]
-    public void GreyAndDarkBlue_AreNotCalledWhiteOrBlack()
+    public void GreyAndAChalkedBlack_AreNotCalledWhiteOrBlack()
     {
         var grey = HoldColorEstimator.Estimate(Patch(400, (128, 128, 130)), Patch(300, Wood));
         var chalkedBlack = HoldColorEstimator.Estimate([.. Patch(220, (28, 28, 30)), .. Patch(180, Chalk)], Patch(300, Wood));
-        var navy = HoldColorEstimator.Estimate(Patch(400, (30, 34, 46)), Patch(300, Wood));
 
         Assert.Equal((null, HoldColorVerdict.UnclearGrey), (grey.Color, grey.Verdict));
         Assert.Equal((null, HoldColorVerdict.UnclearGrey), (chalkedBlack.Color, chalkedBlack.Verdict));
-        Assert.NotEqual("black", navy.Color);
+    }
+
+    [Fact]
+    public void ADarkHoldLeaningBlue_IsBlue_AndOneLeaningWarm_IsBlack()
+    {
+        // Navy reads nearly black but its slight cast points to blue; the lamps give a black hold a warm one.
+        var navy = HoldColorEstimator.Estimate(Patch(400, (30, 34, 46)), Patch(300, Wood));
+        var lampLitBlack = HoldColorEstimator.Estimate(Patch(400, (40, 34, 28)), Patch(300, Wood));
+
+        Assert.Equal(("blue", HoldColorVerdict.Proposed), (navy.Color, navy.Verdict));
+        Assert.Equal(("black", HoldColorVerdict.Proposed), (lampLitBlack.Color, lampLitBlack.Verdict));
+    }
+
+    [Fact]
+    public void AWhiteHoldInWarmLight_IsWhite_ButBleachedWoodIsNot()
+    {
+        // Lit by the same lamps as the wall: leaning the wall's way, less than the wall and clearly lighter.
+        var warmWhite = HoldColorEstimator.Estimate(Patch(400, (240, 234, 220)), Patch(300, Wood));
+        var bleachedWood = HoldColorEstimator.Estimate(Patch(400, (206, 196, 178)), Patch(300, Wood));
+        var warmWhiteAlone = HoldColorEstimator.Estimate(Patch(400, (240, 234, 220)), []);
+
+        Assert.Equal(("white", HoldColorVerdict.Proposed), (warmWhite.Color, warmWhite.Verdict));
+        Assert.Null(bleachedWood.Color);
+        Assert.Null(warmWhiteAlone.Color);
+    }
+
+    [Fact]
+    public void AWhiteHoldWithSomeColourOnIt_IsStillWhite()
+    {
+        // A light blue mark on a white hold: too much colour to be judged as grey, too little to be judged by hue.
+        var estimate = HoldColorEstimator.Estimate([.. Patch(320, Chalk), .. Patch(80, (175, 195, 225))], Patch(300, Wood));
+
+        Assert.Equal(("white", HoldColorVerdict.Proposed), (estimate.Color, estimate.Verdict));
+    }
+
+    [Fact]
+    public void AWeakRed_StaysUnset_BecausePinkAndOrangeHoldsLookLikeThatToo()
+    {
+        var estimate = HoldColorEstimator.Estimate(Patch(400, (172, 110, 104)), Patch(300, Wood));
+
+        Assert.Equal((null, HoldColorVerdict.Pale), (estimate.Color, estimate.Verdict));
     }
 
     [Fact]
