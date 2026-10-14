@@ -5,5 +5,6 @@
   "videoFramesRange": [3, 400],
   "anchorImages": 15,
   "baselineImages": 200,
+  "geometryRequestBaseMb": 4096,
   "splatFloorImages": 600
 }

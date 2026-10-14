@@ -28,15 +28,19 @@ public sealed class ComputeJobClient(
         return Parse<ComputeHealth>(body);
     }
 
-    public async Task<int?> GetMaxImagesAsync(CancellationToken ct)
+    public async Task<ComputeLimits?> GetLimitsAsync(CancellationToken ct)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, Url("v1/info"));
         var body = await SendAsync(request, "read the service's limits", authenticate: true, ct);
         using var doc = JsonDocument.Parse(body);
-        return doc.RootElement.TryGetProperty("limits", out var limits) && limits.ValueKind == JsonValueKind.Object
-               && limits.TryGetProperty("maxPhotos", out var max) && max.TryGetInt32(out var n) && n > 0
-            ? n
-            : null;
+        if (!doc.RootElement.TryGetProperty("limits", out var limits) || limits.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        int? images = limits.TryGetProperty("maxPhotos", out var max) && max.TryGetInt32(out var n) && n > 0 ? n : null;
+        long? bytes = limits.TryGetProperty("maxRequestMb", out var mb) && mb.TryGetInt64(out var m) && m > 0 ? m * 1024 * 1024 : null;
+        return new ComputeLimits(images, bytes);
     }
 
     public async Task<string> SubmitJsonAsync(string kind, string json, CancellationToken ct)

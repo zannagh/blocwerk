@@ -18,10 +18,10 @@ public interface IComputeJobClient
     Task<ComputeHealth> GetHealthAsync(CancellationToken ct);
 
     /// <summary>
-    /// The most images one job of this worker takes (<c>GET /v1/info</c>, <c>limits.maxPhotos</c>), or null when the worker
-    /// does not say (a client that is no HTTP worker). Throws <see cref="ComputeJobException"/> like every call.
+    /// What one job of this worker takes (<c>GET /v1/info</c>, <c>limits.maxPhotos</c> and <c>maxRequestMb</c>), or null when
+    /// the worker does not say (a client that is no HTTP worker). Throws <see cref="ComputeJobException"/> like every call.
     /// </summary>
-    Task<int?> GetMaxImagesAsync(CancellationToken ct) => Task.FromResult<int?>(null);
+    Task<ComputeLimits?> GetLimitsAsync(CancellationToken ct) => Task.FromResult<ComputeLimits?>(null);
 
     /// <summary><c>POST /v1/jobs/{kind}</c> with a JSON body. Returns the job id.</summary>
     Task<string> SubmitJsonAsync(string kind, string json, CancellationToken ct);

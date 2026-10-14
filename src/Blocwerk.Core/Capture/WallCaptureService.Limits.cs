@@ -31,12 +31,15 @@ public sealed partial class WallCaptureService
         // Frames not taken yet (a capture that starts): what the extraction will take from the video's length.
         var frames = video?.VideoFramesJson is { } json ? CaptureVideoFiles.Frames(json).Count
             : video?.VideoStoredPath is not null ? CaptureLimits.ExpectedFrames(video.VideoDurationSeconds, PipelineOptions) : 0;
-        var geometryCap = fit.HasFlag(CaptureFit.Geometry) ? await MaxImagesAsync(ComputeServiceKind.Geometry) : null;
-        var splatCap = fit.HasFlag(CaptureFit.Splat) ? await MaxImagesAsync(ComputeServiceKind.Splat) : null;
-        return CaptureLimits.Refusal(photos, frames, PipelineOptions, fit, geometryCap, splatCap);
+        var geometry = fit.HasFlag(CaptureFit.Geometry) ? await LimitsAsync(ComputeServiceKind.Geometry) : null;
+        var splat = fit.HasFlag(CaptureFit.Splat) ? await LimitsAsync(ComputeServiceKind.Splat) : null;
+        var bytes = geometry?.MaxRequestBytes is null ? 0
+            : await db.WallCapturePhotos.Where(p => p.CaptureId == captureId).SumAsync(p => p.SizeBytes);
+        return CaptureLimits.Refusal(
+            photos, frames, PipelineOptions, fit, geometry?.MaxImages, splat?.MaxImages, bytes, geometry?.MaxRequestBytes);
     }
 
-    private async Task<int?> MaxImagesAsync(ComputeServiceKind kind)
+    private async Task<ComputeLimits?> LimitsAsync(ComputeServiceKind kind)
     {
         var client = computeClients.Get(kind);
         if (!client.IsConfigured)
@@ -47,7 +50,7 @@ public sealed partial class WallCaptureService
         using var timeout = new CancellationTokenSource(LimitsProbeTimeout);
         try
         {
-            return await client.GetMaxImagesAsync(timeout.Token);
+            return await client.GetLimitsAsync(timeout.Token);
         }
         catch (Exception ex) when (ex is ComputeJobException or OperationCanceledException)
         {

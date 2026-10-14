@@ -6,8 +6,8 @@ from computejobs.settings import env_int, settings
 # a textures request carries every photo at full size (48 MP: 12-22 MB each), streamed to the job dir: 4 GB per request
 # and the timeouts below are sized for 200 images and grow with the limits.
 IMAGES = capture_limits.geometry_images()
-settings.load(work_dir="/tmp/wall-geometry-jobs", max_request_mb=capture_limits.scaled_s(4096, IMAGES), max_photo_mb=40,
-              max_photos=IMAGES)
+REQUEST_MB = capture_limits.scaled_s(capture_limits.DEFAULTS["geometryRequestBaseMb"], IMAGES)
+settings.load(work_dir="/tmp/wall-geometry-jobs", max_request_mb=REQUEST_MB, max_photo_mb=40, max_photos=IMAGES)
 settings.solve_timeout_s = env_int("SOLVE_TIMEOUT_S", capture_limits.scaled_s(1800, IMAGES))
 settings.textures_timeout_s = env_int("TEXTURES_TIMEOUT_S", capture_limits.scaled_s(2700, IMAGES))
 # total output pixels of one textures job (all facets are held in memory together); 200 MP

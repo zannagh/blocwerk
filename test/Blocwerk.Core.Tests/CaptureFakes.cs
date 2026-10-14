@@ -63,7 +63,11 @@ internal sealed class FakeComputeJobClient : IComputeJobClient
     /// <summary>What the worker reports it takes per job (<c>/v1/info</c>); null = it does not say.</summary>
     public int? MaxImages { get; set; }
 
-    public Task<int?> GetMaxImagesAsync(CancellationToken ct) => Task.FromResult(MaxImages);
+    /// <summary>What the worker reports it takes per request, bytes (<c>/v1/info</c>); null = it does not say.</summary>
+    public long? MaxRequestBytes { get; set; }
+
+    public Task<ComputeLimits?> GetLimitsAsync(CancellationToken ct) =>
+        Task.FromResult<ComputeLimits?>(MaxImages is null && MaxRequestBytes is null ? null : new ComputeLimits(MaxImages, MaxRequestBytes));
 
     public Task<string> SubmitJsonAsync(string kind, string json, CancellationToken ct)
     {

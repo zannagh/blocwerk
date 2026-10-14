@@ -35,11 +35,21 @@ public static class CaptureLimits
     /// <summary>The image count the base timeouts are sized for.</summary>
     public const int BaselineImages = 200;
 
+    /// <summary>The geometry worker's request size for <see cref="BaselineImages"/> photos, MB.</summary>
+    public const int GeometryRequestBaseMb = 4096;
+
     /// <summary>The splat worker never takes fewer images per job than this (what it always took).</summary>
     public const int SplatFloorImages = 600;
 
     /// <summary>The geometry worker's images per job for the largest capture these options allow: the photos.</summary>
     public static int GeometryImages(WallCapturePipelineOptions options) => options.MaxPhotos;
+
+    /// <summary>
+    /// The geometry worker's request size for the largest capture these options allow (4 GB per 200 photos, as
+    /// capture_limits.py sizes <c>MAX_REQUEST_MB</c>).
+    /// </summary>
+    public static long GeometryRequestBytes(WallCapturePipelineOptions options) =>
+        (long)Math.Ceiling(GeometryRequestBaseMb * Math.Max(1.0, (double)GeometryImages(options) / BaselineImages)) * 1024 * 1024;
 
     /// <summary>The splat worker's images per job for the largest capture these options allow.</summary>
     public static int SplatImages(WallCapturePipelineOptions options) =>
@@ -67,10 +77,12 @@ public static class CaptureLimits
     /// <summary>
     /// Why a capture of <paramref name="photos"/> photos and <paramref name="frames"/> video frames cannot go where
     /// <paramref name="fit"/> sends it (to workers that take <paramref name="geometryCap"/> / <paramref name="splatCap"/>
-    /// images per job when known), or null when it fits.
+    /// images per job when known), or null when it fits. <paramref name="photoBytes"/> (the photos' stored size) is held against
+    /// the 3D model service's request cap <paramref name="geometryRequestCap"/> (a textures request carries every photo).
     /// </summary>
     public static string? Refusal(
-        int photos, int frames, WallCapturePipelineOptions options, CaptureFit fit, int? geometryCap = null, int? splatCap = null)
+        int photos, int frames, WallCapturePipelineOptions options, CaptureFit fit, int? geometryCap = null, int? splatCap = null,
+        long photoBytes = 0, long? geometryRequestCap = null)
     {
         if (photos > options.MaxPhotos || (fit.HasFlag(CaptureFit.Splat) && frames > options.MaxVideoFrames))
         {
@@ -83,6 +95,14 @@ public static class CaptureLimits
         if (fit.HasFlag(CaptureFit.Geometry) && geometryCap is { } geometry && photos > geometry)
         {
             return WorkerRefusal(photos, "3D model service", geometry);
+        }
+
+        if (fit.HasFlag(CaptureFit.Geometry) && geometryRequestCap is { } requestCap && photoBytes > requestCap)
+        {
+            var (mb, capMb) = (photoBytes >> 20, requestCap >> 20);
+            return string.Create(
+                CultureInfo.InvariantCulture,
+                $"This capture's photos are {mb} MB; the 3D model service takes at most {capMb} MB per request (its MAX_REQUEST_MB is set below the capture limits). Nothing was sent.");
         }
 
         var splatImages = photos + frames + AnchorImages;

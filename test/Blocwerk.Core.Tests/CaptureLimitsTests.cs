@@ -17,6 +17,9 @@ namespace Blocwerk.Core.Tests;
 /// </summary>
 public class CaptureLimitsTests
 {
+    /// <summary>The Attic capture on prod (99f7723f…): 429 photos, 1958 MB stored.</summary>
+    private const long AtticPhotoBytes = 1958L << 20;
+
     private static readonly CaptureFit[] RedoPaths = [CaptureFit.Start, CaptureFit.Retrain, CaptureFit.Resolve, CaptureFit.Rerender];
 
     [Fact]
@@ -82,21 +85,45 @@ public class CaptureLimitsTests
         var options = Bind("450", "400");
         var (geometry, splat) = WorkerCaps(options, geometryOverride: null, splatOverride: null);
         Assert.Equal((450, 865), (geometry, splat));
+        Assert.Equal(9216L << 20, CaptureLimits.GeometryRequestBytes(options));
         foreach (var path in RedoPaths)
         {
-            Assert.Null(CaptureLimits.Refusal(429, 400, options, path, geometry, splat));
+            Assert.Null(CaptureLimits.Refusal(429, 400, options, path, geometry, splat, AtticPhotoBytes, CaptureLimits.GeometryRequestBytes(options)));
+            Assert.Null(CaptureLimits.Refusal(429, 400, options, path, geometry, splat, AtticPhotoBytes, 4096L << 20)); // 4 GB kept: fits too
         }
+    }
+
+    [Fact]
+    public void ANewCaptureOfTheAtticsSize_IsNotRefusedAtStart_WithTheRecommendedLimits()
+    {
+        var options = Bind("450", "400");
+        var frames = CaptureLimits.ExpectedFrames(179, options); // a 179 s walk at 2.5 frames a second, capped at 400
+        Assert.Equal(400, frames);
+        var (geometry, splat) = WorkerCaps(options, geometryOverride: null, splatOverride: null);
+        Assert.Null(CaptureLimits.Refusal(429, frames, options, CaptureFit.Start, geometry, splat, AtticPhotoBytes, CaptureLimits.GeometryRequestBytes(options)));
+    }
+
+    [Fact]
+    public void PhotosLargerThanTheModelServicesRequest_AreRefusedBeforeSending()
+    {
+        var options = Bind("450", "400");
+        Assert.Contains(
+            "photos are 1958 MB; the 3D model service takes at most 1024 MB per request",
+            CaptureLimits.Refusal(429, 400, options, CaptureFit.Rerender, 450, 865, AtticPhotoBytes, 1024L << 20));
+        Assert.Null(CaptureLimits.Refusal(429, 400, options, CaptureFit.Retrain, 450, 865, AtticPhotoBytes, 1024L << 20)); // not sent there
     }
 
     [Fact]
     public void TheAtticCapture_WithTodaysProdEnvironment_IsRefusedOnEveryPath_AndSaysWhy()
     {
-        // CAPTURE__MAXPHOTOS=400, CAPTURE__MAXVIDEOFRAMES=200, GEOMETRY_MAX_PHOTOS=400, SPLAT_MAX_PHOTOS=640.
+        // CAPTURE__MAXPHOTOS=400, CAPTURE__MAXVIDEOFRAMES=200, GEOMETRY_MAX_PHOTOS=400, SPLAT_MAX_PHOTOS=640, GEOMETRY_MAX_REQUEST_MB=4096.
         var prod = Bind("400", "200");
         var (geometry, splat) = WorkerCaps(prod, geometryOverride: 400, splatOverride: 640);
         foreach (var path in RedoPaths)
         {
-            Assert.Contains("429 photos and 400 video frames; this server takes at most 400 photos and 200 frames", CaptureLimits.Refusal(429, 400, prod, path, geometry, splat));
+            Assert.Contains(
+                "429 photos and 400 video frames; this server takes at most 400 photos and 200 frames",
+                CaptureLimits.Refusal(429, 400, prod, path, geometry, splat, AtticPhotoBytes, 4096L << 20));
         }
 
         // With only the app's limits raised, the worker overrides still refuse: the model service for 429 photos > 400,
