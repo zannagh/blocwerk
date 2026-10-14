@@ -17,6 +17,8 @@ namespace Blocwerk.Core.Tests.Redetect;
 /// </summary>
 public class PanelRedetectMergeTests
 {
+    private const double Tolerance = 1e-9;
+
     [Fact]
     public async Task AHoldFoundAgain_KeepsItsIdentity_AndTakesTheDetectedShape()
     {
@@ -104,9 +106,9 @@ public class PanelRedetectMergeTests
         Assert.Equal((2, 0, 0), (done.NewHolds, done.BetterShapes, done.Merges.Count));
         var holds = await s.HoldsAsync();
         Assert.Equal((0.1, "Volume"), (holds[volume].Radius, holds[volume].Name));
-        var onVolume = holds.Values.Single(h => h.Radius == 0.02 && h.X == 0.52);
+        var onVolume = holds.Values.Single(h => Math.Abs(h.Radius - 0.02) < Tolerance && Math.Abs(h.X - 0.52) < Tolerance);
         Assert.Equal(("green", "green", true, true, 1), (onVolume.Color, onVolume.ProposedColor, onVolume.IsAutoDetected, onVolume.NeedsReview, onVolume.Generation));
-        Assert.Null(holds.Values.Single(h => h.X == 0.9).Color);
+        Assert.Null(holds.Values.Single(h => Math.Abs(h.X - 0.9) < Tolerance).Color);
     }
 
     [Fact]

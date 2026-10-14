@@ -45,11 +45,15 @@ public sealed partial class WallLookOverService
             var settled = 0;
             foreach (var finding in open.Where(f => !onlyWithoutBoulders || views[f.Id].Boulders.Count == 0))
             {
-                if (await ClaimAsync(db, finding.Id, LookOverFindingStatus.Open, ct))
+                // Claimed meanwhile by someone else: theirs to settle.
+                var claimed = await ClaimAsync(db, finding.Id, LookOverFindingStatus.Open, ct);
+                if (!claimed)
                 {
-                    await SettleAsync(db, finding, views[finding.Id], access.UserId, ct);
-                    settled++;
+                    continue;
                 }
+
+                await SettleAsync(db, finding, views[finding.Id], access.UserId, ct);
+                settled++;
             }
 
             await db.SaveChangesAsync(ct);

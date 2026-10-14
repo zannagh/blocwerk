@@ -51,14 +51,20 @@ internal sealed class HoldPhotoPixels : IDisposable
             return null;
         }
 
-        var upright = ImageRendition.Reorient(decoded, ImageRendition.OriginOf(photo));
-        if (upright is null)
+        var keepDecoded = false;
+        try
         {
-            return new HoldPhotoPixels(decoded);
+            var upright = ImageRendition.Reorient(decoded, ImageRendition.OriginOf(photo));
+            keepDecoded = upright is null;
+            return new HoldPhotoPixels(upright ?? decoded);
         }
-
-        decoded.Dispose();
-        return new HoldPhotoPixels(upright);
+        finally
+        {
+            if (!keepDecoded)
+            {
+                decoded.Dispose();
+            }
+        }
     }
 
     /// <summary>The pixel at (x, y) in Oklab.</summary>
