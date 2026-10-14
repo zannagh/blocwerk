@@ -132,6 +132,7 @@ public class RedetectFollowUpTests
         var onRed = new[] { new Hold { X = 0.45, Y = 0.5, Radius = 0.012, IsAutoDetected = true }, Traced(0.55, 0.5, 0.012, 0.012).Shape };
         var pockets = new[] { Traced(0.45, 0.8, 0.01, 0.01).Shape, Traced(0.55, 0.8, 0.01, 0.01).Shape };
         var red = Traced(0.5, 0.5, 0.1, 0.05) with { Color = "red" };
+        red.Shape.Confidence = 0.9;
         var board = Traced(0.5, 0.8, 0.1, 0.04) with { Color = "white" };
         var detections = new[] { far[0], far[1], far[2], red, Traced(0.45, 0.5, 0.011, 0.011), Traced(0.55, 0.5, 0.012, 0.012), board };
         var input = new RedetectInput(

@@ -15,7 +15,17 @@ internal static class HoldColorSampler
     /// <param name="height">Photo height in pixels.</param>
     /// <param name="pixel">The photo's pixel at (x, y).</param>
     /// <returns>The estimate.</returns>
-    public static HoldColorEstimate Estimate(Hold hold, int width, int height, Func<int, int, OklabColor> pixel)
+    public static HoldColorEstimate Estimate(Hold hold, int width, int height, Func<int, int, OklabColor> pixel) =>
+        Estimate(hold, width, height, pixel, null);
+
+    /// <summary>Estimates the colour of one hold on a photo, leaving out the pixels the given test excludes.</summary>
+    /// <param name="hold">The hold, positioned on this photo.</param>
+    /// <param name="width">Photo width in pixels.</param>
+    /// <param name="height">Photo height in pixels.</param>
+    /// <param name="pixel">The photo's pixel at (x, y).</param>
+    /// <param name="excluded">True for a pixel (x, y in photo fractions) that does not belong to the hold: a hold screwed onto it.</param>
+    /// <returns>The estimate.</returns>
+    public static HoldColorEstimate Estimate(Hold hold, int width, int height, Func<int, int, OklabColor> pixel, Func<double, double, bool>? excluded)
     {
         var mask = HoldColorMask.For(hold, width, height);
         var (left, top, right, bottom) = mask.Bounds(width, height);
@@ -27,6 +37,11 @@ internal static class HoldColorSampler
         {
             for (var x = left; x < right; x += stride)
             {
+                if (excluded is not null && excluded((x + 0.5) / width, (y + 0.5) / height))
+                {
+                    continue;
+                }
+
                 if (mask.IsHold(x + 0.5, y + 0.5))
                 {
                     own.Add(pixel(x, y));

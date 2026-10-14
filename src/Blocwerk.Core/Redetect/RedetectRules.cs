@@ -160,7 +160,9 @@ internal static class RedetectRules
     public static List<int> OnBase(RedetectInput input, int detection)
     {
         var baseHold = input.Detections[detection];
-        if (baseHold.Shape.ShapePoints is not { Count: >= 3 } || (baseHold.ColorRead && !IsColoured(baseHold.Color)))
+        // A base is a detection the detector is sure enough of, with a colour read off the photo.
+        if (baseHold.Shape.ShapePoints is not { Count: >= 3 } || baseHold.Shape.Confidence < MinBaseConfidence
+            || !baseHold.ColorRead || !IsColoured(baseHold.Color))
         {
             return [];
         }
@@ -171,14 +173,13 @@ internal static class RedetectRules
             && input.Detections[i].Shape is var other
             && ShapeGeometry.Contains(outline, new P2(other.X, other.Y))
             && ShapeGeometry.Area(HoldShapePolygon.Of(other)) * BaseAreaFactor <= area)];
-        return baseHold.ColorRead || on.Count >= MinHoldsOnUnreadBase ? on : [];
+
+        // A base is a hold of its own colour: when every hold on it has that colour, it is more likely one hold seen in parts.
+        return on.Any(i => !string.Equals(input.Detections[i].Color, baseHold.Color, StringComparison.OrdinalIgnoreCase)) ? on : [];
     }
 
-    /// <summary>
-    /// Where the colour could not be read off the photo (only the detector's "volume" label), a base needs this many
-    /// holds on it: a wooden volume with one hold on it is common, a large hold with several is not.
-    /// </summary>
-    public const int MinHoldsOnUnreadBase = 2;
+    /// <summary>The detector confidence a base needs.</summary>
+    public const double MinBaseConfidence = 0.5;
 
     /// <summary>Two new detections are the same hold from this overlap (IoU) of their outlines on.</summary>
     public const double DuplicateIou = 0.5;

@@ -5,6 +5,7 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Data;
+using Blocwerk.Core.Detection.Outlines;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Holds.Colors;
 using Blocwerk.Core.HoldStacks;
@@ -188,7 +189,25 @@ public sealed partial class PanelRedetectService : IPanelRedetectService
     private static List<string?> ReadColors(byte[] photo, List<Hold> holds)
     {
         using var pixels = HoldPhotoPixels.TryOpen(photo);
-        return [.. holds.Select(h => pixels is null ? null : HoldColorSampler.Estimate(h, pixels.Width, pixels.Height, pixels.At).Color)];
+        // A large hold with holds screwed onto it is read without them: their colours are not its colour.
+        return [.. holds.Select(h => pixels is null ? null : HoldColorSampler.Estimate(h, pixels.Width, pixels.Height, pixels.At, OnIt(h, holds)).Color)];
+    }
+
+    /// <summary>A test for the pixels of the smaller holds lying on a hold; null when none does.</summary>
+    private static Func<double, double, bool>? OnIt(Hold hold, List<Hold> holds)
+    {
+        if (hold.ShapePoints is not { Count: >= 3 })
+        {
+            return null;
+        }
+
+        var outline = HoldShapePolygon.Of(hold);
+        double area = ShapeGeometry.Area(outline);
+        var on = holds.Where(o => !ReferenceEquals(o, hold) && o.ShapePoints is { Count: >= 3 }
+            && ShapeGeometry.Contains(outline, new P2(o.X, o.Y))
+            && ShapeGeometry.Area(HoldShapePolygon.Of(o)) * RedetectRules.BaseAreaFactor <= area)
+            .Select(HoldShapePolygon.Of).ToList();
+        return on.Count == 0 ? null : (x, y) => on.Any(p => ShapeGeometry.Contains(p, new P2(x, y)));
     }
 
     /// <summary>The wall and the panel, tracked; the panel is null when it is not one of the wall's live panels.</summary>
