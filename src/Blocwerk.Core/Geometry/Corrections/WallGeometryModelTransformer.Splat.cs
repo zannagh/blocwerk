@@ -2,6 +2,7 @@
 // See License in the project root for license information.
 
 using System.Text.Json.Nodes;
+using Blocwerk.Core.Capture.Coverage;
 
 namespace Blocwerk.Core.Geometry.Corrections;
 
@@ -11,7 +12,8 @@ public static partial class WallGeometryModelTransformer
     /// <summary>
     /// The splat frame after <paramref name="t"/>: <c>toWorldMm</c> (and the fine alignment's) become <c>S·M</c>, the
     /// scale per unit grows by <c>s</c>, and the viewer transform (<c>toViewer</c>/<c>matrix</c>, metres around the reference
-    /// facet's centre) and its <c>crop</c> follow the moved centre. The splat file itself is untouched.
+    /// facet's centre) and its <c>crop</c> follow the moved centre, and the video frames' cameras
+    /// (<see cref="CoverageCamera.VideoCamerasField"/>) move like the model's. The splat file itself is untouched.
     /// </summary>
     /// <param name="frameJson">The stored <c>frame.json</c>.</param>
     /// <param name="t">The similarity.</param>
@@ -37,6 +39,8 @@ public static partial class WallGeometryModelTransformer
             root["scaleMmPerUnit"] = perUnit * t.Scale;
         }
 
+        // The registered video frames' poses are in the world (mm) like the model's cameras: they move the same way.
+        TransformCameras(root[CoverageCamera.VideoCamerasField] as JsonArray, t);
         return root.ToJsonString();
     }
 

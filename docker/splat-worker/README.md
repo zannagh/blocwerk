@@ -63,6 +63,9 @@ memoryBudgetMb, trainMemoryBudgetMb, extractionThreads, matchingTier, memoryRetr
 colmapGpu (GPU name or null), colmapGpuExtraction, colmapMapper, siftDsp, siftAffineShape, vocabTreeMatching,
 splatsTrained, splatCount, steps, trainingSeconds, stageSeconds{…}, alignmentResidualMm, fileBytes}`
 (+ with gsplat and `GSPLAT_EVAL_EVERY`: `evalPsnr`, `evalSsim`, `evalViews`, `evalEvery`, `evalWallPsnr`, `evalWallSsim`; with zones `zones`).
+`frame.json` only (not in `result`), when aligned and video frames registered: `videoCameras [{image, width, height,
+K, dist, R, t}]`, the registered frames' poses from the same SfM run in the wall-geometry world (mm), shaped like the
+geometry document's `cameras` (`splatworker/video_cameras.py`; the app's coverage report checks the video on them).
 Files: `wall.splat` (antimatter15, 32 B/splat, sorted by importance), `wall.spz` (Niantic v2, gzip,
 SH degree 0, checked against Spark 2.2's own `writeSpz` and loaded/rendered in a Spark 2.2 viewer), `frame.json`. **The splat files stay in the
 COLMAP frame of the run** (rotating SH coefficients is not worth it at degree 0 and the transform is

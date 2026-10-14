@@ -23,6 +23,7 @@ from .refine import refine_frame
 from .settings import settings
 from .sfm import Sfm
 from .splatio import Splats, crop_mask, read_ply, write_splat, write_spz
+from .video_cameras import frame_cameras, video_cameras
 from .zone_run import export_cut
 
 # overall progress band per stage (train dominates; bands only need to be monotone)
@@ -271,10 +272,17 @@ class Run:
                                             "origin = centre of the reference facet) or toWorldMm "
                                             "(-> wall-geometry world, mm)",
                **{k: v for k, v in frame.items()}, "options": self.opts.to_dict(), "stats": stats}
+        if (cams := video_cameras(self.frame_cameras(), frame)) is not None:
+            doc["videoCameras"] = cams  # the registered frames' poses, world mm (video_cameras.py)
         with open(os.path.join(self.dir, "frame.json"), "w") as fh:
             json.dump(doc, fh, indent=1)
         files.append("frame.json")
-        return {"frame": {k: v for k, v in doc.items() if k != "stats"}, "stats": stats, "files": files}
+        return {"frame": {k: v for k, v in doc.items() if k not in ("stats", "videoCameras")}, "stats": stats,
+                "files": files}
+
+    def frame_cameras(self):
+        """The registered video frames' cameras in the COLMAP frame (video_cameras.frame_cameras)."""
+        return frame_cameras(self.model)
 
 
 def run(job_dir, progress):

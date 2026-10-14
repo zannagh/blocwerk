@@ -109,10 +109,26 @@ def read_model(dataset_dir):
             *read_points(os.path.join(d, "points3D.bin")))
 
 
+def read_text_cameras(txt_dir):
+    """{camera_id: {"model", "width", "height", "params"}} of cameras.txt ({} when there is none)."""
+    path, cams = os.path.join(txt_dir, "cameras.txt"), {}
+    if not os.path.exists(path):
+        return cams
+    with open(path) as fh:
+        for ln in fh:
+            p = ln.split()
+            if ln.startswith("#") or len(p) < 5:
+                continue
+            cams[int(p[0])] = {"model": p[1], "width": int(p[2]), "height": int(p[3]),
+                               "params": [float(v) for v in p[4:]]}
+    return cams
+
+
 def read_text_model(txt_dir):
-    """{'images': {name: camera centre (3,)}, 'points': n, 'meanReprojErrorPx': float|None,
+    """{'images': {name: camera centre (3,)}, 'poses': {name: {'R' (3, 3), 't' (3,), 'camera': id}}
+    (world-to-camera), 'cameras': read_text_cameras, 'points': n, 'meanReprojErrorPx': float|None,
     'meanTrackLength': float|None (images observing a point, on average)}."""
-    images = {}
+    images, poses = {}, {}
     with open(os.path.join(txt_dir, "images.txt")) as fh:
         lines = [ln for ln in fh.read().split("\n") if not ln.startswith("#")]
     for ln in lines[0::2]:
@@ -121,6 +137,7 @@ def read_text_model(txt_dir):
             continue
         R, t = qvec_to_rotmat([float(v) for v in p[1:5]]), np.array([float(v) for v in p[5:8]])
         images[p[9]] = -R.T @ t
+        poses[p[9]] = {"R": R, "t": t, "camera": int(p[8])}
     n_points, err_sum, track_sum = 0, 0.0, 0
     with open(os.path.join(txt_dir, "points3D.txt")) as fh:
         for ln in fh:
@@ -130,6 +147,6 @@ def read_text_model(txt_dir):
             parts = ln.split()
             err_sum += float(parts[7])
             track_sum += (len(parts) - 8) // 2  # IMAGE_ID, POINT2D_IDX pairs
-    return {"images": images, "points": n_points,
+    return {"images": images, "poses": poses, "cameras": read_text_cameras(txt_dir), "points": n_points,
             "meanReprojErrorPx": round(err_sum / n_points, 3) if n_points else None,
             "meanTrackLength": round(track_sum / n_points, 2) if n_points else None}

@@ -2,6 +2,7 @@
 // See License in the project root for license information.
 
 using System.Text.Json.Nodes;
+using Blocwerk.Core.Capture.Coverage;
 using Blocwerk.Core.Geometry;
 using Blocwerk.Core.Geometry.Corrections;
 using Blocwerk.Core.Geometry.Footprints;
@@ -101,6 +102,26 @@ public class WallGeometryModelTransformerTests
         Assert.Equal(toViewer[1], matrix[4], 9);
         Assert.Equal(toViewer[3], matrix[12], 9);
         Assert.Equal(500 * 1.1, moved["scaleMmPerUnit"]!.GetValue<double>(), 6);
+    }
+
+    [Fact]
+    public void SplatFrame_VideoCamerasMoveWithTheWorld_AndStillSeeTheSamePixel()
+    {
+        var frame = JsonNode.Parse(SplatFrameJson())!.AsObject();
+        var camera = CoverageFixtures.LookAt("vf_0001", [1500, -2500, 1300], [1500, 0, 1200]);
+        frame[CoverageCamera.VideoCamerasField] = new JsonArray(new JsonObject
+        {
+            ["image"] = camera.Image, ["width"] = camera.Width, ["height"] = camera.Height, ["K"] = GeometryJson.Array(camera.K, 6),
+            ["dist"] = new JsonArray(), ["R"] = GeometryJson.Array(camera.R, 9), ["t"] = GeometryJson.Array(camera.T, 6),
+        });
+
+        var moved = WallGeometryModelTransformer.TransformSplatFrame(frame.ToJsonString(), Tilted);
+
+        double[] point = [1500, 0, 1200];
+        var oldPixel = camera.Project(point)!.Value;
+        var newPixel = Assert.Single(CoverageCamera.FromSplatFrame(moved)).Camera.Project(Tilted.Apply(point))!.Value;
+        Assert.Equal(oldPixel.X, newPixel.X, 1);
+        Assert.Equal(oldPixel.Y, newPixel.Y, 1);
     }
 
     [Fact]
