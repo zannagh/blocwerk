@@ -71,11 +71,13 @@
     <div class="redetect-finish">
         <div class="redetect-progress" role="status">
             <progress max="@cards.Count" value="@answers.Count"></progress>
-            <span>@RedetectCopy.Progress(answers.Count, cards.Count, Accepted)</span>
+            <span class="redetect-wide">@RedetectCopy.Progress(answers.Count, cards.Count, Accepted)</span>
+            <span class="redetect-narrow">@RedetectCopy.ShortProgress(answers.Count, cards.Count)</span>
         </div>
         <button type="button" class="btn-secondary" disabled="@Busy" @onclick="OnCancel">Change nothing</button>
         <button type="button" class="btn-primary" disabled="@(Busy || Accepted == 0)" @onclick="Apply">
-            Apply @Accepted.ToString("N0") accepted @(Accepted == 1 ? "change" : "changes")
+            <span class="redetect-wide">Apply @Accepted.ToString("N0") accepted @(Accepted == 1 ? "change" : "changes")</span>
+            <span class="redetect-narrow">Apply @Accepted.ToString("N0")</span>
         </button>
     </div>
 </div>

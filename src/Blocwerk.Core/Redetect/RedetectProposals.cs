@@ -94,7 +94,8 @@ public static class RedetectProposals
             });
         }
 
-        return [.. proposals.Select(p => p with { Stamp = RedetectStamps.Of(p, byId, input.Detections) })];
+        // A proposal the detector is unsure about starts out kept: it is never also one to accept unseen.
+        return [.. proposals.Select(p => p with { Safe = p.Safe && !p.Unsure, Stamp = RedetectStamps.Of(p, byId, input.Detections) })];
     }
 
     /// <summary>The decisions that are written when only the given proposals were accepted.</summary>

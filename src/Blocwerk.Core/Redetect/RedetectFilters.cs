@@ -2,9 +2,7 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
-using Blocwerk.Core.Redetect;
-
-namespace Blocwerk.Web.Components.Shared.Redetect;
+namespace Blocwerk.Core.Redetect;
 
 /// <summary>Which cards of the re-detect review are shown.</summary>
 public enum RedetectFilter
@@ -15,7 +13,7 @@ public enum RedetectFilter
     /// <summary>Cards without an answer.</summary>
     Open,
 
-    /// <summary>The shape updates that can be accepted together.</summary>
+    /// <summary>The shape updates that can be accepted together and have no answer yet.</summary>
     Safe,
 
     /// <summary>Cards the detector is unsure about.</summary>
@@ -55,6 +53,20 @@ public static class RedetectFilters
         return proposal.Unsure || proposal.Kind == RedetectProposalKind.NewHold;
     }
 
+    /// <summary>
+    /// The safe shape updates that have no answer yet: what the bulk step accepts, and what its button and the "Safe"
+    /// chip count. One rule for both, so the two numbers never differ.
+    /// </summary>
+    /// <param name="proposals">The proposals.</param>
+    /// <param name="answer">The answer per proposal so far; null without one.</param>
+    /// <returns>The proposals the bulk step would accept.</returns>
+    public static List<RedetectProposal> SafeToAccept(IEnumerable<RedetectProposal> proposals, Func<RedetectProposal, bool?> answer)
+    {
+        ArgumentNullException.ThrowIfNull(proposals);
+        ArgumentNullException.ThrowIfNull(answer);
+        return [.. proposals.Where(p => Matches(RedetectFilter.Safe, p, answer(p)))];
+    }
+
     /// <summary>True when the proposal is shown under the filter.</summary>
     /// <param name="filter">The filter.</param>
     /// <param name="proposal">The proposal.</param>
@@ -66,7 +78,7 @@ public static class RedetectFilters
         return filter switch
         {
             RedetectFilter.Open => answer is null,
-            RedetectFilter.Safe => proposal.Safe,
+            RedetectFilter.Safe => proposal.Safe && answer is null,
             RedetectFilter.Unsure => proposal.Unsure,
             RedetectFilter.Shape => proposal.Kind == RedetectProposalKind.BetterShape,
             RedetectFilter.YourShape => proposal.Kind == RedetectProposalKind.HandShape,

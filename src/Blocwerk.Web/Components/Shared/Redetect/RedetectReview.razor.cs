@@ -43,7 +43,7 @@ public partial class RedetectReview
 
     private int Accepted => answers.Count(a => a.Value);
 
-    private int SafeOpen => cards.Count(c => c.Proposal.Safe && !answers.ContainsKey(c.Proposal.Key));
+    private int SafeOpen => RedetectFilters.SafeToAccept(cards.Select(c => c.Proposal), AnswerOf).Count;
 
     /// <summary>Gets the chips: every kind of card that occurs, with how many there are.</summary>
     private IEnumerable<(RedetectFilter Filter, string Label, int Count)> Chips =>
@@ -70,7 +70,9 @@ public partial class RedetectReview
         }
     }
 
-    private bool? Answer(RedetectCard card) => answers.TryGetValue(card.Proposal.Key, out var given) ? given : null;
+    private bool? Answer(RedetectCard card) => AnswerOf(card.Proposal);
+
+    private bool? AnswerOf(RedetectProposal proposal) => answers.TryGetValue(proposal.Key, out var given) ? given : null;
 
     /// <summary>Shows the cards of one kind, from the first that has no answer yet.</summary>
     private void Show(RedetectFilter chosen)
@@ -106,9 +108,9 @@ public partial class RedetectReview
 
     private void AcceptSafe()
     {
-        foreach (var card in cards.Where(c => c.Proposal.Safe && !answers.ContainsKey(c.Proposal.Key)))
+        foreach (var proposal in RedetectFilters.SafeToAccept(cards.Select(c => c.Proposal), AnswerOf))
         {
-            answers[card.Proposal.Key] = true;
+            answers[proposal.Key] = true;
         }
 
         // On to what still needs an answer.

@@ -143,6 +143,7 @@ public class RedetectSafetyTests
         var inset = Outlined(0.5, 0.5, 0.03, 0.03);
 
         Assert.Equal(RedetectDoubt.PaleHold, Shape(Input([placed], [pale]), placed).Doubt);
+        Assert.False(Shape(Input([placed], [pale]), placed).Safe);
         Assert.Equal(RedetectDoubt.ThinPart, Shape(Input([placed], [Detected(0.5, 0.5, 0.028, 0.006)]), placed).Doubt);
         Assert.Equal(RedetectDoubt.None, Shape(Input([placed], [Detected(0.5, 0.5, 0.024, 0.024)]), placed).Doubt);
         Assert.Equal(RedetectDoubt.DropsPart, Shape(Input([inset], [Detected(0.5, 0.5, 0.023, 0.03)]), inset).Doubt);

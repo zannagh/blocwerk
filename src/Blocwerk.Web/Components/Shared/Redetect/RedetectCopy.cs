@@ -102,7 +102,7 @@ internal static class RedetectCopy
     public static string FilterLabel(RedetectFilter filter) => filter switch
     {
         RedetectFilter.Open => "Not answered",
-        RedetectFilter.Safe => "Safe",
+        RedetectFilter.Safe => "Safe, not answered",
         RedetectFilter.Unsure => "Unsure",
         RedetectFilter.Shape => "Shape",
         RedetectFilter.YourShape => "Your shape",
@@ -117,6 +117,9 @@ internal static class RedetectCopy
     /// <summary>The count under the cards.</summary>
     public static string Progress(int answered, int total, int accepted) =>
         $"{answered:N0} of {total:N0} answered, {accepted:N0} accepted";
+
+    /// <summary>The count under the cards on a narrow screen.</summary>
+    public static string ShortProgress(int answered, int total) => $"{answered:N0}/{total:N0} answered";
 
     /// <summary>The two sentences above the cards.</summary>
     public static string Intro(PanelRedetectPlan plan) =>
