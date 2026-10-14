@@ -29,6 +29,7 @@ public sealed class RunnerHoldDetection(
     ILogger<RunnerHoldDetection> logger,
     TimeProvider? clock = null)
 {
+    private static readonly Dictionary<(string Path, long Length, DateTime Written), string> ModelHashes = [];
     private static readonly GpuJobStatus[] Waiting = [GpuJobStatus.Queued];
     private static readonly GpuJobStatus[] Active = [GpuJobStatus.Queued, GpuJobStatus.Claimed, GpuJobStatus.Running];
     private readonly TimeProvider time = clock ?? TimeProvider.System;
@@ -39,7 +40,7 @@ public sealed class RunnerHoldDetection(
     /// <param name="context">The capture and its (active) model.</param>
     /// <param name="ct">Cancellation (a shutdown: the job stays, a restart waits for it again).</param>
     /// <returns>The holds per photo, or null.</returns>
-    public async Task<IReadOnlyDictionary<string, RunnerPhotoHolds>?> DetectAsync(CaptureFollowUpContext context, CancellationToken ct)
+    public async Task<RunnerHoldsFound?> DetectAsync(CaptureFollowUpContext context, CancellationToken ct)
     {
         if (!Options.HoldsOnRunners || Options.Mode == GpuRunnerMode.Off)
         {
@@ -58,6 +59,37 @@ public sealed class RunnerHoldDetection(
         }
 
         return job is null ? null : await WaitAsync(job, ct);
+    }
+
+    /// <summary>
+    /// The runner detector's identity, <c>yolo-runner:&lt;first 12 hex of the model's SHA-256&gt;</c>: what its detections are
+    /// cached under, so they are never taken for the app detector's (or another model's).
+    /// </summary>
+    internal string DetectorName()
+    {
+        if (ModelFile() is not { } path)
+        {
+            return "yolo-runner:unknown";
+        }
+
+        var info = new FileInfo(path);
+        var key = (path, info.Length, info.LastWriteTimeUtc);
+        lock (ModelHashes)
+        {
+            if (ModelHashes.TryGetValue(key, out var known))
+            {
+                return known;
+            }
+        }
+
+        using var stream = File.OpenRead(path);
+        var name = $"yolo-runner:{Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream))[..12].ToLowerInvariant()}";
+        lock (ModelHashes)
+        {
+            ModelHashes[key] = name;
+        }
+
+        return name;
     }
 
     /// <summary>The model file the app's detector loads, resolved like the detector does; null when there is none.</summary>
@@ -109,7 +141,7 @@ public sealed class RunnerHoldDetection(
         return SolvedCamera.ParseAll(json).Where(c => photos.ContainsKey(c.Image)).Select(c => (c.Image, photos[c.Image])).ToList();
     }
 
-    private async Task<IReadOnlyDictionary<string, RunnerPhotoHolds>?> WaitAsync(GpuJob queued, CancellationToken ct)
+    private async Task<RunnerHoldsFound?> WaitAsync(GpuJob queued, CancellationToken ct)
     {
         var id = queued.Id;
         DateTimeOffset? waitingSince = null;
@@ -165,7 +197,7 @@ public sealed class RunnerHoldDetection(
         return false;
     }
 
-    private async Task<IReadOnlyDictionary<string, RunnerPhotoHolds>?> TakeResultAsync(GpuJob job, CancellationToken ct)
+    private async Task<RunnerHoldsFound?> TakeResultAsync(GpuJob job, CancellationToken ct)
     {
         try
         {
@@ -175,7 +207,7 @@ public sealed class RunnerHoldDetection(
             var holds = RunnerHoldsResult.Read(path);
             await gpuJobs.CloseHoldsAsync(job.Id, null, ct);
             logger.LogInformation("GPU job {JobId}: a 3D runner found the holds in {Photos} photos", job.Id, holds.Count);
-            return holds;
+            return new RunnerHoldsFound(DetectorName(), holds);
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException)
         {

@@ -73,7 +73,7 @@ public sealed partial class CaptureFollowUpChain
                 var marked = kind switch
                 {
                     CaptureFollowUpRecoveryKind.Rederive => r.Rederive,
-                    CaptureFollowUpRecoveryKind.AfterCompletion => r.AfterCompletion,
+                    CaptureFollowUpRecoveryKind.AfterCompletion => r.AfterCompletion is not null,
                     _ => r.RunAgain,
                 };
                 queue = marked && r.Recoveries < MaxRecoveries;
@@ -86,7 +86,7 @@ public sealed partial class CaptureFollowUpChain
                 var dropped = kind switch
                 {
                     CaptureFollowUpRecoveryKind.Rederive => r with { Rederive = false },
-                    CaptureFollowUpRecoveryKind.AfterCompletion => r with { AfterCompletion = false },
+                    CaptureFollowUpRecoveryKind.AfterCompletion => r with { AfterCompletion = null },
                     _ => r with { RunAgain = false },
                 };
                 return dropped with { Recoveries = 0, Running = null, Note = r.Note is null ? GaveUpNote : $"{r.Note} {GaveUpNote}" };

@@ -63,7 +63,7 @@ public sealed partial class HoldProposalService(
 
     /// <inheritdoc />
     public async Task<HoldProposalRunResult?> FindFromPipelineAsync(
-        Guid wallId, IReadOnlyDictionary<string, RunnerPhotoHolds>? detected, CancellationToken ct = default)
+        Guid wallId, RunnerHoldsFound? detected, CancellationToken ct = default)
     {
         await Gate.WaitAsync(ct);
         try
@@ -116,7 +116,7 @@ public sealed partial class HoldProposalService(
     }
 
     private async Task<HoldProposalRunResult?> RunAsync(
-        Guid wallId, CancellationToken ct, IProgress<HoldSearchProgress>? progress = null, IReadOnlyDictionary<string, RunnerPhotoHolds>? detected = null)
+        Guid wallId, CancellationToken ct, IProgress<HoldSearchProgress>? progress = null, RunnerHoldsFound? detected = null)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);
         var model = await db.WallGeometryModels.AsNoTracking()
@@ -143,7 +143,7 @@ public sealed partial class HoldProposalService(
             .Select(p => new[] { p.X, p.Y, p.Z }).ToListAsync(ct);
         var (candidates, clusters) = await Task.Run(() => HoldProposalFinder.Find(cameras, detections, inputs.Facets, inputs.Known, reviewed), ct);
         var onPanels = await ReplacePendingAsync(db, wallId, model.Id, candidates, inputs, ct);
-        var by = detected is null ? detector.Name : $"{detector.Name}, {detected.Count} on a 3D runner";
+        var by = detected is null ? detector.Name : $"{detector.Name}, {detected.Photos.Count} by {detected.Detector}";
         logger.LogInformation(
             "Hold proposals on wall {WallId}: {Photos} photos ({Detector}), {Detections} detections, {Clusters} multi-view holds, {Proposals} proposed ({OnPanels} on a panel photo), {Ms} ms",
             wallId, cameras.Count, by, detections.Count, clusters, candidates.Count, onPanels, watch.ElapsedMilliseconds);
@@ -169,7 +169,7 @@ public sealed partial class HoldProposalService(
     /// </summary>
     private async Task<List<CaptureDetection>> DetectAllAsync(
         ICaptureHoldDetector detector, Dictionary<string, SolvedCamera> cameras, Dictionary<string, string> photos,
-        IProgress<HoldSearchProgress>? progress, IReadOnlyDictionary<string, RunnerPhotoHolds>? detected, CancellationToken ct)
+        IProgress<HoldSearchProgress>? progress, RunnerHoldsFound? detected, CancellationToken ct)
     {
         var all = new List<CaptureDetection>();
         var done = 0;
@@ -178,10 +178,10 @@ public sealed partial class HoldProposalService(
         {
             ct.ThrowIfCancellationRequested();
             progress?.Report(new HoldSearchProgress(done++, cameras.Count));
-            if (detected is not null && detected.TryGetValue(name, out var onRunner))
+            if (detected is not null && detected.Photos.TryGetValue(name, out var onRunner))
             {
                 var fromRunner = OnSolvedGrid(onRunner, camera);
-                CaptureDetectionCache.Put(photos[name], detector.Name, fromRunner);
+                CaptureDetectionCache.Put(photos[name], detected.Detector, fromRunner);
                 all.AddRange(fromRunner);
                 continue;
             }

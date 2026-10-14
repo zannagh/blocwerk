@@ -55,6 +55,25 @@ public sealed class RunnerHoldDetectionTests : IDisposable
     }
 
     [Fact]
+    public async Task TheFollowUpStep_FallsBackToTheAppsSearch_WhenNoRunnerTakesIt()
+    {
+        using var h = new WallTestHarness();
+        using var f = await RunnerFixture.CreateAsync(h, Options());
+        await HoldsRunnerAsync(f);
+        var context = await SeedAsync(f);
+        var proposals = new FakeHoldProposals { Proposals = 4 };
+        var step = new FindHoldProposalsFollowUpStep(proposals, h.DbContextFactory, Detection(f));
+
+        var run = step.RunAsync(context, CancellationToken.None);
+        await QueuedJobAsync(h);
+        f.Clock.Advance(TimeSpan.FromMinutes(11)); // the runner never claims
+
+        var result = await run.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(CaptureFollowUpOutcome.Done, result.Outcome);
+        Assert.Equal(1, proposals.Calls); // the app's own search ran
+    }
+
+    [Fact]
     public async Task AJobNobodyClaims_IsCancelledAfterTheClaimWait_AndAnOlderRunnerNeverGetsIt()
     {
         using var h = new WallTestHarness();
@@ -100,7 +119,8 @@ public sealed class RunnerHoldDetectionTests : IDisposable
 
         var found = await detect.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.NotNull(found);
-        var p00 = Assert.Single(found!).Value;
+        Assert.StartsWith("yolo-runner:", found!.Detector, StringComparison.Ordinal);
+        var p00 = Assert.Single(found.Photos).Value;
         var hold = Assert.Single(p00.Detections); // the volume is left out, as in the app
         Assert.Equal(15.0, hold.Px, 0.01); // normalised and rounded to 4 places first, as in the app
         Assert.Equal(15.0, hold.Py, 0.01);

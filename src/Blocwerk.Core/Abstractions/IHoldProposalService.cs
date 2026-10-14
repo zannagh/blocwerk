@@ -38,7 +38,7 @@ public interface IHoldProposalService
     /// <param name="ct">Cancellation.</param>
     /// <returns>The outcome, or null when not possible or failed.</returns>
     Task<HoldProposalRunResult?> FindFromPipelineAsync(
-        Guid wallId, IReadOnlyDictionary<string, RunnerPhotoHolds>? detected, CancellationToken ct = default) =>
+        Guid wallId, RunnerHoldsFound? detected, CancellationToken ct = default) =>
         FindFromPipelineAsync(wallId, ct);
 
     /// <summary>Checks that the current user may search this wall (wall admin, not a kiosk).</summary>

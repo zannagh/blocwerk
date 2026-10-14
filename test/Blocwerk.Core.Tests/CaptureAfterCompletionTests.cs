@@ -35,7 +35,7 @@ public class CaptureAfterCompletionTests
 
         Assert.Equal(["place"], log);
         Assert.Equal(WallCaptureStatus.Succeeded, (await CaptureAsync(h, captureId)).Status);
-        Assert.True(Record(await CaptureAsync(h, captureId)).AfterCompletion);
+        Assert.NotNull(Record(await CaptureAsync(h, captureId)).AfterCompletion);
         Assert.Equal(captureId, await queue.DequeueAsync(new CancellationTokenSource(TimeSpan.FromSeconds(5)).Token));
 
         var worker = new AfterCompletionWorker(queue, chain!, h.RootContextFactory, NullLogger<AfterCompletionWorker>.Instance);
@@ -43,7 +43,7 @@ public class CaptureAfterCompletionTests
 
         Assert.Equal(["place", "proposals"], log);
         var record = Record(await CaptureAsync(h, captureId));
-        Assert.False(record.AfterCompletion);
+        Assert.Null(record.AfterCompletion);
         Assert.NotNull(record.Find("proposals"));
     }
 
@@ -72,7 +72,7 @@ public class CaptureAfterCompletionTests
 
         Assert.Equal(captureId, again);
         Assert.Equal(["proposals"], log);
-        Assert.False(Record(await CaptureAsync(h, captureId)).AfterCompletion);
+        Assert.Null(Record(await CaptureAsync(h, captureId)).AfterCompletion);
     }
 
     [Fact]
@@ -109,6 +109,81 @@ public class CaptureAfterCompletionTests
         release.SetResult();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run);
         Assert.Equal(0, (await CaptureAsync(h, captureId)).Attempts); // given back once, not twice
+    }
+
+    [Fact]
+    public async Task ACaptureCompletedAgainDuringTheRun_KeepsItsNewerMark_AndTheCountIsTakenBackOnly()
+    {
+        using var h = new WallTestHarness();
+        var log = new List<string>();
+        var queue = new AfterCompletionQueue();
+        CaptureFollowUpChain? chain = null;
+        var step = new ScriptedFollowUpStep("proposals", 400, log, afterCompletion: true);
+        using var s = new CaptureScenario(
+            h, followUps: harness => chain = FollowUpChains.Build(harness.RootContextFactory, step), afterCompletion: queue);
+        var captureId = await s.StartCaptureAsync();
+        await s.Processor.ProcessAsync(captureId, CancellationToken.None);
+        var first = Record(await CaptureAsync(h, captureId)).AfterCompletion;
+        step.Run = (c, _) =>
+        {
+            chain!.MarkAfterCompletionAsync(c.CaptureId, CancellationToken.None).GetAwaiter().GetResult(); // completed again meanwhile
+            return CaptureFollowUpStepResult.Done(string.Empty);
+        };
+
+        var newer = await chain!.RunAfterCompletionAsync(captureId, CancellationToken.None);
+
+        var record = Record(await CaptureAsync(h, captureId));
+        Assert.True(newer);
+        Assert.NotNull(record.AfterCompletion);
+        Assert.NotEqual(first, record.AfterCompletion);
+        Assert.Equal(0, record.Recoveries);
+    }
+
+    [Fact]
+    public async Task ACaptureWaitingLong_DoesNotHoldTheOthersBack_AndRunsOnceAtATime()
+    {
+        using var h = new WallTestHarness();
+        var queue = new AfterCompletionQueue();
+        var (slow, fast) = (Guid.NewGuid(), Guid.NewGuid());
+        var release = new TaskCompletionSource();
+        var fastDone = new TaskCompletionSource();
+        var runs = new List<Guid>();
+        var chain = FollowUpChains.Build(h.RootContextFactory);
+        using var worker = new AfterCompletionWorker(queue, chain, h.RootContextFactory, NullLogger<AfterCompletionWorker>.Instance)
+        {
+            RunOverride = async (id, _) =>
+            {
+                lock (runs)
+                {
+                    runs.Add(id);
+                }
+
+                if (id == slow)
+                {
+                    await release.Task; // a runner's hold search that waits for hours
+                }
+                else
+                {
+                    fastDone.TrySetResult();
+                }
+
+                return false;
+            },
+        };
+        await worker.StartAsync(CancellationToken.None);
+        queue.Enqueue(slow);
+        queue.Enqueue(slow); // handed off again while it runs: not run twice at once
+        queue.Enqueue(fast);
+
+        await fastDone.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        release.SetResult();
+        await worker.StopAsync(CancellationToken.None);
+
+        lock (runs)
+        {
+            Assert.Equal(1, runs.Count(r => r == slow));
+            Assert.Contains(fast, runs);
+        }
     }
 
     private static async Task<bool> WaitForAsync(Func<Task<bool>> condition)

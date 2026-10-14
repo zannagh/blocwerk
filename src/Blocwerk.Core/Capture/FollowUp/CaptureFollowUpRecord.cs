@@ -34,7 +34,7 @@ namespace Blocwerk.Core.Capture.FollowUp;
 /// <param name="RerenderStarts">The same count for its texture re-render (<see cref="CaptureTextureOutcome.RerenderMark"/>).</param>
 /// <param name="Running">The step running right now (for the progress API), or null.</param>
 /// <param name="AfterCompletion">
-/// The capture completed and its slow after-completion steps (hold proposals, coverage report) are queued beside the capture
+/// The mark (a fresh id per completion) of a capture whose slow after-completion steps (hold proposals, coverage report) are queued beside the capture
 /// worker (<see cref="AfterCompletionWorker"/>) and not finished yet: resumed after a restart until it is cleared.
 /// </param>
 public sealed record CaptureFollowUpRecord(
@@ -47,13 +47,13 @@ public sealed record CaptureFollowUpRecord(
     [property: JsonPropertyName("resolveStarts"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] int ResolveStarts = 0,
     [property: JsonPropertyName("rerenderStarts"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] int RerenderStarts = 0,
     [property: JsonPropertyName("running"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CaptureFollowUpRunning? Running = null,
-    [property: JsonPropertyName("afterCompletion"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool AfterCompletion = false)
+    [property: JsonPropertyName("afterCompletionMark"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? AfterCompletion = null)
 {
     /// <summary>How a record marked <see cref="Rederive"/> reads in the stored JSON (to find the ones left to resume).</summary>
     public const string RederiveMarker = "\"rederive\":true";
 
     /// <summary>How a record marked <see cref="AfterCompletion"/> reads in the stored JSON (to find the ones left to resume).</summary>
-    public const string AfterCompletionMarker = "\"afterCompletion\":true";
+    public const string AfterCompletionMarker = "\"afterCompletionMark\":";
 
     /// <summary>How a record marked <see cref="RunAgain"/> reads in the stored JSON (to find the ones left to resume).</summary>
     public const string RunAgainMarker = "\"runAgain\":true";
