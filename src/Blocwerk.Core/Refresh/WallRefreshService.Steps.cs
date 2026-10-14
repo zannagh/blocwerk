@@ -40,7 +40,8 @@ public sealed partial class WallRefreshService
         queue.Enqueue(refreshId);
     }
 
-    public async Task StartAsync(Guid refreshId, IReadOnlyList<PanelChoice> choices, bool keepModel = false, bool fullRevision = false)
+    public async Task StartAsync(
+        Guid refreshId, IReadOnlyList<PanelChoice> choices, bool keepModel = false, bool fullRevision = false, SplatQuality? quality = null)
     {
         var (db, refresh) = await OpenRefreshAsync(refreshId);
         await using (db)
@@ -78,6 +79,7 @@ public sealed partial class WallRefreshService
             else
             {
                 RefreshTimeline.Set(refresh, RefreshTimeline.Capture, RefreshStepState.Running, "Starting");
+                await KeepQualityAsync(db, refresh, quality);
             }
 
             await db.SaveChangesAsync();
@@ -173,6 +175,20 @@ public sealed partial class WallRefreshService
         refresh.Error = null;
         RefreshTimeline.Set(refresh, RefreshTimeline.Apply, RefreshStepState.Running, "Applying the panel update");
         await db.SaveChangesAsync();
+    }
+
+    /// <summary>The chosen photo-real quality goes on the run's draft capture, which the background start reads.</summary>
+    private static async Task KeepQualityAsync(BlocwerkDbContext db, WallRefresh refresh, SplatQuality? quality)
+    {
+        if (quality is not { } chosen || !Enum.IsDefined(chosen) || refresh.CaptureId is not { } captureId)
+        {
+            return;
+        }
+
+        if (await db.WallCaptures.FirstOrDefaultAsync(c => c.Id == captureId && c.Status == WallCaptureStatus.Draft) is { } draft)
+        {
+            draft.SplatQuality = chosen;
+        }
     }
 
     private static (int Col, int Row) TowardCentre(int col, int row) =>

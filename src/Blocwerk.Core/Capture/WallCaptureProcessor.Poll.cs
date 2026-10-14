@@ -24,7 +24,9 @@ public sealed partial class WallCaptureProcessor
     private async Task<ComputeJobStatus> PollAsync(
         IComputeJobClient client, string jobId, JobStage stage, CancellationToken ct)
     {
-        var timeout = ComputeJobClientFactory.SettingsFor(settings, client.Service).JobTimeout;
+        // Sized for 200 images, like the workers' own timeouts, and grown with the capture limits as theirs are.
+        var timeout = CaptureLimits.Scaled(
+            ComputeJobClientFactory.SettingsFor(settings, client.Service).JobTimeout, CaptureLimits.SplatImages(options));
         var deadline = DateTimeOffset.UtcNow + timeout;
         var delay = options.PollInitialDelay;
         var transientErrors = 0;

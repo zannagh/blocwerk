@@ -2,6 +2,7 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using System.Text.Json.Serialization;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Refresh;
 
@@ -21,7 +22,12 @@ namespace Blocwerk.Web.Controllers;
 /// of the wall is archived when the update is applied. Refused (409) unless every panel gets a new photo. It cannot be
 /// undone from the app. Defaults to false.
 /// </param>
-public sealed record RefreshStartRequest(IReadOnlyList<PanelChoice>? Choices = null, bool KeepModel = false, bool FullRevision = false);
+/// <param name="Quality">The photo-real view's quality for the 3D capture (draft, high, max, ultra); omitted is High.</param>
+public sealed record RefreshStartRequest(
+    IReadOnlyList<PanelChoice>? Choices = null,
+    bool KeepModel = false,
+    bool FullRevision = false,
+    [property: JsonConverter(typeof(JsonStringEnumConverter<SplatQuality>))] SplatQuality Quality = SplatQuality.High);
 
 /// <summary>Body of <c>POST …/refresh/{refreshId}/apply</c>.</summary>
 /// <param name="DecisionsVersion">

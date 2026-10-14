@@ -84,7 +84,8 @@ public sealed partial class WallRefreshProcessor
 
     private async Task StartCaptureOnceAsync(WallRefresh refresh, WallRefreshActors actors, Guid captureId, CancellationToken ct)
     {
-        if (await actors.Capture.GetCaptureAsync(captureId) is { Status: not WallCaptureStatus.Draft })
+        var draft = await actors.Capture.GetCaptureAsync(captureId);
+        if (draft is { Status: not WallCaptureStatus.Draft })
         {
             await MarkCaptureStartedAsync(refresh, "3D capture started", ct);
             return;
@@ -92,7 +93,9 @@ public sealed partial class WallRefreshProcessor
 
         var videoNote = await AttachVideosAsync(refresh, actors, captureId, ct);
         var declarations = await actors.Capture.SuggestDeclarationsAsync(captureId);
-        var problems = await actors.Capture.StartAsync(captureId, declarations, CaptureNote);
+
+        // The quality chosen on the sort screen sits on the draft (WallRefreshService.StartAsync); none chosen is High.
+        var problems = await actors.Capture.StartAsync(captureId, declarations, CaptureNote, draft?.SplatQuality ?? SplatQuality.High);
         if (problems.Count > 0)
         {
             await StepAsync(

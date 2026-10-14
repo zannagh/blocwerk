@@ -70,7 +70,9 @@ public interface IWallRefreshService
     /// The wall was fully reset: nothing is carried over, every detection becomes a new hold and every boulder is
     /// archived when the update is applied. Refused unless every panel gets a new photo.
     /// </param>
-    Task StartAsync(Guid refreshId, IReadOnlyList<PanelChoice> choices, bool keepModel = false, bool fullRevision = false);
+    /// <param name="quality">The photo-real view's quality for the 3D capture (null: High, as before).</param>
+    Task StartAsync(
+        Guid refreshId, IReadOnlyList<PanelChoice> choices, bool keepModel = false, bool fullRevision = false, Entities.SplatQuality? quality = null);
 
     /// <summary>The user's confirm: applies the prepared panel update, then places the holds on the 3D model.</summary>
     /// <param name="refreshId">The run.</param>

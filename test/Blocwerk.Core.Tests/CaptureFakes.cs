@@ -60,6 +60,11 @@ internal sealed class FakeComputeJobClient : IComputeJobClient
     public Task<ComputeHealth> GetHealthAsync(CancellationToken ct) =>
         Task.FromResult(new ComputeHealth { Status = "ok", Kinds = Kinds, PrepareOutputs = PrepareOutputs });
 
+    /// <summary>What the worker reports it takes per job (<c>/v1/info</c>); null = it does not say.</summary>
+    public int? MaxImages { get; set; }
+
+    public Task<int?> GetMaxImagesAsync(CancellationToken ct) => Task.FromResult(MaxImages);
+
     public Task<string> SubmitJsonAsync(string kind, string json, CancellationToken ct)
     {
         JsonSubmissions.Add((kind, json));

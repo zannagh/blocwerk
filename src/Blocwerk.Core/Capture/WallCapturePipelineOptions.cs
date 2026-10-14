@@ -10,9 +10,9 @@ public sealed class WallCapturePipelineOptions
     public const int DefaultMaxPhotos = 200;
 
     /// <summary>
-    /// Photos per capture; every step uses all of them (more views, better model, textures and hold shapes). Must not
-    /// exceed the compute services' own per-job caps (wall-geometry's and the splat worker's <c>MAX_PHOTOS</c>,
-    /// 200 / 600 by default), and wall-geometry's <c>MAX_REQUEST_MB</c> must fit them all in one textures request.
+    /// Photos per capture; every step uses all of them (more views, better model, textures and hold shapes). With
+    /// <see cref="MaxVideoFrames"/> the one place for the capture limits: the compute services read the same two values and
+    /// size their per-job caps, request size and timeouts from them (<see cref="CaptureLimits"/>).
     /// A big wall shot with the main lens (24 mm) needs ~50 photos for the coverage 14 ultra-wide ones give, a careful
     /// walk along a large wall well over 100. Setting <c>Blocwerk:Capture:MaxPhotos</c> / <c>CAPTURE__MAXPHOTOS</c>
     /// (2–1000); default 200.

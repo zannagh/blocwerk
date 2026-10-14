@@ -38,6 +38,11 @@ public sealed partial class WallCaptureService
                 return problems;
             }
 
+            if (await FitProblemAsync(db, capture.Id, geometry: false, splat: true) is { } tooBig)
+            {
+                return [tooBig];
+            }
+
             var textureError = capture.Status == WallCaptureStatus.SucceededWithoutTextures ? TexturePart(capture.Error) : null;
             capture.SplatQuality = quality;
             capture.SplatJobId = null;

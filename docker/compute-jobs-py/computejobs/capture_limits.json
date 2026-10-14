@@ -1,0 +1,6 @@
+{
+  "maxPhotos": 200,
+  "maxVideoFrames": 120,
+  "anchorImages": 32,
+  "baselineImages": 200
+}

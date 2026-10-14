@@ -1,11 +1,32 @@
 // "Update panels + 3D" drop zone: uploads every picked or dropped file as the raw request body via XHR (never over
 // the SignalR circuit), a few at a time, reporting overall progress and each file's outcome back to .NET.
 window.bwRefreshUpload = {
-    /** Resolves to the number of files sent once all are done. */
-    upload(inputId, url, dotNetRef) {
+    /**
+     * Resolves to the number of files sent once all are done. Photos past `photoRoom` (what the capture still takes) are
+     * refused here, before a byte is sent; `photoLimit` is the capture's limit, for the message.
+     */
+    upload(inputId, url, dotNetRef, photoRoom, photoLimit) {
         const input = document.getElementById(inputId);
-        const files = input && input.files ? Array.from(input.files) : [];
+        const picked = input && input.files ? Array.from(input.files) : [];
+        if (picked.length === 0) {
+            return Promise.resolve(0);
+        }
+
+        const isVideo = (f) => /\.(mp4|mov)$/i.test(f.name) || (f.type || '').startsWith('video/');
+        let room = typeof photoRoom === 'number' ? photoRoom : Infinity;
+        const files = picked.filter((f) => {
+            if (isVideo(f) || room > 0) {
+                room -= isVideo(f) ? 0 : 1;
+                return true;
+            }
+            dotNetRef.invokeMethodAsync('OnFileUploaded', {
+                photoId: null, fileName: f.name, isVideo: false,
+                problem: 'Not sent: a capture takes at most ' + photoLimit + ' photos.',
+            }).catch(() => { /* the circuit went away */ });
+            return false;
+        });
         if (files.length === 0) {
+            input.value = '';
             return Promise.resolve(0);
         }
 

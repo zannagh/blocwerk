@@ -31,6 +31,11 @@ public sealed partial class WallCaptureService
                 return problems;
             }
 
+            if (await FitProblemAsync(db, capture.Id, geometry: true, splat: false) is { } tooBig)
+            {
+                return [tooBig];
+            }
+
             capture.SolveJobId = CaptureResolveMark.Mark;
             await db.SaveChangesAsync();
             resolveQueue?.Enqueue(capture.Id);

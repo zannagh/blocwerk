@@ -48,7 +48,13 @@ Only what a probe needs; nothing about paths, tools, limits or the queue:
 ### `GET /v1/info` (authenticated)
 
 `/health`'s fields plus `gitSha`, `auth`, `jobs {queued, running}` and per-worker details (limits;
-the splat worker's tool paths/versions and GPU backend).
+the splat worker's tool paths/versions and GPU backend). The app reads `limits.maxPhotos` before it starts or redoes a
+capture and refuses one that would not fit, before anything is sent.
+
+Limits: both workers size `MAX_PHOTOS`, the request size and their timeouts from the capture limits the app uses,
+`CAPTURE_MAX_PHOTOS` and `CAPTURE_MAX_VIDEO_FRAMES` (`computejobs/capture_limits.py`, defaults in `capture_limits.json`):
+wall-geometry takes photos + frames per job, the splat worker that plus 32 anchor crops (at least 600), and every timeout
+sized for 200 images grows in proportion. An explicit `MAX_PHOTOS` / `*_TIMEOUT_S` still wins.
 
 ### `POST /v1/jobs/{kind}` → `202 { "jobId": "…", "status": "queued" }`
 

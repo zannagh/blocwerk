@@ -1,13 +1,18 @@
 """Runtime configuration from the environment (shared fields: computejobs.settings)."""
 import os
 
+from computejobs import capture_limits
 from computejobs.settings import env_int, settings
 
-settings.load(work_dir=os.path.join(os.environ.get("TMPDIR", "/tmp"), "splat-jobs"), max_request_mb=8192,
-              max_photo_mb=40, max_photos=600, max_queued=4, result_ttl_s=3600)
+# Images per job (photos + video frames + anchor crops) and the timeouts follow the capture limits
+# (CAPTURE_MAX_PHOTOS + CAPTURE_MAX_VIDEO_FRAMES, computejobs/capture_limits.py); never below the 600 images it always took.
+IMAGES = max(600, capture_limits.splat_images())
+settings.load(work_dir=os.path.join(os.environ.get("TMPDIR", "/tmp"), "splat-jobs"),
+              max_request_mb=capture_limits.scaled_s(8192, IMAGES * 200 // 600), max_photo_mb=40, max_photos=IMAGES,
+              max_queued=4, result_ttl_s=3600)
 settings.brush_bin = os.environ.get("BRUSH_BIN", "brush_app")
 settings.colmap_bin = os.environ.get("COLMAP_BIN", "colmap")
-settings.splat_timeout_s = env_int("SPLAT_TIMEOUT_S", 4 * 3600)
+settings.splat_timeout_s = env_int("SPLAT_TIMEOUT_S", capture_limits.scaled_s(4 * 3600, IMAGES * 200 // 600))
 settings.min_photos = env_int("MIN_PHOTOS", 3)
 # Photos are re-encoded (metadata-free) on arrival at most this long edge; the job then downscales
 # them to the quality profile's edges (profiles.py).
