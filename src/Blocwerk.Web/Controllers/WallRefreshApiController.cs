@@ -4,6 +4,7 @@
 
 using Blocwerk.Authentication.Authorization;
 using Blocwerk.Authentication.Handlers;
+using Blocwerk.Core.Entities;
 using Blocwerk.Core.Refresh;
 using Blocwerk.Core.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -100,7 +101,7 @@ public sealed partial class WallRefreshApiController(
     public Task<IActionResult> Start(Guid wallId, Guid refreshId, [FromBody] RefreshStartRequest? body) =>
         WriteAsync(wallId, "refresh.start", () => ForRunAsync(wallId, refreshId, async _ =>
         {
-            await refreshes.StartAsync(refreshId, body?.Choices ?? [], body?.KeepModel ?? false, body?.FullRevision ?? false);
+            await refreshes.StartAsync(refreshId, body?.Choices ?? [], body?.KeepModel ?? false, body?.FullRevision ?? false, body?.Quality ?? SplatQuality.High);
             return Accepted();
         }));
 

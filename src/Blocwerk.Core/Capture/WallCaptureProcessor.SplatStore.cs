@@ -24,6 +24,11 @@ public sealed partial class WallCaptureProcessor
         await SetStageAsync(captureId, WallCaptureStatus.Splatting, 0.99, "Photo-real view: saving", ct);
         var row = await BuildSplatRowAsync(modelId, jobId, client, ct);
         await SwapViewAsync(row, guard: null, ct);
+        if (CaptureSplatDocuments.TrainedQuality(row.FrameJson) is { } trained)
+        {
+            // What the view is, not what was asked for: a worker's profile override or a runner's fallback decides it.
+            await UpdateAsync(captureId, c => c.SplatQuality = trained, ct);
+        }
     }
 
     /// <summary>Downloads, checks and saves the finished view's files; the row is not stored yet.</summary>

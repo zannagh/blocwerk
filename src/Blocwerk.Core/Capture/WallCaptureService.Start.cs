@@ -64,6 +64,11 @@ public sealed partial class WallCaptureService
                 return errors;
             }
 
+            if (await FitProblemAsync(db, capture.Id, IsSplatConfigured ? CaptureFit.Start : CaptureFit.Geometry) is { } tooBig)
+            {
+                return [tooBig];
+            }
+
             // The capture keeps the plan (and revision) it started with: later edits of the wall's plan don't change it.
             if (capture.PlanJson is null)
             {

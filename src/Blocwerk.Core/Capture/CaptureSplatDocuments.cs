@@ -76,6 +76,22 @@ public static class CaptureSplatDocuments
     };
 
     /// <summary>
+    /// The profile the view was really trained at, as the worker or the runner reports it in <c>frame.json</c>'s
+    /// <c>stats.quality</c> (a worker's <c>SPLAT_PROFILE_OVERRIDE</c> or a runner's lower fallback wins over the request), or null.
+    /// </summary>
+    public static SplatQuality? TrainedQuality(string? frameJson)
+    {
+        try
+        {
+            return frameJson is null ? null : ParseQuality(JsonNode.Parse(frameJson)?["stats"]?["quality"]?.GetValue<string>());
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// The profile a "retrain at higher quality" offers after <paramref name="current"/>: none recorded
     /// (a capture from before the profiles) or draft → high, high → max, max → nothing higher.
     /// </summary>

@@ -84,7 +84,7 @@
         }
         else if (view.Status == WallRefreshStatus.ReadyToStart)
         {
-            <RefreshSortScreen View="view" OnStart="StartAsync" OnStartPanelsOnly="StartPanelsOnlyAsync"
+            <RefreshSortScreen View="view" @bind-Quality="splatQuality" OnStart="StartAsync" OnStartPanelsOnly="StartPanelsOnlyAsync"
                                OnStartOver="StartFullRevisionAsync" OnStartOverPanelsOnly="StartFullRevisionPanelsOnlyAsync" />
         }
         else if (view.Status == WallRefreshStatus.ReadyToApply)
