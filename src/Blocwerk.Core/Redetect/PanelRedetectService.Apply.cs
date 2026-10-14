@@ -73,13 +73,15 @@ public sealed partial class PanelRedetectService
     }
 
     /// <summary>A detection as a new stored hold of the panel, with the colour read off the photo as its proposal.</summary>
-    private static Hold NewHold(RedetectDetection detection, WallPanel panel)
+    private static Hold NewHold(RedetectDetection detection, WallPanel panel, bool isBase)
     {
         var hold = detection.Shape.Clone();
         hold.Id = Guid.NewGuid();
         hold.Generation = panel.Generation;
-        hold.Color = detection.Color;
-        hold.ProposedColor = detection.Color;
+
+        // A large hold with holds on it whose colour the reader could not tell gets no suggestion: the detector's "volume" label is no colour of it.
+        hold.Color = isBase && !detection.ColorRead ? null : detection.Color;
+        hold.ProposedColor = hold.Color;
         return hold;
     }
 
@@ -93,7 +95,7 @@ public sealed partial class PanelRedetectService
             RedetectShapes.Apply(byId[update.HoldId], input.Detections[update.Detection].Shape, update.Change);
         }
 
-        var added = decisions.NewDetections.Select(i => NewHold(input.Detections[i], panel)).ToList();
+        var added = decisions.NewDetections.Select(i => NewHold(input.Detections[i], panel, RedetectRules.OnBase(input, i).Count > 0)).ToList();
         db.Holds.AddRange(added);
         if (decisions.Removed.Count > 0)
         {

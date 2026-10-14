@@ -27,7 +27,7 @@ internal static class HoldColorSampler
     /// <returns>The estimate.</returns>
     public static HoldColorEstimate Estimate(Hold hold, int width, int height, Func<int, int, OklabColor> pixel, Func<double, double, bool>? excluded)
     {
-        var (own, surroundings, area) = Sample(hold, width, height, pixel);
+        var (own, surroundings, area) = Sample(hold, width, height, pixel, excluded);
         return HoldColorEstimator.Estimate(own, surroundings, area);
     }
 
@@ -36,9 +36,10 @@ internal static class HoldColorSampler
     /// <param name="width">Photo width in pixels.</param>
     /// <param name="height">Photo height in pixels.</param>
     /// <param name="pixel">The photo's pixel at (x, y).</param>
+    /// <param name="excluded">True for a pixel (x, y in photo fractions) that does not belong to the hold; null for none.</param>
     /// <returns>The samples.</returns>
     public static (List<OklabColor> Own, List<OklabColor> Surroundings, double Area) Sample(
-        Hold hold, int width, int height, Func<int, int, OklabColor> pixel)
+        Hold hold, int width, int height, Func<int, int, OklabColor> pixel, Func<double, double, bool>? excluded = null)
     {
         var mask = HoldColorMask.For(hold, width, height);
         var (left, top, right, bottom) = mask.Bounds(width, height);

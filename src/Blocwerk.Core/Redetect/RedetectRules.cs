@@ -160,9 +160,10 @@ internal static class RedetectRules
     public static List<int> OnBase(RedetectInput input, int detection)
     {
         var baseHold = input.Detections[detection];
-        // A base is a detection the detector is sure enough of, with a colour read off the photo.
+        // A base is a detection the detector is sure enough of, cast in a colour. The colour reader declines a weak
+        // red or a colour between two (salmon); such a base needs several holds on it instead.
         if (baseHold.Shape.ShapePoints is not { Count: >= 3 } || baseHold.Shape.Confidence < MinBaseConfidence
-            || !baseHold.ColorRead || !IsColoured(baseHold.Color))
+            || (baseHold.ColorRead && !IsColoured(baseHold.Color)))
         {
             return [];
         }
@@ -175,8 +176,19 @@ internal static class RedetectRules
             && ShapeGeometry.Area(HoldShapePolygon.Of(other)) * BaseAreaFactor <= area)];
 
         // A base is a hold of its own colour: when every hold on it has that colour, it is more likely one hold seen in parts.
+        if (!baseHold.ColorRead)
+        {
+            return on.Count >= MinHoldsOnUnreadBase ? on : [];
+        }
+
         return on.Any(i => !string.Equals(input.Detections[i].Color, baseHold.Color, StringComparison.OrdinalIgnoreCase)) ? on : [];
     }
+
+    /// <summary>
+    /// Where the colour could not be read off the photo, a base needs this many holds on it: a wooden volume with one
+    /// hold on it is common, a large hold with several is not.
+    /// </summary>
+    public const int MinHoldsOnUnreadBase = 2;
 
     /// <summary>The detector confidence a base needs.</summary>
     public const double MinBaseConfidence = 0.5;
