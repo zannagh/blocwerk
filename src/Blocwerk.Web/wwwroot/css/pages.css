@@ -527,8 +527,8 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
 }
 
 /* Edit mode renders NEITHER of the two things the chrome budget reserves room for under the
-   photo: WallDetail drops the .wall-side rail (so no stat cards), and WallPhotoEditor renders
-   WallDimControl only on its read-only arms (so no dim bar). Budgeting for both anyway shrank the
+   photo: WallDetail drops the .wall-side rail (so no stat cards), and the room of the old dim bar
+   (--wall-dim-bar-h, app.css) is only kept for read-only. Budgeting for both anyway shrank the
    photo's cap by --wall-stats-h + --wall-dim-bar-h for nothing. Declared on .wall-main so it beats
    BOTH the inherited `:root:root` block in app.css and the desktop tier's body-level payload; the
    desktop tier's own override keys on `:has(> .wall-side)`, which edit mode never matches, so the

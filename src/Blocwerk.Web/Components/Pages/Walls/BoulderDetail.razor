@@ -261,11 +261,6 @@ else
             </div>
         }
 
-        @if (!_show3D || _showHistoric)
-        {
-            @* Dims the photo around the boulder: meaningless on the 3D view, which dims by itself. *@
-            <WallDimControl />
-        }
         @if (HistoricHoldsMissing > 0)
         {
             @* Fix: a partial translation used to be silent. Some of the boulder's holds have no
@@ -333,6 +328,7 @@ else
                               EnableSwipe="true"
                               HistoricMode="_showHistoric"
                               LensOverlay="true"
+                              BoulderFocus="true"
                               Fullscreen="true" />
         }
         else
@@ -349,6 +345,8 @@ else
                     </div>
                 </div>
                 <StageOpenButton OnOpen="() => _stageOpen = true" />
+                @* Dims the photo around the boulder. Not on the 3D view, which dims by itself. *@
+                <BoulderFocusButton />
                 @if (_stageOpen)
                 {
                     @* The SAME layers again inside the takeover. Deliberately a second render of one
@@ -527,7 +525,7 @@ else
     /// carrying data-lens-overlay, which is what arms the magnifier).
     /// </summary>
     private RenderFragment PhotoLayers => @<text>
-        <img src="@ResponsiveImage.Initial(PhotoUrl)" data-bw-res alt="Wall" class="wall-photo" />
+        <img src="@ResponsiveImage.Initial(PhotoUrl)" data-bw-res alt="Wall" class="wall-photo boulder-photo" />
         <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
             @* The "feet of one colour only" rule is shown as an info banner above the image, not by
                painting every wall hold of that colour. Only the boulder's own holds (including
@@ -536,17 +534,15 @@ else
                holds translated to the generation on screen. *@
             @foreach (var bh in HoldStackOrder.BackToFront(_renderHolds, bh => bh.HoldId, bh => bh.Hold.StackedOnHoldId))
             {
-                @* A virtual hold isn't visible on the photo: dash its outline, as the pickers and
-                   MultiPanelViewer do, so it doesn't read as a real hold. *@
-                var dash = bh.Hold.IsVirtual ? "0.6 0.4" : null;
-                @* Through HoldShape like every other overlay in the app. Foot is deliberately NOT
-                   set: this legacy single-image branch has always drawn every hold as a plain
-                   circle and keeps doing so, so the move is visually a no-op. *@
-                <HoldShape @key="bh.HoldId" X="bh.Hold.X" Y="bh.Hold.Y" Radius="bh.Hold.Radius"
+                @* The same glowing, unfilled, lightly rounded outline as MultiPanelViewer draws a boulder's
+                   holds in; dashed for a virtual hold or one the last update did not find. Foot is
+                   deliberately NOT set: this legacy single-image branch has always drawn every hold as a
+                   plain circle. *@
+                var subdued = bh.Hold.IsVirtual || bh.Hold.KeptUnconfirmedGeneration is not null;
+                <HoldShine @key="bh.HoldId" X="bh.Hold.X" Y="bh.Hold.Y" Radius="bh.Hold.Radius"
                            ShapePoints="bh.Hold.ShapePoints" ShapeHoles="bh.Hold.ShapeHoles"
-                           Fill="@BoulderHoldColors.FillFor(bh.Type, bh.Usage)"
-                           Stroke="@BoulderHoldColors.Stroke(bh.Type)" StrokeWidth="0.5"
-                           Dash="@dash" Kept="bh.Hold.KeptUnconfirmedGeneration is not null" />
+                           Color="@BoulderHoldColors.Outline(bh.Type, bh.Usage)" Smooth="true"
+                           Look="@(subdued ? "base" : null)" />
             }
         </svg>
     </text>;
@@ -1635,7 +1631,7 @@ else
     /// matching the single-image photo view. Twin ids resolve to the source hold's boulder colour.</summary>
     private (string Fill, string Stroke) BoulderHoldColorOf(Guid holdId) =>
         _highlightedHoldTypes.TryGetValue(holdId, out var t)
-            ? (BoulderHoldColors.FillFor(t.Type, t.Usage), BoulderHoldColors.Stroke(t.Type))
+            ? (BoulderHoldColors.FillFor(t.Type, t.Usage), BoulderHoldColors.Outline(t.Type, t.Usage))
             : (BoulderHoldColors.Fill(HoldType.Normal), BoulderHoldColors.Normal);
 
     private async Task<List<Hold>> FetchWallHoldsAsync()

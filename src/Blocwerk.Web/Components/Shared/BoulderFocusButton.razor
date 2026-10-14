@@ -1,0 +1,38 @@
+@inject IJSRuntime JS
+
+@*
+    The focus toggle over a boulder's photo: a lightbulb that dims the photo so the boulder's holds stand
+    out (boulder-focus.css). The state lives in JS + localStorage (blocwerkBoulderFocus) as a class on
+    <html>, so a tap costs no server round-trip and survives every re-render. The handler is a plain
+    HTML attribute on purpose, not a Blazor event callback; aria-pressed is left to the script, so a
+    re-render never resets it.
+*@
+<button type="button" class="heat-tool boulder-focus-tool"
+        aria-label="Focus on the boulder" title="Focus: dim the photo so the boulder's holds stand out"
+        onclick="window.blocwerkBoulderFocus.toggle()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+         stroke-linejoin="round" width="22" height="22" aria-hidden="true">
+        <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5" />
+        <path d="M9 18h6" />
+        <path d="M10 22h4" />
+    </svg>
+</button>
+
+@code {
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        try
+        {
+            await JS.InvokeVoidAsync("blocwerkBoulderFocus.hydrate");
+        }
+        catch (JSDisconnectedException)
+        {
+            // The circuit went away before the first render settled; nothing to hydrate.
+        }
+    }
+}

@@ -36,6 +36,17 @@ public static class BoulderHoldColors
         _ => Normal,
     };
 
+    /// <summary>
+    /// The outline colour of a hold in the boulder view, which draws outlines only, without a fill: start
+    /// green and top purple first, then a foot-only hold orange (the colour its fill used to carry), and
+    /// every other hold blue.
+    /// </summary>
+    public static string Outline(HoldType type, HoldUsage usage) => type switch
+    {
+        HoldType.Start or HoldType.Top => Stroke(type),
+        _ => usage == HoldUsage.FootOnly ? Foot : Normal,
+    };
+
     /// <summary>The translucent fill for a hold of the given type.</summary>
     public static string Fill(HoldType type, double alpha = 0.55) =>
         HoldPalette.Rgba(Stroke(type), alpha);
