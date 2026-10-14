@@ -34,8 +34,8 @@ internal static class KeptHoldFixture
         Guid? big = null;
         await using (var db = h.CreateContext())
         {
-            var staged = await db.Holds.SingleAsync(s => s.Generation == 3 && s.X == Unused.X && s.Y == Unused.Y);
-            unusedOld = (await db.Holds.SingleAsync(s => s.Generation == 2 && s.X == Unused.X && s.Y == Unused.Y)).Id;
+            var staged = await db.Holds.SingleAsync(s => s.Generation == 3 && Math.Abs(s.X - Unused.X) < Tolerance && Math.Abs(s.Y - Unused.Y) < Tolerance);
+            unusedOld = (await db.Holds.SingleAsync(s => s.Generation == 2 && Math.Abs(s.X - Unused.X) < Tolerance && Math.Abs(s.Y - Unused.Y) < Tolerance)).Id;
             db.Holds.Remove(staged);
             var panel = w.StagedByPanel.Keys.Single();
             var ids = w.StagedByPanel[panel].Where(id => id != staged.Id).ToList();
@@ -67,7 +67,7 @@ internal static class KeptHoldFixture
         await using var after = h.CreateContext();
         var used = await after.BoulderHolds.Where(bh => bh.BoulderId == w.BoulderId).Select(bh => bh.HoldId).SingleAsync();
         var unused = await after.HoldGenerationLinks.Where(l => l.OldHoldId == unusedOld).Select(l => l.NewHoldId!.Value).SingleAsync();
-        var found = await after.Holds.Where(x => x.Generation == 3 && x.X == Anchors[0].X && x.Y == Anchors[0].Y).Select(x => x.Id).SingleAsync();
+        var found = await after.Holds.Where(x => x.Generation == 3 && Math.Abs(x.X - Anchors[0].X) < Tolerance && Math.Abs(x.Y - Anchors[0].Y) < Tolerance).Select(x => x.Id).SingleAsync();
         return new KeptWall(w, used, unused, unusedOld, big, found);
     }
 

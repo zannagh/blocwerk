@@ -55,7 +55,7 @@ public partial class WallBigUpdateService
     {
         null => "unmeasured",
         HoldLook.Replaced when pair.Mispaired => "mispaired",
-        var look => look.Value.ToString().ToLowerInvariant(),
+        _ => pair.Look.Value.ToString().ToLowerInvariant(),
     };
 
     private string SpotVerdict(JudgedSpot spot) =>
