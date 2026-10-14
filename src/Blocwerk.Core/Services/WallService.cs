@@ -2235,7 +2235,11 @@ public class WallService : IWallService
             }
         }
 
-        var liveCenter = panels.FirstOrDefault(p => p.Col == 0 && p.Row == 0 && p.Photo != null);
+        var liveCenter = panels
+            .Where(p => p.Col == 0 && p.Row == 0 && p.Photo != null)
+            .OrderByDescending(p => p.Generation)
+            .ThenBy(p => p.Id)
+            .FirstOrDefault();
         if (liveCenter is not null)
         {
             // Re-upload onto an existing big wall: refresh the live center panel's bytes and adopt the
@@ -2251,6 +2255,15 @@ public class WallService : IWallService
 
             liveCenter.Photo = wall.Photo is null ? null : (byte[])wall.Photo.Clone();
             liveCenter.PhotoContentType = wall.PhotoContentType;
+            liveCenter.PhotoRevision++;
+
+            // A crop of the replaced photo no longer applies: its kept original would bring the old photo back.
+            var crop = await db.WallPanelCrops.FirstOrDefaultAsync(c => c.WallPanelId == liveCenter.Id);
+            if (crop is not null)
+            {
+                db.WallPanelCrops.Remove(crop);
+            }
+
             foreach (var hold in unassigned)
             {
                 hold.WallPanelId = liveCenter.Id;

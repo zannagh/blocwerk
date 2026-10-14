@@ -51,11 +51,11 @@ public class CroppedCentreUpdateFrameTests
         Assert.Equal(150 - 30, seen.Y * size.Height, 0);
     }
 
-    private static WallBigUpdateService Service(PanelCropFixture f, IHoldOverlapMatcher matcher) =>
+    internal static WallBigUpdateService Service(PanelCropFixture f, IHoldOverlapMatcher matcher) =>
         new(f.Harness.DbContextFactory, f.Harness.CurrentUser, f.Harness.HoldDetection, matcher, NullLogger<WallBigUpdateService>.Instance);
 
     /// <summary>The wall photo equals the centre panel photo (as after any promote), the centre is cropped, then re-shot.</summary>
-    private static async Task<OldImageCapturingMatcher> CropThenStageAsync(PanelCropFixture f)
+    internal static async Task<OldImageCapturingMatcher> CropThenStageAsync(PanelCropFixture f)
     {
         await f.SeedAsync();
         await using (var db = f.Harness.CreateContext())

@@ -84,7 +84,7 @@ public partial class WallCaptureCoverage
             var v => string.Create(CultureInfo.InvariantCulture, $"{v.FramesExtracted} video frames"),
         };
         var passes = r.Video.PosesFrom == CoveragePoseSource.Photos && r.Video.HasVideo
-            ? " The video's camera positions are not reported yet, so its passes were checked on the photos."
+            ? " The video's camera positions are not reported yet, so the squares are rated on the photos and the video is not checked against the recipe."
             : string.Empty;
         return $"Rated from {views} ({video}), in 20 cm squares.{passes}";
     }
