@@ -75,6 +75,12 @@ public sealed record EvalHold
     /// <summary>Gets the colour the app reads off the photo for it.</summary>
     public string? Color { get; init; }
 
+    /// <summary>Gets the measured size across, mm, where the hold was measured.</summary>
+    public double? SizeMm { get; init; }
+
+    /// <summary>Gets a value indicating whether the hold's colour is close to the wall's around it.</summary>
+    public bool Pale { get; init; }
+
     /// <summary>Gets the index of the hold it sits on, when the stacking rule says so.</summary>
     public int? StackedOn { get; init; }
 

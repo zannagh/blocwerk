@@ -22,23 +22,27 @@ internal static class RedetectHistory
     private const string DeleteLabel = "hold-delete";
     private const string EditLabel = "hold-edit";
 
-    /// <summary>The spots of the panel's current photo where a detection must not become a new hold.</summary>
+    /// <summary>The spots of the panel's current photo with an earlier answer: "Not a hold", set aside, or a deleted hold.</summary>
     /// <param name="db">The context.</param>
     /// <param name="panel">The panel.</param>
     /// <param name="ct">Cancellation.</param>
-    /// <returns>The spots as holds that are never stored.</returns>
-    public static async Task<List<Hold>> TurnedDownAsync(BlocwerkDbContext db, WallPanel panel, CancellationToken ct)
+    /// <returns>The spots, as holds that are never stored, with what was said there.</returns>
+    public static async Task<List<RedetectTurnedDown>> TurnedDownAsync(BlocwerkDbContext db, WallPanel panel, CancellationToken ct)
     {
         var findings = await db.WallLookOverFindings.AsNoTracking()
             .Where(f => f.WallId == panel.WallId && f.PanelId == panel.Id && f.Generation == panel.Generation
                         && f.Kind == LookOverFindingKind.DiscardedDetection && f.Answer != LookOverAnswer.AddHold)
             .ToListAsync(ct);
-        var spots = findings.Select(DiscardedDetections.AsHold).ToList();
+        var spots = findings.Select(f => new RedetectTurnedDown(
+            DiscardedDetections.AsHold(f),
+            f.Answer is null ? new RedetectEarlier(RedetectEarlierKind.SetAside, f.CreatedAt) : new RedetectEarlier(RedetectEarlierKind.NotAHold, f.AnsweredAt))).ToList();
         foreach (var before in await EntriesAsync(db, panel, DeleteLabel, ChangeJournalOp.Delete, ct))
         {
             if (Read(before.Before) is { } row && row.PanelId == panel.Id && row.Generation == panel.Generation)
             {
-                spots.Add(new Hold { WallId = panel.WallId, WallPanelId = panel.Id, Generation = panel.Generation, X = row.X, Y = row.Y, Radius = row.Radius });
+                spots.Add(new RedetectTurnedDown(
+                    new Hold { WallId = panel.WallId, WallPanelId = panel.Id, Generation = panel.Generation, X = row.X, Y = row.Y, Radius = row.Radius },
+                    new RedetectEarlier(RedetectEarlierKind.Deleted, before.When)));
             }
         }
 
@@ -94,7 +98,7 @@ internal static class RedetectHistory
     }
 
     /// <summary>The journal entries about holds of the wall a person made under one label.</summary>
-    private static async Task<List<(string Key, string? Before, string? After)>> EntriesAsync(
+    private static async Task<List<(string Key, string? Before, string? After, DateTimeOffset When)>> EntriesAsync(
         BlocwerkDbContext db, WallPanel panel, string label, ChangeJournalOp op, CancellationToken ct)
     {
         var panelText = panel.Id.ToString();
@@ -105,8 +109,8 @@ internal static class RedetectHistory
                   && entry.EntityType == nameof(Hold) && entry.Op == op
                   && ((entry.BeforeJson != null && entry.BeforeJson.Contains(panelText)) || (entry.AfterJson != null && entry.AfterJson.Contains(panelText)))
             orderby entry.CreatedAt
-            select new { entry.KeyJson, entry.BeforeJson, entry.AfterJson }).ToListAsync(ct);
-        return [.. rows.Select(r => (r.KeyJson, r.BeforeJson, r.AfterJson))];
+            select new { entry.KeyJson, entry.BeforeJson, entry.AfterJson, entry.CreatedAt }).ToListAsync(ct);
+        return [.. rows.Select(r => (r.KeyJson, r.BeforeJson, r.AfterJson, r.CreatedAt))];
     }
 
     /// <summary>Position, size and photo of a journalled hold row; null when the row cannot be read.</summary>

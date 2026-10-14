@@ -102,15 +102,19 @@ public class RedetectProposalTests
     }
 
     [Fact]
-    public void ADetectionWhereAPersonSaidNoHold_NeverBecomesANewHold()
+    public void ADetectionWhereAPersonSaidNoHold_IsStillProposed_AndItsCardSaysWhatWasAnswered()
     {
-        var rejected = new Hold { X = 0.7, Y = 0.7, Radius = 0.02 };
+        var when = new DateTimeOffset(2026, 9, 30, 18, 0, 0, TimeSpan.Zero);
+        var rejected = new RedetectTurnedDown(new Hold { X = 0.7, Y = 0.7, Radius = 0.02 }, new RedetectEarlier(RedetectEarlierKind.NotAHold, when));
         var input = Input([], [Square(0.701, 0.7, 0.018, 0.018), Square(0.2, 0.2, 0.02, 0.02)]) with { TurnedDown = [rejected] };
 
         var decisions = RedetectPlanner.Plan(input, Options);
+        var proposals = RedetectProposals.Build(input, decisions, []);
 
-        Assert.Equal([1], decisions.NewDetections);
+        Assert.Equal([0, 1], decisions.NewDetections);
         Assert.Equal(1, decisions.TurnedDown);
+        Assert.Equal(new RedetectEarlier(RedetectEarlierKind.NotAHold, when), proposals.Single(p => p.Key == "new:0").Earlier);
+        Assert.Null(proposals.Single(p => p.Key == "new:1").Earlier);
     }
 
     [Fact]

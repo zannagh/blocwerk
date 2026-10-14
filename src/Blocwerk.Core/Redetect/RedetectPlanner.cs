@@ -52,16 +52,18 @@ public static class RedetectPlanner
         var split = splits.Select(s => s.HoldId).ToHashSet();
         var pieces = splits.SelectMany(s => s.Detections).ToHashSet();
         var fresh = Enumerable.Range(0, input.Detections.Count).Where(i => !taken.Contains(i) && !pieces.Contains(i)).ToList();
-        var turnedDown = fresh.Where(i => RedetectRules.OnTurnedDown(input, i, options)).ToHashSet();
+        // An earlier "Not a hold" or deletion is shown on the card, not obeyed: those answers were often wrong.
+        var earlier = fresh.Select(i => (i, Answer: RedetectRules.EarlierAnswer(input, i, options))).Where(e => e.Answer is not null).ToDictionary(e => e.i, e => e.Answer!);
 
         // Where the outliner ran at all (some detection has a traced outline), a new hold needs one too.
         var traces = input.Detections.Any(d => RedetectRules.IsTraced(d.Shape));
-        var untraced = fresh.Where(i => traces && !turnedDown.Contains(i) && !RedetectRules.IsTraced(input.Detections[i].Shape)).ToHashSet();
+        var untraced = fresh.Where(i => traces && !RedetectRules.IsTraced(input.Detections[i].Shape)).ToHashSet();
         var median = input.Detections.Count == 0 ? 0 : input.Detections.Select(d => d.Shape.Radius).Order().ElementAt(input.Detections.Count / 2);
-        var parts = fresh.Where(i => traces && !turnedDown.Contains(i) && !untraced.Contains(i) && RedetectRules.IsNoHold(input, i, median)).ToHashSet();
+        var parts = fresh.Where(i => traces && !untraced.Contains(i) && RedetectRules.IsNoHold(input, i, median)).ToHashSet();
+        var added = fresh.Where(i => !untraced.Contains(i) && !parts.Contains(i)).ToList();
         return new RedetectDecisions(
             [.. draft.Shapes.Where(s => !split.Contains(s.HoldId))],
-            [.. fresh.Where(i => !turnedDown.Contains(i) && !untraced.Contains(i) && !parts.Contains(i))],
+            added,
             draft.Merges,
             draft.ForReview,
             [.. gone.Where(id => !split.Contains(id))],
@@ -71,7 +73,8 @@ public static class RedetectPlanner
             HandOffers = [.. draft.HandOffers.Where(o => !split.Contains(o.HoldId))],
             LikelyMerges = draft.LikelyMerges,
             Splits = splits,
-            TurnedDown = turnedDown.Count,
+            Earlier = added.Where(earlier.ContainsKey).ToDictionary(i => i, i => earlier[i]),
+            TurnedDown = added.Count(earlier.ContainsKey),
             Untraced = untraced.Count + parts.Count,
         };
     }

@@ -64,6 +64,9 @@ internal sealed class RedetectSafety
     /// <summary>An outline for a plain circle that is this many times longer than wide is a strip: an edge or a gap, seldom the hold.</summary>
     public const double StripElongation = 4;
 
+    /// <summary>An outline that covers this many other holds is a board, a volume or a bunch of holds: it is never proposed.</summary>
+    public const int MaxCoveredHolds = 2;
+
     /// <summary>The share of a stored outline the pieces of a split have to cover together.</summary>
     public const double MinSplitCover = 0.8;
 
@@ -156,6 +159,29 @@ internal sealed class RedetectSafety
             : !traced && detection.OutlinePale ? RedetectDoubt.PaleHold
             : RedetectDoubt.None;
         return new RedetectShapeCheck(clean, doubt);
+    }
+
+    /// <summary>The doubt about a new hold: one that hardly stands out from the wall may be bare wall or wood.</summary>
+    /// <param name="detection">The detection.</param>
+    /// <returns>The doubt, or none.</returns>
+    public static RedetectDoubt CheckNewHold(Hold detection) =>
+        detection.OutlinePale ? RedetectDoubt.MaybeBareWall : RedetectDoubt.None;
+
+    /// <summary>
+    /// How many stored holds have their centre inside the outline, the hold itself, the hold it sits on and the holds
+    /// on it left out. From <see cref="MaxCoveredHolds"/> on, the outline is a board or a volume with holds on it.
+    /// </summary>
+    /// <param name="input">The planner's input.</param>
+    /// <param name="outline">The outline.</param>
+    /// <param name="hold">The stored hold it would belong to; null for a new hold.</param>
+    /// <returns>The number of other holds it covers.</returns>
+    public static int CoveredHolds(RedetectInput input, IReadOnlyList<P2> outline, Hold? hold)
+    {
+        double minX = outline.Min(p => p.X), minY = outline.Min(p => p.Y), maxX = outline.Max(p => p.X), maxY = outline.Max(p => p.Y);
+        return input.Existing.Select(e => e.Hold).Count(other => RedetectRules.IsMatchable(other)
+            && (hold is null || (other.Id != hold.Id && other.StackedOnHoldId != hold.Id && hold.StackedOnHoldId != other.Id))
+            && other.X >= minX && other.X <= maxX && other.Y >= minY && other.Y <= maxY
+            && ShapeGeometry.Contains(outline, new P2(other.X, other.Y)));
     }
 
     /// <summary>

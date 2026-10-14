@@ -44,6 +44,11 @@
                         <strong>@RedetectCopy.Heading(card.Proposal)</strong>
                         <span class="redetect-answer @(given switch { true => "is-accepted", false => "is-kept", _ => "is-open" })">@RedetectCopy.State(card.Proposal, given)</span>
                     </div>
+                    @if (RedetectCopy.Earlier(card.Proposal.Earlier) is { } earlier)
+                    {
+                        <p class="redetect-earlier" role="note">@earlier</p>
+                    }
+
                     @if (card.Proposal.Unsure)
                     {
                         <p class="redetect-unsure" role="note"><strong>The detector is unsure.</strong> @RedetectCopy.Why(card.Proposal.Doubt)</p>

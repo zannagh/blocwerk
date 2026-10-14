@@ -17,6 +17,12 @@ internal static class RedetectRules
     public const double PartSizeMm = 25;
 
     /// <summary>
+    /// A new detection on bare wall measured smaller than this is a screw hole, a bolt hole or a knot: on the Attic's
+    /// two photos every one of them was, and no hold. A stored hold of that size is left alone.
+    /// </summary>
+    public const double NewHoldMinMm = 40;
+
+    /// <summary>
     /// Inside another hold the limit is higher: a bolt recess with its washer or a pocket measures up to this, and a hold
     /// screwed onto a hold is larger.
     /// </summary>
@@ -62,14 +68,17 @@ internal static class RedetectRules
     public static bool IsTraced(Hold detection) =>
         detection.ShapePoints is { Count: >= 3 } && detection.OutlineConfidence is not <= HoldOutlineRefiner.CircleConfidenceCeiling;
 
-    /// <summary>True when the detection lies on a spot where a person already said there is no hold.</summary>
-    public static bool OnTurnedDown(RedetectInput input, int detection, HoldSamenessOptions options)
+    /// <summary>The earlier answer about the detection's spot, or null when there is none.</summary>
+    public static RedetectEarlier? EarlierAnswer(RedetectInput input, int detection, HoldSamenessOptions options)
     {
         var shape = input.Detections[detection].Shape;
-        return input.TurnedDown.Any(spot =>
-            Math.Abs(spot.X - shape.X) <= spot.Radius + shape.Radius
+        return input.TurnedDown.Where(t => t.Spot is var spot
+            && Math.Abs(spot.X - shape.X) <= spot.Radius + shape.Radius
             && Math.Abs(spot.Y - shape.Y) <= (spot.Radius + shape.Radius) * 2
-            && HoldSameness.SamePlace(HoldSameness.Measure(spot, spot.ShapePoints is { Count: >= 3 } ? shape : new Hold { X = shape.X, Y = shape.Y, Radius = shape.Radius }), options));
+            && HoldSameness.SamePlace(HoldSameness.Measure(spot, spot.ShapePoints is { Count: >= 3 } ? shape : new Hold { X = shape.X, Y = shape.Y, Radius = shape.Radius }), options))
+            .Select(t => t.Earlier)
+            .OrderBy(e => e.Kind)
+            .FirstOrDefault();
     }
 
     /// <summary>True for a hold a re-detect may look at: not virtual and not hidden as kept but not confirmed.</summary>
@@ -137,7 +146,10 @@ internal static class RedetectRules
             || input.Existing.Any(e => IsMatchable(e.Hold) && Near(e.Hold) && ShapeGeometry.Contains(HoldShapePolygon.Of(e.Hold), centre));
     }
 
-    /// <summary>True for a detection on an empty spot that is a part of a hold, smaller than any hold, or a sliver.</summary>
+    /// <summary>
+    /// True for a detection on an empty spot that is a part of a hold, a screw or bolt hole (<see cref="NewHoldMinMm"/>),
+    /// a sliver, a printed marker, or a board or volume that covers several holds.
+    /// </summary>
     /// <param name="input">The planner's input.</param>
     /// <param name="detection">Index of the detection.</param>
     /// <param name="medianRadius">The median radius of this photo's detections.</param>
@@ -145,7 +157,10 @@ internal static class RedetectRules
     public static bool IsNoHold(RedetectInput input, int detection, double medianRadius)
     {
         var shape = input.Detections[detection].Shape;
-        return IsPartOfAHold(input, detection, medianRadius) || IsInsideAHold(shape, input) || IsTooSmall(shape) || IsSliver(shape, medianRadius);
+        return IsPartOfAHold(input, detection, medianRadius) || IsInsideAHold(shape, input) || IsTooSmall(shape) || IsSliver(shape, medianRadius)
+            || shape is { WidthMm: > 0, HeightMm: > 0 } && Math.Max(shape.WidthMm.Value, shape.HeightMm.Value) < NewHoldMinMm
+            || RedetectMarkers.On(input.Markers, shape)
+            || (shape.ShapePoints is { Count: >= 3 } && RedetectSafety.CoveredHolds(input, HoldShapePolygon.Of(shape), null) >= RedetectSafety.MaxCoveredHolds);
     }
 
     /// <summary>True when a detection was measured and is smaller than any hold (<see cref="PartSizeMm"/>): a bolt hole, a screw head, a knot.</summary>

@@ -14,10 +14,11 @@ How things are counted
               the outline bled from one hold onto its neighbour.
   split       a hold with a second detection lying (>= 60 %) inside it that is at least 15 % of its size and is not a
               hold of its own; smaller ones are counted as "parts" (bolt holes, features).
-  extras      detections that are no hold: "rejected" where a person already said no hold, "ignored" where the data
-              says nothing, "unverified" for the rest (new holds, or false detections: only looking tells).
-  precision   matched / (matched + rejected + parts + split pieces + unverified): a lower bound, since some
-              unverified ones are real holds nobody recorded.
+  extras      detections that are no hold on today's wall: "rejected" where a person answered "Not a hold" or deleted a
+              hold, "ignored" where the data says nothing, "unverified" for the rest. None of these is known to be wrong:
+              the owner found most of his earlier "Not a hold" answers wrong, so "rejected" is only a label.
+  precision   matched / (matched + parts + split pieces + every extra): a lower bound, since many extras are real
+              holds nobody recorded. "Known wrong" counts only parts and split pieces.
 """
 import argparse
 import json
@@ -224,7 +225,8 @@ def summarise(panel: dict) -> dict:
     wrong = extras.get("rejected", 0) + extras.get("part", 0) + extras.get("split", 0) + extras.get("unverified", 0)
     out = {"all": block(holds) | {
         "detections": panel["detected"], "precisionLowerBound": _ratio(found, found + wrong),
-        "precisionKnownWrongOnly": _ratio(found, found + extras.get("rejected", 0) + extras.get("part", 0) + extras.get("split", 0)),
+        "precisionKnownWrongOnly": _ratio(found, found + extras.get("part", 0) + extras.get("split", 0)),
+        "precisionKnownWrongOldRule": _ratio(found, found + extras.get("rejected", 0) + extras.get("part", 0) + extras.get("split", 0)),
         "extras": extras, "mergeErrors": len(panel["merges"]), "splitErrors": sum(1 for r in holds if r["split"]),
         "stacks": panel["stacks"]["counts"], "detectMs": panel["detectMs"], "outlineMs": panel["outlineMs"],
         "methods": panel["methods"]}}

@@ -64,7 +64,11 @@ public static class RedetectProposals
             new RedetectProposal($"merge:{m.KeptId}:{m.RemovedId}", RedetectProposalKind.Merge, m.KeptId, [m.RemovedId], [], false, m.Score)));
         proposals.AddRange(stacks.Select(s =>
             new RedetectProposal($"stack:{s.Upper.Id}:{s.Base.Id}", RedetectProposalKind.Stack, s.Upper.Id, [s.Base.Id], [], false, s.Inside)));
-        proposals.AddRange(decisions.NewDetections.Select(i => new RedetectProposal($"new:{i}", RedetectProposalKind.NewHold, null, [], [i], false, 0)));
+        proposals.AddRange(decisions.NewDetections.Select(i => new RedetectProposal($"new:{i}", RedetectProposalKind.NewHold, null, [], [i], false, 0)
+        {
+            Earlier = decisions.Earlier.GetValueOrDefault(i),
+            Doubt = RedetectSafety.CheckNewHold(input.Detections[i].Shape),
+        }));
         proposals.AddRange(decisions.Removed.Select(id => new RedetectProposal($"gone:{id}", RedetectProposalKind.NotFound, id, [], [], false, 0)));
         proposals.AddRange(decisions.HandOffers.Select(o =>
             new RedetectProposal($"hand:{o.HoldId}", RedetectProposalKind.HandShape, o.HoldId, [], [o.Detection], false, Overlap(byId[o.HoldId], input, o.Detection).Iou)
@@ -95,7 +99,9 @@ public static class RedetectProposals
         }
 
         // A proposal the detector is unsure about starts out kept: it is never also one to accept unseen.
-        return [.. proposals.Select(p => p with { Safe = p.Safe && !p.Unsure, Stamp = RedetectStamps.Of(p, byId, input.Detections) })];
+        // A shape that covers several other holds (a whole board with its pockets, a volume) is never proposed.
+        return [.. proposals.Where(p => !CoversHolds(p, input, byId))
+            .Select(p => p with { Safe = p.Safe && !p.Unsure, Stamp = RedetectStamps.Of(p, byId, input.Detections) })];
     }
 
     /// <summary>The decisions that are written when only the given proposals were accepted.</summary>
@@ -157,6 +163,11 @@ public static class RedetectProposals
 
         return stacks;
     }
+
+    private static bool CoversHolds(RedetectProposal proposal, RedetectInput input, Dictionary<Guid, Entities.Hold> byId) =>
+        proposal.Kind is RedetectProposalKind.BetterShape or RedetectProposalKind.HandShape
+        && input.Detections[proposal.Detections[0]].Shape is { ShapePoints.Count: >= 3 } shape
+        && RedetectSafety.CoveredHolds(input, Detection.Outlines.HoldShapePolygon.Of(shape), byId[proposal.HoldId!.Value]) >= RedetectSafety.MaxCoveredHolds;
 
     private static HoldOverlap Overlap(Entities.Hold hold, RedetectInput input, int detection) =>
         HoldSameness.Measure(hold, input.Detections[detection].Shape);

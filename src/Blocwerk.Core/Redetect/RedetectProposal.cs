@@ -52,6 +52,9 @@ public enum RedetectDoubt
 
     /// <summary>The pieces of a split leave out a part of the stored hold.</summary>
     PiecesMissPart = 6,
+
+    /// <summary>A new hold that hardly stands out from the wall: it may be bare wall.</summary>
+    MaybeBareWall = 7,
 }
 
 /// <summary>
@@ -82,6 +85,9 @@ public sealed record RedetectProposal(
     /// "keep" from the start; only a person accepting it changes the hold.
     /// </summary>
     public RedetectDoubt Doubt { get; init; }
+
+    /// <summary>Gets what was answered at this spot before, for a new hold; null when nothing was.</summary>
+    public RedetectEarlier? Earlier { get; init; }
 
     /// <summary>Gets a value indicating whether the detector is unsure about this proposal (<see cref="Doubt"/>).</summary>
     public bool Unsure => Doubt != RedetectDoubt.None;

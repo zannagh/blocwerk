@@ -39,6 +39,9 @@ public enum RedetectFilter
 
     /// <summary>A hold that was not found again.</summary>
     NotFound,
+
+    /// <summary>A new hold on a spot that was answered before ("Not a hold", set aside, or a deleted hold).</summary>
+    AnsweredBefore,
 }
 
 /// <summary>Which proposal belongs to which filter, and which cards start out answered "keep". Pure.</summary>
@@ -87,6 +90,7 @@ public static class RedetectFilters
             RedetectFilter.Stack => proposal.Kind == RedetectProposalKind.Stack,
             RedetectFilter.NewHold => proposal.Kind == RedetectProposalKind.NewHold,
             RedetectFilter.NotFound => proposal.Kind == RedetectProposalKind.NotFound,
+            RedetectFilter.AnsweredBefore => proposal.Earlier is not null,
             _ => true,
         };
     }

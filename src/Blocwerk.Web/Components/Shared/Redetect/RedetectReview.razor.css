@@ -18,6 +18,7 @@
 .redetect-review ::deep .redetect-answer.is-kept { background: var(--text-heading); color: var(--bg-surface); }
 .redetect-review ::deep .redetect-answer.is-accepted { background: var(--accent); color: var(--on-accent); }
 .redetect-review ::deep .redetect-unsure { margin: 0; padding: 8px 10px; border-left: 4px solid var(--status-warning); border-radius: var(--r-sm); background: var(--bg-surface-alt); color: var(--text-heading); font-size: 0.9rem; line-height: 1.35; }
+.redetect-review ::deep .redetect-earlier { margin: 0; padding: 6px 10px; border-left: 4px solid var(--status-info, var(--border-light)); border-radius: var(--r-sm); background: var(--bg-surface-alt); color: var(--text-heading); font-size: 0.85rem; }
 .redetect-review ::deep .redetect-choice { border-width: 2px; }
 .redetect-review ::deep .redetect-choice.is-chosen { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
 .redetect-review ::deep .redetect-choice.is-chosen::before { content: "\2713\00a0"; }

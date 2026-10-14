@@ -18,6 +18,29 @@ public sealed record RedetectDetection(Hold Shape, string? Color);
 /// <param name="Linked">True when it is linked to a hold on another panel.</param>
 public sealed record RedetectExisting(Hold Hold, IReadOnlySet<Guid> Boulders, int ActiveBoulders, bool Linked);
 
+/// <summary>What a person said earlier about a spot where the detector now finds a hold.</summary>
+public enum RedetectEarlierKind
+{
+    /// <summary>The detection there was answered "Not a hold".</summary>
+    NotAHold = 0,
+
+    /// <summary>An update set the detection there aside, and nobody answered it.</summary>
+    SetAside = 1,
+
+    /// <summary>A person deleted a hold there.</summary>
+    Deleted = 2,
+}
+
+/// <summary>An earlier answer about a spot. It is shown on the card; it is not taken as the truth.</summary>
+/// <param name="Kind">What was said.</param>
+/// <param name="When">When, where it is known.</param>
+public sealed record RedetectEarlier(RedetectEarlierKind Kind, DateTimeOffset? When);
+
+/// <summary>A spot of the photo with an earlier answer about it.</summary>
+/// <param name="Spot">Where, as a hold that is never stored.</param>
+/// <param name="Earlier">What was said there.</param>
+public sealed record RedetectTurnedDown(Hold Spot, RedetectEarlier Earlier);
+
 /// <summary>What a matched hold takes from its detection.</summary>
 public enum RedetectShapeChange
 {
@@ -74,7 +97,13 @@ public sealed record RedetectDecisions(
     /// <summary>Gets the stored holds the detector sees as several holds; their detections are in none of the other lists.</summary>
     public IReadOnlyList<RedetectSplit> Splits { get; init; } = [];
 
-    /// <summary>Gets the number of detections left out because a person already said there is no hold on that spot.</summary>
+    /// <summary>
+    /// Gets the earlier answers about the spots of new detections, by detection: "Not a hold", set aside by an update, or
+    /// a deleted hold. Such a detection is still proposed; its card says what was answered there before.
+    /// </summary>
+    public IReadOnlyDictionary<int, RedetectEarlier> Earlier { get; init; } = new Dictionary<int, RedetectEarlier>();
+
+    /// <summary>Gets the number of new detections on a spot with an earlier answer (<see cref="Earlier"/>).</summary>
     public int TurnedDown { get; init; }
 
     /// <summary>
@@ -99,13 +128,17 @@ public sealed record RedetectInput(
     bool CanMerge)
 {
     /// <summary>
-    /// Gets the spots on this photo where a person already said "no hold": a detection answered "Not a hold" or still
-    /// waiting in the look-over, and holds a person deleted. A detection on one of them never becomes a new hold.
+    /// Gets the spots on this photo with an earlier answer: a detection answered "Not a hold" or still waiting in the
+    /// look-over, and holds a person deleted. Those answers were often wrong, so a detection there is proposed like
+    /// any other; its card says what was answered.
     /// </summary>
-    public IReadOnlyList<Hold> TurnedDown { get; init; } = [];
+    public IReadOnlyList<RedetectTurnedDown> TurnedDown { get; init; } = [];
 
     /// <summary>
     /// Gets the holds a person moved or resized by hand without that being flagged on the hold: they count as hand-made.
     /// </summary>
     public IReadOnlySet<Guid> HandEdited { get; init; } = new HashSet<Guid>();
+
+    /// <summary>Gets the printed markers on the photo, corners in photo fractions: a detection on one is never a hold.</summary>
+    public IReadOnlyList<IReadOnlyList<(double X, double Y)>> Markers { get; init; } = [];
 }

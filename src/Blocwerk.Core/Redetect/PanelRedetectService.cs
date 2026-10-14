@@ -48,6 +48,7 @@ public sealed partial class PanelRedetectService : IPanelRedetectService
     private readonly IHoldStackService? stacks;
     private readonly IHoldRefinementQueue? refinement;
     private readonly BlocwerkSettings? settings;
+    private readonly IMarkerDetectionService? markers;
 
     /// <summary>Initializes a new instance of the <see cref="PanelRedetectService"/> class.</summary>
     /// <param name="dbContextFactory">Context factory.</param>
@@ -62,6 +63,7 @@ public sealed partial class PanelRedetectService : IPanelRedetectService
     /// <param name="stacks">Records that a hold sits on another; without it accepted stacks are not written.</param>
     /// <param name="refinement">Refines the 3D shapes of the holds whose outline changed, in the background.</param>
     /// <param name="settings">The installation's settings: with them, re-detect only runs where it is switched on.</param>
+    /// <param name="markers">Finds the printed markers on the photo that are not stored for it; without it only the stored ones are avoided.</param>
     public PanelRedetectService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
         ICurrentUserService currentUserService,
@@ -74,8 +76,10 @@ public sealed partial class PanelRedetectService : IPanelRedetectService
         IKioskContext? kioskContext = null,
         IHoldStackService? stacks = null,
         IHoldRefinementQueue? refinement = null,
-        BlocwerkSettings? settings = null)
+        BlocwerkSettings? settings = null,
+        IMarkerDetectionService? markers = null)
     {
+        this.markers = markers;
         this.settings = settings;
         this.stacks = stacks;
         this.refinement = refinement;
@@ -259,6 +263,7 @@ public sealed partial class PanelRedetectService : IPanelRedetectService
         {
             TurnedDown = await RedetectHistory.TurnedDownAsync(db, panel, ct),
             HandEdited = await RedetectHistory.HandEditedAsync(db, panel, ct),
+            Markers = panel.Photo is { } photo ? await RedetectMarkers.LoadAsync(db, panel, photo, markers, logger, ct) : [],
         };
     }
 

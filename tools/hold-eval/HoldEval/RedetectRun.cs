@@ -51,7 +51,7 @@ public static class RedetectRun
         var enrichment = new HoldEnrichmentService(
             settings, NullLogger<HoldEnrichmentService>.Instance, HoldDetectionServices.Outliner(settings.HoldDetection.Segmenter, detector), new ArucoMarkerDetectionService());
         var service = new PanelRedetectService(
-            factory, factory.ActingAs(owner), detector, new HoldSamenessOptions(), NullLogger<PanelRedetectService>.Instance, enrichment, CopyHost.MergesPossible());
+            factory, factory.ActingAs(owner), detector, new HoldSamenessOptions(), NullLogger<PanelRedetectService>.Instance, enrichment, CopyHost.MergesPossible(), markers: new ArucoMarkerDetectionService());
         foreach (var panel in panels)
         {
             var clock = System.Diagnostics.Stopwatch.StartNew();
@@ -85,7 +85,9 @@ public static class RedetectRun
             ShapePoints = d.Shape.ShapePoints?.Select(p => new[] { p.Dx, p.Dy }).ToList(),
             ShapeHoles = d.Shape.ShapeHoles?.Select(ring => ring.Select(p => new[] { p.Dx, p.Dy }).ToList()).ToList(),
             Color = d.Color,
+            SizeMm = d.Shape.WidthMm is > 0 && d.Shape.HeightMm is > 0 ? Math.Max(d.Shape.WidthMm.Value, d.Shape.HeightMm.Value) : null,
+            Pale = d.Shape.OutlinePale,
         }),
-        Proposals = plan.Proposals.Select(p => new { p.Key, Kind = p.Kind.ToString(), p.HoldId, p.OtherHoldIds, p.Detections, p.Safe, p.Unsure, Doubt = p.Doubt.ToString(), p.Score }),
+        Proposals = plan.Proposals.Select(p => new { p.Key, Kind = p.Kind.ToString(), p.HoldId, p.OtherHoldIds, p.Detections, p.Safe, p.Unsure, Doubt = p.Doubt.ToString(), Earlier = p.Earlier?.Kind.ToString(), p.Score }),
     };
 }

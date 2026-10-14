@@ -84,7 +84,17 @@ internal static class RedetectCopy
         RedetectDoubt.TakesInAnotherHold => "The new shape reaches over another hold.",
         RedetectDoubt.PaleHold => "The hold hardly stands out from the wall.",
         RedetectDoubt.PiecesMissPart => "The pieces leave out part of the hold.",
+        RedetectDoubt.MaybeBareWall => "It hardly stands out from the wall. It may be bare wall.",
         _ => string.Empty,
+    };
+
+    /// <summary>What was answered at the spot before, for the card; null when nothing was.</summary>
+    public static string? Earlier(RedetectEarlier? earlier) => earlier switch
+    {
+        null => null,
+        { Kind: RedetectEarlierKind.NotAHold } => $"You answered \"Not a hold\" here{On(earlier.When)}.",
+        { Kind: RedetectEarlierKind.Deleted } => $"You deleted a hold here{On(earlier.When)}.",
+        _ => $"An update set this detection aside{On(earlier.When)} and nobody answered it.",
     };
 
     /// <summary>The state of a card, beside its heading.</summary>
@@ -111,6 +121,7 @@ internal static class RedetectCopy
         RedetectFilter.Stack => "Hold on a hold",
         RedetectFilter.NewHold => "New hold",
         RedetectFilter.NotFound => "Not found",
+        RedetectFilter.AnsweredBefore => "Answered before",
         _ => "All",
     };
 
@@ -126,19 +137,9 @@ internal static class RedetectCopy
         $"{PlainCopy.Plural(plan.Proposals.Count, "proposal")} for this photo. Nothing changes until you apply.";
 
     /// <summary>What the review does not show, or null when nothing was left out.</summary>
-    public static string? LeftOut(PanelRedetectPlan plan)
-    {
-        var parts = new List<string>();
-        if (plan.TurnedDown > 0)
-        {
-            parts.Add($"{PlainCopy.Plural(plan.TurnedDown, "detection")} on spots where somebody already said there is no hold.");
-        }
+    public static string? LeftOut(PanelRedetectPlan plan) => plan.Untraced > 0
+        ? $"{PlainCopy.Plural(plan.Untraced, "detection")} on an empty spot that is no hold: without a traceable outline, a screw or bolt hole, a printed marker, a sliver, a part of a hold, or a board that covers several holds."
+        : null;
 
-        if (plan.Untraced > 0)
-        {
-            parts.Add($"{PlainCopy.Plural(plan.Untraced, "detection")} on an empty spot without a traceable outline.");
-        }
-
-        return parts.Count == 0 ? null : string.Join(" ", parts);
-    }
+    private static string On(DateTimeOffset? when) => when is { } at ? $" on {at:d MMM yyyy}" : string.Empty;
 }

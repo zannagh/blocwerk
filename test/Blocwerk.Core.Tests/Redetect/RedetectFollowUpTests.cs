@@ -96,6 +96,34 @@ public class RedetectFollowUpTests
         Assert.Contains(3, Plan(half: 0.0175).NewDetections);
     }
 
+    [Fact]
+    public void ADetectionOnAPrintedMarker_OrMeasuredSmallerThanAnyHold_OnBareWall_IsNotProposed_AndOneThatCoversSeveralHoldsIsNot()
+    {
+        var far = new[] { Traced(0.1, 0.1, 0.03, 0.03), Traced(0.9, 0.1, 0.03, 0.03), Traced(0.1, 0.9, 0.03, 0.03) };
+        var onMarker = Traced(0.5, 0.5, 0.02, 0.02);
+        var screwHole = Traced(0.7, 0.7, 0.02, 0.02);
+        (screwHole.Shape.WidthMm, screwHole.Shape.HeightMm) = (30, 28);
+        var foothold = Traced(0.3, 0.7, 0.02, 0.02);
+        (foothold.Shape.WidthMm, foothold.Shape.HeightMm) = (60, 45);
+        var board = Traced(0.5, 0.25, 0.1, 0.05);
+        Hold Pocket(double x) => new() { X = x, Y = 0.25, Radius = 0.01, IsAutoDetected = true };
+        var input = new RedetectInput(
+            [.. new[] { Pocket(0.45), Pocket(0.5), Pocket(0.55) }.Select(h => new RedetectExisting(h, new HashSet<Guid>(), 0, false))],
+            [.. far, onMarker, screwHole, foothold, board],
+            new HashSet<(Guid, Guid)>(),
+            CanMerge: true)
+        {
+            Markers = [[(0.48, 0.48), (0.52, 0.48), (0.52, 0.52), (0.48, 0.52)]],
+        };
+
+        var added = RedetectPlanner.Plan(input, Options).NewDetections;
+
+        Assert.Contains(5, added);
+        Assert.DoesNotContain(3, added);
+        Assert.DoesNotContain(4, added);
+        Assert.DoesNotContain(6, added);
+    }
+
     private static RedetectDetection Traced(double x, double y, double halfWidth, double halfHeight) => new(
         new Hold
         {
