@@ -210,6 +210,16 @@ public class RedetectProposalTests
     }
 
     [Fact]
+    public void AShapeOnlyOneMethodTraced_IsNeverInTheBulkClass()
+    {
+        var hold = Outlined(0.3, 0.3, 0.03, 0.03);
+        var detection = Square(0.303, 0.3, 0.024, 0.03);
+        detection.Shape.OutlineCorroborated = false;
+
+        Assert.False(Single(Input([hold], [detection])).Safe);
+    }
+
+    [Fact]
     public void AStack_IsAProposal_AndItsKeyNamesBothHolds()
     {
         var volume = Outlined(0.5, 0.5, 0.1, 0.1);
@@ -246,6 +256,7 @@ public class RedetectProposalTests
         Y = y,
         Radius = Math.Max(halfWidth, halfHeight),
         IsAutoDetected = true,
+        OutlineCorroborated = true,
         OutlineSource = HoldOutlineSource.AutoContour,
         ShapePoints =
         [

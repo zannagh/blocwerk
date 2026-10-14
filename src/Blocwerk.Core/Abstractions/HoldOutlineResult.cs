@@ -38,4 +38,11 @@ public sealed record HoldOutlineResult(
     double Confidence,
     HoldOutlineMethod Method,
     HoldFingerprint Fingerprint,
-    List<List<ShapePoint>>? ShapeHoles = null);
+    List<List<ShapePoint>>? ShapeHoles = null)
+{
+    /// <summary>
+    /// Gets a value indicating whether a second, independent method found the same outline (or, where the second method
+    /// found nothing, the outline spans the detector box): such an outline can be accepted without a look.
+    /// </summary>
+    public bool Corroborated { get; init; }
+}

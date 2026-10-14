@@ -51,6 +51,28 @@ public class OutlineConfidenceScoringTests
     }
 
     [Fact]
+    public void TheSameHold_GetsTheSameOutline_WhateverRanOnTheThreadBefore()
+    {
+        // GrabCut draws from OpenCV's per-thread random generator; another history on the thread must not change the outline.
+        using Mat img = SyntheticWall.Wood(600, 500);
+        Point[] truth = SyntheticWall.Blob(new Point(300, 240), 80, 60, seed: 11);
+        SyntheticWall.PaintHold(img, truth, new Scalar(200, 212, 222), 0);
+        Rect box = Cv2.BoundingRect(truth);
+        HoldSeed seed = HoldSeed.FromPixelBox(box.X, box.Y, box.Width, box.Height, img.Width, img.Height);
+        HoldOutlineResult After(ulong history)
+        {
+            Cv2.SetTheRNG(history);
+            using var session = new OpenCvHoldOutlineService().OpenSession(img);
+            return session.Outline(seed);
+        }
+
+        var outlines = new ulong[] { 1, 987654321, 42, 7777777 }.Select(After).ToList();
+
+        Assert.Equal(HoldOutlineMethod.GrabCut, outlines[0].Method);
+        Assert.All(outlines, o => Assert.Equal(outlines[0].ShapePoints!.Select(p => (p.Dx, p.Dy)), o.ShapePoints!.Select(p => (p.Dx, p.Dy))));
+    }
+
+    [Fact]
     public void LessContrast_NeverScoresHigher()
     {
         var strong = OutlineOnWood(new Scalar(40, 40, 200));

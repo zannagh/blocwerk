@@ -27,6 +27,7 @@ public partial class WallDetail
 
     private PanelRedetectPlan? redetectPlan;
     private bool redetectBusy;
+    private bool redetectPlanning;
 
     [Inject]
     private IPanelRedetectService PanelRedetect { get; set; } = null!;
@@ -53,8 +54,17 @@ public partial class WallDetail
             return;
         }
 
+        if (redetectPlanning)
+        {
+            await ShowToast("Re-detect is still looking at the photo");
+            return;
+        }
+
+        redetectPlanning = true;
         try
         {
+            // Detecting and outlining a panel photo takes a minute or two; the page stays usable meanwhile.
+            await ShowToast("Re-detect is looking at the photo. This takes a minute or two, the proposals open when it is done");
             var plan = await PanelRedetect.PlanAsync(WallId, _editingPanel.Id);
             if (plan.Proposals.Count > 0)
             {
@@ -68,6 +78,10 @@ public partial class WallDetail
         catch (Exception ex)
         {
             await ShowToast($"Re-detect failed: {ex.Message}");
+        }
+        finally
+        {
+            redetectPlanning = false;
         }
     }
 

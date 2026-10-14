@@ -113,7 +113,7 @@ def panel_entries(truth: dict, old: dict, new: dict, photo: Image.Image, spots: 
             entry |= {"iouNew": m["iou"], "thinNew": m["thin"], "coversNew": m["covers"], "circleNew": d["outline"] is None,
                       "fragmentNew": geo.is_fragment(d, np_[focus_new[0]], width, height),
                       "roughNew": d["outline"] is not None and (d.get("outlineConfidence") or 1) <= 0.2,
-                      "detectorConfidence": d.get("confidence")}
+                      "detectorConfidence": d.get("confidence"), "detNew": d["index"]}
         if status == "stacked" and proposal:
             base = proposal["otherHoldIds"][0]
             entry |= {"role": "stacked", "stackedOn": base} if proposal["holdId"] == hold["id"] else {"role": "base", "children": [proposal["holdId"]]}
@@ -121,6 +121,10 @@ def panel_entries(truth: dict, old: dict, new: dict, photo: Image.Image, spots: 
             o, n = op[focus_old[0]], np_[focus_new[0]]
             entry |= {"areaNewOverOld": round(n.area / o.area, 3) if o.area else None,
                       "newInsideOld": round(geo.inside(n, o), 3), "oldInsideNew": round(geo.inside(o, n), 3)}
+        if status in ("same", "missing"):
+            # No change is proposed for it (or it is not detected): there is no new shape to judge.
+            entry["nothingToJudge"] = True
+            entry["note"] = "No change is proposed for this hold." if status == "same" else "Not detected; nothing is proposed and the hold stays as it is."
         entry["blank"] = [i for i, f in ((1, focus_old), (2, focus_new)) if not f]
         frame = tiles.window([hold] + [holds[i] for i in others] + [olds[i] for i in focus_old] + [news[i] for i in focus_new], width, height)
         is_child = status == "stacked" and entry.get("role") == "stacked"
@@ -259,7 +263,7 @@ def main() -> None:
                 entry["ownerId"] = owner
         given = next((v for k, v in verdicts.items() if entry["id"].startswith(k)), None)
         if given:
-            entry |= {"verdict": given["verdict"], "note": given.get("note", ""), "reviewed": True}
+            entry |= {"verdict": given["verdict"], "note": given.get("note", "") or entry.get("note", ""), "reviewed": True}
     order = sorted(range(len(entries)), key=lambda k: sort_key(entries[k]))
     for n, sheet in enumerate(tiles.sheets([images[k] for k in order], COLUMNS, ROWS), start=1):
         sheet.save(args.out / f"sheet-{n:02d}.jpg", quality=72, optimize=True)
@@ -281,6 +285,11 @@ def main() -> None:
         "placeholders": placeholder_table(out_entries),
         "againstOldOutline": against_old(out_entries),
         "newHolds": new_hold_table(out_entries),
+        "judging": {"toJudge": sum(1 for e in out_entries if not e.get("nothingToJudge")),
+                    "judged": sum(1 for e in out_entries if e["reviewed"] and not e.get("nothingToJudge")),
+                    "nothingToJudge": sum(1 for e in out_entries if e.get("nothingToJudge"))},
+        "bulkClass": {"holds": sum(1 for e in out_entries if "bulk-safe" in e["tags"]),
+                      "verdicts": dict(Counter(e["verdict"] for e in out_entries if "bulk-safe" in e["tags"]))},
     }
     if args.extra:
         summary |= json.loads(args.extra.read_text())

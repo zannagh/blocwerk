@@ -46,6 +46,9 @@ public sealed partial class PanelRedetectService
             if (decisions.Shapes.Count + decisions.NewDetections.Count + decisions.Removed.Count > 0)
             {
                 await WriteAsync(db, wall, panel, input, decisions, ct);
+
+                // A new outline drops the hold's 3D shape, which was traced from the old one: it is made again.
+                refinement?.Enqueue(plan.WallId, decisions.Shapes.Select(s => s.HoldId));
             }
         }
 

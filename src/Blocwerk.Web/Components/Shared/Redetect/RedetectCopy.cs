@@ -79,7 +79,10 @@ internal static class RedetectCopy
     public static string Intro(PanelRedetectPlan plan)
     {
         var safe = plan.Proposals.Count(p => p.Safe);
-        var parts = new List<string> { $"{PlainCopy.Plural(plan.Proposals.Count, "proposal")}. Nothing changes until you apply your answers." };
+        var parts = new List<string>
+        {
+            $"{PlainCopy.Plural(plan.Proposals.Count, "proposal")}. Nothing changes until you apply your answers. A hold that gets a new outline gets its 3D shape made again afterwards, in the background.",
+        };
         if (safe > 0)
         {
             parts.Add($"{PlainCopy.Plural(safe, "shape update")} keep the hold where and about as large as it is and can be accepted together.");

@@ -45,6 +45,7 @@ public sealed partial class PanelRedetectService : IPanelRedetectService
     private readonly IChangeJournal? journal;
     private readonly IKioskContext? kioskContext;
     private readonly IHoldStackService? stacks;
+    private readonly IHoldRefinementQueue? refinement;
 
     /// <summary>Initializes a new instance of the <see cref="PanelRedetectService"/> class.</summary>
     /// <param name="dbContextFactory">Context factory.</param>
@@ -57,6 +58,7 @@ public sealed partial class PanelRedetectService : IPanelRedetectService
     /// <param name="journal">Names the journal batch; optional as on the other hold services.</param>
     /// <param name="kioskContext">The kiosk context, when the host has one.</param>
     /// <param name="stacks">Records that a hold sits on another; without it accepted stacks are not written.</param>
+    /// <param name="refinement">Refines the 3D shapes of the holds whose outline changed, in the background.</param>
     public PanelRedetectService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
         ICurrentUserService currentUserService,
@@ -67,9 +69,11 @@ public sealed partial class PanelRedetectService : IPanelRedetectService
         IHoldDuplicateService? duplicates = null,
         IChangeJournal? journal = null,
         IKioskContext? kioskContext = null,
-        IHoldStackService? stacks = null)
+        IHoldStackService? stacks = null,
+        IHoldRefinementQueue? refinement = null)
     {
         this.stacks = stacks;
+        this.refinement = refinement;
         this.dbContextFactory = dbContextFactory;
         this.currentUserService = currentUserService;
         this.holdDetectionService = holdDetectionService;
@@ -114,8 +118,19 @@ public sealed partial class PanelRedetectService : IPanelRedetectService
     /// The stored holds of the panel that sit on another stored hold and are not recorded as such. Stacking is a wall
     /// admin's decision, like a merge: for anybody else nothing is proposed.
     /// </summary>
-    private static List<HoldStackPlan> Stacks(RedetectInput input, (int Width, int Height)? size) =>
-        input.CanMerge ? HoldStacking.Plan([.. input.Existing.Select(e => e.Hold).Where(RedetectPlanner.IsMatchable)], null, size) : [];
+    private static List<HoldStackPlan> Stacks(RedetectInput input, (int Width, int Height)? size)
+    {
+        if (!input.CanMerge)
+        {
+            return [];
+        }
+
+        // A bolt hole or a pocket that was recorded as a hold lies inside its hold too: that is no hold on a hold.
+        var radii = input.Existing.Select(e => e.Hold.Radius).Order().ToList();
+        var median = radii.Count == 0 ? 0 : radii[radii.Count / 2];
+        return [.. HoldStacking.Plan([.. input.Existing.Select(e => e.Hold).Where(RedetectPlanner.IsMatchable)], null, size)
+            .Where(s => !RedetectRules.IsPart(s.Upper, input, median))];
+    }
 
     private static PanelRedetectSummary Summarize(RedetectInput input, RedetectDecisions decisions)
     {
@@ -167,7 +182,9 @@ public sealed partial class PanelRedetectService : IPanelRedetectService
     private async Task<List<RedetectDetection>> DetectAsync(BlocwerkDbContext db, Wall wall, WallPanel panel, CancellationToken ct)
     {
         var photo = panel.Photo!;
-        var detected = await holdDetectionService.DetectHoldsAsync(photo);
+
+        // The detector works for seconds on the calling thread; from the editor that thread is the page's own.
+        var detected = await Task.Run(() => holdDetectionService.DetectHoldsAsync(photo), ct);
         var fresh = detected.Select(d => new Hold
         {
             WallId = wall.Id,

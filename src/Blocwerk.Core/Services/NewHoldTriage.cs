@@ -8,7 +8,7 @@ using Blocwerk.Core.Enums;
 namespace Blocwerk.Core.Services;
 
 /// <summary>An unpaired staged detection, in RAW pixels of the staged photo (radius 0: size unknown).</summary>
-public readonly record struct TriageCandidate(Guid Id, double X, double Y, double RadiusPx = 0);
+public readonly record struct TriageCandidate(Guid Id, double X, double Y, double RadiusPx = 0, bool Confident = false);
 
 /// <summary>A hold's spot on a staged photo, RAW pixels.</summary>
 public readonly record struct TriageSpot(double X, double Y, double RadiusPx);
@@ -47,6 +47,17 @@ public static class NewHoldTriage
 
     /// <summary>Correlation at or above which the old photo already showed the same thing.</summary>
     public const double SameAsOldScore = 0.6;
+
+    /// <summary>The detector confidence from which a detection with a traced outline is never dropped as unchanged.</summary>
+    public const double ConfidentDetection = 0.9;
+
+    /// <summary>True for a detection the detector is sure of and whose outline was really traced (not a circle, not a rough shape).</summary>
+    /// <param name="confidence">The detector's confidence.</param>
+    /// <param name="outlined">Whether the hold has an outline.</param>
+    /// <param name="outlineConfidence">The outliner's confidence, when it gave one.</param>
+    /// <returns>Whether the detection is confident and plausible.</returns>
+    public static bool IsConfident(double confidence, bool outlined, double? outlineConfidence) =>
+        confidence >= ConfidentDetection && outlined && outlineConfidence is > Detection.Outlines.HoldOutlineRefiner.CircleConfidenceCeiling;
 
     /// <summary>The marker quad grown by this factor also covers its white print border.</summary>
     public const double MarkerGrowth = 1.35;
@@ -110,7 +121,9 @@ public static class NewHoldTriage
                 continue;
             }
 
-            if (onNotFound)
+            // A detection the detector is sure of and that has a traced outline is a hold, also where the spot looks
+            // as it did on the old photo: the old wall simply had no record of it (or only a placeholder circle).
+            if (onNotFound || c.Confident)
             {
                 continue;
             }

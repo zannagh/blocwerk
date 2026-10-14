@@ -58,7 +58,7 @@ public static class RedetectPlanner
         var traces = input.Detections.Any(d => RedetectRules.IsTraced(d.Shape));
         var untraced = fresh.Where(i => traces && !turnedDown.Contains(i) && !RedetectRules.IsTraced(input.Detections[i].Shape)).ToHashSet();
         var median = input.Detections.Count == 0 ? 0 : input.Detections.Select(d => d.Shape.Radius).Order().ElementAt(input.Detections.Count / 2);
-        var parts = fresh.Where(i => traces && !turnedDown.Contains(i) && !untraced.Contains(i) && RedetectRules.IsPartOfAHold(input, i, median)).ToHashSet();
+        var parts = fresh.Where(i => traces && !turnedDown.Contains(i) && !untraced.Contains(i) && RedetectRules.IsNoHold(input, i, median)).ToHashSet();
         return new RedetectDecisions(
             [.. draft.Shapes.Where(s => !split.Contains(s.HoldId))],
             [.. fresh.Where(i => !turnedDown.Contains(i) && !untraced.Contains(i) && !parts.Contains(i))],
@@ -185,8 +185,10 @@ public static class RedetectPlanner
         var verdict = HoldSameness.Judge(overlap, HoldColorAgreement.Compare(keeper.Hold.Color, other.Hold.Color), options);
 
         // Two holds a person placed are there on purpose, and a boulder that uses both would end up with one hold less.
+        // Two holds that each have a twin on a neighbour panel were told apart there: they are two holds.
+        var canMerge = input.CanMerge && !(keeper.Linked && other.Linked);
         var sure = verdict == HoldSamenessVerdict.Same
-            && input.CanMerge
+            && canMerge
             && !(HoldMergeRules.IsHandMade(keeper.Hold) && HoldMergeRules.IsHandMade(other.Hold))
             && !keeper.Boulders.Overlaps(other.Boulders);
         if (sure)
@@ -201,7 +203,7 @@ public static class RedetectPlanner
         }
 
         // Two stored holds on one detection that nothing tells apart: one question for a person, never a silent merge.
-        if (input.CanMerge && verdict is HoldSamenessVerdict.Same or HoldSamenessVerdict.Likely && !keeper.Boulders.Overlaps(other.Boulders))
+        if (canMerge && verdict is HoldSamenessVerdict.Same or HoldSamenessVerdict.Likely && !keeper.Boulders.Overlaps(other.Boulders))
         {
             draft.LikelyMerges.Add(new RedetectMerge(keeper.Hold.Id, other.Hold.Id, overlap.Score));
         }

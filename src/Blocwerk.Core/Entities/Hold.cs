@@ -100,6 +100,14 @@ public partial class Hold
     public HoldDetectedBox? DetectedBox { get; set; }
 
     /// <summary>
+    /// True on a fresh detection whose outline two independent methods agree on (see
+    /// <c>HoldOutlineResult.Corroborated</c>). Not stored: a re-detect reads it to tell which shape changes can be
+    /// accepted together.
+    /// </summary>
+    [NotMapped]
+    public bool OutlineCorroborated { get; set; }
+
+    /// <summary>
     /// Why a panel update's triage suggested to discard this staged detection (a <see cref="NewHoldDiscardReason"/> name),
     /// written while the update is staged so the change journal's delete entry of the promote carries it. Null on every
     /// hold the triage kept; a hold that is live with one was kept by a person against the suggestion.
@@ -269,6 +277,7 @@ public partial class Hold
         IsAutoDetected = IsAutoDetected,
         Confidence = Confidence,
         DetectedBox = DetectedBox,
+        OutlineCorroborated = OutlineCorroborated,
         DiscardReason = DiscardReason,
         Generation = Generation,
         NeedsReview = NeedsReview,

@@ -13,6 +13,51 @@ internal static class RedetectRules
     /// <summary>A detection under this share of the photo's median detection size can be a part of a hold.</summary>
     public const double PartSizeShare = 0.4;
 
+    /// <summary>...and so can one under this size, where its size in millimetres is known: no hold is smaller.</summary>
+    public const double PartSizeMm = 25;
+
+    /// <summary>
+    /// Inside another hold the limit is higher: a bolt recess with its washer or a pocket measures up to this, and a hold
+    /// screwed onto a hold is larger.
+    /// </summary>
+    public const double InsidePartSizeMm = 40;
+
+    /// <summary>...and where the surrounding hold was never measured, a part covers less than this share of its area.</summary>
+    public const double InsidePartAreaShare = 0.15;
+
+    /// <summary>A detection counts as inside a stored hold when this share of its outline's points lie in that hold's outline.</summary>
+    public const double InsideShare = 0.8;
+
+    /// <summary>An outline at least this many times longer than wide, on a detection smaller than normal, is a sliver.</summary>
+    public const double SliverAspect = 4;
+
+    /// <summary>
+    /// True when a detection is a sliver: smaller than the photo's median detection and several times longer than it is
+    /// wide. That is the gap between two holds or the edge of a shadow; a rail is thin too, but large.
+    /// </summary>
+    /// <param name="shape">The detection.</param>
+    /// <param name="medianRadius">The median radius of this photo's detections.</param>
+    /// <returns>Whether it is a sliver.</returns>
+    public static bool IsSliver(Hold shape, double medianRadius)
+    {
+        if (shape.ShapePoints is not { Count: >= 3 } points || shape.Radius >= medianRadius)
+        {
+            return false;
+        }
+
+        // The thinnest and the longest extent over directions 15 degrees apart.
+        double thinnest = double.MaxValue, longest = 0;
+        for (int k = 0; k < 12; k++)
+        {
+            double angle = k * Math.PI / 12, cos = Math.Cos(angle), sin = Math.Sin(angle);
+            var along = points.Select(p => (p.Dx * cos) + (p.Dy * sin)).ToList();
+            double extent = along.Max() - along.Min();
+            (thinnest, longest) = (Math.Min(thinnest, extent), Math.Max(longest, extent));
+        }
+
+        return longest >= SliverAspect * thinnest;
+    }
+
     /// <summary>True when the detection has an outline that was really traced: not a plain circle and not a rough shape.</summary>
     public static bool IsTraced(Hold detection) =>
         detection.ShapePoints is { Count: >= 3 } && detection.OutlineConfidence is not <= HoldOutlineRefiner.CircleConfidenceCeiling;
@@ -65,16 +110,85 @@ internal static class RedetectRules
     /// <returns>Whether it is a part.</returns>
     public static bool IsPartOfAHold(RedetectInput input, int detection, double medianRadius)
     {
-        var shape = input.Detections[detection].Shape;
-        if (shape.Radius >= PartSizeShare * medianRadius)
+        return IsPart(input.Detections[detection].Shape, input, medianRadius);
+    }
+
+    /// <summary>The same for any hold of the photo, stored or detected: tiny, and inside another one's traced outline.</summary>
+    /// <param name="shape">The hold.</param>
+    /// <param name="input">The planner's input.</param>
+    /// <param name="medianRadius">The median radius of this photo's detections.</param>
+    /// <returns>Whether it is a part.</returns>
+    public static bool IsPart(Hold shape, RedetectInput input, double medianRadius)
+    {
+        // In millimetres where the hold was measured, else against what is normal on this photo.
+        bool tiny = shape is { WidthMm: > 0, HeightMm: > 0 }
+            ? Math.Max(shape.WidthMm.Value, shape.HeightMm.Value) < InsidePartSizeMm
+            : shape.Radius < PartSizeShare * medianRadius;
+        if (!tiny)
         {
             return false;
         }
 
+        // Inside the traced outline of another detection, or inside a stored hold (its outline, or its circle).
         var centre = new P2(shape.X, shape.Y);
-        bool Holds(Hold other) => !ReferenceEquals(other, shape) && other.ShapePoints is { Count: >= 3 } && other.Radius > shape.Radius
-            && Math.Abs(other.X - shape.X) <= other.Radius * 2 && Math.Abs(other.Y - shape.Y) <= other.Radius * 3
-            && ShapeGeometry.Contains(HoldShapePolygon.Of(other), centre);
-        return input.Detections.Any(d => Holds(d.Shape)) || input.Existing.Any(e => IsMatchable(e.Hold) && Holds(e.Hold));
+        bool Near(Hold other) => !ReferenceEquals(other, shape) && other.Radius > shape.Radius
+            && Math.Abs(other.X - shape.X) <= other.Radius * 2 && Math.Abs(other.Y - shape.Y) <= other.Radius * 3;
+        return input.Detections.Any(d => Near(d.Shape) && d.Shape.ShapePoints is { Count: >= 3 } && ShapeGeometry.Contains(HoldShapePolygon.Of(d.Shape), centre))
+            || input.Existing.Any(e => IsMatchable(e.Hold) && Near(e.Hold) && ShapeGeometry.Contains(HoldShapePolygon.Of(e.Hold), centre));
+    }
+
+    /// <summary>True for a detection on an empty spot that is a part of a hold, smaller than any hold, or a sliver.</summary>
+    /// <param name="input">The planner's input.</param>
+    /// <param name="detection">Index of the detection.</param>
+    /// <param name="medianRadius">The median radius of this photo's detections.</param>
+    /// <returns>Whether it is no hold.</returns>
+    public static bool IsNoHold(RedetectInput input, int detection, double medianRadius)
+    {
+        var shape = input.Detections[detection].Shape;
+        return IsPartOfAHold(input, detection, medianRadius) || IsInsideAHold(shape, input) || IsTooSmall(shape) || IsSliver(shape, medianRadius);
+    }
+
+    /// <summary>True when a detection was measured and is smaller than any hold (<see cref="PartSizeMm"/>): a bolt hole, a screw head, a knot.</summary>
+    /// <param name="shape">The detection.</param>
+    /// <returns>Whether it is too small to be a hold.</returns>
+    public static bool IsTooSmall(Hold shape) =>
+        shape is { WidthMm: > 0, HeightMm: > 0 } && Math.Max(shape.WidthMm.Value, shape.HeightMm.Value) < PartSizeMm;
+
+    /// <summary>
+    /// True when a traced detection lies inside the outline of a stored hold and is small against it: a bolt recess, a
+    /// washer or a pocket of that hold. Its size comes from the surrounding hold's measured size
+    /// (<see cref="InsidePartSizeMm"/>), or from its share of that hold's area (<see cref="InsidePartAreaShare"/>).
+    /// </summary>
+    /// <param name="detection">The detection.</param>
+    /// <param name="input">The planner's input.</param>
+    /// <returns>Whether it is a part of a stored hold.</returns>
+    public static bool IsInsideAHold(Hold detection, RedetectInput input)
+    {
+        if (detection.ShapePoints is not { Count: >= 3 } points)
+        {
+            return false;
+        }
+
+        double area = ShapeGeometry.Area(HoldShapePolygon.Of(detection));
+        foreach (var hold in input.Existing.Select(e => e.Hold).Where(h => IsMatchable(h) && h.ShapePoints is { Count: >= 3 }))
+        {
+            var outline = HoldShapePolygon.Of(hold);
+            if (!ShapeGeometry.Contains(outline, new P2(detection.X, detection.Y))
+                || points.Count(p => ShapeGeometry.Contains(outline, new P2(detection.X + p.Dx, detection.Y + p.Dy))) < InsideShare * points.Count)
+            {
+                continue;
+            }
+
+            double share = area / Math.Max(1e-12, ShapeGeometry.Area(outline));
+            bool small = hold is { WidthMm: > 0, HeightMm: > 0 }
+                ? Math.Sqrt(share * hold.WidthMm.Value * hold.HeightMm.Value) < InsidePartSizeMm
+                : share < InsidePartAreaShare;
+            if (small)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

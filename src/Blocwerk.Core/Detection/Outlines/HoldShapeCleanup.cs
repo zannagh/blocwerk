@@ -166,7 +166,7 @@ public static class HoldShapeCleanup
 
         return r.Fit is HoldShapeFit.Unchanged or HoldShapeFit.Unresolved
             ? outline
-            : outline with { ShapePoints = r.Shape.ToList(), ShapeHoles = HoldShapeHoles.Inside(outline.ShapeHoles, r.Shape) };
+            : outline with { ShapePoints = r.Shape.ToList(), ShapeHoles = HoldShapeHoles.Inside(outline.ShapeHoles, r.Shape), Corroborated = false };
     }
 
     private static HoldShapeInput Locked(Hold h) => new(h.Id, h.X, h.Y, h.Radius, h.ShapePoints, Locked: true, StackedOn: h.StackedOnHoldId);

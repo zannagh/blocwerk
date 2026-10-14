@@ -16,7 +16,8 @@ public static class RedetectProposals
     /// <summary>A shape update is safe to accept in bulk when the old and the new outline overlap at least this much (IoU)...</summary>
     public const double SafeIou = 0.5;
 
-    /// <summary>...and the two are at most this far apart in size, measured across.</summary>
+    /// <summary>...and the two are at most this far apart in size, measured across. The detected outline also has to be
+    /// corroborated (<see cref="Entities.Hold.OutlineCorroborated"/>): what only one method traced is looked at.</summary>
     public const double SafeSizeRatio = 1.35;
 
     /// <summary>Builds the proposals of one planned re-detect.</summary>
@@ -57,13 +58,13 @@ public static class RedetectProposals
         {
             var detection = input.Detections[o.Detection].Shape;
             var overlap = HoldSameness.Measure(byId[o.HoldId], new Entities.Hold { X = detection.X, Y = detection.Y, Radius = detection.Radius });
-            var safe = detection.Confidence >= options.SafeDetectorConfidence && overlap.SizeRatio <= options.MaxSizeRatio;
+            var safe = detection.Confidence >= options.SafeDetectorConfidence && overlap.SizeRatio <= options.MaxSizeRatio && detection.OutlineCorroborated;
             return new RedetectProposal($"hand:{o.HoldId}", RedetectProposalKind.HandShape, o.HoldId, [], [o.Detection], safe, overlap.Iou);
         }));
         foreach (var update in decisions.Shapes.Where(s => s.Change == RedetectShapeChange.Replace))
         {
             var overlap = Overlap(byId[update.HoldId], input, update.Detection);
-            var safe = overlap.Iou >= SafeIou && overlap.SizeRatio <= SafeSizeRatio;
+            var safe = overlap.Iou >= SafeIou && overlap.SizeRatio <= SafeSizeRatio && input.Detections[update.Detection].Shape.OutlineCorroborated;
             proposals.Add(new RedetectProposal($"shape:{update.HoldId}", RedetectProposalKind.BetterShape, update.HoldId, [], [update.Detection], safe, overlap.Iou));
         }
 

@@ -43,18 +43,6 @@ public sealed class OpenCvHoldOutlineSession : IHoldBatchOutlineSession
     /// <summary>A low-contrast GrabCut outline this close to the seed ellipse is the seed, not a hold.</summary>
     public const double MaxSeedEllipseIoU = 0.85;
 
-    /// <summary>An outline covering less than this share of its detector box's area is a fragment of the hold.</summary>
-    public const double MinBoxArea = 0.25;
-
-    /// <summary>...and so is one spanning less than this share of the box's width or of its height.</summary>
-    public const double MinBoxExtent = 0.6;
-
-    /// <summary>An outline spanning at least this share of the box's width and height is taken as the whole hold.</summary>
-    public const double FullBoxCover = 0.85;
-
-    /// <summary>Below that, the colour outline replaces the model's when it spans this much more of the box.</summary>
-    public const double ClearlyMoreCover = 0.1;
-
     private static readonly double[] ThresholdFactors = [0.45, 0.7];
 
     private readonly Mat image;
@@ -166,61 +154,25 @@ public sealed class OpenCvHoldOutlineSession : IHoldBatchOutlineSession
     }
 
     /// <summary>
-    /// The first outline that is believable for the seed: the model's, else the colour pass's. With a detector box,
-    /// believable means consistent with the box (<see cref="FitsBox"/>): a bolt hole or half a pale hold is a failure,
-    /// not a result, and the hold then gets the box's own ellipse as a rough shape instead of a fragment.
+    /// The outline of one seed: the model's and the colour pass's, chosen between by <see cref="OutlineChoice"/>; with a
+    /// detector box and neither believable, the box's own ellipse as a rough shape instead of a fragment.
     /// </summary>
     private HoldOutlineResult Best(HoldSeed seed, HoldOutlineResult? segmented, double aspect)
     {
         var model = segmented is null ? null : HoldOutlineRefiner.Refine(segmented, aspect);
-        bool modelFits = model is not null && model.Method != HoldOutlineMethod.CircleFallback && FitsBox(seed, model);
-        if (modelFits && BoxCover(seed, model!) >= FullBoxCover)
-        {
-            return model!;
-        }
 
-        // The model's outline is missing or leaves a part of the box empty (a rim cut off, one colour of a two-tone
-        // hold): the colour pass is asked too, and the one that spans more of the detector box is the hold.
-        var colour = HoldOutlineRefiner.Refine(OutlineRaw(seed), aspect);
-        bool boxed = seed.BoxWidth is > 0 && seed.BoxHeight is > 0;
-        bool colourFits = colour.Method != HoldOutlineMethod.CircleFallback && FitsBox(seed, colour);
-        if (modelFits && !(colourFits && BoxCover(seed, colour) >= BoxCover(seed, model!) + ClearlyMoreCover))
+        // The colour pass exactly as it ran before the model existed (inside the circle around the box's longer
+        // side): that outline is what the hold would have got, so it is the one the model's has to hold up against.
+        var colour = HoldOutlineRefiner.Refine(OutlineRaw(new HoldSeed(seed.X, seed.Y, seed.Radius)), aspect);
+        if (new OutlineChoice(image).Pick(seed, model, colour, segmenter is not null) is { } chosen)
         {
-            return model!;
-        }
-
-        if (!boxed || colourFits)
-        {
-            return colour;
+            return chosen;
         }
 
         using OutlineCrop? crop = OutlineCrop.Create(image, seed);
         return crop is null
             ? colour
             : HoldOutlineRefiner.Refine(OutlineResultBuilder.Circle(crop, seed, image.Width, image.Height, colour.Confidence / HoldOutlineRefiner.CircleConfidenceCeiling, rough: true), aspect);
-    }
-
-    /// <summary>The smaller of the shares of the box's width and of its height that the outline spans; 1 without a box.</summary>
-    private static double BoxCover(HoldSeed seed, HoldOutlineResult result) =>
-        seed.BoxWidth is > 0 && seed.BoxHeight is > 0
-            ? Math.Min(result.Bounds.Width / seed.BoxWidth.Value, result.Bounds.Height / seed.BoxHeight.Value)
-            : 1;
-
-    /// <summary>
-    /// True when an outline covers enough of its detector box: at least <see cref="MinBoxArea"/> of its area and
-    /// <see cref="MinBoxExtent"/> of its width and of its height. Always true for a seed without a box.
-    /// </summary>
-    private bool FitsBox(HoldSeed seed, HoldOutlineResult result)
-    {
-        if (seed.BoxWidth is not > 0 || seed.BoxHeight is not > 0)
-        {
-            return true;
-        }
-
-        double boxArea = seed.BoxWidth.Value * image.Width * seed.BoxHeight.Value * image.Height;
-        return result.AreaPx >= MinBoxArea * boxArea
-            && result.Bounds.Width >= MinBoxExtent * seed.BoxWidth.Value
-            && result.Bounds.Height >= MinBoxExtent * seed.BoxHeight.Value;
     }
 
     /// <summary>

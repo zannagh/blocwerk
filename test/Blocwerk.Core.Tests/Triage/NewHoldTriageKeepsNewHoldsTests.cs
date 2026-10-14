@@ -38,6 +38,28 @@ public class NewHoldTriageKeepsNewHoldsTests
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
+    public void AConfidentTracedDetection_IsNotDroppedBecauseTheSpotLooksUnchanged(bool confident)
+    {
+        // The owner's case: a hold the old wall had no record of, detected with confidence 0.997 and a good outline.
+        var detection = new TriageCandidate(Guid.NewGuid(), 1000, 1000, 80, Confident: confident);
+
+        var result = NewHoldTriage.Classify(Input([detection]), AlwaysThere);
+
+        Assert.Equal(confident ? [] : [NewHoldDiscardReason.UnchangedSinceOldPhoto], result.Values);
+    }
+
+    [Fact]
+    public void OnlyASureDetectionWithATracedOutline_IsConfident()
+    {
+        Assert.True(NewHoldTriage.IsConfident(0.95, outlined: true, outlineConfidence: 0.8));
+        Assert.False(NewHoldTriage.IsConfident(0.8, outlined: true, outlineConfidence: 0.8));
+        Assert.False(NewHoldTriage.IsConfident(0.99, outlined: false, outlineConfidence: null));
+        Assert.False(NewHoldTriage.IsConfident(0.99, outlined: true, outlineConfidence: 0.2));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
     public void ADetectionOnTheSpotOfAnOldHoldNotFoundAgain_IsNotUnchanged(bool notFound)
     {
         var detection = new TriageCandidate(Guid.NewGuid(), 1000, 1000, 80);

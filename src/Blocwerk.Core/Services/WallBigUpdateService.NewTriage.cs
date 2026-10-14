@@ -142,7 +142,9 @@ public partial class WallBigUpdateService
 
         var oldSize = oldPhoto is null ? null : OverlapSeedLoader.RawSize(oldPhoto);
         var candidates = Unpaired(staged, twins)
-            .Select(h => new TriageCandidate(h.Id, h.X * newSize.Width, h.Y * newSize.Height, h.Radius * Math.Max(newSize.Width, newSize.Height)))
+            .Select(h => new TriageCandidate(
+                h.Id, h.X * newSize.Width, h.Y * newSize.Height, h.Radius * Math.Max(newSize.Width, newSize.Height),
+                NewHoldTriage.IsConfident(h.Confidence, h.ShapePoints is { Count: >= 3 }, h.OutlineConfidence)))
             .ToList();
         var pairs = oldSize is not { } os
             ? []
