@@ -50,9 +50,9 @@ def test_health(client):
     assert set(h) == {"status", "service", "protocol", "version", "kinds"}
     info = client.get("/v1/info").json()
     assert "gitSha" in info and info["limits"]["maxImageMegapixels"] == 100
-    # a job may carry every image of the largest capture (the app's defaults: 200 photos + 120 video frames), all of
-    # them in one textures request (48 MP JPEGs, 12-22 MB each), 4 GB per 200 images: MAX_PHOTOS / MAX_REQUEST_MB override
-    assert info["limits"]["maxPhotos"] == 320 and info["limits"]["maxRequestMb"] == 6554
+    # a capture may carry up to 200 photos (the app's CAPTURE__MAXPHOTOS default), all of them in one textures
+    # request (48 MP JPEGs, 12-22 MB each): MAX_PHOTOS / MAX_REQUEST_MB override these
+    assert info["limits"]["maxPhotos"] == 200 and info["limits"]["maxRequestMb"] == 4096
 
 
 def test_solve_happy_path(client, capture1_request):

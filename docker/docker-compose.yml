@@ -161,7 +161,7 @@ services:
       # Limits (docker/wall-geometry/README.md); empty = the default. A textures request carries every photo:
       # 200 full-size 48 MP photos (12-22 MB each) need up to ~4.4 GB: the default is 4096 MB (streamed to disk).
       MAX_REQUEST_MB: ${GEOMETRY_MAX_REQUEST_MB:-}
-      # Images per job: from the capture limits (photos + video frames); MAX_PHOTOS only to stay below them.
+      # Photos per job: from the capture limits (CAPTURE_MAX_PHOTOS); MAX_PHOTOS only to stay below them.
       CAPTURE_MAX_PHOTOS: ${CAPTURE__MAXPHOTOS:-}
       CAPTURE_MAX_VIDEO_FRAMES: ${CAPTURE__MAXVIDEOFRAMES:-}
       MAX_PHOTOS: ${GEOMETRY_MAX_PHOTOS:-}

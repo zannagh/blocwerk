@@ -38,7 +38,7 @@ public sealed partial class WallCaptureService
                 return problems;
             }
 
-            if (await FitProblemAsync(db, capture.Id, geometry: false, splat: true) is { } tooBig)
+            if (await FitProblemAsync(db, capture.Id, CaptureFit.Retrain) is { } tooBig)
             {
                 return [tooBig];
             }

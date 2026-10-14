@@ -64,7 +64,7 @@ public sealed partial class WallCaptureService
                 return errors;
             }
 
-            if (await FitProblemAsync(db, capture.Id, geometry: true, splat: IsSplatConfigured) is { } tooBig)
+            if (await FitProblemAsync(db, capture.Id, IsSplatConfigured ? CaptureFit.Start : CaptureFit.Geometry) is { } tooBig)
             {
                 return [tooBig];
             }

@@ -43,7 +43,7 @@ public sealed partial class WallCaptureService
                 return [runnerProblem];
             }
 
-            if (route == TextureRoute.Host && await FitProblemAsync(db, capture.Id, geometry: true, splat: false) is { } tooBig)
+            if (route == TextureRoute.Host && await FitProblemAsync(db, capture.Id, CaptureFit.Rerender) is { } tooBig)
             {
                 return [tooBig];
             }

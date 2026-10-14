@@ -12,7 +12,7 @@ window.bwRefreshUpload = {
             return Promise.resolve(0);
         }
 
-        const isVideo = (f) => /\.(mp4|mov)$/i.test(f.name) || (f.type || '').startsWith('video/');
+        const isVideo = (f) => /\.(mp4|mov|m4v)$/i.test(f.name) || (f.type || '').startsWith('video/');
         let room = typeof photoRoom === 'number' ? photoRoom : Infinity;
         const files = picked.filter((f) => {
             if (isVideo(f) || room > 0) {

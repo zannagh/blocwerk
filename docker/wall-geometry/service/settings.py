@@ -2,7 +2,7 @@
 from computejobs import capture_limits
 from computejobs.settings import env_int, settings
 
-# Images per job follow the capture limits (CAPTURE_MAX_PHOTOS + CAPTURE_MAX_VIDEO_FRAMES, computejobs/capture_limits.py);
+# Photos per job follow the capture limits (CAPTURE_MAX_PHOTOS, computejobs/capture_limits.py; video frames never come here);
 # a textures request carries every photo at full size (48 MP: 12-22 MB each), streamed to the job dir: 4 GB per request
 # and the timeouts below are sized for 200 images and grow with the limits.
 IMAGES = capture_limits.geometry_images()

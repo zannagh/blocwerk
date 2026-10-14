@@ -8,37 +8,71 @@ namespace Blocwerk.Core.Capture;
 /// <summary>
 /// The capture limits in one place: <see cref="WallCapturePipelineOptions.MaxPhotos"/> and
 /// <see cref="WallCapturePipelineOptions.MaxVideoFrames"/> (<c>CAPTURE__MAXPHOTOS</c>, <c>CAPTURE__MAXVIDEOFRAMES</c>). The
-/// compute workers read the same two values and derive their per-job caps and timeouts the same way
-/// (<c>docker/compute-jobs-py/computejobs/capture_limits.py</c>, defaults in <c>capture_limits.json</c>, which a test holds
-/// against these numbers): wall-geometry takes photos + frames per job, the splat worker that plus the anchor crops, and
-/// every timeout sized for <see cref="BaselineImages"/> images grows in proportion. A capture that will not fit (one
-/// imported from an instance with higher limits, a worker configured below them) is refused before anything is sent.
+/// compute workers read the same two values with the same ranges and derive their per-job caps and timeouts the same way
+/// (<c>docker/compute-jobs-py/computejobs/capture_limits.py</c>; every number here is in its <c>capture_limits.json</c>, which
+/// a test holds against this class): wall-geometry gets the photos (never the video frames), the splat worker the photos,
+/// the frames and the anchor photos (at least <see cref="SplatFloorImages"/>), and every timeout sized for
+/// <see cref="BaselineImages"/> images grows in proportion. A capture that will not fit (one imported from an instance with
+/// higher limits, a worker configured below them) is refused before anything is sent.
 /// </summary>
 public static class CaptureLimits
 {
-    /// <summary>The marker anchor crops a splat job carries on top of the photos and frames (at most).</summary>
-    public const int AnchorImages = 32;
+    /// <summary>The fewest photos <c>CAPTURE__MAXPHOTOS</c> may be (a value outside the range keeps the default).</summary>
+    public const int MinPhotos = 2;
+
+    /// <summary>The most photos <c>CAPTURE__MAXPHOTOS</c> may be.</summary>
+    public const int MaxPhotosCeiling = 1000;
+
+    /// <summary>The fewest frames <c>CAPTURE__MAXVIDEOFRAMES</c> may be.</summary>
+    public const int MinVideoFrames = 3;
+
+    /// <summary>The most frames <c>CAPTURE__MAXVIDEOFRAMES</c> may be.</summary>
+    public const int MaxVideoFramesCeiling = 400;
+
+    /// <summary>The anchor photos a markerless capture's splat job carries on top of its own (<see cref="AnchorPhotoSelector"/>).</summary>
+    public const int AnchorImages = AnchorPhotoSelector.DefaultCount;
 
     /// <summary>The image count the base timeouts are sized for.</summary>
     public const int BaselineImages = 200;
 
-    /// <summary>The geometry worker's images per job for the largest capture these options allow.</summary>
-    public static int GeometryImages(WallCapturePipelineOptions options) => options.MaxPhotos + options.MaxVideoFrames;
+    /// <summary>The splat worker never takes fewer images per job than this (what it always took).</summary>
+    public const int SplatFloorImages = 600;
+
+    /// <summary>The geometry worker's images per job for the largest capture these options allow: the photos.</summary>
+    public static int GeometryImages(WallCapturePipelineOptions options) => options.MaxPhotos;
 
     /// <summary>The splat worker's images per job for the largest capture these options allow.</summary>
-    public static int SplatImages(WallCapturePipelineOptions options) => GeometryImages(options) + AnchorImages;
+    public static int SplatImages(WallCapturePipelineOptions options) =>
+        Math.Max(SplatFloorImages, options.MaxPhotos + options.MaxVideoFrames + AnchorImages);
 
     /// <summary>A timeout sized for <see cref="BaselineImages"/> images, grown in proportion for more (never below it).</summary>
     public static TimeSpan Scaled(TimeSpan timeout, int images) =>
         images <= BaselineImages ? timeout : TimeSpan.FromTicks((long)Math.Ceiling(timeout.Ticks * (double)images / BaselineImages));
 
+    /// <summary>The worker's timeout growth: geometry by its photos, the splat worker against its 600-image floor.</summary>
+    public static TimeSpan ScaledFor(Compute.ComputeServiceKind service, TimeSpan timeout, WallCapturePipelineOptions options) =>
+        service == Compute.ComputeServiceKind.Splat
+            ? Scaled(timeout, SplatImages(options) * BaselineImages / SplatFloorImages)
+            : Scaled(timeout, GeometryImages(options));
+
     /// <summary>
-    /// Why a capture of <paramref name="photos"/> photos and <paramref name="frames"/> video frames cannot be sent (to a worker
-    /// that takes <paramref name="geometryCap"/> / <paramref name="splatCap"/> images per job when known), or null when it fits.
+    /// The frames a video yields once extracted: about its duration at the sampling rate, at most the frame limit (what
+    /// <see cref="CaptureVideoFrameExtractor"/> takes). Unknown duration: none counted (the extraction caps them anyway).
     /// </summary>
-    public static string? Refusal(int photos, int frames, WallCapturePipelineOptions options, int? geometryCap = null, int? splatCap = null)
+    public static int ExpectedFrames(double? durationSeconds, WallCapturePipelineOptions options) =>
+        durationSeconds is > 0 and { } seconds
+            ? (int)Math.Min(options.MaxVideoFrames, Math.Ceiling(seconds * options.VideoFramesPerSecond))
+            : 0;
+
+    /// <summary>
+    /// Why a capture of <paramref name="photos"/> photos and <paramref name="frames"/> video frames cannot go where
+    /// <paramref name="fit"/> sends it (to workers that take <paramref name="geometryCap"/> / <paramref name="splatCap"/>
+    /// images per job when known), or null when it fits.
+    /// </summary>
+    public static string? Refusal(
+        int photos, int frames, WallCapturePipelineOptions options, CaptureFit fit, int? geometryCap = null, int? splatCap = null)
     {
-        if (photos > options.MaxPhotos || frames > options.MaxVideoFrames)
+        if (photos > options.MaxPhotos || (fit.HasFlag(CaptureFit.Splat) && frames > options.MaxVideoFrames))
         {
             var (maxPhotos, maxFrames) = (options.MaxPhotos, options.MaxVideoFrames);
             return string.Create(
@@ -46,16 +80,19 @@ public static class CaptureLimits
                 $"This capture has {photos} photos and {frames} video frames; this server takes at most {maxPhotos} photos and {maxFrames} frames (CAPTURE__MAXPHOTOS, CAPTURE__MAXVIDEOFRAMES). Nothing was sent.");
         }
 
-        var cap = new[] { (geometryCap, photos + frames, "3D model service"), (splatCap, photos + frames + AnchorImages, "photo-real worker") }
-            .FirstOrDefault(c => c.Item1 is { } max && c.Item2 > max);
-        if (cap.Item1 is not { } limit)
+        if (fit.HasFlag(CaptureFit.Geometry) && geometryCap is { } geometry && photos > geometry)
         {
-            return null;
+            return WorkerRefusal(photos, "3D model service", geometry);
         }
 
-        var (images, worker) = (photos + frames, cap.Item3);
-        return string.Create(
-            CultureInfo.InvariantCulture,
-            $"This capture has {images} images; the {worker} takes at most {limit} per job (its MAX_PHOTOS is set below the capture limits). Nothing was sent.");
+        var splatImages = photos + frames + AnchorImages;
+        return fit.HasFlag(CaptureFit.Splat) && splatCap is { } splat && splatImages > splat
+            ? WorkerRefusal(splatImages, "photo-real worker", splat)
+            : null;
     }
+
+    private static string WorkerRefusal(int images, string worker, int cap) =>
+        string.Create(
+            CultureInfo.InvariantCulture,
+            $"This capture sends {images} images; the {worker} takes at most {cap} per job (its MAX_PHOTOS is set below the capture limits). Nothing was sent.");
 }

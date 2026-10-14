@@ -53,7 +53,7 @@ capture and refuses one that would not fit, before anything is sent.
 
 Limits: both workers size `MAX_PHOTOS`, the request size and their timeouts from the capture limits the app uses,
 `CAPTURE_MAX_PHOTOS` and `CAPTURE_MAX_VIDEO_FRAMES` (`computejobs/capture_limits.py`, defaults in `capture_limits.json`):
-wall-geometry takes photos + frames per job, the splat worker that plus 32 anchor crops (at least 600), and every timeout
+wall-geometry takes the photos per job (never the video frames), the splat worker photos + frames + 15 anchor photos (at least 600), and every timeout
 sized for 200 images grows in proportion. An explicit `MAX_PHOTOS` / `*_TIMEOUT_S` still wins.
 
 ### `POST /v1/jobs/{kind}` → `202 { "jobId": "…", "status": "queued" }`

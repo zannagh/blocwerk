@@ -178,11 +178,11 @@ public sealed class WallCapturePipelineOptions
         var days = ReadInt(configuration, "PhotoRetentionDays", 0, int.MaxValue);
         var videoMb = ReadInt(configuration, "MaxVideoMb", 1, 16 * 1024);
         var photoMb = ReadInt(configuration, "MaxPhotoMb", 1, 200);
-        var frames = ReadInt(configuration, "MaxVideoFrames", 3, 400);
+        var frames = ReadInt(configuration, "MaxVideoFrames", CaptureLimits.MinVideoFrames, CaptureLimits.MaxVideoFramesCeiling);
         var fps = ReadDouble(configuration, "VideoFramesPerSecond", 0.1, 10) ?? defaults.VideoFramesPerSecond;
         return new WallCapturePipelineOptions
         {
-            MaxPhotos = ReadInt(configuration, "MaxPhotos", 2, 1000) ?? defaults.MaxPhotos,
+            MaxPhotos = ReadInt(configuration, "MaxPhotos", CaptureLimits.MinPhotos, CaptureLimits.MaxPhotosCeiling) ?? defaults.MaxPhotos,
             PhotoRetention = days is { } d ? (d == 0 ? null : TimeSpan.FromDays(d)) : defaults.PhotoRetention,
             MaxVideoBytes = videoMb is { } mb ? mb * 1024L * 1024 : defaults.MaxVideoBytes,
             MaxPhotoBytes = photoMb is { } pmb ? pmb * 1024L * 1024 : defaults.MaxPhotoBytes,
