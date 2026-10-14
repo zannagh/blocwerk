@@ -88,6 +88,11 @@ public static class HoldShapeOverlapResolver
             {
                 return new HoldShapeResolution(hold.Id, HoldShapeFit.Shrunk, pulled, hold.Radius);
             }
+
+            if (hold.KeepsOutline)
+            {
+                return new HoldShapeResolution(hold.Id, HoldShapeFit.Unresolved, shape, hold.Radius);
+            }
         }
 
         return FitCircle(hold, hold.Shape is { Count: >= 3 } ? hold.Radius : start, obstacles, allowRadiusShrink, hadShape: hold.Shape is { Count: >= 3 });

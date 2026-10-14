@@ -32,7 +32,7 @@ using var pipeline = new EvalPipeline(positional[0], settings);
 foreach (var photo in positional.Skip(2))
 {
     var run = await pipeline.RunAsync(await File.ReadAllBytesAsync(photo));
-    var target = Path.Combine(positional[1], Path.GetFileNameWithoutExtension(photo) + ".json");
+    var target = Path.Join(positional[1], Path.GetFileNameWithoutExtension(photo) + ".json");
     await File.WriteAllTextAsync(target, JsonSerializer.Serialize(run, EvalJson.Options));
     Console.WriteLine($"{Path.GetFileName(photo)}: {run.Holds.Count} holds, detect {run.DetectMs:F0} ms, outline {run.OutlineMs:F0} ms -> {target}");
 }

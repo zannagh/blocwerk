@@ -26,6 +26,20 @@ public class FreshOutlineOrderTests
         Assert.NotEqual(results[0].Upper, results[0].Lower);
     }
 
+    [Fact]
+    public void AFreshOutlineThatCannotBeClearedOfItsNeighbour_StaysAnOutline_AndDoesNotBecomeACircle()
+    {
+        // The second square lies almost on the first: no cut clears it and keeps half of it.
+        var first = Fresh(0.50, 0.40);
+        var second = Fresh(0.505, 0.405);
+        var outlines = new Dictionary<Hold, HoldOutlineResult> { [first] = Outline(first), [second] = Outline(second) };
+
+        var resolved = HoldShapeCleanup.ResolveOutlines([first, second], outlines, allowRadiusShrink: true, keepTraced: true);
+
+        Assert.All(resolved.Values, r => Assert.NotEqual(HoldOutlineMethod.CircleFallback, r.Outline.Method));
+        Assert.Equal(Key(Outline(second)), Key(resolved[second].Outline));
+    }
+
     /// <summary>Two squares that overlap by a third, on holds with fresh random ids; returns each one's resolved outline.</summary>
     private static (string Upper, string Lower) Resolve()
     {

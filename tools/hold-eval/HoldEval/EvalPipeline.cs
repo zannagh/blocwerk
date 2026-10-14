@@ -41,8 +41,8 @@ public sealed class EvalPipeline : IDisposable
         app.HoldDetection.Tiling.TileSize = settings.TileSize > 0 ? settings.TileSize : app.HoldDetection.Tiling.TileSize;
         app.HoldDetection.Tiling.Confidence = settings.Confidence > 0 ? settings.Confidence : app.HoldDetection.Tiling.Confidence;
         app.HoldDetection.Segmenter.Enabled = settings.Segmenter;
-        app.HoldDetection.Segmenter.EncoderPath = Path.Combine(Path.GetDirectoryName(modelPath)!, "hold-segmenter-encoder.onnx");
-        app.HoldDetection.Segmenter.DecoderPath = Path.Combine(Path.GetDirectoryName(modelPath)!, "hold-segmenter-decoder.onnx");
+        app.HoldDetection.Segmenter.EncoderPath = Path.Join(Path.GetDirectoryName(modelPath)!, "hold-segmenter-encoder.onnx");
+        app.HoldDetection.Segmenter.DecoderPath = Path.Join(Path.GetDirectoryName(modelPath)!, "hold-segmenter-decoder.onnx");
         detector = new YoloHoldDetectionService(modelPath, app.HoldDetection.Tiling);
         outliner = HoldDetectionServices.Outliner(app.HoldDetection.Segmenter, detector);
         enrichment = new HoldEnrichmentService(app, NullLogger<HoldEnrichmentService>.Instance, outliner);

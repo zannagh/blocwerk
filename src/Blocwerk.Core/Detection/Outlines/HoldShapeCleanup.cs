@@ -115,12 +115,14 @@ public static class HoldShapeCleanup
     /// <param name="outlines">The new outlines by hold.</param>
     /// <param name="allowRadiusShrink">False when radii must not change.</param>
     /// <param name="aspect">Photo width / height.</param>
+    /// <param name="keepTraced">True to keep a traced outline that cannot be cleared of a neighbour instead of making it a circle.</param>
     /// <returns>The adjusted outline and radius per hold in <paramref name="outlines"/>.</returns>
     public static Dictionary<Hold, (HoldOutlineResult Outline, double Radius)> ResolveOutlines(
         IReadOnlyList<Hold> panelHolds,
         IReadOnlyDictionary<Hold, HoldOutlineResult> outlines,
         bool allowRadiusShrink,
-        double aspect = 1)
+        double aspect = 1,
+        bool keepTraced = false)
     {
         ArgumentNullException.ThrowIfNull(panelHolds);
         ArgumentNullException.ThrowIfNull(outlines);
@@ -129,7 +131,7 @@ public static class HoldShapeCleanup
         var turns = outlines.Keys.OrderBy(h => h.Y).ThenBy(h => h.X).ThenBy(h => h.Radius).Select((h, i) => (h, i)).ToDictionary(t => t.h, t => t.i + 1);
         var inputs = panelHolds
             .Select(h => outlines.TryGetValue(h, out var o)
-                ? new HoldShapeInput(h.Id, h.X, h.Y, h.Radius, IsContour(o) ? o.ShapePoints : null, Locked: false, StackedOn: h.StackedOnHoldId) { Turn = turns[h] }
+                ? new HoldShapeInput(h.Id, h.X, h.Y, h.Radius, IsContour(o) ? o.ShapePoints : null, Locked: false, StackedOn: h.StackedOnHoldId) { Turn = turns[h], KeepsOutline = keepTraced }
                 : Locked(h))
             .ToList();
         var byId = outlines.Keys.ToDictionary(h => h.Id);
@@ -162,7 +164,7 @@ public static class HoldShapeCleanup
             };
         }
 
-        return r.Fit == HoldShapeFit.Unchanged
+        return r.Fit is HoldShapeFit.Unchanged or HoldShapeFit.Unresolved
             ? outline
             : outline with { ShapePoints = r.Shape.ToList(), ShapeHoles = HoldShapeHoles.Inside(outline.ShapeHoles, r.Shape) };
     }

@@ -62,10 +62,13 @@ public class HoldProtrusionEstimatorTests
     public void ASingleStrayPointHighOverAHold_DoesNotStretchItsApex()
     {
         var points = Surface(volumeMm: 0, holdA: 500, holdB: 800, apexOffsetA: 0);
-        for (var k = 0; k < 400; k++)
+        for (var a = 480.0; a < 520; a += 2)
         {
-            var w = HoldFootprintEstimatorTests.Wall.ToWorld(480 + (k % 20 * 2), 780 + (k / 20 * 2), 380);
-            points.Add(((float)w[0], (float)w[1], (float)w[2]));
+            for (var b = 780.0; b < 820; b += 2)
+            {
+                var w = HoldFootprintEstimatorTests.Wall.ToWorld(a, b, 380);
+                points.Add(((float)w[0], (float)w[1], (float)w[2]));
+            }
         }
 
         var hold = new ProtrusionHold(Guid.NewGuid(), "0", 500, 800, Square, "k");

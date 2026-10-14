@@ -14,7 +14,8 @@ run-detector.sh --redetect, which carries the proposals. Writes, in the layout t
   panels/         the whole panel with the old and with the new outlines
   summary.json    counts per status and the score table, old against new
 
---cases maps a label to hold ids to tag (e.g. {"owner-case": ["163b4010"]}). The output holds photos of a private
+--cases names the owner's cases: {"owner-case": {"<hold id prefix on the wall>": "<the id the owner named>"},
+"spots": [{"ownerId", "panel", "x", "y"}]}; a spot gets a tile of its own with whatever lies on it. The output holds photos of a private
 wall: keep it out of the repository.
 """
 import argparse
@@ -30,7 +31,7 @@ import score
 import tiles
 
 COLUMNS, ROWS = 5, 10
-ORDER = ["split", "merged", "stacked", "new", "missing", "proposal for hand-made shape", "shape changed", "same"]
+ORDER = ["split", "merged", "stacked", "new", "missing", "shape-changed", "same", "spot"]
 PANEL_NAMES = {0: "centre", 1: "right"}
 
 
@@ -46,7 +47,7 @@ def by_hold(proposals: list[dict]) -> dict[str, dict]:
 
 def status_of(proposal: dict | None) -> str:
     return {"Split": "split", "Merge": "merged", "Stack": "stacked", "NewHold": "new", "NotFound": "missing",
-            "HandShape": "proposal for hand-made shape", "BetterShape": "shape changed"}.get((proposal or {}).get("kind"), "same")
+            "HandShape": "shape-changed", "BetterShape": "shape-changed"}.get((proposal or {}).get("kind"), "same")
 
 
 def measured(poly_truth, det_poly) -> dict:
@@ -60,7 +61,7 @@ def shared_detection(poly, det_polys: list) -> int | None:
     return best if best is not None and geo.iou(poly, det_polys[best]) >= 0.3 else None
 
 
-def panel_entries(truth: dict, old: dict, new: dict, photo: Image.Image) -> tuple[list[dict], list[Image.Image], dict]:
+def panel_entries(truth: dict, old: dict, new: dict, photo: Image.Image, spots: list[dict]) -> tuple[list[dict], list[Image.Image], dict]:
     width, height = truth["width"], truth["height"]
     name = PANEL_NAMES.get(truth["col"], f"{truth['col']},{truth['row']}")
     holds = truth["holds"]
@@ -94,7 +95,9 @@ def panel_entries(truth: dict, old: dict, new: dict, photo: Image.Image) -> tupl
             "id": hold["id"], "panel": name, "name": hold["name"], "colour": hold["colour"], "boulders": hold["boulders"],
             "handMade": hold["trust"].startswith("hand") or bool(hold["provenance"]), "status": status,
             "verdict": "not judged", "note": "", "reviewed": False,
-            "tags": (["bulk-safe"] if (proposal or {}).get("safe") else []) + (["shares-detection"] if shares else []) + [f"hand-{p}" for p in hold["provenance"]],
+            "tags": (["bulk-safe"] if (proposal or {}).get("safe") else []) + (["shares-detection"] if shares else [])
+            + (["hand-proposal"] if (proposal or {}).get("kind") == "HandShape" else []) + (["used-by-boulder"] if hold["boulders"] else [])
+            + [f"hand-{p}" for p in hold["provenance"]],
             "size": geo.size_class(tp[ti], max(width, height)), "contrast": round(geo.contrast(bgr, tp[ti]), 1),
             "circleOnWall": hold["outline"] is None,
         }
@@ -114,6 +117,10 @@ def panel_entries(truth: dict, old: dict, new: dict, photo: Image.Image) -> tupl
         if status == "stacked" and proposal:
             base = proposal["otherHoldIds"][0]
             entry |= {"role": "stacked", "stackedOn": base} if proposal["holdId"] == hold["id"] else {"role": "base", "children": [proposal["holdId"]]}
+        if focus_old and focus_new and olds[focus_old[0]]["outline"] and news[focus_new[0]]["outline"]:
+            o, n = op[focus_old[0]], np_[focus_new[0]]
+            entry |= {"areaNewOverOld": round(n.area / o.area, 3) if o.area else None,
+                      "newInsideOld": round(geo.inside(n, o), 3), "oldInsideNew": round(geo.inside(o, n), 3)}
         entry["blank"] = [i for i, f in ((1, focus_old), (2, focus_new)) if not f]
         frame = tiles.window([hold] + [holds[i] for i in others] + [olds[i] for i in focus_old] + [news[i] for i in focus_new], width, height)
         is_child = status == "stacked" and entry.get("role") == "stacked"
@@ -132,10 +139,25 @@ def panel_entries(truth: dict, old: dict, new: dict, photo: Image.Image) -> tupl
             "id": f"new-{name}-{proposal['detections'][0]:04d}", "panel": name, "name": None, "colour": news[di]["colour"], "boulders": [],
             "handMade": False, "status": "new", "verdict": "not judged", "note": "", "reviewed": False, "tags": [],
             "size": geo.size_class(np_[di], max(width, height)), "thinNew": round(max(geo.implausibility(np_[di])), 3),
-            "circleNew": news[di]["outline"] is None, "blank": [0] + ([] if near else [1]),
+            "circleNew": news[di]["outline"] is None, "blank": [0] + ([] if near else [1]), "alsoOldDetector": bool(near),
         })
         frame = tiles.window([news[di]], width, height)
         images.append(tiles.tile(photo, [tiles.Layer(holds, []), tiles.Layer(olds, near[:1]) if near else None, tiles.Layer(news, [di])], frame))
+    for spot in [s for s in spots if s["panel"] == name]:
+        point = geo.Point(spot["x"] * width, spot["y"] * height)
+        at = lambda polys: [i for i, p in enumerate(polys) if p.buffer(3).contains(point)]
+        wall_at, old_at, new_at_spot = at(tp), at(op), at(np_)
+        shown = [holds[i] for i in wall_at] + [olds[i] for i in old_at] + [news[i] for i in new_at_spot]
+        frame = tiles.window(shown, width, height) if shown else (point.x, point.y, 90.0)
+        entries.append({
+            "id": f"spot-{spot['ownerId']}", "ownerId": spot["ownerId"], "panel": name, "name": None, "colour": None, "boulders": [],
+            "handMade": False, "status": "spot", "verdict": "not judged", "note": "", "reviewed": False, "tags": ["owner-case"],
+            "wallHolds": [holds[i]["id"] for i in wall_at], "oldDetections": len(old_at), "newDetections": len(new_at_spot),
+            "newProposed": sum(1 for p in new["proposals"] for i in new_at_spot if news[i]["index"] in p["detections"]),
+            "blank": [i for i, f in ((0, wall_at), (1, old_at), (2, new_at_spot)) if not f],
+        })
+        images.append(tiles.tile(photo, [tiles.Layer(holds, wall_at), tiles.Layer(olds, old_at) if old_at else None,
+                                         tiles.Layer(news, new_at_spot) if new_at_spot else None], frame))
     overlays = {"old": tiles.panel_image(photo, olds), "new": tiles.panel_image(photo, news), "wall": tiles.panel_image(photo, holds)}
     return entries, images, overlays
 
@@ -180,12 +202,30 @@ def subset_table(entries: list[dict]) -> dict:
 def placeholder_table(entries: list[dict]) -> dict:
     """The holds that are only a circle on the wall, and what the new detector offers for them."""
     circles = [e for e in entries if e.get("circleOnWall")]
-    offered = [e for e in circles if e["status"] in ("proposal for hand-made shape", "shape changed")
+    offered = [e for e in circles if e["status"] == "shape-changed"
                and e.get("circleNew") is False and not e.get("roughNew")]
     return {"circleOnlyOnWall": len(circles), "tracedShapeProposed": len(offered),
             "ofThoseBulkSafe": sum(1 for e in offered if "bulk-safe" in e["tags"]),
             "roughShapeProposed": sum(1 for e in circles if e.get("roughNew") and e["status"] != "same"),
             "notDetected": sum(1 for e in circles if "circleNew" not in e)}
+
+
+def against_old(entries: list[dict]) -> dict:
+    """Where both detectors traced the hold: how often the new outline is clearly smaller and inside the old one (a rim
+    or one colour of a two-tone hold cut off, unless the old one bled), or clearly larger and around it (it grew over
+    the hold around a pale patch, unless the old one was a fragment)."""
+    both = [e for e in entries if e.get("areaNewOverOld") is not None]
+    smaller = [e for e in both if e["areaNewOverOld"] < 0.75 and e["newInsideOld"] >= 0.85]
+    larger = [e for e in both if e["areaNewOverOld"] > 1.4 and e["oldInsideNew"] >= 0.85]
+    return {"bothTraced": len(both), "newClearlySmaller": len(smaller), "newClearlyLarger": len(larger),
+            "smallerIds": sorted(e["id"][:8] for e in smaller), "largerIds": sorted(e["id"][:8] for e in larger),
+            "tracedToCircle": sorted(e["id"][:8] for e in entries if e.get("circleOld") is False and e.get("circleNew"))}
+
+
+def new_hold_table(entries: list[dict]) -> dict:
+    new = [e for e in entries if e["status"] == "new"]
+    return {"proposed": len(new), "alsoFoundByOldDetector": sum(1 for e in new if e.get("alsoOldDetector")),
+            "verdicts": dict(Counter(e["verdict"] for e in new))}
 
 
 def main() -> None:
@@ -207,15 +247,16 @@ def main() -> None:
         photo = Image.open(args.photos / f"{pid}.jpg").convert("RGB")
         new = json.loads((args.new / f"{pid}.json").read_text())
         new["holds"] = score.load_run(args.new / f"{pid}.json")["holds"]
-        e, i, overlays = panel_entries(truth, score.load_run(args.old / f"{pid}.json"), new, photo)
+        e, i, overlays = panel_entries(truth, score.load_run(args.old / f"{pid}.json"), new, photo, cases.get("spots", []))
         entries += e
         images += i
         for kind, image in overlays.items():
             image.save(args.out / "panels" / f"{PANEL_NAMES.get(truth['col'], pid)}-{kind}.jpg", quality=78)
     for entry in entries:
-        for label, ids in cases.items():
-            if any(entry["id"].startswith(i) for i in ids if not i.startswith("@")):
-                entry["tags"].append(label)
+        for today, owner in cases.get("owner-case", {}).items():
+            if entry["id"].startswith(today):
+                entry["tags"].append("owner-case")
+                entry["ownerId"] = owner
         given = next((v for k, v in verdicts.items() if entry["id"].startswith(k)), None)
         if given:
             entry |= {"verdict": given["verdict"], "note": given.get("note", ""), "reviewed": True}
@@ -238,6 +279,8 @@ def main() -> None:
         "lowContrast": subset_table([e for e in out_entries if e.get("lowContrast")]),
         "otherContrast": subset_table([e for e in out_entries if e.get("lowContrast") is False]),
         "placeholders": placeholder_table(out_entries),
+        "againstOldOutline": against_old(out_entries),
+        "newHolds": new_hold_table(out_entries),
     }
     if args.extra:
         summary |= json.loads(args.extra.read_text())

@@ -49,6 +49,12 @@ public sealed class OpenCvHoldOutlineSession : IHoldBatchOutlineSession
     /// <summary>...and so is one spanning less than this share of the box's width or of its height.</summary>
     public const double MinBoxExtent = 0.6;
 
+    /// <summary>An outline spanning at least this share of the box's width and height is taken as the whole hold.</summary>
+    public const double FullBoxCover = 0.85;
+
+    /// <summary>Below that, the colour outline replaces the model's when it spans this much more of the box.</summary>
+    public const double ClearlyMoreCover = 0.1;
+
     private static readonly double[] ThresholdFactors = [0.45, 0.7];
 
     private readonly Mat image;
@@ -167,14 +173,23 @@ public sealed class OpenCvHoldOutlineSession : IHoldBatchOutlineSession
     private HoldOutlineResult Best(HoldSeed seed, HoldOutlineResult? segmented, double aspect)
     {
         var model = segmented is null ? null : HoldOutlineRefiner.Refine(segmented, aspect);
-        if (model is not null && model.Method != HoldOutlineMethod.CircleFallback && FitsBox(seed, model))
+        bool modelFits = model is not null && model.Method != HoldOutlineMethod.CircleFallback && FitsBox(seed, model);
+        if (modelFits && BoxCover(seed, model!) >= FullBoxCover)
         {
-            return model;
+            return model!;
         }
 
+        // The model's outline is missing or leaves a part of the box empty (a rim cut off, one colour of a two-tone
+        // hold): the colour pass is asked too, and the one that spans more of the detector box is the hold.
         var colour = HoldOutlineRefiner.Refine(OutlineRaw(seed), aspect);
         bool boxed = seed.BoxWidth is > 0 && seed.BoxHeight is > 0;
-        if (!boxed || (colour.Method != HoldOutlineMethod.CircleFallback && FitsBox(seed, colour)))
+        bool colourFits = colour.Method != HoldOutlineMethod.CircleFallback && FitsBox(seed, colour);
+        if (modelFits && !(colourFits && BoxCover(seed, colour) >= BoxCover(seed, model!) + ClearlyMoreCover))
+        {
+            return model!;
+        }
+
+        if (!boxed || colourFits)
         {
             return colour;
         }
@@ -184,6 +199,12 @@ public sealed class OpenCvHoldOutlineSession : IHoldBatchOutlineSession
             ? colour
             : HoldOutlineRefiner.Refine(OutlineResultBuilder.Circle(crop, seed, image.Width, image.Height, colour.Confidence / HoldOutlineRefiner.CircleConfidenceCeiling, rough: true), aspect);
     }
+
+    /// <summary>The smaller of the shares of the box's width and of its height that the outline spans; 1 without a box.</summary>
+    private static double BoxCover(HoldSeed seed, HoldOutlineResult result) =>
+        seed.BoxWidth is > 0 && seed.BoxHeight is > 0
+            ? Math.Min(result.Bounds.Width / seed.BoxWidth.Value, result.Bounds.Height / seed.BoxHeight.Value)
+            : 1;
 
     /// <summary>
     /// True when an outline covers enough of its detector box: at least <see cref="MinBoxArea"/> of its area and

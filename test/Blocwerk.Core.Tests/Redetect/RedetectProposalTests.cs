@@ -130,6 +130,23 @@ public class RedetectProposalTests
     }
 
     [Fact]
+    public void ABoltHoleInsideAHold_IsNotProposedAsANewHold()
+    {
+        var hold = Outlined(0.5, 0.5, 0.04, 0.04);
+        var detections = new[]
+        {
+            Traced(0.5, 0.5, 0.04), Traced(0.2, 0.2, 0.03), Traced(0.8, 0.2, 0.03), Traced(0.2, 0.8, 0.03),
+            Traced(0.52, 0.51, 0.004), // the bolt hole
+            Traced(0.8, 0.8, 0.004), // as tiny, but on bare wall: a foot chip
+        };
+
+        var decisions = RedetectPlanner.Plan(Input([hold], detections), Options);
+
+        Assert.DoesNotContain(4, decisions.NewDetections);
+        Assert.Contains(5, decisions.NewDetections);
+    }
+
+    [Fact]
     public void OnlyAShapeThatKeepsTheHoldInPlace_IsSafeToAcceptInBulk()
     {
         var near = Outlined(0.3, 0.3, 0.03, 0.03);
@@ -211,6 +228,13 @@ public class RedetectProposalTests
 
     private static RedetectInput Input(Hold[] existing, RedetectDetection[] detections) => new(
         [.. existing.Select(h => new RedetectExisting(h, new HashSet<Guid>(), 0, false))], detections, new HashSet<(Guid, Guid)>(), CanMerge: true);
+
+    private static RedetectDetection Traced(double x, double y, double half)
+    {
+        var detection = Square(x, y, half, half);
+        detection.Shape.OutlineConfidence = 0.9;
+        return detection;
+    }
 
     private static RedetectDetection Piece(double x, double y) => Square(x, y, 0.019, 0.02);
 

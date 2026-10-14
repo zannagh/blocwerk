@@ -63,5 +63,17 @@ public class MaskPlausibilityTests
         Assert.Equal(0, mask.At<byte>(60, 100));
     }
 
+    [Fact]
+    public void ANotchCutIntoAnEdge_IsFilled()
+    {
+        using Mat mask = Blank();
+        Cv2.Rectangle(mask, new Rect(50, 60, 100, 80), Scalar.All(255), -1);
+        Cv2.Rectangle(mask, new Rect(90, 60, 16, 14), Scalar.All(0), -1);
+
+        MaskPlausibility.Clean(mask);
+
+        Assert.Equal(255, mask.At<byte>(66, 98));
+    }
+
     private static Mat Blank() => new(200, 200, MatType.CV_8UC1, Scalar.All(0));
 }

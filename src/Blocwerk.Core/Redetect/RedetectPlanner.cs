@@ -57,9 +57,11 @@ public static class RedetectPlanner
         // Where the outliner ran at all (some detection has a traced outline), a new hold needs one too.
         var traces = input.Detections.Any(d => RedetectRules.IsTraced(d.Shape));
         var untraced = fresh.Where(i => traces && !turnedDown.Contains(i) && !RedetectRules.IsTraced(input.Detections[i].Shape)).ToHashSet();
+        var median = input.Detections.Count == 0 ? 0 : input.Detections.Select(d => d.Shape.Radius).Order().ElementAt(input.Detections.Count / 2);
+        var parts = fresh.Where(i => traces && !turnedDown.Contains(i) && !untraced.Contains(i) && RedetectRules.IsPartOfAHold(input, i, median)).ToHashSet();
         return new RedetectDecisions(
             [.. draft.Shapes.Where(s => !split.Contains(s.HoldId))],
-            [.. fresh.Where(i => !turnedDown.Contains(i) && !untraced.Contains(i))],
+            [.. fresh.Where(i => !turnedDown.Contains(i) && !untraced.Contains(i) && !parts.Contains(i))],
             draft.Merges,
             draft.ForReview,
             [.. gone.Where(id => !split.Contains(id))],
@@ -70,7 +72,7 @@ public static class RedetectPlanner
             LikelyMerges = draft.LikelyMerges,
             Splits = splits,
             TurnedDown = turnedDown.Count,
-            Untraced = untraced.Count,
+            Untraced = untraced.Count + parts.Count,
         };
     }
 

@@ -27,6 +27,9 @@ internal static class MaskPlausibility
     /// <summary>Closing the slits may add at most this share of the area; beyond it the shape is really concave.</summary>
     public const double MaxFilledShare = 0.2;
 
+    /// <summary>A bite out of the outline (a notch, a step at a corner) is filled when it is at most this share of the hold's area.</summary>
+    public const double MaxNotchShare = 0.04;
+
     /// <summary>Cleans a binary mask (0/255) in place.</summary>
     /// <param name="mask">The mask; holds one object, possibly with loose specks.</param>
     public static void Clean(Mat mask)
@@ -52,6 +55,43 @@ internal static class MaskPlausibility
         if (Cv2.CountNonZero(closed) <= (1 + MaxFilledShare) * area)
         {
             closed.CopyTo(mask);
+        }
+
+        FillNotches(mask);
+    }
+
+    /// <summary>
+    /// Fills the small bites between the outline and its convex hull: a notch or a step cut into an edge is not how a
+    /// hold is moulded, it is where a shadow, chalk or a neighbour's edge misled the mask. A bay that is a real part of
+    /// the shape is larger than <see cref="MaxNotchShare"/> of the hold and stays.
+    /// </summary>
+    /// <param name="mask">The mask; holds one object.</param>
+    public static void FillNotches(Mat mask)
+    {
+        Cv2.FindContours(mask, out Point[][] contours, out _, RetrievalModes.External, ContourApproximationModes.ApproxSimple);
+        if (contours.Length == 0)
+        {
+            return;
+        }
+
+        Point[] largest = contours.MaxBy(c => Cv2.ContourArea(c))!;
+        double area = Cv2.ContourArea(largest);
+        if (area < 16 || largest.Length < 3)
+        {
+            return;
+        }
+
+        using var hull = new Mat(mask.Rows, mask.Cols, MatType.CV_8UC1, Scalar.All(0));
+        Cv2.FillConvexPoly(hull, Cv2.ConvexHull(largest), Scalar.All(255));
+        using var bites = new Mat();
+        using var outside = new Mat();
+        Cv2.BitwiseNot(mask, outside);
+        Cv2.BitwiseAnd(hull, outside, bites);
+        Cv2.FindContours(bites, out Point[][] gaps, out _, RetrievalModes.External, ContourApproximationModes.ApproxSimple);
+        var small = gaps.Where(g => g.Length >= 3 && Cv2.ContourArea(g) <= MaxNotchShare * area).ToArray();
+        if (small.Length > 0)
+        {
+            Cv2.DrawContours(mask, small, -1, Scalar.All(255), -1);
         }
     }
 

@@ -103,7 +103,7 @@ public sealed partial class HoldEnrichmentService : IHoldEnrichmentService
 
         // The panel's shapes must not overlap each other or a hand-placed hold: clip, else circle, else a smaller circle.
         var aspect = (double)session.ImageWidth / Math.Max(1, session.ImageHeight);
-        foreach (var (hold, (outline, radius)) in HoldShapeCleanup.ResolveOutlines(request.Holds, plan.Outlines, allowRadiusShrink: true, aspect))
+        foreach (var (hold, (outline, radius)) in HoldShapeCleanup.ResolveOutlines(request.Holds, plan.Outlines, allowRadiusShrink: true, aspect, keepTraced: true))
         {
             plan.Outlines[hold] = outline;
             if (Math.Abs(radius - hold.Radius) > 1e-9)

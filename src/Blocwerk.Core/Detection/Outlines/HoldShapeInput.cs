@@ -27,6 +27,13 @@ public sealed record HoldShapeInput(
     /// they are given their order on the photo instead: the same photo then always resolves the same way.
     /// </summary>
     public int Turn { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether the hold keeps its traced outline when it cannot be cleared of a neighbour, as
+    /// <see cref="HoldShapeFit.Unresolved"/>, instead of falling back to a circle. Set for freshly traced outlines: a
+    /// circle there says less than the outline and usually overlaps the neighbour just the same.
+    /// </summary>
+    public bool KeepsOutline { get; init; }
 }
 
 /// <summary>How the resolver fitted one unlocked hold.</summary>

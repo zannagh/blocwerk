@@ -45,8 +45,8 @@ public static class RedetectRun
         }
 
         var settings = new BlocwerkSettings();
-        settings.HoldDetection.Segmenter.EncoderPath = Path.Combine(Path.GetDirectoryName(modelPath)!, "hold-segmenter-encoder.onnx");
-        settings.HoldDetection.Segmenter.DecoderPath = Path.Combine(Path.GetDirectoryName(modelPath)!, "hold-segmenter-decoder.onnx");
+        settings.HoldDetection.Segmenter.EncoderPath = Path.Join(Path.GetDirectoryName(modelPath)!, "hold-segmenter-encoder.onnx");
+        settings.HoldDetection.Segmenter.DecoderPath = Path.Join(Path.GetDirectoryName(modelPath)!, "hold-segmenter-decoder.onnx");
         using var detector = new YoloHoldDetectionService(modelPath, settings.HoldDetection.Tiling);
         var enrichment = new HoldEnrichmentService(
             settings, NullLogger<HoldEnrichmentService>.Instance, HoldDetectionServices.Outliner(settings.HoldDetection.Segmenter, detector), new ArucoMarkerDetectionService());
@@ -56,7 +56,7 @@ public static class RedetectRun
         {
             var clock = System.Diagnostics.Stopwatch.StartNew();
             var plan = await service.PlanAsync(wallId, panel);
-            var target = Path.Combine(outDir, $"{panel}.json");
+            var target = Path.Join(outDir, $"{panel}.json");
             await File.WriteAllTextAsync(target, JsonSerializer.Serialize(Describe(plan), EvalJson.Options));
             Console.WriteLine($"{panel}: {plan.Detections.Count} detections, {plan.Proposals.Count} proposals, {plan.TurnedDown} turned down, {clock.Elapsed.TotalSeconds:F0} s -> {target}");
         }
