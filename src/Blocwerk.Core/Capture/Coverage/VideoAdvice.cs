@@ -28,8 +28,14 @@ public static class VideoAdvice
                 $"Only {placed} of {video.FramesExtracted} video frames could be placed: walk slower and keep the wall in view"));
         }
 
-        var missing = video.Passes.Where(p => !p.Present).ToList();
+        // A video whose frame positions are not reported cannot be checked: the photos say nothing about what it holds.
         var fromVideo = video.PosesFrom == CoveragePoseSource.Video;
+        if (video.HasVideo && !fromVideo)
+        {
+            yield break;
+        }
+
+        var missing = video.Passes.Where(p => !p.Present).ToList();
         foreach (var pass in missing.Where(p => !IsVolume(p)))
         {
             var text = fromVideo
