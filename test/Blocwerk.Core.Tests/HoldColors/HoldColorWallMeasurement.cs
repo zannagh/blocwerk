@@ -32,14 +32,21 @@ public class HoldColorWallMeasurement(ITestOutputHelper output)
 
         var wall = Environment.GetEnvironmentVariable("BLOCWERK_COLOR_EVAL_WALL") ?? "The Attic";
         var samples = await HoldColorSampleCache.LoadAsync(Database, Path.Combine(OutDir, "color-samples.bin"), wall);
+        // Each hold is compared with the other holds of known colour on its photo, as the proposer does for a new one.
+        var signatures = samples.ToDictionary(s => s.HoldId, s => HoldColorSignature.Of(s.Own, s.Surroundings));
         var rows = samples
-            .Select(s => (Sample: s, Estimate: HoldColorEstimator.Estimate(s.Own, s.Surroundings)))
+            .Select(s => (Sample: s, Estimate: Palette(s, samples, signatures).Refine(HoldColorEstimator.Estimate(s.Own, s.Surroundings), signatures[s.HoldId])))
             .ToList();
         var summary = Summarise(rows);
         output.WriteLine(summary);
         await File.WriteAllTextAsync(Path.Combine(OutDir, "color-summary.txt"), summary);
         await File.WriteAllLinesAsync(Path.Combine(OutDir, "color-holds.csv"), rows.Select(r => Line(r.Sample, r.Estimate)));
     }
+
+    private static HoldColorPalette Palette(HoldColorSample hold, List<HoldColorSample> samples, Dictionary<Guid, HoldColorSignature?> signatures) =>
+        new(samples
+            .Where(s => s.PanelId == hold.PanelId && s.HoldId != hold.HoldId && signatures[s.HoldId] is not null)
+            .Select(s => (signatures[s.HoldId]!, s.Stored)));
 
     private static string Summarise(List<(HoldColorSample Sample, HoldColorEstimate Estimate)> rows)
     {
