@@ -54,6 +54,11 @@ else
             </button>
         }
 
+        @if (BoulderFocus)
+        {
+            <BoulderFocusButton />
+        }
+
         @* Full-screen landscape takeover. Steps aside for the usage toggle when that one is shown,
            since both float in the same corner. *@
         @if (Fullscreen)
@@ -68,7 +73,7 @@ else
             @* ContentKey: a panel switch under the open takeover must re-fit the stage — the world
                is sized from the image's natural dimensions, read once per photo. *@
             <StageOverlay OnClose="() => _stageOpen = false" Label="Wall panel in full screen"
-                          ContentKey="@_panel.Id.ToString()">
+                          ContentKey="@_panel.Id.ToString()" Chrome="@(BoulderFocus ? FocusChrome : null)">
                 @PhotoLayers
             </StageOverlay>
         }
@@ -117,7 +122,7 @@ else
                     @if (_panel is { } panel)
                     {
                     <img src="@ResponsiveImage.Initial(PhotoUrl(panel))" data-bw-res
-                         alt="Wall panel @panel.Col,@panel.Row" class="wall-photo" />
+                         alt="Wall panel @panel.Col,@panel.Row" class="wall-photo @(BoulderFocus ? "boulder-photo" : null)" />
                     @if (_heatOn)
                     {
                         <canvas class="usage-heat" aria-hidden="true"></canvas>
@@ -152,7 +157,15 @@ else
                                editor and the hold picker — at FULL radius: on a viewing surface the shrink
                                only made feet hard to see, and the shape alone tells them from hands. *@
                             var isFoot = h.Category == HoldCategory.Foot;
-                            @if (drawn)
+                            @if (drawn && isHi)
+                            {
+                                @* A boulder's own hold: the wall view's tapped-hold outline in the boulder colour,
+                                   glowing, no fill, corners lightly rounded. Dashed when not quite on the photo. *@
+                                <HoldShine @key="h.Id" X="h.X" Y="h.Y" Radius="h.Radius" ShapePoints="h.ShapePoints" ShapeHoles="h.ShapeHoles"
+                                           Foot="isFoot" FootScale="HoldShape.FullFoot" Color="@stroke" Smooth="true"
+                                           Look="@(h.IsVirtual || h.Kept ? "base" : null)" />
+                            }
+                            else if (drawn)
                             {
                                 <HoldShape @key="h.Id" X="h.X" Y="h.Y" Radius="h.Radius" ShapePoints="h.ShapePoints" ShapeHoles="h.ShapeHoles"
                                            Foot="isFoot" FootScale="HoldShape.FullFoot"
@@ -247,6 +260,15 @@ else
     /// detail view; left false in the wall view, whose editor stays photo-only in the lens.
     /// </summary>
     [Parameter] public bool LensOverlay { get; set; }
+
+    /// <summary>The focus lightbulb inside the full-screen takeover (boulder view only).</summary>
+    private static RenderFragment FocusChrome => @<BoulderFocusButton />;
+
+    /// <summary>
+    /// The boulder view: shows the focus lightbulb and marks the photo as one it dims (boulder-focus.css).
+    /// Left false on the wall page, so its panels are never dimmed.
+    /// </summary>
+    [Parameter] public bool BoulderFocus { get; set; }
 
     /// <summary>
     /// When true, show the "open in full screen" button that lifts the panel into the landscape

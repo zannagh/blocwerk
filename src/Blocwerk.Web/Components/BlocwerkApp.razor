@@ -35,6 +35,7 @@
     <link rel="stylesheet" href="@Assets["css/pages.css"]" />
     <link rel="stylesheet" href="@Assets["css/usage-heat.css"]" />
     <link rel="stylesheet" href="@Assets["css/hold-tap.css"]" />
+    <link rel="stylesheet" href="@Assets["css/boulder-focus.css"]" />
     <link rel="stylesheet" href="@Assets["css/components.css"]" />
     <link rel="stylesheet" href="@Assets["css/training.css"]" />
     <link rel="stylesheet" href="@Assets["css/guides.css"]" />
@@ -57,9 +58,9 @@
     @* Deferred: its own work already waits for DOMContentLoaded, and nothing reads bwTime at parse,
        so deferring costs no earlier behaviour and frees first paint. *@
     <script defer src="@Assets["js/localtime.js"]"></script>
-    @* NOT deferred: like theme.js this applies a stored visual pref (--wall-dim on <html>) at parse
-       to avoid a flash of the undimmed wall on first paint. *@
-    <script src="@Assets["js/wall-dim.js"]"></script>
+    @* NOT deferred: like theme.js this applies a stored visual pref (boulder focus, a class on <html>)
+       at parse to avoid a flash of the undimmed boulder photo on first paint. *@
+    <script src="@Assets["js/boulder-focus.js"]"></script>
     @* Inert unless the page renders the kiosk release form; the real idle gate is server-side.
        Deferred: it only arms after the DOM exists and defines no parse-time global. *@
     <script defer src="@Assets["js/kiosk-idle.js"]"></script>

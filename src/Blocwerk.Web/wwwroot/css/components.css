@@ -128,7 +128,7 @@
     /* Vertical space taken by the chrome ABOVE/around each photo box, subtracted from the window
        so the fullscreen/desktop layout can size the photo to fit without scrolling. Deliberately
        generous (slightly under-estimates available height) so the image is guaranteed contained. */
-    --boulder-photo-chrome: 96px;   /* back link + title + grade + wall-dim bar + margins */
+    --boulder-photo-chrome: 96px;   /* back link + title + grade + margins */
     --wall-photo-chrome: 168px;     /* carousel padding + toggle row + dim bar + dots + gaps */
 }
 .wall-fold {
@@ -288,84 +288,6 @@
     width: calc(var(--zoom, 1) * 100%); min-width: 100%; }
 .photo-picker .wall-photo { width: 100%; display: block; }
 .photo-picker .hold-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
-
-/* ========== Background (wall photo) visibility ==========
-   --wall-dim (0..1) and .bw-wall-focus are set on <html> by wwwroot/js/wall-dim.js
-   from localStorage, so the setting costs no server round-trips, survives every
-   Blazor re-render, and applies to every surface at once. Only the <img> is filtered
-   — the hold SVG overlay is a sibling and stays at full contrast. */
-img.wall-photo {
-    filter: brightness(calc(1 - (var(--wall-dim, 0) * 0.8)))
-            saturate(calc(1 - (var(--wall-dim, 0) * 0.7)));
-    transition: filter 120ms linear;
-}
-.bw-wall-focus img.wall-photo { filter: brightness(0.3) saturate(0.12) contrast(1.15); }
-
-/* Focus mode also thickens hold outlines on the read-only/picking surfaces. The
-   editor is left alone so its drag handles keep their calibrated hit sizes.
-   A pocket hold draws its visible shape as path.hold-pocket (its polygon.hold-hit is transparent). */
-.bw-wall-focus .photo-section .hold-overlay :is(circle, rect, polygon, path.hold-pocket),
-.bw-wall-focus .photo-picker .hold-overlay :is(circle, rect, polygon, path.hold-pocket) {
-    stroke-width: 0.75;
-    paint-order: stroke fill;
-}
-
-.wall-dim-bar {
-    display: flex; align-items: center; gap: 10px;
-    padding: 2px 12px; min-height: 34px; box-sizing: border-box;
-    background: var(--bg-surface-alt); color: var(--text-secondary);
-    border-bottom: 1px solid var(--border);
-}
-.wall-dim-bar > svg { flex: 0 0 auto; opacity: 0.7; }
-
-/* The range input is styled from tokens in ALL THREE theme states rather than left to
-   the UA: a native slider follows `color-scheme`, which used to be `light dark` (OS
-   preference) and so rendered a light track inside dark chrome whenever the site theme
-   was set explicitly. app.css now pins color-scheme per theme AND exposes --range-track
-   / --range-thumb, and every colour below comes from a token defined on bare :root. */
-.wall-dim-bar input[type="range"] {
-    flex: 1 1 auto; min-width: 0; height: 28px; margin: 0;
-    -webkit-appearance: none; appearance: none;
-    background: transparent; cursor: pointer;
-    accent-color: var(--accent);
-}
-.wall-dim-bar input[type="range"]::-webkit-slider-runnable-track {
-    height: 4px; border-radius: var(--r-pill); background: var(--range-track);
-}
-.wall-dim-bar input[type="range"]::-moz-range-track {
-    height: 4px; border-radius: var(--r-pill); background: var(--range-track);
-}
-.wall-dim-bar input[type="range"]::-moz-range-progress {
-    height: 4px; border-radius: var(--r-pill); background: var(--range-thumb);
-}
-.wall-dim-bar input[type="range"]::-webkit-slider-thumb {
-    -webkit-appearance: none; appearance: none;
-    width: 16px; height: 16px; margin-top: -6px; /* centres the 16px thumb on the 4px track */
-    border-radius: 50%; border: 2px solid var(--bg-surface);
-    background: var(--range-thumb);
-    box-shadow: 0 1px 3px var(--shadow-md);
-}
-.wall-dim-bar input[type="range"]::-moz-range-thumb {
-    width: 16px; height: 16px; box-sizing: border-box;
-    border-radius: 50%; border: 2px solid var(--bg-surface);
-    background: var(--range-thumb);
-    box-shadow: 0 1px 3px var(--shadow-md);
-}
-.wall-dim-bar input[type="range"]:focus { outline: none; }
-.wall-dim-bar input[type="range"]:focus-visible::-webkit-slider-thumb {
-    box-shadow: 0 0 0 3px var(--accent-soft), 0 0 0 4px var(--accent);
-}
-.wall-dim-bar input[type="range"]:focus-visible::-moz-range-thumb {
-    box-shadow: 0 0 0 3px var(--accent-soft), 0 0 0 4px var(--accent);
-}
-
-.wall-dim-focus {
-    flex: 0 0 auto; padding: 6px 14px; min-height: 30px;
-    border: 1px solid var(--border); background: var(--bg-surface); color: var(--text);
-    border-radius: var(--r-pill); font-size: 0.75rem; font-weight: 600; cursor: pointer;
-}
-.wall-dim-focus:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-:root.bw-wall-focus .wall-dim-focus { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 
 /* ========== GradePicker ========== */
 

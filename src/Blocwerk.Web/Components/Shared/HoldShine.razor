@@ -9,7 +9,7 @@
     @foreach (var layer in string.IsNullOrEmpty(Look) ? Layers : PlainLayers)
     {
         <g @key="layer" class="hold-shine-@layer">
-            <HoldShape X="X" Y="Y" Radius="Radius" ShapePoints="ShapePoints" ShapeHoles="ShapeHoles"
+            <HoldShape X="X" Y="Y" Radius="Radius" ShapePoints="drawnPoints" ShapeHoles="drawnHoles"
                        Foot="Foot" FootScale="FootScale" Fill="none" PointerEvents="none" />
         </g>
     }
@@ -48,4 +48,19 @@
 
     /// <summary>The outline colour, any CSS colour.</summary>
     [Parameter] public string Color { get; set; } = "var(--accent)";
+
+    /// <summary>
+    /// Round the outline's corners a little for display (<see cref="HoldOutlineSmoothing"/>), as the boulder
+    /// view does. The stored outline is never changed.
+    /// </summary>
+    [Parameter] public bool Smooth { get; set; }
+
+    private IReadOnlyList<ShapePoint>? drawnPoints;
+    private IReadOnlyList<IReadOnlyList<ShapePoint>>? drawnHoles;
+
+    protected override void OnParametersSet()
+    {
+        drawnPoints = Smooth ? HoldOutlineSmoothing.Smooth(ShapePoints) : ShapePoints;
+        drawnHoles = Smooth ? HoldOutlineSmoothing.SmoothRings(ShapeHoles) : ShapeHoles;
+    }
 }

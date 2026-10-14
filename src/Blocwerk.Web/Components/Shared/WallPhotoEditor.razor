@@ -337,15 +337,6 @@
 </div>
 </div>
 
-@* Dimming the photo helps a READER pick a boulder's holds out of the wall; while editing it
-   only fights the thing being edited, and the bar stole a row of vertical space right under
-   the photo where the docked toolbar wants it. So it appears on the read-only arms of this
-   component only — never in edit mode, never on the border/shape settings card. *@
-@if (!CanEdit && !BorderOnly)
-{
-    <WallDimControl />
-}
-
 @* Mode-specific contextual controls — kept BELOW the viewport so the image
    never shifts under the cursor when a tool's options appear or change. *@
 @* What is left down here is WALL-LIFECYCLE state, not tool state: these bars appear and disappear

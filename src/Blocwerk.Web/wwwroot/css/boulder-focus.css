@@ -1,0 +1,25 @@
+/* Focus on a boulder view: the lightbulb over the boulder's photo (BoulderFocusButton.razor), state on
+   <html> from wwwroot/js/boulder-focus.js. Only the boulder view's photos carry img.boulder-photo, so the
+   wall page's panels and every other photo stay as they are. The hold outlines are a sibling layer and
+   keep their full strength.
+   The level is 75 % of the old dim slider at its maximum (brightness 1 - 0.8, saturation 1 - 0.7):
+   brightness 1 - 0.75 * 0.8 = 0.4 and saturation 1 - 0.75 * 0.7 = 0.475. The old focus button went to
+   brightness 0.3, saturation 0.12, contrast 1.15. */
+img.boulder-photo { transition: filter 120ms linear; }
+:root.bw-boulder-focus img.boulder-photo { filter: brightness(0.4) saturate(0.475); }
+
+/* Styled like the wall view's "Show all holds" button (.heat-tool .holds-all-tool), bottom right ON the
+   photo, clear of the full-screen button top right. boulder-focus.js measures the exact offsets: the
+   photo box can be narrower than the button's container. 10px is the corner before it has run. */
+.boulder-focus-tool { position: absolute; z-index: 3; bottom: 10px; right: 10px; }
+
+/* In full screen the button rides the stage's chrome slot: bottom right of the screen, upright with
+   the photo, clear of the close button top right. */
+.bw-stage-chrome:has(> .boulder-focus-tool) {
+    left: auto;
+    right: max(24px, env(safe-area-inset-right, 0px));
+    bottom: max(24px, env(safe-area-inset-bottom, 0px));
+    transform: none;
+}
+.bw-stage-chrome > .boulder-focus-tool { position: static; }
+:root.bw-boulder-focus .boulder-focus-tool { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
