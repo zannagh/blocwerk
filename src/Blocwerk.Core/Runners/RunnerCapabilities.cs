@@ -7,7 +7,8 @@ namespace Blocwerk.Core.Runners;
 
 /// <summary>
 /// What a 3D runner advertises in <c>hello</c> (<c>capabilities</c>) and which jobs that lets it claim. A runner that
-/// advertises none (every version before textures jobs) counts as <c>splat</c> only, so it never sees a textures job.
+/// advertises none (every version before textures jobs) counts as <c>splat</c> only, so it never sees a textures job; a
+/// hold detection job only goes to a runner that names <c>detect-holds</c> (every version before it never does).
 /// </summary>
 public static class RunnerCapabilities
 {
@@ -17,7 +18,10 @@ public static class RunnerCapabilities
     /// <summary>Renders wall textures (the wall-geometry package is importable and memory suffices).</summary>
     public const string Textures = "textures";
 
-    private static readonly string[] Known = [Splat, Textures];
+    /// <summary>Finds holds in capture photos (ONNX Runtime is importable on the runner).</summary>
+    public const string DetectHolds = "detect-holds";
+
+    private static readonly string[] Known = [Splat, Textures, DetectHolds];
 
     /// <summary>The stored form of a hello's list: known names only, de-duplicated, comma separated; null when none was sent.</summary>
     public static string? Store(IEnumerable<string>? reported)
@@ -30,6 +34,7 @@ public static class RunnerCapabilities
     public static bool Allows(string? stored, GpuJobKind kind) => kind switch
     {
         GpuJobKind.Textures => Has(stored, Textures),
+        GpuJobKind.DetectHolds => Has(stored, DetectHolds),
         _ => stored is null || Has(stored, Splat),
     };
 
@@ -38,5 +43,10 @@ public static class RunnerCapabilities
         stored is not null && stored.Split(',', StringSplitOptions.RemoveEmptyEntries).Contains(capability);
 
     /// <summary>The wire name of a job kind (the claim's <c>kind</c>).</summary>
-    public static string KindName(GpuJobKind kind) => kind == GpuJobKind.Textures ? Textures : Splat;
+    public static string KindName(GpuJobKind kind) => kind switch
+    {
+        GpuJobKind.Textures => Textures,
+        GpuJobKind.DetectHolds => DetectHolds,
+        _ => Splat,
+    };
 }

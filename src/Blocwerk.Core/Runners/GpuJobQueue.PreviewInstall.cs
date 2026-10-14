@@ -87,7 +87,7 @@ public sealed partial class GpuJobQueue
     public async Task<(int Step, int? Total)?> InstalledPreviewAsync(Guid captureId, CancellationToken ct)
     {
         await using var db = dbContextFactory.CreateDbContext();
-        var job = await db.GpuJobs.AsNoTracking().Where(j => j.CaptureId == captureId)
+        var job = await db.GpuJobs.AsNoTracking().Where(j => j.CaptureId == captureId && j.Kind == GpuJobKind.Splat)
             .OrderByDescending(j => j.CreatedAt)
             .Select(j => new { j.PreviewInstalledStep, j.TotalSteps, j.InstalledAt, j.Status })
             .FirstOrDefaultAsync(ct);

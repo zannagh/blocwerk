@@ -14,4 +14,10 @@ public enum GpuJobKind
     /// Only runners that advertise the <c>textures</c> capability get it.
     /// </summary>
     Textures = 1,
+
+    /// <summary>
+    /// Find the holds in a capture's photos for the hold proposal search (the app's model and tiling, run on the runner).
+    /// Only runners that advertise the <c>detect-holds</c> capability get it; without one the app detects them itself.
+    /// </summary>
+    DetectHolds = 2,
 }

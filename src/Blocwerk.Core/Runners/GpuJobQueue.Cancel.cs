@@ -75,14 +75,7 @@ public sealed partial class GpuJobQueue
 
         foreach (var job in jobs)
         {
-            if (job.Kind == GpuJobKind.Textures)
-            {
-                NotifyTextures(job.CaptureId);
-            }
-            else
-            {
-                await MarkCaptureWithoutSplatAsync(db, job, reason, ct);
-            }
+            await JobEndedAsync(db, job, reason, ct);
         }
 
         logger.LogInformation("3D runners are off: cancelled {Count} waiting or running GPU job(s)", jobs.Count);

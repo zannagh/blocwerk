@@ -72,6 +72,7 @@ def test_the_blend_budget_can_be_set_as_the_services_own_variable():
 def test_hello_carries_the_capabilities(tmp_path, fast, server, monkeypatch):  # noqa: F811
     monkeypatch.setattr(caps_module.textures, "advertise", lambda: {"capabilities": ["splat", "textures"],
                                                                     "texturesMemoryMb": 24576})
+    monkeypatch.setattr(caps_module.holds, "advertise", lambda: [])
     monkeypatch.setattr(caps_module, "gpu_info", lambda: ("Apple M4", 49152))
     monkeypatch.setattr(caps_module, "budget_mb", lambda: 20000)
     caps = caps_module.Capabilities()

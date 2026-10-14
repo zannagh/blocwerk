@@ -4,6 +4,7 @@
 
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Runners;
 using Blocwerk.Core.Services;
 
 namespace Blocwerk.Core.Abstractions;
@@ -27,6 +28,18 @@ public interface IHoldProposalService
     /// <param name="ct">Cancellation.</param>
     /// <returns>The outcome, or null when not possible or failed.</returns>
     Task<HoldProposalRunResult?> FindFromPipelineAsync(Guid wallId, CancellationToken ct = default);
+
+    /// <summary>
+    /// <see cref="FindFromPipelineAsync(Guid, CancellationToken)"/> with the photos a 3D runner already searched
+    /// (<see cref="RunnerHoldDetection"/>, by camera name): those are not detected again here.
+    /// </summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="detected">The holds the runner found per camera name.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>The outcome, or null when not possible or failed.</returns>
+    Task<HoldProposalRunResult?> FindFromPipelineAsync(
+        Guid wallId, RunnerHoldsFound? detected, CancellationToken ct = default) =>
+        FindFromPipelineAsync(wallId, ct);
 
     /// <summary>Checks that the current user may search this wall (wall admin, not a kiosk).</summary>
     /// <param name="wallId">The wall.</param>

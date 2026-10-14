@@ -44,6 +44,7 @@ public sealed partial class GpuJobQueue
     internal static string WaitingStage(SplatQuality quality, int online, int busy, int paused = 0, GpuJobKind kind = GpuJobKind.Splat) =>
         online == 0 && paused > 0 ? "waiting for a 3D runner (paused)"
         : online == 0 && kind == GpuJobKind.Textures ? "waiting for a 3D runner that can render wall textures (none online)"
+        : online == 0 && kind == GpuJobKind.DetectHolds ? "waiting for a 3D runner that can find holds (none online)"
         : online == 0 ? $"waiting for a 3D runner that can train {CaptureSplatDocuments.QualityName(quality)} (none online)"
         : busy >= online ? $"waiting for a 3D runner ({online} online, busy)"
         : busy == 0 ? $"waiting for a 3D runner ({online} online)"
@@ -78,9 +79,12 @@ public sealed partial class GpuJobQueue
         foreach (var job in stale)
         {
             var days = options.QueuedLifetime.TotalDays.ToString("0.#", CultureInfo.InvariantCulture);
-            var reason = job.Kind == GpuJobKind.Textures
-                ? $"no 3D runner rendered the wall textures within {days} days"
-                : $"no 3D runner took the photo-real view within {days} days";
+            var reason = job.Kind switch
+            {
+                GpuJobKind.Textures => $"no 3D runner rendered the wall textures within {days} days",
+                GpuJobKind.DetectHolds => $"no 3D runner looked for holds within {days} days",
+                _ => $"no 3D runner took the photo-real view within {days} days",
+            };
             var cancelled = await db.GpuJobs.Where(j => j.Id == job.Id && j.Status == GpuJobStatus.Queued)
                 .ExecuteUpdateAsync(
                     s => s.SetProperty(j => j.Status, GpuJobStatus.Cancelled)
@@ -94,14 +98,7 @@ public sealed partial class GpuJobQueue
             }
 
             logger.LogInformation("GPU job {JobId} of capture {CaptureId} expired: {Reason}", job.Id, job.CaptureId, reason);
-            if (job.Kind == GpuJobKind.Textures)
-            {
-                NotifyTextures(job.CaptureId);
-            }
-            else
-            {
-                await MarkCaptureWithoutSplatAsync(db, job, reason, ct);
-            }
+            await JobEndedAsync(db, job, reason, ct);
 
             // An installed preview stays the job's leftover: it may still be the capture's view, to finish again.
             DeleteAll(KeepOnlyInstalledPreview(job), job.Id);
@@ -122,6 +119,12 @@ public sealed partial class GpuJobQueue
             if (job.Kind == GpuJobKind.Textures)
             {
                 await RetryTexturesDeliveryAsync(db, job, now, ct);
+                continue;
+            }
+
+            if (job.Kind == GpuJobKind.DetectHolds)
+            {
+                await ExpireHoldsDeliveryAsync(db, job, now, ct);
                 continue;
             }
 

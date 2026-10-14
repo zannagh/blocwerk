@@ -24,7 +24,8 @@ public enum GpuRunnerMode
 /// <c>RUNNERS__MAXRESULTMB</c>, <c>RUNNERS__MAXBUNDLEMB</c>, <c>RUNNERS__MAXATTEMPTS</c>, <c>RUNNERS__MAXLOSTLEASES</c>,
 /// <c>RUNNERS__MAXJOBHOURS</c>, <c>RUNNERS__QUEUEDJOBDAYS</c>, <c>RUNNERS__MAXCONCURRENTUPLOADS</c>,
 /// <c>RUNNERS__MAXUPLOADMINUTES</c>, <c>RUNNERS__MINFREEDISKMB</c>, <c>RUNNERS__MAXRESULTSPLATS</c>,
-/// <c>RUNNERS__MAXRUNNERSPERUSER</c>, <c>RUNNERS__PREVIEWS</c>).
+/// <c>RUNNERS__MAXRUNNERSPERUSER</c>, <c>RUNNERS__PREVIEWS</c>, <c>RUNNERS__HOLDS</c>, <c>RUNNERS__HOLDSCLAIMMINUTES</c>,
+/// <c>RUNNERS__HOLDSMAXMINUTES</c>).
 /// </summary>
 public sealed class GpuRunnerOptions
 {
@@ -121,6 +122,27 @@ public sealed class GpuRunnerOptions
     /// <summary>The largest preview upload, decoded (<c>RUNNERS__MAXPREVIEWMB</c>); a preview is never the final result.</summary>
     public long MaxPreviewBytes { get; init; } = 1024L * 1024 * 1024;
 
+    /// <summary>
+    /// Whether the hold proposal search after a capture sends its detection to a runner that advertises <c>detect-holds</c>
+    /// (<c>RUNNERS__HOLDS</c>, default on). Off, or with no such runner online, the app detects the holds itself as before.
+    /// </summary>
+    public bool HoldsOnRunners { get; init; } = true;
+
+    /// <summary>
+    /// How long a hold detection job may wait for a runner to claim it (<c>RUNNERS__HOLDSCLAIMMINUTES</c>, default 10) before
+    /// the search cancels it and detects in the app; also how long it may wait again after a runner handed it back.
+    /// </summary>
+    public TimeSpan HoldsClaimWait { get; init; } = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// The longest the search waits for a runner's hold detection overall (<c>RUNNERS__HOLDSMAXMINUTES</c>, default 180); past
+    /// it the job is cancelled and the app detects the holds itself.
+    /// </summary>
+    public TimeSpan HoldsMaxWait { get; init; } = TimeSpan.FromHours(3);
+
+    /// <summary>How often the search looks at its hold detection job while it waits.</summary>
+    public TimeSpan HoldsPollInterval { get; init; } = TimeSpan.FromSeconds(5);
+
     public static GpuRunnerOptions Bind(IConfiguration? configuration)
     {
         var d = new GpuRunnerOptions();
@@ -143,6 +165,9 @@ public sealed class GpuRunnerOptions
             MinPreviewInterval = Int(configuration, "MinPreviewIntervalSeconds", 0, 3600) is { } secs ? TimeSpan.FromSeconds(secs) : d.MinPreviewInterval,
             MaxPreviewBytes = Megabytes(configuration, "MaxPreviewMb", 16 * 1024) ?? d.MaxPreviewBytes,
             Previews = bool.TryParse(Read(configuration, "Previews"), out var previews) ? previews : d.Previews,
+            HoldsOnRunners = bool.TryParse(Read(configuration, "Holds"), out var holds) ? holds : d.HoldsOnRunners,
+            HoldsClaimWait = Int(configuration, "HoldsClaimMinutes", 1, 24 * 60) is { } claim ? TimeSpan.FromMinutes(claim) : d.HoldsClaimWait,
+            HoldsMaxWait = Int(configuration, "HoldsMaxMinutes", 1, 7 * 24 * 60) is { } most ? TimeSpan.FromMinutes(most) : d.HoldsMaxWait,
         };
     }
 

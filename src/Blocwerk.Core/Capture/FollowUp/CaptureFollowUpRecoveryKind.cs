@@ -11,4 +11,7 @@ public enum CaptureFollowUpRecoveryKind
 
     /// <summary><see cref="CaptureFollowUpRecord.RunAgain"/>: the chain after a correction or re-activation.</summary>
     RunAgain,
+
+    /// <summary><see cref="CaptureFollowUpRecord.AfterCompletion"/>: the slow steps of a completed capture, beside the capture worker.</summary>
+    AfterCompletion,
 }

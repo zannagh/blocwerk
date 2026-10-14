@@ -70,7 +70,12 @@ public sealed partial class CaptureFollowUpChain
             captureId,
             r =>
             {
-                var marked = kind == CaptureFollowUpRecoveryKind.Rederive ? r.Rederive : r.RunAgain;
+                var marked = kind switch
+                {
+                    CaptureFollowUpRecoveryKind.Rederive => r.Rederive,
+                    CaptureFollowUpRecoveryKind.AfterCompletion => r.AfterCompletion is not null,
+                    _ => r.RunAgain,
+                };
                 queue = marked && r.Recoveries < MaxRecoveries;
                 if (queue || !marked)
                 {
@@ -78,7 +83,12 @@ public sealed partial class CaptureFollowUpChain
                 }
 
                 logger.LogWarning("Capture {CaptureId}: {Count} runs of its follow-up steps did not finish; they are dropped", captureId, r.Recoveries);
-                var dropped = kind == CaptureFollowUpRecoveryKind.Rederive ? r with { Rederive = false } : r with { RunAgain = false };
+                var dropped = kind switch
+                {
+                    CaptureFollowUpRecoveryKind.Rederive => r with { Rederive = false },
+                    CaptureFollowUpRecoveryKind.AfterCompletion => r with { AfterCompletion = null },
+                    _ => r with { RunAgain = false },
+                };
                 return dropped with { Recoveries = 0, Running = null, Note = r.Note is null ? GaveUpNote : $"{r.Note} {GaveUpNote}" };
             },
             ct);

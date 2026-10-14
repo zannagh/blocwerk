@@ -30,7 +30,8 @@ internal static partial class ApiDocsData
         + "\n    }\n  ]\n}";
 
     private const string JobsNote =
-        "kind: capture, gpuTraining, gpuTextures (wall textures rendered on a 3D runner), finish, followUp, textureRerender, resolve, import, holdSearch. etaSource: rate or history. runnerPaused "
+        "kind: capture, gpuTraining, gpuTextures (wall textures rendered on a 3D runner), gpuHolds (a capture's holds found on a 3D runner), finish, "
+        + "followUp, textureRerender, resolve, import, holdSearch. etaSource: rate or history. runnerPaused "
         + "(GPU training): its runner is paused, or every online runner that may take it is. "
         + "Shortened example; every job carries every field (null when it does not apply).";
 

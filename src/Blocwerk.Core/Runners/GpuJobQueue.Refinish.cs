@@ -26,7 +26,7 @@ public sealed partial class GpuJobQueue
             return [];
         }
 
-        var jobs = await db.GpuJobs.AsNoTracking().Where(j => captureIds.Contains(j.CaptureId)).ToListAsync();
+        var jobs = await db.GpuJobs.AsNoTracking().Where(j => captureIds.Contains(j.CaptureId) && j.Kind == GpuJobKind.Splat).ToListAsync();
         return jobs.GroupBy(j => j.CaptureId)
             .Where(g => IsRefinishable(g.OrderByDescending(j => j.CreatedAt).First(), files))
             .Select(g => g.Key)
@@ -36,7 +36,7 @@ public sealed partial class GpuJobQueue
     /// <summary>The capture's newest job when it can be finished again (its leftover files all still stored), or null.</summary>
     public static async Task<GpuJob?> RefinishSourceAsync(BlocwerkDbContext db, ICaptureFileStore files, Guid captureId, CancellationToken ct)
     {
-        var job = await db.GpuJobs.Where(j => j.CaptureId == captureId).OrderByDescending(j => j.CreatedAt).FirstOrDefaultAsync(ct);
+        var job = await db.GpuJobs.Where(j => j.CaptureId == captureId && j.Kind == GpuJobKind.Splat).OrderByDescending(j => j.CreatedAt).FirstOrDefaultAsync(ct);
         return job is not null && IsRefinishable(job, files) ? job : null;
     }
 
@@ -76,7 +76,7 @@ public sealed partial class GpuJobQueue
     public async Task<GpuJobRefinishState?> RestoreRefinishAsync(Guid captureId, CancellationToken ct)
     {
         await using var db = dbContextFactory.CreateDbContext();
-        var job = await db.GpuJobs.Where(j => j.CaptureId == captureId).OrderByDescending(j => j.CreatedAt).FirstOrDefaultAsync(ct);
+        var job = await db.GpuJobs.Where(j => j.CaptureId == captureId && j.Kind == GpuJobKind.Splat).OrderByDescending(j => j.CreatedAt).FirstOrDefaultAsync(ct);
         if (job is null || GpuJobRefinishState.Parse(job.RefinishStateJson) is not { } before)
         {
             return null;
