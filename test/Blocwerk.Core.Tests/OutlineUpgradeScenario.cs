@@ -59,7 +59,7 @@ internal sealed class OutlineUpgradeScenario
     }
 
     public HoldOutlineUpgradeService Service(
-        IHoldOutlineService? outlines = null, bool outlinesOn = true, IKioskContext? kiosk = null)
+        IHoldOutlineService? outlines = null, bool outlinesOn = true, IKioskContext? kiosk = null, IHoldRefinementQueue? refinementQueue = null)
     {
         var settings = new BlocwerkSettings();
         settings.HoldDetection.OutlinesEnabled = outlinesOn;
@@ -69,7 +69,8 @@ internal sealed class OutlineUpgradeScenario
             settings,
             NullLogger<HoldOutlineUpgradeService>.Instance,
             outlines ?? EnrichmentFakes.Outlines(),
-            kiosk);
+            kiosk,
+            refinementQueue);
     }
 
     public async Task<Dictionary<Guid, Hold>> LoadHoldsAsync()

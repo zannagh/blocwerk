@@ -53,16 +53,41 @@ public sealed class HoldShapeCleanupServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ApplyRefreshesThe3DFootprintsOnlyWhenShapesChanged()
+    public async Task ApplyQueuesTheFootprintsOfTheChangedHoldsOnlyAfterReleasingTheWallLock()
     {
         await SeedAsync();
-        var footprints = Substitute.For<IHoldFootprintService>();
+        var queue = Substitute.For<IHoldRefinementQueue>();
+        var queued = new List<Guid>();
+        var lockFree = true;
+        queue.When(q => q.Enqueue(harness.WallId, Arg.Any<IEnumerable<Guid>>())).Do(call =>
+        {
+            queued.AddRange(call.Arg<IEnumerable<Guid>>());
+            try
+            {
+                WallHoldWriteLock.TryAcquire(harness.WallId, "busy").Dispose();
+            }
+            catch (UserFacingException)
+            {
+                lockFree = false;
+            }
+        });
 
-        await Service(footprints).ApplyAsync(harness.WallId);
-        await footprints.Received(1).RefineFromPipelineAsync(harness.WallId, Arg.Any<CancellationToken>());
+        var applied = await Service(queue).ApplyAsync(harness.WallId);
 
-        await Service(footprints).ApplyAsync(harness.WallId);
-        await footprints.Received(1).RefineFromPipelineAsync(harness.WallId, Arg.Any<CancellationToken>());
+        Assert.True(lockFree);
+        Assert.Equal(applied.Changed, queued.Count);
+        Assert.Contains(spiky, queued);
+        Assert.DoesNotContain(manualSpiky, queued);
+
+        queue.ClearReceivedCalls();
+        await Service(queue).ApplyAsync(harness.WallId);
+        queue.DidNotReceive().Enqueue(Arg.Any<Guid>(), Arg.Any<IEnumerable<Guid>>());
+
+        queued.Clear();
+        await Service(queue).RevertAsync(harness.WallId, applied.BatchId!.Value);
+        Assert.True(lockFree);
+        Assert.Equal(applied.Changed, queued.Count);
+        Assert.Contains(spiky, queued);
     }
 
     [Fact]
@@ -171,7 +196,7 @@ public sealed class HoldShapeCleanupServiceTests : IDisposable
     private static string Key(Hold h) =>
         $"{h.Radius:R}|{h.OutlineSource}|{string.Join(",", (h.ShapePoints ?? []).Select(p => $"{p.Dx:R}/{p.Dy:R}"))}";
 
-    private HoldShapeCleanupService Service(IHoldFootprintService? footprints = null)
+    private HoldShapeCleanupService Service(IHoldRefinementQueue? refinementQueue = null)
     {
         var factory = new JournalingFactory(((TestDbContextFactory)harness.DbContextFactory).ConnectionString, journal);
         return new HoldShapeCleanupService(
@@ -180,7 +205,7 @@ public sealed class HoldShapeCleanupServiceTests : IDisposable
             journal,
             new ChangeJournalReverter(factory, journal),
             NullLogger<HoldShapeCleanupService>.Instance,
-            footprints: footprints);
+            refinementQueue: refinementQueue);
     }
 
     private async Task<Dictionary<Guid, Hold>> LoadAsync()

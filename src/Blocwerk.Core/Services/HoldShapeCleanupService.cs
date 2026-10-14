@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Detection.Outlines;
@@ -24,7 +25,7 @@ public sealed partial class HoldShapeCleanupService : IHoldShapeCleanupService
     private readonly ChangeJournalReverter reverter;
     private readonly ILogger<HoldShapeCleanupService> logger;
     private readonly IKioskContext? kioskContext;
-    private readonly IHoldFootprintService? footprints;
+    private readonly IHoldRefinementQueue? refinementQueue;
 
     /// <summary>Initializes a new instance of the <see cref="HoldShapeCleanupService"/> class.</summary>
     /// <param name="dbContextFactory">Context factory.</param>
@@ -33,7 +34,7 @@ public sealed partial class HoldShapeCleanupService : IHoldShapeCleanupService
     /// <param name="reverter">Reverts a batch.</param>
     /// <param name="logger">Logger.</param>
     /// <param name="kioskContext">The kiosk context, when the host has one.</param>
-    /// <param name="footprints">Refreshes the 3D hold footprints after shapes changed; optional.</param>
+    /// <param name="refinementQueue">Refreshes the 3D footprints of the changed holds in the background; optional.</param>
     public HoldShapeCleanupService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
         ICurrentUserService currentUserService,
@@ -41,7 +42,7 @@ public sealed partial class HoldShapeCleanupService : IHoldShapeCleanupService
         ChangeJournalReverter reverter,
         ILogger<HoldShapeCleanupService> logger,
         IKioskContext? kioskContext = null,
-        IHoldFootprintService? footprints = null)
+        IHoldRefinementQueue? refinementQueue = null)
     {
         this.dbContextFactory = dbContextFactory;
         this.currentUserService = currentUserService;
@@ -49,7 +50,7 @@ public sealed partial class HoldShapeCleanupService : IHoldShapeCleanupService
         this.reverter = reverter;
         this.logger = logger;
         this.kioskContext = kioskContext;
-        this.footprints = footprints;
+        this.refinementQueue = refinementQueue;
     }
 
     /// <inheritdoc/>
@@ -89,30 +90,35 @@ public sealed partial class HoldShapeCleanupService : IHoldShapeCleanupService
         var (db, userId) = await OpenForAdminAsync(wallId, ct);
         await using (db)
         {
-            using var wallLock = AcquireWallLock(wallId);
-            var (holds, plan) = await PlanAsync(db, wallId, progress, ct);
-            if (expectedVersion is not null && expectedVersion != plan.Version)
+            HoldShapeCleanupPlan plan;
+            Guid batchId;
+            using (AcquireWallLock(wallId))
             {
-                throw new UserFacingException("The holds changed since the preview. Check the hold shapes again, then apply.");
-            }
+                var (holds, planned) = await PlanAsync(db, wallId, progress, ct);
+                plan = planned;
+                if (expectedVersion is not null && expectedVersion != plan.Version)
+                {
+                    throw new UserFacingException("The holds changed since the preview. Check the hold shapes again, then apply.");
+                }
 
-            if (plan.Changes.Count == 0)
-            {
-                return plan.Summary(null);
-            }
+                if (plan.Changes.Count == 0)
+                {
+                    return plan.Summary(null);
+                }
 
-            foreach (var change in plan.Changes)
-            {
-                Write(holds[change.HoldId], change);
-            }
+                foreach (var change in plan.Changes)
+                {
+                    Write(holds[change.HoldId], change);
+                }
 
-            ct.ThrowIfCancellationRequested();
-            var batchId = await SaveInBatchAsync(db, wallId, ct);
-            await RefreshFootprintsAsync(wallId);
+                ct.ThrowIfCancellationRequested();
+                batchId = await SaveInBatchAsync(db, wallId, ct);
+            }
 
             logger.LogInformation(
                 "Hold shape clean-up on wall {WallId} by {UserId}: {Changed} of {Shapes} outlines and {Circles} circles considered changed, journal batch {BatchId}",
                 wallId, userId, plan.Changes.Count, plan.AutoShapes, plan.AutoCircles, batchId);
+            QueueFootprints(wallId, plan.Changes.Select(c => c.HoldId));
             return plan.Summary(batchId);
         }
     }
@@ -131,11 +137,16 @@ public sealed partial class HoldShapeCleanupService : IHoldShapeCleanupService
             }
         }
 
-        using var wallLock = AcquireWallLock(wallId);
-        var result = await reverter.RevertBatchAsync(batchId, force: false, ct);
+        var touched = await TouchedHoldsAsync(batchId, ct);
+        ChangeJournalRevertResult result;
+        using (AcquireWallLock(wallId))
+        {
+            result = await reverter.RevertBatchAsync(batchId, force: false, ct);
+        }
+
         if (result.Reverted)
         {
-            await RefreshFootprintsAsync(wallId);
+            QueueFootprints(wallId, touched);
         }
 
         return result;
@@ -155,25 +166,32 @@ public sealed partial class HoldShapeCleanupService : IHoldShapeCleanupService
         WallHoldWriteLock.TryAcquire(wallId, "Another update of this wall's holds (a clean-up, an outline upgrade or a wall update) is running. Try again in a moment.");
 
     /// <summary>
-    /// The 3D footprints derive from the outlines. This runs AFTER the holds were saved, so it ignores the caller's
-    /// cancellation (a cancelled request must not report "nothing changed" over written holds) and a failure here
-    /// is logged, not reported as a failed clean-up: the shapes are saved and the refresh can be run again.
+    /// The 3D footprints derive from the outlines. Only the changed holds are refined, in the background and outside the
+    /// wall's hold lock (<see cref="IHoldRefinementQueue"/>): a refinement of the whole wall traces every hold in every
+    /// capture photo, which takes many minutes, and running it inline kept the request and the lock busy all that time.
+    /// Until it ran, the 3D view projects the new outlines.
     /// </summary>
-    private async Task RefreshFootprintsAsync(Guid wallId)
-    {
-        if (footprints is null)
-        {
-            return;
-        }
+    private void QueueFootprints(Guid wallId, IEnumerable<Guid> holdIds) => refinementQueue?.Enqueue(wallId, holdIds);
 
-        try
-        {
-            await footprints.RefineFromPipelineAsync(wallId, CancellationToken.None);
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            logger.LogWarning(ex, "The 3D footprint refresh after the shape clean-up on wall {WallId} failed; run \"refine 3D hold shapes\" again", wallId);
-        }
+    /// <summary>The holds a recorded batch changed, read from its journal entries.</summary>
+    private async Task<List<Guid>> TouchedHoldsAsync(Guid batchId, CancellationToken ct)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+        var keys = await db.ChangeJournalEntries.AsNoTracking()
+            .Where(e => e.BatchId == batchId && e.EntityType == nameof(Hold))
+            .Select(e => e.KeyJson)
+            .ToListAsync(ct);
+        return keys.Select(HoldIdOf).OfType<Guid>().ToList();
+    }
+
+    private static Guid? HoldIdOf(string keyJson)
+    {
+        using var key = JsonDocument.Parse(keyJson);
+        return key.RootElement.ValueKind == JsonValueKind.Object
+               && key.RootElement.TryGetProperty(nameof(Hold.Id), out var id)
+               && id.TryGetGuid(out var guid)
+            ? guid
+            : null;
     }
 
     /// <summary>Writes one change onto the tracked hold: geometry only, never position, never boulders.</summary>
