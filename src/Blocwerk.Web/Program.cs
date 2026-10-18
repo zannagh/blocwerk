@@ -43,17 +43,10 @@ public static class Program
 
         var loggerConfiguration = new LoggerConfiguration()
             .Enrich.FromLogContext()
-            .WriteTo.Console()
 
-            // One file per day, a new one after 10 MB, at most 7 files (70 MB), so about a week at normal volume and a
-            // busy day can only shorten that. Production mounts logs/ from the host (docker-compose.prod.yml), so the
-            // files outlive a redeploy and a session can be compared with the one before it.
-            .WriteTo.File(
-                "logs/blocwerk.log",
-                rollingInterval: RollingInterval.Day,
-                fileSizeLimitBytes: 10 * 1024 * 1024,
-                rollOnFileSizeLimit: true,
-                retainedFileCountLimit: 7);
+            // stdout only: docker captures it, and in production the host's log collector ships the container log to
+            // Loki (Grafana), which keeps it across redeploys. No log files in the container or on the host.
+            .WriteTo.Console();
 
         // Levels per category: defaults in LoggingLevels, overridable with Logging__LogLevel__<Category> (compose/env).
         // The framework categories stay at Warning so only genuine problems (and our own Information logs) ship; Debug
