@@ -2,6 +2,7 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
 
 namespace Blocwerk.Web.Components.Shared;
@@ -61,7 +62,7 @@ public partial class CarryoverReview
 
     private async Task OnNewHoldGeometryChanged(PanelImageView.HoldGeometry g)
     {
-        await WallPanelService.UpdateStagedHoldAsync(WallId, g.HoldId, g.X, g.Y, g.Radius);
+        await WallPanelService.UpdateStagedHoldInSessionAsync(WallId, SessionId, g.HoldId, g.X, g.Y, g.Radius);
         await ReloadNewHoldsAsync();
     }
 
@@ -93,7 +94,7 @@ public partial class CarryoverReview
     /// </summary>
     private async Task<Guid?> AddNewHoldAsync((double X, double Y, double Radius) at)
     {
-        var id = await WallPanelService.AddStagedHoldAsync(WallId, CenterPanelId, at.X, at.Y, at.Radius);
+        var id = await WallPanelService.AddStagedHoldInSessionAsync(WallId, SessionId, CenterPanelId, at.X, at.Y, at.Radius);
         await ReloadNewHoldsAsync();
         StateHasChanged();
         return id;
@@ -111,7 +112,9 @@ public partial class CarryoverReview
 
     private async Task RemoveNewHoldAsync(Guid id)
     {
-        await WallPanelService.DeleteStagedHoldAsync(WallId, id);
+        // Deleting a twin here is the user's explicit choice: the service releases the verdicts that name it (same
+        // kind, no twin, unconfirmed) before the delete, exactly as the in-memory fallback below does.
+        await WallPanelService.DeleteStagedHoldInSessionAsync(WallId, SessionId, id, StagedTwinDeletion.ReleaseTwin);
 
         // Any carry decision that pointed at this now-deleted staged twin falls back to a carry in
         // place (no twin), so no decision references a hold that no longer exists. The fallbacks are

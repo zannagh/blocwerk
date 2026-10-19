@@ -16,17 +16,13 @@ namespace Blocwerk.Web.Components.Shared;
 public partial class BigWallUpdate
 {
     // ---- Finish ----------------------------------------------------------------
-    private int CarriedCount => _outcome?.Carryover.Count(d => d.Kind == CarryKind.Carried) ?? 0;
-    private int ChangedCount => _outcome?.Carryover.Count(d => d.Kind == CarryKind.Changed) ?? 0;
-    private int RemovedCount => _outcome?.Carryover.Count(d => d.Kind == CarryKind.Removed) ?? 0;
+    // The confirm-step counts live in BigWallUpdate.ConfirmSummary.cs and read the session.
 
     /// <summary>Staged holds the carry verdicts make an old hold's successor; the overlap step does not offer deleting them.</summary>
     private IReadOnlySet<Guid>? ReFoundSuccessorIds => _outcome?.Carryover
         .Where(d => d.Kind != CarryKind.Removed && d.NewHoldId is not null)
         .Select(d => d.NewHoldId!.Value)
         .ToHashSet();
-    private int NewKeptCount => _outcome?.AcceptedNewCenterHoldIds.Count ?? 0;
-    private int LinkCount => _linkSets.Sum(l => l.Links.Count);
 
     /// <summary>
     /// Promotes what the SESSION says was decided, not what this circuit happens to remember — the two
@@ -50,6 +46,7 @@ public partial class BigWallUpdate
         try
         {
             var confirmation = await BuildConfirmationAsync();
+            confirmDecisions = confirmation;
 
             // BuildConfirmationAsync re-reads the session rows, so it can surface out-of-scope verdicts
             // this circuit had not seen yet (another admin's decisions, or a resume that skipped the
@@ -66,6 +63,7 @@ public partial class BigWallUpdate
                 confirmation.Carryover, confirmation.AcceptedNewCenterHoldIds, confirmation.RemovedNewCenterHoldIds);
             _linkSets.Clear();
             _linkSets.AddRange(confirmation.Neighbours);
+            confirmDecisions = confirmation;
             _phase = WallUpdatePhase.Done;
             await OnPromoted.InvokeAsync();
         }

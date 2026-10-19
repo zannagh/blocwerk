@@ -63,6 +63,8 @@ public sealed partial class WallRefreshService
                 throw new UserFacingException(WallBigUpdateService.FullRevisionNeedsEveryPanel);
             }
 
+            await EnsureNoOtherUpdateOpenAsync(db, refresh, picks);
+
             refresh.FullRevision = fullRevision;
             if (fullRevision)
             {

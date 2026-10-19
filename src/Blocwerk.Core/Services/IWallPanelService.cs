@@ -195,6 +195,25 @@ public interface IWallPanelService
     Task DeleteStagedHoldAsync(Guid wallId, Guid holdId);
 
     /// <summary>
+    /// <see cref="AddStagedHoldAsync"/> as the update's screens make it: refused with
+    /// <see cref="WallUpdateSessionSupersededException"/> when <paramref name="expectedSessionId"/> is not the wall's open
+    /// update session any more (null checks nothing).
+    /// </summary>
+    Task<Guid> AddStagedHoldInSessionAsync(
+        Guid wallId, Guid? expectedSessionId, Guid panelId, double x, double y, double radius, bool needsReview = true);
+
+    /// <summary><see cref="UpdateStagedHoldAsync"/>, scoped to the session as <see cref="AddStagedHoldInSessionAsync"/> is.</summary>
+    Task UpdateStagedHoldInSessionAsync(Guid wallId, Guid? expectedSessionId, Guid holdId, double x, double y, double radius);
+
+    /// <summary>
+    /// <see cref="DeleteStagedHoldAsync"/>, scoped to the session as <see cref="AddStagedHoldInSessionAsync"/> is, and
+    /// guarded: when an old hold's carry verdict names the hold as its twin, <paramref name="twins"/> decides — refuse
+    /// (<see cref="StagedHoldIsTwinException"/>, nothing deleted) or keep the verdict without the twin.
+    /// </summary>
+    Task DeleteStagedHoldInSessionAsync(
+        Guid wallId, Guid? expectedSessionId, Guid holdId, StagedTwinDeletion twins = StagedTwinDeletion.Refuse);
+
+    /// <summary>
     /// Records that two holds on different panels of the same wall are the one physical hold seen
     /// across an overlapping seam — the standalone counterpart to the links created during the
     /// add-panel confirmation flow. Validates that both holds exist on <paramref name="wallId"/> and

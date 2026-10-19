@@ -12,7 +12,8 @@ namespace Blocwerk.Core.Services;
 public partial class WallUpdateSessionService
 {
     /// <inheritdoc/>
-    public async Task<DateTimeOffset?> SaveDefaultDecisionsAsync(Guid wallId, DefaultDecisions decisions, DateTimeOffset? onlyIfUnchangedSince = null)
+    public async Task<DateTimeOffset?> SaveDefaultDecisionsAsync(
+        Guid wallId, DefaultDecisions decisions, DateTimeOffset? onlyIfUnchangedSince = null, Guid? expectedSessionId = null)
     {
         var user = await currentUserService.GetCurrentUserAsync();
         await using var db = await dbContextFactory.CreateDbContextAsync();
@@ -20,7 +21,7 @@ public partial class WallUpdateSessionService
         await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
 
         await using var transaction = await db.Database.BeginTransactionAsync();
-        var session = await RequireOpenAsync(db, wallId);
+        var session = await RequireOpenAsync(db, wallId, expectedSessionId);
 
         // Row lock without a change, then the committed state: a user write before it shows here, one after it waits.
         await db.WallUpdateSessions.Where(s => s.Id == session.Id)

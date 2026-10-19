@@ -111,7 +111,7 @@ public partial class CarryoverReview
         relocationBusy = true;
         try
         {
-            await Sessions.DecideRelocationAsync(WallId, suggestion.Id, decision);
+            await Sessions.DecideRelocationAsync(WallId, suggestion.Id, decision, SessionId);
             MirrorRelocationVerdict(suggestion, decision);
             _saveError = null;
         }

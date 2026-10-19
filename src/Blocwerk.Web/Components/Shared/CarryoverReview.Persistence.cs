@@ -118,7 +118,7 @@ public partial class CarryoverReview
     {
         try
         {
-            await Sessions.SaveCarryDecisionAsync(WallId, decision);
+            await Sessions.SaveCarryDecisionAsync(WallId, decision, SessionId);
             _saveError = null;
         }
         catch (Exception ex)
@@ -143,7 +143,7 @@ public partial class CarryoverReview
     {
         try
         {
-            await Sessions.SaveNewCentreHoldDecisionAsync(WallId, stagedHoldId, discarded);
+            await Sessions.SaveNewCentreHoldDecisionAsync(WallId, stagedHoldId, discarded, SessionId);
             _saveError = null;
         }
         catch (Exception ex)

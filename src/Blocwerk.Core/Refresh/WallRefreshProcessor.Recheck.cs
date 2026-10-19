@@ -139,7 +139,9 @@ public sealed partial class WallRefreshProcessor
     /// <summary>
     /// Matches, triages (with the wall's 3D model), records the quick review's default decisions on the update session in
     /// one go and sums them up for the confirm screen. With <paramref name="onlyIfUnchangedSince"/>, nothing is recorded
-    /// (null is returned) when the session was changed after it — the user's choices win.
+    /// (null is returned) when the session was changed after it — the user's choices win. With
+    /// <paramref name="summarizeIfRefused"/>, the summary is then made from those choices as stored instead (and carries no
+    /// <see cref="RefreshSummary.DecisionsRecordedAt"/>, so no later 3D re-check replaces them).
     /// </summary>
     private async Task<RefreshSummary?> TriageAndRecordAsync(
         WallRefresh refresh,
@@ -147,7 +149,8 @@ public sealed partial class WallRefreshProcessor
         IReadOnlyDictionary<Guid, IReadOnlyList<Guid>> byPanel,
         IReadOnlyList<string> panels,
         DateTimeOffset? onlyIfUnchangedSince,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool summarizeIfRefused = false)
     {
         Guid? model;
         await using (var db = dbContextFactory.CreateDbContext())
@@ -158,7 +161,8 @@ public sealed partial class WallRefreshProcessor
         var matched = await actors.BigUpdate.ResumeAsync(refresh.WallId, use3DEvidence: true);
         var quick = QuickUpdateDefaults.Build(matched, byPanel);
         var cards = UpdateExceptionBuilder.Build(matched, quick);
-        if (await RecordDecisionsAsync(refresh.WallId, actors.Sessions, quick, cards, onlyIfUnchangedSince) is not { } recordedAt)
+        var recordedAt = await RecordDecisionsAsync(refresh, actors.Sessions, quick, cards, onlyIfUnchangedSince);
+        if (recordedAt is null && !summarizeIfRefused)
         {
             return null;
         }
@@ -175,6 +179,7 @@ public sealed partial class WallRefreshProcessor
             CheckedWithModelId = model is not null && matched.Evidence3DModelId == model ? model : null,
             Attempted3DModelId = model,
             DecisionsRecordedAt = recordedAt,
+            EditedInFullReview = recordedAt is null,
         };
     }
 }

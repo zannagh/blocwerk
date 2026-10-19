@@ -37,7 +37,12 @@ public interface IWallUpdateSessionService
     /// The position in the neighbour-overlap walk. Only meaningful at <see cref="WallUpdatePhase.Neighbours"/>;
     /// pass 0 elsewhere. Throws when no session is open.
     /// </param>
-    Task<WallUpdateSessionInfo> SetPhaseAsync(Guid wallId, WallUpdatePhase phase, int neighbourIndex = 0);
+    /// <param name="expectedSessionId">
+    /// The session the caller is looking at. Every write below takes it too: when it is not the wall's open session any
+    /// more the write is refused with <see cref="WallUpdateSessionSupersededException"/> instead of landing in the update
+    /// that replaced it. Null means "whatever is open" (legacy and service-level callers).
+    /// </param>
+    Task<WallUpdateSessionInfo> SetPhaseAsync(Guid wallId, WallUpdatePhase phase, int neighbourIndex = 0, Guid? expectedSessionId = null);
 
     /// <summary>
     /// Everything decided so far, as a promote-ready payload. The warp dictionaries are null: re-run the
@@ -55,7 +60,7 @@ public interface IWallUpdateSessionService
     /// <see cref="CarryConfirmationPolicy"/> for the full rule.
     /// </para>
     /// </summary>
-    Task SaveCarryDecisionAsync(Guid wallId, CarryoverDecision decision);
+    Task SaveCarryDecisionAsync(Guid wallId, CarryoverDecision decision, Guid? expectedSessionId = null);
 
     /// <summary>
     /// Who has confirmed which old-hold carry verdicts on the wall's open session, for the review to show
@@ -71,10 +76,10 @@ public interface IWallUpdateSessionService
     /// The "un-review this" action: the only way to clear a confirmation without changing the verdict,
     /// since a write that re-states the same verdict deliberately preserves it.
     /// </summary>
-    Task ClearCarryConfirmationAsync(Guid wallId, Guid oldHoldId);
+    Task ClearCarryConfirmationAsync(Guid wallId, Guid oldHoldId, Guid? expectedSessionId = null);
 
     /// <summary>Upserts the keep/discard verdict for ONE staged centre hold with no old twin.</summary>
-    Task SaveNewCentreHoldDecisionAsync(Guid wallId, Guid stagedHoldId, bool discarded);
+    Task SaveNewCentreHoldDecisionAsync(Guid wallId, Guid stagedHoldId, bool discarded, Guid? expectedSessionId = null);
 
     /// <summary>
     /// Replaces the whole carryover half of the session in one write: every carry verdict plus the
@@ -98,7 +103,8 @@ public interface IWallUpdateSessionService
         Guid wallId,
         IReadOnlyList<CarryoverDecision> carryover,
         IReadOnlyList<Guid> acceptedNewCentreHoldIds,
-        IReadOnlyList<Guid> removedNewCentreHoldIds);
+        IReadOnlyList<Guid> removedNewCentreHoldIds,
+        Guid? expectedSessionId = null);
 
     /// <summary>
     /// Replaces one staged panel's confirmed overlap outcome — its links and its removed holds. Called
@@ -109,20 +115,24 @@ public interface IWallUpdateSessionService
     /// separate "clear this panel" call: the one the wizard used to make on Skip silently deleted rows
     /// the user had confirmed in an earlier session, and skipping now leaves a decided panel alone.
     /// </remarks>
-    Task SaveNeighbourLinkSetAsync(Guid wallId, NeighbourLinkSet linkSet);
+    Task SaveNeighbourLinkSetAsync(Guid wallId, NeighbourLinkSet linkSet, Guid? expectedSessionId = null);
 
     /// <summary>
     /// Writes a whole set of default decisions at once (the quick review's): the carryover, the new centre holds, every
     /// neighbour panel's links and removals, and the phase, in one transaction under the session's write lock.
     /// </summary>
+    /// <param name="wallId">The wall being updated.</param>
+    /// <param name="decisions">The decisions to write.</param>
     /// <param name="onlyIfUnchangedSince">
     /// When set, nothing is written if the session was changed after this moment (the user's own choices win).
     /// </param>
+    /// <param name="expectedSessionId">The session the decisions are for; refused when another one is open (null: whatever is open).</param>
     /// <returns>
     /// The session's <c>UpdatedAt</c> as committed with the decisions (the stamp to compare later writes against), or null
     /// when nothing was written.
     /// </returns>
-    Task<DateTimeOffset?> SaveDefaultDecisionsAsync(Guid wallId, DefaultDecisions decisions, DateTimeOffset? onlyIfUnchangedSince = null);
+    Task<DateTimeOffset?> SaveDefaultDecisionsAsync(
+        Guid wallId, DefaultDecisions decisions, DateTimeOffset? onlyIfUnchangedSince = null, Guid? expectedSessionId = null);
 
     /// <summary>
     /// The open session's "this hold moved" suggestions, best first — the same list on every read, since
@@ -139,7 +149,7 @@ public interface IWallUpdateSessionService
     /// holds as they were; dismissing a previously accepted suggestion puts the old hold back to the
     /// unconfirmed default (carried in place) while its verdict is still the one that accept wrote.
     /// </summary>
-    Task DecideRelocationAsync(Guid wallId, Guid suggestionId, RelocationDecision decision);
+    Task DecideRelocationAsync(Guid wallId, Guid suggestionId, RelocationDecision decision, Guid? expectedSessionId = null);
 
     /// <summary>
     /// The open session's confirm-screen cards (<see cref="Entities.WallUpdateException"/>): the holds whose evidence needs a
@@ -152,5 +162,5 @@ public interface IWallUpdateSessionService
     /// kept (carried in place) or removed, a low-confidence match is confirmed, a disputed detection is kept as a new hold
     /// or left out. <see cref="UpdateExceptionAnswer.Undo"/> puts the update's default back.
     /// </summary>
-    Task DecideUpdateExceptionAsync(Guid wallId, Guid exceptionId, UpdateExceptionAnswer answer);
+    Task DecideUpdateExceptionAsync(Guid wallId, Guid exceptionId, UpdateExceptionAnswer answer, Guid? expectedSessionId = null);
 }

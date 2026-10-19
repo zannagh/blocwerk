@@ -96,7 +96,7 @@
         case WallUpdatePhase.Detected:
             @if (_session is not null)
             {
-                <TouchupStep @ref="_detectedStep" WallId="WallId" Session="_session"
+                <TouchupStep @ref="_detectedStep" WallId="WallId" Session="_session" SessionId="_sessionInfo?.Id"
                              Heading="Check the detected holds"
                              Lead="Fix the detection before we match it against the old wall."
                              OnContinue="OnDetectedContinue" OnSkip="OnDetectedContinue">
@@ -112,7 +112,7 @@
         case WallUpdatePhase.Carryover:
             @if (_session is not null)
             {
-                <CarryoverReview @ref="_carryover" WallId="WallId" Session="_session"
+                <CarryoverReview @ref="_carryover" WallId="WallId" Session="_session" SessionId="_sessionInfo?.Id"
                                  Restored="_restored"
                                  ScopeResets="_scopeResets"
                                  OnScopeResetsAcknowledged="AcknowledgeScopeResets"
@@ -127,7 +127,7 @@
                 <div class="bigupdate-step-label">
                     Overlaps — neighbour @(_neighbourIndex + 1) of @_session!.Neighbours.Count
                 </div>
-                <PanelOverlapStepper @key="n.PanelId" WallId="WallId" PanelId="n.PanelId"
+                <PanelOverlapStepper @key="n.PanelId" @ref="neighbourStepper" WallId="WallId" PanelId="n.PanelId" SessionId="_sessionInfo?.Id"
                                      Col="n.Col" Row="n.Row" Proposals="n.Proposals" NeighbourStaged="true"
                                      AlignmentFailed="n.AlignmentFailed"
                                      Restored="RestoredFor(n.PanelId)"
@@ -141,7 +141,7 @@
         case WallUpdatePhase.Touchup:
             @if (_session is not null)
             {
-                <TouchupStep @ref="_touchupStep" WallId="WallId" Session="_session"
+                <TouchupStep @ref="_touchupStep" WallId="WallId" Session="_session" SessionId="_sessionInfo?.Id"
                              OnContinue="OnTouchupContinue" OnSkip="OnTouchupSkip" />
             }
             break;
