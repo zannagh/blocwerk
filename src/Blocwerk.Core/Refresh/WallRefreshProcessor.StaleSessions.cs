@@ -2,6 +2,7 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using System.Collections.Concurrent;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
@@ -20,6 +21,9 @@ public sealed partial class WallRefreshProcessor
 {
     /// <summary>How long a step-by-step update may sit untouched before it is discarded.</summary>
     public static readonly TimeSpan SessionIdleLimit = TimeSpan.FromDays(7);
+
+    /// <summary>Idle sessions nobody could discard, with the stamp they had then: reported once, not on every pass.</summary>
+    private readonly ConcurrentDictionary<Guid, DateTimeOffset> leftIdleSessions = new();
 
     private static readonly WallRefreshStatus[] ActiveStatuses =
     [
@@ -69,26 +73,50 @@ public sealed partial class WallRefreshProcessor
                 }
             }
 
-            if ((session.CreatedByUserId ?? session.LastActiveByUserId) is not { } actor)
+            // The starter first; one who is no longer an admin of the wall cannot discard it, so then the wall's owner
+            // (always an admin of it) closes it. Only when neither may is it left for a person, and said so once.
+            foreach (var actor in await DiscardActorsAsync(session, ct))
             {
-                return false;
+                if (await TryDiscardAsAsync(session, actor, ct))
+                {
+                    logger.LogInformation(
+                        "Discarded wall update session {SessionId} on wall {WallId}: untouched since {UpdatedAt}",
+                        session.Id, session.WallId, session.UpdatedAt);
+                    return true;
+                }
             }
 
-            try
+            if (!leftIdleSessions.TryGetValue(session.Id, out var reported) || reported != session.UpdatedAt)
             {
-                await using var scope = await actorFactory.CreateAsync(actor, ct);
-                await scope.Actors.BigUpdate.DiscardAsync(session.WallId, session.Id);
-            }
-            catch (Exception ex) when (ex is UserFacingException or InvalidOperationException or UnauthorizedAccessException)
-            {
-                // Replaced meanwhile, or its starter may no longer discard it: left for a person.
-                logger.LogInformation(ex, "Idle wall update session {SessionId} on wall {WallId} was left as it is", session.Id, session.WallId);
-                return false;
+                leftIdleSessions[session.Id] = session.UpdatedAt;
+                logger.LogInformation("Idle wall update session {SessionId} on wall {WallId} was left as it is", session.Id, session.WallId);
             }
 
-            logger.LogInformation(
-                "Discarded wall update session {SessionId} on wall {WallId}: untouched since {UpdatedAt}", session.Id, session.WallId, session.UpdatedAt);
+            return false;
+        }
+    }
+
+    /// <summary>Who may discard the session, in order: its starter (or last editor), then the wall's owner.</summary>
+    private async Task<IReadOnlyList<Guid>> DiscardActorsAsync(WallUpdateSession session, CancellationToken ct)
+    {
+        await using var db = dbContextFactory.CreateDbContext();
+        var owner = await db.Walls.IgnoreQueryFilters().Where(w => w.Id == session.WallId).Select(w => (Guid?)w.OwnerId).FirstOrDefaultAsync(ct);
+        return new[] { session.CreatedByUserId ?? session.LastActiveByUserId, owner }.OfType<Guid>().Distinct().ToList();
+    }
+
+    /// <summary>Discards the session as <paramref name="actor"/>; false when that user may not (or it was replaced meanwhile).</summary>
+    private async Task<bool> TryDiscardAsAsync(WallUpdateSession session, Guid actor, CancellationToken ct)
+    {
+        try
+        {
+            await using var scope = await actorFactory.CreateAsync(actor, ct);
+            await scope.Actors.BigUpdate.DiscardAsync(session.WallId, session.Id);
             return true;
+        }
+        catch (Exception ex) when (ex is UserFacingException or InvalidOperationException or UnauthorizedAccessException)
+        {
+            logger.LogDebug(ex, "Idle wall update session {SessionId}: {UserId} could not discard it", session.Id, actor);
+            return false;
         }
     }
 }

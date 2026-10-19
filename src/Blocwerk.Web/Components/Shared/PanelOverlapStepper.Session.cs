@@ -2,6 +2,7 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
 using Microsoft.AspNetCore.Components;
 
@@ -14,8 +15,8 @@ namespace Blocwerk.Web.Components.Shared;
 /// </summary>
 public partial class PanelOverlapStepper
 {
-    private const string TwinDeleteHint =
-        "This hold is where an old hold was matched to in the carry-over review. To drop it, change that hold's verdict there.";
+    private const string TwinReleasedHint =
+        "An old hold was matched to that hold. It keeps its choice and is carried at its old place; check it in the look-over.";
 
     /// <summary>The wall update session the edits belong to; null outside a wall update (adding a panel).</summary>
     [Parameter]
@@ -43,18 +44,23 @@ public partial class PanelOverlapStepper
         }
     }
 
-    /// <summary>Deletes a staged hold in the session; false (with the reason shown) when it was refused.</summary>
+    /// <summary>
+    /// Deletes a staged hold in the session; false (with the reason shown) when it was refused. The bin is the user's
+    /// explicit choice and the carry-over review only shows the centre, so a match an old hold had to this hold is
+    /// released (the old hold keeps its verdict, without the match) rather than refused with nowhere to go. The user is
+    /// told when that happened.
+    /// </summary>
     private async Task<bool> TryDeleteStagedInSessionAsync(Guid id)
     {
         try
         {
-            await WallPanelService.DeleteStagedHoldInSessionAsync(WallId, SessionId, id);
+            var released = await WallPanelService.DeleteStagedHoldInSessionAsync(WallId, SessionId, id, StagedTwinDeletion.ReleaseTwin);
+            if (released > 0)
+            {
+                _warning = TwinReleasedHint;
+            }
+
             return true;
-        }
-        catch (StagedHoldIsTwinException)
-        {
-            _warning = TwinDeleteHint;
-            return false;
         }
         catch (UserFacingException ex)
         {

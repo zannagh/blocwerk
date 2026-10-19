@@ -16,6 +16,9 @@ namespace Blocwerk.Core.Refresh;
 /// </summary>
 public sealed partial class WallRefreshService
 {
+    /// <summary>The most answers one call takes.</summary>
+    public const int MaxCheckAnswers = 500;
+
     /// <summary>The card kinds whose "Remove" removes the OLD hold: only taken for a hold on the centre panel.</summary>
     private static readonly HashSet<UpdateExceptionKind> RemovalKinds =
         [UpdateExceptionKind.ReplacedByOther, UpdateExceptionKind.PossiblyRemoved];
@@ -84,6 +87,11 @@ public sealed partial class WallRefreshService
             return 0;
         }
 
+        if (answers.Count > MaxCheckAnswers)
+        {
+            throw new UserFacingException($"Send at most {MaxCheckAnswers} answers at once.");
+        }
+
         var user = await currentUserService.GetCurrentUserAsync();
         await using (var scope = await actorFactory.CreateAsync(user.Id, CancellationToken.None))
         {
@@ -111,7 +119,15 @@ public sealed partial class WallRefreshService
         {
             foreach (var answer in answers)
             {
-                await sessions.DecideUpdateExceptionAsync(refresh.WallId, answer.CheckId, answer.Answer, refresh.UpdateSessionId);
+                try
+                {
+                    await sessions.DecideUpdateExceptionAsync(refresh.WallId, answer.CheckId, answer.Answer, refresh.UpdateSessionId);
+                }
+                catch (UserFacingException ex)
+                {
+                    throw new RefreshCheckAnswersStoppedException(written, answer.CheckId, ex);
+                }
+
                 written++;
             }
         }

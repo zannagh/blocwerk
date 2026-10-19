@@ -19,6 +19,9 @@ public partial class CarryoverReview
     [Inject]
     private IWallUpdateSessionService Sessions { get; set; } = default!;
 
+    [Inject]
+    private ILogger<CarryoverReview> Logger { get; set; } = default!;
+
     /// <summary>
     /// The decisions already recorded on the wall's update session, when this phase is being resumed.
     /// Laid over the carry-all defaults and the matcher's suggestions so a resumed review shows what
@@ -123,7 +126,7 @@ public partial class CarryoverReview
         }
         catch (Exception ex)
         {
-            _saveError = $"Could not save that decision yet: {ex.Message}";
+            _saveError = "Could not save that decision yet: " + UpdateErrorText.Describe(ex, Logger, "saving a carry verdict");
         }
 
         // The queue is a function of the decisions, so it is rebuilt here rather than only at init:
@@ -148,7 +151,7 @@ public partial class CarryoverReview
         }
         catch (Exception ex)
         {
-            _saveError = $"Could not save that decision yet: {ex.Message}";
+            _saveError = "Could not save that decision yet: " + UpdateErrorText.Describe(ex, Logger, "saving a new hold's decision");
         }
     }
 

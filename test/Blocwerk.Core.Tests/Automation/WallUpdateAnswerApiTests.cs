@@ -86,6 +86,30 @@ public class WallUpdateAnswerApiTests
     }
 
     [Fact]
+    public async Task SeveralAnswers_StoppingPartWay_SayWhereToResume()
+    {
+        using var h = new WallTestHarness();
+        using var s = new RefreshScenario(h);
+        s.Capture.Client.IsConfigured = false;
+        await s.SeedWallAsync();
+        var view = await s.PrepareAsync();
+        var refreshes = Substitute.For<IWallRefreshService>();
+        refreshes.PeekCurrentAsync(h.WallId).Returns(view);
+        var failed = Guid.NewGuid();
+        refreshes.DecideChecksAsync(view.Id, Arg.Any<IReadOnlyList<RefreshCheckAnswer>>())
+            .Returns<int>(_ => throw new RefreshCheckAnswersStoppedException(3, failed, new Core.Services.UserFacingException("gone")));
+        var api = RefreshApi(h, refreshes).As(ApiKeys.Personal());
+
+        var result = await api.AnswerChecks(h.WallId, view.Id, new RefreshCheckAnswersRequest([new RefreshCheckAnswerItem(Guid.NewGuid(), UpdateExceptionAnswer.Keep)]));
+        var tooMany = await api.AnswerChecks(h.WallId, view.Id, new RefreshCheckAnswersRequest(
+            Enumerable.Range(0, WallRefreshService.MaxCheckAnswers + 1).Select(_ => new RefreshCheckAnswerItem(Guid.NewGuid(), UpdateExceptionAnswer.Keep)).ToList()));
+
+        var body = Value<RefreshCheckAnswered>(result);
+        Assert.Equal((StatusCodes.Status202Accepted, 3, (Guid?)failed, "gone"), (AutomationApiFixture.Status(result), body.Answered, body.FailedCheckId, body.Error));
+        Assert.Equal(StatusCodes.Status400BadRequest, AutomationApiFixture.Status(tooMany));
+    }
+
+    [Fact]
     public void TheAnswerBodies_TakeNamesOrNumbers()
     {
         var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);

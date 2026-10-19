@@ -208,9 +208,10 @@ public interface IWallPanelService
     /// <summary>
     /// <see cref="DeleteStagedHoldAsync"/>, scoped to the session as <see cref="AddStagedHoldInSessionAsync"/> is, and
     /// guarded: when an old hold's carry verdict names the hold as its twin, <paramref name="twins"/> decides — refuse
-    /// (<see cref="StagedHoldIsTwinException"/>, nothing deleted) or keep the verdict without the twin.
+    /// (<see cref="StagedHoldIsTwinException"/>, nothing deleted) or keep the verdict without the twin. The release and
+    /// the delete are one save. Returns how many verdicts were released.
     /// </summary>
-    Task DeleteStagedHoldInSessionAsync(
+    Task<int> DeleteStagedHoldInSessionAsync(
         Guid wallId, Guid? expectedSessionId, Guid holdId, StagedTwinDeletion twins = StagedTwinDeletion.Refuse);
 
     /// <summary>

@@ -61,6 +61,36 @@ public class BigWallUpdateSourceTests
     }
 
     [Fact]
+    public void TheOverlapStepsBin_ReleasesAMatch_InsteadOfADeadEnd()
+    {
+        var code = Read(Shared + "PanelOverlapStepper.Session.cs");
+
+        Assert.Contains("DeleteStagedHoldInSessionAsync(WallId, SessionId, id, StagedTwinDeletion.ReleaseTwin)", code);
+        Assert.DoesNotContain("catch (StagedHoldIsTwinException)", code);
+    }
+
+    [Fact]
+    public void TheCarryoverReviewsEdits_ShowARefusal_InsteadOfThrowing()
+    {
+        var tools = Read(Shared + "CarryoverReview.Tools.cs");
+
+        foreach (var edit in new[] { "UpdateStagedHoldInSessionAsync", "AddStagedHoldInSessionAsync", "DeleteStagedHoldInSessionAsync" })
+        {
+            var at = tools.IndexOf(edit, StringComparison.Ordinal);
+            var guard = tools.LastIndexOf("TryStagedEditAsync(", at, StringComparison.Ordinal);
+            Assert.True(at > 0 && guard > 0 && at - guard < 160, $"{edit} must run inside TryStagedEditAsync");
+        }
+    }
+
+    [Fact]
+    public void SaveFailures_ShowOnlyUserFacingText()
+    {
+        Assert.DoesNotContain("{ex.Message}", Read(Shared + "BigWallUpdate.Neighbours.cs"));
+        Assert.DoesNotContain("{ex.Message}", Read(Shared + "CarryoverReview.Persistence.cs"));
+        Assert.Contains("ex is UserFacingException", Read(Shared + "UpdateErrorText.cs"));
+    }
+
+    [Fact]
     public void EveryWizardWrite_NamesTheSession()
     {
         var plainCalls = new Regex(@"(Sessions|WallPanelService)\.(SetPhaseAsync|Save\w+Async|Clear\w+Async|Decide\w+Async|(Add|Update|Delete)StagedHoldAsync)\(");

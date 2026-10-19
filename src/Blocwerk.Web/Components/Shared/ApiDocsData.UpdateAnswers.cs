@@ -22,7 +22,8 @@ internal static partial class ApiDocsData
     private const string CheckAnswerNote =
         "202 {\"answered\": n}; the summary is made again in the background, so read the summary again for the new decisionsVersion. "
         + "answer: keep, remove or undo (or 0, 1, 2). 400 without an answer; 409 when refused (the card is gone, the update was replaced, "
-        + "the 3D check is running, a remove off the centre). Several answers apply in order and stop at the first refusal.";
+        + "the 3D check is running, a remove off the centre). Several answers (at most 500) apply in order and stop at the first refusal: "
+        + "the answer then says how many were saved, failedCheckId and error (202 when some were saved, 409 when none were).";
 
     private const string LookOverAnswerNote =
         "200 with the look-over's state; 409 with the reason when refused. answer must be one of the finding's answers (Settle, "

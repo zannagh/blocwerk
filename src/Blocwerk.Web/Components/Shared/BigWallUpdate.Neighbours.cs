@@ -4,6 +4,7 @@
 
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
+using Microsoft.AspNetCore.Components;
 
 namespace Blocwerk.Web.Components.Shared;
 
@@ -13,6 +14,9 @@ namespace Blocwerk.Web.Components.Shared;
 /// </summary>
 public partial class BigWallUpdate
 {
+    [Inject]
+    private ILogger<BigWallUpdate> Logger { get; set; } = default!;
+
     // ---- Phase 2: one neighbour overlap at a time ------------------------------
     private async Task OnNeighbourConfirm(PanelConfirmation confirmation)
     {
@@ -98,7 +102,8 @@ public partial class BigWallUpdate
         }
         catch (Exception ex)
         {
-            _error = $"Could not save this panel's overlaps, so this panel is not finished yet: {ex.Message}";
+            _error = "Could not save this panel's overlaps, so this panel is not finished yet: "
+                + UpdateErrorText.Describe(ex, Logger, "saving a neighbour panel's overlaps");
             return false;
         }
     }

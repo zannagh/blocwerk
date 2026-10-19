@@ -26,6 +26,12 @@ public sealed record RefreshCheckAnswerItem(
     Guid CheckId,
     [property: JsonConverter(typeof(JsonStringEnumConverter<UpdateExceptionAnswer>))] UpdateExceptionAnswer? Answer);
 
-/// <summary>202 of the answer routes: how many cards were answered; the summary is being made again.</summary>
-/// <param name="Answered">The number of answers written.</param>
-public sealed record RefreshCheckAnswered(int Answered);
+/// <summary>
+/// What the answer routes answer: how many cards were answered (the summary is being made again). When an answer was
+/// refused, also which card and why; the answers before it are saved, it and those after it are not (202 when some were
+/// saved, 409 when none were).
+/// </summary>
+/// <param name="Answered">The number of answers written, in order.</param>
+/// <param name="FailedCheckId">The card whose answer was refused; null when all were written.</param>
+/// <param name="Error">Why it was refused; null when all were written.</param>
+public sealed record RefreshCheckAnswered(int Answered, Guid? FailedCheckId = null, string? Error = null);

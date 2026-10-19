@@ -35,15 +35,34 @@ public sealed partial class WallRefreshApiController
     public Task<IActionResult> AnswerChecks(Guid wallId, Guid refreshId, [FromBody] RefreshCheckAnswersRequest? body)
     {
         var answers = body?.Answers ?? [];
-        if (answers.Count == 0 || answers.Any(a => a.Answer is null))
+        if (answers.Count == 0 || answers.Count > WallRefreshService.MaxCheckAnswers || answers.Any(a => a.Answer is null))
         {
-            return Task.FromResult<IActionResult>(BadRequest(new ApiErrorResponse("Send answers: [{ checkId, answer }], answer keep, remove or undo.")));
+            return Task.FromResult<IActionResult>(BadRequest(new ApiErrorResponse(
+                $"Send 1 to {WallRefreshService.MaxCheckAnswers} answers: [{{ checkId, answer }}], answer keep, remove or undo.")));
         }
 
         return AnswerChecksAsync(wallId, refreshId, "refresh.checks", answers.Select(a => new RefreshCheckAnswer(a.CheckId, a.Answer!.Value)).ToList());
     }
 
+    /// <summary>
+    /// 409 on a refusal says how many answers were saved before it and which card was refused, so a script resumes
+    /// after it. Answers that were saved stay saved (and audited) even then.
+    /// </summary>
     private Task<IActionResult> AnswerChecksAsync(Guid wallId, Guid refreshId, string action, IReadOnlyList<RefreshCheckAnswer> answers) =>
         WriteAsync(wallId, action, () => ForRunAsync(wallId, refreshId, async _ =>
-            Accepted(new RefreshCheckAnswered(await refreshes.DecideChecksAsync(refreshId, answers)))));
+        {
+            try
+            {
+                return Accepted(new RefreshCheckAnswered(await refreshes.DecideChecksAsync(refreshId, answers)));
+            }
+            catch (RefreshCheckAnswersStoppedException ex) when (ex.Answered > 0)
+            {
+                // Some were written: a 2xx keeps the audit row, and the body says where it stopped.
+                return Accepted(new RefreshCheckAnswered(ex.Answered, ex.FailedCheckId, ex.Message));
+            }
+            catch (RefreshCheckAnswersStoppedException ex)
+            {
+                return Conflict(new RefreshCheckAnswered(0, ex.FailedCheckId, ex.Message));
+            }
+        }));
 }

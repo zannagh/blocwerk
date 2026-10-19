@@ -29,7 +29,7 @@ public class WallRefreshOffCentreCheckTests
         var card = await AddCardAsync(h, view, old[0].Id, UpdateExceptionStatus.Pending);
 
         Assert.False((await s.Service.GetChecksAsync(view.Id)).Single(c => c.Id == card).CanRemove);
-        var refused = await Assert.ThrowsAsync<UserFacingException>(() => s.Service.DecideCheckAsync(view.Id, card, UpdateExceptionAnswer.Remove));
+        var refused = await Assert.ThrowsAnyAsync<UserFacingException>(() => s.Service.DecideCheckAsync(view.Id, card, UpdateExceptionAnswer.Remove));
 
         Assert.Equal(WallUpdateSessionService.OffCentreRemoveRefused, refused.Message);
         var decisions = await WallUpdateSessionFixture.Sessions(h).GetDecisionsAsync(h.WallId);

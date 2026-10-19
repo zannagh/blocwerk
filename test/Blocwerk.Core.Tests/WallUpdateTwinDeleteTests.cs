@@ -38,8 +38,9 @@ public class WallUpdateTwinDeleteTests
         using var h = new WallTestHarness();
         var (old, twin, session) = await ChangedOntoTwinAsync(h);
 
-        await WallUpdateSessionFixture.Panels(h).DeleteStagedHoldInSessionAsync(h.WallId, session, twin, StagedTwinDeletion.ReleaseTwin);
+        var released = await WallUpdateSessionFixture.Panels(h).DeleteStagedHoldInSessionAsync(h.WallId, session, twin, StagedTwinDeletion.ReleaseTwin);
 
+        Assert.Equal(1, released);
         await using var db = h.CreateContext();
         Assert.False(await db.Holds.AnyAsync(x => x.Id == twin));
         var row = await db.WallUpdateHoldDecisions.SingleAsync(d => d.HoldId == old);
