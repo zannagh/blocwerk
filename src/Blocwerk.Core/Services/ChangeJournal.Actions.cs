@@ -58,6 +58,10 @@ public sealed partial class ChangeJournal
         batch.Status = ChangeJournalStatus.Recorded;
         batch.SealedAt = action.Append ? null : DateTimeOffset.UtcNow;
         await db.SaveChangesAsync();
+        if (!action.Append)
+        {
+            ForgetSeq(batch.Id);
+        }
     }
 
     /// <summary>
