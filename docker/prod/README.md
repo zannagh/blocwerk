@@ -63,7 +63,7 @@ Watch the first runs with `tail -f autodeploy.log`.
 
 What the app logs, how long it is kept and how to read it. Everything is bounded: nothing here grows without limit.
 
-**What is logged** (Serilog: console, which docker captures, plus `logs/blocwerk<day>.log`, mounted from `./logs` on the box):
+**What is logged** (Serilog, console only: docker captures it, and the host's Grafana Alloy ships the container log to Loki):
 
 - Circuit lifecycle at Information, a few lines per circuit: `Circuit <id8> opened (phone|tablet|desktop|kiosk)`, `connected`,
   `connection down ... after N s up`, `reconnected ... after N ms down, reconnect K`, `closed ... after N s, K reconnects,
@@ -84,10 +84,9 @@ from the measured volume (app about 25 KB/h without circuit logs; postgres 4 KB/
 | postgres, wall-geometry, splat-cpu | 5m x 2 (10 MB) | days of normal volume |
 | otel-dashboard | 2m x 2 (4 MB) | its telemetry is in memory only (lost on restart); this is just its stdout |
 
-The docker log goes away with the container, so every redeploy empties it. The app's own files do not: they are written to
-`./logs` on the box (one file per day, a new one after 10 MB, at most 7 files, so at most 70 MB and about a week at normal
-volume). If the volume turns out larger than expected, the files cover fewer days: raise the limits in `Program.cs`, not the
-log level, first.
+The docker log goes away with the container, so every redeploy empties it. Loki does not: Grafana Alloy on the box reads
+every container's docker log and pushes it to Loki (labels `host="vps"`, `container`, `compose_project`, `compose_service`,
+`stream`), which keeps 30 days and survives redeploys. The app writes no log files (it did until this change, to `./logs`).
 
 **Proxy access log** (Caddy, `/home/patrickweindl/caddy/Caddyfile`, not in this repo): the `blocwerk.app` site writes one JSON
 line per request to `/data/access-logs/blocwerk.app.log` in the `caddy_data` volume, 10 MB per file, 5 old files, none older
@@ -121,7 +120,7 @@ lines to see whether the proxy saw the connection end at the same moment. The bl
 
 ```sh
 ssh ionos 'cd /home/patrickweindl/blocwerk && docker compose logs --since 6h blocwerk | grep -E "Circuit |Slow "'
-ssh ionos 'grep -hE "Circuit |Slow " /home/patrickweindl/blocwerk/logs/blocwerk*.log'   # also before the last redeploy
+# also before the last redeploy, in Grafana (Explore, Loki):  {host="vps", compose_service="blocwerk"} |~ "Circuit |Slow "
 ssh ionos 'docker exec caddy-caddy-1 sh -c "grep -h /_blazor /data/access-logs/blocwerk.app*.log"'   # websockets, with duration
 ```
 

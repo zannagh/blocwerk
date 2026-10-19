@@ -127,8 +127,6 @@ services:
       - ./beta-videos:/data/beta-videos
       # Wall gallery uploads + the image-variant cache (WALLIMAGE__STORAGEPATH above).
       - ./wall-images:/data/wall-images
-      # The app's log files (at most 7 x 10 MB), kept across redeploys.
-      - ./logs:/app/logs
     depends_on:
       - postgres
       - otel-dashboard
