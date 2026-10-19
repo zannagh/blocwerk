@@ -46,7 +46,10 @@ public static class Program
 
             // stdout only: docker captures it, and in production the host's log collector ships the container log to
             // Loki (Grafana), which keeps it across redeploys. No log files in the container or on the host.
-            .WriteTo.Console();
+            // Full date and level on every line, so a line read on its own (Loki, grep) is dated, and the collector can
+            // join exception continuation lines to the line that starts with this prefix.
+            .WriteTo.Console(
+                outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} {Level:u3}] {Message:lj}{NewLine}{Exception}");
 
         // Levels per category: defaults in LoggingLevels, overridable with Logging__LogLevel__<Category> (compose/env).
         // The framework categories stay at Warning so only genuine problems (and our own Information logs) ship; Debug
