@@ -37,8 +37,19 @@ public sealed class ChangeJournalReverter
         this.journal = journal;
     }
 
-    public async Task<ChangeJournalRevertResult> RevertBatchAsync(
-        Guid batchId, bool force = false, CancellationToken cancellationToken = default)
+    public Task<ChangeJournalRevertResult> RevertBatchAsync(
+        Guid batchId, bool force = false, CancellationToken cancellationToken = default) =>
+        RevertCoreAsync(batchId, force, dryRun: false, cancellationToken);
+
+    /// <summary>
+    /// Runs every check a revert would (divergence per key, the cascade guard) and reports the conflicts, writing
+    /// nothing: <see cref="ChangeJournalRevertResult.Reverted"/> is false and <see cref="ChangeJournalRevertResult.DryRun"/> true.
+    /// </summary>
+    public Task<ChangeJournalRevertResult> DryRunRevertAsync(Guid batchId, CancellationToken cancellationToken = default) =>
+        RevertCoreAsync(batchId, force: false, dryRun: true, cancellationToken);
+
+    private async Task<ChangeJournalRevertResult> RevertCoreAsync(
+        Guid batchId, bool force, bool dryRun, CancellationToken cancellationToken)
     {
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
         db.CurrentUserId = Guid.Empty;
@@ -46,11 +57,12 @@ public sealed class ChangeJournalReverter
         var batch = await db.ChangeJournalBatches.FirstOrDefaultAsync(b => b.Id == batchId, cancellationToken);
         if (batch is null)
         {
-            return new ChangeJournalRevertResult(false, batchId, null, [], "Batch not found.");
+            return new ChangeJournalRevertResult(false, batchId, null, [], "Batch not found.", dryRun);
         }
 
         // Reverse Seq is the inverse of the recorded save order, which is FK-safe; EF still reorders
-        // the physical writes within the single SaveChanges to respect foreign keys.
+        // the physical writes within the single SaveChanges to respect foreign keys. One batch only, so
+        // its Seq is a total order (the cross-batch ordering of C7 is a replay concern).
         var entries = await db.ChangeJournalEntries
             .Where(e => e.BatchId == batchId)
             .OrderByDescending(e => e.Seq)
@@ -58,47 +70,12 @@ public sealed class ChangeJournalReverter
 
         var resolveBlob = await LoadBlobResolverAsync(db, entries, cancellationToken);
 
-        // Reverting an Insert deletes the row, so those keys are the ones this revert removes; the
-        // cascade guard uses them to tell a batch-known dependent from a prod-only one.
-        var deletedByBatch = entries
-            .Where(e => e.Op == ChangeJournalOp.Insert)
-            .Select(e => (e.EntityType, e.KeyJson))
-            .ToHashSet();
-
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-
-        var conflicts = new List<ChangeJournalConflict>();
-
-        // Divergence is checked per KEY against the batch's full NET-FINAL image — every property the
-        // batch set across ALL its entries, not just the last update's touched props. A key written more
-        // than once in this batch (the run→promote wall update INSERTs a staged panel then UPDATEs it)
-        // therefore catches an out-of-band edit to a property an earlier entry set but a later one never
-        // touched, which a last-entry-only check would silently miss and then delete.
-        foreach (var group in entries.GroupBy(e => (e.EntityType, e.KeyJson)))
-        {
-            var ordered = group.OrderBy(e => e.Seq).ToList();
-            var conflict = await CheckKeyDivergenceAsync(db, ordered, resolveBlob, cancellationToken);
-            if (conflict is not null)
-            {
-                conflicts.Add(conflict);
-            }
-        }
-
-        // Reverting an Insert deletes the row, so each Insert (even a superseded one) is guarded against
-        // silently cascading over prod-only dependents. An Update's inverse only restores scalars.
-        foreach (var entry in entries.Where(e => e.Op == ChangeJournalOp.Insert))
-        {
-            var conflict = await CheckInsertCascadeAsync(db, entry, deletedByBatch, cancellationToken);
-            if (conflict is not null)
-            {
-                conflicts.Add(conflict);
-            }
-        }
-
-        if (conflicts.Count > 0 && !force)
+        var conflicts = await CollectConflictsAsync(db, entries, resolveBlob, cancellationToken);
+        if (dryRun || (conflicts.Count > 0 && !force))
         {
             await transaction.RollbackAsync(cancellationToken);
-            return new ChangeJournalRevertResult(false, batchId, null, conflicts, null);
+            return new ChangeJournalRevertResult(false, batchId, null, conflicts, null, dryRun);
         }
 
         Guid? revertBatchId;
@@ -117,6 +94,44 @@ public sealed class ChangeJournalReverter
 
         await transaction.CommitAsync(cancellationToken);
         return new ChangeJournalRevertResult(true, batchId, revertBatchId, conflicts, null);
+    }
+
+    private static async Task<List<ChangeJournalConflict>> CollectConflictsAsync(
+        BlocwerkDbContext db, IReadOnlyList<ChangeJournalEntry> entries, Func<string, byte[]?> resolveBlob, CancellationToken ct)
+    {
+        // Reverting an Insert deletes the row, so those keys are the ones this revert removes; the
+        // cascade guard uses them to tell a batch-known dependent from a prod-only one.
+        var deletedByBatch = entries
+            .Where(e => e.Op == ChangeJournalOp.Insert)
+            .Select(e => (e.EntityType, e.KeyJson))
+            .ToHashSet();
+        var conflicts = new List<ChangeJournalConflict>();
+
+        // Divergence is checked per KEY against the batch's full NET-FINAL image — every property the
+        // batch set across ALL its entries, not just the last update's touched props. A key written more
+        // than once in this batch (the run→promote wall update INSERTs a staged panel then UPDATEs it)
+        // therefore catches an out-of-band edit to a property an earlier entry set but a later one never
+        // touched, which a last-entry-only check would silently miss and then delete.
+        foreach (var group in entries.GroupBy(e => (e.EntityType, e.KeyJson)))
+        {
+            var ordered = group.OrderBy(e => e.Seq).ToList();
+            if (await CheckKeyDivergenceAsync(db, ordered, resolveBlob, ct) is { } conflict)
+            {
+                conflicts.Add(conflict);
+            }
+        }
+
+        // Reverting an Insert deletes the row, so each Insert (even a superseded one) is guarded against
+        // silently cascading over prod-only dependents. An Update's inverse only restores scalars.
+        foreach (var entry in entries.Where(e => e.Op == ChangeJournalOp.Insert))
+        {
+            if (await CheckInsertCascadeAsync(db, entry, deletedByBatch, ct) is { } conflict)
+            {
+                conflicts.Add(conflict);
+            }
+        }
+
+        return conflicts;
     }
 
     /// <summary>

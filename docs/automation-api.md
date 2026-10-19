@@ -12,6 +12,7 @@ Every route calls the same service the page calls, so the rules are the page's r
 | Colours for holds without one (`/api/walls/{wallId}/holds/suggest-colors`) | yes | **no** (403) | no (403) |
 | Stacks for existing holds (`/api/walls/{wallId}/holds/stacks`, `…/stacks/preview`) | yes | **no** (403) | no (403) |
 | Wall preparation (`/api/walls/{wallId}/markers`, `…/marker-plan`, `…/marker-plan/revisions`) | yes | yes | no (403) |
+| Change journal export / replay / revert (`/api/v1/admin/journal/…`) | yes, **owner must be an installation admin** | **no** (403) | no (403) |
 
 * "Write access" is the *Allow this key to change walls* box when creating the key under *Settings → API keys*.
 * The owner has to be an admin of the wall (owner or member with the Admin role). Being an administrator of the installation is not enough on its own, exactly as in the browser: the request answers 403.
@@ -177,6 +178,35 @@ curl -fsS -H "$AUTH" "$BASE/api/walls/$WALL/marker-plan" > marker-plan.current.j
 ```
 
 A plan can also be attached to a single capture (`PUT /api/walls/{wallId}/captures/{captureId}/plan`), which saves it as a revision the same way.
+
+## Change journal: export a wall update and replay it on another instance
+
+Run the update once locally, check it, then carry exactly what it wrote to production. These routes replace the Development-only `/dev/journal/*` harness. They take a personal key with write access whose owner is an **administrator of the installation** (anything else is 403, no key is 401), exactly like the capture package routes.
+
+| Method and route | What it does |
+| --- | --- |
+| `GET /api/v1/admin/journal/walls/{wallId}/batches?includeUnscoped=false&since=<iso time>` | The wall's batches, oldest first: `id`, `label`, `scopeKind`, `scopeId`, `status`, `actor`, `createdAt`, `sealedAt`, `entryCount`. `includeUnscoped=true` adds the unscoped `adhoc` batches since `since` (default: the last 7 days) that touched the wall. |
+| `GET /api/v1/admin/journal/export?batchId=<id>&batchId=<id>…` | The package as gzip-compressed JSON (`application/gzip`), panel photos inside. Entries are in the source's write order. |
+| `POST /api/v1/admin/journal/replay?dryRun=true&force=false` | Body: the package, gzip or plain JSON, up to 1 GB. **A dry run unless `dryRun=false`.** Returns the report: `applied`, `dryRun`, `rows[]` (`seq`, `batchId`, `entityType`, `keyJson`, `outcome` 0 applied / 1 already applied / 2 conflict, `detail`), `fatalErrors[]`, `replayBatchId`. 200 for a dry run or a committed run; 409 with the report when a real run was refused. |
+| `POST /api/v1/admin/journal/batches/{batchId}/revert?dryRun=true&force=false` | Reverts one batch on this instance. **A dry run unless `dryRun=false`.** 200 with `reverted`, `dryRun`, `conflicts[]`, `revertBatchId`; 404 for an unknown batch; 409 when a real revert was refused. |
+
+```sh
+AUTH="Authorization: Bearer $BLOCWERK_PERSONAL_API_KEY"   # personal key with write access, owner is an installation admin
+
+# Locally: find the update's batch and export it.
+curl -fsS -H "$AUTH" "$LOCAL/api/v1/admin/journal/walls/$WALL/batches" | jq '.[] | {id, label, sealedAt, entryCount}'
+curl -fsS -H "$AUTH" -o update.json.gz "$LOCAL/api/v1/admin/journal/export?batchId=$BATCH"
+
+# On production: dry run first (the default), read the conflicts, then apply.
+curl -sS -X POST -H "$AUTH" --data-binary @update.json.gz "$BASE/api/v1/admin/journal/replay" | jq '{dryRun, fatalErrors, conflicts: [.rows[] | select(.outcome == 2)]}'
+curl -fsS -X POST -H "$AUTH" --data-binary @update.json.gz "$BASE/api/v1/admin/journal/replay?dryRun=false" | jq '{applied, replayBatchId}'
+```
+
+* **Schema parity is never forced.** The package records the source's last EF migration. A target on another migration refuses the replay with a fatal error, even with `force=true`. `force` only pushes past row conflicts. Use it only when you have read every conflict.
+* **Replaying is idempotent.** Rows already at the package's result report `outcome` 1 and are left alone, so a package can be sent again after a partial failure.
+* **One wall update is one batch.** Staging, every touch-up of the staged holds (the Detected and Touchup steps, and the full review's editor) and the promote all record into the wall's `wall-update` batch, so exporting that batch alone carries the whole update. Updates recorded before this change have their touch-ups in separate `adhoc` batches. Find them with `includeUnscoped=true` and export them in the same package as the `wall-update` batch: the package is ordered by write time, so they replay in the order they were made.
+* Later batches on the wall (look-over answers, colour proposals) can go in the same package or in their own, sent afterwards. Do not export placement or remeasure batches: production recomputes those when the capture is imported (replay the journal first, then import the capture).
+* Not in the journal, so not carried: look-over findings, update sessions, refresh runs and captures, `Hold.DiscardReason`, and the look-over's "missing" `NeedsReview` flag.
 
 ## Still in the browser
 
