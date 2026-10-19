@@ -50,11 +50,13 @@ public sealed class ChangeJournalReplayer
         // run→promote wall update INSERTs a staged panel then UPDATEs it live — is evaluated by its NET
         // effect, not by any single intermediate write). Every entry of a key inherits that one outcome,
         // so re-replaying an already-applied package is an idempotent no-op, not a spurious conflict.
+        // A key's entries are evaluated in PACKAGE order — the order phase 2 applies them in — never by Seq alone:
+        // Seq restarts at 0 in every batch, so sorting a key's entries from several batches by it put a later
+        // batch's update before the earlier batch's insert (review finding C7).
         var outcomeByKey = new Dictionary<(string EntityType, string KeyJson), (ChangeJournalReplayOutcome Outcome, string? Detail)>();
-        foreach (var group in package.Entries.GroupBy(e => (e.EntityType, e.KeyJson)))
+        foreach (var group in InPackageOrderByKey(package))
         {
-            var ordered = group.OrderBy(e => e.Seq).ToList();
-            outcomeByKey[group.Key] = await EvaluateKeyAsync(db, ordered, resolveBlob, deletedByBatch, cancellationToken);
+            outcomeByKey[group.Key] = await EvaluateKeyAsync(db, group.ToList(), resolveBlob, deletedByBatch, cancellationToken);
         }
 
         var rows = package.Entries
@@ -77,7 +79,7 @@ public sealed class ChangeJournalReplayer
         }
 
         // Phase 2 — apply the rows that need applying, in one transaction, journalled as a new batch.
-        var scope = package.Batches.Select(b => (b.ScopeKind, b.ScopeId)).FirstOrDefault();
+        var scope = ReplayScope(package);
         Guid? replayBatchId;
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         using (journal.BeginBatch("replay", scope.ScopeKind, scope.ScopeId))
@@ -123,7 +125,7 @@ public sealed class ChangeJournalReplayer
     /// <summary>
     /// Decides one key's replay outcome from its ordered entries, judged against the batch's NET effect:
     /// already at the net effect → skip (idempotent); else at the recorded starting precondition (absent
-    /// for an insert-first key, the first before-image otherwise) → apply the key's entries in Seq order;
+    /// for an insert-first key, the first before-image otherwise) → apply the key's entries in package order;
     /// else → conflict. A net-delete that would apply still runs the cascade guard.
     /// </summary>
     private static async Task<(ChangeJournalReplayOutcome Outcome, string? Detail)> EvaluateKeyAsync(
@@ -227,12 +229,54 @@ public sealed class ChangeJournalReplayer
         }
     }
 
+    /// <summary>Each key's entries in package order (the list index; GroupBy keeps the source order inside a group).</summary>
+    private static IEnumerable<IGrouping<(string EntityType, string KeyJson), ChangeJournalPackageEntry>> InPackageOrderByKey(
+        ChangeJournalPackage package) =>
+        package.Entries.GroupBy(e => (e.EntityType, e.KeyJson));
+
+    /// <summary>
+    /// The scope the replay batch is recorded under, so it is listed with the wall it changed: the package's wall-update
+    /// batch, else its first wall-scoped batch, else the wall of its base markers, else whatever the first batch had.
+    /// </summary>
+    private static (ChangeJournalScopeKind ScopeKind, Guid? ScopeId) ReplayScope(ChangeJournalPackage package)
+    {
+        var wallBatch = package.Batches.FirstOrDefault(b => b.ScopeKind == ChangeJournalScopeKind.Wall && b.Label == ChangeJournal.WallUpdateBatchLabel)
+            ?? package.Batches.FirstOrDefault(b => b.ScopeKind == ChangeJournalScopeKind.Wall && b.ScopeId is not null);
+        if (wallBatch is not null)
+        {
+            return (wallBatch.ScopeKind, wallBatch.ScopeId);
+        }
+
+        var marker = package.BaseMarkers.FirstOrDefault(m => m.ScopeKind == ChangeJournalScopeKind.Wall && m.ScopeId is not null);
+        return marker is not null
+            ? (marker.ScopeKind, marker.ScopeId)
+            : package.Batches.Select(b => (b.ScopeKind, b.ScopeId)).FirstOrDefault();
+    }
+
+    /// <summary>
+    /// Decodes a blob only when a row first needs it (and once): a package holds every photo as Base64, and a dry run or
+    /// a mostly-applied package touches few of them, so decoding all of them up front only added their size to the peak.
+    /// </summary>
     private static Func<string, byte[]?> BlobResolver(ChangeJournalPackage package)
     {
-        var byShaBytes = package.Blobs
-            .GroupBy(b => b.Sha256)
-            .ToDictionary(g => g.Key, g => Convert.FromBase64String(g.First().Base64));
-        return sha => byShaBytes.TryGetValue(sha, out var bytes) ? bytes : null;
+        var base64BySha = package.Blobs.GroupBy(b => b.Sha256).ToDictionary(g => g.Key, g => g.First().Base64);
+        var decoded = new Dictionary<string, byte[]>();
+        return sha =>
+        {
+            if (decoded.TryGetValue(sha, out var bytes))
+            {
+                return bytes;
+            }
+
+            if (!base64BySha.TryGetValue(sha, out var base64))
+            {
+                return null;
+            }
+
+            bytes = Convert.FromBase64String(base64);
+            decoded[sha] = bytes;
+            return bytes;
+        };
     }
 
     private static (Type? Clr, IEntityType? Meta) ResolveOrNull(BlocwerkDbContext db, string entityTypeName)
@@ -243,5 +287,5 @@ public sealed class ChangeJournalReplayer
 
     private static ChangeJournalReplayRow Row(
         ChangeJournalPackageEntry entry, ChangeJournalReplayOutcome outcome, string? detail) =>
-        new(entry.Seq, entry.EntityType, entry.KeyJson, outcome, detail);
+        new(entry.Seq, entry.EntityType, entry.KeyJson, outcome, detail, entry.BatchId);
 }
