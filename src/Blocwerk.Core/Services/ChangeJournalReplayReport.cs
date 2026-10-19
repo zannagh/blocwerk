@@ -19,7 +19,8 @@ public sealed record ChangeJournalReplayRow(
     string EntityType,
     string KeyJson,
     ChangeJournalReplayOutcome Outcome,
-    string? Detail);
+    string? Detail,
+    Guid? BatchId = null);
 
 /// <summary>
 /// The result of <see cref="ChangeJournalReplayer.ImportReplayAsync"/>. <see cref="Applied"/> is true

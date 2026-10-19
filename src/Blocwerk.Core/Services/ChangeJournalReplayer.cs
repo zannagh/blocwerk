@@ -50,11 +50,13 @@ public sealed class ChangeJournalReplayer
         // run→promote wall update INSERTs a staged panel then UPDATEs it live — is evaluated by its NET
         // effect, not by any single intermediate write). Every entry of a key inherits that one outcome,
         // so re-replaying an already-applied package is an idempotent no-op, not a spurious conflict.
+        // A key's entries are evaluated in PACKAGE order — the order phase 2 applies them in — never by Seq alone:
+        // Seq restarts at 0 in every batch, so sorting a key's entries from several batches by it put a later
+        // batch's update before the earlier batch's insert (review finding C7).
         var outcomeByKey = new Dictionary<(string EntityType, string KeyJson), (ChangeJournalReplayOutcome Outcome, string? Detail)>();
-        foreach (var group in package.Entries.GroupBy(e => (e.EntityType, e.KeyJson)))
+        foreach (var group in InPackageOrderByKey(package))
         {
-            var ordered = group.OrderBy(e => e.Seq).ToList();
-            outcomeByKey[group.Key] = await EvaluateKeyAsync(db, ordered, resolveBlob, deletedByBatch, cancellationToken);
+            outcomeByKey[group.Key] = await EvaluateKeyAsync(db, group.ToList(), resolveBlob, deletedByBatch, cancellationToken);
         }
 
         var rows = package.Entries
@@ -123,7 +125,7 @@ public sealed class ChangeJournalReplayer
     /// <summary>
     /// Decides one key's replay outcome from its ordered entries, judged against the batch's NET effect:
     /// already at the net effect → skip (idempotent); else at the recorded starting precondition (absent
-    /// for an insert-first key, the first before-image otherwise) → apply the key's entries in Seq order;
+    /// for an insert-first key, the first before-image otherwise) → apply the key's entries in package order;
     /// else → conflict. A net-delete that would apply still runs the cascade guard.
     /// </summary>
     private static async Task<(ChangeJournalReplayOutcome Outcome, string? Detail)> EvaluateKeyAsync(
@@ -227,6 +229,11 @@ public sealed class ChangeJournalReplayer
         }
     }
 
+    /// <summary>Each key's entries in package order (the list index; GroupBy keeps the source order inside a group).</summary>
+    private static IEnumerable<IGrouping<(string EntityType, string KeyJson), ChangeJournalPackageEntry>> InPackageOrderByKey(
+        ChangeJournalPackage package) =>
+        package.Entries.GroupBy(e => (e.EntityType, e.KeyJson));
+
     private static Func<string, byte[]?> BlobResolver(ChangeJournalPackage package)
     {
         var byShaBytes = package.Blobs
@@ -243,5 +250,5 @@ public sealed class ChangeJournalReplayer
 
     private static ChangeJournalReplayRow Row(
         ChangeJournalPackageEntry entry, ChangeJournalReplayOutcome outcome, string? detail) =>
-        new(entry.Seq, entry.EntityType, entry.KeyJson, outcome, detail);
+        new(entry.Seq, entry.EntityType, entry.KeyJson, outcome, detail, entry.BatchId);
 }
