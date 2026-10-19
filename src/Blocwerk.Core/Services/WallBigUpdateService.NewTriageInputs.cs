@@ -60,25 +60,34 @@ public partial class WallBigUpdateService
 
     /// <summary>
     /// Writes each suggested discard's reason onto its staged hold (and clears it where the triage no longer suggests
-    /// one), so the reason survives the promote in the journal entry of the deleted detection. Set-based, outside the
-    /// change journal: a staged detection's reason is no edit to undo.
+    /// one), so the reason survives the promote in the journal entry of the deleted detection. Tracked writes on a
+    /// context of their own, inside the wall's open wall-update batch: the reason is part of what that batch replays
+    /// (it used to be a set-based update the journal never saw, so a replayed wall had no reasons).
     /// </summary>
-    private static async Task PersistDiscardReasonsAsync(BlocwerkDbContext db, Guid wallId, int stagedGen, BigUpdateSession session)
+    private async Task PersistDiscardReasonsAsync(Guid wallId, int stagedGen, BigUpdateSession session)
     {
-        var suggested = session.SuggestedNewDiscards ?? new Dictionary<Guid, NewHoldDiscardReason>();
-        foreach (var group in suggested.GroupBy(s => s.Value, s => s.Key))
+        var suggested = (session.SuggestedNewDiscards ?? new Dictionary<Guid, NewHoldDiscardReason>())
+            .ToDictionary(s => s.Key, s => s.Value.ToString());
+        var ids = suggested.Keys.ToList();
+
+        await using var db = await dbContextFactory.CreateDbContextAsync();
+        var holds = await db.Holds
+            .Where(h => h.WallId == wallId && h.Generation == stagedGen && (ids.Contains(h.Id) || h.DiscardReason != null))
+            .ToListAsync();
+        foreach (var hold in holds)
         {
-            var reason = group.Key.ToString();
-            var ids = group.ToList();
-            await db.Holds
-                .Where(h => h.WallId == wallId && h.Generation == stagedGen && ids.Contains(h.Id) && h.DiscardReason != reason)
-                .ExecuteUpdateAsync(s => s.SetProperty(h => h.DiscardReason, reason));
+            var reason = suggested.GetValueOrDefault(hold.Id);
+            if (hold.DiscardReason != reason)
+            {
+                hold.DiscardReason = reason;
+            }
         }
 
-        var all = suggested.Keys.ToList();
-        await db.Holds
-            .Where(h => h.WallId == wallId && h.Generation == stagedGen && h.DiscardReason != null && !all.Contains(h.Id))
-            .ExecuteUpdateAsync(s => s.SetProperty(h => h.DiscardReason, (string?)null));
+        if (db.ChangeTracker.HasChanges())
+        {
+            using var batch = changeJournal?.BeginWallUpdateBatch(wallId);
+            await db.SaveChangesAsync();
+        }
     }
 
     private async Task<List<IReadOnlyList<(double X, double Y)>>> RescuedMarkerQuadsAsync(byte[] photo)
