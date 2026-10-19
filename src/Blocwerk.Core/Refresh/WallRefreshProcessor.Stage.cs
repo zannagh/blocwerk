@@ -6,6 +6,7 @@ using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core.Refresh;
 
@@ -20,12 +21,11 @@ public sealed partial class WallRefreshProcessor
     private async Task StagePanelsAsync(
         WallRefresh refresh, WallRefreshActors actors, IReadOnlyList<BigUpdatePhoto> photos, CancellationToken ct)
     {
-        await StepAsync(refresh, RefreshTimeline.Detect, RefreshStepState.Running, $"Looking for holds on {photos.Count} new panel photos", ct);
+        // Whether the open session is this run's is decided on the row as stored, BEFORE this pass marks Detect running:
+        // the adoption rule reads "Detect already started" as "a previous pass of this run staged it".
         var owned = await OwnedSessionIdAsync(refresh, actors);
-        var staged = owned is not null
-            ? await actors.BigUpdate.GetStagedAsync(refresh.WallId)
-            : await actors.BigUpdate.StageAsync(refresh.WallId, photos, fullRevision: refresh.FullRevision);
-        var sessionId = owned ?? (await actors.Sessions.GetOpenSessionAsync(refresh.WallId))?.Id;
+        await StepAsync(refresh, RefreshTimeline.Detect, RefreshStepState.Running, $"Looking for holds on {photos.Count} new panel photos", ct);
+        var (staged, sessionId, unchangedSince) = await StageOrAdoptAsync(refresh, actors, photos, owned);
         await SaveAsync(refresh, r => r.UpdateSessionId = sessionId, ct);
 
         var byPanel = await StagedHoldsByPanelAsync(refresh.WallId, ct);
@@ -39,8 +39,16 @@ public sealed partial class WallRefreshProcessor
             ct);
 
         var panels = photos.Select(p => PanelPositionName.Describe(p.Col, p.Row)).ToList();
-        var summary = await TriageAndRecordAsync(refresh, actors, byPanel, panels, null, ct)
+
+        // Only over a session nobody has written since it was staged (or adopted): a person's choices made meanwhile, in
+        // the full review, win over the defaults, and the summary is then made from those choices instead.
+        var summary = await TriageAndRecordAsync(refresh, actors, byPanel, panels, unchangedSince, ct, summarizeIfRefused: true)
             ?? throw new InvalidOperationException("The quick review's decisions could not be recorded.");
+        if (summary.EditedInFullReview)
+        {
+            logger.LogInformation("Wall refresh {RefreshId}: the update session was changed by a person; their choices are kept", refresh.Id);
+        }
+
         await SaveAsync(
             refresh,
             r =>
@@ -51,6 +59,27 @@ public sealed partial class WallRefreshProcessor
                 RefreshTimeline.Set(r, RefreshTimeline.Review, RefreshStepState.Waiting, "Check the summary, then apply");
             },
             ct);
+    }
+
+    /// <summary>
+    /// Stages the photos, or picks up the staging this run already made (<paramref name="owned"/>). Returns the session and
+    /// the stamp the defaults may be written over: an adopted session only while nobody has written it since it was opened
+    /// (its creation), a fresh or recorded one only while nobody has written it since this pass read it.
+    /// </summary>
+    private static async Task<(BigUpdateSession Staged, Guid? SessionId, DateTimeOffset? UnchangedSince)> StageOrAdoptAsync(
+        WallRefresh refresh, WallRefreshActors actors, IReadOnlyList<BigUpdatePhoto> photos, Guid? owned)
+    {
+        var adopted = owned is not null && refresh.UpdateSessionId is null;
+        var staged = owned is not null
+            ? await actors.BigUpdate.GetStagedAsync(refresh.WallId)
+            : await actors.BigUpdate.StageAsync(refresh.WallId, photos, fullRevision: refresh.FullRevision);
+        var open = await actors.Sessions.GetOpenSessionAsync(refresh.WallId);
+        if (open is null || (owned is { } id && open.Id != id))
+        {
+            return (staged, owned ?? open?.Id, null);
+        }
+
+        return (staged, open.Id, adopted ? open.CreatedAt : open.UpdatedAt);
     }
 
     /// <summary>
@@ -82,16 +111,17 @@ public sealed partial class WallRefreshProcessor
     /// stamp as committed with them; null when the user changed the session after <paramref name="onlyIfUnchangedSince"/>.
     /// </summary>
     private static Task<DateTimeOffset?> RecordDecisionsAsync(
-        Guid wallId,
+        WallRefresh refresh,
         IWallUpdateSessionService sessions,
         QuickDecisions quick,
         IReadOnlyList<UpdateExceptionDraft> cards,
         DateTimeOffset? onlyIfUnchangedSince) =>
         sessions.SaveDefaultDecisionsAsync(
-            wallId,
+            refresh.WallId,
             new DefaultDecisions(
                 quick.Carryover, quick.AcceptedNewCentreHoldIds, quick.RemovedNewCentreHoldIds, quick.Neighbours, WallUpdatePhase.Carryover, cards),
-            onlyIfUnchangedSince);
+            onlyIfUnchangedSince,
+            refresh.UpdateSessionId);
 
     private async Task<Dictionary<Guid, IReadOnlyList<Guid>>> StagedHoldsByPanelAsync(Guid wallId, CancellationToken ct)
     {

@@ -27,7 +27,7 @@ public partial class BigWallUpdate
     private async Task OnShapesSkipped()
     {
         await GoToPhaseAsync(WallUpdatePhase.Confirm);
-        await LoadShapeSummaryAsync();
+        await LoadConfirmSummaryAsync();
     }
 
     /// <summary>
@@ -41,7 +41,7 @@ public partial class BigWallUpdate
             await ShapeService.CompleteReviewAsync(WallId, _sessionInfo?.Id);
             _sessionInfo = await Sessions.GetOpenSessionAsync(WallId);
             _phase = WallUpdatePhase.Confirm;
-            await LoadShapeSummaryAsync();
+            await LoadConfirmSummaryAsync();
         }
         catch (WallUpdateSessionSupersededException)
         {

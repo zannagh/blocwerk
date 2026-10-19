@@ -19,6 +19,12 @@ public partial class CarryoverReview
 
     [Parameter] public Guid WallId { get; set; }
     [Parameter] public BigUpdateSession Session { get; set; } = default!;
+
+    /// <summary>
+    /// The update session the review belongs to. Every write names it, so a tab left on a replaced update is refused
+    /// instead of writing its verdicts into the update that replaced it. Null for a legacy staged update.
+    /// </summary>
+    [Parameter] public Guid? SessionId { get; set; }
     [Parameter] public EventCallback<CarryoverOutcome> OnContinue { get; set; }
     [Parameter] public EventCallback OnDiscard { get; set; }
 

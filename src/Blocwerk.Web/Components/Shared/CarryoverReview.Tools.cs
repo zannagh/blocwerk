@@ -2,6 +2,7 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
 
 namespace Blocwerk.Web.Components.Shared;
@@ -61,7 +62,7 @@ public partial class CarryoverReview
 
     private async Task OnNewHoldGeometryChanged(PanelImageView.HoldGeometry g)
     {
-        await WallPanelService.UpdateStagedHoldAsync(WallId, g.HoldId, g.X, g.Y, g.Radius);
+        await TryStagedEditAsync(() => WallPanelService.UpdateStagedHoldInSessionAsync(WallId, SessionId, g.HoldId, g.X, g.Y, g.Radius), "moving a staged hold");
         await ReloadNewHoldsAsync();
     }
 
@@ -93,10 +94,32 @@ public partial class CarryoverReview
     /// </summary>
     private async Task<Guid?> AddNewHoldAsync((double X, double Y, double Radius) at)
     {
-        var id = await WallPanelService.AddStagedHoldAsync(WallId, CenterPanelId, at.X, at.Y, at.Radius);
+        Guid? id = null;
+        await TryStagedEditAsync(
+            async () => id = await WallPanelService.AddStagedHoldInSessionAsync(WallId, SessionId, CenterPanelId, at.X, at.Y, at.Radius),
+            "adding a staged hold");
         await ReloadNewHoldsAsync();
         StateHasChanged();
         return id;
+    }
+
+    /// <summary>
+    /// Runs one staged edit; a refusal (the update was replaced, the hold is gone) or a failure is shown on the review
+    /// instead of escaping the event handler and tearing the circuit down. False when it was not saved.
+    /// </summary>
+    private async Task<bool> TryStagedEditAsync(Func<Task> edit, string what)
+    {
+        try
+        {
+            await edit();
+            _saveError = null;
+            return true;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException)
+        {
+            _saveError = "That change was not saved: " + UpdateErrorText.Describe(ex, Logger, what);
+            return false;
+        }
     }
 
     private async Task RemoveSelectedNewHold()
@@ -111,7 +134,14 @@ public partial class CarryoverReview
 
     private async Task RemoveNewHoldAsync(Guid id)
     {
-        await WallPanelService.DeleteStagedHoldAsync(WallId, id);
+        // Deleting a twin here is the user's explicit choice: the service releases the verdicts that name it (same
+        // kind, no twin, unconfirmed) before the delete, exactly as the in-memory fallback below does.
+        if (!await TryStagedEditAsync(
+                () => WallPanelService.DeleteStagedHoldInSessionAsync(WallId, SessionId, id, StagedTwinDeletion.ReleaseTwin),
+                "deleting a staged hold"))
+        {
+            return;
+        }
 
         // Any carry decision that pointed at this now-deleted staged twin falls back to a carry in
         // place (no twin), so no decision references a hold that no longer exists. The fallbacks are

@@ -14,9 +14,14 @@ namespace Blocwerk.Core.Services;
 /// </summary>
 public class WallUpdateSessionSupersededException : UserFacingException
 {
-    public WallUpdateSessionSupersededException(Guid wallId, Guid expectedSessionId, Guid? currentSessionId)
-        : base("This wall update was replaced by a newer one, so it can no longer be applied or discarded. "
-            + "Reload the wall to see the update that is in progress now.")
+    /// <summary>The refusal for a decision or staged-hold edit sent by a tab that looks at a replaced update.</summary>
+    public const string ChangeRefused =
+        "This wall update was replaced by a newer one, so this change was not saved. "
+        + "Reload the wall to see the update that is in progress now.";
+
+    public WallUpdateSessionSupersededException(Guid wallId, Guid expectedSessionId, Guid? currentSessionId, string? message = null)
+        : base(message ?? ("This wall update was replaced by a newer one, so it can no longer be applied or discarded. "
+            + "Reload the wall to see the update that is in progress now."))
     {
         WallId = wallId;
         ExpectedSessionId = expectedSessionId;
