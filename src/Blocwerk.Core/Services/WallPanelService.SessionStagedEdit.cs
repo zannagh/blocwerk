@@ -15,7 +15,8 @@ namespace Blocwerk.Core.Services;
 /// counted as activity on that session (so the idle sweep never discards an update somebody is editing), and (for a
 /// delete) guarded against taking an old hold's carry verdict with its twin. Add and move run the plain staged edit
 /// (WallPanelService.StagedEdit.cs) after the check; the delete releases the twin and removes the hold in ONE save, so
-/// a failure can never leave a verdict re-pointed for a hold that is still there.
+/// a failure can never leave a verdict re-pointed for a hold that is still there. The session guard runs first; every
+/// write then happens inside the wall's open wall-update journal batch, so that batch alone replays the whole update.
 /// </summary>
 public partial class WallPanelService
 {
@@ -24,17 +25,23 @@ public partial class WallPanelService
         Guid wallId, Guid? expectedSessionId, Guid panelId, double x, double y, double radius, bool needsReview = true)
     {
         var userId = await EnsureSessionForStagedEditAsync(wallId, expectedSessionId);
-        var id = await AddStagedHoldAsync(wallId, panelId, x, y, radius, needsReview: needsReview);
-        await TouchOpenSessionAsync(wallId, userId);
-        return id;
+        using (BeginUpdateBatch(wallId))
+        {
+            var id = await AddStagedHoldAsync(wallId, panelId, x, y, radius, needsReview: needsReview);
+            await TouchOpenSessionAsync(wallId, userId);
+            return id;
+        }
     }
 
     /// <inheritdoc/>
     public async Task UpdateStagedHoldInSessionAsync(Guid wallId, Guid? expectedSessionId, Guid holdId, double x, double y, double radius)
     {
         var userId = await EnsureSessionForStagedEditAsync(wallId, expectedSessionId);
-        await UpdateStagedHoldAsync(wallId, holdId, x, y, radius);
-        await TouchOpenSessionAsync(wallId, userId);
+        using (BeginUpdateBatch(wallId))
+        {
+            await UpdateStagedHoldAsync(wallId, holdId, x, y, radius);
+            await TouchOpenSessionAsync(wallId, userId);
+        }
     }
 
     /// <inheritdoc/>
@@ -59,7 +66,14 @@ public partial class WallPanelService
             WallUpdateSessions.Touch(open, user.Id);
         }
 
-        await db.SaveChangesAsync();
+        // Guards and the twin refusal ran above, so a refused delete opens no batch; the one save (hold delete, unstack,
+        // released verdicts, session touch) lands in the wall's open wall-update batch, like the plain staged delete.
+        // Only the allow-listed rows (the hold and its stack links) are journalled; session rows are not, by design.
+        using (BeginUpdateBatch(wallId))
+        {
+            await db.SaveChangesAsync();
+        }
+
         logger.LogInformation(
             "Staged hold {HoldId} deleted on wall {WallId} by {UserId} ({Released} carry verdict(s) released from it)",
             holdId, wallId, user.Id, released);

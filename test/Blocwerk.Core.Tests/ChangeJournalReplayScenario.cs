@@ -18,6 +18,12 @@ public enum TouchupMode
 
     /// <summary>Through the real <see cref="WallPanelService"/> staged-edit methods.</summary>
     Service,
+
+    /// <summary>
+    /// Through the session-scoped staged edits the update's UI and API make, inside an open update session whose old hold
+    /// is confirmed "Changed" onto the hold the touch-up deletes (so the delete releases that twin in the same save).
+    /// </summary>
+    Session,
 }
 
 /// <summary>The ids of one source update and the replay target it is replayed onto.</summary>
@@ -37,6 +43,12 @@ public sealed class ChangeJournalReplayScenario
 
     /// <summary>The hold added in the touch-up (the service picks its own id).</summary>
     public Guid AddedId { get; set; } = Guid.NewGuid();
+
+    /// <summary>The open update session of a <see cref="TouchupMode.Session"/> run.</summary>
+    public Guid SessionId { get; set; }
+
+    /// <summary>How many carry verdicts the session-scoped delete released from its twin.</summary>
+    public int ReleasedTwins { get; set; }
 
     public IDbContextFactory<BlocwerkDbContext>? TargetFactory { get; set; }
 

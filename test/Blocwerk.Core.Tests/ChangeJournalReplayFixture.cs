@@ -75,6 +75,10 @@ public sealed class ChangeJournalReplayFixture : IDisposable
         {
             await ServiceTouchupAsync(s);
         }
+        else if (touchup == TouchupMode.Session)
+        {
+            await SessionTouchupAsync(s);
+        }
 
         await Task.Delay(20);
         var accepted = touchup != TouchupMode.None && !addedIsTwin ? new List<Guid> { s.AddedId } : [];
@@ -175,6 +179,30 @@ public sealed class ChangeJournalReplayFixture : IDisposable
         await panels.UpdateStagedHoldAsync(s.WallId, s.TwinId, 0.6, 0.5, 0.02);
         await panels.DeleteStagedHoldAsync(s.WallId, s.DeletedId);
         s.AddedId = await panels.AddStagedHoldAsync(s.WallId, s.PanelId, 0.9, 0.9, 0.02);
+    }
+
+    /// <summary>
+    /// The session-scoped touch-up: the open session (and its "Changed onto the deleted hold" verdict) is written raw,
+    /// as session rows are not journalled; the edits then go through the session-scoped service calls.
+    /// </summary>
+    private async Task SessionTouchupAsync(ChangeJournalReplayScenario s)
+    {
+        await using (var db = CreateContext())
+        {
+            var session = WallUpdateSessions.Open(db, s.WallId, stagedGeneration: 1, Owner.Id);
+            s.SessionId = session.Id;
+            db.WallUpdateHoldDecisions.Add(new WallUpdateHoldDecision
+            {
+                SessionId = session.Id, Kind = WallUpdateHoldDecisionKind.Carry, HoldId = s.OldHoldId,
+                PairedHoldId = s.DeletedId, CarryKind = CarryKind.Changed, Confirmed = true,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var panels = PanelService();
+        await panels.UpdateStagedHoldInSessionAsync(s.WallId, s.SessionId, s.TwinId, 0.6, 0.5, 0.02);
+        s.ReleasedTwins = await panels.DeleteStagedHoldInSessionAsync(s.WallId, s.SessionId, s.DeletedId, StagedTwinDeletion.ReleaseTwin);
+        s.AddedId = await panels.AddStagedHoldInSessionAsync(s.WallId, s.SessionId, s.PanelId, 0.9, 0.9, 0.02);
     }
 
     private static Hold Staged(ChangeJournalReplayScenario s, Guid id, double xy) => new()
