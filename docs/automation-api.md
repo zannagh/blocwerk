@@ -185,17 +185,19 @@ Run the update once locally, check it, then carry exactly what it wrote to produ
 
 | Method and route | What it does |
 | --- | --- |
-| `GET /api/v1/admin/journal/walls/{wallId}/batches?includeUnscoped=false&since=<iso time>` | The wall's batches, oldest first: `id`, `label`, `scopeKind`, `scopeId`, `status`, `actor`, `createdAt`, `sealedAt`, `entryCount`. `includeUnscoped=true` adds the unscoped `adhoc` batches since `since` (default: the last 7 days) that touched the wall. |
-| `GET /api/v1/admin/journal/export?batchId=<id>&batchId=<id>…` | The package as gzip-compressed JSON (`application/gzip`), panel photos inside. Entries are in the source's write order. |
-| `POST /api/v1/admin/journal/replay?dryRun=true&force=false` | Body: the package, gzip or plain JSON, up to 1 GB. **A dry run unless `dryRun=false`.** Returns the report: `applied`, `dryRun`, `rows[]` (`seq`, `batchId`, `entityType`, `keyJson`, `outcome` 0 applied / 1 already applied / 2 conflict, `detail`), `fatalErrors[]`, `replayBatchId`. 200 for a dry run or a committed run; 409 with the report when a real run was refused. |
+| `GET /api/v1/admin/journal/walls/{wallId}/batches?includeUnscoped=false&since=<iso time>` | The wall's batches, oldest first: `id`, `label`, `scopeKind`, `scopeId`, `status`, `actor`, `createdAt`, `sealedAt`, `entryCount`, `wallUpdateBatchId` (the wall update the batch belongs to: the `wall-update` batch itself, or the one that was open when the batch was created; null otherwise). `includeUnscoped=true` adds the unscoped `adhoc` batches since `since` (default: the last 7 days) that touched the wall. |
+| `GET /api/v1/admin/journal/export?updateBatchId=<id>` | **A whole wall update**: the `wall-update` batch and every batch of the wall created while it was open (nested and `adhoc` ones), as gzip-compressed JSON (`application/gzip`), panel photos inside, in the source's write order. 404 when the id is not a `wall-update` batch. |
+| `GET /api/v1/admin/journal/export?wallId=<id>&since=<iso>&until=<iso>&includeUnscoped=true` | The wall's batches created in that window (adhoc ones included unless `includeUnscoped=false`). Replays, reverts and reverted batches are left out of both modes above. |
+| `GET /api/v1/admin/journal/export?batchId=<id>&batchId=<id>…` | Exactly the batches named. Name exactly one of `updateBatchId`, `wallId` or `batchId` (else 400). |
+| `POST /api/v1/admin/journal/replay?dryRun=true&force=false` | Body: the package, gzip or plain JSON, up to 1 GB. **A dry run unless `dryRun=false`.** Returns the report: `applied`, `dryRun`, `rows[]` (`seq`, `batchId`, `entityType`, `keyJson`, `outcome` 0 applied / 1 already applied / 2 conflict, `detail`), `fatalErrors[]`, `replayBatchId` (also in the `X-Replay-Batch-Id` header; it is the batch to revert to undo the replay, listed under the package's wall). 200 for a dry run or a committed run; 409 with the report when a real run was refused; 409 with a problem body (`title`, `detail` naming the constraint) when the database refused a write while applying (nothing committed); 499 when the client went away (rolled back). |
 | `POST /api/v1/admin/journal/batches/{batchId}/revert?dryRun=true&force=false` | Reverts one batch on this instance. **A dry run unless `dryRun=false`.** 200 with `reverted`, `dryRun`, `conflicts[]`, `revertBatchId`; 404 for an unknown batch; 409 when a real revert was refused. |
 
 ```sh
 AUTH="Authorization: Bearer $BLOCWERK_PERSONAL_API_KEY"   # personal key with write access, owner is an installation admin
 
 # Locally: find the update's batch and export it.
-curl -fsS -H "$AUTH" "$LOCAL/api/v1/admin/journal/walls/$WALL/batches" | jq '.[] | {id, label, sealedAt, entryCount}'
-curl -fsS -H "$AUTH" -o update.json.gz "$LOCAL/api/v1/admin/journal/export?batchId=$BATCH"
+curl -fsS -H "$AUTH" "$LOCAL/api/v1/admin/journal/walls/$WALL/batches?includeUnscoped=true" | jq '.[] | {id, label, sealedAt, entryCount, wallUpdateBatchId}'
+curl -fsS -H "$AUTH" -o update.json.gz "$LOCAL/api/v1/admin/journal/export?updateBatchId=$UPDATE"
 
 # On production: dry run first (the default), read the conflicts, then apply.
 curl -sS -X POST -H "$AUTH" --data-binary @update.json.gz "$BASE/api/v1/admin/journal/replay" | jq '{dryRun, fatalErrors, conflicts: [.rows[] | select(.outcome == 2)]}'
@@ -204,9 +206,10 @@ curl -fsS -X POST -H "$AUTH" --data-binary @update.json.gz "$BASE/api/v1/admin/j
 
 * **Schema parity is never forced.** The package records the source's last EF migration. A target on another migration refuses the replay with a fatal error, even with `force=true`. `force` only pushes past row conflicts. Use it only when you have read every conflict.
 * **Replaying is idempotent.** Rows already at the package's result report `outcome` 1 and are left alone, so a package can be sent again after a partial failure.
-* **One wall update is one batch.** Staging, every touch-up of the staged holds (the Detected and Touchup steps, and the full review's editor) and the promote all record into the wall's `wall-update` batch, so exporting that batch alone carries the whole update. Updates recorded before this change have their touch-ups in separate `adhoc` batches. Find them with `includeUnscoped=true` and export them in the same package as the `wall-update` batch: the package is ordered by write time, so they replay in the order they were made.
+* **One wall update is one batch.** Staging, every touch-up of the staged holds (the Detected and Touchup steps, and the full review's editor) and the promote all record into the wall's `wall-update` batch, so exporting that batch alone carries the whole update. So is the triage's discard reason on each staged detection. Updates recorded before this change have their touch-ups in separate `adhoc` batches: `export?updateBatchId=` picks them up (they were written while the update was open), and the package is ordered by write time, so they replay in the order they were made.
 * Later batches on the wall (look-over answers, colour proposals) can go in the same package or in their own, sent afterwards. Do not export placement or remeasure batches: production recomputes those when the capture is imported (replay the journal first, then import the capture).
-* Not in the journal, so not carried: look-over findings, update sessions, refresh runs and captures, `Hold.DiscardReason`, and the look-over's "missing" `NeedsReview` flag.
+* Not in the journal, so not carried: look-over findings, update sessions, refresh runs and captures, and the look-over's "missing" `NeedsReview` flag.
+* Memory: the replay holds the whole package in memory. Expect a peak of roughly 3 to 4 times the uncompressed package size (the Base64 text as .NET strings, plus the decoded photos the applied rows need), so about 1 to 1.2 GB for a 300 MB package. Blobs no row needs are never decoded.
 
 ## Still in the browser
 

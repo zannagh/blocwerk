@@ -79,7 +79,7 @@ public sealed class ChangeJournalReplayer
         }
 
         // Phase 2 — apply the rows that need applying, in one transaction, journalled as a new batch.
-        var scope = package.Batches.Select(b => (b.ScopeKind, b.ScopeId)).FirstOrDefault();
+        var scope = ReplayScope(package);
         Guid? replayBatchId;
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         using (journal.BeginBatch("replay", scope.ScopeKind, scope.ScopeId))
@@ -234,12 +234,49 @@ public sealed class ChangeJournalReplayer
         ChangeJournalPackage package) =>
         package.Entries.GroupBy(e => (e.EntityType, e.KeyJson));
 
+    /// <summary>
+    /// The scope the replay batch is recorded under, so it is listed with the wall it changed: the package's wall-update
+    /// batch, else its first wall-scoped batch, else the wall of its base markers, else whatever the first batch had.
+    /// </summary>
+    private static (ChangeJournalScopeKind ScopeKind, Guid? ScopeId) ReplayScope(ChangeJournalPackage package)
+    {
+        var wallBatch = package.Batches.FirstOrDefault(b => b.ScopeKind == ChangeJournalScopeKind.Wall && b.Label == ChangeJournal.WallUpdateBatchLabel)
+            ?? package.Batches.FirstOrDefault(b => b.ScopeKind == ChangeJournalScopeKind.Wall && b.ScopeId is not null);
+        if (wallBatch is not null)
+        {
+            return (wallBatch.ScopeKind, wallBatch.ScopeId);
+        }
+
+        var marker = package.BaseMarkers.FirstOrDefault(m => m.ScopeKind == ChangeJournalScopeKind.Wall && m.ScopeId is not null);
+        return marker is not null
+            ? (marker.ScopeKind, marker.ScopeId)
+            : package.Batches.Select(b => (b.ScopeKind, b.ScopeId)).FirstOrDefault();
+    }
+
+    /// <summary>
+    /// Decodes a blob only when a row first needs it (and once): a package holds every photo as Base64, and a dry run or
+    /// a mostly-applied package touches few of them, so decoding all of them up front only added their size to the peak.
+    /// </summary>
     private static Func<string, byte[]?> BlobResolver(ChangeJournalPackage package)
     {
-        var byShaBytes = package.Blobs
-            .GroupBy(b => b.Sha256)
-            .ToDictionary(g => g.Key, g => Convert.FromBase64String(g.First().Base64));
-        return sha => byShaBytes.TryGetValue(sha, out var bytes) ? bytes : null;
+        var base64BySha = package.Blobs.GroupBy(b => b.Sha256).ToDictionary(g => g.Key, g => g.First().Base64);
+        var decoded = new Dictionary<string, byte[]>();
+        return sha =>
+        {
+            if (decoded.TryGetValue(sha, out var bytes))
+            {
+                return bytes;
+            }
+
+            if (!base64BySha.TryGetValue(sha, out var base64))
+            {
+                return null;
+            }
+
+            bytes = Convert.FromBase64String(base64);
+            decoded[sha] = bytes;
+            return bytes;
+        };
     }
 
     private static (Type? Clr, IEntityType? Meta) ResolveOrNull(BlocwerkDbContext db, string entityTypeName)

@@ -8,6 +8,7 @@ using Blocwerk.Core.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Server.Kestrel.Core.Features;
+using Microsoft.EntityFrameworkCore;
 using MinDataRate = Microsoft.AspNetCore.Server.Kestrel.Core.MinDataRate;
 
 namespace Blocwerk.Web.Controllers;
@@ -30,6 +31,8 @@ public sealed class ChangeJournalAdminController(IChangeJournalAdminService jour
     /// <summary>A package carries every photo it references as Base64: a few hundred MB must fit.</summary>
     public const long MaxPackageBytes = 1024L * 1024 * 1024;
 
+    private const int ClientClosedRequest = 499;
+
     private static readonly MinDataRate MinBodyRate = new(bytesPerSecond: 16 * 1024, gracePeriod: TimeSpan.FromSeconds(30));
 
     /// <summary>The wall's batches, oldest first; <c>includeUnscoped</c> adds the "adhoc" ones that touched it since <c>since</c> (default 7 days).</summary>
@@ -38,17 +41,40 @@ public sealed class ChangeJournalAdminController(IChangeJournalAdminService jour
         Guid wallId, [FromQuery] bool includeUnscoped = false, [FromQuery] DateTimeOffset? since = null, CancellationToken ct = default) =>
         RunAsync(async () => Ok(await journal.ListBatchesAsync(wallId, includeUnscoped, since, ct)));
 
-    /// <summary>The package of the given batches as gzip-compressed JSON (photos inside).</summary>
+    /// <summary>
+    /// A package as gzip-compressed JSON (photos inside), in write order. Exactly one selection: <c>batchId</c> (repeat
+    /// it) for chosen batches; <c>updateBatchId</c> for a whole wall update (its wall-update batch and every batch created
+    /// while it was open, adhoc ones included); or <c>wallId</c> with <c>since</c>/<c>until</c> for a time window of the
+    /// wall's batches (<c>includeUnscoped</c>, default true, adds the adhoc ones that touched it). Replays and reverts are
+    /// left out of the latter two.
+    /// </summary>
     [HttpGet("export")]
-    public Task<IActionResult> Export([FromQuery] Guid[]? batchId, CancellationToken ct) =>
+    public Task<IActionResult> Export(
+        [FromQuery] Guid[]? batchId,
+        [FromQuery] Guid? updateBatchId,
+        [FromQuery] Guid? wallId,
+        [FromQuery] DateTimeOffset? since,
+        [FromQuery] DateTimeOffset? until,
+        [FromQuery] bool includeUnscoped = true,
+        CancellationToken ct = default) =>
         RunAsync(async () =>
         {
-            if (batchId is null || batchId.Length == 0)
+            var modes = (batchId is { Length: > 0 } ? 1 : 0) + (updateBatchId is null ? 0 : 1) + (wallId is null ? 0 : 1);
+            if (modes != 1)
             {
-                return BadRequest(new ApiErrorResponse("Name at least one batch: ?batchId=<guid>&batchId=<guid>."));
+                return BadRequest(new ApiErrorResponse("Name exactly one of ?batchId=<guid>(&batchId=…), ?updateBatchId=<guid> or ?wallId=<guid>(&since=&until=)."));
             }
 
-            var package = await journal.ExportAsync(batchId, ct);
+            var package = updateBatchId is { } update
+                ? await journal.ExportWallUpdateAsync(update, ct)
+                : wallId is { } wall
+                    ? await journal.ExportWallAsync(wall, since, until, includeUnscoped, ct)
+                    : await journal.ExportAsync(batchId!, ct);
+            if (package is null)
+            {
+                return NotFound(new ApiErrorResponse("That is not a wall-update batch."));
+            }
+
             var file = new FileStream(
                 Path.GetTempFileName(), FileMode.Create, FileAccess.ReadWrite, FileShare.None, 81920, FileOptions.DeleteOnClose | FileOptions.Asynchronous);
             await ChangeJournalPackageJson.WriteGzipAsync(package, file, ct);
@@ -79,6 +105,12 @@ public sealed class ChangeJournalAdminController(IChangeJournalAdminService jour
             Request.EnableBuffering(bufferThreshold: 1024 * 1024, bufferLimit: MaxPackageBytes);
             var package = await ChangeJournalPackageJson.ReadAsync(Request.Body, ct);
             var report = await journal.ReplayAsync(package, dryRun, force, ct);
+            if (report.ReplayBatchId is { } replayBatch)
+            {
+                // The batch the replayed writes landed in: what to revert if the replay must be undone.
+                Response.Headers["X-Replay-Batch-Id"] = replayBatch.ToString();
+            }
+
             return (report.DryRun && report.FatalErrors.Count == 0) || report.Applied ? Ok(report) : Conflict(report);
         });
 
@@ -117,6 +149,21 @@ public sealed class ChangeJournalAdminController(IChangeJournalAdminService jour
         catch (BadHttpRequestException ex) when (ex.StatusCode == StatusCodes.Status413PayloadTooLarge)
         {
             return StatusCode(StatusCodes.Status413PayloadTooLarge, new ApiErrorResponse($"The package is larger than {MaxPackageBytes / (1024 * 1024)} MB."));
+        }
+        catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
+        {
+            // The client went away; a replay's transaction rolled back with it. 499, as nginx and Caddy log it.
+            return StatusCode(ClientClosedRequest, new ApiErrorResponse("The request was cancelled; nothing was committed."));
+        }
+        catch (DbUpdateException ex)
+        {
+            // The database refused a write while applying (a constraint the package's rows break here). The
+            // transaction rolled back, so nothing changed; the inner message names the constraint.
+            logger.LogWarning(ex, "Journal admin request hit a database refusal");
+            return Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: "The database refused a write; nothing was committed.",
+                detail: ex.InnerException?.Message ?? ex.Message);
         }
         catch (InvalidOperationException ex)
         {

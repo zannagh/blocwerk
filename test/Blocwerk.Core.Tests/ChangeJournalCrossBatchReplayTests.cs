@@ -155,6 +155,19 @@ public sealed class ChangeJournalCrossBatchReplayTests : IDisposable
         Assert.All(report.Rows, r => Assert.Equal(wallUpdate, r.BatchId));
     }
 
+    [Fact]
+    public async Task ABlobNoRowNeeds_IsNeverDecoded()
+    {
+        var s = await f.RunUpdateAsync(TouchupMode.Service);
+        var package = await f.ExportAsync([await f.WallUpdateBatchIdAsync(s.WallId)]);
+
+        // Decoding every blob up front threw on this one; decoded on demand, nothing ever asks for it.
+        package.Blobs.Add(new ChangeJournalPackageBlob { Sha256 = "unreferenced", Base64 = "*** not base64 ***", Len = 3 });
+        var report = await f.ReplayAsync(s, package, dryRun: false);
+
+        Assert.True(report.Applied);
+    }
+
     private async Task AnswerLookOverAsync(ChangeJournalReplayScenario s)
     {
         await Task.Delay(20);

@@ -8,6 +8,9 @@ using Blocwerk.Core.Services;
 using Blocwerk.Web.Controllers;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 namespace Blocwerk.Core.Tests;
@@ -115,6 +118,62 @@ public sealed class ChangeJournalAdminEndpointTests
 
         Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, garbage.StatusCode);
+    }
+
+    [Fact]
+    public async Task ADatabaseRefusalWhileApplying_Is409ProblemDetails_NotA500()
+    {
+        var journal = Substitute.For<IChangeJournalAdminService>();
+        journal.ReplayAsync(default!, default, default, default)
+            .ReturnsForAnyArgs(Task.FromException<ChangeJournalReplayReport>(
+                new DbUpdateException("save failed", new InvalidOperationException("duplicate key \"IX_Holds\""))));
+        await using var host = await JournalApiHost.StartAsync(journal);
+
+        var response = await host.SendAsync("POST", "/api/v1/admin/journal/replay?dryRun=false", "personal-write-key", await GzipPackageAsync("m-1"));
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+
+        // A ProblemDetails body (the controller's [Produces] keeps the media type application/json).
+        using var problem = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(409, problem.RootElement.GetProperty("status").GetInt32());
+        Assert.Contains("nothing was committed", problem.RootElement.GetProperty("title").GetString());
+        Assert.Contains("IX_Holds", problem.RootElement.GetProperty("detail").GetString());
+    }
+
+    [Fact]
+    public async Task ARequestTheClientAborted_Is499()
+    {
+        var journal = Substitute.For<IChangeJournalAdminService>();
+        journal.RevertAsync(default, default, default, default)
+            .ReturnsForAnyArgs(Task.FromException<ChangeJournalRevertResult>(new OperationCanceledException()));
+        using var aborted = new CancellationTokenSource();
+        await aborted.CancelAsync();
+        var controller = new ChangeJournalAdminController(journal, NullLogger<ChangeJournalAdminController>.Instance)
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { RequestAborted = aborted.Token } },
+        };
+
+        var result = Assert.IsType<ObjectResult>(await controller.Revert(Guid.NewGuid(), dryRun: false));
+
+        Assert.Equal(499, result.StatusCode);
+    }
+
+    [Fact]
+    public async Task TheExportModes_AreExclusive_AndAnUnknownUpdateIs404()
+    {
+        var journal = Substitute.For<IChangeJournalAdminService>();
+        journal.ExportWallUpdateAsync(default, default).ReturnsForAnyArgs((ChangeJournalPackage?)null);
+        await using var host = await JournalApiHost.StartAsync(journal);
+        var update = Guid.NewGuid();
+
+        var both = await host.SendAsync("GET", $"/api/v1/admin/journal/export?updateBatchId={update}&wallId={Wall}", "personal-write-key");
+        var none = await host.SendAsync("GET", "/api/v1/admin/journal/export", "personal-write-key");
+        var unknown = await host.SendAsync("GET", $"/api/v1/admin/journal/export?updateBatchId={update}", "personal-write-key");
+
+        Assert.Equal(HttpStatusCode.BadRequest, both.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, none.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
+        await journal.Received(1).ExportWallUpdateAsync(update, Arg.Any<CancellationToken>());
     }
 
     private static IEnumerable<(string Method, string Path)> RoutePairs() =>

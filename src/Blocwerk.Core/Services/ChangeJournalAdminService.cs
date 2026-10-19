@@ -1,7 +1,6 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
-using System.Text.Json;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Enums;
@@ -23,9 +22,6 @@ public sealed class ChangeJournalAdminService(
     ChangeJournalReverter reverter,
     ILogger<ChangeJournalAdminService> logger) : IChangeJournalAdminService
 {
-    /// <summary>The unscoped-batch search reads entry text; without a bound it would scan the whole journal.</summary>
-    public static readonly TimeSpan DefaultUnscopedWindow = TimeSpan.FromDays(7);
-
     public async Task<Guid> EnsureAdminAsync(CancellationToken ct)
     {
         var user = await currentUser.GetCurrentUserAsync()
@@ -40,29 +36,48 @@ public sealed class ChangeJournalAdminService(
     {
         await EnsureAdminAsync(ct);
         await using var db = rootFactory.CreateDbContext();
-        db.CurrentUserId = Guid.Empty;
-
-        var ids = await db.ChangeJournalBatches.AsNoTracking()
-            .Where(b => b.ScopeKind == ChangeJournalScopeKind.Wall && b.ScopeId == wallId)
-            .Where(b => since == null || b.CreatedAt >= since)
-            .Select(b => b.Id)
-            .ToListAsync(ct);
-        if (includeUnscoped)
-        {
-            ids.AddRange(await UnscopedBatchIdsAsync(db, wallId, since ?? DateTimeOffset.UtcNow - DefaultUnscopedWindow, ct));
-        }
-
+        var batches = await ChangeJournalBatchSelection.ForWallAsync(db, wallId, includeUnscoped, since, null, ct);
+        var updates = await ChangeJournalBatchSelection.WallUpdatesAsync(db, wallId, ct);
+        var ids = batches.Select(b => b.Id).ToList();
         var counts = await db.ChangeJournalEntries.AsNoTracking()
             .Where(e => ids.Contains(e.BatchId))
             .GroupBy(e => e.BatchId)
             .Select(g => new { g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.Key, x => x.Count, ct);
-        var batches = await db.ChangeJournalBatches.AsNoTracking().Where(b => ids.Contains(b.Id)).ToListAsync(ct);
         return batches
-            .OrderBy(b => b.CreatedAt)
             .Select(b => new ChangeJournalBatchSummary(
-                b.Id, b.Label, b.ScopeKind, b.ScopeId, b.Status, b.Actor, b.CreatedAt, b.SealedAt, counts.GetValueOrDefault(b.Id)))
+                b.Id, b.Label, b.ScopeKind, b.ScopeId, b.Status, b.Actor, b.CreatedAt, b.SealedAt, counts.GetValueOrDefault(b.Id),
+                ChangeJournalBatchSelection.UpdateOf(b, updates)))
             .ToList();
+    }
+
+    public async Task<ChangeJournalPackage?> ExportWallUpdateAsync(Guid updateBatchId, CancellationToken ct)
+    {
+        await EnsureAdminAsync(ct);
+        await using var db = rootFactory.CreateDbContext();
+        var update = await db.ChangeJournalBatches.AsNoTracking().FirstOrDefaultAsync(
+            b => b.Id == updateBatchId && b.Label == ChangeJournal.WallUpdateBatchLabel && b.ScopeId != null, ct);
+        if (update is null)
+        {
+            return null;
+        }
+
+        // Everything created while the update was open, the adhoc batches included.
+        return await ExportWallAsync(update.ScopeId!.Value, update.CreatedAt, update.SealedAt, includeUnscoped: true, ct);
+    }
+
+    public async Task<ChangeJournalPackage> ExportWallAsync(
+        Guid wallId, DateTimeOffset? since, DateTimeOffset? until, bool includeUnscoped, CancellationToken ct)
+    {
+        await EnsureAdminAsync(ct);
+        List<Guid> ids;
+        await using (var db = rootFactory.CreateDbContext())
+        {
+            var batches = await ChangeJournalBatchSelection.ForWallAsync(db, wallId, includeUnscoped, since, until, ct);
+            ids = batches.Where(ChangeJournalBatchSelection.IsReplayable).Select(b => b.Id).ToList();
+        }
+
+        return await ExportAsync(ids, ct);
     }
 
     public async Task<ChangeJournalPackage> ExportAsync(IReadOnlyCollection<Guid> batchIds, CancellationToken ct)
@@ -109,64 +124,5 @@ public sealed class ChangeJournalAdminService(
             "Journal revert of batch {BatchId} by {UserId}: dryRun={DryRun}, force={Force}, reverted={Reverted}, conflicts={Conflicts}, revertBatch={RevertBatchId}",
             batchId, userId, dryRun, force, result.Reverted, result.Conflicts.Count, result.RevertBatchId);
         return result;
-    }
-
-    /// <summary>
-    /// Unscoped batches since <paramref name="since"/> that touched the wall: an entry names the wall's id in its
-    /// images (an insert or delete carries <c>WallId</c>), or its key is one of the wall's holds, panels or boulders (an
-    /// update carries only the changed columns). Rows deleted since are only found through the first test.
-    /// </summary>
-    private static async Task<List<Guid>> UnscopedBatchIdsAsync(
-        BlocwerkDbContext db, Guid wallId, DateTimeOffset since, CancellationToken ct)
-    {
-        // Guids are journalled in their default ("D", lower-case) JSON form.
-        var needle = wallId.ToString();
-        var recent = db.ChangeJournalBatches.AsNoTracking()
-            .Where(b => b.ScopeId == null && b.CreatedAt >= since)
-            .Select(b => b.Id);
-        var entries = await db.ChangeJournalEntries.AsNoTracking()
-            .Where(e => recent.Contains(e.BatchId))
-            .Select(e => new
-            {
-                e.BatchId,
-                e.KeyJson,
-                Mentions = (e.AfterJson != null && e.AfterJson.Contains(needle)) || (e.BeforeJson != null && e.BeforeJson.Contains(needle)),
-            })
-            .ToListAsync(ct);
-        if (entries.Count == 0)
-        {
-            return [];
-        }
-
-        var owned = await WallRowIdsAsync(db, wallId, ct);
-        return entries
-            .Where(e => e.Mentions || KeyGuids(e.KeyJson).Any(id => id == wallId || owned.Contains(id)))
-            .Select(e => e.BatchId)
-            .Distinct()
-            .ToList();
-    }
-
-    private static async Task<HashSet<Guid>> WallRowIdsAsync(BlocwerkDbContext db, Guid wallId, CancellationToken ct)
-    {
-        var holds = await db.Holds.AsNoTracking().Where(h => h.WallId == wallId).Select(h => h.Id).ToListAsync(ct);
-        var panels = await db.WallPanels.AsNoTracking().Where(p => p.WallId == wallId).Select(p => p.Id).ToListAsync(ct);
-        var boulders = await db.Boulders.AsNoTracking().Where(b => b.WallId == wallId).Select(b => b.Id).ToListAsync(ct);
-        return holds.Concat(panels).Concat(boulders).ToHashSet();
-    }
-
-    /// <summary>Every Guid value in a journalled key (<c>{"Id":"…"}</c>, or the parts of a composite key).</summary>
-    private static IEnumerable<Guid> KeyGuids(string keyJson)
-    {
-        using var doc = JsonDocument.Parse(keyJson);
-        var ids = new List<Guid>();
-        foreach (var part in doc.RootElement.EnumerateObject())
-        {
-            if (part.Value.ValueKind == JsonValueKind.String && part.Value.TryGetGuid(out var id))
-            {
-                ids.Add(id);
-            }
-        }
-
-        return ids;
     }
 }

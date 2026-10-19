@@ -122,6 +122,51 @@ public sealed class ChangeJournalAdminServiceTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task AWholeUpdateExport_CarriesItsAdhocTouchups_LeavesOutLaterBatches_AndReplaysUnderTheWall()
+    {
+        var s = await f.RunUpdateAsync(TouchupMode.Adhoc);
+        var wallUpdate = await f.WallUpdateBatchIdAsync(s.WallId);
+        await Task.Delay(20);
+        using (f.Journal.BeginBatch("look-over", ChangeJournalScopeKind.Wall, s.WallId))
+        {
+            await using var db = f.CreateContext();
+            (await db.Holds.SingleAsync(h => h.Id == s.TwinId)).Name = "later";
+            await db.SaveChangesAsync();
+        }
+
+        var service = Service(await AdminAsync());
+        var listed = await service.ListBatchesAsync(s.WallId, includeUnscoped: true, since: null, default);
+        var package = await service.ExportWallUpdateAsync(wallUpdate, default);
+
+        // The listing groups the adhoc touch-ups under the update; the look-over came after its seal.
+        Assert.All(listed.Where(b => b.Label == "adhoc" && b.CreatedAt > listed.Single(x => x.Id == wallUpdate).CreatedAt),
+            b => Assert.Equal(wallUpdate, b.WallUpdateBatchId));
+        Assert.Null(listed.Single(b => b.Label == "look-over").WallUpdateBatchId);
+
+        Assert.NotNull(package);
+        Assert.Contains(package.Batches, b => b.Id == wallUpdate);
+        Assert.Equal(3, package.Batches.Count(b => b.Label == "adhoc"));
+        Assert.DoesNotContain(package.Batches, b => b.Label == "look-over");
+
+        var report = await f.ReplayAsync(s, package, dryRun: false);
+        Assert.True(report.Applied);
+        await using var dst = s.TargetFactory!.CreateDbContext();
+        var replay = await dst.ChangeJournalBatches.SingleAsync(b => b.Id == report.ReplayBatchId);
+        Assert.Equal((ChangeJournalScopeKind.Wall, (Guid?)s.WallId), (replay.ScopeKind, replay.ScopeId));
+        Assert.Equal(0.6, (await dst.Holds.SingleAsync(h => h.Id == s.TwinId)).X);
+    }
+
+    [Fact]
+    public async Task AWholeUpdateExport_OfABatchThatIsNoWallUpdate_IsNull()
+    {
+        var s = await f.RunUpdateAsync(TouchupMode.Adhoc);
+        var service = Service(await AdminAsync());
+        var notAnUpdate = (await service.ListBatchesAsync(s.WallId, true, null, default)).First(b => b.Label == "adhoc").Id;
+
+        Assert.Null(await service.ExportWallUpdateAsync(notAnUpdate, default));
+    }
+
     private ChangeJournalAdminService Service(User actingUser)
     {
         var currentUser = Substitute.For<ICurrentUserService>();

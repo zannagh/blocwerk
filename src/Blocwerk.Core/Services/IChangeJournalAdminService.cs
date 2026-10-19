@@ -25,6 +25,17 @@ public interface IChangeJournalAdminService
     Task<IReadOnlyList<ChangeJournalBatchSummary>> ListBatchesAsync(
         Guid wallId, bool includeUnscoped, DateTimeOffset? since, CancellationToken ct);
 
+    /// <summary>
+    /// The whole wall update <paramref name="updateBatchId"/> names (a <c>wall-update</c> batch): it and every batch of
+    /// the wall created while it was open, adhoc ones included, minus replays and reverts, in write order. Null when the
+    /// id is not a wall-update batch.
+    /// </summary>
+    Task<ChangeJournalPackage?> ExportWallUpdateAsync(Guid updateBatchId, CancellationToken ct);
+
+    /// <summary>The wall's replayable batches created in [<paramref name="since"/>, <paramref name="until"/>], in write order.</summary>
+    Task<ChangeJournalPackage> ExportWallAsync(
+        Guid wallId, DateTimeOffset? since, DateTimeOffset? until, bool includeUnscoped, CancellationToken ct);
+
     /// <summary>The package for the given batches (photos inside as blobs), in the source's write order.</summary>
     Task<ChangeJournalPackage> ExportAsync(IReadOnlyCollection<Guid> batchIds, CancellationToken ct);
 
