@@ -11,9 +11,9 @@ using Microsoft.AspNetCore.Mvc;
 namespace Blocwerk.Web.Controllers;
 
 /// <summary>
-/// The wall look-over over the machine API, read-only: whether an applied panel update left the wall waiting for a
+/// The wall look-over over the machine API, the reads: whether an applied panel update left the wall waiting for a
 /// look-over, since when, and the findings. So the script that applied an update can report what it left behind.
-/// Answering and finishing stay on the page: they are a person's look at the wall.
+/// Answering and finishing are <see cref="WallLookOverAnswersApiController"/>.
 /// </summary>
 /// <remarks>
 /// The same key as "Update panels + 3D" (<see cref="WallRefreshApiController"/>): a personal key with write access; its
