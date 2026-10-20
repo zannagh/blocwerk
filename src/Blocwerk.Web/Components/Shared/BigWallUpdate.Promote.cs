@@ -128,13 +128,8 @@ public partial class BigWallUpdate
         var scoped = CarryoverScope.Reconcile(matched, persisted.Carryover);
         RecordScopeResets(scoped.Reset);
 
-        return persisted with
-        {
-            Carryover = scoped.Decisions.ToList(),
-            CarriedWarpPositions = matched.CarriedWarpPositions,
-            CarriedWarpShapes = matched.CarriedWarpShapes,
-            NotFoundAgain = matched.NotFoundAgain,
-        };
+        // The same payload the quick flow's Apply builds (warp outlines and hand-placed merges included), so both promote alike.
+        return PromotePayload.For(persisted with { Carryover = scoped.Decisions.ToList() }, matched);
     }
 
     /// <summary>

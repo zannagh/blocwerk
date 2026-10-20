@@ -38,15 +38,11 @@ internal static class RefreshDecisions
             .ToList();
         var exceptions = await actors.Sessions.GetUpdateExceptionsAsync(wallId);
         var review = ReviewOldHoldIds(exceptions);
-        promotable = promotable with
-        {
-            ReviewOldHoldIds = review,
-            HandPlacedMergeOldIds = (matched.HandPlacedMerges ?? []).Select(m => m.OldHoldId).ToList(),
-            NotFoundAgain = matched.NotFoundAgain,
-        };
+
+        // Exactly what Apply hands the promote, and the moves are previewed from it: the promote derives the same plan.
+        promotable = PromotePayload.For(promotable with { ReviewOldHoldIds = review }, matched);
         var folded = RelocationFold.Apply(promotable, accepted);
-        var moves = await actors.BigUpdate.PreviewHoldMovesAsync(
-            wallId, folded with { CarriedWarpPositions = matched.CarriedWarpPositions });
+        var moves = await actors.BigUpdate.PreviewHoldMovesAsync(wallId, promotable);
         var linked = folded.Neighbours.Sum(n => n.Links.Count);
         var leftOut = Math.Max(0, matched.Neighbours.Sum(n => n.Proposals.Count) - linked);
         return new PromotableDecisions(
@@ -139,7 +135,10 @@ internal static class RefreshDecisions
 }
 
 /// <summary>What Apply would promote, see <see cref="RefreshDecisions"/>.</summary>
-/// <param name="Scoped">The session's decisions after <see cref="CarryoverScope.Reconcile"/>: what is handed to the promote.</param>
+/// <param name="Scoped">
+/// The session's decisions after <see cref="CarryoverScope.Reconcile"/>, topped up by <see cref="PromotePayload"/>: what is handed
+/// to the promote, and what <paramref name="Moves"/> was planned from.
+/// </param>
 /// <param name="Folded"><paramref name="Scoped"/> with the accepted relocations folded in: what the promote ends up doing.</param>
 /// <param name="Resets">Verdicts outside the reviewable scope that Apply resets to the matcher's default.</param>
 /// <param name="PendingRelocations">"This hold may have moved" suggestions nobody decided.</param>

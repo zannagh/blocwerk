@@ -96,7 +96,11 @@ public interface IWallBigUpdateService
     /// decisions fingerprint.
     /// </summary>
     /// <param name="wallId">The wall.</param>
-    /// <param name="confirmation">The decisions plus the matcher's warp positions.</param>
+    /// <param name="confirmation">
+    /// Exactly the payload that will be handed to <see cref="PromoteAsync"/> (the matcher's warp positions AND shapes included):
+    /// the preview folds the accepted relocations in and applies the full-revision rule the way the promote does, so any other
+    /// input gives a plan the promote refuses.
+    /// </param>
     /// <returns>The plan.</returns>
     Task<HoldMoves.HoldMovePlan> PreviewHoldMovesAsync(Guid wallId, BigUpdateConfirmation confirmation);
 }

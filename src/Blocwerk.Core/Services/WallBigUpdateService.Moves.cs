@@ -25,7 +25,7 @@ public partial class WallBigUpdateService
         await using var db = await dbContextFactory.CreateDbContextAsync();
         db.CurrentUserId = user.Id;
         await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
-        return await PlanHoldMovesAsync(db, confirmation);
+        return await PlanHoldMovesAsync(db, await AsPromotedAsync(db, wallId, confirmation));
     }
 
     private async Task<HoldMovePlan> PlanHoldMovesAsync(BlocwerkDbContext db, BigUpdateConfirmation confirmation)
@@ -124,6 +124,13 @@ public partial class WallBigUpdateService
             .ToHashSet();
         return found.Where(f => !settled.Contains(f.Key)).ToDictionary(f => f.Key, f => f.Value);
     }
+
+    /// <summary>
+    /// The confirmation as the promote acts on it: the accepted "this hold moved" suggestions folded in and, in a full
+    /// revision, no carry. The preview and the promote both plan the moves from this, so the same payload gives the same plan.
+    /// </summary>
+    private static async Task<BigUpdateConfirmation> AsPromotedAsync(BlocwerkDbContext db, Guid wallId, BigUpdateConfirmation confirmation) =>
+        await WithoutCarryInFullRevisionAsync(db, wallId, await FoldAcceptedRelocationsAsync(db, wallId, confirmation));
 
     /// <summary>The panel's carried pairs, old centre → new centre in normalized units (for the local old → new scale).</summary>
     private static List<PointPair> NormalizedPairs(IEnumerable<(Hold Old, Hold Twin)> pairs) =>

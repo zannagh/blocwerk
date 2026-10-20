@@ -170,12 +170,11 @@ internal static class LookOverFixture
     /// <summary>The promote as Apply hands it over: with the old holds of the unanswered cards, and what was not found again.</summary>
     public static async Task PromoteLikeApplyAsync(LookWall w, BigUpdateSession session)
     {
-        var confirmation = (await w.Sessions.GetDecisionsAsync(w.WallId)) with
+        var decisions = (await w.Sessions.GetDecisionsAsync(w.WallId)) with
         {
-            CarriedWarpPositions = session.CarriedWarpPositions,
-            NotFoundAgain = session.NotFoundAgain,
             ReviewOldHoldIds = RefreshDecisions.ReviewOldHoldIds(await w.Sessions.GetUpdateExceptionsAsync(w.WallId)),
         };
+        var confirmation = PromotePayload.For(decisions, session);
         await w.Service.PromoteAsync(w.WallId, confirmation, w.SessionId);
     }
 
