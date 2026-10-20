@@ -72,20 +72,50 @@ internal static partial class HoldOutlineBoolean
             .ToList();
     }
 
-    /// <summary>Builds the even-odd path of an outline in the scaled space.</summary>
+    /// <summary>
+    /// Builds the path of an outline in the scaled space: the outer ring filled NONZERO and simplified (so an outline
+    /// that overlaps itself counts the overlap once instead of punching an even-odd hole into it), minus the union of
+    /// the holes.
+    /// </summary>
     /// <param name="rings">The outline.</param>
     /// <param name="aspect">Photo width / height.</param>
     /// <returns>A new path; the caller disposes it.</returns>
     internal static SKPath ToPath(OutlineRings rings, double aspect)
     {
-        var path = new SKPath { FillType = SKPathFillType.EvenOdd };
-        AddRing(path, rings.Outer, aspect);
-        foreach (var hole in rings.Holes)
+        var solid = UnionOf([rings.Outer], aspect);
+        if (rings.Holes.Count == 0)
         {
-            AddRing(path, hole, aspect);
+            return solid;
         }
 
-        return path;
+        using (solid)
+        {
+            using var holes = UnionOf(rings.Holes, aspect);
+            return solid.Op(holes, SKPathOp.Difference) ?? new SKPath(solid);
+        }
+    }
+
+    /// <summary>The union of rings, each filled nonzero and simplified first.</summary>
+    /// <param name="rings">The rings (normalized).</param>
+    /// <param name="aspect">Photo width / height.</param>
+    /// <returns>A new path; the caller disposes it.</returns>
+    internal static SKPath UnionOf(IEnumerable<IReadOnlyList<P2>> rings, double aspect)
+    {
+        var union = new SKPath { FillType = SKPathFillType.Winding };
+        foreach (var ring in rings.Where(r => r.Count >= 3))
+        {
+            using var one = new SKPath { FillType = SKPathFillType.Winding };
+            AddRing(one, ring, aspect);
+            using var simple = one.Simplify() ?? new SKPath(one);
+            var next = union.Op(simple, SKPathOp.Union);
+            if (next is not null)
+            {
+                union.Dispose();
+                union = next;
+            }
+        }
+
+        return union;
     }
 
     /// <summary>A normalized point in the scaled space.</summary>

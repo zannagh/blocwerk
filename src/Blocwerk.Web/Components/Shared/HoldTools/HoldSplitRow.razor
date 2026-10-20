@@ -13,7 +13,8 @@
 else if (State.HoldId is null)
 {
     <HoldActionPrompt Compact="true" What="Tap the hold to cut in two, then draw a line across it with a finger, pen or the mouse."
-                      UndoKey="State.LastBatchId" UndoMessage="Hold split." OnUndo="OnUndo" Disabled="State.Busy" />
+                      UndoKey="State.LastBatchId" OnUndo="OnUndo" Disabled="@(State.Busy || PendingChanges > 0)"
+                      UndoMessage="@(PendingChanges > 0 ? "Hold split. Save or discard your edits to undo it." : "Hold split.")" />
 }
 else if (Problem is { } problem)
 {
@@ -36,15 +37,17 @@ else
         <HoldActionPrompt Compact="true" Disabled="State.Busy" Outcome="Outcome" ConfirmLabel="Split"
                           OnConfirm="OnConfirm" OnCancel="OnCancel" />
     </span>
-    @if (State.Preview!.Boulders.Count > 0)
+    @if (HasChoices)
     {
         <button type="button" class="opt-btn" @onclick="ToggleChooser" aria-expanded="@(chooserOpen ? "true" : "false")">
-            Parts per boulder (@State.OnSmaller.Count orange)
+            @(State.Preview!.Boulders.Count > 0 ? $"Parts per boulder ({State.OnSmaller.Count} orange)" : "Panel links")
         </button>
 
         @* A popover (top layer): the toolbar row has a fixed height and scrolls sideways, so a list of boulders cannot
            wrap inside it. Manual, so drawing on the photo does not close it; Done or Cancel does. *@
-        <div class="split-chooser" popover="manual" @ref="chooser" role="group" aria-labelledby="@questionId">
+        <div class="split-chooser" popover="manual" @ref="chooser" role="group" aria-label="Which part each boulder and the panel links use">
+            @if (State.Preview!.Boulders.Count > 0)
+            {
             <p class="split-question" id="@questionId">Which part does each boulder use?</p>
             <div class="split-choices">
                 @foreach (var boulder in State.Preview.Boulders)
@@ -60,6 +63,22 @@ else
                     </button>
                 }
             </div>
+            }
+            @if (State.Preview.PanelLinks > 0)
+            {
+                var small = State.LinksGoToSmaller;
+                <p class="split-question split-links-question">
+                    The hold is linked to @PlainCopy.Plural(State.Preview.PanelLinks, "hold") on a neighbouring photo. Which part is that hold?
+                </p>
+                <div class="split-choices">
+                    <button type="button" class="split-boulder @(small ? "is-small" : "is-large")" aria-pressed="@(small ? "true" : "false")"
+                            title="Tap for the other part" @onclick="OnToggleLinks">
+                        <span class="split-dot" aria-hidden="true"></span>
+                        <span class="split-name">Panel links</span>
+                        <span class="split-part">@(small ? "orange" : "green")@(State.LinksOnSmaller is null ? ", like most boulders" : string.Empty)</span>
+                    </button>
+                </div>
+            }
             <div class="split-chooser-actions">
                 <button type="button" class="split-done" @onclick="ToggleChooser">Done</button>
             </div>
@@ -87,6 +106,9 @@ else
 
     [Parameter] public EventCallback<Guid> OnToggleBoulder { get; set; }
 
+    /// <summary>Sends the panel links to the other part.</summary>
+    [Parameter] public EventCallback OnToggleLinks { get; set; }
+
     private readonly string questionId = "split-q-" + Guid.NewGuid().ToString("N")[..8];
     private ElementReference chooser;
     private IJSObjectReference? module;
@@ -96,7 +118,9 @@ else
 
     private string? Problem => State.Preview?.Refusal ?? State.Error;
 
-    private bool HasChooser => State.Ready && PendingChanges == 0 && State.Preview!.Boulders.Count > 0;
+    private bool HasChoices => State.Preview is { } p && (p.Boulders.Count > 0 || p.PanelLinks > 0);
+
+    private bool HasChooser => State.Ready && PendingChanges == 0 && HasChoices;
 
     public async ValueTask DisposeAsync()
     {
@@ -138,7 +162,7 @@ else
 
         try
         {
-            module ??= await JS.InvokeAsync<IJSObjectReference>("import", "/js/hold-split-line.js");
+            module ??= await JS.InvokeAsync<IJSObjectReference>("import", "/js/hold-split-chooser.js");
             await module.InvokeVoidAsync(chooserOpen ? "openBelowRow" : "closePopover", chooser);
             chooserShown = chooserOpen;
         }

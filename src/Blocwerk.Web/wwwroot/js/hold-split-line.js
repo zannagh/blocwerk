@@ -7,12 +7,24 @@
 // - the overlay svg gets touch-action: none, so a finger or Apple Pencil draws instead of scrolling the page;
 // - a ONE-finger touch and a mouse press stop at the svg, so the viewport's pan recogniser (viewport-gestures.js) and
 //   the hold drag (wall-hold-drag.js) never see them; a second finger cancels the stroke and is let through to pinch;
-// - the click that ends a stroke is swallowed, so it does not count as a tap on a hold.
+// - the click that ends a stroke is swallowed, so it does not count as a tap on a hold;
+// - palm rejection, the Shape tool's rule (wall-shape-drag.js): while a pen is down and for a moment after it lifts,
+//   a touch is the resting hand and is swallowed; once a pen has been used, a finger navigates and the pen draws.
 // Everything is drawn into <g data-split-layer>, which Blazor renders EMPTY and never fills itself.
+
+import { splitPreview, touchRole } from './hold-split-geometry.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const MIN_STEP = 0.15;
 const states = new WeakMap();
+const pen = { down: new Set(), upAt: -Infinity, seen: false };
+
+function swallow(e) {
+    e.stopPropagation();
+    if (e.cancelable) {
+        e.preventDefault();
+    }
+}
 
 /** Arms the overlay svg inside the editor's .photo-editor for drawing a cut across the outline (viewBox units). */
 export function arm(container, dotnet, outline) {
@@ -27,7 +39,7 @@ export function arm(container, dotnet, outline) {
         pointerdown: (e) => onDown(state, e),
         pointermove: (e) => onMove(state, e),
         pointerup: (e) => onUp(state, e),
-        pointercancel: () => cancelStroke(state),
+        pointercancel: (e) => { penUp(e); cancelStroke(state); },
         touchstart: (e) => onTouch(state, e),
         touchmove: (e) => onTouch(state, e),
         mousedown: (e) => e.stopPropagation(),
@@ -69,6 +81,16 @@ function overlayOf(container) {
 }
 
 function onTouch(state, e) {
+    const role = touchRole(pen, 'touch', performance.now());
+    if (role === 'palm') {
+        swallow(e);
+        return;
+    }
+
+    if (role === 'navigate') {
+        return;
+    }
+
     if (e.touches.length === 1) {
         // One finger draws: keep it from the viewport's pan.
         e.stopPropagation();
@@ -81,7 +103,18 @@ function onTouch(state, e) {
 }
 
 function onDown(state, e) {
-    if (!e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) {
+    if (e.pointerType === 'pen') {
+        pen.down.add(e.pointerId);
+        pen.seen = true;
+    }
+
+    const role = touchRole(pen, e.pointerType, performance.now());
+    if (role === 'palm') {
+        swallow(e);
+        return;
+    }
+
+    if (role === 'navigate' || state.points !== null || !e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) {
         return;
     }
 
@@ -112,7 +145,14 @@ function onMove(state, e) {
     draw(state);
 }
 
+function penUp(e) {
+    if (e.pointerType === 'pen' && pen.down.delete(e.pointerId)) {
+        pen.upAt = performance.now();
+    }
+}
+
 function onUp(state, e) {
+    penUp(e);
     if (state.points === null || e.pointerId !== state.pointerId) {
         return;
     }
@@ -216,159 +256,4 @@ function polygon(ring, fill) {
     el.setAttribute('stroke', 'none');
     el.setAttribute('pointer-events', 'none');
     return el;
-}
-
-// ---- The cut, as HoldOutlineBoolean.Split does it (outer ring only; the server also cuts out the holes) ----
-
-/** The two parts, larger first, or null while the stroke does not cross the hold yet. */
-export function splitPreview(outline, line) {
-    if (!outline || outline.length < 3 || !line || line.length < 2) {
-        return null;
-    }
-
-    const outer = signedArea(outline) < 0 ? outline.slice().reverse() : outline;
-    const crossings = [];
-    for (let i = 0; i + 1 < line.length; i++) {
-        for (let e = 0; e < outer.length; e++) {
-            const hit = intersect(line[i], line[i + 1], outer[e], outer[(e + 1) % outer.length]);
-            if (hit) {
-                crossings.push({ t: i + hit.s, edge: e, u: hit.u, p: lerp(line[i], line[i + 1], hit.s) });
-            }
-        }
-    }
-
-    crossings.sort((a, b) => a.t - b.t);
-    let best = null;
-    for (let k = 0; k + 1 < crossings.length; k++) {
-        const a = crossings[k];
-        const b = crossings[k + 1];
-        if (b.t - a.t < 1e-9 || !contains(outer, pointAt(line, (a.t + b.t) / 2))) {
-            continue;
-        }
-
-        const inside = [];
-        for (let i = 0; i < line.length; i++) {
-            if (i > a.t && i < b.t) {
-                inside.push(line[i]);
-            }
-        }
-
-        const one = walk(outer, b, a, inside);
-        const two = walk(outer, a, b, inside.slice().reverse());
-        const parts = Math.abs(signedArea(one)) >= Math.abs(signedArea(two)) ? [one, two] : [two, one];
-        if (!best || Math.abs(signedArea(parts[1])) > Math.abs(signedArea(best[1]))) {
-            best = parts;
-        }
-    }
-
-    return best;
-}
-
-function walk(outer, from, to, cut) {
-    const ring = [from.p];
-    if (!(from.edge === to.edge && to.u > from.u)) {
-        let e = from.edge;
-        do {
-            e = (e + 1) % outer.length;
-            ring.push(outer[e]);
-        } while (e !== to.edge);
-    }
-
-    ring.push(to.p);
-    return ring.concat(cut);
-}
-
-function intersect(p, p2, a, b) {
-    const r = [p2[0] - p[0], p2[1] - p[1]];
-    const s = [b[0] - a[0], b[1] - a[1]];
-    const denom = r[0] * s[1] - r[1] * s[0];
-    if (Math.abs(denom) < 1e-12) {
-        return null;
-    }
-
-    const ap = [a[0] - p[0], a[1] - p[1]];
-    const t = (ap[0] * s[1] - ap[1] * s[0]) / denom;
-    const u = (ap[0] * r[1] - ap[1] * r[0]) / denom;
-    return t >= 0 && t < 1 && u >= 0 && u < 1 ? { s: t, u } : null;
-}
-
-function lerp(a, b, t) {
-    return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
-}
-
-function pointAt(line, t) {
-    const i = Math.max(0, Math.min(line.length - 2, Math.floor(t)));
-    return lerp(line[i], line[i + 1], t - i);
-}
-
-function signedArea(ring) {
-    let sum = 0;
-    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-        sum += ring[j][0] * ring[i][1] - ring[j][1] * ring[i][0];
-    }
-
-    return sum / 2;
-}
-
-function contains(ring, p) {
-    let inside = false;
-    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-        const a = ring[i];
-        const b = ring[j];
-        if ((a[1] > p[1]) !== (b[1] > p[1]) && p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0]) {
-            inside = !inside;
-        }
-    }
-
-    return inside;
-}
-
-// ---- The split row's per-boulder chooser (HoldSplitRow.razor): a manual popover placed against the toolbar row ----
-
-const placed = new WeakMap();
-
-/** Shows the popover just below its toolbar row (above it when the row is docked at the bottom) and keeps it there. */
-export function openBelowRow(pop) {
-    if (!pop) {
-        return;
-    }
-
-    try {
-        if (!pop.matches(':popover-open')) {
-            pop.showPopover();
-        }
-    } catch (_) { /* no Popover API: it renders in flow */ }
-
-    const place = () => {
-        const row = pop.closest('.bw-toolbar-row') || pop.closest('.option-bar') || pop.parentElement;
-        if (!row || !pop.isConnected) {
-            return;
-        }
-
-        const r = row.getBoundingClientRect();
-        const w = Math.min(pop.offsetWidth, window.innerWidth - 16);
-        const h = pop.offsetHeight;
-        pop.style.left = `${Math.max(8, Math.min(r.left + 8, window.innerWidth - w - 8))}px`;
-        const below = r.bottom + 6;
-        pop.style.top = `${below + h > window.innerHeight - 8 ? Math.max(8, r.top - h - 6) : below}px`;
-    };
-    place();
-    if (!placed.has(pop)) {
-        window.addEventListener('resize', place);
-        window.addEventListener('scroll', place, true);
-        placed.set(pop, place);
-    }
-}
-
-export function closePopover(pop) {
-    const place = pop ? placed.get(pop) : null;
-    if (place) {
-        window.removeEventListener('resize', place);
-        window.removeEventListener('scroll', place, true);
-        placed.delete(pop);
-    }
-
-    try {
-        pop.hidePopover();
-    } catch (_) { /* not open */ }
 }

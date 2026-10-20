@@ -101,8 +101,14 @@ public sealed partial class HoldMergeSplitService
 
         // A gap up to one and a half times the larger hold's size is bridged; further apart they are not one hold.
         double size = Math.Sqrt(Math.Max(ra.Area, rb.Area) * aspect / Math.PI);
-        return HoldOutlineBoolean.Merge(ra, rb, aspect, Math.Max(0.01, 1.5 * size))
-            ?? throw new UserFacingException("These holds are too far apart to be one hold.");
+        double maxGap = Math.Max(0.01, 1.5 * size);
+        if (HoldOutlineBoolean.Gap(ra, rb, aspect) > maxGap)
+        {
+            throw new UserFacingException("These holds are too far apart to be one hold.");
+        }
+
+        return HoldOutlineBoolean.Merge(ra, rb, aspect, maxGap)
+            ?? throw new UserFacingException("The two outlines could not be joined into one shape. Reshape one of them so they touch, then merge.");
     }
 
     /// <summary>Per active boulder on either hold, which of the two it uses.</summary>

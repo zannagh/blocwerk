@@ -22,6 +22,12 @@ public sealed class HoldSplitToolState
     /// <summary>The boulders that go with the SMALLER part (all others stay on the larger one).</summary>
     public HashSet<Guid> OnSmaller { get; } = [];
 
+    /// <summary>The panel links go with the smaller part (true), the larger (false), or with the part most boulders use (null).</summary>
+    public bool? LinksOnSmaller { get; set; }
+
+    /// <summary>Where the panel links go, the automatic choice resolved.</summary>
+    public bool LinksGoToSmaller => LinksOnSmaller ?? (Preview is { } p && OnSmaller.Count > p.Boulders.Count - OnSmaller.Count);
+
     /// <summary>A server call is running.</summary>
     public bool Busy { get; set; }
 
@@ -40,6 +46,7 @@ public sealed class HoldSplitToolState
         Stroke = null;
         Preview = null;
         Error = null;
+        LinksOnSmaller = null;
         OnSmaller.Clear();
     }
 

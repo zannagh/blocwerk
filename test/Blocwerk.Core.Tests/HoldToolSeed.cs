@@ -2,7 +2,9 @@
 // See License in the project root for license information.
 
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Blocwerk.Core.Tests;
 
@@ -55,6 +57,15 @@ internal static class HoldToolSeed
     {
         await using var db = h.CreateContext();
         return [.. (await db.HoldLinks.AsNoTracking().ToListAsync()).Select(l => new HashSet<Guid> { l.HoldAId, l.HoldBId })];
+    }
+
+    /// <summary>The merge and split tools on the harness's database (SQLite), journalled like the app.</summary>
+    public static HoldMergeSplitService Tools(WallTestHarness h)
+    {
+        var journal = new ChangeJournal();
+        var factory = new JournallingDbContextFactory(((TestDbContextFactory)h.DbContextFactory).ConnectionString, journal);
+        return new HoldMergeSplitService(
+            factory, h.CurrentUser, journal, new ChangeJournalReverter(factory, journal), NullLogger<HoldMergeSplitService>.Instance);
     }
 
     /// <summary>An octagon outline around the centre, for holds that need a traced shape.</summary>

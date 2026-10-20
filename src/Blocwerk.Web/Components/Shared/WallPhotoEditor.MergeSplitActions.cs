@@ -6,6 +6,7 @@ using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Services;
 using Blocwerk.Web.Components.Shared.HoldTools;
+using Microsoft.Extensions.Logging;
 using Microsoft.JSInterop;
 
 namespace Blocwerk.Web.Components.Shared;
@@ -18,6 +19,7 @@ namespace Blocwerk.Web.Components.Shared;
 public partial class WallPhotoEditor
 {
     private const int CircleOutlineSegments = 32;
+    private const string UnexpectedFailure = "Something went wrong and the change may not have been made. Reload the wall to see the holds as they are.";
 
     private IJSObjectReference? splitModule;
 
@@ -101,7 +103,7 @@ public partial class WallPhotoEditor
 
     private async Task UndoMergeHoldsAsync()
     {
-        if (mergeTool.LastBatchId is not { } batchId)
+        if (mergeTool.LastBatchId is not { } batchId || _pendingChanges > 0)
         {
             return;
         }
@@ -151,7 +153,7 @@ public partial class WallPhotoEditor
 
         await RunToolCallAsync(splitTool, async () =>
         {
-            var result = await MergeSplit.SplitAsync(WallId, holdId, stroke, [.. splitTool.OnSmaller]);
+            var result = await MergeSplit.SplitAsync(WallId, holdId, stroke, [.. splitTool.OnSmaller], splitTool.LinksOnSmaller);
             splitTool.Reset();
             splitTool.LastBatchId = result.BatchId;
             await DisarmSplitAsync();
@@ -161,7 +163,7 @@ public partial class WallPhotoEditor
 
     private async Task UndoSplitHoldAsync()
     {
-        if (splitTool.LastBatchId is not { } batchId)
+        if (splitTool.LastBatchId is not { } batchId || _pendingChanges > 0)
         {
             return;
         }
@@ -196,13 +198,20 @@ public partial class WallPhotoEditor
             mergeTool.Preview = null;
             mergeTool.Refusal = ex is UserFacingException ? ex.Message : "You may not edit the holds of this wall.";
         }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Anything else stays in this tool: an unhandled exception here would take the whole circuit down.
+            MergeSplitLogger.LogError(ex, "Merge tool failed on wall {WallId}", WallId);
+            mergeTool.Preview = null;
+            mergeTool.Refusal = UnexpectedFailure;
+        }
         finally
         {
             mergeTool.Busy = false;
         }
     }
 
-    private static async Task RunToolCallAsync(HoldSplitToolState state, Func<Task> call)
+    private async Task RunToolCallAsync(HoldSplitToolState state, Func<Task> call)
     {
         state.Busy = true;
         try
@@ -213,6 +222,12 @@ public partial class WallPhotoEditor
         {
             state.Preview = null;
             state.Error = ex is UserFacingException ? ex.Message : "You may not edit the holds of this wall.";
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            MergeSplitLogger.LogError(ex, "Split tool failed on wall {WallId}", WallId);
+            state.Preview = null;
+            state.Error = UnexpectedFailure;
         }
         finally
         {
