@@ -51,6 +51,21 @@ public interface IWallLookOverService
         CancellationToken ct = default);
 
     /// <summary>
+    /// "Different hold" on an unsure match, naming the hold that replaced the old one: the pair is taken apart as with
+    /// <see cref="LookOverAnswer.DifferentHold"/> (the detection the update paired it with stays a new hold), and
+    /// <paramref name="replacementHoldId"/> becomes the finding's new hold on the spot, so "use the new hold" (per boulder too)
+    /// moves boulders onto it. The replacement must be a live hold of the finding's photo that is not a kept copy.
+    /// </summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="findingId">The finding.</param>
+    /// <param name="replacementHoldId">The hold that is on the old hold's spot now.</param>
+    /// <param name="expectedBoulderIds">The boulders the user was shown on the hold.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>A task.</returns>
+    Task DifferentHoldAsync(
+        Guid wallId, Guid findingId, Guid replacementHoldId, IReadOnlyCollection<Guid> expectedBoulderIds, CancellationToken ct = default);
+
+    /// <summary>
     /// Takes back an answer that changed nothing on the wall ("Same hold", "Still there", "Keep…", "Understood"): the
     /// finding is open again, and a review mark the answer took off the hold or its boulders is back. A removed or
     /// merged hold is not undone here.
@@ -142,9 +157,17 @@ public interface IWallLookOverService
     /// <param name="findingId">The finding.</param>
     /// <param name="x">The spot across the photo, 0..1.</param>
     /// <param name="y">The spot down the photo, 0..1.</param>
+    /// <param name="radius">The hold's radius there (photo widths), or null to keep it.</param>
+    /// <param name="panelId">The photo the spot is on, when the caller names it: it must be the hold's own.</param>
     /// <param name="ct">Cancellation.</param>
     /// <returns>A task.</returns>
-    Task MoveAsync(Guid wallId, Guid findingId, double x, double y, CancellationToken ct = default);
+    /// <remarks>
+    /// Refused, as on the page, when the hold takes no "not there any more" (only those can be moved), when the spot is on
+    /// another photo, and when a hold the update found lies at the spot (within <see cref="LookOverRules.SpotSnapMargin"/>):
+    /// that is "it is this hold" (<see cref="ReassignAsync"/>).
+    /// </remarks>
+    Task MoveAsync(
+        Guid wallId, Guid findingId, double x, double y, double? radius = null, Guid? panelId = null, CancellationToken ct = default);
 
     /// <summary>
     /// The live holds of a finding's photo. Those that are not <see cref="Services.PanelHold.Kept"/> are what an old

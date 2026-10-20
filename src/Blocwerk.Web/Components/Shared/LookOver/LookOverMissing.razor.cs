@@ -18,9 +18,6 @@ namespace Blocwerk.Web.Components.Shared.LookOver;
 /// </summary>
 public partial class LookOverMissing
 {
-    /// <summary>A tap this close to a hold's edge (as a share of the photo's width) still means the hold.</summary>
-    private const double SnapMargin = 0.012;
-
     private readonly Dictionary<Guid, IReadOnlyList<PanelHold>> holdsByPanel = [];
     private ConfirmAction? remove;
     private Guid? shownId;
@@ -151,13 +148,7 @@ public partial class LookOverMissing
             return;
         }
 
-        var near = PanelHolds(panelId)
-            .Where(h => !h.Kept)
-            .Select(h => (Hold: h, Gap: Math.Sqrt(Math.Pow(h.X - at.X, 2) + Math.Pow(h.Y - at.Y, 2)) - h.Radius))
-            .Where(c => c.Gap <= SnapMargin)
-            .OrderBy(c => c.Gap)
-            .Select(c => c.Hold)
-            .FirstOrDefault();
+        var near = LookOverRules.HoldAtSpot(PanelHolds(panelId), at.X, at.Y);
         if (near is not null && Finding.CanReassign)
         {
             (targetId, movedTo) = (near.Id, null);

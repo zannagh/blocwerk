@@ -30,7 +30,11 @@ internal static partial class ApiDocsData
     private const string LookOverAnswerNote =
         "200 with the look-over's state; 409 with the reason when refused. answer must be one of the finding's answers (Settle, "
         + "DifferentHold, RemoveHold, UseNewHold, AddHold, Unlink, or their numbers); expectedBoulderIds are the finding's boulders as read, "
-        + "required for every answer but Settle (409 when other boulders use the hold by now).";
+        + "required for every answer but Settle (409 when other boulders use the hold by now). Reassign (4, \"It is this hold\", a hold the "
+        + "update could not find) takes targetHoldId, a hold of its photo that is not kept (GET …/look-over/holds?panelId=); Moved (5, \"It is "
+        + "here\") takes spot {panelId, x, y, r?} on bare wall of its own photo (a spot on a hold is Reassign). DifferentHold may name "
+        + "targetHoldId, the hold that replaced the old one: the detection the update paired it with stays a new hold, and UseNewHold "
+        + "(newHoldBoulderIds too) then moves boulders onto the named hold.";
 
     private static ApiParamDoc[] CheckOnRun =>
     [
@@ -58,7 +62,7 @@ internal static partial class ApiDocsData
     private static ApiEndpointDoc[] LookOverAnswerEndpoints() =>
     [
         new("POST", LookOverBase + "/findings/{findingId}/answer", "Answers one open finding.", FindingOnWall,
-            "{\n  \"answer\": \"RemoveHold\",\n  \"expectedBoulderIds\": [ \"<guid>\" ]\n}", LookOverStateJson, LookOverAnswerNote),
+            "{\n  \"answer\": \"DifferentHold\",\n  \"expectedBoulderIds\": [ \"<guid>\" ],\n  \"targetHoldId\": \"<guid>\"\n}", LookOverStateJson, LookOverAnswerNote),
         new("POST", LookOverBase + "/findings/{findingId}/undo", "Takes back an answer that changed nothing on the wall.", FindingOnWall,
             null, LookOverStateJson, "200 with the state; 409 when it cannot be undone (a removed or merged hold)."),
         new("POST", LookOverBase + "/finish", "Finishes the look-over: the flag comes off the wall.", RefreshWall,

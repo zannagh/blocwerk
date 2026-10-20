@@ -35,6 +35,10 @@ internal static partial class ApiDocsData
             LookOverStateJson, LookOverNote),
         new("GET", LookOverBase + "/findings", "The findings of the look-over: everything open, and what was answered since the last one.",
             RefreshWall, null, LookOverFindingsJson, LookOverNote),
+        new("GET", LookOverBase + "/holds?panelId={panelId}", "The live holds of a panel photo: what targetHoldId can name.",
+            [.. RefreshWall, new ApiParamDoc("panelId", "query", "The photo (a finding's panelId).")],
+            null, "[\n  { \"id\": \"<guid>\", \"x\": 0.41, \"y\": 0.62, \"radius\": 0.012, \"color\": \"purple\", \"kept\": false }\n]",
+            "kept: a hold the update could not find (never a target). 403 when the key's owner may not look over the wall."),
         .. LookOverAnswerEndpoints(),
     ];
 }

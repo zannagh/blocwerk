@@ -38,6 +38,19 @@ public sealed class WallLookOverApiController(
     public Task<IActionResult> Findings(Guid wallId) =>
         ReadAsync(wallId, async () => Ok(new LookOverFindingsResponse(await StateAsync(wallId), await lookOver.ListAsync(wallId))));
 
+    /// <summary>
+    /// The live holds of one panel photo, as the look-over page draws them: <c>kept</c> marks a hold the update could not
+    /// find (never a target); every other hold can be named as <c>targetHoldId</c> of "It is this hold" or of "Different hold".
+    /// </summary>
+    /// <remarks>A query parameter, not a <c>/panels/</c> path: those are the wall's media byte routes, with their own policy.</remarks>
+    [HttpGet("holds")]
+    public Task<IActionResult> PanelHolds(Guid wallId, [FromQuery] Guid panelId) =>
+        ReadAsync(wallId, async () =>
+        {
+            await StateAsync(wallId);
+            return Ok(await lookOver.GetPanelHoldsAsync(wallId, panelId));
+        });
+
     /// <summary>The state, for somebody who may look over the wall; anybody else is refused like a missing right.</summary>
     private async Task<WallLookOverState> StateAsync(Guid wallId) =>
         await lookOver.GetStateAsync(wallId) is { CanLookOver: true } state

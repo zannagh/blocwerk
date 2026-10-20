@@ -33,7 +33,21 @@ public sealed partial class WallLookOverService
         LookOverAnswer answer,
         IReadOnlyCollection<Guid>? expectedBoulderIds = null,
         IReadOnlyCollection<Guid>? newHoldBoulderIds = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default) =>
+        await AnswerCoreAsync(wallId, findingId, answer, expectedBoulderIds, newHoldBoulderIds, null, ct);
+
+    /// <summary>
+    /// One answer, for <see cref="AnswerAsync"/> and <see cref="DifferentHoldAsync"/>: the latter names the hold that replaced
+    /// the old one (<paramref name="replacementHoldId"/>), checked against the finding's photo before anything changes.
+    /// </summary>
+    private async Task AnswerCoreAsync(
+        Guid wallId,
+        Guid findingId,
+        LookOverAnswer answer,
+        IReadOnlyCollection<Guid>? expectedBoulderIds,
+        IReadOnlyCollection<Guid>? newHoldBoulderIds,
+        Guid? replacementHoldId,
+        CancellationToken ct)
     {
         var (db, access) = await OpenAsync(wallId, ct);
         await using (db)
@@ -57,6 +71,11 @@ public sealed partial class WallLookOverService
                 throw new UserFacingException(BouldersChanged);
             }
 
+            if (replacementHoldId is { } replacement)
+            {
+                await EnsureReplacementAsync(db, wallId, view, replacement, ct);
+            }
+
             // Asked per boulder: every boulder "no" is the old hold gone, every boulder "yes" the merge.
             (answer, var onlyThese) = NewHoldChoice(answer, newHoldBoulderIds, view);
 
@@ -67,7 +86,7 @@ public sealed partial class WallLookOverService
             }
             else
             {
-                await ChangeAsync(db, finding, view, answer, onlyThese, access.UserId, ct);
+                await ChangeAsync(db, finding, view, answer, onlyThese, replacementHoldId, access.UserId, ct);
             }
 
             logger.LogInformation(
@@ -86,6 +105,7 @@ public sealed partial class WallLookOverService
         LookOverFindingView view,
         LookOverAnswer answer,
         IReadOnlySet<Guid>? onlyThese,
+        Guid? replacementHoldId,
         Guid userId,
         CancellationToken ct)
     {
@@ -103,6 +123,10 @@ public sealed partial class WallLookOverService
         try
         {
             added = await ApplyAsync(db, finding, view, answer, onlyThese, ct);
+            if (different && replacementHoldId is { } replacement)
+            {
+                await PointAtReplacementAsync(db, finding, replacement, ct);
+            }
         }
         catch
         {

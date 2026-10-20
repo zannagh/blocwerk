@@ -152,6 +152,47 @@ public class WallUpdateAnswerApiTests
         Assert.Equal(3, (await AutomationApiFixture.ApiBatchesAsync(h)).Count);
     }
 
+    [Fact]
+    public async Task ItIsThisHold_ItIsHere_AndANamedReplacement_ReachThePagesCalls()
+    {
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync(holdCount: 0);
+        var lookOver = Substitute.For<IWallLookOverService>();
+        var api = LookOverApi(h, lookOver).As(ApiKeys.Personal());
+        var (finding, boulder, target, panel) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+
+        var reassign = await api.Answer(h.WallId, finding, new LookOverAnswerRequest(LookOverAnswer.Reassign, [boulder], TargetHoldId: target));
+        var moved = await api.Answer(h.WallId, finding, new LookOverAnswerRequest(LookOverAnswer.Moved, Spot: new LookOverSpotRequest(panel, 0.4, 0.6, 0.02)));
+        var replaced = await api.Answer(h.WallId, finding, new LookOverAnswerRequest(LookOverAnswer.DifferentHold, [boulder], TargetHoldId: target));
+
+        Assert.All([reassign, moved, replaced], r => Assert.Equal(StatusCodes.Status200OK, AutomationApiFixture.Status(r)));
+        await lookOver.Received(1).ReassignAsync(h.WallId, finding, target, Arg.Is<IReadOnlyCollection<Guid>>(b => b.Single() == boulder), Arg.Any<CancellationToken>());
+        await lookOver.Received(1).MoveAsync(h.WallId, finding, 0.4, 0.6, 0.02, panel, Arg.Any<CancellationToken>());
+        await lookOver.Received(1).DifferentHoldAsync(h.WallId, finding, target, Arg.Is<IReadOnlyCollection<Guid>>(b => b.Single() == boulder), Arg.Any<CancellationToken>());
+        await lookOver.DidNotReceiveWithAnyArgs().AnswerAsync(default, default, default);
+    }
+
+    [Theory]
+    [InlineData("{\"answer\":\"Reassign\",\"expectedBoulderIds\":[]}")]
+    [InlineData("{\"answer\":\"Moved\"}")]
+    [InlineData("{\"answer\":\"Moved\",\"spot\":{\"x\":1.5,\"y\":0.2}}")]
+    [InlineData("{\"answer\":\"Moved\",\"spot\":{\"x\":0.5,\"y\":0.2,\"r\":0}}")]
+    [InlineData("{\"answer\":\"Settle\",\"spot\":{\"x\":0.5,\"y\":0.2}}")]
+    [InlineData("{\"answer\":\"RemoveHold\",\"expectedBoulderIds\":[],\"targetHoldId\":\"00000000-0000-0000-0000-000000000001\"}")]
+    [InlineData("{\"answer\":\"DifferentHold\",\"targetHoldId\":\"00000000-0000-0000-0000-000000000001\"}")]
+    public async Task AMisshapenTargetOrSpot_Is400_BeforeTheServiceIsAsked(string json)
+    {
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync(holdCount: 0);
+        var lookOver = Substitute.For<IWallLookOverService>();
+        var body = JsonSerializer.Deserialize<LookOverAnswerRequest>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+
+        var result = await LookOverApi(h, lookOver).As(ApiKeys.Personal()).Answer(h.WallId, Guid.NewGuid(), body);
+
+        Assert.Equal(StatusCodes.Status400BadRequest, AutomationApiFixture.Status(result));
+        Assert.Empty(lookOver.ReceivedCalls());
+    }
+
     [Theory]
     [MemberData(nameof(AutomationApiFixture.KeyNames), MemberType = typeof(AutomationApiFixture))]
     public async Task OnlyAPersonalWriteKey_AnswersTheLookOver(string keyName)

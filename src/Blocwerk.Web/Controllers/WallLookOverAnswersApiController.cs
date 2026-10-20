@@ -20,8 +20,9 @@ namespace Blocwerk.Web.Controllers;
 /// <remarks>
 /// The same key as the reads: a personal key with write access whose owner may look over the wall (the service
 /// decides). Writes are audited in the change journal (<see cref="ApiWriteAudit"/>); the answers' own changes land in
-/// the look-over's own batch, as from the page. "It is this hold" and "It is here" take more than an answer and stay
-/// on the page.
+/// the look-over's own batch, as from the page. "It is this hold" (<c>Reassign</c> with <c>targetHoldId</c>), "It is
+/// here" (<c>Moved</c> with a <c>spot</c>) and "Different hold, this one replaced it" (<c>DifferentHold</c> with
+/// <c>targetHoldId</c>) are the page's own calls too, with its checks (<see cref="LookOverAnswerShape"/>).
 /// </remarks>
 [ApiController]
 [Route("api/walls/{wallId:guid}/look-over")]
@@ -42,14 +43,14 @@ public sealed class WallLookOverAnswersApiController(
             return Task.FromResult<IActionResult>(BadRequest(new ApiErrorResponse("Send an answer the finding takes (its answers).")));
         }
 
-        if (NewHoldProblem(answer, body) is { } problem)
+        if ((NewHoldProblem(answer, body) ?? LookOverAnswerShape.Problem(answer, body)) is { } problem)
         {
             return Task.FromResult<IActionResult>(BadRequest(new ApiErrorResponse(problem)));
         }
 
         return WriteAsync(wallId, "lookover.answer", async () =>
         {
-            await lookOver.AnswerAsync(wallId, findingId, answer, body.ExpectedBoulderIds, body.NewHoldBoulderIds);
+            await LookOverAnswerShape.RunAsync(lookOver, wallId, findingId, answer, body);
             return Ok(await lookOver.GetStateAsync(wallId));
         });
     }

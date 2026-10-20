@@ -18,6 +18,9 @@ public static class LookOverRules
     /// <summary>A discarded detection that live holds cover by at least this is probably a second detection of a hold that is there.</summary>
     public const double DuplicateOverlap = 0.5;
 
+    /// <summary>A spot this close to a hold's edge (as a share of the photo's width) means the hold: "it is this hold", not "it is here".</summary>
+    public const double SpotSnapMargin = 0.012;
+
     /// <summary>The kinds in the order they are shown: what touches boulders first, the noisy and the harmless last.</summary>
     public static readonly IReadOnlyList<LookOverFindingKind> Order =
     [
@@ -83,6 +86,23 @@ public static class LookOverRules
     /// <param name="overlap">How much of it live holds cover, 0..1.</param>
     /// <returns>True when it is.</returns>
     public static bool LikelyMissed(double? confidence, double? overlap) => confidence >= SureDetection && overlap < NoOverlapBelow;
+
+    /// <summary>
+    /// The hold a spot on a photo means: the nearest hold the update found (not a kept copy) whose edge is within
+    /// <see cref="SpotSnapMargin"/> of it, else none (the spot is bare wall: "it is here").
+    /// </summary>
+    /// <param name="holds">The live holds of the photo.</param>
+    /// <param name="x">The spot across the photo, 0..1.</param>
+    /// <param name="y">The spot down the photo, 0..1.</param>
+    /// <returns>The hold, or null.</returns>
+    public static Services.PanelHold? HoldAtSpot(IEnumerable<Services.PanelHold> holds, double x, double y) =>
+        holds
+            .Where(h => !h.Kept)
+            .Select(h => (Hold: h, Gap: Math.Sqrt(Math.Pow(h.X - x, 2) + Math.Pow(h.Y - y, 2)) - h.Radius))
+            .Where(c => c.Gap <= SpotSnapMargin)
+            .OrderBy(c => c.Gap)
+            .Select(c => c.Hold)
+            .FirstOrDefault();
 
     /// <summary>The answers that change a hold or its boulders, so they ask first and say which boulders they saw.</summary>
     /// <param name="answer">The answer.</param>
