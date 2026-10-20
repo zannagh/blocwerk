@@ -159,6 +159,18 @@ public class LookOverFindingBuilderTests
         Assert.Equal(brown.Id, SameSpotFinder.Nearest(Hold(0.5, 0.5), [brown, Hold(0.54, 0.5)], (2000, 1000))?.Id);
     }
 
+    // A small hold over the old centre keeps the spot against a neighbour that only clips the old circle's edge, even
+    // though the neighbour's share of the old footprint is the larger one (both well under a real match).
+    [Fact]
+    public void SameSpot_AHoldOverTheOldCentre_BeatsANeighbourClippingTheEdge()
+    {
+        // 2000 x 1000 px: the old hold is 60 px round; the small one is 10 px on its centre, the neighbour 20 px, 50 px right.
+        var (kept, onCentre, clipping) = (Hold(0.5, 0.5), Hold(0.5, 0.5), Hold(0.525, 0.5));
+        (onCentre.Radius, clipping.Radius) = (0.005, 0.01);
+
+        Assert.Equal(onCentre.Id, SameSpotFinder.Nearest(kept, [clipping, onCentre], (2000, 1000))?.Id);
+    }
+
     [Fact]
     public void TheAnswers_FollowTheKindAndTheUsersRights_AndAHoldThatIsNotLiveCanOnlyBeAcknowledged()
     {

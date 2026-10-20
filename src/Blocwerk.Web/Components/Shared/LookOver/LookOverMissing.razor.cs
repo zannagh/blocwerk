@@ -19,6 +19,7 @@ namespace Blocwerk.Web.Components.Shared.LookOver;
 public partial class LookOverMissing
 {
     private readonly Dictionary<Guid, IReadOnlyList<PanelHold>> holdsByPanel = [];
+    private readonly Dictionary<Guid, (int Width, int Height)?> photoSizes = [];
     private ConfirmAction? remove;
     private Guid? shownId;
     private Guid? targetId;
@@ -95,6 +96,9 @@ public partial class LookOverMissing
             try
             {
                 holdsByPanel[panelId] = await LookOver.GetPanelHoldsAsync(WallId, panelId);
+
+                // The tap is judged with the server's geometry ("it is here" is checked in photo pixels).
+                photoSizes[panelId] = await LookOver.GetPanelPhotoSizeAsync(WallId, panelId);
             }
             catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidOperationException)
             {
@@ -148,7 +152,7 @@ public partial class LookOverMissing
             return;
         }
 
-        var near = LookOverRules.HoldAtSpot(PanelHolds(panelId), at.X, at.Y);
+        var near = LookOverRules.HoldAtSpot(PanelHolds(panelId), at.X, at.Y, photoSizes.GetValueOrDefault(panelId));
         if (near is not null && Finding.CanReassign)
         {
             (targetId, movedTo) = (near.Id, null);

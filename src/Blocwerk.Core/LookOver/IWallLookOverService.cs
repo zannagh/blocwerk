@@ -178,4 +178,14 @@ public interface IWallLookOverService
     /// <param name="ct">Cancellation.</param>
     /// <returns>The holds.</returns>
     Task<IReadOnlyList<Services.PanelHold>> GetPanelHoldsAsync(Guid wallId, Guid panelId, CancellationToken ct = default);
+
+    /// <summary>
+    /// The pixel size of a panel's photo, or null when it does not decode: what <see cref="LookOverRules.HoldAtSpot"/> needs
+    /// so the page judges a tap with the very geometry "it is here" (<see cref="MoveAsync"/>) is checked with.
+    /// </summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="panelId">The panel photo.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>The size.</returns>
+    Task<(int Width, int Height)?> GetPanelPhotoSizeAsync(Guid wallId, Guid panelId, CancellationToken ct = default);
 }

@@ -81,5 +81,41 @@ public class LookOverSpotTests
         Assert.Null(LookOverRules.HoldAtSpot([hold], 0.5, 0.5 + (50 / 1000d), (2000, 1000)));
     }
 
+    // The page and the server judge a tap with one geometry: the photo's pixel size comes with the panel's holds, so a
+    // spot a hair outside a hold (inside the 3 px ring) is that hold on the page as it is for "it is here".
+    [Fact]
+    public async Task ThePageAndTheServer_JudgeASpotBesideAHold_Alike()
+    {
+        using var h = new WallTestHarness();
+        var k = await KeptHoldFixture.ApplyAsync(h);
+        var service = Service(h);
+        var view = (await service.ListAsync(k.Wall.WallId)).Single(v => v.HoldId == k.UsedId);
+        var found = (await HoldAsync(h, k.FoundId))!;
+        var size = await service.GetPanelPhotoSizeAsync(k.Wall.WallId, view.PanelId!.Value);
+        Assert.Equal((64, 48), size);
+
+        // 2 px right of the found hold's circle on the 64 x 48 photo.
+        var x = found.X + (((found.Radius * 64) + 2) / 64);
+        var holds = await service.GetPanelHoldsAsync(k.Wall.WallId, view.PanelId.Value);
+        Assert.Equal(k.FoundId, LookOverRules.HoldAtSpot(holds, x, found.Y, size)?.Id);
+        var refused = await Assert.ThrowsAsync<UserFacingException>(() => service.MoveAsync(k.Wall.WallId, view.Id, x, found.Y));
+        Assert.Contains(k.FoundId.ToString(), refused.Message);
+
+        var page = File.ReadAllText(Path.Combine(RepoRoot(), "src/Blocwerk.Web/Components/Shared/LookOver/LookOverMissing.razor.cs"));
+        Assert.Contains("LookOverRules.HoldAtSpot(PanelHolds(panelId), at.X, at.Y, photoSizes.GetValueOrDefault(panelId))", page);
+        Assert.Contains("await LookOver.GetPanelPhotoSizeAsync(WallId, panelId)", page);
+    }
+
+    private static string RepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Blocwerk.slnx")))
+        {
+            dir = dir.Parent;
+        }
+
+        return dir?.FullName ?? throw new InvalidOperationException("Repository root not found.");
+    }
+
     private static PanelHold PanelHoldAt(double x, double y, double radius) => new(Guid.NewGuid(), x, y, radius, null, HoldCategory.Hand);
 }

@@ -22,10 +22,16 @@ namespace Blocwerk.Core.LookOver;
 internal static class SameSpotFinder
 {
     /// <summary>
+    /// The footprint match (<see cref="FootprintMatch"/>) a hold needs to beat one that covers the old hold's centre: a
+    /// neighbour that only clips the old outline's edge does not take the spot from the hold sitting over its middle.
+    /// </summary>
+    private const double StrongMatch = 0.15;
+
+    /// <summary>
     /// The new hold on the spot of <paramref name="kept"/>. Of the holds on the spot, the one whose footprint coincides best
     /// with the old hold's (<see cref="FootprintMatch"/>), so the hold actually sitting on the old outline wins over a
-    /// neighbour whose centre happens to be nearer; only when no footprint meets the old one, one that covers its centre,
-    /// else the nearest; or null.
+    /// neighbour whose centre happens to be nearer. A weak match (under <see cref="StrongMatch"/>) does not beat a hold
+    /// that covers the old centre; without any overlap, the one covering the centre, else the nearest; or null.
     /// </summary>
     /// <param name="kept">The old hold's copy on the new photo.</param>
     /// <param name="fresh">The new holds of the same photo.</param>
@@ -46,8 +52,9 @@ internal static class SameSpotFinder
                 Covers: Covers(other, kept, size),
                 Match: FootprintMatch(keptArea, AreaOf(other, size))))
             .Where(c => c.Covers || c.Distance <= Math.Max(kept.Radius, c.Other.Radius) * longSide)
-            .OrderByDescending(c => c.Match)
+            .OrderByDescending(c => c.Match >= StrongMatch)
             .ThenByDescending(c => c.Covers)
+            .ThenByDescending(c => c.Match)
             .ThenBy(c => c.Distance)
             .Select(c => c.Other)
             .FirstOrDefault();
