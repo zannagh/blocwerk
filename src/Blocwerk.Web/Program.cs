@@ -363,6 +363,9 @@ public static class Program
         // wall photo routes above.
         app.MapWallPanelPhotos();
 
+        // The hybrid zoom's close-ups of a zoomed panel view (experimental, 404 unless HybridZoom:Enabled); same posture.
+        app.MapWallPanelCloseUp();
+
         // Per-facet textures of a solved glyph wall model (3D view); same posture as the panel photos.
         app.MapWallGeometryTextures();
 

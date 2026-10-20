@@ -15,6 +15,17 @@ public class WallSpotParseTests
         Assert.Equal(-340.5, spot!.B);
     }
 
+    [Fact]
+    public void Parse_KeepsTheUnderneathLook_AndTheUrlCarriesIt()
+    {
+        var spot = WallSpot.Parse("5a:120:340:260:under")!;
+
+        Assert.Equal(WallSpot.Under, spot.Look);
+        Assert.Null(WallSpot.Parse("5a:120:340:260")!.Look);
+        Assert.EndsWith("?at=5a%3A120%3A340%3A260%3Aunder", spot.Url(Guid.Empty));
+        Assert.Null(WallSpot.Parse("5a:120:340:260:sideways"));
+    }
+
     [Theory]
     [InlineData("0:1e308:1e308:1e308")]
     [InlineData("0:1000001:0:0")]

@@ -61,6 +61,10 @@ public partial class Wall3DStage : IAsyncDisposable
     [Parameter]
     public bool ShowFullscreen { get; set; } = true;
 
+    /// <summary>More mount options for wall3d.js (e.g. the volume inset's <c>orbit</c> clamp); read once, at mount.</summary>
+    [Parameter]
+    public IReadOnlyDictionary<string, object?>? ExtraOptions { get; set; }
+
     /// <summary>Show the boulder focus lightbulb over the viewer; it dims the scene around the highlighted boulder.</summary>
     [Parameter]
     public bool BoulderFocus { get; set; }
@@ -94,6 +98,26 @@ public partial class Wall3DStage : IAsyncDisposable
         await DisposeModuleAsync(bridge);
         await DisposeModuleAsync(module);
         GC.SuppressFinalize(this);
+    }
+
+    /// <summary>With a <see cref="Highlight"/>: glides to look at it straight on, or up at its underside.</summary>
+    /// <param name="under">Look from below.</param>
+    /// <returns>A task.</returns>
+    public async Task LookAtSpotAsync(bool under)
+    {
+        if (viewer is null || disposed)
+        {
+            return;
+        }
+
+        try
+        {
+            await viewer.InvokeVoidAsync("lookAtSpot", under);
+        }
+        catch (Exception ex) when (ex is JSDisconnectedException or JSException or OperationCanceledException)
+        {
+            // The viewer is gone or busy; the camera simply stays.
+        }
     }
 
     /// <summary>Called from wwwroot/js/wall3d-bridge.js with the surface under a tap.</summary>
@@ -287,15 +311,24 @@ public partial class Wall3DStage : IAsyncDisposable
         }
     }
 
-    private Dictionary<string, object?> MountOptions() => new()
+    private Dictionary<string, object?> MountOptions()
     {
-        ["roleColors"] = BoulderHoldColors.Wall3DRoles,
-        ["boulderFocus"] = BoulderFocus,
-        ["initialPreset"] = InitialPreset,
-        ["initialMode"] = InitialMode ?? "schematic",
-        ["hintOnce"] = HintOnce,
-        ["highlight"] = Highlight,
-    };
+        var options = new Dictionary<string, object?>
+        {
+            ["roleColors"] = BoulderHoldColors.Wall3DRoles,
+            ["boulderFocus"] = BoulderFocus,
+            ["initialPreset"] = InitialPreset,
+            ["initialMode"] = InitialMode ?? "schematic",
+            ["hintOnce"] = HintOnce,
+            ["highlight"] = Highlight,
+        };
+        foreach (var (key, value) in ExtraOptions ?? new Dictionary<string, object?>())
+        {
+            options[key] = value;
+        }
+
+        return options;
+    }
 
     private async Task ListenFacetTapsAsync()
     {
