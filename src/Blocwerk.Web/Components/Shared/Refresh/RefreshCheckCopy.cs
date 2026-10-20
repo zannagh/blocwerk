@@ -57,6 +57,7 @@ internal static class RefreshCheckCopy
     {
         UpdateExceptionKind.PossiblyRemoved or UpdateExceptionKind.ReplacedByOther => "Remove hold",
         UpdateExceptionKind.MatchedToHandPlaced => "Don't merge",
+        UpdateExceptionKind.LowConfidenceMatch => "Not the same hold",
         _ => "Leave out",
     };
 

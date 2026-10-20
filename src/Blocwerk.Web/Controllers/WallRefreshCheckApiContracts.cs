@@ -10,7 +10,9 @@ namespace Blocwerk.Web.Controllers;
 /// <summary>Body of <c>POST …/refresh/{refreshId}/checks/{checkId}/answer</c>.</summary>
 /// <param name="Answer">
 /// <c>keep</c> (keep the old hold, confirm the match, or keep the detection), <c>remove</c> (remove the old hold, or leave
-/// the detection out; not taken for every kind), or <c>undo</c> (the update's default back). Names or 0/1/2.
+/// the detection out; not taken for every kind), <c>notSame</c> (an unsure match or a hand-placed merge is not the same
+/// hold: the pair is taken apart, the old hold is carried where it was predicted and marked for review, the detection
+/// becomes a new hold), or <c>undo</c> (the update's default back). Names or 0/1/2/3.
 /// </param>
 public sealed record RefreshCheckAnswerRequest(
     [property: JsonConverter(typeof(JsonStringEnumConverter<UpdateExceptionAnswer>))] UpdateExceptionAnswer? Answer);

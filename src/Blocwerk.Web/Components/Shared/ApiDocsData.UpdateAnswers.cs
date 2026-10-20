@@ -21,8 +21,10 @@ internal static partial class ApiDocsData
 
     private const string CheckAnswerNote =
         "202 {\"answered\": n}; the summary is made again in the background, so read the summary again for the new decisionsVersion. "
-        + "answer: keep, remove or undo (or 0, 1, 2). 400 without an answer; 409 when refused (the card is gone, the update was replaced, "
-        + "the 3D check is running, a remove off the centre). Several answers (at most 500) apply in order and stop at the first refusal: "
+        + "answer: keep, remove, undo or notSame (or 0, 1, 2, 3). notSame answers an unsure match (kind 1) or a hand-placed merge (kind 3): "
+        + "the pair is taken apart as the full review's unlink does, the old hold is carried where it was predicted and marked for review, "
+        + "and the detection becomes a new hold (an unsure match takes no remove). 400 without an answer; 409 when refused (the card is gone, "
+        + "the update was replaced, the 3D check is running, a remove off the centre, notSame on a card that pairs nothing). Several answers (at most 500) apply in order and stop at the first refusal: "
         + "the answer then says how many were saved, failedCheckId and error (202 when some were saved, 409 when none were).";
 
     private const string LookOverAnswerNote =

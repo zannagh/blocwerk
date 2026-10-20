@@ -16,6 +16,10 @@ namespace Blocwerk.Core.Services;
 /// </summary>
 public partial class WallUpdateSessionService
 {
+    /// <summary>The refusal of "not the same hold" on a card that pairs nothing.</summary>
+    public const string NotSameRefused =
+        "\"Not the same hold\" answers an unsure match or a hand-placed merge; this card pairs no detection with an old hold.";
+
     /// <summary>The refusal of a "Remove" answer for a hold on a panel other than the centre.</summary>
     public const string OffCentreRemoveRefused =
         "A hold on a panel other than the centre cannot be removed in this update: it is carried over, and the look-over "
@@ -39,6 +43,8 @@ public partial class WallUpdateSessionService
         {
             case UpdateExceptionKind.ReplacedByOther:
             case UpdateExceptionKind.PossiblyRemoved:
+                EnsureNotSameTaken(card, answer);
+
                 // Both kinds: a removal off the centre would be reset to "carried" at the promote while the card read
                 // "Removed" (C4), so it is refused instead.
                 await EnsureRemovableHereAsync(db, card, answer);
@@ -51,8 +57,10 @@ public partial class WallUpdateSessionService
                 await AnswerHandPlacedMergeAsync(db, session.Id, card, answer, user.Id, now);
                 break;
             case UpdateExceptionKind.HandPlacedAmbiguous:
+                EnsureNotSameTaken(card, answer);
                 break;
             default:
+                EnsureNotSameTaken(card, answer);
                 await AnswerConflictingNewAsync(db, session.Id, card, answer);
                 break;
         }
@@ -60,7 +68,7 @@ public partial class WallUpdateSessionService
         card.Status = answer switch
         {
             UpdateExceptionAnswer.Keep => UpdateExceptionStatus.Kept,
-            UpdateExceptionAnswer.Remove => UpdateExceptionStatus.Removed,
+            UpdateExceptionAnswer.Remove or UpdateExceptionAnswer.NotSame => UpdateExceptionStatus.Removed,
             _ => UpdateExceptionStatus.Pending,
         };
         card.DecidedByUserId = answer == UpdateExceptionAnswer.Undo ? null : user.Id;
@@ -107,23 +115,42 @@ public partial class WallUpdateSessionService
         row.UpdatedAt = now;
     }
 
-    /// <summary>Keep: carried onto the matched detection, confirmed. Undo: the same verdict, unconfirmed. Remove is not an answer here.</summary>
+    /// <summary>"Not the same hold" is an answer only where a detection was paired with an old hold.</summary>
+    private static void EnsureNotSameTaken(WallUpdateException card, UpdateExceptionAnswer answer)
+    {
+        if (answer == UpdateExceptionAnswer.NotSame)
+        {
+            throw new UserFacingException(NotSameRefused);
+        }
+    }
+
+    /// <summary>
+    /// Keep: carried onto the matched detection, confirmed. Undo: the same verdict, unconfirmed. NotSame: the pair is taken
+    /// apart as the full review's unlink does (the old hold carried blind, unconfirmed; the card's answer marks it for review)
+    /// and the detection becomes a new hold. Remove is not an answer here: the old hold may well still be there.
+    /// </summary>
     private static async Task AnswerLowConfidenceAsync(
         BlocwerkDbContext db, Guid sessionId, WallUpdateException card, UpdateExceptionAnswer answer, Guid userId, DateTimeOffset now)
     {
         if (answer == UpdateExceptionAnswer.Remove)
         {
-            throw new UserFacingException("A match is confirmed here or changed in the full review.");
+            throw new UserFacingException("A match is confirmed here, answered \"not the same hold\" (notSame), or changed in the full review.");
         }
 
         var row = await CarryRowAsync(db, sessionId, card.OldHoldId!.Value);
-        CarryConfirmationPolicy.Apply(row, CarryKind.Carried, card.StagedHoldId, confirmed: answer == UpdateExceptionAnswer.Keep, userId, now);
-        if (answer == UpdateExceptionAnswer.Undo)
+        var apart = answer == UpdateExceptionAnswer.NotSame;
+        CarryConfirmationPolicy.Apply(
+            row, CarryKind.Carried, apart ? null : card.StagedHoldId, confirmed: answer == UpdateExceptionAnswer.Keep, userId, now);
+        if (answer != UpdateExceptionAnswer.Keep)
         {
             CarryConfirmationPolicy.Clear(row);
         }
 
         row.UpdatedAt = now;
+        if (apart && card.StagedHoldId is { } holdId)
+        {
+            await KeepDetectionAsNewAsync(db, sessionId, holdId);
+        }
     }
 
     /// <summary>
@@ -134,7 +161,7 @@ public partial class WallUpdateSessionService
         BlocwerkDbContext db, Guid sessionId, WallUpdateException card, UpdateExceptionAnswer answer, Guid userId, DateTimeOffset now)
     {
         var row = await CarryRowAsync(db, sessionId, card.OldHoldId!.Value);
-        var rejected = answer == UpdateExceptionAnswer.Remove;
+        var rejected = answer is UpdateExceptionAnswer.Remove or UpdateExceptionAnswer.NotSame;
         CarryConfirmationPolicy.Apply(row, CarryKind.Carried, rejected ? null : card.StagedHoldId, confirmed: answer != UpdateExceptionAnswer.Undo, userId, now);
         if (answer == UpdateExceptionAnswer.Undo)
         {
@@ -142,12 +169,15 @@ public partial class WallUpdateSessionService
         }
 
         row.UpdatedAt = now;
-        if (!rejected)
+        if (rejected)
         {
-            return;
+            await KeepDetectionAsNewAsync(db, sessionId, card.StagedHoldId!.Value);
         }
+    }
 
-        var holdId = card.StagedHoldId!.Value;
+    /// <summary>A detection taken apart from an old hold becomes a new hold: un-discarded on the centre, not removed on a neighbour.</summary>
+    private static async Task KeepDetectionAsNewAsync(BlocwerkDbContext db, Guid sessionId, Guid holdId)
+    {
         var detection = await db.WallUpdateHoldDecisions.FirstOrDefaultAsync(d =>
             d.SessionId == sessionId && d.Kind == WallUpdateHoldDecisionKind.NewCentreHold && d.HoldId == holdId);
         if (detection is not null)

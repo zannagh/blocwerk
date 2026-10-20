@@ -56,14 +56,18 @@ internal static class RefreshDecisions
             moves);
     }
 
-    /// <summary>The old holds of unanswered cards: they go live as decided, marked for review.</summary>
+    /// <summary>
+    /// The old holds of unanswered cards, and of unsure matches answered "not the same hold" (carried blind where the warp
+    /// puts them, which is what most needs a look): they go live as decided, marked for review.
+    /// </summary>
     /// <param name="exceptions">The session's cards.</param>
     /// <returns>The old hold ids.</returns>
     public static IReadOnlyCollection<Guid> ReviewOldHoldIds(IReadOnlyList<UpdateExceptionInfo> exceptions) =>
         exceptions
-            .Where(e => e.Status == UpdateExceptionStatus.Pending
-                && e.Kind is UpdateExceptionKind.PossiblyRemoved or UpdateExceptionKind.LowConfidenceMatch or UpdateExceptionKind.HandPlacedAmbiguous
-                    or UpdateExceptionKind.ReplacedByOther)
+            .Where(e => (e.Status == UpdateExceptionStatus.Pending
+                    && e.Kind is UpdateExceptionKind.PossiblyRemoved or UpdateExceptionKind.LowConfidenceMatch or UpdateExceptionKind.HandPlacedAmbiguous
+                        or UpdateExceptionKind.ReplacedByOther)
+                || (e.Status == UpdateExceptionStatus.Removed && e.Kind == UpdateExceptionKind.LowConfidenceMatch))
             .Select(e => e.OldHoldId)
             .OfType<Guid>()
             .ToHashSet();

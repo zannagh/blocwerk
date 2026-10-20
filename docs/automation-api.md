@@ -111,7 +111,7 @@ The confirm screen's cards (the holds whose evidence needs a person's look) can 
 # The cards and how each is answered now:
 curl -fsS -H "$AUTH" "$BASE/api/walls/$WALL/refresh/$RUN/checks" | jq -c '.[] | {id, kind, status, holdName, boulders, canRemove}'
 
-# Answer one (keep | remove | undo, or 0 | 1 | 2):
+# Answer one (keep | remove | undo | notSame, or 0 | 1 | 2 | 3):
 curl -fsS -X POST -H "$AUTH" -H 'Content-Type: application/json' \
   -d '{"answer":"keep"}' "$BASE/api/walls/$WALL/refresh/$RUN/checks/$CARD/answer"
 
@@ -124,11 +124,12 @@ curl -fsS -X POST -H "$AUTH" -H 'Content-Type: application/json' \
 | Method | Route | Body | Answers |
 |---|---|---|---|
 | GET | `…/refresh/{refreshId}/checks` | — | 200 `[{id, kind, status, hasOld, hasModel, boulders, holdName, confidence, canRemove}]` (empty unless status 4) |
-| POST | `…/refresh/{refreshId}/checks/{checkId}/answer` | `{"answer": "keep"\|"remove"\|"undo"}` | 202 `{"answered": 1}` |
+| POST | `…/refresh/{refreshId}/checks/{checkId}/answer` | `{"answer": "keep"\|"remove"\|"undo"\|"notSame"}` | 202 `{"answered": 1}` |
 | POST | `…/refresh/{refreshId}/checks/answers` | `{"answers": [{"checkId", "answer"}]}` | 202 `{"answered": n}` |
 
 * `kind`: 0 possibly removed, 1 unsure match, 2 new hold with conflicting evidence, 3 matched to a hand-placed hold, 4 hand-placed hold with several detections, 5 another hold is here now. `status`: 0 open, 1 kept, 2 removed.
 * `keep` keeps the old hold (carried where it was), confirms the match, or keeps the detection as a new hold; `remove` removes the old hold, rejects a hand-placed merge, or leaves the detection out; `undo` puts the update's default back. Kinds 1 and 4 take no `remove`.
+* `notSame` says the detection is not the same hold, for an unsure match (kind 1) or a hand-placed merge (kind 3, where it is the same as `remove`): the pair is taken apart as the full review's unlink does. The old hold is carried where the matcher predicts it, unconfirmed and marked for review (an unsure match answered so goes live like an unanswered card, minus the look-over finding), and the detection becomes a new hold. Any other kind refuses it with 409. The card then reads `status` 2.
 * `canRemove` is false for a hold on a panel other than the centre (kinds 0 and 5): such a removal would be undone at the apply, so it is refused with 409; the hold is carried over and the look-over asks about it again.
 * 400 without an answer; 409 when an answer is refused (the card is no longer part of the update, the update was replaced or discarded in the full review, the 3D check is running, the run is not at status 4). Several answers (at most 500 per call, 400 above) are applied in order and the first refusal stops the rest: those before it stay answered, and the answer says where it stopped, `{"answered": n, "failedCheckId": "<id>", "error": "…"}` (202 when some were saved, 409 when none were), so a script resumes after `failedCheckId`.
 

@@ -24,7 +24,7 @@ public sealed partial class WallRefreshApiController
     [HttpPost("{refreshId:guid}/checks/{checkId:guid}/answer")]
     public Task<IActionResult> AnswerCheck(Guid wallId, Guid refreshId, Guid checkId, [FromBody] RefreshCheckAnswerRequest? body) =>
         body?.Answer is not { } answer
-            ? Task.FromResult<IActionResult>(BadRequest(new ApiErrorResponse("Send an answer: keep, remove or undo.")))
+            ? Task.FromResult<IActionResult>(BadRequest(new ApiErrorResponse("Send an answer: keep, remove, notSame or undo.")))
             : AnswerChecksAsync(wallId, refreshId, "refresh.check", [new RefreshCheckAnswer(checkId, answer)]);
 
     /// <summary>
@@ -38,7 +38,7 @@ public sealed partial class WallRefreshApiController
         if (answers.Count == 0 || answers.Count > WallRefreshService.MaxCheckAnswers || answers.Any(a => a.Answer is null))
         {
             return Task.FromResult<IActionResult>(BadRequest(new ApiErrorResponse(
-                $"Send 1 to {WallRefreshService.MaxCheckAnswers} answers: [{{ checkId, answer }}], answer keep, remove or undo.")));
+                $"Send 1 to {WallRefreshService.MaxCheckAnswers} answers: [{{ checkId, answer }}], answer keep, remove, notSame or undo.")));
         }
 
         return AnswerChecksAsync(wallId, refreshId, "refresh.checks", answers.Select(a => new RefreshCheckAnswer(a.CheckId, a.Answer!.Value)).ToList());

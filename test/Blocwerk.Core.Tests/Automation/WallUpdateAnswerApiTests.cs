@@ -117,8 +117,10 @@ public class WallUpdateAnswerApiTests
         var named = JsonSerializer.Deserialize<RefreshCheckAnswerRequest>("{\"answer\":\"remove\"}", options)!;
         var numbered = JsonSerializer.Deserialize<RefreshCheckAnswersRequest>("{\"answers\":[{\"checkId\":\"" + Guid.Empty + "\",\"answer\":2}]}", options)!;
         var lookOver = JsonSerializer.Deserialize<LookOverAnswerRequest>("{\"answer\":\"Settle\"}", options)!;
+        var notSame = JsonSerializer.Deserialize<RefreshCheckAnswerRequest>("{\"answer\":\"notSame\"}", options)!;
 
         Assert.Equal(UpdateExceptionAnswer.Remove, named.Answer);
+        Assert.Equal(UpdateExceptionAnswer.NotSame, notSame.Answer);
         Assert.Equal(UpdateExceptionAnswer.Undo, Assert.Single(numbered.Answers!).Answer);
         Assert.Equal(LookOverAnswer.Settle, lookOver.Answer);
     }
