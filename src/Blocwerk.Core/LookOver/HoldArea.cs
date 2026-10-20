@@ -32,6 +32,12 @@ internal sealed class HoldArea
         (MinY, MaxY) = polygon is null ? (centreY - radiusPx, centreY + radiusPx) : (polygon.Min(p => p.Y), polygon.Max(p => p.Y));
     }
 
+    /// <summary>The centre across, in the area's pixels.</summary>
+    public double CentreX => centreX;
+
+    /// <summary>The centre down, in the area's pixels.</summary>
+    public double CentreY => centreY;
+
     /// <summary>The area in square pixels: the outline's own (a concave one too), else the circle's.</summary>
     public double Area => polygon is null ? Math.PI * radiusPx * radiusPx : Math.Abs(SignedArea(polygon));
 
