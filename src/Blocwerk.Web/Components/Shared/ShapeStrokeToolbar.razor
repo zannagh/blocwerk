@@ -1,0 +1,65 @@
+@* The Shape tool's choice of what a press does, in its option row: move points, erase points, or paint area on
+   (or, with Subtract, off). The size is the eraser's / brush's radius on screen, the same at every zoom. *@
+
+<div class="option-group shape-stroke-tools" role="group" aria-label="Shape editing">
+    <button class="opt-btn @(Tool == ShapeStrokeTool.Points ? "active" : "")" title="Drag the outline's points"
+            aria-pressed="@(Tool == ShapeStrokeTool.Points)" @onclick="() => Pick(ShapeStrokeTool.Points)">Points</button>
+    <button class="opt-btn @(Tool == ShapeStrokeTool.Eraser ? "active" : "")" title="Drag over the outline to remove the points it touches"
+            aria-pressed="@(Tool == ShapeStrokeTool.Eraser)" @onclick="() => Pick(ShapeStrokeTool.Eraser)">Eraser</button>
+    <button class="opt-btn @(Tool == ShapeStrokeTool.Brush ? "active" : "")" title="Paint to add area to the outline"
+            aria-pressed="@(Tool == ShapeStrokeTool.Brush)" @onclick="() => Pick(ShapeStrokeTool.Brush)">Brush</button>
+</div>
+@if (Tool == ShapeStrokeTool.Brush)
+{
+    <label class="cb-label" title="Paint to cut area out of the outline instead of adding it">
+        <input type="checkbox" checked="@Subtract" @onchange="() => SubtractChanged.InvokeAsync(!Subtract)" /> Subtract
+    </label>
+}
+@if (Tool != ShapeStrokeTool.Points)
+{
+    <div class="option-group"><label>Size:</label>
+        <input type="range" min="4" max="60" value="@((int)RadiusPx)" aria-label="@(Tool == ShapeStrokeTool.Brush ? "Brush" : "Eraser") size"
+               @oninput="OnRadius" />
+    </div>
+}
+@if (!string.IsNullOrEmpty(Refusal))
+{
+    <span class="option-hint shape-stroke-refusal" role="status">@Refusal</span>
+}
+
+@code {
+    /// <summary>The current choice.</summary>
+    [Parameter]
+    public ShapeStrokeTool Tool { get; set; }
+
+    /// <summary>Raised with the new choice.</summary>
+    [Parameter]
+    public EventCallback<ShapeStrokeTool> ToolChanged { get; set; }
+
+    /// <summary>The eraser's / brush's radius in screen pixels.</summary>
+    [Parameter]
+    public double RadiusPx { get; set; }
+
+    /// <summary>Raised with the new radius.</summary>
+    [Parameter]
+    public EventCallback<double> RadiusPxChanged { get; set; }
+
+    /// <summary>The brush subtracts.</summary>
+    [Parameter]
+    public bool Subtract { get; set; }
+
+    /// <summary>Raised with the new Subtract state.</summary>
+    [Parameter]
+    public EventCallback<bool> SubtractChanged { get; set; }
+
+    /// <summary>Why the last edit was not taken, or null.</summary>
+    [Parameter]
+    public string? Refusal { get; set; }
+
+    private Task Pick(ShapeStrokeTool tool) => ToolChanged.InvokeAsync(tool);
+
+    private Task OnRadius(ChangeEventArgs e) =>
+        double.TryParse(e.Value?.ToString(), System.Globalization.CultureInfo.InvariantCulture, out var px)
+            ? RadiusPxChanged.InvokeAsync(px)
+            : Task.CompletedTask;
+}

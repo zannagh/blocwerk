@@ -1,0 +1,70 @@
+@using System.Globalization
+@using Blocwerk.Core.Entities
+
+@* The Shape tool's handles for the one hold being edited, plus the empty layer wall-shape-drag.js draws its live
+   preview into. Drawn AFTER every hold by the editor (SVG has no z-index: a later hold would cover a handle).
+
+   The drag itself never comes through here: wall-shape-drag.js reads the points from the data-shape-* attributes
+   (round-trip formatted, so an untouched point is sent back exactly as it is), runs the drag, eraser or brush in
+   the browser and commits once on release. The handles carry no Blazor handlers on purpose: the old
+   @onmousedown never fired for a finger or a pen, which panned the photo instead.
+
+   g.shape-live must stay WITHOUT children in this markup: what the script appends to it is invisible to
+   Blazor's diff and survives every re-render; a child rendered here would be overwritten by the script. *@
+
+<g class="shape-edit" data-shape-hold="@Hold.Id" data-shape-cx="@R(Hold.X)" data-shape-cy="@R(Hold.Y)"
+   data-shape-smooth="@(Smooth ? "true" : null)" data-shape-points="@PointsAttribute"
+   data-shape-radius="@R(RadiusPx)" data-shape-subtract="@(Subtract ? "true" : null)"
+   pointer-events="@(Tool == ShapeStrokeTool.Points ? null : "none")">
+    @if (Tool != ShapeStrokeTool.Brush)
+    {
+        @for (int i = 0; i < Points.Count; i++)
+        {
+            var p = Points[i];
+            <circle data-shape-handle="@i" cx="@F((Hold.X + p.Dx) * 100)" cy="@F((Hold.Y + p.Dy) * 100)"
+                    r="@F(HandleRadius)" fill="white" stroke="var(--accent)" stroke-width="@F(StrokeWidth)"
+                    style="cursor: grab" />
+        }
+    }
+</g>
+<g class="shape-live" pointer-events="none"></g>
+
+@code {
+    /// <summary>The hold whose outline is edited.</summary>
+    [Parameter, EditorRequired]
+    public Hold Hold { get; set; } = default!;
+
+    /// <summary>The points the handles sit on: a smooth outline's control points, else its corners.</summary>
+    [Parameter, EditorRequired]
+    public IReadOnlyList<ShapePoint> Points { get; set; } = [];
+
+    /// <summary>True when <see cref="Points"/> are control points: the browser then redraws their curve.</summary>
+    [Parameter]
+    public bool Smooth { get; set; }
+
+    /// <summary>What a press does.</summary>
+    [Parameter]
+    public ShapeStrokeTool Tool { get; set; }
+
+    /// <summary>The handle radius in viewBox units, already scaled for the zoom.</summary>
+    [Parameter]
+    public double HandleRadius { get; set; }
+
+    /// <summary>The handle outline width in viewBox units.</summary>
+    [Parameter]
+    public double StrokeWidth { get; set; }
+
+    /// <summary>The eraser's or brush's radius in screen (CSS) pixels.</summary>
+    [Parameter]
+    public double RadiusPx { get; set; }
+
+    /// <summary>The brush cuts area out instead of adding it.</summary>
+    [Parameter]
+    public bool Subtract { get; set; }
+
+    private string PointsAttribute => string.Join(' ', Points.Select(p => R(p.Dx) + "," + R(p.Dy)));
+
+    private static string R(double v) => v.ToString("R", CultureInfo.InvariantCulture);
+
+    private static string F(double v) => HoldShapeMarkup.F(v);
+}
