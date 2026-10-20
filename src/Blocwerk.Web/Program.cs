@@ -230,6 +230,9 @@ public static class Program
         // Core's long-running work (capture video upload + frame extraction) holds the same gate.
         builder.Services.AddSingleton<IDeployBusyGate, EditActivityDeployBusyGate>();
 
+        // Background hold writers (the wall enhancement) wait while someone has the wall's hold editor open.
+        builder.Services.AddSingleton<IWallEditPresence, EditActivityWallEditPresence>();
+
         // Heartbeats this circuit's leases while its connection is UP, so a lease whose client has
         // gone silent (a sleeping tablet behind a NAT) expires on its TTL instead of holding
         // /health/ready-to-deploy at 503 until the process restarts — which used to block the very
@@ -430,6 +433,7 @@ public static class Program
         // The pictures of the confirm screen's cards, made on request (see WallRefreshCheckCropEndpoint).
         app.MapWallRefreshCheckCrops();
         app.MapWallDuplicateHoldCrops();
+        app.MapWallEnhancementCrops();
         app.MapWallLookOverCrops();
 
         // HLS adaptive-bitrate ladder for a Ready clip that has one. Same wall/share-token gate as the

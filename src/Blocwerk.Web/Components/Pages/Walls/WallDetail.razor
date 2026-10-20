@@ -194,6 +194,27 @@ else
                    restored when it closes. See the note on the guard inside the Wall Settings card. *@
                 @if (!_showBigUpdate)
                 {
+                @* "Enhance this wall": the one-time chain of every enhancing step per generation, and under "Advanced"
+                   each step on its own (moved here from Wall Shape). Not on a tablet or a share link: the components
+                   hide themselves there and their services refuse. *@
+                @if (!KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))
+                {
+                <details class="settings-panel settings-card" id="wall-enhance">
+                    <summary class="settings-card-summary"><h2>Enhance this wall</h2></summary>
+                    <div class="settings-card-body">
+                        <WallEnhancementCard WallId="_wall.Id" ShareToken="@ShareToken" />
+                        <details class="segment-settings" id="wall-enhance-advanced">
+                            <summary>Advanced: run one step on its own</summary>
+                            <WallOutlineUpgrade WallId="_wall.Id" ShareToken="@ShareToken" />
+                            <WallShapeCleanup WallId="_wall.Id" ShareToken="@ShareToken" />
+                            <WallDuplicateHolds WallId="_wall.Id" ShareToken="@ShareToken" />
+                            <WallLinkedHoldSync WallId="_wall.Id" ShareToken="@ShareToken" />
+                            <WallHoldColorSuggestions WallId="_wall.Id" ShareToken="@ShareToken" />
+                        </details>
+                    </div>
+                </details>
+                }
+
                 <details class="settings-panel settings-card">
                     <summary class="settings-card-summary"><h2>Wall Shape</h2></summary>
                     <div class="settings-card-body">
@@ -252,11 +273,6 @@ else
                             <JobProgressList WallId="_wall.Id" />
                         </details>
                     }
-                    <WallOutlineUpgrade WallId="_wall.Id" ShareToken="@ShareToken" />
-                    <WallShapeCleanup WallId="_wall.Id" ShareToken="@ShareToken" />
-                    <WallDuplicateHolds WallId="_wall.Id" ShareToken="@ShareToken" />
-                    <WallLinkedHoldSync WallId="_wall.Id" ShareToken="@ShareToken" />
-                    <WallHoldColorSuggestions WallId="_wall.Id" ShareToken="@ShareToken" />
                     <Wall3DHoldStats WallId="_wall.Id" ShareToken="@ShareToken" />
                     <WallPhotoPrivacy WallId="_wall.Id" ShareToken="@ShareToken" />
                     </div>

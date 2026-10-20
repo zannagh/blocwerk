@@ -1,0 +1,11 @@
+/* The enhancement's steps on the wall-settings card: a mark, the title, and what the step did in smaller text. */
+.enhance-steps { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 6px; }
+.enhance-step { display: flex; gap: 8px; align-items: baseline; }
+.enhance-step-mark { flex: none; width: 1.2em; text-align: center; font-weight: 700; }
+.enhance-step-text { display: grid; min-width: 0; }
+.enhance-step-title { font-size: 0.92rem; }
+.enhance-step-summary { font-size: 0.82rem; color: var(--text-secondary, inherit); overflow-wrap: anywhere; }
+.enhance-step.is-waiting { opacity: 0.55; }
+.enhance-step.is-running .enhance-step-title { font-weight: 600; }
+.enhance-step.is-failed .enhance-step-mark { color: var(--danger, #c0392b); }
+.enhance-step.is-done .enhance-step-mark { color: var(--success, #2e8b57); }

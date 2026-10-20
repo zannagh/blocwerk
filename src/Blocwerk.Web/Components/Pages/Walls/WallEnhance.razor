@@ -1,0 +1,92 @@
+@page "/walls/{WallId:guid}/enhance"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@using Blocwerk.Core.Entities
+@using Blocwerk.Core.Enhancement
+@* The review of a wall's one-time enhancement: one chip per kind of change (with what is still open), the changes of
+   the chosen kind as cards with their picture and two answers, "Accept all" per kind, and Finalize once nothing is
+   open. Finalizing records the enhancement for the wall's current generation; the card then says when it happened.
+   Wall admins only, never on the wall tablet. *@
+
+<PageTitle>Enhance this wall - Blocwerk</PageTitle>
+
+<SectionContent SectionName="TopBarTitle">Enhance this wall</SectionContent>
+
+<div class="enhance-page">
+    <a href="/walls/@WallId#wall-enhance" class="back-link">&larr; Back to the wall</a>
+    @if (blocked is not null)
+    {
+        <p class="empty-msg">@blocked</p>
+    }
+    else if (view is null)
+    {
+        <p class="loading">Loading...</p>
+    }
+    else
+    {
+        <header class="enhance-header">
+            <p class="enhance-status" role="status">@StatusLine</p>
+            @if (view.State == WallEnhancementState.Review)
+            {
+                <button class="btn-primary enhance-finalize" disabled="@(busy || view.Pending > 0)" @onclick="FinalizeAsync">Finalize</button>
+                @if (view.Pending > 0)
+                {
+                    <p class="hint">Finalize records the enhancement for this state of the wall. Answer every change first, one by one or with "Accept all".</p>
+                }
+            }
+        </header>
+
+        @if (error is not null)
+        {
+            <p class="field-error" role="alert">@error</p>
+        }
+        else if (message is not null)
+        {
+            <p class="glyph-ok" role="status">@message</p>
+        }
+
+        @if (view.Counts.Count == 0)
+        {
+            <p class="empty-msg">The enhancement found nothing to change on this wall.</p>
+        }
+        else
+        {
+            <nav class="enhance-chips" aria-label="Kinds of changes">
+                @foreach (var count in view.Counts)
+                {
+                    <button type="button" class="@(count.Kind == kind ? "is-on" : null)" aria-pressed="@(count.Kind == kind ? "true" : "false")"
+                            @onclick="() => PickAsync(count.Kind)">
+                        @WallEnhancementKinds.Title(count.Kind)<span>@(count.Pending > 0 ? count.Pending : count.Total)</span>
+                    </button>
+                }
+            </nav>
+
+            <div class="enhance-toolbar">
+                <label class="filter-check">
+                    <input type="checkbox" checked="@pendingOnly" @onchange="OnPendingOnlyAsync" />
+                    Only the open ones
+                </label>
+                @if (view.State == WallEnhancementState.Review && Current is { Pending: > 0 } current)
+                {
+                    <ConfirmAction Label="@($"Accept all {current.Pending}")" TriggerClass="btn-secondary" ConfirmClass="btn-primary" Neutral="true"
+                                   ConfirmLabel="@AcceptAllLabel(current)" Question="@AcceptAllQuestion(current)" Disabled="busy"
+                                   OnConfirm="() => AcceptAllAsync(current.Kind)" />
+                }
+            </div>
+
+            <div class="enhance-list">
+                @foreach (var item in items)
+                {
+                    <WallEnhanceItemCard @key="item.Id" WallId="WallId" Item="item" Busy="@(busy || view.State != WallEnhancementState.Review)" OnDecide="DecideAsync" />
+                }
+            </div>
+
+            @if (total > items.Count)
+            {
+                <div class="staged-actions">
+                    <button class="btn-secondary" disabled="@busy" @onclick="MoreAsync">Show @PageSize more (@(total - items.Count) left)</button>
+                </div>
+            }
+        }
+    }
+</div>

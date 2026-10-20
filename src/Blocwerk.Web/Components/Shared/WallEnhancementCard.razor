@@ -1,0 +1,85 @@
+@* Wall-settings card body: "Enhance this wall" — every enhancing step once per wall generation (outlines, holds on
+   holds, shape clean-up, colours, duplicates, and with a 3D model links and missing holds), in the background, then a
+   review on its own page (/walls/{id}/enhance), then Finalize. Once finalized the button only says when it happened.
+   Admin-only (rendered inside the admin card); hidden on a kiosk tablet and behind a share link — the service refuses
+   both anyway. *@
+
+@using Blocwerk.Core.Enhancement
+
+@if (!Hidden && view is not null)
+{
+<div class="glyph-settings enhance-card">
+    <p class="hint">
+        Runs every improvement Blocwerk can make to the holds of this wall in one go: real outlines for circle holds,
+        holds that sit on other holds, smoother shapes that do not overlap, colours for holds without one, possible
+        duplicates and, with a 3D model, the same hold on two panels and holds that are missing. You look over every
+        change afterwards; nothing about positions or boulders changes on its own.
+    </p>
+
+    @switch (view.State)
+    {
+        case WallEnhancementState.NotStarted:
+            @if (view.PreviousFinalizedAt is { } previous)
+            {
+                <p class="hint">Last enhanced on <LocalTime Value="@previous" Format="LocalTimeFormat.DateDmy" />. The wall was updated since, so its current state can be enhanced.</p>
+            }
+            <div class="staged-actions">
+                <button class="btn-primary" disabled="@(busy || view.BlockedReason is not null)" @onclick="StartAsync">Enhance this wall</button>
+            </div>
+            @if (view.BlockedReason is { } blocked)
+            {
+                <p class="hint" role="status">@blocked</p>
+            }
+            break;
+
+        case WallEnhancementState.Running:
+            <p class="loading-small" role="status">
+                @if (view.CurrentStep is { } step)
+                {
+                    <text>Step @view.StepNumber of @view.Steps.Count: @step.Title…</text>
+                }
+                else
+                {
+                    <text>Starting…</text>
+                }
+            </p>
+            @if (view.WaitingForEditor)
+            {
+                <p class="hint" role="status">Waiting: someone has the hold editor of this wall open. The enhancement goes on when it is closed.</p>
+            }
+            <p class="hint">This runs on the server: you can leave the page and come back.</p>
+            <EnhancementStepList Steps="view.Steps" />
+            break;
+
+        case WallEnhancementState.Failed:
+            <p class="field-error" role="alert">The enhancement stopped: @view.Error</p>
+            <EnhancementStepList Steps="view.Steps" />
+            <div class="staged-actions">
+                <button class="btn-primary" disabled="@(busy || view.BlockedReason is not null)" @onclick="StartAsync">Continue the enhancement</button>
+            </div>
+            break;
+
+        case WallEnhancementState.Review:
+            <p class="glyph-summary" role="status">@ReviewLine(view)</p>
+            <EnhancementStepList Steps="view.Steps" />
+            <div class="staged-actions">
+                <a class="btn-primary" href="/walls/@WallId/enhance">@(view.Pending > 0 ? "Review the changes" : "Finalize")</a>
+            </div>
+            break;
+
+        case WallEnhancementState.Finalized:
+            <div class="staged-actions">
+                <button class="btn-secondary" disabled>
+                    Already enhanced for this generation on <LocalTime Value="@view.FinalizedAt!.Value" Format="LocalTimeFormat.DateDmy" />
+                </button>
+            </div>
+            <p class="hint">@FinalizedLine(view)</p>
+            break;
+    }
+
+    @if (failure is not null)
+    {
+        <p class="field-error" role="alert">@failure</p>
+    }
+</div>
+}

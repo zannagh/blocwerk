@@ -1,0 +1,28 @@
+/* The enhancement review. Phone first: one column of cards; from tablet width the cards sit two or three abreast.
+   Chips scroll sideways like the look-over page's. Colours come from the shared tokens. */
+.enhance-page {
+    max-width: 1280px; margin: 0 auto; padding: 6px 16px calc(48px + var(--bottomnav-h, 0px)); display: flex; flex-direction: column; gap: 10px;
+}
+.enhance-page > p { margin: 0; }
+.enhance-header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.enhance-header > p { margin: 0; flex: 1 1 260px; }
+.enhance-status { font-weight: 600; }
+.enhance-page ::deep .enhance-finalize { width: auto; min-height: 40px; margin: 0; padding: 6px 18px; }
+.enhance-chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 0 -16px; padding: 0 16px 2px; }
+.enhance-chips::-webkit-scrollbar { display: none; }
+.enhance-chips button {
+    flex: none; width: auto; min-height: 36px; margin: 0; padding: 4px 12px; border: 1px solid var(--border-light); border-radius: 999px;
+    background: var(--bg-surface); color: var(--text); font: inherit; font-size: 0.85rem; white-space: nowrap; cursor: pointer;
+}
+.enhance-chips button > span { margin-left: 6px; font-weight: 700; }
+.enhance-chips button.is-on { border-color: var(--accent); background: var(--accent); color: var(--on-accent); font-weight: 600; }
+.enhance-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.enhance-toolbar .filter-check { margin: 0; }
+.enhance-page ::deep .enhance-toolbar button { width: auto; min-height: 36px; margin: 0; padding: 4px 12px; font-size: 0.9rem; }
+.enhance-list { display: grid; grid-template-columns: 1fr; gap: 10px; }
+@media (min-width: 720px) {
+    .enhance-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 1100px) {
+    .enhance-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
