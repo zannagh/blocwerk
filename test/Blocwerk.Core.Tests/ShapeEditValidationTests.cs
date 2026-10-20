@@ -32,7 +32,7 @@ public class ShapeEditValidationTests
 
         Assert.Equal("The outline would cross itself.", ShapeEditValidation.Problem(0.5, 0.5, bowTie, control: false, requireSimple: true));
 
-        // A dragged point may cross for a moment, as it always could; only the eraser and the brush are held to it.
+        // The check itself can be asked without it; the editor asks with it for every kind of edit (a dragged point too).
         Assert.Null(ShapeEditValidation.Problem(0.5, 0.5, bowTie, control: false, requireSimple: false));
     }
 
