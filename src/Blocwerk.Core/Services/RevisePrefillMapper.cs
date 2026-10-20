@@ -42,13 +42,15 @@ public static class RevisePrefillMapper
     /// <param name="liveHolds">The current holds the editor can pick from.</param>
     /// <param name="panelPositions">(Col, Row) of every panel id that can occur, old generations included.</param>
     /// <param name="livePanelIds">The live panels; the one at (0, 0) also carries the holds with no panel.</param>
+    /// <param name="splitParts">Holds cut with the split tool: the hold that kept its id -&gt; the parts split off it.</param>
     /// <returns>The picks, the holds that map to nothing, and the panel to open on.</returns>
     public static RevisePrefill Map(
         IReadOnlyCollection<ReviseMark> marks,
         IReadOnlyCollection<ReviseLineageStep> lineage,
         IReadOnlyCollection<Hold> liveHolds,
         IReadOnlyDictionary<Guid, (int Col, int Row)> panelPositions,
-        IReadOnlyCollection<Guid> livePanelIds)
+        IReadOnlyCollection<Guid> livePanelIds,
+        IReadOnlyDictionary<Guid, IReadOnlyList<Guid>>? splitParts = null)
     {
         var live = liveHolds.GroupBy(h => h.Id).ToDictionary(g => g.Key, g => g.First());
         var forward = lineage
@@ -88,7 +90,10 @@ public static class RevisePrefillMapper
         }
 
         var result = picks.Build();
-        return new RevisePrefill(result, unmapped, StartPanel(result, live, centre));
+        return new RevisePrefill(result, unmapped, StartPanel(result, live, centre))
+        {
+            SplitHoldIds = SplitPicks(result, live, splitParts),
+        };
     }
 
     /// <summary>
@@ -204,6 +209,26 @@ public static class RevisePrefillMapper
         }
 
         return best;
+    }
+
+    /// <summary>Lineage picks with a live split-off part that is not ticked itself.</summary>
+    private static List<Guid> SplitPicks(
+        IReadOnlyList<RevisePick> picks,
+        IReadOnlyDictionary<Guid, Hold> live,
+        IReadOnlyDictionary<Guid, IReadOnlyList<Guid>>? splitParts)
+    {
+        if (splitParts is null || splitParts.Count == 0)
+        {
+            return [];
+        }
+
+        var ticked = picks.Select(p => p.HoldId).ToHashSet();
+        return picks
+            .Where(p => p.Source is RevisePickSource.Lineage or RevisePickSource.LineageChanged
+                && splitParts.TryGetValue(p.HoldId, out var parts)
+                && parts.Any(part => live.ContainsKey(part) && !ticked.Contains(part)))
+            .Select(p => p.HoldId)
+            .ToList();
     }
 
     /// <summary>The live panel carrying most picks (a hold with no panel counts for the centre), ties to the smaller id.</summary>

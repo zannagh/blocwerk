@@ -122,6 +122,13 @@
             </p>
         }
 
+        @if (_splitCount > 0)
+        {
+            <p class="revision-hint" data-testid="revise-split">
+                A hold of this boulder was split &mdash; check both parts.
+            </p>
+        }
+
         @if (_unmappedCount > 0)
         {
             <p class="revision-hint" data-testid="revise-unmapped">
@@ -174,6 +181,7 @@
         <button class="btn-submit" @onclick="OnSaveClicked"
                 data-bw-boulder-action="revise" data-bw-boulder-form="#bw-boulder-form"
                 data-bw-boulder-nav="@DetailUrl" data-bw-mode="offline-only"
+                data-bw-boulder-blocked="@OfflineSaveBlock()"
                 disabled="@(string.IsNullOrWhiteSpace(_name) || _selectedHolds.Count == 0 || _isSubmitting)">
             @SaveLabel()
         </button>
@@ -282,12 +290,58 @@
         setters = _selectedSetters.ToList(),
     });
 
-    protected override async Task OnInitializedAsync()
+    // The route this page last loaded. Enhanced navigation keeps the component alive across a change of route
+    // parameters (another boulder's revise link), so loading runs in OnParametersSetAsync, once per route, and
+    // starts from a clean slate; see the enhanced-nav lifecycle note.
+    private (Guid WallId, Guid BoulderId)? _loadedRoute;
+    private Guid _leaseWallId;
+
+    protected override async Task OnParametersSetAsync()
     {
+        if (_loadedRoute == (WallId, BoulderId))
+        {
+            return;
+        }
+
+        _loadedRoute = (WallId, BoulderId);
+
         // Acquire before any await so the page is marked busy for its whole lifetime. No current-user
         // id is resolved yet here, so userId is left null (the deploy gate only needs the count).
-        _editLease = EditActivity.BeginBoulderRevise(WallId, userId: null);
+        if (_editLease is null || _leaseWallId != WallId)
+        {
+            _editLease?.Dispose();
+            _editLease = EditActivity.BeginBoulderRevise(WallId, userId: null);
+            _leaseWallId = WallId;
+        }
 
+        ResetRouteState();
+        await LoadAsync();
+    }
+
+    // Everything a previous boulder could have left behind.
+    private void ResetRouteState()
+    {
+        ResetPrefillState();
+        _wall = null;
+        _boulder = null;
+        _notFound = false;
+        _isCreator = _isAdmin = _isSetter = false;
+        _displayHolds = [];
+        _pickerHolds = [];
+        _panels = [];
+        _currentPanel = null;
+        _holdTwins = null;
+        _selectedHolds = [];
+        _members = [];
+        _selectedSetters.Clear();
+        _referenceGeneration = null;
+        _showOriginal = false;
+        _isSubmitting = false;
+        _error = null;
+    }
+
+    private async Task LoadAsync()
+    {
         _wall = await WallService.GetWallAsync(WallId);
         _boulder = await BoulderService.GetBoulderAsync(BoulderId);
 
@@ -356,13 +410,15 @@
         // Pre-select through hold lineage (BoulderService.GetRevisePrefillAsync) and open on the panel that
         // carries most of those holds. Raw X/Y nearest-neighbour, which this replaces, matched a frozen boulder's
         // old-photo coordinates against today's holds on every panel and saved neighbours nobody had seen.
+        _panelTracker = new RevisePanelTracker(_displayHolds, _panels);
         await ApplyPrefillAsync();
         if (_currentPanel is not null)
         {
-            _seenPanelIds.Add(_currentPanel.Id);
+            _panelTracker.MarkSeen(_currentPanel.Id);
         }
 
         await BuildTwinMapAsync();
+        _panelTracker.Twins = _holdTwins;
 
         RefreshPickerHolds();
 
@@ -406,9 +462,10 @@
             return;
         }
 
-        var isCentre = _currentPanel is { Col: 0, Row: 0 };
+        // The tracker resolves a hold with no panel to the centre, and a hold added in the picker to the panel it
+        // was placed on.
         _pickerHolds = _displayHolds
-            .Where(h => h.WallPanelId == _currentPanel.Id || (isCentre && h.WallPanelId is null))
+            .Where(h => _panelTracker.PanelOf(h.Id) == _currentPanel.Id)
             .ToList();
     }
 

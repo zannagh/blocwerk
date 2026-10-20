@@ -2,7 +2,9 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Enums;
 using Blocwerk.Core.Telemetry;
 using Microsoft.EntityFrameworkCore;
 
@@ -77,7 +79,8 @@ public partial class BoulderService
                 positions[panel.Id] = (panel.Col, panel.Row);
             }
 
-            return RevisePrefillMapper.Map(marks, lineage, liveHolds, positions, livePanels.Select(p => p.Id).ToList());
+            var splits = await LoadSplitPartsAsync(db, wallId, ct);
+            return RevisePrefillMapper.Map(marks, lineage, liveHolds, positions, livePanels.Select(p => p.Id).ToList(), splits);
         }
         catch (Exception ex)
         {
@@ -85,4 +88,45 @@ public partial class BoulderService
             throw;
         }
     }
+
+    /// <summary>
+    /// The split tool's cuts on this wall, from the journal (a split part deliberately gets no lineage row): per
+    /// recorded split batch, the hold whose outline was cut (the Hold update that changed ShapePoints, as opposed to
+    /// a hold merely re-stacked onto the part) -&gt; the parts inserted. Undone splits are not Recorded and drop out.
+    /// </summary>
+    private static async Task<Dictionary<Guid, IReadOnlyList<Guid>>> LoadSplitPartsAsync(
+        BlocwerkDbContext db,
+        Guid wallId,
+        CancellationToken ct)
+    {
+        var entries = await db.ChangeJournalEntries
+            .AsNoTracking()
+            .Where(e => e.EntityType == nameof(Hold)
+                && (e.Op == ChangeJournalOp.Insert || e.Op == ChangeJournalOp.Update)
+                && db.ChangeJournalBatches.Any(b => b.Id == e.BatchId
+                    && b.Label == HoldMergeSplitService.SplitBatchLabel
+                    && b.ScopeId == wallId
+                    && b.Status == ChangeJournalStatus.Recorded))
+            .Select(e => new { e.BatchId, e.Op, e.KeyJson, e.AfterJson })
+            .ToListAsync(ct);
+
+        var result = new Dictionary<Guid, IReadOnlyList<Guid>>();
+        foreach (var batch in entries.GroupBy(e => e.BatchId))
+        {
+            var parts = batch.Where(e => e.Op == ChangeJournalOp.Insert).SelectMany(e => GuidsIn(e.KeyJson)).ToList();
+            var cut = batch.Where(e => e.Op == ChangeJournalOp.Update && e.AfterJson?.Contains(nameof(Hold.ShapePoints)) == true);
+            foreach (var original in cut.SelectMany(e => GuidsIn(e.KeyJson)))
+            {
+                result[original] = result.TryGetValue(original, out var before) ? [.. before, .. parts] : parts;
+            }
+        }
+
+        return result;
+    }
+
+    private static IEnumerable<Guid> GuidsIn(string json) =>
+        GuidInText().Matches(json).Select(m => Guid.Parse(m.Value));
+
+    [System.Text.RegularExpressions.GeneratedRegex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")]
+    private static partial System.Text.RegularExpressions.Regex GuidInText();
 }

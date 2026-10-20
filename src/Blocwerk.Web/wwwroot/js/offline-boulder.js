@@ -50,6 +50,13 @@
  *   PER ACTION
  *     create  data-bw-boulder-draft="true" | "false"   whether Publish or Save-as-Draft was hit
  *
+ *   OPTIONAL
+ *     data-bw-boulder-blocked="<message>"   rendered while the form must not be submitted as it stands
+ *                                     (Revise: a selected hold sits on a panel the user never looked
+ *                                     at). Offline the click shows <message> and queues nothing; the
+ *                                     online @onclick applies the same rule server-side. Omit the
+ *                                     attribute (Blazor drops it for null) when submitting is fine.
+ *
  * The @onclick MUST use the same client-minted id (pass it to CreateBoulderAsync) so the online
  * and offline paths converge on one boulder even if both somehow run.
  *
@@ -127,6 +134,15 @@
         }
         lastClick = now;
 
+        // The same refusal the online path makes, from the last state the circuit rendered.
+        const blocked = element.getAttribute('data-bw-boulder-blocked');
+        if (blocked) {
+            event.preventDefault();
+            event.stopPropagation();
+            say(blocked);
+            return;
+        }
+
         const entry = buildEntry(element);
         if (!entry) {
             return;
@@ -175,8 +191,10 @@
         event.preventDefault();
         event.stopPropagation();
 
-        const message = element.getAttribute('data-bw-offline-unavailable')
-            || 'This action needs a connection.';
+        say(element.getAttribute('data-bw-offline-unavailable') || 'This action needs a connection.');
+    }
+
+    function say(message) {
         if (window.blocwerkStatus && window.blocwerkStatus.flash) {
             window.blocwerkStatus.flash(message, 'error', 6000);
         } else {

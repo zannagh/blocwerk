@@ -152,6 +152,41 @@ public class RevisePrefillMapperTests
         Assert.Empty(result.UnmappedHoldIds);
     }
 
+    [Theory]
+    [InlineData(HoldUsage.HandAndFoot, HoldUsage.FootOnly, HoldUsage.FootOnly)]
+    [InlineData(HoldUsage.FootOnly, HoldUsage.HandAndFoot, HoldUsage.FootOnly)]
+    [InlineData(HoldUsage.HandAndFoot, HoldUsage.HandOnly, HoldUsage.HandOnly)]
+    [InlineData(HoldUsage.FootOnly, HoldUsage.HandOnly, HoldUsage.HandOnly)]
+    [InlineData(HoldUsage.HandOnly, HoldUsage.FootOnly, HoldUsage.HandOnly)]
+    [InlineData(HoldUsage.FootOnly, HoldUsage.FootOnly, HoldUsage.FootOnly)]
+    public void MergedHolds_WithDifferentUsage_FollowTheMergeRule(HoldUsage first, HoldUsage second, HoldUsage expected)
+    {
+        // HandAndFoot is the default ("never chosen") and yields to a deliberate usage, whichever mark comes
+        // first; two deliberate usages go by BoulderHoldReconciler's prominence. "Lower enum wins" would have
+        // turned the deliberate foothold into a hand hold in the first row.
+        var a = OldHold(OldCentre, 0.5, 0.5);
+        var b = OldHold(OldCentre, 0.52, 0.5);
+        var merged = LiveHold(LiveCentre, 0.51, 0.5);
+
+        var result = Map([Mark(a, usage: first), Mark(b, usage: second)], [Link(a.Id, merged.Id), Link(b.Id, merged.Id)], [merged]);
+
+        Assert.Equal(expected, Assert.Single(result.Picks).Usage);
+    }
+
+    [Fact]
+    public void LineagePickOnAHoldLaterSplit_IsReported_WhenItsPartIsNotTicked()
+    {
+        var old = OldHold(OldCentre, 0.5, 0.5);
+        var kept = LiveHold(LiveCentre, 0.49, 0.5);
+        var part = LiveHold(LiveCentre, 0.52, 0.5);
+        var splits = new Dictionary<Guid, IReadOnlyList<Guid>> { [kept.Id] = [part.Id] };
+
+        var result = RevisePrefillMapper.Map([Mark(old)], [Link(old.Id, kept.Id)], [kept, part], Positions, LivePanels, splits);
+
+        Assert.Equal(kept.Id, Assert.Single(result.Picks).HoldId);
+        Assert.Equal(kept.Id, Assert.Single(result.SplitHoldIds));
+    }
+
     [Fact]
     public void SplitHold_TicksEverySuccessor()
     {

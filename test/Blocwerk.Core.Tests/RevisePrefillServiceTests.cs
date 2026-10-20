@@ -30,6 +30,29 @@ public class RevisePrefillServiceTests
         Assert.Null(await h.BoulderService.GetRevisePrefillAsync(Guid.NewGuid(), [], []));
     }
 
+    [Fact]
+    public async Task FrozenBoulderOnAHoldSplitAfterTheUpdate_ReportsTheSplit()
+    {
+        // The split tool keeps the old hold's lineage on the larger part and gives the new part none, so only the
+        // larger part is ticked; the journal says it was split, which the editor turns into "check both parts".
+        using var h = new WallTestHarness();
+        var s = await HoldDuplicateScenario.CreateAsync(h);
+        var hold = await s.AddHoldAsync(0.30, 0.30, 0.04, auto: true, shape: HoldToolSeed.Octagon(0.04));
+        var old = await HoldToolSeed.OldHoldAsync(h, 0.30, 0.30);
+        await HoldToolSeed.LineageAsync(h, old, hold);
+        var boulderId = await s.AddBoulderAsync("Frozen", (old, HoldType.Start));
+        var split = await s.MergeSplit().SplitAsync(h.WallId, hold, [new(0.31, 0.20), new(0.31, 0.40)], []);
+
+        var live = (await s.HoldsAsync()).Values.Where(x => x.Generation == 1).ToList();
+        var panel = new WallPanelInfo(s.PanelId, 0, 0, IsLive: true, HasStaged: false, 1, IsOutdated: false);
+        var result = await h.BoulderService.GetRevisePrefillAsync(boulderId, live, [panel]);
+
+        Assert.NotNull(result);
+        Assert.Equal(hold, Assert.Single(result!.Picks).HoldId);
+        Assert.Contains(live, x => x.Id == split.OtherHoldId);
+        Assert.Equal(hold, Assert.Single(result.SplitHoldIds));
+    }
+
     private static async Task RunAsync(PostgresTestDatabase? pg)
     {
         using var h = new WallTestHarness(pg);

@@ -18,15 +18,26 @@ public partial class BoulderRevise
     // whenever the user classifies the hold, so a differing instance means "the user has dealt with it".
     private readonly Dictionary<Guid, BoulderHoldInput> _guessedEntries = [];
 
-    // Panels the reviser has had on screen. Saving is held back while a selected hold sits on a panel not in here.
-    private readonly HashSet<Guid> _seenPanelIds = [];
+    // Which panel each hold draws on and which panels the reviser has had on screen. Saving is held back while a
+    // selected hold sits on a panel never seen.
+    private RevisePanelTracker _panelTracker = new([], []);
 
     // The boulder's own holds that map to no current hold (deleted, or nothing to match), shown as a note.
     private int _unmappedCount;
 
+    // Lineage picks whose hold was later split with the split tool; only one part is ticked.
+    private int _splitCount;
+
     private IReadOnlySet<Guid> GuessedHoldIds => _guessedEntries.Keys.ToHashSet();
 
-    private Guid? CentrePanelId => _panels.FirstOrDefault(p => p is { Col: 0, Row: 0 })?.Id;
+    /// <summary>Clears everything the previous boulder left behind, so a new BoulderId starts from nothing.</summary>
+    private void ResetPrefillState()
+    {
+        _guessedEntries.Clear();
+        _panelTracker = new([], []);
+        _unmappedCount = 0;
+        _splitCount = 0;
+    }
 
     /// <summary>Loads the lineage-based pre-selection and picks the panel to open on.</summary>
     private async Task ApplyPrefillAsync()
@@ -65,6 +76,7 @@ public partial class BoulderRevise
         }
 
         _unmappedCount = prefill.UnmappedHoldIds.Count;
+        _splitCount = prefill.SplitHoldIds.Count;
         _currentPanel = StartPanel(prefill.StartPanelId);
     }
 
@@ -80,6 +92,15 @@ public partial class BoulderRevise
     private void OnSelectionChanged(List<BoulderHoldInput> selection)
     {
         _selectedHolds = selection;
+
+        // A hold added in the picker (a new virtual hold) lives only in the picker's list: record the panel it was
+        // placed on and keep it, so it is counted on that panel and survives a panel switch.
+        foreach (var added in _pickerHolds.Where(h => !_panelTracker.Knows(h.Id)).ToList())
+        {
+            _panelTracker.AddHold(added, _currentPanel?.Id);
+            _displayHolds.Add(added);
+        }
+
         foreach (var (holdId, entry) in _guessedEntries.ToList())
         {
             if (!selection.Any(s => ReferenceEquals(s, entry)))
@@ -89,32 +110,25 @@ public partial class BoulderRevise
         }
     }
 
-    /// <summary>The live panel a selected hold is drawn on; a hold with no panel draws on the centre.</summary>
-    private Guid? PanelOfHold(Guid holdId) =>
-        _displayHolds.FirstOrDefault(h => h.Id == holdId)?.WallPanelId ?? CentrePanelId;
-
-    /// <summary>Whether a selected hold draws on <paramref name="panelId"/>, itself or through a cross-panel twin.</summary>
-    private bool IsVisibleOn(Guid holdId, Guid panelId) =>
-        PanelOfHold(holdId) == panelId
-        || (_holdTwins?.TryGetValue(holdId, out var twins) == true && twins.Any(t => PanelOfHold(t) == panelId));
-
-    /// <summary>Selected holds the matching panels do not show, grouped by the panel they are on, in panel order.</summary>
-    private List<(WallPanelInfo Panel, int Count)> SelectionsHiddenFrom(Func<Guid, bool> shown) => _panels
-        .Select(p => (Panel: p, Count: _selectedHolds.Count(s => PanelOfHold(s.HoldId) == p.Id && !shown(s.HoldId))))
-        .Where(x => x.Count > 0)
-        .ToList();
+    private IEnumerable<Guid> SelectedIds => _selectedHolds.Select(s => s.HoldId);
 
     /// <summary>Selected holds the shown panel does not draw, per panel they are on.</summary>
     private List<(WallPanelInfo Panel, int Count)> SelectionsOnOtherPanels() => _currentPanel is not { } current
         ? []
-        : SelectionsHiddenFrom(holdId => IsVisibleOn(holdId, current.Id));
+        : _panelTracker.OffScreen(SelectedIds, current.Id);
 
     /// <summary>The first panel holding a selected hold the reviser has not had on screen yet, if any.</summary>
     private (WallPanelInfo Panel, int Count)? FirstUnseenSelection() => _currentPanel is null
         ? null
-        : SelectionsHiddenFrom(holdId => _seenPanelIds.Any(seen => IsVisibleOn(holdId, seen)))
-            .Select(x => ((WallPanelInfo Panel, int Count)?)x)
-            .FirstOrDefault();
+        : _panelTracker.FirstUnseen(SelectedIds);
+
+    /// <summary>
+    /// The refusal the offline submit path shows (data-bw-boulder-blocked on the save button) while a selection sits
+    /// on a panel never seen: offline the circuit is down, so the Blazor check in <see cref="OnSaveClicked"/> cannot run.
+    /// </summary>
+    private string? OfflineSaveBlock() => FirstUnseenSelection() is { } unseen
+        ? $"{unseen.Count} selected hold(s) on {PanelLabel(unseen.Panel)} have not been looked at. Reconnect and check them before saving."
+        : null;
 
     private string PanelLabel(WallPanelInfo panel) => $"Panel {_panels.IndexOf(panel) + 1}/{_panels.Count}";
 
@@ -123,7 +137,7 @@ public partial class BoulderRevise
     private void ShowPanel(WallPanelInfo panel)
     {
         _currentPanel = panel;
-        _seenPanelIds.Add(panel.Id);
+        _panelTracker.MarkSeen(panel.Id);
         RefreshPickerHolds();
     }
 

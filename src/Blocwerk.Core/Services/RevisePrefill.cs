@@ -8,4 +8,11 @@ namespace Blocwerk.Core.Services;
 /// <param name="Picks">The current holds to tick, most prominent mark first.</param>
 /// <param name="UnmappedHoldIds">The boulder's own holds that map to no current hold (gone, deleted, or nothing close enough).</param>
 /// <param name="StartPanelId">The live panel carrying most of the picks, or null when nothing was picked.</param>
-public record RevisePrefill(IReadOnlyList<RevisePick> Picks, IReadOnlyList<Guid> UnmappedHoldIds, Guid? StartPanelId);
+public record RevisePrefill(IReadOnlyList<RevisePick> Picks, IReadOnlyList<Guid> UnmappedHoldIds, Guid? StartPanelId)
+{
+    /// <summary>
+    /// Picks reached through lineage whose hold was later cut in two with the split tool. The new part has no lineage
+    /// (by design), so only the part that kept the id is ticked: the reviser has to check both parts.
+    /// </summary>
+    public IReadOnlyList<Guid> SplitHoldIds { get; init; } = [];
+}
