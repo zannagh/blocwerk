@@ -21,6 +21,10 @@ namespace Blocwerk.Core.LookOver;
 /// </summary>
 public sealed partial class WallLookOverService
 {
+    /// <summary>The refusal of "it is here" for a finding that does not offer it (the page shows no spot to tap).</summary>
+    public const string NotMovable =
+        "This finding does not take \"it is here\": the look-over moves only a hold it also offers to remove as not there any more.";
+
     /// <inheritdoc/>
     public async Task ReassignAsync(
         Guid wallId, Guid findingId, Guid targetHoldId, IReadOnlyCollection<Guid> expectedBoulderIds, CancellationToken ct = default)
@@ -73,9 +77,14 @@ public sealed partial class WallLookOverService
         await using (db)
         {
             var (finding, view) = await MissingAsync(db, wallId, findingId, access, ct);
-            if (!access.CanEdit || !view.Answers.Contains(LookOverAnswer.RemoveHold))
+            if (!access.CanEdit)
             {
                 throw new UserFacingException("Only the owner, admins and moderators of this wall can move a hold.");
+            }
+
+            if (!view.Answers.Contains(LookOverAnswer.RemoveHold))
+            {
+                throw new UserFacingException(NotMovable);
             }
 
             var hold = await db.Holds.AsNoTracking().FirstAsync(h => h.Id == view.HoldId, ct);

@@ -43,10 +43,17 @@ public sealed partial class WallLookOverService
         }
     }
 
-    /// <summary>After the split: the named hold is the one on the spot, and whether it covers the old hold is worked out for it.</summary>
-    private static async Task PointAtReplacementAsync(BlocwerkDbContext db, Entities.WallLookOverFinding finding, Guid replacementHoldId, CancellationToken ct)
+    /// <summary>The named replacement, checked again right before the split (see <see cref="EnsureReplacementAsync"/>).</summary>
+    private static async Task<Entities.Hold> ReplacementAsync(BlocwerkDbContext db, Guid wallId, LookOverFindingView view, Guid replacementHoldId, CancellationToken ct)
     {
-        var replacement = await db.Holds.AsNoTracking().FirstAsync(h => h.Id == replacementHoldId, ct);
+        await EnsureReplacementAsync(db, wallId, view, replacementHoldId, ct);
+        return await db.Holds.AsNoTracking().FirstOrDefaultAsync(h => h.Id == replacementHoldId, ct)
+            ?? throw new UserFacingException(ReplacementNotOnPhoto);
+    }
+
+    /// <summary>After the split (unsaved, on the same context): the named hold is the one on the spot, and whether it covers the old hold.</summary>
+    private static void PointAtReplacement(BlocwerkDbContext db, Entities.WallLookOverFinding finding, Entities.Hold replacement)
+    {
         var old = finding.HoldId is { } holdId ? db.Holds.Local.FirstOrDefault(h => h.Id == holdId) : null;
         finding.OtherHoldId = replacement.Id;
         finding.Covered = old is not null && SameSpotFinder.Covers(replacement, old, null);

@@ -39,6 +39,7 @@ public partial class WallUpdateSessionService
         var card = await db.WallUpdateExceptions.FirstOrDefaultAsync(e => e.Id == exceptionId && e.SessionId == session.Id)
             ?? throw new UserFacingException("That check is no longer part of this update.");
         var now = DateTimeOffset.UtcNow;
+        var wasApart = IsApart(card.Kind, card.Status);
         switch (card.Kind)
         {
             case UpdateExceptionKind.ReplacedByOther:
@@ -68,9 +69,17 @@ public partial class WallUpdateSessionService
         card.Status = answer switch
         {
             UpdateExceptionAnswer.Keep => UpdateExceptionStatus.Kept,
-            UpdateExceptionAnswer.Remove or UpdateExceptionAnswer.NotSame => UpdateExceptionStatus.Removed,
+            UpdateExceptionAnswer.Remove => UpdateExceptionStatus.Removed,
+            UpdateExceptionAnswer.NotSame => UpdateExceptionStatus.NotSame,
             _ => UpdateExceptionStatus.Pending,
         };
+
+        // The pair is put back: the detection is the old hold's twin again, so what took it apart for it as a new hold is undone.
+        if (wasApart && !IsApart(card.Kind, card.Status) && card.StagedHoldId is { } twin)
+        {
+            await RestoreDetectionDefaultAsync(db, session.Id, twin);
+        }
+
         card.DecidedByUserId = answer == UpdateExceptionAnswer.Undo ? null : user.Id;
         card.DecidedAt = answer == UpdateExceptionAnswer.Undo ? null : now;
         WallUpdateSessions.Touch(session, user.Id);
@@ -155,15 +164,20 @@ public partial class WallUpdateSessionService
 
     /// <summary>
     /// Keep or Undo: the old hold takes the detection (confirmed on Keep). Remove: the merge is undone, the old hold stays
-    /// as it was and the detection becomes a new hold beside it.
+    /// as it was (confirmed) and the detection becomes a new hold beside it. NotSame: the same, but the old hold is carried
+    /// unconfirmed and marked for review.
     /// </summary>
     private static async Task AnswerHandPlacedMergeAsync(
         BlocwerkDbContext db, Guid sessionId, WallUpdateException card, UpdateExceptionAnswer answer, Guid userId, DateTimeOffset now)
     {
         var row = await CarryRowAsync(db, sessionId, card.OldHoldId!.Value);
         var rejected = answer is UpdateExceptionAnswer.Remove or UpdateExceptionAnswer.NotSame;
-        CarryConfirmationPolicy.Apply(row, CarryKind.Carried, rejected ? null : card.StagedHoldId, confirmed: answer != UpdateExceptionAnswer.Undo, userId, now);
-        if (answer == UpdateExceptionAnswer.Undo)
+
+        // "Not the same hold" says only that the detection is another hold, not where the old one is: carried blind,
+        // unconfirmed and marked for review, as for an unsure match. "Don't merge" (Remove) keeps it where it was, confirmed.
+        var confirmed = answer is UpdateExceptionAnswer.Keep or UpdateExceptionAnswer.Remove;
+        CarryConfirmationPolicy.Apply(row, CarryKind.Carried, rejected ? null : card.StagedHoldId, confirmed, userId, now);
+        if (!confirmed)
         {
             CarryConfirmationPolicy.Clear(row);
         }
@@ -172,36 +186,6 @@ public partial class WallUpdateSessionService
         if (rejected)
         {
             await KeepDetectionAsNewAsync(db, sessionId, card.StagedHoldId!.Value);
-        }
-    }
-
-    /// <summary>A detection taken apart from an old hold becomes a new hold: un-discarded on the centre, not removed on a neighbour.</summary>
-    private static async Task KeepDetectionAsNewAsync(BlocwerkDbContext db, Guid sessionId, Guid holdId)
-    {
-        var detection = await db.WallUpdateHoldDecisions.FirstOrDefaultAsync(d =>
-            d.SessionId == sessionId && d.Kind == WallUpdateHoldDecisionKind.NewCentreHold && d.HoldId == holdId);
-        if (detection is not null)
-        {
-            detection.Discarded = false;
-            return;
-        }
-
-        var removal = await db.WallUpdateNeighbourDecisions.FirstOrDefaultAsync(d =>
-            d.SessionId == sessionId && d.Kind == WallUpdateNeighbourDecisionKind.Removed && d.HoldId == holdId);
-        if (removal is not null)
-        {
-            db.WallUpdateNeighbourDecisions.Remove(removal);
-            return;
-        }
-
-        // A centre detection no decision mentions yet (the merge consumed it): record it as kept. A neighbour's is kept anyway.
-        var onCentre = await db.Holds.AnyAsync(h => h.Id == holdId && h.WallPanel != null && h.WallPanel.Col == 0 && h.WallPanel.Row == 0);
-        if (onCentre)
-        {
-            db.WallUpdateHoldDecisions.Add(new WallUpdateHoldDecision
-            {
-                SessionId = sessionId, Kind = WallUpdateHoldDecisionKind.NewCentreHold, HoldId = holdId, Discarded = false,
-            });
         }
     }
 

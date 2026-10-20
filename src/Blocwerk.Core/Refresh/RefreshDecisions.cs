@@ -57,7 +57,7 @@ internal static class RefreshDecisions
     }
 
     /// <summary>
-    /// The old holds of unanswered cards, and of unsure matches answered "not the same hold" (carried blind where the warp
+    /// The old holds of unanswered cards, and of cards answered "not the same hold" (carried blind where the warp
     /// puts them, which is what most needs a look): they go live as decided, marked for review.
     /// </summary>
     /// <param name="exceptions">The session's cards.</param>
@@ -67,7 +67,7 @@ internal static class RefreshDecisions
             .Where(e => (e.Status == UpdateExceptionStatus.Pending
                     && e.Kind is UpdateExceptionKind.PossiblyRemoved or UpdateExceptionKind.LowConfidenceMatch or UpdateExceptionKind.HandPlacedAmbiguous
                         or UpdateExceptionKind.ReplacedByOther)
-                || (e.Status == UpdateExceptionStatus.Removed && e.Kind == UpdateExceptionKind.LowConfidenceMatch))
+                || e.Status == UpdateExceptionStatus.NotSame)
             .Select(e => e.OldHoldId)
             .OfType<Guid>()
             .ToHashSet();

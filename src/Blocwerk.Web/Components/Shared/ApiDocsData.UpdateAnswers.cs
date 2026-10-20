@@ -16,7 +16,7 @@ internal static partial class ApiDocsData
 
     private const string ChecksNote =
         "Empty unless the run is at status 4. kind: 0 possibly removed, 1 unsure match, 2 new hold with conflicting evidence, 3 matched "
-        + "to a hand-placed hold, 4 hand-placed hold with several detections, 5 another hold is here now. status: 0 open, 1 kept, 2 removed. "
+        + "to a hand-placed hold, 4 hand-placed hold with several detections, 5 another hold is here now. status: 0 open, 1 kept, 2 removed, 3 not the same hold. "
         + "canRemove is false for a hold on a panel other than the centre (the removal would be undone at the apply).";
 
     private const string CheckAnswerNote =

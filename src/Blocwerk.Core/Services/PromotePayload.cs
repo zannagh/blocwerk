@@ -2,6 +2,8 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using Blocwerk.Core.Enums;
+
 namespace Blocwerk.Core.Services;
 
 /// <summary>
@@ -20,8 +22,22 @@ public static class PromotePayload
         {
             CarriedWarpPositions = matched.CarriedWarpPositions,
             CarriedWarpShapes = matched.CarriedWarpShapes,
-            HandPlacedMergeOldIds = (matched.HandPlacedMerges ?? []).Select(m => m.OldHoldId).ToList(),
+            HandPlacedMergeOldIds = StandingMerges(decisions, matched),
             NotFoundAgain = matched.NotFoundAgain,
             ExpectedMovesVersion = null,
         };
+
+    /// <summary>
+    /// The matcher's hand-placed merges the decisions still make: the old hold's carry row points at the merged detection.
+    /// A merge the user took apart (unlinked, paired with another detection, "not the same hold", removed) is no merge: that
+    /// hold keeps its warped outline and is measured like any other carried pair.
+    /// </summary>
+    /// <param name="decisions">The decisions.</param>
+    /// <param name="matched">The matched session.</param>
+    /// <returns>The old hold ids.</returns>
+    public static List<Guid> StandingMerges(BigUpdateConfirmation decisions, BigUpdateSession matched)
+    {
+        var twins = decisions.Carryover.Where(d => d.Kind != CarryKind.Removed && d.NewHoldId is not null).GroupBy(d => d.OldHoldId).ToDictionary(g => g.Key, g => g.Last().NewHoldId);
+        return (matched.HandPlacedMerges ?? []).Where(m => twins.GetValueOrDefault(m.OldHoldId) == m.NewHoldId).Select(m => m.OldHoldId).ToList();
+    }
 }

@@ -122,10 +122,13 @@ public sealed partial class WallLookOverService
         Hold? added;
         try
         {
+            // The named replacement is read and checked before anything is written (the mark below commits on its own
+            // context), so a replacement that vanished leaves the pair as it was.
+            var replacement = different && replacementHoldId is { } named ? await ReplacementAsync(db, finding.WallId, view, named, ct) : null;
             added = await ApplyAsync(db, finding, view, answer, onlyThese, ct);
-            if (different && replacementHoldId is { } replacement)
+            if (replacement is not null)
             {
-                await PointAtReplacementAsync(db, finding, replacement, ct);
+                PointAtReplacement(db, finding, replacement);
             }
         }
         catch

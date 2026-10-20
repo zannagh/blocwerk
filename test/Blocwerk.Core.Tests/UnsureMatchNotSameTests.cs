@@ -27,7 +27,7 @@ public class UnsureMatchNotSameTests
 
         var decision = (await w.Sessions.GetDecisionsAsync(w.WallId)).Carryover.Single(d => d.OldHoldId == w.TargetId);
         Assert.Equal((CarryKind.Carried, (Guid?)null, false), (decision.Kind, decision.NewHoldId, decision.Confirmed));
-        Assert.Equal(UpdateExceptionStatus.Removed, (await w.Sessions.GetUpdateExceptionsAsync(w.WallId)).Single().Status);
+        Assert.Equal(UpdateExceptionStatus.NotSame, (await w.Sessions.GetUpdateExceptionsAsync(w.WallId)).Single().Status);
 
         await LookOverFixture.PromoteLikeApplyAsync(w, session);
 
