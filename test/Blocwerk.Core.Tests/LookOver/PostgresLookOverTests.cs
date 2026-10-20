@@ -32,7 +32,7 @@ public class PostgresLookOverTests
         await service.FinishAsync(w.WallId, leaveOpen: false);
 
         var boulder = await BoulderAsync(h, w.BoulderId);
-        Assert.Equal((w.DetectionId, false, true), (boulder.BoulderHolds.Single().HoldId, boulder.IsHistoric, boulder.NeedsReview));
+        Assert.Equal((w.DetectionId, false, false), (boulder.BoulderHolds.Single().HoldId, boulder.IsHistoric, boulder.NeedsReview));
         Assert.Null(await HoldAsync(h, view.HoldId));
         var after = (await service.GetStateAsync(w.WallId))!;
         Assert.Equal((false, 0, "Owner"), (after.Pending, after.OpenFindings, after.CompletedBy));

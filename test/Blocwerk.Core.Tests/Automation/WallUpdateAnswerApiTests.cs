@@ -143,7 +143,8 @@ public class WallUpdateAnswerApiTests
         Assert.Equal(
             (StatusCodes.Status200OK, StatusCodes.Status200OK, StatusCodes.Status200OK, StatusCodes.Status400BadRequest),
             (AutomationApiFixture.Status(answer), AutomationApiFixture.Status(undo), AutomationApiFixture.Status(finish), AutomationApiFixture.Status(missing)));
-        await lookOver.Received(1).AnswerAsync(h.WallId, finding, LookOverAnswer.RemoveHold, Arg.Is<IReadOnlyCollection<Guid>>(b => b.Single() == boulder), Arg.Any<CancellationToken>());
+        await lookOver.Received(1).AnswerAsync(
+            h.WallId, finding, LookOverAnswer.RemoveHold, Arg.Is<IReadOnlyCollection<Guid>>(b => b.Single() == boulder), null, Arg.Any<CancellationToken>());
         await lookOver.Received(1).UndoAsync(h.WallId, finding, Arg.Any<CancellationToken>());
         await lookOver.Received(1).FinishAsync(h.WallId, true, Arg.Any<CancellationToken>());
         Assert.Equal(3, (await AutomationApiFixture.ApiBatchesAsync(h)).Count);

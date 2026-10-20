@@ -157,9 +157,9 @@ internal static partial class LookOverCopy
             return $"Merge the old hold into the new hold on this spot? {Undo}";
         }
 
-        var s = count == 1 ? "s" : string.Empty;
-        return $"Merge the old hold into the new hold on this spot? {PlainCopy.Plural(count, "boulder")} ({Names(f)}) keep{s} the same mark "
-            + $"and use{s} the new hold from now on, still marked for review. {Undo}";
+        return $"{PlainCopy.Plural(count, "boulder")} ({Names(f)}) use{(count == 1 ? "s" : string.Empty)} the old hold. A boulder you say yes for uses the new hold "
+            + "from now on, with the same mark; one you say no for becomes historic with the old hold. "
+            + $"{Undo}";
     }
 
     /// <summary>How a settled finding was answered, and by whom.</summary>
@@ -175,6 +175,7 @@ internal static partial class LookOverCopy
             LookOverAnswer.Reassign => "Is a hold on the new photo",
             LookOverAnswer.Moved => "Moved to where it is",
             LookOverAnswer.RemoveHold => "Hold removed",
+            LookOverAnswer.UseNewHold when f.NewHoldBoulders is not null => "Some boulders use the new hold",
             LookOverAnswer.UseNewHold => "Merged into the new hold",
             LookOverAnswer.AddHold => "Added as a hold",
             LookOverAnswer.Unlink => "Two holds",
@@ -191,7 +192,9 @@ internal static partial class LookOverCopy
         {
             LookOverAnswer.RemoveHold when boulders == 0 => "Hold removed; no boulder used it.",
             LookOverAnswer.RemoveHold => $"Hold removed; {PlainCopy.Plural(boulders, "boulder")} {(boulders == 1 ? "is" : "are")} now historic.",
-            LookOverAnswer.UseNewHold or LookOverAnswer.Reassign => "Merged into the new hold. Undo under Wall settings › Possible duplicate holds.",
+            LookOverAnswer.UseNewHold when f.NewHoldBoulders is { } moved => NewHoldSomeResult(moved, boulders - moved, f.ClearedBoulders),
+            LookOverAnswer.UseNewHold => NewHoldAllResult(f.ClearedBoulders),
+            LookOverAnswer.Reassign => "Merged into the new hold. Undo under Wall settings › Possible duplicate holds.",
             LookOverAnswer.Moved => "Marked for review: check its outline in the hold editor.",
             LookOverAnswer.Unlink => "The link is taken apart; both holds stay. Link them again in the hold editor if they are one hold.",
             LookOverAnswer.AddHold => f.CanUndo ? "It is on the wall now, marked for review." : "It is on the wall now; remove it in the hold editor if it is wrong.",

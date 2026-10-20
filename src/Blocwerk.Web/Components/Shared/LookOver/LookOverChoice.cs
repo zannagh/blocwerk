@@ -10,4 +10,9 @@ namespace Blocwerk.Web.Components.Shared.LookOver;
 /// <param name="FindingId">The finding.</param>
 /// <param name="Answer">The answer.</param>
 /// <param name="ShownBoulderIds">The boulders listed on the card (and named in its confirm question).</param>
-public sealed record LookOverChoice(Guid FindingId, LookOverAnswer Answer, IReadOnlyCollection<Guid> ShownBoulderIds);
+/// <param name="NewHoldBoulderIds">
+/// With "use the new hold": the boulders answered yes to "Should this boulder use the new hold in that place?"; null
+/// when every boulder said yes.
+/// </param>
+public sealed record LookOverChoice(
+    Guid FindingId, LookOverAnswer Answer, IReadOnlyCollection<Guid> ShownBoulderIds, IReadOnlyCollection<Guid>? NewHoldBoulderIds = null);

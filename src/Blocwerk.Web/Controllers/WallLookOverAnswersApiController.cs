@@ -4,6 +4,7 @@
 
 using Blocwerk.Authentication.Authorization;
 using Blocwerk.Authentication.Handlers;
+using Blocwerk.Core.Enums;
 using Blocwerk.Core.LookOver;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -34,14 +35,24 @@ public sealed class WallLookOverAnswersApiController(
 {
     /// <summary>Answers one open finding. 200 with the look-over's state; 409 when it is refused (see the error).</summary>
     [HttpPost("findings/{findingId:guid}/answer")]
-    public Task<IActionResult> Answer(Guid wallId, Guid findingId, [FromBody] LookOverAnswerRequest? body) =>
-        body?.Answer is not { } answer
-            ? Task.FromResult<IActionResult>(BadRequest(new ApiErrorResponse("Send an answer the finding takes (its answers).")))
-            : WriteAsync(wallId, "lookover.answer", async () =>
-            {
-                await lookOver.AnswerAsync(wallId, findingId, answer, body.ExpectedBoulderIds);
-                return Ok(await lookOver.GetStateAsync(wallId));
-            });
+    public Task<IActionResult> Answer(Guid wallId, Guid findingId, [FromBody] LookOverAnswerRequest? body)
+    {
+        if (body?.Answer is not { } answer)
+        {
+            return Task.FromResult<IActionResult>(BadRequest(new ApiErrorResponse("Send an answer the finding takes (its answers).")));
+        }
+
+        if (NewHoldProblem(answer, body) is { } problem)
+        {
+            return Task.FromResult<IActionResult>(BadRequest(new ApiErrorResponse(problem)));
+        }
+
+        return WriteAsync(wallId, "lookover.answer", async () =>
+        {
+            await lookOver.AnswerAsync(wallId, findingId, answer, body.ExpectedBoulderIds, body.NewHoldBoulderIds);
+            return Ok(await lookOver.GetStateAsync(wallId));
+        });
+    }
 
     /// <summary>Takes back an answer that changed nothing on the wall; the finding is open again. 200 with the state.</summary>
     [HttpPost("findings/{findingId:guid}/undo")]
@@ -63,6 +74,24 @@ public sealed class WallLookOverAnswersApiController(
             await lookOver.FinishAsync(wallId, body?.LeaveOpen ?? false);
             return Ok(await lookOver.GetStateAsync(wallId));
         });
+
+    /// <summary>What is wrong with a per-boulder "use the new hold", before the service is asked; null when nothing is.</summary>
+    private static string? NewHoldProblem(LookOverAnswer answer, LookOverAnswerRequest body)
+    {
+        if (body.NewHoldBoulderIds is not { } chosen)
+        {
+            return null;
+        }
+
+        if (answer != LookOverAnswer.UseNewHold)
+        {
+            return "newHoldBoulderIds goes only with the answer UseNewHold.";
+        }
+
+        return chosen.All(id => body.ExpectedBoulderIds?.Contains(id) == true)
+            ? null
+            : "newHoldBoulderIds must be among expectedBoulderIds (the finding's boulders as read).";
+    }
 
     private Task<IActionResult> WriteAsync(Guid wallId, string action, Func<Task<IActionResult>> write) =>
         User.IsWritablePersonalKey()

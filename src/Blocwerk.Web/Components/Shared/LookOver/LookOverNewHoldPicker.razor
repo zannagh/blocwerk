@@ -1,0 +1,55 @@
+@using Blocwerk.Core.LookOver
+@* "Should this boulder use the new hold in that place?", once per boulder of a replaced hold, inside the merge's confirm
+   question. Yes by default. The radios are form inputs, so the page's keyboard shortcuts stand down while one has the
+   focus; the whole label is the tap target. The card owns the answers (Declined): it sends them with the answer. *@
+
+<fieldset class="lookover-newhold">
+    <legend>@LookOverCopy.NewHoldPerBoulderQuestion</legend>
+    @foreach (var boulder in Boulders)
+    {
+        var id = boulder.Id;
+        var yes = !Declined.Contains(id);
+        <div class="lookover-newhold-row" role="radiogroup" aria-label="@($"{boulder.Name}: {LookOverCopy.NewHoldPerBoulderQuestion}")">
+            <span class="lookover-newhold-name">@boulder.Name</span>
+            <label class="lookover-newhold-option">
+                <input type="radio" name="@($"newhold-{FindingId}-{id}")" checked="@yes" disabled="@Disabled" @onchange="() => SetAsync(id, true)" /> Yes
+            </label>
+            <label class="lookover-newhold-option">
+                <input type="radio" name="@($"newhold-{FindingId}-{id}")" checked="@(!yes)" disabled="@Disabled" @onchange="() => SetAsync(id, false)" /> No
+            </label>
+        </div>
+    }
+</fieldset>
+
+@code {
+    [Parameter, EditorRequired]
+    public Guid FindingId { get; set; }
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<LookOverBoulder> Boulders { get; set; } = [];
+
+    /// <summary>The boulders answered no; changed in place.</summary>
+    [Parameter, EditorRequired]
+    public HashSet<Guid> Declined { get; set; } = [];
+
+    [Parameter]
+    public bool Disabled { get; set; }
+
+    /// <summary>Raised after an answer changed, so the card can update its confirm button.</summary>
+    [Parameter]
+    public EventCallback OnChanged { get; set; }
+
+    private Task SetAsync(Guid id, bool yes)
+    {
+        if (yes)
+        {
+            Declined.Remove(id);
+        }
+        else
+        {
+            Declined.Add(id);
+        }
+
+        return OnChanged.InvokeAsync();
+    }
+}

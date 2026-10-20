@@ -2723,6 +2723,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<Guid?>("MergeBatchId")
                         .HasColumnType("uuid");
 
+                    b.PrimitiveCollection<List<Guid>>("NewHoldBoulderIds")
+                        .HasColumnType("uuid[]");
+
                     b.Property<Guid?>("OldHoldId")
                         .HasColumnType("uuid");
 

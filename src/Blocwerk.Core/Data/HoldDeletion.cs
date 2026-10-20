@@ -102,10 +102,14 @@ public static class HoldDeletion
     private static async Task<int> DetachBoulderHoldsAsync(
         BlocwerkDbContext db, List<Guid> ids, bool clearNeedsReview, CancellationToken ct)
     {
-        var memberships = await db.BoulderHolds
-            .Include(bh => bh.Boulder)
-            .Where(bh => ids.Contains(bh.HoldId))
-            .ToListAsync(ct);
+        // A membership the caller already took off the hold in this unit of work (moved onto another hold) is not on
+        // the dying hold any more, and its boulder is not retired with it.
+        var memberships = (await db.BoulderHolds
+                .Include(bh => bh.Boulder)
+                .Where(bh => ids.Contains(bh.HoldId))
+                .ToListAsync(ct))
+            .Where(bh => db.Entry(bh).State != EntityState.Deleted)
+            .ToList();
 
         var historic = 0;
         foreach (var membership in memberships)

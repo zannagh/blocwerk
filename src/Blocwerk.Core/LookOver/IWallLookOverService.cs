@@ -35,10 +35,20 @@ public interface IWallLookOverService
     /// The boulders the user was shown on the hold. Required for every answer but <see cref="LookOverAnswer.Settle"/>:
     /// when other boulders use the hold by now, the answer is refused and the user looks again.
     /// </param>
+    /// <param name="newHoldBoulderIds">
+    /// For <see cref="LookOverAnswer.UseNewHold"/> only, asked per boulder: the boulders that should use the new hold,
+    /// a subset of <paramref name="expectedBoulderIds"/>. The others become historic with the old hold, which is
+    /// removed; none of them is the answer "the old hold is gone". Null moves every boulder (the merge).
+    /// </param>
     /// <param name="ct">Cancellation.</param>
     /// <returns>A task.</returns>
     Task AnswerAsync(
-        Guid wallId, Guid findingId, LookOverAnswer answer, IReadOnlyCollection<Guid>? expectedBoulderIds = null, CancellationToken ct = default);
+        Guid wallId,
+        Guid findingId,
+        LookOverAnswer answer,
+        IReadOnlyCollection<Guid>? expectedBoulderIds = null,
+        IReadOnlyCollection<Guid>? newHoldBoulderIds = null,
+        CancellationToken ct = default);
 
     /// <summary>
     /// Takes back an answer that changed nothing on the wall ("Same hold", "Still there", "Keep…", "Understood"): the

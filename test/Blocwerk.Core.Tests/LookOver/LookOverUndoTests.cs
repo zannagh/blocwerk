@@ -140,8 +140,9 @@ public class LookOverUndoTests
         await using var db = h.CreateContext();
         var batches = await db.ChangeJournalBatches.Where(b => b.ScopeId == w.WallId).ToListAsync();
 
-        // Settling took the card's mark off the hold and undoing put it back: two answers, two batches.
-        Assert.Equal(2, batches.Count(b => b.Label == WallLookOverService.BatchLabel));
+        // Settling took the card's mark off the hold and undoing put it back: two answers, two batches. The merge's
+        // answer has a third: it took the boulder's mark off after the merge had committed.
+        Assert.Equal(3, batches.Count(b => b.Label == WallLookOverService.BatchLabel));
         var merge = Assert.Single(batches, b => b.Label == HoldDuplicateService.BatchLabel);
         Assert.Equal(merge.Id, (await FindingAsync(h, w.WallId)).MergeBatchId);
         Assert.True(await db.ChangeJournalEntries.AnyAsync(e => e.BatchId == merge.Id && e.EntityType == nameof(BoulderHold)));

@@ -1,0 +1,5 @@
+.lookover-newhold { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.lookover-newhold legend { padding: 0; margin-bottom: 4px; font-size: 0.9rem; font-weight: 600; color: var(--text); }
+.lookover-newhold-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.lookover-newhold-name { flex: 1 1 10rem; min-width: 0; overflow-wrap: anywhere; font-size: 0.9rem; color: var(--text); }
+.lookover-newhold-option { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 8px; font-size: 0.9rem; cursor: pointer; }

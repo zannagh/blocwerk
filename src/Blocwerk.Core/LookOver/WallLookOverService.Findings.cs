@@ -75,6 +75,7 @@ public sealed partial class WallLookOverService
         {
             AnswerBoulders = f.AnswerBoulders,
             ClearedBoulders = f.ClearedBoulderIds?.Count ?? 0,
+            NewHoldBoulders = f.NewHoldBoulderIds?.Count,
             HoldKept = kept,
             KeptAtUpdate = f.HoldKept,
             CanReassign = kept && f.Status == LookOverFindingStatus.Open && access.CanMerge,

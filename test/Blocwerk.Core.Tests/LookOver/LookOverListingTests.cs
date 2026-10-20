@@ -124,7 +124,7 @@ public class LookOverListingTests
         var unused = View(LookOverFindingKind.SameSpot);
 
         Assert.Equal("Boulders should use the new hold", LookOverCopy.MergeLabel(used));
-        Assert.Contains("2 boulders (Crimp line, Warm-up) keep the same mark", LookOverCopy.UseNewQuestion(used));
+        Assert.Contains("2 boulders (Crimp line, Warm-up) use the old hold", LookOverCopy.UseNewQuestion(used));
         Assert.Equal("Merge into the new hold", LookOverCopy.MergeLabel(unused));
         Assert.DoesNotContain("boulder", LookOverCopy.UseNewQuestion(unused), StringComparison.OrdinalIgnoreCase);
     }
