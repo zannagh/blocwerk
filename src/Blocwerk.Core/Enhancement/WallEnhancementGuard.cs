@@ -19,7 +19,10 @@ public static class WallEnhancementGuard
 {
     /// <summary>The message a wall update gets while the wall is being enhanced.</summary>
     public const string EnhancementRunning =
-        "This wall is being enhanced right now. Wait until its steps are done (the review can wait), then update the wall.";
+        "This wall is being enhanced right now. Wait until its steps are done (the review can wait), or cancel the run in the wall's settings, then update the wall.";
+
+    /// <summary>A Running run whose heartbeat is older than this has a job that is gone or hung: it no longer blocks the wall.</summary>
+    public static readonly TimeSpan StaleAfter = TimeSpan.FromMinutes(10);
 
     private static readonly WallRefreshStatus[] OpenRefresh =
     [
@@ -27,18 +30,45 @@ public static class WallEnhancementGuard
         WallRefreshStatus.Running, WallRefreshStatus.ReadyToApply, WallRefreshStatus.Applying,
     ];
 
-    /// <summary>Refuses a wall update (staging, applying, "Update panels + 3D") while the wall's enhancement runs.</summary>
+    /// <summary>
+    /// Refuses a wall update (staging, applying, "Update panels + 3D") while the wall's enhancement runs. A run with a
+    /// stale heartbeat does not block: it is marked as stopped (it says so on the wall's settings, where it can be
+    /// discarded) and the update goes ahead.
+    /// </summary>
     /// <param name="db">A context.</param>
     /// <param name="wallId">The wall.</param>
     /// <param name="ct">Cancellation.</param>
     /// <returns>When it may go on.</returns>
     public static async Task EnsureNotRunningAsync(BlocwerkDbContext db, Guid wallId, CancellationToken ct = default)
     {
-        if (await db.WallEnhancementRuns.AnyAsync(r => r.WallId == wallId && r.Status == WallEnhancementStatus.Running, ct))
+        var running = await db.WallEnhancementRuns.Where(r => r.WallId == wallId && r.Status == WallEnhancementStatus.Running).ToListAsync(ct);
+        var now = DateTimeOffset.UtcNow;
+        if (running.Any(r => !IsStale(r, now)))
         {
             throw new UserFacingException(EnhancementRunning);
         }
+
+        foreach (var run in running)
+        {
+            var lastSign = run.HeartbeatAt ?? run.UpdatedAt;
+            run.Status = WallEnhancementStatus.Failed;
+            run.CurrentStep = null;
+            run.Error = $"Stopped: no sign of its job since {lastSign:u}, and a wall update went ahead.";
+            run.UpdatedAt = now;
+        }
+
+        if (running.Count > 0)
+        {
+            await db.SaveChangesAsync(ct);
+        }
     }
+
+    /// <summary>Whether a Running run's job is gone or hung (no heartbeat for <see cref="StaleAfter"/>).</summary>
+    /// <param name="run">The run.</param>
+    /// <param name="now">The clock.</param>
+    /// <returns>True when stale.</returns>
+    public static bool IsStale(WallEnhancementRun run, DateTimeOffset now) =>
+        now - (run.HeartbeatAt ?? run.UpdatedAt) > StaleAfter;
 
     /// <summary>Why an enhancement cannot start or go on now: a wall update is open (it will produce a new generation anyway).</summary>
     /// <param name="db">A context.</param>

@@ -51,7 +51,16 @@
             {
                 <p class="hint" role="status">Waiting: someone has the hold editor of this wall open. The enhancement goes on when it is closed.</p>
             }
+            @if (view.Stalled)
+            {
+                <p class="field-error" role="alert">The enhancement shows no sign of life for a while; its job seems stuck. Cancel it, then retry the step or discard the run.</p>
+            }
             <p class="hint">This runs on the server: you can leave the page and come back.</p>
+            <div class="staged-actions">
+                <ConfirmAction Label="Cancel this run" TriggerClass="btn-secondary" ConfirmLabel="Cancel it" Disabled="busy"
+                               Question="Stop the enhancement now? The step in hand is recorded as failed; what the earlier steps did stays for the review, where you can retry the step or discard the run."
+                               OnConfirm="CancelAsync" />
+            </div>
             <EnhancementStepList Steps="view.Steps" />
             break;
 

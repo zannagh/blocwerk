@@ -42,6 +42,13 @@ public class WallEnhancementItem
     /// <summary>The journal batch the answer itself wrote (a merge, a link, an added hold, a confirmed colour), so discarding the run can take it back.</summary>
     public Guid? ResultBatchId { get; set; }
 
+    /// <summary>
+    /// The suggestion record's state before the answer (a link suggestion's distance, whether a duplicate pair was already
+    /// dismissed), so discarding the run can put the record back exactly: those records are not in the change journal.
+    /// </summary>
+    [MaxLength(200)]
+    public string? PriorState { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
     public DateTimeOffset? DecidedAt { get; set; }

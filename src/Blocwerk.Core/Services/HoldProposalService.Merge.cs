@@ -105,7 +105,9 @@ public sealed partial class HoldProposalService
         var pending = await db.HoldProposals.Where(p => p.WallId == wallId && p.Status == HoldProposalStatus.Pending).ToListAsync(ct);
         var frames = inputs.Facets.ToDictionary(f => f.Id, f => f.Frame, StringComparer.Ordinal);
         var mapped = candidates.Select(c => (c, PanelPointMapper.Map(c.World, c.SizeMm, frames[c.FacetId], c.FacetId, inputs.Panels))).ToList();
-        db.HoldProposals.AddRange(Merge(pending, mapped, wallId, modelId));
+        var added = Merge(pending, mapped, wallId, modelId);
+        db.HoldProposals.AddRange(added);
+        await HoldProposalRetirement.ApplyAsync(db, HoldProposalRetirement.Plan([.. pending, .. added], candidates, modelId), ct);
         await db.SaveChangesAsync(ct);
         return mapped.Count(m => m.Item2 is not null);
     }

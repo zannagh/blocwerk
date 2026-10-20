@@ -25,6 +25,12 @@ public sealed partial class WallEnhancementJob
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);
         db.CurrentUserId = Guid.Empty;
         var run = await db.WallEnhancementRuns.FirstAsync(r => r.Id == runId, ct);
+        if (run.Status != WallEnhancementStatus.Running)
+        {
+            // Cancelled (or stopped) from outside while the step was still working: its late result is not recorded.
+            return;
+        }
+
         run.StepsJson = WallEnhancementStepRecord.Write(WallEnhancementStepRecord.With(WallEnhancementStepRecord.Parse(run.StepsJson), record));
         run.CurrentStep = currentStep;
         run.UpdatedAt = DateTimeOffset.UtcNow;

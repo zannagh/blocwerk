@@ -13,6 +13,34 @@ namespace Blocwerk.Core.Enhancement;
 /// <summary>A run's second chances: retrying a failed step, and discarding the whole run.</summary>
 public sealed partial class WallEnhancementService
 {
+    /// <summary>How long a cancel waits for the job to stop before it marks the run itself.</summary>
+    public static readonly TimeSpan CancelWait = TimeSpan.FromSeconds(10);
+
+    /// <inheritdoc/>
+    public async Task<WallEnhancementView> CancelAsync(Guid wallId, CancellationToken ct = default)
+    {
+        var (db, userId) = await OpenForAdminAsync(wallId, ct);
+        await using (db)
+        {
+            var run = await CurrentRunAsync(db, wallId, ct);
+            if (run is not { Status: WallEnhancementStatus.Running })
+            {
+                throw new UserFacingException("No enhancement of this wall is running.");
+            }
+
+            logger.LogInformation("Wall enhancement {RunId} cancelled by {UserId}", run.Id, userId);
+            if (runner.Cancel(run.Id))
+            {
+                await Task.WhenAny(runner.WhenIdleAsync(run.Id), Task.Delay(CancelWait, ct));
+            }
+
+            // Not live here, or still stuck in a step that ignores cancellation: recorded directly. Its late result is
+            // then dropped (the job records a step only while the run is Running).
+            await runner.Job.MarkCancelledAsync(run.Id);
+            return await BuildViewAsync(db, wallId, ct);
+        }
+    }
+
     /// <inheritdoc/>
     public async Task<WallEnhancementView> RetryStepAsync(Guid wallId, string stepKey, CancellationToken ct = default)
     {
@@ -28,6 +56,11 @@ public sealed partial class WallEnhancementService
             if (await BlockedReasonAsync(db, wallId, ct) is { } blocked)
             {
                 throw new UserFacingException(blocked);
+            }
+
+            if (runner.IsRunning(run.Id))
+            {
+                throw new UserFacingException("The cancelled step is still finishing. Try again in a moment.");
             }
 
             var records = WallEnhancementStepRecord.Parse(run.StepsJson);
@@ -66,6 +99,7 @@ public sealed partial class WallEnhancementService
 
             var items = await db.WallEnhancementItems.Where(i => i.RunId == run.Id).ToListAsync(ct);
             var (answersBack, answersKept) = await RevertAnswersAsync(wallId, items, ct);
+            var records = await RestoreRecordsAsync(wallId, items, ct);
             var (undone, kept) = await UndoWrittenAsync(run, items, userId, ct);
 
             // The run row goes (its items with it): the generation counts as not enhanced, and the button works again.
@@ -74,7 +108,7 @@ public sealed partial class WallEnhancementService
             logger.LogInformation(
                 "Wall enhancement {RunId} of wall {WallId} discarded by {UserId}: {Undone} holds restored, {Answers} answers taken back, {Kept} left as they are",
                 run.Id, wallId, userId, undone, answersBack, kept + answersKept);
-            return new WallEnhancementDiscardResult(undone, answersBack, kept + answersKept);
+            return new WallEnhancementDiscardResult(undone, answersBack, kept + answersKept, records);
         }
     }
 

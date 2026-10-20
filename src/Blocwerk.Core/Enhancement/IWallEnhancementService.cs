@@ -64,6 +64,16 @@ public interface IWallEnhancementService
     /// <returns>The finalized state.</returns>
     Task<WallEnhancementView> FinalizeAsync(Guid wallId, bool withoutFailedSteps = false, CancellationToken ct = default);
 
+    /// <summary>
+    /// Cancels the running enhancement: the job stops at its next await, the step in hand is recorded as failed and the
+    /// review opens (where the step can be retried or the run discarded). A job that does not stop within a few seconds,
+    /// or is not live at all, is marked so directly.
+    /// </summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>The state after cancelling.</returns>
+    Task<WallEnhancementView> CancelAsync(Guid wallId, CancellationToken ct = default);
+
     /// <summary>Runs a failed step of the current run again (the run goes back to running for it).</summary>
     /// <param name="wallId">The wall.</param>
     /// <param name="stepKey">The failed step.</param>

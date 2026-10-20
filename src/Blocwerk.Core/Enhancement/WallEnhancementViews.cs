@@ -61,6 +61,7 @@ public sealed record WallEnhancementKindCount(WallEnhancementItemKind Kind, int 
 /// <param name="PreviousFinalizedAt">When an earlier generation was enhanced, if one was.</param>
 /// <param name="StepProgress">How far the running step is (photos done of all), when it reports it.</param>
 /// <param name="StepExpectedEnd">When the running step is expected to be done, once its pace is known.</param>
+/// <param name="Stalled">True while a Running run has shown no sign of life for a while (its job is gone or hung): cancel it.</param>
 public sealed record WallEnhancementView(
     WallEnhancementState State,
     int Generation,
@@ -77,7 +78,8 @@ public sealed record WallEnhancementView(
     bool WaitingForEditor,
     DateTimeOffset? PreviousFinalizedAt,
     WallEnhancementProgress? StepProgress = null,
-    DateTimeOffset? StepExpectedEnd = null)
+    DateTimeOffset? StepExpectedEnd = null,
+    bool Stalled = false)
 {
     /// <summary>Items still to answer, over all kinds.</summary>
     public int Pending => Counts.Sum(c => c.Pending);
@@ -122,7 +124,8 @@ public sealed record WallEnhancementItemPage(int Total, IReadOnlyList<WallEnhanc
 /// <param name="HoldsRestored">Holds the steps wrote that are back as they were.</param>
 /// <param name="AnswersTakenBack">Answers whose writes were taken back (merges, links, added holds, confirmed colours).</param>
 /// <param name="LeftAsTheyAre">Holds or answers changed since by someone else, so left alone.</param>
-public sealed record WallEnhancementDiscardResult(int HoldsRestored, int AnswersTakenBack, int LeftAsTheyAre);
+/// <param name="RecordsRestored">Suggestion records put back (proposals pending again, link suggestions offered again, dismissals forgotten).</param>
+public sealed record WallEnhancementDiscardResult(int HoldsRestored, int AnswersTakenBack, int LeftAsTheyAre, int RecordsRestored = 0);
 
 /// <summary>What answering an item did.</summary>
 /// <param name="Decision">The recorded answer (Skipped when it could not be carried out).</param>

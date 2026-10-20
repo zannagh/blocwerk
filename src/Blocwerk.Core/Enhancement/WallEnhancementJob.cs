@@ -42,6 +42,12 @@ public sealed partial class WallEnhancementJob(
     private readonly IReadOnlyList<IWallEnhancementStep> ordered = steps.OrderBy(s => s.Order).ToList();
     private readonly ConcurrentDictionary<Guid, WallEnhancementStepTracker> trackers = new();
 
+    /// <summary>The watchdog: a step that runs longer is stopped and recorded as failed (then retried or discarded).</summary>
+    public TimeSpan StepTimeout { get; init; } = TimeSpan.FromHours(4);
+
+    /// <summary>How often the run's heartbeat is renewed (<see cref="WallEnhancementGuard.StaleAfter"/> is far longer).</summary>
+    public TimeSpan HeartbeatInterval { get; init; } = TimeSpan.FromMinutes(1);
+
     /// <summary>How often the job looks again while an editor has the wall open.</summary>
     public TimeSpan EditorPoll { get; init; } = TimeSpan.FromSeconds(5);
 
@@ -56,17 +62,24 @@ public sealed partial class WallEnhancementJob(
 
     /// <summary>Runs (or resumes) the run. Never throws but on shutdown.</summary>
     /// <param name="runId">The run; it must be <see cref="WallEnhancementStatus.Running"/>.</param>
-    /// <param name="ct">Cancellation (app shutdown: the run stays Running and resumes on the next start).</param>
+    /// <param name="shutdown">App shutdown: the run stays Running and resumes on the next start.</param>
+    /// <param name="cancel">An admin's "Cancel this run": the step in hand is recorded as failed and the review opens.</param>
     /// <returns>When it stopped.</returns>
-    public async Task RunAsync(Guid runId, CancellationToken ct)
+    public async Task RunAsync(Guid runId, CancellationToken shutdown, CancellationToken cancel = default)
     {
+        using var either = CancellationTokenSource.CreateLinkedTokenSource(shutdown, cancel);
+        var heartbeat = HeartbeatAsync(runId, either.Token);
         try
         {
-            await RunCoreAsync(runId, ct);
+            await RunCoreAsync(runId, either.Token);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (OperationCanceledException) when (shutdown.IsCancellationRequested)
         {
             // Shutdown: the run stays Running and the resumer continues it.
+        }
+        catch (OperationCanceledException) when (cancel.IsCancellationRequested)
+        {
+            await MarkCancelledAsync(runId);
         }
         catch (Exception ex)
         {
@@ -75,6 +88,8 @@ public sealed partial class WallEnhancementJob(
         }
         finally
         {
+            await either.CancelAsync();
+            await heartbeat;
             if (trackers.TryRemove(runId, out var tracker))
             {
                 tracker.Clear();
@@ -164,7 +179,18 @@ public sealed partial class WallEnhancementJob(
                 return (null, WallEnhancementStepOutcomeKind.Failed, stale);
             }
 
-            return await RunInBatchAsync(run, step, tracker, ct);
+            using var watchdog = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            watchdog.CancelAfter(StepTimeout);
+            try
+            {
+                return await RunInBatchAsync(run, step, tracker, watchdog.Token);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                logger.LogWarning("Wall enhancement {RunId}: step {Step} ran longer than {Timeout} and was stopped", run.Id, step.Key, StepTimeout);
+                return (WallEnhancementStepOutcome.Done($"{step.Title} took longer than {StepTimeout.TotalHours:0.#} h and was stopped."),
+                    WallEnhancementStepOutcomeKind.Failed, null);
+            }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

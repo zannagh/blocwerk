@@ -7,8 +7,9 @@ using Blocwerk.Core.Abstractions;
 namespace Blocwerk.Core.Enhancement;
 
 /// <summary>
-/// Follows one long step's progress (photos done of all) and turns it into an expected end: the pace since the step
-/// (re)started, so photos a resumed search reads back from its checkpoint do not make the estimate optimistic. The end
+/// Follows one long step's progress (photos done of all) and turns it into an expected end: the pace over the last
+/// <see cref="Window"/> reports, so the photos a resumed search reads back from its checkpoint (an instant each) do not
+/// keep the estimate optimistic. The end
 /// goes to the deploy gate's ETA (<see cref="IDeployBusyEta"/>) and the progress to the card.
 /// </summary>
 public sealed class WallEnhancementStepTracker : IProgress<WallEnhancementProgress>
@@ -17,8 +18,7 @@ public sealed class WallEnhancementStepTracker : IProgress<WallEnhancementProgre
     private readonly IDeployBusyEta? eta;
     private readonly Func<DateTimeOffset> clock;
     private readonly object gate = new();
-    private DateTimeOffset? firstAt;
-    private int firstDone;
+    private readonly Queue<(DateTimeOffset At, int Done)> window = new();
 
     /// <summary>Initializes a new instance of the <see cref="WallEnhancementStepTracker"/> class.</summary>
     /// <param name="runId">The run (the ETA's key).</param>
@@ -37,6 +37,9 @@ public sealed class WallEnhancementStepTracker : IProgress<WallEnhancementProgre
     /// <summary>When the step is expected to be done, once the pace is known.</summary>
     public DateTimeOffset? ExpectedEnd { get; private set; }
 
+    /// <summary>The reports the pace is taken over: the recent ones, so a resumed search's rush through its checkpointed photos is soon forgotten.</summary>
+    public int Window { get; init; } = 20;
+
     /// <inheritdoc/>
     public void Report(WallEnhancementProgress value)
     {
@@ -44,19 +47,20 @@ public sealed class WallEnhancementStepTracker : IProgress<WallEnhancementProgre
         {
             var now = clock();
             Last = value;
-            if (firstAt is null)
+            window.Enqueue((now, value.Done));
+            while (window.Count > Window)
             {
-                (firstAt, firstDone) = (now, value.Done);
-                return;
+                window.Dequeue();
             }
 
+            var (firstAt, firstDone) = window.Peek();
             var done = value.Done - firstDone;
             if (done <= 0 || value.Total <= value.Done)
             {
                 return;
             }
 
-            var perUnit = (now - firstAt.Value) / done;
+            var perUnit = (now - firstAt) / done;
             ExpectedEnd = now + (perUnit * (value.Total - value.Done));
             eta?.Set(runId, ExpectedEnd);
         }

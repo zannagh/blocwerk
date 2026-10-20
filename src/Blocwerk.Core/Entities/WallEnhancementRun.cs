@@ -47,6 +47,12 @@ public class WallEnhancementRun
 
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 
+    /// <summary>
+    /// The job's sign of life while the run is Running, renewed every minute. A run whose heartbeat is older than
+    /// <c>WallEnhancementGuard.StaleAfter</c> no longer blocks wall updates: its job is gone or hung.
+    /// </summary>
+    public DateTimeOffset? HeartbeatAt { get; set; }
+
     /// <summary>When the last step finished and the review opened.</summary>
     public DateTimeOffset? StepsFinishedAt { get; set; }
 

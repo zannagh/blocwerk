@@ -53,7 +53,8 @@ public sealed partial class WallEnhancementService
             running && editPresence?.IsBeingEdited(wallId) == true,
             previous,
             progress?.Progress,
-            progress?.ExpectedEnd);
+            progress?.ExpectedEnd,
+            running && WallEnhancementGuard.IsStale(run, DateTimeOffset.UtcNow));
     }
 
     private static WallEnhancementState StateOf(WallEnhancementStatus status) => status switch

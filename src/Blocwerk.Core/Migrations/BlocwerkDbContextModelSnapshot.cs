@@ -2463,6 +2463,10 @@ namespace Blocwerk.Core.Migrations
                     b.Property<Guid?>("OtherHoldId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("PriorState")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
                     b.Property<Guid?>("ReferenceId")
                         .HasColumnType("uuid");
 
@@ -2507,6 +2511,9 @@ namespace Blocwerk.Core.Migrations
 
                     b.Property<int>("Generation")
                         .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("HeartbeatAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("OutcomeJson")
                         .HasColumnType("text");

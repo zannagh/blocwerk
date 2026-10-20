@@ -139,7 +139,7 @@ public sealed partial class HoldProposalService(
         var detections = await DetectAllAsync(db, detector, cameras, photos, progress, detected, ct);
         var inputs = await ProposalInputs.LoadAsync(db, wallId, model.Id, WallGeometryDocument.Parse(model.Json), ct);
         var reviewed = await db.HoldProposals.AsNoTracking()
-            .Where(p => p.WallId == wallId && p.Status != HoldProposalStatus.Pending)
+            .Where(p => p.WallId == wallId && (p.Status == HoldProposalStatus.Accepted || p.Status == HoldProposalStatus.Rejected))
             .Select(p => new[] { p.X, p.Y, p.Z }).ToListAsync(ct);
         var (candidates, clusters) = await Task.Run(() => HoldProposalFinder.Find(cameras, detections, inputs.Facets, inputs.Known, reviewed), ct);
         var onPanels = await MergePendingAsync(db, wallId, model.Id, candidates, inputs, ct);

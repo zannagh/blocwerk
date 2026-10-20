@@ -140,6 +140,31 @@ public partial class WallEnhancementCard : IDisposable
         StateHasChanged();
     }
 
+    private async Task CancelAsync()
+    {
+        if (busy)
+        {
+            return;
+        }
+
+        busy = true;
+        failure = null;
+        try
+        {
+            view = await Enhancement.CancelAsync(WallId);
+            SchedulePoll();
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidOperationException or KioskRestrictedException or UserFacingException)
+        {
+            failure = ex.Message;
+            await ReloadAsync();
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
     private async Task StartAsync()
     {
         // A double tap lands before the disabled button reaches the phone: refuse the second start.

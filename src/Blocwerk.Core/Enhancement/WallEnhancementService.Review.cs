@@ -112,6 +112,7 @@ public sealed partial class WallEnhancementService
     private async Task<(WallEnhancementDecision Decision, string Message)> SuggestionInBatchAsync(
         Guid wallId, WallEnhancementItem item, bool accept, CancellationToken ct)
     {
+        item.PriorState = await PriorStateAsync(wallId, item, ct);
         using var scope = journal.BeginBatch(WallEnhancementKinds.ReviewBatchLabel, ChangeJournalScopeKind.Wall, wallId);
         var result = await SuggestionAsync(wallId, item, accept, ct);
         if (accept && item.ResultBatchId is null && scope is ChangeJournalBatchScope { BatchRowCreated: true } written)

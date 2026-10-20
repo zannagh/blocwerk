@@ -39,7 +39,7 @@ public sealed class WallEnhancementFixture : IDisposable
 
     public Guid PanelId { get; private set; }
 
-    public IHoldDuplicateService Duplicates { get; } = Substitute.For<IHoldDuplicateService>();
+    public IHoldDuplicateService Duplicates { get; set; } = Substitute.For<IHoldDuplicateService>();
 
     public IHoldLinkSuggestionService Links { get; } = Substitute.For<IHoldLinkSuggestionService>();
 
@@ -140,7 +140,13 @@ public sealed class WallEnhancementFixture : IDisposable
         steps,
         journal,
         NullLogger<WallEnhancementJob>.Instance,
-        editPresence: Presence) { EditorPoll = TimeSpan.FromMilliseconds(20) };
+        editPresence: Presence) { EditorPoll = TimeSpan.FromMilliseconds(20), StepTimeout = StepTimeout, HeartbeatInterval = HeartbeatInterval };
+
+    /// <summary>The job's heartbeat interval.</summary>
+    public TimeSpan HeartbeatInterval { get; set; } = TimeSpan.FromMinutes(1);
+
+    /// <summary>The job's step watchdog (long by default).</summary>
+    public TimeSpan StepTimeout { get; set; } = TimeSpan.FromHours(4);
 
     /// <summary>Starts the run and waits for its steps.</summary>
     public async Task<WallEnhancementView> StartAndWaitAsync(WallEnhancementService service)
