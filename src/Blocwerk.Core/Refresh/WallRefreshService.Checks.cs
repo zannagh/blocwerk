@@ -16,6 +16,13 @@ namespace Blocwerk.Core.Refresh;
 /// </summary>
 public sealed partial class WallRefreshService
 {
+    /// <summary>The most answers one call takes.</summary>
+    public const int MaxCheckAnswers = 500;
+
+    /// <summary>The card kinds whose "Remove" removes the OLD hold: only taken for a hold on the centre panel.</summary>
+    private static readonly HashSet<UpdateExceptionKind> RemovalKinds =
+        [UpdateExceptionKind.ReplacedByOther, UpdateExceptionKind.PossiblyRemoved];
+
     public async Task<IReadOnlyList<RefreshCheck>> GetChecksAsync(Guid refreshId)
     {
         var (db, refresh) = await OpenRefreshAsync(refreshId);
@@ -40,10 +47,15 @@ public sealed partial class WallRefreshService
             return cards.Select(c =>
             {
                 var hold = c.OldHoldId is { } id ? holds.GetValueOrDefault(id) : null;
+                var removable = !RemovalKinds.Contains(c.Kind) || hold is not { OnCentre: false };
+
+                // A removal stored before it was refused off the centre is reset to "carried" at the promote: the card
+                // says what will happen (open, asked again in the look-over), not "Removed".
+                var status = !removable && c.Status == UpdateExceptionStatus.Removed ? UpdateExceptionStatus.Pending : c.Status;
                 return new RefreshCheck(
-                    c.Id, c.Kind, c.Status, hold is not null, c.HasTexture,
+                    c.Id, c.Kind, status, hold is not null, c.HasTexture,
                     c.OldHoldId is { } o ? boulders.GetValueOrDefault(o) : 0, hold?.Name ?? hold?.Color, c.Confidence,
-                    c.Kind != UpdateExceptionKind.ReplacedByOther || hold is not { OnCentre: false });
+                    removable);
             }).ToList();
         }
     }
@@ -59,12 +71,25 @@ public sealed partial class WallRefreshService
         }
     }
 
-    public async Task DecideCheckAsync(Guid refreshId, Guid checkId, UpdateExceptionAnswer answer)
+    public Task DecideCheckAsync(Guid refreshId, Guid checkId, UpdateExceptionAnswer answer) =>
+        DecideChecksAsync(refreshId, [new RefreshCheckAnswer(checkId, answer)]);
+
+    public async Task<int> DecideChecksAsync(Guid refreshId, IReadOnlyList<RefreshCheckAnswer> answers)
     {
         var (db, refresh) = await OpenRefreshAsync(refreshId);
         await using (db)
         {
             EnsureAnswerable(refresh);
+        }
+
+        if (answers.Count == 0)
+        {
+            return 0;
+        }
+
+        if (answers.Count > MaxCheckAnswers)
+        {
+            throw new UserFacingException($"Send at most {MaxCheckAnswers} answers at once.");
         }
 
         var user = await currentUserService.GetCurrentUserAsync();
@@ -76,11 +101,44 @@ public sealed partial class WallRefreshService
                 throw new UserFacingException("This update was replaced or discarded in the full review.");
             }
 
-            await scope.Actors.Sessions.DecideUpdateExceptionAsync(refresh.WallId, checkId, answer);
+            await WriteAnswersAsync(refreshId, refresh, scope.Actors.Sessions, answers);
         }
 
-        await RequestSummaryAsync(refreshId);
-        queue.Enqueue(refreshId);
+        return answers.Count;
+    }
+
+    /// <summary>
+    /// Writes the answers in order, each naming the run's session (one landing after a takeover is refused, never written
+    /// there). The first refusal stops the rest; the summary is made again for whatever was written, even then.
+    /// </summary>
+    private async Task WriteAnswersAsync(
+        Guid refreshId, WallRefresh refresh, IWallUpdateSessionService sessions, IReadOnlyList<RefreshCheckAnswer> answers)
+    {
+        var written = 0;
+        try
+        {
+            foreach (var answer in answers)
+            {
+                try
+                {
+                    await sessions.DecideUpdateExceptionAsync(refresh.WallId, answer.CheckId, answer.Answer, refresh.UpdateSessionId);
+                }
+                catch (UserFacingException ex)
+                {
+                    throw new RefreshCheckAnswersStoppedException(written, answer.CheckId, ex);
+                }
+
+                written++;
+            }
+        }
+        finally
+        {
+            if (written > 0)
+            {
+                await RequestSummaryAsync(refreshId);
+                queue.Enqueue(refreshId);
+            }
+        }
     }
 
     private static void EnsureAnswerable(WallRefresh refresh)

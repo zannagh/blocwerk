@@ -75,7 +75,7 @@
                     <strong>@Summary.NewHolds</strong> new holds@(Summary.NewSeenIn3D > 0 ? $", {Summary.NewSeenIn3D} of them also seen in the 3D model" : string.Empty)
                 </li>
                 <li>
-                    <strong>@Summary.DroppedDetections</strong> photo detections ignored (on a marker, outside the old photo or already known)
+                    <strong>@Summary.DroppedDetections</strong> photo detections left out (on a marker, outside the old photo, already known or inside a hold that is already there). Each is kept in the look-over after applying, where it can still be added as a hold
                     @if (Summary.DroppedByThe3DModel > 0)
                     {
                         <span>; @Summary.DroppedByThe3DModel of them the 3D model shows as a hold you already have, or off the wall</span>

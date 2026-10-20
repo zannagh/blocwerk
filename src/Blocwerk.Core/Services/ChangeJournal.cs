@@ -104,6 +104,7 @@ public sealed partial class ChangeJournal : IChangeJournal
 
         open.SealedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync();
+        ForgetSeq(open.Id);
     }
 
     /// <summary>

@@ -44,10 +44,11 @@ public static class HoldMoveRemeasurer
         var measures = DifferentialDisplacement.Measure(links.Select(l => (l.OldHold!, l.NewHold!)).ToList(), options);
         var marked = 0;
         var cleared = new List<Guid>();
+
         foreach (var link in links.Where(l => measures.ContainsKey(l.OldHoldId!.Value)))
         {
             var measure = measures[link.OldHoldId!.Value];
-            if (!measure.Confident)
+            if (!measure.Confident || ReOutlineHolds(link, measure, options))
             {
                 continue;
             }
@@ -127,6 +128,14 @@ public static class HoldMoveRemeasurer
             ct);
 
     private static int Rank(HoldMoveOutcome o) => o == HoldMoveOutcome.Stayed ? 0 : 1;
+
+    /// <summary>
+    /// A pair the plan judged a re-outline keeps that verdict only while the 3D measure stays under the rule's own bar for an
+    /// unexplained shift (<see cref="HoldMoveOptions.NoiseMm2D"/>); from there on the placements say the hold moved, and it
+    /// is escalated as any other (25 to 100 mm: kept and its boulders marked).
+    /// </summary>
+    private static bool ReOutlineHolds(HoldGenerationLink link, HoldMoveMeasure measure, HoldMoveOptions options) =>
+        link.MoveSource == HoldMoveSource.ReOutline && measure.DistanceMm < options.NoiseMm2D;
 
     /// <summary>A row that records a hold not found again or replaced, not a measured move: never settled or escalated.</summary>
     private static bool IsNotFound(HoldMoveOutcome o) => o is HoldMoveOutcome.NotFound or HoldMoveOutcome.Replaced;

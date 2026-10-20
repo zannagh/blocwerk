@@ -1,3 +1,4 @@
+using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
 using Microsoft.AspNetCore.Components;
 
@@ -172,7 +173,7 @@ public partial class TouchupStep
     private async Task OnHoldGeometryChanged(PanelImageView.HoldGeometry g)
     {
         // Geometry-only: never sets any review/changed flag, so a reposition is a pure correction.
-        await WallPanelService.UpdateStagedHoldAsync(WallId, g.HoldId, g.X, g.Y, g.Radius);
+        await TryEditAsync(() => WallPanelService.UpdateStagedHoldInSessionAsync(WallId, SessionId, g.HoldId, g.X, g.Y, g.Radius));
         await ReloadHoldsAsync();
     }
 
@@ -185,8 +186,12 @@ public partial class TouchupStep
 
         // needsReview:false — a hold the user adds here is a correction of a model miss, not a
         // physical change, so it must not be flagged for review.
-        var id = await WallPanelService.AddStagedHoldAsync(
-            WallId, panel.PanelId, at.X, at.Y, _touchup.Radius, needsReview: false);
+        var id = Guid.Empty;
+        if (!await TryEditAsync(async () => id = await WallPanelService.AddStagedHoldInSessionAsync(
+                WallId, SessionId, panel.PanelId, at.X, at.Y, _touchup.Radius, needsReview: false)))
+        {
+            return;
+        }
 
         // The Add tool stays active so a run of misses can be fixed in one go; the fresh hold is
         // selected so the slider can fine-tune it straight away.
@@ -204,13 +209,8 @@ public partial class TouchupStep
         await RemoveHoldAsync(id);
     }
 
-    private async Task RemoveHoldAsync(Guid id)
-    {
-        await WallPanelService.DeleteStagedHoldAsync(WallId, id);
-        _touchup.Removed(id);
-
-        await ReloadHoldsAsync();
-    }
+    // Refused (and asked about) when an old hold was matched to it: see TouchupStep.Guard.cs.
+    private Task RemoveHoldAsync(Guid id) => DeleteGuardedAsync(id, StagedTwinDeletion.Refuse);
 
     /// <summary>A staged panel the touch-up step can edit: its id, a human label, and grid position.</summary>
     private sealed record StagedPanelRef(Guid PanelId, string Label, int Col, int Row);

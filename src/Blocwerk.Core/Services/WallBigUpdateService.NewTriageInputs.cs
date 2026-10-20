@@ -34,7 +34,10 @@ public partial class WallBigUpdateService
         BrightenedPass = true,
     };
 
-    /// <summary>For a neighbour panel with overlap proposals against the triaged centre, its overlap owner.</summary>
+    /// <summary>
+    /// For a neighbour panel with overlap proposals against the triaged centre, its overlap owner, with which of its pairs
+    /// are backed by measured anchors (<see cref="NeighbourPanelRule.IsMeasured"/>).
+    /// </summary>
     private static Func<(int Width, int Height), OverlapOwner?> OwnerSource(
         TriagedCentre? centre, NeighbourOverlap? overlap, IReadOnlyList<Hold> staged) =>
         size =>
@@ -46,39 +49,53 @@ public partial class WallBigUpdateService
 
             var own = staged.ToDictionary(h => h.Id);
             var pairs = new List<PointPair>();
+            var measured = new List<PointPair>();
             foreach (var p in overlap.Proposals)
             {
                 if (centre.Holds.TryGetValue(p.HoldAId, out var c) && own.TryGetValue(p.HoldBId, out var n))
                 {
-                    pairs.Add(new PointPair(
-                        n.X * size.Width, n.Y * size.Height, c.X * centre.Size.Width, c.Y * centre.Size.Height));
+                    var pair = new PointPair(n.X * size.Width, n.Y * size.Height, c.X * centre.Size.Width, c.Y * centre.Size.Height);
+                    pairs.Add(pair);
+                    if (NeighbourPanelRule.IsMeasured(p.Confidence))
+                    {
+                        measured.Add(pair);
+                    }
                 }
             }
 
-            return new OverlapOwner(pairs, centre.Size, centre.KeptNew, size, centre.Settled);
+            return new OverlapOwner(pairs, centre.Size, centre.KeptNew, size, centre.Settled, measured);
         };
 
     /// <summary>
     /// Writes each suggested discard's reason onto its staged hold (and clears it where the triage no longer suggests
-    /// one), so the reason survives the promote in the journal entry of the deleted detection. Set-based, outside the
-    /// change journal: a staged detection's reason is no edit to undo.
+    /// one), so the reason survives the promote in the journal entry of the deleted detection. Tracked writes on a
+    /// context of their own, inside the wall's open wall-update batch: the reason is part of what that batch replays
+    /// (it used to be a set-based update the journal never saw, so a replayed wall had no reasons).
     /// </summary>
-    private static async Task PersistDiscardReasonsAsync(BlocwerkDbContext db, Guid wallId, int stagedGen, BigUpdateSession session)
+    private async Task PersistDiscardReasonsAsync(Guid wallId, int stagedGen, BigUpdateSession session)
     {
-        var suggested = session.SuggestedNewDiscards ?? new Dictionary<Guid, NewHoldDiscardReason>();
-        foreach (var group in suggested.GroupBy(s => s.Value, s => s.Key))
+        var suggested = (session.SuggestedNewDiscards ?? new Dictionary<Guid, NewHoldDiscardReason>())
+            .ToDictionary(s => s.Key, s => s.Value.ToString());
+        var ids = suggested.Keys.ToList();
+
+        await using var db = await dbContextFactory.CreateDbContextAsync();
+        var holds = await db.Holds
+            .Where(h => h.WallId == wallId && h.Generation == stagedGen && (ids.Contains(h.Id) || h.DiscardReason != null))
+            .ToListAsync();
+        foreach (var hold in holds)
         {
-            var reason = group.Key.ToString();
-            var ids = group.ToList();
-            await db.Holds
-                .Where(h => h.WallId == wallId && h.Generation == stagedGen && ids.Contains(h.Id) && h.DiscardReason != reason)
-                .ExecuteUpdateAsync(s => s.SetProperty(h => h.DiscardReason, reason));
+            var reason = suggested.GetValueOrDefault(hold.Id);
+            if (hold.DiscardReason != reason)
+            {
+                hold.DiscardReason = reason;
+            }
         }
 
-        var all = suggested.Keys.ToList();
-        await db.Holds
-            .Where(h => h.WallId == wallId && h.Generation == stagedGen && h.DiscardReason != null && !all.Contains(h.Id))
-            .ExecuteUpdateAsync(s => s.SetProperty(h => h.DiscardReason, (string?)null));
+        if (db.ChangeTracker.HasChanges())
+        {
+            using var batch = changeJournal?.BeginWallUpdateBatch(wallId);
+            await db.SaveChangesAsync();
+        }
     }
 
     private async Task<List<IReadOnlyList<(double X, double Y)>>> RescuedMarkerQuadsAsync(byte[] photo)
@@ -103,11 +120,15 @@ public partial class WallBigUpdateService
         }
     }
 
-    private static async Task<List<IReadOnlyList<(double X, double Y)>>> StagedMarkerQuadsAsync(
-        BlocwerkDbContext db, Guid panelId, (int Width, int Height) size)
+    /// <summary>
+    /// The printed markers observed on one photo of a panel, RAW pixels: its staged photo, or (<paramref name="staged"/> false)
+    /// its live one, which for the panel an update replaces is the old photo.
+    /// </summary>
+    private static async Task<List<IReadOnlyList<(double X, double Y)>>> MarkerQuadsAsync(
+        BlocwerkDbContext db, Guid panelId, bool staged, (int Width, int Height) size)
     {
         var rows = await db.WallMarkerObservations
-            .Where(o => o.WallPanelId == panelId && o.FromStagedPhoto && !o.Synthetic)
+            .Where(o => o.WallPanelId == panelId && o.FromStagedPhoto == staged && !o.Synthetic)
             .Select(o => o.CornersJson)
             .ToListAsync();
         var quads = new List<IReadOnlyList<(double X, double Y)>>();

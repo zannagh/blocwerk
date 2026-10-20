@@ -118,7 +118,7 @@ public sealed class ChangeJournalInterceptor : SaveChangesInterceptor
         var scope = changeJournal.Current;
         var now = DateTimeOffset.UtcNow;
         var batchId = scope?.BatchId ?? Guid.NewGuid();
-        var seq = scope?.NextSeq ?? 0;
+        var seq = scope is null ? 0 : changeJournal.ReserveSeq(scope, tracked.Count);
         var pendingBlobs = new List<JournalBlob>();
         var entries = new List<ChangeJournalEntry>();
 
@@ -128,10 +128,6 @@ public sealed class ChangeJournalInterceptor : SaveChangesInterceptor
         }
 
         EnsureBatchRow(context, scope, batchId, now, ActorOf(context));
-        if (scope is not null)
-        {
-            scope.NextSeq = seq;
-        }
 
         return (entries, pendingBlobs);
     }

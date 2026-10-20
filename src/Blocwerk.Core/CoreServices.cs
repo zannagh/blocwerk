@@ -83,6 +83,7 @@ public static class CoreServices
         builder.Services.AddScoped<ChangeJournalReverter>();
         builder.Services.AddScoped<ChangeJournalExporter>();
         builder.Services.AddScoped<ChangeJournalReplayer>();
+        builder.Services.AddScoped<IChangeJournalAdminService, ChangeJournalAdminService>();
 
         // Web Push. VAPID credentials are bound from the top-level "Vapid" section (env VAPID__SUBJECT,
         // VAPID__PUBLICKEY, VAPID__PRIVATEKEY). Missing/empty keys are NOT an error: the service becomes

@@ -73,6 +73,24 @@ else
             </div>
         }
 
+        @if (!string.IsNullOrEmpty(editError))
+        {
+            <p class="staged-hint danger">@editError</p>
+        }
+
+        @if (pendingTwinDelete is { } pending)
+        {
+            @* Never a silent cascade: this hold carries an old hold's verdict, so deleting it is the user's call. *@
+            <div class="bigupdate-banner" role="alert">
+                <strong>@pending.Reason</strong>
+                <span>A "changed" stays changed and its boulders are still marked; only the match to this hold goes, and the choice shows as not reviewed again.</span>
+                <div class="staged-actions">
+                    <button class="btn-danger-soft" @onclick="ConfirmTwinDeleteAsync">Delete it anyway</button>
+                    <button class="btn-secondary" @onclick="CancelTwinDelete">Keep the hold</button>
+                </div>
+            </div>
+        }
+
         <div class="staged-actions">
             <button class="btn-primary" @onclick="() => OnContinue.InvokeAsync()">Continue →</button>
             <button class="btn-secondary" @onclick="() => OnSkip.InvokeAsync()">Skip touch-up</button>

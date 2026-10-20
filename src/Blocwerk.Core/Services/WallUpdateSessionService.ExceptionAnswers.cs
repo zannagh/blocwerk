@@ -16,8 +16,13 @@ namespace Blocwerk.Core.Services;
 /// </summary>
 public partial class WallUpdateSessionService
 {
+    /// <summary>The refusal of a "Remove" answer for a hold on a panel other than the centre.</summary>
+    public const string OffCentreRemoveRefused =
+        "A hold on a panel other than the centre cannot be removed in this update: it is carried over, and the look-over "
+        + "after Apply asks about it again.";
+
     /// <inheritdoc/>
-    public async Task DecideUpdateExceptionAsync(Guid wallId, Guid exceptionId, UpdateExceptionAnswer answer)
+    public async Task DecideUpdateExceptionAsync(Guid wallId, Guid exceptionId, UpdateExceptionAnswer answer, Guid? expectedSessionId = null)
     {
         var user = await currentUserService.GetCurrentUserAsync();
         await using var db = await dbContextFactory.CreateDbContextAsync();
@@ -25,18 +30,18 @@ public partial class WallUpdateSessionService
         await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
 
         await using var transaction = await db.Database.BeginTransactionAsync();
-        var session = await RequireOpenAsync(db, wallId);
+        var session = await RequireOpenAsync(db, wallId, expectedSessionId);
         await LockSessionAsync(db, session.Id);
         var card = await db.WallUpdateExceptions.FirstOrDefaultAsync(e => e.Id == exceptionId && e.SessionId == session.Id)
-            ?? throw new InvalidOperationException("That check is no longer part of this update.");
+            ?? throw new UserFacingException("That check is no longer part of this update.");
         var now = DateTimeOffset.UtcNow;
         switch (card.Kind)
         {
             case UpdateExceptionKind.ReplacedByOther:
-                await EnsureRemovableHereAsync(db, card, answer);
-                await AnswerPossiblyRemovedAsync(db, session.Id, card, answer, user.Id, now);
-                break;
             case UpdateExceptionKind.PossiblyRemoved:
+                // Both kinds: a removal off the centre would be reset to "carried" at the promote while the card read
+                // "Removed" (C4), so it is refused instead.
+                await EnsureRemovableHereAsync(db, card, answer);
                 await AnswerPossiblyRemovedAsync(db, session.Id, card, answer, user.Id, now);
                 break;
             case UpdateExceptionKind.LowConfidenceMatch:
@@ -67,7 +72,7 @@ public partial class WallUpdateSessionService
 
     /// <summary>
     /// A removal is only promoted for a hold on the centre panel (<see cref="CarryoverScope"/> resets any other to
-    /// "carried"), so it is refused for a replaced hold elsewhere instead of being undone unseen.
+    /// "carried"), so it is refused for a replaced or possibly removed hold elsewhere instead of being undone unseen.
     /// </summary>
     private static async Task EnsureRemovableHereAsync(BlocwerkDbContext db, WallUpdateException card, UpdateExceptionAnswer answer)
     {
@@ -79,7 +84,7 @@ public partial class WallUpdateSessionService
         var onCentre = await db.Holds.AnyAsync(h => h.Id == card.OldHoldId && (h.WallPanel == null || (h.WallPanel.Col == 0 && h.WallPanel.Row == 0)));
         if (!onCentre)
         {
-            throw new InvalidOperationException("A hold on this panel is removed in the full review.");
+            throw new UserFacingException(OffCentreRemoveRefused);
         }
     }
 
@@ -108,7 +113,7 @@ public partial class WallUpdateSessionService
     {
         if (answer == UpdateExceptionAnswer.Remove)
         {
-            throw new InvalidOperationException("A match is confirmed here or changed in the full review.");
+            throw new UserFacingException("A match is confirmed here or changed in the full review.");
         }
 
         var row = await CarryRowAsync(db, sessionId, card.OldHoldId!.Value);

@@ -116,7 +116,7 @@ public partial class BigWallUpdate
             _phase = target;
             if (target == WallUpdatePhase.Confirm)
             {
-                await LoadShapeSummaryAsync();
+                await LoadConfirmSummaryAsync();
             }
         }
         catch (Exception ex)
@@ -180,7 +180,13 @@ public partial class BigWallUpdate
         _phase = phase;
         try
         {
-            _sessionInfo = await Sessions.SetPhaseAsync(WallId, phase, neighbourIndex);
+            _sessionInfo = await Sessions.SetPhaseAsync(WallId, phase, neighbourIndex, _sessionInfo?.Id);
+        }
+        catch (WallUpdateSessionSupersededException)
+        {
+            // Another admin's update replaced this one: the cursor must not move theirs, and nothing on this screen
+            // can be saved any more.
+            MarkSuperseded();
         }
         catch (Exception)
         {

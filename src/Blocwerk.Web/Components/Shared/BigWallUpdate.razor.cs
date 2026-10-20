@@ -57,6 +57,7 @@ public partial class BigWallUpdate : IDisposable
     private CarryoverOutcome? _outcome;
     private readonly List<NeighbourLinkSet> _linkSets = [];
     private int _neighbourIndex;
+    private PanelOverlapStepper? neighbourStepper;
 
     protected override async Task OnInitializedAsync()
     {
@@ -155,7 +156,12 @@ public partial class BigWallUpdate : IDisposable
         try
         {
             await Sessions.SaveCarryOutcomeAsync(
-                WallId, outcome.Carryover, outcome.AcceptedNewCenterHoldIds, outcome.RemovedNewCenterHoldIds);
+                WallId, outcome.Carryover, outcome.AcceptedNewCenterHoldIds, outcome.RemovedNewCenterHoldIds, _sessionInfo?.Id);
+        }
+        catch (WallUpdateSessionSupersededException)
+        {
+            MarkSuperseded();
+            return;
         }
         catch (Exception ex)
         {
@@ -175,92 +181,6 @@ public partial class BigWallUpdate : IDisposable
 
         var next = (_session?.Neighbours.Count ?? 0) == 0 ? WallUpdatePhase.Touchup : WallUpdatePhase.Neighbours;
         await GoToPhaseAsync(next);
-    }
-
-    // ---- Phase 2: one neighbour overlap at a time ------------------------------
-    private async Task OnNeighbourConfirm(PanelConfirmation confirmation)
-    {
-        if (CurrentNeighbour is { } n)
-        {
-            var set = new NeighbourLinkSet(
-                n.PanelId, confirmation.Links.ToList(), confirmation.RemovedNeighborHoldIds.ToList());
-            RecordLinkSet(set);
-            await SaveNeighbourAsync(set);
-        }
-
-        await AdvanceNeighbourAsync();
-    }
-
-    /// <summary>
-    /// The stepper's as-you-go save: the panel's outcome so far, written before it is finished, so an
-    /// interrupted walk through one panel's proposals comes back with the confirmations already made.
-    /// The set replaces the panel's rows whole, exactly as the final confirm does.
-    /// </summary>
-    private async Task OnNeighbourProgress(PanelConfirmation confirmation)
-    {
-        if (CurrentNeighbour is not { } n)
-        {
-            return;
-        }
-
-        await SaveNeighbourAsync(new NeighbourLinkSet(
-            n.PanelId, confirmation.Links.ToList(), confirmation.RemovedNeighborHoldIds.ToList()));
-    }
-
-    /// <summary>
-    /// Skipping a neighbour keeps its panel (it is promoted with the rest) but records no links — it
-    /// never deletes the staged panel, so no holds are lost.
-    /// <para>
-    /// Skip means "not now", never "throw away what I already decided". A panel confirmed in an EARLIER
-    /// session keeps its rows: clearing them here destroyed real, already-confirmed work with no prompt,
-    /// and because the in-memory set was emptied to match, the screen agreed and the loss was invisible.
-    /// Preserving beats confirming-first because the destructive reading of Skip has no use case — a user
-    /// who wants a panel's links gone re-walks it and confirms an empty set, which rewrites its rows.
-    /// </para>
-    /// </summary>
-    private async Task OnNeighbourSkip()
-    {
-        if (CurrentNeighbour is { } n)
-        {
-            // Only a panel with NOTHING recorded gets an empty set; anything already decided is left
-            // exactly as it stands, in memory and in the session.
-            var existing = _linkSets.FirstOrDefault(l => l.PanelId == n.PanelId) ?? RestoredFor(n.PanelId);
-            RecordLinkSet(existing ?? new NeighbourLinkSet(n.PanelId, [], []));
-        }
-
-        await AdvanceNeighbourAsync();
-    }
-
-    // A panel is always decided WHOLE, so a re-walk replaces its set rather than appending a second one.
-    private void RecordLinkSet(NeighbourLinkSet set)
-    {
-        _linkSets.RemoveAll(l => l.PanelId == set.PanelId);
-        _linkSets.Add(set);
-    }
-
-    private async Task SaveNeighbourAsync(NeighbourLinkSet set)
-    {
-        try
-        {
-            await Sessions.SaveNeighbourLinkSetAsync(WallId, set);
-        }
-        catch (Exception ex)
-        {
-            _error = $"Could not save this panel's overlaps: {ex.Message}";
-        }
-    }
-
-    private async Task AdvanceNeighbourAsync()
-    {
-        if (_session is not null && _neighbourIndex < _session.Neighbours.Count - 1)
-        {
-            _neighbourIndex++;
-            await GoToPhaseAsync(WallUpdatePhase.Neighbours, _neighbourIndex);
-        }
-        else
-        {
-            await GoToPhaseAsync(WallUpdatePhase.Touchup);
-        }
     }
 
     // ---- Phase 3: manual touch-up across every staged panel --------------------

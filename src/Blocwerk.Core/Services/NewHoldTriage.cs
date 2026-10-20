@@ -7,8 +7,20 @@ using Blocwerk.Core.Enums;
 
 namespace Blocwerk.Core.Services;
 
-/// <summary>An unpaired staged detection, in RAW pixels of the staged photo (radius 0: size unknown).</summary>
-public readonly record struct TriageCandidate(Guid Id, double X, double Y, double RadiusPx = 0, bool Confident = false);
+/// <summary>An unpaired staged detection, in RAW pixels of the staged photo (radius 0: size unknown; no outline: a circle).</summary>
+public readonly record struct TriageCandidate(
+    Guid Id,
+    double X,
+    double Y,
+    double RadiusPx = 0,
+    bool Confident = false,
+    IReadOnlyList<(double X, double Y)>? Outline = null,
+    TriageLab? Lab = null);
+
+/// <summary>A detection kept although it lies inside a carried hold, because its colour says another hold is there now.</summary>
+/// <param name="DetectionId">The staged detection.</param>
+/// <param name="OldHoldId">The old hold no detection carries that it lies in, or null when it lies in a found-again hold.</param>
+public readonly record struct TriageSwap(Guid DetectionId, Guid? OldHoldId);
 
 /// <summary>A hold's spot on a staged photo, RAW pixels.</summary>
 public readonly record struct TriageSpot(double X, double Y, double RadiusPx);
@@ -22,6 +34,15 @@ public readonly record struct TriageSpot(double X, double Y, double RadiusPx);
 /// <param name="Evidence3D">What the 3D model says per candidate; null (or a missing id) when there is no 3D evidence.</param>
 /// <param name="Carried">The staged detections an old hold is carried onto.</param>
 /// <param name="NotFound">The old holds no detection carries, at their predicted spot on the staged photo.</param>
+/// <param name="CarriedOutlines">
+/// The footprints of every carried hold on the staged photo: the detections an old hold is carried onto, and the old holds
+/// no detection carries at their warped spot and outline. Null: the inside-a-carried-hold rule does not run.
+/// </param>
+/// <param name="OldMarkerQuads">The printed markers the OLD photo showed (old photo RAW pixels), or null.</param>
+/// <param name="OldToNewColourShift">
+/// The typical colour change between the photos (median over the found-again pairs, new minus old): the white balance of
+/// the two captures. An old hold's colour is shifted by it before it is compared with a detection's.
+/// </param>
 public sealed record NewHoldTriageInput(
     IReadOnlyList<TriageCandidate> Candidates,
     IReadOnlyList<PointPair> NewToOld,
@@ -30,13 +51,18 @@ public sealed record NewHoldTriageInput(
     OverlapOwner? Owner = null,
     IReadOnlyDictionary<Guid, Evidence3DVerdict>? Evidence3D = null,
     IReadOnlyList<TriageSpot>? Carried = null,
-    IReadOnlyList<TriageSpot>? NotFound = null);
+    IReadOnlyList<TriageSpot>? NotFound = null,
+    IReadOnlyList<TriageOutline>? CarriedOutlines = null,
+    IReadOnlyList<IReadOnlyList<(double X, double Y)>>? OldMarkerQuads = null,
+    TriageLab? OldToNewColourShift = null);
 
 /// <summary>
 /// Picks the unpaired staged detections that are most likely NOT new holds, so the review discards them
 /// by default (the user can still keep any of them). Conservative on purpose: a detection is only
-/// suggested when it sits on a printed marker, when (on a neighbour panel) the centre photo shows that spot,
-/// when the aligned old photo did not cover it, or when the old photo shows the same thing at the aligned spot.
+/// suggested when it sits on a printed marker (seen on the staged photo, or on the old one and mapped over), when (on a
+/// neighbour panel) the centre photo shows that spot, when it lies mostly inside a carried hold (a second outline, or a
+/// part of a hold such as a bolt hole), when the aligned old photo did not cover it, or when the old photo shows the
+/// same thing at the aligned spot.
 /// A detection on the spot of an old hold that was NOT found again is never "known" or "unchanged": it is what is
 /// there now, so it stays a new hold. Nor is a detection "known" for a carried hold of a clearly different size.
 /// </summary>
@@ -79,60 +105,39 @@ public static class NewHoldTriage
     public static double ProbeRadiusPx(double radiusPx) =>
         radiusPx >= LargeHoldPatches * PresencePatch.DefaultRadius ? radiusPx : 0;
 
+    /// <summary>The default verdicts on <paramref name="input"/>'s candidates: the ones to discard, with why.</summary>
+    /// <param name="input">The panel's detections and what is known about them.</param>
+    /// <param name="presence">The presence probe against the old photo, or null when there is none.</param>
+    /// <param name="swaps">Collects the detections kept as another hold on a carried hold's spot (see <see cref="TriageSwap"/>).</param>
+    /// <returns>The suggested discards by detection id.</returns>
     public static Dictionary<Guid, NewHoldDiscardReason> Classify(
         NewHoldTriageInput input,
-        Func<IReadOnlyList<PresenceQuery>, IReadOnlyList<double?>>? presence)
+        Func<IReadOnlyList<PresenceQuery>, IReadOnlyList<double?>>? presence,
+        ICollection<TriageSwap>? swaps = null)
     {
         var result = new Dictionary<Guid, NewHoldDiscardReason>();
         var aligned = input.OldSize is not null && input.NewToOld.Count >= MinimumPairs;
+        var geometry = NewHoldTriageGeometry.For(input, aligned);
         var queries = new List<(Guid Id, PresenceQuery Query)>();
+        var swapCandidates = new List<(TriageCandidate Candidate, TriageOutline Carried)>();
         foreach (var c in input.Candidates)
         {
-            if (input.MarkerQuads.Any(q => InsideGrown(q, c.X, c.Y)))
+            if (Verdict(input, geometry, aligned, c, out var swappedWith) is { } reason)
             {
-                result[c.Id] = NewHoldDiscardReason.OnMarker;
-                continue;
+                result[c.Id] = reason;
             }
-
-            if (input.Owner is { } owner && NeighbourPanelRule.ShownByOwner(owner, c.X, c.Y))
+            else if (swappedWith is { } swapped)
             {
-                result[c.Id] = NewHoldDiscardReason.SeenOnNeighbourPanel;
-                continue;
+                swapCandidates.Add((c, swapped));
             }
-
-            var onNotFound = OnSpot(input.NotFound, c).Any();
-            if (Discard3D(input.Evidence3D, c.Id) is { } reason3D
-                && !(reason3D == NewHoldDiscardReason.KnownHoldIn3D && (onNotFound || OtherSizeThanCarried(input.Carried, c))))
+            else if (aligned && Query(input, c) is { } query)
             {
-                result[c.Id] = reason3D;
-                continue;
+                queries.Add((c.Id, query));
             }
-
-            if (!aligned || LocalAffine.Predict(input.NewToOld, c.X, c.Y) is not { } old)
-            {
-                continue;
-            }
-
-            var (w, h) = input.OldSize!.Value;
-            if (old.X < -OutsideMargin * w || old.Y < -OutsideMargin * h
-                || old.X > (1 + OutsideMargin) * w || old.Y > (1 + OutsideMargin) * h)
-            {
-                result[c.Id] = NewHoldDiscardReason.OutsideOldPhoto;
-                continue;
-            }
-
-            // A detection the detector is sure of and that has a traced outline is a hold, also where the spot looks
-            // as it did on the old photo: the old wall simply had no record of it (or only a placeholder circle).
-            if (onNotFound || c.Confident)
-            {
-                continue;
-            }
-
-            var scale = LocalAffine.Scale(input.NewToOld, c.X, c.Y) ?? 1;
-            queries.Add((c.Id, new PresenceQuery(c.X, c.Y, old.X, old.Y, scale, ProbeRadiusPx(c.RadiusPx))));
         }
 
         AddUnchanged(result, queries, presence);
+        NewHoldTriageSwaps.Resolve(input, aligned, swapCandidates, presence, result, swaps);
         return result;
     }
 
@@ -159,6 +164,66 @@ public static class NewHoldTriage
         }
 
         return inside;
+    }
+
+    /// <summary>The rule that discards the candidate without asking the old photo, or null when none does.</summary>
+    private static NewHoldDiscardReason? Verdict(
+        NewHoldTriageInput input, NewHoldTriageGeometry geometry, bool aligned, TriageCandidate c, out TriageOutline? swappedWith)
+    {
+        swappedWith = null;
+        if (input.MarkerQuads.Any(q => InsideGrown(q, c.X, c.Y)) || geometry.OnOldMarker(c))
+        {
+            return NewHoldDiscardReason.OnMarker;
+        }
+
+        if (input.Owner is { } owner && NeighbourPanelRule.ShownByOwner(owner, c.X, c.Y))
+        {
+            return NewHoldDiscardReason.SeenOnNeighbourPanel;
+        }
+
+        var onNotFound = OnSpot(input.NotFound, c).Any();
+        if (Discard3D(input.Evidence3D, c.Id) is { } reason3D
+            && !(reason3D == NewHoldDiscardReason.KnownHoldIn3D && (onNotFound || OtherSizeThanCarried(input.Carried, c))))
+        {
+            return reason3D;
+        }
+
+        var inside = geometry.InsideCarried(c, out swappedWith);
+        if (inside == InsideVerdict.Inside)
+        {
+            return NewHoldDiscardReason.InsideCarriedHold;
+        }
+
+        if (inside == InsideVerdict.Swapped)
+        {
+            return null;
+        }
+
+        if (!aligned || LocalAffine.Predict(input.NewToOld, c.X, c.Y) is not { } old)
+        {
+            return null;
+        }
+
+        var (w, h) = input.OldSize!.Value;
+        return old.X < -OutsideMargin * w || old.Y < -OutsideMargin * h || old.X > (1 + OutsideMargin) * w || old.Y > (1 + OutsideMargin) * h
+            ? NewHoldDiscardReason.OutsideOldPhoto
+            : null;
+    }
+
+    /// <summary>
+    /// The question to the old photo about a candidate no rule settled, or null when it is not asked. A detection the
+    /// detector is sure of and that has a traced outline is a hold, also where the spot looks as it did on the old photo:
+    /// the old wall simply had no record of it (or only a placeholder circle). Nor is one on a not-found old hold's spot.
+    /// </summary>
+    private static PresenceQuery? Query(NewHoldTriageInput input, TriageCandidate c)
+    {
+        if (OnSpot(input.NotFound, c).Any() || c.Confident || LocalAffine.Predict(input.NewToOld, c.X, c.Y) is not { } old)
+        {
+            return null;
+        }
+
+        var scale = LocalAffine.Scale(input.NewToOld, c.X, c.Y) ?? 1;
+        return new PresenceQuery(c.X, c.Y, old.X, old.Y, scale, ProbeRadiusPx(c.RadiusPx));
     }
 
     /// <summary>The spots the candidate sits on: one centre lies within the other's radius.</summary>

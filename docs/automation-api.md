@@ -12,6 +12,7 @@ Every route calls the same service the page calls, so the rules are the page's r
 | Colours for holds without one (`/api/walls/{wallId}/holds/suggest-colors`) | yes | **no** (403) | no (403) |
 | Stacks for existing holds (`/api/walls/{wallId}/holds/stacks`, `…/stacks/preview`) | yes | **no** (403) | no (403) |
 | Wall preparation (`/api/walls/{wallId}/markers`, `…/marker-plan`, `…/marker-plan/revisions`) | yes | yes | no (403) |
+| Change journal export / replay / revert (`/api/v1/admin/journal/…`) | yes, **owner must be an installation admin** | **no** (403) | no (403) |
 
 * "Write access" is the *Allow this key to change walls* box when creating the key under *Settings → API keys*.
 * The owner has to be an admin of the wall (owner or member with the Admin role). Being an administrator of the installation is not enough on its own, exactly as in the browser: the request answers 403.
@@ -27,7 +28,7 @@ Every write through these routes is recorded in the change journal, scoped to th
 * All the files of one upload go into one batch per run (and key): `api:refresh.upload run:<id> key:<id>`.
 * Every write, refused or not, is also in the server log with the key id.
 
-Actions: `refresh.begin`, `refresh.upload run:<id>`, `refresh.sort`, `refresh.recheck`, `refresh.start`, `refresh.apply`, `refresh.discard`, `holds.suggest-colors`, `markers.set`, `marker-plan.save`, `marker-plan.effective rev:<n>`.
+Actions: `refresh.begin`, `refresh.upload run:<id>`, `refresh.sort`, `refresh.recheck`, `refresh.start`, `refresh.check`, `refresh.checks`, `refresh.apply`, `refresh.discard`, `lookover.answer`, `lookover.undo`, `lookover.finish`, `holds.suggest-colors`, `markers.set`, `marker-plan.save`, `marker-plan.effective rev:<n>`. The answers' own changes (a removed or merged hold in the look-over) are journalled in the look-over's own batch, as from the page; the `api:` batch records who asked.
 
 ## Panel update, end to end
 
@@ -72,11 +73,13 @@ curl -fsS -H "$AUTH" "$BASE/api/walls/$WALL/refresh/$RUN" | jq '{status, error}'
 
 Statuses: 0 uploading, 1 sorting, 2 ready to start, 3 running, 4 ready to apply, 5 applying, 6 done, 7 failed, 8 discarded.
 
+`start` answers 409 before anything runs (no capture is started, the run stays at status 2 with its photos) while another update is open on the wall, typically a forgotten *Update step by step*: the error names who started it and when. Finish or discard that one first. A step-by-step update nobody has touched for 7 days is discarded by the server (its staged photos and choices; nothing live changes).
+
 `start` takes an optional body `{"choices":[{"col":0,"row":0,"photoId":"<id>"}]}` to override the proposal per panel (`photoId: null` keeps that panel's current photo). Without it the run uses the sorter's picks and the quick review's decisions (every old hold carried, only sure overlap links), the same as pressing *Start* and *Apply* on the page without changing anything. Anything finer (moved holds, removals) remains the full review in the browser.
 
 The quick review never takes a hold off a boulder. What it does on its own, and what the summary says about it before anything is applied:
 
-* An old hold is carried onto the detection at its spot only when that detection still looks like it. When another hold sits there now, the old hold is kept where it was, the detection becomes a new hold, and a card asks (`replacedHolds` counts them). A pair that is merely unclear is carried and also gets a card; a pair that cannot be measured is carried without one. Cards can only be answered on the page; unanswered ones mark the hold for review and stay with the wall for the look-over (below).
+* An old hold is carried onto the detection at its spot only when that detection still looks like it. When another hold sits there now, the old hold is kept where it was, the detection becomes a new hold, and a card asks (`replacedHolds` counts them). A pair that is merely unclear is carried and also gets a card; a pair that cannot be measured is carried without one. Cards are answered on the page or over the API (*Answering the cards*, below); unanswered ones mark the hold for review and stay with the wall for the look-over (below).
 * `notFoundHolds` is the to-do list for after the update: every old hold used by a boulder that was not found again and confidently no longer shows at its spot (`outcome` 4, `"not found again on the new photo"`) or was replaced (`outcome` 5, `"another hold is here now"`), with `oldHoldId`, `holdName` (name, else colour), `text` and `boulders` (names). `notFoundOnBoulders` is its length and `bouldersMarkedNotFound` the number of boulders Apply marks for review because of it. Holds that were not detected but may still be there (the spot is unclear, cannot be measured, or another panel still shows the hold) are kept silently and are not listed.
 * A hold can sit on another hold (a hold on a volume): a hold that lies mostly (70 % of its area) inside the outline of a much larger one (at least 4 times its area; a plain circle is never a base) is stacked on it when it is detected or added, and the two are two holds everywhere. An old hold is never carried onto a detection of a clearly different size (the matcher takes the nearest detection of its own size; `otherSize` in the `[Matcher]` log line counts them), and a pair of clearly different size that does not look alike is taken apart without `"another hold is here now"`: the old hold is then judged by its own spot. A carried hold keeps what it sat on (the successor of its old base). Holds that were on the wall before are never stacked by themselves: `POST /api/walls/$WALL/holds/stacks/preview` lists what the rule would stack (`stacks`: `holdId`, `baseHoldId`, `panelId`, `insidePercent`, `areaRatio`, both colours; writes nothing), and `POST /api/walls/$WALL/holds/stacks` stacks them (all, or only the `holdIds` of the body) as one change-journal batch (`hold-stacks`). A hold that already sits on a hold is left as it is, so a second run changes nothing.
 * `movedHolds` lists the carried holds that physically moved, in the same shape plus `newHoldId`, `distanceMm` and `source`.
@@ -100,6 +103,35 @@ curl -fsS -X POST -H "$AUTH" -H 'Content-Type: application/json' \
 * Nothing is left for the look-over about old holds; the wall is flagged when an unsure link (or a new-hold finding) remains.
 * It is one change-journal batch like any other update, but there is no undo in the app. Until Apply, `DELETE …/refresh/{id}` discards it and the wall stays as it is.
 
+### Answering the cards
+
+The confirm screen's cards (the holds whose evidence needs a person's look) can be listed and answered while the run is at status 4. Each answer is the page's own: written to the run's update session as the full review's decision, after which the summary is made again in the background, so read `…/summary` again and apply its new `decisionsVersion`.
+
+```sh
+# The cards and how each is answered now:
+curl -fsS -H "$AUTH" "$BASE/api/walls/$WALL/refresh/$RUN/checks" | jq -c '.[] | {id, kind, status, holdName, boulders, canRemove}'
+
+# Answer one (keep | remove | undo, or 0 | 1 | 2):
+curl -fsS -X POST -H "$AUTH" -H 'Content-Type: application/json' \
+  -d '{"answer":"keep"}' "$BASE/api/walls/$WALL/refresh/$RUN/checks/$CARD/answer"
+
+# Answer several in one go, in order:
+curl -fsS -X POST -H "$AUTH" -H 'Content-Type: application/json' \
+  -d '{"answers":[{"checkId":"<id>","answer":"keep"},{"checkId":"<id>","answer":"remove"}]}' \
+  "$BASE/api/walls/$WALL/refresh/$RUN/checks/answers"
+```
+
+| Method | Route | Body | Answers |
+|---|---|---|---|
+| GET | `…/refresh/{refreshId}/checks` | — | 200 `[{id, kind, status, hasOld, hasModel, boulders, holdName, confidence, canRemove}]` (empty unless status 4) |
+| POST | `…/refresh/{refreshId}/checks/{checkId}/answer` | `{"answer": "keep"\|"remove"\|"undo"}` | 202 `{"answered": 1}` |
+| POST | `…/refresh/{refreshId}/checks/answers` | `{"answers": [{"checkId", "answer"}]}` | 202 `{"answered": n}` |
+
+* `kind`: 0 possibly removed, 1 unsure match, 2 new hold with conflicting evidence, 3 matched to a hand-placed hold, 4 hand-placed hold with several detections, 5 another hold is here now. `status`: 0 open, 1 kept, 2 removed.
+* `keep` keeps the old hold (carried where it was), confirms the match, or keeps the detection as a new hold; `remove` removes the old hold, rejects a hand-placed merge, or leaves the detection out; `undo` puts the update's default back. Kinds 1 and 4 take no `remove`.
+* `canRemove` is false for a hold on a panel other than the centre (kinds 0 and 5): such a removal would be undone at the apply, so it is refused with 409; the hold is carried over and the look-over asks about it again.
+* 400 without an answer; 409 when an answer is refused (the card is no longer part of the update, the update was replaced or discarded in the full review, the 3D check is running, the run is not at status 4). Several answers (at most 500 per call, 400 above) are applied in order and the first refusal stops the rest: those before it stay answered, and the answer says where it stopped, `{"answered": n, "failedCheckId": "<id>", "error": "…"}` (202 when some were saved, 409 when none were), so a script resumes after `failedCheckId`.
+
 ### Consistency
 
 * Reads (`GET …/refresh`, `…/{id}`, `…/summary`) change nothing: polling is side-effect free. `canApply` is true once the summary is ready and no check against this visit's new 3D model is pending.
@@ -110,7 +142,7 @@ curl -fsS -X POST -H "$AUTH" -H 'Content-Type: application/json' \
 
 ### After the apply: the wall look-over
 
-Cards can only be answered on the page, so an update applied from a script goes live with all of them open. They are not lost: every finding nobody answered is kept with the wall, and the wall is flagged as waiting for a look-over until a wall admin or moderator has finished it on the page (*Look over the wall*, `/walls/{wallId}/look-over`). The flag is set by every apply that leaves a finding (from a script, from the page, from the full review) and by nothing else; an update that leaves none does not flag the wall.
+An update applied from a script without answering its cards goes live with all of them open. They are not lost: every finding nobody answered is kept with the wall, and the wall is flagged as waiting for a look-over until a wall admin or moderator has finished it (on the page, *Look over the wall*, `/walls/{wallId}/look-over`, or over the API below). The flag is set by every apply that leaves a finding (from a script, from the page, from the full review) and by nothing else; an update that leaves none does not flag the wall.
 
 ```sh
 # The finished run says what it left behind (null when the wall is not flagged):
@@ -125,7 +157,16 @@ curl -fsS -H "$AUTH" "$BASE/api/walls/$WALL/look-over/findings" \
 * `GET …/look-over` answers `pending`, `pendingSince` (the first update that left a finding since the last finished look-over; later updates do not move it), `generation` (the wall generation of the latest update that left one), `openFindings`, `totalFindings` (the open ones plus those answered since `pendingSince`), `completedAt` and `completedBy` (the last finished look-over, kept while the next one is pending).
 * While `pending`, `bouldersMarked` is the number of current boulders marked for review and `moreBoulders` the number that are not marked but use a hold an open finding is about (an unsure match marks the hold, not its boulders). `missingHolds` is the number of open findings about a hold the update could not find (see below).
 * The flag never clears by itself: with `openFindings` 0 (everything answered, or a later update superseded what was open) the wall stays `pending` until somebody presses *Finish look-over*.
-* Both routes are read-only and take the key of the panel update (a personal key with write access); its owner must be the wall's owner, an admin or a moderator of it, else 403. There is no route to answer a finding or to finish the look-over: that is a person's look at the wall.
+* All look-over routes take the key of the panel update (a personal key with write access); its owner must be the wall's owner, an admin or a moderator of it, else 403. The reads change nothing.
+* Answering, taking an answer back and finishing (each answers 200 with the look-over's state, 409 with the reason when refused, 400 without an answer):
+
+| Method | Route | Body |
+|---|---|---|
+| POST | `…/look-over/findings/{findingId}/answer` | `{"answer": "Settle"\|"DifferentHold"\|"RemoveHold"\|"UseNewHold"\|"AddHold"\|"Unlink" (or 0, 1, 2, 3, 6, 7), "expectedBoulderIds": ["<id>", …]}` |
+| POST | `…/look-over/findings/{findingId}/undo` | — |
+| POST | `…/look-over/finish` | `{"leaveOpen": false}` |
+
+* An answer must be one of the finding's `answers`. `expectedBoulderIds` are the ids of the finding's `boulders` as read; they are required for every answer but `Settle`, and when other boulders use the hold by now the answer is refused (409): read the findings again. `undo` takes back an answer that changed nothing on the wall (a removed or merged hold is not undone). `finish` is refused while findings are open unless `leaveOpen` is true. "It is this hold" (4) and "It is here" (5) need a hold or a spot and stay on the page.
 * A finding has `kind` (0 possibly removed, 1 unsure match, 2 new hold with conflicting evidence, 3 matched to a hand-placed hold, 4 hand-placed hold with several detections, 5 another hold is here now, 6 not found again on a boulder, 7 an old hold kept in place with a new hold on the same spot, 8 a discarded detection, 9 two holds a full revision linked across two photos without being sure), `status` (0 open, 1 answered, 2 superseded by a later update of its panel, 3 closed because the hold was dealt with in the hold editor: `closedReason` 0 removed there, 1 merged in the duplicate review, 2 edited or confirmed there, 3 a hold was added on the spot), `holdId` (the live hold; null for kind 2 and once the hold was deleted), `oldHoldId`, `otherHoldId` (the new hold on the spot, kinds 0, 5, 6, 7), `boulders` (`id`, `name`, `needsReview`) and `answers`, the answers the page offers for it now (0 it is fine as it is, 1 different hold, 2 remove the hold, 3 the boulders should use the new hold). A recorded `answer` can also be 4 (the old hold is one of the holds on the new photo: merged into it) or 5 (the old hold was moved to where it is). An answered finding also says `answeredBy`, `answerBoulders` (boulders on the hold when it was answered), `clearedBoulders` and `canUndo`.
 * On the page, "Still there" (kind 6) and "Same hold" (kind 1) say the update was wrong about the hold: a boulder that this update marked only for that hold loses its mark. No other answer clears a boulder, and a boulder that was marked before the update is never cleared. An answer that changed nothing on the wall can be undone on its card; a removed or merged hold cannot.
 * A hold the update could not find again is kept as a copy, but as "kept, not confirmed": it is not drawn on the wall, in the hold pickers or in the 3D view (a boulder that already uses it still shows it, faded), it is not counted among the wall's holds, and creating or changing a boulder so that it newly uses such a hold is refused with 400 (*"One of the holds was not found again in the last update…"*). Each of them is a finding (`holdKept` true while it is unconfirmed, `keptAtUpdate` true for good; `covered` when it lies under a hold the update found on the new photo), with or without boulders. A person confirms it on the page ("Still here", "It is this hold", "It is here"), by editing it in the hold editor, or removes it.
@@ -178,9 +219,41 @@ curl -fsS -H "$AUTH" "$BASE/api/walls/$WALL/marker-plan" > marker-plan.current.j
 
 A plan can also be attached to a single capture (`PUT /api/walls/{wallId}/captures/{captureId}/plan`), which saves it as a revision the same way.
 
+## Change journal: export a wall update and replay it on another instance
+
+Run the update once locally, check it, then carry exactly what it wrote to production. These routes replace the Development-only `/dev/journal/*` harness. They take a personal key with write access whose owner is an **administrator of the installation** (anything else is 403, no key is 401), exactly like the capture package routes.
+
+| Method and route | What it does |
+| --- | --- |
+| `GET /api/v1/admin/journal/walls/{wallId}/batches?includeUnscoped=false&since=<iso time>` | The wall's batches, oldest first: `id`, `label`, `scopeKind`, `scopeId`, `status`, `actor`, `createdAt`, `sealedAt`, `entryCount`, `wallUpdateBatchId` (the wall update the batch belongs to: the `wall-update` batch itself, or the one that was open when the batch was created; null otherwise). `includeUnscoped=true` adds the unscoped `adhoc` batches since `since` (default: the last 7 days) that touched the wall. |
+| `GET /api/v1/admin/journal/export?updateBatchId=<id>` | **A whole wall update**: the `wall-update` batch and every batch of the wall created while it was open (nested and `adhoc` ones), as gzip-compressed JSON (`application/gzip`), panel photos inside, in the source's write order. 404 when the id is not a `wall-update` batch. |
+| `GET /api/v1/admin/journal/export?wallId=<id>&since=<iso>&until=<iso>&includeUnscoped=true` | The wall's batches created in that window (adhoc ones included unless `includeUnscoped=false`). Replays, reverts and reverted batches are left out of both modes above. |
+| `GET /api/v1/admin/journal/export?batchId=<id>&batchId=<id>…` | Exactly the batches named. Name exactly one of `updateBatchId`, `wallId` or `batchId` (else 400). |
+| `POST /api/v1/admin/journal/replay?dryRun=true&force=false` | Body: the package, gzip or plain JSON, up to 1 GB. **A dry run unless `dryRun=false`.** Returns the report: `applied`, `dryRun`, `rows[]` (`seq`, `batchId`, `entityType`, `keyJson`, `outcome` 0 applied / 1 already applied / 2 conflict, `detail`), `fatalErrors[]`, `replayBatchId` (also in the `X-Replay-Batch-Id` header; it is the batch to revert to undo the replay, listed under the package's wall). 200 for a dry run or a committed run; 409 with the report when a real run was refused; 409 with a problem body (`title`, `detail` naming the constraint) when the database refused a write while applying (nothing committed); 499 when the client went away (rolled back). |
+| `POST /api/v1/admin/journal/batches/{batchId}/revert?dryRun=true&force=false` | Reverts one batch on this instance. **A dry run unless `dryRun=false`.** 200 with `reverted`, `dryRun`, `conflicts[]`, `revertBatchId`; 404 for an unknown batch; 409 when a real revert was refused. |
+
+```sh
+AUTH="Authorization: Bearer $BLOCWERK_PERSONAL_API_KEY"   # personal key with write access, owner is an installation admin
+
+# Locally: find the update's batch and export it.
+curl -fsS -H "$AUTH" "$LOCAL/api/v1/admin/journal/walls/$WALL/batches?includeUnscoped=true" | jq '.[] | {id, label, sealedAt, entryCount, wallUpdateBatchId}'
+curl -fsS -H "$AUTH" -o update.json.gz "$LOCAL/api/v1/admin/journal/export?updateBatchId=$UPDATE"
+
+# On production: dry run first (the default), read the conflicts, then apply.
+curl -sS -X POST -H "$AUTH" --data-binary @update.json.gz "$BASE/api/v1/admin/journal/replay" | jq '{dryRun, fatalErrors, conflicts: [.rows[] | select(.outcome == 2)]}'
+curl -fsS -X POST -H "$AUTH" --data-binary @update.json.gz "$BASE/api/v1/admin/journal/replay?dryRun=false" | jq '{applied, replayBatchId}'
+```
+
+* **Schema parity is never forced.** The package records the source's last EF migration. A target on another migration refuses the replay with a fatal error, even with `force=true`. `force` only pushes past row conflicts. Use it only when you have read every conflict.
+* **Replaying is idempotent.** Rows already at the package's result report `outcome` 1 and are left alone, so a package can be sent again after a partial failure.
+* **One wall update is one batch.** Staging, every touch-up of the staged holds (the Detected and Touchup steps, and the full review's editor) and the promote all record into the wall's `wall-update` batch, so exporting that batch alone carries the whole update. So is the triage's discard reason on each staged detection. Updates recorded before this change have their touch-ups in separate `adhoc` batches: `export?updateBatchId=` picks them up (they were written while the update was open), and the package is ordered by write time, so they replay in the order they were made.
+* Later batches on the wall (look-over answers, colour proposals) can go in the same package or in their own, sent afterwards. Do not export placement or remeasure batches: production recomputes those when the capture is imported (replay the journal first, then import the capture).
+* Not in the journal, so not carried: look-over findings, update sessions, refresh runs and captures, and the look-over's "missing" `NeedsReview` flag.
+* Memory: the replay holds the whole package in memory. Expect a peak of roughly 3 to 4 times the uncompressed package size (the Base64 text as .NET strings, plus the decoded photos the applied rows need), so about 1 to 1.2 GB for a 300 MB package. Blobs no row needs are never decoded.
+
 ## Still in the browser
 
-* Looking over the wall after an update: answering the findings and finishing the look-over (the API only reads them).
+* Looking over the wall after an update: "It is this hold" and "It is here" (the other answers, undo and finish have routes).
 * The full step-by-step review of a panel update (moved holds, removals, overlap links below the threshold, touch-up).
 * Generating or editing a marker plan and printing its PDF (the API stores a plan made in the planner).
 * Wall segments' marker bindings and importing a `wall-geometry.json` by hand.

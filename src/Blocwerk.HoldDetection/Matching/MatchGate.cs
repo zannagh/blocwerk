@@ -27,6 +27,15 @@ internal static class MatchGate
     /// </summary>
     internal const double OtherSizeFactor = 2.5;
 
+    /// <summary>
+    /// The next detection from the predicted centre must lie at least this fraction farther than the chosen one; nearer, the
+    /// pick is a toss-up between two neighbours (see <see cref="Ambiguous"/>).
+    /// </summary>
+    internal const double MinUniqueMargin = 0.25;
+
+    /// <summary>Within this many pixels (or half the detection's radius, when more) the predicted centre is on the detection.</summary>
+    internal const double OnHoldPx = 12.0;
+
     /// <summary>Number of neighbouring mutual candidates the local field error is estimated from.</summary>
     internal const int SpreadNeighbours = 8;
 
@@ -127,5 +136,91 @@ internal static class MatchGate
 
         double tolerance = Math.Max(RadiusFactor * r, SpreadFactor * Math.Max(localSpreadPx, MinSpreadPx));
         return residualPx > tolerance;
+    }
+
+    /// <summary>
+    /// True when the pick is not unique: the predicted centre is not on the chosen detection (farther than
+    /// <see cref="OnHoldPx"/> or half its radius) and the next detection is less than <see cref="MinUniqueMargin"/> farther.
+    /// Such a pair is how an old hold "jumps" to a neighbouring detection, and its displacement is then reported as a move.
+    /// On The Attic's gen 5 → 6 update all 8 such pairs of 961 were false moves. Declining costs little: the old hold is
+    /// warp-carried, and the detection is triaged as a new one (a second outline of a carried hold is discarded there).
+    /// </summary>
+    /// <param name="residualPx">Distance from the predicted centre to the chosen detection, px.</param>
+    /// <param name="competitorPx">Distance to the nearest other detection, px (infinity when there is none).</param>
+    /// <param name="radiusPx">The chosen detection's radius, px, or null.</param>
+    public static bool Ambiguous(double residualPx, double competitorPx, double? radiusPx)
+    {
+        if (residualPx <= Math.Max(OnHoldPx, 0.5 * (radiusPx ?? 0)) || double.IsPositiveInfinity(competitorPx))
+        {
+            return false;
+        }
+
+        return competitorPx <= 0 || (competitorPx - residualPx) / competitorPx < MinUniqueMargin;
+    }
+
+    /// <summary>
+    /// The detection an old hold is offered, as its band index and residual, or null when it is gated out: none of its
+    /// own size near, beyond the residual gate, or not unique (another detection about as near, <see cref="MatchGate.Ambiguous"/>).
+    /// </summary>
+    /// <param name="nearest">The old hold's nearest detections (band indices) and their distances from its predicted centre.</param>
+    /// <param name="oldSize">The old hold's normalized size, or null.</param>
+    /// <param name="rightSizes">The detections' normalized sizes, by band index.</param>
+    /// <param name="radiusRb">The detections' radii in pixels, by band index.</param>
+    /// <param name="gatePx">The residual gate, px.</param>
+    /// <param name="requireUnique">Whether a pick that is not unique is declined (the carryover pass, not the overlap one).</param>
+    /// <param name="stats">Counts every candidate gated out, by why.</param>
+    public static (int B, double Resid)? Pick(
+        (int[] Idx, double[] Dist) nearest, double? oldSize, List<double?> rightSizes, List<double?> radiusRb, double gatePx, bool requireUnique, MatchStats stats)
+    {
+        // A hold on a volume and the volume share a spot: the nearest detection of the old hold's own size is asked.
+        int n = NearestOfItsSize(oldSize, nearest.Idx.Select(c => rightSizes[c]).ToList());
+        if (n != 0)
+        {
+            stats.OtherSize++;
+        }
+
+        if (n < 0)
+        {
+            return null;
+        }
+
+        int b = nearest.Idx[n];
+        double resid = nearest.Dist[n];
+        if (resid >= gatePx)
+        {
+            stats.GatedOut++;
+            return null;
+        }
+
+        if (requireUnique && Ambiguous(resid, Competitor(nearest, n, oldSize, rightSizes), radiusRb[b]))
+        {
+            stats.Ambiguous++;
+            return null;
+        }
+
+        return (b, resid);
+    }
+
+    /// <summary>
+    /// The distance to the nearest OTHER detection that could be the old hold too: one of its own size. A volume the hold sits
+    /// on, or a small hold on a volume, lies on the same spot but is no rival, so it never makes a pick ambiguous.
+    /// </summary>
+    /// <param name="nearest">The nearest detections and their distances.</param>
+    /// <param name="picked">The position of the pick in <paramref name="nearest"/>.</param>
+    /// <param name="oldSize">The old hold's normalized size, or null.</param>
+    /// <param name="rightSizes">The detections' normalized sizes, by band index.</param>
+    /// <returns>The distance, or infinity when there is no such rival.</returns>
+    internal static double Competitor((int[] Idx, double[] Dist) nearest, int picked, double? oldSize, List<double?> rightSizes)
+    {
+        var best = double.PositiveInfinity;
+        for (int k = 0; k < nearest.Idx.Length; k++)
+        {
+            if (k != picked && !OtherSize(oldSize, rightSizes[nearest.Idx[k]]))
+            {
+                best = Math.Min(best, nearest.Dist[k]);
+            }
+        }
+
+        return best;
     }
 }

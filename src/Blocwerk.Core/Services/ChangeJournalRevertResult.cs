@@ -5,10 +5,12 @@ namespace Blocwerk.Core.Services;
 /// is false the transaction was rolled back and nothing changed; <see cref="Conflicts"/> (or
 /// <see cref="Error"/>) says why. On success, <see cref="RevertBatchId"/> is the NEW batch the
 /// interceptor recorded for the revert's own inverse writes, so a revert is itself replayable.
+/// <see cref="DryRun"/> marks a <see cref="ChangeJournalReverter.DryRunRevertAsync"/> report: checked, never written.
 /// </summary>
 public sealed record ChangeJournalRevertResult(
     bool Reverted,
     Guid OriginalBatchId,
     Guid? RevertBatchId,
     IReadOnlyList<ChangeJournalConflict> Conflicts,
-    string? Error);
+    string? Error,
+    bool DryRun = false);

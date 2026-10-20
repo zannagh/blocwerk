@@ -41,7 +41,7 @@ public partial class WallUpdateSessionService
     }
 
     /// <inheritdoc/>
-    public async Task DecideRelocationAsync(Guid wallId, Guid suggestionId, RelocationDecision decision)
+    public async Task DecideRelocationAsync(Guid wallId, Guid suggestionId, RelocationDecision decision, Guid? expectedSessionId = null)
     {
         var user = await currentUserService.GetCurrentUserAsync();
         await using var db = await dbContextFactory.CreateDbContextAsync();
@@ -49,7 +49,7 @@ public partial class WallUpdateSessionService
         await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
 
         await using var transaction = await db.Database.BeginTransactionAsync();
-        var session = await RequireOpenAsync(db, wallId);
+        var session = await RequireOpenAsync(db, wallId, expectedSessionId);
         await LockSessionAsync(db, session.Id);
         var proposal = await db.WallUpdateRelocationProposals
             .FirstOrDefaultAsync(p => p.Id == suggestionId && p.SessionId == session.Id)

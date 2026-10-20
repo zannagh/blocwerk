@@ -93,6 +93,12 @@ public interface IWallRefreshService
     /// </summary>
     Task DecideCheckAsync(Guid refreshId, Guid checkId, Enums.UpdateExceptionAnswer answer);
 
+    /// <summary>
+    /// Answers several cards in order, as <see cref="DecideCheckAsync"/> does one; the summary is made again once. The first
+    /// answer that is refused stops the rest (those before it stay answered). Returns how many were answered.
+    /// </summary>
+    Task<int> DecideChecksAsync(Guid refreshId, IReadOnlyList<RefreshCheckAnswer> answers);
+
     /// <summary>Throws the run away (and its prepared panel update); a started 3D capture keeps running.</summary>
     Task DiscardAsync(Guid refreshId);
 }

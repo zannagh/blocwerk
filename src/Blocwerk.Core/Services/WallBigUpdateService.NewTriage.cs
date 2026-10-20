@@ -73,9 +73,13 @@ public partial class WallBigUpdateService
         var unpaired = Unpaired(staged, twins);
         var evidence = await PanelEvidenceAsync(db, context.Model3D, panel.Id, twins, unpaired.Count + removable.Count > 0);
         var verdicts = Verdicts3D(evidence, unpaired);
-        var notFound = removable.Select(h => (context.Removals.Warp[h.Id], h.Radius)).ToList();
-        var outcome = await TriagePanelAsync(db, panel.Id, staged, twins, oldPhoto, OwnerSource(centre, overlap, staged), verdicts, notFound);
+        var notFound = removable.Select(h => new WarpedOldHold(
+            context.Removals.Warp[h.Id], h.Radius, context.Removals.WarpShapes?.GetValueOrDefault(h.Id), Carries(h, context.Removals), h.Id, Lab(h))).ToList();
+        var oldPanelId = twins.Select(t => t.Old.WallPanelId).Concat(removable.Select(h => h.WallPanelId)).FirstOrDefault(id => id is not null);
+        var outcome = await TriagePanelAsync(
+            db, new TriagedPanel(panel.Id, staged, twins, oldPhoto, oldPanelId), OwnerSource(centre, overlap, staged), verdicts, notFound);
         Collect(result, outcome, verdicts);
+        result.Swaps.AddRange((outcome?.Swaps ?? []).Select(w => (w, panel.Id)));
         result.Evidence3DModelId ??= verdicts is null ? null : context.Model3D?.Id;
         if (evidence is not null && context.Model3D is { } model)
         {
@@ -126,44 +130,42 @@ public partial class WallBigUpdateService
 
     private async Task<PanelTriage?> TriagePanelAsync(
         BlocwerkDbContext db,
-        Guid panelId,
-        IReadOnlyList<Hold> staged,
-        IReadOnlyList<(Hold Old, Hold New)> twins,
-        byte[]? oldPhoto,
+        TriagedPanel panel,
         Func<(int Width, int Height), OverlapOwner?> owner,
         IReadOnlyDictionary<Guid, Evidence3DVerdict>? verdicts,
-        IReadOnlyList<(HoldPositionNorm At, double Radius)> notFound)
+        IReadOnlyList<WarpedOldHold> notFound)
     {
-        var newPhoto = await db.WallPanels.Where(p => p.Id == panelId).Select(p => p.StagedPhoto).FirstAsync();
+        var newPhoto = await db.WallPanels.Where(p => p.Id == panel.PanelId).Select(p => p.StagedPhoto).FirstAsync();
         if (newPhoto is null || OverlapSeedLoader.RawSize(newPhoto) is not { } newSize)
         {
             return null;
         }
 
-        var oldSize = oldPhoto is null ? null : OverlapSeedLoader.RawSize(oldPhoto);
-        var candidates = Unpaired(staged, twins)
-            .Select(h => new TriageCandidate(
-                h.Id, h.X * newSize.Width, h.Y * newSize.Height, h.Radius * Math.Max(newSize.Width, newSize.Height),
-                NewHoldTriage.IsConfident(h.Confidence, h.ShapePoints is { Count: >= 3 }, h.OutlineConfidence)))
-            .ToList();
+        var oldSize = panel.OldPhoto is null ? null : OverlapSeedLoader.RawSize(panel.OldPhoto);
+        var candidates = Unpaired(panel.Staged, panel.Twins).Select(h => Candidate(h, newSize)).ToList();
         var pairs = oldSize is not { } os
             ? []
-            : twins.Select(t => new PointPair(
+            : panel.Twins.Select(t => new PointPair(
                 t.New.X * newSize.Width, t.New.Y * newSize.Height, t.Old.X * os.Width, t.Old.Y * os.Height)).ToList();
-        var markers = await StagedMarkerQuadsAsync(db, panelId, newSize);
+        var markers = await MarkerQuadsAsync(db, panel.PanelId, staged: true, newSize);
         markers.AddRange(await RescuedMarkerQuadsAsync(newPhoto));
+        var oldMarkers = panel.OldPanelId is { } oldPanelId && oldSize is { } size ? await MarkerQuadsAsync(db, oldPanelId, staged: false, size) : null;
         var input = new NewHoldTriageInput(
             candidates, pairs, oldSize, markers, owner(newSize), verdicts,
-            twins.Select(t => Spot(t.New.X, t.New.Y, t.New.Radius, newSize)).ToList(),
-            notFound.Select(n => Spot(n.At.X, n.At.Y, n.Radius, newSize)).ToList());
+            panel.Twins.Select(t => Spot(t.New.X, t.New.Y, t.New.Radius, newSize)).ToList(),
+            notFound.Select(n => Spot(n.At.X, n.At.Y, n.Radius, newSize)).ToList(),
+            CarriedOutlines(panel.Twins, notFound, newSize),
+            oldMarkers,
+            ColourShift(panel.Twins));
         Func<IReadOnlyList<PresenceQuery>, IReadOnlyList<double?>>? presence =
-            presenceProbe is null || oldPhoto is null ? null : q => presenceProbe.Score(oldPhoto, newPhoto, q);
-        var result = NewHoldTriage.Classify(input, presence);
+            presenceProbe is null || panel.OldPhoto is null ? null : q => presenceProbe.Score(panel.OldPhoto, newPhoto, q);
+        var swaps = new List<TriageSwap>();
+        var result = NewHoldTriage.Classify(input, presence, swaps);
         logger.LogInformation(
             "New-hold triage on panel {PanelId}: {Discarded} of {Candidates} unpaired detections discarded by default ({Reasons})",
-            panelId, result.Count, candidates.Count,
+            panel.PanelId, result.Count, candidates.Count,
             string.Join(", ", result.GroupBy(r => r.Value).Select(g => $"{g.Key} {g.Count()}")));
         var kept = candidates.Where(c => !result.ContainsKey(c.Id)).Select(c => (c.X, c.Y)).ToList();
-        return new PanelTriage(result, newSize, kept);
+        return new PanelTriage(result, newSize, kept, swaps);
     }
 }

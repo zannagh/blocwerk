@@ -60,16 +60,12 @@ public partial class WallBigUpdateService
         foreach (var byPanel in pairs.GroupBy(p => p.Twin.WallPanelId!.Value))
         {
             var size = sizes.TryGetValue(byPanel.Key, out var s) ? s : ((int, int)?)null;
-            var scale = size is { } sz ? PanelScaleEstimator.Estimate(byPanel, sz) : null;
+            var panel = new PanelMoveScope(size, size is { } sz ? PanelScaleEstimator.Estimate(byPanel, sz) : null, NormalizedPairs(byPanel));
             foreach (var (old, twin) in byPanel.OrderBy(p => p.Old.Id))
             {
-                var two = HoldMoveCalculator.Distance2D(twin, confirmation.CarriedWarpPositions?.GetValueOrDefault(old.Id), size, scale);
-                var rotation = HoldMoveCalculator.Rotation(HoldFingerprint.FromJson(old.FingerprintJson), HoldFingerprint.FromJson(twin.FingerprintJson));
-                var photo = two is { } d2 ? new HoldMoveMeasure(d2, HoldMoveSource.TwoD, rotation, Corroborated: true) : null;
-                var measure = Reconcile(threeD.GetValueOrDefault(old.Id), photo, moveOptions);
-                if (measure is not null)
+                if (PlanMove(old, twin, confirmation, panel, threeD.GetValueOrDefault(old.Id), confirmed.Contains(old.Id)) is { } move)
                 {
-                    moves.Add(new PlannedMove(old.Id, twin.Id, measure, HoldMovePolicy.Classify(measure, moveOptions, confirmed.Contains(old.Id))));
+                    moves.Add(move);
                 }
             }
         }
@@ -127,6 +123,37 @@ public partial class WallBigUpdateService
             .Select(d => d.OldHoldId)
             .ToHashSet();
         return found.Where(f => !settled.Contains(f.Key)).ToDictionary(f => f.Key, f => f.Value);
+    }
+
+    /// <summary>The panel's carried pairs, old centre → new centre in normalized units (for the local old → new scale).</summary>
+    private static List<PointPair> NormalizedPairs(IEnumerable<(Hold Old, Hold Twin)> pairs) =>
+        pairs.Select(p => new PointPair(p.Old.X, p.Old.Y, p.Twin.X, p.Twin.Y)).ToList();
+
+    /// <summary>
+    /// One carried pair's move. The rotation and the measure come first; a pair whose new outline explains the measured shift
+    /// (<see cref="ReOutlineRule"/>: the outline changed, the hold did not turn, the shift is small) stayed. A move a person
+    /// confirmed is always measured.
+    /// </summary>
+    private PlannedMove? PlanMove(Hold old, Hold twin, BigUpdateConfirmation confirmation, PanelMoveScope panel, HoldMoveMeasure? threeD, bool confirmedMove)
+    {
+        var warp = confirmation.CarriedWarpPositions?.GetValueOrDefault(old.Id);
+        var two = HoldMoveCalculator.Distance2D(twin, warp, panel.Size, panel.MmPerPx);
+        var rotation = HoldMoveCalculator.Rotation(HoldFingerprint.FromJson(old.FingerprintJson), HoldFingerprint.FromJson(twin.FingerprintJson));
+        var photo = two is { } d2 ? new HoldMoveMeasure(d2, HoldMoveSource.TwoD, rotation, Corroborated: true) : null;
+        if (Reconcile(threeD, photo, moveOptions) is not { } measure)
+        {
+            return null;
+        }
+
+        var footprint = warp is null
+            ? (WarpedFootprint?)null
+            : new WarpedFootprint(warp, confirmation.CarriedWarpShapes?.GetValueOrDefault(old.Id), panel.Size, LocalAffine.Scale(panel.Pairs, old.X, old.Y) ?? 1);
+        if (!confirmedMove && ReOutlineRule.Explains(old, twin, footprint, measure.DistanceMm, rotation, moveOptions))
+        {
+            return new PlannedMove(old.Id, twin.Id, measure with { Source = HoldMoveSource.ReOutline }, HoldMoveOutcome.Stayed);
+        }
+
+        return new PlannedMove(old.Id, twin.Id, measure, HoldMovePolicy.Classify(measure, moveOptions, confirmedMove));
     }
 
     /// <summary>

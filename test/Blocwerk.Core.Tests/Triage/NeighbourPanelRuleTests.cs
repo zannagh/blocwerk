@@ -59,6 +59,34 @@ public class NeighbourPanelRuleTests
         Assert.False(NeighbourPanelRule.ShownByOwner(Owner([]) with { OwnerHolds = [] }, 400, 1200));
     }
 
+    [Fact]
+    public void InsideTheMeasuredOverlap_ASpotFarFromEveryMeasuredPair_IsNotJudged()
+    {
+        // Measured pairs only along the strip's top and bottom rows (y 500 and 2000): (400, 1250) lies between them, within
+        // reach of the unmeasured pairs at y 1000 / 1500 only.
+        var measured = Overlap.Where(p => p.SrcY is 500 or 2000).ToList();
+
+        Assert.False(NeighbourPanelRule.ShownByOwner(Owner([]) with { Measured = measured }, 400, 1250));
+        Assert.True(NeighbourPanelRule.ShownByOwner(Owner([]) with { Measured = measured }, 400, 550));
+    }
+
+    [Fact]
+    public void BeyondTheMeasuredOverlap_TheRuleWorksAsBefore()
+    {
+        // Measured pairs only in the strip's right half: (150, 1200) lies outside their hull, where the field is all there is.
+        var measured = Overlap.Where(p => p.SrcX >= 600).ToList();
+
+        Assert.True(NeighbourPanelRule.ShownByOwner(Owner([]) with { Measured = measured }, 150, 1200));
+    }
+
+    [Theory]
+    [InlineData(0.40, false)]
+    [InlineData(0.41, true)]
+    public void OnlyAProposalAboveTheMatchersUnsupportedCap_IsMeasured(double confidence, bool measured)
+    {
+        Assert.Equal(measured, NeighbourPanelRule.IsMeasured(confidence));
+    }
+
     private static OverlapOwner Owner(IReadOnlyList<(double X, double Y)> keptNew) =>
         new(Overlap, (4000, 3000), keptNew, (3000, 4000));
 }

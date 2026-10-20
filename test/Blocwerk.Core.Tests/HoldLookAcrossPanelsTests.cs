@@ -133,7 +133,7 @@ public class HoldLookAcrossPanelsTests
     }
 
     // A removal on a panel other than the centre is reset to "carried" at the promote (CarryoverScope), so it is not
-    // taken here: the card can only be kept, and the hold is removed in the full review.
+    // taken here: the card can only be kept, and the look-over after Apply asks about the hold again.
     [Fact]
     public async Task OnANeighbourPanel_TheReplacedCardCannotBeAnsweredWithRemove()
     {
@@ -145,7 +145,7 @@ public class HoldLookAcrossPanelsTests
         var card = Assert.Single(await w.Sessions.GetUpdateExceptionsAsync(w.WallId));
         Assert.Equal((UpdateExceptionKind.ReplacedByOther, w.NeighbourTargetId), (card.Kind, card.OldHoldId));
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => w.Sessions.DecideUpdateExceptionAsync(w.WallId, card.Id, UpdateExceptionAnswer.Remove));
+        await Assert.ThrowsAsync<UserFacingException>(() => w.Sessions.DecideUpdateExceptionAsync(w.WallId, card.Id, UpdateExceptionAnswer.Remove));
         await w.Sessions.DecideUpdateExceptionAsync(w.WallId, card.Id, UpdateExceptionAnswer.Keep);
 
         var kept = (await w.Sessions.GetUpdateExceptionsAsync(w.WallId)).Single();

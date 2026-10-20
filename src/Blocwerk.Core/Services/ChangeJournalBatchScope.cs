@@ -28,7 +28,14 @@ internal sealed class ChangeJournalBatchScope : IDisposable
         BatchId = batchId ?? Guid.NewGuid();
         NextSeq = startSeq;
         BatchRowCreated = batchRowCreated;
+        Resumable = batchRowCreated;
     }
+
+    /// <summary>
+    /// True when the batch row existed before this scope opened (a resumed wall-update batch, an audited action), so
+    /// other scopes may write into the same batch concurrently and Seq must come from <see cref="ChangeJournal.ReserveSeq"/>'s shared counter.
+    /// </summary>
+    public bool Resumable { get; }
 
     public Guid BatchId { get; }
 

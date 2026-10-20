@@ -1,3 +1,5 @@
+using Blocwerk.Core.Abstractions;
+
 namespace Blocwerk.HoldDetection.Matching;
 
 /// <summary>
@@ -16,7 +18,7 @@ internal static class TextureSupport
     internal const int MinAnchors = 1;
 
     /// <summary>Confidence ceiling of an unsupported proposal — the confirm tier, below the 0.45 auto-accept threshold.</summary>
-    internal const double UnsupportedCap = 0.40;
+    internal const double UnsupportedCap = HoldOverlapConfidence.UnsupportedCap;
 
     /// <summary>Whether a left-image point has at least <see cref="MinAnchors"/> measured anchors within the support radius.</summary>
     /// <param name="point">Left-image point, in pixels.</param>

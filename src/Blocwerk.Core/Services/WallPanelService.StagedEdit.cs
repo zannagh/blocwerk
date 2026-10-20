@@ -68,7 +68,10 @@ public partial class WallPanelService
 
         db.Holds.Add(hold);
         await HoldStacker.StackNewAsync(db, [hold]);
-        await db.SaveChangesAsync();
+        using (BeginUpdateBatch(wallId))
+        {
+            await db.SaveChangesAsync();
+        }
 
         logger.LogInformation(
             "Staged hold {HoldId} added to panel {PanelId} on wall {WallId} (gen {Gen}, needsReview {NeedsReview}) by {UserId}",
@@ -98,7 +101,10 @@ public partial class WallPanelService
             await HoldGlyphRefresher.TryRefreshAsync(db, [hold], logger);
         }
 
-        await db.SaveChangesAsync();
+        using (BeginUpdateBatch(wallId))
+        {
+            await db.SaveChangesAsync();
+        }
 
         logger.LogInformation(
             "Staged hold {HoldId} moved/resized on wall {WallId} by {UserId}", holdId, wallId, user.Id);
@@ -116,11 +122,22 @@ public partial class WallPanelService
         var hold = await LoadStagedHoldAsync(db, wallId, holdId);
         await HoldDeletion.UnstackAsync(db, [hold.Id]);
         db.Holds.Remove(hold);
-        await db.SaveChangesAsync();
+        using (BeginUpdateBatch(wallId))
+        {
+            await db.SaveChangesAsync();
+        }
 
         logger.LogInformation(
             "Staged hold {HoldId} deleted on wall {WallId} by {UserId}", holdId, wallId, user.Id);
     }
+
+    /// <summary>
+    /// Resumes the wall's open wall-update journal batch for one staged edit, the way <c>StageAsync</c> and
+    /// <c>PromoteAsync</c> do, so the touch-up lands in that batch (with the next <c>Seq</c>) and not in an "adhoc" one:
+    /// the wall-update batch alone then replays the whole update, touch-ups included (review finding C7). Opened only
+    /// after the edit passed its checks, so a refused edit opens nothing. Null without a journal (unit tests).
+    /// </summary>
+    private IDisposable? BeginUpdateBatch(Guid wallId) => changeJournal?.BeginWallUpdateBatch(wallId);
 
     /// <summary>
     /// Loads a hold filtered to the staged generation of the in-flight update. Because the filter

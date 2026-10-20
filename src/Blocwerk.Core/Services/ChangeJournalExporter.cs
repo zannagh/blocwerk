@@ -6,7 +6,7 @@ namespace Blocwerk.Core.Services;
 
 /// <summary>
 /// Packages one or more journal batches into a portable <see cref="ChangeJournalPackage"/>: the batch
-/// and entry rows in forward apply order, every byte[] blob they reference (deduplicated, Base64),
+/// and entry rows in forward apply order (the source's write order), every byte[] blob they reference (deduplicated, Base64),
 /// a base marker per distinct scope, plus the source instance and EF migration id used for the
 /// schema-parity / divergence fail-fast on the replay side.
 /// </summary>
@@ -38,11 +38,8 @@ public sealed class ChangeJournalExporter
             .Where(e => ids.Contains(e.BatchId))
             .ToListAsync(cancellationToken);
 
-        // Total apply order: batch creation order, then Seq within the batch.
-        entries = entries
-            .OrderBy(e => order.TryGetValue(e.BatchId, out var i) ? i : int.MaxValue)
-            .ThenBy(e => e.Seq)
-            .ToList();
+        // Total apply order: each batch's Seq order, merged across batches by write time (see ChangeJournalApplyOrder).
+        entries = ChangeJournalApplyOrder.Merge(entries, order);
 
         var blobs = await LoadBlobsAsync(db, entries, cancellationToken);
         var markers = await BuildMarkersAsync(db, batches, cancellationToken);
