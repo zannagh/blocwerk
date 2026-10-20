@@ -63,7 +63,7 @@ public partial class WallBigUpdateService
                 }
             }
 
-            return new OverlapOwner(pairs, centre.Size, centre.KeptNew, size, centre.Settled, measured);
+            return new OverlapOwner(pairs, centre.Size, centre.KeptNew, size, centre.Settled, measured, centre.Discarded);
         };
 
     /// <summary>

@@ -176,7 +176,7 @@ public static class NewHoldTriage
             return NewHoldDiscardReason.OnMarker;
         }
 
-        if (input.Owner is { } owner && NeighbourPanelRule.ShownByOwner(owner, c.X, c.Y))
+        if (input.Owner is { } owner && NeighbourPanelRule.ShownByOwner(owner, c.X, c.Y, c.Confident))
         {
             return NewHoldDiscardReason.SeenOnNeighbourPanel;
         }

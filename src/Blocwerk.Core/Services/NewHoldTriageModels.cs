@@ -17,13 +17,14 @@ internal sealed record PanelTriage(
 
 /// <summary>
 /// The triaged staged centre, as a neighbour's triage needs it: its holds by id, photo size, kept new holds and the
-/// holds it settled itself (carried, hand-placed or discarded by its triage), RAW pixels.
+/// holds it settled itself (carried or hand-placed), and apart from those the detections its triage discarded, RAW pixels.
 /// </summary>
 internal sealed record TriagedCentre(
     IReadOnlyDictionary<Guid, Hold> Holds,
     (int Width, int Height) Size,
     IReadOnlyList<(double X, double Y)> KeptNew,
-    IReadOnlyList<TriageSpot> Settled);
+    IReadOnlyList<TriageSpot> Settled,
+    IReadOnlyList<TriageSpot> Discarded);
 
 /// <summary>The active model as the triage uses it; its textures are read only when a photo must be registered.</summary>
 internal sealed record Evidence3DModel(

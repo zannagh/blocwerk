@@ -87,14 +87,22 @@ public partial class WallBigUpdateService
             await CheckRemovalsAsync(db, model, evidence, new RemovalScope(panel.Id, staged, twins, removable, oldPhoto), context.Removals.Warp, result);
         }
 
-        return isCentre && outcome is { } o ? new TriagedCentre(staged.ToDictionary(h => h.Id), o.Size, o.KeptNew, Settled(staged, unpaired, o)) : null;
+        return isCentre && outcome is { } o
+            ? new TriagedCentre(staged.ToDictionary(h => h.Id), o.Size, o.KeptNew, Settled(staged, unpaired, o, discarded: false), Settled(staged, unpaired, o, discarded: true))
+            : null;
     }
 
-    /// <summary>The staged holds of a panel that are not its kept new holds: carried, hand-placed or discarded by its triage.</summary>
-    private static List<TriageSpot> Settled(IReadOnlyList<Hold> staged, IReadOnlyList<Hold> unpaired, PanelTriage triage)
+    /// <summary>
+    /// The staged holds of a panel that are not its kept new holds: the carried and hand-placed ones, or (with
+    /// <paramref name="discarded"/>) the detections its triage discarded.
+    /// </summary>
+    private static List<TriageSpot> Settled(IReadOnlyList<Hold> staged, IReadOnlyList<Hold> unpaired, PanelTriage triage, bool discarded)
     {
-        var keptNew = unpaired.Where(h => !triage.Discards.ContainsKey(h.Id)).Select(h => h.Id).ToHashSet();
-        return staged.Where(h => !h.IsVirtual && !keptNew.Contains(h.Id)).Select(h => Spot(h.X, h.Y, h.Radius, triage.Size)).ToList();
+        var unpairedIds = unpaired.Select(h => h.Id).ToHashSet();
+        return staged
+            .Where(h => !h.IsVirtual && (discarded ? triage.Discards.ContainsKey(h.Id) : !unpairedIds.Contains(h.Id)))
+            .Select(h => Spot(h.X, h.Y, h.Radius, triage.Size))
+            .ToList();
     }
 
     /// <summary>A normalized spot in RAW pixels (radii are normalized to the longer side).</summary>

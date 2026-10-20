@@ -59,6 +59,17 @@ public class NeighbourPanelRuleTests
         Assert.False(NeighbourPanelRule.ShownByOwner(Owner([]) with { OwnerHolds = [] }, 400, 1200));
     }
 
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public void ASpotTheCentreOnlyDiscarded_SettlesAnUnsureDetection_NotAConfidentOne(bool confident, bool shown)
+    {
+        var owner = Owner([]) with { OwnerHolds = [], OwnerDiscarded = [new TriageSpot(3400, 1200, 60)] };
+
+        Assert.Equal(shown, NeighbourPanelRule.ShownByOwner(owner, 400, 1200, confident));
+        Assert.True(NeighbourPanelRule.ShownByOwner(owner with { OwnerHolds = [new TriageSpot(3400, 1200, 60)] }, 400, 1200, confident: true));
+    }
+
     [Fact]
     public void InsideTheMeasuredOverlap_ASpotFarFromEveryMeasuredPair_IsNotJudged()
     {

@@ -16,12 +16,17 @@ namespace Blocwerk.Core.Services;
 /// <param name="OwnerNewHolds">The owner's unpaired detections its own triage kept (genuinely new holds).</param>
 /// <param name="PhotoSize">This panel's photo size.</param>
 /// <param name="OwnerHolds">
-/// What the owner settled itself: the detections it carries an old hold onto, its hand-placed holds and the detections
-/// its own triage discarded. Null when unknown: every spot the owner shows then counts as settled.
+/// What the owner settled itself: the detections it carries an old hold onto, its hand-placed holds and (unless
+/// <paramref name="OwnerDiscarded"/> lists them apart) the detections its own triage discarded. Null when unknown: every spot
+/// the owner shows then counts as settled.
 /// </param>
 /// <param name="Measured">
 /// The pairs of <paramref name="ToOwner"/> backed by measured anchors (<see cref="NeighbourPanelRule.IsMeasured"/>), or null
 /// when unknown: then every pair is trusted as before.
+/// </param>
+/// <param name="OwnerDiscarded">
+/// The detections the owner's own triage discarded, apart from <paramref name="OwnerHolds"/>: they settle a spot for an unsure
+/// detection of this panel only (see <see cref="NeighbourPanelRule.ShownByOwner"/>). Null when they are in <paramref name="OwnerHolds"/>.
 /// </param>
 public sealed record OverlapOwner(
     IReadOnlyList<PointPair> ToOwner,
@@ -29,7 +34,8 @@ public sealed record OverlapOwner(
     IReadOnlyList<(double X, double Y)> OwnerNewHolds,
     (int Width, int Height) PhotoSize,
     IReadOnlyList<TriageSpot>? OwnerHolds = null,
-    IReadOnlyList<PointPair>? Measured = null);
+    IReadOnlyList<PointPair>? Measured = null,
+    IReadOnlyList<TriageSpot>? OwnerDiscarded = null);
 
 /// <summary>
 /// A neighbour photo usually shows part of the centre panel (an oblique shot sees the main wall at its
@@ -42,6 +48,10 @@ public sealed record OverlapOwner(
 /// extrapolated field, and between the measured parts those reach into wall the centre photo does not show (The Attic's
 /// right side wall, where the rule threw two real new holds away). Beyond the measured region (an oblique strip where
 /// texture matching fails) there is nothing better than the field, and the rule works as before.
+/// A spot the owner settled only by throwing its own detection away is no hold of the owner: a confident detection here
+/// (detector sure, outline traced) stays a new hold, or the hold would be on neither photo (The Attic, October 2026: an
+/// existing beige hold at the right panel's edge, dropped after the 3D re-check). An unsure one is dropped as before, as
+/// the owner's noise seen twice.
 /// </summary>
 public static class NeighbourPanelRule
 {
@@ -54,7 +64,12 @@ public static class NeighbourPanelRule
     private const int MinimumPairs = 6;
 
     /// <summary>True when the owner photo shows this spot, settled it with a hold of its own and has no kept new hold there.</summary>
-    public static bool ShownByOwner(OverlapOwner owner, double x, double y)
+    /// <param name="owner">The owner.</param>
+    /// <param name="x">The detection's x, RAW pixels of this panel's photo.</param>
+    /// <param name="y">The detection's y.</param>
+    /// <param name="confident">The detection is confident (<see cref="NewHoldTriage.IsConfident"/>): the owner's discards do not settle it.</param>
+    /// <returns>Whether it belongs to the owner.</returns>
+    public static bool ShownByOwner(OverlapOwner owner, double x, double y, bool confident = false)
     {
         if (owner.ToOwner.Count < MinimumPairs)
         {
@@ -84,7 +99,13 @@ public static class NeighbourPanelRule
             return false;
         }
 
-        return owner.OwnerHolds is null || owner.OwnerHolds.Any(o => Distance(o.X, o.Y, m.X, m.Y) <= twin + o.RadiusPx);
+        if (owner.OwnerHolds is null)
+        {
+            return true;
+        }
+
+        var settledBy = confident ? owner.OwnerHolds : owner.OwnerHolds.Concat(owner.OwnerDiscarded ?? []);
+        return settledBy.Any(o => Distance(o.X, o.Y, m.X, m.Y) <= twin + o.RadiusPx);
     }
 
     /// <summary>Whether an overlap proposal of this confidence is backed by measured anchors (inside the shared overlap).</summary>

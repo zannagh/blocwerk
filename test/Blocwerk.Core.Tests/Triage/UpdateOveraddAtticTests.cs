@@ -46,7 +46,8 @@ public class UpdateOveraddAtticTests(ITestOutputHelper output)
 
         // The measured result, no slack: any change of these numbers is a change of behaviour to look at.
         Assert.Equal((123, 23, 26, 3), (Kept(all, emulated, _ => true), Kept(all, emulated, Noise.Contains), Kept(all, emulated, Duplicates.Contains), Discarded(all, emulated, Real.Contains)));
-        Assert.True(Kept(all, after, _ => true) <= 105, "new holds proposed");
+        Assert.True(Kept(all, after, _ => true) <= 107, "new holds proposed");
+        Assert.True(Kept(all, after, Existing.Contains) >= 18, "existing holds that had no outline kept");
         Assert.True(Kept(all, after, Noise.Contains) <= 19, "noise kept");
         Assert.True(Kept(all, after, Duplicates.Contains) <= 14, "duplicates kept");
         Assert.True(Discarded(all, after, Real.Contains) <= 2, "real new holds discarded");
@@ -55,6 +56,10 @@ public class UpdateOveraddAtticTests(ITestOutputHelper output)
         Assert.False(after.ContainsKey(Id(all, "735d9467")), "the black/white hold on the right-panel beam");
         Assert.False(after.ContainsKey(Id(all, "e5e69ffa")), "the lilac ball on the right side wall");
         Assert.False(after.ContainsKey(Id(all, "f39cd15c")), "N57, the purple hold that replaced the orange one");
+
+        // A confident right-panel detection on a spot the centre settled only by discarding its own detection there stays: else
+        // the hold is on neither photo (exp, 2026-10-20: the beige 3f1b772e, dropped after the 3D re-check).
+        Assert.False(after.ContainsKey(Id(all, "47f13dbb")), "the beige hold at the right panel's edge");
 
         // Two real right-panel holds the real run kept are discarded here under the old rules as well, so not by these
         // changes: with the harness's overlap pairs (no 3D anchors) f9164ac2 maps 30 px onto a carried centre hold of about its
@@ -137,12 +142,14 @@ public class UpdateOveraddAtticTests(ITestOutputHelper output)
         OveraddPanel centre, IReadOnlyDictionary<Guid, NewHoldDiscardReason> centreResult, OveraddPanel right, bool newRules)
     {
         var kept = centre.Candidates.Where(c => !centreResult.ContainsKey(c.Id)).Select(c => (c.X, c.Y)).ToList();
-        var settled = centre.Settled
-            .Concat(centre.Candidates.Where(c => centreResult.ContainsKey(c.Id)).Select(c => new TriageSpot(c.X, c.Y, c.RadiusPx)))
-            .ToList();
+        var discarded = centre.Candidates.Where(c => centreResult.ContainsKey(c.Id)).Select(c => new TriageSpot(c.X, c.Y, c.RadiusPx)).ToList();
         var measured = right.OverlapToMain.Where(p => NeighbourPanelRule.IsMeasured(p.Confidence)).Select(p => p.Pair).ToList();
         var pairs = right.OverlapToMain.Select(p => p.Pair).ToList();
-        return new OverlapOwner(pairs, (4032, 3024), kept, (4032, 3024), settled, newRules ? measured : null);
+
+        // The old rules counted the centre's own discards as its holds for every detection; the new ones only for an unsure one.
+        return newRules
+            ? new OverlapOwner(pairs, (4032, 3024), kept, (4032, 3024), centre.Settled, measured, discarded)
+            : new OverlapOwner(pairs, (4032, 3024), kept, (4032, 3024), [.. centre.Settled, .. discarded]);
     }
 
     private static int Kept<T>(IEnumerable<OveraddCandidate> all, IReadOnlyDictionary<Guid, T> discards, Func<string, bool> label) =>
