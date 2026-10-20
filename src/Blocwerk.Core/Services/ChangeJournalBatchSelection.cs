@@ -70,8 +70,8 @@ internal static class ChangeJournalBatchSelection
 
     /// <summary>
     /// Unscoped batches in the window that touched the wall: an entry names the wall's id in its images (an insert or
-    /// delete carries <c>WallId</c>), or its key is one of the wall's holds, panels or boulders (an update carries only the
-    /// changed columns). Rows deleted since are only found through the first test.
+    /// delete carries <c>WallId</c>), or its key is a row of the wall (an update carries only the changed columns, so a
+    /// HoldGenerationLink re-measure has no wall id of its own). See <see cref="WallRowIdsAsync"/> for what counts.
     /// </summary>
     private static async Task<List<Guid>> UnscopedBatchIdsAsync(
         BlocwerkDbContext db, Guid wallId, DateTimeOffset since, DateTimeOffset? until, CancellationToken ct)
@@ -103,12 +103,37 @@ internal static class ChangeJournalBatchSelection
             .ToList();
     }
 
+    /// <summary>
+    /// The ids an entry key may name to belong to the wall, for every allow-listed entity: the live rows of the wall
+    /// (holds, panels, boulders, generation links, hold links, boulder-hold moves, resets; a panel crop is keyed by its
+    /// panel, a boulder hold by its boulder and hold), plus every row the journal ever recorded with the wall's id in an
+    /// image, so a row deleted since (a hold, a generation link) still counts.
+    /// </summary>
     private static async Task<HashSet<Guid>> WallRowIdsAsync(BlocwerkDbContext db, Guid wallId, CancellationToken ct)
     {
-        var holds = await db.Holds.AsNoTracking().Where(h => h.WallId == wallId).Select(h => h.Id).ToListAsync(ct);
-        var panels = await db.WallPanels.AsNoTracking().Where(p => p.WallId == wallId).Select(p => p.Id).ToListAsync(ct);
-        var boulders = await db.Boulders.AsNoTracking().Where(b => b.WallId == wallId).Select(b => b.Id).ToListAsync(ct);
-        return holds.Concat(panels).Concat(boulders).ToHashSet();
+        var ids = new HashSet<Guid>();
+        ids.UnionWith(await db.Holds.AsNoTracking().Where(h => h.WallId == wallId).Select(h => h.Id).ToListAsync(ct));
+        ids.UnionWith(await db.WallPanels.AsNoTracking().Where(p => p.WallId == wallId).Select(p => p.Id).ToListAsync(ct));
+        ids.UnionWith(await db.Boulders.AsNoTracking().Where(b => b.WallId == wallId).Select(b => b.Id).ToListAsync(ct));
+        ids.UnionWith(await db.HoldGenerationLinks.AsNoTracking().Where(l => l.WallId == wallId).Select(l => l.Id).ToListAsync(ct));
+        ids.UnionWith(await db.HoldLinks.AsNoTracking().Where(l => l.WallId == wallId).Select(l => l.Id).ToListAsync(ct));
+        ids.UnionWith(await db.BoulderHoldMoves.AsNoTracking().Where(m => m.WallId == wallId).Select(m => m.Id).ToListAsync(ct));
+        ids.UnionWith(await db.WallResets.AsNoTracking().Where(r => r.WallId == wallId).Select(r => r.Id).ToListAsync(ct));
+
+        // Rows gone from the tables: their insert's after-image or delete's before-image carries the wall id.
+        var needle = $"\"WallId\":\"{wallId}\"";
+        var journalled = await db.ChangeJournalEntries.AsNoTracking()
+            .Where(e => (e.AfterJson != null && e.AfterJson.Contains(needle)) || (e.BeforeJson != null && e.BeforeJson.Contains(needle)))
+            .Select(e => e.KeyJson)
+            .Distinct()
+            .ToListAsync(ct);
+        foreach (var key in journalled)
+        {
+            ids.UnionWith(KeyGuids(key));
+        }
+
+        ids.Remove(wallId);
+        return ids;
     }
 
     /// <summary>Every Guid value in a journalled key (<c>{"Id":"…"}</c>, or the parts of a composite key).</summary>
