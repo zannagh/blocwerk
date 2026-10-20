@@ -28,6 +28,7 @@ public partial class WallBigUpdateService
         await using var db = await dbContextFactory.CreateDbContextAsync();
         db.CurrentUserId = user.Id;
         await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
+        await Blocwerk.Core.Enhancement.WallEnhancementGuard.EnsureNotRunningAsync(db, wallId);
 
         // Identity first, before a single row or journal entry is written: the staged panels this promote
         // is about to bring live belong to whatever session is open NOW, while the confirmation was built

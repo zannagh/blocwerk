@@ -1,0 +1,92 @@
+@* One review item of a wall enhancement: its picture (the hold in yellow; the old shape or the pair's other hold
+   dashed in magenta), what happened or is suggested, and the two answers for its kind. Answered items show their
+   answer instead of the buttons. *@
+
+@using Blocwerk.Core.Entities
+@using Blocwerk.Core.Enhancement
+@using Blocwerk.Web.Endpoints
+
+<article class="enhance-item @(Item.Decision == WallEnhancementDecision.Pending ? null : "is-answered")" aria-label="@Headline">
+    <img class="enhance-item-crop" src="@WallEnhancementCropEndpoint.Url(WallId, Item.Id)" alt="@Alt" loading="lazy" width="180" height="180" />
+    <div class="enhance-item-body">
+        <p class="enhance-item-title">@Headline</p>
+        <p class="hint">@Where</p>
+        @if (Item.Decision == WallEnhancementDecision.Pending)
+        {
+            <div class="enhance-item-actions">
+                <button class="btn-primary" disabled="@Busy" @onclick="() => OnDecide.InvokeAsync((Item, true))">@AcceptLabel</button>
+                <button class="btn-secondary" disabled="@Busy" @onclick="() => OnDecide.InvokeAsync((Item, false))">@RejectLabel</button>
+            </div>
+        }
+        else
+        {
+            <p class="enhance-item-answer" role="status">@Answer</p>
+        }
+    </div>
+</article>
+
+@code {
+    /// <summary>The wall (for the picture's address).</summary>
+    [Parameter, EditorRequired]
+    public Guid WallId { get; set; }
+
+    /// <summary>The item.</summary>
+    [Parameter, EditorRequired]
+    public WallEnhancementItemView Item { get; set; } = default!;
+
+    /// <summary>True while an answer is on its way: both buttons wait.</summary>
+    [Parameter]
+    public bool Busy { get; set; }
+
+    /// <summary>Raised with the item and true (keep / carry out) or false (undo / turn down).</summary>
+    [Parameter]
+    public EventCallback<(WallEnhancementItemView Item, bool Accept)> OnDecide { get; set; }
+
+    private string Name => string.IsNullOrWhiteSpace(Item.HoldName) ? "A hold" : Item.HoldName!;
+
+    private string Headline => Item.Kind switch
+    {
+        WallEnhancementItemKind.Shape => $"{Name}: new outline",
+        WallEnhancementItemKind.Stack => $"{Name} sits on another hold",
+        WallEnhancementItemKind.Colour => $"{Name}: suggested colour {Item.Detail ?? "none"}",
+        WallEnhancementItemKind.Duplicate => "Probably the same hold recorded twice",
+        WallEnhancementItemKind.Link => "Probably the same hold on two panels",
+        _ => "A hold the capture photos show that the wall does not have",
+    };
+
+    private string Where => Item.Kind switch
+    {
+        WallEnhancementItemKind.Shape => "Yellow: the outline now. Dashed: how it was before.",
+        WallEnhancementItemKind.Stack => "Yellow: this hold. Dashed: the hold it sits on.",
+        WallEnhancementItemKind.Duplicate => "Yellow and dashed: the two holds. Merging keeps one; boulders move over to it.",
+        WallEnhancementItemKind.NewHold => "Adding it puts a new hold on its panel.",
+        _ => Item.X is { } x && Item.Y is { } y ? $"On its panel {PlainCopy.Position(x, y)}." : string.Empty,
+    };
+
+    private string Alt => Item.Kind == WallEnhancementItemKind.Shape
+        ? "The hold on its photo: its new outline in yellow, the old one dashed in magenta"
+        : "The hold on its photo, outlined in yellow";
+
+    private string AcceptLabel => Item.Kind switch
+    {
+        WallEnhancementItemKind.Duplicate => "Merge",
+        WallEnhancementItemKind.Link => "Link them",
+        WallEnhancementItemKind.NewHold => "Add the hold",
+        _ => "Keep",
+    };
+
+    private string RejectLabel => Item.Kind switch
+    {
+        WallEnhancementItemKind.Duplicate => "Not a duplicate",
+        WallEnhancementItemKind.Link => "Not the same",
+        WallEnhancementItemKind.NewHold => "Not a hold",
+        _ => "Undo",
+    };
+
+    private string Answer => Item.Decision switch
+    {
+        WallEnhancementDecision.Accepted => WallEnhancementKinds.IsWritten(Item.Kind) ? "Kept." : "Done.",
+        WallEnhancementDecision.Rejected => WallEnhancementKinds.IsWritten(Item.Kind) ? "Undone." : "Turned down.",
+        _ => $"Left as it is: {Item.Note}",
+    };
+}

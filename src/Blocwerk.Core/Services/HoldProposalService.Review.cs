@@ -79,31 +79,6 @@ public sealed partial class HoldProposalService
         return bytes is null ? null : RingCrop.Render(bytes, p.BestPx, p.BestPy, p.BestRadiusPx);
     }
 
-    /// <summary>Replaces the wall's pending proposals with <paramref name="candidates"/>; returns how many map onto a panel.</summary>
-    private static async Task<int> ReplacePendingAsync(
-        BlocwerkDbContext db, Guid wallId, Guid modelId, List<HoldProposalCandidate> candidates, ProposalInputs inputs, CancellationToken ct)
-    {
-        await db.HoldProposals.Where(p => p.WallId == wallId && p.Status == HoldProposalStatus.Pending).ExecuteDeleteAsync(ct);
-        var frames = inputs.Facets.ToDictionary(f => f.Id, f => f.Frame, StringComparer.Ordinal);
-        var onPanels = 0;
-        foreach (var c in candidates)
-        {
-            var panel = PanelPointMapper.Map(c.World, c.SizeMm, frames[c.FacetId], c.FacetId, inputs.Panels);
-            onPanels += panel is null ? 0 : 1;
-            db.HoldProposals.Add(new HoldProposal
-            {
-                WallId = wallId, GeometryModelId = modelId, FacetId = c.FacetId, A = c.A, B = c.B, H = c.H,
-                X = Math.Round(c.World[0], 1), Y = Math.Round(c.World[1], 1), Z = Math.Round(c.World[2], 1),
-                SizeMm = c.SizeMm, Views = c.Views, Confidence = c.Confidence,
-                BestPhoto = c.Best.Photo, BestPx = Math.Round(c.Best.Px, 1), BestPy = Math.Round(c.Best.Py, 1), BestRadiusPx = Math.Round(c.Best.RadiusPx, 1),
-                PanelId = panel?.PanelId, PanelX = panel?.X, PanelY = panel?.Y, PanelRadius = panel?.Radius,
-            });
-        }
-
-        await db.SaveChangesAsync(ct);
-        return onPanels;
-    }
-
     /// <summary>
     /// A proposal's panel point is in the coordinates of the panel photo that was live when the search ran. Once a panel
     /// update replaces that photo the point means nothing on the new one (the hold would be created on the superseded

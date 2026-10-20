@@ -1,0 +1,13 @@
+/* One review card: the picture left, text and answers right; on a narrow phone the picture shrinks rather than wraps. */
+.enhance-item {
+    display: flex; gap: 10px; align-items: flex-start; padding: 10px; border: 1px solid var(--border-light); border-radius: var(--r-md, 8px);
+    background: var(--bg-surface); min-width: 0;
+}
+.enhance-item.is-answered { opacity: 0.72; }
+.enhance-item-crop { flex: none; width: 38%; max-width: 180px; height: auto; aspect-ratio: 1 / 1; object-fit: cover; border-radius: 6px; background: #000; }
+.enhance-item-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.enhance-item-body p { margin: 0; overflow-wrap: anywhere; }
+.enhance-item-title { font-weight: 600; }
+.enhance-item-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; }
+.enhance-item-actions button { flex: 1 1 110px; width: auto; min-height: 40px; margin: 0; padding: 6px 10px; }
+.enhance-item-answer { font-weight: 600; color: var(--text-secondary, inherit); }

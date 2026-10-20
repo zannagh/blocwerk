@@ -230,6 +230,13 @@ public static class Program
         // Core's long-running work (capture video upload + frame extraction) holds the same gate.
         builder.Services.AddSingleton<IDeployBusyGate, EditActivityDeployBusyGate>();
 
+        // Background hold writers (the wall enhancement) wait while someone has the wall's hold editor open.
+        builder.Services.AddSingleton<IWallEditPresence, EditActivityWallEditPresence>();
+
+        // Long background work says when it expects to be done (/health/busy-eta), so autodeploy can wait for it.
+        builder.Services.AddSingleton<DeployBusyEtaBoard>();
+        builder.Services.AddSingleton<IDeployBusyEta>(sp => sp.GetRequiredService<DeployBusyEtaBoard>());
+
         // Heartbeats this circuit's leases while its connection is UP, so a lease whose client has
         // gone silent (a sleeping tablet behind a NAT) expires on its TTL instead of holding
         // /health/ready-to-deploy at 503 until the process restarts — which used to block the very
@@ -346,6 +353,11 @@ public static class Program
             },
         });
 
+        // Seconds until long background work (a wall enhancement's hold search) expects to finish; 0 when none. Plain
+        // text next to ready-to-deploy, whose "idle"/"busy" body stays exactly as the deployed autodeploy hook reads it.
+        app.MapGet("/health/busy-eta", (DeployBusyEtaBoard board) => Results.Text(board.SecondsLeft().ToString(System.Globalization.CultureInfo.InvariantCulture)))
+            .AllowAnonymous();
+
         // Liveness beacon for the "server is updating" overlay: anonymous, no database, and it
         // carries the id of THIS process so a client can tell a dropped socket from a replaced
         // container. Mapped next to the health endpoints and outside /api for the same reason they
@@ -431,6 +443,7 @@ public static class Program
         app.MapWallRefreshCheckCrops();
         app.MapWallRefreshReviewCrops();
         app.MapWallDuplicateHoldCrops();
+        app.MapWallEnhancementCrops();
         app.MapWallLookOverCrops();
 
         // HLS adaptive-bitrate ladder for a Ready clip that has one. Same wall/share-token gate as the

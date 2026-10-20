@@ -17,7 +17,7 @@ public sealed partial class HoldOutlineUpgradeService
     {
         ArgumentNullException.ThrowIfNull(options);
         EnsureEnabled();
-        var (result, outlined) = await WriteUnderLockAsync(wallId, options, ct);
+        var (result, outlined) = await WriteInChunksAsync(wallId, options, ct);
 
         // New outlines: their 3D footprints are refined in the background, outside the hold lock, for those holds only.
         // A whole-wall refinement traces every hold in every capture photo and takes many minutes.
@@ -29,10 +29,14 @@ public sealed partial class HoldOutlineUpgradeService
         return result;
     }
 
-    private async Task<(HoldOutlineUpgradeResult Result, List<Guid> Outlined)> WriteUnderLockAsync(
+    /// <summary>
+    /// Plans photo by photo without the wall's hold lock (tracing a big wall takes minutes) and takes the lock only for each
+    /// batch of writes, so other hold writers (an editor's save, a merge) get their turn between chunks. Every batch
+    /// re-reads its holds and skips any changed since it was planned, so a write in between is never overwritten.
+    /// </summary>
+    private async Task<(HoldOutlineUpgradeResult Result, List<Guid> Outlined)> WriteInChunksAsync(
         Guid wallId, HoldOutlineUpgradeOptions options, CancellationToken ct)
     {
-        using var holdWrite = await WallHoldWriteLock.AcquireAsync(wallId, ct: ct);
         var (db, userId) = await OpenForAdminAsync(wallId, ct);
         await using (db)
         {
@@ -59,6 +63,7 @@ public sealed partial class HoldOutlineUpgradeService
                 var writes = plan.Proposals.Where(p => p.Outcome == HoldOutlineUpgradeOutcome.Outline || p.FillsFingerprint || p.NewRadius is not null);
                 foreach (var batch in writes.Chunk(BatchSize))
                 {
+                    using var holdWrite = await WallHoldWriteLock.AcquireAsync(wallId, ct: ct);
                     skipped += await WriteBatchAsync(db, run, batch, plan.Metrics, entries, ct);
                 }
             }

@@ -48,6 +48,12 @@ public interface IHoldProposalService
     Task EnsureCanFindAsync(Guid wallId, CancellationToken ct = default);
 
     /// <summary>
+    /// Whether the wall's active 3D model already had a proposal pass (stored proposals, or the capture chain's recorded
+    /// search, e.g. by a 3D runner): a new search would only repeat it. False by default.
+    /// </summary>
+    Task<bool> HasProposalPassAsync(Guid wallId, CancellationToken ct = default) => Task.FromResult(false);
+
+    /// <summary>
     /// Runs the search for a background job (<see cref="HoldSearchJobs"/>): no user check (the starter was checked),
     /// waits for its turn, reports the photos searched and throws a <see cref="UserFacingException"/> when it cannot run.
     /// </summary>
