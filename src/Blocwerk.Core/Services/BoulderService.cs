@@ -9,7 +9,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core.Services;
 
-public interface IBoulderService
+/// <summary>Reads and writes the boulders of a wall.</summary>
+public partial interface IBoulderService
 {
     /// <summary>
     /// Creates a boulder. <paramref name="handsFollowFeet"/> and <paramref name="footColorOnly"/>

@@ -93,6 +93,14 @@
                 var sw = isSelected || isColorFoot ? "0.4" : "0.2";
                 var dash = hold.IsVirtual ? "0.6 0.4" : string.Empty;
                 if (hold.IsVirtual && !isSelected && !isColorFoot) { strokeColor = "#c86dff"; }
+                @* A pre-selection the caller could only guess (Revise: no lineage, or the hold changed): an amber
+                   dashed outline until the user re-classifies it, so it never passes for a sure pick. *@
+                if (isSelected && GuessedHoldIds is not null && GuessedHoldIds.Contains(selection!.HoldId))
+                {
+                    strokeColor = "#ffb300";
+                    sw = "0.6";
+                    dash = "1.2 0.6";
+                }
                 var isFoot = hold.Category == HoldCategory.Foot;
                 @* A hold that is not part of the boulder is not drawn: it stays in the overlay, transparent, as the
                    tap target it always was, and gets its outline with the tap (the layer below). A virtual hold is
@@ -170,6 +178,12 @@
     /// entry per physical hold, so the count and Publish label never inflate.
     /// </summary>
     [Parameter] public IReadOnlyDictionary<Guid, IReadOnlyList<Guid>>? HoldTwins { get; set; }
+
+    /// <summary>
+    /// Selected holds the caller only guessed (the Revise editor's position fallback, or a hold its lineage says
+    /// changed). Drawn with an amber dashed outline; null or empty draws every selection the same.
+    /// </summary>
+    [Parameter] public IReadOnlySet<Guid>? GuessedHoldIds { get; set; }
 
     /// <summary>
     /// The boulder's "hands follow feet" rule. While it is on the picker offers no

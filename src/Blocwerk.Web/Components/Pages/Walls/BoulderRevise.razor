@@ -98,6 +98,38 @@
             <BoulderPanelSwitcher Panels="_panels" Current="_currentPanel" CurrentChanged="OnPanelChanged" />
         }
 
+        @* Selections are per hold across ALL panels, but the picker draws one panel. Say so, with a way there. *@
+        @if (SelectionsOnOtherPanels() is { Count: > 0 } offPanel)
+        {
+            <p class="revision-hint revise-off-panel" data-testid="revise-off-panel">
+                @offPanel.Sum(x => x.Count) selected on other panels:
+                @foreach (var (panel, count) in offPanel)
+                {
+                    var target = panel;
+                    <button type="button" class="mode-btn" @onclick="() => ShowPanel(target)">
+                        @count on @PanelLabel(target) &rarr;
+                    </button>
+                }
+            </p>
+        }
+
+        @if (GuessedSelectedCount > 0)
+        {
+            <p class="revision-hint" data-testid="revise-guessed">
+                @GuessedSelectedCount pre-selected @(GuessedSelectedCount == 1 ? "hold is" : "holds are") only a guess
+                (no record of where the hold went, or it changed at the last wall update), outlined in amber dashes.
+                Tap @(GuessedSelectedCount == 1 ? "it" : "each") to confirm or remove it.
+            </p>
+        }
+
+        @if (_unmappedCount > 0)
+        {
+            <p class="revision-hint" data-testid="revise-unmapped">
+                @_unmappedCount of the boulder's holds @(_unmappedCount == 1 ? "no longer exists" : "no longer exist") on the wall
+                and @(_unmappedCount == 1 ? "is" : "are") not selected.
+            </p>
+        }
+
         <HoldPicker WallId="WallId"
                     PhotoUrl="@PickerPhotoUrl"
                     PanelId="@(_currentPanel?.Id)"
@@ -106,7 +138,9 @@
                     HandsFollowFeet="_handsFollowFeet"
                     FootColorOnly="_footColorOnly"
                     HoldTwins="_holdTwins"
-                    @bind-SelectedHolds="_selectedHolds" />
+                    GuessedHoldIds="GuessedHoldIds"
+                    SelectedHolds="_selectedHolds"
+                    SelectedHoldsChanged="OnSelectionChanged" />
 
         <BoulderNewRules @bind-AllKickboardOn="_allKickboardOn"
                          @bind-FootColorOnly="_footColorOnly"
@@ -137,15 +171,11 @@
         @* Live form snapshot for the offline submit path (offline-boulder.js). *@
         <div id="bw-boulder-form" hidden aria-hidden="true" data-bw-boulder-snapshot="@SnapshotJson"></div>
 
-        <button class="btn-submit" @onclick="Submit"
+        <button class="btn-submit" @onclick="OnSaveClicked"
                 data-bw-boulder-action="revise" data-bw-boulder-form="#bw-boulder-form"
                 data-bw-boulder-nav="@DetailUrl" data-bw-mode="offline-only"
                 disabled="@(string.IsNullOrWhiteSpace(_name) || _selectedHolds.Count == 0 || _isSubmitting)">
-            @(_isSubmitting
-                ? "Saving..."
-                : _isDraft
-                    ? $"Save Draft ({_selectedHolds.Count} holds)"
-                    : $"Save Revision ({_selectedHolds.Count} holds)")
+            @SaveLabel()
         </button>
 
         @if (!string.IsNullOrEmpty(_error))
@@ -323,7 +353,14 @@
             _panels = [];
         }
 
-        _currentPanel = StartPanel();
+        // Pre-select through hold lineage (BoulderService.GetRevisePrefillAsync) and open on the panel that
+        // carries most of those holds. Raw X/Y nearest-neighbour, which this replaces, matched a frozen boulder's
+        // old-photo coordinates against today's holds on every panel and saved neighbours nobody had seen.
+        await ApplyPrefillAsync();
+        if (_currentPanel is not null)
+        {
+            _seenPanelIds.Add(_currentPanel.Id);
+        }
 
         await BuildTwinMapAsync();
 
@@ -346,60 +383,6 @@
                 _referenceGeneration = holdGen;
             }
         }
-
-        // Pre-select the current holds the boulder is now on. Editing is current-only, so the goal is
-        // to open with the app's best guess already ticked, all adjustable in the HoldPicker below.
-        var currentHoldIds = _wall.Holds.Select(h => h.Id).ToHashSet();
-        var preselected = new List<BoulderHoldInput>();
-        var usedHoldIds = new HashSet<Guid>();
-
-        // 1. Holds that carried over by identity (still exist at the current generation).
-        foreach (var bh in _boulder.BoulderHolds.Where(bh => currentHoldIds.Contains(bh.HoldId)))
-        {
-            if (usedHoldIds.Add(bh.HoldId))
-            {
-                preselected.Add(new BoulderHoldInput(bh.HoldId, bh.Type, bh.Usage));
-            }
-        }
-
-        // 2. Orphaned holds the matcher couldn't carry (generation < current — virtual/manual holds,
-        //    or anything the wall update dropped): best-guess each to the NEAREST current hold within a
-        //    conservative distance, so a truly-gone hold isn't force-mapped to something unrelated.
-        //    De-duped, so two old holds landing on the same current hold select it once.
-        foreach (var bh in _boulder.BoulderHolds.Where(bh => !currentHoldIds.Contains(bh.HoldId)))
-        {
-            var nearest = NearestHold(_wall.Holds, bh.Hold.X, bh.Hold.Y, MaxRematchDistance);
-            if (nearest is not null && usedHoldIds.Add(nearest.Id))
-            {
-                preselected.Add(new BoulderHoldInput(nearest.Id, bh.Type, bh.Usage));
-            }
-        }
-
-        _selectedHolds = preselected;
-    }
-
-    // The panel the editor opens on: the one carrying most of the boulder's holds, mirroring how
-    // BoulderDetail picks its start panel. Opening on the centre (0,0) regardless — which this
-    // replaces — meant a boulder set on any other panel showed NOTHING ticked until the reviser
-    // happened to step onto the right panel, because RefreshPickerHolds restricts the picker to the
-    // current panel's holds. Falls back to the centre, then to any panel, then to null.
-    private WallPanelInfo? StartPanel()
-    {
-        var home = _boulder?.BoulderHolds
-            .Select(bh => bh.Hold.WallPanelId)
-            .Where(id => id is not null)
-            .GroupBy(id => id!.Value)
-            // Tie-broken by panel id: two panels can carry the same number of the boulder's holds,
-            // and without it the editor opened on whichever the provider happened to list first —
-            // the same boulder could open on a different panel between two loads.
-            .OrderByDescending(g => g.Count())
-            .ThenBy(g => g.Key)
-            .Select(g => (Guid?)g.Key)
-            .FirstOrDefault();
-
-        return (home is { } panelId ? _panels.FirstOrDefault(p => p.Id == panelId) : null)
-            ?? _panels.FirstOrDefault(p => p is { Col: 0, Row: 0 })
-            ?? _panels.FirstOrDefault();
     }
 
     // The photo behind the picker: the current panel's image, else null so the picker falls back to
@@ -461,34 +444,7 @@
     // already-picked holds on the new panel stay highlighted); only the visible photo + hold set change.
     private void OnPanelChanged(WallPanelInfo panel)
     {
-        _currentPanel = panel;
-        RefreshPickerHolds();
-    }
-
-    // Max Euclidean distance in the normalized [0,1] coordinate space for the orphaned-hold re-match.
-    // Conservative on purpose: beyond this the nearest current hold is treated as "not a match" and the
-    // old hold contributes nothing, rather than mis-mapping the boulder onto an unrelated hold.
-    private const double MaxRematchDistance = 0.06;
-
-    // The current hold nearest to a normalized (x, y), or null when the closest is farther than
-    // maxDistance. Pure Euclidean nearest-neighbour over the current-generation holds.
-    private static Hold? NearestHold(IEnumerable<Hold> holds, double x, double y, double maxDistance)
-    {
-        Hold? best = null;
-        var bestDistanceSquared = maxDistance * maxDistance;
-        foreach (var hold in holds)
-        {
-            var dx = hold.X - x;
-            var dy = hold.Y - y;
-            var distanceSquared = (dx * dx) + (dy * dy);
-            if (distanceSquared <= bestDistanceSquared)
-            {
-                bestDistanceSquared = distanceSquared;
-                best = hold;
-            }
-        }
-
-        return best;
+        ShowPanel(panel);
     }
 
     private void ShowOriginal()
