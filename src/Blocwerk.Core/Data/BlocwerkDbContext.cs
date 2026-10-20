@@ -205,6 +205,7 @@ public partial class BlocwerkDbContext : DbContext
         ConfigureWallUpdateSession(modelBuilder);
         ConfigureRelocationProposals(modelBuilder);
         ConfigureUpdateExceptions(modelBuilder);
+        ConfigureReviewAnswers(modelBuilder);
         ConfigureShapeProposals(modelBuilder);
         ConfigureTopLogger(modelBuilder);
         ConfigureGlyphGeometry(modelBuilder);

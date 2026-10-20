@@ -43,7 +43,7 @@ public class RefreshFlowTests
         steps[3] = steps[3] with { State = RefreshStepState.Done };
         Assert.Equal("Working…", RefreshFlow.StatusLine(View(WallRefreshStatus.Running, steps)));
         Assert.Null(RefreshFlow.StatusLine(View(WallRefreshStatus.ReadyToApply, steps)));
-        Assert.StartsWith("Updating the summary", RefreshFlow.StatusLine(View(WallRefreshStatus.ReadyToApply, steps) with { SummaryUpdating = true }));
+        Assert.StartsWith("Working out what Apply changes", RefreshFlow.StatusLine(View(WallRefreshStatus.ReadyToApply, steps) with { SummaryUpdating = true }));
         Assert.StartsWith("The new 3D model is ready", RefreshFlow.StatusLine(View(WallRefreshStatus.ReadyToApply, steps) with { Check3DPending = true }));
     }
 

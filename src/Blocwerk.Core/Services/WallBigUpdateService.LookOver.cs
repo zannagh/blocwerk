@@ -30,7 +30,7 @@ public partial class WallBigUpdateService
     private async Task RecordLookOverAsync(BlocwerkDbContext db, Wall wall, int newGen, LookOverPromoteInputs inputs)
     {
         await SupersedeLookOverAsync(db, wall.Id, inputs.ReplacedPanelIds);
-        KeepDiscardedDetections(db, wall, newGen);
+        KeepDiscardedDetections(db, wall, newGen, await LeftOutByAPersonAsync(db, wall.Id));
         try
         {
             var session = await WallUpdateSessions.FindOpenAsync(db, wall.Id);
@@ -87,17 +87,44 @@ public partial class WallBigUpdateService
     }
 
     /// <summary>
+    /// The detections a person answered "leave out" in the one review of this update (<see cref="WallUpdateReviewAnswer"/>):
+    /// their findings are kept settled, not open. Read before the promote saves (the answers cascade with the detections).
+    /// </summary>
+    private async Task<IReadOnlyDictionary<Guid, WallUpdateReviewAnswer>> LeftOutByAPersonAsync(BlocwerkDbContext db, Guid wallId)
+    {
+        try
+        {
+            var session = await WallUpdateSessions.FindOpenAsync(db, wallId);
+            if (session is null)
+            {
+                return new Dictionary<Guid, WallUpdateReviewAnswer>();
+            }
+
+            var rows = await db.WallUpdateReviewAnswers.AsNoTracking()
+                .Where(a => a.SessionId == session.Id && a.Subject == ReviewSubject.LeftOut && a.Answer == ReviewAnswer.LeaveOut)
+                .ToListAsync();
+            return rows.GroupBy(a => a.HoldId).ToDictionary(g => g.Key, g => g.First());
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "The review answers of the update of wall {WallId} could not be read; its discarded detections stay open.", wallId);
+            return new Dictionary<Guid, WallUpdateReviewAnswer>();
+        }
+    }
+
+    /// <summary>
     /// Keeps the staged detections this promote deletes because the triage discarded them (their rows carry the
     /// reason), as findings of their own kind: read from the change tracker before the promote saves, saved with it.
-    /// They never flag the wall here; see <see cref="FlagForDiscardedDetectionsAsync"/>.
+    /// One a person already answered "leave out" in the review is kept settled with that answer. They never flag the
+    /// wall here; see <see cref="FlagForDiscardedDetectionsAsync"/>.
     /// </summary>
-    private void KeepDiscardedDetections(BlocwerkDbContext db, Wall wall, int newGen)
+    private void KeepDiscardedDetections(BlocwerkDbContext db, Wall wall, int newGen, IReadOnlyDictionary<Guid, WallUpdateReviewAnswer> answered)
     {
         try
         {
             var kept = db.ChangeTracker.Entries<Hold>()
                 .Where(e => e.State == EntityState.Deleted && DiscardedDetections.IsOne(e.Entity, wall.Id, newGen))
-                .Select(e => DiscardedDetections.From(e.Entity))
+                .Select(e => SettledIfAnswered(DiscardedDetections.From(e.Entity), answered.GetValueOrDefault(e.Entity.Id)))
                 .ToList();
             db.WallLookOverFindings.AddRange(kept);
             logger.LogInformation("The update of wall {WallId} to generation {Generation} keeps {Count} discarded detections", wall.Id, newGen, kept.Count);
@@ -106,6 +133,17 @@ public partial class WallBigUpdateService
         {
             logger.LogError(ex, "The discarded detections of the update of wall {WallId} could not be kept; the update is applied without them.", wall.Id);
         }
+    }
+
+    private static WallLookOverFinding SettledIfAnswered(WallLookOverFinding finding, WallUpdateReviewAnswer? answer)
+    {
+        if (answer is not null)
+        {
+            (finding.Status, finding.Answer, finding.AnsweredByUserId, finding.AnsweredAt) =
+                (LookOverFindingStatus.Settled, LookOverAnswer.Settle, answer.ByUserId, answer.At);
+        }
+
+        return finding;
     }
 
     /// <summary>

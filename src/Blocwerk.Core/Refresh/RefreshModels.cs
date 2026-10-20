@@ -185,7 +185,7 @@ public sealed record RefreshFile(Guid? PhotoId, string? FileName, bool IsVideo, 
 /// <param name="OpenFindings">Findings nobody answered yet.</param>
 public sealed record RefreshLookOver(DateTimeOffset PendingSince, int OpenFindings);
 
-/// <summary>Everything the "Update panels + 3D" page shows.</summary>
+/// <summary>Everything the "Update wall" page shows. <c>VideosAccepted</c>: a video would be used (3D and its photo-real view are set up here), so the page sends them.</summary>
 public sealed record WallRefreshView(
     Guid Id,
     Guid WallId,
@@ -206,7 +206,8 @@ public sealed record WallRefreshView(
     bool SummaryUpdating = false,
     RefreshLookOver? LookOver = null,
     bool FullRevision = false,
-    RefreshRevisionPreview? Revision = null)
+    RefreshRevisionPreview? Revision = null,
+    bool VideosAccepted = false)
 {
     public bool IsWorking => Status is WallRefreshStatus.Sorting or WallRefreshStatus.Running or WallRefreshStatus.Applying;
 }

@@ -24,15 +24,20 @@ internal static class RefreshDecisions
     /// <param name="actors">The services acting as the run's starter.</param>
     /// <param name="matched">The matched session.</param>
     /// <param name="stagedByPanel">The staged holds per staged panel, as they are now.</param>
+    /// <param name="reviewedOldHoldIds">The old holds a person answered in the one review (not found: still there or gone).</param>
     /// <returns>What Apply would promote, with its version.</returns>
     public static async Task<PromotableDecisions> LoadAsync(
-        Guid wallId, WallRefreshActors actors, BigUpdateSession matched, IReadOnlyDictionary<Guid, IReadOnlyList<Guid>> stagedByPanel)
+        Guid wallId,
+        WallRefreshActors actors,
+        BigUpdateSession matched,
+        IReadOnlyDictionary<Guid, IReadOnlyList<Guid>> stagedByPanel,
+        IReadOnlyCollection<Guid>? reviewedOldHoldIds = null)
     {
         var decisions = await actors.Sessions.GetDecisionsAsync(wallId);
         var exceptions = await actors.Sessions.GetUpdateExceptionsAsync(wallId);
 
         // A card answered about a hold off the centre is the user's verdict on a pair they were shown: promoted as answered.
-        var scoped = CarryoverScope.Reconcile(matched, decisions.Carryover, CarryoverScope.CardVerdictOldHoldIds(exceptions));
+        var scoped = CarryoverScope.Reconcile(matched, decisions.Carryover, CarryoverScope.CardVerdictOldHoldIds(exceptions), reviewedOldHoldIds);
         var promotable = decisions with { Carryover = scoped.Decisions.ToList() };
         var relocations = await actors.Sessions.GetRelocationSuggestionsAsync(wallId);
         var accepted = relocations

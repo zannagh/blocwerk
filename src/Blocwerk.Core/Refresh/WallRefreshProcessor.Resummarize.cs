@@ -36,8 +36,8 @@ public sealed partial class WallRefreshProcessor
             var open = await actors.Sessions.GetOpenSessionAsync(refresh.WallId);
             if (open is not null && open.Id == refresh.UpdateSessionId && RefreshTimeline.Summary(refresh) is { } summary)
             {
-                var matched = await actors.BigUpdate.ResumeAsync(refresh.WallId);
-                var promotable = await RefreshDecisions.LoadAsync(refresh.WallId, actors, matched, await StagedHoldsByPanelAsync(refresh.WallId, ct));
+                var matched = await MatchForPreviewAsync(refresh.WallId, actors);
+                var promotable = await LoadDecisionsAsync(refresh, actors, matched, ct);
                 fresh = await FreshSummaryAsync(refresh, summary, promotable, ct) with { AnsweredAt = open.UpdatedAt };
             }
         }
@@ -60,6 +60,38 @@ public sealed partial class WallRefreshProcessor
             },
             CancellationToken.None);
         await ClearRequestAsync(refresh, requested);
+    }
+
+    /// <summary>
+    /// The matched session for a summary (never for Apply): the last one while the matcher's inputs are unchanged, so an
+    /// answer costs the decisions read, not a match (<see cref="MatchedSessionCache"/>).
+    /// </summary>
+    private async Task<Services.BigUpdateSession> MatchForPreviewAsync(Guid wallId, WallRefreshActors actors)
+    {
+        await using var db = dbContextFactory.CreateDbContext();
+        return await matches.GetOrMatchAsync(db, wallId, use3D: false, () => actors.BigUpdate.ResumeAsync(wallId));
+    }
+
+    /// <summary>
+    /// What Apply would promote now (<see cref="RefreshDecisions.LoadAsync"/>), with the old holds a person answered in the
+    /// one review, whose verdicts stand on every re-photographed panel.
+    /// </summary>
+    private async Task<PromotableDecisions> LoadDecisionsAsync(
+        WallRefresh refresh, WallRefreshActors actors, Services.BigUpdateSession matched, CancellationToken ct)
+    {
+        var staged = await StagedHoldsByPanelAsync(refresh.WallId, ct);
+        HashSet<Guid> reviewed = [];
+        if (refresh.UpdateSessionId is { } sessionId)
+        {
+            await using var db = dbContextFactory.CreateDbContext();
+            reviewed = (await db.WallUpdateReviewAnswers.AsNoTracking()
+                    .Where(a => a.SessionId == sessionId && a.Subject == Enums.ReviewSubject.NotFound)
+                    .Select(a => a.HoldId)
+                    .ToListAsync(ct))
+                .ToHashSet();
+        }
+
+        return await RefreshDecisions.LoadAsync(refresh.WallId, actors, matched, staged, reviewed);
     }
 
     /// <summary>Clears the request this run served; a newer answer meanwhile keeps it (its own enqueue makes the summary again).</summary>
