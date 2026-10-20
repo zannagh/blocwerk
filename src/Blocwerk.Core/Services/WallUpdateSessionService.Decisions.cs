@@ -63,10 +63,11 @@ public partial class WallUpdateSessionService
     }
 
     /// <inheritdoc/>
-    public async Task SaveCarryDecisionAsync(Guid wallId, CarryoverDecision decision)
+    public async Task SaveCarryDecisionAsync(Guid wallId, CarryoverDecision decision, Guid? expectedSessionId = null)
     {
         await UpsertHoldDecisionAsync(
             wallId,
+            expectedSessionId,
             WallUpdateHoldDecisionKind.Carry,
             decision.OldHoldId,
             (row, userId) => CarryConfirmationPolicy.Apply(
@@ -79,20 +80,22 @@ public partial class WallUpdateSessionService
     }
 
     /// <inheritdoc/>
-    public async Task ClearCarryConfirmationAsync(Guid wallId, Guid oldHoldId)
+    public async Task ClearCarryConfirmationAsync(Guid wallId, Guid oldHoldId, Guid? expectedSessionId = null)
     {
         await UpsertHoldDecisionAsync(
             wallId,
+            expectedSessionId,
             WallUpdateHoldDecisionKind.Carry,
             oldHoldId,
             (row, _) => CarryConfirmationPolicy.Clear(row));
     }
 
     /// <inheritdoc/>
-    public async Task SaveNewCentreHoldDecisionAsync(Guid wallId, Guid stagedHoldId, bool discarded)
+    public async Task SaveNewCentreHoldDecisionAsync(Guid wallId, Guid stagedHoldId, bool discarded, Guid? expectedSessionId = null)
     {
         await UpsertHoldDecisionAsync(
             wallId,
+            expectedSessionId,
             WallUpdateHoldDecisionKind.NewCentreHold,
             stagedHoldId,
             (row, _) => row.Discarded = discarded);
@@ -104,6 +107,7 @@ public partial class WallUpdateSessionService
     /// </summary>
     private async Task UpsertHoldDecisionAsync(
         Guid wallId,
+        Guid? expectedSessionId,
         WallUpdateHoldDecisionKind kind,
         Guid holdId,
         Action<WallUpdateHoldDecision, Guid> apply)
@@ -113,7 +117,7 @@ public partial class WallUpdateSessionService
         db.CurrentUserId = user.Id;
         await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
 
-        var session = await RequireOpenAsync(db, wallId);
+        var session = await RequireOpenAsync(db, wallId, expectedSessionId);
         var row = await db.WallUpdateHoldDecisions.FirstOrDefaultAsync(d =>
             d.SessionId == session.Id && d.Kind == kind && d.HoldId == holdId);
         if (row is null)
@@ -133,14 +137,15 @@ public partial class WallUpdateSessionService
         Guid wallId,
         IReadOnlyList<CarryoverDecision> carryover,
         IReadOnlyList<Guid> acceptedNewCentreHoldIds,
-        IReadOnlyList<Guid> removedNewCentreHoldIds)
+        IReadOnlyList<Guid> removedNewCentreHoldIds,
+        Guid? expectedSessionId = null)
     {
         var user = await currentUserService.GetCurrentUserAsync();
         await using var db = await dbContextFactory.CreateDbContextAsync();
         db.CurrentUserId = user.Id;
         await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
 
-        var session = await RequireOpenAsync(db, wallId);
+        var session = await RequireOpenAsync(db, wallId, expectedSessionId);
         await WriteCarryOutcomeAsync(db, session, carryover, acceptedNewCentreHoldIds, removedNewCentreHoldIds);
         WallUpdateSessions.Touch(session, user.Id);
         await db.SaveChangesAsync();
@@ -255,42 +260,5 @@ public partial class WallUpdateSessionService
                 Discarded = discarded,
             });
         }
-    }
-
-    private static List<Guid> CollectHoldIds(
-        IReadOnlyList<CarryoverDecision> carryover,
-        IReadOnlyList<Guid> accepted,
-        IReadOnlyList<Guid> removed)
-    {
-        var ids = new List<Guid>();
-        foreach (var decision in carryover)
-        {
-            ids.Add(decision.OldHoldId);
-            if (decision.NewHoldId is { } newId)
-            {
-                ids.Add(newId);
-            }
-        }
-
-        ids.AddRange(accepted);
-        ids.AddRange(removed);
-        return ids;
-    }
-
-    /// <summary>The subset of <paramref name="candidates"/> that still exists on the wall.</summary>
-    private static async Task<HashSet<Guid>> LoadLiveHoldIdsAsync(
-        BlocwerkDbContext db, Guid wallId, List<Guid> candidates)
-    {
-        if (candidates.Count == 0)
-        {
-            return [];
-        }
-
-        var distinct = candidates.Distinct().ToList();
-        var found = await db.Holds
-            .Where(h => h.WallId == wallId && distinct.Contains(h.Id))
-            .Select(h => h.Id)
-            .ToListAsync();
-        return found.ToHashSet();
     }
 }

@@ -29,24 +29,22 @@ internal static class RefreshDecisions
         Guid wallId, WallRefreshActors actors, BigUpdateSession matched, IReadOnlyDictionary<Guid, IReadOnlyList<Guid>> stagedByPanel)
     {
         var decisions = await actors.Sessions.GetDecisionsAsync(wallId);
-        var scoped = CarryoverScope.Reconcile(matched, decisions.Carryover);
+        var exceptions = await actors.Sessions.GetUpdateExceptionsAsync(wallId);
+
+        // A card answered about a hold off the centre is the user's verdict on a pair they were shown: promoted as answered.
+        var scoped = CarryoverScope.Reconcile(matched, decisions.Carryover, CarryoverScope.CardVerdictOldHoldIds(exceptions));
         var promotable = decisions with { Carryover = scoped.Decisions.ToList() };
         var relocations = await actors.Sessions.GetRelocationSuggestionsAsync(wallId);
         var accepted = relocations
             .Where(r => RelocationFold.VerdictOf(r.Status) is not null)
             .Select(r => (r.OldHoldId, r.NewHoldId, RelocationFold.VerdictOf(r.Status)!.Value))
             .ToList();
-        var exceptions = await actors.Sessions.GetUpdateExceptionsAsync(wallId);
         var review = ReviewOldHoldIds(exceptions);
-        promotable = promotable with
-        {
-            ReviewOldHoldIds = review,
-            HandPlacedMergeOldIds = (matched.HandPlacedMerges ?? []).Select(m => m.OldHoldId).ToList(),
-            NotFoundAgain = matched.NotFoundAgain,
-        };
+
+        // Exactly what Apply hands the promote, and the moves are previewed from it: the promote derives the same plan.
+        promotable = PromotePayload.For(promotable with { ReviewOldHoldIds = review }, matched);
         var folded = RelocationFold.Apply(promotable, accepted);
-        var moves = await actors.BigUpdate.PreviewHoldMovesAsync(
-            wallId, folded with { CarriedWarpPositions = matched.CarriedWarpPositions });
+        var moves = await actors.BigUpdate.PreviewHoldMovesAsync(wallId, promotable);
         var linked = folded.Neighbours.Sum(n => n.Links.Count);
         var leftOut = Math.Max(0, matched.Neighbours.Sum(n => n.Proposals.Count) - linked);
         return new PromotableDecisions(
@@ -60,14 +58,18 @@ internal static class RefreshDecisions
             moves);
     }
 
-    /// <summary>The old holds of unanswered cards: they go live as decided, marked for review.</summary>
+    /// <summary>
+    /// The old holds of unanswered cards, and of cards answered "not the same hold" (carried blind where the warp
+    /// puts them, which is what most needs a look): they go live as decided, marked for review.
+    /// </summary>
     /// <param name="exceptions">The session's cards.</param>
     /// <returns>The old hold ids.</returns>
     public static IReadOnlyCollection<Guid> ReviewOldHoldIds(IReadOnlyList<UpdateExceptionInfo> exceptions) =>
         exceptions
-            .Where(e => e.Status == UpdateExceptionStatus.Pending
-                && e.Kind is UpdateExceptionKind.PossiblyRemoved or UpdateExceptionKind.LowConfidenceMatch or UpdateExceptionKind.HandPlacedAmbiguous
-                    or UpdateExceptionKind.ReplacedByOther)
+            .Where(e => (e.Status == UpdateExceptionStatus.Pending
+                    && e.Kind is UpdateExceptionKind.PossiblyRemoved or UpdateExceptionKind.LowConfidenceMatch or UpdateExceptionKind.HandPlacedAmbiguous
+                        or UpdateExceptionKind.ReplacedByOther)
+                || e.Status == UpdateExceptionStatus.NotSame)
             .Select(e => e.OldHoldId)
             .OfType<Guid>()
             .ToHashSet();
@@ -139,7 +141,10 @@ internal static class RefreshDecisions
 }
 
 /// <summary>What Apply would promote, see <see cref="RefreshDecisions"/>.</summary>
-/// <param name="Scoped">The session's decisions after <see cref="CarryoverScope.Reconcile"/>: what is handed to the promote.</param>
+/// <param name="Scoped">
+/// The session's decisions after <see cref="CarryoverScope.Reconcile"/>, topped up by <see cref="PromotePayload"/>: what is handed
+/// to the promote, and what <paramref name="Moves"/> was planned from.
+/// </param>
 /// <param name="Folded"><paramref name="Scoped"/> with the accepted relocations folded in: what the promote ends up doing.</param>
 /// <param name="Resets">Verdicts outside the reviewable scope that Apply resets to the matcher's default.</param>
 /// <param name="PendingRelocations">"This hold may have moved" suggestions nobody decided.</param>

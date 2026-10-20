@@ -141,7 +141,7 @@ public partial class WallLookOver
     }
 
     private Task AnswerAsync(LookOverChoice choice) =>
-        ActAsync(choice.FindingId, () => LookOver.AnswerAsync(WallId, choice.FindingId, choice.Answer, choice.ShownBoulderIds));
+        ActAsync(choice.FindingId, () => LookOver.AnswerAsync(WallId, choice.FindingId, choice.Answer, choice.ShownBoulderIds, choice.NewHoldBoulderIds));
 
     private Task UndoAsync(Guid findingId) => ActAsync(findingId, () => LookOver.UndoAsync(WallId, findingId));
 

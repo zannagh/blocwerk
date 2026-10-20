@@ -287,6 +287,8 @@ give the job memory to match (`SPLAT_MAX_MEMORY_MB` unset, container limit ≥ 1
 | `TEXTURES_BLEND_MAX_BYTES` | 50 % of the machine's memory | the multi-view blend's budget for a wall-textures job (the wall-geometry service's own variable); advertised as `texturesMemoryMb`. `RUNNER_TEXTURES_MEMORY_FRACTION` (0.1 to 0.9) changes the 50 % |
 | `RUNNER_TEXTURES_MAX_IMAGE_MP` | 200 | OpenCV's decode limit per photo of a textures job |
 | `RUNNER_HOLDS` | 1 | `0` = never advertise the `detect-holds` capability (hold detection, below) |
+| `RUNNER_KEEP_AWAKE` | 1 | Windows: keep the PC out of idle sleep while the runner runs; `0` = off (macOS: `caffeinate -i`) |
+| `RUNNER_WINPTY` | 1 | Windows: give Brush a ConPTY through pywinpty (live progress); `0` = a plain pipe |
 
 ## Run natively on a Mac (the "external GPU")
 
@@ -573,14 +575,67 @@ docker run -d --name blocwerk-runner --restart unless-stopped --stop-timeout 30 
 # AMD / Intel (Brush on Vulkan)
 docker run -d --name blocwerk-runner --restart unless-stopped --stop-timeout 30 --device /dev/dri \
   --env-file runner.env ghcr.io/zannagh/blocwerk-splat-worker:latest python -m splatworker.gpurunner --server https://blocwerk.app
-# Apple Silicon (Brush on Metal, natively; untested)
+# Apple Silicon (Brush on Metal, natively)
 set -a; . ./runner.env; set +a; caffeinate -i docker/splat-worker/run-runner-native.sh --server https://blocwerk.app
+# Windows x64, NVIDIA / AMD / Intel (Brush on Vulkan or DX12, natively; PowerShell; see "Native runners per OS")
+$env:BWR_KEY = 'bwr_...'; powershell -ExecutionPolicy Bypass -File docker\splat-worker\run-runner-native.ps1 --server https://blocwerk.app
 # the CPU half next to the app: same images, no GPU
 docker run -e SPLAT_WORKER_MODE=cpu -e COMPUTE_API_KEY=... ghcr.io/zannagh/blocwerk-splat-worker:latest
 ```
 
 Plain `http://` is refused except for localhost (`--insecure-http` overrides). Exit codes: 0 stopped,
 2 misconfigured (no key, trainer missing; also on a resume when the trainer turns out unusable), 3 key refused.
+
+### Native runners per OS
+
+Both launchers download the pinned Brush v0.3.0 release (sha256-checked) into `./.bin` (on Windows into a folder named
+after the version, so a version bump downloads anew), make `./.venv` from
+`requirements.txt` (uv if present; re-installed when the requirements change) and start
+`python -m splatworker.gpurunner`. No COLMAP: the server's CPU half runs it. The runner picks its highest quality from
+the GPU it finds (`gpuprobe.py`) and the memory budget:
+
+| | macOS (Apple Silicon) | Windows x64 |
+|---|---|---|
+| launcher | `run-runner-native.sh` (bash, `set -euo pipefail`) | `run-runner-native.ps1` (PowerShell 5.1 or 7, `Set-StrictMode`) |
+| Brush backend | Metal | wgpu on Vulkan or DX12 through the vendor driver (NVIDIA, AMD, Intel) |
+| GPU / memory | `system_profiler`; **unified**: the machine's RAM is the GPU's memory, the host budget decides | `nvidia-smi`, else the registry's display adapters (64-bit `qwMemorySize`, AMD / Intel); a **discrete** card's VRAM caps Brush too (below) |
+| quarantine | `xattr -dr com.apple.quarantine` on `.bin` | `Unblock-File` (Mark-of-the-Web / SmartScreen) on `.bin` |
+| progress from Brush | POSIX pty | ConPTY via `pywinpty` (`requirements-windows.txt`); without it a pipe: training works, the progress bar does not move until the end |
+| stays awake | `caffeinate -i` in front | the runner asks Windows itself (`RUNNER_KEEP_AWAKE=0` turns it off) |
+| work dir | `~/Library/Caches/blocwerk-runner` | `%LOCALAPPDATA%\blocwerk-runner` |
+| stop | Ctrl+C / SIGTERM | Ctrl+C / Ctrl+Break, closing the console window, log-off / shutdown (the job is handed back within Windows' ~5 s) |
+| highest quality | max (Brush) | **max** (Brush); `ultra` needs the CUDA runner below |
+
+**Quality on a discrete GPU** (Windows, Linux AMD): Brush keeps its host-memory tiers (max >= 12 GB, high >= 5 GB budget)
+and is additionally capped by the card: max on >= 12 GB of VRAM, high on >= 6 GB, else draft (`caps.BRUSH_VRAM_FLOOR_MB`;
+estimates, not measured yet). A card whose VRAM cannot be read counts as 4 GB (draft): set `SPLAT_VRAM_MB` to its real
+size. Only Apple Silicon and known integrated GPUs (Intel UHD / Iris / HD / Arc Graphics, AMD Radeon(TM) Graphics, Vega
+and 7xxM APUs) are unified memory and keep the host budget alone. `RUNNER_MAX_QUALITY` caps the result.
+
+**The native Windows runner trains with Brush, so it tops out at `max`.** `ultra` is gsplat on CUDA (what the old
+production model was trained with on the RTX 4070 Ti SUPER); gsplat does not run natively on Windows, so on an NVIDIA
+PC run the CUDA runner in Docker Desktop (WSL2 backend, "Use the WSL 2 based engine" on; a current NVIDIA driver is
+all WSL2 needs). From the repo root in PowerShell, with `runner.env` holding the one line `BWR_KEY=bwr_...`:
+
+```powershell
+docker build -f docker/splat-worker/Dockerfile.cuda -t blocwerk-splat-worker-cuda:local .
+docker run -d --name blocwerk-runner --restart unless-stopped --stop-timeout 30 --gpus all `
+  -e RUNNER_UI_HOST=0.0.0.0 -p 127.0.0.1:8190:8190 `
+  -e RUNNER_STATE_DIR=/var/lib/splat-worker/runner-state -v blocwerk-runner-state:/var/lib/splat-worker/runner-state `
+  --env-file runner.env blocwerk-splat-worker-cuda:local python -m splatworker.gpurunner --server https://blocwerk.app
+```
+
+It says `gsplat trainer, up to ultra` on a >= 12 GB card. Run one runner per GPU: the native one or the Docker one.
+
+**Windows specifics.** Native Brush uses the driver's Vulkan / DX12 directly, which is not the WSL2 dzn path that
+crashes (`WGPU_BACKEND=vulkan` or `dx12` forces one). The memory guard reads the working set of Brush's process tree (`winsys.py`); there is no
+swap guard on Windows (its commit charge moves with the GPU driver). A bundle whose names cannot exist here (two photos
+differing only in case, `CON`, a trailing dot; on macOS also NFC vs NFD spellings of one name) is handed back as a retryable failure (`portable.py`), so a Linux
+runner can take it; macOS's case-insensitive APFS gets the same check. Consider excluding the work dir from Defender's
+real-time scan (it scans every unpacked photo and every Brush export) and enabling long paths
+(`HKLM\SYSTEM\CurrentControlSet\Control\FileSystem\LongPathsEnabled = 1`) if your profile path is long.
+To run it unattended, a Scheduled Task "at log on" with `powershell -ExecutionPolicy Bypass -File ...` and `BWR_KEY` as a
+user environment variable is enough (no service wrapper: Brush needs the user's GPU session).
 
 ### Wall textures (`textures` jobs)
 

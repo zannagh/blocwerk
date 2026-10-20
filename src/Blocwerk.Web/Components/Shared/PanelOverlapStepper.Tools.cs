@@ -110,7 +110,11 @@ public partial class PanelOverlapStepper
 
     private async Task MoveStagedHoldAsync(PanelImageView.HoldGeometry g)
     {
-        await WallPanelService.UpdateStagedHoldAsync(WallId, g.HoldId, g.X, g.Y, g.Radius);
+        if (!await TryMoveStagedInSessionAsync(g))
+        {
+            return;
+        }
+
         if (_stagedHolds.TryGetValue(g.HoldId, out var hold))
         {
             ReplaceInStagedSet(hold with { X = g.X, Y = g.Y, Radius = g.Radius });
@@ -187,7 +191,11 @@ public partial class PanelOverlapStepper
     /// </summary>
     private async Task DeleteTouchupHoldAsync(Guid id)
     {
-        await WallPanelService.DeleteStagedHoldAsync(WallId, id);
+        if (!await TryDeleteStagedInSessionAsync(id))
+        {
+            return;
+        }
+
         RemoveFromStagedSet(id);
         _touchup.Removed(id);
 

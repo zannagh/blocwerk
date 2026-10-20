@@ -1,12 +1,11 @@
-"""What this runner can do: trainer (SPLAT_TRAINER: gsplat on CUDA, Brush on Vulkan / Metal), GPU and
-VRAM, host memory budget -> the highest quality profile it will train (hello, claim); and whether it renders wall
-textures (`capabilities`, `texturesMemoryMb`: textures.py) and finds holds (`capabilities`: holds.py)."""
-import json
+"""What this runner can do: trainer (SPLAT_TRAINER: gsplat on CUDA, Brush on Vulkan / DX12 / Metal), GPU and
+VRAM (gpuprobe.py: NVIDIA, AMD, Intel, Apple), host memory budget -> the highest quality profile it will train (hello,
+claim); and whether it renders wall textures (`capabilities`, `texturesMemoryMb`: textures.py) and finds holds
+(`capabilities`: holds.py)."""
 import os
 import platform
-import subprocess
 
-from .. import __version__, brush, gpu, gsplat_trainer, trainers
+from .. import __version__, brush, gpuprobe, gsplat_trainer, trainers
 from ..profiles import QUALITIES
 from ..resources import memory_budget, system_memory
 from ..settings import settings
@@ -14,29 +13,28 @@ from . import holds, textures
 
 # Brush's host-memory needs per profile (README "quality profiles"): high 5-6 GB, max 12+ GB.
 BRUSH_FLOOR_MB = {"max": 12 * 1024, "high": 5 * 1024}
+# Brush's VRAM per profile on a DISCRETE GPU (not measured yet: estimated from the splat caps at ~1 KB per splat for
+# parameters + Adam state + gradients, plus raster buffers): max (5 M splats) on a 12 GB card, high (2 M) on a 6 GB
+# card, at 95 % of the nominal size (what the cards report). Unified memory (Apple Silicon, iGPUs) has no separate
+# pool: the host budget above is its limit. SPLAT_VRAM_MB / RUNNER_MAX_QUALITY override.
+BRUSH_VRAM_FLOOR_MB = {"max": 0.95 * 12 * 1024, "high": 0.95 * 6 * 1024}
+# A discrete adapter whose VRAM could not be read (a registry entry without a size): assume a small card (draft)
+# rather than the host's RAM; SPLAT_VRAM_MB states the real size.
+UNKNOWN_VRAM_MB = 4096
 # gsplat's VRAM for the profile at its splat floor (gsplat_trainer.vram_mb, 4:3 photos at the profile's
 # edge, with the planner's headroom): ultra is the server's own rule (>= 98 % of 12 GB).
 GSPLAT_FLOOR_MB = {"ultra": 0.98 * trainers.ULTRA_MIN_VRAM_MB, "max": 6 * 1024, "high": 4 * 1024}
 
 
-def _run(cmd):
-    try:
-        return subprocess.run(cmd, capture_output=True, text=True, timeout=20).stdout
-    except (OSError, subprocess.SubprocessError):
-        return ""
-
-
 def gpu_info():
-    """(name, VRAM MB or None). macOS: the chipset (unified memory = VRAM); else nvidia-smi (gpu.py)."""
-    if platform.system() == "Darwin":
-        try:
-            doc = json.loads(_run(["system_profiler", "SPDisplaysDataType", "-json"]) or "{}")
-            name = (doc.get("SPDisplaysDataType") or [{}])[0].get("sppci_model")
-        except (ValueError, IndexError, AttributeError):
-            name = None
-        return name or "Apple GPU", system_memory().get("totalMb")
-    info = gpu.vram()
-    return ((info or {}).get("name") or "unknown"), (info or {}).get("totalMb")
+    """(name, memory MB or None, unified) of the GPU gpuprobe.detect() picks. Unified memory (Apple Silicon, an iGPU):
+    the machine's memory, what Brush trains out of; a discrete GPU: its VRAM (None when unknown). No adapter seen at
+    all (a container without nvidia-smi or sysfs): unified, i.e. the host budget alone, as before gpuprobe."""
+    total_ram = system_memory().get("totalMb")
+    info = gpuprobe.detect(total_ram_mb=total_ram)
+    if info is None:
+        return "unknown", None, True
+    return info["name"], (total_ram if info["unified"] else info["totalMb"]), info["unified"]
 
 
 def budget_mb():
@@ -49,14 +47,22 @@ def cap_quality(q, cap=None):
     return cap if cap in QUALITIES and QUALITIES.index(cap) < QUALITIES.index(q) else q
 
 
-def max_quality(trainer, vram_mb, budget, cap=None):
-    """The highest profile this machine trains: gsplat by VRAM (ultra only on >= 12 GB), Brush by the host
-    memory budget (>= 12 GB max, >= 5 GB high, else draft); at most `cap` / RUNNER_MAX_QUALITY."""
+def _tier(floors, mb, names):
+    return next((n for n in names if (mb or 0) >= floors[n]), "draft")
+
+
+def max_quality(trainer, vram_mb, budget, cap=None, unified=None):
+    """The highest profile this machine trains: gsplat by a discrete card's VRAM (ultra only on >= 12 GB; unified
+    memory is never VRAM to it); Brush by the host memory budget (>= 12 GB max, >= 5 GB high, else draft) and, on a
+    discrete GPU (unified=False), also by its VRAM (BRUSH_VRAM_FLOOR_MB; the lower tier wins), an unknown VRAM taken as
+    UNKNOWN_VRAM_MB (draft). unified=None (not known): gsplat takes vram_mb as VRAM, Brush the budget alone.
+    At most `cap` / RUNNER_MAX_QUALITY."""
     if trainer == "gsplat":
-        floors = GSPLAT_FLOOR_MB
-        q = next((n for n in ("ultra", "max", "high") if (vram_mb or 0) >= floors[n]), "draft")
+        q = _tier(GSPLAT_FLOOR_MB, None if unified is True else vram_mb, ("ultra", "max", "high"))
     else:
-        q = next((n for n in ("max", "high") if budget >= BRUSH_FLOOR_MB[n]), "draft")
+        q = _tier(BRUSH_FLOOR_MB, budget, ("max", "high"))
+        if unified is False:
+            q = min(q, _tier(BRUSH_VRAM_FLOOR_MB, vram_mb or UNKNOWN_VRAM_MB, ("max", "high")), key=QUALITIES.index)
     return cap_quality(q, cap)
 
 
@@ -91,10 +97,10 @@ class Capabilities:
         return self._doc(None if self._version is self.UNPROBED else self._version)
 
     def _doc(self, version):
-        name, vram = gpu_info()
+        name, vram, unified = gpu_info()
         budget = budget_mb()
         doc = {"runnerVersion": __version__, "gpuName": name, "vramMb": vram,
-               "maxQuality": max_quality(self.trainer, vram, budget), "memoryBudgetMb": budget,
+               "maxQuality": max_quality(self.trainer, vram, budget, unified=unified), "memoryBudgetMb": budget,
                "platform": f"{platform.system()} {platform.machine()}", "trainer": self.trainer,
                "cuda": self.trainer == "gsplat" and version is not None, "trainerVersion": version,
                **textures.advertise()}

@@ -136,6 +136,41 @@ public class LookOverFindingBuilderTests
         Assert.Equal(same, SameSpotFinder.Nearest(kept, [fresh], (2000, 1000)) is not null);
     }
 
+    // "Greetings to Patrick": the purple sits on the old orange's outline, a brown neighbour's centre is nearer the old
+    // hold's centre. The finding pairs the hold on the outline, not the nearest centre.
+    [Fact]
+    public void SameSpot_PairsTheHoldOnTheOldOutline_NotTheNearestCentre()
+    {
+        // 2000 x 1000 px: the old outline spans 1000..1120 x 460..540 px, right of the old centre (1000, 500).
+        var (old, copy) = (Hold(0.5, 0.5), Hold(0.5, 0.5));
+        copy.Radius = 0.04;
+        copy.ShapePoints =
+        [
+            new() { Dx = 0, Dy = -0.04 }, new() { Dx = 0.06, Dy = -0.04 }, new() { Dx = 0.06, Dy = 0.04 }, new() { Dx = 0, Dy = 0.04 },
+        ];
+        var (purple, brown) = (Hold(0.535, 0.5), Hold(0.475, 0.5));
+        (purple.Radius, brown.Radius) = (0.02, 0.02);
+
+        var finding = Assert.Single(LookOverFindingBuilder.Build(Facts([], live: [copy, brown, purple], successors: [(old, copy)])));
+
+        Assert.Equal(purple.Id, finding.OtherHoldId);
+
+        // Nothing meets the old footprint: the nearest centre within the larger radius, as before.
+        Assert.Equal(brown.Id, SameSpotFinder.Nearest(Hold(0.5, 0.5), [brown, Hold(0.54, 0.5)], (2000, 1000))?.Id);
+    }
+
+    // A small hold over the old centre keeps the spot against a neighbour that only clips the old circle's edge, even
+    // though the neighbour's share of the old footprint is the larger one (both well under a real match).
+    [Fact]
+    public void SameSpot_AHoldOverTheOldCentre_BeatsANeighbourClippingTheEdge()
+    {
+        // 2000 x 1000 px: the old hold is 60 px round; the small one is 10 px on its centre, the neighbour 20 px, 50 px right.
+        var (kept, onCentre, clipping) = (Hold(0.5, 0.5), Hold(0.5, 0.5), Hold(0.525, 0.5));
+        (onCentre.Radius, clipping.Radius) = (0.005, 0.01);
+
+        Assert.Equal(onCentre.Id, SameSpotFinder.Nearest(kept, [clipping, onCentre], (2000, 1000))?.Id);
+    }
+
     [Fact]
     public void TheAnswers_FollowTheKindAndTheUsersRights_AndAHoldThatIsNotLiveCanOnlyBeAcknowledged()
     {

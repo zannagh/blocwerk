@@ -21,6 +21,10 @@ namespace Blocwerk.Core.LookOver;
 /// </summary>
 public sealed partial class WallLookOverService
 {
+    /// <summary>The refusal of "it is here" for a finding that does not offer it (the page shows no spot to tap).</summary>
+    public const string NotMovable =
+        "This finding does not take \"it is here\": the look-over moves only a hold it also offers to remove as not there any more.";
+
     /// <inheritdoc/>
     public async Task ReassignAsync(
         Guid wallId, Guid findingId, Guid targetHoldId, IReadOnlyCollection<Guid> expectedBoulderIds, CancellationToken ct = default)
@@ -50,6 +54,8 @@ public sealed partial class WallLookOverService
             await ClaimForChangeAsync(db, finding, ct);
             try
             {
+                // The merge's colour rule: a colour a person set on the old hold moves onto the target (it was corrected by
+                // hand); a detector's proposal on the old hold never overrides the target's own colour.
                 var merge = await duplicates.MergeAsync(wallId, targetHoldId, view.HoldId!.Value, HoldMergeMode.KeepLeft, ct);
                 (finding.MergeBatchId, finding.OtherHoldId) = (merge.BatchId, targetHoldId);
             }
@@ -66,7 +72,8 @@ public sealed partial class WallLookOverService
     }
 
     /// <inheritdoc/>
-    public async Task MoveAsync(Guid wallId, Guid findingId, double x, double y, CancellationToken ct = default)
+    public async Task MoveAsync(
+        Guid wallId, Guid findingId, double x, double y, double? radius = null, Guid? panelId = null, CancellationToken ct = default)
     {
         var (db, access) = await OpenAsync(wallId, ct);
         await using (db)
@@ -77,13 +84,20 @@ public sealed partial class WallLookOverService
                 throw new UserFacingException("Only the owner, admins and moderators of this wall can move a hold.");
             }
 
+            if (!view.Answers.Contains(LookOverAnswer.RemoveHold))
+            {
+                throw new UserFacingException(NotMovable);
+            }
+
             var hold = await db.Holds.AsNoTracking().FirstAsync(h => h.Id == view.HoldId, ct);
+            await EnsureBareSpotAsync(db, wallId, hold, x, y, panelId, ct);
             using var batch = BeginBatch(wallId);
             await ClaimForChangeAsync(db, finding, ct);
             try
             {
                 // The editor's move, as a big-wall panel edit makes it: the boulders are not retired by it.
-                await walls.UpdateHoldAsync(hold.Id, new HoldEdit { X = Math.Clamp(x, 0, 1), Y = Math.Clamp(y, 0, 1), Radius = hold.Radius, FlagBouldersOnMove = false });
+                await walls.UpdateHoldAsync(
+                    hold.Id, new HoldEdit { X = Math.Clamp(x, 0, 1), Y = Math.Clamp(y, 0, 1), Radius = radius ?? hold.Radius, FlagBouldersOnMove = false });
             }
             catch
             {
@@ -108,6 +122,39 @@ public sealed partial class WallLookOverService
             return await PanelHoldsAsync(db, wallId, panelId, ct);
         }
     }
+
+    /// <inheritdoc/>
+    public async Task<(int Width, int Height)?> GetPanelPhotoSizeAsync(Guid wallId, Guid panelId, CancellationToken ct = default)
+    {
+        var (db, _) = await OpenAsync(wallId, ct);
+        await using (db)
+        {
+            return await db.WallPanels.AnyAsync(p => p.Id == panelId && p.WallId == wallId, ct) ? await PhotoSizeAsync(db, panelId, ct) : null;
+        }
+    }
+
+    /// <summary>
+    /// "It is here" only on the hold's own photo and only on bare wall: a spot inside a hold the update found (or a hair
+    /// outside its outline, <see cref="LookOverRules.SpotSnapPixels"/>) means that hold ("it is this hold").
+    /// </summary>
+    private static async Task EnsureBareSpotAsync(
+        BlocwerkDbContext db, Guid wallId, Entities.Hold hold, double x, double y, Guid? panelId, CancellationToken ct)
+    {
+        if (panelId is { } on && on != hold.WallPanelId)
+        {
+            throw new UserFacingException("That spot is on another photo: a hold is moved on its own panel's photo.");
+        }
+
+        var holds = await PanelHoldsAsync(db, wallId, hold.WallPanelId, ct);
+        var size = hold.WallPanelId is { } panel ? await PhotoSizeAsync(db, panel, ct) : null;
+        if (LookOverRules.HoldAtSpot(holds.Where(h => h.Id != hold.Id), x, y, size) is { } there)
+        {
+            throw new UserFacingException($"A hold is at that spot ({there.Id}): say that it is this hold instead (Reassign with targetHoldId).");
+        }
+    }
+
+    private static async Task<(int Width, int Height)?> PhotoSizeAsync(BlocwerkDbContext db, Guid panelId, CancellationToken ct) =>
+        (await LookOverFrameSource.SizesAsync(db, [panelId], ct)).TryGetValue(panelId, out var size) ? size : null;
 
     private static async Task<List<PanelHold>> PanelHoldsAsync(BlocwerkDbContext db, Guid wallId, Guid? panelId, CancellationToken ct)
     {

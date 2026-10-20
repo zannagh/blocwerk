@@ -54,8 +54,13 @@
             }
             @if (Finding.Answers.Contains(LookOverAnswer.UseNewHold))
             {
-                <ConfirmAction Label="@LookOverCopy.MergeLabel(Finding)" Question="@LookOverCopy.UseNewQuestion(Finding)" ConfirmLabel="Merge into the new hold"
-                               Disabled="Disabled" OnConfirm="() => AnswerAsync(LookOverAnswer.UseNewHold)" />
+                <ConfirmAction Label="@LookOverCopy.MergeLabel(Finding)" Question="@LookOverCopy.UseNewQuestion(Finding)"
+                               ConfirmLabel="@LookOverCopy.UseNewConfirmLabel(Finding, declined.Count)" Disabled="Disabled" OnConfirm="UseNewHoldAsync">
+                    @if (Finding.Boulders.Count > 0)
+                    {
+                        <LookOverNewHoldPicker FindingId="Finding.Id" Boulders="Finding.Boulders" Declined="declined" Disabled="Disabled" OnChanged="StateHasChanged" />
+                    }
+                </ConfirmAction>
             }
             @if (Finding.Answers.Contains(LookOverAnswer.RemoveHold))
             {
@@ -92,6 +97,10 @@
 @code {
     private ElementReference card;
     private bool zoomed;
+
+    /// <summary>The boulders answered no to "use the new hold" (yes by default).</summary>
+    private readonly HashSet<Guid> declined = [];
+    private Guid declinedFor;
     private int focusedFor;
 
     [Parameter, EditorRequired]
@@ -115,6 +124,16 @@
 
     [Parameter]
     public EventCallback<Guid> OnUndo { get; set; }
+
+    /// <summary>A card shown for another finding starts again from yes for every boulder.</summary>
+    protected override void OnParametersSet()
+    {
+        if (declinedFor != Finding.Id)
+        {
+            declinedFor = Finding.Id;
+            declined.Clear();
+        }
+    }
 
     private bool Open => Finding.Status == LookOverFindingStatus.Open;
 
@@ -159,4 +178,15 @@
     /// <summary>The answer goes out with the boulders this card shows: the server refuses when they are not the ones on the hold any more.</summary>
     private Task AnswerAsync(LookOverAnswer answer) =>
         OnAnswer.InvokeAsync(new LookOverChoice(Finding.Id, answer, [.. Finding.Boulders.Select(b => b.Id)]));
+
+    /// <summary>
+    /// "Use the new hold" with the per-boulder answers: every boulder yes is the merge (no list), otherwise the list of the
+    /// yes boulders goes along (empty when every boulder said no: the old hold is gone).
+    /// </summary>
+    private Task UseNewHoldAsync()
+    {
+        var shown = Finding.Boulders.Select(b => b.Id).ToList();
+        var yes = shown.Where(id => !declined.Contains(id)).ToList();
+        return OnAnswer.InvokeAsync(new LookOverChoice(Finding.Id, LookOverAnswer.UseNewHold, shown, yes.Count == shown.Count ? null : yes));
+    }
 }

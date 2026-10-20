@@ -16,17 +16,13 @@ namespace Blocwerk.Web.Components.Shared;
 public partial class BigWallUpdate
 {
     // ---- Finish ----------------------------------------------------------------
-    private int CarriedCount => _outcome?.Carryover.Count(d => d.Kind == CarryKind.Carried) ?? 0;
-    private int ChangedCount => _outcome?.Carryover.Count(d => d.Kind == CarryKind.Changed) ?? 0;
-    private int RemovedCount => _outcome?.Carryover.Count(d => d.Kind == CarryKind.Removed) ?? 0;
+    // The confirm-step counts live in BigWallUpdate.ConfirmSummary.cs and read the session.
 
     /// <summary>Staged holds the carry verdicts make an old hold's successor; the overlap step does not offer deleting them.</summary>
     private IReadOnlySet<Guid>? ReFoundSuccessorIds => _outcome?.Carryover
         .Where(d => d.Kind != CarryKind.Removed && d.NewHoldId is not null)
         .Select(d => d.NewHoldId!.Value)
         .ToHashSet();
-    private int NewKeptCount => _outcome?.AcceptedNewCenterHoldIds.Count ?? 0;
-    private int LinkCount => _linkSets.Sum(l => l.Links.Count);
 
     /// <summary>
     /// Promotes what the SESSION says was decided, not what this circuit happens to remember — the two
@@ -50,6 +46,7 @@ public partial class BigWallUpdate
         try
         {
             var confirmation = await BuildConfirmationAsync();
+            confirmDecisions = confirmation;
 
             // BuildConfirmationAsync re-reads the session rows, so it can surface out-of-scope verdicts
             // this circuit had not seen yet (another admin's decisions, or a resume that skipped the
@@ -66,6 +63,7 @@ public partial class BigWallUpdate
                 confirmation.Carryover, confirmation.AcceptedNewCenterHoldIds, confirmation.RemovedNewCenterHoldIds);
             _linkSets.Clear();
             _linkSets.AddRange(confirmation.Neighbours);
+            confirmDecisions = confirmation;
             _phase = WallUpdatePhase.Done;
             await OnPromoted.InvokeAsync();
         }
@@ -127,16 +125,12 @@ public partial class BigWallUpdate
         // the only one every path passes through — a resume straight to Confirm never re-walks the
         // carryover, so the rows reach here exactly as they were recorded. Neutralising them here as
         // well as on restore means no ordering of resume, take-over or re-read can let one through.
-        var scoped = CarryoverScope.Reconcile(matched, persisted.Carryover);
+        await LoadCardVerdictsAsync(open is not null);
+        var scoped = CarryoverScope.Reconcile(matched, persisted.Carryover, _cardVerdicts);
         RecordScopeResets(scoped.Reset);
 
-        return persisted with
-        {
-            Carryover = scoped.Decisions.ToList(),
-            CarriedWarpPositions = matched.CarriedWarpPositions,
-            CarriedWarpShapes = matched.CarriedWarpShapes,
-            NotFoundAgain = matched.NotFoundAgain,
-        };
+        // The same payload the quick flow's Apply builds (warp outlines and hand-placed merges included), so both promote alike.
+        return PromotePayload.For(persisted with { Carryover = scoped.Decisions.ToList() }, matched);
     }
 
     /// <summary>
@@ -169,9 +163,19 @@ public partial class BigWallUpdate
 
     private bool ScopeResetsPending => _scopeResets.Count > 0 && !_scopeResetsAcknowledged;
 
+    /// <summary>
+    /// The old holds whose verdict a confirm-screen card answered (<see cref="CarryoverScope.CardVerdictOldHoldIds"/>): every
+    /// scope reconcile here passes them, so restore, the confirm counts, the carryover seed and Apply agree with the quick flow.
+    /// </summary>
+    private HashSet<Guid> _cardVerdicts = [];
+
+    /// <summary>Reads the session's cards again; without a session there are none.</summary>
+    private async Task LoadCardVerdictsAsync(bool hasSession = true) =>
+        _cardVerdicts = hasSession ? CarryoverScope.CardVerdictOldHoldIds(await Sessions.GetUpdateExceptionsAsync(WallId)) : [];
+
     private CarryoverScopeResult ReconcileCarryScope(IReadOnlyList<CarryoverDecision> decisions) =>
         _session is { } session
-            ? CarryoverScope.Reconcile(session, decisions)
+            ? CarryoverScope.Reconcile(session, decisions, _cardVerdicts)
             : new CarryoverScopeResult(decisions, []);
 
     /// <summary>

@@ -90,7 +90,7 @@ public sealed partial class WallLookOverService
     }
 
     /// <summary>
-    /// A duplicate merge since the update touched the boulder (it moved a membership of it, or marked it): such a merge
+    /// A duplicate merge (or a merge with the editor's merge tool) since the update touched the boulder (it moved a membership of it, or marked it): such a merge
     /// can mark a boulder for using both holds and leaves no reason row, so the boulder is not cleared from here.
     /// </summary>
     private static async Task<bool> MergedSinceAsync(BlocwerkDbContext db, WallLookOverFinding finding, Guid boulderId, CancellationToken ct)
@@ -98,7 +98,7 @@ public sealed partial class WallLookOverService
         var id = boulderId.ToString();
         return await db.ChangeJournalEntries.AnyAsync(
             e => (e.EntityType == nameof(Boulder) || e.EntityType == nameof(BoulderHold)) && e.KeyJson.Contains(id)
-                && db.ChangeJournalBatches.Any(b => b.Id == e.BatchId && b.Label == HoldDuplicateService.BatchLabel && b.ScopeId == finding.WallId
+                && db.ChangeJournalBatches.Any(b => b.Id == e.BatchId && (b.Label == HoldDuplicateService.BatchLabel || b.Label == HoldMergeSplitService.MergeBatchLabel) && b.ScopeId == finding.WallId
                     && b.Status == ChangeJournalStatus.Recorded && b.CreatedAt >= finding.CreatedAt),
             ct);
     }

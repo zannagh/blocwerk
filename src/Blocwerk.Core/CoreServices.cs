@@ -10,6 +10,7 @@ using Blocwerk.Core.MarkerPlanning;
 using Blocwerk.Core.Redetect;
 using Blocwerk.Core.Refresh;
 using Blocwerk.Core.Services;
+using Blocwerk.Core.Services.HybridZoom;
 using Blocwerk.Core.Services.PanelCrop;
 using Blocwerk.Core.Services.TopLogger;
 using Blocwerk.Core.Telemetry;
@@ -83,6 +84,7 @@ public static class CoreServices
         builder.Services.AddScoped<ChangeJournalReverter>();
         builder.Services.AddScoped<ChangeJournalExporter>();
         builder.Services.AddScoped<ChangeJournalReplayer>();
+        builder.Services.AddScoped<IChangeJournalAdminService, ChangeJournalAdminService>();
 
         // Web Push. VAPID credentials are bound from the top-level "Vapid" section (env VAPID__SUBJECT,
         // VAPID__PUBLICKEY, VAPID__PRIVATEKEY). Missing/empty keys are NOT an error: the service becomes
@@ -173,6 +175,7 @@ public static class CoreServices
         builder.Services.AddScoped<IHoldShapeCleanupService, HoldShapeCleanupService>();
         builder.Services.AddScoped<IHoldStackService, HoldStackService>();
         builder.Services.AddScoped<IHoldDuplicateService, HoldDuplicateService>();
+        builder.Services.AddScoped<IHoldMergeSplitService, HoldMergeSplitService>();
         builder.Services.AddScoped<IPanelRedetectService, PanelRedetectService>();
         builder.Services.AddScoped<IWallLookOverService, WallLookOverService>();
         builder.Services.AddScoped<ILinkedHoldSyncService, LinkedHoldSyncService>();
@@ -182,6 +185,12 @@ public static class CoreServices
         builder.Services.AddScoped<IHoldTexturePlacementService, HoldTexturePlacementService>();
         builder.Services.AddScoped<IHoldProtrusionService, HoldProtrusionService>();
         builder.Services.AddScoped<IWallVolumeService, WallVolumeService>();
+
+        // Hybrid zoom (experimental, off by default: HybridZoom__Enabled=true): a zoomed panel view swaps in a sharper
+        // close-up from the 3D capture's photos, warped onto the panel.
+        builder.Services.AddSingleton(builder.Configuration.GetSection(HybridZoomOptions.Section).Get<HybridZoomOptions>() ?? new HybridZoomOptions());
+        builder.Services.AddSingleton<HybridZoomCache>();
+        builder.Services.AddScoped<IHybridZoomService, HybridZoomService>();
 
         // Multi-view hold proposals: the first AVAILABLE detector wins; the GPU runner stub stays unavailable.
         builder.Services.AddScoped<ICaptureHoldDetector, ComputeCaptureHoldDetector>();

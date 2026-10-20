@@ -4,7 +4,7 @@
 
 namespace Blocwerk.Web.Components.Shared;
 
-/// <summary>The reference for the wall look-over over the API (WallLookOverApiController), listed with the panel update.</summary>
+/// <summary>The reference for the wall look-over over the API (the reads; the answers are in ApiDocsData.UpdateAnswers.cs), listed with the panel update.</summary>
 internal static partial class ApiDocsData
 {
     private const string LookOverBase = "/api/walls/{wallId}/look-over";
@@ -20,8 +20,8 @@ internal static partial class ApiDocsData
         + "\"holdKept\": true, \"keptAtUpdate\": true, \"covered\": true, \"closedReason\": null } ]\n}";
 
     private const string LookOverNote =
-        "Read-only. An applied update that leaves findings nobody answered flags the wall until a wall admin or moderator finishes the "
-        + "look-over on the page. kind: 0 possibly removed, 1 unsure match, 2 new hold with conflicting evidence, 3 matched to a "
+        "An applied update that leaves findings nobody answered flags the wall until a wall admin or moderator finishes the "
+        + "look-over (on the page, or with the answer and finish routes below). kind: 0 possibly removed, 1 unsure match, 2 new hold with conflicting evidence, 3 matched to a "
         + "hand-placed hold, 4 hand-placed hold with several detections, 5 another hold is here now, 6 not found again on a boulder, "
         + "7 old and new hold on the same spot, 8 a discarded detection, 9 two holds a full revision linked across two photos without "
         + "being sure. status: 0 open, 1 answered, 2 superseded by a later update, 3 closed in the hold editor. "
@@ -35,5 +35,10 @@ internal static partial class ApiDocsData
             LookOverStateJson, LookOverNote),
         new("GET", LookOverBase + "/findings", "The findings of the look-over: everything open, and what was answered since the last one.",
             RefreshWall, null, LookOverFindingsJson, LookOverNote),
+        new("GET", LookOverBase + "/holds?panelId={panelId}", "The live holds of a panel photo: what targetHoldId can name.",
+            [.. RefreshWall, new ApiParamDoc("panelId", "query", "The photo (a finding's panelId).")],
+            null, "[\n  { \"id\": \"<guid>\", \"x\": 0.41, \"y\": 0.62, \"radius\": 0.012, \"color\": \"purple\", \"kept\": false }\n]",
+            "kept: a hold the update could not find (never a target). 403 when the key's owner may not look over the wall."),
+        .. LookOverAnswerEndpoints(),
     ];
 }

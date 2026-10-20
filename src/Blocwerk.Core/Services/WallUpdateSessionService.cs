@@ -47,14 +47,14 @@ public partial class WallUpdateSessionService : IWallUpdateSessionService
 
     /// <inheritdoc/>
     public async Task<WallUpdateSessionInfo> SetPhaseAsync(
-        Guid wallId, WallUpdatePhase phase, int neighbourIndex = 0)
+        Guid wallId, WallUpdatePhase phase, int neighbourIndex = 0, Guid? expectedSessionId = null)
     {
         var user = await currentUserService.GetCurrentUserAsync();
         await using var db = await dbContextFactory.CreateDbContextAsync();
         db.CurrentUserId = user.Id;
         await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
 
-        var session = await RequireOpenAsync(db, wallId);
+        var session = await RequireOpenAsync(db, wallId, expectedSessionId);
         WallUpdateSessions.MovePhase(session, phase, neighbourIndex, user.Id);
         await db.SaveChangesAsync();
 
@@ -68,9 +68,15 @@ public partial class WallUpdateSessionService : IWallUpdateSessionService
     /// The wall's open session, or a throw. Every decision write needs one: a decision without a session
     /// has nothing to hang off, and silently creating one here would hide a wizard that lost its footing.
     /// </summary>
-    private static async Task<WallUpdateSession> RequireOpenAsync(BlocwerkDbContext db, Guid wallId)
+    /// <remarks>
+    /// With <paramref name="expectedSessionId"/> the write is refused (<see cref="WallUpdateSessionSupersededException"/>)
+    /// unless that session is the open one: a tab still showing a replaced update must not write its choices into the
+    /// update that replaced it (old-hold ids are the same in both). Null keeps the legacy "whatever is open".
+    /// </remarks>
+    private static async Task<WallUpdateSession> RequireOpenAsync(BlocwerkDbContext db, Guid wallId, Guid? expectedSessionId = null)
     {
-        return await WallUpdateSessions.FindOpenAsync(db, wallId)
-            ?? throw new InvalidOperationException("No in-flight big update on this wall.");
+        var open = await WallUpdateSessions.FindOpenAsync(db, wallId);
+        WallUpdateSessions.EnsureIs(wallId, expectedSessionId, open, WallUpdateSessionSupersededException.ChangeRefused);
+        return open ?? throw new InvalidOperationException("No in-flight big update on this wall.");
     }
 }

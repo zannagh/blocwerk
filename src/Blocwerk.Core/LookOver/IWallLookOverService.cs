@@ -35,10 +35,35 @@ public interface IWallLookOverService
     /// The boulders the user was shown on the hold. Required for every answer but <see cref="LookOverAnswer.Settle"/>:
     /// when other boulders use the hold by now, the answer is refused and the user looks again.
     /// </param>
+    /// <param name="newHoldBoulderIds">
+    /// For <see cref="LookOverAnswer.UseNewHold"/> only, asked per boulder: the boulders that should use the new hold,
+    /// a subset of <paramref name="expectedBoulderIds"/>. The others become historic with the old hold, which is
+    /// removed; none of them is the answer "the old hold is gone". Null moves every boulder (the merge).
+    /// </param>
     /// <param name="ct">Cancellation.</param>
     /// <returns>A task.</returns>
     Task AnswerAsync(
-        Guid wallId, Guid findingId, LookOverAnswer answer, IReadOnlyCollection<Guid>? expectedBoulderIds = null, CancellationToken ct = default);
+        Guid wallId,
+        Guid findingId,
+        LookOverAnswer answer,
+        IReadOnlyCollection<Guid>? expectedBoulderIds = null,
+        IReadOnlyCollection<Guid>? newHoldBoulderIds = null,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// "Different hold" on an unsure match, naming the hold that replaced the old one: the pair is taken apart as with
+    /// <see cref="LookOverAnswer.DifferentHold"/> (the detection the update paired it with stays a new hold), and
+    /// <paramref name="replacementHoldId"/> becomes the finding's new hold on the spot, so "use the new hold" (per boulder too)
+    /// moves boulders onto it. The replacement must be a live hold of the finding's photo that is not a kept copy.
+    /// </summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="findingId">The finding.</param>
+    /// <param name="replacementHoldId">The hold that is on the old hold's spot now.</param>
+    /// <param name="expectedBoulderIds">The boulders the user was shown on the hold.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>A task.</returns>
+    Task DifferentHoldAsync(
+        Guid wallId, Guid findingId, Guid replacementHoldId, IReadOnlyCollection<Guid> expectedBoulderIds, CancellationToken ct = default);
 
     /// <summary>
     /// Takes back an answer that changed nothing on the wall ("Same hold", "Still there", "Keep…", "Understood"): the
@@ -132,9 +157,17 @@ public interface IWallLookOverService
     /// <param name="findingId">The finding.</param>
     /// <param name="x">The spot across the photo, 0..1.</param>
     /// <param name="y">The spot down the photo, 0..1.</param>
+    /// <param name="radius">The hold's radius there (photo widths), or null to keep it.</param>
+    /// <param name="panelId">The photo the spot is on, when the caller names it: it must be the hold's own.</param>
     /// <param name="ct">Cancellation.</param>
     /// <returns>A task.</returns>
-    Task MoveAsync(Guid wallId, Guid findingId, double x, double y, CancellationToken ct = default);
+    /// <remarks>
+    /// Refused, as on the page, when the hold takes no "not there any more" (only those can be moved), when the spot is on
+    /// another photo, and when the spot lies inside a hold the update found (or within <see cref="LookOverRules.SpotSnapPixels"/> of its outline):
+    /// that is "it is this hold" (<see cref="ReassignAsync"/>).
+    /// </remarks>
+    Task MoveAsync(
+        Guid wallId, Guid findingId, double x, double y, double? radius = null, Guid? panelId = null, CancellationToken ct = default);
 
     /// <summary>
     /// The live holds of a finding's photo. Those that are not <see cref="Services.PanelHold.Kept"/> are what an old
@@ -145,4 +178,14 @@ public interface IWallLookOverService
     /// <param name="ct">Cancellation.</param>
     /// <returns>The holds.</returns>
     Task<IReadOnlyList<Services.PanelHold>> GetPanelHoldsAsync(Guid wallId, Guid panelId, CancellationToken ct = default);
+
+    /// <summary>
+    /// The pixel size of a panel's photo, or null when it does not decode: what <see cref="LookOverRules.HoldAtSpot"/> needs
+    /// so the page judges a tap with the very geometry "it is here" (<see cref="MoveAsync"/>) is checked with.
+    /// </summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="panelId">The panel photo.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>The size.</returns>
+    Task<(int Width, int Height)?> GetPanelPhotoSizeAsync(Guid wallId, Guid panelId, CancellationToken ct = default);
 }

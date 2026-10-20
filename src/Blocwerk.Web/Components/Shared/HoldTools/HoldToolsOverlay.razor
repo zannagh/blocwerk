@@ -1,0 +1,53 @@
+@* Drawn inside the wall editor's overlay svg (viewBox 0..100): the merge tool's merged outline, the split tool's two
+   parts as the server cut them, and the EMPTY <g data-split-layer> that hold-split-line.js draws the live stroke and
+   preview into. Blazor never puts children in that group, so the script's nodes are not in its way. Nothing here
+   takes a pointer. *@
+@namespace Blocwerk.Web.Components.Shared.HoldTools
+@using System.Globalization
+@using System.Text
+
+@if (Merge?.Preview is { } merge && Merge.KeepId is not null)
+{
+    <path d="@PathOf(merge.Outline)" fill="rgba(51,221,102,0.28)" fill-rule="evenodd" stroke="#33dd66" stroke-width="2.5"
+          vector-effect="non-scaling-stroke" pointer-events="none" data-hold-tool="merge-preview" />
+}
+
+@if (SplitArmed)
+{
+    <g data-split-layer pointer-events="none"></g>
+}
+
+@if (Split?.Preview is { Larger: { } larger, Smaller: { } smaller })
+{
+    <path d="@PathOf(larger)" fill="none" fill-rule="evenodd" stroke="#33dd66" stroke-width="2.5" stroke-dasharray="5 3"
+          vector-effect="non-scaling-stroke" pointer-events="none" data-hold-tool="split-larger" />
+    <path d="@PathOf(smaller)" fill="none" fill-rule="evenodd" stroke="#ff9933" stroke-width="2.5" stroke-dasharray="5 3"
+          vector-effect="non-scaling-stroke" pointer-events="none" data-hold-tool="split-smaller" />
+}
+
+@code {
+    [Parameter] public HoldMergeToolState? Merge { get; set; }
+
+    [Parameter] public HoldSplitToolState? Split { get; set; }
+
+    /// <summary>The split tool has a hold picked: the script's drawing layer is needed.</summary>
+    [Parameter] public bool SplitArmed { get; set; }
+
+    private static string PathOf(HoldToolOutline outline)
+    {
+        var d = new StringBuilder();
+        foreach (var ring in outline.Holes.Prepend(outline.Outer).Where(r => r.Count >= 3))
+        {
+            for (int i = 0; i < ring.Count; i++)
+            {
+                d.Append(i == 0 ? 'M' : 'L')
+                    .Append((ring[i].X * 100).ToString("0.###", CultureInfo.InvariantCulture)).Append(' ')
+                    .Append((ring[i].Y * 100).ToString("0.###", CultureInfo.InvariantCulture)).Append(' ');
+            }
+
+            d.Append("Z ");
+        }
+
+        return d.ToString();
+    }
+}

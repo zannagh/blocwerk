@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Runtime.CompilerServices;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Services;
@@ -17,10 +18,14 @@ namespace Blocwerk.Core.Data;
 /// committed. State is stashed per-<see cref="DbContext"/> in a <see cref="ConditionalWeakTable{TKey,TValue}"/>
 /// so concurrent saves on different contexts can't clobber each other (the interceptor is a singleton).
 /// </summary>
-public sealed class DomainChangeInterceptor : SaveChangesInterceptor
+public sealed class DomainChangeInterceptor : SaveChangesInterceptor, IDbTransactionInterceptor
 {
     private readonly IDomainChangeNotifier notifier;
     private readonly ConditionalWeakTable<DbContext, List<DomainChange>> pending = new();
+
+    // Saved inside an explicit transaction that has not committed yet (a replay, a revert): published on its commit,
+    // dropped on its rollback, so an open circuit never re-reads and caches the uncommitted (or never-committed) state.
+    private readonly ConditionalWeakTable<DbContext, List<DomainChange>> awaitingCommit = new();
 
     public DomainChangeInterceptor(IDomainChangeNotifier notifier)
     {
@@ -51,6 +56,26 @@ public sealed class DomainChangeInterceptor : SaveChangesInterceptor
     {
         Publish(eventData.Context);
         return base.SavedChangesAsync(eventData, result, cancellationToken);
+    }
+
+    public void TransactionCommitted(DbTransaction transaction, TransactionEndEventData eventData) =>
+        PublishCommitted(eventData.Context);
+
+    public Task TransactionCommittedAsync(
+        DbTransaction transaction, TransactionEndEventData eventData, CancellationToken cancellationToken = default)
+    {
+        PublishCommitted(eventData.Context);
+        return Task.CompletedTask;
+    }
+
+    public void TransactionRolledBack(DbTransaction transaction, TransactionEndEventData eventData) =>
+        DropUncommitted(eventData.Context);
+
+    public Task TransactionRolledBackAsync(
+        DbTransaction transaction, TransactionEndEventData eventData, CancellationToken cancellationToken = default)
+    {
+        DropUncommitted(eventData.Context);
+        return Task.CompletedTask;
     }
 
     private void Capture(DbContext? context)
@@ -124,6 +149,36 @@ public sealed class DomainChangeInterceptor : SaveChangesInterceptor
         }
 
         pending.Remove(context);
+        if (context.Database.CurrentTransaction is not null)
+        {
+            awaitingCommit.GetValue(context, _ => []).AddRange(changes);
+            return;
+        }
+
+        PublishAll(changes);
+    }
+
+    private void PublishCommitted(DbContext? context)
+    {
+        if (context is null || !awaitingCommit.TryGetValue(context, out var changes))
+        {
+            return;
+        }
+
+        awaitingCommit.Remove(context);
+        PublishAll(changes.Distinct().ToList());
+    }
+
+    private void DropUncommitted(DbContext? context)
+    {
+        if (context is not null)
+        {
+            awaitingCommit.Remove(context);
+        }
+    }
+
+    private void PublishAll(IEnumerable<DomainChange> changes)
+    {
         foreach (var change in changes)
         {
             notifier.Publish(change);

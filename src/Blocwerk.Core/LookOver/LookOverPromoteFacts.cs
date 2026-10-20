@@ -26,6 +26,10 @@ namespace Blocwerk.Core.LookOver;
 /// Live hold to the boulders the promote marked BECAUSE that hold was not found again: not marked before, told
 /// "not found again" about this hold, and given no other reason by the same promote.
 /// </param>
+/// <param name="NewlyReplaced">
+/// Live hold to the boulders the promote marked BECAUSE that hold was replaced by another: not marked before, and
+/// given no other reason by the same promote.
+/// </param>
 internal sealed record LookOverPromoteFacts(
     IReadOnlyList<WallUpdateException> Cards,
     IReadOnlyDictionary<Guid, CarryoverDecision> Carry,
@@ -37,4 +41,5 @@ internal sealed record LookOverPromoteFacts(
     IReadOnlyDictionary<Guid, (int Width, int Height)> PhotoSizes,
     IReadOnlySet<Guid> CardMarked,
     IReadOnlySet<Guid> UnalignedPanelIds,
-    IReadOnlyDictionary<Guid, List<Guid>> NewlyMarked);
+    IReadOnlyDictionary<Guid, List<Guid>> NewlyMarked,
+    IReadOnlyDictionary<Guid, List<Guid>>? NewlyReplaced = null);

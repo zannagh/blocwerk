@@ -40,7 +40,7 @@ public partial class WallBigUpdateService
         // Accepted "this hold moved" suggestions become Changed carry verdicts (decision D-A). Read from
         // the session just verified as the caller's, so every accept is honoured once, by the one path
         // that carries every other hold.
-        confirmation = await WithoutCarryInFullRevisionAsync(db, wallId, await FoldAcceptedRelocationsAsync(db, wallId, confirmation));
+        confirmation = await AsPromotedAsync(db, wallId, confirmation);
 
         // Which carried holds physically moved, derived BEFORE the staged twins are touched. Refused when it differs from
         // what the user confirmed: the promote does only what was shown.

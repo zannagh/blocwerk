@@ -14,14 +14,14 @@ namespace Blocwerk.Core.Services;
 public partial class WallUpdateSessionService
 {
     /// <inheritdoc/>
-    public async Task SaveNeighbourLinkSetAsync(Guid wallId, NeighbourLinkSet linkSet)
+    public async Task SaveNeighbourLinkSetAsync(Guid wallId, NeighbourLinkSet linkSet, Guid? expectedSessionId = null)
     {
         var user = await currentUserService.GetCurrentUserAsync();
         await using var db = await dbContextFactory.CreateDbContextAsync();
         db.CurrentUserId = user.Id;
         await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
 
-        var session = await RequireOpenAsync(db, wallId);
+        var session = await RequireOpenAsync(db, wallId, expectedSessionId);
         await WriteNeighbourLinkSetAsync(db, session, linkSet);
         WallUpdateSessions.Touch(session, user.Id);
         await db.SaveChangesAsync();

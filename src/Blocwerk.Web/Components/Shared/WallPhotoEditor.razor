@@ -32,11 +32,13 @@
 <div class="photo-viewport@(_frame != null ? " bw-framed" : string.Empty) @CursorClassForMode()" @ref="_viewportRef">
 <div class="photo-editor" @ref="_containerRef"
      data-hold-drag="@(CanEdit && _mode == HoldTouchupTool.Move ? "true" : null)"
+     data-shape-tool="@ShapeToolAttribute"
      data-hold-drag-key="@holdDragKey">
     <img src="@ResponsiveImage.Initial(EffectivePhotoUrl)" data-bw-res alt="Wall" class="wall-photo" />
     @* Moving a HOLD never comes through here: wall-hold-drag.js runs that drag in the browser and
-       calls CommitHoldMove once on release. The pointer events below serve the handle drags (border,
-       shape points, alignment, tilt), which are few elements and stay on the server. The move listener
+       calls CommitHoldMove once on release, and the Shape tool's points, eraser and brush run in
+       wall-shape-drag.js the same way (CommitShapeEdit). The pointer events below serve the handle drags (border,
+       alignment, tilt), which are few elements and stay on the server. The move listener
        exists only while one of those is running, so a pointer merely crossing the overlay sends
        nothing; each event used to cost a round-trip and a re-render of every hold. *@
     <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none"
@@ -130,6 +132,11 @@
                 strokeColor = "#ff8a3d";
             }
             var sw = (isSelected || isShapeEditing || isNaming) ? "0.4" : (IsStaging ? "0.45" : "0.25");
+            if (isShapeEditing)
+            {
+                // Thin with the zoom like the handles: at 12x a fixed 0.4 is a band ~30px wide that hides the edge being edited.
+                sw = F(Math.Max(0.4 * HandleScale, 0.04));
+            }
             var dash = "";
             if (ManualAlignment && !(isSelected || isShapeEditing || isNaming))
             {
@@ -177,7 +184,7 @@
                        Foot="isFoot" Fill="@fillColor" Stroke="@strokeColor" StrokeWidth="@sw" Dash="@dash"
                        Kept="hold.KeptUnconfirmedGeneration is not null" StackKeys="@StackKeys(stackOn, hold)"
                        PointerEvents="@hitEvents" Style="cursor: pointer"
-                       OnClick="() => OnHoldClick(hold)" OnPointerDown="() => StartDrag(hold)" />
+                       OnClick="HoldClickCallback(hold.Id)" OnPointerDown="HoldDownCallback(hold.Id)" />
 
             @if (_showUsage && usageRefs.Count > 0)
             {
@@ -265,21 +272,12 @@
             }
         }
 
-        @if (_mode == HoldTouchupTool.Shape && _shapeEditHoldId.HasValue)
+        @if (_mode == HoldTouchupTool.Shape && EditedShapeHold() is { } sh && ShapeEditPoints(sh) is { Count: >= 3 } editPoints)
         {
-            var sh = Holds.FirstOrDefault(h => h.Id == _shapeEditHoldId);
-            if (sh is not null && ShapeEditPoints(sh) is { Count: >= 3 } editPoints)
-            {
-                @for (int i = 0; i < editPoints.Count; i++)
-                {
-                    var cpIdx = i;
-                    var sp = editPoints[cpIdx];
-                    <circle cx="@F((sh.X + sp.Dx) * 100)" cy="@F((sh.Y + sp.Dy) * 100)"
-                            r="@F(_shapePointRadius * HandleScale)" fill="white" stroke="var(--accent)" stroke-width="@F(0.25 * HandleScale)"
-                            style="cursor: grab"
-                            @onmousedown="() => StartShapePointDrag(sh, cpIdx)" @onmousedown:stopPropagation="true" />
-                }
-            }
+            @* Dragged, erased and painted in the browser (wall-shape-drag.js), committed once via CommitShapeEdit. *@
+            <ShapeEditHandles Hold="sh" Points="editPoints" Smooth="HoldOutlineSpline.IsSmooth(sh)" Tool="shapeStrokeTool"
+                              HandleRadius="_shapePointRadius * HandleScale" StrokeWidth="0.25 * HandleScale"
+                              RadiusPx="shapeStrokeRadiusPx" Subtract="shapeBrushSubtract" />
         }
 
         @if (CanEdit && IsStaging && !ManualAlignment && Holds.Any(IsLiveHold))
@@ -328,6 +326,8 @@
                         @onmousedown="(e) => StartShapeTiltDrag(e, th)" @onmousedown:stopPropagation="true" />
             }
         }
+
+        @MergeSplitOverlay
     </svg>
 
     @if (_isDetecting)
@@ -500,6 +500,8 @@
                     new ToolbarItem { Id = "join-virtual", Kind = ToolbarItemKind.Tool, Tool = HoldTouchupTool.JoinVirtual, Label = "Join duplicate virtual holds", ShortcutKey = "J", Icon = IconJoinVirtual, Visible = () => HoldToolsAvailable && !IsStaging, Row = RowJoinVirtual },
                     new ToolbarItem { Id = "mark-unchanged", Kind = ToolbarItemKind.Tool, Tool = HoldTouchupTool.MarkUnchanged, Label = "Mark a hold unchanged", ShortcutKey = "C", Icon = IconMarkUnchanged, Visible = () => HoldToolsAvailable, Row = RowMarkUnchanged },
                     new ToolbarItem { Id = "mark-changed", Kind = ToolbarItemKind.Tool, Tool = HoldTouchupTool.MarkChanged, Label = "Mark a hold changed", ShortcutKey = "X", Icon = IconMarkChanged, Visible = () => HoldToolsAvailable && !IsStaging, Row = RowMarkChanged },
+                    MergeHoldsItem,
+                    SplitHoldItem,
                 ],
             },
             new ToolbarGroup
@@ -757,6 +759,9 @@
             <label class="cb-label" title="Draw the outline as a smooth curve through its points instead of straight edges. An outline with very many points is reduced to a few first.">
                 <input type="checkbox" checked="@HoldOutlineSpline.IsSmooth(shapeHold)" @onchange="() => ToggleSmoothOutline(shapeHold)" /> Smooth outline
             </label>
+            <ShapeStrokeToolbar Tool="shapeStrokeTool" ToolChanged="SetShapeStrokeTool" RadiusPx="shapeStrokeRadiusPx"
+                                RadiusPxChanged="SetShapeStrokeRadius" Subtract="shapeBrushSubtract"
+                                SubtractChanged="SetShapeBrushSubtract" Refusal="@shapeEditRefusal" />
         }
         @if (shapeHold != null)
         {
@@ -1305,8 +1310,6 @@
     // move to CommitHoldMove through the reference registered under it.
     private readonly string holdDragKey = Guid.NewGuid().ToString("N");
     private DotNetObjectReference<WallPhotoEditor>? holdDragRef;
-    private int? _draggingShapePointIdx;
-    private Hold? _draggingShapeHold;
     private int? _draggingBorderIdx;
     private bool _isDetecting;
     private HoldCategory _addCategory = HoldCategory.Hand;
@@ -1592,6 +1595,7 @@
                 // Keyed, not bound to the element: a re-render that replaces .photo-editor keeps the key.
                 holdDragRef = DotNetObjectReference.Create(this);
                 await JS.InvokeVoidAsync("wallHoldDrag.register", holdDragKey, holdDragRef);
+                await JS.InvokeVoidAsync("wallShapeDrag.register", holdDragKey, holdDragRef);
             }
 
             await JS.InvokeVoidAsync("bwViewport.setupScroll", _viewportRef, _zoomState.Reference);
@@ -1647,6 +1651,7 @@
             try
             {
                 await JS.InvokeVoidAsync("wallHoldDrag.unregister", holdDragKey);
+                await JS.InvokeVoidAsync("wallShapeDrag.unregister", holdDragKey);
             }
             catch (Exception ex) when (ex is JSDisconnectedException or JSException or OperationCanceledException)
             {
@@ -1737,6 +1742,7 @@
         HoldTouchupTool.JoinVirtual => "bw-cursor-pointer",
         HoldTouchupTool.MarkUnchanged => "bw-cursor-pointer",
         HoldTouchupTool.MarkChanged => "bw-cursor-pointer",
+        HoldTouchupTool.MergeHolds or HoldTouchupTool.SplitHold => MergeSplitCursor!,
         _ => "bw-cursor-default"
     };
 
@@ -1794,6 +1800,7 @@
         {
             _markChangedHoldId = null;
         }
+        ClearMergeSplitState(mode);
     }
 
     private void TakeSnapshot()
@@ -1949,6 +1956,9 @@
                 CaptureShapeTiltSnapshot(hold);
                 _shapeTiltAngleX = 0;
                 _shapeTiltAngleY = 0;
+                return;
+            case HoldTouchupTool.MergeHolds or HoldTouchupTool.SplitHold:
+                await OnMergeSplitHoldClickAsync(hold);
                 return;
         }
     }
@@ -2424,8 +2434,7 @@
     // A handle drag the server follows move by move. Hold moves are not among them.
     private bool HandleDragActive => _alignDragHandle.HasValue
         || _shapeTiltDragging
-        || _draggingBorderIdx.HasValue
-        || _draggingShapePointIdx.HasValue;
+        || _draggingBorderIdx.HasValue;
 
     private EventCallback<PointerEventArgs> handleDragMove;
 
@@ -2433,15 +2442,6 @@
     private EventCallback<PointerEventArgs> HandleDragMove => HandleDragActive
         ? (handleDragMove.HasDelegate ? handleDragMove : handleDragMove = EventCallback.Factory.Create<PointerEventArgs>(this, OnSvgMouseMove))
         : default;
-
-    private void StartShapePointDrag(Hold hold, int idx)
-    {
-        // Pocket holes are dropped on the first REAL move (OnSvgMouseMove), not here: a tap without a
-        // move saves the unchanged outline, which the server treats as no reshape and keeps the holes.
-        TakeSnapshot();
-        _draggingShapeHold = hold;
-        _draggingShapePointIdx = idx;
-    }
 
     private void StartBorderDrag(int idx)
     {
@@ -2499,22 +2499,6 @@
         if (_draggingBorderIdx.HasValue && _draggingBorderIdx.Value < BorderPoints.Count)
         {
             BorderPoints[_draggingBorderIdx.Value] = new ShapePoint { Dx = Math.Clamp(pos.X, 0, 1), Dy = Math.Clamp(pos.Y, 0, 1) };
-            StateHasChanged(); return;
-        }
-        if (_draggingShapePointIdx.HasValue && _draggingShapeHold != null)
-        {
-            var dragged = ShapeEditPoints(_draggingShapeHold)!;
-            var sp = dragged[_draggingShapePointIdx.Value];
-            var nx = pos.X - _draggingShapeHold.X;
-            var ny = pos.Y - _draggingShapeHold.Y;
-            if (Math.Abs(sp.Dx - nx) > 1e-6 || Math.Abs(sp.Dy - ny) > 1e-6)
-            {
-                DropPocketHoles(_draggingShapeHold);
-            }
-
-            sp.Dx = nx;
-            sp.Dy = ny;
-            AfterShapeEdit(_draggingShapeHold, dragged);
             StateHasChanged();
         }
     }
@@ -2523,12 +2507,7 @@
     {
         if (_alignDragHandle.HasValue) { _alignDragHandle = null; _alignSnapshot = null; return; }
         if (_shapeTiltDragging) { _shapeTiltDragging = false; return; }
-        if (_draggingBorderIdx.HasValue) { _draggingBorderIdx = null; await OnBorderChanged.InvokeAsync(BorderPoints); return; }
-        if (_draggingShapePointIdx.HasValue && _draggingShapeHold != null)
-        {
-            var h = _draggingShapeHold; _draggingShapePointIdx = null; _draggingShapeHold = null;
-            _updatedHoldIds.Add(h.Id);
-        }
+        if (_draggingBorderIdx.HasValue) { _draggingBorderIdx = null; await OnBorderChanged.InvokeAsync(BorderPoints); }
     }
 
     private Task DeleteSelected() => _selectedHoldId is { } id ? RequestDeleteAsync(id) : Task.CompletedTask;
@@ -2972,6 +2951,7 @@
     [
         "a", "m", "s", "p", "e", "n", "d", "b", "t", "u", "g", "k", "j", "c", "x",
         "l", "o", "r", "i",
+        "f", "v",
         "1", "2", "3", "4", "5", "6", "7", "8", "9", "[", "]",
         "+", "-", "0",
     ];
@@ -3005,7 +2985,7 @@
 
     private async Task OnShortcut(string key)
     {
-        if (!TryToolShortcut(key) && !TryPaintShortcut(key) && !TryEscape(key))
+        if (!TryToolShortcut(key) && !TryPaintShortcut(key) && !TryShapeStrokeShortcut(key) && !TryEscape(key))
         {
             await HandleAsyncShortcut(key);
         }
@@ -3042,6 +3022,8 @@
             case "k" when tools && !IsStaging: SetMode(HoldTouchupTool.MakeActual); return true;
             case "j" when tools && !IsStaging: SetMode(HoldTouchupTool.JoinVirtual); return true;
             case "b" when CanEdit && CanEditShape: SetMode(HoldTouchupTool.Border); return true;
+            case "f" when tools && MergeSplitAvailable: SetMode(HoldTouchupTool.MergeHolds); return true;
+            case "v" when tools && MergeSplitAvailable: SetMode(HoldTouchupTool.SplitHold); return true;
             case "l": _showNames = !_showNames; return true;
             case "i" when CanEdit: CycleIncompleteCriteria(); return true;
             case "o" when tools || (BorderOnly && CanEditShape): _showBorder = !_showBorder; return true;
@@ -3108,6 +3090,7 @@
                || _markUnchangedHoldId.HasValue
                || _markChangedHoldId.HasValue
                || pendingDeleteHoldId.HasValue
+               || HasMergeSplitSubMode
                || (_mode == HoldTouchupTool.ShapeTilt && _shapeTiltHoldId.HasValue));
 
     /// <summary>
@@ -3178,6 +3161,11 @@
         if (pendingDeleteHoldId.HasValue)
         {
             pendingDeleteHoldId = null;
+            return;
+        }
+
+        if (CancelMergeSplitSubMode())
+        {
             return;
         }
 

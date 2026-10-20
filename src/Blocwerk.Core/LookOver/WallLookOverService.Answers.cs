@@ -16,7 +16,7 @@ namespace Blocwerk.Core.LookOver;
 /// Answering a finding after the update is live. "Different hold" is the editor's "mark as changed"
 /// (<see cref="IWallService.MarkHoldModifiedAsync"/>) and then takes the pair apart (the Split part), "gone" is the editor's delete
 /// (<see cref="IWallService.DeleteHoldAsync"/>: the boulders that use the hold become historic), and "use the new hold"
-/// is the duplicate review's merge (<see cref="IHoldDuplicateService.MergeAsync"/>: the boulders move over, undoable).
+/// moves the boulders onto the new hold as the duplicate review's merge does, per boulder and undoable there (the NewHold part).
 /// Each of those checks the user again by its own rule, which is also what decides the answers a user is offered.
 /// An answer only ever reaches a hold that is live, and only with the boulders the user was shown. Settling is in the
 /// Settle part; what it does to boulders in the Boulders part.
@@ -28,7 +28,26 @@ public sealed partial class WallLookOverService
 
     /// <inheritdoc/>
     public async Task AnswerAsync(
-        Guid wallId, Guid findingId, LookOverAnswer answer, IReadOnlyCollection<Guid>? expectedBoulderIds = null, CancellationToken ct = default)
+        Guid wallId,
+        Guid findingId,
+        LookOverAnswer answer,
+        IReadOnlyCollection<Guid>? expectedBoulderIds = null,
+        IReadOnlyCollection<Guid>? newHoldBoulderIds = null,
+        CancellationToken ct = default) =>
+        await AnswerCoreAsync(wallId, findingId, answer, expectedBoulderIds, newHoldBoulderIds, null, ct);
+
+    /// <summary>
+    /// One answer, for <see cref="AnswerAsync"/> and <see cref="DifferentHoldAsync"/>: the latter names the hold that replaced
+    /// the old one (<paramref name="replacementHoldId"/>), checked against the finding's photo before anything changes.
+    /// </summary>
+    private async Task AnswerCoreAsync(
+        Guid wallId,
+        Guid findingId,
+        LookOverAnswer answer,
+        IReadOnlyCollection<Guid>? expectedBoulderIds,
+        IReadOnlyCollection<Guid>? newHoldBoulderIds,
+        Guid? replacementHoldId,
+        CancellationToken ct)
     {
         var (db, access) = await OpenAsync(wallId, ct);
         await using (db)
@@ -52,6 +71,14 @@ public sealed partial class WallLookOverService
                 throw new UserFacingException(BouldersChanged);
             }
 
+            if (replacementHoldId is { } replacement)
+            {
+                await EnsureReplacementAsync(db, wallId, view, replacement, ct);
+            }
+
+            // Asked per boulder: every boulder "no" is the old hold gone, every boulder "yes" the merge.
+            (answer, var onlyThese) = NewHoldChoice(answer, newHoldBoulderIds, view);
+
             using var batch = BeginBatch(wallId);
             if (answer == LookOverAnswer.Settle)
             {
@@ -59,7 +86,7 @@ public sealed partial class WallLookOverService
             }
             else
             {
-                await ChangeAsync(db, finding, view, answer, access.UserId, ct);
+                await ChangeAsync(db, finding, view, answer, onlyThese, replacementHoldId, access.UserId, ct);
             }
 
             logger.LogInformation(
@@ -73,7 +100,14 @@ public sealed partial class WallLookOverService
     /// operation refuses. Acts on <see cref="LookOverFindingView.HoldId"/>, which is only ever a live hold.
     /// </summary>
     private async Task ChangeAsync(
-        BlocwerkDbContext db, WallLookOverFinding finding, LookOverFindingView view, LookOverAnswer answer, Guid userId, CancellationToken ct)
+        BlocwerkDbContext db,
+        WallLookOverFinding finding,
+        LookOverFindingView view,
+        LookOverAnswer answer,
+        IReadOnlySet<Guid>? onlyThese,
+        Guid? replacementHoldId,
+        Guid userId,
+        CancellationToken ct)
     {
         var mine = db.WallLookOverFindings.Where(f => f.Id == finding.Id);
         var different = answer == LookOverAnswer.DifferentHold;
@@ -88,7 +122,14 @@ public sealed partial class WallLookOverService
         Hold? added;
         try
         {
-            added = await ApplyAsync(db, finding, view, answer, ct);
+            // The named replacement is read and checked before anything is written (the mark below commits on its own
+            // context), so a replacement that vanished leaves the pair as it was.
+            var replacement = different && replacementHoldId is { } named ? await ReplacementAsync(db, finding.WallId, view, named, ct) : null;
+            added = await ApplyAsync(db, finding, view, answer, onlyThese, ct);
+            if (replacement is not null)
+            {
+                PointAtReplacement(db, finding, replacement);
+            }
         }
         catch
         {
@@ -115,7 +156,8 @@ public sealed partial class WallLookOverService
     }
 
     /// <summary>Runs the hold operation of an answer. Returns the new hold when the answer took a pair apart.</summary>
-    private async Task<Hold?> ApplyAsync(BlocwerkDbContext db, WallLookOverFinding finding, LookOverFindingView view, LookOverAnswer answer, CancellationToken ct)
+    private async Task<Hold?> ApplyAsync(
+        BlocwerkDbContext db, WallLookOverFinding finding, LookOverFindingView view, LookOverAnswer answer, IReadOnlySet<Guid>? onlyThese, CancellationToken ct)
     {
         switch (answer)
         {
@@ -141,8 +183,7 @@ public sealed partial class WallLookOverService
                 await UnlinkAsync(db, finding, ct);
                 return null;
             default:
-                var merge = await duplicates.MergeAsync(finding.WallId, view.OtherHoldId!.Value, view.HoldId!.Value, HoldMergeMode.KeepLeft, ct);
-                finding.MergeBatchId = merge.BatchId;
+                await UseNewHoldAsync(db, finding, view, onlyThese, ct);
                 return null;
         }
     }

@@ -116,7 +116,7 @@ public partial class BigWallUpdate
             _phase = target;
             if (target == WallUpdatePhase.Confirm)
             {
-                await LoadShapeSummaryAsync();
+                await LoadConfirmSummaryAsync();
             }
         }
         catch (Exception ex)
@@ -141,6 +141,7 @@ public partial class BigWallUpdate
         // would ever look at these rows again before the promote reads them straight out of the
         // session. Neutralise the ones about holds no surface can show HERE, so the reset is in effect
         // (and its notice is armed) on every resume target, not only when the carryover is re-walked.
+        await LoadCardVerdictsAsync();
         var reconciled = ReconcileCarryScope(_restored.Carryover);
         RecordScopeResets(reconciled.Reset);
         _restored = _restored with { Carryover = reconciled.Decisions.ToList() };
@@ -180,7 +181,13 @@ public partial class BigWallUpdate
         _phase = phase;
         try
         {
-            _sessionInfo = await Sessions.SetPhaseAsync(WallId, phase, neighbourIndex);
+            _sessionInfo = await Sessions.SetPhaseAsync(WallId, phase, neighbourIndex, _sessionInfo?.Id);
+        }
+        catch (WallUpdateSessionSupersededException)
+        {
+            // Another admin's update replaced this one: the cursor must not move theirs, and nothing on this screen
+            // can be saved any more.
+            MarkSuperseded();
         }
         catch (Exception)
         {

@@ -140,30 +140,36 @@ internal static class LookOverReconciler
     }
 
     /// <summary>
-    /// The wall's holds a person placed since the update: not detected, not carried from the generation before, and
-    /// not themselves a copy nobody confirmed.
+    /// The wall's holds a person placed since the update: not detected, not carried from the generation before, not
+    /// themselves a copy nobody confirmed, and not the new part of a split (that is part of a hold that was there).
     /// </summary>
-    private static Task<List<Hold>> PlacedByHandAsync(BlocwerkDbContext db, Guid wallId, CancellationToken ct) =>
-        db.Holds.AsNoTracking()
+    private static async Task<List<Hold>> PlacedByHandAsync(BlocwerkDbContext db, Guid wallId, CancellationToken ct)
+    {
+        var parts = await HoldMergeSplitService.SplitPartIdsAsync(db, wallId, ct);
+        var holds = await db.Holds.AsNoTracking()
             .Where(h => h.WallId == wallId && !h.IsAutoDetected && !h.IsVirtual && h.KeptUnconfirmedGeneration == null && h.WallPanelId != null
                 && db.Walls.Any(w => w.Id == wallId && w.CurrentGeneration == h.Generation)
                 && !db.HoldGenerationLinks.Any(l => l.NewHoldId == h.Id))
             .OrderBy(h => h.Id)
             .ToListAsync(ct);
+        return [.. holds.Where(h => !parts.Contains(h.Id))];
+    }
 
-    /// <summary>The hold went in a merge of the duplicate-holds review (the journal says which batch deleted it).</summary>
+    /// <summary>The hold went in a merge, of the duplicate-holds review or the editor's merge tool (the journal says which batch deleted it).</summary>
     private static async Task<bool> MergedAsync(BlocwerkDbContext db, Guid wallId, Guid holdId, CancellationToken ct)
     {
         var id = holdId.ToString();
         return await db.ChangeJournalEntries.AnyAsync(
             e => e.EntityType == nameof(Hold) && e.Op == ChangeJournalOp.Delete && e.KeyJson.Contains(id)
-                && db.ChangeJournalBatches.Any(b => b.Id == e.BatchId && b.Label == HoldDuplicateService.BatchLabel && b.ScopeId == wallId),
+                && db.ChangeJournalBatches.Any(b => b.Id == e.BatchId
+                    && (b.Label == HoldDuplicateService.BatchLabel || b.Label == HoldMergeSplitService.MergeBatchLabel) && b.ScopeId == wallId),
             ct);
     }
 
     /// <summary>
-    /// A hold was placed by hand where the detection was left out: on the finding's photo, at its spot, not detected
-    /// and not carried from the generation before (those were there when the update decided to leave the detection out).
+    /// A hold was placed by hand where the detection was left out: on the finding's photo, at its spot, not detected,
+    /// not carried from the generation before (those were there when the update decided to leave the detection out) and
+    /// not the new part of a split.
     /// </summary>
     private static async Task<bool> HoldAddedAsync(BlocwerkDbContext db, WallLookOverFinding finding, CancellationToken ct)
     {
@@ -172,12 +178,13 @@ internal static class LookOverReconciler
             return false;
         }
 
+        var parts = await HoldMergeSplitService.SplitPartIdsAsync(db, finding.WallId, ct);
         var placed = await db.Holds.AsNoTracking()
             .Where(h => h.WallPanelId == panelId && h.Generation == finding.Generation && !h.IsAutoDetected && !h.IsVirtual
                 && !db.HoldGenerationLinks.Any(l => l.NewHoldId == h.Id))
-            .Select(h => new { h.X, h.Y, h.Radius })
+            .Select(h => new { h.Id, h.X, h.Y, h.Radius })
             .ToListAsync(ct);
-        return placed.Any(h =>
+        return placed.Where(h => !parts.Contains(h.Id)).Any(h =>
         {
             var (dx, dy) = (h.X - finding.X, h.Y - finding.Y);
             return Math.Sqrt((dx * dx) + (dy * dy)) <= Math.Max(h.Radius, finding.Radius);

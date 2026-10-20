@@ -92,8 +92,9 @@ public class WallLookOverFinding
     /// The boulders this update marked for review BECAUSE <see cref="HoldId"/> was not found again: not marked before
     /// it, and given no other reason by it (no other moved or missing hold, no two holds that became one, no hold
     /// marked as changed). The only boulders an answer saying "the update was wrong about this hold" may clear again.
-    /// Empty for every other kind of finding; null on a finding written before this was recorded (unknown, so
-    /// nothing is cleared).
+    /// On a <see cref="LookOverFindingKind.ReplacedByOther"/> finding: the boulders marked only because this hold was
+    /// replaced, which "use the new hold" may clear. Empty for every other kind of finding; null on a finding written
+    /// before this was recorded (unknown, so nothing is cleared).
     /// </summary>
     public List<Guid>? MarkedBoulderIds { get; set; }
 

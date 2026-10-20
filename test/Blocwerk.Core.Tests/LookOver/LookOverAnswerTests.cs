@@ -74,7 +74,7 @@ public class LookOverAnswerTests
     }
 
     [Fact]
-    public async Task BouldersShouldUseTheNewHold_MergesTheOldHoldIntoIt_AndTheBoulderStaysCurrentAndMarked()
+    public async Task BouldersShouldUseTheNewHold_MergesTheOldHoldIntoIt_AndTheBoulderStaysCurrent_WithoutTheReplacementsMark()
     {
         using var h = new WallTestHarness();
         var w = await ApplyAsync(h, targetDetected: true, score: 0.1);
@@ -86,8 +86,9 @@ public class LookOverAnswerTests
         Assert.Null(await HoldAsync(h, view.HoldId));
         var boulder = await BoulderAsync(h, w.BoulderId);
         var membership = Assert.Single(boulder.BoulderHolds);
-        Assert.Equal((w.DetectionId, HoldType.Start, false, true), (membership.HoldId, membership.Type, boulder.IsHistoric, boulder.NeedsReview));
+        Assert.Equal((w.DetectionId, HoldType.Start, false, false), (membership.HoldId, membership.Type, boulder.IsHistoric, boulder.NeedsReview));
         var finding = await FindingAsync(h, w.WallId);
+        Assert.Equal([w.BoulderId], finding.ClearedBoulderIds);
         Assert.Equal((LookOverFindingStatus.Settled, (LookOverAnswer?)LookOverAnswer.UseNewHold), (finding.Status, finding.Answer));
         await using var db = h.CreateContext();
         Assert.True(await db.ChangeJournalBatches.AnyAsync(b => b.Id == finding.MergeBatchId && b.Label == HoldDuplicateService.BatchLabel));

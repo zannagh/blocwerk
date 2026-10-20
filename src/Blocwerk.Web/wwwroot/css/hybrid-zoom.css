@@ -1,0 +1,146 @@
+/* Hybrid zoom (experimental, see wwwroot/js/hybrid-zoom.js): the close-up from the 3D capture, laid over the
+   panel rectangle it shows. The layer sits between the photo and the hold overlay (DOM order, no z-index), so
+   holds draw on top; it never takes a pointer event, so the pan engine and hold taps see the photo as before.
+   The close-up's edges are feathered: capture and panel photos differ in exposure, and a soft seam reads as
+   "sharper here" rather than as a pasted rectangle. */
+.hybrid-zoom-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+.hybrid-closeup {
+    position: absolute;
+    display: block;
+    max-width: none;
+    opacity: 0;
+    transition: opacity 300ms ease-out, filter 120ms linear;
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-drag: none;
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 3%, #000 97%, transparent),
+        linear-gradient(to bottom, transparent, #000 3%, #000 97%, transparent);
+    -webkit-mask-composite: source-in;
+    mask-image: linear-gradient(to right, transparent, #000 3%, #000 97%, transparent),
+        linear-gradient(to bottom, transparent, #000 3%, #000 97%, transparent);
+    mask-composite: intersect;
+}
+
+.hybrid-closeup.shown {
+    opacity: 1;
+}
+
+/* "Look underneath": shown while the zoomed view is on a volume; opens the 3D view framed from below it.
+   Bottom-left, clear of the tool column on the right and the panel arrows at the edges' centres. */
+.hybrid-volume-slot {
+    position: absolute;
+    left: 10px;
+    bottom: 10px;
+    z-index: 3;
+}
+
+.hybrid-volume-slot[hidden] {
+    display: none;
+}
+
+.hybrid-volume-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 36px;
+    padding: 6px 14px;
+    border-radius: 18px;
+    background: rgba(0, 0, 0, 0.62);
+    color: #fff;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-decoration: none;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+.hybrid-volume-chip:focus-visible {
+    outline: 2px solid var(--accent, #4c9aff);
+    outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .hybrid-closeup {
+        transition: none;
+    }
+}
+
+/* The volume inset (VolumeInset3D.razor): a small 3D view of the volume, above the chip. The 3D view's own
+   chrome (mode switch, presets, hints, scale) does not fit 220 px and is hidden; the inset bar replaces it. */
+.hybrid-inset {
+    position: absolute;
+    left: 10px;
+    bottom: 54px;
+    z-index: 4;
+    width: 220px;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #1d1d1f;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+}
+
+.hybrid-inset-bar {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    padding: 4px;
+    background: rgba(0, 0, 0, 0.7);
+}
+
+.hybrid-inset-btn,
+.hybrid-inset-close {
+    min-height: 32px;
+    padding: 0 7px;
+    border: 0;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.14);
+    color: #fff;
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+}
+
+.hybrid-inset-close {
+    margin-left: auto;
+    padding: 0 6px;
+}
+
+.hybrid-inset-btn:focus-visible,
+.hybrid-inset-close:focus-visible {
+    outline: 2px solid var(--accent, #4c9aff);
+    outline-offset: 1px;
+}
+
+.hybrid-inset-stage {
+    position: relative;
+    width: 220px;
+    height: 180px;
+}
+
+.hybrid-inset-stage .wall3d-stage-shell,
+.hybrid-inset-stage .wall3d-stage-host,
+.hybrid-inset-stage .wall3d-stage-el {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+}
+
+.hybrid-inset-stage .w3d-root > :not(canvas) {
+    display: none;
+}
+
+.hybrid-inset-message {
+    margin: 0;
+    padding: 12px;
+    color: #fff;
+    font-size: 0.8rem;
+}

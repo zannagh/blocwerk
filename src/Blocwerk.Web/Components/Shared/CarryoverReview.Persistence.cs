@@ -19,12 +19,19 @@ public partial class CarryoverReview
     [Inject]
     private IWallUpdateSessionService Sessions { get; set; } = default!;
 
+    [Inject]
+    private ILogger<CarryoverReview> Logger { get; set; } = default!;
+
     /// <summary>
     /// The decisions already recorded on the wall's update session, when this phase is being resumed.
     /// Laid over the carry-all defaults and the matcher's suggestions so a resumed review shows what
     /// the user decided, not what the matcher would propose afresh. Null on a first pass.
     /// </summary>
     [Parameter] public BigUpdateConfirmation? Restored { get; set; }
+
+    /// <summary>The old holds whose verdict a confirm-screen card answered (<see cref="CarryoverScope.CardVerdictOldHoldIds"/>).</summary>
+    [Parameter]
+    public IReadOnlyCollection<Guid> CardVerdicts { get; set; } = [];
 
     /// <summary>
     /// Overlays the persisted verdicts on top of the carry-all seed and the matcher proposals. Order
@@ -43,7 +50,8 @@ public partial class CarryoverReview
         // to the matcher default before it is laid back: it would otherwise sit in _decisions invisible
         // — not drawn, not counted, in no stepper — and still ship to the promote, where a Removed
         // freezes its boulders. The reset ones are surfaced to the user rather than dropped silently.
-        var reconciled = CarryoverScope.Reconcile(Session, restored.Carryover);
+        // A card answered about such a hold (the quick flow shows them for every panel) is the user's verdict: laid back as is.
+        var reconciled = CarryoverScope.Reconcile(Session, restored.Carryover, CardVerdicts);
         _ownScopeResets = reconciled.Reset;
         foreach (var decision in reconciled.Decisions)
         {
@@ -118,12 +126,12 @@ public partial class CarryoverReview
     {
         try
         {
-            await Sessions.SaveCarryDecisionAsync(WallId, decision);
+            await Sessions.SaveCarryDecisionAsync(WallId, decision, SessionId);
             _saveError = null;
         }
         catch (Exception ex)
         {
-            _saveError = $"Could not save that decision yet: {ex.Message}";
+            _saveError = "Could not save that decision yet: " + UpdateErrorText.Describe(ex, Logger, "saving a carry verdict");
         }
 
         // The queue is a function of the decisions, so it is rebuilt here rather than only at init:
@@ -143,12 +151,12 @@ public partial class CarryoverReview
     {
         try
         {
-            await Sessions.SaveNewCentreHoldDecisionAsync(WallId, stagedHoldId, discarded);
+            await Sessions.SaveNewCentreHoldDecisionAsync(WallId, stagedHoldId, discarded, SessionId);
             _saveError = null;
         }
         catch (Exception ex)
         {
-            _saveError = $"Could not save that decision yet: {ex.Message}";
+            _saveError = "Could not save that decision yet: " + UpdateErrorText.Describe(ex, Logger, "saving a new hold's decision");
         }
     }
 

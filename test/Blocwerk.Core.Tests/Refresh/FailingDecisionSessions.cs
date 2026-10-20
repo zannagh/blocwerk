@@ -12,36 +12,44 @@ internal sealed class FailingDecisionSessions(IWallUpdateSessionService inner) :
 {
     public Task<WallUpdateSessionInfo?> GetOpenSessionAsync(Guid wallId) => inner.GetOpenSessionAsync(wallId);
 
-    public Task<WallUpdateSessionInfo> SetPhaseAsync(Guid wallId, WallUpdatePhase phase, int neighbourIndex = 0) =>
-        inner.SetPhaseAsync(wallId, phase, neighbourIndex);
+    public Task<WallUpdateSessionInfo> SetPhaseAsync(Guid wallId, WallUpdatePhase phase, int neighbourIndex = 0, Guid? expectedSessionId = null) =>
+        inner.SetPhaseAsync(wallId, phase, neighbourIndex, expectedSessionId);
 
     public Task<BigUpdateConfirmation> GetDecisionsAsync(Guid wallId) => inner.GetDecisionsAsync(wallId);
 
-    public Task SaveCarryDecisionAsync(Guid wallId, CarryoverDecision decision) => inner.SaveCarryDecisionAsync(wallId, decision);
+    public Task SaveCarryDecisionAsync(Guid wallId, CarryoverDecision decision, Guid? expectedSessionId = null) =>
+        inner.SaveCarryDecisionAsync(wallId, decision, expectedSessionId);
 
     public Task<IReadOnlyList<CarryConfirmation>> GetCarryConfirmationsAsync(Guid wallId) => inner.GetCarryConfirmationsAsync(wallId);
 
-    public Task ClearCarryConfirmationAsync(Guid wallId, Guid oldHoldId) => inner.ClearCarryConfirmationAsync(wallId, oldHoldId);
+    public Task ClearCarryConfirmationAsync(Guid wallId, Guid oldHoldId, Guid? expectedSessionId = null) =>
+        inner.ClearCarryConfirmationAsync(wallId, oldHoldId, expectedSessionId);
 
-    public Task SaveNewCentreHoldDecisionAsync(Guid wallId, Guid stagedHoldId, bool discarded) =>
-        inner.SaveNewCentreHoldDecisionAsync(wallId, stagedHoldId, discarded);
+    public Task SaveNewCentreHoldDecisionAsync(Guid wallId, Guid stagedHoldId, bool discarded, Guid? expectedSessionId = null) =>
+        inner.SaveNewCentreHoldDecisionAsync(wallId, stagedHoldId, discarded, expectedSessionId);
 
     public Task SaveCarryOutcomeAsync(
-        Guid wallId, IReadOnlyList<CarryoverDecision> carryover, IReadOnlyList<Guid> acceptedNewCentreHoldIds, IReadOnlyList<Guid> removedNewCentreHoldIds) =>
+        Guid wallId,
+        IReadOnlyList<CarryoverDecision> carryover,
+        IReadOnlyList<Guid> acceptedNewCentreHoldIds,
+        IReadOnlyList<Guid> removedNewCentreHoldIds,
+        Guid? expectedSessionId = null) =>
         throw new InvalidOperationException("The decisions could not be saved.");
 
-    public Task SaveNeighbourLinkSetAsync(Guid wallId, NeighbourLinkSet linkSet) => inner.SaveNeighbourLinkSetAsync(wallId, linkSet);
+    public Task SaveNeighbourLinkSetAsync(Guid wallId, NeighbourLinkSet linkSet, Guid? expectedSessionId = null) =>
+        inner.SaveNeighbourLinkSetAsync(wallId, linkSet, expectedSessionId);
 
-    public Task<DateTimeOffset?> SaveDefaultDecisionsAsync(Guid wallId, DefaultDecisions decisions, DateTimeOffset? onlyIfUnchangedSince = null) =>
+    public Task<DateTimeOffset?> SaveDefaultDecisionsAsync(
+        Guid wallId, DefaultDecisions decisions, DateTimeOffset? onlyIfUnchangedSince = null, Guid? expectedSessionId = null) =>
         throw new InvalidOperationException("The decisions could not be saved.");
 
     public Task<IReadOnlyList<RelocationSuggestion>> GetRelocationSuggestionsAsync(Guid wallId) => inner.GetRelocationSuggestionsAsync(wallId);
 
-    public Task DecideRelocationAsync(Guid wallId, Guid suggestionId, RelocationDecision decision) =>
-        inner.DecideRelocationAsync(wallId, suggestionId, decision);
+    public Task DecideRelocationAsync(Guid wallId, Guid suggestionId, RelocationDecision decision, Guid? expectedSessionId = null) =>
+        inner.DecideRelocationAsync(wallId, suggestionId, decision, expectedSessionId);
 
     public Task<IReadOnlyList<UpdateExceptionInfo>> GetUpdateExceptionsAsync(Guid wallId) => inner.GetUpdateExceptionsAsync(wallId);
 
-    public Task DecideUpdateExceptionAsync(Guid wallId, Guid exceptionId, UpdateExceptionAnswer answer) =>
-        inner.DecideUpdateExceptionAsync(wallId, exceptionId, answer);
+    public Task DecideUpdateExceptionAsync(Guid wallId, Guid exceptionId, UpdateExceptionAnswer answer, Guid? expectedSessionId = null) =>
+        inner.DecideUpdateExceptionAsync(wallId, exceptionId, answer, expectedSessionId);
 }

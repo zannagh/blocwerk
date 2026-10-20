@@ -93,11 +93,7 @@ internal static class HoldLookFixture
     /// <summary>Promotes the recorded decisions, topped up from the session the way Apply and the full review do.</summary>
     public static async Task PromoteAsync(LookWall w, BigUpdateSession session)
     {
-        var confirmation = (await w.Sessions.GetDecisionsAsync(w.WallId)) with
-        {
-            CarriedWarpPositions = session.CarriedWarpPositions,
-            NotFoundAgain = session.NotFoundAgain,
-        };
+        var confirmation = PromotePayload.For(await w.Sessions.GetDecisionsAsync(w.WallId), session);
         await w.Service.PromoteAsync(w.WallId, confirmation, w.SessionId);
     }
 

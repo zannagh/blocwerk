@@ -45,6 +45,9 @@ public sealed partial class WallRefreshProcessor
         }
 
         var matched = await actors.BigUpdate.ResumeAsync(refresh.WallId);
+
+        // The panels were checked when the decisions were recorded; here only a matcher that cannot run stops the apply.
+        MatcherHealth.EnsureUsable(matched, panels: false);
         var promotable = await RefreshDecisions.LoadAsync(refresh.WallId, actors, matched, await StagedHoldsByPanelAsync(refresh.WallId, ct));
         var summary = RefreshTimeline.Summary(refresh);
 
@@ -59,13 +62,8 @@ public sealed partial class WallRefreshProcessor
             return;
         }
 
-        var confirmation = promotable.Scoped with
-        {
-            CarriedWarpPositions = matched.CarriedWarpPositions,
-            CarriedWarpShapes = matched.CarriedWarpShapes,
-            HandPlacedMergeOldIds = (matched.HandPlacedMerges ?? []).Select(m => m.OldHoldId).ToList(),
-            ExpectedMovesVersion = promotable.Moves.Version,
-        };
+        // The very payload the confirmed moves were planned from, so the promote derives the same plan.
+        var confirmation = promotable.Scoped with { ExpectedMovesVersion = promotable.Moves.Version };
         await actors.BigUpdate.PromoteAsync(refresh.WallId, confirmation, open.Id);
         await FinishPromotedAsync(refresh, actors, ct);
     }

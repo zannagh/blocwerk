@@ -19,6 +19,8 @@ public partial class WallPhotoEditor
     /// <summary>The holds whose base was changed here since the last save: only those send it.</summary>
     private readonly HashSet<Guid> restackedIds = [];
 
+    private HoldStackMemo? stackMemo;
+
     /// <summary>The hold waiting for a tap on the hold it sits on.</summary>
     private Guid? stackPickHoldId;
 
@@ -29,7 +31,7 @@ public partial class WallPhotoEditor
     private bool CanStack => CanResetToCircle;
 
     /// <summary>The working copy with every base before what sits on it: the order the overlay draws in.</summary>
-    private List<Hold> HoldsBackToFront => HoldStackOrder.BackToFront(Holds, h => h.Id, h => h.StackedOnHoldId);
+    private List<Hold> HoldsBackToFront => StackMemo().Order;
 
     private static string StackLabel(Hold hold)
     {
@@ -41,8 +43,19 @@ public partial class WallPhotoEditor
         return string.IsNullOrWhiteSpace(hold.Color) ? "a hold without a colour" : $"the {HoldPalette.DisplayName(hold.Color).ToLowerInvariant()} hold";
     }
 
-    private Dictionary<Guid, Guid?> StackMap() =>
-        Holds.GroupBy(h => h.Id).ToDictionary(g => g.Key, g => g.First().StackedOnHoldId);
+    /// <summary>Hold id to the id of the hold it sits on. Read-only: it is shared between calls until a hold changes.</summary>
+    private Dictionary<Guid, Guid?> StackMap() => StackMemo().On;
+
+    /// <summary>The stack map and the drawing order, computed again only when a hold or a base changed.</summary>
+    private HoldStackMemo StackMemo()
+    {
+        if (stackMemo is null || !stackMemo.Matches(Holds))
+        {
+            stackMemo = HoldStackMemo.For(Holds);
+        }
+
+        return stackMemo;
+    }
 
     private Hold? BaseOf(Hold hold) => hold.StackedOnHoldId is { } id ? Holds.FirstOrDefault(h => h.Id == id) : null;
 

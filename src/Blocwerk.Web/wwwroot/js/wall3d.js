@@ -34,7 +34,7 @@ import { createSplatClip } from './wall3d-splat-clip.js';
 import { buildVolumes } from './wall3d-volumes.js';
 import { buildBody } from './wall3d-body.js';
 import { createRenderLoop } from './wall3d-loop.js';
-import { buildLocator, poseFor } from './wall3d-locate.js';
+import { buildLocator, clampOrbit, poseFor } from './wall3d-locate.js';
 import { createKeyboard } from './wall3d-keys.js';
 
 /** Colours of a boulder's hold roles; the page passes BoulderHoldColors so they match the 2D views. */
@@ -258,7 +258,17 @@ function build(container, renderer, view, options) {
     if (locator) {
         framed = null;
         ui.setActive(null);
-        tweener.to(poseFor(locator));
+        if (options.orbit) {
+            // The volume inset (hybrid zoom): start AT the pose, closer than "Show on wall", then pin the orbit.
+            if (options.orbit.frontDistance) locator.distance = options.orbit.frontDistance;
+            const pose = poseFor(locator, frame.floorZ);
+            camera.position.copy(pose.position);
+            controls.target.copy(pose.target);
+            clampOrbit(controls, camera, locator, options.orbit);
+            controls.update();
+        } else {
+            tweener.to(poseFor(locator, frame.floorZ));
+        }
         loop.interact();
     }
     request();
@@ -282,6 +292,12 @@ function build(container, renderer, view, options) {
         }),
         /** Renders synchronously (used by the screenshot harness). */
         renderNow() { tweener.step(performance.now() + 1e6); controls.update(); loop.drawNow(performance.now()); },
+        /** With a highlighted spot: glides to look straight at it, or (`under`) up at its underside. */
+        lookAtSpot(under) {
+            if (!locator) return;
+            tweener.to(poseFor({ ...locator, under: !!under }, frame.floorZ));
+            loop.interact();
+        },
         /** Looks straight at one hold from `distanceMm` out along its facet normal (close-ups). */
         focusHold(id, distanceMm = 900) {
             const hold = holdById(id);

@@ -180,6 +180,18 @@
 .photo-editor[data-hold-drag] .hold-overlay circle,
 .photo-editor[data-hold-drag] .hold-overlay polygon,
 .photo-editor[data-hold-drag] .hold-overlay rect { touch-action: none; }
+/* Shape tool (wall-shape-drag.js): a finger or pen on a point handle drags it, and with the eraser or brush a press
+   anywhere on the photo erases or paints, instead of the browser scrolling (and firing pointercancel). Two fingers
+   still pinch and pan: viewport-gestures.js does that in script. Scoped by [data-shape-tool], which is only set
+   while a hold's outline is being edited. */
+.photo-editor[data-shape-tool] [data-shape-handle] { touch-action: none; }
+.photo-editor[data-shape-tool="eraser"] .hold-overlay,
+.photo-editor[data-shape-tool="eraser"] .wall-photo,
+.photo-editor[data-shape-tool="brush"] .hold-overlay,
+.photo-editor[data-shape-tool="brush"] .wall-photo { touch-action: none; }
+.photo-editor[data-shape-tool="eraser"] .hold-overlay *,
+.photo-editor[data-shape-tool="brush"] .hold-overlay * { cursor: crosshair !important; }
+.shape-stroke-refusal { color: #ffb4a8; }
 /* Boulder viewer only: the overlay holds are display-only (no tap/click handlers), so let
    pointer/touch events fall through to the viewport. Otherwise a mouse drag or double-tap that
    happens to start on a hold is treated as landing on an interactive shape and neither pans nor

@@ -85,14 +85,19 @@ public partial class WallBigUpdateService
         IReadOnlyList<MatcherHold> rightHolds,
         HoldOverlapDirection direction,
         ILogger? diag,
-        HoldOverlapSeed? seed)
+        HoldOverlapSeed? seed,
+        bool carryPass = true)
     {
         if (recordedUnaligned)
         {
             throw new InvalidOperationException("An earlier run of this update could not line these photos up.");
         }
 
-        return overlapMatcher.Match(leftImage, leftHolds, rightImage, rightHolds, direction, diag, seed);
+        // The carryover pass: an old hold may only be paired with a detection that is unambiguously its own. The overlap pass
+        // between two panels keeps every proposal; its unsure ones reach the review only as unsure links.
+        return carryPass && overlapMatcher is IHoldCarryMatcher carry
+            ? carry.MatchCarry(leftImage, leftHolds, rightImage, rightHolds, direction, diag, seed)
+            : overlapMatcher.Match(leftImage, leftHolds, rightImage, rightHolds, direction, diag, seed);
     }
 
     /// <summary>The panels this open session has already recorded as unaligned (empty when none is open).</summary>

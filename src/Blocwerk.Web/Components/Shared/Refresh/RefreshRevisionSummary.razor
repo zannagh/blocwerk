@@ -13,7 +13,7 @@
             <strong>@Revision.HoldsCreated</strong> new holds are created@(Summary.NewSeenIn3D > 0 ? $", {Summary.NewSeenIn3D} of them also seen in the 3D model" : string.Empty)
         </li>
         <li>
-            <strong>@Summary.DroppedDetections</strong> photo detections ignored (on a marker, or the same hold seen on a neighbouring panel)
+            <strong>@Summary.DroppedDetections</strong> photo detections left out (on a marker, or the same hold seen on a neighbouring panel). Each is kept in the look-over after applying, where it can still be added as a hold
             @if (Summary.DroppedByThe3DModel > 0)
             {
                 <span>; @Summary.DroppedByThe3DModel of them the 3D model shows off the wall</span>

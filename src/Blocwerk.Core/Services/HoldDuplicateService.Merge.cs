@@ -41,7 +41,7 @@ public sealed partial class HoldDuplicateService
             }
 
             var (kept, removed) = Choose(left, right, mode);
-            var (moved, flagged) = await MoveBouldersAsync(db, kept, removed, ct);
+            var (moved, flagged) = await MoveBouldersAsync(db, kept, removed, null, ct);
             if (mode == HoldMergeMode.KeepHandUseDetectedShape)
             {
                 HoldMergeRules.AdoptDetectedShape(kept, removed);
@@ -60,25 +60,12 @@ public sealed partial class HoldDuplicateService
         }
     }
 
-    private static (Hold Kept, Hold Removed) Choose(Hold left, Hold right, HoldMergeMode mode)
-    {
-        switch (mode)
-        {
-            case HoldMergeMode.KeepLeft:
-                return (left, right);
-            case HoldMergeMode.KeepRight:
-                return (right, left);
-            default:
-                if (HoldMergeRules.IsHandMade(left) == HoldMergeRules.IsHandMade(right))
-                {
-                    throw new UserFacingException("Only a hand-placed hold next to an automatic detection can take the detected shape. Choose which hold to keep instead.");
-                }
-
-                return HoldMergeRules.IsHandMade(left) ? (left, right) : (right, left);
-        }
-    }
-
-    private static async Task<(int Moved, int Flagged)> MoveBouldersAsync(BlocwerkDbContext db, Hold kept, Hold removed, CancellationToken ct)
+    /// <summary>
+    /// Moves the memberships of <paramref name="removed"/> onto <paramref name="kept"/> (tracked, not saved): all of them,
+    /// or only those of the boulders in <paramref name="only"/> (the look-over's per-boulder "use the new hold").
+    /// </summary>
+    internal static async Task<(int Moved, int Flagged)> MoveBouldersAsync(
+        BlocwerkDbContext db, Hold kept, Hold removed, IReadOnlySet<Guid>? only, CancellationToken ct)
     {
         var links = await db.BoulderHolds.Include(bh => bh.Boulder)
             .Where(bh => bh.HoldId == kept.Id || bh.HoldId == removed.Id)
@@ -86,7 +73,7 @@ public sealed partial class HoldDuplicateService
         var keptLinks = links.Where(l => l.HoldId == kept.Id).ToDictionary(l => l.BoulderId);
         int moved = 0;
         int flagged = 0;
-        foreach (var link in links.Where(l => l.HoldId == removed.Id))
+        foreach (var link in links.Where(l => l.HoldId == removed.Id && (only is null || only.Contains(l.BoulderId))))
         {
             db.BoulderHolds.Remove(link);
             if (keptLinks.TryGetValue(link.BoulderId, out var existing))
@@ -108,6 +95,24 @@ public sealed partial class HoldDuplicateService
         }
 
         return (moved, flagged);
+    }
+
+    private static (Hold Kept, Hold Removed) Choose(Hold left, Hold right, HoldMergeMode mode)
+    {
+        switch (mode)
+        {
+            case HoldMergeMode.KeepLeft:
+                return (left, right);
+            case HoldMergeMode.KeepRight:
+                return (right, left);
+            default:
+                if (HoldMergeRules.IsHandMade(left) == HoldMergeRules.IsHandMade(right))
+                {
+                    throw new UserFacingException("Only a hand-placed hold next to an automatic detection can take the detected shape. Choose which hold to keep instead.");
+                }
+
+                return HoldMergeRules.IsHandMade(left) ? (left, right) : (right, left);
+        }
     }
 
     /// <summary>Saves inside a named batch and returns the id of exactly the batch that was opened for this write.</summary>

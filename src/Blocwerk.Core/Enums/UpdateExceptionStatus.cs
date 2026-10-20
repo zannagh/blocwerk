@@ -18,4 +18,10 @@ public enum UpdateExceptionStatus
 
     /// <summary>Removed: the old hold is gone (possibly removed), or the detection is left out (conflicting evidence).</summary>
     Removed = 2,
+
+    /// <summary>
+    /// Not the same hold (an unsure match or a hand-placed merge, <see cref="UpdateExceptionAnswer.NotSame"/>): the pair is taken
+    /// apart, the old hold goes live carried where it was predicted, unconfirmed and marked for review.
+    /// </summary>
+    NotSame = 3,
 }

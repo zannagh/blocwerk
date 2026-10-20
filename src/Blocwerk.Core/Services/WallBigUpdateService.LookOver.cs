@@ -133,9 +133,11 @@ public partial class WallBigUpdateService
     /// cleared). Read from the tracker, which still knows what a boulder was when it was loaded. Left out, so that
     /// nothing clears them later: a boulder that was marked before, one told anything else (a hold moved, was replaced
     /// or taken off), one that lost a membership (two of its holds became one), and one that uses a hold carried as
-    /// "changed".
+    /// "changed". With <paramref name="outcome"/> <see cref="HoldMoveOutcome.Replaced"/> it is the boulders marked only
+    /// because this one hold was replaced by another (one reason, nothing else): the look-over's "use the new hold" may
+    /// clear exactly those.
     /// </summary>
-    private static Dictionary<Guid, List<Guid>> MarkedForAMissingHold(BlocwerkDbContext db)
+    private static Dictionary<Guid, List<Guid>> MarkedForOneHold(BlocwerkDbContext db, HoldMoveOutcome outcome = HoldMoveOutcome.NotFound)
     {
         var marked = db.ChangeTracker.Entries<Boulder>()
             .Where(e => e.Entity.NeedsReview && !e.Property(b => b.NeedsReview).OriginalValue)
@@ -151,13 +153,14 @@ public partial class WallBigUpdateService
         {
             var mine = memberships.Where(e => e.Entity.BoulderId == boulderId).ToList();
             return marked.Contains(boulderId)
-                && reasons.Where(m => m.BoulderId == boulderId).All(m => m.Outcome == HoldMoveOutcome.NotFound)
+                && reasons.Where(m => m.BoulderId == boulderId).All(m => m.Outcome == outcome)
+                && (outcome == HoldMoveOutcome.NotFound || reasons.Count(m => m.BoulderId == boulderId) == 1)
                 && mine.Count(e => e.State == EntityState.Added) == mine.Count(e => e.State == EntityState.Deleted)
                 && !mine.Any(e => e.State == EntityState.Added && changedHolds.Contains(e.Entity.HoldId));
         }
 
         return reasons
-            .Where(m => m.Outcome == HoldMoveOutcome.NotFound && m.NewHoldId is not null && OnlyThisReason(m.BoulderId))
+            .Where(m => m.Outcome == outcome && m.NewHoldId is not null && OnlyThisReason(m.BoulderId))
             .GroupBy(m => m.NewHoldId!.Value)
             .ToDictionary(g => g.Key, g => g.Select(m => m.BoulderId).Distinct().ToList());
     }
@@ -179,7 +182,7 @@ public partial class WallBigUpdateService
             .GroupBy(bh => bh.HoldId)
             .ToDictionary(g => g.Key, g => g.Select(bh => bh.BoulderId).Distinct().Count());
         var carry = inputs.Confirmation.Carryover.GroupBy(d => d.OldHoldId).ToDictionary(g => g.Key, g => g.First());
-        var newlyMarked = MarkedForAMissingHold(db);
+        var newlyMarked = MarkedForOneHold(db);
         return new LookOverPromoteFacts(
             cards,
             carry,
@@ -191,6 +194,7 @@ public partial class WallBigUpdateService
             inputs.PhotoSizes,
             inputs.CardMarked,
             unaligned,
-            newlyMarked);
+            newlyMarked,
+            MarkedForOneHold(db, HoldMoveOutcome.Replaced));
     }
 }

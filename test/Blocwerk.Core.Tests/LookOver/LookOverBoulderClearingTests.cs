@@ -130,8 +130,9 @@ public class LookOverBoulderClearingTests
         var service = Service(h);
         var view = Assert.Single(await service.ListAsync(w.WallId));
 
-        // A replaced hold explains no boulder's mark that could be taken back: the boulder is its setter's to check.
-        Assert.Equal([], (await FindingAsync(h, w.WallId)).MarkedBoulderIds);
+        // The replacement alone marked the boulder (recorded, for "use the new hold"), but keeping the old hold takes
+        // nothing back: the hold's situation did change, and the boulder is its setter's to check.
+        Assert.Equal([w.BoulderId], (await FindingAsync(h, w.WallId)).MarkedBoulderIds);
 
         await service.AnswerAsync(w.WallId, view.Id, LookOverAnswer.Settle);
 

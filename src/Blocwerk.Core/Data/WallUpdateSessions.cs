@@ -80,17 +80,27 @@ public static class WallUpdateSessions
     /// </para>
     /// </summary>
     public static async Task EnsureCurrentAsync(
-        BlocwerkDbContext db, Guid wallId, Guid? expectedSessionId, CancellationToken ct = default)
+        BlocwerkDbContext db, Guid wallId, Guid? expectedSessionId, CancellationToken ct = default, string? message = null)
     {
-        if (expectedSessionId is not { } expected)
+        if (expectedSessionId is null)
         {
             return;
         }
 
         var open = await FindOpenAsync(db, wallId, ct);
-        if (open is null || open.Id != expected)
+        EnsureIs(wallId, expectedSessionId, open, message);
+    }
+
+    /// <summary>
+    /// Refuses when <paramref name="open"/> (the wall's open session, as just read) is not the session
+    /// <paramref name="expectedSessionId"/> names; null expects nothing. The decision writes read the open session
+    /// anyway, so they check the very row they are about to write to.
+    /// </summary>
+    public static void EnsureIs(Guid wallId, Guid? expectedSessionId, WallUpdateSession? open, string? message = null)
+    {
+        if (expectedSessionId is { } expected && (open is null || open.Id != expected))
         {
-            throw new Services.WallUpdateSessionSupersededException(wallId, expected, open?.Id);
+            throw new Services.WallUpdateSessionSupersededException(wallId, expected, open?.Id, message);
         }
     }
 

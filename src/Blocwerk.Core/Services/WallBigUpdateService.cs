@@ -93,7 +93,7 @@ public partial class WallBigUpdateService : IWallBigUpdateService
             ?? throw new InvalidOperationException("No in-flight big update to resume.");
 
         var session = await BuildSessionAsync(db, wall, centerPanel.Id, stagedGen, use3DEvidence);
-        await PersistDiscardReasonsAsync(db, wallId, stagedGen, session);
+        await PersistDiscardReasonsAsync(wallId, stagedGen, session);
 
         // A panel the matcher could not align is recorded on the session: the banner survives a resume and
         // the promote flags that panel's blind carries.
@@ -275,8 +275,9 @@ public partial class WallBigUpdateService : IWallBigUpdateService
         }
 
         CollectNotFoundAgain(looks, removedCandidates);
-        var removals = new RemovalInputs(oldByPosition, removedCandidates.ToHashSet(), carriedWarp);
+        var removals = new RemovalInputs(oldByPosition, removedCandidates.ToHashSet(), carriedWarp, carriedShapes, looks.NotFoundAgain.Keys.ToHashSet());
         var triage = await SuggestNewDiscardsAsync(db, wall, stagedGen, carryover, oldHolds, oldPanelPhotosById, oldCentrePhoto, neighbours, use3DEvidence, removals);
+        RecordSwaps(triage, removals.NotFoundAgain, looks);
         return new BigUpdateSession(
             wall.Id, centerPanelId, carryover, removedCandidates, newCenter, neighbours,
             autoMatchStatus, autoMatchMessage, carriedWarp, carriedShapes,

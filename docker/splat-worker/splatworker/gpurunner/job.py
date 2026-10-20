@@ -20,6 +20,7 @@ from computejobs.child import JobError
 
 from .. import checkpoints, procs
 from ..bundle import BundleError, extract_bundle
+from ..portable import BundleNotPortable
 from ..procs import ToolStopped
 from ..slimply import write_slim_ply
 from ..splatio import read_ply
@@ -148,7 +149,8 @@ class JobRun:
 
     UPLOAD_DETAIL = "uploading the trained scene"
     BAD_INPUT = (BundleError,)  # what no retry fixes: reported as a failure for good
-    CANNOT_HERE = (BundleTooLarge, BundleDamaged)  # what another runner may do better: a retryable failure
+    # what another runner may do better: a retryable failure
+    CANNOT_HERE = (BundleTooLarge, BundleDamaged, BundleNotPortable)
 
     def _produce(self):
         """Downloads and works the job; returns (the result file, the stats header). Textures jobs override it."""

@@ -81,6 +81,7 @@ public sealed class WallRefreshWorker(
                 try
                 {
                     await processor.DiscardStaleAsync(DateTimeOffset.UtcNow, ct);
+                    await processor.DiscardIdleSessionsAsync(DateTimeOffset.UtcNow, ct);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {

@@ -38,6 +38,15 @@ internal sealed class HoldDuplicateScenario
             factory, harness.CurrentUser, journal, new ChangeJournalReverter(factory, journal), NullLogger<HoldDuplicateService>.Instance);
     }
 
+    /// <summary>The wall editor's merge and split tools, on the same journalled contexts.</summary>
+    public HoldMergeSplitService MergeSplit()
+    {
+        var connection = ((TestDbContextFactory)harness.DbContextFactory).ConnectionString;
+        var factory = new InterceptedFactory(connection, journal);
+        return new HoldMergeSplitService(
+            factory, harness.CurrentUser, journal, new ChangeJournalReverter(factory, journal), NullLogger<HoldMergeSplitService>.Instance);
+    }
+
     /// <summary>The wall editor's re-detect on the same journalled contexts, merging through <see cref="Service"/>.</summary>
     public PanelRedetectService Redetect()
     {

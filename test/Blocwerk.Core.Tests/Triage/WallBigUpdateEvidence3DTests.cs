@@ -83,7 +83,8 @@ public class WallBigUpdateEvidence3DTests
 
         var session = await ResumeAsync(h, new FixedPhotoTextureMatcher(fake, 10), use3D: true);
 
-        Assert.Null((await ReasonsByXAsync(h, session))[KnownX]);
+        // Not as a hold the model knows: the photos alone see the second outline of the hold found again.
+        Assert.Equal(NewHoldDiscardReason.InsideCarriedHold, (await ReasonsByXAsync(h, session))[KnownX]);
     }
 
     [Fact]
@@ -95,8 +96,9 @@ public class WallBigUpdateEvidence3DTests
         var none = await ResumeAsync(h, null, use3D: true);
         var unreadable = await ResumeAsync(h, new FixedPhotoTextureMatcher(fake, 255), use3D: true);
 
-        Assert.Empty(none.SuggestedNewDiscards!);
-        Assert.Empty(unreadable.SuggestedNewDiscards!);
+        // Nothing from the model: only the photo-only rule, the second outline inside the hold found again.
+        Assert.Equal([NewHoldDiscardReason.InsideCarriedHold], none.SuggestedNewDiscards!.Values);
+        Assert.Equal([NewHoldDiscardReason.InsideCarriedHold], unreadable.SuggestedNewDiscards!.Values);
     }
 
     private static async Task<BigUpdateSession> ResumeAsync(WallTestHarness h, IPhotoTextureMatcher? matcher, bool use3D = false)

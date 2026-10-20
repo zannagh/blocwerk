@@ -7,8 +7,10 @@ import logging
 import os
 import signal
 import sys
+import threading
 
 from ..settings import settings  # loads the env (SPLAT_TRAINER, GSPLAT_PYTHON, BRUSH_BIN, ...) first
+from .. import winsys
 from .alive import work_dir
 from .caps import Capabilities
 from .client import Client, check_server
@@ -17,6 +19,9 @@ from .loop import Runner
 from .web import start_status_page
 
 log = logging.getLogger("gpurunner")
+# SIGBREAK: Ctrl+Break in a Windows console (and what a service wrapper like NSSM sends first); SIGTERM there only
+# comes from Python itself, Ctrl+C is SIGINT everywhere.
+STOP_SIGNALS = ("SIGTERM", "SIGINT", "SIGBREAK")
 
 
 def parse_args(argv):
@@ -38,6 +43,30 @@ def read_key():
         sys.exit("BWR_KEY is not set to a runner key (bwr_...): create one in Blocwerk (wall settings, 3D runners) "
                  "and pass it through the environment (docker: --env-file runner.env)")
     return key
+
+
+def install_stops(runner):
+    """Every way the runner is told to stop hands the running job back: the signals, and on Windows the console
+    window closing (or log-off / shutdown: Windows waits ~5 s, the handler holds it until the loop ended). Also keeps
+    Windows awake. Returns the event main() sets once the loop has ended."""
+    def stop(signum, _frame):
+        log.info("signal %d: handing back the running job and stopping", signum)
+        runner.stop()
+
+    for name in STOP_SIGNALS:
+        if hasattr(signal, name):
+            signal.signal(getattr(signal, name), stop)
+    finished = threading.Event()
+
+    def console_closed(grace_s):
+        log.info("console closing: handing back the running job")
+        runner.stop()
+        finished.wait(grace_s)
+
+    winsys.on_console_close(console_closed)
+    if os.environ.get("RUNNER_KEEP_AWAKE", "1").strip() not in ("0", "false", "no") and winsys.keep_awake():
+        log.info("keeping Windows awake while the runner runs (RUNNER_KEEP_AWAKE=0 turns that off)")
+    return finished
 
 
 def main(argv=None):
@@ -67,13 +96,7 @@ def main(argv=None):
     gzip_upload = not args.no_gzip and os.environ.get("RUNNER_UPLOAD_GZIP", "1").strip() not in ("0", "false", "no")
     runner = Runner(Client(server, key, gzip_upload), work_dir(), caps, max_jobs=1 if args.once else None,
                     control=control)
-
-    def stop(signum, _frame):
-        log.info("signal %d: handing back the running job and stopping", signum)
-        runner.stop()
-
-    signal.signal(signal.SIGTERM, stop)
-    signal.signal(signal.SIGINT, stop)
+    finished = install_stops(runner)
     log.info("Blocwerk 3D runner -> %s (%s, work dir %s)", server, caps.trainer, runner.work_dir)
     r = runner.resume
     log.info("checkpoints: %s; previews: %s", f"every {r.every} steps in {r.root}" if r.every else "off",
@@ -82,6 +105,7 @@ def main(argv=None):
     try:
         return runner.run()
     finally:
+        finished.set()
         if page is not None:
             page.close()
 

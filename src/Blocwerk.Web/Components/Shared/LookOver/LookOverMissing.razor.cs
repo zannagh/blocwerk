@@ -18,10 +18,8 @@ namespace Blocwerk.Web.Components.Shared.LookOver;
 /// </summary>
 public partial class LookOverMissing
 {
-    /// <summary>A tap this close to a hold's edge (as a share of the photo's width) still means the hold.</summary>
-    private const double SnapMargin = 0.012;
-
     private readonly Dictionary<Guid, IReadOnlyList<PanelHold>> holdsByPanel = [];
+    private readonly Dictionary<Guid, (int Width, int Height)?> photoSizes = [];
     private ConfirmAction? remove;
     private Guid? shownId;
     private Guid? targetId;
@@ -98,6 +96,9 @@ public partial class LookOverMissing
             try
             {
                 holdsByPanel[panelId] = await LookOver.GetPanelHoldsAsync(WallId, panelId);
+
+                // The tap is judged with the server's geometry ("it is here" is checked in photo pixels).
+                photoSizes[panelId] = await LookOver.GetPanelPhotoSizeAsync(WallId, panelId);
             }
             catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidOperationException)
             {
@@ -151,13 +152,7 @@ public partial class LookOverMissing
             return;
         }
 
-        var near = PanelHolds(panelId)
-            .Where(h => !h.Kept)
-            .Select(h => (Hold: h, Gap: Math.Sqrt(Math.Pow(h.X - at.X, 2) + Math.Pow(h.Y - at.Y, 2)) - h.Radius))
-            .Where(c => c.Gap <= SnapMargin)
-            .OrderBy(c => c.Gap)
-            .Select(c => c.Hold)
-            .FirstOrDefault();
+        var near = LookOverRules.HoldAtSpot(PanelHolds(panelId), at.X, at.Y, photoSizes.GetValueOrDefault(panelId));
         if (near is not null && Finding.CanReassign)
         {
             (targetId, movedTo) = (near.Id, null);
