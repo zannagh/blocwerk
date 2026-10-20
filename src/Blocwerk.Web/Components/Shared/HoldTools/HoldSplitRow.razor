@@ -2,6 +2,8 @@
    (the larger, green part by default) and confirm. Reads HoldSplitToolState; the actions are callbacks into
    WallPhotoEditor.MergeSplit.cs. *@
 @namespace Blocwerk.Web.Components.Shared.HoldTools
+@implements IAsyncDisposable
+@inject IJSRuntime JS
 
 @if (State.HoldId is null && State.Error is { } failed)
 {
@@ -36,18 +38,32 @@ else
     </span>
     @if (State.Preview!.Boulders.Count > 0)
     {
-        <span class="split-boulders" role="group" aria-label="Which part does each boulder use?">
-            <span class="split-question">Which part does each boulder use?</span>
-            @foreach (var boulder in State.Preview.Boulders)
-            {
-                var small = State.OnSmaller.Contains(boulder.Id);
-                <button type="button" class="opt-btn split-boulder @(small ? "is-small" : "is-large")"
-                        aria-pressed="@(small ? "true" : "false")" title="Tap to use the other part"
-                        @onclick="() => OnToggleBoulder.InvokeAsync(boulder.Id)">
-                    <span class="split-dot"></span>@boulder.Name
-                </button>
-            }
-        </span>
+        <button type="button" class="opt-btn" @onclick="ToggleChooser" aria-expanded="@(chooserOpen ? "true" : "false")">
+            Parts per boulder (@State.OnSmaller.Count orange)
+        </button>
+
+        @* A popover (top layer): the toolbar row has a fixed height and scrolls sideways, so a list of boulders cannot
+           wrap inside it. Manual, so drawing on the photo does not close it; Done or Cancel does. *@
+        <div class="split-chooser" popover="manual" @ref="chooser" role="group" aria-labelledby="@questionId">
+            <p class="split-question" id="@questionId">Which part does each boulder use?</p>
+            <div class="split-choices">
+                @foreach (var boulder in State.Preview.Boulders)
+                {
+                    var small = State.OnSmaller.Contains(boulder.Id);
+                    <button type="button" class="split-boulder @(small ? "is-small" : "is-large")"
+                            aria-pressed="@(small ? "true" : "false")"
+                            title="@(small ? "Uses the orange part. Tap for the green part." : "Uses the green part. Tap for the orange part.")"
+                            @onclick="() => OnToggleBoulder.InvokeAsync(boulder.Id)">
+                        <span class="split-dot" aria-hidden="true"></span>
+                        <span class="split-name">@boulder.Name</span>
+                        <span class="split-part">@(small ? "orange" : "green")</span>
+                    </button>
+                }
+            </div>
+            <div class="split-chooser-actions">
+                <button type="button" class="split-done" @onclick="ToggleChooser">Done</button>
+            </div>
+        </div>
     }
 }
 
@@ -71,7 +87,68 @@ else
 
     [Parameter] public EventCallback<Guid> OnToggleBoulder { get; set; }
 
+    private readonly string questionId = "split-q-" + Guid.NewGuid().ToString("N")[..8];
+    private ElementReference chooser;
+    private IJSObjectReference? module;
+    private bool chooserOpen;
+    private bool chooserShown;
+    private HoldSplitPreview? openedFor;
+
     private string? Problem => State.Preview?.Refusal ?? State.Error;
+
+    private bool HasChooser => State.Ready && PendingChanges == 0 && State.Preview!.Boulders.Count > 0;
+
+    public async ValueTask DisposeAsync()
+    {
+        if (module is not null)
+        {
+            try
+            {
+                await module.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+                // The circuit is gone.
+            }
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        // A fresh cut opens the choice by itself; leaving the cut closes it.
+        if (HasChooser && !ReferenceEquals(openedFor, State.Preview))
+        {
+            openedFor = State.Preview;
+            chooserOpen = true;
+        }
+        else if (!HasChooser)
+        {
+            chooserOpen = false;
+            chooserShown = false;
+            openedFor = null;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!HasChooser || chooserOpen == chooserShown)
+        {
+            return;
+        }
+
+        try
+        {
+            module ??= await JS.InvokeAsync<IJSObjectReference>("import", "/js/hold-split-line.js");
+            await module.InvokeVoidAsync(chooserOpen ? "openBelowRow" : "closePopover", chooser);
+            chooserShown = chooserOpen;
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or TaskCanceledException)
+        {
+            // A stale element after a re-render: the next render tries again.
+        }
+    }
+
+    private void ToggleChooser() => chooserOpen = !chooserOpen;
 
     private HoldActionOutcome? Outcome
     {
@@ -87,7 +164,8 @@ else
             var boulders = total == 0 ? "No boulder uses it."
                 : moving == 0 && total == 1 ? "Its boulder stays on the green part."
                 : moving == 0 ? $"All {PlainCopy.Plural(total, "boulder")} stay on the green part."
-                : $"{PlainCopy.Plural(moving, "boulder")} move to the new orange hold, {PlainCopy.Plural(total - moving, "boulder")} stay.";
+                : moving == total ? $"{(total == 1 ? "Its boulder moves" : $"All {PlainCopy.Plural(total, "boulder")} move")} to the new orange hold."
+                : $"{PlainCopy.Plural(moving, "boulder")} {(moving == 1 ? "moves" : "move")} to the new orange hold, {PlainCopy.Plural(total - moving, "boulder")} {(total - moving == 1 ? "stays" : "stay")}.";
             return new HoldActionOutcome(
                 $"{HoldTitle} becomes two holds: green keeps it and its history, orange is a new hold of the same colour.",
                 boulders,

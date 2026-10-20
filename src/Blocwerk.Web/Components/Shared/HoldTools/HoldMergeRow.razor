@@ -67,8 +67,8 @@ else
             var boulders = (moving, both) switch
             {
                 (0, 0) => $"No boulder uses {RemoveLabel}.",
-                (_, 0) => $"{PlainCopy.Plural(moving, "boulder")} move over to {KeepLabel.ToLowerInvariant()}.",
-                _ => $"{PlainCopy.Plural(moving, "boulder")} move over; {PlainCopy.Plural(both, "boulder")} used both and {(both == 1 ? "is" : "are")} flagged for review.",
+                (_, 0) => $"{PlainCopy.Plural(moving, "boulder")} {(moving == 1 ? "moves" : "move")} over to {KeepLabel.ToLowerInvariant()}.",
+                _ => $"{PlainCopy.Plural(moving, "boulder")} {(moving == 1 ? "moves" : "move")} over; {PlainCopy.Plural(both, "boulder")} used both and {(both == 1 ? "is" : "are")} flagged for review.",
             };
             return new HoldActionOutcome(
                 $"{KeepLabel} stays and takes in {RemoveLabel}: one hold with both outlines{bridge}.",
