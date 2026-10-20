@@ -29,6 +29,15 @@ public sealed class HoldRefinementQueue(IServiceScopeFactory scopes, ILogger<Hol
     /// <summary>How often a refinement waiting for a running hold search looks again.</summary>
     public static readonly TimeSpan SearchPoll = TimeSpan.FromSeconds(10);
 
+    /// <summary>Whether a hold search runs (the wait condition; tests replace it).</summary>
+    internal Func<bool> SearchRunning { get; init; } = () => HoldProposalService.IsSearching;
+
+    /// <summary>The quiet time of a burst (<see cref="Debounce"/>; tests shorten it).</summary>
+    internal TimeSpan BurstQuiet { get; init; } = Debounce;
+
+    /// <summary>The poll while a search runs (<see cref="SearchPoll"/>; tests shorten it).</summary>
+    internal TimeSpan SearchWait { get; init; } = SearchPoll;
+
     private readonly Channel<(Guid WallId, Guid[] HoldIds)> channel =
         Channel.CreateUnbounded<(Guid WallId, Guid[] HoldIds)>(new UnboundedChannelOptions { SingleReader = true });
 
@@ -151,9 +160,9 @@ public sealed class HoldRefinementQueue(IServiceScopeFactory scopes, ILogger<Hol
                 await DrainBurstAsync(pending, stoppingToken);
 
                 // Not alongside a hold search (minutes of detection on the same CPU): the edits keep collecting meanwhile.
-                while (HoldProposalService.IsSearching)
+                while (SearchRunning())
                 {
-                    await Task.Delay(SearchPoll, stoppingToken);
+                    await Task.Delay(SearchWait, stoppingToken);
                     await DrainBurstAsync(pending, stoppingToken);
                 }
 
@@ -192,7 +201,7 @@ public sealed class HoldRefinementQueue(IServiceScopeFactory scopes, ILogger<Hol
         while (true)
         {
             using var quiet = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            quiet.CancelAfter(Debounce);
+            quiet.CancelAfter(BurstQuiet);
             try
             {
                 Add(pending, await channel.Reader.ReadAsync(quiet.Token));
