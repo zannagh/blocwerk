@@ -123,8 +123,8 @@ public sealed partial class WallLookOverService
     }
 
     /// <summary>
-    /// "It is here" only on the hold's own photo and only on bare wall: a spot on a hold the update found means that hold
-    /// ("it is this hold"), as a tap on the page does.
+    /// "It is here" only on the hold's own photo and only on bare wall: a spot inside a hold the update found (or a hair
+    /// outside its outline, <see cref="LookOverRules.SpotSnapPixels"/>) means that hold ("it is this hold").
     /// </summary>
     private static async Task EnsureBareSpotAsync(
         BlocwerkDbContext db, Guid wallId, Entities.Hold hold, double x, double y, Guid? panelId, CancellationToken ct)
@@ -135,7 +135,9 @@ public sealed partial class WallLookOverService
         }
 
         var holds = await PanelHoldsAsync(db, wallId, hold.WallPanelId, ct);
-        if (LookOverRules.HoldAtSpot(holds.Where(h => h.Id != hold.Id), x, y) is { } there)
+        (int Width, int Height)? size = hold.WallPanelId is { } panel
+            && (await LookOverFrameSource.SizesAsync(db, [panel], ct)).TryGetValue(panel, out var known) ? known : null;
+        if (LookOverRules.HoldAtSpot(holds.Where(h => h.Id != hold.Id), x, y, size) is { } there)
         {
             throw new UserFacingException($"A hold is at that spot ({there.Id}): say that it is this hold instead (Reassign with targetHoldId).");
         }

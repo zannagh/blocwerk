@@ -18,8 +18,11 @@ public static class LookOverRules
     /// <summary>A discarded detection that live holds cover by at least this is probably a second detection of a hold that is there.</summary>
     public const double DuplicateOverlap = 0.5;
 
-    /// <summary>A spot this close to a hold's edge (as a share of the photo's width) means the hold: "it is this hold", not "it is here".</summary>
-    public const double SpotSnapMargin = 0.012;
+    /// <summary>
+    /// A spot inside a hold's outline, or within this many pixels of the photo outside it, means the hold: "it is this
+    /// hold", not "it is here". Only a hair's breadth: on a dense wall the spot of a hold is often right beside another.
+    /// </summary>
+    public const double SpotSnapPixels = 3;
 
     /// <summary>The kinds in the order they are shown: what touches boulders first, the noisy and the harmless last.</summary>
     public static readonly IReadOnlyList<LookOverFindingKind> Order =
@@ -88,21 +91,31 @@ public static class LookOverRules
     public static bool LikelyMissed(double? confidence, double? overlap) => confidence >= SureDetection && overlap < NoOverlapBelow;
 
     /// <summary>
-    /// The hold a spot on a photo means: the nearest hold the update found (not a kept copy) whose edge is within
-    /// <see cref="SpotSnapMargin"/> of it, else none (the spot is bare wall: "it is here").
+    /// The hold a spot on a photo means: a hold the update found (not a kept copy) whose outline (or circle, without one)
+    /// contains the spot or passes within <paramref name="marginPx"/> of it, the closest first; else none (the spot is
+    /// bare wall: "it is here"). Measured in the photo's pixels: positions are normalised per axis and radii to the long
+    /// side, so mixing them as they are would stretch every circle along the short side.
     /// </summary>
     /// <param name="holds">The live holds of the photo.</param>
     /// <param name="x">The spot across the photo, 0..1.</param>
     /// <param name="y">The spot down the photo, 0..1.</param>
+    /// <param name="size">The photo's pixel size; null when it is not known, and then only a spot inside a hold counts.</param>
+    /// <param name="marginPx">How close outside a hold still means it, in photo pixels.</param>
     /// <returns>The hold, or null.</returns>
-    public static Services.PanelHold? HoldAtSpot(IEnumerable<Services.PanelHold> holds, double x, double y) =>
-        holds
+    public static Services.PanelHold? HoldAtSpot(
+        IEnumerable<Services.PanelHold> holds, double x, double y, (int Width, int Height)? size = null, double marginPx = SpotSnapPixels)
+    {
+        var known = size is { Width: > 0, Height: > 0 };
+        var (width, height) = known ? ((double)size!.Value.Width, (double)size.Value.Height) : (1d, 1d);
+        var margin = known ? marginPx : 0;
+        return holds
             .Where(h => !h.Kept)
-            .Select(h => (Hold: h, Gap: Math.Sqrt(Math.Pow(h.X - x, 2) + Math.Pow(h.Y - y, 2)) - h.Radius))
-            .Where(c => c.Gap <= SpotSnapMargin)
+            .Select(h => (Hold: h, Gap: new HoldArea(h.X, h.Y, h.Radius, h.ShapePoints, known ? size : null).EdgeGap(x * width, y * height)))
+            .Where(c => c.Gap <= margin)
             .OrderBy(c => c.Gap)
             .Select(c => c.Hold)
             .FirstOrDefault();
+    }
 
     /// <summary>The answers that change a hold or its boulders, so they ask first and say which boulders they saw.</summary>
     /// <param name="answer">The answer.</param>

@@ -85,6 +85,31 @@ internal sealed class HoldArea
         return inside;
     }
 
+    /// <summary>How far a pixel lies outside the area, in pixels: 0 inside it, else the distance to its outline or circle.</summary>
+    /// <param name="x">Pixel x.</param>
+    /// <param name="y">Pixel y.</param>
+    /// <returns>The gap.</returns>
+    public double EdgeGap(double x, double y)
+    {
+        if (Contains(x, y))
+        {
+            return 0;
+        }
+
+        if (polygon is null)
+        {
+            return Math.Sqrt(((x - centreX) * (x - centreX)) + ((y - centreY) * (y - centreY))) - radiusPx;
+        }
+
+        var gap = double.MaxValue;
+        for (int i = 0, j = polygon.Length - 1; i < polygon.Length; j = i++)
+        {
+            gap = Math.Min(gap, SegmentDistance(x, y, polygon[j], polygon[i]));
+        }
+
+        return gap;
+    }
+
     /// <summary>How much of this area the others cover, 0..1, sampled on a grid over its bounding box.</summary>
     /// <param name="others">The areas that may cover it.</param>
     /// <returns>The covered share; 0 for an area without extent.</returns>
@@ -112,6 +137,15 @@ internal sealed class HoldArea
         }
 
         return inside == 0 ? 0 : (double)covered / inside;
+    }
+
+    private static double SegmentDistance(double x, double y, (double X, double Y) a, (double X, double Y) b)
+    {
+        var (dx, dy) = (b.X - a.X, b.Y - a.Y);
+        var lengthSquared = (dx * dx) + (dy * dy);
+        var t = lengthSquared <= 0 ? 0 : Math.Clamp((((x - a.X) * dx) + ((y - a.Y) * dy)) / lengthSquared, 0, 1);
+        var (px, py) = (a.X + (t * dx) - x, a.Y + (t * dy) - y);
+        return Math.Sqrt((px * px) + (py * py));
     }
 
     private static double SignedArea((double X, double Y)[] ring)

@@ -163,7 +163,7 @@ public interface IWallLookOverService
     /// <returns>A task.</returns>
     /// <remarks>
     /// Refused, as on the page, when the hold takes no "not there any more" (only those can be moved), when the spot is on
-    /// another photo, and when a hold the update found lies at the spot (within <see cref="LookOverRules.SpotSnapMargin"/>):
+    /// another photo, and when the spot lies inside a hold the update found (or within <see cref="LookOverRules.SpotSnapPixels"/> of its outline):
     /// that is "it is this hold" (<see cref="ReassignAsync"/>).
     /// </remarks>
     Task MoveAsync(
