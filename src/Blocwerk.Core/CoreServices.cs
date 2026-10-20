@@ -175,6 +175,7 @@ public static class CoreServices
         builder.Services.AddScoped<IHoldShapeCleanupService, HoldShapeCleanupService>();
         builder.Services.AddScoped<IHoldStackService, HoldStackService>();
         builder.Services.AddScoped<IHoldDuplicateService, HoldDuplicateService>();
+        builder.Services.AddScoped<IHoldMergeSplitService, HoldMergeSplitService>();
         builder.Services.AddScoped<IPanelRedetectService, PanelRedetectService>();
         builder.Services.AddScoped<IWallLookOverService, WallLookOverService>();
         builder.Services.AddScoped<ILinkedHoldSyncService, LinkedHoldSyncService>();

@@ -132,9 +132,13 @@ public static class HoldDeletion
 
     private static async Task RemoveHoldLinksAsync(BlocwerkDbContext db, List<Guid> ids, CancellationToken ct)
     {
-        var links = await db.HoldLinks
+        // By what the context holds now, as in UnstackAsync: a merge has already re-pointed some of these onto the hold
+        // that stays (HoldRelinking), and those must survive.
+        var links = (await db.HoldLinks
+                .Where(l => ids.Contains(l.HoldAId) || ids.Contains(l.HoldBId))
+                .ToListAsync(ct))
             .Where(l => ids.Contains(l.HoldAId) || ids.Contains(l.HoldBId))
-            .ToListAsync(ct);
+            .ToList();
         if (links.Count > 0)
         {
             db.HoldLinks.RemoveRange(links);
