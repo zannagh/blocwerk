@@ -42,15 +42,19 @@ public class LookOverMissingTests
         Assert.True(await db.ChangeJournalBatches.AnyAsync(b => b.Id == finding.MergeBatchId && b.Label == HoldDuplicateService.BatchLabel));
     }
 
-    // The purple on the old orange's spot: "it is this hold" moves identity and boulders, never the old hold's colour.
-    [Fact]
-    public async Task ItIsThisHold_LeavesTheTargetItsOwnDetectedColour()
+    // "It is this hold" moves identity and boulders. The target keeps its own detected colour against a colour the
+    // detector proposed for the old hold; a colour a person set on the old hold was a correction, and moves over.
+    [Theory]
+    [InlineData(true, "purple", "purple")]
+    [InlineData(false, "orange", null)]
+    public async Task ItIsThisHold_KeepsTheTargetsColour_UnlessAPersonSetTheOldOne(bool oldProposed, string colour, string? proposed)
     {
         using var h = new WallTestHarness();
         var k = await KeptHoldFixture.ApplyAsync(h);
         await using (var db = h.CreateContext())
         {
-            await db.Holds.Where(x => x.Id == k.UsedId).ExecuteUpdateAsync(s => s.SetProperty(x => x.Color, "orange").SetProperty(x => x.ProposedColor, (string?)null));
+            await db.Holds.Where(x => x.Id == k.UsedId)
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.Color, "orange").SetProperty(x => x.ProposedColor, oldProposed ? "orange" : null));
             await db.Holds.Where(x => x.Id == k.FoundId).ExecuteUpdateAsync(s => s.SetProperty(x => x.Color, "purple").SetProperty(x => x.ProposedColor, "purple"));
         }
 
@@ -60,7 +64,7 @@ public class LookOverMissingTests
         await service.ReassignAsync(k.Wall.WallId, view.Id, k.FoundId, [k.Wall.BoulderId]);
 
         var target = (await HoldAsync(h, k.FoundId))!;
-        Assert.Equal(("purple", "purple", "Yellow crimp"), (target.Color, target.ProposedColor, target.Name));
+        Assert.Equal((colour, proposed, "Yellow crimp"), (target.Color, target.ProposedColor, target.Name));
         Assert.Equal(k.FoundId, (await BoulderAsync(h, k.Wall.BoulderId)).BoulderHolds.Single().HoldId);
     }
 

@@ -22,8 +22,7 @@ namespace Blocwerk.Core.Services;
 public sealed partial class HoldDuplicateService
 {
     /// <inheritdoc/>
-    public async Task<HoldMergeResult> MergeAsync(
-        Guid wallId, Guid leftId, Guid rightId, HoldMergeMode mode, CancellationToken ct = default, bool keepColour = false)
+    public async Task<HoldMergeResult> MergeAsync(Guid wallId, Guid leftId, Guid rightId, HoldMergeMode mode, CancellationToken ct = default)
     {
         var (db, userId) = await OpenForAdminAsync(wallId, ct);
         await using (db)
@@ -48,7 +47,7 @@ public sealed partial class HoldDuplicateService
                 HoldMergeRules.AdoptDetectedShape(kept, removed);
             }
 
-            HoldMergeRules.MergeFlags(kept, removed, keepColour);
+            HoldMergeRules.MergeFlags(kept, removed);
             await HoldStacker.MergeAsync(db, kept, removed, ct);
             await HoldDeletion.PrepareHoldForDeleteAsync(db, removed.Id, HoldDeleteBoulderPolicy.LeaveUntouched, ct: ct);
             db.Holds.Remove(removed);

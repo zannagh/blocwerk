@@ -16,7 +16,7 @@ namespace Blocwerk.Core.LookOver;
 /// The two answers only a hold the update could not find takes: "it is this hold" and "it is here". Like every other
 /// answer they are existing hold operations: the first is the duplicate review's merge of the kept copy into the
 /// hold the user points at (the copy's boulders move over, its name and other attributes fill what that hold lacks,
-/// the hold's own colour, position and outline stay; wall admins only, undone in the duplicate review), the second is the
+/// the hold's own position and outline stay; wall admins only, undone in the duplicate review), the second is the
 /// hold editor's move (which also confirms the hold). Both only for a hold that is live and still not confirmed.
 /// </summary>
 public sealed partial class WallLookOverService

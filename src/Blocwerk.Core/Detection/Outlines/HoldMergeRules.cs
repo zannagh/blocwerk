@@ -85,18 +85,10 @@ public static class HoldMergeRules
     /// </summary>
     /// <param name="kept">The hold that stays.</param>
     /// <param name="removed">The hold that goes.</param>
-    /// <param name="keepColour">
-    /// The keeper's colour stays whenever it has one, a proposal too: the removed hold was ANOTHER physical hold (the
-    /// look-over's "it is this hold", where only identity, boulders and lineage move onto the hold now on the wall).
-    /// </param>
-    public static void MergeFlags(Hold kept, Hold removed, bool keepColour = false)
+    public static void MergeFlags(Hold kept, Hold removed)
     {
         kept.Name = string.IsNullOrWhiteSpace(kept.Name) ? removed.Name : kept.Name;
-        if (!keepColour || string.IsNullOrWhiteSpace(kept.Color))
-        {
-            MergeColor(kept, removed);
-        }
-
+        MergeColor(kept, removed);
         kept.Material ??= removed.Material;
         kept.HandType ??= removed.HandType;
         kept.IsOnKickboard |= removed.IsOnKickboard;
