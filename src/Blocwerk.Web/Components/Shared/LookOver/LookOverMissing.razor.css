@@ -6,7 +6,8 @@
 .deck-was ::deep figcaption { display: none; }
 .deck-was .deck-detail { margin: 2px 0 0; }
 .deck-tap-hint { margin: 0; font-size: 0.8rem; }
-.deck-wall { flex: 1 1 220px; min-height: 220px; container-type: size; }
+/* On a phone the wall photo gets at least 45 % of the screen: it is where a hold is tapped (it was a 15 px strip). */
+.deck-wall { flex: 1 1 max(220px, 45dvh); min-height: max(220px, 45dvh); container-type: size; }
 .deck-wall ::deep .panel-step-view { margin: 0; }
 .deck-wall ::deep .panel-step-viewport { --panel-step-max-h: calc(100cqh - 36px); }
 

@@ -30,7 +30,7 @@ internal static class RefreshFlow
     {
         if (view.SummaryUpdating)
         {
-            return "Updating the summary with your answer.";
+            return "Working out what Apply changes. You can keep answering.";
         }
 
         if (view.Check3DPending)

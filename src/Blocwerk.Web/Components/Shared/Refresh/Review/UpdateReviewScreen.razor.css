@@ -1,0 +1,83 @@
+/* The one review. Phone first: the chips (one scrolling row each), the deck in all the height that is left, Apply at the
+   bottom. From 900 px the Apply panel stands beside the deck. The list view scrolls like any page. */
+.review { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.review.is-list { flex: none; }
+.review-filters { flex: none; display: grid; gap: 6px; }
+.review-chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+.review-chips::-webkit-scrollbar { display: none; }
+.review-chip {
+    flex: none; width: auto; min-height: 40px; margin: 0; padding: 4px 12px; border: 1px solid var(--border-light); border-radius: 999px;
+    background: var(--bg-surface); color: var(--text); font: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.review-chip small { margin-left: 4px; font-weight: 500; color: var(--text-secondary); }
+.review-chip.is-attention small { color: var(--attention-text); font-weight: 700; }
+.review-chip.is-on { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
+.review-chip.is-on small { color: inherit; }
+.review-main { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.review.is-list .review-main { flex: none; }
+.review-items { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; gap: 4px; }
+.review.is-list .review-items { flex: none; }
+.review-bulk { flex: none; display: flex; justify-content: center; }
+.review-bulk ::deep .btn-link { min-height: 40px; }
+.review-bulk ::deep .confirm-action { width: 100%; margin: 0; }
+
+::deep .review-answers > button { flex: 1 1 0; min-height: 48px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+::deep .review-answers > button.is-suggested { border-color: var(--accent); }
+::deep .review-answers kbd {
+    display: inline-block; min-width: 1.4em; padding: 0 4px; border: 1px solid var(--border-light); border-radius: 4px; font-size: 0.75rem;
+    color: var(--text-secondary); background: var(--bg-surface-alt);
+}
+::deep .review-card .deck-used { display: block; margin-top: 2px; font-size: 0.85rem; color: var(--text-secondary); }
+
+.review-main ::deep .review-apply {
+    flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding-top: 8px; border-top: 1px solid var(--border-light);
+}
+.review-main ::deep .review-apply .refresh-numbers { flex: 1 1 100%; }
+.review-main ::deep .review-open { flex: 1 1 100%; margin: 0; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; font-size: 0.9rem; }
+.review-main ::deep .review-open .hint { margin: 0; }
+.review-main ::deep .review-moves { flex: 1 1 100%; font-size: 0.85rem; }
+.review-main ::deep .review-moves > summary { cursor: pointer; }
+.review-main ::deep .review-moves ul { max-height: 30dvh; overflow-y: auto; margin: 4px 0; padding-left: 1.2rem; }
+.review-main ::deep .review-apply .refresh-apply-note { flex: 1 1 140px; margin: 0; font-size: 0.82rem; color: var(--text-secondary); }
+.review-main ::deep .review-apply > button { flex: none; width: auto; margin: 0; min-height: 44px; padding: 8px 16px; }
+.review-main ::deep .review-apply > .confirm-action { flex: 1 1 100%; margin: 0; }
+.review.is-list ::deep .review-apply { position: sticky; bottom: var(--bottomnav-h, 0px); z-index: 5; padding: 8px 0; background: var(--bg); }
+
+/* The list view. */
+::deep .review-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+::deep .review-row {
+    display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 10px; padding: 8px; align-items: center;
+    border: 1px solid var(--border-light); border-radius: var(--r-md); background: var(--bg-surface-alt);
+}
+::deep .review-row.is-answered { opacity: 0.7; }
+::deep .review-row-crops { display: flex; gap: 4px; }
+::deep .review-row-crops img { width: 84px; height: 84px; object-fit: cover; border-radius: var(--r-md); background: var(--bg-surface); }
+::deep .review-row-text p { margin: 0; }
+::deep .review-row-text small { color: var(--text-secondary); }
+::deep .review-row-answers { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+::deep .review-row-answers > button { width: auto; min-height: 44px; margin: 0; }
+::deep .review-more { width: auto; margin: 8px auto; }
+
+/* Phone and portrait tablet: the deck's pictures need the height, so the Apply panel is one line (the open count and
+   Apply); the numbers and the moved holds are in the list view and on a wide screen. */
+@media (max-width: 899px) {
+    .review:not(.is-list) .review-main ::deep .review-apply .refresh-numbers,
+    .review:not(.is-list) .review-main ::deep .review-apply .review-moves,
+    .review:not(.is-list) .review-main ::deep .review-apply .hint { display: none; }
+    .review-main ::deep .review-open { flex: 1 1 0; font-size: 0.85rem; }
+    .review-main ::deep .review-apply .refresh-apply-note { display: none; }
+}
+
+@media (min-width: 900px) {
+    .review-main { flex-direction: row; align-items: stretch; }
+    .review-main ::deep .review-apply {
+        flex: 0 0 300px; display: grid; grid-auto-rows: max-content; align-content: start; gap: 10px; padding: 0 0 0 12px;
+        border-top: 0; border-left: 1px solid var(--border-light); overflow-y: auto;
+    }
+    .review-main ::deep .review-apply > * { flex: none; }
+    .review-main ::deep .review-apply .refresh-numbers { grid-template-columns: 1fr 1fr; }
+    .review-main ::deep .review-apply > button { width: 100%; }
+    .review.is-list ::deep .review-apply { position: sticky; top: 8px; align-self: flex-start; }
+    ::deep .review-row { grid-template-columns: auto minmax(0, 1fr) auto; }
+    ::deep .review-row-answers { grid-column: auto; justify-content: flex-end; }
+}

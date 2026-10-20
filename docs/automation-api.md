@@ -28,7 +28,7 @@ Every write through these routes is recorded in the change journal, scoped to th
 * All the files of one upload go into one batch per run (and key): `api:refresh.upload run:<id> key:<id>`.
 * Every write, refused or not, is also in the server log with the key id.
 
-Actions: `refresh.begin`, `refresh.upload run:<id>`, `refresh.sort`, `refresh.recheck`, `refresh.start`, `refresh.check`, `refresh.checks`, `refresh.apply`, `refresh.discard`, `lookover.answer`, `lookover.undo`, `lookover.finish`, `holds.suggest-colors`, `markers.set`, `marker-plan.save`, `marker-plan.effective rev:<n>`. The answers' own changes (a removed or merged hold in the look-over) are journalled in the look-over's own batch, as from the page; the `api:` batch records who asked.
+Actions: `refresh.begin`, `refresh.upload run:<id>`, `refresh.sort`, `refresh.recheck`, `refresh.start`, `refresh.check`, `refresh.checks`, `refresh.review`, `refresh.review.accept`, `refresh.apply`, `refresh.discard`, `lookover.answer`, `lookover.undo`, `lookover.finish`, `holds.suggest-colors`, `markers.set`, `marker-plan.save`, `marker-plan.effective rev:<n>`. The answers' own changes (a removed or merged hold in the look-over) are journalled in the look-over's own batch, as from the page; the `api:` batch records who asked.
 
 ## Panel update, end to end
 
@@ -136,6 +136,48 @@ curl -fsS -X POST -H "$AUTH" -H 'Content-Type: application/json' \
 * `notSame` says the detection is not the same hold, for an unsure match (kind 1) or a hand-placed merge (kind 3: the merge is undone as with `remove`, which keeps the old hold confirmed where it was): the pair is taken apart as the full review's unlink does. The old hold is carried where the matcher predicts it, unconfirmed and marked for review (an unsure match answered so goes live like an unanswered card, minus the look-over finding), and the detection becomes a new hold. This holds on every panel: unlike `remove`, a `notSame` about a hold off the centre is applied as answered. Any other kind refuses it with 409. The card then reads `status` 3; `undo` (or `keep`) puts the pair back, the detection's own decision included.
 * `canRemove` is false for a hold on a panel other than the centre (kinds 0 and 5): such a removal would be undone at the apply, so it is refused with 409; the hold is carried over and the look-over asks about it again.
 * 400 without an answer; 409 when an answer is refused (the card is no longer part of the update, the update was replaced or discarded in the full review, the 3D check is running, the run is not at status 4). Several answers (at most 500 per call, 400 above) are applied in order and the first refusal stops the rest: those before it stay answered, and the answer says where it stopped, `{"answered": n, "failedCheckId": "<id>", "error": "…"}` (202 when some were saved, 409 when none were), so a script resumes after `failedCheckId`.
+
+### The one review
+
+Everything the page's review shows, in one list: the cards above, every old hold that was not found again, every new
+detection that goes live and every detection the triage left out, and the "this hold may have moved" suggestions. It is
+what the look-over would otherwise ask about after Apply, so a script can answer it all before Apply. Read it while the
+run is at status 4.
+
+```sh
+# Counts, panels and items (groups and answers by name):
+curl -fsS -H "$AUTH" "$BASE/api/walls/$WALL/refresh/$RUN/review" | jq '{counts, items: [.items[] | {key, group, answers, suggested, answer, leavesFinding}]}'
+
+# Answer items by key, in order:
+curl -fsS -X POST -H "$AUTH" -H 'Content-Type: application/json' \
+  -d '{"answers":[{"key":"k-<oldHoldId>","answer":"stillThere"},{"key":"d-<detectionId>","answer":"addAsHold"}]}' \
+  "$BASE/api/walls/$WALL/refresh/$RUN/review/answers"
+
+# Answer every unanswered item of a group (of one panel, optionally) with its suggested answer:
+curl -fsS -X POST -H "$AUTH" -H 'Content-Type: application/json' \
+  -d '{"group":"leftOut","panelId":null}' "$BASE/api/walls/$WALL/refresh/$RUN/review/accept"
+```
+
+| Method | Route | Body | Answers |
+|---|---|---|---|
+| GET | `…/refresh/{refreshId}/review` | — | 200 `{refreshId, sessionId, decisionsVersion, summaryUpdating, panels, items, counts}`; 404 unless status 4 |
+| POST | `…/refresh/{refreshId}/review/answers` | `{"answers": [{"key", "answer"}]}` | 202 `{"answered": n, "counts"}` |
+| POST | `…/refresh/{refreshId}/review/accept` | `{"group", "panelId"?}` | 202 `{"answered": n, "counts"}` |
+
+* `key` names what the item is about: `c-<card id>` (a card, as in `…/checks`), `k-<old hold id>` (not found again),
+  `n-<detection id>` (a new hold), `d-<detection id>` (left out by the triage), `r-<suggestion id>` (may have moved).
+* `group`: `unsure`, `handPlaced`, `replaced`, `possiblyRemoved`, `conflicting3D`, `notFound`, `leftOut`, `newHold`, `moved`.
+  Each item lists the `answers` it takes and the one Apply uses when nobody answers (`suggested`); `undo` takes an answer back.
+  Cards: `keep`, `remove`, `notSame` (as above). Not found: `stillThere` (kept, confirmed: no look-over question) or `gone`
+  (removed, on any panel; its boulders become history). New: `keepNew` or `notAHold`. Left out: `leaveOut` (kept out, its
+  look-over finding is stored settled) or `addAsHold`. May have moved: `sameHold`, `moved`, `dismiss`.
+* `counts.open` is the number of items that become look-over findings after Apply (unanswered cards, holds not
+  found, left-out detections that look like a missed hold, and matches answered `notSame`, whose old hold the look-over still places): the finished run's `lookOver.openFindings` is that number, plus
+  any finding the 3D model adds later. `counts.toCheck` counts every unanswered item; `counts.groups` the same per group.
+* Answers are applied in order (at most 2000 per call); the first refusal stops the rest and answers
+  `{"answered": n, "failedKey", "error"}` (202 when some were saved, 409 when none were). After answers the summary is made
+  again in the background (`summaryUpdating`), without matching again; read `…/summary` for the new `decisionsVersion`
+  before Apply.
 
 ### Consistency
 

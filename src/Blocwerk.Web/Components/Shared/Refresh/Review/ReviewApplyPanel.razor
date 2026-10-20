@@ -1,0 +1,81 @@
+@using Blocwerk.Core.Refresh
+@using Blocwerk.Core.Refresh.Review
+@* Beside the review (below it on a phone): what Apply does, from the same decisions the promote reads, how many
+   items stay open for the look-over (the same number the look-over will show), and Apply itself. It waits only while
+   answers are being written or the summary is made again, and says so. *@
+
+<aside class="review-apply" aria-label="Apply">
+    @if (View.Summary is { } s)
+    {
+        <dl class="refresh-numbers" aria-label="What the update does">
+            @foreach (var number in RefreshFlow.Numbers(s))
+            {
+                <div class="@(number.Attention ? "is-attention" : null)">
+                    <dt>@number.Label</dt>
+                    <dd>@number.Value</dd>
+                </div>
+            }
+        </dl>
+        <p class="review-open" role="status">
+            @if (Counts.Open == 0)
+            {
+                <span>Nothing stays open for the look-over.</span>
+            }
+            else
+            {
+                <strong>@Counts.Open</strong> <span>@(Counts.Open == 1 ? "item stays" : "items stay") open for the look-over after Apply.</span>
+            }
+            <span class="hint">@Counts.Answered of @Counts.Total answered.</span>
+        </p>
+        @if (s.MovedHolds is { Count: > 0 } moved)
+        {
+            <details class="review-moves">
+                <summary>@PlainCopy.Plural(moved.Count, "hold") moved</summary>
+                <ul>
+                    @foreach (var m in moved.Take(40))
+                    {
+                        <li>@(m.HoldName ?? "A hold"): @m.Text@(m.Boulders.Count > 0 ? $" ({string.Join(", ", m.Boulders)})" : null)</li>
+                    }
+                </ul>
+            </details>
+        }
+        <p class="refresh-apply-note">@Note</p>
+        <ConfirmAction Label="Apply update" Question="@Question(s)" ConfirmLabel="Apply update" TriggerClass="btn-primary" ConfirmClass="btn-primary"
+                       Neutral="true" Disabled="@Busy" OnConfirm="OnApply" />
+    }
+</aside>
+
+@code {
+    [Parameter, EditorRequired]
+    public WallRefreshView View { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public ReviewCounts Counts { get; set; } = default!;
+
+    /// <summary>Answers are still being written.</summary>
+    [Parameter]
+    public bool Waiting { get; set; }
+
+    [Parameter]
+    public EventCallback OnApply { get; set; }
+
+    private bool Busy => Waiting || View.SummaryUpdating || View.Check3DPending;
+
+    private string Note => Waiting
+        ? "Saving your answers…"
+        : View.Check3DPending
+            ? "Checking against the new 3D model…"
+            : View.SummaryUpdating
+                ? "Working out what Apply changes…"
+                : "Nothing is live yet.";
+
+    private string Question(RefreshSummary s)
+    {
+        var open = Counts.Open == 0
+            ? "Nothing stays open for the look-over."
+            : $"{PlainCopy.Plural(Counts.Open, "item")} {(Counts.Open == 1 ? "stays" : "stay")} open for the look-over.";
+        var removed = s.Removed > 0 ? $" {PlainCopy.Plural(s.Removed, "old hold")} {(s.Removed == 1 ? "is" : "are")} removed." : string.Empty;
+        return $"Apply the update now? {s.Refound} holds are found again, {s.NewHolds} are new, {s.KeptInPlace} stay where they were.{removed} {open} "
+            + "The new photos and holds go live; the old ones stay as history.";
+    }
+}

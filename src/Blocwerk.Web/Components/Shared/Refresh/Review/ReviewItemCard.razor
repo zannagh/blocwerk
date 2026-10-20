@@ -1,0 +1,92 @@
+@using Blocwerk.Core.Refresh
+@using Blocwerk.Core.Refresh.Review
+@using Blocwerk.Web.Endpoints
+@* One item of the one review on the card deck: the old and the new picture side by side (a tap shows them large), the
+   question with the boulders that use the hold, what happens when it is left alone, and the answers as big buttons
+   numbered for the keyboard (1, 2, 3). Pen and finger: no hover, every target 44 px. *@
+
+<div class="deck-body review-card">
+    <div class="deck-about">
+        <strong>@ReviewCopy.Question(Item)</strong>
+        @if (Item.Boulders.Count > 0)
+        {
+            <span class="deck-used">Used by @string.Join(", ", Item.Boulders.Take(4))@(Item.Boulders.Count > 4 ? $" and {Item.Boulders.Count - 4} more" : null)</span>
+        }
+    </div>
+    <div class="deck-pictures">
+        @foreach (var (view, caption) in Pictures)
+        {
+            <button type="button" class="lookover-crop" @onclick="() => zoomed = true" aria-label="Show the pictures larger">
+                <figure><img onerror="this.closest('button').style.display='none'" src="@Crop(view)" alt="@caption" /><figcaption>@caption</figcaption></figure>
+            </button>
+        }
+    </div>
+    <p class="deck-detail">@ReviewCopy.WhenLeftAlone(Item)@(Item.Confidence is { } c && Item.StagedHoldId is not null ? $" Confidence {c:0.00}." : null)</p>
+</div>
+
+<div class="deck-answers review-answers" role="group" aria-label="Answer">
+    @for (var i = 0; i < Item.Answers.Count; i++)
+    {
+        var answer = Item.Answers[i];
+        var number = i + 1;
+        <button type="button" class="@(answer == Item.Suggested ? "btn-secondary is-suggested" : "btn-secondary")" disabled="@Disabled"
+                aria-keyshortcuts="@number" @onclick="() => OnAnswer.InvokeAsync(answer)">
+            <kbd aria-hidden="true">@number</kbd> @ReviewCopy.Answer(Item, answer)
+        </button>
+    }
+</div>
+
+@if (zoomed)
+{
+    <Modal Title="@ReviewCopy.Question(Item)" PanelClass="lookover-zoom" OnClose="() => zoomed = false">
+        <button type="button" class="btn-secondary lookover-zoom-close" @onclick="() => zoomed = false">Close</button>
+        <div class="lookover-zoom-pictures">
+            @foreach (var (view, caption) in Pictures)
+            {
+                <figure><img onerror="this.parentElement.style.display='none'" src="@Crop(view)" alt="@caption" /><figcaption>@caption</figcaption></figure>
+            }
+        </div>
+    </Modal>
+}
+
+@code {
+    private bool zoomed;
+
+    [Parameter, EditorRequired]
+    public Guid RefreshId { get; set; }
+
+    [Parameter, EditorRequired]
+    public ReviewItem Item { get; set; } = default!;
+
+    [Parameter]
+    public bool Disabled { get; set; }
+
+    [Parameter]
+    public EventCallback<ReviewAnswer> OnAnswer { get; set; }
+
+    /// <summary>A detection has no old picture (an old photo at the same coordinates could show another place).</summary>
+    private IEnumerable<(CheckCropView View, string Caption)> Pictures
+    {
+        get
+        {
+            if (Item.OldHoldId is not null)
+            {
+                yield return (CheckCropView.Old, "Old photo");
+            }
+
+            yield return (CheckCropView.New, "New photo");
+            if (Item.Key.StartsWith("c-", StringComparison.Ordinal) && Item.Group is Blocwerk.Core.Enums.ReviewGroup.PossiblyRemoved or Blocwerk.Core.Enums.ReviewGroup.Conflicting3D)
+            {
+                yield return (CheckCropView.Model, "3D texture");
+            }
+        }
+    }
+
+    /// <summary>Gives the answer with this number (1 is the first button).</summary>
+    /// <param name="number">The number key that was pressed.</param>
+    /// <returns>A task that ends when the answer is handed on.</returns>
+    public Task PressAsync(int number) =>
+        Disabled || number < 1 || number > Item.Answers.Count ? Task.CompletedTask : OnAnswer.InvokeAsync(Item.Answers[number - 1]);
+
+    private string Crop(CheckCropView view) => WallRefreshReviewCropEndpoint.Url(RefreshId, Item.Key, view);
+}

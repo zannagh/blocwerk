@@ -1,0 +1,87 @@
+@using Blocwerk.Core.Enums
+@using Blocwerk.Core.Refresh.Review
+@* The one review of a wall update: the panel picker and the groups at the top (each with how many are still to check),
+   the current group's items one at a time on the card deck (or as a list), and beside it the Apply panel with what Apply
+   changes and how many items stay open for the look-over. Answers never wait: the item is answered on screen at once
+   and the deck turns on; the write goes out in the background, in order, and only Apply waits for it. *@
+
+<div class="review @(ListView ? "is-list" : null)">
+    @if (review is null)
+    {
+        <p class="loading">Loading the review…</p>
+    }
+    else
+    {
+        <div class="review-filters">
+            @if (review.Panels.Count > 1)
+            {
+                <div class="review-chips" role="group" aria-label="Panel">
+                    <button type="button" class="review-chip @(panel is null ? "is-on" : null)" aria-pressed="@(panel is null ? "true" : "false")" @onclick="() => PickPanel(null)">All panels</button>
+                    @foreach (var p in review.Panels)
+                    {
+                        <button type="button" class="review-chip @(panel == p.PanelId ? "is-on" : null)" aria-pressed="@(panel == p.PanelId ? "true" : "false")"
+                                @onclick="() => PickPanel(p.PanelId)">@p.Name <small>@ToCheckOn(p.PanelId)</small></button>
+                    }
+                </div>
+            }
+            <div class="review-chips" role="group" aria-label="What to check">
+                @foreach (var g in Groups)
+                {
+                    <button type="button" class="review-chip @(g.Group == group ? "is-on" : null) @(g.Open > 0 ? "is-attention" : null)"
+                            aria-pressed="@(g.Group == group ? "true" : "false")" @onclick="() => PickGroup(g.Group)">
+                        @ReviewCopy.Group(g.Group) <small>@(g.ToCheck == 0 ? "done" : g.ToCheck.ToString())</small>
+                    </button>
+                }
+            </div>
+        </div>
+
+        @if (error is not null)
+        {
+            <p class="field-error" role="alert">@error</p>
+        }
+
+        <div class="review-main">
+            <section class="review-items" aria-label="@(group is { } shown ? ReviewCopy.Group(shown) : "Review")">
+                @if (ListView)
+                {
+                    <ReviewList RefreshId="View.Id" Items="InGroup" OnAnswer="AnswerFromListAsync" />
+                }
+                else
+                {
+                    <CardDeck Count="Queue.Count" Index="Index" Label="@(group is { } g ? ReviewCopy.Group(g) : null)" OnStep="Step" OnKey="OnKeyAsync"
+                              ShowSkip="true" Note="@(LastAnswered is null ? null : LastNote)">
+                        <ChildContent>
+                            @if (Current is { } item)
+                            {
+                                <ReviewItemCard @key="item.Key" @ref="card" RefreshId="View.Id" Item="item" OnAnswer="a => AnswerAsync(item, a)" />
+                            }
+                        </ChildContent>
+                        <Empty>
+                            <p class="glyph-ok" role="status">@EmptyText</p>
+                        </Empty>
+                    </CardDeck>
+                }
+                @if (Queue.Count > 1 && group is { } bulk)
+                {
+                    <div class="review-bulk">
+                        <ConfirmAction Label="@ReviewCopy.AcceptAll(bulk, Queue.Count)" Question="@ReviewCopy.AcceptAllQuestion(bulk, Queue.Count)"
+                                       ConfirmLabel="Yes, answer all" TriggerClass="btn-link" ConfirmClass="btn-primary" Neutral="true"
+                                       OnConfirm="AcceptAllAsync" />
+                    </div>
+                }
+            </section>
+
+            <ReviewApplyPanel View="View" Counts="Counts" Waiting="Writing" OnApply="OnApply" />
+        </div>
+    }
+</div>
+
+@code {
+    private RenderFragment LastNote => @<p class="deck-undo" role="status">
+        @if (LastAnswered is { } last)
+        {
+            <span>Last answer, @ReviewCopy.Group(last.Group).ToLowerInvariant()@(last.HoldName is { } name ? $" ({name})" : null): @ReviewCopy.Answered(last)</span>
+            <button type="button" class="btn-link" @onclick="() => AnswerAsync(last, ReviewAnswer.Undo)">Undo</button>
+        }
+    </p>;
+}

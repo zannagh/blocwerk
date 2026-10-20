@@ -1,0 +1,62 @@
+@using Blocwerk.Core.Enums
+@using Blocwerk.Core.Refresh
+@using Blocwerk.Core.Refresh.Review
+@using Blocwerk.Web.Endpoints
+@* The current group of the one review as a list, for a big screen: every item with its pictures (loaded as they
+   scroll in) and its answers inline; an answered one shows its answer with Undo. Shows the first 60 and more on request. *@
+
+<ul class="review-list">
+    @foreach (var item in Items.Take(shown))
+    {
+        <li class="review-row @(item.IsAnswered ? "is-answered" : null)" @key="item.Key">
+            <div class="review-row-crops">
+                @if (item.OldHoldId is not null)
+                {
+                    <img loading="lazy" onerror="this.style.visibility='hidden'" src="@Crop(item, CheckCropView.Old)" alt="Old photo" />
+                }
+                <img loading="lazy" onerror="this.style.visibility='hidden'" src="@Crop(item, CheckCropView.New)" alt="New photo" />
+            </div>
+            <div class="review-row-text">
+                <p>@ReviewCopy.Question(item)</p>
+                @if (item.Boulders.Count > 0)
+                {
+                    <small>Used by @string.Join(", ", item.Boulders.Take(3))@(item.Boulders.Count > 3 ? $" +{item.Boulders.Count - 3}" : null)</small>
+                }
+            </div>
+            <div class="review-row-answers">
+                @if (item.IsAnswered)
+                {
+                    <span class="refresh-badge is-user">@ReviewCopy.Answered(item)</span>
+                    <button type="button" class="btn-link" @onclick="() => OnAnswer.InvokeAsync((item, ReviewAnswer.Undo))">Undo</button>
+                }
+                else
+                {
+                    @foreach (var answer in item.Answers)
+                    {
+                        <button type="button" class="@(answer == item.Suggested ? "btn-secondary is-suggested" : "btn-secondary")"
+                                @onclick="() => OnAnswer.InvokeAsync((item, answer))">@ReviewCopy.Answer(item, answer)</button>
+                    }
+                }
+            </div>
+        </li>
+    }
+</ul>
+@if (Items.Count > shown)
+{
+    <button type="button" class="btn-secondary review-more" @onclick="() => shown += 60">Show 60 more (@(Items.Count - shown) left)</button>
+}
+
+@code {
+    private int shown = 60;
+
+    [Parameter, EditorRequired]
+    public Guid RefreshId { get; set; }
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<ReviewItem> Items { get; set; } = [];
+
+    [Parameter]
+    public EventCallback<(ReviewItem Item, ReviewAnswer Answer)> OnAnswer { get; set; }
+
+    private string Crop(ReviewItem item, CheckCropView view) => WallRefreshReviewCropEndpoint.Url(RefreshId, item.Key, view);
+}
