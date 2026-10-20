@@ -39,10 +39,10 @@
         {
             <p class="field-error" role="alert">@error</p>
         }
-        @if (unsaved.Count > 0 && !sending)
+        @if (pending.Unsaved > 0 && !sending)
         {
             <p class="field-error review-unsaved" role="alert">
-                @PlainCopy.Plural(unsaved.Count, "answer") not saved: the server could not be reached.
+                @PlainCopy.Plural(pending.Unsaved, "answer") not saved: the server could not be reached.
                 <button type="button" class="btn-secondary" @onclick="RetryAsync">Retry</button>
             </p>
         }

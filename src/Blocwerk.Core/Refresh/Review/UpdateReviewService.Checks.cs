@@ -19,17 +19,17 @@ public sealed partial class UpdateReviewService
     /// <summary>The refusal of "accept all" for the holds not found again.</summary>
     public const string NoBulkNotFound = "Holds that were not found again are answered one by one: nobody can say for all of them at once that they are still there.";
 
-    private async Task<(List<ReviewAnswerRequest> Valid, (string Key, string Reason)? Refused)> CheckAgainstReviewAsync(
+    private async Task<(List<ReviewAnswerRequest> Valid, (string Key, string Reason)? Refused, UpdateReview Review)> CheckAgainstReviewAsync(
         BlocwerkDbContext db, WallRefresh refresh, IReadOnlyList<ReviewAnswerRequest> answers, bool onlyIfUnanswered)
     {
-        var facts = refresh.UpdateSessionId is { } sessionId ? await ReadFactsAsync(db, refresh.WallId, sessionId) : null;
-        var items = (facts is null ? [] : UpdateReviewBuilder.Build(facts)).ToDictionary(i => i.Key, StringComparer.Ordinal);
+        var review = await ReadAsync(db, refresh) ?? throw new UserFacingException("This update can no longer be changed here.");
+        var items = review.Items.ToDictionary(i => i.Key, StringComparer.Ordinal);
         var valid = new List<ReviewAnswerRequest>();
         foreach (var answer in answers)
         {
             if (Refusal(items.GetValueOrDefault(answer.Key), answer) is { } reason)
             {
-                return (valid, (answer.Key, reason));
+                return (valid, (answer.Key, reason), review);
             }
 
             if (!onlyIfUnanswered || !items[answer.Key].IsAnswered)
@@ -38,7 +38,7 @@ public sealed partial class UpdateReviewService
             }
         }
 
-        return (valid, null);
+        return (valid, null, review);
     }
 
     private static string? Refusal(ReviewItem? item, ReviewAnswerRequest answer)

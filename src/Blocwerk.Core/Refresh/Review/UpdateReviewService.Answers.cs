@@ -67,10 +67,28 @@ public sealed partial class UpdateReviewService
                 throw new ReviewAnswersStoppedException(checkedAnswers.Valid.Count, refused.Key, new UserFacingException(refused.Reason));
             }
 
-            var after = await ReadAsync(db, await db.WallRefreshes.AsNoTracking().FirstAsync(r => r.Id == refreshId))
-                ?? throw new UserFacingException("This update can no longer be changed here.");
-            return (after, checkedAnswers.Valid.Count);
+            // The review the answers were checked against, with them laid over it: built once per call. What they change
+            // beyond their own items (a "not the same hold" making a new hold) shows on the next read.
+            var by = await db.Users.AsNoTracking().IgnoreQueryFilters().Where(u => u.Id == userId).Select(u => u.CustomDisplayName ?? u.DisplayName).FirstOrDefaultAsync();
+            return (Answered(checkedAnswers.Review, checkedAnswers.Valid, by), checkedAnswers.Valid.Count);
         }
+    }
+
+    /// <summary><paramref name="review"/> with <paramref name="written"/> laid over its items (the last answer per item wins).</summary>
+    internal static UpdateReview Answered(UpdateReview review, IReadOnlyList<ReviewAnswerRequest> written, string? by)
+    {
+        if (written.Count == 0)
+        {
+            return review;
+        }
+
+        var last = written.GroupBy(a => a.Key, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Last().Answer, StringComparer.Ordinal);
+        var items = review.Items
+            .Select(i => last.TryGetValue(i.Key, out var a)
+                ? i with { Answer = a == ReviewAnswer.Undo ? null : a, AnsweredBy = a == ReviewAnswer.Undo ? null : by }
+                : i)
+            .ToList();
+        return review with { Items = items, Counts = ReviewCounts.Of(items), SummaryUpdating = true };
     }
 
     /// <summary>Writes the answers in order; the first refusal stops the rest. The summary is asked for whatever was written.</summary>

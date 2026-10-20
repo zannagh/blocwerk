@@ -21,15 +21,14 @@ public partial class UpdateReviewScreen
     /// <summary>What an answer reads as until the server confirms it.</summary>
     public const string Saving = "saving…";
 
-    private readonly List<ReviewAnswerRequest> pending = [];
-    private readonly List<ReviewAnswerRequest> unsaved = [];
+    private readonly PendingAnswers pending = new();
     private readonly CancellationTokenSource writes = new();
     private bool sending;
     private bool accepting;
     private bool guarded;
 
     /// <summary>Answers are on their way to the server, or could not be saved: Apply waits.</summary>
-    private bool Writing => pending.Count > 0 || sending || accepting || unsaved.Count > 0;
+    private bool Writing => pending.Waiting > 0 || sending || accepting || pending.Unsaved > 0;
 
     private Task AnswerAsync(ReviewItem item, ReviewAnswer answer)
     {
@@ -84,9 +83,7 @@ public partial class UpdateReviewScreen
     /// <summary>Sends the answers that could not be saved again.</summary>
     private Task RetryAsync()
     {
-        var again = unsaved.ToList();
-        unsaved.Clear();
-        foreach (var answer in again)
+        foreach (var answer in pending.TakeUnsaved())
         {
             Record(answer.Key, answer.Answer);
         }
@@ -96,6 +93,7 @@ public partial class UpdateReviewScreen
 
     private void Record(string key, ReviewAnswer answer)
     {
+        // The latest answer per item wins: an unsaved older one is not sent again after it.
         overlay[key] = answer == ReviewAnswer.Undo ? null : answer;
         pending.Add(new ReviewAnswerRequest(key, answer));
         items = null;
@@ -116,11 +114,9 @@ public partial class UpdateReviewScreen
     {
         try
         {
-            while (pending.Count > 0 && !writes.IsCancellationRequested)
+            while (pending.Waiting > 0 && !writes.IsCancellationRequested)
             {
-                var batch = pending.ToList();
-                pending.Clear();
-                await WriteBatchAsync(batch);
+                await WriteBatchAsync(pending.TakeBatch());
             }
         }
         finally
@@ -130,7 +126,7 @@ public partial class UpdateReviewScreen
                 sending = false;
                 items = null;
                 StateHasChanged();
-                await GuardTabAsync(unsaved.Count > 0);
+                await GuardTabAsync(pending.Unsaved > 0);
                 await OnAnswered.InvokeAsync();
             });
         }
@@ -153,7 +149,7 @@ public partial class UpdateReviewScreen
             // Not refused, just not sent: kept for Retry, never shown as saved.
             await InvokeAsync(async () =>
             {
-                unsaved.AddRange(batch);
+                pending.Failed(batch);
                 Settle(await ReadOrKeepAsync(), batch, batch.Select(a => a.Key).ToHashSet(StringComparer.Ordinal));
             });
         }
@@ -177,7 +173,7 @@ public partial class UpdateReviewScreen
         review = after ?? review;
         foreach (var key in batch.Select(a => a.Key).Distinct(StringComparer.Ordinal))
         {
-            if (lost.Contains(key) || pending.All(p => p.Key != key))
+            if (lost.Contains(key) || !pending.IsWaiting(key))
             {
                 overlay.Remove(key);
             }

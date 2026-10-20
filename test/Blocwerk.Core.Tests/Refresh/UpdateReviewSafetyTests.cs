@@ -142,6 +142,24 @@ public class UpdateReviewSafetyTests
         Assert.Equal(2, matches);
     }
 
+    [Fact]
+    public async Task AReusedFingerprint_GivesWayToAPublishedChangeOfTheWall()
+    {
+        using var h = new WallTestHarness();
+        using var s = await ReviewScenario.PrepareAsync(h);
+        var notifier = new DomainChangeNotifier();
+        var cache = new MatchedSessionCache(notifier);
+        var session = new BigUpdateSession(h.WallId, Guid.NewGuid(), [], [], [], []);
+        await using var db = h.CreateContext();
+        await cache.GetOrMatchAsync(db, h.WallId, false, () => Task.FromResult(session));
+        Assert.Same(session, await cache.PeekAsync(db, h.WallId));
+
+        await MoveAHoldAsync(h);
+        notifier.Publish(new DomainChange(DomainChangeScope.Wall, h.WallId, Guid.Empty));
+
+        Assert.Null(await cache.PeekAsync(db, h.WallId));
+    }
+
     /// <summary>The match as the summary keeps it, with the matcher's spots of the old holds on the new photos.</summary>
     private static async Task WarmAsync(WallTestHarness h, ReviewScenario s, Dictionary<Guid, HoldPositionNorm> spots)
     {

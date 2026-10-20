@@ -22,9 +22,32 @@ namespace Blocwerk.Core.Refresh;
 /// </summary>
 public sealed class MatchedSessionCache
 {
+    /// <summary>How long the holds-and-panels part of a fingerprint is reused while no change of the wall was published.</summary>
+    public static readonly TimeSpan GeometryReuse = TimeSpan.FromSeconds(30);
+
     private readonly ConcurrentDictionary<Guid, Entry> entries = new();
+    private readonly ConcurrentDictionary<Guid, Geometry> geometry = new();
+    private readonly ConcurrentDictionary<Guid, long> versions = new();
+    private readonly bool notified;
+
+    /// <summary>Initializes a new instance of the <see cref="MatchedSessionCache"/> class.</summary>
+    /// <param name="changes">
+    /// The app's change signal (every saved hold, panel or wall publishes its wall). With it, the expensive part of a
+    /// fingerprint (every hold of the wall) is read once per change and reused for <see cref="GeometryReuse"/>; without
+    /// it, it is read on every lookup.
+    /// </param>
+    public MatchedSessionCache(Services.IDomainChangeNotifier? changes = null)
+    {
+        if (changes is not null)
+        {
+            notified = true;
+            changes.Changed += change => versions.AddOrUpdate(change.WallId, 1, (_, v) => v + 1);
+        }
+    }
 
     private sealed record Entry(string Fingerprint, bool Use3D, BigUpdateSession Session);
+
+    private sealed record Geometry(long Version, DateTimeOffset At, string Text);
 
     /// <summary>The cached session when its inputs are unchanged, else the matcher's (which is then cached).</summary>
     /// <param name="db">A context to read the fingerprint with.</param>
@@ -62,7 +85,7 @@ public sealed class MatchedSessionCache
     public void Forget(Guid wallId) => entries.TryRemove(wallId, out _);
 
     /// <summary>A short fingerprint of everything the matcher reads for the wall's open update.</summary>
-    internal static async Task<string> FingerprintAsync(BlocwerkDbContext db, Guid wallId)
+    internal async Task<string> FingerprintAsync(BlocwerkDbContext db, Guid wallId)
     {
         var text = new StringBuilder();
         var wall = await db.Walls.AsNoTracking().IgnoreQueryFilters().Where(w => w.Id == wallId)
@@ -73,6 +96,27 @@ public sealed class MatchedSessionCache
         var carry = string.Join(',', (session?.UnalignedCarryPanelIds ?? []).Order());
         var overlap = string.Join(',', (session?.UnalignedOverlapPanelIds ?? []).Order());
         text.Append(CultureInfo.InvariantCulture, $"s:{session?.Id}:{session?.FullRevision}:{carry}:{overlap}\n");
+        text.Append(await GeometryAsync(db, wallId));
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text.ToString())), 0, 16);
+    }
+
+    /// <summary>The panels and holds part, reused while the wall published no change (and briefly, as a safety net).</summary>
+    private async Task<string> GeometryAsync(BlocwerkDbContext db, Guid wallId)
+    {
+        var version = versions.GetValueOrDefault(wallId);
+        if (notified && geometry.TryGetValue(wallId, out var known) && known.Version == version && DateTimeOffset.UtcNow - known.At < GeometryReuse)
+        {
+            return known.Text;
+        }
+
+        var text = await ReadGeometryAsync(db, wallId);
+        geometry[wallId] = new Geometry(version, DateTimeOffset.UtcNow, text);
+        return text;
+    }
+
+    private static async Task<string> ReadGeometryAsync(BlocwerkDbContext db, Guid wallId)
+    {
+        var text = new StringBuilder();
         var panels = await db.WallPanels.AsNoTracking().Where(p => p.WallId == wallId)
             .Select(p => new { p.Id, p.Generation, p.Col, p.Row, Photo = p.Photo == null ? 0 : p.Photo.Length, Staged = p.StagedPhoto == null ? 0 : p.StagedPhoto.Length })
             .ToListAsync();
@@ -89,7 +133,7 @@ public sealed class MatchedSessionCache
             text.Append(CultureInfo.InvariantCulture, $"h:{h.Id}:{h.Generation}:{h.WallPanelId}:{h.X:R}:{h.Y:R}:{h.Radius:R}:{h.IsVirtual}:{h.IsAutoDetected}:{Shape(h.ShapePoints)}\n");
         }
 
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text.ToString())), 0, 16);
+        return text.ToString();
     }
 
     private static string Shape(List<Entities.ShapePoint>? points) =>

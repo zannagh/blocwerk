@@ -53,7 +53,14 @@ public class WallRefreshPageSourceTests
         var finallyAt = writes.IndexOf("finally", loop, StringComparison.Ordinal);
         Assert.True(finallyAt > loop && writes.IndexOf("sending = false;", finallyAt, StringComparison.Ordinal) > finallyAt);
         Assert.Contains("catch (Exception ex) when (ex is not OperationCanceledException", writes);
-        Assert.Contains("unsaved.AddRange(batch);", writes);
+        Assert.Contains("pending.Failed(batch);", writes);
+
+        // Leaving the review takes the "leave this page?" guard down (it is about this page's answers only).
+        var code = Read("src/Blocwerk.Web/Components/Shared/Refresh/Review/UpdateReviewScreen.razor.cs");
+        var dispose = code.IndexOf("public async ValueTask DisposeAsync()", StringComparison.Ordinal);
+        Assert.True(dispose > 0 && code.IndexOf("await GuardTabAsync(false);", dispose, StringComparison.Ordinal) > dispose);
+        Assert.Contains("export function guard(enabled)", Read("src/Blocwerk.Web/wwwroot/js/unsaved-guard.js"));
+        Assert.Contains("removeEventListener('beforeunload', ask)", Read("src/Blocwerk.Web/wwwroot/js/unsaved-guard.js"));
         Assert.Contains("@onclick=\"RetryAsync\"", screen);
 
         // An answer reads "saving…" until the server has it; closing the tab meanwhile asks first.

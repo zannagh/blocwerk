@@ -14,7 +14,7 @@ namespace Blocwerk.Web.Components.Shared.Refresh.Review;
 /// and the counts. Every list is the server's items with the answers given on this page laid over them until the server
 /// has them (<see cref="overlay"/>), so the counts move with every tap.
 /// </summary>
-public partial class UpdateReviewScreen : IDisposable
+public partial class UpdateReviewScreen : IAsyncDisposable
 {
     private readonly Dictionary<string, ReviewAnswer?> overlay = new(StringComparer.Ordinal);
     private Core.Refresh.Review.UpdateReview? review;
@@ -69,7 +69,13 @@ public partial class UpdateReviewScreen : IDisposable
         ? "Everything is answered. Apply when you are ready."
         : "Nothing left to check here. Pick another group above.";
 
-    public void Dispose() => writes.Dispose();
+    /// <summary>Leaving the review (in the app too) takes the tab guard down: it is about this page's answers only.</summary>
+    public async ValueTask DisposeAsync()
+    {
+        await writes.CancelAsync();
+        await GuardTabAsync(false);
+        writes.Dispose();
+    }
 
     protected override async Task OnParametersSetAsync()
     {
