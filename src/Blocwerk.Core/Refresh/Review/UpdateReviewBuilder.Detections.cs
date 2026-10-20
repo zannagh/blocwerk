@@ -32,17 +32,24 @@ internal static partial class UpdateReviewBuilder
         }
     }
 
+    /// <summary>
+    /// A new detection is answered "not a hold" while the session leaves it out (whoever did), and "it is a hold" only
+    /// while it is kept and a person said so. The decision rows Apply reads are the truth; a review answer they no longer
+    /// say (a step-by-step save since) is not shown. An answer survives the triage moving the detection between "new" and
+    /// "left out" (a 3D re-check): it is looked up by the hold, whichever subject it was given under.
+    /// </summary>
     private static ReviewItem NewHold(UpdateReviewFacts facts, StagedFact hold)
     {
-        var row = facts.Answers.GetValueOrDefault((hold.Id, ReviewSubject.NewHold));
-        var answer = row?.Answer ?? (IsOut(facts, hold) ? ReviewAnswer.NotAHold : null);
+        var row = AnswerAbout(facts, hold.Id);
+        var answer = IsOut(facts, hold) ? ReviewAnswer.NotAHold : row?.Answer is ReviewAnswer.KeepNew or ReviewAnswer.AddAsHold ? ReviewAnswer.KeepNew : (ReviewAnswer?)null;
         return Detection(facts, hold, ReviewGroup.NewHold, "n", answer, row?.ByUserId, leavesFinding: false);
     }
 
+    /// <summary>"Add as a hold" while the session keeps it; "not a hold" only while it is out and a person said so.</summary>
     private static ReviewItem LeftOut(UpdateReviewFacts facts, StagedFact hold, IEnumerable<HoldArea> live)
     {
-        var row = facts.Answers.GetValueOrDefault((hold.Id, ReviewSubject.LeftOut));
-        var answer = row?.Answer ?? (IsOut(facts, hold) ? null : ReviewAnswer.AddAsHold);
+        var row = AnswerAbout(facts, hold.Id);
+        var answer = !IsOut(facts, hold) ? ReviewAnswer.AddAsHold : row?.Answer is ReviewAnswer.LeaveOut or ReviewAnswer.NotAHold ? ReviewAnswer.LeaveOut : (ReviewAnswer?)null;
         var overlap = DiscardedDetections.Overlap(Area(facts, hold), live);
         var likely = LookOverRules.LikelyMissed(hold.Confidence, Math.Round(overlap, 3));
         return Detection(facts, hold, ReviewGroup.LeftOut, "d", answer, row?.ByUserId, likely);
@@ -67,6 +74,9 @@ internal static partial class UpdateReviewBuilder
             leavesFinding,
             hold.X,
             hold.Y);
+
+    private static Entities.WallUpdateReviewAnswer? AnswerAbout(UpdateReviewFacts facts, Guid holdId) =>
+        facts.Answers.GetValueOrDefault((holdId, ReviewSubject.NewHold)) ?? facts.Answers.GetValueOrDefault((holdId, ReviewSubject.LeftOut));
 
     /// <summary>Whether the detection is left out as the session stands: a discarded centre detection, a removed neighbour one.</summary>
     private static bool IsOut(UpdateReviewFacts facts, StagedFact hold) =>

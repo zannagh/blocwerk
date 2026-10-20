@@ -39,10 +39,11 @@ public sealed class MatchedSessionCache
             return hit;
         }
 
+        // Fingerprinted before the match: an edit made while it runs (~50 s) makes the entry a miss, never a stale hit. The
+        // matcher's own writes (discard reasons) are not among the inputs.
+        var fingerprint = await FingerprintAsync(db, wallId);
         var session = await match();
-
-        // Fingerprinted after the match: the matcher's own writes (discard reasons) are not among the inputs.
-        entries[wallId] = new Entry(await FingerprintAsync(db, wallId), use3D, session);
+        entries[wallId] = new Entry(fingerprint, use3D, session);
         return session;
     }
 

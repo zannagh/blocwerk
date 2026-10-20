@@ -43,6 +43,30 @@ public class WallRefreshPageSourceTests
     }
 
     [Fact]
+    public void TheReviewsWriter_SurvivesAnyFailure_KeepsUnsavedAnswers_AndGuardsTheTab()
+    {
+        var writes = Read("src/Blocwerk.Web/Components/Shared/Refresh/Review/UpdateReviewScreen.Writes.cs");
+        var screen = Read("src/Blocwerk.Web/Components/Shared/Refresh/Review/UpdateReviewScreen.razor");
+
+        // The loop clears its flag in a finally, whatever a batch throws, and a failed batch is kept for Retry.
+        var loop = writes.IndexOf("private async Task WriteLoopAsync()", StringComparison.Ordinal);
+        var finallyAt = writes.IndexOf("finally", loop, StringComparison.Ordinal);
+        Assert.True(finallyAt > loop && writes.IndexOf("sending = false;", finallyAt, StringComparison.Ordinal) > finallyAt);
+        Assert.Contains("catch (Exception ex) when (ex is not OperationCanceledException", writes);
+        Assert.Contains("unsaved.AddRange(batch);", writes);
+        Assert.Contains("@onclick=\"RetryAsync\"", screen);
+
+        // An answer reads "saving…" until the server has it; closing the tab meanwhile asks first.
+        Assert.Contains("AnsweredBy = answer is null ? null : Saving", Read("src/Blocwerk.Web/Components/Shared/Refresh/Review/UpdateReviewScreen.razor.cs"));
+        Assert.Contains("\"/js/unsaved-guard.js\"", writes);
+        Assert.Contains("beforeunload", Read("src/Blocwerk.Web/wwwroot/js/unsaved-guard.js"));
+
+        // "All as suggested" is the server's (it fills only what is unanswered there) and never offered for "not found".
+        Assert.Contains("Reviews.AcceptSuggestedAsync(View.Id, g, panel)", writes);
+        Assert.Contains("UpdateReviewService.AcceptsAll(bulk)", screen);
+    }
+
+    [Fact]
     public void ARefusedAction_ReloadsTheRun_SoAStaleSummaryIsReplaced()
     {
         var code = Read("src/Blocwerk.Web/Components/Pages/Walls/WallRefresh.razor.cs");

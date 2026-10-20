@@ -41,11 +41,11 @@ public sealed partial class WallRefreshApiController
             try
             {
                 var after = await review.AnswerAsync(refreshId, requests);
-                return Answered(new ReviewAnswered(requests.Count, after.Counts), accepted: true);
+                return Answered(new ReviewAnswered(requests.Count, true, after.Counts), accepted: true);
             }
             catch (ReviewAnswersStoppedException ex)
             {
-                return Answered(new ReviewAnswered(ex.Answered, null, ex.FailedKey, ex.Message), accepted: ex.Answered > 0);
+                return Answered(new ReviewAnswered(ex.Answered, false, null, ex.FailedKey, ex.Message), accepted: ex.Answered > 0);
             }
         }));
     }
@@ -59,7 +59,7 @@ public sealed partial class WallRefreshApiController
             : WriteAsync(wallId, "refresh.review.accept", () => ForRunAsync(wallId, refreshId, async _ =>
             {
                 var (answered, after) = await review.AcceptSuggestedAsync(refreshId, group, body.PanelId);
-                return Answered(new ReviewAnswered(answered, after.Counts), accepted: true);
+                return Answered(new ReviewAnswered(answered, true, after.Counts), accepted: true);
             }));
 
     private static JsonResult Answered(ReviewAnswered body, bool accepted) =>

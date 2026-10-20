@@ -27,8 +27,12 @@ public sealed record ReviewAcceptRequest(
     [property: JsonConverter(typeof(JsonStringEnumConverter<ReviewGroup>))] ReviewGroup? Group,
     Guid? PanelId);
 
-/// <summary>What the answer routes answer: how many were written, the counts after, and where it stopped when it did.</summary>
-public sealed record ReviewAnswered(int Answered, ReviewCounts? Counts, string? FailedKey = null, string? Error = null);
+/// <summary>
+/// What the answer routes answer: how many were written (in order), whether that is all of them (<c>complete</c>), the
+/// counts after, and where it stopped when it did. A partial result answers 202 (the written answers stay written and
+/// audited) with <c>complete: false</c>; nothing written answers 409.
+/// </summary>
+public sealed record ReviewAnswered(int Answered, bool Complete, ReviewCounts? Counts, string? FailedKey = null, string? Error = null);
 
 /// <summary>The review as JSON: groups and answers by name, so a script reads what a person reads.</summary>
 public static class ReviewJson

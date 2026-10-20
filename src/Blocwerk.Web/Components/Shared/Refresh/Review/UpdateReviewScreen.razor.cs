@@ -45,6 +45,9 @@ public partial class UpdateReviewScreen : IDisposable
     [Inject]
     private IUpdateReviewService Reviews { get; set; } = default!;
 
+    [Inject]
+    private Microsoft.JSInterop.IJSRuntime JS { get; set; } = default!;
+
     /// <summary>The server's items with this page's answers laid over them; made again whenever either changes.</summary>
     private IReadOnlyList<ReviewItem> Items => items ??= review is null ? [] : review.Items.Select(Overlaid).ToList();
 
@@ -106,7 +109,7 @@ public partial class UpdateReviewScreen : IDisposable
     private string ToCheckOn(Guid panelId) => Items.Count(i => i.PanelId == panelId && !i.IsAnswered).ToString();
 
     private ReviewItem Overlaid(ReviewItem item) =>
-        overlay.TryGetValue(item.Key, out var answer) ? item with { Answer = answer, AnsweredBy = answer is null ? null : "you" } : item;
+        overlay.TryGetValue(item.Key, out var answer) ? item with { Answer = answer, AnsweredBy = answer is null ? null : Saving } : item;
 
     private void PickPanel(Guid? id)
     {

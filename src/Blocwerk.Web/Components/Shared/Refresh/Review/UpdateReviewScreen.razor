@@ -39,6 +39,13 @@
         {
             <p class="field-error" role="alert">@error</p>
         }
+        @if (unsaved.Count > 0 && !sending)
+        {
+            <p class="field-error review-unsaved" role="alert">
+                @PlainCopy.Plural(unsaved.Count, "answer") not saved: the server could not be reached.
+                <button type="button" class="btn-secondary" @onclick="RetryAsync">Retry</button>
+            </p>
+        }
 
         <div class="review-main">
             <section class="review-items" aria-label="@(group is { } shown ? ReviewCopy.Group(shown) : "Review")">
@@ -61,12 +68,12 @@
                         </Empty>
                     </CardDeck>
                 }
-                @if (Queue.Count > 1 && group is { } bulk)
+                @if (Queue.Count > 1 && group is { } bulk && UpdateReviewService.AcceptsAll(bulk))
                 {
                     <div class="review-bulk">
                         <ConfirmAction Label="@ReviewCopy.AcceptAll(bulk, Queue.Count)" Question="@ReviewCopy.AcceptAllQuestion(bulk, Queue.Count)"
                                        ConfirmLabel="Yes, answer all" TriggerClass="btn-link" ConfirmClass="btn-primary" Neutral="true"
-                                       OnConfirm="AcceptAllAsync" />
+                                       Disabled="accepting" OnConfirm="AcceptAllAsync" />
                     </div>
                 }
             </section>

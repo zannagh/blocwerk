@@ -81,3 +81,6 @@
     ::deep .review-row { grid-template-columns: auto minmax(0, 1fr) auto; }
     ::deep .review-row-answers { grid-column: auto; justify-content: flex-end; }
 }
+
+::deep .review-spot-pending { margin: 0; display: flex; flex-direction: column; justify-content: center; gap: 4px; aspect-ratio: 1; padding: 12px;
+    border: 1px dashed var(--border-light); border-radius: var(--r-md); background: var(--bg-surface-alt); font-size: 0.85rem; color: var(--text-secondary); text-align: center; }

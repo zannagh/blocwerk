@@ -101,7 +101,7 @@ public partial class WallBigUpdateService
             }
 
             var rows = await db.WallUpdateReviewAnswers.AsNoTracking()
-                .Where(a => a.SessionId == session.Id && a.Subject == ReviewSubject.LeftOut && a.Answer == ReviewAnswer.LeaveOut)
+                .Where(a => a.SessionId == session.Id && (a.Answer == ReviewAnswer.LeaveOut || a.Answer == ReviewAnswer.NotAHold))
                 .ToListAsync();
             return rows.GroupBy(a => a.HoldId).ToDictionary(g => g.Key, g => g.First());
         }

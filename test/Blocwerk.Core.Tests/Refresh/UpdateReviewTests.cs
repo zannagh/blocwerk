@@ -95,20 +95,24 @@ public class UpdateReviewTests
     }
 
     [Fact]
-    public async Task AcceptSuggested_AnswersTheGroup_OfOnePanel_InOneCall()
+    public async Task AcceptSuggested_FillsOnlyWhatIsUnanswered_AndIsRefusedForNotFound()
     {
         using var h = new WallTestHarness();
         using var s = await ReviewScenario.PrepareAsync(h);
-        var panel = (await s.ReadAsync()).Panels.Single().PanelId;
+        var review = await s.ReadAsync();
+        var panel = review.Panels.Single().PanelId;
+        var news = review.Items.Where(i => i.Group == ReviewGroup.NewHold).ToList();
+        await s.Review.AnswerAsync(s.View.Id, [new(news[0].Key, ReviewAnswer.NotAHold)]);
 
-        var (answered, after) = await s.Review.AcceptSuggestedAsync(s.View.Id, ReviewGroup.NotFound, panel);
+        var (answered, after) = await s.Review.AcceptSuggestedAsync(s.View.Id, ReviewGroup.NewHold, panel);
 
-        Assert.Equal(2, answered);
-        Assert.All(after.Items.Where(i => i.Group == ReviewGroup.NotFound), i => Assert.Equal(ReviewAnswer.StillThere, i.Answer));
-        Assert.Equal("Owner", after.Items.First(i => i.Group == ReviewGroup.NotFound).AnsweredBy);
-        Assert.Equal(0, after.Counts.Open);
-        Assert.Equal(2, after.Counts.ToCheck);
-        Assert.Equal(0, (await s.Review.AcceptSuggestedAsync(s.View.Id, ReviewGroup.NotFound)).Answered);
+        Assert.Equal(1, answered);
+        Assert.Equal(ReviewAnswer.NotAHold, after.Items.Single(i => i.Key == news[0].Key).Answer);
+        Assert.Equal(ReviewAnswer.KeepNew, after.Items.Single(i => i.Key == news[1].Key).Answer);
+        Assert.Equal("Owner", after.Items.Single(i => i.Key == news[1].Key).AnsweredBy);
+        Assert.Equal(0, (await s.Review.AcceptSuggestedAsync(s.View.Id, ReviewGroup.NewHold)).Answered);
+        var refused = await Assert.ThrowsAsync<UserFacingException>(() => s.Review.AcceptSuggestedAsync(s.View.Id, ReviewGroup.NotFound));
+        Assert.Equal(UpdateReviewService.NoBulkNotFound, refused.Message);
     }
 
     [Fact]

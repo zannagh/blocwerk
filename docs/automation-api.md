@@ -161,11 +161,13 @@ curl -fsS -X POST -H "$AUTH" -H 'Content-Type: application/json' \
 | Method | Route | Body | Answers |
 |---|---|---|---|
 | GET | `…/refresh/{refreshId}/review` | — | 200 `{refreshId, sessionId, decisionsVersion, summaryUpdating, panels, items, counts}`; 404 unless status 4 |
-| POST | `…/refresh/{refreshId}/review/answers` | `{"answers": [{"key", "answer"}]}` | 202 `{"answered": n, "counts"}` |
-| POST | `…/refresh/{refreshId}/review/accept` | `{"group", "panelId"?}` | 202 `{"answered": n, "counts"}` |
+| POST | `…/refresh/{refreshId}/review/answers` | `{"answers": [{"key", "answer"}]}` | 202 `{"answered": n, "complete": true, "counts"}` |
+| POST | `…/refresh/{refreshId}/review/accept` | `{"group", "panelId"?}` | 202 `{"answered": n, "complete": true, "counts"}` |
 
 * `key` names what the item is about: `c-<card id>` (a card, as in `…/checks`), `k-<old hold id>` (not found again),
   `n-<detection id>` (a new hold), `d-<detection id>` (left out by the triage), `r-<suggestion id>` (may have moved).
+* `…/review/accept` fills only items still unanswered when it writes (another person's answers stay), and is refused for
+  `notFound`: holds not found again are answered one by one.
 * `group`: `unsure`, `handPlaced`, `replaced`, `possiblyRemoved`, `conflicting3D`, `notFound`, `leftOut`, `newHold`, `moved`.
   Each item lists the `answers` it takes and the one Apply uses when nobody answers (`suggested`); `undo` takes an answer back.
   Cards: `keep`, `remove`, `notSame` (as above). Not found: `stillThere` (kept, confirmed: no look-over question) or `gone`
@@ -175,7 +177,7 @@ curl -fsS -X POST -H "$AUTH" -H 'Content-Type: application/json' \
   found, left-out detections that look like a missed hold, and matches answered `notSame`, whose old hold the look-over still places): the finished run's `lookOver.openFindings` is that number, plus
   any finding the 3D model adds later. `counts.toCheck` counts every unanswered item; `counts.groups` the same per group.
 * Answers are applied in order (at most 2000 per call); the first refusal stops the rest and answers
-  `{"answered": n, "failedKey", "error"}` (202 when some were saved, 409 when none were). After answers the summary is made
+  `{"answered": n, "complete": false, "failedKey", "error"}` (202 when some were saved, 409 when none were; `complete` is true only when every answer was written). Each answer is checked against the review as it is now: a key that is no current item (a card's hold, a twin, a linked neighbour hold, a new hold under a `d-` key) or an answer the item does not take is refused. After answers the summary is made
   again in the background (`summaryUpdating`), without matching again; read `…/summary` for the new `decisionsVersion`
   before Apply.
 

@@ -80,8 +80,9 @@ internal static partial class UpdateReviewBuilder
             }
 
             var old = facts.OldHolds.GetValueOrDefault(oldId);
+            // The carry row Apply reads is the answer; the review's own row only says who gave it.
             var row = facts.Answers.GetValueOrDefault((oldId, ReviewSubject.NotFound));
-            var answer = row?.Answer ?? (carry.Kind == CarryKind.Removed ? ReviewAnswer.Gone : carry.Confirmed ? ReviewAnswer.StillThere : null);
+            var answer = carry.Kind == CarryKind.Removed ? ReviewAnswer.Gone : carry.Confirmed ? ReviewAnswer.StillThere : (ReviewAnswer?)null;
             var spot = facts.Spots?.TryGetValue(oldId, out var at) == true ? at : null;
             yield return new ReviewItem(
                 $"k-{oldId}",

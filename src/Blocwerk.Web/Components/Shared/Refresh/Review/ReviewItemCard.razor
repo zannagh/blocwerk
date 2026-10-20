@@ -16,6 +16,12 @@
     <div class="deck-pictures">
         @foreach (var (view, caption) in Pictures)
         {
+            @if (view == CheckCropView.New && SpotUnknown)
+            {
+                @* No guess at the old coordinates: on the new photo they can show bare wall beside the hold. *@
+                <figure class="review-spot-pending" role="note"><span>Where it is on the new photo is still being worked out.</span><figcaption>@caption</figcaption></figure>
+                continue;
+            }
             <button type="button" class="lookover-crop" @onclick="() => zoomed = true" aria-label="Show the pictures larger">
                 <figure><img onerror="this.closest('button').style.display='none'" src="@Crop(view)" alt="@caption" /><figcaption>@caption</figcaption></figure>
             </button>
@@ -63,6 +69,9 @@
 
     [Parameter]
     public EventCallback<ReviewAnswer> OnAnswer { get; set; }
+
+    /// <summary>An old hold whose spot on the new photo the matcher has not given (yet): no "new" picture.</summary>
+    private bool SpotUnknown => Item.Key.StartsWith("k-", StringComparison.Ordinal) && Item.X is null;
 
     /// <summary>A detection has no old picture (an old photo at the same coordinates could show another place).</summary>
     private IEnumerable<(CheckCropView View, string Caption)> Pictures

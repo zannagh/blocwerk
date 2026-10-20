@@ -4,25 +4,32 @@
 
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Refresh.Review;
+using Blocwerk.Core.Services;
+using Microsoft.JSInterop;
 
 namespace Blocwerk.Web.Components.Shared.Refresh.Review;
 
 /// <summary>
-/// The answers, optimistic: a tap marks the item answered on screen at once and turns the deck on; the answers are sent
-/// in the background, in the order they were given, several at a time when they pile up. A refused answer is taken off
-/// the screen again with the reason. Only Apply waits until everything is written.
+/// The answers, optimistic but never claimed saved early: a tap turns the deck on at once and the item reads "saving…"
+/// until the server has it; the answers go out in the background, in order, several at a time when they pile up. An
+/// answer the server refuses is taken off the screen with the reason. One that could not be sent at all (the server or
+/// the network failed) is kept as "not saved" with Retry. Apply waits until nothing is in flight, and closing the tab
+/// meanwhile asks first.
 /// </summary>
 public partial class UpdateReviewScreen
 {
+    /// <summary>What an answer reads as until the server confirms it.</summary>
+    public const string Saving = "saving…";
+
     private readonly List<ReviewAnswerRequest> pending = [];
+    private readonly List<ReviewAnswerRequest> unsaved = [];
     private readonly CancellationTokenSource writes = new();
     private bool sending;
+    private bool accepting;
+    private bool guarded;
 
-    /// <summary>
-    /// Answers are still on their way to the server. A flag of its own, cleared before the last render of the loop: the
-    /// loop's task is not completed yet while that render runs, so its state cannot say it.
-    /// </summary>
-    private bool Writing => pending.Count > 0 || sending;
+    /// <summary>Answers are on their way to the server, or could not be saved: Apply waits.</summary>
+    private bool Writing => pending.Count > 0 || sending || accepting || unsaved.Count > 0;
 
     private Task AnswerAsync(ReviewItem item, ReviewAnswer answer)
     {
@@ -45,15 +52,45 @@ public partial class UpdateReviewScreen
 
     private Task AnswerFromListAsync((ReviewItem Item, ReviewAnswer Answer) given) => AnswerAsync(given.Item, given.Answer);
 
-    /// <summary>Answers every unanswered item of the group on the shown panel with its suggested answer.</summary>
-    private Task AcceptAllAsync()
+    /// <summary>
+    /// "All as suggested" for the group on the shown panel, answered by the server from its own state: an item someone
+    /// answered meanwhile (another tab, another admin) keeps that answer.
+    /// </summary>
+    private async Task AcceptAllAsync()
     {
-        foreach (var item in Queue)
+        if (group is not { } g || accepting)
         {
-            Record(item.Key, item.Suggested);
+            return;
         }
 
-        currentKey = null;
+        accepting = true;
+        try
+        {
+            var (_, after) = await Reviews.AcceptSuggestedAsync(View.Id, g, panel);
+            (review, items, currentKey, error) = (after, null, null, null);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            error = ex is UserFacingException ? ex.Message : "The answers could not be saved. Try again.";
+        }
+        finally
+        {
+            accepting = false;
+        }
+
+        await OnAnswered.InvokeAsync();
+    }
+
+    /// <summary>Sends the answers that could not be saved again.</summary>
+    private Task RetryAsync()
+    {
+        var again = unsaved.ToList();
+        unsaved.Clear();
+        foreach (var answer in again)
+        {
+            Record(answer.Key, answer.Answer);
+        }
+
         return SendAsync();
     }
 
@@ -65,33 +102,38 @@ public partial class UpdateReviewScreen
         error = null;
     }
 
-    private Task SendAsync()
+    private async Task SendAsync()
     {
         if (!sending)
         {
             sending = true;
+            await GuardTabAsync(true);
             _ = WriteLoopAsync();
         }
-
-        return Task.CompletedTask;
     }
 
     private async Task WriteLoopAsync()
     {
-        while (pending.Count > 0 && !writes.IsCancellationRequested)
+        try
         {
-            var batch = pending.ToList();
-            pending.Clear();
-            await WriteBatchAsync(batch);
+            while (pending.Count > 0 && !writes.IsCancellationRequested)
+            {
+                var batch = pending.ToList();
+                pending.Clear();
+                await WriteBatchAsync(batch);
+            }
         }
-
-        await InvokeAsync(async () =>
+        finally
         {
-            sending = false;
-            items = null;
-            StateHasChanged();
-            await OnAnswered.InvokeAsync();
-        });
+            await InvokeAsync(async () =>
+            {
+                sending = false;
+                items = null;
+                StateHasChanged();
+                await GuardTabAsync(unsaved.Count > 0);
+                await OnAnswered.InvokeAsync();
+            });
+        }
     }
 
     private async Task WriteBatchAsync(List<ReviewAnswerRequest> batch)
@@ -104,13 +146,28 @@ public partial class UpdateReviewScreen
         catch (ReviewAnswersStoppedException ex)
         {
             var lost = batch.Skip(ex.Answered).Select(a => a.Key).ToHashSet(StringComparer.Ordinal);
-            var after = await Reviews.GetAsync(View.Id);
-            await InvokeAsync(() => Settle(after, batch, lost, $"{PlainCopy.Plural(lost.Count, "answer")} not saved: {ex.Message}"));
+            await InvokeAsync(async () => Settle(await ReadOrKeepAsync(), batch, lost, $"{PlainCopy.Plural(lost.Count, "answer")} not saved: {ex.Message}"));
         }
-        catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is not OperationCanceledException || !writes.IsCancellationRequested)
         {
-            var after = await Reviews.GetAsync(View.Id);
-            await InvokeAsync(() => Settle(after, batch, batch.Select(a => a.Key).ToHashSet(StringComparer.Ordinal), ex.Message));
+            // Not refused, just not sent: kept for Retry, never shown as saved.
+            await InvokeAsync(async () =>
+            {
+                unsaved.AddRange(batch);
+                Settle(await ReadOrKeepAsync(), batch, batch.Select(a => a.Key).ToHashSet(StringComparer.Ordinal));
+            });
+        }
+    }
+
+    private async Task<Core.Refresh.Review.UpdateReview?> ReadOrKeepAsync()
+    {
+        try
+        {
+            return await Reviews.GetAsync(View.Id);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return null;
         }
     }
 
@@ -129,5 +186,25 @@ public partial class UpdateReviewScreen
         error = message ?? error;
         items = null;
         StateHasChanged();
+    }
+
+    /// <summary>Asks before the tab closes while answers are in flight or unsaved (best effort: a gone circuit has no JS).</summary>
+    private async Task GuardTabAsync(bool on)
+    {
+        if (on == guarded)
+        {
+            return;
+        }
+
+        try
+        {
+            await using var module = await JS.InvokeAsync<IJSObjectReference>("import", "/js/unsaved-guard.js");
+            await module.InvokeVoidAsync("guard", on);
+            guarded = on;
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or TaskCanceledException or InvalidOperationException)
+        {
+            // Nothing to guard any more.
+        }
     }
 }

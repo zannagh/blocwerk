@@ -181,6 +181,14 @@ public sealed partial class UpdateReviewService
     private static async Task RecordAnswerAsync(
         BlocwerkDbContext db, Guid sessionId, Guid holdId, ReviewSubject subject, ReviewAnswer answer, Guid userId, DateTimeOffset now)
     {
+        // A detection has one answer: one given while it was "new" goes when it is answered as "left out", and back.
+        if (subject != ReviewSubject.NotFound)
+        {
+            var other = subject == ReviewSubject.NewHold ? ReviewSubject.LeftOut : ReviewSubject.NewHold;
+            db.WallUpdateReviewAnswers.RemoveRange(await db.WallUpdateReviewAnswers
+                .Where(a => a.SessionId == sessionId && a.HoldId == holdId && a.Subject == other).ToListAsync());
+        }
+
         var row = db.WallUpdateReviewAnswers.Local.FirstOrDefault(a => a.SessionId == sessionId && a.HoldId == holdId && a.Subject == subject)
             ?? await db.WallUpdateReviewAnswers.FirstOrDefaultAsync(a => a.SessionId == sessionId && a.HoldId == holdId && a.Subject == subject);
         if (row is not null && db.Entry(row).State == EntityState.Deleted)

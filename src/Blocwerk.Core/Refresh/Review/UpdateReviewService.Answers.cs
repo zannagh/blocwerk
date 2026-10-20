@@ -26,24 +26,51 @@ public sealed partial class UpdateReviewService
             throw new UserFacingException($"Send at most {MaxAnswers} answers at once.");
         }
 
-        var (db, refresh, userId) = await OpenAsync(refreshId);
-        await using (db)
-        {
-            await EnsureAnswerableAsync(db, refresh);
-            await WriteAllAsync(refresh, userId, answers);
-            return await ReadAsync(db, await db.WallRefreshes.AsNoTracking().FirstAsync(r => r.Id == refreshId))
-                ?? throw new UserFacingException("This update can no longer be changed here.");
-        }
+        return (await AnswerAsync(refreshId, answers, onlyIfUnanswered: false)).Review;
     }
 
     public async Task<(int Answered, UpdateReview Review)> AcceptSuggestedAsync(Guid refreshId, ReviewGroup group, Guid? panelId = null)
     {
+        if (!AcceptsAll(group))
+        {
+            throw new UserFacingException(NoBulkNotFound);
+        }
+
         var review = await GetAsync(refreshId) ?? throw new UserFacingException("This update can no longer be changed here.");
         var open = review.Items
             .Where(i => i.Group == group && !i.IsAnswered && (panelId is null || i.PanelId == panelId))
             .Select(i => new ReviewAnswerRequest(i.Key, i.Suggested))
             .ToList();
-        return open.Count == 0 ? (0, review) : (open.Count, await AnswerAsync(refreshId, open));
+        if (open.Count == 0)
+        {
+            return (0, review);
+        }
+
+        // Only what is still unanswered when the answers are written: another tab's answers meanwhile are not overwritten.
+        var (after, written) = await AnswerAsync(refreshId, open, onlyIfUnanswered: true);
+        return (written, after);
+    }
+
+    /// <summary>Whether a whole group may be answered at once: every group but "not found" (nobody looked at each hold).</summary>
+    public static bool AcceptsAll(ReviewGroup group) => group != ReviewGroup.NotFound;
+
+    private async Task<(UpdateReview Review, int Written)> AnswerAsync(Guid refreshId, IReadOnlyList<ReviewAnswerRequest> answers, bool onlyIfUnanswered)
+    {
+        var (db, refresh, userId) = await OpenAsync(refreshId);
+        await using (db)
+        {
+            await EnsureAnswerableAsync(db, refresh);
+            var checkedAnswers = await CheckAgainstReviewAsync(db, refresh, answers, onlyIfUnanswered);
+            await WriteAllAsync(refresh, userId, checkedAnswers.Valid);
+            if (checkedAnswers.Refused is { } refused)
+            {
+                throw new ReviewAnswersStoppedException(checkedAnswers.Valid.Count, refused.Key, new UserFacingException(refused.Reason));
+            }
+
+            var after = await ReadAsync(db, await db.WallRefreshes.AsNoTracking().FirstAsync(r => r.Id == refreshId))
+                ?? throw new UserFacingException("This update can no longer be changed here.");
+            return (after, checkedAnswers.Valid.Count);
+        }
     }
 
     /// <summary>Writes the answers in order; the first refusal stops the rest. The summary is asked for whatever was written.</summary>
