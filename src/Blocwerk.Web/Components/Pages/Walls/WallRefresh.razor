@@ -4,14 +4,15 @@
 @using Blocwerk.Core.Entities
 @using Blocwerk.Core.Refresh
 @using Blocwerk.Web.Components.Shared.Refresh
+@using Blocwerk.Web.Components.Shared.Refresh.Review
 @* "Update panels + 3D": one header with the steps of the update (photos, check, apply, look over), one line about
    what is being worked on, and one screen per step: the drop of a visit's photos and videos, the photo per panel
    with the two ways to start, then the check with Apply. The timeline and "Discard this update" are behind
    "Details". The check step is one screen that does not scroll. *@
 
-<PageTitle>Update panels + 3D - Blocwerk</PageTitle>
+<PageTitle>Update wall - Blocwerk</PageTitle>
 
-<SectionContent SectionName="TopBarTitle">Update panels + 3D</SectionContent>
+<SectionContent SectionName="TopBarTitle">Update wall</SectionContent>
 
 <div class="refresh-page @(OneScreen ? "is-one-screen" : null)">
     @if (blocked is not null)
@@ -87,9 +88,14 @@
             <RefreshSortScreen View="view" @bind-Quality="splatQuality" OnStart="StartAsync" OnStartPanelsOnly="StartPanelsOnlyAsync"
                                OnStartOver="StartFullRevisionAsync" OnStartOverPanelsOnly="StartFullRevisionPanelsOnlyAsync" />
         }
+        else if (view.Status == WallRefreshStatus.ReadyToApply && StartsOver)
+        {
+            <RefreshConfirm View="view" ListView="true" OnApply="ApplyAsync" OnAnswered="ReloadAfterAnswerAsync" />
+        }
         else if (view.Status == WallRefreshStatus.ReadyToApply)
         {
-            <RefreshConfirm View="view" ListView="listView || StartsOver" OnApply="ApplyAsync" OnAnswered="ReloadAfterAnswerAsync" />
+            @* The one review: every hold to check, by panel and group, answers that never wait, Apply beside it. *@
+            <UpdateReviewScreen View="view" ListView="listView" OnApply="ApplyAsync" OnAnswered="ReloadAfterAnswerAsync" />
         }
         else if (view.Status == WallRefreshStatus.Done)
         {

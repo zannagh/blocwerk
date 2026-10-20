@@ -3368,6 +3368,40 @@ namespace Blocwerk.Core.Migrations
                     b.ToTable("WallUpdateRelocationProposals");
                 });
 
+            modelBuilder.Entity("Blocwerk.Core.Entities.WallUpdateReviewAnswer", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Answer")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("HoldId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("SessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Subject")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("HoldId");
+
+                    b.HasIndex("SessionId", "HoldId", "Subject")
+                        .IsUnique();
+
+                    b.ToTable("WallUpdateReviewAnswers");
+                });
+
             modelBuilder.Entity("Blocwerk.Core.Entities.WallUpdateSession", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4545,6 +4579,21 @@ namespace Blocwerk.Core.Migrations
                     b.Navigation("NewHold");
 
                     b.Navigation("OldHold");
+                });
+
+            modelBuilder.Entity("Blocwerk.Core.Entities.WallUpdateReviewAnswer", b =>
+                {
+                    b.HasOne("Blocwerk.Core.Entities.Hold", null)
+                        .WithMany()
+                        .HasForeignKey("HoldId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Blocwerk.Core.Entities.WallUpdateSession", null)
+                        .WithMany()
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallUpdateSession", b =>

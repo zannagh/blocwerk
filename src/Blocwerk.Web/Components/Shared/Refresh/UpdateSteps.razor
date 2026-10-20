@@ -41,7 +41,12 @@
     [Parameter]
     public RenderFragment? ChildContent { get; set; }
 
-    private static string Name(UpdateStep step) => step == UpdateStep.LookOver ? "Look over" : step.ToString();
+    private static string Name(UpdateStep step) => step switch
+    {
+        UpdateStep.LookOver => "Leftovers",
+        UpdateStep.Check => "Review",
+        _ => step.ToString(),
+    };
 
     private string? Href(UpdateStep step)
     {

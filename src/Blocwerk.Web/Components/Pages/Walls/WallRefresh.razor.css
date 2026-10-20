@@ -46,6 +46,8 @@
 .refresh-page ::deep .refresh-start .refresh-actions { margin-top: 0; }
 .refresh-page ::deep .refresh-start-more { margin-top: 8px; font-size: 0.9rem; }
 .refresh-page ::deep .refresh-start-more > summary { cursor: pointer; color: var(--text-secondary); }
+.refresh-page ::deep .refresh-revision-more { grid-column: 1 / -1; }
+.refresh-page ::deep .refresh-revision-more > summary { cursor: pointer; padding: 8px 0; font-size: 0.9rem; color: var(--text-secondary); }
 
 /* The check step: numbers, the deck (or the lists), Apply. */
 .refresh-page ::deep .refresh-confirm { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; gap: 8px; }

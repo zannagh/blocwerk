@@ -57,8 +57,15 @@ public sealed partial class WallRefreshProcessor
                 r.Status = WallRefreshStatus.ReadyToApply;
                 RefreshTimeline.Set(r, RefreshTimeline.Match, RefreshStepState.Done, RefreshTimeline.MatchDetail(summary));
                 RefreshTimeline.Set(r, RefreshTimeline.Review, RefreshStepState.Waiting, "Check the summary, then apply");
+
+                // The review opens now; the summary is made once more the way Apply reads it (and the match kept for the
+                // answers' summaries), while the user already looks at the items. Apply waits for it.
+                r.SummaryRequestedAt = DateTimeOffset.UtcNow;
             },
             ct);
+
+        // Read back as stored: the request is cleared by comparing it with the database's own value (its precision).
+        await ResummarizeAsync(await LoadAsync(refresh.Id, ct) ?? refresh, actors, ct);
     }
 
     /// <summary>

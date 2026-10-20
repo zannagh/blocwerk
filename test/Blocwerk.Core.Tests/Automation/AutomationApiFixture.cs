@@ -73,6 +73,7 @@ internal static class AutomationApiFixture
     public static int Status(IActionResult result) => result switch
     {
         ObjectResult o => o.StatusCode ?? StatusCodes.Status200OK,
+        JsonResult j => j.StatusCode ?? StatusCodes.Status200OK,
         StatusCodeResult s => s.StatusCode,
         _ => throw new InvalidOperationException(result.GetType().Name),
     };

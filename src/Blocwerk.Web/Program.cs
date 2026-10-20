@@ -429,6 +429,7 @@ public static class Program
 
         // The pictures of the confirm screen's cards, made on request (see WallRefreshCheckCropEndpoint).
         app.MapWallRefreshCheckCrops();
+        app.MapWallRefreshReviewCrops();
         app.MapWallDuplicateHoldCrops();
         app.MapWallLookOverCrops();
 

@@ -131,21 +131,23 @@ else
                                     <span>Opening it continues where they left off.</span>
                                 </p>
                             }
-                            @* Wall admins' main way to bring the wall up to date after a visit. "Update panels + 3D" is
-                               not offered on the wall tablet (the page refuses kiosks too); this card is admin-only and
-                               not on share links. "Update step by step" is the manual flow. *@
+                            @* The wall page's "Update wall" button is the one way in; this card repeats it next to the panel
+                               grid. Not on the wall tablet (the page refuses kiosks too), not behind a share link. The
+                               step-by-step wizard is the manual route, kept under "Advanced". *@
                             <div class="update-actions" role="group" aria-labelledby="update-actions-title">
-                                <h3 class="update-actions-title" id="update-actions-title">Update panels</h3>
-                                <p class="field-hint">Two ways to bring the wall up to date after a visit. Pick the first unless you want to decide every hold yourself.</p>
+                                <h3 class="update-actions-title" id="update-actions-title">Update the wall</h3>
+                                <p class="field-hint">After a visit: upload the new panel photos (and the photos and videos for 3D, if you have them), check everything in one review, then apply.</p>
                                 @if (!KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))
                                 {
-                                    <a class="btn-primary update-action" href="/walls/@WallId/update">Update panels + 3D</a>
-                                    <p class="field-hint"><strong>Recommended.</strong> Upload all photos and videos of a visit in one go. Blocwerk sorts them to the panels, carries your holds over and updates the 3D model; you check the result and apply it.</p>
+                                    <a class="btn-primary update-action" href="/walls/@WallId/update">Update wall</a>
                                 }
-                                <button class="btn-secondary update-action" @onclick="OpenBigUpdate">
-                                    @(_openUpdate is null ? "Update step by step" : "Continue the step-by-step update")
-                                </button>
-                                <p class="field-hint">Manual route, panel photos only. You stage the new photos and decide what happens to each hold. Use it when you want full control or have no 3D photos.</p>
+                                <details class="update-advanced" open="@(_openUpdate is not null)">
+                                    <summary>Advanced: step by step</summary>
+                                    <p class="field-hint">Manual route, panel photos only: you stage the new photos and decide every hold yourself, step by step.</p>
+                                    <button class="btn-secondary update-action" @onclick="OpenBigUpdate">
+                                        @(_openUpdate is null ? "Update step by step" : "Continue the step-by-step update")
+                                    </button>
+                                </details>
                             </div>
                         </div>
                     }
@@ -175,17 +177,6 @@ else
                             </div>
                         }
 
-                        @if (!KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))
-                        {
-                        <section class="danger-zone" aria-labelledby="danger-zone-title">
-                            <h3 id="danger-zone-title">Danger zone</h3>
-                            <p class="hint">Deleting a wall removes its boulders, ascents, photos and members for good. This cannot be undone.</p>
-                            <ConfirmAction Label="Delete Wall" TriggerClass="btn-danger" ConfirmLabel="Delete this wall for good"
-                                           RequiredText="@_wall.Name"
-                                           Question="@($"Delete \"{_wall.Name}\" with all its boulders, ascents and photos?")"
-                                           OnConfirm="DeleteWall" />
-                        </section>
-                        }
                     }
                     </div>
                 </details>
@@ -302,6 +293,24 @@ else
                         }
                     }
                 }
+                }
+
+                @* Deleting the wall is a card of its own at the very bottom, collapsed, far from every update control. *@
+                @if (_isAdmin && !_showBigUpdate && !KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))
+                {
+                    <details class="settings-panel settings-card danger-card">
+                        <summary class="settings-card-summary"><h2>Delete this wall</h2></summary>
+                        <div class="settings-card-body">
+                            <section class="danger-zone" aria-labelledby="danger-zone-title">
+                                <h3 id="danger-zone-title">Danger zone</h3>
+                                <p class="hint">Deleting a wall removes its boulders, ascents, photos and members for good. This cannot be undone.</p>
+                                <ConfirmAction Label="Delete Wall" TriggerClass="btn-danger" ConfirmLabel="Delete this wall for good"
+                                               RequiredText="@_wall.Name"
+                                               Question="@($"Delete \"{_wall.Name}\" with all its boulders, ascents and photos?")"
+                                               OnConfirm="DeleteWall" />
+                            </section>
+                        </div>
+                    </details>
                 }
             }
         </Page1>
@@ -659,6 +668,12 @@ else
                         </svg>
                         View in 3D
                     </Wall3DLink>
+
+                    @* The one way into a wall update: upload, one review, apply (wall admins, own device only). *@
+                    @if (_isAdmin && !KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))
+                    {
+                        <a class="btn-secondary wall-update-link" href="/walls/@WallId/update">Update wall</a>
+                    }
 
                     @if (_canEditHolds && KeptHoldCount > 0 && string.IsNullOrEmpty(ShareToken))
                     {

@@ -27,9 +27,9 @@ public partial class RefreshDropZone : IDisposable
     [Parameter]
     public WallRefreshView? View { get; set; }
 
-    /// <summary>Opens the run if there is none yet; returns its id (null when it could not be opened).</summary>
+    /// <summary>Opens the run if there is none yet; returns it (null when it could not be opened).</summary>
     [Parameter]
-    public Func<Task<Guid?>> EnsureRefreshAsync { get; set; } = default!;
+    public Func<Task<WallRefreshView?>> EnsureRefreshAsync { get; set; } = default!;
 
     [Parameter]
     public EventCallback OnFilesChanged { get; set; }
@@ -60,6 +60,9 @@ public partial class RefreshDropZone : IDisposable
         }
     }
 
+    /// <summary>Videos would not be used here (no 3D or no photo-real view): the picker does not offer them.</summary>
+    private bool NoVideos => View is { VideosAccepted: false };
+
     public void Dispose() => selfRef?.Dispose();
 
     [JSInvokable]
@@ -87,6 +90,11 @@ public partial class RefreshDropZone : IDisposable
 
     private static string Megabytes(long bytes) => $"{bytes / 1048576d:0} MB";
 
+    /// <summary>Why a video is not used here, said before it is sent.</summary>
+    private static string VideoRefusal(WallRefreshView run) => run.CaptureAvailable
+        ? "Not sent: videos are only used for the photo-real 3D view, which is not set up here."
+        : "Not sent: 3D is not set up for this wall, so videos are not used.";
+
     private async Task UploadAsync()
     {
         if (uploading)
@@ -98,18 +106,21 @@ public partial class RefreshDropZone : IDisposable
         percent = 0;
         try
         {
-            if (await EnsureRefreshAsync() is not { } refreshId)
+            if (await EnsureRefreshAsync() is not { } run)
             {
                 return;
             }
 
             selfRef ??= DotNetObjectReference.Create(this);
 
-            // Photos the capture would refuse are not sent at all (the browser stops them before the upload).
-            var room = Math.Max(0, PipelineOptions.MaxPhotos - (View?.Photos.Count ?? 0));
+            // Photos the capture would refuse, and videos it could not use, are not sent at all: the browser stops them
+            // before a byte goes out (a 700 MB video refused after its upload cost minutes for nothing).
+            var room = Math.Max(0, PipelineOptions.MaxPhotos - run.Photos.Count);
+            var videos = new RefreshVideoRules(
+                run.VideosAccepted, Math.Max(0, WallRefreshService.MaxVideos - run.Videos.Count), PipelineOptions.MaxVideoBytes, VideoRefusal(run));
             await JS.InvokeAsync<int>(
-                "bwRefreshUpload.upload", TimeSpan.FromHours(3), "refresh-files", WallRefreshUploadEndpoint.Url(refreshId), selfRef,
-                room, PipelineOptions.MaxPhotos);
+                "bwRefreshUpload.upload", TimeSpan.FromHours(3), "refresh-files", WallRefreshUploadEndpoint.Url(run.Id), selfRef,
+                room, PipelineOptions.MaxPhotos, videos);
         }
         catch (JSException ex)
         {

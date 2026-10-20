@@ -145,6 +145,9 @@
 
         @if (View.Revision is { } revision && View.Picks.Count > 0)
         {
+            @* Rare and destructive: one closed line under the way to start, never a card of equal weight beside it. *@
+            <details class="refresh-revision-more">
+            <summary>The wall was fully reset (every hold taken off)?</summary>
             <section class="refresh-start refresh-revision" aria-labelledby="refresh-revision-title">
                 <h2 id="refresh-revision-title">The wall was fully reset</h2>
                 <p class="hint">
@@ -182,6 +185,7 @@
                     </ul>
                 </details>
             </section>
+            </details>
         }
     </div>
 </div>

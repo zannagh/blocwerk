@@ -56,7 +56,7 @@ public sealed partial class WallLookOverService
         var answerers = findings.Select(f => f.AnsweredByUserId).OfType<Guid>().Distinct().ToList();
         var names = answerers.Count == 0
             ? []
-            : await db.Users.IgnoreQueryFilters().Where(u => answerers.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.DisplayName, ct);
+            : await db.Users.IgnoreQueryFilters().Where(u => answerers.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.Name, ct);
         var retired = await RetiredByNewHoldAsync(db, findings, ct);
         return findings
             .Select(f => (Finding: f, Kept: f.HoldId is { } id && holds.GetValueOrDefault(id) is { Live: true, Kept: true }))

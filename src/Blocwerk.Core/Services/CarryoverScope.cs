@@ -75,9 +75,17 @@ public static class CarryoverScope
     /// recorded wherever the hold is, never reset — but only while the row still says what the card answered (carried, no
     /// twin): a row rewritten since (say, by the step-by-step review) is judged like any other.
     /// </param>
+    /// <param name="reviewVerdicts">
+    /// Old holds a person answered in the one review (kept "still there" or "gone"), which shows every re-photographed
+    /// panel's holds with their pictures: promoted as recorded, but only while the row is still one such answer
+    /// (no twin, carried or removed).
+    /// </param>
     /// <returns>The promote-safe decision set and the verdicts that were reset.</returns>
     public static CarryoverScopeResult Reconcile(
-        BigUpdateSession session, IReadOnlyList<CarryoverDecision> decisions, IReadOnlyCollection<Guid>? cardVerdicts = null)
+        BigUpdateSession session,
+        IReadOnlyList<CarryoverDecision> decisions,
+        IReadOnlyCollection<Guid>? cardVerdicts = null,
+        IReadOnlyCollection<Guid>? reviewVerdicts = null)
     {
         var reviewable = ReviewableOldHoldIds(session);
         if (reviewable is null)
@@ -91,7 +99,7 @@ public static class CarryoverScope
         var reset = new List<CarryoverDecision>();
         foreach (var decision in decisions)
         {
-            if (reviewable.Contains(decision.OldHoldId) || IsCardAnswer(decision, cardVerdicts))
+            if (reviewable.Contains(decision.OldHoldId) || IsCardAnswer(decision, cardVerdicts) || IsReviewAnswer(decision, reviewVerdicts))
             {
                 safe.Add(decision);
                 continue;
@@ -128,6 +136,9 @@ public static class CarryoverScope
             .ToHashSet();
 
     /// <summary>Whether a decision is still the card's answer: a pair taken apart leaves the old hold carried, with no twin.</summary>
+    private static bool IsReviewAnswer(CarryoverDecision decision, IReadOnlyCollection<Guid>? reviewVerdicts) =>
+        reviewVerdicts?.Contains(decision.OldHoldId) == true && decision is { Kind: CarryKind.Carried or CarryKind.Removed, NewHoldId: null };
+
     private static bool IsCardAnswer(CarryoverDecision decision, IReadOnlyCollection<Guid>? cardVerdicts) =>
         cardVerdicts?.Contains(decision.OldHoldId) == true && decision is { Kind: CarryKind.Carried, NewHoldId: null };
 

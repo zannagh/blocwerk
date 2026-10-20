@@ -82,9 +82,17 @@ public partial class WallBigUpdateService
         var holds = await db.Holds
             .Where(h => h.WallId == wallId && h.Generation == stagedGen && (ids.Contains(h.Id) || h.DiscardReason != null))
             .ToListAsync();
+
+        // A pass without the 3D evidence cannot tell what the 3D model saw: the reasons an earlier pass with it wrote stay.
+        var without3D = session.Evidence3DModelId is null;
         foreach (var hold in holds)
         {
             var reason = suggested.GetValueOrDefault(hold.Id);
+            if (reason is null && without3D && hold.DiscardReason is nameof(NewHoldDiscardReason.KnownHoldIn3D) or nameof(NewHoldDiscardReason.OffWallIn3D))
+            {
+                continue;
+            }
+
             if (hold.DiscardReason != reason)
             {
                 hold.DiscardReason = reason;

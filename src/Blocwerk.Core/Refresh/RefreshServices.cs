@@ -16,7 +16,9 @@ public static class RefreshServices
         services.AddSingleton<PanelPhotoPicker>();
         services.AddSingleton<ICaptureVideoJoiner, CaptureVideoJoiner>();
         services.AddSingleton<IWallRefreshActorFactory, ScopedWallRefreshActorFactory>();
+        services.AddSingleton<MatchedSessionCache>();
         services.AddSingleton<WallRefreshProcessor>();
+        services.AddScoped<Review.IUpdateReviewService, Review.UpdateReviewService>();
         services.AddHostedService<WallRefreshWorker>();
         services.AddScoped<IWallRefreshService, WallRefreshService>();
         return services;

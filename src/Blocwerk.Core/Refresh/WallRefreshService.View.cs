@@ -43,7 +43,8 @@ public sealed partial class WallRefreshService
             SummaryUpdating: WallRefreshProcessor.IsResummarizing(refresh, DateTimeOffset.UtcNow),
             LookOver: refresh.Status == WallRefreshStatus.Done ? await LookOverAsync(db, refresh.WallId) : null,
             FullRevision: refresh.FullRevision,
-            Revision: refresh.Status == WallRefreshStatus.ReadyToStart ? await RevisionPreviewAsync(db, refresh.WallId) : null);
+            Revision: refresh.Status == WallRefreshStatus.ReadyToStart ? await RevisionPreviewAsync(db, refresh.WallId) : null,
+            VideosAccepted: available && captures.IsSplatConfigured);
     }
 
     /// <summary>The wall's look-over flag with its open findings, or null while the wall is not flagged.</summary>
