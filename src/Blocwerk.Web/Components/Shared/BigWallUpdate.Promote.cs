@@ -125,7 +125,8 @@ public partial class BigWallUpdate
         // the only one every path passes through — a resume straight to Confirm never re-walks the
         // carryover, so the rows reach here exactly as they were recorded. Neutralising them here as
         // well as on restore means no ordering of resume, take-over or re-read can let one through.
-        var scoped = CarryoverScope.Reconcile(matched, persisted.Carryover);
+        IReadOnlyList<UpdateExceptionInfo> cards = open is null ? [] : await Sessions.GetUpdateExceptionsAsync(WallId);
+        var scoped = CarryoverScope.Reconcile(matched, persisted.Carryover, CarryoverScope.CardVerdictOldHoldIds(cards));
         RecordScopeResets(scoped.Reset);
 
         // The same payload the quick flow's Apply builds (warp outlines and hand-placed merges included), so both promote alike.

@@ -29,14 +29,16 @@ internal static class RefreshDecisions
         Guid wallId, WallRefreshActors actors, BigUpdateSession matched, IReadOnlyDictionary<Guid, IReadOnlyList<Guid>> stagedByPanel)
     {
         var decisions = await actors.Sessions.GetDecisionsAsync(wallId);
-        var scoped = CarryoverScope.Reconcile(matched, decisions.Carryover);
+        var exceptions = await actors.Sessions.GetUpdateExceptionsAsync(wallId);
+
+        // A card answered about a hold off the centre is the user's verdict on a pair they were shown: promoted as answered.
+        var scoped = CarryoverScope.Reconcile(matched, decisions.Carryover, CarryoverScope.CardVerdictOldHoldIds(exceptions));
         var promotable = decisions with { Carryover = scoped.Decisions.ToList() };
         var relocations = await actors.Sessions.GetRelocationSuggestionsAsync(wallId);
         var accepted = relocations
             .Where(r => RelocationFold.VerdictOf(r.Status) is not null)
             .Select(r => (r.OldHoldId, r.NewHoldId, RelocationFold.VerdictOf(r.Status)!.Value))
             .ToList();
-        var exceptions = await actors.Sessions.GetUpdateExceptionsAsync(wallId);
         var review = ReviewOldHoldIds(exceptions);
 
         // Exactly what Apply hands the promote, and the moves are previewed from it: the promote derives the same plan.

@@ -69,9 +69,14 @@ public static class CarryoverScope
     /// </summary>
     /// <param name="session">The matched session, for the reviewable scope and the matcher proposals.</param>
     /// <param name="decisions">The recorded verdicts (restored from the session, or held in memory).</param>
+    /// <param name="cardVerdicts">
+    /// Old holds whose verdict a confirm-screen card answered (<see cref="CardVerdictOldHoldIds"/>). The cards are shown, with
+    /// their crops, for every re-photographed panel, so such a verdict was made about a hold the user saw: it is promoted as
+    /// recorded wherever the hold is, never reset.
+    /// </param>
     /// <returns>The promote-safe decision set and the verdicts that were reset.</returns>
     public static CarryoverScopeResult Reconcile(
-        BigUpdateSession session, IReadOnlyList<CarryoverDecision> decisions)
+        BigUpdateSession session, IReadOnlyList<CarryoverDecision> decisions, IReadOnlyCollection<Guid>? cardVerdicts = null)
     {
         var reviewable = ReviewableOldHoldIds(session);
         if (reviewable is null)
@@ -85,7 +90,7 @@ public static class CarryoverScope
         var reset = new List<CarryoverDecision>();
         foreach (var decision in decisions)
         {
-            if (reviewable.Contains(decision.OldHoldId))
+            if (reviewable.Contains(decision.OldHoldId) || cardVerdicts?.Contains(decision.OldHoldId) == true)
             {
                 safe.Add(decision);
                 continue;
@@ -104,6 +109,22 @@ public static class CarryoverScope
 
         return new CarryoverScopeResult(safe, reset);
     }
+
+    /// <summary>
+    /// The old holds whose carry verdict a card answer took apart from its detection: "not the same hold" on an unsure match
+    /// or a hand-placed merge, and a rejected hand-placed merge. These are answers about a pair the card showed, so
+    /// <see cref="Reconcile"/> keeps them off the centre too. A "Remove" of a replaced or possibly removed hold is not among
+    /// them: off the centre it is refused when answered, and one stored before that is still reset.
+    /// </summary>
+    /// <param name="cards">The session's cards.</param>
+    /// <returns>The old hold ids.</returns>
+    public static HashSet<Guid> CardVerdictOldHoldIds(IEnumerable<UpdateExceptionInfo> cards) =>
+        cards
+            .Where(c => c.Status == UpdateExceptionStatus.NotSame
+                || (c.Kind == UpdateExceptionKind.MatchedToHandPlaced && c.Status == UpdateExceptionStatus.Removed))
+            .Select(c => c.OldHoldId)
+            .OfType<Guid>()
+            .ToHashSet();
 
     /// <summary>
     /// The matcher default for one old hold: carried in place, twinned to the matcher's same-panel
