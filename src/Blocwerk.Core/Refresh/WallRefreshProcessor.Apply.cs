@@ -45,6 +45,9 @@ public sealed partial class WallRefreshProcessor
         }
 
         var matched = await actors.BigUpdate.ResumeAsync(refresh.WallId);
+
+        // The panels were checked when the decisions were recorded; here only a matcher that cannot run stops the apply.
+        MatcherHealth.EnsureUsable(matched, panels: false);
         var promotable = await RefreshDecisions.LoadAsync(refresh.WallId, actors, matched, await StagedHoldsByPanelAsync(refresh.WallId, ct));
         var summary = RefreshTimeline.Summary(refresh);
 

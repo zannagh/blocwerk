@@ -153,12 +153,15 @@ public sealed partial class WallRefreshProcessor
         bool summarizeIfRefused = false)
     {
         Guid? model;
+        IReadOnlySet<Guid> recordedUnaligned;
         await using (var db = dbContextFactory.CreateDbContext())
         {
             model = await Ready3DModelAsync(db, refresh, ct);
+            recordedUnaligned = (await WallUpdateSessions.FindOpenAsync(db, refresh.WallId))?.UnalignedCarryPanelIds.ToHashSet() ?? [];
         }
 
         var matched = await actors.BigUpdate.ResumeAsync(refresh.WallId, use3DEvidence: true);
+        MatcherHealth.EnsureUsable(matched, recordedUnaligned);
         var quick = QuickUpdateDefaults.Build(matched, byPanel);
         var cards = UpdateExceptionBuilder.Build(matched, quick);
         var recordedAt = await RecordDecisionsAsync(refresh, actors.Sessions, quick, cards, onlyIfUnchangedSince);
