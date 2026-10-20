@@ -29,6 +29,10 @@ public partial class CarryoverReview
     /// </summary>
     [Parameter] public BigUpdateConfirmation? Restored { get; set; }
 
+    /// <summary>The old holds whose verdict a confirm-screen card answered (<see cref="CarryoverScope.CardVerdictOldHoldIds"/>).</summary>
+    [Parameter]
+    public IReadOnlyCollection<Guid> CardVerdicts { get; set; } = [];
+
     /// <summary>
     /// Overlays the persisted verdicts on top of the carry-all seed and the matcher proposals. Order
     /// matters: the user's own decision must win over both, and a persisted decision about a hold that
@@ -46,7 +50,8 @@ public partial class CarryoverReview
         // to the matcher default before it is laid back: it would otherwise sit in _decisions invisible
         // — not drawn, not counted, in no stepper — and still ship to the promote, where a Removed
         // freezes its boulders. The reset ones are surfaced to the user rather than dropped silently.
-        var reconciled = CarryoverScope.Reconcile(Session, restored.Carryover);
+        // A card answered about such a hold (the quick flow shows them for every panel) is the user's verdict: laid back as is.
+        var reconciled = CarryoverScope.Reconcile(Session, restored.Carryover, CardVerdicts);
         _ownScopeResets = reconciled.Reset;
         foreach (var decision in reconciled.Decisions)
         {

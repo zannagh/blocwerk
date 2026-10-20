@@ -72,7 +72,8 @@ public static class CarryoverScope
     /// <param name="cardVerdicts">
     /// Old holds whose verdict a confirm-screen card answered (<see cref="CardVerdictOldHoldIds"/>). The cards are shown, with
     /// their crops, for every re-photographed panel, so such a verdict was made about a hold the user saw: it is promoted as
-    /// recorded wherever the hold is, never reset.
+    /// recorded wherever the hold is, never reset — but only while the row still says what the card answered (carried, no
+    /// twin): a row rewritten since (say, by the step-by-step review) is judged like any other.
     /// </param>
     /// <returns>The promote-safe decision set and the verdicts that were reset.</returns>
     public static CarryoverScopeResult Reconcile(
@@ -90,7 +91,7 @@ public static class CarryoverScope
         var reset = new List<CarryoverDecision>();
         foreach (var decision in decisions)
         {
-            if (reviewable.Contains(decision.OldHoldId) || cardVerdicts?.Contains(decision.OldHoldId) == true)
+            if (reviewable.Contains(decision.OldHoldId) || IsCardAnswer(decision, cardVerdicts))
             {
                 safe.Add(decision);
                 continue;
@@ -125,6 +126,10 @@ public static class CarryoverScope
             .Select(c => c.OldHoldId)
             .OfType<Guid>()
             .ToHashSet();
+
+    /// <summary>Whether a decision is still the card's answer: a pair taken apart leaves the old hold carried, with no twin.</summary>
+    private static bool IsCardAnswer(CarryoverDecision decision, IReadOnlyCollection<Guid>? cardVerdicts) =>
+        cardVerdicts?.Contains(decision.OldHoldId) == true && decision is { Kind: CarryKind.Carried, NewHoldId: null };
 
     /// <summary>
     /// The matcher default for one old hold: carried in place, twinned to the matcher's same-panel

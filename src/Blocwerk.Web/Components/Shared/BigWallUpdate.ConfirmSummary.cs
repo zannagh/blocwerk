@@ -51,6 +51,7 @@ public partial class BigWallUpdate
         try
         {
             var persisted = await Sessions.GetDecisionsAsync(WallId);
+            await LoadCardVerdictsAsync();
             var scoped = ReconcileCarryScope(persisted.Carryover);
             RecordScopeResets(scoped.Reset);
             confirmDecisions = persisted with { Carryover = scoped.Decisions.ToList() };

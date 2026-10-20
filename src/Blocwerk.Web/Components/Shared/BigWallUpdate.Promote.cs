@@ -125,8 +125,8 @@ public partial class BigWallUpdate
         // the only one every path passes through — a resume straight to Confirm never re-walks the
         // carryover, so the rows reach here exactly as they were recorded. Neutralising them here as
         // well as on restore means no ordering of resume, take-over or re-read can let one through.
-        IReadOnlyList<UpdateExceptionInfo> cards = open is null ? [] : await Sessions.GetUpdateExceptionsAsync(WallId);
-        var scoped = CarryoverScope.Reconcile(matched, persisted.Carryover, CarryoverScope.CardVerdictOldHoldIds(cards));
+        await LoadCardVerdictsAsync(open is not null);
+        var scoped = CarryoverScope.Reconcile(matched, persisted.Carryover, _cardVerdicts);
         RecordScopeResets(scoped.Reset);
 
         // The same payload the quick flow's Apply builds (warp outlines and hand-placed merges included), so both promote alike.
@@ -163,9 +163,19 @@ public partial class BigWallUpdate
 
     private bool ScopeResetsPending => _scopeResets.Count > 0 && !_scopeResetsAcknowledged;
 
+    /// <summary>
+    /// The old holds whose verdict a confirm-screen card answered (<see cref="CarryoverScope.CardVerdictOldHoldIds"/>): every
+    /// scope reconcile here passes them, so restore, the confirm counts, the carryover seed and Apply agree with the quick flow.
+    /// </summary>
+    private HashSet<Guid> _cardVerdicts = [];
+
+    /// <summary>Reads the session's cards again; without a session there are none.</summary>
+    private async Task LoadCardVerdictsAsync(bool hasSession = true) =>
+        _cardVerdicts = hasSession ? CarryoverScope.CardVerdictOldHoldIds(await Sessions.GetUpdateExceptionsAsync(WallId)) : [];
+
     private CarryoverScopeResult ReconcileCarryScope(IReadOnlyList<CarryoverDecision> decisions) =>
         _session is { } session
-            ? CarryoverScope.Reconcile(session, decisions)
+            ? CarryoverScope.Reconcile(session, decisions, _cardVerdicts)
             : new CarryoverScopeResult(decisions, []);
 
     /// <summary>
