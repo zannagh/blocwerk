@@ -83,6 +83,15 @@ window.bwGestures = (function () {
         }
     }
 
+    /** Whether the wall editor's Shape tool owns this touch (see wall-shape-drag.js ownsTouch). */
+    function shapeToolOwns(e) {
+        try {
+            return !!(window.wallShapeDrag && window.wallShapeDrag.ownsTouch(e));
+        } catch (_) {
+            return false;
+        }
+    }
+
     /**
      * The part of the page currently on screen, in layout-viewport CSS pixels — the coordinate
      * space of clientX/clientY and of `position: fixed`. Identical to the layout viewport at page
@@ -495,6 +504,14 @@ window.bwGestures = (function () {
         let lastTapY = 0;
 
         el.addEventListener('touchstart', function (e) {
+            // The wall editor's Shape tool (wall-shape-drag.js) is dragging a point, erasing or painting, or a
+            // pen is on the photo and this is the palm beside it: the gesture is not the viewport's.
+            if (shapeToolOwns(e)) {
+                cancelLens();
+                mode = 'shape';
+                return;
+            }
+
             if (e.touches.length === 2) {
                 e.preventDefault();
                 cancelLens(); // second finger: this is a pinch, not a long-press
@@ -519,6 +536,10 @@ window.bwGestures = (function () {
         }, { passive: false });
 
         el.addEventListener('touchmove', function (e) {
+            if (mode === 'shape') {
+                return;
+            }
+
             // Once the lens is up it owns the single-finger gesture: it follows the finger
             // and the viewport does not pan until release.
             if (lensActive && e.touches.length === 1) {
@@ -570,6 +591,11 @@ window.bwGestures = (function () {
         }, { passive: false });
 
         el.addEventListener('touchend', function (e) {
+            if (mode === 'shape') {
+                mode = e.touches.length === 0 ? null : mode;
+                return;
+            }
+
             // Tear down the lens (or a still-pending long-press timer). If it was showing,
             // this release belongs to the lens: swallow it so it doesn't also fire a tap /
             // double-tap zoom.
