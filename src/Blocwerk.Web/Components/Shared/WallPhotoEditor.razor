@@ -177,7 +177,7 @@
                        Foot="isFoot" Fill="@fillColor" Stroke="@strokeColor" StrokeWidth="@sw" Dash="@dash"
                        Kept="hold.KeptUnconfirmedGeneration is not null" StackKeys="@StackKeys(stackOn, hold)"
                        PointerEvents="@hitEvents" Style="cursor: pointer"
-                       OnClick="() => OnHoldClick(hold)" OnPointerDown="() => StartDrag(hold)" />
+                       OnClick="HoldClickCallback(hold.Id)" OnPointerDown="HoldDownCallback(hold.Id)" />
 
             @if (_showUsage && usageRefs.Count > 0)
             {

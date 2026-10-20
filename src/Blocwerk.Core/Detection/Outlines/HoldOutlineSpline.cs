@@ -92,9 +92,7 @@ public static class HoldOutlineSpline
             return null;
         }
 
-        var expected = Densify(control);
-        bool same = expected.Count == stored.Count
-            && expected.Zip(stored).All(p => Math.Abs(p.First.Dx - p.Second.Dx) <= Tolerance && Math.Abs(p.First.Dy - p.Second.Dy) <= Tolerance);
+        bool same = HoldOutlineSplineCache.IsCurve(hold, control, stored, () => IsCurveOf(control, stored));
         return same ? control : null;
     }
 
@@ -161,6 +159,13 @@ public static class HoldOutlineSpline
     /// <returns>The curve through the control points when there are any, else the outline as sent.</returns>
     public static List<ShapePoint>? Outline(List<ShapePoint>? outline, List<ShapePoint>? control) =>
         outline is not null && control is { Count: >= 3 } ? Densify(control) : outline;
+
+    private static bool IsCurveOf(IReadOnlyList<ShapePoint> control, IReadOnlyList<ShapePoint> stored)
+    {
+        var expected = Densify(control);
+        return expected.Count == stored.Count
+            && expected.Zip(stored).All(p => Math.Abs(p.First.Dx - p.Second.Dx) <= Tolerance && Math.Abs(p.First.Dy - p.Second.Dy) <= Tolerance);
+    }
 
     private static List<P2> Distinct(IReadOnlyList<ShapePoint> points)
     {
