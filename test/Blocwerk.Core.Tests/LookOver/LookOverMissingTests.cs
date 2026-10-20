@@ -42,6 +42,28 @@ public class LookOverMissingTests
         Assert.True(await db.ChangeJournalBatches.AnyAsync(b => b.Id == finding.MergeBatchId && b.Label == HoldDuplicateService.BatchLabel));
     }
 
+    // The purple on the old orange's spot: "it is this hold" moves identity and boulders, never the old hold's colour.
+    [Fact]
+    public async Task ItIsThisHold_LeavesTheTargetItsOwnDetectedColour()
+    {
+        using var h = new WallTestHarness();
+        var k = await KeptHoldFixture.ApplyAsync(h);
+        await using (var db = h.CreateContext())
+        {
+            await db.Holds.Where(x => x.Id == k.UsedId).ExecuteUpdateAsync(s => s.SetProperty(x => x.Color, "orange").SetProperty(x => x.ProposedColor, (string?)null));
+            await db.Holds.Where(x => x.Id == k.FoundId).ExecuteUpdateAsync(s => s.SetProperty(x => x.Color, "purple").SetProperty(x => x.ProposedColor, "purple"));
+        }
+
+        var service = Service(h);
+        var view = (await service.ListAsync(k.Wall.WallId)).Single(v => v.HoldId == k.UsedId);
+
+        await service.ReassignAsync(k.Wall.WallId, view.Id, k.FoundId, [k.Wall.BoulderId]);
+
+        var target = (await HoldAsync(h, k.FoundId))!;
+        Assert.Equal(("purple", "purple", "Yellow crimp"), (target.Color, target.ProposedColor, target.Name));
+        Assert.Equal(k.FoundId, (await BoulderAsync(h, k.Wall.BoulderId)).BoulderHolds.Single().HoldId);
+    }
+
     [Fact]
     public async Task ItIsThisHold_IsRefused_ForAModerator_ForAnotherUnconfirmedHold_AndWhenTheBouldersChanged()
     {

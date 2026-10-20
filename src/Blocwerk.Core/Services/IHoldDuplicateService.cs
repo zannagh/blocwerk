@@ -23,8 +23,10 @@ public interface IHoldDuplicateService
     /// <param name="rightId">The "right" hold.</param>
     /// <param name="mode">Which hold stays and whether it takes the detected shape.</param>
     /// <param name="ct">Cancellation.</param>
+    /// <param name="keepColour">The hold that stays keeps its own colour (see <see cref="Detection.Outlines.HoldMergeRules.MergeFlags"/>).</param>
     /// <returns>What happened, with the journal batch to undo it.</returns>
-    Task<HoldMergeResult> MergeAsync(Guid wallId, Guid leftId, Guid rightId, HoldMergeMode mode, CancellationToken ct = default);
+    Task<HoldMergeResult> MergeAsync(
+        Guid wallId, Guid leftId, Guid rightId, HoldMergeMode mode, CancellationToken ct = default, bool keepColour = false);
 
     /// <summary>Remembers that two holds are different, so the pair is not suggested again.</summary>
     /// <param name="wallId">The wall.</param>
