@@ -2,11 +2,11 @@
    (or, with Subtract, off). The size is the eraser's / brush's radius on screen, the same at every zoom. *@
 
 <div class="option-group shape-stroke-tools" role="group" aria-label="Shape editing">
-    <button class="opt-btn @(Tool == ShapeStrokeTool.Points ? "active" : "")" title="Drag the outline's points"
+    <button class="opt-btn @(Tool == ShapeStrokeTool.Points ? "active" : "")" title="Drag the outline's points (1)"
             aria-pressed="@(Tool == ShapeStrokeTool.Points)" @onclick="() => Pick(ShapeStrokeTool.Points)">Points</button>
-    <button class="opt-btn @(Tool == ShapeStrokeTool.Eraser ? "active" : "")" title="Drag over the outline to remove the points it touches"
+    <button class="opt-btn @(Tool == ShapeStrokeTool.Eraser ? "active" : "")" title="Drag over the outline, or tap, to remove the points it touches (2)"
             aria-pressed="@(Tool == ShapeStrokeTool.Eraser)" @onclick="() => Pick(ShapeStrokeTool.Eraser)">Eraser</button>
-    <button class="opt-btn @(Tool == ShapeStrokeTool.Brush ? "active" : "")" title="Paint to add area to the outline"
+    <button class="opt-btn @(Tool == ShapeStrokeTool.Brush ? "active" : "")" title="Paint to add area to the outline (3)"
             aria-pressed="@(Tool == ShapeStrokeTool.Brush)" @onclick="() => Pick(ShapeStrokeTool.Brush)">Brush</button>
 </div>
 @if (Tool == ShapeStrokeTool.Brush)

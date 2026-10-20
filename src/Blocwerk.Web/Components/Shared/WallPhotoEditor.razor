@@ -2985,7 +2985,7 @@
 
     private async Task OnShortcut(string key)
     {
-        if (!TryToolShortcut(key) && !TryPaintShortcut(key) && !TryEscape(key))
+        if (!TryToolShortcut(key) && !TryPaintShortcut(key) && !TryShapeStrokeShortcut(key) && !TryEscape(key))
         {
             await HandleAsyncShortcut(key);
         }
