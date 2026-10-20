@@ -113,6 +113,9 @@ internal static class NewHoldPerBoulderScenarios
 
         Assert.True(result.Reverted, result.Error ?? string.Join("; ", result.Conflicts));
         Assert.Equal(before, await SnapshotAsync(h, w.WallId));
+
+        // A reverted batch no longer counts towards what the answer did.
+        Assert.Null(Assert.Single(await Service(h).ListAsync(w.WallId)).NewHoldBoulders);
     }
 
     /// <summary>The wall's holds, memberships and boulder flags, as one comparable string.</summary>

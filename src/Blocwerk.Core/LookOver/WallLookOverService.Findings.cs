@@ -76,7 +76,8 @@ public sealed partial class WallLookOverService
 
     /// <summary>
     /// Per "use the new hold" batch, how many boulders it made historic (the ones answered no): read from the batch
-    /// itself, which records a boulder's retirement as a change of its historic flag. Zero for a plain merge.
+    /// itself, which records a boulder's retirement as a change of its historic flag. Zero for a plain merge and for a
+    /// batch the duplicate review has reverted.
     /// </summary>
     private static async Task<Dictionary<Guid, int>> RetiredByNewHoldAsync(BlocwerkDbContext db, IReadOnlyList<WallLookOverFinding> findings, CancellationToken ct)
     {
@@ -88,6 +89,7 @@ public sealed partial class WallLookOverService
 
         return (await db.ChangeJournalEntries.AsNoTracking()
                 .Where(e => batches.Contains(e.BatchId) && e.EntityType == nameof(Boulder) && e.Op == ChangeJournalOp.Update
+                    && db.ChangeJournalBatches.Any(b => b.Id == e.BatchId && b.Status == ChangeJournalStatus.Recorded)
                     && e.AfterJson != null && e.AfterJson.Contains(nameof(Boulder.IsHistoric)))
                 .Select(e => e.BatchId)
                 .ToListAsync(ct))

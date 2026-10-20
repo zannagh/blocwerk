@@ -42,4 +42,25 @@ public class PostgresLookOverNewHoldTests
         using var h = new WallTestHarness(PostgresTestDatabase.Create());
         await NewHoldPerBoulderScenarios.UndoAsync(h, mixed: false);
     }
+
+    [PostgresFact]
+    public async Task Mixed_WithFrozenBoulders()
+    {
+        using var h = new WallTestHarness(PostgresTestDatabase.Create());
+        await NewHoldEdgeScenarios.FrozenBouldersMoveAsync(h);
+    }
+
+    [PostgresFact]
+    public async Task Mixed_WithABoulderOnBothHolds()
+    {
+        using var h = new WallTestHarness(PostgresTestDatabase.Create());
+        await NewHoldEdgeScenarios.BoulderOnBothHoldsAsync(h);
+    }
+
+    [PostgresFact]
+    public async Task Mixed_WithStackedAndLinkedHolds()
+    {
+        using var h = new WallTestHarness(PostgresTestDatabase.Create());
+        await NewHoldEdgeScenarios.StackedAndLinkedAsync(h);
+    }
 }

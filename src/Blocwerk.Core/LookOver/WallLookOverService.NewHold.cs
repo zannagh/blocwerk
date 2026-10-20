@@ -28,6 +28,26 @@ public sealed partial class WallLookOverService
     public const string NotShownBoulder = "Only the boulders that use this hold can be moved onto the new hold. Reload the page and check again.";
 
     /// <summary>
+    /// Under the wall lock, the current boulders on the old hold must still be the ones the user answered for (one that
+    /// joined since would otherwise be retired unasked). Returns the memberships to move: null for all, else the yes
+    /// boulders plus every archived or historic one, whose frozen record keeps its hold on the new hold.
+    /// </summary>
+    internal static async Task<IReadOnlySet<Guid>?> MovingUnderLockAsync(
+        BlocwerkDbContext db, Guid oldId, LookOverFindingView view, IReadOnlySet<Guid>? onlyThese, CancellationToken ct)
+    {
+        var uses = await db.BoulderHolds.AsNoTracking()
+            .Where(bh => bh.HoldId == oldId)
+            .Select(bh => new { bh.BoulderId, Frozen = bh.Boulder.IsArchived || bh.Boulder.IsHistoric })
+            .ToListAsync(ct);
+        if (!uses.Where(u => !u.Frozen).Select(u => u.BoulderId).ToHashSet().SetEquals(view.Boulders.Select(b => b.Id)))
+        {
+            throw new UserFacingException(BouldersChanged);
+        }
+
+        return onlyThese is null ? null : onlyThese.Concat(uses.Where(u => u.Frozen).Select(u => u.BoulderId)).ToHashSet();
+    }
+
+    /// <summary>
     /// The boulders that should use the new hold, checked: only with "use the new hold", and only boulders on the hold.
     /// Null when there is no per-boulder answer or every boulder said yes (the plain merge); every boulder no is
     /// <see cref="LookOverAnswer.RemoveHold"/>.
@@ -70,18 +90,20 @@ public sealed partial class WallLookOverService
     private async Task UseNewHoldAsync(
         BlocwerkDbContext db, WallLookOverFinding finding, LookOverFindingView view, IReadOnlySet<Guid>? onlyThese, CancellationToken ct)
     {
+        var journalled = journal ?? throw new InvalidOperationException("\"Use the new hold\" needs the change journal, so the answer can be undone.");
         using var wallLock = WallHoldWriteLock.TryAcquire(
             finding.WallId, "Another update of this wall's holds (a clean-up, an outline upgrade, a merge or a wall update) is running. Try again in a moment.");
         var (old, replacement) = await PairAsync(db, finding, view, ct);
+        var toMove = await MovingUnderLockAsync(db, old.Id, view, onlyThese, ct);
         var clearable = await ClearableAsync(db, finding, view, onlyThese ?? view.Boulders.Select(b => b.Id).ToHashSet(), ct);
-        var (moved, _) = await HoldDuplicateService.MoveBouldersAsync(db, replacement, old, onlyThese, ct);
+        var (moved, _) = await HoldDuplicateService.MoveBouldersAsync(db, replacement, old, toMove, ct);
         var cleared = ClearTracked(await db.Boulders.Where(b => clearable.Contains(b.Id)).ToListAsync(ct));
         HoldMergeRules.MergeFlags(replacement, old);
         await HoldStacker.MergeAsync(db, replacement, old, ct);
         var historic = await HoldDeletion.PrepareHoldForDeleteAsync(db, old.Id, HoldDeleteBoulderPolicy.DetachAndFlagHistoric, ct: ct);
         db.Holds.Remove(old);
         ct.ThrowIfCancellationRequested();
-        using (var scope = journal?.BeginBatch(HoldDuplicateService.BatchLabel, ChangeJournalScopeKind.Wall, finding.WallId))
+        using (var scope = journalled.BeginBatch(HoldDuplicateService.BatchLabel, ChangeJournalScopeKind.Wall, finding.WallId))
         {
             await db.SaveChangesAsync(ct);
             if ((await LinkedHoldSync.ReconcileAsync(db, finding.WallId, replacement.Id, ct)).Any)
@@ -89,7 +111,8 @@ public sealed partial class WallLookOverService
                 await db.SaveChangesAsync(ct);
             }
 
-            finding.MergeBatchId = (scope as ChangeJournalBatchScope)?.BatchId;
+            finding.MergeBatchId = (scope as ChangeJournalBatchScope)?.BatchId
+                ?? throw new InvalidOperationException("The change journal opened no batch for \"use the new hold\".");
         }
 
         finding.ClearedBoulderIds = cleared;
@@ -106,6 +129,11 @@ public sealed partial class WallLookOverService
         if (old is null || replacement is null)
         {
             throw new UserFacingException("One of these holds no longer exists. Reload the page.");
+        }
+
+        if (old.Id == replacement.Id)
+        {
+            throw new UserFacingException("The old and the new hold are the same hold. Reload the page.");
         }
 
         if (old.WallPanelId != replacement.WallPanelId || old.Generation != replacement.Generation)
