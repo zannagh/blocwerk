@@ -86,6 +86,20 @@ internal static class ChangeJournalEntityAccessor
             return current is null && expected is null;
         }
 
+        // PostgreSQL keeps timestamps/intervals to the microsecond, .NET to 100 ns (Linux clocks fill the 7th digit):
+        // an image recorded from an in-memory value must still match the row read back from the database.
+        // PostgreSQL rounds to the microsecond while a client may truncate, so either way the stored value
+        // lies strictly within one microsecond of the recorded one; DateTimeOffset compares in UTC.
+        switch (current, expected)
+        {
+            case (DateTimeOffset c, DateTimeOffset e):
+                return WithinMicrosecond(c.UtcTicks - e.UtcTicks);
+            case (DateTime c, DateTime e):
+                return WithinMicrosecond(c.Ticks - e.Ticks);
+            case (TimeSpan c, TimeSpan e):
+                return WithinMicrosecond(c.Ticks - e.Ticks);
+        }
+
         var comparer = property.GetValueComparer();
         if (comparer is not null
             && comparer.Type.IsInstanceOfType(current)
@@ -95,6 +109,11 @@ internal static class ChangeJournalEntityAccessor
         }
 
         return current.Equals(expected);
+    }
+
+    private static bool WithinMicrosecond(long tickDifference)
+    {
+        return Math.Abs(tickDifference) < TimeSpan.TicksPerMicrosecond;
     }
 
     private static string Describe(object? value)
