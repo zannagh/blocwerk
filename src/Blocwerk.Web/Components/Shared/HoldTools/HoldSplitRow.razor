@@ -30,25 +30,25 @@ else if (PendingChanges > 0)
 }
 else
 {
-    <HoldActionPrompt Compact="true" Disabled="State.Busy" Outcome="Outcome" ConfirmLabel="Split"
-                      PreviewHint="Green keeps the hold, orange becomes a new hold."
-                      OnConfirm="OnConfirm" OnCancel="OnCancel">
-        @if (State.Preview!.Boulders.Count > 0)
-        {
-            <span class="split-boulders" role="group" aria-label="Which part does each boulder use?">
-                <span class="split-question">Which part does each boulder use?</span>
-                @foreach (var boulder in State.Preview.Boulders)
-                {
-                    var small = State.OnSmaller.Contains(boulder.Id);
-                    <button type="button" class="opt-btn split-boulder @(small ? "is-small" : "is-large")"
-                            aria-pressed="@(small ? "true" : "false")" title="Tap to use the other part"
-                            @onclick="() => OnToggleBoulder.InvokeAsync(boulder.Id)">
-                        <span class="split-dot"></span>@boulder.Name
-                    </button>
-                }
-            </span>
-        }
-    </HoldActionPrompt>
+    <span class="split-prompt">
+        <HoldActionPrompt Compact="true" Disabled="State.Busy" Outcome="Outcome" ConfirmLabel="Split"
+                          OnConfirm="OnConfirm" OnCancel="OnCancel" />
+    </span>
+    @if (State.Preview!.Boulders.Count > 0)
+    {
+        <span class="split-boulders" role="group" aria-label="Which part does each boulder use?">
+            <span class="split-question">Which part does each boulder use?</span>
+            @foreach (var boulder in State.Preview.Boulders)
+            {
+                var small = State.OnSmaller.Contains(boulder.Id);
+                <button type="button" class="opt-btn split-boulder @(small ? "is-small" : "is-large")"
+                        aria-pressed="@(small ? "true" : "false")" title="Tap to use the other part"
+                        @onclick="() => OnToggleBoulder.InvokeAsync(boulder.Id)">
+                    <span class="split-dot"></span>@boulder.Name
+                </button>
+            }
+        </span>
+    }
 }
 
 @code {
@@ -56,6 +56,9 @@ else
 
     /// <summary>How the hold being cut is called.</summary>
     [Parameter] public string HoldLabel { get; set; } = "the hold";
+
+    /// <summary>The same, at the start of a sentence.</summary>
+    [Parameter] public string HoldTitle { get; set; } = "The hold";
 
     /// <summary>Unsaved edits in the editor: a split refuses while there are any.</summary>
     [Parameter] public int PendingChanges { get; set; }
@@ -82,12 +85,13 @@ else
             var moving = State.OnSmaller.Count;
             var total = preview.Boulders.Count;
             var boulders = total == 0 ? "No boulder uses it."
+                : moving == 0 && total == 1 ? "Its boulder stays on the green part."
                 : moving == 0 ? $"All {PlainCopy.Plural(total, "boulder")} stay on the green part."
                 : $"{PlainCopy.Plural(moving, "boulder")} move to the new orange hold, {PlainCopy.Plural(total - moving, "boulder")} stay.";
             return new HoldActionOutcome(
-                $"{HoldLabel} is cut in two: the larger part keeps the hold and its history, the smaller becomes a new hold of the same colour.",
+                $"{HoldTitle} becomes two holds: green keeps it and its history, orange is a new hold of the same colour.",
                 boulders,
-                "Undo is offered right after.",
+                "You can undo it.",
                 Danger: false);
         }
     }

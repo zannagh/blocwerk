@@ -90,8 +90,9 @@ public partial class WallPhotoEditor
         builder.OpenElement(0, "div");
         builder.AddAttribute(1, "class", "option-bar");
         builder.OpenComponent<HoldSplitRow>(2);
-        builder.AddComponentParameter(3, nameof(HoldSplitRow.State), splitTool);
-        builder.AddComponentParameter(4, nameof(HoldSplitRow.HoldLabel), LabelOf(splitTool.HoldId, "the hold"));
+        builder.AddComponentParameter(2, nameof(HoldSplitRow.State), splitTool);
+        builder.AddComponentParameter(3, nameof(HoldSplitRow.HoldLabel), LabelOf(splitTool.HoldId, "the hold"));
+        builder.AddComponentParameter(4, nameof(HoldSplitRow.HoldTitle), Capitalized(LabelOf(splitTool.HoldId, "the hold")));
         builder.AddComponentParameter(5, nameof(HoldSplitRow.PendingChanges), _pendingChanges);
         builder.AddComponentParameter(6, nameof(HoldSplitRow.OnConfirm), EventCallback.Factory.Create(this, ConfirmSplitHoldAsync));
         builder.AddComponentParameter(7, nameof(HoldSplitRow.OnCancel), EventCallback.Factory.Create(this, CancelSplitAsync));
