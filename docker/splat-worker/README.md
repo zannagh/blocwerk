@@ -588,7 +588,8 @@ Plain `http://` is refused except for localhost (`--insecure-http` overrides). E
 
 ### Native runners per OS
 
-Both launchers download the pinned Brush v0.3.0 release (sha256-checked) into `./.bin`, make `./.venv` from
+Both launchers download the pinned Brush v0.3.0 release (sha256-checked) into `./.bin` (on Windows into a folder named
+after the version, so a version bump downloads anew), make `./.venv` from
 `requirements.txt` (uv if present; re-installed when the requirements change) and start
 `python -m splatworker.gpurunner`. No COLMAP: the server's CPU half runs it. The runner picks its highest quality from
 the GPU it finds (`gpuprobe.py`) and the memory budget:
@@ -602,18 +603,34 @@ the GPU it finds (`gpuprobe.py`) and the memory budget:
 | progress from Brush | POSIX pty | ConPTY via `pywinpty` (`requirements-windows.txt`); without it a pipe: training works, the progress bar does not move until the end |
 | stays awake | `caffeinate -i` in front | the runner asks Windows itself (`RUNNER_KEEP_AWAKE=0` turns it off) |
 | work dir | `~/Library/Caches/blocwerk-runner` | `%LOCALAPPDATA%\blocwerk-runner` |
-| stop | Ctrl+C / SIGTERM | Ctrl+C / Ctrl+Break |
+| stop | Ctrl+C / SIGTERM | Ctrl+C / Ctrl+Break, closing the console window, log-off / shutdown (the job is handed back within Windows' ~5 s) |
+| highest quality | max (Brush) | **max** (Brush); `ultra` needs the CUDA runner below |
 
 **Quality on a discrete GPU** (Windows, Linux AMD): Brush keeps its host-memory tiers (max >= 12 GB, high >= 5 GB budget)
 and is additionally capped by the card: max on >= 12 GB of VRAM, high on >= 6 GB, else draft (`caps.BRUSH_VRAM_FLOOR_MB`;
-estimates, not measured yet). Unified memory (Apple, an iGPU with < 2 GB dedicated) keeps the host budget alone.
-`SPLAT_VRAM_MB` overrides the detected VRAM, `RUNNER_MAX_QUALITY` caps the result.
+estimates, not measured yet). A card whose VRAM cannot be read counts as 4 GB (draft): set `SPLAT_VRAM_MB` to its real
+size. Only Apple Silicon and known integrated GPUs (Intel UHD / Iris / HD / Arc Graphics, AMD Radeon(TM) Graphics, Vega
+and 7xxM APUs) are unified memory and keep the host budget alone. `RUNNER_MAX_QUALITY` caps the result.
 
-**Windows specifics.** gsplat (CUDA) is not supported natively: for `ultra` on an NVIDIA card run the CUDA image under
-Docker Desktop's WSL2 backend (above). Native Brush uses the driver's Vulkan / DX12 directly, which is not the
-WSL2 dzn path that crashes. The memory guard reads the working set of Brush's process tree (`winsys.py`); there is no
+**The native Windows runner trains with Brush, so it tops out at `max`.** `ultra` is gsplat on CUDA (what the old
+production model was trained with on the RTX 4070 Ti SUPER); gsplat does not run natively on Windows, so on an NVIDIA
+PC run the CUDA runner in Docker Desktop (WSL2 backend, "Use the WSL 2 based engine" on; a current NVIDIA driver is
+all WSL2 needs). From the repo root in PowerShell, with `runner.env` holding the one line `BWR_KEY=bwr_...`:
+
+```powershell
+docker build -f docker/splat-worker/Dockerfile.cuda -t blocwerk-splat-worker-cuda:local .
+docker run -d --name blocwerk-runner --restart unless-stopped --stop-timeout 30 --gpus all `
+  -e RUNNER_UI_HOST=0.0.0.0 -p 127.0.0.1:8190:8190 `
+  -e RUNNER_STATE_DIR=/var/lib/splat-worker/runner-state -v blocwerk-runner-state:/var/lib/splat-worker/runner-state `
+  --env-file runner.env blocwerk-splat-worker-cuda:local python -m splatworker.gpurunner --server https://blocwerk.app
+```
+
+It says `gsplat trainer, up to ultra` on a >= 12 GB card. Run one runner per GPU: the native one or the Docker one.
+
+**Windows specifics.** Native Brush uses the driver's Vulkan / DX12 directly, which is not the WSL2 dzn path that
+crashes (`WGPU_BACKEND=vulkan` or `dx12` forces one). The memory guard reads the working set of Brush's process tree (`winsys.py`); there is no
 swap guard on Windows (its commit charge moves with the GPU driver). A bundle whose names cannot exist here (two photos
-differing only in case, `CON`, a trailing dot) is handed back as a retryable failure (`portable.py`), so a Linux
+differing only in case, `CON`, a trailing dot; on macOS also NFC vs NFD spellings of one name) is handed back as a retryable failure (`portable.py`), so a Linux
 runner can take it; macOS's case-insensitive APFS gets the same check. Consider excluding the work dir from Defender's
 real-time scan (it scans every unpacked photo and every Brush export) and enabling long paths
 (`HKLM\SYSTEM\CurrentControlSet\Control\FileSystem\LongPathsEnabled = 1`) if your profile path is long.

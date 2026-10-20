@@ -31,6 +31,16 @@ def test_tree_pids_and_table_tree_bytes_skip_the_idle_process_and_cycles():
     assert memguard.table_tree_bytes({1: (2, 5), 2: (1, 7)}, 1) == 12  # a parent loop is counted once
 
 
+def test_console_close_hands_back_and_ctrl_c_passes_on():
+    calls = []
+    handler = winsys.close_event_handler(calls.append, grace_s=3.0)
+    assert handler(0) is False and handler(1) is False and calls == []  # Ctrl+C / Ctrl+Break: Python's SIGINT path
+    assert handler(2) is True and handler(6) is True and calls == [3.0, 3.0]  # close, shutdown
+    boom = winsys.close_event_handler(lambda g: 1 / 0)
+    assert boom(5) is True  # an error never escapes into the console thread
+    assert winsys.on_console_close(calls.append) is (sys.platform == "win32")
+
+
 def test_terminal_mode():
     assert procs.terminal_mode(False) == "pipe"
     assert procs.terminal_mode(True, "darwin") == "pty" and procs.terminal_mode(True, "linux") == "pty"
@@ -100,6 +110,18 @@ def test_tool_errors_never_name_a_windows_path():
     assert safe_message("tool /opt/brush/brush_app failed") == "tool brush_app failed"  # POSIX unchanged
 
 
+@pytest.mark.parametrize("name", ["Jane Doe", "O'Brien", "jane&co", "Jane, Inc", "J. (Admin)"])
+def test_no_user_name_survives_in_error_text(name):
+    texts = [rf"cannot open C:\Users\{name}", rf"cannot open C:\Users\{name}\AppData\Local\job\photo.jpg now",
+             rf"C:\Users\{name}\x y\z.log failed", f"cannot open /Users/{name}/photos/a.jpg",
+             f"read /home/{name}", rf"\\nas\homes\Users\{name}\b.bin"]
+    for text in texts:
+        msg = safe_message(text)
+        for word in name.replace(",", " ").replace("(", " ").replace(")", " ").split():
+            assert word not in msg, (text, msg)
+    assert "photo.jpg" in safe_message(texts[1]) and "z.log" in safe_message(texts[2])
+
+
 def test_tool_env_keeps_what_windows_children_need(monkeypatch):
     monkeypatch.setenv("SYSTEMROOT", r"C:\Windows")
     monkeypatch.setenv("LOCALAPPDATA", r"C:\Users\x\AppData\Local")
@@ -119,6 +141,15 @@ def test_portable_names():
         assert portable.name_problem([bad], windows=True, case_insensitive=False), bad
         assert portable.name_problem([bad], windows=False, case_insensitive=False) is None
     assert portable.name_problem(["dataset/images/console.jpg"], windows=True, case_insensitive=False) is None
+
+
+def test_portable_names_unicode():
+    nfc, nfd = "dataset/images/g/café.jpg", "dataset/images/g/café.jpg"
+    assert portable.name_problem([nfc, nfd], windows=False, case_insensitive=False, norm_insensitive=True)  # APFS
+    assert portable.name_problem([nfc, nfd], windows=True, case_insensitive=True) is None  # NTFS keeps both
+    assert portable.name_problem([nfc.upper(), nfd], False, True, norm_insensitive=True)  # case + normalization
+    sharp = ["dataset/images/g/straße.jpg", "dataset/images/g/strasse.jpg"]
+    assert portable.name_problem(sharp, windows=True, case_insensitive=True, norm_insensitive=True) is None
 
 
 def test_case_probe_matches_this_file_system(tmp_path):

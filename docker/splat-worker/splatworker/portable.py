@@ -9,6 +9,7 @@ import os
 import re
 import sys
 import tempfile
+import unicodedata
 
 RESERVED = re.compile(r"^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])(\..*)?$", re.I)
 BAD_CHARS = re.compile(r'[<>:"|?*\x00-\x1f]')
@@ -29,7 +30,15 @@ def windows_problem(part):
     return None
 
 
-def name_problem(names, windows, case_insensitive):
+def fold(name, case_insensitive, norm_insensitive):
+    """The key under which this file system finds `name`: NFC when it ignores Unicode normalization (APFS: "é" composed
+    and decomposed are one file), lower-cased when it ignores case. lower(), not casefold(): no file system folds
+    "ß" to "ss", so casefold() would report collisions that are not."""
+    key = unicodedata.normalize("NFC", name) if norm_insensitive else name
+    return key.lower() if case_insensitive else key
+
+
+def name_problem(names, windows, case_insensitive, norm_insensitive=False):
     """The first reason the archive names (POSIX '/' separated) cannot be unpacked side by side, or None."""
     seen = {}
     for name in names:
@@ -38,10 +47,10 @@ def name_problem(names, windows, case_insensitive):
                 why = windows_problem(part)
                 if why:
                     return why
-        if case_insensitive:
-            key = name.casefold()
+        if case_insensitive or norm_insensitive:
+            key = fold(name, case_insensitive, norm_insensitive)
             if key in seen and seen[key] != name:
-                return f"{seen[key]!r} and {name!r} differ only in case"
+                return f"{seen[key]!r} and {name!r} are the same file here (case or Unicode normalization)"
             seen.setdefault(key, name)
     return None
 
@@ -66,6 +75,7 @@ def is_case_insensitive(directory):
 
 def check_names(names, directory, platform=None):
     """Raises BundleNotPortable when `names` cannot all be unpacked into `directory` on this machine."""
-    why = name_problem(names, (platform or sys.platform) == "win32", is_case_insensitive(directory))
+    platform = platform or sys.platform
+    why = name_problem(names, platform == "win32", is_case_insensitive(directory), norm_insensitive=platform == "darwin")
     if why:
         raise BundleNotPortable(f"this runner's file system cannot hold the bundle: {why}")

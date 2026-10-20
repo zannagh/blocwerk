@@ -87,6 +87,42 @@ def memory_status():
             "swapUsedMb": swap_used}
 
 
+CLOSE_EVENTS = (2, 5, 6)  # CTRL_CLOSE_EVENT, CTRL_LOGOFF_EVENT, CTRL_SHUTDOWN_EVENT
+CLOSE_GRACE_S = 4.5  # Windows ends the process ~5 s after a close event, whatever the handler does
+_HANDLERS = []  # the ctypes callbacks must outlive the registration
+
+
+def close_event_handler(on_close, grace_s=CLOSE_GRACE_S):
+    """The console control handler: for a close / log-off / shutdown it calls on_close(grace_s) (which hands the job
+    back and returns once that is done or the grace is over) and claims the event; Ctrl+C / Ctrl+Break pass on to
+    Python's own handler (SIGINT / SIGBREAK). Pure: tested on every OS."""
+    def handler(event):
+        if event not in CLOSE_EVENTS:
+            return False
+        try:
+            on_close(grace_s)
+        except Exception:  # noqa: BLE001 - nothing may escape into the console thread
+            pass
+        return True
+    return handler
+
+
+def on_console_close(on_close):
+    """Registers close_event_handler(on_close) with SetConsoleCtrlHandler; whether it took (False off Windows)."""
+    if KERNEL32 is None:
+        return False
+    try:
+        proto = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_uint32)
+        callback = proto(close_event_handler(on_close))
+        KERNEL32.SetConsoleCtrlHandler.argtypes = [proto, ctypes.c_int]
+        if not KERNEL32.SetConsoleCtrlHandler(callback, True):
+            return False
+    except (AttributeError, TypeError, OSError):
+        return False
+    _HANDLERS.append(callback)
+    return True
+
+
 def keep_awake():
     """The Windows `caffeinate -i`: no idle sleep while this process runs (ES_CONTINUOUS | ES_SYSTEM_REQUIRED; the
     display may still turn off). Returns whether it took; a no-op off Windows."""

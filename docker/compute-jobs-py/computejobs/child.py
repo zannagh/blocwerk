@@ -8,8 +8,16 @@ import uuid
 log = logging.getLogger("computejobs.child")
 MAX_ERROR_CHARS = 400
 ABS_PATH = re.compile(r"(?<![\w.])/(?:[\w.@+-]+/)+([\w.@+-]*)")
-# C:\... and \\server\share\...: directories may hold inner spaces ("Jane Doe"), never a trailing one (Windows has none)
-WIN_PATH = re.compile(r"(?<![\w.])(?:[A-Za-z]:|\\\\[\w.$-]+)\\(?:[\w.@+$()-]+(?: [\w.@+$()-]+)*\\)*([\w.@+$-]*)")
+# The user folder's name (C:\Users\<name>, /Users/<name>, /home/<name>) may hold anything a name can - spaces, quotes,
+# "&", commas - so it is replaced first, whole, up to the next separator or the end of the text (over-scrubbing the
+# words after a path that ends at the user folder is the safe side).
+USER_DIR = re.compile(r"(?i)([\\/](?:Users|home|Documents and Settings)[\\/])[^\\/\r\n]+")
+# C:\... and \\server\share\...: a directory is anything Windows allows in a name (inner spaces, quotes, "&", commas)
+# but no leading or trailing whitespace (Windows strips it, and "a.jpg or \\nas" must stay two paths); the last
+# component (the file name that stays) stops at whitespace.
+_WIN_CH, _WIN_EDGE = r"[^\\/:*?\"<>|\r\n]", r"[^\\/:*?\"<>|\s]"
+WIN_PATH = re.compile(rf"(?<![\w.])(?:[A-Za-z]:|\\\\[\w.$-]+)\\(?:{_WIN_EDGE}(?:{_WIN_CH}*{_WIN_EDGE})?\\)*"
+                      rf"({_WIN_EDGE}*)")
 
 # What external tools (COLMAP, Brush, ...) get to see of the environment: nothing else, in particular
 # no COMPUTE_* secret (settings.py also scrubs those from os.environ at startup).
@@ -39,6 +47,7 @@ def safe_message(msg, job_dir=None):
     text = str(msg)
     if job_dir:
         text = text.replace(os.path.realpath(job_dir), "<job>").replace(job_dir, "<job>")
+    text = USER_DIR.sub(r"\1user", text)
     text = ABS_PATH.sub(lambda m: m.group(1) or "<path>", text)
     text = WIN_PATH.sub(lambda m: m.group(1) or "<path>", text)
     text = " ".join(text.split())

@@ -33,6 +33,20 @@ function Invoke-Native([string]$What, [scriptblock]$Command) {
     if ($LASTEXITCODE -ne 0) { Fail "$What failed (exit code $LASTEXITCODE)" }
 }
 
+# A probe: the command's stdout (stderr dropped), or $null when it fails. Windows PowerShell 5.1 turns redirected
+# native stderr into error records, which $ErrorActionPreference = 'Stop' would make fatal: relax it here, and catch.
+function Get-NativeOutput([scriptblock]$Command) {
+    $ErrorActionPreference = 'Continue'
+    try {
+        $out = & $Command 2>$null
+        if ($LASTEXITCODE -ne 0) { return $null }
+        return $out
+    }
+    catch {
+        return $null
+    }
+}
+
 if ($env:OS -ne 'Windows_NT') { Fail 'run-runner-native.ps1 is for Windows; on a Mac use run-runner-native.sh' }
 $arch = $env:PROCESSOR_ARCHITECTURE
 if ($env:PROCESSOR_ARCHITEW6432) { $arch = $env:PROCESSOR_ARCHITEW6432 }
@@ -41,7 +55,7 @@ if ($arch -ne 'AMD64' -and -not $env:BRUSH_BIN) {
 }
 
 function Install-Brush {
-    $bin = Join-Path $Here ".bin\$BrushAsset"
+    $bin = Join-Path $Here ".bin\brush-$BrushVersion-$BrushAsset"  # versioned: a version bump downloads anew
     $exe = Join-Path $bin 'brush_app.exe'
     if (Test-Path -LiteralPath $exe) { return $exe }
     New-Item -ItemType Directory -Force -Path (Join-Path $Here '.bin') | Out-Null
@@ -101,8 +115,8 @@ function Install-Requirements([string]$Venv, [string]$Python) {
     }
     else {
         # a venv made by uv has no pip; bootstrap it so a run without uv on PATH (a scheduled task) still works
-        & $Python -m pip --version *> $null
-        if ($LASTEXITCODE -ne 0) { Invoke-Native 'ensurepip' { & $Python -m ensurepip -q } }
+        $probe = Get-NativeOutput { & $Python -m pip --version }
+        if ($null -eq $probe) { Invoke-Native 'ensurepip' { & $Python -m ensurepip -q } }
         Invoke-Native 'pip install' { & $Python -m pip install -q @reqs }
     }
     Set-Content -LiteralPath $stamp -Value $sum -Encoding ASCII
@@ -124,8 +138,8 @@ if (-not $env:BRUSH_CACHE_DIR) { $env:BRUSH_CACHE_DIR = Join-Path $env:RUNNER_WO
 if (-not $env:GIT_SHA) {
     $env:GIT_SHA = 'unknown'
     if (Get-Command git -ErrorAction SilentlyContinue) {
-        $sha = & git -C $Here rev-parse --short HEAD 2>$null
-        if ($LASTEXITCODE -eq 0 -and $sha) { $env:GIT_SHA = "$sha".Trim() }
+        $sha = Get-NativeOutput { & git -C $Here rev-parse --short HEAD }
+        if ($sha) { $env:GIT_SHA = "$sha".Trim() }
     }
 }
 

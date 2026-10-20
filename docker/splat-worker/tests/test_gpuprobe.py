@@ -84,8 +84,31 @@ def test_brush_quality_takes_the_vram_of_a_discrete_card_and_the_ram_of_unified_
     assert caps.max_quality("brush", 8188, 20000, unified=False) == "high"  # 8 GB card
     assert caps.max_quality("brush", 4096, 20000, unified=False) == "draft"  # 4 GB card
     assert caps.max_quality("brush", 24564, 6000, unified=False) == "high"  # RAM limits
-    assert caps.max_quality("brush", None, 20000, unified=False) == "max"  # VRAM unknown: RAM only
+    assert caps.max_quality("brush", None, 20000, unified=False) == "draft"  # discrete, VRAM unknown: assume small
+    assert caps.max_quality("brush", None, 20000) == "max"  # nothing known (no adapter seen): the budget, as before
     assert caps.max_quality("gsplat", 16376, 8000, unified=False) == "ultra"  # gsplat unchanged
+    assert caps.max_quality("gsplat", 65536, 8000, unified=True) == "draft"  # host RAM is never gsplat's VRAM
+
+
+def test_only_apple_and_known_igpus_are_unified():
+    for name in ("Intel(R) UHD Graphics 770", "Intel(R) Iris(R) Xe Graphics", "Intel(R) HD Graphics 620",
+                 "Intel(R) Arc(TM) Graphics", "AMD Radeon(TM) Graphics", "AMD Radeon(TM) Vega 8 Graphics",
+                 "AMD Radeon 780M Graphics"):
+        assert gpuprobe.gpu_doc(name, 512)["unified"] is True, name
+    for name in ("Intel(R) Arc(TM) A770 Graphics", "AMD Radeon RX 7800 XT", "AMD Radeon RX Vega 64",
+                 "NVIDIA GeForce GTX 1050", "Some Future GPU"):
+        assert gpuprobe.gpu_doc(name, None)["unified"] is False, name  # unknown VRAM is not "unified"
+
+
+def test_a_registry_card_without_a_size_is_discrete_and_trains_draft(monkeypatch):
+    docs = gpuprobe.parse_windows_adapters([{"DriverDesc": "AMD Radeon RX 6600"}])
+    assert docs == [{"name": "AMD Radeon RX 6600", "vendor": "amd", "totalMb": None, "freeMb": None,
+                     "unified": False}]
+    monkeypatch.setattr(caps, "system_memory", lambda: {"totalMb": 65536})
+    monkeypatch.setattr(caps.gpuprobe, "detect", lambda total_ram_mb=None: docs[0])
+    name, vram, unified = caps.gpu_info()
+    assert (vram, unified) == (None, False)
+    assert caps.max_quality("brush", vram, 30000, unified=unified) == "draft"
 
 
 def test_gpu_info_reports_ram_on_unified_and_vram_on_discrete(monkeypatch):

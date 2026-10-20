@@ -9,17 +9,21 @@ detect() -> {"name", "vendor", "totalMb", "freeMb", "unified"}:
 - Windows without nvidia-smi: the display adapters in the registry (HardwareInformation.qwMemorySize, the dedicated
   memory as a 64-bit value: WMI's AdapterRAM is 32-bit and tops out at 4 GB). AMD / Intel discrete cards land here.
 - Linux without nvidia-smi: amdgpu's sysfs (mem_info_vram_total / mem_info_vram_used under /sys/class/drm).
-An adapter with less than SHARED_BELOW_MB of dedicated memory (an iGPU's carve-out) counts as unified: it trains out of
-the host memory. Everything here is stdlib; the parsers are pure (tests/test_gpuprobe.py)."""
+Only Apple and KNOWN integrated GPUs (IGPU: Intel UHD / Iris / HD / Arc Graphics, AMD "Radeon(TM) Graphics", Vega and
+7xxM APUs) count as unified: they train out of the host memory. Every other adapter is discrete, also when its VRAM is
+unknown (a registry entry without a size) or tiny: caps.py then assumes little VRAM (conservative), never the host's
+RAM. Everything here is stdlib; the parsers are pure (tests/test_gpuprobe.py)."""
 import json
 import os
+import re
 import subprocess
 import sys
 
 from . import gpu
 from .settings import settings
 
-SHARED_BELOW_MB = 2048
+IGPU = re.compile(r"intel.*(\buhd\b|\biris\b|\bhd graphics)|intel.*arc\(tm\) graphics$|radeon\(tm\) graphics$"
+                  r"|radeon(\(tm\))? vega \d+ graphics|radeon(\(tm\))? \d{3,4}m\b", re.I)  # not "RX Vega 64"
 VIRTUAL_ADAPTERS = ("microsoft basic", "remote display", "virtual", "parsec", "citrix", "vmware", "hyper-v")
 AMD_VENDOR = "0x1002"
 VENDORS = (("nvidia", "nvidia"), ("geforce", "nvidia"), ("quadro", "nvidia"), ("radeon", "amd"), ("amd", "amd"),
@@ -34,9 +38,9 @@ def vendor_of(name):
 
 
 def gpu_doc(name, total_mb, free_mb=None, unified=None, vendor=None):
-    """The detect() document; unified defaults to "less than SHARED_BELOW_MB dedicated"."""
+    """The detect() document; unified defaults to "a known integrated GPU" (IGPU), never to "VRAM unknown"."""
     if unified is None:
-        unified = not total_mb or total_mb < SHARED_BELOW_MB
+        unified = bool(IGPU.search((name or "").strip()))
     return {"name": name or "unknown", "vendor": vendor or vendor_of(name), "totalMb": total_mb,
             "freeMb": free_mb if free_mb is not None else total_mb, "unified": bool(unified)}
 

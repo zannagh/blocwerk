@@ -18,6 +18,9 @@ BRUSH_FLOOR_MB = {"max": 12 * 1024, "high": 5 * 1024}
 # card, at 95 % of the nominal size (what the cards report). Unified memory (Apple Silicon, iGPUs) has no separate
 # pool: the host budget above is its limit. SPLAT_VRAM_MB / RUNNER_MAX_QUALITY override.
 BRUSH_VRAM_FLOOR_MB = {"max": 0.95 * 12 * 1024, "high": 0.95 * 6 * 1024}
+# A discrete adapter whose VRAM could not be read (a registry entry without a size): assume a small card (draft)
+# rather than the host's RAM; SPLAT_VRAM_MB states the real size.
+UNKNOWN_VRAM_MB = 4096
 # gsplat's VRAM for the profile at its splat floor (gsplat_trainer.vram_mb, 4:3 photos at the profile's
 # edge, with the planner's headroom): ultra is the server's own rule (>= 98 % of 12 GB).
 GSPLAT_FLOOR_MB = {"ultra": 0.98 * trainers.ULTRA_MIN_VRAM_MB, "max": 6 * 1024, "high": 4 * 1024}
@@ -25,7 +28,8 @@ GSPLAT_FLOOR_MB = {"ultra": 0.98 * trainers.ULTRA_MIN_VRAM_MB, "max": 6 * 1024, 
 
 def gpu_info():
     """(name, memory MB or None, unified) of the GPU gpuprobe.detect() picks. Unified memory (Apple Silicon, an iGPU):
-    the machine's memory, what Brush trains out of; a discrete GPU: its VRAM."""
+    the machine's memory, what Brush trains out of; a discrete GPU: its VRAM (None when unknown). No adapter seen at
+    all (a container without nvidia-smi or sysfs): unified, i.e. the host budget alone, as before gpuprobe."""
     total_ram = system_memory().get("totalMb")
     info = gpuprobe.detect(total_ram_mb=total_ram)
     if info is None:
@@ -47,16 +51,18 @@ def _tier(floors, mb, names):
     return next((n for n in names if (mb or 0) >= floors[n]), "draft")
 
 
-def max_quality(trainer, vram_mb, budget, cap=None, unified=True):
-    """The highest profile this machine trains: gsplat by VRAM (ultra only on >= 12 GB); Brush by the host memory
-    budget (>= 12 GB max, >= 5 GB high, else draft) and, on a discrete GPU (unified=False) with a known VRAM, also by
-    that VRAM (BRUSH_VRAM_FLOOR_MB; the lower tier wins). At most `cap` / RUNNER_MAX_QUALITY."""
+def max_quality(trainer, vram_mb, budget, cap=None, unified=None):
+    """The highest profile this machine trains: gsplat by a discrete card's VRAM (ultra only on >= 12 GB; unified
+    memory is never VRAM to it); Brush by the host memory budget (>= 12 GB max, >= 5 GB high, else draft) and, on a
+    discrete GPU (unified=False), also by its VRAM (BRUSH_VRAM_FLOOR_MB; the lower tier wins), an unknown VRAM taken as
+    UNKNOWN_VRAM_MB (draft). unified=None (not known): gsplat takes vram_mb as VRAM, Brush the budget alone.
+    At most `cap` / RUNNER_MAX_QUALITY."""
     if trainer == "gsplat":
-        q = _tier(GSPLAT_FLOOR_MB, vram_mb, ("ultra", "max", "high"))
+        q = _tier(GSPLAT_FLOOR_MB, None if unified is True else vram_mb, ("ultra", "max", "high"))
     else:
         q = _tier(BRUSH_FLOOR_MB, budget, ("max", "high"))
-        if not unified and vram_mb:
-            q = min(q, _tier(BRUSH_VRAM_FLOOR_MB, vram_mb, ("max", "high")), key=QUALITIES.index)
+        if unified is False:
+            q = min(q, _tier(BRUSH_VRAM_FLOOR_MB, vram_mb or UNKNOWN_VRAM_MB, ("max", "high")), key=QUALITIES.index)
     return cap_quality(q, cap)
 
 
