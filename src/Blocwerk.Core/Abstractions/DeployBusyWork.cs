@@ -15,4 +15,10 @@ public enum DeployBusyWork
 
     /// <summary>A 3D runner is uploading a trained splat. Not resumable: a restart makes the runner upload again.</summary>
     RunnerResultUpload,
+
+    /// <summary>
+    /// One step of a wall's one-time enhancement is writing holds. Resumable (a restart runs the step again), but a
+    /// deploy waits for the step so it is not cut off halfway.
+    /// </summary>
+    WallEnhancement,
 }

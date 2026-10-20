@@ -221,6 +221,7 @@ public partial class BlocwerkDbContext : DbContext
         ConfigureHoldLinkSuggestions(modelBuilder);
         ConfigurePanelCrops(modelBuilder);
         ConfigureLookOver(modelBuilder);
+        ConfigureWallEnhancement(modelBuilder);
     }
 
     private static void ConfigureTopLogger(ModelBuilder modelBuilder)
