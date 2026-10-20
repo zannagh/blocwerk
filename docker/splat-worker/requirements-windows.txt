@@ -1,0 +1,4 @@
+# Windows-only additions for a native 3D runner (run-runner-native.ps1 installs them next to requirements.txt):
+# pywinpty gives Brush a pseudo-console (ConPTY), without which it prints no progress (splatworker/winpty_proc.py).
+# Not in requirements.lock: the Docker images are Linux and never need it.
+pywinpty==2.0.15; sys_platform == "win32"

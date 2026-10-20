@@ -1,0 +1,84 @@
+name: 3D runner (Windows + macOS)
+
+# The native 3D runner (docker/splat-worker/run-runner-native.sh / .ps1) on the two desktop OSes it targets: installs
+# the runner's Python requirements on a stock Windows and macOS image, runs the portable unit tests (GPU detection,
+# quality selection, Windows memory readings, ConPTY adapter, bundle names) as a gate, and the whole suite as a report
+# (parts of it assume POSIX tools: not a gate yet). The PowerShell launcher is parsed and linted on Windows.
+# No GPU on GitHub runners: Brush itself is NOT exercised here (README "Native runners per OS").
+
+on:
+  pull_request:
+    paths:
+      - 'docker/splat-worker/**'
+      - 'docker/compute-jobs-py/**'
+      - '.github/workflows/runner-cross-platform.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Runner tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install the runner's requirements
+        run: |
+          python -m pip install -r docker/splat-worker/requirements-dev.txt -r docker/splat-worker/requirements-windows.txt
+
+      - name: Portable unit tests (gate)
+        run: >
+          python -m pytest -q
+          docker/splat-worker/tests/test_winsys.py
+          docker/splat-worker/tests/test_gpuprobe.py
+          docker/splat-worker/tests/test_parsers.py
+
+      - name: Whole suite (report only)
+        continue-on-error: true
+        run: python -m pytest -q -rf docker/splat-worker/tests docker/compute-jobs-py/tests
+
+  launcher:
+    name: PowerShell launcher (parse + lint)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse in Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $tokens = $null; $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile("$PWD\docker\splat-worker\run-runner-native.ps1", [ref]$tokens, [ref]$errors)
+          if ($errors) { $errors | ForEach-Object { Write-Error $_.ToString() }; exit 1 }
+
+      - name: PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+          $found = Invoke-ScriptAnalyzer -Path docker/splat-worker/run-runner-native.ps1 -Severity Error, Warning `
+            -ExcludeRule PSAvoidUsingWriteHost
+          $found | Format-Table -AutoSize
+          if ($found | Where-Object Severity -eq 'Error') { exit 1 }
+
+      - name: Refuses to start without a key
+        shell: pwsh
+        env:
+          BRUSH_BIN: C:\Windows\System32\where.exe
+        run: |
+          $out = & powershell -NoProfile -ExecutionPolicy Bypass -File docker/splat-worker/run-runner-native.ps1 --server https://example.invalid 2>&1
+          if ($LASTEXITCODE -eq 0) { Write-Error "started without BWR_KEY"; exit 1 }
+          if (-not ("$out" -match 'BWR_KEY')) { Write-Error "unexpected output: $out"; exit 1 }
+          exit 0

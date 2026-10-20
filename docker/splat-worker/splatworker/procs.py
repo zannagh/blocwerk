@@ -2,7 +2,8 @@
 
 `use_pty=True` gives the tool a pseudo-terminal: Brush only prints its step counter to a TTY (with a
 plain pipe it prints nothing at all). Carriage-return redraws are split into separate lines and ANSI
-escapes are stripped. The job's process group is killed by the parent on cancel/timeout, which takes
+escapes are stripped. On Windows (no `pty` module) the terminal is a ConPTY through pywinpty (winpty_proc.py), or
+a plain pipe without it. The job's process group is killed by the parent on cancel/timeout, which takes
 these tools down with it.
 """
 import os
@@ -14,6 +15,7 @@ from collections import deque
 
 from computejobs.child import JobError, tool_env
 
+from . import winpty_proc
 from .memguard import OOM_TEXT, Watchdog, address_space_limiter, describe_mb
 from .resources import SwapMeter
 
@@ -39,6 +41,17 @@ class ToolStopped(JobError):
 # (gpurunner.job), so Brush and gsplat stop without a parameter through every trainer; the worker never
 # sets it (its jobs are killed by process group). ToolRun(stop=...) takes precedence.
 current_stop = None
+
+
+def terminal_mode(use_pty, platform=None, winpty_ok=None):
+    """How a tool's output is read: "pty" (POSIX pseudo-terminal), "winpty" (a Windows ConPTY through pywinpty) or
+    "pipe" (no terminal wanted, or none to be had: Windows without pywinpty)."""
+    if not use_pty:
+        return "pipe"
+    platform = platform or sys.platform
+    if platform != "win32":
+        return "pty"
+    return "winpty" if (winpty_proc.available() if winpty_ok is None else winpty_ok) else "pipe"
 
 
 class ToolRun:
@@ -89,6 +102,10 @@ class ToolRun:
         preexec = address_space_limiter(self.mem_limit_mb) if self.limit_as else None
         proc = subprocess.Popen(self.cmd, cwd=self.cwd, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
                                 env=tool_env(self.env), close_fds=True, preexec_fn=preexec)
+        return self._guard(proc)
+
+    def _guard(self, proc):
+        """The memory watchdog and the stop watcher on a started tool (a Popen or a winpty_proc.WinPtyTool)."""
         if self.mem_limit_mb:
             self.watchdog = Watchdog(proc, self.mem_limit_mb, swap_limit_mb=self.swap_limit_mb, swap_meter=_SWAP)
             self.watchdog.start()
@@ -105,22 +122,11 @@ class ToolRun:
     def run(self):
         """Run to completion; raise JobError(stage, ...) on a non-zero exit."""
         try:
-            with open(self.log_path, "a", buffering=1) as log:
+            # UTF-8 whatever the locale: a Windows console code page cannot encode Brush's output (emoji, box drawing)
+            with open(self.log_path, "a", buffering=1, encoding="utf-8", errors="replace") as log:
                 log.write("$ " + " ".join(self.cmd) + "\n")
                 try:
-                    if self.use_pty:
-                        import pty
-                        master, slave = pty.openpty()
-                        proc = self._start(slave, slave)
-                        os.close(slave)
-                        try:
-                            self._pump(lambda: os.read(master, 65536), log)
-                        finally:
-                            os.close(master)
-                    else:
-                        proc = self._start(subprocess.PIPE, subprocess.STDOUT)
-                        self._pump(lambda: proc.stdout.read1(65536), log)
-                    code = proc.wait()
+                    code = self._run_tool(log)
                 finally:
                     if self.watchdog:
                         self.watchdog.stop()
@@ -147,6 +153,32 @@ class ToolRun:
                                        f"(exit code {code}): {self.last_error()}")
         return self
 
+    def _run_tool(self, log):
+        """Starts the tool, pumps its output into the parser and the log, returns its exit code."""
+        mode = terminal_mode(self.use_pty)
+        if mode == "pty":
+            import pty
+            master, slave = pty.openpty()
+            proc = self._start(slave, slave)
+            os.close(slave)
+            try:
+                self._pump(lambda: os.read(master, 65536), log)
+            finally:
+                os.close(master)
+        elif mode == "winpty":
+            proc = self._guard(winpty_proc.WinPtyTool(self.cmd, self.cwd, tool_env(self.env)))
+            try:
+                self._pump(proc.read, log)
+                return proc.wait()
+            finally:
+                proc.close()
+        else:
+            if self.use_pty:
+                log.write("# no pseudo-terminal here (pip install pywinpty): no live progress from this tool\n")
+            proc = self._start(subprocess.PIPE, subprocess.STDOUT)
+            self._pump(lambda: proc.stdout.read1(65536), log)
+        return proc.wait()
+
     def _swap_note(self):
         if not self.swap_limit_mb or self.watchdog.swap_base is None:
             return ""
@@ -164,7 +196,9 @@ class ToolRun:
         return None
 
     def _verb(self):
-        return self.cmd[1] if len(self.cmd) > 1 and not self.cmd[1].startswith(("/", "-")) else ""
+        arg = self.cmd[1] if len(self.cmd) > 1 else ""
+        # a path is no verb (and would put the user's directory into the job's error): C:\... on Windows too
+        return "" if not arg or arg.startswith(("/", "-", "\\")) or os.path.isabs(arg) or ":" in arg[:3] else arg
 
     def last_error(self):
         """The most telling recent line: an error/check line if there is one, else the last line."""

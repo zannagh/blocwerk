@@ -8,13 +8,20 @@ import uuid
 log = logging.getLogger("computejobs.child")
 MAX_ERROR_CHARS = 400
 ABS_PATH = re.compile(r"(?<![\w.])/(?:[\w.@+-]+/)+([\w.@+-]*)")
+# C:\... and \\server\share\...: directories may hold inner spaces ("Jane Doe"), never a trailing one (Windows has none)
+WIN_PATH = re.compile(r"(?<![\w.])(?:[A-Za-z]:|\\\\[\w.$-]+)\\(?:[\w.@+$()-]+(?: [\w.@+$()-]+)*\\)*([\w.@+$-]*)")
 
 # What external tools (COLMAP, Brush, ...) get to see of the environment: nothing else, in particular
 # no COMPUTE_* secret (settings.py also scrubs those from os.environ at startup).
 TOOL_ENV_NAMES = {"PATH", "HOME", "TMPDIR", "TMP", "TEMP", "LANG", "LC_ALL", "LC_CTYPE", "TZ", "USER",
                   "LOGNAME", "SHELL", "TERM", "LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH",
                   "DYLD_FALLBACK_LIBRARY_PATH", "DISPLAY", "WAYLAND_DISPLAY", "RUST_LOG", "RUST_BACKTRACE",
-                  "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"}
+                  "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "PYTHONUTF8",
+                  # Windows: without SYSTEMROOT a child cannot even start Python or load the GPU driver's DLLs;
+                  # the rest is where tools find their per-user caches (os.environ upper-cases names there)
+                  "SYSTEMROOT", "WINDIR", "SYSTEMDRIVE", "COMSPEC", "PATHEXT", "USERPROFILE", "LOCALAPPDATA",
+                  "APPDATA", "PROGRAMDATA", "PROGRAMFILES", "PROGRAMFILES(X86)", "NUMBER_OF_PROCESSORS",
+                  "PROCESSOR_ARCHITECTURE", "OS"}
 TOOL_ENV_PREFIXES = ("XDG_", "VK_", "WGPU_", "NVIDIA_", "CUDA_", "MESA_", "__GLX_", "__NV_", "__EGL_",
                      "QT_", "GALLIUM_", "LIBGL_", "LP_")
 
@@ -33,6 +40,7 @@ def safe_message(msg, job_dir=None):
     if job_dir:
         text = text.replace(os.path.realpath(job_dir), "<job>").replace(job_dir, "<job>")
     text = ABS_PATH.sub(lambda m: m.group(1) or "<path>", text)
+    text = WIN_PATH.sub(lambda m: m.group(1) or "<path>", text)
     text = " ".join(text.split())
     return text if len(text) <= MAX_ERROR_CHARS else text[:MAX_ERROR_CHARS - 1] + "…"
 

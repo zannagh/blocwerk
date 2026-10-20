@@ -22,6 +22,7 @@ import sys
 import zipfile
 
 from .. import procs
+from ..portable import BundleNotPortable
 from ..resources import system_memory
 from .client import BundleTooLarge
 from .job import BundleDamaged, JobRun, trim_stats, with_retries
@@ -94,7 +95,7 @@ class TexturesRun(JobRun):
 
     UPLOAD_DETAIL = "uploading the rendered textures"
     BAD_INPUT = (TexturesBundleError, TexturesInputError)
-    CANNOT_HERE = (BundleTooLarge, BundleDamaged, NotEnoughMemory)
+    CANNOT_HERE = (BundleTooLarge, BundleDamaged, NotEnoughMemory, BundleNotPortable)
 
     def _produce(self):
         need, have = self.job.get("requiredMemoryMb"), blend_budget_mb()

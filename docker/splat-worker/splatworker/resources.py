@@ -6,6 +6,7 @@
   the cgroup limit (v2 /sys/fs/cgroup/memory.max + memory.current, v1 memory.limit_in_bytes +
   memory.usage_in_bytes, page cache from memory.stat counted as reclaimable), because /proc/meminfo
   shows the whole VM, not the container.
+- Windows (a native runner): GlobalMemoryStatusEx (winsys.py): available physical memory, the page file as swap.
 
 budget = min(available + reclaimable, total x BUDGET_FRACTION), at least MIN_BUDGET_MB (never more
 than the total fraction), and never above SPLAT_MAX_MEMORY_MB when that is set (a hard upper bound).
@@ -15,6 +16,8 @@ import os
 import re
 import subprocess
 import sys
+
+from . import winsys
 
 BUDGET_FRACTION = 0.6
 MIN_BUDGET_MB = 3072  # feature extraction at 4 threads needs ~2.5 GB; below that the tuning drops threads
@@ -102,6 +105,8 @@ def system_memory():
             info["totalMb"] = min(info["totalMb"] or limit // MB, limit // MB)
             room = (limit - usage + cache) // MB
             info["availableMb"] = min(info["availableMb"] or room, room)
+    elif sys.platform == "win32":
+        info.update(winsys.memory_status() or {})
     return info
 
 
@@ -145,6 +150,10 @@ class SwapMeter:
             xsw, size = self._XswUsage(), ctypes.c_size_t(ctypes.sizeof(self._XswUsage))
             if self.libc.sysctlbyname(b"vm.swapusage", ctypes.byref(xsw), ctypes.byref(size), None, 0) == 0:
                 return xsw.used / MB
+            return None
+        if sys.platform == "win32":
+            # No swap guard on Windows: its only reading is the commit charge, which GPU drivers (WDDM) and untouched
+            # reservations move without any paging, so growth there would kill healthy runs. The footprint guard stays.
             return None
         text = _read("/proc/meminfo")
         if text is None:
