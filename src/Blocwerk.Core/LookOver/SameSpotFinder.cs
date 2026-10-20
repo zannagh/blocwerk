@@ -53,26 +53,6 @@ internal static class SameSpotFinder
             .FirstOrDefault();
     }
 
-    /// <summary>
-    /// How well two footprints coincide, 0..1: their shared area over their joint area (intersection over union). A small
-    /// neighbour clipping the old outline's edge and a large volume behind it both score low; the hold that sits on the
-    /// old outline scores high. The shared area is sampled from whichever side measures it larger, so a hold much smaller
-    /// than the other is not missed between the grid points.
-    /// </summary>
-    /// <param name="a">One footprint.</param>
-    /// <param name="b">The other.</param>
-    /// <returns>The share; 0 when they do not meet.</returns>
-    internal static double FootprintMatch(HoldArea a, HoldArea b)
-    {
-        if (!a.MayTouch(b) || a.Area <= 0 || b.Area <= 0)
-        {
-            return 0;
-        }
-
-        var shared = Math.Max(a.CoveredBy([b]) * a.Area, b.CoveredBy([a]) * b.Area);
-        return shared <= 0 ? 0 : shared / (a.Area + b.Area - Math.Min(shared, Math.Min(a.Area, b.Area)));
-    }
-
     /// <summary>The centre of <paramref name="old"/> lies inside <paramref name="newHold"/>: its traced outline when it has one, else its circle.</summary>
     /// <param name="newHold">The new hold.</param>
     /// <param name="old">The old hold kept in place.</param>
@@ -93,6 +73,26 @@ internal static class SameSpotFinder
 
         var (width, height) = Size(size);
         return Distance(newHold, old, width, height) <= newHold.Radius * Math.Max(width, height);
+    }
+
+    /// <summary>
+    /// How well two footprints coincide, 0..1: their shared area over their joint area (intersection over union). A small
+    /// neighbour clipping the old outline's edge and a large volume behind it both score low; the hold that sits on the
+    /// old outline scores high. The shared area is sampled from whichever side measures it larger, so a hold much smaller
+    /// than the other is not missed between the grid points.
+    /// </summary>
+    /// <param name="a">One footprint.</param>
+    /// <param name="b">The other.</param>
+    /// <returns>The share; 0 when they do not meet.</returns>
+    private static double FootprintMatch(HoldArea a, HoldArea b)
+    {
+        if (!a.MayTouch(b) || a.Area <= 0 || b.Area <= 0)
+        {
+            return 0;
+        }
+
+        var shared = Math.Max(a.CoveredBy([b]) * a.Area, b.CoveredBy([a]) * b.Area);
+        return shared <= 0 ? 0 : shared / (a.Area + b.Area - Math.Min(shared, Math.Min(a.Area, b.Area)));
     }
 
     private static HoldArea AreaOf(Hold hold, (int Width, int Height)? size) =>
