@@ -76,10 +76,11 @@ window.bwKeys = (function () {
     // The cross-gen and panel-link tools are here for the same reason: they are full-view takeovers,
     // so without them the editor's letter keys stay live underneath a tool that covers the screen.
     // The shape-adjust overlay (wall update shape review) hosts a whole editor over the wizard.
+    // The hybrid zoom's volume inset is small but owns its keys (orbit arrows, Escape closes it).
     function takeoverSurfaceOpen() {
         return document.querySelector(
             '.panel-stepper, .wall-lightbox, .bw-modal-backdrop, .crossgen-tool, .panel-link-overlay, .bw-stage-overlay, .wall3d-fs, '
-            + '.shape-adjust-overlay') !== null;
+            + '.shape-adjust-overlay, .hybrid-inset') !== null;
     }
 
     // Enter and Space ACTIVATE whatever currently has focus. Listening in the capture phase means we

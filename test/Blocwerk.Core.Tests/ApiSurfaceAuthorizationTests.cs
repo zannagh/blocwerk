@@ -101,6 +101,7 @@ public class ApiSurfaceAuthorizationTests
         Assert.Contains("/api/walls/{wallId:guid}/temperature", routes);
         Assert.Contains("/api/walls/{wallId:guid}/panels/{panelId:guid}/photo", routes);
         Assert.Contains("/api/walls/{wallId:guid}/panels/{panelId:guid}/staged-photo", routes);
+        Assert.Contains("/api/walls/{wallId:guid}/panels/{panelId:guid}/closeup", routes);
         Assert.Contains("/api/walls/{wallId:guid}/geometry/{modelId:guid}/textures/{facetId}", routes);
         Assert.Contains("/api/walls/{wallId:guid}/geometry/{modelId:guid}/splat", routes);
         Assert.Contains("/api/v1/me/sessions", routes);
@@ -247,6 +248,8 @@ public class ApiSurfaceAuthorizationTests
         builder.Services.AddSingleton(Substitute.For<Blocwerk.Core.Capture.IWallCaptureService>());
         builder.Services.AddSingleton(new Blocwerk.Core.Capture.WallCapturePipelineOptions());
         builder.Services.AddSingleton(Substitute.For<Blocwerk.Core.Refresh.IWallRefreshService>());
+        builder.Services.AddSingleton(new Blocwerk.Core.Services.HybridZoom.HybridZoomOptions());
+        builder.Services.AddSingleton(Substitute.For<Blocwerk.Core.Services.HybridZoom.IHybridZoomService>());
 
         var app = builder.Build();
         app.MapControllers();
@@ -256,6 +259,9 @@ public class ApiSurfaceAuthorizationTests
         // The panel photo routes were missing here, which is precisely how they came to sit under
         // /api/walls with no authorization at all: the guard test below could not see them.
         app.MapWallPanelPhotos();
+
+        // The hybrid zoom's panel close-ups sit under /api/walls too.
+        app.MapWallPanelCloseUp();
 
         // Glyph model textures (3D view) sit under /api/walls as well.
         app.MapWallGeometryTextures();

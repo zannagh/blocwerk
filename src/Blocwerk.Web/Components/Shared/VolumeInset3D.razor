@@ -1,0 +1,39 @@
+@* Hybrid zoom (experimental): the small 3D view of the volume under a zoomed panel view. hybrid-zoom.js shows
+   the "Look underneath" chip in the slot while a volume is in view and, on a tap, asks this component to open;
+   nothing 3D (no view payload, no wall3d.js, no WebGL context) exists before that. The inset reuses Wall3DStage
+   (wall3d.js) with the volume as its highlighted spot and the orbit pinned around it. Escape and a tap outside
+   close it; while it is open the global keyboard shortcuts stand down (.hybrid-inset is a takeover surface). *@
+@using Blocwerk.Core.Geometry.View3D
+@implements IAsyncDisposable
+
+<div class="hybrid-volume-slot" data-bw-hybrid-3d="@ThreeDUrl" hidden @ref="slot"></div>
+@if (spot is not null)
+{
+    <div class="hybrid-inset" role="dialog" aria-label="Volume in 3D" @ref="inset">
+        <div class="hybrid-inset-bar">
+            <button type="button" class="hybrid-inset-btn" @onclick="() => LookAsync(false)">Front</button>
+            <button type="button" class="hybrid-inset-btn" @onclick="() => LookAsync(true)">Under</button>
+            <a class="hybrid-inset-btn" href="@($"{ThreeDUrl}?at={Uri.EscapeDataString(spotText ?? string.Empty)}")"
+               title="Open the full 3D view here">Open</a>
+            <button type="button" class="hybrid-inset-close" aria-label="Close the 3D view" @onclick="CloseAsync">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="16" height="16"
+                     stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            </button>
+        </div>
+        <div class="hybrid-inset-stage">
+            @if (view?.View is { } v)
+            {
+                <Wall3DStage @key="spot" @ref="stage" View="v" Highlight="spot" InitialMode="@mode" InitialPreset="front"
+                             ShowFullscreen="false" ExtraOptions="orbit" />
+            }
+            else if (view is not null)
+            {
+                <p class="hybrid-inset-message">No 3D model for this wall.</p>
+            }
+            else
+            {
+                <p class="hybrid-inset-message">Loading 3D…</p>
+            }
+        </div>
+    </div>
+}
