@@ -28,12 +28,28 @@ public class UpdateReviewBuilderTests
         var staged = Staged(Centre);
         var card = new WallUpdateException { Kind = UpdateExceptionKind.LowConfidenceMatch, OldHoldId = old, StagedHoldId = staged.Id, Status = status };
 
-        var items = UpdateReviewBuilder.Build(Facts([card], new() { [old] = new(CarryKind.Carried, staged.Id, false, null) }, [staged], old));
+        // As the answer writes it: "not the same hold" takes the pair apart.
+        var twin = status == UpdateExceptionStatus.NotSame ? (Guid?)null : staged.Id;
+        var items = UpdateReviewBuilder.Build(Facts([card], new() { [old] = new(CarryKind.Carried, twin, false, null) }, [staged], old));
 
         var item = Assert.Single(items);
         Assert.Equal((ReviewGroup.Unsure, open), (item.Group, item.IsOpen));
         Assert.Equal([ReviewAnswer.Keep, ReviewAnswer.NotSame], item.Answers);
         Assert.Equal(open ? 1 : 0, ReviewCounts.Of(items).Open);
+    }
+
+    [Theory]
+    [InlineData(UpdateExceptionKind.LowConfidenceMatch, UpdateExceptionStatus.NotSame)]
+    [InlineData(UpdateExceptionKind.MatchedToHandPlaced, UpdateExceptionStatus.Removed)]
+    public void ACardWhosePairAStepByStepSaveRestored_ReadsSameHold_AndLeavesNoFinding(UpdateExceptionKind kind, UpdateExceptionStatus status)
+    {
+        var old = Guid.NewGuid();
+        var staged = Staged(Centre);
+        var card = new WallUpdateException { Kind = kind, OldHoldId = old, StagedHoldId = staged.Id, Status = status };
+
+        var item = Assert.Single(UpdateReviewBuilder.Build(Facts([card], new() { [old] = new(CarryKind.Carried, staged.Id, false, null) }, [staged], old)));
+
+        Assert.Equal((ReviewAnswer.Keep, false), (item.Answer!.Value, item.IsOpen));
     }
 
     [Fact]

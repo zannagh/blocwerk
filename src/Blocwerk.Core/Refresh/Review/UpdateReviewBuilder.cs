@@ -46,6 +46,7 @@ internal static partial class UpdateReviewBuilder
 
         // A removal stored before it was refused off the centre is reset at the promote: shown as what will happen.
         var answer = !removable && card.Status == UpdateExceptionStatus.Removed ? null : ReviewAnswerSets.FromCard(card.Status);
+        answer = AsTheRowsSay(facts, card, answer);
         var (x, y) = card is { X: { } cx, Y: { } cy } ? (cx, cy) : (staged?.X, staged?.Y);
         return new ReviewItem(
             $"c-{card.Id}",
@@ -64,6 +65,28 @@ internal static partial class UpdateReviewBuilder
             LeavesFinding: true,
             x,
             y);
+    }
+
+    /// <summary>
+    /// A pair a card answered stands or falls by the carry row Apply reads, not by the card: a step-by-step save that
+    /// paired the old hold with the detection again makes it "same hold" (no look-over question), one that took the pair
+    /// apart makes it "not the same hold".
+    /// </summary>
+    private static ReviewAnswer? AsTheRowsSay(UpdateReviewFacts facts, WallUpdateException card, ReviewAnswer? answer)
+    {
+        if (answer is null || card.Kind is not (UpdateExceptionKind.LowConfidenceMatch or UpdateExceptionKind.MatchedToHandPlaced)
+            || card.OldHoldId is not { } oldId || facts.Carry.GetValueOrDefault(oldId) is not { } row)
+        {
+            return answer;
+        }
+
+        var paired = row.Kind != CarryKind.Removed && row.PairedHoldId == card.StagedHoldId;
+        return (paired, answer) switch
+        {
+            (true, ReviewAnswer.NotSame or ReviewAnswer.Remove) => ReviewAnswer.Keep,
+            (false, ReviewAnswer.Keep) => card.Kind == UpdateExceptionKind.LowConfidenceMatch ? ReviewAnswer.NotSame : ReviewAnswer.Remove,
+            _ => answer,
+        };
     }
 
     /// <summary>

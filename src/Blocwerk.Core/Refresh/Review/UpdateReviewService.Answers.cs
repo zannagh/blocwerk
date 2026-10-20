@@ -75,7 +75,7 @@ public sealed partial class UpdateReviewService
     }
 
     /// <summary><paramref name="review"/> with <paramref name="written"/> laid over its items (the last answer per item wins).</summary>
-    internal static UpdateReview Answered(UpdateReview review, IReadOnlyList<ReviewAnswerRequest> written, string? by)
+    private static UpdateReview Answered(UpdateReview review, IReadOnlyList<ReviewAnswerRequest> written, string? by)
     {
         if (written.Count == 0)
         {

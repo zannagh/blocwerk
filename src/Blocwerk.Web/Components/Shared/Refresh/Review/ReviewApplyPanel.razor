@@ -56,12 +56,18 @@
     [Parameter]
     public bool Waiting { get; set; }
 
+    /// <summary>Answers that could not be saved (Retry first).</summary>
+    [Parameter]
+    public int Unsaved { get; set; }
+
     [Parameter]
     public EventCallback OnApply { get; set; }
 
     private bool Busy => Waiting || View.SummaryUpdating || View.Check3DPending;
 
-    private string Note => Waiting
+    private string Note => Unsaved > 0
+        ? $"{PlainCopy.Plural(Unsaved, "answer")} not saved: retry them first."
+        : Waiting
         ? "Saving your answers…"
         : View.Check3DPending
             ? "Checking against the new 3D model…"
