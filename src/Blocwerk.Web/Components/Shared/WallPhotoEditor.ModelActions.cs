@@ -128,6 +128,11 @@ public partial class WallPhotoEditor
     /// </summary>
     private (string Stroke, string Dash)? ModelActionPreview(Hold hold)
     {
+        if (MergeSplitPreview(hold) is { } toolPreview)
+        {
+            return toolPreview;
+        }
+
         if (pendingDeleteHoldId == hold.Id)
         {
             return (PreviewGoes, "0.5 0.35");
