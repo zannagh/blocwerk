@@ -26,3 +26,7 @@
 @media (min-width: 1100px) {
     .enhance-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+.enhance-run-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.enhance-failed { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex: 1 1 100%; }
+.enhance-failed > p { margin: 0; flex: 1 1 240px; }
+.enhance-page ::deep .enhance-run-actions button { width: auto; min-height: 36px; margin: 0; padding: 4px 12px; font-size: 0.9rem; }

@@ -233,6 +233,10 @@ public static class Program
         // Background hold writers (the wall enhancement) wait while someone has the wall's hold editor open.
         builder.Services.AddSingleton<IWallEditPresence, EditActivityWallEditPresence>();
 
+        // Long background work says when it expects to be done (/health/busy-eta), so autodeploy can wait for it.
+        builder.Services.AddSingleton<DeployBusyEtaBoard>();
+        builder.Services.AddSingleton<IDeployBusyEta>(sp => sp.GetRequiredService<DeployBusyEtaBoard>());
+
         // Heartbeats this circuit's leases while its connection is UP, so a lease whose client has
         // gone silent (a sleeping tablet behind a NAT) expires on its TTL instead of holding
         // /health/ready-to-deploy at 503 until the process restarts — which used to block the very
@@ -348,6 +352,11 @@ public static class Program
                 return context.Response.WriteAsync(report.Status == HealthStatus.Healthy ? "idle" : "busy");
             },
         });
+
+        // Seconds until long background work (a wall enhancement's hold search) expects to finish; 0 when none. Plain
+        // text next to ready-to-deploy, whose "idle"/"busy" body stays exactly as the deployed autodeploy hook reads it.
+        app.MapGet("/health/busy-eta", (DeployBusyEtaBoard board) => Results.Text(board.SecondsLeft().ToString(System.Globalization.CultureInfo.InvariantCulture)))
+            .AllowAnonymous();
 
         // Liveness beacon for the "server is updating" overlay: anonymous, no database, and it
         // carries the id of THIS process so a client can tell a dropped socket from a replaced

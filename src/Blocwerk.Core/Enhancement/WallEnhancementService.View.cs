@@ -36,6 +36,7 @@ public sealed partial class WallEnhancementService
         var current = run.CurrentStep is { } key ? steps.FirstOrDefault(s => s.Key == key) : null;
         var names = await NamesAsync(db, [run.CreatedByUserId, run.FinalizedByUserId], ct);
         var running = run.Status == WallEnhancementStatus.Running;
+        var progress = running ? runner.Job.ProgressOf(run.Id) : null;
         return new WallEnhancementView(
             StateOf(run.Status),
             generation,
@@ -50,7 +51,9 @@ public sealed partial class WallEnhancementService
             blocked,
             run.Error,
             running && editPresence?.IsBeingEdited(wallId) == true,
-            previous);
+            previous,
+            progress?.Progress,
+            progress?.ExpectedEnd);
     }
 
     private static WallEnhancementState StateOf(WallEnhancementStatus status) => status switch

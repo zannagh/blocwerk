@@ -31,7 +31,7 @@ public sealed partial class WallEnhancementJob
         await db.SaveChangesAsync(ct);
     }
 
-    /// <summary>Why the run must stop before the next step, or null: the wall went, or a wall update moved its generation.</summary>
+    /// <summary>Why the run must stop before the next step, or null: the wall went, a wall update moved its generation, or one is open.</summary>
     private async Task<string?> StaleReasonAsync(WallEnhancementRun run, CancellationToken ct)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);
@@ -44,7 +44,7 @@ public sealed partial class WallEnhancementJob
         {
             null => "The wall no longer exists.",
             var g when g != run.Generation => "The wall was updated while it was being enhanced. Its new state can be enhanced on its own.",
-            _ => null,
+            _ => await WallEnhancementGuard.OpenUpdateReasonAsync(db, run.WallId, ct),
         };
     }
 

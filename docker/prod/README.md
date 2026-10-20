@@ -7,6 +7,11 @@ truth, and you copy them over by hand.
 
 - `autodeploy.sh`: run by cron every minute (and at boot). First the app, exactly as before: `blocwerk`
   is recreated behind the app's `/health/ready-to-deploy` gate (30 min cap) and a maintenance notice.
+  Past the cap it keeps waiting while `/health/busy-eta` (seconds; 0 when none) reports long background
+  work that said when it ends, such as a wall enhancement's hold search, up to 360 polls (6 h) in all.
+  **The live copy on the IONOS box is separate**: until `autodeploy.sh` is reinstalled there (see
+  "Install / update on the box" or `rollout.sh`), the box keeps the plain 30 min cap. The search
+  checkpoints per photo, so a deploy that still cuts it costs only the photo in hand.
   Then, from an EXIT trap so it never delays the app, the compute services: `wall-geometry` and
   `splat-cpu` are recreated when their image changed, but only after two consecutive idle polls of
   their authenticated `/v1/info` (no queued or running job). A failed probe counts as busy unless docker

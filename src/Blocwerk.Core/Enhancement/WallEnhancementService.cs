@@ -29,7 +29,8 @@ public sealed partial class WallEnhancementService(
     IHoldProposalService proposals,
     ILogger<WallEnhancementService> logger,
     IKioskContext? kioskContext = null,
-    IWallEditPresence? editPresence = null) : IWallEnhancementService
+    IWallEditPresence? editPresence = null,
+    IHoldRefinementQueue? refinementQueue = null) : IWallEnhancementService
 {
     private const string KioskRefusal = "Enhancing a wall";
 
@@ -110,18 +111,8 @@ public sealed partial class WallEnhancementService(
     }
 
     /// <summary>Why the enhancement cannot start now: a wall update is open (it will produce a new generation anyway).</summary>
-    private static async Task<string?> BlockedReasonAsync(BlocwerkDbContext db, Guid wallId, CancellationToken ct)
-    {
-        if (await db.WallUpdateSessions.AnyAsync(s => s.WallId == wallId && s.Status == WallUpdateSessionStatus.Open, ct))
-        {
-            return "A wall update is in progress. Finish or discard it first: the enhancement works on the wall as it is now.";
-        }
-
-        var open = new[] { WallRefreshStatus.Uploading, WallRefreshStatus.Sorting, WallRefreshStatus.ReadyToStart, WallRefreshStatus.Running, WallRefreshStatus.ReadyToApply, WallRefreshStatus.Applying };
-        return await db.WallRefreshes.AnyAsync(r => r.WallId == wallId && open.Contains(r.Status), ct)
-            ? "An \"Update panels + 3D\" is in progress. Finish or discard it first: the enhancement works on the wall as it is now."
-            : null;
-    }
+    private static Task<string?> BlockedReasonAsync(BlocwerkDbContext db, Guid wallId, CancellationToken ct) =>
+        WallEnhancementGuard.OpenUpdateReasonAsync(db, wallId, ct);
 
     private static async Task<int> GenerationAsync(BlocwerkDbContext db, Guid wallId, CancellationToken ct) =>
         await db.Walls.Where(w => w.Id == wallId).Select(w => (int?)w.CurrentGeneration).FirstOrDefaultAsync(ct)

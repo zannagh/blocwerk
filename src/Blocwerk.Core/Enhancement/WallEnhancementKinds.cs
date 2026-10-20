@@ -26,6 +26,24 @@ public static class WallEnhancementKinds
         WallEnhancementItemKind.NewHold,
     ];
 
+    /// <summary>
+    /// The hold columns an undo of a written kind is about: they must still be as the steps left them, and they are put
+    /// back. Everything else the steps' batches touched (the 3D sizes, facet and plane a refinement re-derives) is put back
+    /// only where nobody changed it since.
+    /// </summary>
+    /// <param name="kind">A written kind.</param>
+    /// <returns>The column names.</returns>
+    public static IReadOnlySet<string> OwnedColumns(WallEnhancementItemKind kind) => kind switch
+    {
+        WallEnhancementItemKind.Shape => new HashSet<string>(StringComparer.Ordinal)
+        {
+            nameof(Hold.X), nameof(Hold.Y), nameof(Hold.Radius), nameof(Hold.ShapePoints), nameof(Hold.ShapeControlPoints),
+            nameof(Hold.ShapeHoles), nameof(Hold.OutlineSource), nameof(Hold.OutlineConfidence),
+        },
+        WallEnhancementItemKind.Stack => new HashSet<string>(StringComparer.Ordinal) { nameof(Hold.StackedOnHoldId) },
+        _ => new HashSet<string>(StringComparer.Ordinal) { nameof(Hold.Color), nameof(Hold.ProposedColor) },
+    };
+
     /// <summary>True for a kind its step already wrote (kept or undone per hold); false for a suggestion.</summary>
     /// <param name="kind">The kind.</param>
     /// <returns>Whether it was written.</returns>

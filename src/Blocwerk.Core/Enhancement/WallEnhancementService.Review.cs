@@ -96,13 +96,30 @@ public sealed partial class WallEnhancementService
                 WallEnhancementItemKind.Colour => accept
                     ? await ConfirmColourAsync(run.WallId, item, userId, ct)
                     : await UndoAsync(run, item, userId, ct),
-                _ => await SuggestionAsync(run.WallId, item, accept, ct),
+                _ => await SuggestionInBatchAsync(run.WallId, item, accept, ct),
             };
         }
         catch (Exception ex) when (ex is UserFacingException or InvalidOperationException)
         {
             return (WallEnhancementDecision.Skipped, ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Carries out a suggestion inside a review batch of its own, recorded on the item, so discarding the run can take the
+    /// added hold or link back (a merge records its own batch).
+    /// </summary>
+    private async Task<(WallEnhancementDecision Decision, string Message)> SuggestionInBatchAsync(
+        Guid wallId, WallEnhancementItem item, bool accept, CancellationToken ct)
+    {
+        using var scope = journal.BeginBatch(WallEnhancementKinds.ReviewBatchLabel, ChangeJournalScopeKind.Wall, wallId);
+        var result = await SuggestionAsync(wallId, item, accept, ct);
+        if (accept && item.ResultBatchId is null && scope is ChangeJournalBatchScope { BatchRowCreated: true } written)
+        {
+            item.ResultBatchId = written.BatchId;
+        }
+
+        return result;
     }
 
     private async Task<(WallEnhancementDecision Decision, string Message)> SuggestionAsync(
@@ -114,6 +131,7 @@ public sealed partial class WallEnhancementService
             case WallEnhancementItemKind.Duplicate when accept:
                 var mode = Enum.TryParse<HoldMergeMode>(item.Detail, out var parsed) ? parsed : HoldMergeMode.KeepLeft;
                 var merged = await duplicates.MergeAsync(wallId, left, right, mode, ct);
+                item.ResultBatchId = merged.BatchId;
                 return (WallEnhancementDecision.Accepted, $"Merged; {WallEnhancementKinds.Count(merged.MovedBoulders, "boulder", "boulders")} moved over.");
             case WallEnhancementItemKind.Duplicate:
                 await duplicates.DismissAsync(wallId, left, right, ct);

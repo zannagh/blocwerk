@@ -43,6 +43,10 @@
                     <text>Starting…</text>
                 }
             </p>
+            @if (ProgressLine(view) is { } progressLine)
+            {
+                <p class="hint" role="status">@progressLine</p>
+            }
             @if (view.WaitingForEditor)
             {
                 <p class="hint" role="status">Waiting: someone has the hold editor of this wall open. The enhancement goes on when it is closed.</p>
@@ -56,6 +60,7 @@
             <EnhancementStepList Steps="view.Steps" />
             <div class="staged-actions">
                 <button class="btn-primary" disabled="@(busy || view.BlockedReason is not null)" @onclick="StartAsync">Continue the enhancement</button>
+                <a class="btn-secondary" href="/walls/@WallId/enhance">Review or discard it</a>
             </div>
             break;
 

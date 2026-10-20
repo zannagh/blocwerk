@@ -136,13 +136,13 @@ public sealed partial class HoldProposalService(
         }
 
         var watch = Stopwatch.StartNew();
-        var detections = await DetectAllAsync(detector, cameras, photos, progress, detected, ct);
+        var detections = await DetectAllAsync(db, detector, cameras, photos, progress, detected, ct);
         var inputs = await ProposalInputs.LoadAsync(db, wallId, model.Id, WallGeometryDocument.Parse(model.Json), ct);
         var reviewed = await db.HoldProposals.AsNoTracking()
             .Where(p => p.WallId == wallId && p.Status != HoldProposalStatus.Pending)
             .Select(p => new[] { p.X, p.Y, p.Z }).ToListAsync(ct);
         var (candidates, clusters) = await Task.Run(() => HoldProposalFinder.Find(cameras, detections, inputs.Facets, inputs.Known, reviewed), ct);
-        var onPanels = await ReplacePendingAsync(db, wallId, model.Id, candidates, inputs, ct);
+        var onPanels = await MergePendingAsync(db, wallId, model.Id, candidates, inputs, ct);
         var by = detected is null ? detector.Name : $"{detector.Name}, {detected.Photos.Count} by {detected.Detector}";
         logger.LogInformation(
             "Hold proposals on wall {WallId}: {Photos} photos ({Detector}), {Detections} detections, {Clusters} multi-view holds, {Proposals} proposed ({OnPanels} on a panel photo), {Ms} ms",
@@ -168,11 +168,15 @@ public sealed partial class HoldProposalService(
     /// already searched (<paramref name="detected"/>) is taken from there; the others are detected here.
     /// </summary>
     private async Task<List<CaptureDetection>> DetectAllAsync(
-        ICaptureHoldDetector detector, Dictionary<string, SolvedCamera> cameras, Dictionary<string, string> photos,
+        BlocwerkDbContext db, ICaptureHoldDetector detector, Dictionary<string, SolvedCamera> cameras, Dictionary<string, string> photos,
         IProgress<HoldSearchProgress>? progress, RunnerHoldsFound? detected, CancellationToken ct)
     {
         var all = new List<CaptureDetection>();
         var done = 0;
+
+        // The checkpoint: photos a cut-off search already detected are read back instead of detected again.
+        await CaptureDetectionStore.PruneAsync(db, ct);
+        var stored = await CaptureDetectionStore.LoadAsync(db, cameras.Keys.Select(n => photos[n]).ToList(), detector.Name, ct);
         progress?.Report(new HoldSearchProgress(0, cameras.Count));
         foreach (var (name, camera) in cameras)
         {
@@ -186,7 +190,7 @@ public sealed partial class HoldProposalService(
                 continue;
             }
 
-            if (CaptureDetectionCache.Get(photos[name], detector.Name) is { } cached)
+            if ((CaptureDetectionCache.Get(photos[name], detector.Name) ?? stored.GetValueOrDefault(photos[name])) is { } cached)
             {
                 all.AddRange(cached);
                 continue;
@@ -203,6 +207,7 @@ public sealed partial class HoldProposalService(
             var found = (await detector.DetectAsync(name, bytes, ct))
                 .Select(d => d with { Px = d.Px * sx, Py = d.Py * sx, RadiusPx = d.RadiusPx * sx }).ToList();
             CaptureDetectionCache.Put(photos[name], detector.Name, found);
+            await CaptureDetectionStore.SaveAsync(db, photos[name], detector.Name, found, ct);
             all.AddRange(found);
         }
 

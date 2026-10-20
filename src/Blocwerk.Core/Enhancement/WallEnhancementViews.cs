@@ -59,6 +59,8 @@ public sealed record WallEnhancementKindCount(WallEnhancementItemKind Kind, int 
 /// <param name="Error">Why it stopped, for a failed run.</param>
 /// <param name="WaitingForEditor">True while the run waits for someone to close the wall's hold editor.</param>
 /// <param name="PreviousFinalizedAt">When an earlier generation was enhanced, if one was.</param>
+/// <param name="StepProgress">How far the running step is (photos done of all), when it reports it.</param>
+/// <param name="StepExpectedEnd">When the running step is expected to be done, once its pace is known.</param>
 public sealed record WallEnhancementView(
     WallEnhancementState State,
     int Generation,
@@ -73,7 +75,9 @@ public sealed record WallEnhancementView(
     string? BlockedReason,
     string? Error,
     bool WaitingForEditor,
-    DateTimeOffset? PreviousFinalizedAt)
+    DateTimeOffset? PreviousFinalizedAt,
+    WallEnhancementProgress? StepProgress = null,
+    DateTimeOffset? StepExpectedEnd = null)
 {
     /// <summary>Items still to answer, over all kinds.</summary>
     public int Pending => Counts.Sum(c => c.Pending);
@@ -113,6 +117,12 @@ public sealed record WallEnhancementItemView(
 /// <param name="Total">Items of the kind (matching the filter).</param>
 /// <param name="Items">This page.</param>
 public sealed record WallEnhancementItemPage(int Total, IReadOnlyList<WallEnhancementItemView> Items);
+
+/// <summary>What discarding a run took back.</summary>
+/// <param name="HoldsRestored">Holds the steps wrote that are back as they were.</param>
+/// <param name="AnswersTakenBack">Answers whose writes were taken back (merges, links, added holds, confirmed colours).</param>
+/// <param name="LeftAsTheyAre">Holds or answers changed since by someone else, so left alone.</param>
+public sealed record WallEnhancementDiscardResult(int HoldsRestored, int AnswersTakenBack, int LeftAsTheyAre);
 
 /// <summary>What answering an item did.</summary>
 /// <param name="Decision">The recorded answer (Skipped when it could not be carried out).</param>

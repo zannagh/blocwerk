@@ -14,8 +14,8 @@ namespace Blocwerk.Core.Enhancement.Steps;
 /// </summary>
 public sealed class DuplicatesEnhancementStep : IWallEnhancementStep
 {
-    /// <summary>The most pairs one run puts up for review (the service's own page limit).</summary>
-    public const int MaxPairs = 100;
+    /// <summary>Pairs per page asked of the service (its own page limit).</summary>
+    public const int PageSize = 100;
 
     /// <inheritdoc/>
     public string Key => "duplicates";
@@ -32,14 +32,24 @@ public sealed class DuplicatesEnhancementStep : IWallEnhancementStep
     /// <inheritdoc/>
     public async Task<WallEnhancementStepOutcome> RunAsync(WallEnhancementStepContext context, CancellationToken ct)
     {
-        var page = await context.Actors.Duplicates.ListAsync(context.WallId, 0, MaxPairs, ct);
-        var suggestions = page.Items
-            .Select(i => new WallEnhancementSuggestion(i.Left.Id, i.Right.Id, null, i.SuggestedMode.ToString()))
-            .ToList();
-        var summary = page.Total == 0
+        // Every pair, page by page (the service hands out at most a page at a time).
+        var suggestions = new List<WallEnhancementSuggestion>();
+        var total = 0;
+        do
+        {
+            var page = await context.Actors.Duplicates.ListAsync(context.WallId, suggestions.Count, PageSize, ct);
+            total = page.Total;
+            suggestions.AddRange(page.Items.Select(i => new WallEnhancementSuggestion(i.Left.Id, i.Right.Id, null, i.SuggestedMode.ToString())));
+            if (page.Items.Count == 0)
+            {
+                break;
+            }
+        }
+        while (suggestions.Count < total);
+
+        var summary = total == 0
             ? "No duplicate holds found."
-            : $"{WallEnhancementKinds.Count(page.Total, "possible duplicate", "possible duplicates")} to look at"
-              + (page.Total > suggestions.Count ? $" (the first {suggestions.Count} are in this review)." : ".");
+            : $"{WallEnhancementKinds.Count(total, "possible duplicate", "possible duplicates")} to look at.";
         return new WallEnhancementStepOutcome(summary, suggestions);
     }
 }

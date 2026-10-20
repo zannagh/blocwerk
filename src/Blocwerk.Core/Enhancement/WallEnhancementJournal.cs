@@ -43,8 +43,9 @@ internal static class WallEnhancementJournal
     }
 
     /// <summary>The hold rows the batches updated (one entry per batch and hold).</summary>
+    /// <remarks>With <paramref name="holdId"/>, only that hold's entries are read (a review card, not the whole run).</remarks>
     public static async Task<List<WallEnhancementHoldEntry>> HoldUpdatesAsync(
-        BlocwerkDbContext db, IReadOnlyCollection<Guid> batchIds, CancellationToken ct)
+        BlocwerkDbContext db, IReadOnlyCollection<Guid> batchIds, CancellationToken ct, Guid? holdId = null)
     {
         if (batchIds.Count == 0)
         {
@@ -52,8 +53,10 @@ internal static class WallEnhancementJournal
         }
 
         var ids = batchIds.ToList();
+        var needle = holdId?.ToString();
         var rows = await db.ChangeJournalEntries.AsNoTracking()
             .Where(e => ids.Contains(e.BatchId) && e.EntityType == nameof(Hold) && e.Op == ChangeJournalOp.Update)
+            .Where(e => needle == null || e.KeyJson.Contains(needle))
             .Select(e => new { e.BatchId, e.KeyJson })
             .ToListAsync(ct);
         return rows

@@ -43,6 +43,11 @@ public partial class WallEnhance
 
     private WallEnhancementKindCount? Current => view?.Counts.FirstOrDefault(c => c.Kind == kind);
 
+    private IReadOnlyList<WallEnhancementStepView> FailedSteps =>
+        view?.Steps.Where(s => s.Outcome == WallEnhancementStepOutcomeKind.Failed).ToList() ?? [];
+
+    private string FailedTitles => string.Join(", ", FailedSteps.Select(s => s.Title.ToLowerInvariant()));
+
     private string StatusLine => view?.State switch
     {
         WallEnhancementState.Review when view.Pending > 0 => $"{WallEnhancementKinds.Count(view.Pending, "change", "changes")} to look over.",
@@ -143,10 +148,27 @@ public partial class WallEnhance
         await LoadItemsAsync(reset: true);
     });
 
-    private Task FinalizeAsync() => RunAsync(async () =>
+    private Task FinalizeAsync(bool withoutFailedSteps) => RunAsync(async () =>
     {
-        view = await Enhancement.FinalizeAsync(WallId);
+        view = await Enhancement.FinalizeAsync(WallId, withoutFailedSteps);
         message = "The enhancement is finalized for this state of the wall. It runs again only after the next wall update.";
+    });
+
+    private Task RetryAsync(string stepKey) => RunAsync(async () =>
+    {
+        view = await Enhancement.RetryStepAsync(WallId, stepKey);
+        message = "The step runs again. Its changes join this review when it is done; the wall's settings show how far it is.";
+    });
+
+    private Task DiscardAsync() => RunAsync(async () =>
+    {
+        var result = await Enhancement.DiscardAsync(WallId);
+        message = $"Discarded: {WallEnhancementKinds.Count(result.HoldsRestored, "hold is", "holds are")} back as they were, "
+                  + $"{WallEnhancementKinds.Count(result.AnswersTakenBack, "answer", "answers")} taken back"
+                  + (result.LeftAsTheyAre > 0 ? $", {result.LeftAsTheyAre} changed by someone since and left as they are." : ".");
+        view = await Enhancement.GetAsync(WallId);
+        items.Clear();
+        total = 0;
     });
 
     /// <summary>Runs one action with the busy flag set; failures become the error line.</summary>

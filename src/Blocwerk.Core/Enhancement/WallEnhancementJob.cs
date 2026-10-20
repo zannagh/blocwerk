@@ -2,6 +2,7 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using System.Collections.Concurrent;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
@@ -15,13 +16,15 @@ namespace Blocwerk.Core.Enhancement;
 /// <summary>
 /// Runs a wall's one-time enhancement: every registered <see cref="IWallEnhancementStep"/> in order, each in its own
 /// wall-scoped journal batch, each recorded on the run as it starts and as it ends. A recorded step never runs again, so
-/// a run interrupted by a restart resumes with exactly the step that was cut off (all steps are idempotent). A step that
-/// throws is recorded as failed and the next one still runs; the run then waits for its review.
+/// a run interrupted by a restart resumes with exactly the step that was cut off (all steps are idempotent, and the long
+/// hold search checkpoints per photo). A step that throws is recorded as failed and the next one still runs; the run
+/// then waits for its review, where a failed step can be retried.
 /// </summary>
 /// <remarks>
 /// Before each step the job waits while someone has the wall's hold editor open (<see cref="IWallEditPresence"/>) and
-/// while another writer holds the wall's hold lock; during the step it holds the deploy gate. It stops (Failed,
-/// resumable) when the wall's generation moved: the run belongs to the generation it started on.
+/// while another writer holds the wall's hold lock, and AFTER both waits it checks the generation and that no wall
+/// update opened: a run never writes to a generation it did not start on. During the step it holds the deploy gate and
+/// reports an expected end for long steps (<see cref="IDeployBusyEta"/>).
 /// </remarks>
 public sealed partial class WallEnhancementJob(
     IDbContextFactory<BlocwerkDbContext> dbContextFactory,
@@ -30,18 +33,26 @@ public sealed partial class WallEnhancementJob(
     IChangeJournal journal,
     ILogger<WallEnhancementJob> logger,
     IDeployBusyGate? busyGate = null,
-    IWallEditPresence? editPresence = null)
+    IWallEditPresence? editPresence = null,
+    IDeployBusyEta? busyEta = null)
 {
     /// <summary>How long the job waits for another hold writer of the wall before the step fails.</summary>
     public static readonly TimeSpan WriterWait = TimeSpan.FromMinutes(10);
 
     private readonly IReadOnlyList<IWallEnhancementStep> ordered = steps.OrderBy(s => s.Order).ToList();
+    private readonly ConcurrentDictionary<Guid, WallEnhancementStepTracker> trackers = new();
 
     /// <summary>How often the job looks again while an editor has the wall open.</summary>
     public TimeSpan EditorPoll { get; init; } = TimeSpan.FromSeconds(5);
 
     /// <summary>The steps in the order they run.</summary>
     public IReadOnlyList<IWallEnhancementStep> Steps => ordered;
+
+    /// <summary>How far the running step of the run is, when it reports progress.</summary>
+    /// <param name="runId">The run.</param>
+    /// <returns>The progress and the expected end, or null.</returns>
+    public (WallEnhancementProgress Progress, DateTimeOffset? ExpectedEnd)? ProgressOf(Guid runId) =>
+        trackers.TryGetValue(runId, out var t) && t.Last is { } last ? (last, t.ExpectedEnd) : null;
 
     /// <summary>Runs (or resumes) the run. Never throws but on shutdown.</summary>
     /// <param name="runId">The run; it must be <see cref="WallEnhancementStatus.Running"/>.</param>
@@ -62,6 +73,13 @@ public sealed partial class WallEnhancementJob(
             logger.LogWarning(ex, "Wall enhancement {RunId} failed", runId);
             await MarkFailedAsync(runId, ex.Message);
         }
+        finally
+        {
+            if (trackers.TryRemove(runId, out var tracker))
+            {
+                tracker.Clear();
+            }
+        }
     }
 
     private async Task RunCoreAsync(Guid runId, CancellationToken ct)
@@ -80,29 +98,41 @@ public sealed partial class WallEnhancementJob(
                 continue;
             }
 
-            if (await StaleReasonAsync(run, ct) is { } why)
+            await WaitForEditorsAsync(run.WallId, ct);
+            if (!await RunOneAsync(run, step, recorded, ct))
             {
-                await MarkFailedAsync(runId, why);
                 return;
             }
-
-            await WaitForEditorsAsync(run.WallId, ct);
-            await RunOneAsync(run, step, recorded?.StartedAt ?? DateTimeOffset.UtcNow, ct);
         }
 
         await FinishAsync(runId, ct);
     }
 
-    private async Task RunOneAsync(WallEnhancementRun run, IWallEnhancementStep step, DateTimeOffset started, CancellationToken ct)
+    /// <summary>Runs one step and records it. False when the run had to stop (the wall moved on): it is marked failed.</summary>
+    private async Task<bool> RunOneAsync(WallEnhancementRun run, IWallEnhancementStep step, WallEnhancementStepRecord? recorded, CancellationToken ct)
     {
-        var running = new WallEnhancementStepRecord(step.Key, step.Title, WallEnhancementStepOutcomeKind.Running, string.Empty, started, null, []);
+        if (await StaleReasonAsync(run, ct) is { } before)
+        {
+            await MarkFailedAsync(run.Id, before);
+            return false;
+        }
+
+        var started = recorded?.StartedAt ?? DateTimeOffset.UtcNow;
+        var running = new WallEnhancementStepRecord(
+            step.Key, step.Title, WallEnhancementStepOutcomeKind.Running, string.Empty, started, null, recorded?.BatchIds ?? []);
         await SaveStepAsync(run.Id, running, step.Key, ct);
-        var (outcome, kind) = await RunStepAsync(run, step, ct);
+        var (outcome, kind, stale) = await RunStepAsync(run, step, ct);
+        if (stale is not null)
+        {
+            await MarkFailedAsync(run.Id, stale);
+            return false;
+        }
+
         List<Guid> batches;
         await using (var db = await dbContextFactory.CreateDbContextAsync(ct))
         {
             batches = await WallEnhancementJournal.StepBatchesAsync(db, run.WallId, run.CreatedByUserId, step, started, ct);
-            await AddItemsAsync(db, run.Id, step, batches, outcome.Suggestions, ct);
+            await AddItemsAsync(db, run.Id, step, batches, outcome!.Suggestions, ct);
         }
 
         var done = running with { Outcome = kind, Summary = outcome.Summary, FinishedAt = DateTimeOffset.UtcNow, BatchIds = batches };
@@ -110,30 +140,31 @@ public sealed partial class WallEnhancementJob(
         logger.LogInformation(
             "Wall enhancement {RunId} on wall {WallId}, step {Step}: {Outcome} — {Summary} ({Batches} journal batches)",
             run.Id, run.WallId, step.Key, kind, outcome.Summary, batches.Count);
+        return true;
     }
 
-    private async Task<(WallEnhancementStepOutcome Outcome, WallEnhancementStepOutcomeKind Kind)> RunStepAsync(
+    private async Task<(WallEnhancementStepOutcome? Outcome, WallEnhancementStepOutcomeKind Kind, string? Stale)> RunStepAsync(
         WallEnhancementRun run, IWallEnhancementStep step, CancellationToken ct)
     {
         using var busy = busyGate?.Hold(DeployBusyWork.WallEnhancement, run.WallId, run.CreatedByUserId);
+        var tracker = trackers[run.Id] = new WallEnhancementStepTracker(run.Id, busyEta);
         try
         {
             if (step.NeedsModel && !await HasActiveModelAsync(run.WallId, ct))
             {
-                return (WallEnhancementStepOutcome.Skip("This wall has no 3D model yet."), WallEnhancementStepOutcomeKind.Skipped);
+                return (WallEnhancementStepOutcome.Skip("This wall has no 3D model yet."), WallEnhancementStepOutcomeKind.Skipped, null);
             }
 
             // Another writer of the wall's holds (a clean-up, a merge, a wall-update commit) finishes first: the steps
-            // themselves fail fast on the lock, which in the background would only mean a failed step.
+            // themselves fail fast on the lock, which in the background would only mean a failed step. That wait may have
+            // let a wall update through, so the generation is checked again right before the step writes.
             (await WallHoldWriteLock.AcquireAsync(run.WallId, WriterWait, ct)).Dispose();
-            await using var actors = await actorFactory.CreateAsync(run.CreatedByUserId, ct);
-            WallEnhancementStepOutcome outcome;
-            using (journal.BeginBatch(WallEnhancementKinds.BatchLabel(step.Key), ChangeJournalScopeKind.Wall, run.WallId))
+            if (await StaleReasonAsync(run, ct) is { } stale)
             {
-                outcome = await step.RunAsync(new WallEnhancementStepContext(run.WallId, run.CreatedByUserId, actors), ct);
+                return (null, WallEnhancementStepOutcomeKind.Failed, stale);
             }
 
-            return (outcome, outcome.Skipped ? WallEnhancementStepOutcomeKind.Skipped : WallEnhancementStepOutcomeKind.Done);
+            return await RunInBatchAsync(run, step, tracker, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -143,8 +174,25 @@ public sealed partial class WallEnhancementJob(
         {
             logger.LogWarning(ex, "Wall enhancement {RunId}: step {Step} failed; the next steps still run", run.Id, step.Key);
             var text = ex is UserFacingException or UnauthorizedAccessException or InvalidOperationException ? $": {ex.Message}" : ".";
-            return (WallEnhancementStepOutcome.Done($"{step.Title} failed{text}"), WallEnhancementStepOutcomeKind.Failed);
+            return (WallEnhancementStepOutcome.Done($"{step.Title} failed{text}"), WallEnhancementStepOutcomeKind.Failed, null);
         }
+        finally
+        {
+            tracker.Clear();
+        }
+    }
+
+    private async Task<(WallEnhancementStepOutcome? Outcome, WallEnhancementStepOutcomeKind Kind, string? Stale)> RunInBatchAsync(
+        WallEnhancementRun run, IWallEnhancementStep step, WallEnhancementStepTracker tracker, CancellationToken ct)
+    {
+        await using var actors = await actorFactory.CreateAsync(run.CreatedByUserId, ct);
+        WallEnhancementStepOutcome outcome;
+        using (journal.BeginBatch(WallEnhancementKinds.BatchLabel(step.Key), ChangeJournalScopeKind.Wall, run.WallId))
+        {
+            outcome = await step.RunAsync(new WallEnhancementStepContext(run.WallId, run.CreatedByUserId, actors, tracker), ct);
+        }
+
+        return (outcome, outcome.Skipped ? WallEnhancementStepOutcomeKind.Skipped : WallEnhancementStepOutcomeKind.Done, null);
     }
 
     private async Task WaitForEditorsAsync(Guid wallId, CancellationToken ct)

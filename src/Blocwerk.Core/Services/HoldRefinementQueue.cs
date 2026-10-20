@@ -26,6 +26,9 @@ public sealed class HoldRefinementQueue(IServiceScopeFactory scopes, ILogger<Hol
     /// <summary>Quiet time after the last queued edit before a run starts.</summary>
     public static readonly TimeSpan Debounce = TimeSpan.FromSeconds(20);
 
+    /// <summary>How often a refinement waiting for a running hold search looks again.</summary>
+    public static readonly TimeSpan SearchPoll = TimeSpan.FromSeconds(10);
+
     private readonly Channel<(Guid WallId, Guid[] HoldIds)> channel =
         Channel.CreateUnbounded<(Guid WallId, Guid[] HoldIds)>(new UnboundedChannelOptions { SingleReader = true });
 
@@ -146,6 +149,14 @@ public sealed class HoldRefinementQueue(IServiceScopeFactory scopes, ILogger<Hol
                 var item = await channel.Reader.ReadAsync(stoppingToken);
                 Add(pending, item);
                 await DrainBurstAsync(pending, stoppingToken);
+
+                // Not alongside a hold search (minutes of detection on the same CPU): the edits keep collecting meanwhile.
+                while (HoldProposalService.IsSearching)
+                {
+                    await Task.Delay(SearchPoll, stoppingToken);
+                    await DrainBurstAsync(pending, stoppingToken);
+                }
+
                 foreach (var (wallId, ids) in pending)
                 {
                     await RunAsync(wallId, ids, stoppingToken);

@@ -54,11 +54,31 @@ public interface IWallEnhancementService
     /// <returns>How many were accepted, and how many could not be carried out.</returns>
     Task<(int Accepted, int Skipped)> AcceptAllAsync(Guid wallId, WallEnhancementItemKind kind, CancellationToken ct = default);
 
-    /// <summary>Records the reviewed enhancement for the generation. Refused while an item is pending.</summary>
+    /// <summary>
+    /// Records the reviewed enhancement for the generation. Refused while an item is pending, and while a step failed
+    /// unless <paramref name="withoutFailedSteps"/> says the admin chose to finalize without it.
+    /// </summary>
     /// <param name="wallId">The wall.</param>
+    /// <param name="withoutFailedSteps">True when the admin confirmed finalizing without the failed steps.</param>
     /// <param name="ct">Cancellation.</param>
     /// <returns>The finalized state.</returns>
-    Task<WallEnhancementView> FinalizeAsync(Guid wallId, CancellationToken ct = default);
+    Task<WallEnhancementView> FinalizeAsync(Guid wallId, bool withoutFailedSteps = false, CancellationToken ct = default);
+
+    /// <summary>Runs a failed step of the current run again (the run goes back to running for it).</summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="stepKey">The failed step.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>The state after starting it.</returns>
+    Task<WallEnhancementView> RetryStepAsync(Guid wallId, string stepKey, CancellationToken ct = default);
+
+    /// <summary>
+    /// Discards the current run before it is finalized: takes back what its steps and its answers wrote through the change
+    /// journal (where nobody changed it since) and removes the run, so the generation can be enhanced again.
+    /// </summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>What was taken back and what stayed.</returns>
+    Task<WallEnhancementDiscardResult> DiscardAsync(Guid wallId, CancellationToken ct = default);
 
     /// <summary>The review picture of an item (JPEG), or null when there is none.</summary>
     /// <param name="wallId">The wall.</param>

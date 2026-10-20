@@ -505,6 +505,28 @@ namespace Blocwerk.Core.Migrations
                     b.ToTable("BoulderSetters");
                 });
 
+            modelBuilder.Entity("Blocwerk.Core.Entities.CaptureDetectionRecord", b =>
+                {
+                    b.Property<string>("StoredPath")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<string>("Detector")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DetectionsJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("StoredPath", "Detector");
+
+                    b.ToTable("CaptureDetectionRecords");
+                });
+
             modelBuilder.Entity("Blocwerk.Core.Entities.ChangeJournalBatch", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2442,6 +2464,9 @@ namespace Blocwerk.Core.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<Guid?>("ReferenceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ResultBatchId")
                         .HasColumnType("uuid");
 
                     b.Property<Guid>("RunId")

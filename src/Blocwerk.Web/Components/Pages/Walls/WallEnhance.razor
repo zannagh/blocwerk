@@ -28,13 +28,39 @@
             <p class="enhance-status" role="status">@StatusLine</p>
             @if (view.State == WallEnhancementState.Review)
             {
-                <button class="btn-primary enhance-finalize" disabled="@(busy || view.Pending > 0)" @onclick="FinalizeAsync">Finalize</button>
+                @if (FailedSteps.Count > 0 && view.Pending == 0)
+                {
+                    <ConfirmAction Label="@($"Finalize without {FailedTitles}")" TriggerClass="btn-primary enhance-finalize" ConfirmClass="btn-primary" Neutral="true"
+                                   ConfirmLabel="Finalize anyway" Disabled="busy"
+                                   Question="@($"{FailedTitles} failed. Finalize without it? The enhancement then counts as done for this state of the wall.")"
+                                   OnConfirm="() => FinalizeAsync(true)" />
+                }
+                else
+                {
+                    <button class="btn-primary enhance-finalize" disabled="@(busy || view.Pending > 0)" @onclick="() => FinalizeAsync(false)">Finalize</button>
+                }
                 @if (view.Pending > 0)
                 {
                     <p class="hint">Finalize records the enhancement for this state of the wall. Answer every change first, one by one or with "Accept all".</p>
                 }
             }
         </header>
+
+        @if (view.State is WallEnhancementState.Review or WallEnhancementState.Failed)
+        {
+            <section class="enhance-run-actions" aria-label="The run">
+                @foreach (var step in FailedSteps)
+                {
+                    <div class="enhance-failed">
+                        <p class="field-error">@step.Summary</p>
+                        <button class="btn-secondary" disabled="@busy" @onclick="() => RetryAsync(step.Key)">Retry this step</button>
+                    </div>
+                }
+                <ConfirmAction Label="Discard this run" TriggerClass="btn-secondary" ConfirmLabel="Discard it" Disabled="busy"
+                               Question="Discard the whole enhancement? Every change it made, and what your answers merged, linked or added, is taken back where nobody changed it since. The wall can then be enhanced again."
+                               OnConfirm="DiscardAsync" />
+            </section>
+        }
 
         @if (error is not null)
         {

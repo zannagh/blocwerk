@@ -14,6 +14,8 @@ public partial class BlocwerkDbContext
 
     public DbSet<WallEnhancementItem> WallEnhancementItems => Set<WallEnhancementItem>();
 
+    public DbSet<CaptureDetectionRecord> CaptureDetectionRecords => Set<CaptureDetectionRecord>();
+
     private static void ConfigureWallEnhancement(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<WallEnhancementRun>(entity =>
@@ -39,6 +41,12 @@ public partial class BlocwerkDbContext
                 .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasIndex(i => new { i.RunId, i.Kind, i.Decision });
+        });
+
+        modelBuilder.Entity<CaptureDetectionRecord>(entity =>
+        {
+            entity.HasKey(r => new { r.StoredPath, r.Detector });
+            entity.Property(r => r.DetectionsJson).HasColumnType("text");
         });
     }
 }

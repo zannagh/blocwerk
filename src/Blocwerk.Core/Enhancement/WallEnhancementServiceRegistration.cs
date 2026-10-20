@@ -37,7 +37,8 @@ public static class WallEnhancementServiceRegistration
             sp.GetRequiredService<IChangeJournal>(),
             sp.GetRequiredService<ILogger<WallEnhancementJob>>(),
             sp.GetService<IDeployBusyGate>(),
-            sp.GetService<IWallEditPresence>()));
+            sp.GetService<IWallEditPresence>(),
+            sp.GetService<IDeployBusyEta>()));
         services.AddSingleton<WallEnhancementRunner>();
         services.AddHostedService(sp => new WallEnhancementResumer(
             sp.GetRequiredService<RootDbContextFactory>(),

@@ -45,6 +45,8 @@ public sealed class WallEnhancementFixture : IDisposable
 
     public IHoldProposalService Proposals { get; } = Substitute.For<IHoldProposalService>();
 
+    public IHoldRefinementQueue RefinementQueue { get; } = Substitute.For<IHoldRefinementQueue>();
+
     public IKioskContext? Kiosk { get; set; }
 
     public IWallEditPresence? Presence { get; set; }
@@ -129,7 +131,7 @@ public sealed class WallEnhancementFixture : IDisposable
         Runner ??= new WallEnhancementRunner(Job(steps));
         return new WallEnhancementService(
             Journalling, Harness.CurrentUser, Runner, journal, new ChangeJournalReverter(Journalling, journal),
-            Duplicates, Links, Proposals, NullLogger<WallEnhancementService>.Instance, Kiosk, Presence);
+            Duplicates, Links, Proposals, NullLogger<WallEnhancementService>.Instance, Kiosk, Presence, RefinementQueue);
     }
 
     public WallEnhancementJob Job(IReadOnlyList<IWallEnhancementStep> steps) => new(

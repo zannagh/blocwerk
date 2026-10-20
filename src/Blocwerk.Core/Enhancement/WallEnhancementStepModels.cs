@@ -8,7 +8,14 @@ namespace Blocwerk.Core.Enhancement;
 /// <param name="WallId">The wall.</param>
 /// <param name="UserId">The admin who started the run; the services act for them.</param>
 /// <param name="Actors">The wall services, built for that admin.</param>
-public sealed record WallEnhancementStepContext(Guid WallId, Guid UserId, WallEnhancementActors Actors);
+/// <param name="Progress">Where a long step reports how far it is (photos done of all), for the card and the deploy gate's ETA.</param>
+public sealed record WallEnhancementStepContext(
+    Guid WallId, Guid UserId, WallEnhancementActors Actors, IProgress<WallEnhancementProgress>? Progress = null);
+
+/// <summary>How far a long step is.</summary>
+/// <param name="Done">Units done (photos).</param>
+/// <param name="Total">All units.</param>
+public readonly record struct WallEnhancementProgress(int Done, int Total);
 
 /// <summary>A suggestion of a suggesting step: what it is about, for the review item.</summary>
 /// <param name="HoldId">The hold (the left one of a pair).</param>

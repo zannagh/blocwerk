@@ -13,7 +13,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Blocwerk.Core.Migrations
 {
     [DbContext(typeof(BlocwerkDbContext))]
-    [Migration("20261020205519_AddWallEnhancement")]
+    [Migration("20261020223451_AddWallEnhancement")]
     partial class AddWallEnhancement
     {
         /// <inheritdoc />
@@ -506,6 +506,28 @@ namespace Blocwerk.Core.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("BoulderSetters");
+                });
+
+            modelBuilder.Entity("Blocwerk.Core.Entities.CaptureDetectionRecord", b =>
+                {
+                    b.Property<string>("StoredPath")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<string>("Detector")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DetectionsJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("StoredPath", "Detector");
+
+                    b.ToTable("CaptureDetectionRecords");
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.ChangeJournalBatch", b =>
@@ -2445,6 +2467,9 @@ namespace Blocwerk.Core.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<Guid?>("ReferenceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ResultBatchId")
                         .HasColumnType("uuid");
 
                     b.Property<Guid>("RunId")

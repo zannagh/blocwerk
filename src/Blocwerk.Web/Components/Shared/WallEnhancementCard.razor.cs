@@ -57,6 +57,26 @@ public partial class WallEnhancementCard : IDisposable
         ? "Done, and every change is answered. Finalize it to record the enhancement."
         : $"Done: {WallEnhancementKinds.Count(v.Pending, "change", "changes")} to look over.";
 
+    /// <summary>"Photo 120 of 425, about 35 min left" while a long step reports progress, else null.</summary>
+    /// <param name="v">The view.</param>
+    /// <returns>The line, or null.</returns>
+    internal static string? ProgressLine(WallEnhancementView v)
+    {
+        if (v.StepProgress is not { Total: > 0 } p)
+        {
+            return null;
+        }
+
+        var line = $"Photo {Math.Min(p.Done + 1, p.Total)} of {p.Total}";
+        if (v.StepExpectedEnd is { } end && end > DateTimeOffset.UtcNow)
+        {
+            var minutes = Math.Max(1, (int)Math.Round((end - DateTimeOffset.UtcNow).TotalMinutes));
+            line += $", about {WallEnhancementKinds.Count(minutes, "minute", "minutes")} left";
+        }
+
+        return line + ".";
+    }
+
     /// <summary>Who finalized it and what the review kept.</summary>
     /// <param name="v">The view.</param>
     /// <returns>The line.</returns>

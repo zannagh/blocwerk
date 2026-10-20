@@ -36,7 +36,7 @@ public sealed partial class WallEnhancementService
         string? key;
         await using (var db = await dbContextFactory.CreateDbContextAsync(ct))
         {
-            key = (await WallEnhancementJournal.HoldUpdatesAsync(db, batches, ct)).FirstOrDefault(e => e.HoldId == item.HoldId)?.KeyJson;
+            key = (await WallEnhancementJournal.HoldUpdatesAsync(db, batches, ct, item.HoldId)).FirstOrDefault(e => e.HoldId == item.HoldId)?.KeyJson;
         }
 
         if (key is null)
@@ -48,12 +48,24 @@ public sealed partial class WallEnhancementService
         using (await WallHoldWriteLock.AcquireAsync(run.WallId, ct: ct))
         {
             result = await reverter.RevertKeyAsync(
-                batches, nameof(Hold), key, WallEnhancementKinds.UndoLabel(item.Kind), ChangeJournalScopeKind.Wall, run.WallId, userId, ct);
+                new ChangeJournalKeyRevert(
+                    batches, nameof(Hold), key, WallEnhancementKinds.UndoLabel(item.Kind), ChangeJournalScopeKind.Wall, run.WallId, userId,
+                    WallEnhancementKinds.OwnedColumns(item.Kind)),
+                ct);
         }
 
-        return result.Reverted
-            ? (WallEnhancementDecision.Rejected, "Undone: the hold is back as it was.")
-            : (WallEnhancementDecision.Skipped, "This hold was changed after the enhancement, so it was left as it is.");
+        if (!result.Reverted)
+        {
+            return (WallEnhancementDecision.Skipped, "This hold was changed after the enhancement, so it was left as it is.");
+        }
+
+        // The old outline needs its 3D footprint back: re-derived in the background, for this hold only.
+        if (item.Kind == WallEnhancementItemKind.Shape && item.HoldId is { } holdId)
+        {
+            refinementQueue?.Enqueue(run.WallId, [holdId]);
+        }
+
+        return (WallEnhancementDecision.Rejected, "Undone: the hold is back as it was.");
     }
 
     private async Task<(WallEnhancementDecision Decision, string Message)> ConfirmColourAsync(
@@ -93,9 +105,16 @@ public sealed partial class WallEnhancementService
             Record(item, WallEnhancementDecision.Accepted, string.Empty, userId);
         }
 
-        using (journal.BeginBatch(WallEnhancementKinds.ReviewBatchLabel, ChangeJournalScopeKind.Wall, wallId))
+        using (var scope = journal.BeginBatch(WallEnhancementKinds.ReviewBatchLabel, ChangeJournalScopeKind.Wall, wallId))
         {
             await db.SaveChangesAsync(ct);
+            if (scope is ChangeJournalBatchScope { BatchRowCreated: true } written)
+            {
+                foreach (var item in items.Where(i => i.Decision == WallEnhancementDecision.Accepted))
+                {
+                    item.ResultBatchId = written.BatchId;
+                }
+            }
         }
 
         return confirmed;

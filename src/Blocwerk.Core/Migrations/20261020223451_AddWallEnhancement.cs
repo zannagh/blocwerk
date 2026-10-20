@@ -12,6 +12,20 @@ namespace Blocwerk.Core.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.CreateTable(
+                name: "CaptureDetectionRecords",
+                columns: table => new
+                {
+                    StoredPath = table.Column<string>(type: "character varying(512)", maxLength: 512, nullable: false),
+                    Detector = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false),
+                    DetectionsJson = table.Column<string>(type: "text", nullable: false),
+                    CreatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_CaptureDetectionRecords", x => new { x.StoredPath, x.Detector });
+                });
+
+            migrationBuilder.CreateTable(
                 name: "WallEnhancementRuns",
                 columns: table => new
                 {
@@ -55,6 +69,7 @@ namespace Blocwerk.Core.Migrations
                     Detail = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: true),
                     Decision = table.Column<int>(type: "integer", nullable: false),
                     Note = table.Column<string>(type: "character varying(300)", maxLength: 300, nullable: true),
+                    ResultBatchId = table.Column<Guid>(type: "uuid", nullable: true),
                     CreatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                     DecidedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
                     DecidedByUserId = table.Column<Guid>(type: "uuid", nullable: true)
@@ -85,6 +100,9 @@ namespace Blocwerk.Core.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropTable(
+                name: "CaptureDetectionRecords");
+
             migrationBuilder.DropTable(
                 name: "WallEnhancementItems");
 

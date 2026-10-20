@@ -16,7 +16,7 @@ public sealed partial class WallEnhancementService
     private static readonly JsonSerializerOptions OutcomeJson = new(JsonSerializerDefaults.Web);
 
     /// <inheritdoc/>
-    public async Task<WallEnhancementView> FinalizeAsync(Guid wallId, CancellationToken ct = default)
+    public async Task<WallEnhancementView> FinalizeAsync(Guid wallId, bool withoutFailedSteps = false, CancellationToken ct = default)
     {
         var (db, userId) = await OpenForAdminAsync(wallId, ct);
         await using (db)
@@ -29,6 +29,13 @@ public sealed partial class WallEnhancementService
                 throw new UserFacingException($"{WallEnhancementKinds.Count(pending, "change still waits", "changes still wait")} for an answer.");
             }
 
+            var failed = WallEnhancementStepRecord.Parse(run.StepsJson).Where(s => s.Outcome == WallEnhancementStepOutcomeKind.Failed).ToList();
+            if (failed.Count > 0 && !withoutFailedSteps)
+            {
+                throw new UserFacingException(
+                    $"These steps failed: {string.Join(", ", failed.Select(f => f.Title))}. Retry them, or finalize without them.");
+            }
+
             run.Status = WallEnhancementStatus.Finalized;
             run.FinalizedAt = DateTimeOffset.UtcNow;
             run.FinalizedByUserId = userId;
@@ -39,6 +46,7 @@ public sealed partial class WallEnhancementService
                     kinds = counts.Select(c => new { kind = c.Kind.ToString(), kept = c.Accepted, undone = c.Rejected, skipped = c.Skipped }),
                     steps = WallEnhancementStepRecord.Parse(run.StepsJson)
                         .Select(s => new { s.Key, outcome = s.Outcome.ToString(), s.Summary, batches = s.BatchIds.Count }),
+                    finalizedWithoutFailedSteps = failed.Select(f => f.Key),
                 },
                 OutcomeJson);
             await db.SaveChangesAsync(ct);

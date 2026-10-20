@@ -73,8 +73,9 @@ public sealed partial class WallEnhancementService
     {
         var batches = BatchesNewestFirst(run, WallEnhancementItemKind.Shape).ToList();
         await using var scratch = await dbContextFactory.CreateDbContextAsync(ct);
+        var needle = current.Id.ToString();
         var entries = await scratch.ChangeJournalEntries.AsNoTracking()
-            .Where(e => batches.Contains(e.BatchId) && e.EntityType == nameof(Hold) && e.Op == ChangeJournalOp.Update)
+            .Where(e => batches.Contains(e.BatchId) && e.EntityType == nameof(Hold) && e.Op == ChangeJournalOp.Update && e.KeyJson.Contains(needle))
             .ToListAsync(ct);
         var mine = entries.Where(e => WallEnhancementJournal.HoldIdOf(e.KeyJson) == current.Id)
             .OrderBy(e => batches.IndexOf(e.BatchId)).ThenByDescending(e => e.Seq)

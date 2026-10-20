@@ -39,6 +39,9 @@ public class WallEnhancementItem
     [MaxLength(300)]
     public string? Note { get; set; }
 
+    /// <summary>The journal batch the answer itself wrote (a merge, a link, an added hold, a confirmed colour), so discarding the run can take it back.</summary>
+    public Guid? ResultBatchId { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
     public DateTimeOffset? DecidedAt { get; set; }

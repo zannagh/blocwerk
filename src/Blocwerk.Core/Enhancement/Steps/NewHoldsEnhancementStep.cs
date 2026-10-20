@@ -4,6 +4,7 @@
 
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Services;
 
 namespace Blocwerk.Core.Enhancement.Steps;
 
@@ -34,7 +35,16 @@ public sealed class NewHoldsEnhancementStep : IWallEnhancementStep
     public async Task<WallEnhancementStepOutcome> RunAsync(WallEnhancementStepContext context, CancellationToken ct)
     {
         await context.Actors.Proposals.EnsureCanFindAsync(context.WallId, ct);
-        await context.Actors.Proposals.FindInBackgroundAsync(context.WallId, null, ct);
+
+        // The active model's own proposal pass (the capture chain's, often by a 3D runner) is reused as it is: a search
+        // here would take most of an hour on the server's CPU to find the same holds again, without the runner's detections.
+        var reused = await context.Actors.Proposals.HasProposalPassAsync(context.WallId, ct);
+        if (!reused)
+        {
+            var progress = new Progress<HoldSearchProgress>(p => context.Progress?.Report(new WallEnhancementProgress(p.Done, p.Total)));
+            await context.Actors.Proposals.FindInBackgroundAsync(context.WallId, progress, ct);
+        }
+
         var pending = await context.Actors.Proposals.ListAsync(context.WallId, ct: ct);
         var suggestions = pending
             .Where(p => p.PanelId is not null && !p.IsStale)
@@ -43,7 +53,8 @@ public sealed class NewHoldsEnhancementStep : IWallEnhancementStep
         return new WallEnhancementStepOutcome(
             suggestions.Count == 0
                 ? "No missing holds found."
-                : $"{WallEnhancementKinds.Count(suggestions.Count, "possible new hold", "possible new holds")} to look at.",
+                : $"{WallEnhancementKinds.Count(suggestions.Count, "possible new hold", "possible new holds")} to look at"
+                  + (reused ? " (from the 3D model's own search)." : "."),
             suggestions);
     }
 }
