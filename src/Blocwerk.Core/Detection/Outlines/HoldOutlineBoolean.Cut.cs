@@ -43,7 +43,7 @@ internal static partial class HoldOutlineBoolean
             outer.Reverse();
         }
 
-        var line = Scaled(stroke, aspect);
+        var line = WithoutLoops(Scaled(stroke, aspect));
         var passages = Passages(outer, line);
         if (passages.Count == 0)
         {
@@ -51,10 +51,18 @@ internal static partial class HoldOutlineBoolean
         }
 
         // A stroke across a concave hold can run inside it more than once; the stretch that halves it best is the cut.
-        var ordered = passages
+        var candidates = passages
             .Select(p => new[] { Part(Walk(outer, p.Exit, p.Entry, p.Inside), shape.Holes, aspect), Part(Walk(outer, p.Entry, p.Exit, Reversed(p.Inside)), shape.Holes, aspect) })
-            .Where(parts => parts.All(part => part is not null))
-            .Select(parts => parts.Select(part => part!).OrderByDescending(part => part.Area).ToList())
+            .Where(parts => parts.All(pieces => pieces.Count > 0))
+            .ToList();
+        var whole = candidates.Where(parts => parts.All(pieces => pieces.Count == 1)).ToList();
+        if (whole.Count == 0 && candidates.Count > 0)
+        {
+            return HoldOutlineCut.Refused("A pocket of the hold would cut one of the pieces in two. Draw the cut so that each side stays in one piece.");
+        }
+
+        var ordered = whole
+            .Select(parts => parts.Select(pieces => pieces[0]).OrderByDescending(part => part.Area).ToList())
             .MaxBy(parts => parts[1].Area);
         if (ordered is null)
         {
@@ -71,8 +79,34 @@ internal static partial class HoldOutlineBoolean
         return new HoldOutlineCut(ordered[0], smaller, null);
     }
 
-    /// <summary>One part: its outer ring (scaled space) minus the hold's holes, the largest piece if the holes cut it up.</summary>
-    private static OutlineRings? Part(List<P2> ring, IReadOnlyList<IReadOnlyList<P2>> holes, double aspect)
+    /// <summary>
+    /// The stroke with every loop it draws over itself cut out (a scribble while cutting): where two of its segments
+    /// cross, everything between the crossing is dropped, so the cut is one simple line and the parts tile the hold.
+    /// </summary>
+    internal static List<P2> WithoutLoops(List<P2> line)
+    {
+        var points = new List<P2>(line);
+        for (int i = 0; i + 1 < points.Count; i++)
+        {
+            for (int j = points.Count - 2; j >= i + 2; j--)
+            {
+                if (Intersect(points[i], points[i + 1], points[j], points[j + 1]) is { } hit)
+                {
+                    var crossing = points[i] + ((points[i + 1] - points[i]) * hit.S);
+                    points = [.. points.Take(i + 1), crossing, .. points.Skip(j + 1)];
+                    break;
+                }
+            }
+        }
+
+        return points;
+    }
+
+    /// <summary>
+    /// One part: its outer ring (scaled space, nonzero, so a stroke that loops over itself is resolved) minus the hold's
+    /// holes. Every piece is returned: a pocket can cut a part in two, which no single hold outline can carry.
+    /// </summary>
+    private static List<OutlineRings> Part(List<P2> ring, IReadOnlyList<IReadOnlyList<P2>> holes, double aspect)
     {
         using var path = new SKPath { FillType = SKPathFillType.Winding };
         path.MoveTo((float)ring[0].X, (float)ring[0].Y);
@@ -82,9 +116,10 @@ internal static partial class HoldOutlineBoolean
         }
 
         path.Close();
-        using var cutOut = ToPath(new OutlineRings([], holes), aspect);
-        using var result = path.Op(cutOut, SKPathOp.Difference);
-        return result is null ? null : Pieces(result, aspect).FirstOrDefault();
+        using var simple = path.Simplify() ?? new SKPath(path);
+        using var cutOut = UnionOf(holes, aspect);
+        using var result = simple.Op(cutOut, SKPathOp.Difference);
+        return result is null ? [] : Pieces(result, aspect);
     }
 
     /// <summary>

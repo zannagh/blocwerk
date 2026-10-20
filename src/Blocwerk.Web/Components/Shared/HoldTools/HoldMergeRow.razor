@@ -20,11 +20,13 @@ else if (State.Preview is not null && PendingChanges > 0)
 }
 else
 {
-    <HoldActionPrompt Compact="true" Disabled="State.Busy"
+    @* Undo stays offered with drafts pending, but disabled: the reload after an undo would throw the drafts away. Disabling
+       rather than hiding keeps the prompt's undo timer running instead of restarting it. *@
+    <HoldActionPrompt Compact="true" Disabled="@(State.Busy || (State.LastBatchId is not null && PendingChanges > 0))"
                       What="Tap two holds that are really one hold. They become one: the outlines are joined, the boulders, stacked holds, history and panel links of the one that goes move to the one that stays."
                       Outcome="Outcome" ConfirmLabel="Merge" PreviewHint="Green is the merged outline."
                       OnConfirm="OnConfirm" OnCancel="OnCancel"
-                      UndoKey="State.LastBatchId" UndoMessage="Holds merged." OnUndo="OnUndo">
+                      UndoKey="State.LastBatchId" UndoMessage="@(PendingChanges > 0 ? "Holds merged. Save or discard your edits to undo it." : "Holds merged.")" OnUndo="OnUndo">
         <button type="button" class="opt-btn" disabled="@State.Busy" @onclick="OnSwap" title="Keep the other hold instead">Keep @RemoveLabel instead</button>
     </HoldActionPrompt>
 }

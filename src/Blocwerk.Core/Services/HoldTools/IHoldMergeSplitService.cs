@@ -22,9 +22,18 @@ public interface IHoldMergeSplitService
     /// <summary>What cutting the hold along the stroke would do. Never throws for a bad cut; says why instead.</summary>
     Task<HoldSplitPreview> PreviewSplitAsync(Guid wallId, Guid holdId, IReadOnlyList<NormalizedPoint> stroke, CancellationToken ct = default);
 
-    /// <summary>Cuts the hold in two; the boulders in <paramref name="bouldersOnSmallerPart"/> move to the new, smaller part.</summary>
+    /// <summary>
+    /// Cuts the hold in two; the boulders in <paramref name="bouldersOnSmallerPart"/> move to the new, smaller part.
+    /// The hold's panel links (the same hold on a neighbouring photo) go with the smaller part when
+    /// <paramref name="panelLinksToSmaller"/> says so; null means with the part most of the boulders use.
+    /// </summary>
     Task<HoldToolResult> SplitAsync(
-        Guid wallId, Guid holdId, IReadOnlyList<NormalizedPoint> stroke, IReadOnlyCollection<Guid> bouldersOnSmallerPart, CancellationToken ct = default);
+        Guid wallId,
+        Guid holdId,
+        IReadOnlyList<NormalizedPoint> stroke,
+        IReadOnlyCollection<Guid> bouldersOnSmallerPart,
+        bool? panelLinksToSmaller = null,
+        CancellationToken ct = default);
 
     /// <summary>Undoes a merge or split of this wall.</summary>
     Task<ChangeJournalRevertResult> UndoAsync(Guid wallId, Guid batchId, CancellationToken ct = default);

@@ -61,6 +61,27 @@ public sealed partial class HoldMergeSplitService(
         }
     }
 
+    /// <summary>
+    /// The holds a split made (the new, smaller parts), read from the journal: they were placed by no one, so the
+    /// look-over must not take one for a hold put there by hand. Parts whose split was undone are not counted.
+    /// </summary>
+    /// <param name="db">The context.</param>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>The parts' ids.</returns>
+    internal static async Task<HashSet<Guid>> SplitPartIdsAsync(BlocwerkDbContext db, Guid wallId, CancellationToken ct)
+    {
+        var keys = await db.ChangeJournalEntries.AsNoTracking()
+            .Where(e => e.EntityType == nameof(Hold) && e.Op == ChangeJournalOp.Insert
+                && db.ChangeJournalBatches.Any(b => b.Id == e.BatchId && b.Label == SplitBatchLabel && b.ScopeId == wallId && b.Status == ChangeJournalStatus.Recorded))
+            .Select(e => e.KeyJson)
+            .ToListAsync(ct);
+        return keys.SelectMany(k => GuidPattern().Matches(k).Select(m => Guid.Parse(m.Value))).ToHashSet();
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")]
+    private static partial System.Text.RegularExpressions.Regex GuidPattern();
+
     /// <summary>A live, non-virtual hold of the wall, tracked.</summary>
     private static async Task<Hold> LoadLiveAsync(BlocwerkDbContext db, Guid wallId, Guid holdId, CancellationToken ct)
     {
@@ -110,6 +131,10 @@ public sealed partial class HoldMergeSplitService(
     {
         using var scope = journal.BeginBatch(label, ChangeJournalScopeKind.Wall, wallId);
         var batchId = ((ChangeJournalBatchScope)scope).BatchId;
+
+        // The edit and the linked-twin sync are two saves; one transaction makes them land (or fail) together. The
+        // journal writes its rows inside each save, on this same context, so it is inside the transaction too.
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
         await db.SaveChangesAsync(ct);
 
         // What the merge carried onto the kept hold reaches its linked twins in the same batch, so undo reverts both.
@@ -118,6 +143,7 @@ public sealed partial class HoldMergeSplitService(
             await db.SaveChangesAsync(ct);
         }
 
+        await tx.CommitAsync(ct);
         return batchId;
     }
 
