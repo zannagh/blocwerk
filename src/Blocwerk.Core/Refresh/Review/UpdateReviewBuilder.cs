@@ -80,6 +80,7 @@ internal static partial class UpdateReviewBuilder
             }
 
             var old = facts.OldHolds.GetValueOrDefault(oldId);
+
             // The carry row Apply reads is the answer; the review's own row only says who gave it.
             var row = facts.Answers.GetValueOrDefault((oldId, ReviewSubject.NotFound));
             var answer = carry.Kind == CarryKind.Removed ? ReviewAnswer.Gone : carry.Confirmed ? ReviewAnswer.StillThere : (ReviewAnswer?)null;
