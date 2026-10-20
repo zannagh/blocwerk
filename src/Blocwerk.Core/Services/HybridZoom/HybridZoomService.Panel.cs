@@ -14,23 +14,21 @@ public sealed partial class HybridZoomService
     /// <summary>Long side the panel photo is decoded at for the colour match (statistics only).</summary>
     private const int PanelMatchEdge = 1536;
 
-    /// <summary>The panel photo, upright and at most <see cref="PanelMatchEdge"/> px; null when it cannot be read.</summary>
-    private async Task<SKImage?> PanelImageAsync(BlocwerkDbContext db, ZoomPanel panel, CancellationToken ct)
+    /// <summary>
+    /// A lease on the panel photo, upright and at most <see cref="PanelMatchEdge"/> px; null when it cannot be read.
+    /// Dispose it after the render: the cache frees dropped photos only once no render holds them.
+    /// </summary>
+    private async Task<PanelImageLease?> PanelImageAsync(BlocwerkDbContext db, ZoomPanel panel, CancellationToken ct)
     {
         var key = (panel.Id, panel.Generation, panel.Revision);
-        if (cache.TryGetPanel(key, out var cached))
+        if (cache.AcquirePanel(key) is { } cached)
         {
             return cached;
         }
 
         var bytes = await db.WallPanels.AsNoTracking().Where(p => p.Id == panel.Id).Select(p => p.Photo).FirstOrDefaultAsync(ct);
         var image = bytes is null ? null : await Task.Run(() => Decode(bytes), ct);
-        if (image is not null)
-        {
-            cache.PutPanel(key, image);
-        }
-
-        return image;
+        return image is null ? null : cache.PutPanel(key, image);
     }
 
     private static SKImage? Decode(byte[] bytes)

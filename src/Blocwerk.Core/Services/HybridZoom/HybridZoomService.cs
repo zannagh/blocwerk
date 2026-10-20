@@ -95,10 +95,10 @@ public sealed partial class HybridZoomService(
             var shape = aspect ?? (plan.Rect.W * inputs.PanelInfo.Width) / (plan.Rect.H * inputs.PanelInfo.Height);
             var size = HybridZoomRenderer.OutputSize(plan.Choice, px, shape);
             var source = await files.ReadAsync(plan.StoredPath, ct);
-            var panelImage = options.ColorMatch ? await PanelImageAsync(db, panel, ct) : null;
+            using var panelImage = options.ColorMatch ? await PanelImageAsync(db, panel, ct) : null;
             var image = source is null
                 ? null
-                : await Task.Run(() => HybridZoomRenderer.Render(source, plan, size, options.JpegQuality, panelImage), ct);
+                : await Task.Run(() => HybridZoomRenderer.Render(source, plan, size, options.JpegQuality, panelImage?.Image), ct);
             if (image is null)
             {
                 logger.LogWarning("Hybrid zoom on wall {WallId}: capture photo {Photo} could not be rendered", wallId, plan.Choice.Name);

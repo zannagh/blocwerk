@@ -8,7 +8,6 @@ using Blocwerk.Authentication.Authorization;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Geometry.HybridZoom;
-using Blocwerk.Core.Services;
 using Blocwerk.Core.Services.HybridZoom;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -19,8 +18,9 @@ namespace Blocwerk.Web.Endpoints;
 /// The hybrid zoom's close-up of a zoomed panel view (<see cref="IHybridZoomService"/>): a JPEG that lies exactly
 /// over the panel rectangle given in <c>X-Bw-Closeup-Rect</c> (which may be smaller than asked), 204 with
 /// <c>X-Bw-Closeup-Status</c> when no capture photo beats the panel photo there, 503 while too many renders run.
-/// Gated like the other wall media (<see cref="WallPanelPhotoEndpoints"/>): a member, a share-token viewer or the
-/// wall's kiosk; API-key principals are rejected. 404 whenever the experiment is off.
+/// Signed-in wall members only by default (<see cref="CloseUpAccess"/>; share-token viewers and the kiosk only with
+/// <see cref="HybridZoomOptions.AllowShareAndKiosk"/>); API-key principals are rejected. 404 whenever the experiment
+/// is off — before any query value is read, so a malformed request cannot tell that the route exists.
 /// </summary>
 public static class WallPanelCloseUpEndpoint
 {
@@ -45,41 +45,45 @@ public static class WallPanelCloseUpEndpoint
             .DenyApiKeyPrincipals();
     }
 
+    /// <remarks>The query is read by hand rather than bound, so the flag-off 404 comes before any binding error.</remarks>
     internal static async Task<IResult> HandleAsync(
         Guid wallId,
         Guid panelId,
-        [FromQuery] double x,
-        [FromQuery] double y,
-        [FromQuery] double w,
-        [FromQuery] double h,
-        [FromQuery] int? px,
-        [FromQuery] double? ar,
-        [FromQuery] string? token,
         ClaimsPrincipal user,
         HttpContext http,
         [FromServices] HybridZoomOptions options,
         [FromServices] IHybridZoomService zoom,
-        [FromServices] IWallService wallService,
         [FromServices] ICurrentUserService currentUserService,
         [FromServices] IDbContextFactory<BlocwerkDbContext> dbContextFactory,
         [FromServices] IKioskContext kioskContext,
         CancellationToken ct)
     {
-        if (!options.Enabled || user.IsApiKeyPrincipal() || ViewRect.Create(x, y, w, h) is not { } rect)
+        if (!options.Enabled || user.IsApiKeyPrincipal())
         {
             return Results.NotFound();
         }
 
-        if (!await WallGalleryImageEndpoint.HasWallAccessAsync(
-                wallId, token, wallService, currentUserService, dbContextFactory, kioskContext, ct))
+        var query = http.Request.Query;
+        string? token = query["token"];
+        if (!await CloseUpAccess.AllowsAsync(wallId, token, options, currentUserService, dbContextFactory, kioskContext, ct))
         {
             return Results.NotFound();
         }
 
+        if (Number(query["x"]) is not { } x || Number(query["y"]) is not { } y || Number(query["w"]) is not { } w
+            || Number(query["h"]) is not { } h || ViewRect.Create(x, y, w, h) is not { } rect)
+        {
+            return Results.BadRequest();
+        }
+
+        var px = Number(query["px"]) is { } p && p is >= 1 and <= 16384 ? (int)p : options.MaxOutputPx;
         var ifNoneMatch = http.Request.Headers.IfNoneMatch.ToString();
-        var result = await zoom.RenderAsync(wallId, panelId, rect, px ?? options.MaxOutputPx, ar, ifNoneMatch, ct);
+        var result = await zoom.RenderAsync(wallId, panelId, rect, px, Number(query["ar"]), ifNoneMatch, ct);
         return Respond(http, result);
     }
+
+    private static double? Number(string? text) =>
+        double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) && double.IsFinite(v) ? v : null;
 
     private static IResult Respond(HttpContext http, CloseUpResult result)
     {

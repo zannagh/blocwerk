@@ -81,27 +81,36 @@ public class HybridZoomServiceTests
         Assert.Equal("no-better-photo", noneHttp.Response.Headers[WallPanelCloseUpEndpoint.StatusHeader]);
     }
 
-    private static HybridZoomService Service(WallTestHarness h, CaptureScenario s, HybridZoomOptions? options = null)
+    internal static HybridZoomService Service(WallTestHarness h, CaptureScenario s, HybridZoomOptions? options = null)
     {
         options ??= new HybridZoomOptions { Enabled = true };
         return new HybridZoomService(h.DbContextFactory, s.Files, options, new HybridZoomCache(options), NullLogger<HybridZoomService>.Instance);
     }
 
-    private static async Task<(IResult Result, HttpContext Http)> ServeAsync(
+    internal static Task<(IResult Result, HttpContext Http)> ServeAsync(
         WallTestHarness h, CaptureScenario s, Guid panelId, bool enabled, Guid wallId, (double X, double Y, double W, double H)? rect = null)
     {
-        var options = new HybridZoomOptions { Enabled = enabled };
         var r = rect ?? (View.X, View.Y, View.W, View.H);
-        var kiosk = Substitute.For<IKioskContext>();
+        return ServeAsync(h, s, panelId, wallId, new HybridZoomOptions { Enabled = enabled }, Substitute.For<IKioskContext>(), null, Query(r));
+    }
+
+    /// <summary>Calls the endpoint as the harness's current user (or anonymous), with the given kiosk state and query.</summary>
+    internal static async Task<(IResult Result, HttpContext Http)> ServeAsync(
+        WallTestHarness h, CaptureScenario s, Guid panelId, Guid wallId, HybridZoomOptions options, IKioskContext kiosk, string? token, string query)
+    {
         var http = new DefaultHttpContext();
+        http.Request.QueryString = new QueryString("?" + query + (token is null ? string.Empty : "&token=" + Uri.EscapeDataString(token)));
         var result = await WallPanelCloseUpEndpoint.HandleAsync(
-            wallId, panelId, r.X, r.Y, r.W, r.H, 512, 1.0, null, new ClaimsPrincipal(), http, options, Service(h, s, options),
-            h.WallService, h.CurrentUser, h.DbContextFactory, kiosk, CancellationToken.None);
+            wallId, panelId, new ClaimsPrincipal(), http, options, Service(h, s, options), h.CurrentUser, h.DbContextFactory, kiosk, CancellationToken.None);
         return (result, http);
     }
 
+    /// <summary>The query of a view rectangle at 512 px, square.</summary>
+    internal static string Query((double X, double Y, double W, double H) r) =>
+        string.Create(System.Globalization.CultureInfo.InvariantCulture, $"x={r.X}&y={r.Y}&w={r.W}&h={r.H}&px=512&ar=1");
+
     /// <summary>Seeds the scene; returns the panel. The capture ran <paramref name="captureAge"/> before the panel photo.</summary>
-    private static async Task<Guid> SeedAsync(WallTestHarness h, CaptureScenario s, TimeSpan captureAge)
+    internal static async Task<Guid> SeedAsync(WallTestHarness h, CaptureScenario s, TimeSpan captureAge)
     {
         await h.SeedWallAsync(holdCount: 0, generation: 1);
         var close = LookAt("p01", [1000, -1600, 1000], Target);

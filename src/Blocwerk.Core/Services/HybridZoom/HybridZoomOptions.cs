@@ -19,6 +19,14 @@ public sealed class HybridZoomOptions
     /// <summary>Whether the close-up endpoint answers and the panel viewer asks it. Default false.</summary>
     public bool Enabled { get; set; }
 
+    /// <summary>
+    /// Also serve close-ups to share-link viewers and the wall's kiosk tablet (the panel photos' own rule). Off by
+    /// default: close-ups are cut from the 3D capture's photos, which are otherwise wall-admin only and were not framed
+    /// for publishing — a close-up can show people, phones or the room behind a volume that no panel photo shows.
+    /// With it off only signed-in members of the wall get them. Env <c>HybridZoom__AllowShareAndKiosk=true</c>.
+    /// </summary>
+    public bool AllowShareAndKiosk { get; set; }
+
     /// <summary>Zoom level (1 = fit) from which the panel viewer asks for a close-up.</summary>
     public double MinZoom { get; set; } = 2.5;
 

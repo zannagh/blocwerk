@@ -23,8 +23,7 @@ public sealed class HybridZoomCache(HybridZoomOptions options)
 
     private readonly ConcurrentDictionary<string, CloseUpResult> entries = new(StringComparer.Ordinal);
 
-    // Never disposed explicitly: a render may still read one that was just dropped; the finalizer frees it.
-    private readonly ConcurrentDictionary<(Guid Panel, int Generation, int Revision), SkiaSharp.SKImage> panels = new();
+    private readonly ConcurrentDictionary<(Guid Panel, int Generation, int Revision), CachedPanelImage> panels = new();
     private long bytes;
 
     /// <summary>Bounds renders running at once (each decodes a capture photo).</summary>
@@ -59,22 +58,44 @@ public sealed class HybridZoomCache(HybridZoomOptions options)
         }
     }
 
-    /// <summary>A decoded panel photo, if cached.</summary>
+    /// <summary>A lease on a cached decoded panel photo, or null when it is not (or no longer) cached.</summary>
     /// <param name="key">The panel photo stamp.</param>
-    /// <param name="image">The image.</param>
-    /// <returns>Whether it was cached.</returns>
-    public bool TryGetPanel((Guid Panel, int Generation, int Revision) key, out SkiaSharp.SKImage image) => panels.TryGetValue(key, out image!);
+    /// <returns>The lease; dispose it when done.</returns>
+    internal PanelImageLease? AcquirePanel((Guid Panel, int Generation, int Revision) key) =>
+        panels.TryGetValue(key, out var entry) ? entry.TryAcquire() : null;
 
-    /// <summary>Keeps a decoded panel photo (the oldest few are dropped wholesale past <see cref="MaxPanels"/>).</summary>
+    /// <summary>
+    /// Keeps a decoded panel photo (owning it from here on) and returns a lease on it. Past <see cref="MaxPanels"/> the
+    /// others are dropped wholesale, each freed as soon as no render holds it.
+    /// </summary>
     /// <param name="key">The panel photo stamp.</param>
     /// <param name="image">The image.</param>
-    public void PutPanel((Guid Panel, int Generation, int Revision) key, SkiaSharp.SKImage image)
+    /// <returns>A lease on the kept image.</returns>
+    internal PanelImageLease PutPanel((Guid Panel, int Generation, int Revision) key, SkiaSharp.SKImage image)
     {
+        var entry = new CachedPanelImage(image);
+        var lease = entry.TryAcquire()!;
         if (panels.Count >= MaxPanels)
         {
-            panels.Clear();
+            foreach (var old in panels.Keys.ToList())
+            {
+                if (panels.TryRemove(old, out var dropped))
+                {
+                    dropped.Evict();
+                }
+            }
         }
 
-        panels[key] = image;
+        if (panels.TryGetValue(key, out var previous) && panels.TryUpdate(key, entry, previous))
+        {
+            previous.Evict();
+        }
+        else if (!panels.TryAdd(key, entry))
+        {
+            // Another render cached the same photo meanwhile: this copy serves this render only.
+            entry.Evict();
+        }
+
+        return lease;
     }
 }
