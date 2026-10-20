@@ -34,7 +34,10 @@ public partial class WallBigUpdateService
         BrightenedPass = true,
     };
 
-    /// <summary>For a neighbour panel with overlap proposals against the triaged centre, its overlap owner.</summary>
+    /// <summary>
+    /// For a neighbour panel with overlap proposals against the triaged centre, its overlap owner, with which of its pairs
+    /// are backed by measured anchors (<see cref="NeighbourPanelRule.IsMeasured"/>).
+    /// </summary>
     private static Func<(int Width, int Height), OverlapOwner?> OwnerSource(
         TriagedCentre? centre, NeighbourOverlap? overlap, IReadOnlyList<Hold> staged) =>
         size =>
@@ -46,16 +49,21 @@ public partial class WallBigUpdateService
 
             var own = staged.ToDictionary(h => h.Id);
             var pairs = new List<PointPair>();
+            var measured = new List<PointPair>();
             foreach (var p in overlap.Proposals)
             {
                 if (centre.Holds.TryGetValue(p.HoldAId, out var c) && own.TryGetValue(p.HoldBId, out var n))
                 {
-                    pairs.Add(new PointPair(
-                        n.X * size.Width, n.Y * size.Height, c.X * centre.Size.Width, c.Y * centre.Size.Height));
+                    var pair = new PointPair(n.X * size.Width, n.Y * size.Height, c.X * centre.Size.Width, c.Y * centre.Size.Height);
+                    pairs.Add(pair);
+                    if (NeighbourPanelRule.IsMeasured(p.Confidence))
+                    {
+                        measured.Add(pair);
+                    }
                 }
             }
 
-            return new OverlapOwner(pairs, centre.Size, centre.KeptNew, size, centre.Settled);
+            return new OverlapOwner(pairs, centre.Size, centre.KeptNew, size, centre.Settled, measured);
         };
 
     /// <summary>
@@ -112,11 +120,15 @@ public partial class WallBigUpdateService
         }
     }
 
-    private static async Task<List<IReadOnlyList<(double X, double Y)>>> StagedMarkerQuadsAsync(
-        BlocwerkDbContext db, Guid panelId, (int Width, int Height) size)
+    /// <summary>
+    /// The printed markers observed on one photo of a panel, RAW pixels: its staged photo, or (<paramref name="staged"/> false)
+    /// its live one, which for the panel an update replaces is the old photo.
+    /// </summary>
+    private static async Task<List<IReadOnlyList<(double X, double Y)>>> MarkerQuadsAsync(
+        BlocwerkDbContext db, Guid panelId, bool staged, (int Width, int Height) size)
     {
         var rows = await db.WallMarkerObservations
-            .Where(o => o.WallPanelId == panelId && o.FromStagedPhoto && !o.Synthetic)
+            .Where(o => o.WallPanelId == panelId && o.FromStagedPhoto == staged && !o.Synthetic)
             .Select(o => o.CornersJson)
             .ToListAsync();
         var quads = new List<IReadOnlyList<(double X, double Y)>>();

@@ -24,4 +24,10 @@ public enum NewHoldDiscardReason
 
     /// <summary>On the 3D model the spot lies well off the wall (floor mats, ceiling, a neighbouring wall).</summary>
     OffWallIn3D,
+
+    /// <summary>
+    /// It lies mostly inside a carried hold's footprint: a second outline of a hold that is already there, or a part of one
+    /// (a bolt hole, a screw head, a facet of a volume).
+    /// </summary>
+    InsideCarriedHold,
 }

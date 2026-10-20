@@ -275,8 +275,9 @@ public partial class WallBigUpdateService : IWallBigUpdateService
         }
 
         CollectNotFoundAgain(looks, removedCandidates);
-        var removals = new RemovalInputs(oldByPosition, removedCandidates.ToHashSet(), carriedWarp);
+        var removals = new RemovalInputs(oldByPosition, removedCandidates.ToHashSet(), carriedWarp, carriedShapes, looks.NotFoundAgain.Keys.ToHashSet());
         var triage = await SuggestNewDiscardsAsync(db, wall, stagedGen, carryover, oldHolds, oldPanelPhotosById, oldCentrePhoto, neighbours, use3DEvidence, removals);
+        RecordSwaps(triage, removals.NotFoundAgain, looks);
         return new BigUpdateSession(
             wall.Id, centerPanelId, carryover, removedCandidates, newCenter, neighbours,
             autoMatchStatus, autoMatchMessage, carriedWarp, carriedShapes,

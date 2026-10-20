@@ -36,4 +36,7 @@ internal sealed class MatchStats
 
     /// <summary>Assigned (mutual) proposals.</summary>
     public int MutualNn { get; set; }
+
+    /// <summary>Candidates declined because another detection was about as near (see <see cref="MatchGate.Ambiguous"/>).</summary>
+    public int Ambiguous { get; set; }
 }

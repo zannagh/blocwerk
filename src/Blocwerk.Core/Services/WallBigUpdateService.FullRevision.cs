@@ -119,7 +119,7 @@ public partial class WallBigUpdateService
         try
         {
             var result = MatchUnlessUnaligned(
-                recordedUnaligned, centerImage, centerMatcher, neighbourImage, neighbourMatcher, direction, null, seed);
+                recordedUnaligned, centerImage, centerMatcher, neighbourImage, neighbourMatcher, direction, null, seed, carryPass: false);
 
             // NeighborPanelId is the panel HoldAId belongs to: the staged CENTRE panel, not this neighbour (the stepper
             // draws the left image and its holds from it).
