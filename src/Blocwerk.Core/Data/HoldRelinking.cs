@@ -82,6 +82,7 @@ internal static class HoldRelinking
         var touchesDuplicate = links
             .Where(l => l.OldHoldId == duplicateHoldId || l.NewHoldId == duplicateHoldId)
             .ToList();
+
         // Only rows with BOTH ends live take part in the uniqueness dedupe: a tombstoned end is NULL
         // and the unique index is filtered to exclude those. The consequence is that duplicate
         // tombstones — several (NULL, survivor) rows — can accumulate here and are indistinguishable

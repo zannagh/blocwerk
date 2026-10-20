@@ -1,0 +1,94 @@
+@* The split tool's option row in the wall editor: pick a hold, draw the cut, then say per boulder which part it uses
+   (the larger, green part by default) and confirm. Reads HoldSplitToolState; the actions are callbacks into
+   WallPhotoEditor.MergeSplit.cs. *@
+@namespace Blocwerk.Web.Components.Shared.HoldTools
+
+@if (State.HoldId is null && State.Error is { } failed)
+{
+    <span class="option-hint">@failed</span>
+    <button class="opt-btn" @onclick="OnCancel">OK</button>
+}
+else if (State.HoldId is null)
+{
+    <HoldActionPrompt Compact="true" What="Tap the hold to cut in two, then draw a line across it with a finger, pen or the mouse."
+                      UndoKey="State.LastBatchId" UndoMessage="Hold split." OnUndo="OnUndo" Disabled="State.Busy" />
+}
+else if (Problem is { } problem)
+{
+    <span class="option-hint">@problem Draw again.</span>
+    <button class="opt-btn" @onclick="OnCancel">Cancel</button>
+}
+else if (!State.Ready)
+{
+    <span class="option-hint">@(State.Busy ? "Cutting…" : $"Draw a line across {HoldLabel}: start outside it and end outside it.")</span>
+    <button class="opt-btn" @onclick="OnCancel">Cancel</button>
+}
+else if (PendingChanges > 0)
+{
+    <span class="option-hint">You have @PlainCopy.Plural(PendingChanges, "unsaved change"). Save or discard them first: a split works on the saved holds.</span>
+    <button class="opt-btn" @onclick="OnCancel">Cancel</button>
+}
+else
+{
+    <HoldActionPrompt Compact="true" Disabled="State.Busy" Outcome="Outcome" ConfirmLabel="Split"
+                      PreviewHint="Green keeps the hold, orange becomes a new hold."
+                      OnConfirm="OnConfirm" OnCancel="OnCancel">
+        @if (State.Preview!.Boulders.Count > 0)
+        {
+            <span class="split-boulders" role="group" aria-label="Which part does each boulder use?">
+                <span class="split-question">Which part does each boulder use?</span>
+                @foreach (var boulder in State.Preview.Boulders)
+                {
+                    var small = State.OnSmaller.Contains(boulder.Id);
+                    <button type="button" class="opt-btn split-boulder @(small ? "is-small" : "is-large")"
+                            aria-pressed="@(small ? "true" : "false")" title="Tap to use the other part"
+                            @onclick="() => OnToggleBoulder.InvokeAsync(boulder.Id)">
+                        <span class="split-dot"></span>@boulder.Name
+                    </button>
+                }
+            </span>
+        }
+    </HoldActionPrompt>
+}
+
+@code {
+    [Parameter, EditorRequired] public HoldSplitToolState State { get; set; } = default!;
+
+    /// <summary>How the hold being cut is called.</summary>
+    [Parameter] public string HoldLabel { get; set; } = "the hold";
+
+    /// <summary>Unsaved edits in the editor: a split refuses while there are any.</summary>
+    [Parameter] public int PendingChanges { get; set; }
+
+    [Parameter] public EventCallback OnConfirm { get; set; }
+
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    [Parameter] public EventCallback OnUndo { get; set; }
+
+    [Parameter] public EventCallback<Guid> OnToggleBoulder { get; set; }
+
+    private string? Problem => State.Preview?.Refusal ?? State.Error;
+
+    private HoldActionOutcome? Outcome
+    {
+        get
+        {
+            if (State.Preview is not { } preview)
+            {
+                return null;
+            }
+
+            var moving = State.OnSmaller.Count;
+            var total = preview.Boulders.Count;
+            var boulders = total == 0 ? "No boulder uses it."
+                : moving == 0 ? $"All {PlainCopy.Plural(total, "boulder")} stay on the green part."
+                : $"{PlainCopy.Plural(moving, "boulder")} move to the new orange hold, {PlainCopy.Plural(total - moving, "boulder")} stay.";
+            return new HoldActionOutcome(
+                $"{HoldLabel} is cut in two: the larger part keeps the hold and its history, the smaller becomes a new hold of the same colour.",
+                boulders,
+                "Undo is offered right after.",
+                Danger: false);
+        }
+    }
+}

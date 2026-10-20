@@ -1,0 +1,32 @@
+.split-boulders {
+    display: inline-flex;
+    flex-wrap: nowrap;
+    gap: 0.3rem;
+    align-items: center;
+    max-width: 100%;
+    overflow-x: auto;
+}
+
+.split-question {
+    font-size: 0.8rem;
+    opacity: 0.85;
+    white-space: nowrap;
+}
+
+.split-boulder {
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.split-dot {
+    width: 0.6rem;
+    height: 0.6rem;
+    border-radius: 50%;
+    background: #33dd66;
+}
+
+.split-boulder.is-small .split-dot {
+    background: #ff9933;
+}

@@ -328,6 +328,8 @@
                         @onmousedown="(e) => StartShapeTiltDrag(e, th)" @onmousedown:stopPropagation="true" />
             }
         }
+
+        @MergeSplitOverlay
     </svg>
 
     @if (_isDetecting)
@@ -500,6 +502,8 @@
                     new ToolbarItem { Id = "join-virtual", Kind = ToolbarItemKind.Tool, Tool = HoldTouchupTool.JoinVirtual, Label = "Join duplicate virtual holds", ShortcutKey = "J", Icon = IconJoinVirtual, Visible = () => HoldToolsAvailable && !IsStaging, Row = RowJoinVirtual },
                     new ToolbarItem { Id = "mark-unchanged", Kind = ToolbarItemKind.Tool, Tool = HoldTouchupTool.MarkUnchanged, Label = "Mark a hold unchanged", ShortcutKey = "C", Icon = IconMarkUnchanged, Visible = () => HoldToolsAvailable, Row = RowMarkUnchanged },
                     new ToolbarItem { Id = "mark-changed", Kind = ToolbarItemKind.Tool, Tool = HoldTouchupTool.MarkChanged, Label = "Mark a hold changed", ShortcutKey = "X", Icon = IconMarkChanged, Visible = () => HoldToolsAvailable && !IsStaging, Row = RowMarkChanged },
+                    MergeHoldsItem,
+                    SplitHoldItem,
                 ],
             },
             new ToolbarGroup
@@ -1737,6 +1741,7 @@
         HoldTouchupTool.JoinVirtual => "bw-cursor-pointer",
         HoldTouchupTool.MarkUnchanged => "bw-cursor-pointer",
         HoldTouchupTool.MarkChanged => "bw-cursor-pointer",
+        HoldTouchupTool.MergeHolds or HoldTouchupTool.SplitHold => MergeSplitCursor!,
         _ => "bw-cursor-default"
     };
 
@@ -1794,6 +1799,7 @@
         {
             _markChangedHoldId = null;
         }
+        ClearMergeSplitState(mode);
     }
 
     private void TakeSnapshot()
@@ -1949,6 +1955,9 @@
                 CaptureShapeTiltSnapshot(hold);
                 _shapeTiltAngleX = 0;
                 _shapeTiltAngleY = 0;
+                return;
+            case HoldTouchupTool.MergeHolds or HoldTouchupTool.SplitHold:
+                await OnMergeSplitHoldClickAsync(hold);
                 return;
         }
     }
@@ -2972,6 +2981,7 @@
     [
         "a", "m", "s", "p", "e", "n", "d", "b", "t", "u", "g", "k", "j", "c", "x",
         "l", "o", "r", "i",
+        "f", "v",
         "1", "2", "3", "4", "5", "6", "7", "8", "9", "[", "]",
         "+", "-", "0",
     ];
@@ -3042,6 +3052,8 @@
             case "k" when tools && !IsStaging: SetMode(HoldTouchupTool.MakeActual); return true;
             case "j" when tools && !IsStaging: SetMode(HoldTouchupTool.JoinVirtual); return true;
             case "b" when CanEdit && CanEditShape: SetMode(HoldTouchupTool.Border); return true;
+            case "f" when tools && MergeSplitAvailable: SetMode(HoldTouchupTool.MergeHolds); return true;
+            case "v" when tools && MergeSplitAvailable: SetMode(HoldTouchupTool.SplitHold); return true;
             case "l": _showNames = !_showNames; return true;
             case "i" when CanEdit: CycleIncompleteCriteria(); return true;
             case "o" when tools || (BorderOnly && CanEditShape): _showBorder = !_showBorder; return true;
@@ -3108,6 +3120,7 @@
                || _markUnchangedHoldId.HasValue
                || _markChangedHoldId.HasValue
                || pendingDeleteHoldId.HasValue
+               || HasMergeSplitSubMode
                || (_mode == HoldTouchupTool.ShapeTilt && _shapeTiltHoldId.HasValue));
 
     /// <summary>
@@ -3178,6 +3191,11 @@
         if (pendingDeleteHoldId.HasValue)
         {
             pendingDeleteHoldId = null;
+            return;
+        }
+
+        if (CancelMergeSplitSubMode())
+        {
             return;
         }
 

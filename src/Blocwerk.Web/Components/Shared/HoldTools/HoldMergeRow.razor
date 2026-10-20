@@ -1,0 +1,80 @@
+@* The merge tool's option row in the wall editor: what the tool does, the open confirm (which hold stays, what
+   happens to the boulders) and, right after a merge, Undo. Reads HoldMergeToolState; every action is a callback
+   into WallPhotoEditor.MergeSplit.cs, which owns the state and talks to the server. *@
+@namespace Blocwerk.Web.Components.Shared.HoldTools
+
+@if (State.Refusal is { } refusal)
+{
+    <span class="option-hint">@refusal</span>
+    <button class="opt-btn" @onclick="OnCancel">OK</button>
+}
+else if (State.FirstId is not null && State.SecondId is null)
+{
+    <span class="option-hint">Now tap the hold that belongs to <strong>@FirstLabel</strong>.</span>
+    <button class="opt-btn" @onclick="OnCancel">Cancel</button>
+}
+else if (State.Preview is not null && PendingChanges > 0)
+{
+    <span class="option-hint">You have @PlainCopy.Plural(PendingChanges, "unsaved change"). Save or discard them first: a merge works on the saved holds.</span>
+    <button class="opt-btn" @onclick="OnCancel">Cancel</button>
+}
+else
+{
+    <HoldActionPrompt Compact="true" Disabled="State.Busy"
+                      What="Tap two holds that are really one hold. They become one: the outlines are joined, the boulders, stacked holds, history and panel links of the one that goes move to the one that stays."
+                      Outcome="Outcome" ConfirmLabel="Merge" PreviewHint="Green is the merged outline."
+                      OnConfirm="OnConfirm" OnCancel="OnCancel"
+                      UndoKey="State.LastBatchId" UndoMessage="Holds merged." OnUndo="OnUndo">
+        <button type="button" class="opt-btn" disabled="@State.Busy" @onclick="OnSwap" title="Keep the other hold instead">Keep @RemoveLabel instead</button>
+    </HoldActionPrompt>
+}
+
+@code {
+    [Parameter, EditorRequired] public HoldMergeToolState State { get; set; } = default!;
+
+    /// <summary>How the first pick is called in the sentences.</summary>
+    [Parameter] public string FirstLabel { get; set; } = "the first hold";
+
+    /// <summary>How the hold that stays is called.</summary>
+    [Parameter] public string KeepLabel { get; set; } = "The first hold";
+
+    /// <summary>How the hold that goes is called.</summary>
+    [Parameter] public string RemoveLabel { get; set; } = "the other hold";
+
+    /// <summary>Unsaved edits in the editor: a merge refuses while there are any.</summary>
+    [Parameter] public int PendingChanges { get; set; }
+
+    [Parameter] public EventCallback OnConfirm { get; set; }
+
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    [Parameter] public EventCallback OnSwap { get; set; }
+
+    [Parameter] public EventCallback OnUndo { get; set; }
+
+    private HoldActionOutcome? Outcome
+    {
+        get
+        {
+            if (State.Preview is not { } preview || State.KeepId is not { } keep || State.RemoveId is not { } remove)
+            {
+                return null;
+            }
+
+            var both = preview.BouldersOnBoth;
+            var moving = preview.Boulders.GetValueOrDefault(remove) - both;
+            var bridge = preview.Bridged ? ", joined across the gap between them" : string.Empty;
+            var boulders = (moving, both) switch
+            {
+                (0, 0) => $"No boulder uses {RemoveLabel}.",
+                (_, 0) => $"{PlainCopy.Plural(moving, "boulder")} move over to {KeepLabel.ToLowerInvariant()}.",
+                _ => $"{PlainCopy.Plural(moving, "boulder")} move over; {PlainCopy.Plural(both, "boulder")} used both and {(both == 1 ? "is" : "are")} flagged for review.",
+            };
+            return new HoldActionOutcome(
+                $"{KeepLabel} stays and takes in {RemoveLabel}: one hold with both outlines{bridge}.",
+                boulders,
+                "Undo is offered right after.",
+                Danger: false);
+        }
+    }
+}

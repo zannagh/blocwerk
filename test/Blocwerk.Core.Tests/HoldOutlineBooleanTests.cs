@@ -165,12 +165,12 @@ public sealed class HoldOutlineBooleanTests
         var cut = HoldOutlineBoolean.Split(shape, [new P2(0.50, 0.40), new P2(0.50, 0.60)], 1.0);
 
         Assert.Null(cut.Refusal);
-        var left = new[] { cut.Larger!, cut.Smaller! }.Single(p => p.Centroid.X < 0.50);
+        var (larger, smaller) = (cut.Larger!, cut.Smaller!);
+        var left = new[] { larger, smaller }.Single(p => p.Centroid.X < 0.50);
         Assert.Single(left.Holes);
         Assert.False(left.Covers(new P2(0.47, 0.50)));
-        Assert.False(cut.Larger.Covers(new P2(0.50, 0.53)) || cut.Smaller.Covers(new P2(0.50, 0.53)));
-        double expected = shape.Area;
-        Assert.Equal(expected, cut.Larger.Area + cut.Smaller.Area, 4);
+        Assert.False(larger.Covers(new P2(0.50, 0.53)) || smaller.Covers(new P2(0.50, 0.53)));
+        Assert.Equal(shape.Area, larger.Area + smaller.Area, 4);
     }
 
     [Fact]

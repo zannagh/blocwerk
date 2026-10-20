@@ -68,4 +68,10 @@ public enum HoldTouchupTool
 
     /// <summary>Tap a hold that was physically swapped or re-set, to flag it and its boulders.</summary>
     MarkChanged,
+
+    /// <summary>Tap two holds that are really one hold: they become one (outline union, boulders, history).</summary>
+    MergeHolds,
+
+    /// <summary>Tap a hold that is really two holds, then draw a line across it to cut it in two.</summary>
+    SplitHold,
 }

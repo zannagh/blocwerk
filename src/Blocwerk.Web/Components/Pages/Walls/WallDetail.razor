@@ -535,6 +535,7 @@ else
                                              OnMakeHoldActual="OnMakeHoldActual"
                                              OnMergeVirtualHold="OnMergeVirtualHold"
                                              OnJoinVirtualHolds="OnJoinVirtualHolds"
+                                             OnHoldsRestructured="OnHoldsRestructured"
                                              OnRestoreUnchangedHold="OnRestoreUnchangedHold"
                                              HasMultiplePanels="_livePanels.Count >= 2"
                                              OnLinkPanels="OpenLinkTool"
@@ -577,6 +578,7 @@ else
                                              OnMakeHoldActual="OnMakeHoldActual"
                                              OnMergeVirtualHold="OnMergeVirtualHold"
                                              OnJoinVirtualHolds="OnJoinVirtualHolds"
+                                             OnHoldsRestructured="OnHoldsRestructured"
                                              OnRestoreUnchangedHold="OnRestoreUnchangedHold"
                                              OnRequestHoldUsage="@(_isAnonymous ? null : LoadHoldUsage)" />
                             @if (!_isEditing)
