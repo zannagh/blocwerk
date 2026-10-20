@@ -1,5 +1,6 @@
 """Runtime configuration from the environment (shared fields: computejobs.settings)."""
 import os
+import tempfile
 
 from computejobs import capture_limits
 from computejobs.settings import env_int, settings
@@ -8,7 +9,7 @@ from computejobs.settings import env_int, settings
 # (CAPTURE_MAX_PHOTOS + CAPTURE_MAX_VIDEO_FRAMES, computejobs/capture_limits.py); sized against those 600.
 IMAGES = capture_limits.splat_images()
 FLOOR = capture_limits.DEFAULTS["splatFloorImages"]
-settings.load(work_dir=os.path.join(os.environ.get("TMPDIR", "/tmp"), "splat-jobs"),
+settings.load(work_dir=os.path.join(tempfile.gettempdir(), "splat-jobs"),  # TMPDIR, else TEMP / /tmp
               max_request_mb=capture_limits.scaled_s(8192, IMAGES, FLOOR), max_photo_mb=40, max_photos=IMAGES,
               max_queued=4, result_ttl_s=3600)
 settings.brush_bin = os.environ.get("BRUSH_BIN", "brush_app")

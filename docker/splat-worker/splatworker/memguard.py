@@ -8,6 +8,7 @@ process instead:
 - macOS: libproc's proc_pid_rusage(RUSAGE_INFO_V2).ri_phys_footprint (what `top`'s MEM column and
   Activity Monitor show; includes compressed pages), via ctypes, ~7 us per process.
 - Linux: VmRSS + VmSwap from /proc/<pid>/status (the slim image has no `ps`).
+- Windows: the working set of the tree (winsys.py: Toolhelp32 + K32GetProcessMemoryInfo; no `ps` there).
 - elsewhere: `ps` RSS.
 Per process we take max(footprint, resident): the footprint leaves out shared/file-backed pages RSS
 counts, so the guard never reads lower than plain RSS did. No psutil dependency.
@@ -19,6 +20,8 @@ import subprocess
 import sys
 import threading
 import time
+
+from . import winsys
 
 POLL_S = 0.25
 # RLIMIT_AS caps VIRTUAL memory, which always exceeds RSS (thread stacks, malloc arenas, mapped
@@ -128,15 +131,23 @@ def tree_footprint(pid):
     """Memory bytes charged to `pid` and all its descendants (0 once it is gone)."""
     if _LIBPROC is not None:
         return _darwin_tree(pid)
-    table = _proc_table()
+    return table_tree_bytes(winsys.process_table(only=pid) if sys.platform == "win32" else _proc_table(), pid)
+
+
+def table_tree_bytes(table, pid):
+    """The bytes of `pid` and its descendants in {pid: (ppid, bytes)} (0 when `pid` is not in it)."""
     if pid not in table:
         return 0
     children = {}
     for p, (pp, _) in table.items():
-        children.setdefault(pp, []).append(p)
-    total, todo = 0, [pid]
+        if p != pp:  # Windows: pid 0 is its own parent
+            children.setdefault(pp, []).append(p)
+    total, todo, seen = 0, [pid], set()
     while todo:
         p = todo.pop()
+        if p in seen:
+            continue
+        seen.add(p)
         total += table[p][1]
         todo.extend(children.get(p, ()))
     return total

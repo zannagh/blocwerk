@@ -58,7 +58,7 @@ def test_max_quality_ultra_only_with_gsplat_on_12_gb(monkeypatch):
 def test_capabilities_report_the_trainer_and_cuda(monkeypatch):
     monkeypatch.setattr(caps.trainers, "select", lambda: "gsplat")
     monkeypatch.setattr(caps.gsplat_trainer, "tool_version", lambda p: "gsplat 1.5.3, torch 2.4.1, RTX")
-    monkeypatch.setattr(caps, "gpu_info", lambda: ("RTX", 16376))
+    monkeypatch.setattr(caps, "gpu_info", lambda: ("RTX", 16376, False))
     monkeypatch.setattr(caps, "budget_mb", lambda: 20000)
     doc = caps.Capabilities()()
     assert doc["trainer"] == "gsplat" and doc["cuda"] is True and doc["vramMb"] == 16376

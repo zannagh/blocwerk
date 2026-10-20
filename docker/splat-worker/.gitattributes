@@ -1,0 +1,4 @@
+# A Windows checkout (core.autocrlf=true) must not turn the bash launchers into CRLF ("bad interpreter" in WSL / Git
+# Bash); the PowerShell launcher is CRLF like any Windows script. Python and the requirements read either.
+*.sh text eol=lf
+*.ps1 text eol=crlf

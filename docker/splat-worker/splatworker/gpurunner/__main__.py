@@ -9,6 +9,7 @@ import signal
 import sys
 
 from ..settings import settings  # loads the env (SPLAT_TRAINER, GSPLAT_PYTHON, BRUSH_BIN, ...) first
+from .. import winsys
 from .alive import work_dir
 from .caps import Capabilities
 from .client import Client, check_server
@@ -17,6 +18,9 @@ from .loop import Runner
 from .web import start_status_page
 
 log = logging.getLogger("gpurunner")
+# SIGBREAK: Ctrl+Break in a Windows console (and what a service wrapper like NSSM sends first); SIGTERM there only
+# comes from Python itself, Ctrl+C is SIGINT everywhere.
+STOP_SIGNALS = ("SIGTERM", "SIGINT", "SIGBREAK")
 
 
 def parse_args(argv):
@@ -72,8 +76,11 @@ def main(argv=None):
         log.info("signal %d: handing back the running job and stopping", signum)
         runner.stop()
 
-    signal.signal(signal.SIGTERM, stop)
-    signal.signal(signal.SIGINT, stop)
+    for name in STOP_SIGNALS:
+        if hasattr(signal, name):
+            signal.signal(getattr(signal, name), stop)
+    if os.environ.get("RUNNER_KEEP_AWAKE", "1").strip() not in ("0", "false", "no") and winsys.keep_awake():
+        log.info("keeping Windows awake while the runner runs (RUNNER_KEEP_AWAKE=0 turns that off)")
     log.info("Blocwerk 3D runner -> %s (%s, work dir %s)", server, caps.trainer, runner.work_dir)
     r = runner.resume
     log.info("checkpoints: %s; previews: %s", f"every {r.every} steps in {r.root}" if r.every else "off",

@@ -19,6 +19,7 @@ from dataclasses import fields
 
 from computejobs.child import JobError
 
+from .portable import check_names
 from .profiles import QUALITIES, Profile
 from .settings import settings
 
@@ -190,6 +191,7 @@ def extract_bundle(zip_path, out_dir, max_bytes=8 << 30):
             raise BundleError("bundle too large")
         for info in infos:
             _check_member(info)
+        check_names([i.filename for i in infos if not i.is_dir()], out_dir)  # case / Windows names: BundleNotPortable
         _unpack(z, infos, out_dir, max_bytes)
         try:
             doc = json.loads(z.read("train.json"))

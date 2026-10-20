@@ -10,6 +10,8 @@ import os
 import re
 import zipfile
 
+from ..portable import check_names
+
 JOB_FILE, GEOMETRY_FILE, PHOTO_DIR = "textures-job.json", "geometry.json", "photos/"
 MAX_ENTRIES = 5000
 MAX_BYTES = 24 << 30
@@ -49,6 +51,7 @@ def extract_textures_bundle(zip_path, dest):
                         raise TexturesBundleError(f"{info.filename} is too large")
                 elif (m := PHOTO.match(info.filename)) is None or ".." in info.filename:
                     raise TexturesBundleError(f"the bundle has an unexpected file: {info.filename[:80]}")
+            check_names([f"photo_{m.group(1)}.{m.group(2)}" for i in infos if (m := PHOTO.match(i.filename))], dest)
             job = json.loads(zf.read(JOB_FILE))
             options = validate_params(job.get("options") if isinstance(job, dict) else None)
             _copy(zf, names[GEOMETRY_FILE], os.path.join(dest, "geometry.json"))
