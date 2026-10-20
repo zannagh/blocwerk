@@ -7,6 +7,7 @@ using Blocwerk.Core.Detection.Outlines;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.HoldMoves;
+using Blocwerk.Core.HoldStacks;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -15,10 +16,10 @@ namespace Blocwerk.Core.LookOver;
 
 /// <summary>
 /// "Should this boulder use the new hold in that place?", asked per boulder of a hold another hold replaced. Every
-/// boulder yes is the duplicate review's merge; every boulder no is "the old hold is gone"; a mix moves the yes
+/// boulder yes does what the duplicate review's merge does (old hold gone, every boulder on the new hold); every boulder no is "the old hold is gone"; a mix moves the yes
 /// boulders' memberships onto the new hold and removes the old hold, which takes the no boulders with it into history
-/// (the old hold is physically gone). The mix is one journal batch under the merge's label, so the duplicate review
-/// undoes it as one, exactly. A yes boulder whose review mark this replacement alone explained
+/// (the old hold is physically gone). Both are one journal batch under the merge's label, so the duplicate review
+/// undoes either as one, exactly. A yes boulder whose review mark this replacement alone explained
 /// (<see cref="WallLookOverFinding.MarkedBoulderIds"/>) loses the mark: a person just answered for it.
 /// </summary>
 public sealed partial class WallLookOverService
@@ -59,35 +60,47 @@ public sealed partial class WallLookOverService
         return (answer, chosen.SetEquals(shown) ? null : chosen);
     }
 
-    /// <summary>Runs "use the new hold": the merge for every boulder, or the mix for <paramref name="onlyThese"/>.</summary>
+    /// <summary>
+    /// "Use the new hold", for every boulder or for <paramref name="onlyThese"/>, in one save inside one batch under the
+    /// merge's label: the yes boulders move as in the merge (a boulder on both holds keeps the stronger role and is
+    /// marked), their marks come off, the new hold takes the old one's flags and what is stacked on it, and the old
+    /// hold is removed through <see cref="HoldDeletion"/> with <see cref="HoldDeleteBoulderPolicy.DetachAndFlagHistoric"/>,
+    /// which by then only finds the no boulders on it. Undone as one in the duplicate review, marks included.
+    /// </summary>
     private async Task UseNewHoldAsync(
         BlocwerkDbContext db, WallLookOverFinding finding, LookOverFindingView view, IReadOnlySet<Guid>? onlyThese, CancellationToken ct)
     {
-        var clearable = await ClearableAsync(db, finding, view, onlyThese ?? view.Boulders.Select(b => b.Id).ToHashSet(), ct);
-        if (onlyThese is null)
-        {
-            var merge = await duplicates.MergeAsync(finding.WallId, view.OtherHoldId!.Value, view.HoldId!.Value, HoldMergeMode.KeepLeft, ct);
-            finding.MergeBatchId = merge.BatchId;
-
-            // On the answer's own context and batch: the merge has committed by now.
-            finding.ClearedBoulderIds = await ClearMarksAsync(db, clearable, ct);
-            return;
-        }
-
-        var (batchId, cleared) = await UseNewHoldForSomeAsync(db, finding, view, onlyThese, clearable, ct);
-        (finding.MergeBatchId, finding.ClearedBoulderIds, finding.NewHoldBoulderIds) = (batchId, cleared, [.. onlyThese]);
-    }
-
-    /// <summary>
-    /// The mix, in one save inside one batch: the yes boulders move as in the merge, their marks come off, and the old
-    /// hold is removed through <see cref="HoldDeletion"/> with <see cref="HoldDeleteBoulderPolicy.DetachAndFlagHistoric"/>,
-    /// which by then only finds the no boulders on it.
-    /// </summary>
-    private async Task<(Guid? BatchId, List<Guid> Cleared)> UseNewHoldForSomeAsync(
-        BlocwerkDbContext db, WallLookOverFinding finding, LookOverFindingView view, IReadOnlySet<Guid> onlyThese, HashSet<Guid> clearable, CancellationToken ct)
-    {
         using var wallLock = WallHoldWriteLock.TryAcquire(
             finding.WallId, "Another update of this wall's holds (a clean-up, an outline upgrade, a merge or a wall update) is running. Try again in a moment.");
+        var (old, replacement) = await PairAsync(db, finding, view, ct);
+        var clearable = await ClearableAsync(db, finding, view, onlyThese ?? view.Boulders.Select(b => b.Id).ToHashSet(), ct);
+        var (moved, _) = await HoldDuplicateService.MoveBouldersAsync(db, replacement, old, onlyThese, ct);
+        var cleared = ClearTracked(await db.Boulders.Where(b => clearable.Contains(b.Id)).ToListAsync(ct));
+        HoldMergeRules.MergeFlags(replacement, old);
+        await HoldStacker.MergeAsync(db, replacement, old, ct);
+        var historic = await HoldDeletion.PrepareHoldForDeleteAsync(db, old.Id, HoldDeleteBoulderPolicy.DetachAndFlagHistoric, ct: ct);
+        db.Holds.Remove(old);
+        ct.ThrowIfCancellationRequested();
+        using (var scope = journal?.BeginBatch(HoldDuplicateService.BatchLabel, ChangeJournalScopeKind.Wall, finding.WallId))
+        {
+            await db.SaveChangesAsync(ct);
+            if ((await LinkedHoldSync.ReconcileAsync(db, finding.WallId, replacement.Id, ct)).Any)
+            {
+                await db.SaveChangesAsync(ct);
+            }
+
+            finding.MergeBatchId = (scope as ChangeJournalBatchScope)?.BatchId;
+        }
+
+        finding.ClearedBoulderIds = cleared;
+        logger.LogInformation(
+            "Look-over finding {FindingId}: {Moved} boulders moved from hold {Old} onto {New}, {Historic} made historic with it, {Cleared} cleared, batch {BatchId}",
+            finding.Id, moved, old.Id, replacement.Id, historic, cleared.Count, finding.MergeBatchId);
+    }
+
+    /// <summary>The old hold and the new one on its spot, as the merge checks them: both still there, on one photo.</summary>
+    private static async Task<(Hold Old, Hold Replacement)> PairAsync(BlocwerkDbContext db, WallLookOverFinding finding, LookOverFindingView view, CancellationToken ct)
+    {
         var old = await db.Holds.FirstOrDefaultAsync(h => h.Id == view.HoldId && h.WallId == finding.WallId, ct);
         var replacement = await db.Holds.FirstOrDefaultAsync(h => h.Id == view.OtherHoldId && h.WallId == finding.WallId, ct);
         if (old is null || replacement is null)
@@ -95,17 +108,12 @@ public sealed partial class WallLookOverService
             throw new UserFacingException("One of these holds no longer exists. Reload the page.");
         }
 
-        var (moved, _) = await HoldDuplicateService.MoveBouldersAsync(db, replacement, old, onlyThese, ct);
-        var cleared = ClearTracked(await db.Boulders.Where(b => clearable.Contains(b.Id)).ToListAsync(ct));
-        var historic = await HoldDeletion.PrepareHoldForDeleteAsync(db, old.Id, HoldDeleteBoulderPolicy.DetachAndFlagHistoric, ct: ct);
-        db.Holds.Remove(old);
-        ct.ThrowIfCancellationRequested();
-        using var scope = journal?.BeginBatch(HoldDuplicateService.BatchLabel, ChangeJournalScopeKind.Wall, finding.WallId);
-        await db.SaveChangesAsync(ct);
-        logger.LogInformation(
-            "Look-over finding {FindingId}: {Moved} boulders moved from hold {Old} onto {New}, {Historic} made historic with it, {Cleared} cleared",
-            finding.Id, moved, old.Id, replacement.Id, historic, cleared.Count);
-        return ((scope as ChangeJournalBatchScope)?.BatchId, cleared);
+        if (old.WallPanelId != replacement.WallPanelId || old.Generation != replacement.Generation)
+        {
+            throw new UserFacingException("These holds are on different photos, so they cannot be merged.");
+        }
+
+        return (old, replacement);
     }
 
     /// <summary>
@@ -135,10 +143,6 @@ public sealed partial class WallLookOverService
 
         return clearable;
     }
-
-    /// <summary>Takes the mark off the clearable boulders that still have it (tracked; the caller saves).</summary>
-    private static async Task<List<Guid>> ClearMarksAsync(BlocwerkDbContext db, HashSet<Guid> clearable, CancellationToken ct) =>
-        clearable.Count == 0 ? [] : ClearTracked(await db.Boulders.Where(b => clearable.Contains(b.Id)).ToListAsync(ct));
 
     private static List<Guid> ClearTracked(List<Boulder> boulders)
     {

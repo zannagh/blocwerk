@@ -53,10 +53,10 @@ internal static class NewHoldPerBoulderScenarios
 
         var finding = await FindingAsync(h, w.WallId);
         Assert.Equal((LookOverAnswer?)LookOverAnswer.UseNewHold, finding.Answer);
-        Assert.Null(finding.NewHoldBoulderIds);
         Assert.Equal(new[] { w.BoulderId, second }.Order(), finding.ClearedBoulderIds!.Order());
         await using var db = h.CreateContext();
         Assert.True(await db.ChangeJournalBatches.AnyAsync(b => b.Id == finding.MergeBatchId && b.Label == HoldDuplicateService.BatchLabel));
+        Assert.Null(Assert.Single(await Service(h).ListAsync(w.WallId)).NewHoldBoulders);
     }
 
     public static async Task MixedAsync(WallTestHarness h)
@@ -74,7 +74,6 @@ internal static class NewHoldPerBoulderScenarios
 
         var finding = await FindingAsync(h, w.WallId);
         Assert.Equal((LookOverFindingStatus.Settled, (LookOverAnswer?)LookOverAnswer.UseNewHold, 2), (finding.Status, finding.Answer, finding.AnswerBoulders));
-        Assert.Equal([w.BoulderId], finding.NewHoldBoulderIds);
         Assert.Equal([w.BoulderId], finding.ClearedBoulderIds);
         await using var db = h.CreateContext();
         var batch = await db.ChangeJournalBatches.SingleAsync(b => b.Id == finding.MergeBatchId);
@@ -98,15 +97,15 @@ internal static class NewHoldPerBoulderScenarios
 
         var finding = await FindingAsync(h, w.WallId);
         Assert.Equal(((LookOverAnswer?)LookOverAnswer.RemoveHold, (Guid?)null), (finding.Answer, finding.MergeBatchId));
-        Assert.Null(finding.NewHoldBoulderIds);
     }
 
-    public static async Task UndoMixedAsync(WallTestHarness h)
+    /// <summary>Answers per boulder (<paramref name="mixed"/>: the second boulder yes, the first no; else both yes), then undoes it in the duplicate review.</summary>
+    public static async Task UndoAsync(WallTestHarness h, bool mixed)
     {
         var (w, second, view) = await TwoBouldersAsync(h);
         var before = await SnapshotAsync(h, w.WallId);
 
-        await Service(h).AnswerAsync(w.WallId, view.Id, LookOverAnswer.UseNewHold, [w.BoulderId, second], [second]);
+        await Service(h).AnswerAsync(w.WallId, view.Id, LookOverAnswer.UseNewHold, [w.BoulderId, second], mixed ? [second] : null);
         var finding = await FindingAsync(h, w.WallId);
         Assert.NotEqual(before, await SnapshotAsync(h, w.WallId));
 

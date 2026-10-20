@@ -57,6 +57,7 @@ public sealed partial class WallLookOverService
         var names = answerers.Count == 0
             ? []
             : await db.Users.IgnoreQueryFilters().Where(u => answerers.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.DisplayName, ct);
+        var retired = await RetiredByNewHoldAsync(db, findings, ct);
         return findings
             .Select(f => (Finding: f, Kept: f.HoldId is { } id && holds.GetValueOrDefault(id) is { Live: true, Kept: true }))
             .Select(x => (x.Finding, x.Kept, View: ToView(x.Finding, holds, boulders, access)))
@@ -66,8 +67,32 @@ public sealed partial class WallLookOverService
                 CanUndo = x.Finding.Kind == LookOverFindingKind.DiscardedDetection
                     ? CanUndoDiscarded(x.Finding, holds, boulders)
                     : CanUndo(x.Finding, holds, since),
+                NewHoldBoulders = x.Finding.MergeBatchId is { } batch && retired.GetValueOrDefault(batch) is > 0 and var gone
+                    ? (x.Finding.AnswerBoulders ?? 0) - gone
+                    : null,
             })
             .ToList();
+    }
+
+    /// <summary>
+    /// Per "use the new hold" batch, how many boulders it made historic (the ones answered no): read from the batch
+    /// itself, which records a boulder's retirement as a change of its historic flag. Zero for a plain merge.
+    /// </summary>
+    private static async Task<Dictionary<Guid, int>> RetiredByNewHoldAsync(BlocwerkDbContext db, IReadOnlyList<WallLookOverFinding> findings, CancellationToken ct)
+    {
+        var batches = findings.Where(f => f.Answer == LookOverAnswer.UseNewHold).Select(f => f.MergeBatchId).OfType<Guid>().ToList();
+        if (batches.Count == 0)
+        {
+            return [];
+        }
+
+        return (await db.ChangeJournalEntries.AsNoTracking()
+                .Where(e => batches.Contains(e.BatchId) && e.EntityType == nameof(Boulder) && e.Op == ChangeJournalOp.Update
+                    && e.AfterJson != null && e.AfterJson.Contains(nameof(Boulder.IsHistoric)))
+                .Select(e => e.BatchId)
+                .ToListAsync(ct))
+            .GroupBy(id => id)
+            .ToDictionary(g => g.Key, g => g.Count());
     }
 
     private static LookOverFindingView Detailed(LookOverFindingView view, WallLookOverFinding f, bool kept, LookOverAccess access) =>
@@ -75,7 +100,6 @@ public sealed partial class WallLookOverService
         {
             AnswerBoulders = f.AnswerBoulders,
             ClearedBoulders = f.ClearedBoulderIds?.Count ?? 0,
-            NewHoldBoulders = f.NewHoldBoulderIds?.Count,
             HoldKept = kept,
             KeptAtUpdate = f.HoldKept,
             CanReassign = kept && f.Status == LookOverFindingStatus.Open && access.CanMerge,

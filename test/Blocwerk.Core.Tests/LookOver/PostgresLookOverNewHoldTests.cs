@@ -33,6 +33,13 @@ public class PostgresLookOverNewHoldTests
     public async Task UndoingAMix_PutsEverythingBackExactly()
     {
         using var h = new WallTestHarness(PostgresTestDatabase.Create());
-        await NewHoldPerBoulderScenarios.UndoMixedAsync(h);
+        await NewHoldPerBoulderScenarios.UndoAsync(h, mixed: true);
+    }
+
+    [PostgresFact]
+    public async Task UndoingAllYes_PutsTheMarksBackToo()
+    {
+        using var h = new WallTestHarness(PostgresTestDatabase.Create());
+        await NewHoldPerBoulderScenarios.UndoAsync(h, mixed: false);
     }
 }

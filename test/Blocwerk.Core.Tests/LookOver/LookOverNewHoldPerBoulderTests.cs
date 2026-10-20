@@ -41,7 +41,14 @@ public class LookOverNewHoldPerBoulderTests
     public async Task UndoingAMix_PutsEveryThingBackExactly()
     {
         using var h = new WallTestHarness();
-        await NewHoldPerBoulderScenarios.UndoMixedAsync(h);
+        await NewHoldPerBoulderScenarios.UndoAsync(h, mixed: true);
+    }
+
+    [Fact]
+    public async Task UndoingAllYes_PutsTheMarksBackToo()
+    {
+        using var h = new WallTestHarness();
+        await NewHoldPerBoulderScenarios.UndoAsync(h, mixed: false);
     }
 
     [Fact]

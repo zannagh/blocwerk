@@ -89,7 +89,6 @@ public class LookOverAnswerTests
         Assert.Equal((w.DetectionId, HoldType.Start, false, false), (membership.HoldId, membership.Type, boulder.IsHistoric, boulder.NeedsReview));
         var finding = await FindingAsync(h, w.WallId);
         Assert.Equal([w.BoulderId], finding.ClearedBoulderIds);
-        Assert.Null(finding.NewHoldBoulderIds);
         Assert.Equal((LookOverFindingStatus.Settled, (LookOverAnswer?)LookOverAnswer.UseNewHold), (finding.Status, finding.Answer));
         await using var db = h.CreateContext();
         Assert.True(await db.ChangeJournalBatches.AnyAsync(b => b.Id == finding.MergeBatchId && b.Label == HoldDuplicateService.BatchLabel));

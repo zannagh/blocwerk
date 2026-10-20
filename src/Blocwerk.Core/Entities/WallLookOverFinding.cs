@@ -159,11 +159,5 @@ public class WallLookOverFinding
     /// <summary>The change-journal batch of the merge, when the answer was <see cref="LookOverAnswer.UseNewHold"/> (undo with it).</summary>
     public Guid? MergeBatchId { get; set; }
 
-    /// <summary>
-    /// The boulders a <see cref="LookOverAnswer.UseNewHold"/> answer moved onto the new hold, when the user answered per
-    /// boulder and said no for some (the others became historic with the old hold). Null when every boulder moved.
-    /// </summary>
-    public List<Guid>? NewHoldBoulderIds { get; set; }
-
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }

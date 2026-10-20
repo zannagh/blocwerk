@@ -16,8 +16,7 @@ namespace Blocwerk.Core.LookOver;
 /// Answering a finding after the update is live. "Different hold" is the editor's "mark as changed"
 /// (<see cref="IWallService.MarkHoldModifiedAsync"/>) and then takes the pair apart (the Split part), "gone" is the editor's delete
 /// (<see cref="IWallService.DeleteHoldAsync"/>: the boulders that use the hold become historic), and "use the new hold"
-/// is the duplicate review's merge (<see cref="IHoldDuplicateService.MergeAsync"/>: the boulders move over, undoable), or,
-/// answered per boulder, the NewHold part.
+/// moves the boulders onto the new hold as the duplicate review's merge does, per boulder and undoable there (the NewHold part).
 /// Each of those checks the user again by its own rule, which is also what decides the answers a user is offered.
 /// An answer only ever reaches a hold that is live, and only with the boulders the user was shown. Settling is in the
 /// Settle part; what it does to boulders in the Boulders part.

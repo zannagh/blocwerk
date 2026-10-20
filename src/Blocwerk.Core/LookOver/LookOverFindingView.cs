@@ -49,8 +49,8 @@ namespace Blocwerk.Core.LookOver;
 /// <param name="DiscardReason">Why the update discarded the detection (a <see cref="NewHoldDiscardReason"/> name), when that was recorded.</param>
 /// <param name="Overlap">How much of a discarded detection the live holds of its photo cover, 0..1.</param>
 /// <param name="NewHoldBoulders">
-/// How many boulders a "use the new hold" answered per boulder moved onto the new hold (the others became historic);
-/// null when every boulder moved.
+/// How many boulders a "use the new hold" answered per boulder moved onto the new hold, when some were answered no
+/// and became historic; null when every boulder moved.
 /// </param>
 public sealed record LookOverFindingView(
     Guid Id,
