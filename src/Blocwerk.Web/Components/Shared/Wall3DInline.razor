@@ -23,7 +23,7 @@
     else
     {
         <div class="wall3d-inline-stage">
-            <Wall3DStage View="result.View" InitialMode="schematic" HintOnce="true"
+            <Wall3DStage View="result.View" ShareToken="@ShareToken" InitialMode="schematic" HintOnce="true"
                          BoulderFocus="BoulderId is not null" Tools="Tools" />
         </div>
         @if (result.View.BoulderName is not null)

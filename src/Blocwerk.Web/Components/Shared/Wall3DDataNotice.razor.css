@@ -1,0 +1,40 @@
+/* Centred over the stage that has not started; above the stage's own chrome. */
+.wall3d-data-notice {
+    position: absolute;
+    z-index: 4;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: min(340px, calc(100% - 32px));
+    box-sizing: border-box;
+    padding: 16px;
+    border-radius: 12px;
+    background: var(--bg-surface, #fff);
+    color: var(--text, inherit);
+    box-shadow: 0 6px 24px var(--shadow-lg);
+}
+
+.wall3d-data-notice-title {
+    margin: 0 0 6px;
+    font-weight: 600;
+}
+
+.wall3d-data-notice-text {
+    margin: 0 0 10px;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.wall3d-data-notice-remember {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 12px;
+    font-size: 0.9rem;
+}
+
+.wall3d-data-notice-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}

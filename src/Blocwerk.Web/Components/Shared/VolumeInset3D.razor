@@ -23,8 +23,8 @@
         <div class="hybrid-inset-stage">
             @if (view?.View is { } v)
             {
-                <Wall3DStage @key="spot" @ref="stage" View="v" Highlight="spot" InitialMode="@mode" InitialPreset="front"
-                             ShowFullscreen="false" ExtraOptions="orbit" />
+                <Wall3DStage @key="spot" @ref="stage" View="v" ShareToken="@ShareToken" Highlight="spot" InitialMode="@mode" InitialPreset="front"
+                             ShowFullscreen="false" OfferSaveOffline="false" ExtraOptions="orbit" />
             }
             else if (view is not null)
             {

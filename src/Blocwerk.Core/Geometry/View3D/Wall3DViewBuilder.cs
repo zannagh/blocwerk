@@ -115,7 +115,8 @@ public static class Wall3DViewBuilder
     /// <returns>The hold to draw.</returns>
     public static Wall3DHold Fold(IReadOnlyList<HoldTwinCandidate> group, IReadOnlyDictionary<Guid, HashSet<Guid>> bouldersByHold)
     {
-        var rep = group[0].Placed;
+        // Kept unconfirmed copies are only built for a boulder that uses them (BuildHolds), so the hold depends on it.
+        var rep = group[0].Placed with { BoulderOnly = group.Any(c => c.Hold.KeptUnconfirmedGeneration is not null) };
         var boulders = group.SelectMany(c => bouldersByHold.GetValueOrDefault(c.Hold.Id) ?? []).Distinct().Count();
         if (group.Count == 1)
         {

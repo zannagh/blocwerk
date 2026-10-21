@@ -139,8 +139,9 @@ window.bwAssetWipe = (function () {
             return;
         }
         const others = new Set();
-        walls.filter(w => w.wallId !== wallId).forEach(w => (w.entries || []).forEach(e => others.add(e.sha)));
-        const mine = new Set((dropped.entries || []).map(e => e.sha).filter(sha => sha && !others.has(sha)));
+        const listed = w => (w.entries || []).concat(w.docs || []);
+        walls.filter(w => w.wallId !== wallId).forEach(w => listed(w).forEach(e => others.add(e.sha)));
+        const mine = new Set(listed(dropped).map(e => e.sha).filter(sha => sha && !others.has(sha)));
         const assets = await env.ledger.assetsOf(partition);
         await deleteKeys(env, partition, assets.filter(a => mine.has(a.sha)).map(a => a.key));
     }

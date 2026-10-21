@@ -408,6 +408,9 @@ public static class Program
         // Content-addressed wall assets (/api/walls/{w}/a/{sha}), revalidated (no-cache); same posture as the wall media above.
         app.MapAssets();
 
+        // The working-data documents beside them (/api/walls/{w}/d/view3d/{sha}, design §6.5); same posture.
+        app.MapWallDocuments();
+
         // Their manifest per wall and the device's cache partition (design §6.4, §6.6).
         app.MapAssetManifest();
 

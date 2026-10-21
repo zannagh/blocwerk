@@ -196,7 +196,8 @@
     @* The page side of the on-device wall-asset cache: the ledger, budgets, wipe rules, manifests, the page's
        partition session, the fill plan and its runner, then
        the coordinator, which reads the others lazily off window and boots on DOM-ready. After pwa.js only for
-       readability; it works with any worker, or none. asset-notice.js feeds StorageNotice.razor. *@
+       readability; it works with any worker, or none. asset-notice.js feeds StorageNotice.razor; asset-3d.js the 3D
+       view's mobile-data notice and "Save 3D offline" (Wall3DStage). *@
     <script src="@Assets["js/asset-ledger.js"]"></script>
     <script src="@Assets["js/asset-budget.js"]"></script>
     <script src="@Assets["js/asset-wipe.js"]"></script>
@@ -207,6 +208,7 @@
     <script src="@Assets["js/asset-fill.js"]"></script>
     <script src="@Assets["js/asset-cache.js"]"></script>
     <script src="@Assets["js/asset-notice.js"]"></script>
+    <script src="@Assets["js/asset-3d.js"]"></script>
     @* Defines bwPush; inert until NotificationPrompt.razor / the profile notification card calls it.
        No parse-time event to catch (unlike install-prompt.js), so it loads with the deferred bundle. *@
     <script src="@Assets["js/push.js"]"></script>

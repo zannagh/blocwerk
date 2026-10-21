@@ -83,6 +83,7 @@ public partial class Wall3DStage : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         disposed = true;
+        noticeGate.Abandon();
         try
         {
             // A mount in flight disposes its own viewer when it returns (it sees `disposed`).
@@ -145,60 +146,6 @@ public partial class Wall3DStage : IAsyncDisposable
         return Task.WhenAll(sync, mounting);
     }
 
-    /// <summary>Called from wwwroot/js/wall3d-portal.js when Escape asks to leave full screen.</summary>
-    [JSInvokable]
-    public Task CloseFromJs()
-    {
-        return InvokeAsync(() => SetFullscreen(false));
-    }
-
-    private async Task SyncPortalAsync()
-    {
-        if (portaled == fullscreen)
-        {
-            return;
-        }
-
-        portaled = fullscreen;
-        try
-        {
-            portal ??= await JS.InvokeAsync<IJSObjectReference>("import", "/js/wall3d-portal.js");
-            selfRef ??= DotNetObjectReference.Create(this);
-            if (fullscreen)
-            {
-                await portal.InvokeVoidAsync("enter", host, selfRef);
-            }
-            else
-            {
-                await portal.InvokeVoidAsync("exit", host);
-            }
-        }
-        catch (Exception ex) when (ex is JSDisconnectedException or JSException or OperationCanceledException)
-        {
-            // Circuit gone or the browser did not answer: the fixed-position fallback still shows.
-        }
-    }
-
-    private async Task ReleasePortalAsync()
-    {
-        if (portal is null)
-        {
-            return;
-        }
-
-        try
-        {
-            // The shell is leaving the page: a host still on <body> has to go with it.
-            await portal.InvokeVoidAsync("exit", host);
-        }
-        catch (Exception ex) when (ex is JSDisconnectedException or JSException or OperationCanceledException or InvalidOperationException)
-        {
-            // Nothing left to clean up.
-        }
-
-        await DisposeModuleAsync(portal);
-    }
-
     private static async Task DisposeModuleAsync(IJSObjectReference? reference)
     {
         if (reference is null)
@@ -257,7 +204,7 @@ public partial class Wall3DStage : IAsyncDisposable
             // The previous mount timed out; this one starts afresh.
         }
 
-        if (!IsCurrent(view))
+        if (!IsCurrent(view) || !await PassDataNoticeAsync(view) || !IsCurrent(view))
         {
             return;
         }
@@ -273,7 +220,7 @@ public partial class Wall3DStage : IAsyncDisposable
                 return;
             }
 
-            var handle = await module.InvokeAsync<IJSObjectReference>("mount", stage, view, MountOptions(restore));
+            var handle = await InvokeMountAsync(module, view, restore);
             if (!IsCurrent(view))
             {
                 await DisposeViewerAsync(handle);
@@ -312,30 +259,6 @@ public partial class Wall3DStage : IAsyncDisposable
                 StateHasChanged();
             }
         }
-    }
-
-    private Dictionary<string, object?> MountOptions(JsonElement? restore)
-    {
-        var options = new Dictionary<string, object?>
-        {
-            ["roleColors"] = BoulderHoldColors.Wall3DRoles,
-            ["boulderFocus"] = BoulderFocus,
-            ["initialPreset"] = InitialPreset,
-            ["initialMode"] = InitialMode ?? "schematic",
-            ["hintOnce"] = HintOnce,
-            ["highlight"] = Highlight,
-        };
-        if (restore is { } carried)
-        {
-            options["restore"] = carried;
-        }
-
-        foreach (var (key, value) in ExtraOptions ?? new Dictionary<string, object?>())
-        {
-            options[key] = value;
-        }
-
-        return options;
     }
 
     private async Task ListenFacetTapsAsync()

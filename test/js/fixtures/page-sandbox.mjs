@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 const js = new URL('../../../src/Blocwerk.Web/wwwroot/js/', import.meta.url);
-const MODULES = ['asset-ledger.js', 'asset-budget.js', 'asset-wipe.js', 'asset-manifest.js', 'asset-store.js', 'asset-session.js', 'asset-plan.js', 'asset-fill.js', 'asset-cache.js', 'asset-notice.js'];
+const MODULES = ['asset-ledger.js', 'asset-budget.js', 'asset-wipe.js', 'asset-manifest.js', 'asset-store.js', 'asset-session.js', 'asset-plan.js', 'asset-fill.js', 'asset-cache.js', 'asset-notice.js', 'asset-3d.js'];
 export const ORIGIN = 'https://blocwerk.test';
 export const USER_A = 'u-aaaaaaaaaaaaaaaaaaaa';
 export const USER_B = 'u-bbbbbbbbbbbbbbbbbbbb';
@@ -50,7 +50,7 @@ export function manifest(wallId, assets, extra = {}) {
 
 /**
  * opts: { label (meta content, null = no meta), path, search, caches, routes: { path → fn(init, url) }, partitionOfWorker,
- *         swReply ('v4' | 'none' | 'v3' | null = no controller), refuse (worker posts asset-refused), silent (worker
+ *         swReply ('v4' | 'none' | 'v3' | null = no controller), maxTouchPoints, coarse (a coarse pointer), refuse (worker posts asset-refused), silent (worker
  *         neither stores nor answers: a slow write), prefs3d, ua, quota, ledger, user, connection }
  */
 export function loadPage(opts = {}) {
@@ -63,6 +63,7 @@ export function loadPage(opts = {}) {
     const storage = new Map();
     const assigned = [];
     const events = [];
+    const persisted = [];
     const caches = opts.caches || fakeCaches();
     const label = opts.label === undefined ? USER_A : opts.label;
     const meta = label === null ? null : { getAttribute: () => label };
@@ -153,14 +154,15 @@ export function loadPage(opts = {}) {
         location: { pathname: opts.path || '/', search: opts.search || '', origin: ORIGIN, href: ORIGIN + (opts.path || '/'), assign: u => assigned.push(String(u)) },
         navigator: {
             userAgent: opts.ua || 'Mozilla/5.0 (X11; Linux x86_64) Chrome/130.0 Safari/537.36',
-            maxTouchPoints: 0,
+            maxTouchPoints: opts.maxTouchPoints ?? 0,
+            standalone: opts.navStandalone,
             connection: opts.connection,
             onLine: opts.onLine ?? true,
             userAgentData: opts.userAgentData,
             serviceWorker: { controller, addEventListener: (type, fn) => { if (type === 'message') { swListeners.push(fn); } } },
-            storage: { estimate: async () => ({ quota: opts.quota ?? 50e9, usage: 41e9 }), persisted: async () => false, persist: async () => true },
+            storage: { estimate: async () => ({ quota: opts.quota ?? 50e9, usage: 41e9 }), persisted: async () => false, persist: async () => { persisted.push(Date.now()); return true; } },
         },
-        matchMedia: () => ({ matches: !!opts.standalone }),
+        matchMedia: q => ({ matches: q === '(pointer: coarse)' ? !!opts.coarse : !!opts.standalone }),
         localStorage: { getItem: k => (storage.has(k) ? storage.get(k) : null), setItem: (k, v) => storage.set(k, String(v)), removeItem: k => storage.delete(k) },
         document: {
             readyState: 'complete',
@@ -200,7 +202,7 @@ export function loadPage(opts = {}) {
     };
 
     return {
-        win: sandbox, caches, fetches, posted, timers, events, assigned, storage, worker,
+        win: sandbox, caches, fetches, posted, timers, events, assigned, storage, worker, persisted,
         cache: sandbox.bwAssetCache,
         ledger: () => sandbox.bwAssetLedger.open(),
         boot: async () => { await sandbox.bwAssetCache.boot(); await settle(); await sandbox.bwAssetCache.filled(); await settle(); },

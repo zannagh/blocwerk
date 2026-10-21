@@ -1,6 +1,7 @@
 // Opt-in 3D wall view. Loaded with JS.InvokeAsync<IJSObjectReference>("import", "/js/wall3d.js");
 // `mount(container, view, options)` renders the Wall3DView payload (Blocwerk.Core.Geometry.View3D)
-// into `container` and returns a handle whose `dispose()` frees every GPU resource.
+// into `container` and resolves to a handle whose `dispose()` frees every GPU resource. The payload is
+// either the view or a reference to its cached view3d document (wall3d-doc.js), fetched first.
 //
 // The world frame is wall-geometry.json's: millimetres, z up. Rendering is on demand in every mode
 // (wall3d-loop.js): a frame is drawn only while something moves or changes, and never while the page
@@ -36,6 +37,7 @@ import { buildBody } from './wall3d-body.js';
 import { createRenderLoop } from './wall3d-loop.js';
 import { buildLocator, clampOrbit, poseFor } from './wall3d-locate.js';
 import { createKeyboard } from './wall3d-keys.js';
+import { resolveView } from './wall3d-doc.js';
 
 /** Colours of a boulder's hold roles; the page passes BoulderHoldColors so they match the 2D views. */
 const DEFAULT_ROLE_COLORS = { Start: '#4CAF50', Top: '#9C27B0', Hand: '#2196F3', Foot: '#FF9800', ColorFoot: '#FF9800' };
@@ -46,7 +48,9 @@ const CAPPED_DAMPING = 1 - (1 - DAMPING) ** 2;
 /** Prefix of the error `mount` throws when the model itself could not be drawn (not WebGL missing). */
 export const MODEL_FAILED = 'wall3d-model:';
 
-export function mount(container, view, options = {}) {
+export async function mount(container, payload, options = {}) {
+    // Before any WebGL context exists: a document that cannot be used throws DOC_FAILED and leaves nothing behind.
+    const view = await resolveView(payload);
     container.classList.add('w3d-root');
     const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: !!options.preserveDrawingBuffer });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));

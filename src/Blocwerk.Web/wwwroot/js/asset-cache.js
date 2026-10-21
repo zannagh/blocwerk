@@ -285,6 +285,8 @@ window.bwAssetCache = (function (win) {
             return whenStarted(() => (on ? scheduleFill() : evict()));
         },
         keep3d,
+        // An eviction pass now (bwAsset3d.unsave: a wall that is no longer kept offline).
+        evict: () => whenStarted(() => evict()),
         // Whether this device background-fills 3D (2.8's data-volume warning on opening 3D reads it): never on a phone
         // or tablet (bwAssetPlan.isMobile), nor on a metered connection, nor with 3D opted out.
         fills3dInBackground: () => keep3d() && !mobile() && !Plan().isMetered(win.navigator),

@@ -8,6 +8,8 @@
  *   3. 3D (textures, masks, one splat level), only on a desktop browser (never on a phone or tablet, iOS or Android:
  *      there 3D is cached only when a 3D view is opened), while 3D is kept, the connection is unmetered and the 3D
  *      budget has room.
+ * A wall the viewer saved for offline 3D (`save3d`, bwAsset3d.save) is the exception: its 3D goes right after core, on
+ * every device and connection, past the 3D budget and the opt-out, because the viewer asked for exactly that.
  * Within a tier the open wall goes first, then the walls by when they were last opened. Every other `lazy` asset
  * (superseded panels, reset photos, video thumbnails) is never background-filled: the worker caches it on use, and so
  * it does 3D on a phone, a tablet or a metered connection.
@@ -165,6 +167,11 @@ window.bwAssetPlan = (function () {
                     }
                 });
             }
+        }
+        // Saved 3D: asked for explicitly, so no budget, metered or mobile rule holds it back (a refusal still streams).
+        const unbounded = { fits: () => true, take: () => undefined };
+        for (const wall of walls.filter(w => w.save3d && w.keepOffline)) {
+            view3dEntries(wall, cachedShas).forEach(entry => within(wall, entry, [null], 'view3d', unbounded));
         }
         // Core is planned whatever the budget; the gallery gets only what is left after it.
         const images = roomOf((state.usedImages || 0) + coreBytes, state.budget.images);
