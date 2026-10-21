@@ -787,6 +787,32 @@ namespace Blocwerk.Core.Migrations
                     b.ToTable("ExternalGyms");
                 });
 
+            modelBuilder.Entity("Blocwerk.Core.Entities.FeedEpoch", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<long?>("DatabaseOid")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("FloorSeq")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("FloorTxId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long?>("SystemIdentifier")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("FeedEpochs");
+                });
+
             modelBuilder.Entity("Blocwerk.Core.Entities.GpuJob", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2426,6 +2452,68 @@ namespace Blocwerk.Core.Migrations
                         .IsUnique();
 
                     b.ToTable("WallCapturePhotos");
+                });
+
+            modelBuilder.Entity("Blocwerk.Core.Entities.WallChange", b =>
+                {
+                    b.Property<long>("Seq")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Seq"));
+
+                    b.Property<Guid?>("ActorUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<short>("Audience")
+                        .HasColumnType("smallint");
+
+                    b.Property<Guid?>("AudienceUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("BoulderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DataJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<Guid?>("EntityId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<short>("SchemaVersion")
+                        .HasColumnType("smallint");
+
+                    b.Property<long?>("TxId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasAnnotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.None);
+
+                    b.Property<Guid?>("WallId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Seq");
+
+                    b.HasIndex("ActorUserId")
+                        .HasFilter("\"ActorUserId\" IS NOT NULL");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("TxId", "Seq");
+
+                    b.HasIndex("AudienceUserId", "TxId", "Seq")
+                        .HasFilter("\"AudienceUserId\" IS NOT NULL");
+
+                    b.HasIndex("WallId", "TxId", "Seq");
+
+                    b.ToTable("WallChanges");
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallEnhancementItem", b =>

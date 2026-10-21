@@ -52,11 +52,13 @@ public sealed class WallEnhancementStopTests
     {
         using var f = await WallEnhancementFixture.CreateAsync();
         var release = new TaskCompletionSource();
+        var otherWallBlocking = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var otherWall = await AddWallAsync(f);
         var blocking = new FakeEnhancementStep("links", 600, WallEnhancementItemKind.Link, async (ctx, ct) =>
         {
             if (ctx.WallId == otherWall)
             {
+                otherWallBlocking.TrySetResult();
                 await release.Task.WaitAsync(ct);
             }
 
@@ -64,6 +66,9 @@ public sealed class WallEnhancementStopTests
         });
         var service = f.Service(blocking);
         await service.StartAsync(otherWall);
+
+        // Only once the other wall holds the runner is this wall's run certainly still queued when it is cancelled.
+        await otherWallBlocking.Task.WaitAsync(TimeSpan.FromSeconds(30));
         await service.StartAsync(f.WallId);
 
         var view = await service.CancelAsync(f.WallId);
