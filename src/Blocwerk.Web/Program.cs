@@ -13,6 +13,7 @@ using Blocwerk.HoldDetection;
 using Blocwerk.Web.Components;
 using Blocwerk.Web.Controllers;
 using Blocwerk.Web.Endpoints;
+using Blocwerk.Web.Endpoints.Feed;
 using Blocwerk.Web.HealthChecks;
 using Blocwerk.Web.Maintenance;
 using Blocwerk.Web.State;
@@ -271,6 +272,10 @@ public static class Program
         // app keeps ONE OnRejected that dispatches per policy (a second AddRateLimiter would overwrite it).
         builder.Services.AddRunnerRateLimit();
 
+        // The feed's catch-up and stream routes (PR 1.6): their open-stream caps and their per-address rate limit, also
+        // through RateLimitPolicies.
+        builder.Services.AddFeedStream();
+
         // Health checks: "busy" (Degraded while editing, not Unhealthy) gates deploys; "database"
         // probes PostgreSQL. Both are surfaced anonymously via MapHealthChecks below.
         builder.Services.AddHealthChecks()
@@ -413,6 +418,9 @@ public static class Program
 
         // Their manifest per wall and the device's cache partition (design §6.4, §6.6).
         app.MapAssetManifest();
+
+        // The live feed over HTTP: a wall's catch-up pages and event stream, and the caller's own rows (/api/me/changes).
+        app.MapFeed();
 
         // Device reports of the photo-real view (start, level steps, lost contexts), logged only.
         app.MapPhotoRealDiagnostics();

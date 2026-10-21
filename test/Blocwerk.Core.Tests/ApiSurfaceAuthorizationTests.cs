@@ -4,10 +4,12 @@ using Blocwerk.Core.Data;
 using Blocwerk.Core.Services;
 using Blocwerk.Web.Controllers;
 using Blocwerk.Web.Endpoints;
+using Blocwerk.Web.Endpoints.Feed;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Controllers;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -108,6 +110,9 @@ public class ApiSurfaceAuthorizationTests
         Assert.Contains("/api/walls/{wallId:guid}/a/{sha}/{width:int}", routes);
         Assert.Contains("/api/walls/{wallId:guid}/manifest", routes);
         Assert.Contains("/api/walls/{wallId:guid}/d/{kind}/{sha}", routes);
+
+        Assert.Contains(FeedEndpoints.WallChangesRoute, routes);
+        Assert.Contains(FeedEndpoints.StreamRoute, routes);
         Assert.Contains("/api/v1/me/sessions", routes);
         Assert.Contains("/api/captures/{captureId:guid}/video", routes);
         Assert.Contains("/api/refreshes/{refreshId:guid}/files", routes);
@@ -178,6 +183,36 @@ public class ApiSurfaceAuthorizationTests
             // either locks out share links or lets a leaked key walk other walls.
             Assert.Equal(BlocwerkPolicies.WallGalleryImage, authorize!.Policy);
         }
+    }
+
+    /// <summary>
+    /// The feed's wall routes (catch-up and stream) serve every kind of a wall's changes, so they take the wall media's
+    /// posture: the gallery-image policy (a person, a share token or the wall's kiosk) AND an API-key rejection, never a
+    /// key's owner's membership. <c>/api/me/changes</c> lies outside the API-key surface, so a key authenticates nobody
+    /// there, and it requires a signed-in human. All three are rate limited.
+    /// </summary>
+    [Fact]
+    public void TheFeedRoutes_AreGuarded_AndRateLimited()
+    {
+        var endpoints = AllEndpoints();
+        foreach (var route in new[] { FeedEndpoints.WallChangesRoute, FeedEndpoints.StreamRoute })
+        {
+            var endpoint = Assert.Single(endpoints.Where(e => e.RoutePattern.RawText == route));
+            Assert.True(ApiKeySurface.Covers(ToPath(route)));
+            Assert.Equal(BlocwerkPolicies.WallGalleryImage, endpoint.Metadata.GetMetadata<IAuthorizeData>()?.Policy);
+            Assert.NotNull(endpoint.Metadata.GetMetadata<DeniesApiKeyPrincipals>());
+            Assert.Equal(FeedEndpoints.RateLimitPolicy, endpoint.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName);
+        }
+
+        var self = Assert.Single(endpoints.Where(e => e.RoutePattern.RawText == FeedEndpoints.SelfChangesRoute));
+        Assert.False(ApiKeySurface.Covers(ToPath(FeedEndpoints.SelfChangesRoute)));
+        Assert.NotNull(self.Metadata.GetMetadata<IAuthorizeData>());
+        Assert.Null(self.Metadata.GetMetadata<IAuthorizeData>()!.Policy); // the default policy: a signed-in human
+        Assert.Equal(FeedEndpoints.RateLimitPolicy, self.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName);
+
+        // The stream holds its request open on purpose; the slow-request log must leave it out.
+        Assert.NotNull(Assert.Single(endpoints.Where(e => e.RoutePattern.RawText == FeedEndpoints.StreamRoute))
+            .Metadata.GetMetadata<Blocwerk.Web.LongPollEndpoint>());
     }
 
     /// <summary>
@@ -289,6 +324,9 @@ public class ApiSurfaceAuthorizationTests
 
         // Their manifest sits under /api/walls too; the partition route under /api/me, outside the prefixes.
         app.MapAssetManifest();
+
+        // The live feed's catch-up and stream routes sit under /api/walls too (and /api/me/changes beside them).
+        app.MapFeed();
 
         // The capture video upload sits under /api/captures, an API-key prefix for personal keys.
         app.MapCaptureVideoUpload();
