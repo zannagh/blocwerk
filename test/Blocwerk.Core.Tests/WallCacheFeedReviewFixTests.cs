@@ -6,7 +6,7 @@ using Blocwerk.Contracts.Feed.Payloads;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Feed;
-using Blocwerk.Core.Services;
+using Blocwerk.Web.State;
 using Blocwerk.Web.State.Feed;
 
 namespace Blocwerk.Core.Tests;
@@ -36,7 +36,7 @@ public sealed class WallCacheFeedReviewFixTests
 
         var again = new TaskCompletionSource<CacheLoad<Boulder?>>();
         _ = store.Boulders.GetOrLoad(boulderId, () => again.Task);
-        Assert.True(store.EvictWall(wallId)); // the DomainChange path too
+        Assert.True(store.EvictWall(wallId)); // the own-write path too
         Assert.False(store.Boulders.Keys.Any());
     }
 
@@ -70,11 +70,11 @@ public sealed class WallCacheFeedReviewFixTests
         });
 
         await f.DeliverAsync(f.Row(FeedKinds.WallUpdated, f.WallId, new WallPayload(0, false)));
-        Assert.DoesNotContain(f.Changes, c => c.Scope == DomainChangeScope.Boulder);
+        Assert.DoesNotContain(f.Changes, c => c.Scope == WallCacheChangeScope.Boulder);
         gate.SetResult();
         await loading;
 
-        await CircuitCacheFixture.WaitUntilAsync(() => f.Changes.Any(c => c.Scope == DomainChangeScope.Boulder && c.BoulderId == boulder.Id));
+        await CircuitCacheFixture.WaitUntilAsync(() => f.Changes.Any(c => c.Scope == WallCacheChangeScope.Boulder && c.BoulderId == boulder.Id));
     }
 
     [Fact]
@@ -223,7 +223,10 @@ public sealed class WallCacheFeedReviewFixTests
         Assert.Null(await f.Link.EnsureAsync(f.WallId));
         Assert.Equal(before + 1, f.Fake.Resolved);
 
-        f.Notifier.Publish(new DomainChange(DomainChangeScope.WallList, Guid.Empty, Guid.Empty));
+        f.Commits.Publish([new WallChange
+        {
+            WallId = f.WallId, Kind = FeedKinds.WallsChanged, EntityId = f.WallId, Audience = FeedAudience.User, AudienceUserId = Guid.NewGuid(),
+        }]);
         f.Fake.Viewer = FeedViewer.Member(f.Harness.Owner.Id);
         Assert.NotNull(await f.Link.EnsureAsync(f.WallId));
     }

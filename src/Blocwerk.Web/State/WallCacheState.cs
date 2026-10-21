@@ -1,6 +1,7 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using Blocwerk.Contracts.Feed;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Feed;
 using Blocwerk.Core.Services;
@@ -13,52 +14,51 @@ namespace Blocwerk.Web.State;
 /// Blazor circuit and is never shared between users. Without it every navigation rebuilds a <c>DbContext</c> and re-runs
 /// the wall/boulder queries; with it a revisit is served from memory.
 /// <para>
-/// <b>Coherence, two paths side by side.</b>
+/// <b>Coherence, two paths over the same feed rows.</b>
 /// <list type="bullet">
-/// <item><description>The live feed (<see cref="WallFeedLink"/>, design §5.5): every wall with a cached entry is subscribed
-/// to the hub, and each event evicts only what it touches (<see cref="WallFeedEviction"/>). Every load is tagged with its
-/// <c>CursorAtLoad</c>, so an event the load already reflects evicts nothing. The feed also handles access: a removed
-/// member leaves the wall (<see cref="AccessLost"/>), a demoted or promoted one resubscribes.</description></item>
-/// <item><description><see cref="IDomainChangeNotifier"/>: synchronous, in-process, coarse. It stays until PR 1.8 because
-/// it is the circuit's read-your-own-writes path: a page that saves and reloads straight away needs the eviction to
-/// happen inside the save, which a feed delivery (after the commit, on the hub's loop) cannot promise. It is also the only
-/// signal for the wall list.</description></item>
+/// <item><description>Own writes, synchronously (<see cref="FeedCommits"/>): every commit of this process evicts here
+/// before the save (or the JS→API request) returns, so a page that saves and reloads straight away reads fresh data. The
+/// eviction is unconditional, and it also keeps the wall list (<see cref="WallListCache"/>) and the kept "no access"
+/// answers current.</description></item>
+/// <item><description>The live feed (<see cref="WallFeedLink"/>, design §5.5): every wall with a cached entry is
+/// subscribed to the hub, and each event evicts only what it touches (<see cref="WallFeedEviction"/>). Every load is
+/// tagged with its <c>CursorAtLoad</c>, so an event the load already reflects (a delivery of a commit the first path
+/// already evicted for) evicts nothing. The feed also handles access: a removed member leaves the wall
+/// (<see cref="AccessLost"/>), a demoted or promoted one resubscribes.</description></item>
 /// </list>
 /// </para>
 /// <para>
-/// <see cref="Changed"/> is raised for a domain change, and for a feed event only when it actually evicted something, so
-/// the event of a change the page already reloaded for costs no second reload.
+/// <see cref="Changed"/> is raised only when a change actually evicted something, so the event of a change the page
+/// already reloaded for costs no second reload.
 /// </para>
 /// </summary>
 public sealed class WallCacheState : IDisposable
 {
     private readonly IWallService walls;
     private readonly IBoulderService boulders;
-    private readonly IDomainChangeNotifier notifier;
     private readonly WallFeedLink link;
+    private readonly IDisposable commitObservation;
     private readonly WallCacheStore store = new();
     private readonly WallFeedWatches watches = new();
-    private readonly object myWallsGate = new();
-    private Task<List<Wall>>? myWalls;
+    private readonly WallListCache wallList = new();
     private int disposed;
 
-    public WallCacheState(IWallService walls, IBoulderService boulders, IDomainChangeNotifier notifier, WallFeedLink link)
+    public WallCacheState(IWallService walls, IBoulderService boulders, FeedCommits commits, WallFeedLink link)
     {
         this.walls = walls;
         this.boulders = boulders;
-        this.notifier = notifier;
         this.link = link;
-        notifier.Changed += OnDomainChanged;
+        commitObservation = commits.Observe(OnCommitted);
         link.Delivered += OnDelivered;
         link.ViewerChanged += OnViewerChanged;
         link.AccessLost += OnAccessLost;
     }
 
     /// <summary>
-    /// Raised (on the publishing thread, or the feed hub's loop) after a change evicts cache entries. Components filter by
-    /// the ids they show and marshal a reload via <c>InvokeAsync</c>, never awaited.
+    /// Raised (on the writer's thread for an own write, on the feed hub's loop for a delivery) after a change evicted cache
+    /// entries. Components filter by the ids they show and marshal a reload via <c>InvokeAsync</c>, never awaited.
     /// </summary>
-    public event Action<DomainChange>? Changed;
+    public event Action<WallCacheChange>? Changed;
 
     /// <summary>Raised (off the circuit's dispatcher) when the circuit lost its access to a wall: leave it.</summary>
     public event Action<Guid>? AccessLost;
@@ -97,13 +97,7 @@ public sealed class WallCacheState : IDisposable
     /// <summary>Keeps the wall's subscription while a live list follows it, even when nothing of it is cached.</summary>
     public IDisposable Watch(Guid wallId) => watches.Watch(wallId);
 
-    public Task<List<Wall>> GetMyWallsAsync()
-    {
-        lock (myWallsGate)
-        {
-            return myWalls ??= LoadMyWalls();
-        }
-    }
+    public Task<List<Wall>> GetMyWallsAsync() => wallList.GetAsync(walls.GetMyWallsAsync);
 
     /// <summary>
     /// Follows the page on screen (base-relative path): the wall of a member page is subscribed and pinned, so a removal
@@ -123,7 +117,7 @@ public sealed class WallCacheState : IDisposable
             return;
         }
 
-        notifier.Changed -= OnDomainChanged;
+        commitObservation.Dispose();
         link.Delivered -= OnDelivered;
         link.ViewerChanged -= OnViewerChanged;
         link.AccessLost -= OnAccessLost;
@@ -163,56 +157,29 @@ public sealed class WallCacheState : IDisposable
         return new CacheLoad<T>(await load(), at);
     }
 
-    private async Task<List<Wall>> LoadMyWalls()
+    // On the writer's thread, right after the commit: evict, raise, return. Never await here. The envelopes carry
+    // FeedCommit.Cursor, so every cached entry they touch goes; access changes are left to the audience-filtered feed.
+    private void OnCommitted(FeedCommit commit)
     {
-        try
+        if (Volatile.Read(ref disposed) == 1)
         {
-            return await walls.GetMyWallsAsync();
-        }
-        catch
-        {
-            // Don't cache a failed load — drop it so the next call retries.
-            ForgetMyWalls();
-            throw;
-        }
-    }
-
-    private void ForgetMyWalls()
-    {
-        lock (myWallsGate)
-        {
-            myWalls = null;
-        }
-    }
-
-    private void OnDomainChanged(DomainChange change)
-    {
-        switch (change.Scope)
-        {
-            case DomainChangeScope.WallList:
-                ForgetMyWalls();
-                link.ForgetDenied(); // a wall the user joined may now be subscribed to
-                break;
-
-            case DomainChangeScope.Wall:
-                store.EvictWall(change.WallId);
-                break;
-
-            case DomainChangeScope.Boulder:
-                // Evict the boulder, then its wall aggregate — falling back to the boulder's own cached WallId when the
-                // change didn't carry one (see the interceptor's BoulderHold case).
-                var wallId = change.WallId;
-                if (store.Boulders.TryPeek(change.BoulderId, out var cached) && wallId == Guid.Empty)
-                {
-                    wallId = cached.Value?.WallId ?? Guid.Empty;
-                }
-
-                store.Boulders.Evict(change.BoulderId);
-                store.EvictWall(wallId);
-                break;
+            return;
         }
 
-        Changed?.Invoke(change);
+        foreach (var wall in commit.Events.Where(e => e.WallId is not null).GroupBy(e => e.WallId!.Value))
+        {
+            Evict(wall.Key, wall, resync: false);
+        }
+
+        if (WallListCache.GrantsWalls(commit))
+        {
+            link.ForgetDenied(); // a wall the user joined may now be subscribed to
+        }
+
+        if (wallList.IsStaleAfter(commit) && wallList.Forget())
+        {
+            Changed?.Invoke(WallCacheChange.WallList);
+        }
     }
 
     // On the hub's loop: evict, raise, return. Never await here.
@@ -223,18 +190,24 @@ public sealed class WallCacheState : IDisposable
             return;
         }
 
-        var wall = delivery.Resync && store.EvictWall(delivery.WallId);
+        Evict(delivery.WallId, delivery.Events, delivery.Resync);
+        FeedDelivered?.Invoke(delivery);
+    }
+
+    private void Evict(Guid wallId, IEnumerable<FeedEnvelope> events, bool resync)
+    {
+        var wall = resync && store.EvictWall(wallId);
         var changedBoulders = new HashSet<Guid>();
         var inFlight = new List<Task<Guid?>>();
-        foreach (var e in delivery.Events)
+        foreach (var e in events)
         {
-            var evicted = WallFeedEviction.Apply(store, delivery.WallId, e);
+            var evicted = WallFeedEviction.Apply(store, wallId, e);
             wall |= evicted.Wall;
             changedBoulders.UnionWith(evicted.Boulders);
             inFlight.AddRange(evicted.InFlight);
         }
 
-        RaiseFeedChange(delivery.WallId, wall, changedBoulders);
+        RaiseFeedChange(wallId, wall, changedBoulders);
         if (!wall)
         {
             // Reported once the load tells its wall, and only for this wall.
@@ -242,25 +215,23 @@ public sealed class WallCacheState : IDisposable
             {
                 if (!changedBoulders.Contains(id) && Volatile.Read(ref disposed) == 0)
                 {
-                    Changed?.Invoke(new DomainChange(DomainChangeScope.Boulder, delivery.WallId, id));
+                    Changed?.Invoke(WallCacheChange.OfBoulder(wallId, id));
                 }
             });
         }
-
-        FeedDelivered?.Invoke(delivery);
     }
 
     private void RaiseFeedChange(Guid wallId, bool wall, IEnumerable<Guid> changedBoulders)
     {
         if (wall)
         {
-            Changed?.Invoke(new DomainChange(DomainChangeScope.Wall, wallId, Guid.Empty));
+            Changed?.Invoke(WallCacheChange.OfWall(wallId));
             return;
         }
 
         foreach (var boulderId in changedBoulders)
         {
-            Changed?.Invoke(new DomainChange(DomainChangeScope.Boulder, wallId, boulderId));
+            Changed?.Invoke(WallCacheChange.OfBoulder(wallId, boulderId));
         }
     }
 
@@ -270,7 +241,7 @@ public sealed class WallCacheState : IDisposable
         if (Volatile.Read(ref disposed) == 0)
         {
             store.EvictWall(wallId);
-            Changed?.Invoke(new DomainChange(DomainChangeScope.Wall, wallId, Guid.Empty));
+            Changed?.Invoke(WallCacheChange.OfWall(wallId));
             ViewerChanged?.Invoke(wallId);
         }
     }
@@ -283,9 +254,9 @@ public sealed class WallCacheState : IDisposable
         }
 
         store.EvictWall(wallId);
-        ForgetMyWalls();
-        Changed?.Invoke(new DomainChange(DomainChangeScope.WallList, Guid.Empty, Guid.Empty));
-        Changed?.Invoke(new DomainChange(DomainChangeScope.Wall, wallId, Guid.Empty));
+        wallList.Forget();
+        Changed?.Invoke(WallCacheChange.WallList);
+        Changed?.Invoke(WallCacheChange.OfWall(wallId));
         AccessLost?.Invoke(wallId);
     }
 }

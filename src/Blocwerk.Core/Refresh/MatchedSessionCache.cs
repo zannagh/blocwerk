@@ -32,28 +32,27 @@ public sealed class MatchedSessionCache
     private readonly bool notified;
 
     /// <summary>Initializes a new instance of the <see cref="MatchedSessionCache"/> class.</summary>
-    /// <param name="changes">
-    /// The app's in-process change signal (every saved hold, panel or wall publishes its wall, synchronously at commit).
+    /// <param name="commits">
+    /// The in-process own-write path: every committed feed row of a wall counts as a change of it, synchronously at commit
+    /// (a hold, a panel, a staged photo: <c>panel.staged</c>, a wall).
     /// </param>
     /// <param name="feed">
-    /// The live feed's hub: every wake of a wall (a commit that wrote feed rows for it) also counts as a change. This is the
-    /// signal that stays when the domain-change notifier goes (PR 1.8). With either, the expensive part of a fingerprint
-    /// (every hold of the wall) is read once per change and reused for <see cref="GeometryReuse"/>; with neither, it is read
-    /// on every lookup.
+    /// The live feed's hub: every wake of a wall (a commit that wrote feed rows for it) also counts as a change, shortly
+    /// after the commit. With either, the expensive part of a fingerprint (every hold of the wall) is read once per change
+    /// and reused for <see cref="GeometryReuse"/>; with neither, it is read on every lookup.
     /// </param>
-    public MatchedSessionCache(Services.IDomainChangeNotifier? changes = null, IWallFeedHub? feed = null)
+    public MatchedSessionCache(FeedCommits? commits = null, IWallFeedHub? feed = null)
     {
-        if (changes is not null)
+        // Never disposed: the cache is a singleton beside the observers, so the observations live exactly as long.
+        if (commits is not null)
         {
             notified = true;
-            changes.Changed += change => Bump(change.WallId);
+            _ = commits.Observe(OnCommitted);
         }
 
         if (feed is not null)
         {
             notified = true;
-
-            // Never disposed: the cache is a singleton beside the hub, so the observation lives exactly as long.
             _ = feed.ObserveWakes(Bump);
         }
     }
@@ -114,6 +113,14 @@ public sealed class MatchedSessionCache
     }
 
     private void Bump(Guid wallId) => versions.AddOrUpdate(wallId, 1, (_, v) => v + 1);
+
+    private void OnCommitted(FeedCommit commit)
+    {
+        foreach (var wallId in commit.Rows.Where(r => r.WallId is not null).Select(r => r.WallId!.Value).Distinct())
+        {
+            Bump(wallId);
+        }
+    }
 
     /// <summary>The panels and holds part, reused while the wall published no change (and briefly, as a safety net).</summary>
     private async Task<string> GeometryAsync(BlocwerkDbContext db, Guid wallId)

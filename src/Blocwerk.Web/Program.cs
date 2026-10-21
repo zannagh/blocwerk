@@ -184,8 +184,8 @@ public static class Program
         builder.Services.AddScoped<SessionState>();
 
         // Per-circuit cache of wall/boulder aggregate reads, so revisits are served from memory and edits
-        // live-refresh. Invalidated by the live feed (scoped per event, through the circuit's hub
-        // subscriptions) and, until PR 1.8, by the in-process domain-change notifier.
+        // live-refresh. Invalidated by the live feed: synchronously by this process's own commits
+        // (FeedCommits), and scoped per event through the circuit's hub subscriptions.
         builder.Services.AddScoped<ICircuitFeedViewer, CircuitFeedViewer>();
         builder.Services.AddScoped<WallFeedLink>();
         builder.Services.AddScoped<WallCacheState>();

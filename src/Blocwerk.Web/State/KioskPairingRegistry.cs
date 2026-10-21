@@ -92,11 +92,10 @@ public sealed class KioskPairingRegistry
     /// (on some other circuit, maybe on another device entirely) approved it.
     /// </summary>
     /// <remarks>
-    /// Same shape and same defensiveness as <c>DomainChangeNotifier</c>: invoked over
-    /// <c>GetInvocationList</c> with exceptions swallowed, because one stale circuit's handler
-    /// throwing must not fail the admin's approval or starve the tablet that is actually waiting.
-    /// Not <c>IDomainChangeNotifier</c> itself — that carries a fixed EF-shaped payload and this is
-    /// not a database change.
+    /// Invoked over <c>GetInvocationList</c> with exceptions swallowed, because one stale circuit's
+    /// handler throwing must not fail the admin's approval or starve the tablet that is actually
+    /// waiting. Not a feed kind (<c>FeedCommits</c>): a pairing lives in memory, it is not a database
+    /// change.
     /// </remarks>
     public event Action<Guid>? Changed;
 

@@ -93,8 +93,8 @@ public static class FeedBulkWrite
         FeedAudienceScope.Apply(list);
         try
         {
-            var wakes = await FeedLookupSavepoint.RunAsync(db, () => InsertAsync(db, list), CancellationToken.None);
-            FeedInterceptor.Of(db)?.HoldOrWake(db, wakes);
+            await FeedLookupSavepoint.RunAsync(db, () => InsertAsync(db, list), CancellationToken.None);
+            FeedInterceptor.Of(db)?.HoldOrWake(db, list);
         }
         catch (Exception ex)
         {
@@ -131,18 +131,15 @@ public static class FeedBulkWrite
         }
     }
 
-    private static async Task<List<FeedWake>> InsertAsync(BlocwerkDbContext db, IReadOnlyList<WallChange> rows)
+    // The rows learn their transaction id (Postgres) for the wakes; their Seq stays unknown, which nothing after the
+    // insert reads (the own-write observers evict unconditionally).
+    private static async Task<bool> InsertAsync(BlocwerkDbContext db, IReadOnlyList<WallChange> rows)
     {
-        var wakes = new List<FeedWake>();
         foreach (var row in rows)
         {
-            var txId = await WallChangeInsert.ExecuteAsync(db, row, CancellationToken.None);
-            if (row.WallId is { } wallId)
-            {
-                wakes.Add(new FeedWake(wallId, txId));
-            }
+            row.TxId = await WallChangeInsert.ExecuteAsync(db, row, CancellationToken.None);
         }
 
-        return wakes;
+        return true;
     }
 }

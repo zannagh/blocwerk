@@ -6,7 +6,7 @@ using Blocwerk.Contracts.Feed.Payloads;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Feed;
-using Blocwerk.Core.Services;
+using Blocwerk.Web.State;
 
 namespace Blocwerk.Core.Tests;
 
@@ -38,7 +38,7 @@ public sealed class WallCacheFeedEvictionTests : IAsyncLifetime
         Assert.False(f.Store.Walls.TryPeek(f.WallId, out _));
         Assert.Equal([(f.WallId, 1)], f.Store.HoldSets.Keys);
         Assert.Equal([second.Id], f.Store.Boulders.Keys);
-        Assert.Contains(f.Changes, c => c is { Scope: DomainChangeScope.Wall } && c.WallId == f.WallId);
+        Assert.Contains(f.Changes, c => c is { Scope: WallCacheChangeScope.Wall } && c.WallId == f.WallId);
     }
 
     [Fact]

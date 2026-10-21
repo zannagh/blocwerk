@@ -80,7 +80,7 @@ public sealed partial class WallFeedLink(IWallFeedHub hub, IWallFeed feed, ICirc
             catch (Exception ex)
             {
                 slots.TryRemove(new KeyValuePair<Guid, Task<WallFeedSlot?>>(wallId, task));
-                logger.LogWarning(ex, "Could not subscribe to the feed of wall {WallId}; its cache relies on the domain-change path", wallId);
+                logger.LogWarning(ex, "Could not subscribe to the feed of wall {WallId}; its cache relies on this process's own commits only", wallId);
                 return null;
             }
 

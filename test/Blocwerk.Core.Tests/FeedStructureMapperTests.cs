@@ -33,7 +33,7 @@ public sealed class FeedStructureMapperTests
     }
 
     [Fact]
-    public async Task AStagedPhotoOnlySave_OfTheWallOrAPanel_WritesNothing()
+    public async Task AStagedPhotoOnlySave_OfTheWallOrAPanel_WritesOnlyPanelStaged_ForTheEditors()
     {
         using var harness = new WallTestHarness();
         await harness.SeedWallAsync(holdCount: 0);
@@ -43,16 +43,21 @@ public sealed class FeedStructureMapperTests
             await seed.SaveChangesAsync();
         }
 
+        Guid panelId;
         await using (var db = Context(harness))
         {
             var wall = await db.Walls.SingleAsync();
             (wall.StagedPhoto, wall.StagedAt) = ([9], DateTimeOffset.UtcNow);
             wall.LinkedHoldSyncVersion = 4;
-            (await db.WallPanels.SingleAsync()).StagedPhoto = [9];
+            var panel = await db.WallPanels.SingleAsync();
+            (panel.StagedPhoto, panelId) = ([9], panel.Id);
             await db.SaveChangesAsync();
         }
 
-        Assert.Empty(await RowsAsync(harness));
+        // Nothing a viewer sees; the editors hear of the panel (the matched-session cache reads its staged photo).
+        var row = Assert.Single(await RowsAsync(harness));
+        Assert.Equal((FeedKinds.PanelStaged, FeedAudience.Setters, panelId), (row.Kind, row.Audience, row.EntityId!.Value));
+        Assert.True(Payload(row).TryGetProperty("generation", out _));
         await using var read = harness.CreateContext();
         Assert.NotNull((await read.Walls.SingleAsync()).StagedPhotoSha256); // the hash stamp ran in that save
         Assert.NotNull((await read.WallPanels.SingleAsync()).StagedPhotoSha256);
@@ -79,10 +84,13 @@ public sealed class FeedStructureMapperTests
         }
 
         var rows = await RowsAsync(harness);
-        Assert.Equal([FeedKinds.MemberChanged, FeedKinds.MemberChanged, FeedKinds.AccessRevoked], rows.Select(r => r.Kind));
-        Assert.All(rows.Take(2), r => Assert.Equal((FeedAudience.Members, user.Id), (r.Audience, r.EntityId)));
+        Assert.Equal([FeedKinds.MemberChanged, FeedKinds.WallsChanged, FeedKinds.MemberChanged, FeedKinds.AccessRevoked], rows.Select(r => r.Kind));
+        Assert.All(new[] { rows[0], rows[2] }, r => Assert.Equal((FeedAudience.Members, user.Id), (r.Audience, r.EntityId)));
         Assert.Equal("Moderator", Payload(rows[0]).GetProperty("role").GetString());
-        var revoked = rows[2];
+        var joined = rows[1]; // addressed to the new member alone: their wall list reloads
+        Assert.Equal((FeedAudience.User, user.Id, harness.WallId, harness.WallId), (joined.Audience, joined.AudienceUserId, joined.WallId, joined.EntityId));
+        Assert.Null(joined.DataJson);
+        var revoked = rows[3];
         Assert.Equal((FeedAudience.User, user.Id, harness.WallId, harness.WallId), (revoked.Audience, revoked.AudienceUserId, revoked.WallId, revoked.EntityId));
         Assert.Null(revoked.DataJson);
     }

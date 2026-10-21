@@ -30,6 +30,21 @@ public static class FeedEnvelopes
         };
     }
 
+    /// <summary>
+    /// The envelope of a row just committed in this process (<see cref="FeedCommit"/>): ids, kind and payload only, with
+    /// <see cref="FeedCommit.Cursor"/>. Never delivered to a client.
+    /// </summary>
+    public static FeedEnvelope Committed(WallChange row) => new()
+    {
+        Cursor = FeedCommit.Cursor.ToString(),
+        WallId = row.WallId,
+        BoulderId = row.BoulderId,
+        Kind = row.Kind,
+        EntityId = row.EntityId,
+        At = row.CreatedAt,
+        Data = Parse(row.DataJson),
+    };
+
     // A payload that does not parse is delivered without data (the client reloads by id) instead of stalling the wall's
     // reads on one bad row.
     private static JsonElement? Parse(string? json)

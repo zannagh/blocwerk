@@ -81,7 +81,7 @@ public sealed class FeedSavePathTimingTests
     {
         var journal = new ChangeJournal(() => TestDb.Create(cs));
         IInterceptor[] interceptors =
-            [new DomainChangeInterceptor(new DomainChangeNotifier()), new ChangeJournalInterceptor(journal), .. extra];
+            [new ChangeJournalInterceptor(journal), .. extra];
         return new WallService(new InterceptedDbContextFactory(cs, interceptors), harness.CurrentUser, harness.HoldDetection, harness.ActivityLog, NullLogger<WallService>.Instance);
     }
 }

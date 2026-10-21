@@ -4,6 +4,7 @@
 using Blocwerk.Contracts.Feed;
 using Blocwerk.Contracts.Feed.Payloads;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Enums;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace Blocwerk.Core.Feed.Structure;
@@ -13,7 +14,8 @@ namespace Blocwerk.Core.Feed.Structure;
 /// <c>link.changed</c> and <c>volume.changed</c>, for an added, changed or deleted row alike. Only a panel is
 /// generation-scoped, so only a panel's row carries <c>{ generation }</c>. A segment applies to every generation, a link
 /// joins holds of two panels whose generations differ, and a volume belongs to a geometry model, so their payload is null.
-/// A panel save that only touches its staged photo writes nothing, as for the wall.
+/// A panel save that only touches its staged photo writes <c>panel.staged</c> for the editors instead: no viewer sees the
+/// staged photo, but the update procedure's matched-session cache reads it and must hear about the change.
 /// </summary>
 internal sealed class WallPartFeedMapper : IFeedMapper
 {
@@ -32,9 +34,11 @@ internal sealed class WallPartFeedMapper : IFeedMapper
             case WallSegment segment:
                 context.Add(StructureRows.Wall(FeedKinds.SegmentChanged, segment.WallId, segment.Id, null));
                 break;
-            case WallPanel panel when !FeedEntryValues.OnlyModified(entry, UnseenPanel):
-                var generation = FeedEntryValues.Value<int>(entry, nameof(WallPanel.Generation));
-                context.Add(StructureRows.Wall(FeedKinds.PanelChanged, panel.WallId, panel.Id, new GenerationPayload(generation)));
+            case WallPanel panel:
+                var generation = new GenerationPayload(FeedEntryValues.Value<int>(entry, nameof(WallPanel.Generation)));
+                context.Add(FeedEntryValues.OnlyModified(entry, UnseenPanel)
+                    ? StructureRows.Row(FeedKinds.PanelStaged, panel.WallId, panel.Id, FeedAudience.Setters, generation)
+                    : StructureRows.Wall(FeedKinds.PanelChanged, panel.WallId, panel.Id, generation));
                 break;
             case HoldLink link:
                 context.Add(StructureRows.Wall(FeedKinds.LinkChanged, link.WallId, link.Id, null));
