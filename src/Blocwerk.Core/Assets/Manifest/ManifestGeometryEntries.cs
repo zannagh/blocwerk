@@ -11,7 +11,7 @@ namespace Blocwerk.Core.Assets.Manifest;
 
 /// <summary>
 /// The 3D kinds of a manifest, of the wall's active geometry model only (what the 3D view draws): facet textures and
-/// masks (<c>view3d</c>), and the splat levels the viewer offers (<c>optin</c>). A file whose stored name escapes the
+/// masks, and the splat levels the viewer offers, all in the opt-out-able <c>view3d</c> tier. A file whose stored name escapes the
 /// capture store is left out, as the resolver refuses it.
 /// </summary>
 internal static class ManifestGeometryEntries
@@ -64,7 +64,7 @@ internal static class ManifestGeometryEntries
 
         levels.Add((splat.StoredPath, splat.SizeBytes, splat.Sha256, splat.SplatCount ?? 0));
         return levels.Where(l => files.ResolvePhysicalPath(l.StoredPath) is not null)
-            .Select(l => File(ManifestAssetKinds.Splat, splat.Id, l.Sha, SplatType, l.SizeBytes, ManifestTiers.Optin) with { Splats = l.Splats })
+            .Select(l => File(ManifestAssetKinds.Splat, splat.Id, l.Sha, SplatType, l.SizeBytes, ManifestTiers.View3d) with { Splats = l.Splats })
             .ToList();
     }
 

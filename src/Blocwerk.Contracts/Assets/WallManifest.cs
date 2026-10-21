@@ -17,8 +17,10 @@ namespace Blocwerk.Contracts.Assets;
 /// <param name="Cursor">The feed cursor the manifest was read at; every change at or below it is reflected.</param>
 /// <param name="Generation">The wall's current generation.</param>
 /// <param name="Pending">How many listed assets have no hash yet (<c>sha: null</c>): network-only until hashed.</param>
-/// <param name="Budget">The client's fill budget for one wall (design §6.8).</param>
-/// <param name="Totals">The listed bytes per tier.</param>
+/// <param name="Totals">
+/// The listed bytes per tier: the per-wall figures a client orders its fill and picks evictions by. No wall is left out
+/// of the cache for its size; wall data is always cached (decided 2026-10-21).
+/// </param>
 /// <param name="Assets">The assets, ordered by tier, kind and id; one entry per distinct sha.</param>
 public sealed record WallManifest(
     int V,
@@ -27,6 +29,5 @@ public sealed record WallManifest(
     string? Cursor,
     int Generation,
     int Pending,
-    ManifestBudget Budget,
     ManifestTotals Totals,
     IReadOnlyList<ManifestAsset> Assets);

@@ -52,6 +52,15 @@ public class ManifestPostgresTests
         await f.AddFeedRowAsync(FeedKinds.CommentAdded);
         Assert.Equal(first.Sha, (await f.GetAsync())!.Sha);
         await f.AddFeedRowAsync(FeedKinds.WallManifest);
+
+        // The horizon is cluster-wide: another test database's open transaction can hold the new row above it for a
+        // while, and until it drops below, the cache rightly keeps its entry.
+        var deadline = DateTime.UtcNow.AddSeconds(60);
+        while ((await f.GetAsync())!.Pending == 0 && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(100);
+        }
+
         Assert.Equal(1, (await f.GetAsync())!.Pending);
     }
 

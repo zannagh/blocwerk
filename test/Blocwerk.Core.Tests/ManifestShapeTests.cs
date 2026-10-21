@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Tests;
 
-/// <summary>The manifest's shape (design §6.4): tiers, sizes, budget, the wall hash, null shas and de-duplication.</summary>
+/// <summary>The manifest's shape (design §6.4): tiers, sizes, the wall hash, null shas and de-duplication.</summary>
 public class ManifestShapeTests
 {
     [Fact]
@@ -32,14 +32,13 @@ public class ManifestShapeTests
         Assert.Equal(ManifestTiers.View3d, Tier(m, s.Texture));
         Assert.Equal("F1", Assert.Single(m.Assets, a => a.Sha == s.Mask).Facet);
         Assert.Equal([0, 40_000], m.Assets.Where(a => a.Kind == ManifestAssetKinds.Splat).Select(a => a.Splats!.Value));
-        Assert.All(m.Assets.Where(a => a.Kind == ManifestAssetKinds.Splat), a => Assert.Equal(ManifestTiers.Optin, a.Tier));
+        Assert.All(m.Assets.Where(a => a.Kind == ManifestAssetKinds.Splat), a => Assert.Equal(ManifestTiers.View3d, a.Tier));
         Assert.Null(Assert.Single(m.Assets, a => a.Sha == s.Texture).Widths);
 
-        Assert.Equal(new ManifestBudget(60L * 1024 * 1024, 5), m.Budget);
         Assert.Equal(f.Assets.PanelBytes.Length, m.Totals.Core);
         Assert.Equal(3 + 3 + 4 + 3 + 3, m.Totals.Lazy);
-        Assert.Equal(2 + 2, m.Totals.View3d);
-        Assert.Equal(4 + 2, m.Totals.Optin);
+        Assert.Equal(2 + 2 + 4 + 2, m.Totals.View3d);
+        Assert.Equal([ManifestTiers.Core, ManifestTiers.Lazy, ManifestTiers.View3d], m.Assets.Select(a => a.Tier).Distinct());
         Assert.Equal((1, 0), (m.V, m.Pending));
     }
 
@@ -57,13 +56,12 @@ public class ManifestShapeTests
         using var doc = JsonDocument.Parse(((MemoryStream)http.Response.Body).ToArray());
         var root = doc.RootElement;
 
-        foreach (var name in new[] { "v", "wallId", "sha", "cursor", "generation", "pending", "budget", "totals", "assets" })
+        foreach (var name in new[] { "v", "wallId", "sha", "cursor", "generation", "pending", "totals", "assets" })
         {
             Assert.True(root.TryGetProperty(name, out _), $"missing {name}");
         }
 
-        Assert.Equal(60L * 1024 * 1024, root.GetProperty("budget").GetProperty("wallCoreBytes").GetInt64());
-        Assert.Equal(5, root.GetProperty("budget").GetProperty("walls").GetInt32());
+        Assert.False(root.TryGetProperty("budget", out _), "no wall-level budget: wall data is always cached");
         Assert.True(root.GetProperty("totals").TryGetProperty("view3d", out _));
         Assert.Equal(1, root.GetProperty("pending").GetInt32());
         Assert.All(root.GetProperty("assets").EnumerateArray(), a => Assert.True(a.TryGetProperty("sha", out _)));

@@ -14,7 +14,7 @@ namespace Blocwerk.Core.Assets.Manifest;
 /// </summary>
 public static class ManifestAssembly
 {
-    private static readonly string[] TierOrder = [ManifestTiers.Core, ManifestTiers.Lazy, ManifestTiers.View3d, ManifestTiers.Optin];
+    private static readonly string[] TierOrder = [ManifestTiers.Core, ManifestTiers.Lazy, ManifestTiers.View3d];
 
     /// <summary>The manifest of <paramref name="entries"/>, with its wall hash and without a cursor.</summary>
     public static WallManifest Assemble(Guid wallId, int generation, IEnumerable<ManifestAsset> entries)
@@ -27,7 +27,6 @@ public static class ManifestAssembly
             Cursor: null,
             generation,
             assets.Count(a => a.Sha is null),
-            ManifestBudget.Default,
             Totals(assets),
             assets);
         return manifest with { Sha = WallHash(manifest) };
@@ -65,6 +64,6 @@ public static class ManifestAssembly
     private static ManifestTotals Totals(IReadOnlyList<ManifestAsset> assets)
     {
         long Sum(string tier) => assets.Where(a => a.Tier == tier).Sum(a => a.Bytes);
-        return new ManifestTotals(Sum(ManifestTiers.Core), Sum(ManifestTiers.Lazy), Sum(ManifestTiers.View3d), Sum(ManifestTiers.Optin));
+        return new ManifestTotals(Sum(ManifestTiers.Core), Sum(ManifestTiers.Lazy), Sum(ManifestTiers.View3d));
     }
 }

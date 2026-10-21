@@ -19,6 +19,7 @@ public static class ManifestServices
         services.AddSingleton<WallManifestCache>();
         services.AddSingleton<WallManifestBuilder>();
         services.AddScoped<WallManifestService>();
+        services.AddScoped<CacheSummaryService>();
         services.AddScoped<ICachePartitionResolver, CachePartitionResolver>();
         return services;
     }

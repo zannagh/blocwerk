@@ -31,7 +31,7 @@ public static class ManifestFreshness
         FeedKinds.MemberChanged, FeedKinds.AccessRevoked, FeedKinds.SegmentChanged, FeedKinds.LinkChanged, FeedKinds.VolumeChanged,
         FeedKinds.HoldChanged, FeedKinds.HoldDeleted, FeedKinds.BoulderStats, FeedKinds.CommentAdded, FeedKinds.CommentDeleted,
         FeedKinds.ActivityAdded, FeedKinds.FavoriteChanged, FeedKinds.RatingMine, FeedKinds.TickMine, FeedKinds.UserProfile,
-        FeedKinds.TicksResync,
+        FeedKinds.TicksResync, FeedKinds.UserResync,
     };
 
     /// <summary>The cursor the entry may move up to when it still holds, or null when it must be rebuilt.</summary>

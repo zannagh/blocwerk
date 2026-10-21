@@ -13,7 +13,8 @@ using Microsoft.Net.Http.Headers;
 namespace Blocwerk.Web.Endpoints;
 
 /// <summary>
-/// The asset cache's two control routes (design §6.3): a wall's manifest, and the caller's cache partition.
+/// The asset cache's control routes (design §6.3): a wall's manifest, the caller's cache partition, and the caller's
+/// cache summary (the count behind the high-storage banner).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -23,8 +24,8 @@ namespace Blocwerk.Web.Endpoints;
 /// client revalidates every time and an unchanged wall costs a 304.
 /// </para>
 /// <para>
-/// The partition route answers anyone (an anonymous caller is <c>anon</c>) and is never stored by any cache. It sits
-/// outside the API-key prefixes, so a bearer presented there resolves nobody.
+/// The partition and summary routes answer anyone (an anonymous caller is <c>anon</c> with no 3D walls) and are never
+/// stored by any cache. They sit outside the API-key prefixes, so a bearer presented there resolves nobody.
 /// </para>
 /// </remarks>
 public static class ManifestEndpoints
@@ -35,12 +36,17 @@ public static class ManifestEndpoints
     /// <summary>The caller's cache partition.</summary>
     public const string PartitionRoute = "/api/me/cache-partition";
 
+    /// <summary>What the caller's storage notices need (<see cref="CacheSummaryResponse"/>).</summary>
+    public const string SummaryRoute = "/api/me/cache-summary";
+
     public static void MapAssetManifest(this WebApplication app)
     {
         app.MapGet(ManifestRoute, HandleManifestAsync)
             .RequireAuthorization(BlocwerkPolicies.WallGalleryImage)
             .DenyApiKeyPrincipals();
         app.MapGet(PartitionRoute, HandlePartitionAsync)
+            .AllowAnonymous();
+        app.MapGet(SummaryRoute, HandleSummaryAsync)
             .AllowAnonymous();
     }
 
@@ -72,5 +78,11 @@ public static class ManifestEndpoints
     {
         http.Response.Headers.CacheControl = "no-store";
         return Results.Json(new CachePartitionResponse(await partitions.ResolveAsync()));
+    }
+
+    internal static async Task<IResult> HandleSummaryAsync(HttpContext http, [FromServices] CacheSummaryService summaries, CancellationToken ct)
+    {
+        http.Response.Headers.CacheControl = "no-store";
+        return Results.Json(await summaries.GetAsync(ct));
     }
 }
