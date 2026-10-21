@@ -22,6 +22,8 @@ public sealed record FeedDatabaseIdentity(long DatabaseOid, long? SystemIdentifi
     private const string MayReadControlSql = "SELECT has_function_privilege('pg_control_system()', 'EXECUTE') AS \"Value\"";
     private const string SystemIdentifierSql = "SELECT system_identifier AS \"Value\" FROM pg_control_system()";
 
+    private static int warnedNoSystemIdentifier;
+
     /// <summary>Reads the identity. Call it outside a transaction: a refused <c>pg_control_system()</c> would abort one.</summary>
     public static async Task<FeedDatabaseIdentity> ReadAsync(BlocwerkDbContext db, ILogger logger, CancellationToken cancellationToken)
     {
@@ -41,18 +43,22 @@ public sealed record FeedDatabaseIdentity(long DatabaseOid, long? SystemIdentifi
     {
         try
         {
-            if (!await db.Database.SqlQueryRaw<bool>(MayReadControlSql).SingleAsync(cancellationToken))
+            if (await db.Database.SqlQueryRaw<bool>(MayReadControlSql).SingleAsync(cancellationToken))
             {
-                return null;
+                return await db.Database.SqlQueryRaw<long>(SystemIdentifierSql).SingleAsync(cancellationToken);
             }
-
-            return await db.Database.SqlQueryRaw<long>(SystemIdentifierSql).SingleAsync(cancellationToken);
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.InsufficientPrivilege)
         {
-            // The database oid alone still tells a restore into a new database apart.
-            logger.LogInformation("The feed cannot read pg_control_system(); its restore check uses the database oid alone.");
-            return null;
+            // Falls through to the warning: the database oid alone still tells a restore into a new database apart.
         }
+
+        if (Interlocked.Exchange(ref warnedNoSystemIdentifier, 1) == 0)
+        {
+            logger.LogWarning(
+                "The feed's role may not call pg_control_system(); its restore check uses the database oid alone, so a restore into a new cluster under the same oid would go unnoticed.");
+        }
+
+        return null;
     }
 }

@@ -15,8 +15,6 @@ namespace Blocwerk.Core.Feed;
 /// </summary>
 internal static class WallChangeInsert
 {
-    private const string CurrentTxIdSql = "SELECT pg_current_xact_id()::text::bigint AS \"Value\"";
-
     public static async Task<long?> ExecuteAsync(BlocwerkDbContext db, WallChange row, CancellationToken cancellationToken)
     {
         if (db.Database.CurrentTransaction is null)
@@ -30,8 +28,9 @@ internal static class WallChangeInsert
         var table = StoreObjectIdentifier.Table(entityType.GetTableName()!, entityType.GetSchema());
         var isNpgsql = db.Database.IsNpgsql();
 
-        // Real DbParameters: EF maps a bare value by its CLR type, which a null (DBNull) has none of.
-        await using var factory = db.Database.GetDbConnection().CreateCommand();
+        // Real DbParameters: EF maps a bare value by its CLR type, which a null (DBNull) has none of. The command only
+        // makes them; EF runs the statement.
+        await using var parameterSource = db.Database.GetDbConnection().CreateCommand();
         var columns = new List<string>();
         var placeholders = new List<string>();
         var values = new List<object>();
@@ -39,7 +38,7 @@ internal static class WallChangeInsert
         {
             var property = entityType.FindProperty(name)!;
             var cast = isNpgsql && property.GetColumnType() == "jsonb" ? "::jsonb" : string.Empty;
-            var parameter = factory.CreateParameter();
+            var parameter = parameterSource.CreateParameter();
             parameter.ParameterName = $"feed{values.Count}";
             parameter.Value = ToProvider(property, value) ?? DBNull.Value;
             columns.Add($"\"{property.GetColumnName(table)}\"");
@@ -47,9 +46,13 @@ internal static class WallChangeInsert
             values.Add(parameter);
         }
 
-        var sql = $"INSERT INTO \"{table.Name}\" ({string.Join(", ", columns)}) VALUES ({string.Join(", ", placeholders)})";
-        await db.Database.ExecuteSqlRawAsync(sql, values, cancellationToken);
-        return isNpgsql ? await db.Database.SqlQueryRaw<long>(CurrentTxIdSql).SingleAsync(cancellationToken) : null;
+        var target = table.Schema is null ? $"\"{table.Name}\"" : $"\"{table.Schema}\".\"{table.Name}\"";
+        var txId = $"\"{entityType.FindProperty(nameof(WallChange.TxId))!.GetColumnName(table)}\"";
+        var sql = $"INSERT INTO {target} ({string.Join(", ", columns)}) VALUES ({string.Join(", ", placeholders)}) RETURNING {txId} AS \"Value\"";
+
+        // Not composed (no Single over it), so EF runs the INSERT as written instead of wrapping it in a subquery.
+        var returned = await db.Database.SqlQueryRaw<long?>(sql, values.ToArray()).ToListAsync(cancellationToken);
+        return returned.Single();
     }
 
     private static object? ToProvider(IProperty property, object? value)

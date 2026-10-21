@@ -110,4 +110,39 @@ public sealed class PostgresFeedEpochTests
         Assert.Equal(txId, served.TxId);
         Assert.Contains("\"generation\": 3", served.DataJson);
     }
+
+    [PostgresFact]
+    public async Task ConcurrentInitialize_AgreesOnOneEpoch()
+    {
+        using var pg = PostgresTestDatabase.Create();
+        var feeds = Enumerable.Range(0, 8).Select(_ => new WallFeed(() => pg.CreateContext(), NullLogger<WallFeed>.Instance)).ToList();
+
+        var epochs = await Task.WhenAll(feeds.Select(f => Task.Run(() => f.InitializeAsync())));
+
+        Assert.Single(epochs.Distinct());
+        await using var db = pg.CreateContext();
+        Assert.Equal(1, await db.FeedEpochs.CountAsync());
+    }
+
+    [PostgresFact]
+    public async Task Check_InATransactionWhoseXidPredatesACommittedRow_DoesNotTruncate()
+    {
+        using var pg = PostgresTestDatabase.Create();
+        var kit = new PostgresFeedTestKit(pg);
+        var epoch = await kit.Feed.InitializeAsync();
+
+        // The check's transaction holds an older xid than the row another connection commits before the check runs:
+        // compared with the transaction's own xid, that row would look foreign.
+        await using var db = pg.CreateContext();
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var ownXid = await PostgresFeedTestKit.TakeXidAsync(db);
+        var row = await kit.CommitAsync(kit.Row("newer"));
+        var checkedEpoch = await FeedEpochStore.EnsureAsync(db, NullLogger.Instance, CancellationToken.None);
+        await transaction.CommitAsync();
+
+        Assert.True(row.TxId > ownXid);
+        Assert.Equal(epoch, checkedEpoch.Id);
+        await using var check = pg.CreateContext();
+        Assert.Equal(1, await check.WallChanges.CountAsync());
+    }
 }

@@ -10,17 +10,13 @@ namespace Blocwerk.Core.Feed;
 
 /// <summary>
 /// The <see cref="IWallFeed"/> over a context factory. Each read takes the provider's ceiling first and then reads up to
-/// it on the same connection, so no row is skipped (<see cref="IFeedHorizon"/>). A singleton: it holds no state beyond
+/// it, so no row is skipped (<see cref="IFeedHorizon"/>). A singleton: it holds no state beyond
 /// "the epoch exists".
 /// </summary>
 public sealed class WallFeed : IWallFeed
 {
     /// <summary>The largest page a read returns.</summary>
     public const int MaxLimit = 1000;
-
-    // The feed's read connection only (E2): an idle open transaction would hold back the horizon for everyone, so this
-    // session gives one up after a minute. Set per session, never on the role; the pool resets it when the connection returns.
-    private const string IdleTimeoutSql = "SET idle_in_transaction_session_timeout = '60s'";
 
     private readonly Func<BlocwerkDbContext> createContext;
     private readonly ILogger<WallFeed> logger;
@@ -51,7 +47,7 @@ public sealed class WallFeed : IWallFeed
 
     public async Task<FeedCursor> CurrentAsync(CancellationToken cancellationToken = default)
     {
-        await using var db = await OpenReadContextAsync(cancellationToken);
+        await using var db = createContext();
         var epoch = await EpochAsync(db, cancellationToken);
         var horizon = FeedHorizons.For(db);
         var ceiling = await horizon.CeilingAsync(db, cancellationToken);
@@ -61,17 +57,25 @@ public sealed class WallFeed : IWallFeed
     public async Task<FeedPage> ReadAsync(FeedFilter filter, FeedCursor after, int limit, CancellationToken cancellationToken = default)
     {
         limit = Math.Clamp(limit, 1, MaxLimit);
-        await using var db = await OpenReadContextAsync(cancellationToken);
+        await using var db = createContext();
         var epoch = await EpochAsync(db, cancellationToken);
         var horizon = FeedHorizons.For(db);
         var ceiling = await horizon.CeilingAsync(db, cancellationToken);
         if (after.Epoch != epoch.Id || IsBelowFloor(after.Position, epoch))
         {
-            return new FeedPage([], new FeedCursor(epoch.Id, await HighWaterAsync(db, horizon, ceiling, epoch, cancellationToken)), Resync: true);
+            return await ResyncAsync(db, horizon, ceiling, epoch, cancellationToken);
         }
 
         var query = horizon.Between(db.WallChanges.AsNoTracking().Where(filter.Predicate), after.Position, ceiling);
         var rows = await horizon.InOrder(query).Take(limit).ToListAsync(cancellationToken);
+
+        // Retention may have deleted rows after the cursor while this page was read; the floor it raised says so.
+        epoch = await FeedEpochStore.ReadAsync(db, cancellationToken) ?? epoch;
+        if (after.Epoch != epoch.Id || IsBelowFloor(after.Position, epoch))
+        {
+            return await ResyncAsync(db, horizon, ceiling, epoch, cancellationToken);
+        }
+
         if (rows.Count == limit)
         {
             // A full page may have more below the ceiling.
@@ -85,6 +89,11 @@ public sealed class WallFeed : IWallFeed
 
     public Task<long?> AppendAsync(BlocwerkDbContext db, WallChange row, CancellationToken cancellationToken = default) =>
         WallChangeInsert.ExecuteAsync(db, row, cancellationToken);
+
+    // Nothing to deliver: the caller reloads, then continues from the high-water mark taken before its reload.
+    private static async Task<FeedPage> ResyncAsync(
+        BlocwerkDbContext db, IFeedHorizon horizon, FeedPosition ceiling, FeedEpoch epoch, CancellationToken cancellationToken) =>
+        new([], new FeedCursor(epoch.Id, await HighWaterAsync(db, horizon, ceiling, epoch, cancellationToken)), Resync: true);
 
     // The newest stored position at or below the ceiling, or the retention floor if that is higher. No cursor is handed
     // out above it: the mark moves only when rows are written, so the startup check (high-water >= current xid) stays
@@ -105,27 +114,6 @@ public sealed class WallFeed : IWallFeed
     // A cursor exactly at the floor saw the newest deleted row, so it lost nothing; one below it may have.
     private static bool IsBelowFloor(FeedPosition position, FeedEpoch epoch) =>
         epoch.FloorSeq > 0 && position < new FeedPosition(epoch.FloorTxId, epoch.FloorSeq);
-
-    private async Task<BlocwerkDbContext> OpenReadContextAsync(CancellationToken cancellationToken)
-    {
-        var db = createContext();
-        if (!db.Database.IsNpgsql())
-        {
-            return db;
-        }
-
-        try
-        {
-            await db.Database.OpenConnectionAsync(cancellationToken);
-            await db.Database.ExecuteSqlRawAsync(IdleTimeoutSql, cancellationToken);
-            return db;
-        }
-        catch
-        {
-            await db.DisposeAsync();
-            throw;
-        }
-    }
 
     private async Task<FeedEpoch> EpochAsync(BlocwerkDbContext db, CancellationToken cancellationToken)
     {

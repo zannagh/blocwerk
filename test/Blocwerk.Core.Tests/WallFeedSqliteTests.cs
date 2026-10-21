@@ -141,6 +141,23 @@ public sealed class WallFeedSqliteTests : IDisposable
         Assert.Equal(FeedAudience.Members, row.Audience);
     }
 
+    [Fact]
+    public async Task Seq_IsNeverReused_AfterTheNewestRowIsDeleted()
+    {
+        await AddAsync(Row("a"), Row("b"));
+        long deletedSeq;
+        await using (var db = factory.CreateDbContext())
+        {
+            deletedSeq = await db.WallChanges.MaxAsync(c => c.Seq);
+            await db.WallChanges.Where(c => c.Seq == deletedSeq).ExecuteDeleteAsync();
+        }
+
+        await AddAsync(Row("c"));
+
+        await using var check = factory.CreateDbContext();
+        Assert.True(await check.WallChanges.MaxAsync(c => c.Seq) > deletedSeq, "a reused Seq would sort before cursors already past it");
+    }
+
     private WallChange Row(string kind, Guid? wall = null, FeedAudience audience = FeedAudience.Wall, Guid? user = null, DateTimeOffset? createdAt = null) =>
         new()
         {
