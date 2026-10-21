@@ -68,14 +68,14 @@ scenario() {
 }
 
 # name                     ready  eta    flush  deferrals  expected
-scenario idle-deploys       idle   0      200    none      "calls=[flush announce up] deferrals=none" 'flushed open editors: {"sessions":1'
-scenario old-app-404        idle   0      404    none      "calls=[flush announce up] deferrals=none" "flush endpoint missing (older app)"
-scenario flush-unreachable  idle   0      000    none      "calls=[flush announce up] deferrals=none" "flush failed (HTTP 000)"
+scenario idle-deploys       idle   0      200    none      "calls=[announce flush up] deferrals=none" 'flushed open editors: {"sessions":1'
+scenario old-app-404        idle   0      404    none      "calls=[announce flush up] deferrals=none" "flush endpoint missing (older app)"
+scenario flush-unreachable  idle   0      000    none      "calls=[announce flush up] deferrals=none" "flush failed (HTTP 000)"
 scenario busy-defers        busy   0      200    3         "calls=[] deferrals=4"
-scenario busy-cap-forces    busy   0      200    30        "calls=[flush announce up] deferrals=none"
+scenario busy-cap-forces    busy   0      200    30        "calls=[announce flush up] deferrals=none"
 scenario present-edit-waits busy   7200   200    30        "calls=[] deferrals=31"
 scenario present-edit-long  busy   7200   200    1000      "calls=[] deferrals=1001"
-scenario safety-cap-forces  busy   7200   200    1440      "calls=[flush announce up] deferrals=none"
+scenario safety-cap-forces  busy   7200   200    1440      "calls=[announce flush up] deferrals=none"
 # A newer image while deferred keeps the count (8df10aa): target differs, count goes on.
 scenario new-image-keeps    busy   0      200    12        "calls=[] deferrals=13"
 

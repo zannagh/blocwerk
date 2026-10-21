@@ -16,20 +16,31 @@ namespace Blocwerk.Web.Components.Pages.Walls;
 /// </summary>
 public partial class WallCreate
 {
-    private const string KeepKey = "wall-create";
     private static readonly JsonSerializerOptions KeepJson = new(JsonSerializerDefaults.Web);
 
     private IDisposable? _flushRegistration;
     private bool _restoreChecked;
 
+    private Guid? _keepUserId;
+    private bool _identityResolved;
+
     [Inject]
     private CircuitEditFlush EditFlush { get; set; } = default!;
+
+    [Inject]
+    private Blocwerk.Core.Abstractions.ICurrentUserService CurrentUserService { get; set; } = default!;
+
+    [Inject]
+    private Blocwerk.Core.Abstractions.IKioskContext KioskContext { get; set; } = default!;
+
+    private string KeepKey => KeptCopyKey.For(_keepUserId, KioskContext, "wall-create");
 
     private bool IsDirty =>
         !string.IsNullOrWhiteSpace(_model.Name) || !string.IsNullOrWhiteSpace(_model.Description)
         || _model.Angle != 0 || _model.HasMarkers || _photoData is not null;
 
-    private string? KeepPayload => IsDirty
+    // Nothing is offered for keeping until the key knows whose form this is.
+    private string? KeepPayload => IsDirty && _identityResolved
         ? JsonSerializer.Serialize(
             new WallCreateKeep(_model.Name, _model.Description, _model.Angle, _model.HasMarkers, _model.MarkerSizeMm, _photoData is not null),
             KeepJson)
@@ -42,6 +53,7 @@ public partial class WallCreate
 
     private async Task<EditFlushOutcome> FlushForDeployAsync()
     {
+        await ResolveIdentityAsync();
         if (EditorFlushPolicy.WallCreate(IsDirty, _isSubmitting) == EditFlushAction.Nothing || KeepPayload is not { } payload)
         {
             return EditFlushOutcome.NothingToSave;
@@ -55,10 +67,30 @@ public partial class WallCreate
             : EditFlushOutcome.NotSaved;
     }
 
+    private async Task ResolveIdentityAsync()
+    {
+        if (_identityResolved)
+        {
+            return;
+        }
+
+        try
+        {
+            _keepUserId = (await CurrentUserService.GetCurrentUserAsync()).Id;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            _keepUserId = null;
+        }
+
+        _identityResolved = true;
+    }
+
     private async Task RestoreKeptAsync()
     {
         _restoreChecked = true;
-        var json = await DeployDraftInterop.TakeAsync(JS, KeepKey);
+        await ResolveIdentityAsync();
+        var json = (await DeployDraftInterop.TakeAsync(JS, KeepKey))?.Payload;
         WallCreateKeep? kept;
         try
         {

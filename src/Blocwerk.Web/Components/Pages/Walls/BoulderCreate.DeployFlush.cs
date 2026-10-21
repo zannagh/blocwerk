@@ -30,7 +30,7 @@ public partial class BoulderCreate
     [Inject]
     private ILogger<BoulderCreate> Logger { get; set; } = default!;
 
-    private string KeepKey => $"boulder-create:{WallId}";
+    private string KeepKey => KeptCopyKey.For(_flushUserId, KioskContext, $"boulder-create:{WallId}");
 
     private string CreateUrl => $"/walls/{WallId}/boulders/create";
 
@@ -94,30 +94,55 @@ public partial class BoulderCreate
     }
 
     /// <summary>Takes back a create kept on this device, once, after the wall has loaded.</summary>
+    /// <remarks>
+    /// The copy's client id is reused ONLY for a copy a deploy flush kept and no boulder carries yet: that is the same
+    /// unsaved create, and reusing the id keeps it idempotent. A copy made while the page was hidden gets a fresh id,
+    /// because its id may already belong to a boulder created since (the offline queue, another tab), and creating
+    /// "again" under it would silently return that boulder instead of the new one.
+    /// </remarks>
     private async Task RestoreKeptAsync()
     {
         _restoreChecked = true;
-        var snapshot = BoulderFormSnapshot.TryParse(await DeployDraftInterop.TakeAsync(JS, KeepKey));
-        if (snapshot is null)
+        var kept = await DeployDraftInterop.TakeAsync(JS, KeepKey);
+        var snapshot = BoulderFormSnapshot.TryParse(kept?.Payload);
+        if (kept is null || snapshot is null)
         {
             return;
         }
 
-        // The flush saved it on the server while this browser could not hear about it: point there instead.
-        if (!_isAnonymous && await BoulderService.GetBoulderAsync(snapshot.Id) is { } saved)
+        var saved = await ExistingBoulderAsync(snapshot.Id);
+        var id = EditorFlushPolicy.RestoreCreate(kept.FromDeploy, saved is not null);
+        if (id == RestoredCreateId.AlreadySaved)
         {
-            await DeployDraftInterop.ShowAsync(JS, $"Your boulder “{saved.Name}” was saved as a draft before an update.", $"/walls/{WallId}/boulders/{saved.Id}");
+            // Already a boulder (the flush saved it while this browser could not hear, or it was submitted since).
+            if (kept.FromDeploy)
+            {
+                await DeployDraftInterop.ShowAsync(JS, $"Your boulder “{saved!.Name}” was saved as a draft before an update.", $"/walls/{WallId}/boulders/{saved.Id}");
+            }
+
             return;
         }
 
-        ApplySnapshot(snapshot);
+        ApplySnapshot(snapshot, reuseId: id == RestoredCreateId.Reuse);
         StateHasChanged();
     }
 
-    private void ApplySnapshot(BoulderFormSnapshot snapshot)
+    private async Task<Blocwerk.Core.Entities.Boulder?> ExistingBoulderAsync(Guid id)
+    {
+        try
+        {
+            return await BoulderService.GetBoulderAsync(id);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    private void ApplySnapshot(BoulderFormSnapshot snapshot, bool reuseId)
     {
         var holdIds = _holds.Select(h => h.Id).ToHashSet();
-        _clientId = snapshot.Id;
+        _clientId = reuseId ? snapshot.Id : Guid.NewGuid();
         _name = string.IsNullOrWhiteSpace(snapshot.Name) ? _name : snapshot.Name;
         _grade = snapshot.Grade;
         _allKickboardOn = snapshot.KickboardFootholdsOn;

@@ -23,14 +23,17 @@ public partial class BoulderDetail
     [Inject]
     private CircuitEditFlush EditFlush { get; set; } = default!;
 
-    private string KeepKey => $"boulder-edit:{BoulderId}";
+    private string KeepKey => KeptCopyKey.For(_currentUserId, KioskContext, $"boulder-edit:{BoulderId}");
+
+    // What the inline editors started from; a restore compares it with the boulder now.
+    private string InlineBase => $"{_boulder?.Name}\n{_boulder?.Grade}";
 
     private bool InlineDirty =>
         (_editMeta && _boulder is not null && (_editName != _boulder.Name || _editGrade != _boulder.Grade))
         || (_showGradeForm && !string.IsNullOrEmpty(_proposedGrade));
 
     private string? KeepPayload => InlineDirty
-        ? JsonSerializer.Serialize(new InlineEditKeep(_editMeta, _editName, _editGrade, _showGradeForm, _proposedGrade), KeepJson)
+        ? new BaseKeep(JsonSerializer.Serialize(new InlineEditKeep(_editMeta, _editName, _editGrade, _showGradeForm, _proposedGrade), KeepJson), InlineBase).ToJson()
         : null;
 
     /// <summary>Registers the flush while an inline editor is open; called from <c>SyncBoulderEditLease</c>.</summary>
@@ -74,10 +77,16 @@ public partial class BoulderDetail
             return;
         }
 
-        var kept = Parse(await DeployDraftInterop.TakeAsync(JS, KeepKey));
-        if (kept is null)
+        var wrapper = BaseKeep.TryParse((await DeployDraftInterop.TakeAsync(JS, KeepKey))?.Payload);
+        var kept = Parse(wrapper?.State);
+        if (wrapper is null || kept is null)
         {
             return;
+        }
+
+        if (wrapper.Base != InlineBase)
+        {
+            await DeployDraftInterop.ShowAsync(JS, BaseKeep.ChangedSince, $"/walls/{WallId}/boulders/{BoulderId}");
         }
 
         if (kept.Meta && (_isCreator || _isAdmin || _isSetter))

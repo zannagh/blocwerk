@@ -15,6 +15,10 @@
  * Exposes window.bwDeployDrafts (called from DeployDraftInterop.cs):
  *   keep(key, payloadJson, notice?, href?)  notice(text, href?)  take(key) -> payloadJson|null  drop(key)
  *   show(text, href?)  (a notice right now, for state the server already saved)
+ *   clearAll()  forgetVisible()   (identity switch; the offline queue took the form)
+ *
+ * Kept keys carry the identity they belong to ("<identity>|<editor>", see KeptCopyKey.cs); a page only writes and
+ * takes back keys of its own identity, and a page load under a different identity than the last one clears them all.
  *
  * The store (createStore) is pure over a Storage-like object, so node tests it (test/js/deploy-drafts.test.mjs).
  */
@@ -31,6 +35,7 @@
 
     const PREFIX = 'bw-kept:';
     const NOTICES = 'bw-deploy-notices';
+    const IDENTITY = 'bw-kept-identity';
     const MAX_AGE_MS = 7 * 24 * 3600 * 1000;
     const RESTORED = 'Your unsaved changes from before were restored.';
 
@@ -58,32 +63,65 @@
         } catch (e) { /* storage blocked: nothing was kept anyway */ }
     }
 
-    // storage: a Storage; now(): ms; show(text, href, key): displays a notice now (key: the copy it can discard).
-    function createStore(storage, now, show) {
+    function keysOf(storage) {
+        const out = [];
+        try {
+            for (let i = 0; i < storage.length; i++) {
+                out.push(storage.key(i));
+            }
+        } catch (e) { /* storage blocked */ }
+
+        return out;
+    }
+
+    // storage: a Storage; now(): ms; show(text, href, key): displays a notice now (key: the copy it can discard);
+    // identity(): who this page is for ("<user>", "k<kiosk key>-<user>" or "...anon"). Every kept key starts with
+    // the identity it was kept for ("<identity>|<editor>"), and a copy is only ever written or taken back under the
+    // identity of the page, so it can never restore into another person's form.
+    function createStore(storage, now, show, identity) {
         const restored = new Set();
+        const who = identity || function () { return 'anon'; };
+        const owned = function (key) { return String(key).split('|')[0] === who(); };
 
         function notice(text, href, key) {
             if (!text) {
                 return;
             }
 
-            const list = read(storage, NOTICES) || [];
+            // One notice per editor (or per text) however often the flush runs.
+            const list = (read(storage, NOTICES) || []).filter(function (n) {
+                return key ? n.key !== key : !(n.text === String(text) && n.href === (href || null));
+            });
             list.push({ text: String(text), href: href || null, key: key || null, at: now() });
             write(storage, NOTICES, list);
         }
 
         function keep(key, payload, text, href) {
+            if (!owned(key)) {
+                return false;
+            }
+
             write(storage, PREFIX + key, { payload: String(payload), reason: 'deploy', at: now() });
             notice(text, href, key);
+            return true;
         }
 
         function keepHidden(key, payload) {
+            if (!owned(key)) {
+                return;
+            }
+
             const existing = read(storage, PREFIX + key);
             const reason = existing && existing.reason === 'deploy' ? 'deploy' : 'hidden';
             write(storage, PREFIX + key, { payload: String(payload), reason: reason, at: now() });
         }
 
+        // { payload, reason: 'deploy' | 'hidden' } or null. 'deploy' means a pre-deploy flush kept it.
         function take(key) {
+            if (!owned(key)) {
+                return null;
+            }
+
             const entry = read(storage, PREFIX + key);
             remove(storage, PREFIX + key);
             if (!entry || now() - entry.at > MAX_AGE_MS) {
@@ -95,18 +133,18 @@
                 show(RESTORED, null, key);
             }
 
-            return entry.payload;
+            return { payload: entry.payload, reason: entry.reason };
         }
 
         function drop(key) {
             remove(storage, PREFIX + key);
         }
 
-        // The queued notices, oldest first, removed from storage.
+        // The queued notices for this identity, oldest first, removed from storage.
         function takeNotices() {
             const list = read(storage, NOTICES) || [];
             remove(storage, NOTICES);
-            return list.filter(function (n) { return now() - n.at <= MAX_AGE_MS; });
+            return list.filter(function (n) { return now() - n.at <= MAX_AGE_MS && (!n.key || owned(n.key)); });
         }
 
         // The user dismissed a kept copy: forget it, and say whether the open editor already took it back (then only a
@@ -116,7 +154,36 @@
             return restored.has(key);
         }
 
-        return { keep: keep, keepHidden: keepHidden, take: take, drop: drop, notice: notice, takeNotices: takeNotices, discard: discard };
+        // Sign-out, kiosk act-as ending, an account switch: nothing kept may outlive the person it was kept for.
+        function clearAll() {
+            keysOf(storage).forEach(function (k) {
+                if (k && k.indexOf(PREFIX) === 0) {
+                    remove(storage, k);
+                }
+            });
+            remove(storage, NOTICES);
+        }
+
+        // Called on every page load: a different identity than last time means the switch happened elsewhere.
+        function checkIdentity() {
+            let last = null;
+            try {
+                last = storage.getItem(IDENTITY);
+            } catch (e) { /* storage blocked */ }
+
+            if (last !== null && last !== who()) {
+                clearAll();
+            }
+
+            try {
+                storage.setItem(IDENTITY, who());
+            } catch (e) { /* storage blocked */ }
+        }
+
+        return {
+            keep: keep, keepHidden: keepHidden, take: take, drop: drop, notice: notice, takeNotices: takeNotices,
+            discard: discard, clearAll: clearAll, checkIdentity: checkIdentity
+        };
     }
 
     function button(doc, label, onClick) {
@@ -170,8 +237,24 @@
                 }
             } : null);
         };
-        store = createStore(storage || { getItem: function () { return null; }, setItem: function () { throw new Error('no storage'); }, removeItem: function () { } },
-            function () { return Date.now(); }, show);
+        // The identity the server rendered onto <body> (BlocwerkApp.razor), in the same shape KeptCopyKey.cs builds.
+        const identity = function () {
+            const b = doc.body ? doc.body.dataset : {};
+            return (b.bwKiosk ? 'k' + b.bwKiosk + '-' : '') + (b.bwUser || 'anon');
+        };
+        store = createStore(storage || { length: 0, getItem: function () { return null; }, setItem: function () { throw new Error('no storage'); }, removeItem: function () { } },
+            function () { return Date.now(); }, show, identity);
+        store.checkIdentity();
+
+        // The shared "the person at this browser changed" hook (sign-out, kiosk act-as end, account switch).
+        win.addEventListener('bw:identity-changed', function () { store.clearAll(); });
+
+        // An editor's form left the page another way (the offline queue took it): forget its copies, and do not let
+        // this page's unload copy it straight back.
+        const forgetVisible = function () {
+            discarding = true;
+            doc.querySelectorAll('[data-bw-keep-key]').forEach(function (el) { store.drop(el.dataset.bwKeepKey); });
+        };
 
         const captureHidden = function () {
             if (discarding) {
@@ -201,7 +284,10 @@
             showQueued();
         }
 
-        return { keep: store.keep, notice: store.notice, take: store.take, drop: store.drop, show: function (text, href) { show(text, href, null); } };
+        return {
+            keep: store.keep, notice: store.notice, take: store.take, drop: store.drop, clearAll: store.clearAll,
+            forgetVisible: forgetVisible, show: function (text, href) { show(text, href, null); }
+        };
     }
 
     return { createStore: createStore, install: install, MAX_AGE_MS: MAX_AGE_MS, RESTORED: RESTORED };

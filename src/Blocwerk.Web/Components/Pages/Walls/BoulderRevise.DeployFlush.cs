@@ -23,13 +23,17 @@ public partial class BoulderRevise
     [Inject]
     private CircuitEditFlush EditFlush { get; set; } = default!;
 
-    private string KeepKey => $"boulder-revise:{BoulderId}";
+    [Inject]
+    private Blocwerk.Core.Abstractions.IKioskContext KioskContext { get; set; } = default!;
+
+    private string KeepKey => KeptCopyKey.For(_flushUserId, KioskContext, $"boulder-revise:{BoulderId}");
 
     private string ReviseUrl => $"/walls/{WallId}/boulders/{BoulderId}/revise";
 
     private bool IsDirty => _pristineSnapshot is not null && SnapshotJson != _pristineSnapshot;
 
-    private string? KeepPayload => IsDirty ? SnapshotJson : null;
+    // The form with the boulder as it was when this edit began (see BaseKeep).
+    private string? KeepPayload => IsDirty ? new BaseKeep(SnapshotJson, _pristineSnapshot!).ToJson() : null;
 
     /// <summary>Called once a boulder this user may revise has loaded: what it looks like now is "nothing to save".</summary>
     private void ArmDeployFlush()
@@ -62,7 +66,7 @@ public partial class BoulderRevise
         }
 
         var notice = $"Your changes to “{_name}” were kept on this device before an update; they are back in Revise.";
-        return await DeployDraftInterop.KeepAsync(JS, KeepKey, SnapshotJson, notice, ReviseUrl)
+        return KeepPayload is { } payload && await DeployDraftInterop.KeepAsync(JS, KeepKey, payload, notice, ReviseUrl)
             ? EditFlushOutcome.KeptOnDevice
             : EditFlushOutcome.NotSaved;
     }
@@ -101,10 +105,16 @@ public partial class BoulderRevise
     private async Task RestoreKeptAsync()
     {
         _restoreChecked = true;
-        var snapshot = BoulderFormSnapshot.TryParse(await DeployDraftInterop.TakeAsync(JS, KeepKey));
-        if (snapshot is null || snapshot.Id != BoulderId)
+        var kept = BaseKeep.TryParse((await DeployDraftInterop.TakeAsync(JS, KeepKey))?.Payload);
+        var snapshot = BoulderFormSnapshot.TryParse(kept?.State);
+        if (kept is null || snapshot is null || snapshot.Id != BoulderId)
         {
             return;
+        }
+
+        if (kept.Base != _pristineSnapshot)
+        {
+            await DeployDraftInterop.ShowAsync(JS, BaseKeep.ChangedSince, ReviseUrl);
         }
 
         var displayIds = _displayHolds.Select(h => h.Id).ToHashSet();

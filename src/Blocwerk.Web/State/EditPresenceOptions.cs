@@ -36,8 +36,8 @@ public sealed class EditPresenceOptions
 
     /// <summary>
     /// The local time of day after which no editing lease holds the gate any more: a lease lets go at the first
-    /// occurrence of this time after it started (see <see cref="EditDeployCutoff"/>). Midnight by default, so a
-    /// pending deploy waits at most until the coming midnight.
+    /// occurrence of this time after it started (see <see cref="EditDeployCutoff"/>). Midnight by default: every
+    /// lease open at midnight lets go at midnight; one opened after it can hold until the next midnight.
     /// </summary>
     public TimeSpan CutoffTimeOfDay { get; set; } = TimeSpan.Zero;
 

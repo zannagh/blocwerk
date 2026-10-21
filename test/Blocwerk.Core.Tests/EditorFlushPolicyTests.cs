@@ -45,14 +45,47 @@ public class EditorFlushPolicyTests
     }
 
     [Theory]
-    [InlineData(false, false, true, true, EditFlushAction.SaveOnServer)]
-    [InlineData(false, false, true, false, EditFlushAction.Nothing)]
-    [InlineData(false, false, false, true, EditFlushAction.Nothing)]
-    [InlineData(true, true, true, true, EditFlushAction.CannotKeep)]
-    [InlineData(true, false, true, false, EditFlushAction.Nothing)]
-    public void WallEditor(bool manualAlignment, bool alignmentWork, bool canEdit, bool pending, EditFlushAction expected)
+    [InlineData(false, false, true, true, false, EditFlushAction.SaveOnServer)]
+    [InlineData(false, false, true, true, true, EditFlushAction.Nothing)]
+    [InlineData(false, false, true, false, false, EditFlushAction.Nothing)]
+    [InlineData(false, false, false, true, false, EditFlushAction.Nothing)]
+    [InlineData(true, true, true, true, false, EditFlushAction.CannotKeep)]
+    [InlineData(true, false, true, false, false, EditFlushAction.Nothing)]
+    public void WallEditor(bool manualAlignment, bool alignmentWork, bool canEdit, bool pending, bool submitting, EditFlushAction expected)
     {
-        Assert.Equal(expected, EditorFlushPolicy.WallEditor(manualAlignment, alignmentWork, canEdit, pending));
+        Assert.Equal(expected, EditorFlushPolicy.WallEditor(manualAlignment, alignmentWork, canEdit, pending, submitting));
+    }
+
+    /// <summary>W4 is a product decision still open: until it is made, the flush saves the batch exactly like the button.</summary>
+    [Fact]
+    public void TheWallFlushSavesTheWholeBatchUntilDecidedOtherwise()
+    {
+        Assert.Equal(WallFlushScope.Everything, EditorFlushPolicy.WallFlush);
+    }
+
+    [Theory]
+    [InlineData(true, false, RestoredCreateId.Reuse)]
+    [InlineData(false, false, RestoredCreateId.Fresh)]
+    [InlineData(true, true, RestoredCreateId.AlreadySaved)]
+    [InlineData(false, true, RestoredCreateId.AlreadySaved)]
+    public void ARestoredCreateOnlyReusesItsIdWhenNothingCanCollide(bool fromDeploy, bool exists, RestoredCreateId expected)
+    {
+        Assert.Equal(expected, EditorFlushPolicy.RestoreCreate(fromDeploy, exists));
+    }
+
+    /// <summary>Kept copies are partitioned by who is at the browser, in the shape deploy-drafts.js builds.</summary>
+    [Fact]
+    public void KeptCopyKeysCarryTheIdentity()
+    {
+        var user = Guid.NewGuid();
+        var key = Guid.NewGuid();
+        var notKiosk = AnonymousSettingFixture.KioskContextFor(isKiosk: false, null, null);
+        var tablet = AnonymousSettingFixture.KioskContextFor(isKiosk: true, Guid.NewGuid(), key);
+
+        Assert.Equal($"{user}|boulder-create:w", KeptCopyKey.For(user, notKiosk, "boulder-create:w"));
+        Assert.Equal($"k{key}-{user}|boulder-create:w", KeptCopyKey.For(user, tablet, "boulder-create:w"));
+        Assert.Equal($"k{key}-anon|boulder-create:w", KeptCopyKey.For(null, tablet, "boulder-create:w"));
+        Assert.Equal("anon|wall-create", KeptCopyKey.For(Guid.Empty, null, "wall-create"));
     }
 
     /// <summary>

@@ -1042,6 +1042,10 @@ else
     {
         // Every render, not just the first: the lease toggles when edit mode is entered or left.
         _editGuardActive = await EditGuardInterop.SyncAsync(JS, "wall-edit", _editLease is not null, _editGuardActive, EditActivity);
+        if (!_wallKeepChecked && _isEditing && _panelEditor is not null)
+        {
+            await RestoreKeptDecisionsAsync();
+        }
 
         // Not on firstRender: the boulder section only exists once the wall has loaded. watchFold is
         // a no-op on a page it already watches, and it needs no teardown (its listeners live on nodes

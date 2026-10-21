@@ -327,7 +327,7 @@ announce() {
   fi
 }
 
-# Ask every open editor to persist its unsaved state before the container goes: a draft boulder, a
+# Ask every open editor to persist its unsaved state right before the container goes: a draft boulder, a
 # draft's revise, the wall editor's pending batch, or state kept in the browser for after the reload.
 # Called before EVERY deploy (it is a no-op when no editor is open), so it covers both a deploy past
 # an absent user's lease and one forced by a cap. Best effort like the announcement: an app without
@@ -353,8 +353,10 @@ flush_edits() {
   esac
 }
 
-flush_edits
+# Announce first, flush last: the flush runs after the announcement's grace, right before the container
+# goes, so an edit made while the "updating" notice was on its way is still in what gets saved.
 announce
+flush_edits
 
 echo "deploying..."
 docker compose up -d "$SERVICE"

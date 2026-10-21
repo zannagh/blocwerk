@@ -17,7 +17,7 @@
     <h1>Create Wall</h1>
 
     @* The form, kept in the browser when the page is hidden (deploy-drafts.js). *@
-    <div hidden aria-hidden="true" data-bw-keep-key="wall-create" data-bw-keep-payload="@KeepPayload"></div>
+    <div hidden aria-hidden="true" data-bw-keep-key="@KeepKey" data-bw-keep-payload="@KeepPayload"></div>
 
     <EditForm Model="_model" OnValidSubmit="Submit" FormName="create-wall">
         <div class="form-group">

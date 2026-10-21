@@ -18,7 +18,16 @@ public static class DeployDraftInterop
     /// <summary>Keeps <paramref name="payloadJson"/> under <paramref name="key"/> and queues <paramref name="notice"/>.</summary>
     public static async Task<bool> KeepAsync(IJSRuntime js, string key, string payloadJson, string notice, string? href = null)
     {
-        return await TryAsync(js, DefaultTimeout, "bwDeployDrafts.keep", key, payloadJson, notice, href);
+        // keep() answers false for a key of another identity than the page's; that is not kept either.
+        try
+        {
+            using var cts = new CancellationTokenSource(DefaultTimeout);
+            return await js.InvokeAsync<bool>("bwDeployDrafts.keep", cts.Token, key, payloadJson, notice, href).AsTask().WaitAsync(DefaultTimeout);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
+        {
+            return false;
+        }
     }
 
     /// <summary>Queues a notice shown on the next page load (the reload after the deploy).</summary>
@@ -52,14 +61,14 @@ public static class DeployDraftInterop
     }
 
     /// <summary>Takes (and forgets) the state kept under <paramref name="key"/>, or null.</summary>
-    public static async Task<string?> TakeAsync(IJSRuntime js, string key)
+    public static async Task<KeptCopy?> TakeAsync(IJSRuntime js, string key)
     {
         try
         {
             using var cts = new CancellationTokenSource(DefaultTimeout);
-            return await js.InvokeAsync<string?>("bwDeployDrafts.take", cts.Token, key).AsTask().WaitAsync(DefaultTimeout);
+            return await js.InvokeAsync<KeptCopy?>("bwDeployDrafts.take", cts.Token, key).AsTask().WaitAsync(DefaultTimeout);
         }
-        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException or OperationCanceledException or TimeoutException)
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
         {
             return null;
         }
