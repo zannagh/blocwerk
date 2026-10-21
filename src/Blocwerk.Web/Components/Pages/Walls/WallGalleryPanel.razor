@@ -244,7 +244,7 @@
 
     // The grid asks for the small rendition; only the photo opened in the lightbox is the stored one.
     private string ImageUrl(WallGalleryItem item, bool thumbnail = false) =>
-        ResponsiveImage.Gallery(WallId, item.Source.ToString(), item.Id, ShareToken, thumbnail);
+        ResponsiveImage.Gallery(WallId, item.Source.ToString(), item.Id, item.SizeBytes, ShareToken, thumbnail);
 
     private static string ItemKey(WallGalleryItem item) => $"{item.Source}:{item.Id}";
 

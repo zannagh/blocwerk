@@ -3,6 +3,7 @@ using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
+using Blocwerk.Web.Components.Shared;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -97,6 +98,40 @@ public class WallPhotoPrivacyServiceTests
         await Assert.ThrowsAsync<KioskRestrictedException>(() => Service(h, kiosk).RemoveMetadataAsync(h.WallId));
         await using var db = h.CreateContext();
         Assert.True((await db.WallPanels.Select(p => p.Photo).FirstAsync(p => p != null))!.AsSpan().IndexOf(ExifJpeg.GpsLatitudeBytes) >= 0);
+    }
+
+    [Fact]
+    public async Task AGalleryRowWhoseSizeLagsItsFile_IsRepairedByTheNextRun_SoItsUrlVersionMoves()
+    {
+        using var h = new WallTestHarness();
+        var seeded = await SeedDirtyWallAsync(h);
+        var dirtyLength = (await File.ReadAllBytesAsync(seeded.GalleryPath)).LongLength;
+        await Service(h).RemoveMetadataAsync(h.WallId);
+
+        // A crash between the file move and the commit: clean file, the row still on the old size.
+        await using (var db = h.CreateContext())
+        {
+            await db.WallImages.ExecuteUpdateAsync(s => s.SetProperty(i => i.SizeBytes, dirtyLength));
+        }
+
+        var dryRun = await Service(h).ScanAsync(h.WallId);
+        Assert.Equal(0, dryRun.WithMetadata);                  // the file is clean: nothing would ever rewrite it
+        Assert.Equal(1, dryRun.NeedsRepair);                   // ...but the scan sees the drift
+        Assert.True(WallPhotoPrivacy.CanApply(dryRun));        // and the page offers the run that repairs it
+        Assert.Equal("Repair", WallPhotoPrivacy.ApplyLabel(dryRun));
+        Assert.Contains("1 gallery snapshot needs a repair", WallPhotoPrivacy.ScanText(dryRun));
+        await using (var db = h.CreateContext())
+        {
+            Assert.Equal(dirtyLength, await db.WallImages.Select(i => i.SizeBytes).SingleAsync()); // a dry run never writes
+        }
+
+        Assert.Equal(1, (await Service(h).RemoveMetadataAsync(h.WallId)).NeedsRepair);
+        var after = await Service(h).ScanAsync(h.WallId);
+        Assert.Equal(0, after.NeedsRepair);
+        Assert.False(WallPhotoPrivacy.CanApply(after));
+
+        await using var check = h.CreateContext();
+        Assert.Equal(new FileInfo(seeded.GalleryPath).Length, await check.WallImages.Select(i => i.SizeBytes).SingleAsync());
     }
 
     private static WallPhotoPrivacyService Service(WallTestHarness h, IKioskContext? kiosk = null) =>

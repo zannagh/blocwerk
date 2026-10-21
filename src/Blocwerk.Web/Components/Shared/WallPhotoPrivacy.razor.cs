@@ -38,16 +38,28 @@ public partial class WallPhotoPrivacy
     /// <summary>The dry-run sentence: how many stored photos carry a location, and how many carry metadata to remove.</summary>
     internal static string ScanText(PhotoPrivacyReport r)
     {
+        var repair = r.NeedsRepair > 0
+            ? $" {r.NeedsRepair} gallery {(r.NeedsRepair == 1 ? "snapshot needs" : "snapshots need")} a repair after an interrupted clean-up."
+            : string.Empty;
         if (r.WithMetadata == 0)
         {
-            return r.Photos == 0
+            return (r.Photos == 0
                 ? "This wall stores no photos yet."
-                : $"All {r.Photos} stored photos are already free of location and other metadata.";
+                : $"All {r.Photos} stored photos are already free of location and other metadata.") + repair;
         }
 
         return $"{r.WithLocation} of {r.Photos} stored photos carry a location; "
-            + $"{r.WithMetadata} carry metadata that would be removed.";
+            + $"{r.WithMetadata} carry metadata that would be removed." + repair;
     }
+
+    /// <summary>
+    /// Whether the scan leaves anything for the apply run: metadata to remove, or a gallery row to repair —
+    /// the latter on an otherwise clean wall too, or nothing could ever start the run that repairs it.
+    /// </summary>
+    internal static bool CanApply(PhotoPrivacyReport r) => r.WithMetadata > 0 || r.NeedsRepair > 0;
+
+    /// <summary>The apply button: removing metadata when there is any, otherwise only the repair.</summary>
+    internal static string ApplyLabel(PhotoPrivacyReport r) => r.WithMetadata > 0 ? "Remove location data" : "Repair";
 
     // Route data is reset here, not in OnInitializedAsync: WallDetail is retained across enhanced
     // navigation between walls, and so is this component.
@@ -77,6 +89,11 @@ public partial class WallPhotoPrivacy
         if (result.Skipped > 0)
         {
             message += $" {result.Skipped} changed while this ran — check again to catch them.";
+        }
+
+        if (result.NeedsRepair > 0)
+        {
+            message += $" Repaired {result.NeedsRepair} gallery {(result.NeedsRepair == 1 ? "snapshot" : "snapshots")}.";
         }
     });
 

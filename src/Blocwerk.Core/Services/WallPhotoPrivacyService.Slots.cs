@@ -9,9 +9,14 @@ namespace Blocwerk.Core.Services;
 /// <summary>One stored photo: how to read it, and how to replace it only if it still holds the bytes that were read.</summary>
 /// <param name="Load">Reads the photo, or null when the slot is empty.</param>
 /// <param name="Save">Writes (db, original, clean); false when the stored bytes changed since they were read.</param>
+/// <param name="Repair">
+/// (db, apply): whether the row's metadata has drifted from the stored bytes, putting it right when
+/// <c>apply</c> is set; null for a slot whose bytes and metadata are one column and cannot drift.
+/// </param>
 internal sealed record WallPhotoSlot(
     Func<BlocwerkDbContext, CancellationToken, Task<byte[]?>> Load,
-    Func<BlocwerkDbContext, byte[], byte[], CancellationToken, Task<bool>> Save);
+    Func<BlocwerkDbContext, byte[], byte[], CancellationToken, Task<bool>> Save,
+    Func<BlocwerkDbContext, bool, CancellationToken, Task<bool>>? Repair = null);
 
 /// <summary>Where a wall keeps photos: the rows and files a <see cref="WallPhotoSlot"/> is built for.</summary>
 public sealed partial class WallPhotoPrivacyService
@@ -66,7 +71,11 @@ public sealed partial class WallPhotoPrivacyService
 
     /// <summary>
     /// A gallery upload on disk: replaced through a temp file and an atomic move, and its row's size
-    /// updated — which also moves the image's variant-cache key and ETag.
+    /// updated — which also moves the image's variant-cache key, ETag and url version. The size is written
+    /// in a transaction that commits only after the move, so a crash before the move changes nothing; a
+    /// crash between the move and the commit leaves a clean file under the old size, which
+    /// <see cref="WallPhotoSlot.Repair"/> puts right on the next run (a rerun sees a clean file and would
+    /// otherwise never touch the row again).
     /// </summary>
     private WallPhotoSlot GalleryFile(Guid imageId, string storedName)
     {
@@ -77,10 +86,25 @@ public sealed partial class WallPhotoPrivacyService
             {
                 var temp = imageStorage.CreateTempPath(Path.GetExtension(path!));
                 await File.WriteAllBytesAsync(temp, clean, ct);
-                File.Move(temp, path!, overwrite: true);
+                await using var tx = await db.Database.BeginTransactionAsync(ct);
                 await db.WallImages.IgnoreQueryFilters().Where(i => i.Id == imageId)
                     .ExecuteUpdateAsync(s => s.SetProperty(i => i.SizeBytes, clean.LongLength), ct);
+                File.Move(temp, path!, overwrite: true);
+                await tx.CommitAsync(ct);
                 return true;
+            },
+            async (db, apply, ct) =>
+            {
+                if (path is null || !File.Exists(path))
+                {
+                    return false;
+                }
+
+                var length = new FileInfo(path).Length;
+                var drifted = db.WallImages.IgnoreQueryFilters().Where(i => i.Id == imageId && i.SizeBytes != length);
+                return apply
+                    ? await drifted.ExecuteUpdateAsync(s => s.SetProperty(i => i.SizeBytes, length), ct) > 0
+                    : await drifted.AnyAsync(ct);
             });
     }
 

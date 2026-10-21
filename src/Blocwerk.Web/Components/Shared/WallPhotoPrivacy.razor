@@ -23,9 +23,9 @@
     {
         <p class="glyph-summary" role="status">@ScanText(scan)</p>
         <div class="staged-actions">
-            @if (scan.WithMetadata > 0)
+            @if (CanApply(scan))
             {
-                <button class="btn-primary" @onclick="ApplyAsync" disabled="@busy">Remove location data</button>
+                <button class="btn-primary" @onclick="ApplyAsync" disabled="@busy">@ApplyLabel(scan)</button>
             }
             <button class="btn-secondary" @onclick="() => scan = null" disabled="@busy">Close</button>
         </div>

@@ -10,7 +10,11 @@ namespace Blocwerk.Core.Services;
 /// <param name="WithMetadata">Photos that carried removable metadata (GPS included) when they were looked at.</param>
 /// <param name="Cleaned">Photos rewritten without it — always 0 for a dry run.</param>
 /// <param name="Skipped">Photos left alone because they changed while the run was going (re-run to pick them up).</param>
-public sealed record PhotoPrivacyReport(int Photos, int WithLocation, int WithMetadata, int Cleaned, int Skipped);
+/// <param name="NeedsRepair">
+/// Gallery rows whose recorded size no longer matches their file (a crash mid-rewrite): a dry run only
+/// counts them, an apply run repairs them. Until repaired their url version does not follow the bytes.
+/// </param>
+public sealed record PhotoPrivacyReport(int Photos, int WithLocation, int WithMetadata, int Cleaned, int Skipped, int NeedsRepair = 0);
 
 /// <summary>
 /// Removes location and other metadata from the photos a wall ALREADY stores — new uploads are cleaned
@@ -19,7 +23,7 @@ public sealed record PhotoPrivacyReport(int Photos, int WithLocation, int WithMe
 /// </summary>
 public interface IWallPhotoPrivacyService
 {
-    /// <summary>Dry run: counts what <see cref="RemoveMetadataAsync"/> would clean, changing nothing.</summary>
+    /// <summary>Dry run: counts what <see cref="RemoveMetadataAsync"/> would clean or repair, changing nothing.</summary>
     Task<PhotoPrivacyReport> ScanAsync(Guid wallId, CancellationToken ct = default);
 
     /// <summary>

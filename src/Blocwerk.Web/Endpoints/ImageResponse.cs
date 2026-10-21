@@ -1,6 +1,3 @@
-using System.Globalization;
-using System.Security.Cryptography;
-using System.Text;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Services;
 using Microsoft.Net.Http.Headers;
@@ -27,9 +24,10 @@ public static class ImageResponse
     public const string MutableCacheControl = "private, no-cache";
 
     /// <summary>
-    /// An image that can never change again — a retired generation's archived photo, addressed by
-    /// its generation number. Still <c>private</c>, but the browser may serve it for a year without
-    /// even revalidating.
+    /// A URL whose bytes can never change again: a texture, splat or gallery image requested with its
+    /// current <see cref="AssetVersion"/> (<see cref="IsVersioned"/>). Still <c>private</c>, but the browser
+    /// may serve it for a year without even revalidating. A URL that does not name its bytes must never
+    /// get this, however rarely they change: a privacy rewrite or a re-run would then stay stale for a year.
     /// </summary>
     public const string ImmutableCacheControl = "private, max-age=31536000, immutable";
 
@@ -45,9 +43,6 @@ public static class ImageResponse
     /// </summary>
     public const string VariantCacheControl = "private, max-age=300";
 
-    /// <summary>The unit separator, used only to keep the hashed parts from running together.</summary>
-    private const char PartSeparator = '\u001f';
-
     /// <summary>
     /// A strong ETag over the identifying metadata. The parts are hashed rather than concatenated
     /// so the value stays opaque and fixed-size whatever they contain.
@@ -59,21 +54,14 @@ public static class ImageResponse
     /// cached rendition is addressed by exactly the parts that decide the ETag — a re-uploaded or
     /// re-staged photo moves both together and can never serve a stale variant behind a fresh tag.
     /// </summary>
-    public static string Key(params object?[] parts)
-    {
-        // Formatted invariantly, never under the ambient culture. Today's parts are GUIDs, ints and
-        // ASCII content types that format identically everywhere, but a part whose ToString() IS
-        // culture-sensitive (a date, a decimal) would otherwise make the tag depend on the server's
-        // locale — silently invalidating every browser and disk cache the moment that changed.
-        var raw = string.Join(
-            PartSeparator,
-            parts.Select(p => p is IFormattable f
-                ? f.ToString(null, CultureInfo.InvariantCulture)
-                : p?.ToString() ?? string.Empty));
+    public static string Key(params object?[] parts) => AssetVersion.Of(parts);
 
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
-        return Convert.ToHexStringLower(hash.AsSpan(0, 16));
-    }
+    /// <summary>
+    /// Whether the request names the current bytes through <see cref="AssetVersion.QueryName"/>, which is
+    /// the only case in which an asset whose bytes can change under its URL may be served immutable.
+    /// </summary>
+    public static bool IsVersioned(HttpRequest request, string version) =>
+        AssetVersion.Matches(request.Query[AssetVersion.QueryName], version);
 
     /// <summary>
     /// Emits the validator and cache policy, then either short-circuits (304 on a match, a bodyless
@@ -124,8 +112,12 @@ public static class ImageResponse
         bool immutable,
         Func<Task<ImageVariant?>> load)
     {
+        // A url that names a version which is no longer current must revalidate: it is exactly the copy a
+        // rewrite replaced. The bounded max-age is only for a url that never named a version at all.
         http.Response.Headers.ETag = etag;
-        http.Response.Headers.CacheControl = immutable ? ImmutableCacheControl : VariantCacheControl;
+        http.Response.Headers.CacheControl = immutable
+            ? ImmutableCacheControl
+            : http.Request.Query.ContainsKey(AssetVersion.QueryName) ? MutableCacheControl : VariantCacheControl;
 
         if (Matches(http.Request, etag))
         {

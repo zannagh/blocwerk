@@ -16,8 +16,10 @@ namespace Blocwerk.Web.Endpoints;
 /// The photo-real (Gaussian splat, <c>.spz</c>) scene of a solved glyph wall model, for the 3D view.
 /// Same posture as <see cref="WallGeometryTextureEndpoints"/>: a member of the wall, an anonymous
 /// viewer holding its share token, or the wall's own kiosk tablet; API-key principals are rejected;
-/// a model of another wall is a 404. A splat row is written once and replaced by a NEW row (new id),
-/// so it is served immutable under an ETag of its id.
+/// a model of another wall is a 404. A splat row is written once, but a re-run replaces it by a NEW row
+/// under the same model id and a LOD backfill adds levels to it, so the route URL does not name the bytes:
+/// it is served immutable only when its <c>?v=</c> matches <see cref="WallGeometrySplats.Version"/> (the
+/// URLs the 3D view hands out), and with revalidation against the ETag otherwise.
 /// </summary>
 public static class WallGeometrySplatEndpoints
 {
@@ -78,7 +80,9 @@ public static class WallGeometrySplatEndpoints
 
         var etag = ImageResponse.Etag(kind, splat.Id, size);
         http.Response.Headers.ETag = etag;
-        http.Response.Headers.CacheControl = ImageResponse.ImmutableCacheControl;
+        http.Response.Headers.CacheControl = ImageResponse.IsVersioned(http.Request, WallGeometrySplats.Version(splat, lod))
+            ? ImageResponse.ImmutableCacheControl
+            : ImageResponse.MutableCacheControl;
         return ImageResponse.Matches(http.Request, etag)
             ? Results.StatusCode(StatusCodes.Status304NotModified)
             : Results.File(path, ContentType, enableRangeProcessing: true);

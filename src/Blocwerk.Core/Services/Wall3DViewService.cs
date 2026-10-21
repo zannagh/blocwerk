@@ -146,10 +146,10 @@ public sealed partial class Wall3DViewService(
         return view with
         {
             Textures = textures,
-            SplatUrl = matrix is null ? null : WallGeometrySplats.Url(view.WallId, splat!.GeometryModelId, shareToken),
+            SplatUrl = matrix is null ? null : WallGeometrySplats.Url(view.WallId, splat!, shareToken),
             SplatMobileUrl = matrix is null || splat!.MobileStoredPath is null
                 ? null
-                : WallGeometrySplats.Url(view.WallId, splat.GeometryModelId, shareToken, mobile: true),
+                : WallGeometrySplats.Url(view.WallId, splat, shareToken, mobile: true),
             SplatLevels = matrix is null ? [] : SplatLevels(view.WallId, splat!, shareToken),
             SplatMatrix = matrix,
         };
@@ -158,17 +158,16 @@ public sealed partial class Wall3DViewService(
     /// <summary>The ladder, smallest first, then the full scene; rows without a ladder offer the legacy mobile copy.</summary>
     private static List<Wall3DSplatLevel> SplatLevels(Guid wallId, WallGeometrySplat splat, string? shareToken)
     {
-        var modelId = splat.GeometryModelId;
         var levels = SplatLodLadder.Parse(splat.LodLevelsJson)
-            .Select(l => new Wall3DSplatLevel(WallGeometrySplats.LevelUrl(wallId, modelId, l.Splats, shareToken), l.Splats, l.SizeBytes))
+            .Select(l => new Wall3DSplatLevel(WallGeometrySplats.LevelUrl(wallId, splat, l.Splats, shareToken), l.Splats, l.SizeBytes))
             .ToList();
         if (levels.Count == 0 && splat.MobileStoredPath is not null)
         {
             levels.Add(new Wall3DSplatLevel(
-                WallGeometrySplats.Url(wallId, modelId, shareToken, mobile: true), SpzDecimator.MobileTarget, splat.MobileSizeBytes ?? 0));
+                WallGeometrySplats.Url(wallId, splat, shareToken, mobile: true), SpzDecimator.MobileTarget, splat.MobileSizeBytes ?? 0));
         }
 
-        levels.Add(new Wall3DSplatLevel(WallGeometrySplats.Url(wallId, modelId, shareToken), splat.SplatCount ?? 0, splat.SizeBytes));
+        levels.Add(new Wall3DSplatLevel(WallGeometrySplats.Url(wallId, splat, shareToken), splat.SplatCount ?? 0, splat.SizeBytes));
         return levels;
     }
 

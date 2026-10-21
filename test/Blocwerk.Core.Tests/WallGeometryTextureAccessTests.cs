@@ -17,7 +17,7 @@ namespace Blocwerk.Core.Tests;
 public class WallGeometryTextureAccessTests
 {
     [Fact]
-    public async Task Member_GetsTheTexture_Immutable()
+    public async Task Member_GetsTheTexture_RevalidatedUnlessTheUrlNamesItsVersion()
     {
         using var h = new WallTestHarness();
         using var s = new CaptureScenario(h);
@@ -27,7 +27,14 @@ public class WallGeometryTextureAccessTests
 
         var file = Assert.IsType<FileContentHttpResult>(result);
         Assert.Equal("image/jpeg", file.ContentType);
-        Assert.Contains("immutable", http.Response.Headers.CacheControl.ToString());
+        Assert.Equal("private, no-cache", http.Response.Headers.CacheControl.ToString());
+
+        var url = (await s.Service.GetActiveTexturesAsync(h.WallId))[0].Url;
+        var versioned = AssetRequests.For(url);
+        await WallGeometryTextureEndpoints.HandleAsync(
+            h.WallId, modelId, "0", null, new ClaimsPrincipal(), versioned, h.WallService, h.CurrentUser,
+            h.DbContextFactory, Kiosk(null), s.Files, CancellationToken.None);
+        Assert.Contains("immutable", versioned.Response.Headers.CacheControl.ToString());
     }
 
     [Fact]
@@ -81,8 +88,8 @@ public class WallGeometryTextureAccessTests
 
         var list = await s.Service.GetActiveTexturesAsync(h.WallId);
         Assert.Equal(["0", "5a"], list.Select(t => t.FacetId));
-        Assert.Equal($"/api/walls/{h.WallId}/geometry/{modelId}/textures/0", list[0].Url);
-        Assert.Equal($"/api/walls/{h.WallId}/geometry/{modelId}/textures/0/mask", list[0].MaskUrl);
+        Assert.StartsWith($"/api/walls/{h.WallId}/geometry/{modelId}/textures/0?v=", list[0].Url);
+        Assert.StartsWith($"/api/walls/{h.WallId}/geometry/{modelId}/textures/0/mask?v=", list[0].MaskUrl);
         Assert.Null(list[1].MaskUrl);
         Assert.Equal((-100, 3000, -100, 2500), (list[0].AMin, list[0].AMax, list[0].BMin, list[0].BMax));
 
@@ -94,8 +101,8 @@ public class WallGeometryTextureAccessTests
 
         h.CurrentUser.GetCurrentUserAsync().Returns(_ => Task.FromException<User>(new UnauthorizedAccessException()));
         var shared = await s.Service.GetActiveTexturesAsync(h.WallId, "tok en");
-        Assert.EndsWith("?token=tok%20en", shared[0].Url);
-        Assert.EndsWith("/mask?token=tok%20en", shared[0].MaskUrl);
+        Assert.Contains("/textures/0?token=tok%20en&v=", shared[0].Url);
+        Assert.Contains("/mask?token=tok%20en&v=", shared[0].MaskUrl);
         Assert.Empty(await s.Service.GetActiveTexturesAsync(h.WallId));
     }
 
@@ -110,7 +117,7 @@ public class WallGeometryTextureAccessTests
         var file = Assert.IsType<FileContentHttpResult>(result);
         Assert.Equal("image/png", file.ContentType);
         Assert.Equal(FakeComputeJobClient.MaskPng, file.FileContents.ToArray());
-        Assert.Contains("immutable", http.Response.Headers.CacheControl.ToString());
+        Assert.Equal("private, no-cache", http.Response.Headers.CacheControl.ToString());
         Assert.IsType<NotFound>((await ServeMaskAsync(h, s, h.WallId, modelId, "5a", null, Kiosk(null))).Result);
         Assert.IsType<NotFound>((await ServeMaskAsync(h, s, Guid.NewGuid(), modelId, "0", null, Kiosk(null))).Result);
 
