@@ -171,12 +171,9 @@ public partial class UpdateReviewScreen
     private void Settle(Core.Refresh.Review.UpdateReview? after, List<ReviewAnswerRequest> batch, IReadOnlySet<string> lost, string? message = null)
     {
         review = after ?? review;
-        foreach (var key in batch.Select(a => a.Key).Distinct(StringComparer.Ordinal))
+        foreach (var key in batch.Select(a => a.Key).Distinct(StringComparer.Ordinal).Where(k => lost.Contains(k) || !pending.IsWaiting(k)))
         {
-            if (lost.Contains(key) || !pending.IsWaiting(key))
-            {
-                overlay.Remove(key);
-            }
+            overlay.Remove(key);
         }
 
         error = message ?? error;

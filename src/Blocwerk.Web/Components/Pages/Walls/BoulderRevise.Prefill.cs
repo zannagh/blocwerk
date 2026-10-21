@@ -2,6 +2,7 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using System.Data.Common;
 using Blocwerk.Core.Services;
 
 namespace Blocwerk.Web.Components.Pages.Walls;
@@ -47,8 +48,10 @@ public partial class BoulderRevise
         {
             prefill = await BoulderService.GetRevisePrefillAsync(BoulderId, _displayHolds, _panels);
         }
-        catch (Exception)
+        catch (Exception ex) when (ex is InvalidOperationException or DbException or TimeoutException or UnauthorizedAccessException)
         {
+            // The page still opens: the fallback below carries only the holds that survive unchanged.
+            Logger.LogWarning(ex, "Revise pre-selection by hold lineage failed for boulder {BoulderId}", BoulderId);
             prefill = null;
         }
 
