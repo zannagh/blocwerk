@@ -8,9 +8,10 @@ namespace Blocwerk.Authentication.Services;
 
 /// <summary>
 /// The markup of <see cref="SiteDataClearing.SignedOutPage"/>: a bare page that tells the page-side caches the identity
-/// changed and moves on at once. It loads only <c>deploy-drafts.js</c>, whose <c>bw:identity-changed</c> listener drops
-/// the editor copies kept on the device for the identity that left. Its target is always a local path; anything else
-/// becomes "/".
+/// changed and moves on at once. It loads <c>deploy-drafts.js</c>, whose <c>bw:identity-changed</c> listener drops
+/// the editor copies kept on the device for the identity that left, and <c>asset-ledger.js</c> + <c>asset-wipe.js</c>,
+/// whose <c>bwAssetWipe.signedOut()</c> wipes the on-device asset cache before it moves on (capped at 1.5 s; the next
+/// page's partition check wipes anyway). Its target is always a local path; anything else becomes "/".
 /// </summary>
 internal static class SignedOutMarkup
 {
@@ -34,10 +35,15 @@ internal static class SignedOutMarkup
             <body>
             <p>Signed out. <a href="{{html}}">Continue</a></p>
             <script src="/js/deploy-drafts.js"></script>
+            <script src="/js/asset-ledger.js"></script>
+            <script src="/js/asset-wipe.js"></script>
             <script>
             try { window.dispatchEvent(new Event('{{IdentityChangedEvent}}')); } catch (e) { }
             try { if (window.bwDeployDrafts && window.bwDeployDrafts.clearAll) { window.bwDeployDrafts.clearAll(); } } catch (e) { }
-            location.replace("{{js}}");
+            var gone = false;
+            var go = function () { if (!gone) { gone = true; location.replace("{{js}}"); } };
+            setTimeout(go, 1500);
+            try { window.bwAssetWipe.signedOut().then(go, go); } catch (e) { go(); }
             </script>
             </body>
             </html>

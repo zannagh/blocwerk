@@ -179,7 +179,23 @@ window.bwAssetWipe = (function () {
         }
     }
 
-    /** Rule 2: the logout link and the kiosk unregister form wipe first. `env` is resolved lazily (getEnv). */
+    /**
+     * The signed-out page (SignedOutMarkup.cs, PR 2.5) calls this, so an account sign-out wipes even when no
+     * interceptor below ran (a forced load of /account/logout, a link outside the app's pages). It fires nothing: that
+     * page dispatches `bw:identity-changed` itself. A second wipe after the interceptor's finds nothing to delete.
+     */
+    function signedOut(win) {
+        return win.bwAssetLedger.open()
+            .then(ledger => ledger.setMeta({ activePartition: null })
+                .then(() => wipe({ caches: win.caches, ledger, origin: win.location.origin }, null)))
+            .catch(() => undefined);
+    }
+
+    /**
+     * Rule 2: the logout link and the kiosk unregister form wipe first. `env` is resolved lazily (getEnv). On a kiosk
+     * (`k-` partition) the logout link only ends a member's session, a plain redirect server-side, so it keeps the
+     * tablet's cache; the next page's acting-user check clears the drafts.
+     */
     function installLogout(win, getEnv) {
         win.document.addEventListener('click', event => {
             const link = event.target && event.target.closest ? event.target.closest('a[href]') : null;
@@ -187,7 +203,10 @@ window.bwAssetWipe = (function () {
                 return;
             }
             event.preventDefault();
-            getEnv().then(env => wipeThen(win, env, () => win.location.assign(link.href)), () => win.location.assign(link.href));
+            const go = () => win.location.assign(link.href);
+            getEnv()
+                .then(env => env.ledger.getMeta().then(meta => (String(meta.activePartition).startsWith('k-') ? go() : wipeThen(win, env, go))))
+                .catch(go);
         }, true);
         win.document.addEventListener('submit', event => {
             const form = event.target;
@@ -203,5 +222,5 @@ window.bwAssetWipe = (function () {
         }, true);
     }
 
-    return { tokenOf, decide, wipe, deleteKeys, dropWall, userTagOf, announceIdentityChange, installLogout, cacheUrl };
+    return { tokenOf, decide, wipe, deleteKeys, dropWall, userTagOf, announceIdentityChange, installLogout, cacheUrl, signedOut: () => signedOut(window) };
 })();

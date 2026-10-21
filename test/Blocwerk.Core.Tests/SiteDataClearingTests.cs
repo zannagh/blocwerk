@@ -62,6 +62,10 @@ public class SiteDataClearingTests
         Assert.Contains("window.bwDeployDrafts.clearAll()", page.Content);
         Assert.True(page.Content!.IndexOf("<script src=\"/js/deploy-drafts.js\"></script>", StringComparison.Ordinal)
             < page.Content.IndexOf("new Event('bw:identity-changed')", StringComparison.Ordinal));
+        Assert.True(page.Content.IndexOf("<script src=\"/js/asset-wipe.js\"></script>", StringComparison.Ordinal)
+            < page.Content.IndexOf("window.bwAssetWipe.signedOut()", StringComparison.Ordinal));
+        Assert.True(page.Content.IndexOf("<script src=\"/js/asset-ledger.js\"></script>", StringComparison.Ordinal)
+            < page.Content.IndexOf("<script src=\"/js/asset-wipe.js\"></script>", StringComparison.Ordinal));
     }
 
     /// <summary>A kiosk session ending (release, idle) keeps the tablet's shared, wall-pinned cache.</summary>

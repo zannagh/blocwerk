@@ -135,6 +135,30 @@ test('rule 2: the logout link wipes every partition first, then navigates; kiosk
     assert.ok(!names(kiosk).some(n => n.startsWith('bw-a1-')));
 });
 
+test('the signed-out page\'s bwAssetWipe.signedOut() wipes every partition when no interceptor ran; a second wipe is harmless', async () => {
+    const caches = standardCaches();
+    const page = loadPage({ label: USER_A, caches, swReply: 'none', summary: { wallsWith3d: 0, walls: [W1] }, routes: listing(W1, sha('a')) });
+    await page.boot();
+    assert.deepEqual(keys(caches, `bw-a1-${USER_A}-img`), [sha('a')]);
+
+    await page.win.bwAssetWipe.signedOut();
+    await page.win.bwAssetWipe.signedOut();
+    assert.ok(!names(caches).some(n => n.startsWith('bw-a1-')));
+    assert.ok(names(caches).includes('blocwerk-offline') && names(caches).includes('bw-sw-state'));
+    assert.equal((await (await page.ledger()).getMeta()).activePartition, null);
+});
+
+test('on a kiosk the logout link keeps the tablet cache (the server answers a plain redirect there)', async () => {
+    const caches = fakeCaches({ [`bw-a1-${KIOSK}-img`]: [`${ORIGIN}/__bw/${sha('k')}`] });
+    const tablet = loadPage({ label: KIOSK, caches, swReply: 'none', summary: { wallsWith3d: 0, walls: [W1] }, routes: listing(W1, sha('k')) });
+    await tablet.boot();
+    const link = { href: `${ORIGIN}/account/logout`, getAttribute: () => '/account/logout', closest: () => link };
+    tablet.docEvent('click', { target: link, preventDefault: () => {}, defaultPrevented: false });
+    await tablet.settle();
+    assert.deepEqual(tablet.assigned, [`${ORIGIN}/account/logout`]);
+    assert.deepEqual(keys(caches, `bw-a1-${KIOSK}-img`), [sha('k')]);
+});
+
 function memberPage(more = {}) {
     const routes = Object.assign({
         [`/api/walls/${W1}/manifest`]: () => json(manifest(W1, [[sha('1'), 'core'], [sha('2'), 'lazy'], [sha('3'), 'view3d', { kind: 'texture' }]]), 200, { etag: 'W/"m1"' }),
