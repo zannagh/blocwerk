@@ -1719,6 +1719,11 @@ public class WallService : IWallService
 
     public async Task DeleteHoldAsync(Guid holdId)
     {
+        await DeleteHoldRetiringAsync(holdId);
+    }
+
+    public async Task<IReadOnlyList<RetiredBoulder>> DeleteHoldRetiringAsync(Guid holdId)
+    {
         using var op = BlocwerkMetrics.TimeOperation("Wall.DeleteHold");
         try
         {
@@ -1738,7 +1743,8 @@ public class WallService : IWallService
             // Everything that references the hold with a Restrict FK — boulder memberships (each
             // active boulder is flagged historic), panel links, and the cross-generation lineage
             // rows, which are tombstoned rather than destroyed.
-            var historicCount = await HoldDeletion.PrepareHoldForDeleteAsync(db, holdId);
+            var retired = new List<Boulder>();
+            var historicCount = await HoldDeletion.PrepareHoldForDeleteAsync(db, holdId, retired: retired);
 
             db.Holds.Remove(hold);
 
@@ -1752,6 +1758,7 @@ public class WallService : IWallService
             BlocwerkMetrics.RecordHoldDeleted(hold.WallId);
             await _activityLogService.LogAsync(hold.WallId, null, ActivityType.HoldDeleted);
             _logger.LogInformation("Hold {HoldId} on wall {WallId} deleted by {UserId}, {HistoricCount} boulder(s) made historic", holdId, hold.WallId, user.Id, historicCount);
+            return retired.Select(b => new RetiredBoulder(b.Id, b.Name)).ToList();
         }
         catch (Exception ex)
         {

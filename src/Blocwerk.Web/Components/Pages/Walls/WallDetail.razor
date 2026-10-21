@@ -1654,7 +1654,7 @@ else
 
         foreach (var holdId in changes.Deleted)
         {
-            await WallService.DeleteHoldAsync(holdId);
+            _lastBatchRetired.AddRange(await WallService.DeleteHoldRetiringAsync(holdId));
             _holds.RemoveAll(h => h.Id == holdId);
         }
 
@@ -1876,7 +1876,7 @@ else
 
         foreach (var holdId in changes.Deleted)
         {
-            await WallService.DeleteHoldAsync(holdId);
+            _lastBatchRetired.AddRange(await WallService.DeleteHoldRetiringAsync(holdId));
         }
 
         await LoadEditingPanelHolds();
