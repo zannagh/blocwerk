@@ -8,6 +8,7 @@ using Blocwerk.Core.Abstractions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -55,13 +56,17 @@ public class SiteDataClearingTests
         Assert.Equal("\"cache\"", http.Response.Headers[SiteDataClearing.HeaderName].ToString());
         Assert.Equal("no-store", http.Response.Headers.CacheControl.ToString());
         Assert.StartsWith("text/html", page.ContentType);
-        Assert.Contains("<meta http-equiv=\"refresh\" content=\"1;url=/\">", page.Content);
+        Assert.Contains("<meta http-equiv=\"refresh\" content=\"2;url=/\">", page.Content);
         Assert.Contains("<a href=\"/\">Continue</a>", page.Content);
         Assert.Contains("location.replace(\"/\")", page.Content);
         Assert.Contains("new Event('bw:identity-changed')", page.Content);
         Assert.Contains("window.bwDeployDrafts.clearAll()", page.Content);
         Assert.True(page.Content!.IndexOf("<script src=\"/js/deploy-drafts.js\"></script>", StringComparison.Ordinal)
             < page.Content.IndexOf("new Event('bw:identity-changed')", StringComparison.Ordinal));
+        Assert.True(page.Content.IndexOf("<script src=\"/js/asset-wipe.js\"></script>", StringComparison.Ordinal)
+            < page.Content.IndexOf("window.bwAssetWipe.signedOut()", StringComparison.Ordinal));
+        Assert.True(page.Content.IndexOf("<script src=\"/js/asset-ledger.js\"></script>", StringComparison.Ordinal)
+            < page.Content.IndexOf("<script src=\"/js/asset-wipe.js\"></script>", StringComparison.Ordinal));
     }
 
     /// <summary>A kiosk session ending (release, idle) keeps the tablet's shared, wall-pinned cache.</summary>
@@ -72,6 +77,25 @@ public class SiteDataClearingTests
 
         Assert.IsType<LocalRedirectResult>(await controller.Logout());
         Assert.False(http.Response.Headers.ContainsKey(SiteDataClearing.HeaderName));
+    }
+
+    /// <summary>The scripts load by their fingerprinted URLs (the endpoint's asset map), as BlocwerkApp's do through @Assets.</summary>
+    [Fact]
+    public void TheSignedOutPage_LoadsItsScriptsByTheirFingerprintedUrls()
+    {
+        string[] scripts = ["js/deploy-drafts.js", "js/asset-ledger.js", "js/asset-wipe.js"];
+        var assets = new ResourceAssetCollection(scripts
+            .Select(label => new ResourceAsset(label.Replace(".js", ".abc123.js", StringComparison.Ordinal), [new ResourceAssetProperty("label", label)]))
+            .ToList());
+        var http = new DefaultHttpContext();
+        http.SetEndpoint(new Endpoint(null, new EndpointMetadataCollection(new object[] { assets }), "logout"));
+
+        var page = SiteDataClearing.SignedOutPage(http.Response, "/");
+
+        Assert.Contains("<script src=\"/js/asset-wipe.abc123.js\"></script>", page.Content);
+        Assert.Contains("<script src=\"/js/asset-ledger.abc123.js\"></script>", page.Content);
+        Assert.Contains("<script src=\"/js/deploy-drafts.abc123.js\"></script>", page.Content);
+        Assert.DoesNotContain("src=\"/js/asset-wipe.js\"", page.Content);
     }
 
     [Theory]

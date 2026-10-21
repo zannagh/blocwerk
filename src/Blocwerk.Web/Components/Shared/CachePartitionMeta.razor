@@ -4,12 +4,13 @@
 
 @* The device's asset-cache partition (design §6.6), on every server-rendered page: the page modules compare it with the
    partition they last cached under and wipe on any difference, a missing meta included. Rendered in the head of BlocwerkApp,
-   which every page goes through. "offline" (keep, decide nothing) if the partition cannot be decided: a failure on the
-   server must never make every device wipe on every page load. *@
+   which every page goes through. "unknown" if the partition cannot be decided: a failure on the server must never make
+   every device wipe on every page load, but neither may it keep a cache across a real identity switch, so the page
+   trusts nothing (caches nothing, wipes on a changed acting user). "offline" belongs to offline.html alone. *@
 <meta name="@CachePartitions.MetaName" content="@partition" />
 
 @code {
-    private string partition = CachePartitions.Offline;
+    private string partition = CachePartitions.Unknown;
 
     protected override async Task OnInitializedAsync()
     {
@@ -19,7 +20,7 @@
         }
         catch (Exception)
         {
-            partition = CachePartitions.Offline;
+            partition = CachePartitions.Unknown;
         }
     }
 }

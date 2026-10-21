@@ -25,9 +25,12 @@ public static class CachePartitions
     /// <summary>Cache nothing, and wipe what is cached (a kiosk whose wall allows no anonymous cache).</summary>
     public const string None = "none";
 
-    /// <summary>
-    /// No decision, keep the active partition: a page served from the device itself (<c>offline.html</c>), or a server
-    /// page whose partition could not be resolved.
-    /// </summary>
+    /// <summary>No decision, keep the active partition: a page served from the device itself (<c>offline.html</c>) only.</summary>
     public const string Offline = "offline";
+
+    /// <summary>
+    /// The server could not resolve the partition: trust nothing. The page caches nothing and fills nothing, and wipes
+    /// if its acting user changed; the worker goes network-only and never falls back to its last label.
+    /// </summary>
+    public const string Unknown = "unknown";
 }

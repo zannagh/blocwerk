@@ -10,8 +10,8 @@ using Microsoft.EntityFrameworkCore;
 namespace Blocwerk.Core.Assets.Manifest;
 
 /// <summary>
-/// Serves <c>GET /api/me/cache-summary</c>: the count of the viewer's walls with 3D data, for the client's high-storage
-/// banner. The walls are the ones the viewer's manifests would list 3D for: a signed-in caller's walls through the same
+/// Serves <c>GET /api/me/cache-summary</c>: the viewer's cacheable walls, for the client's fill queue, and the count of them
+/// with 3D data, for the client's high-storage banner. The walls are the ones the viewer's manifests would list 3D for: a signed-in caller's walls through the same
 /// membership filter <see cref="Resolution.AssetAccessGate"/> grants on, a kiosk tablet's bound wall only when
 /// <see cref="KioskCacheRules"/> lets it cache, and none for anybody else.
 /// </summary>
@@ -26,7 +26,7 @@ public sealed class CacheSummaryService(
         var walls = await WallsAsync(db, ct);
         if (walls.Count == 0)
         {
-            return new CacheSummaryResponse(0);
+            return new CacheSummaryResponse(0, []);
         }
 
         // "Has 3D data" is what ManifestGeometryEntries lists: the active model's textures or its splat.
@@ -36,7 +36,7 @@ public sealed class CacheSummaryService(
             .Select(m => m.WallId)
             .Distinct()
             .CountAsync(ct);
-        return new CacheSummaryResponse(count);
+        return new CacheSummaryResponse(count, walls);
     }
 
     private async Task<List<Guid>> WallsAsync(BlocwerkDbContext db, CancellationToken ct)

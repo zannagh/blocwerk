@@ -40,6 +40,36 @@ public class CacheSummaryTests
         f.Assets.Caller = null;
 
         Assert.Equal(0, await CountAsync(f));
+        Assert.Empty((await Service(f).GetAsync(default)).Walls);
+    }
+
+    [Fact]
+    public async Task TheWalls_AreTheMembersWalls_WithOrWithout3D_AndNeverAStrangers()
+    {
+        using var f = new ManifestFixture();
+        var s = await f.SeedAsync();
+        var plain = await AddWallAsync(f, member: true, active: false, files: false);
+
+        var walls = (await Service(f).GetAsync(default)).Walls;
+
+        Assert.Contains(f.WallId, walls);
+        Assert.Contains(plain, walls);
+        Assert.DoesNotContain(s.OtherWallId, walls);
+    }
+
+    [Fact]
+    public async Task AKiosk_ListsOnlyItsBoundWall_NoneWhenItMayNotCache()
+    {
+        using var f = new ManifestFixture();
+        var s = await f.SeedAsync();
+        await AddWallAsync(f, member: true, active: true, files: true);
+
+        f.BindKiosk();
+        Assert.Equal([f.WallId], (await Service(f).GetAsync(default)).Walls);
+        f.BindKiosk(s.OtherWallId);
+        Assert.Equal([s.OtherWallId], (await Service(f).GetAsync(default)).Walls);
+        f.BindKiosk(Guid.Empty);
+        Assert.Empty((await Service(f).GetAsync(default)).Walls);
     }
 
     [Fact]
@@ -73,6 +103,7 @@ public class CacheSummaryTests
         Assert.Equal("no-store", http.Response.Headers.CacheControl.ToString());
         using var body = JsonDocument.Parse(((MemoryStream)http.Response.Body).ToArray());
         Assert.Equal(1, body.RootElement.GetProperty("wallsWith3d").GetInt32());
+        Assert.Equal(f.WallId, body.RootElement.GetProperty("walls")[0].GetGuid());
     }
 
     private static CacheSummaryService Service(ManifestFixture f) =>
@@ -80,7 +111,7 @@ public class CacheSummaryTests
 
     private static async Task<int> CountAsync(ManifestFixture f) => (await Service(f).GetAsync(default)).WallsWith3d;
 
-    private static async Task AddWallAsync(ManifestFixture f, bool member, bool active, bool files)
+    private static async Task<Guid> AddWallAsync(ManifestFixture f, bool member, bool active, bool files)
     {
         var wall = new Wall { Name = "W" + Guid.NewGuid().ToString("N")[..6], OwnerId = f.Assets.Harness.Owner.Id };
         await using (var db = f.Assets.Harness.CreateContext())
@@ -95,6 +126,7 @@ public class CacheSummaryTests
         }
 
         await Add3DAsync(f, wall.Id, active, files);
+        return wall.Id;
     }
 
     private static async Task Add3DAsync(ManifestFixture f, Guid wallId, bool active, bool files)

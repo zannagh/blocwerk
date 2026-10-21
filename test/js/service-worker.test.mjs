@@ -58,9 +58,15 @@ test('activate keeps the asset caches and the worker state, deleting only old sh
 
 test('sw-info under proto 1 is answered on the passed port, or else to the sending client', () => {
     const worker = loadWorker();
-    const expected = { proto: 1, type: 'sw-info', shell: 'blocwerk-shell-v4' };
+    const expected = { proto: 1, type: 'sw-info', shell: 'blocwerk-shell-v4', partition: null };
     assert.deepEqual(send(worker, { proto: 1, type: 'sw-info' }, true).map(m => ({ ...m })), [expected]);
     assert.deepEqual(send(worker, { proto: 1, type: 'sw-info' }, false).map(m => ({ ...m })), [expected]);
+});
+
+test('sw-info reports the label the asset cache serves, once a lookup answered', async () => {
+    const worker = workerFor(ALICE);
+    await dispatchFetch(worker, asset()).settle();
+    assert.equal(send(worker, { proto: 1, type: 'sw-info' }, true)[0].partition, ALICE);
 });
 
 test('messages with an unknown proto or type, or no object at all, are ignored without throwing', () => {
@@ -184,7 +190,19 @@ test('a refused put (quota, full device) still hands the page the network respon
     assert.equal(served.status, 200);
     assert.equal(await served.text(), 'jpeg-bytes');
     assert.equal(worker.stored.get(`bw-a1-${ALICE}-img`)?.size ?? 0, 0);
-    assert.deepEqual(worker.posted, []);
+    assert.deepEqual(worker.posted.map(p => [p.message.type, p.message.sha, p.message.width]), [['asset-refused', SHA, 1280]],
+        'the page hears of the refusal, so a slow write is never taken for one');
+});
+
+test('`unknown` (the server could not resolve the partition) is network-only and never falls back to the last label', async () => {
+    const worker = workerFor(ALICE);
+    await dispatchFetch(worker, asset()).settle();
+    assert.equal(assetFetches(worker), 1);
+    worker.routes[PARTITION] = () => response(200, JSON.stringify({ partition: 'unknown' }), { 'content-type': 'application/json' });
+
+    await dispatchFetch(worker, asset(), { clientId: 'page-2' }).settle();
+    assert.equal(assetFetches(worker), 2, 'the cached copy under the last label is not served');
+    assert.notEqual(await worker.stored.get('bw-sw-state').get('/__bw/partition').clone().text(), ALICE);
 });
 
 test('a failing cache lookup falls back to the network', async () => {

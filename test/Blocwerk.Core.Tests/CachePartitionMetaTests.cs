@@ -36,14 +36,17 @@ public sealed partial class CachePartitionMetaTests : IDisposable
         Assert.Equal($"<meta name=\"bw-partition\" content=\"{partition}\" />", (await RenderAsync(resolver)).Trim());
     }
 
-    /// <summary>An undecidable partition says <c>offline</c> (keep): a server fault must not wipe every device on every page.</summary>
+    /// <summary>
+    /// An undecidable partition says <c>unknown</c> (trust nothing), never <c>offline</c>: a server fault must not wipe
+    /// every device on every page, nor keep a cache across a real identity switch.
+    /// </summary>
     [Fact]
-    public async Task AResolverThatFails_RendersOffline()
+    public async Task AResolverThatFails_RendersUnknown()
     {
         var resolver = Substitute.For<ICachePartitionResolver>();
         resolver.ResolveAsync().Returns<string>(_ => throw new InvalidOperationException("boom"));
 
-        Assert.Contains("content=\"offline\"", await RenderAsync(resolver));
+        Assert.Contains("content=\"unknown\"", await RenderAsync(resolver));
     }
 
     [Fact]
