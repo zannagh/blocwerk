@@ -30,7 +30,7 @@ public sealed class ManifestFeedMapperTests : IDisposable
 
         await fixture.ClearRowsAsync();
         await fixture.ChangeAsync<WallPanel>(p => p.Id == panel.Id, (p, _) => p.StagedPhoto = [5]);
-        Assert.Empty(await fixture.RowsAsync());
+        Assert.Equal([FeedKinds.PanelStaged], (await fixture.RowsAsync()).Select(r => r.Kind)); // for the editors, no manifest
     }
 
     [Fact]

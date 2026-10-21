@@ -1475,9 +1475,9 @@ else
     /// edit shows up without a reload. Skipped while this user is editing, so a background reload
     /// never clobbers in-progress hold edits; their own post-save <see cref="LoadWall"/> covers that.
     /// </summary>
-    private void OnCacheChanged(DomainChange change)
+    private void OnCacheChanged(WallCacheChange change)
     {
-        if (change.Scope == DomainChangeScope.WallList || change.WallId != WallId || _isEditing)
+        if (change.Scope == WallCacheChangeScope.WallList || change.WallId != WallId || _isEditing)
         {
             return;
         }

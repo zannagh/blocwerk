@@ -132,7 +132,7 @@ public sealed class FeedInterceptorTests
         using var owned = harness;
         var hold = (await harness.SeedWallAsync(holdCount: 1))[0];
         var transactions = new TransactionCounter();
-        var feed = new FeedInterceptor(new FeedMapperRegistry([new ProbeHoldMapper()]), signal, NullLogger<FeedInterceptor>.Instance);
+        var feed = new FeedInterceptor(new FeedMapperRegistry([new ProbeHoldMapper()]), signal, NullLogger<FeedInterceptor>.Instance, TestFeedCommits.Unobserved());
         await using var db = TestDb.Create(harness.DbContextFactory.ConnectionString, feed, transactions);
         var tracked = await db.Holds.SingleAsync(h => h.Id == hold.Id);
         tracked.X += 0.01;
@@ -197,7 +197,7 @@ public sealed class FeedInterceptorTests
     private BlocwerkDbContext Context(WallTestHarness harness, params IFeedMapper[] mappers) =>
         TestDb.Create(
             harness.DbContextFactory.ConnectionString,
-            new FeedInterceptor(new FeedMapperRegistry(mappers), signal, NullLogger<FeedInterceptor>.Instance));
+            new FeedInterceptor(new FeedMapperRegistry(mappers), signal, NullLogger<FeedInterceptor>.Instance, TestFeedCommits.Unobserved()));
 
     private static async Task MoveAsync(BlocwerkDbContext db, Guid holdId)
     {

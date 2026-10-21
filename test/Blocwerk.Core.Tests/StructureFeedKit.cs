@@ -17,7 +17,7 @@ internal static class StructureFeedKit
     private static readonly HashSet<string> AllowedFields = ["sv", "generation", "panelId", "isDraft", "role", "reason", "ownerChanged"];
 
     public static FeedInterceptor Interceptor(IFeedSignal? signal = null) =>
-        new(new FeedMapperRegistry(FeedMappers.Create()), signal ?? new RecordingFeedSignal(), NullLogger<FeedInterceptor>.Instance);
+        new(new FeedMapperRegistry(FeedMappers.Create()), signal ?? new RecordingFeedSignal(), NullLogger<FeedInterceptor>.Instance, TestFeedCommits.Unobserved());
 
     public static BlocwerkDbContext Context(WallTestHarness harness, IFeedSignal? signal = null) =>
         TestDb.Create(harness.DbContextFactory.ConnectionString, Interceptor(signal));

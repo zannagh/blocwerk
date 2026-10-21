@@ -88,9 +88,9 @@
     }
 
     // Live-refresh when the set of walls changes (created/deleted/joined) on any circuit.
-    private void OnCacheChanged(DomainChange change)
+    private void OnCacheChanged(WallCacheChange change)
     {
-        if (change.Scope != DomainChangeScope.WallList)
+        if (change.Scope != WallCacheChangeScope.WallList)
         {
             return;
         }

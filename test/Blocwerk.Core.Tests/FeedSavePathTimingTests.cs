@@ -75,13 +75,13 @@ public sealed class FeedSavePathTimingTests
     }
 
     private static FeedInterceptor Feed(IFeedSignal signal, params IFeedMapper[] mappers) =>
-        new(new FeedMapperRegistry(mappers), signal, NullLogger<FeedInterceptor>.Instance);
+        new(new FeedMapperRegistry(mappers), signal, NullLogger<FeedInterceptor>.Instance, TestFeedCommits.Unobserved());
 
     private static IWallService Service(WallTestHarness harness, string cs, params IInterceptor[] extra)
     {
         var journal = new ChangeJournal(() => TestDb.Create(cs));
         IInterceptor[] interceptors =
-            [new DomainChangeInterceptor(new DomainChangeNotifier()), new ChangeJournalInterceptor(journal), .. extra];
+            [new ChangeJournalInterceptor(journal), .. extra];
         return new WallService(new InterceptedDbContextFactory(cs, interceptors), harness.CurrentUser, harness.HoldDetection, harness.ActivityLog, NullLogger<WallService>.Instance);
     }
 }

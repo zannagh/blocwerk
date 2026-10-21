@@ -6,10 +6,9 @@ namespace Blocwerk.Core.Services;
 /// underneath them.
 /// </summary>
 /// <remarks>
-/// Deliberately a sibling of <see cref="IDomainChangeNotifier"/> rather than another
-/// <c>DomainChange</c> scope: a domain change carries data ABOUT the domain, while this carries a
-/// fact about the PROCESS, and mixing the two would make every cache subscriber filter for a kind
-/// of event it can never act on.
+/// Deliberately not a feed kind (<see cref="Feed.FeedCommits"/>, the live feed): a feed row carries
+/// data ABOUT the domain, while this carries a fact about the PROCESS, and mixing the two would make
+/// every cache subscriber filter for a kind of event it can never act on.
 /// </remarks>
 public interface IMaintenanceAnnouncer
 {

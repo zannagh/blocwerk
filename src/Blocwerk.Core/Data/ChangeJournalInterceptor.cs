@@ -15,8 +15,8 @@ namespace Blocwerk.Core.Data;
 /// applies the effect: journal and effect commit or roll back together.
 /// </summary>
 /// <remarks>
-/// Separate from <see cref="DomainChangeInterceptor"/>, which persists nothing and only broadcasts
-/// cache-invalidation ids. Entries attach to the ambient <see cref="ChangeJournal"/> batch when one
+/// Separate from <see cref="Feed.FeedInterceptor"/>, which writes the live-update feed (ids for
+/// viewers, not a replayable log). Entries attach to the ambient <see cref="ChangeJournal"/> batch when one
 /// is open, otherwise an implicit single-SaveChanges "adhoc" batch is created. The journal entity
 /// types are deliberately absent from <see cref="Allowlist"/>, which is the recursion guard: the
 /// interceptor's own inserts are never themselves journalled.

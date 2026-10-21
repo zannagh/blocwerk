@@ -123,7 +123,7 @@ public sealed class FeedInterceptorEdgeTests : IDisposable
     }
 
     private FeedInterceptor Feed(params IFeedMapper[] mappers) =>
-        new(new FeedMapperRegistry(mappers), signal, NullLogger<FeedInterceptor>.Instance);
+        new(new FeedMapperRegistry(mappers), signal, NullLogger<FeedInterceptor>.Instance, TestFeedCommits.Unobserved());
 
     private BlocwerkDbContext Context(params IFeedMapper[] mappers) =>
         TestDb.Create(harness.DbContextFactory.ConnectionString, (IInterceptor)Feed(mappers));

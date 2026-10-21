@@ -6,7 +6,6 @@ using Blocwerk.Contracts.Feed.Payloads;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Feed;
-using Blocwerk.Core.Services;
 using Blocwerk.Web.State;
 using Blocwerk.Web.State.Feed;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -20,7 +19,7 @@ namespace Blocwerk.Core.Tests;
 /// </summary>
 internal sealed class CircuitCacheFixture : IAsyncDisposable
 {
-    private readonly List<DomainChange> changes = [];
+    private readonly List<WallCacheChange> changes = [];
     private readonly List<FeedDelivery> deliveries = [];
     private readonly List<Guid> lost = [];
 
@@ -35,7 +34,7 @@ internal sealed class CircuitCacheFixture : IAsyncDisposable
         Hub = new WallFeedHub(Feed, Signal, () => TestDb.Create(connectionString), NullLogger<WallFeedHub>.Instance);
         Viewers = viewers?.Invoke(Harness) ?? Fake;
         Link = new WallFeedLink(wrapHub?.Invoke(Hub) ?? Hub, Feed, Viewers, NullLogger<WallFeedLink>.Instance);
-        Cache = new WallCacheState(Harness.WallService, Harness.BoulderService, Notifier, Link);
+        Cache = new WallCacheState(Harness.WallService, Harness.BoulderService, Commits, Link, NullLogger<WallCacheState>.Instance);
         Cache.Changed += c => Record(changes, c);
         Cache.FeedDelivered += d => Record(deliveries, d);
         Cache.AccessLost += w => Record(lost, w);
@@ -45,7 +44,7 @@ internal sealed class CircuitCacheFixture : IAsyncDisposable
 
     public InProcessFeedSignal Signal { get; } = new();
 
-    public DomainChangeNotifier Notifier { get; } = new();
+    public FeedCommits Commits { get; } = new(NullLogger<FeedCommits>.Instance);
 
     public WallFeed Feed { get; }
 
@@ -63,7 +62,7 @@ internal sealed class CircuitCacheFixture : IAsyncDisposable
 
     public Guid WallId => Harness.WallId;
 
-    public IReadOnlyList<DomainChange> Changes => Snapshot(changes);
+    public IReadOnlyList<WallCacheChange> Changes => Snapshot(changes);
 
     public IReadOnlyList<FeedDelivery> Deliveries => Snapshot(deliveries);
 

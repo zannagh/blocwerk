@@ -23,7 +23,7 @@ public sealed class FeedScopeTests : IDisposable
 
     public FeedScopeTests()
     {
-        interceptor = new FeedInterceptor(new FeedMapperRegistry([new ProbeHoldMapper()]), signal, NullLogger<FeedInterceptor>.Instance);
+        interceptor = new FeedInterceptor(new FeedMapperRegistry([new ProbeHoldMapper()]), signal, NullLogger<FeedInterceptor>.Instance, TestFeedCommits.Unobserved());
     }
 
     public void Dispose() => harness.Dispose();

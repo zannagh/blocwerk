@@ -58,22 +58,16 @@ public static class CoreServices
         builder.Services.AddSingleton(builder.Configuration.GetSection(HoldMoveOptions.Section).Get<HoldMoveOptions>() ?? new HoldMoveOptions());
         builder.Services.AddSingleton(builder.Configuration.GetSection(HoldSamenessOptions.Section).Get<HoldSamenessOptions>() ?? new HoldSamenessOptions());
 
-        // In-process pub/sub for wall/boulder changes + the EF interceptor that publishes them.
-        // Singletons so a mutation on any circuit invalidates every circuit's cache (see
-        // IDomainChangeNotifier / DomainChangeInterceptor).
-        builder.Services.AddSingleton<IDomainChangeNotifier, DomainChangeNotifier>();
-
         // The "this server is about to be replaced" notice. A singleton for the same reason and with
         // the same single-instance caveat: it is one fact about this process, read by every circuit
         // and by the anonymous /alive beacon.
         builder.Services.AddSingleton<IMaintenanceAnnouncer, MaintenanceAnnouncer>();
-        builder.Services.AddSingleton<DomainChangeInterceptor>();
 
         // The persisting mutation log (Phase A: capture only). The ambient batch tracker is a
         // singleton because its "current batch" lives in an AsyncLocal that flows with the call
         // chain; the interceptor reads it and writes journal rows into the same SaveChanges as the
         // effect. Registered as both the concrete type (the interceptor takes it) and IChangeJournal
-        // (callers open batches through it). Runs alongside DomainChangeInterceptor — both fire.
+        // (callers open batches through it). Runs alongside FeedInterceptor — both fire.
         // The registry factory is a LAZY delegate (resolved only when a wall-update batch is opened/sealed),
         // so building the singleton never resolves RootDbContextFactory — which would otherwise cycle back
         // through the DbContextOptions → ChangeJournalInterceptor → ChangeJournal. RootDbContextFactory is
@@ -117,7 +111,6 @@ public static class CoreServices
         {
             options.UseNpgsql(config.Postgres.ConnectionString);
             options.AddInterceptors(sp.GetRequiredService<SlowCommandInterceptor>());
-            options.AddInterceptors(sp.GetRequiredService<DomainChangeInterceptor>());
             options.AddInterceptors(sp.GetRequiredService<ChangeJournalInterceptor>());
             options.AddInterceptors(sp.GetRequiredService<FeedInterceptor>());
         });

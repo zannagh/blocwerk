@@ -27,8 +27,28 @@ namespace Blocwerk.Web.State.Feed;
 /// cache (the aggregate holds no manifest data).</description></item>
 /// </list>
 /// </summary>
+/// <remarks>
+/// <b>Rule:</b> every entity type a cached read hands out (<see cref="CachedShapes"/>) must name the kinds that evict
+/// it, and a change to any of its columns a page shows must write one of them. A cached read that starts loading another
+/// entity type fails <c>WallCacheShapeGuardTests</c> until it is listed here, with its kinds.
+/// </remarks>
 public static class WallFeedEviction
 {
+    /// <summary>
+    /// Gets the entity types the cached reads hold (the wall aggregate, a boulder, a hold set), each with the kinds that
+    /// evict the entries holding it. Owned types travel with their owner.
+    /// </summary>
+    public static IReadOnlyDictionary<Type, IReadOnlySet<string>> CachedShapes { get; } = new Dictionary<Type, IReadOnlySet<string>>
+    {
+        [typeof(Core.Entities.Wall)] = Kinds(FeedKinds.WallUpdated, FeedKinds.WallResync),
+        [typeof(Core.Entities.WallMember)] = Kinds(FeedKinds.MemberChanged),
+        [typeof(Core.Entities.Hold)] = Kinds(FeedKinds.HoldChanged, FeedKinds.HoldDeleted),
+        [typeof(Core.Entities.Boulder)] = Kinds(FeedKinds.BoulderChanged, FeedKinds.BoulderDeleted),
+        [typeof(Core.Entities.BoulderHold)] = Kinds(FeedKinds.BoulderChanged),
+        [typeof(Core.Entities.BoulderSetter)] = Kinds(FeedKinds.BoulderChanged),
+        [typeof(Core.Entities.User)] = Kinds(FeedKinds.UserProfile),
+    };
+
     public static WallFeedEvicted Apply(WallCacheStore store, Guid wallId, FeedEnvelope e)
     {
         if (!FeedKinds.IsKnown(e.Kind))
@@ -54,6 +74,8 @@ public static class WallFeedEviction
             _ => WallFeedEvicted.None,
         };
     }
+
+    private static IReadOnlySet<string> Kinds(params string[] kinds) => new HashSet<string>(kinds, StringComparer.Ordinal);
 
     private static WallFeedEvicted Aggregate(WallCacheStore store, Guid wallId, FeedCursor cursor, WallFeedEvicted boulders) =>
         boulders with { Wall = store.EvictAggregate(wallId, cursor) };

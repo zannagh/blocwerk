@@ -29,6 +29,7 @@ public sealed partial class WallFeedLink(IWallFeedHub hub, IWallFeed feed, ICirc
     private readonly ConcurrentDictionary<Guid, Task<WallFeedSlot?>> slots = new();
     private readonly SemaphoreSlim changes = new(1, 1);
     private int disposed;
+    private int deniedEpoch;
     private Guid? pinned;
 
     /// <summary>Raised on the hub's loop for every delivery; a resync, or a delivery of another epoch, has Resync set.</summary>
@@ -80,7 +81,7 @@ public sealed partial class WallFeedLink(IWallFeedHub hub, IWallFeed feed, ICirc
             catch (Exception ex)
             {
                 slots.TryRemove(new KeyValuePair<Guid, Task<WallFeedSlot?>>(wallId, task));
-                logger.LogWarning(ex, "Could not subscribe to the feed of wall {WallId}; its cache relies on the domain-change path", wallId);
+                logger.LogWarning(ex, "Could not subscribe to the feed of wall {WallId}; its cache relies on this process's own commits only", wallId);
                 return null;
             }
 
@@ -114,9 +115,13 @@ public sealed partial class WallFeedLink(IWallFeedHub hub, IWallFeed feed, ICirc
     public FeedViewer? ViewerOf(Guid wallId) =>
         slots.TryGetValue(wallId, out var task) && task.IsCompletedSuccessfully ? task.Result?.Viewer : null;
 
-    /// <summary>Forgets the kept "no access" answers (the user's set of walls changed).</summary>
+    /// <summary>
+    /// Forgets the kept "no access" answers (the user's set of walls changed). An answer still being read when this runs
+    /// may predate the change, so that read is repeated before it is kept (<see cref="ResolveAsync"/>).
+    /// </summary>
     public void ForgetDenied()
     {
+        Interlocked.Increment(ref deniedEpoch);
         foreach (var (wallId, task) in slots)
         {
             if (task.IsCompletedSuccessfully && task.Result is null)
@@ -169,7 +174,7 @@ public sealed partial class WallFeedLink(IWallFeedHub hub, IWallFeed feed, ICirc
     // Throws on a failed resolve or subscribe; null means "no access".
     private async Task<WallFeedSlot?> OpenAsync(Guid wallId, FeedViewer? viewer)
     {
-        viewer ??= await viewers.ResolveAsync(wallId);
+        viewer ??= await ResolveAsync(wallId);
         if (viewer is null)
         {
             return null;
@@ -184,6 +189,21 @@ public sealed partial class WallFeedLink(IWallFeedHub hub, IWallFeed feed, ICirc
         }
 
         return slot;
+    }
+
+    // A "no access" answer read while ForgetDenied ran may be from before a join: read once more. Bounded, because every
+    // repeat needs another ForgetDenied during the read.
+    private async Task<FeedViewer?> ResolveAsync(Guid wallId)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            var epoch = Volatile.Read(ref deniedEpoch);
+            var viewer = await viewers.ResolveAsync(wallId);
+            if (viewer is not null || epoch == Volatile.Read(ref deniedEpoch) || attempt == 3)
+            {
+                return viewer;
+            }
+        }
     }
 
     // On the hub's loop, under the wall's gate: no waiting here, and no call back into the hub. A batch is cut after its

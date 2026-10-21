@@ -143,21 +143,28 @@ public class UpdateReviewSafetyTests
     }
 
     [Fact]
-    public async Task AReusedFingerprint_GivesWayToAPublishedChangeOfTheWall()
+    public async Task AReusedFingerprint_GivesWayToACommittedChangeOfTheWall()
     {
         using var h = new WallTestHarness();
         using var s = await ReviewScenario.PrepareAsync(h);
-        var notifier = new DomainChangeNotifier();
-        var cache = new MatchedSessionCache(notifier);
+        var commits = new RecordingFeedCommits();
+        var cache = new MatchedSessionCache(commits.Commits);
         var session = new BigUpdateSession(h.WallId, Guid.NewGuid(), [], [], [], []);
         await using var db = h.CreateContext();
         await cache.GetOrMatchAsync(db, h.WallId, false, () => Task.FromResult(session));
         Assert.Same(session, await cache.PeekAsync(db, h.WallId));
 
         await MoveAHoldAsync(h);
-        notifier.Publish(new DomainChange(DomainChangeScope.Wall, h.WallId, Guid.Empty));
+        Assert.Same(session, await cache.PeekAsync(db, h.WallId)); // nothing committed through the feed: still reused
 
-        Assert.Null(await cache.PeekAsync(db, h.WallId));
+        await using (var edit = TestDb.Create(h.DbContextFactory.ConnectionString, FeedCommitsAfterCommitTests.Interceptor(commits)))
+        {
+            var hold = await edit.Holds.FirstAsync(x => x.WallId == h.WallId);
+            hold.Y += 0.01;
+            await edit.SaveChangesAsync();
+        }
+
+        Assert.Null(await cache.PeekAsync(db, h.WallId)); // synchronously, at the commit
     }
 
     /// <summary>The match as the summary keeps it, with the matcher's spots of the old holds on the new photos.</summary>

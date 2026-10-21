@@ -142,7 +142,7 @@ public class ContentHashCarryTests
         }
 
         var signal = new RecordingFeedSignal();
-        var feed = new FeedInterceptor(new FeedMapperRegistry([new ThrowingMapper(typeof(Wall)), new ProbeUserMapper()]), signal, NullLogger<FeedInterceptor>.Instance);
+        var feed = new FeedInterceptor(new FeedMapperRegistry([new ThrowingMapper(typeof(Wall)), new ProbeUserMapper()]), signal, NullLogger<FeedInterceptor>.Instance, TestFeedCommits.Unobserved());
         await using (var db = TestDb.Create(h.DbContextFactory.ConnectionString, new ChangeJournalInterceptor(new ChangeJournal()), feed))
         {
             await db.AttachVisibleWallsWithoutPhotosAsync();

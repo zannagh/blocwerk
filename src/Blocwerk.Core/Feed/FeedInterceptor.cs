@@ -19,27 +19,20 @@ namespace Blocwerk.Core.Feed;
 /// opens for a save of more than one statement. Rows and edit commit or roll back together.
 /// <para>
 /// After the commit the walls are woken (<see cref="IFeedSignal"/>): straight after a save without an explicit
-/// transaction, on <c>TransactionCommitted</c> with one, never after a rollback (the same rule as
-/// <see cref="Data.DomainChangeInterceptor"/>). A failed or cancelled save drops its rows and wakes (E5), and detaches the
+/// transaction, on <c>TransactionCommitted</c> with one, never after a rollback. Just before the wakes, the committed rows go to the in-process
+/// <see cref="FeedCommits"/> observers, synchronously, so a circuit's cache evicts before the save returns (read your own
+/// writes). A failed or cancelled save drops its rows and wakes (E5), and detaches the
 /// rows so a retried save collects them afresh instead of writing them twice. A suppressed save writes and wakes nothing.
 /// Held wakes belong to one transaction: its commit releases them, and anything else that ends it drops them. A singleton: per-context state lives in
 /// <see cref="ConditionalWeakTable{TKey,TValue}"/>s.
 /// </para>
 /// </summary>
-public sealed class FeedInterceptor : SaveChangesInterceptor, IDbTransactionInterceptor
+public sealed class FeedInterceptor(
+    FeedMapperRegistry registry, IFeedSignal signal, ILogger<FeedInterceptor> logger, FeedCommits commits)
+    : SaveChangesInterceptor, IDbTransactionInterceptor
 {
-    private readonly FeedMapperRegistry registry;
-    private readonly IFeedSignal signal;
-    private readonly ILogger<FeedInterceptor> logger;
     private readonly ConditionalWeakTable<DbContext, List<WallChange>> pending = new();
     private readonly ConditionalWeakTable<DbContext, FeedPendingCommit> awaitingCommit = new();
-
-    public FeedInterceptor(FeedMapperRegistry registry, IFeedSignal signal, ILogger<FeedInterceptor> logger)
-    {
-        this.registry = registry;
-        this.signal = signal;
-        this.logger = logger;
-    }
 
     // An earlier interceptor that suppressed the save (HasResult) means nothing is written: nothing to collect.
     public override InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result)
@@ -160,10 +153,11 @@ public sealed class FeedInterceptor : SaveChangesInterceptor, IDbTransactionInte
     }
 
     /// <summary>
-    /// The wakes of rows a bulk site appended with raw SQL (<see cref="FeedBulkWrite"/>): held for the commit of the open
-    /// transaction they were written in, exactly as a save's, and dropped if it rolls back.
+    /// Written rows (a save's, or those a bulk site appended with raw SQL, <see cref="FeedBulkWrite"/>): held for the
+    /// commit of the open transaction they were written in and dropped if it rolls back; without one, released now.
+    /// Releasing hands them to <see cref="FeedCommits"/> and then wakes their walls.
     /// </summary>
-    internal void HoldOrWake(DbContext context, IReadOnlyList<FeedWake> wakes)
+    internal void HoldOrWake(DbContext context, IReadOnlyList<WallChange> rows)
     {
         if (context.Database.CurrentTransaction?.GetDbTransaction() is { } transaction)
         {
@@ -174,11 +168,11 @@ public sealed class FeedInterceptor : SaveChangesInterceptor, IDbTransactionInte
                 held = awaitingCommit.GetValue(context, _ => new FeedPendingCommit(transaction));
             }
 
-            held.Wakes.AddRange(wakes);
+            held.Rows.AddRange(rows);
             return;
         }
 
-        WakeAll(wakes);
+        Release(rows);
     }
 
     /// <summary>The feed interceptor registered on <paramref name="context"/>, or null for a context built without it.</summary>
@@ -224,9 +218,8 @@ public sealed class FeedInterceptor : SaveChangesInterceptor, IDbTransactionInte
         // tracking them too: a long transaction of many saves (a replay) would otherwise drag them through every
         // DetectChanges.
         var written = rows.Where(r => !context.Entry(r).Property(c => c.Seq).IsTemporary).ToList();
-        var wakes = Wakes(written);
         Detach(context, rows);
-        HoldOrWake(context, wakes);
+        HoldOrWake(context, written);
     }
 
     private void Drop(DbContext? context)
@@ -250,7 +243,7 @@ public sealed class FeedInterceptor : SaveChangesInterceptor, IDbTransactionInte
             awaitingCommit.Remove(context);
             if (ReferenceEquals(held.Transaction, transaction))
             {
-                WakeAll(held.Wakes);
+                Release(held.Rows);
             }
         }
     }
@@ -263,17 +256,19 @@ public sealed class FeedInterceptor : SaveChangesInterceptor, IDbTransactionInte
         }
     }
 
-    // One wake per wall, with the newest transaction id: the hub re-polls until that one is below the horizon.
-    private void WakeAll(IEnumerable<FeedWake> wakes)
+    // The own-write observers first (synchronous eviction), then one wake per wall with the newest transaction id: the
+    // hub re-polls until that one is below the horizon. Wall-less User rows reach the observers and wake nothing.
+    private void Release(IReadOnlyList<WallChange> rows)
     {
-        foreach (var wake in wakes.GroupBy(w => w.WallId).Select(g => g.MaxBy(w => w.TxId ?? 0)))
+        commits.Publish(rows);
+        foreach (var wake in Wakes(rows).GroupBy(w => w.WallId).Select(g => g.MaxBy(w => w.TxId ?? 0)))
         {
             signal.Wake(wake);
         }
     }
 
-    private static List<FeedWake> Wakes(IEnumerable<WallChange> rows) =>
-        rows.Where(r => r.WallId is not null).Select(r => new FeedWake(r.WallId!.Value, r.TxId)).ToList();
+    private static IEnumerable<FeedWake> Wakes(IEnumerable<WallChange> rows) =>
+        rows.Where(r => r.WallId is not null).Select(r => new FeedWake(r.WallId!.Value, r.TxId));
 
     private static void Detach(DbContext context, IEnumerable<WallChange> rows)
     {

@@ -1283,12 +1283,12 @@ else
     /// through the uncached share path) and while the name/grade form is open, so a background reload
     /// never discards an in-progress edit.
     /// </summary>
-    private void OnCacheChanged(DomainChange change)
+    private void OnCacheChanged(WallCacheChange change)
     {
         // Share viewers are skipped by TOKEN, not only by _isAnonymous: a signed-in viewer following
         // a share link has _isAnonymous == false even with no membership on this wall, and their
         // reads go through the uncached share path that this cache signal says nothing about.
-        if (change.Scope == DomainChangeScope.WallList || _isAnonymous || !string.IsNullOrEmpty(ShareToken) || _editMeta)
+        if (change.Scope == WallCacheChangeScope.WallList || _isAnonymous || !string.IsNullOrEmpty(ShareToken) || _editMeta)
         {
             return;
         }
