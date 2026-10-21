@@ -75,7 +75,7 @@ public sealed class WallEnhancementStepFixTests
     public void TheInAppDetector_NamesItsColourFallback_SoACheckpointNeverPassesItOffAsAModelPass()
     {
         var settings = new Configuration.BlocwerkSettings();
-        settings.HoldDetection.ModelPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".onnx");
+        settings.HoldDetection.ModelPath = Path.Join(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".onnx");
         var detector = new InAppCaptureHoldDetector(Substitute.For<IHoldDetectionService>(), settings);
         Assert.Equal("color-cpu", detector.Name);
 

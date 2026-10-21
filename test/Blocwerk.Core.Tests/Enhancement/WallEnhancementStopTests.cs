@@ -174,7 +174,8 @@ public sealed class WallEnhancementStopTests
         await using var check = f.Harness.CreateContext();
         Assert.True(await check.Holds.AnyAsync(h => h.Id == added));
         var proposal = await check.HoldProposals.SingleAsync(p => p.Id == proposalId);
-        Assert.Equal((HoldProposalStatus.Accepted, (Guid?)added), (proposal.Status, proposal.HoldId));
+        Assert.Equal(HoldProposalStatus.Accepted, proposal.Status);
+        Assert.Equal(added, proposal.HoldId);
     }
 
     [Fact]

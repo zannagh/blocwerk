@@ -39,7 +39,7 @@ public sealed class InAppCaptureHoldDetector(IHoldDetectionService detector, Con
         }
 
         var assemblyDir = Path.GetDirectoryName(typeof(InAppCaptureHoldDetector).Assembly.Location) ?? ".";
-        var resolved = Path.Combine(assemblyDir, configuredPath);
+        var resolved = Path.Join(assemblyDir, configuredPath);
         return File.Exists(resolved) ? resolved : configuredPath;
     }
 

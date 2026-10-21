@@ -2480,6 +2480,11 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("RunId", "Kind", "Decision");
 
+                    b.HasIndex("RunId", "Kind", "HoldId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_WallEnhancementItems_RunId_Kind_HoldId_Written")
+                        .HasFilter("\"Kind\" IN (0, 1, 2)");
+
                     b.ToTable("WallEnhancementItems");
                 });
 

@@ -101,54 +101,62 @@ public sealed class WallEnhancementRunner(WallEnhancementJob job) : IDisposable
         shutdown.Cancel();
     }
 
+    /// <summary>Runs the job for the run, then frees its slot and forgets it. Owns <paramref name="cancel"/> and disposes it.</summary>
     private async Task RunAsync(Guid runId, CancellationToken stop, CancellationTokenSource cancel)
     {
-        var acquired = false;
+        using (cancel)
+        {
+            var acquired = false;
+            try
+            {
+                acquired = await WaitForSlotAsync(runId, stop, cancel.Token);
+                await job.RunAsync(runId, stop, cancel.Token);
+            }
+            catch (OperationCanceledException) when (stop.IsCancellationRequested)
+            {
+                // Shut down while queued or running: the run stays Running and resumes on the next start.
+            }
+            catch (OperationCanceledException)
+            {
+                // Cancelled while still queued: nothing ran yet.
+                await job.MarkCancelledAsync(runId);
+            }
+            finally
+            {
+                Release(runId, acquired);
+            }
+        }
+    }
+
+    /// <summary>Waits for the run's turn; queued behind another wall's run (minutes), its heartbeat goes on meanwhile.</summary>
+    private async Task<bool> WaitForSlotAsync(Guid runId, CancellationToken stop, CancellationToken cancel)
+    {
+        using var either = CancellationTokenSource.CreateLinkedTokenSource(stop, cancel);
+        using var waiting = CancellationTokenSource.CreateLinkedTokenSource(either.Token);
+        var heartbeat = job.HeartbeatAsync(runId, waiting.Token);
         try
         {
-            using var either = CancellationTokenSource.CreateLinkedTokenSource(stop, cancel.Token);
-
-            // Queued behind another wall's run (minutes): its heartbeat goes on meanwhile, so it does not look hung.
-            using (var waiting = CancellationTokenSource.CreateLinkedTokenSource(either.Token))
-            {
-                var heartbeat = job.HeartbeatAsync(runId, waiting.Token);
-                try
-                {
-                    await slots.WaitAsync(either.Token);
-                    acquired = true;
-                }
-                finally
-                {
-                    await waiting.CancelAsync();
-                    await heartbeat;
-                }
-            }
-
-            await job.RunAsync(runId, stop, cancel.Token);
-        }
-        catch (OperationCanceledException) when (stop.IsCancellationRequested)
-        {
-            // Shut down while queued or running: the run stays Running and resumes on the next start.
-        }
-        catch (OperationCanceledException)
-        {
-            // Cancelled while still queued: nothing ran yet.
-            await job.MarkCancelledAsync(runId);
+            await slots.WaitAsync(either.Token);
+            return true;
         }
         finally
         {
-            if (acquired)
-            {
-                slots.Release();
-            }
+            await waiting.CancelAsync();
+            await heartbeat;
+        }
+    }
 
-            lock (gate)
-            {
-                runs.Remove(runId);
-                Live.TryRemove(runId, out _);
-            }
+    private void Release(Guid runId, bool acquired)
+    {
+        if (acquired)
+        {
+            slots.Release();
+        }
 
-            cancel.Dispose();
+        lock (gate)
+        {
+            runs.Remove(runId);
+            Live.TryRemove(runId, out _);
         }
     }
 }

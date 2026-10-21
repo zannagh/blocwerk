@@ -40,7 +40,7 @@ public sealed partial class WallEnhancementJob
             await db.SaveChangesAsync();
             logger.LogInformation("Wall enhancement {RunId} cancelled during step {Step}", runId, (object?)during ?? "none (between steps or queued)");
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "Could not record the cancelled wall enhancement {RunId}", runId);
         }
@@ -70,10 +70,34 @@ public sealed partial class WallEnhancementJob
                 recorded?.StartedAt ?? now,
                 now,
                 recorded?.BatchIds ?? [],
-                NeverRan: !ran));
+                NeverRan: !ran,
+                Kind: step.Kind,
+                Labels: recorded?.Labels ?? WallEnhancementJournal.StepLabels(step)));
         }
 
         return records;
+    }
+
+    /// <summary>Lists a stopped step's writes once more, after its work returned or was let go (whatever the run's status).</summary>
+    /// <param name="runId">The run.</param>
+    /// <param name="stepKey">The step that was in hand.</param>
+    /// <returns>When done.</returns>
+    internal async Task ResalvageAsync(Guid runId, string stepKey)
+    {
+        try
+        {
+            await using var db = await dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = Guid.Empty;
+            if (await db.WallEnhancementRuns.FirstOrDefaultAsync(r => r.Id == runId) is { } run)
+            {
+                await WallEnhancementSalvage.SalvageStepAsync(db, run, stepKey, CancellationToken.None);
+                await db.SaveChangesAsync();
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Wall enhancement {RunId}: the writes of stopped step {Step} could not be listed again", runId, stepKey);
+        }
     }
 
     /// <summary>Renews the run's heartbeat until the run ends (the wall-update guard reads it).</summary>
@@ -92,7 +116,7 @@ public sealed partial class WallEnhancementJob
             {
                 return;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
                 logger.LogWarning(ex, "Wall enhancement {RunId}: a heartbeat could not be saved; trying again", runId);
                 await DelayQuietlyAsync(HeartbeatInterval, ct);
