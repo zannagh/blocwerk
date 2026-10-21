@@ -98,6 +98,7 @@ public sealed class LeafFeedTests : IAsyncLifetime
     public async Task AnEventTheLoadReflects_IsSkipped()
     {
         using var feed = Open(CommentList.Kinds);
+        await CaughtUpAsync();
         var early = Row(FeedKinds.CommentAdded, Guid.NewGuid());
         await f.CommitAsync(false, early);
         await dispatcher.Run(() => feed.LoadAsync(() => Task.FromResult(0), _ => { }));
@@ -294,6 +295,18 @@ public sealed class LeafFeedTests : IAsyncLifetime
         {
             return applied.ToList();
         }
+    }
+
+    // Waits until the circuit's subscription is open and the hub has read past a row of another boulder (which the list
+    // ignores). Without it the hub's first read after the subscribe can land after a row the test commits next and deliver
+    // it as live, before any load: a list with no load yet applies it, which is right, but not what a test about the
+    // load's cursor means to check.
+    private async Task CaughtUpAsync()
+    {
+        await f.Cache.EnsureFeedAsync(f.WallId);
+        var elsewhere = Row(FeedKinds.CommentAdded, Guid.NewGuid());
+        elsewhere.BoulderId = Guid.NewGuid();
+        await f.DeliverAsync(elsewhere);
     }
 
     // Commits, wakes and waits until the list applied one more batch.

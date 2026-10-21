@@ -35,6 +35,13 @@ public sealed class PostgresLeafFeedTests
             return Task.CompletedTask;
         });
 
+        // The subscription is open and the hub has read past a row of another boulder, so its first read cannot deliver
+        // `early` as live before the load (see LeafFeedTests.CaughtUpAsync).
+        await f.Cache.EnsureFeedAsync(f.WallId);
+        var elsewhere = f.Row(FeedKinds.CommentAdded, Guid.NewGuid(), new CommentPayload(Guid.NewGuid()));
+        elsewhere.BoulderId = Guid.NewGuid();
+        await f.DeliverAsync(elsewhere);
+
         var early = await CommentRowAsync(f, boulder, "seen by the load");
         await f.CommitAsync(false, early);
 
