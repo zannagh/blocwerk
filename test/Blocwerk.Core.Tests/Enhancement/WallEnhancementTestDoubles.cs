@@ -70,3 +70,20 @@ internal sealed class FakeEnhancementStep(
     public static FakeEnhancementStep Suggesting(string key, int order, WallEnhancementItemKind kind, params WallEnhancementSuggestion[] suggestions) =>
         new(key, order, kind, (_, _) => Task.FromResult(new WallEnhancementStepOutcome($"{suggestions.Length} suggested", suggestions)));
 }
+
+/// <summary>A context factory whose first context throws on save, as a dropped connection would.</summary>
+internal sealed class FailOnceFactory(IDbContextFactory<BlocwerkDbContext> inner) : IDbContextFactory<BlocwerkDbContext>
+{
+    public bool Failed { get; private set; }
+
+    public BlocwerkDbContext CreateDbContext()
+    {
+        if (!Failed)
+        {
+            Failed = true;
+            throw new InvalidOperationException("connection dropped");
+        }
+
+        return inner.CreateDbContext();
+    }
+}

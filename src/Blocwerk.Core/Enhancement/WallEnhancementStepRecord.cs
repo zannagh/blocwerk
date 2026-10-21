@@ -34,6 +34,7 @@ public enum WallEnhancementStepOutcomeKind
 /// <param name="StartedAt">When it first started.</param>
 /// <param name="FinishedAt">When it ended, or null while running.</param>
 /// <param name="BatchIds">The journal batches it wrote, oldest first.</param>
+/// <param name="NeverRan">True for a step a cancel stopped before it started: it failed without doing anything.</param>
 public sealed record WallEnhancementStepRecord(
     string Key,
     string Title,
@@ -41,7 +42,8 @@ public sealed record WallEnhancementStepRecord(
     string Summary,
     DateTimeOffset StartedAt,
     DateTimeOffset? FinishedAt,
-    IReadOnlyList<Guid> BatchIds)
+    IReadOnlyList<Guid> BatchIds,
+    bool NeverRan = false)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 

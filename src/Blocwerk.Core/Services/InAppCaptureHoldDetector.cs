@@ -23,7 +23,25 @@ public sealed class InAppCaptureHoldDetector(IHoldDetectionService detector, Con
     private const string VolumeColor = "white";
 
     /// <inheritdoc />
-    public string Name => settings is null || File.Exists(settings.HoldDetection.ModelPath) ? "yolo-cpu" : "color-cpu";
+    public string Name => settings is null || File.Exists(ResolveModelPath(settings.HoldDetection.ModelPath)) ? "yolo-cpu" : "color-cpu";
+
+    /// <summary>
+    /// Where the app's detector reads its model from: a rooted path as it is, a relative one next to the app's assemblies
+    /// when it is there, else as given (relative to the working directory). The detector itself resolves it this way.
+    /// </summary>
+    /// <param name="configuredPath">The configured path.</param>
+    /// <returns>The path the detector opens.</returns>
+    public static string ResolveModelPath(string configuredPath)
+    {
+        if (Path.IsPathRooted(configuredPath))
+        {
+            return configuredPath;
+        }
+
+        var assemblyDir = Path.GetDirectoryName(typeof(InAppCaptureHoldDetector).Assembly.Location) ?? ".";
+        var resolved = Path.Combine(assemblyDir, configuredPath);
+        return File.Exists(resolved) ? resolved : configuredPath;
+    }
 
     /// <inheritdoc />
     public Task<bool> IsAvailableAsync(CancellationToken ct = default) => Task.FromResult(true);

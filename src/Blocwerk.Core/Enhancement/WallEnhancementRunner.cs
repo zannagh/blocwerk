@@ -16,10 +16,22 @@ public sealed class WallEnhancementRunner(WallEnhancementJob job) : IDisposable
     /// <summary>Runs that may work at once, server-wide (each traces photos with OpenCV); further runs queue.</summary>
     public const int MaxConcurrentRuns = 1;
 
+    /// <summary>
+    /// The runs live in this process, whatever their status says: a cancelled or timed-out step can still be working after
+    /// its run left Running. Static because the wall-update guard (<see cref="WallEnhancementGuard"/>) reads it from
+    /// services that have no runner (the app is single-instance).
+    /// </summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, byte> Live = new();
+
     private readonly SemaphoreSlim slots = new(MaxConcurrentRuns, MaxConcurrentRuns);
     private readonly CancellationTokenSource shutdown = new();
     private readonly object gate = new();
     private readonly Dictionary<Guid, (Task Task, CancellationTokenSource Cancel)> runs = [];
+
+    /// <summary>Whether the run's job is still live in this process (any runner).</summary>
+    /// <param name="runId">The run.</param>
+    /// <returns>True while its job has not returned.</returns>
+    public static bool IsLive(Guid runId) => Live.ContainsKey(runId);
 
     /// <summary>The job the runner runs (its steps, for the progress line).</summary>
     public WallEnhancementJob Job => job;
@@ -48,6 +60,7 @@ public sealed class WallEnhancementRunner(WallEnhancementJob job) : IDisposable
 
             var cancel = new CancellationTokenSource();
             var token = shutdown.Token;
+            Live[runId] = 0;
             runs[runId] = (Task.Run(() => RunAsync(runId, token, cancel)), cancel);
         }
     }
@@ -132,6 +145,7 @@ public sealed class WallEnhancementRunner(WallEnhancementJob job) : IDisposable
             lock (gate)
             {
                 runs.Remove(runId);
+                Live.TryRemove(runId, out _);
             }
 
             cancel.Dispose();

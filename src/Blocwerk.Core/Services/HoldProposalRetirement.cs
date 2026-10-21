@@ -5,7 +5,6 @@
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
-using Blocwerk.Core.Geometry.Proposals;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Services;
@@ -25,25 +24,23 @@ internal sealed record ProposalRetirement(HoldProposal Retired, HoldProposal? Su
 internal static class HoldProposalRetirement
 {
     /// <summary>What to retire after a pass over <paramref name="modelId"/>.</summary>
+    /// <remarks>
+    /// The merge matches spots only within one model, so every pending proposal of another (superseded) model is retired:
+    /// left pending it would be a twin of the new pass's row on the same hold. Where the two models share a frame
+    /// (<paramref name="sharesFrame"/>) a same-spot new row is its survivor, so review items follow it; elsewhere world
+    /// coordinates of two models mean nothing to each other, and it is retired without a survivor.
+    /// </remarks>
     /// <param name="pending">The wall's pending proposals after the merge (the new rows included).</param>
-    /// <param name="candidates">The pass's candidates.</param>
     /// <param name="modelId">The model the pass searched.</param>
+    /// <param name="sharesFrame">Whether a model's coordinates are in the searched model's frame.</param>
     /// <returns>The retirements.</returns>
-    public static List<ProposalRetirement> Plan(IReadOnlyList<HoldProposal> pending, IReadOnlyList<HoldProposalCandidate> candidates, Guid modelId)
+    public static List<ProposalRetirement> Plan(IReadOnlyList<HoldProposal> pending, Guid modelId, Func<Guid, bool> sharesFrame)
     {
         var result = new List<ProposalRetirement>();
-        foreach (var old in pending.Where(p => p.GeometryModelId != modelId))
-        {
-            if (!candidates.Any(c => Near(old.X, old.Y, old.Z, old.SizeMm, c.World[0], c.World[1], c.World[2], c.SizeMm)))
-            {
-                result.Add(new ProposalRetirement(old, null));
-            }
-        }
-
         var kept = new List<HoldProposal>();
         foreach (var p in pending.Where(p => p.GeometryModelId == modelId).OrderByDescending(p => p.Views).ThenByDescending(p => p.Confidence).ThenBy(p => p.Id))
         {
-            var twin = kept.FirstOrDefault(k => Near(k.X, k.Y, k.Z, k.SizeMm, p.X, p.Y, p.Z, p.SizeMm));
+            var twin = kept.FirstOrDefault(k => Near(k, p));
             if (twin is null)
             {
                 kept.Add(p);
@@ -54,8 +51,25 @@ internal static class HoldProposalRetirement
             }
         }
 
+        foreach (var old in pending.Where(p => p.GeometryModelId != modelId))
+        {
+            var survivor = sharesFrame(old.GeometryModelId) ? kept.FirstOrDefault(k => Near(k, old)) : null;
+            result.Add(new ProposalRetirement(old, survivor));
+        }
+
         return result;
     }
+
+    /// <summary>
+    /// Whether two models' coordinates are in one frame: both solved from the printed markers of the same, known plan
+    /// revision (the markers define the frame). A feature reconstruction has a frame of its own; a model derived by a
+    /// correction gets its proposals carried over (re-pointed to it) by the correction itself.
+    /// </summary>
+    /// <param name="a">One model's frame source and plan revision.</param>
+    /// <param name="b">The other's.</param>
+    /// <returns>True when they share a frame.</returns>
+    public static bool SameFrame((WallGeometryFrameSource Source, int? Plan) a, (WallGeometryFrameSource Source, int? Plan) b) =>
+        a.Source == WallGeometryFrameSource.Markers && b.Source == WallGeometryFrameSource.Markers && a.Plan is not null && a.Plan == b.Plan;
 
     /// <summary>Retires the proposals (tracked rows) and re-points or closes the enhancement review items that named them.</summary>
     /// <param name="db">The context the proposals are tracked in.</param>
@@ -81,22 +95,31 @@ internal static class HoldProposalRetirement
         var items = await db.WallEnhancementItems
             .Where(i => i.Kind == WallEnhancementItemKind.NewHold && i.Decision == WallEnhancementDecision.Pending && i.ReferenceId != null && ids.Contains(i.ReferenceId.Value))
             .ToListAsync(ct);
+        var survivors = retirements.Where(r => r.Survivor is not null).Select(r => r.Survivor!.Id).Distinct().ToList();
+        var taken = (await db.WallEnhancementItems.AsNoTracking()
+                .Where(i => i.Kind == WallEnhancementItemKind.NewHold && i.Decision == WallEnhancementDecision.Pending && i.ReferenceId != null && survivors.Contains(i.ReferenceId.Value))
+                .Select(i => new { i.RunId, i.ReferenceId })
+                .ToListAsync(ct))
+            .Select(i => (i.RunId, i.ReferenceId!.Value))
+            .ToHashSet();
         foreach (var item in items)
         {
             var survivor = retirements.First(r => r.Retired.Id == item.ReferenceId).Survivor;
-            if (survivor is not null)
+            if (survivor is not null && taken.Add((item.RunId, survivor.Id)))
             {
                 item.ReferenceId = survivor.Id;
                 continue;
             }
 
             item.Decision = WallEnhancementDecision.Skipped;
-            item.Note = "The new 3D model no longer sees a hold here.";
+            item.Note = survivor is null
+                ? "The new 3D model no longer sees a hold here."
+                : "The same spot is already in this review as another possible new hold.";
             item.DecidedAt = now;
         }
     }
 
-    private static bool Near(double ax, double ay, double az, double aSize, double bx, double by, double bz, double bSize) =>
-        Math.Sqrt(Math.Pow(ax - bx, 2) + Math.Pow(ay - by, 2) + Math.Pow(az - bz, 2))
-        <= Math.Max(HoldProposalService.SameSpotMinMm, 0.5 * Math.Max(aSize, bSize));
+    private static bool Near(HoldProposal a, HoldProposal b) =>
+        Math.Sqrt(Math.Pow(a.X - b.X, 2) + Math.Pow(a.Y - b.Y, 2) + Math.Pow(a.Z - b.Z, 2))
+        <= Math.Max(HoldProposalService.SameSpotMinMm, 0.5 * Math.Max(a.SizeMm, b.SizeMm));
 }
