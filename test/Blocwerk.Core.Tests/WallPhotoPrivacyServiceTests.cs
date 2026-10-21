@@ -3,6 +3,7 @@ using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
+using Blocwerk.Web.Components.Shared;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -115,12 +116,19 @@ public class WallPhotoPrivacyServiceTests
 
         var dryRun = await Service(h).ScanAsync(h.WallId);
         Assert.Equal(0, dryRun.WithMetadata);                  // the file is clean: nothing would ever rewrite it
+        Assert.Equal(1, dryRun.NeedsRepair);                   // ...but the scan sees the drift
+        Assert.True(WallPhotoPrivacy.CanApply(dryRun));        // and the page offers the run that repairs it
+        Assert.Equal("Repair", WallPhotoPrivacy.ApplyLabel(dryRun));
+        Assert.Contains("1 gallery snapshot needs a repair", WallPhotoPrivacy.ScanText(dryRun));
         await using (var db = h.CreateContext())
         {
             Assert.Equal(dirtyLength, await db.WallImages.Select(i => i.SizeBytes).SingleAsync()); // a dry run never writes
         }
 
-        await Service(h).RemoveMetadataAsync(h.WallId);
+        Assert.Equal(1, (await Service(h).RemoveMetadataAsync(h.WallId)).NeedsRepair);
+        var after = await Service(h).ScanAsync(h.WallId);
+        Assert.Equal(0, after.NeedsRepair);
+        Assert.False(WallPhotoPrivacy.CanApply(after));
 
         await using var check = h.CreateContext();
         Assert.Equal(new FileInfo(seeded.GalleryPath).Length, await check.WallImages.Select(i => i.SizeBytes).SingleAsync());

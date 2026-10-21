@@ -10,13 +10,13 @@ namespace Blocwerk.Core.Services;
 /// <param name="Load">Reads the photo, or null when the slot is empty.</param>
 /// <param name="Save">Writes (db, original, clean); false when the stored bytes changed since they were read.</param>
 /// <param name="Repair">
-/// Brings the row's metadata back in line with the stored bytes (true when it had to), or null for a slot
-/// whose bytes and metadata are one column and cannot drift.
+/// (db, apply): whether the row's metadata has drifted from the stored bytes, putting it right when
+/// <c>apply</c> is set; null for a slot whose bytes and metadata are one column and cannot drift.
 /// </param>
 internal sealed record WallPhotoSlot(
     Func<BlocwerkDbContext, CancellationToken, Task<byte[]?>> Load,
     Func<BlocwerkDbContext, byte[], byte[], CancellationToken, Task<bool>> Save,
-    Func<BlocwerkDbContext, CancellationToken, Task<bool>>? Repair = null);
+    Func<BlocwerkDbContext, bool, CancellationToken, Task<bool>>? Repair = null);
 
 /// <summary>Where a wall keeps photos: the rows and files a <see cref="WallPhotoSlot"/> is built for.</summary>
 public sealed partial class WallPhotoPrivacyService
@@ -93,7 +93,7 @@ public sealed partial class WallPhotoPrivacyService
                 await tx.CommitAsync(ct);
                 return true;
             },
-            async (db, ct) =>
+            async (db, apply, ct) =>
             {
                 if (path is null || !File.Exists(path))
                 {
@@ -101,8 +101,10 @@ public sealed partial class WallPhotoPrivacyService
                 }
 
                 var length = new FileInfo(path).Length;
-                return await db.WallImages.IgnoreQueryFilters().Where(i => i.Id == imageId && i.SizeBytes != length)
-                    .ExecuteUpdateAsync(s => s.SetProperty(i => i.SizeBytes, length), ct) > 0;
+                var drifted = db.WallImages.IgnoreQueryFilters().Where(i => i.Id == imageId && i.SizeBytes != length);
+                return apply
+                    ? await drifted.ExecuteUpdateAsync(s => s.SetProperty(i => i.SizeBytes, length), ct) > 0
+                    : await drifted.AnyAsync(ct);
             });
     }
 
