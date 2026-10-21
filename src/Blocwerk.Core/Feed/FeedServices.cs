@@ -7,7 +7,10 @@ using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core.Feed;
 
-/// <summary>Registers the live-update feed (PR 1.1: storage, reads, retention and the lag gauge; nothing writes rows yet).</summary>
+/// <summary>
+/// Registers the live-update feed: storage, reads, retention and the lag gauge (PR 1.1); the interceptor, the wake signal
+/// and the hub (PR 1.2a). No mapper is registered yet, so nothing writes rows and nothing subscribes.
+/// </summary>
 public static class FeedServices
 {
     public static IServiceCollection AddWallFeed(this IServiceCollection services)
@@ -17,6 +20,22 @@ public static class FeedServices
         services.AddSingleton<IWallFeed>(sp => new WallFeed(
             () => sp.GetRequiredService<RootDbContextFactory>().CreateDbContext(),
             sp.GetRequiredService<ILogger<WallFeed>>()));
+
+        // The write side: the mappers (FeedMappers, none before PR 1.2b) and the interceptor that runs them, added to the
+        // context options in CoreServices. Singletons: they hold no per-save state outside their per-context tables.
+        services.AddSingleton(_ => new FeedMapperRegistry(FeedMappers.Create()));
+        services.AddSingleton<IFeedSignal, InProcessFeedSignal>();
+        services.AddSingleton<FeedInterceptor>();
+
+        // The fan-out. Hydration reads through the session-less factory, like the feed: the subscriber's viewer, not a
+        // kiosk stamp, decides what leaves the server.
+        services.AddSingleton(sp => new WallFeedHub(
+            sp.GetRequiredService<IWallFeed>(),
+            sp.GetRequiredService<IFeedSignal>(),
+            () => sp.GetRequiredService<RootDbContextFactory>().CreateDbContext(),
+            sp.GetRequiredService<ILogger<WallFeedHub>>()));
+        services.AddSingleton<IWallFeedHub>(sp => sp.GetRequiredService<WallFeedHub>());
+        services.AddHostedService(sp => sp.GetRequiredService<WallFeedHub>());
         services.AddHostedService<WallChangeRetentionService>();
         services.AddHostedService<FeedLagCollector>();
         return services;

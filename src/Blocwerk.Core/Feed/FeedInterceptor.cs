@@ -1,0 +1,188 @@
+// Copyright (c) 2026, zannagh. All rights reserved.
+// See License in the project root for license information.
+
+using System.Data.Common;
+using System.Runtime.CompilerServices;
+using Blocwerk.Core.Entities;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Logging;
+
+namespace Blocwerk.Core.Feed;
+
+/// <summary>
+/// Writes the live-update feed from <c>SaveChanges</c> (design §5.3). <c>SavingChanges</c> maps the tracked changes
+/// (<see cref="FeedCollector"/>) and adds the rows to the SAME context, as <see cref="Data.ChangeJournalInterceptor"/> does,
+/// so they are part of the save: inside the caller's transaction when there is one, otherwise inside the transaction EF
+/// opens for a save of more than one statement. Rows and edit commit or roll back together.
+/// <para>
+/// After the commit the walls are woken (<see cref="IFeedSignal"/>): straight after a save without an explicit
+/// transaction, on <c>TransactionCommitted</c> with one, never after a rollback (the same rule as
+/// <see cref="Data.DomainChangeInterceptor"/>). A failed or cancelled save drops its rows and wakes (E5), and detaches the
+/// rows so a retried save collects them afresh instead of writing them twice. A singleton: per-context state lives in
+/// <see cref="ConditionalWeakTable{TKey,TValue}"/>s.
+/// </para>
+/// </summary>
+public sealed class FeedInterceptor : SaveChangesInterceptor, IDbTransactionInterceptor
+{
+    private readonly FeedMapperRegistry registry;
+    private readonly IFeedSignal signal;
+    private readonly ILogger<FeedInterceptor> logger;
+    private readonly ConditionalWeakTable<DbContext, List<WallChange>> pending = new();
+    private readonly ConditionalWeakTable<DbContext, List<FeedWake>> awaitingCommit = new();
+
+    public FeedInterceptor(FeedMapperRegistry registry, IFeedSignal signal, ILogger<FeedInterceptor> logger)
+    {
+        this.registry = registry;
+        this.signal = signal;
+        this.logger = logger;
+    }
+
+    public override InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result)
+    {
+        Collect(eventData.Context);
+        return base.SavingChanges(eventData, result);
+    }
+
+    public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+        DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+    {
+        Collect(eventData.Context);
+        return base.SavingChangesAsync(eventData, result, cancellationToken);
+    }
+
+    public override int SavedChanges(SaveChangesCompletedEventData eventData, int result)
+    {
+        Saved(eventData.Context);
+        return base.SavedChanges(eventData, result);
+    }
+
+    public override ValueTask<int> SavedChangesAsync(
+        SaveChangesCompletedEventData eventData, int result, CancellationToken cancellationToken = default)
+    {
+        Saved(eventData.Context);
+        return base.SavedChangesAsync(eventData, result, cancellationToken);
+    }
+
+    public override void SaveChangesFailed(DbContextErrorEventData eventData) => Drop(eventData.Context);
+
+    public override Task SaveChangesFailedAsync(DbContextErrorEventData eventData, CancellationToken cancellationToken = default)
+    {
+        Drop(eventData.Context);
+        return Task.CompletedTask;
+    }
+
+    public override void SaveChangesCanceled(DbContextEventData eventData) => Drop(eventData.Context);
+
+    public override Task SaveChangesCanceledAsync(DbContextEventData eventData, CancellationToken cancellationToken = default)
+    {
+        Drop(eventData.Context);
+        return Task.CompletedTask;
+    }
+
+    public void TransactionCommitted(DbTransaction transaction, TransactionEndEventData eventData) => WakeCommitted(eventData.Context);
+
+    public Task TransactionCommittedAsync(
+        DbTransaction transaction, TransactionEndEventData eventData, CancellationToken cancellationToken = default)
+    {
+        WakeCommitted(eventData.Context);
+        return Task.CompletedTask;
+    }
+
+    public void TransactionRolledBack(DbTransaction transaction, TransactionEndEventData eventData) => DropUncommitted(eventData.Context);
+
+    public Task TransactionRolledBackAsync(
+        DbTransaction transaction, TransactionEndEventData eventData, CancellationToken cancellationToken = default)
+    {
+        DropUncommitted(eventData.Context);
+        return Task.CompletedTask;
+    }
+
+    private void Collect(DbContext? context)
+    {
+        // Nothing is mapped (PR 1.2a ships so): the save pays one check and no change-tracker walk.
+        if (context is null || registry.IsEmpty)
+        {
+            return;
+        }
+
+        var rows = FeedCollector.Collect(context, registry, logger);
+        if (rows.Count == 0)
+        {
+            return;
+        }
+
+        // Added to, not replaced: a save another interceptor runs on this context before ours has seen the outer save's
+        // SavedChanges must not drop the outer save's wakes.
+        context.AddRange(rows);
+        pending.GetValue(context, _ => []).AddRange(rows);
+    }
+
+    private void Saved(DbContext? context)
+    {
+        if (context is null || !pending.TryGetValue(context, out var rows))
+        {
+            return;
+        }
+
+        pending.Remove(context);
+
+        // EF has read the database-generated Seq and TxId back. The rows are immutable from here, so the context stops
+        // tracking them: a long transaction of many saves (a replay) would otherwise drag them through every DetectChanges.
+        var wakes = Wakes(rows);
+        Detach(context, rows);
+        if (context.Database.CurrentTransaction is not null)
+        {
+            awaitingCommit.GetValue(context, _ => []).AddRange(wakes);
+            return;
+        }
+
+        WakeAll(wakes);
+    }
+
+    private void Drop(DbContext? context)
+    {
+        if (context is not null && pending.TryGetValue(context, out var rows))
+        {
+            pending.Remove(context);
+            Detach(context, rows);
+        }
+    }
+
+    private void WakeCommitted(DbContext? context)
+    {
+        if (context is not null && awaitingCommit.TryGetValue(context, out var wakes))
+        {
+            awaitingCommit.Remove(context);
+            WakeAll(wakes);
+        }
+    }
+
+    private void DropUncommitted(DbContext? context)
+    {
+        if (context is not null)
+        {
+            awaitingCommit.Remove(context);
+        }
+    }
+
+    // One wake per wall, with the newest transaction id: the hub re-polls until that one is below the horizon.
+    private void WakeAll(IEnumerable<FeedWake> wakes)
+    {
+        foreach (var wake in wakes.GroupBy(w => w.WallId).Select(g => g.MaxBy(w => w.TxId ?? 0)))
+        {
+            signal.Wake(wake);
+        }
+    }
+
+    private static List<FeedWake> Wakes(IEnumerable<WallChange> rows) =>
+        rows.Where(r => r.WallId is not null).Select(r => new FeedWake(r.WallId!.Value, r.TxId)).ToList();
+
+    private static void Detach(DbContext context, IEnumerable<WallChange> rows)
+    {
+        foreach (var row in rows)
+        {
+            context.Entry(row).State = EntityState.Detached;
+        }
+    }
+}

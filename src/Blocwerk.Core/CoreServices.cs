@@ -115,6 +115,7 @@ public static class CoreServices
             options.AddInterceptors(sp.GetRequiredService<SlowCommandInterceptor>());
             options.AddInterceptors(sp.GetRequiredService<DomainChangeInterceptor>());
             options.AddInterceptors(sp.GetRequiredService<ChangeJournalInterceptor>());
+            options.AddInterceptors(sp.GetRequiredService<FeedInterceptor>());
         });
 
         // Kiosk wall scoping is stamped on EVERY context, centrally, at creation — see
@@ -238,7 +239,8 @@ public static class CoreServices
         // Polls the DB for the "how many exist now" telemetry gauges (walls, boulders, users...).
         builder.Services.AddHostedService<TelemetryStatsCollector>();
 
-        // The durable live-update feed (outbox): reads, retention and the horizon-lag gauge. Nothing writes rows yet.
+        // The durable live-update feed (outbox): reads, retention, the horizon-lag gauge, the interceptor and the hub.
+        // No mapper is registered yet (PR 1.2b/c), so nothing writes rows.
         builder.Services.AddWallFeed();
 
         // Post-detection hold outlines/fingerprints (all walls) and glyph metrics (glyph walls). Its CV

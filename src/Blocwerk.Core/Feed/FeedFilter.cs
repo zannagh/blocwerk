@@ -29,6 +29,12 @@ public sealed class FeedFilter
             && (shared.Contains(c.Audience) || (c.Audience == FeedAudience.User && viewerUserId != null && c.AudienceUserId == viewerUserId)));
     }
 
+    /// <summary>
+    /// Every row of one wall, whatever its audience: the hub's own read, which narrows the rows per subscriber
+    /// (<see cref="FeedViewer.Allows"/>) before anything leaves the server. Never hand its rows to a client unfiltered.
+    /// </summary>
+    public static FeedFilter AllOfWall(Guid wallId) => new(c => c.WallId == wallId);
+
     /// <summary>One user's own rows across every wall (favourites, own ticks, profile).</summary>
     public static FeedFilter ForUser(Guid userId) =>
         new(c => c.Audience == FeedAudience.User && c.AudienceUserId == userId);
