@@ -2,6 +2,7 @@
 // See License in the project root for license information.
 
 using Blocwerk.Core.Data;
+using Blocwerk.Core.Pulse;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Capture.FollowUp;
@@ -48,7 +49,7 @@ internal static class CaptureFollowUpRecordStore
             await using var db = createDb();
             var row = await db.WallCaptures.AsNoTracking()
                 .Where(c => c.Id == captureId)
-                .Select(c => new { c.GeometryModelId, c.FollowUpJson })
+                .Select(c => new { c.GeometryModelId, c.FollowUpJson, c.WallId })
                 .FirstOrDefaultAsync(ct);
             if (row is null || !modelAccepted(row.GeometryModelId))
             {
@@ -80,6 +81,7 @@ internal static class CaptureFollowUpRecordStore
                     ct);
             if (written == 1)
             {
+                WallPulseInterceptor.Publish(db, new WallPulse(row.WallId, PulseTopics.Capture, captureId));
                 return record;
             }
         }

@@ -116,6 +116,15 @@ public sealed partial class WallFeedLink(IWallFeedHub hub, IWallFeed feed, ICirc
         slots.TryGetValue(wallId, out var task) && task.IsCompletedSuccessfully ? task.Result?.Viewer : null;
 
     /// <summary>
+    /// The viewer of a live subscription: null as well once the slot is revoked or retired, so a demotion stops what the
+    /// old audiences received at once, before the resubscribe lands (job pulses read it at every delivery).
+    /// </summary>
+    public FeedViewer? ActiveViewerOf(Guid wallId) =>
+        slots.TryGetValue(wallId, out var task) && task.IsCompletedSuccessfully && task.Result is { IsRevoked: false, IsRetired: false } slot
+            ? slot.Viewer
+            : null;
+
+    /// <summary>
     /// Forgets the kept "no access" answers (the user's set of walls changed). An answer still being read when this runs
     /// may predate the change, so that read is repeated before it is kept (<see cref="ResolveAsync"/>).
     /// </summary>

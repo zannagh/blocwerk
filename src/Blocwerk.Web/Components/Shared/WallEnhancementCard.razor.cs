@@ -4,25 +4,27 @@
 
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Enhancement;
+using Blocwerk.Core.Pulse;
 using Blocwerk.Core.Services;
+using Blocwerk.Web.State;
+using Blocwerk.Web.State.Live;
 using Microsoft.AspNetCore.Components;
 
 namespace Blocwerk.Web.Components.Shared;
 
 /// <summary>
 /// Code-behind of the "Enhance this wall" card: loads the current generation's enhancement, starts or continues it,
-/// and refreshes every few seconds while it runs (the run lives on the server, not in this circuit).
+/// and refreshes on the run's pulses (<see cref="PulseTopics.Enhancement"/>; the run lives on the server, not in this
+/// circuit), with a slow safety poll while it runs.
 /// </summary>
 public partial class WallEnhancementCard : IDisposable
 {
-    private static readonly TimeSpan Poll = TimeSpan.FromSeconds(3);
-
     private Guid loadedWallId;
     private bool busy;
     private bool disposed;
     private string? failure;
     private WallEnhancementView? view;
-    private Timer? timer;
+    private PulseLoop? pulses;
 
     /// <summary>The wall being administered.</summary>
     [Parameter]
@@ -39,6 +41,12 @@ public partial class WallEnhancementCard : IDisposable
     private IKioskContext KioskContext { get; set; } = default!;
 
     [Inject]
+    private WallCacheState Cache { get; set; } = default!;
+
+    [Inject]
+    private IWallPulse Pulse { get; set; } = default!;
+
+    [Inject]
     private ILogger<WallEnhancementCard> Logger { get; set; } = default!;
 
     private bool Hidden => KioskContext.IsKiosk || !string.IsNullOrEmpty(ShareToken);
@@ -47,7 +55,7 @@ public partial class WallEnhancementCard : IDisposable
     public void Dispose()
     {
         disposed = true;
-        timer?.Dispose();
+        pulses?.Dispose();
     }
 
     /// <summary>"Done: 412 changes to look over." for a run waiting for its review.</summary>
@@ -100,6 +108,9 @@ public partial class WallEnhancementCard : IDisposable
         loadedWallId = WallId;
         failure = null;
         await ReloadAsync();
+        pulses?.Dispose();
+        pulses = PulseLoop.Start(
+            Cache, Pulse, WallId, [PulseTopics.Enhancement], () => view?.State == WallEnhancementState.Running, InvokeAsync, PollAsync, Logger);
     }
 
     private async Task ReloadAsync()
@@ -113,20 +124,6 @@ public partial class WallEnhancementCard : IDisposable
             Logger.LogWarning(ex, "Could not load the enhancement of wall {WallId}", WallId);
             view = null;
         }
-
-        SchedulePoll();
-    }
-
-    private void SchedulePoll()
-    {
-        if (view?.State == WallEnhancementState.Running && !disposed)
-        {
-            timer ??= new Timer(_ => _ = InvokeAsync(PollAsync), null, Poll, Poll);
-            return;
-        }
-
-        timer?.Dispose();
-        timer = null;
     }
 
     private async Task PollAsync()
@@ -152,7 +149,7 @@ public partial class WallEnhancementCard : IDisposable
         try
         {
             view = await Enhancement.CancelAsync(WallId);
-            SchedulePoll();
+            pulses?.Nudge();
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidOperationException or KioskRestrictedException or UserFacingException)
         {
@@ -178,7 +175,7 @@ public partial class WallEnhancementCard : IDisposable
         try
         {
             view = await Enhancement.StartAsync(WallId);
-            SchedulePoll();
+            pulses?.Nudge();
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidOperationException or KioskRestrictedException or UserFacingException)
         {

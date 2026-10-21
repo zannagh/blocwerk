@@ -105,6 +105,9 @@ public sealed partial class WallRefreshProcessor
         if (cleared > 0)
         {
             refresh.SummaryRequestedAt = null;
+
+            // A bulk write the pulse interceptor never sees: the page stops showing "updating the summary" on this one.
+            pulse?.Publish(new Pulse.WallPulse(refresh.WallId, Pulse.PulseTopics.Refresh, refresh.Id));
         }
     }
 }

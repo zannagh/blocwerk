@@ -13,6 +13,7 @@ using Blocwerk.Core.Enhancement;
 using Blocwerk.Core.Feed;
 using Blocwerk.Core.LookOver;
 using Blocwerk.Core.MarkerPlanning;
+using Blocwerk.Core.Pulse;
 using Blocwerk.Core.Redetect;
 using Blocwerk.Core.Refresh;
 using Blocwerk.Core.Services;
@@ -113,6 +114,7 @@ public static class CoreServices
             options.AddInterceptors(sp.GetRequiredService<SlowCommandInterceptor>());
             options.AddInterceptors(sp.GetRequiredService<ChangeJournalInterceptor>());
             options.AddInterceptors(sp.GetRequiredService<FeedInterceptor>());
+            options.AddInterceptors(sp.GetRequiredService<WallPulseInterceptor>());
         });
 
         // Kiosk wall scoping is stamped on EVERY context, centrally, at creation — see
@@ -252,6 +254,7 @@ public static class CoreServices
         // The durable live-update feed (outbox): reads, retention, the horizon-lag gauge, the interceptor and the hub.
         // No mapper is registered yet (PR 1.2b/c), so nothing writes rows.
         builder.Services.AddWallFeed();
+        builder.Services.AddWallPulse();
 
         // Post-detection hold outlines/fingerprints (all walls) and glyph metrics (glyph walls). Its CV
         // dependencies come from the HoldDetection project and are optional; stateless, so a singleton.

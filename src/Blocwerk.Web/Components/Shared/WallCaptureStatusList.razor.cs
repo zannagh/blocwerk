@@ -1,19 +1,21 @@
 using Blocwerk.Core.Capture;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Geometry;
+using Blocwerk.Core.Pulse;
 using Blocwerk.Core.Services;
+using Blocwerk.Web.State;
+using Blocwerk.Web.State.Live;
 using Microsoft.AspNetCore.Components;
 
 namespace Blocwerk.Web.Components.Shared;
 
 /// <summary>
-/// Polls the wall's captures every ~2 s while one is running (and only then), so the status panel
-/// follows the background pipeline without the page doing anything.
+/// Follows the wall's captures while one is running (and only then), so the status panel follows the background
+/// pipeline without the page doing anything: it re-reads on the captures' and runner jobs' pulses
+/// (<see cref="PulseWake"/>), and every <see cref="PulseWake.SafetyPoll"/> without one.
 /// </summary>
 public partial class WallCaptureStatusList : IAsyncDisposable
 {
-    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(2);
-
     private static readonly string[] IgnoredDetectionKinds = [WallGeometryModelCheck.KindRejectedObservation];
 
     private readonly CancellationTokenSource disposed = new();
@@ -25,6 +27,7 @@ public partial class WallCaptureStatusList : IAsyncDisposable
     private WallCaptureSummary? running;
     private string? failure;
     private Task? pollLoop;
+    private PulseWake? wake;
     private bool retraining;
     private bool ultraAvailable;
 
@@ -45,6 +48,12 @@ public partial class WallCaptureStatusList : IAsyncDisposable
     private ILogger<WallCaptureStatusList> Logger { get; set; } = default!;
 
     [Inject]
+    private WallCacheState Cache { get; set; } = default!;
+
+    [Inject]
+    private IWallPulse Pulse { get; set; } = default!;
+
+    [Inject]
     private Blocwerk.Core.Runners.IGpuRunnerService GpuRunners { get; set; } = default!;
 
     [Inject]
@@ -61,6 +70,7 @@ public partial class WallCaptureStatusList : IAsyncDisposable
     {
         await disposed.CancelAsync();
         disposed.Dispose();
+        wake?.Dispose();
         GC.SuppressFinalize(this);
     }
 
@@ -72,6 +82,9 @@ public partial class WallCaptureStatusList : IAsyncDisposable
         }
 
         loadedWallId = WallId;
+        wake?.Dispose();
+        wake = null;
+        wake = await PulseWake.OpenAsync(Cache, Pulse, WallId, [PulseTopics.Capture, PulseTopics.GpuJob]);
         await LoadAsync();
     }
 
@@ -224,74 +237,5 @@ public partial class WallCaptureStatusList : IAsyncDisposable
         {
             pollLoop = PollAsync(disposed.Token);
         }
-    }
-
-    /// <summary>
-    /// Follows the running capture. A failed poll (a DB timeout, say) is logged and retried with a
-    /// growing delay instead of faulting this fire-and-forget task, which would silently stop polling.
-    /// </summary>
-    private async Task PollAsync(CancellationToken ct)
-    {
-        var failures = 0;
-        try
-        {
-            while (ShouldPoll)
-            {
-                await Task.Delay(PollDelay(failures), ct);
-                var watched = running?.Id;
-                var resolving = history.Where(c => c.ModelResolving).ToDictionary(c => c.Id, c => c.GeometryModelId);
-                try
-                {
-                    await InvokeAsync(LoadAsyncWithoutRestart);
-                    failures = 0;
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    failures++;
-                    Logger.LogWarning(ex, "Polling captures of wall {WallId} failed ({Failures} in a row); retrying", WallId, failures);
-                    continue;
-                }
-
-                var finished = watched is null ? null : history.FirstOrDefault(c => c.Id == watched);
-
-                // The model is live once the photo-real stage starts; that stage can take an hour.
-                if (finished is { GeometryModelId: not null } && (!finished.IsRunning || finished.Status == WallCaptureStatus.Splatting)
-                    && notified.Add(finished.Id))
-                {
-                    await InvokeAsync(() => OnCompleted.InvokeAsync());
-                }
-                else if (history.Any(c => resolving.TryGetValue(c.Id, out var before) && c.GeometryModelId != before))
-                {
-                    // A model solved again is live: the 3D view reloads as after a capture.
-                    await InvokeAsync(() => OnCompleted.InvokeAsync());
-                }
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            // Component disposed.
-        }
-    }
-
-    /// <summary>The normal interval, doubling per consecutive failure up to 30 s.</summary>
-    private static TimeSpan PollDelay(int failures) => failures == 0
-        ? PollInterval
-        : TimeSpan.FromSeconds(Math.Min(30, PollInterval.TotalSeconds * Math.Pow(2, failures)));
-
-    private async Task LoadAsyncWithoutRestart()
-    {
-        try
-        {
-            history = await Captures.GetCapturesAsync(WallId);
-            running = history.FirstOrDefault(c => c.IsRunning);
-        }
-        catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidOperationException or KioskRestrictedException)
-        {
-            Logger.LogWarning(ex, "Polling captures of wall {WallId} failed", WallId);
-            running = null;
-            history = [];
-        }
-
-        StateHasChanged();
     }
 }

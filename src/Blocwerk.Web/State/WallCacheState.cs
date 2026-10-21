@@ -98,6 +98,9 @@ public sealed class WallCacheState : IDisposable
     /// <summary>Subscribes to the wall's feed if the circuit may see it (a live list on a page that caches nothing).</summary>
     public Task EnsureFeedAsync(Guid wallId) => link.EnsureAsync(wallId);
 
+    /// <summary>The circuit's viewer on a live, unrevoked subscription of the wall, or null (job pulses, PR 1.7).</summary>
+    public FeedViewer? ActiveViewerOf(Guid wallId) => link.ActiveViewerOf(wallId);
+
     /// <summary>Keeps the wall's subscription while a live list follows it, even when nothing of it is cached.</summary>
     public IDisposable Watch(Guid wallId) => watches.Watch(wallId);
 

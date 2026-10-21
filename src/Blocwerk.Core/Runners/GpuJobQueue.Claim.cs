@@ -137,6 +137,7 @@ public sealed partial class GpuJobQueue
             return null;
         }
 
+        PulseJob(pick.WallId, pick.Id, 0);
         await db.GpuRunners.Where(r => r.Id == runner.Id)
             .ExecuteUpdateAsync(s => s.SetProperty(r => r.LastJobAt, now), ct);
         logger.LogInformation(

@@ -3,24 +3,34 @@
 // </copyright>
 
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Pulse;
 using Blocwerk.Core.Services;
+using Blocwerk.Web.State;
+using Blocwerk.Web.State.Live;
 using Microsoft.AspNetCore.Components;
 
 namespace Blocwerk.Web.Components.Shared;
 
 /// <summary>
 /// The "Find holds from all photos" run: a background job (<see cref="IHoldSearchService"/>) this page only starts and
-/// watches, so it can be left (or the phone put to sleep) and revisited: the status and, once it ended, the proposals
-/// are read again when the page comes back.
+/// watches on its pulses (<see cref="PulseTopics.HoldSearch"/>, with a safety poll while it runs), so it can be left (or
+/// the phone put to sleep) and revisited: the status and, once it ended, the proposals are read again when the page comes
+/// back.
 /// </summary>
 public partial class WallHoldProposals : IDisposable
 {
-    private static readonly TimeSpan PollEvery = TimeSpan.FromSeconds(2);
     private HoldSearchStatus? search;
-    private CancellationTokenSource? polling;
+    private PulseLoop? searchPulses;
+    private Guid searchPulsesWallId;
 
     [Inject]
     private IHoldSearchService Search { get; set; } = default!;
+
+    [Inject]
+    private WallCacheState Cache { get; set; } = default!;
+
+    [Inject]
+    private IWallPulse Pulse { get; set; } = default!;
 
     private bool Searching => search is { Active: true };
 
@@ -44,9 +54,8 @@ public partial class WallHoldProposals : IDisposable
     /// <inheritdoc />
     public void Dispose()
     {
-        polling?.Cancel();
-        polling?.Dispose();
-        polling = null;
+        searchPulses?.Dispose();
+        searchPulses = null;
         GC.SuppressFinalize(this);
     }
 
@@ -63,7 +72,6 @@ public partial class WallHoldProposals : IDisposable
     /// <summary>Reads the wall's latest search (after the page opened or the wall changed) and watches it if it runs.</summary>
     private async Task LoadSearchAsync()
     {
-        polling?.Cancel();
         search = null;
         try
         {
@@ -74,42 +82,22 @@ public partial class WallHoldProposals : IDisposable
             Logger.LogWarning(ex, "Could not read the hold search of wall {WallId}", WallId);
         }
 
-        if (Searching)
-        {
-            StartPolling();
-        }
+        StartPolling();
     }
 
+    // One loop per wall; it idles (pulses only) between searches, so one started on another device shows up too.
     private void StartPolling()
     {
-        polling?.Cancel();
-        polling = new CancellationTokenSource();
-        _ = PollAsync(WallId, polling.Token);
-    }
+        if (searchPulses is not null && searchPulsesWallId == WallId)
+        {
+            searchPulses.Nudge();
+            return;
+        }
 
-    private async Task PollAsync(Guid wallId, CancellationToken ct)
-    {
-        using var timer = new PeriodicTimer(PollEvery);
-        try
-        {
-            while (await timer.WaitForNextTickAsync(ct))
-            {
-                var running = false;
-                await InvokeAsync(async () => running = await RefreshSearchAsync(wallId));
-                if (!running)
-                {
-                    return;
-                }
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            // The page was left or the wall changed.
-        }
-        catch (Exception ex)
-        {
-            Logger.LogWarning(ex, "Watching the hold search of wall {WallId} stopped", wallId);
-        }
+        searchPulses?.Dispose();
+        var wallId = searchPulsesWallId = WallId;
+        searchPulses = PulseLoop.Start(
+            Cache, Pulse, wallId, [PulseTopics.HoldSearch], () => Searching, InvokeAsync, () => RefreshSearchAsync(wallId), Logger);
     }
 
     /// <summary>One look at the search; true while it still runs. When it ends the proposals are listed again.</summary>
