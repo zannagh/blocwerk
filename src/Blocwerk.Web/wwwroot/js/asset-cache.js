@@ -118,12 +118,17 @@ window.bwAssetCache = (function (win) {
     }
 
     async function fillOnce() {
+        // A worker serving another identity's label would store nothing for this page: wait, backing off.
+        const served = await Store().workerPartition(win);
+        if (served && REAL_LABEL.test(served) && served !== state.active) {
+            return 'mismatch';
+        }
         const { walls, assets } = await snapshot();
         const classified = Budget().classify(walls, assets);
         const bytesIn = test => classified.filter(test).reduce((sum, item) => sum + (item.asset.bytes || 0), 0);
         const tasks = Plan().planFill({
             walls, cachedKeys: new Set(assets.map(a => a.key)), openWallId: state.openWallId, keep3d: keep3d(),
-            metered: Plan().isMetered(win.navigator), budget: state.budget,
+            metered: Plan().isMetered(win.navigator), mobile: Plan().isMobile(win.navigator), budget: state.budget,
             usedImages: bytesIn(item => item.tier === 'core' || item.tier === 'lazy'), used3d: bytesIn(item => item.tier === 'view3d'),
             width: Plan().fitWidth(win.innerWidth, win.devicePixelRatio), tokens: state.tokens
         });
@@ -137,7 +142,7 @@ window.bwAssetCache = (function (win) {
 
     // One fill at a time; a request during a run reruns once it ends (the plan is rebuilt from the ledger).
     function scheduleFill() {
-        if (!state.capable || !caching() || !state.runner || state.runner.streaming) {
+        if (!state.capable || !caching() || !state.runner || state.runner.streaming || state.stopped) {
             return Promise.resolve();
         }
         if (state.filling) {
@@ -165,6 +170,7 @@ window.bwAssetCache = (function (win) {
             fetch: (url, init) => win.fetch(url, init),
             verify: task => Store().verify(win, state.seen, state.waiters, state.active, task),
             partition: () => state.active, hidden: () => win.document.visibilityState === 'hidden',
+            online: () => win.navigator.onLine !== false, forget: task => state.seen.delete(task.key),
             concurrency: () => Fill().concurrencyOf(win.navigator), freeOneWall, lock: fn => Fill().lock(win.navigator, fn)
         });
     }
@@ -274,6 +280,9 @@ window.bwAssetCache = (function (win) {
             return whenStarted(() => (on ? scheduleFill() : evict()));
         },
         keep3d,
+        // Whether this device background-fills 3D (2.8's data-volume warning on opening 3D reads it): never on a phone
+        // or tablet (bwAssetPlan.isMobile), nor on a metered connection, nor with 3D opted out.
+        fills3dInBackground: () => keep3d() && !Plan().isMobile(win.navigator) && !Plan().isMetered(win.navigator),
         summary: () => state.summaryLoaded,
         // The running fill, for tests and 2.9's progress: resolves when the queue is drained.
         filled: () => state.filling || Promise.resolve()

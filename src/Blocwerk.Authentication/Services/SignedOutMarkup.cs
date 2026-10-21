@@ -18,8 +18,14 @@ internal static class SignedOutMarkup
     /// <summary>The event the page-side caches listen for (the asset ledger, the deploy drafts).</summary>
     public const string IdentityChangedEvent = "bw:identity-changed";
 
-    public static string Render(string next)
+    /// <summary>The scripts the page loads, by their static-asset labels (the paths under wwwroot).</summary>
+    public static readonly string[] Scripts = ["js/deploy-drafts.js", "js/asset-ledger.js", "js/asset-wipe.js"];
+
+    /// <summary>The page for <paramref name="next"/>; <paramref name="assetUrl"/> maps a script label to its served URL.</summary>
+    public static string Render(string next, Func<string, string>? assetUrl = null)
     {
+        var url = assetUrl ?? (label => label);
+        var scripts = string.Concat(Scripts.Select(s => $"<script src=\"/{WebUtility.HtmlEncode(url(s).TrimStart('/'))}\"></script>\n"));
         var target = IsLocal(next) ? next : "/";
         var html = WebUtility.HtmlEncode(target);
         var js = JavaScriptEncoder.Default.Encode(target);
@@ -34,10 +40,7 @@ internal static class SignedOutMarkup
             </head>
             <body>
             <p>Signed out. <a href="{{html}}">Continue</a></p>
-            <script src="/js/deploy-drafts.js"></script>
-            <script src="/js/asset-ledger.js"></script>
-            <script src="/js/asset-wipe.js"></script>
-            <script>
+            {{scripts}}<script>
             try { window.dispatchEvent(new Event('{{IdentityChangedEvent}}')); } catch (e) { }
             try { if (window.bwDeployDrafts && window.bwDeployDrafts.clearAll) { window.bwDeployDrafts.clearAll(); } } catch (e) { }
             var gone = false;

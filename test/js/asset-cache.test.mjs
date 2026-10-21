@@ -254,3 +254,13 @@ test('rule 5: a share-opened wall is dropped on the next start that is not on it
     await later.boot();
     assert.deepEqual(plain(await ledger.wallsOf(USER_A)), []);
 });
+
+test('a kiosk tablet whose meta is unknown (a resolver fault) does not wipe on logout: data-bw-kiosk tells it', async () => {
+    const caches = fakeCaches({ [`bw-a1-${KIOSK}-img`]: [`${ORIGIN}/__bw/${sha('k')}`] });
+    const tablet = loadPage({ label: 'unknown', kioskKey: 'key-1', caches, swReply: 'none' });
+    await tablet.boot();
+    const link = { href: `${ORIGIN}/account/logout`, getAttribute: () => '/account/logout', closest: () => link };
+    tablet.docEvent('click', { target: link, button: 0, preventDefault: () => assert.fail('a kiosk logout is not held'), defaultPrevented: false });
+    await tablet.settle();
+    assert.deepEqual(keys(caches, `bw-a1-${KIOSK}-img`), [sha('k')]);
+});

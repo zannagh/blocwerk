@@ -198,6 +198,17 @@ window.bwAssetWipe = (function () {
         return win.bwAssetLedger.open().then(ledger => wipeAll(win, ledger)).catch(() => undefined);
     }
 
+    // A kiosk tablet: the body's data-bw-kiosk (set for every identity on it), or a `k-` label. The attribute matters
+    // when the meta is `unknown` (a resolver fault) on a tablet.
+    function isKioskPage(doc) {
+        const body = doc.body;
+        if (body && body.dataset && body.dataset.bwKiosk) {
+            return true;
+        }
+        const meta = doc.querySelector('meta[name="bw-partition"]');
+        return !!meta && String(meta.getAttribute('content')).startsWith('k-');
+    }
+
     const isPlainClick = event => (event.button === undefined || event.button === 0)
         && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
 
@@ -206,7 +217,7 @@ window.bwAssetWipe = (function () {
      * anything is awaited, so a ledger that never opens cannot hold the navigation. A modified or non-primary click
      * (a new tab, a download) is left to the browser. On a kiosk (the page's meta is `k-…`) the link only ends a member's
      * session, a plain redirect server-side, so it keeps the tablet's cache; the next page's acting-user check clears the
-     * drafts.
+     * drafts. The kiosk is told by data-bw-kiosk first, so an `unknown` meta on a tablet does not wipe either.
      */
     function installLogout(win, getLedger) {
         win.document.addEventListener('click', event => {
@@ -214,8 +225,7 @@ window.bwAssetWipe = (function () {
             if (!link || event.defaultPrevented || !isPlainClick(event) || pathOf(win, link.getAttribute('href')) !== LOGOUT_PATH) {
                 return;
             }
-            const meta = win.document.querySelector('meta[name="bw-partition"]');
-            if (meta && String(meta.getAttribute('content')).startsWith('k-')) {
+            if (isKioskPage(win.document)) {
                 return;
             }
             event.preventDefault();

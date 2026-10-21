@@ -153,10 +153,11 @@ test('a fill stopped by a hidden page resumes when it is visible again', async (
 
 test('a fill stopped by a network failure resumes on `online`, and fetches what it missed', async () => {
     let down = true;
-    const page = memberPage({ routes: { [`/api/walls/${W2}/a/${sha('4')}/1280`]: () => { if (down) { throw new TypeError('Failed to fetch'); } return new Response('x'); } } });
+    const page = memberPage({ onLine: false, routes: { [`/api/walls/${W2}/a/${sha('4')}/1280`]: () => { if (down) { throw new TypeError('Failed to fetch'); } return new Response('x'); } } });
     await page.boot();
     const before = page.assetFetches().length;
     down = false;
+    page.win.navigator.onLine = true;
     page.winEvent('online');
     await page.settle();
     await page.cache.filled();
@@ -189,4 +190,23 @@ test('manifests are fetched in parallel, at most 3 at a time', async () => {
     await page.boot();
     assert.equal(page.fetches.filter(f => f.path.endsWith('/manifest')).length, 7);
     assert.equal(peak, 3);
+});
+
+test('a worker serving another partition than the page\'s gets no fill, and the fill tries again later', async () => {
+    const page = memberPage({ swPartition: USER_B });
+    await page.boot();
+    assert.equal(page.assetFetches().length, 0);
+    assert.ok(page.timers.some(t => t.ms === 30000 && !t.done));
+    const same = memberPage({ swPartition: USER_A });
+    await same.boot();
+    assert.equal(same.assetFetches().length, 4);
+});
+
+test('a phone gets no 3D background fill, and the hook for 2.8 says so', async () => {
+    const phone = memberPage({ ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148' });
+    await phone.boot();
+    assert.ok(!phone.assetFetches().some(f => f.path.endsWith(sha('3'))));
+    assert.ok(phone.assetFetches().some(f => f.path.endsWith(sha('1'))));
+    assert.equal(phone.cache.fills3dInBackground(), false);
+    assert.equal(memberPage().cache.fills3dInBackground(), true);
 });

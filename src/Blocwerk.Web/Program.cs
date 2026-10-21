@@ -325,7 +325,10 @@ public static class Program
         app.MapStaticAssets();
         app.ConfigureCoreApplication();
         app.ConfigureAuthenticationMiddlewares();
-        app.MapControllers();
+
+        // WithStaticAssets: controller endpoints carry the fingerprinted asset map (ResourceAssetCollection), which the
+        // signed-out page (SiteDataClearing.SignedOutPage) uses for its scripts, as BlocwerkApp does through @Assets.
+        app.MapControllers().WithStaticAssets();
 
         // Personal-API-key browser login for automation. OFF by default: unmapped (a plain 404)
         // unless Blocwerk:Auth:ApiKeyLogin:Enabled is set. See ApiKeyLoginEndpoints.

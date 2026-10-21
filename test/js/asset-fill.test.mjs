@@ -47,11 +47,11 @@ test('a run that cannot get the lock answers locked', async () => {
     assert.equal(await runner({ lock: lock.run }).run(tasks('/a')), 'locked');
 });
 
-test('a network failure ends the run as offline, and no worker fetches after the lock is released', async () => {
+test('a network failure while offline ends the run as offline, and no worker fetches after the lock is released', async () => {
     let inLock = false;
     const outside = [];
     const r = runner({
-        concurrency: () => 2,
+        concurrency: () => 2, online: () => false,
         lock: async fn => { inLock = true; try { return await fn(); } finally { inLock = false; } },
         fetch: async url => {
             if (!inLock) {
@@ -105,4 +105,40 @@ test('a body is drained chunk by chunk and never buffered whole', async () => {
     const response = { ok: true, body, arrayBuffer: async () => assert.fail('buffered the whole body') };
     assert.equal(await runner({ fetch: async () => response }).run(tasks('/a')), 'done');
     assert.equal(chunks, 4);
+});
+
+test('a fetch that fails while online is that asset\'s failure: the run goes on, and after 3 the asset is skipped for good', async () => {
+    const fetched = [];
+    const r = runner({ online: () => true, fetch: async url => { fetched.push(url); if (url === '/bad') { throw new TypeError('reset'); } return ok(); } });
+    for (let i = 0; i < 4; i++) {
+        assert.equal(await r.run(tasks('/bad', '/good')), 'done');
+    }
+    assert.equal(fetched.filter(u => u === '/bad').length, Fill.FAILURE_LIMIT);
+    assert.equal(fetched.filter(u => u === '/good').length, 4);
+});
+
+test('an earlier announcement of a key is forgotten before its fetch', async () => {
+    const seen = new Map([['/a', 'stored']]);
+    let verified;
+    const r = runner({ forget: task => seen.delete(task.key), verify: async task => { verified = seen.get(task.key) || 'unknown'; return verified; } });
+    await r.run(tasks('/a'));
+    assert.equal(verified, 'unknown');
+});
+
+test('unsure retries back off 30 s, 1, 2, 4 min, and the page stops filling after 5; locked waits 30 s; done resets', () => {
+    const waits = [];
+    const win = { setTimeout: (fn, ms) => { waits.push(ms); return fn; }, document: { addEventListener() {} }, addEventListener() {} };
+    const holder = {};
+    for (let i = 0; i < 5; i++) {
+        holder.retry = null;
+        Fill.resumeAfter(win, i % 2 ? 'mismatch' : 'unsure', () => {}, holder);
+    }
+    assert.deepEqual(waits, [30000, 60000, 120000, 240000]);
+    assert.equal(holder.stopped, true);
+    assert.equal(Fill.backoffMs(10), 15 * 60 * 1000);
+    const other = { unsureRuns: 3 };
+    Fill.resumeAfter(win, 'done', () => {}, other);
+    assert.equal(other.unsureRuns, 0);
+    Fill.resumeAfter(win, 'locked', () => {}, other);
+    assert.equal(waits.at(-1), 30000);
 });

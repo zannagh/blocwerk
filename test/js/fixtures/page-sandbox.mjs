@@ -122,7 +122,11 @@ export function loadPage(opts = {}) {
             if (swReply === 'none' || !message || message.type !== 'sw-info') {
                 return; // an old worker ignores sw-info
             }
-            ports[0].postMessage({ proto: 1, type: 'sw-info', shell: swReply === 'v3' ? 'blocwerk-shell-v3' : 'blocwerk-shell-v4' });
+            const reply = { proto: 1, type: 'sw-info', shell: swReply === 'v3' ? 'blocwerk-shell-v3' : 'blocwerk-shell-v4' };
+            if (opts.swPartition !== undefined) {
+                reply.partition = opts.swPartition;
+            }
+            ports[0].postMessage(reply);
         },
     };
 
@@ -145,6 +149,8 @@ export function loadPage(opts = {}) {
             userAgent: opts.ua || 'Mozilla/5.0 (X11; Linux x86_64) Chrome/130.0 Safari/537.36',
             maxTouchPoints: 0,
             connection: opts.connection,
+            onLine: opts.onLine ?? true,
+            userAgentData: opts.userAgentData,
             serviceWorker: { controller, addEventListener: (type, fn) => { if (type === 'message') { swListeners.push(fn); } } },
             storage: { estimate: async () => ({ quota: opts.quota ?? 50e9, usage: 41e9 }), persisted: async () => false, persist: async () => true },
         },
@@ -154,7 +160,7 @@ export function loadPage(opts = {}) {
             readyState: 'complete',
             visibilityState: 'visible',
             querySelector: selector => (selector === 'meta[name="bw-partition"]' ? meta : null),
-            body: { getAttribute: name => (name === 'data-bw-user' ? (opts.user ?? '') : null) },
+            body: { getAttribute: name => (name === 'data-bw-user' ? (opts.user ?? '') : null), dataset: opts.kioskKey ? { bwKiosk: opts.kioskKey } : {} },
             addEventListener: (type, fn) => { (docListeners[type] = docListeners[type] || []).push(fn); },
             removeEventListener: () => {},
         },

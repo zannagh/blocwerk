@@ -7,8 +7,11 @@
  *
  * A RUN holds the 'bw-fill' lock (one filling tab) and ends, releasing it, as soon as any of these happens:
  *   'hidden'    the page went to the background (the caller resumes on visibilitychange);
- *   'offline'   a fetch failed (the caller resumes on `online`; the next run's plan includes that task again);
- *   'unsure'    UNSURE_LIMIT assets in a row were neither confirmed stored nor refused (a slow worker): try later;
+ *   'offline'   a fetch failed while the browser says it is offline (the caller resumes on `online`; the next run's
+ *               plan includes that task again). A fetch that fails while online is that task's failure: it is retried
+ *               on later runs and skipped for the page's life after FAILURE_LIMIT failures; the run goes on;
+ *   'unsure'    UNSURE_LIMIT assets in a row were neither confirmed stored nor refused (a slow worker), or the worker
+ *               serves another partition than this page's ('mismatch' from the caller): try later, backing off;
  *   'streaming' a refusal survived freeing one wall and one retry: no fill again for this page, everything streams;
  *   'done'      the queue is empty.
  * A run that could not get the lock answers 'locked'. Workers stop between tasks, and run() resolves only after every
@@ -20,13 +23,35 @@ window.bwAssetFill = (function () {
     'use strict';
 
     const UNSURE_LIMIT = 3;
+    const FAILURE_LIMIT = 3;
     const RETRY_MS = 30 * 1000;
+    const BACKOFF_CAP_MS = 15 * 60 * 1000;
+    // After this many 'unsure' (or 'mismatch') runs the page gives up filling: a worker that never confirms would
+    // otherwise re-download the same (up to 400 MB) assets on every retry.
+    const UNSURE_RUNS_LIMIT = 5;
+
+    /** The wait before the n-th 'unsure' retry (1-based): 30 s, 1 min, 2 min, 4 min, ... capped at 15 min. */
+    function backoffMs(n) {
+        return Math.min(BACKOFF_CAP_MS, RETRY_MS * 2 ** Math.max(0, n - 1));
+    }
 
     /**
      * A stopped run resumes on what stopped it: the page coming back ('hidden'), the network coming back ('offline'),
-     * or a timer ('locked', 'unsure'; one at a time, held in `holder.retry`).
+     * or a timer: 'locked' after RETRY_MS, 'unsure'/'mismatch' after backoffMs and not at all past UNSURE_RUNS_LIMIT
+     * (`holder.stopped`). One timer at a time, held in `holder.retry`; `holder.unsureRuns` counts, a 'done' resets it.
      */
     function resumeAfter(win, result, again, holder) {
+        if (result === 'done') {
+            holder.unsureRuns = 0;
+            return;
+        }
+        if (result === 'unsure' || result === 'mismatch') {
+            holder.unsureRuns = (holder.unsureRuns || 0) + 1;
+            if (holder.unsureRuns >= UNSURE_RUNS_LIMIT) {
+                holder.stopped = true;
+                return;
+            }
+        }
         if (result === 'hidden') {
             const onVisible = () => {
                 if (win.document.visibilityState !== 'hidden') {
@@ -37,8 +62,9 @@ window.bwAssetFill = (function () {
             win.document.addEventListener('visibilitychange', onVisible);
         } else if (result === 'offline') {
             win.addEventListener('online', () => again(), { once: true });
-        } else if ((result === 'locked' || result === 'unsure') && !holder.retry) {
-            holder.retry = win.setTimeout(() => { holder.retry = null; again(); }, RETRY_MS);
+        } else if ((result === 'locked' || result === 'unsure' || result === 'mismatch') && !holder.retry) {
+            const wait = result === 'locked' ? RETRY_MS : backoffMs(holder.unsureRuns);
+            holder.retry = win.setTimeout(() => { holder.retry = null; again(); }, wait);
         }
     }
 
@@ -71,16 +97,23 @@ window.bwAssetFill = (function () {
 
     /**
      * env: { fetch(url, init), verify(task) → Promise<'stored'|'refused'|'unknown'>, partition() → label,
-     *        hidden() → bool, concurrency() → n, freeOneWall() → Promise<bool>, lock(fn) → Promise }
+     *        hidden() → bool, online() → bool, forget(task) (drops an earlier announcement of the task's key),
+     *        concurrency() → n, freeOneWall() → Promise<bool>, lock(fn) → Promise }
      * Returns { run(tasks) → Promise<'done'|'hidden'|'offline'|'unsure'|'streaming'|'locked'>, streaming }.
      */
     function createRunner(env) {
         let streaming = false;
         let retried = false;
+        const failures = new Map();
+        const online = () => (typeof env.online === 'function' ? env.online() : true);
 
         // Throws on a network failure; anything the server answered is an outcome.
         async function one(task) {
             const label = env.partition();
+            // An announcement from before this fetch (an earlier store that was evicted since) must not confirm it.
+            if (typeof env.forget === 'function') {
+                env.forget(task);
+            }
             const response = await env.fetch(task.url, { priority: 'low', credentials: 'same-origin' });
             // A 404/403 (the asset or the access went) is the manifest's business: its next fetch drops it.
             if (!response.ok) {
@@ -97,7 +130,7 @@ window.bwAssetFill = (function () {
             if (streaming) {
                 return 'streaming';
             }
-            const queue = tasks.slice();
+            const queue = tasks.filter(task => (failures.get(task.key) || 0) < FAILURE_LIMIT);
             let stop = null;
             let unsure = 0;
 
@@ -116,9 +149,13 @@ window.bwAssetFill = (function () {
                             outcome = await one(task);
                         }
                     } catch (e) {
-                        // Nothing was recorded for it, so the next run (on `online`) plans it again.
-                        stop = stop || 'offline';
-                        break;
+                        if (!online()) {
+                            // Nothing was recorded for it, so the next run (on `online`) plans it again.
+                            stop = stop || 'offline';
+                            break;
+                        }
+                        failures.set(task.key, (failures.get(task.key) || 0) + 1);
+                        continue;
                     }
                     if (outcome === 'refused') {
                         streaming = true;
@@ -145,5 +182,5 @@ window.bwAssetFill = (function () {
         return { run, get streaming() { return streaming; } };
     }
 
-    return { UNSURE_LIMIT, RETRY_MS, concurrencyOf, lock, discard, resumeAfter, createRunner };
+    return { UNSURE_LIMIT, FAILURE_LIMIT, UNSURE_RUNS_LIMIT, RETRY_MS, backoffMs, concurrencyOf, lock, discard, resumeAfter, createRunner };
 })();

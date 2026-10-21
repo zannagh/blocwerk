@@ -79,7 +79,8 @@ self.addEventListener('message', event => {
         return;
     }
     if (data.type === 'sw-info') {
-        reply(event, { proto: PROTO, type: 'sw-info', shell: CACHE });
+        // `partition`: the label the asset cache serves right now (sw-asset-cache.js), null before any lookup.
+        reply(event, { proto: PROTO, type: 'sw-info', shell: CACHE, partition: assetPartitions.current });
     }
 });
 

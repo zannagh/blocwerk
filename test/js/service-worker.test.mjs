@@ -58,9 +58,15 @@ test('activate keeps the asset caches and the worker state, deleting only old sh
 
 test('sw-info under proto 1 is answered on the passed port, or else to the sending client', () => {
     const worker = loadWorker();
-    const expected = { proto: 1, type: 'sw-info', shell: 'blocwerk-shell-v4' };
+    const expected = { proto: 1, type: 'sw-info', shell: 'blocwerk-shell-v4', partition: null };
     assert.deepEqual(send(worker, { proto: 1, type: 'sw-info' }, true).map(m => ({ ...m })), [expected]);
     assert.deepEqual(send(worker, { proto: 1, type: 'sw-info' }, false).map(m => ({ ...m })), [expected]);
+});
+
+test('sw-info reports the label the asset cache serves, once a lookup answered', async () => {
+    const worker = workerFor(ALICE);
+    await dispatchFetch(worker, asset()).settle();
+    assert.equal(send(worker, { proto: 1, type: 'sw-info' }, true)[0].partition, ALICE);
 });
 
 test('messages with an unknown proto or type, or no object at all, are ignored without throwing', () => {

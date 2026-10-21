@@ -5,10 +5,15 @@
  * ORDER: tier first, then wall.
  *   1. `core` of every wall (the current panels at the fit rendition plus 640), always, whatever the budget;
  *   2. the gallery (640 and the original), newest images first, while the image budget has room;
- *   3. 3D (textures, masks, one splat level), while 3D is kept, the connection is unmetered and the 3D budget has room.
+ *   3. 3D (textures, masks, one splat level), only on a desktop browser (never on a phone or tablet, iOS or Android:
+ *      there 3D is cached only when a 3D view is opened), while 3D is kept, the connection is unmetered and the 3D
+ *      budget has room.
  * Within a tier the open wall goes first, then the walls by when they were last opened. Every other `lazy` asset
  * (superseded panels, reset photos, video thumbnails) is never background-filled: the worker caches it on use, and so
- * it does 3D on a metered connection.
+ * it does 3D on a phone, a tablet or a metered connection.
+ *
+ * BYTES. The image room starts at what the ledger holds plus what this plan's core will add, and every rendition is
+ * charged on its own: an original at the manifest's size, a rendition at an estimate scaled from it.
  */
 window.bwAssetPlan = (function () {
     'use strict';
@@ -19,6 +24,8 @@ window.bwAssetPlan = (function () {
     const THUMB = 640;
     // iOS fails a single Cache API entry at about 600 MB (the storage probe); 400 MB stored fine.
     const MAX_ENTRY_BYTES = 400 * 1024 * 1024;
+    // The width an original is assumed to have when a rendition's size is estimated from it (a phone photo is ~4000).
+    const ESTIMATE_WIDTH = 4000;
 
     /** The rendition a wall photo is shown at on this device at fit. */
     function fitWidth(cssWidth, dpr) {
@@ -34,6 +41,28 @@ window.bwAssetPlan = (function () {
     function isMetered(nav) {
         const c = nav && nav.connection;
         return !!c && (!!c.saveData || c.type === 'cellular' || /(^|-)2g$|^3g$/.test(c.effectiveType || ''));
+    }
+
+    /**
+     * A phone or tablet, iOS or Android (the 3D background-fill rule; 2.8's data-volume warning reads it too):
+     * `navigator.userAgentData.mobile` where the browser has it, else iPhone/iPad/iPod/Android in the UA, or iPadOS,
+     * which reports itself as a Mac but has touch points.
+     */
+    function isMobile(nav) {
+        if (!nav) {
+            return false;
+        }
+        if (nav.userAgentData && typeof nav.userAgentData.mobile === 'boolean' && nav.userAgentData.mobile) {
+            return true;
+        }
+        const ua = nav.userAgent || '';
+        return /iPhone|iPad|iPod|Android/i.test(ua) || (/Macintosh/.test(ua) && nav.maxTouchPoints > 1);
+    }
+
+    /** What one rendition of an entry costs: the original at its size, a width at an estimate scaled from it. */
+    function bytesOf(entry, width) {
+        const bytes = entry.bytes || 0;
+        return width ? Math.ceil(bytes * Math.min(1, (width / ESTIMATE_WIDTH) ** 2)) : bytes;
     }
 
     function keyOf(sha, width) {
@@ -80,7 +109,7 @@ window.bwAssetPlan = (function () {
     }
 
     /**
-     * The ordered download list. `state`: { walls, cachedKeys: Set, openWallId, keep3d, metered, budget: {images,
+     * The ordered download list. `state`: { walls, cachedKeys: Set, openWallId, keep3d, metered, mobile, budget: {images,
      * view3d}, usedImages, used3d, width, tokens: Map wallId → token }. Returns [{ key, url, sha, width, tier, wallId }].
      */
     function planFill(state) {
@@ -98,27 +127,34 @@ window.bwAssetPlan = (function () {
             tasks.push({ key, url: urlOf(wall.wallId, entry.sha, width, token), sha: entry.sha, width, tier, wallId: wall.wallId });
             return true;
         };
-        // Pushes an entry's renditions while `room` holds; the original's size bounds what each one costs.
+        // Pushes an entry's renditions that are not cached yet, all or none, while `room` holds their cost.
         const within = (wall, entry, widths, tier, room) => {
-            const bytes = entry.bytes || 0;
-            if (bytes > MAX_ENTRY_BYTES || !room.fits(bytes)) {
+            const missing = photoWidths(entry, widths).filter(w => !planned.has(keyOf(entry.sha, w)));
+            const cost = missing.reduce((sum, w) => sum + bytesOf(entry, w), 0);
+            if ((entry.bytes || 0) > MAX_ENTRY_BYTES || missing.length === 0 || !room.fits(cost)) {
                 return;
             }
-            const pushed = photoWidths(entry, widths).filter(w => push(wall, entry, w, tier)).length;
-            room.take(pushed > 0 ? bytes : 0);
+            missing.forEach(w => push(wall, entry, w, tier));
+            room.take(cost);
         };
         const roomOf = (used, budget) => ({ fits: b => used + b <= budget, take: b => { used += b; } });
 
+        let coreBytes = 0;
         for (const wall of walls) {
             for (const entry of (wall.entries || []).filter(e => e.tier === 'core' && e.sha)) {
-                photoWidths(entry, [state.width, THUMB]).forEach(w => push(wall, entry, w, 'core'));
+                photoWidths(entry, [state.width, THUMB]).forEach(w => {
+                    if (push(wall, entry, w, 'core')) {
+                        coreBytes += bytesOf(entry, w);
+                    }
+                });
             }
         }
-        const images = roomOf(state.usedImages || 0, state.budget.images);
+        // Core is planned whatever the budget; the gallery gets only what is left after it.
+        const images = roomOf((state.usedImages || 0) + coreBytes, state.budget.images);
         for (const wall of walls) {
             galleryEntries(wall).forEach(entry => within(wall, entry, [THUMB, null], 'gallery', images));
         }
-        if (state.keep3d && !state.metered) {
+        if (state.keep3d && !state.metered && !state.mobile) {
             const view3d = roomOf(state.used3d || 0, state.budget.view3d);
             for (const wall of walls) {
                 view3dEntries(wall, cachedShas).forEach(entry => within(wall, entry, [null], 'view3d', view3d));
@@ -127,5 +163,5 @@ window.bwAssetPlan = (function () {
         return tasks;
     }
 
-    return { WIDTHS, THUMB, MAX_ENTRY_BYTES, fitWidth, isMetered, keyOf, urlOf, planFill };
+    return { WIDTHS, THUMB, MAX_ENTRY_BYTES, fitWidth, isMetered, isMobile, bytesOf, keyOf, urlOf, planFill };
 })();

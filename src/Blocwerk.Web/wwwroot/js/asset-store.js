@@ -25,28 +25,40 @@ window.bwAssetStore = (function () {
     const cacheName = (partition, suffix) => `bw-a1-${partition}-${suffix}`;
     const cacheUrl = (win, key) => `${win.location.origin}/__bw/${key}`;
 
-    function probeWorker(win) {
+    // The worker's `sw-info` reply, or null (no worker, an old one that ignores it, a timeout).
+    function askWorker(win) {
         const sw = win.navigator.serviceWorker;
         const controller = sw && sw.controller;
         if (!controller || typeof win.MessageChannel !== 'function') {
-            return Promise.resolve(false);
+            return Promise.resolve(null);
         }
         return new Promise(resolve => {
             const channel = new win.MessageChannel();
-            const timer = win.setTimeout(() => resolve(false), SW_INFO_TIMEOUT_MS);
+            const timer = win.setTimeout(() => resolve(null), SW_INFO_TIMEOUT_MS);
             channel.port1.onmessage = event => {
                 win.clearTimeout(timer);
                 const data = event.data || {};
-                const version = /^blocwerk-shell-v(\d+)$/.exec(data.shell || '');
-                resolve(data.proto === PROTO && data.type === 'sw-info' && !!version && Number(version[1]) >= MIN_ROUTING_SHELL);
+                resolve(data.proto === PROTO && data.type === 'sw-info' ? data : null);
             };
             try {
                 controller.postMessage({ proto: PROTO, type: 'sw-info' }, [channel.port2]);
             } catch (e) {
                 win.clearTimeout(timer);
-                resolve(false);
+                resolve(null);
             }
         });
+    }
+
+    function probeWorker(win) {
+        return askWorker(win).then(data => {
+            const version = data && /^blocwerk-shell-v(\d+)$/.exec(data.shell || '');
+            return !!version && Number(version[1]) >= MIN_ROUTING_SHELL;
+        });
+    }
+
+    /** The label the worker serves right now (`sw-info`'s `partition`), or null when it does not say. */
+    function workerPartition(win) {
+        return askWorker(win).then(data => (data && typeof data.partition === 'string' ? data.partition : null));
     }
 
     async function inCache(win, partition, key) {
@@ -134,5 +146,5 @@ window.bwAssetStore = (function () {
         }
     }
 
-    return { PROTO, SW_INFO_TIMEOUT_MS, VERIFY_WAIT_MS, probeWorker, verify, reconcile, loadSummary };
+    return { PROTO, SW_INFO_TIMEOUT_MS, VERIFY_WAIT_MS, probeWorker, workerPartition, verify, reconcile, loadSummary };
 })();

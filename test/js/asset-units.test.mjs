@@ -75,6 +75,31 @@ test('3D fills only while kept, unmetered and within its budget', () => {
     assert.equal(Plan.isMetered({}), false, 'no Network Information API counts as unmetered');
 });
 
+test('mobile browsers never background-fill 3D, whatever the connection; desktop does on unmetered', () => {
+    const walls = [wall('w', 1, [photo(sha('a'), 'core'), { sha: sha('c'), kind: 'texture', tier: 'view3d', bytes: 10 }])];
+    assert.ok(plan(walls, { mobile: true }).every(t => t.tier === 'core'));
+    assert.ok(plan(walls, { mobile: false }).some(t => t.tier === 'view3d'));
+    const nav = (ua, more = {}) => Object.assign({ userAgent: ua, maxTouchPoints: 0 }, more);
+    assert.equal(Plan.isMobile(nav('Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15')), true);
+    assert.equal(Plan.isMobile(nav('Mozilla/5.0 (Linux; Android 15; Pixel 9) Chrome/130.0 Mobile Safari/537.36')), true);
+    assert.equal(Plan.isMobile(nav('Mozilla/5.0 (Linux; Android 15; SM-X910) Chrome/130.0 Safari/537.36')), true, 'an Android tablet');
+    assert.equal(Plan.isMobile(nav('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/18.0 Safari/605.1.15', { maxTouchPoints: 5 })), true, 'iPadOS as a Mac');
+    assert.equal(Plan.isMobile(nav('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/18.0 Safari/605.1.15')), false);
+    assert.equal(Plan.isMobile(nav('Mozilla/5.0 (X11; Linux x86_64) Chrome/130.0', { userAgentData: { mobile: true } })), true);
+    assert.equal(Plan.isMobile(nav('Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0', { userAgentData: { mobile: false } })), false);
+});
+
+test('the gallery\'s room starts after the core this plan adds, and each rendition is charged on its own', () => {
+    const core = photo(sha('a'), 'core', 4000);
+    const g = gallery(sha('g'), '2026-06-01T00:00:00+00:00', 4000);
+    const coreCost = Plan.bytesOf(core, 1280) + Plan.bytesOf(core, 640);
+    const galleryCost = Plan.bytesOf(g, 640) + Plan.bytesOf(g, null);
+    const shas = budget => [...new Set(plan([wall('w', 1, [core, g])], { budget: { images: budget, view3d: 0 } }).map(t => t.sha[0]))];
+    assert.deepEqual(plain(shas(coreCost + galleryCost)), ['a', 'g']);
+    assert.deepEqual(plain(shas(coreCost + galleryCost - 1)), ['a'], 'core\'s planned bytes count, and the 640 is charged beside the original');
+    assert.deepEqual(plain(shas(galleryCost)), ['a'], 'core alone would overshoot');
+});
+
 test('the fill takes one splat level (the smallest), none if the wall has one, and skips what is cached', () => {
     const levels = [{ sha: sha('1'), kind: 'splat', tier: 'view3d', bytes: 5, splats: 250000 }, { sha: sha('2'), kind: 'splat', tier: 'view3d', bytes: 2, splats: 40000 }];
     const w = [wall('w', 1, levels)];

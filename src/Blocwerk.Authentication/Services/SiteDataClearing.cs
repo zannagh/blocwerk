@@ -1,6 +1,7 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
@@ -31,6 +32,17 @@ namespace Blocwerk.Authentication.Services;
 /// </remarks>
 public static class SiteDataClearing
 {
+    /// <summary>
+    /// The fingerprinted URLs of the static assets (what <c>@Assets</c> gives BlocwerkApp), from the endpoint's
+    /// <see cref="ResourceAssetCollection"/> (<c>MapControllers().WithStaticAssets()</c>), so a stale cached copy of an
+    /// unversioned path can never break the page. Without the map (tests, a host without it) the plain path.
+    /// </summary>
+    private static Func<string, string>? AssetUrls(HttpContext http)
+    {
+        var assets = http.GetEndpoint()?.Metadata.GetMetadata<ResourceAssetCollection>();
+        return assets is null ? null : label => assets[label];
+    }
+
     /// <summary>The response header.</summary>
     public const string HeaderName = "Clear-Site-Data";
 
@@ -61,7 +73,7 @@ public static class SiteDataClearing
         {
             StatusCode = StatusCodes.Status200OK,
             ContentType = "text/html; charset=utf-8",
-            Content = SignedOutMarkup.Render(next),
+            Content = SignedOutMarkup.Render(next, AssetUrls(response.HttpContext)),
         };
     }
 }
