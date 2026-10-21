@@ -49,7 +49,9 @@ public sealed partial class WallEnhancementService
             }
 
             var shownId = otherSide ? found.Item.OtherHoldId : found.Item.HoldId;
-            var shown = shownId is { } holdId ? await db.Holds.AsNoTracking().FirstOrDefaultAsync(h => h.Id == holdId && h.WallId == wallId, ct) : null;
+            var shown = shownId is { } holdId
+                ? await db.Holds.AsNoTracking().FirstOrDefaultAsync(h => h.Id == holdId && h.WallId == wallId, ct) ?? await DeletedHoldAsync(wallId, holdId, ct)
+                : null;
             if (shown?.WallPanelId is not { } panelId)
             {
                 return null;

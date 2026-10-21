@@ -2,15 +2,20 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using Blocwerk.Core.Detection.Outlines;
 using Blocwerk.Core.Enhancement;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Enums;
+using Blocwerk.Core.Services;
+using Microsoft.Extensions.Logging.Abstractions;
 using SkiaSharp;
 
 namespace Blocwerk.Core.Tests.Enhancement;
 
 /// <summary>
 /// A link suggestion pairs holds on two panels. Its review must show both panels: before, it showed only the first
-/// hold's photo, so a pair could not be judged and every suggestion was turned down.
+/// hold's photo, so a pair could not be judged and every suggestion was turned down. And an answered card whose hold
+/// was merged away later still has its picture.
 /// </summary>
 public sealed class WallEnhancementLinkCropTests
 {
@@ -45,6 +50,29 @@ public sealed class WallEnhancementLinkCropTests
 
         Assert.NotNull(await service.CropAsync(f.WallId, item.Id));
         Assert.Null(await service.OtherCropAsync(f.WallId, item.Id));
+    }
+
+    [Fact]
+    public async Task ItemWhoseHoldWasMergedAway_StillHasItsPicture()
+    {
+        using var f = await WallEnhancementFixture.CreateAsync();
+        f.Duplicates = new HoldDuplicateService(
+            f.Journalling, f.Harness.CurrentUser, f.Journal, new ChangeJournalReverter(f.Journalling, f.Journal), NullLogger<HoldDuplicateService>.Instance);
+        await f.SetPanelPhotoAsync(Solid(SKColors.Red));
+        var kept = await f.AddHoldAsync(0.5, 0.5);
+        var merged = await f.AddHoldAsync(0.52, 0.5);
+        var other = await f.AddHoldAsync(0.2, 0.2);
+        var service = f.Service(FakeEnhancementStep.Suggesting("duplicates", 500, WallEnhancementItemKind.Duplicate,
+            new WallEnhancementSuggestion(kept, merged, null, nameof(HoldMergeMode.KeepLeft)),
+            new WallEnhancementSuggestion(merged, other, null, nameof(HoldMergeMode.KeepLeft))));
+        await f.StartAndWaitAsync(service);
+        var items = await f.ItemsAsync();
+        await service.DecideAsync(f.WallId, items.Single(i => i.HoldId == kept).Id, true);
+        Assert.Null(await f.Harness.CreateContext().Holds.FindAsync(merged));
+
+        var crop = await service.CropAsync(f.WallId, items.Single(i => i.HoldId == merged).Id);
+
+        Assert.Equal(SKColors.Red, CentreOf(Assert.IsType<byte[]>(crop)));
     }
 
     private static async Task<Guid> AddPanelAsync(WallEnhancementFixture f, byte[] photo)
