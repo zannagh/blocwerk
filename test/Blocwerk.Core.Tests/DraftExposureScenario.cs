@@ -129,6 +129,12 @@ internal sealed class DraftExposureScenario
         return new AttemptService(factory, users, Harness.ActivityLog, NullLogger<AttemptService>.Instance);
     }
 
+    public IBoulderFeedbackService Feedback(DraftViewer viewer)
+    {
+        var (factory, users, _) = Parts(viewer);
+        return new BoulderFeedbackService(factory, users, NullLogger<BoulderFeedbackService>.Instance);
+    }
+
     /// <summary>The wall as the viewer's wall page loads it: by share token on the share route, by id otherwise.</summary>
     public async Task<Wall?> LoadWallAsync(DraftViewer viewer) =>
         UsesShareLink(viewer)
