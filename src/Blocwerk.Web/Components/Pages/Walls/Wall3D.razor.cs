@@ -85,17 +85,24 @@ public partial class Wall3D
     private async Task ReloadAsync(bool keepSameModel = false)
     {
         var key = Key;
+        var built = 0;
         try
         {
-            Wall3DViewResult? built = null;
-            await BuildTaggedAsync(() => ViewService.BuildAsync(key.Wall, key.Boulder, key.Token), r => built = r);
-            if (built is null || _loaded != key || (keepSameModel && Wall3DViewIdentity.SameModel(_result, built)))
+            // Assigned in the commit: the feed may apply a held batch (a nested rebuild) before LoadAsync returns,
+            // and an assignment after it would put this older build back over the newer one.
+            await BuildTaggedAsync(() => ViewService.BuildAsync(key.Wall, key.Boulder, key.Token), result =>
             {
-                return;
-            }
+                if (_loaded == key && !(keepSameModel && Wall3DViewIdentity.SameModel(_result, result)))
+                {
+                    _result = result;
+                    built = ++buildEpoch;
+                }
+            });
 
-            _result = built;
-            await LoadCorrectionAsync(key);
+            if (built != 0 && built == buildEpoch)
+            {
+                await LoadCorrectionAsync(key);
+            }
         }
         catch (UnauthorizedAccessException)
         {

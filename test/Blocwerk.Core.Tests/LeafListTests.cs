@@ -192,6 +192,30 @@ public sealed class LeafListTests
         Assert.False(Wall3DViewIdentity.SameModel(View(null), View(null)));
     }
 
+    [Fact]
+    public void ContentKinds_ReloadStructurally_ADeliveryResyncDoesNot_AndBothSkipWhatTheLoadHas()
+    {
+        var threeD = Wall3DViewIdentity.Scope(Wall);
+        var hold = Env(FeedKinds.HoldChanged, seq: 7) with { BoulderId = null };
+
+        Assert.True(threeD.Select(Delivery(hold), null) is { Reload: true, Structural: true });
+        Assert.True(Comments.Select(Delivery(Env(FeedKinds.WallResync, seq: 7) with { BoulderId = null }), null) is { Structural: true });
+        Assert.True(threeD.Select(Delivery() with { Resync = true }, null) is { Reload: true, Structural: false });
+        Assert.Null(threeD.Select(Delivery(hold), Cursor(7)));
+        Assert.Null(Comments.Select(Delivery(hold), null)); // a hold is no comment list's business
+        Assert.True(LeafBatch.ReloadOnly.Merge(LeafBatch.Coarse).Structural);
+    }
+
+    [Fact]
+    public void ARemountOfTheSamePlace_CarriesTheCamera()
+    {
+        var boulder = Guid.NewGuid();
+
+        Assert.True(Wall3DViewIdentity.SamePlace(new Wall3DView { WallId = Wall, BoulderId = boulder }, new Wall3DView { WallId = Wall, BoulderId = boulder }));
+        Assert.False(Wall3DViewIdentity.SamePlace(new Wall3DView { WallId = Wall }, new Wall3DView { WallId = Wall, BoulderId = boulder }));
+        Assert.False(Wall3DViewIdentity.SamePlace(null, new Wall3DView { WallId = Wall }));
+    }
+
     private static Wall3DViewResult View(string? model) =>
         new(Wall3DViewStatus.Ok, "W", new Wall3DView { WallId = Wall, ModelKey = model });
 

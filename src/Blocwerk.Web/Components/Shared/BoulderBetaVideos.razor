@@ -282,8 +282,7 @@
                 () => IsAnonymous && !string.IsNullOrEmpty(ShareToken)
                     ? VideoService.GetVideosByShareTokenAsync(BoulderId, ShareToken)
                     : LoadForSignedInViewerAsync(),
-                videos => _videos = videos);
-            _error = null;
+                videos => (_videos, _error) = (videos, null)); // in the commit: a nested reload may land first
         }
         catch (Exception ex)
         {
@@ -483,10 +482,11 @@
             }
 
             // Reload rather than a local remove so a concurrently uploaded/deleted clip is reflected
-            // too, then notify the parent so its count and activity feed refresh.
+            // too, then notify the parent so its count and activity feed refresh. The error is cleared
+            // first, so the reload's own error is not wiped afterwards.
+            _error = null;
             await ReloadAsync();
             await Uploaded.InvokeAsync();
-            _error = null;
         }
         catch (Exception ex)
         {

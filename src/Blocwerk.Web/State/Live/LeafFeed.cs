@@ -17,8 +17,8 @@ namespace Blocwerk.Web.State.Live;
 /// </para>
 /// <para>
 /// <b>Holding.</b> While <c>isHeld</c> is true (the user is editing in the list), and while a load runs, batches are
-/// merged, not applied. A load's end releases what arrived above its cursor; <see cref="ReleaseAsync"/> does when an edit
-/// ends. Nothing is lost and nothing is patched under the user's hands or into a list a load is about to replace.
+/// merged, not applied. A load's end releases what arrived above its cursor, as a new dispatcher item after the caller's
+/// own code; <see cref="ReleaseAsync"/> does when an edit ends. Nothing is lost and nothing is patched under the user's hands or into a list a load is about to replace.
 /// </para>
 /// <para>
 /// <b>CursorAtLoad.</b> Every full load runs through <see cref="LoadAsync{T}"/>: it subscribes first, reads the feed cursor,
@@ -50,6 +50,7 @@ public sealed class LeafFeed(
     private int loads;
     private int loading;
     private int reloadQueued;
+    private int structuralQueued;
     private int disposed;
 
     public LeafScope Scope { get; } = scope;
@@ -113,7 +114,12 @@ public sealed class LeafFeed(
                 pending = pending?.After(at);
             }
 
-            await ReleaseAsync();
+            // As a new dispatcher item, after the caller's own code that follows the load (its catch, its render),
+            // so what was held is never applied under it.
+            if (pending is not null)
+            {
+                _ = DispatchReleaseAsync();
+            }
         }
 
         return committed;
@@ -173,8 +179,15 @@ public sealed class LeafFeed(
         if (!batch.Reload)
         {
             _ = DispatchAsync(batch);
+            return;
         }
-        else if (Interlocked.Exchange(ref reloadQueued, 1) == 0)
+
+        if (batch.Structural)
+        {
+            Volatile.Write(ref structuralQueued, 1);
+        }
+
+        if (Interlocked.Exchange(ref reloadQueued, 1) == 0)
         {
             _ = ReloadLaterAsync();
         }
@@ -184,7 +197,20 @@ public sealed class LeafFeed(
     {
         await Task.Delay(ReloadDelay);
         Volatile.Write(ref reloadQueued, 0);
-        await DispatchAsync(LeafBatch.ReloadOnly);
+        var structural = Interlocked.Exchange(ref structuralQueued, 0) == 1;
+        await DispatchAsync(structural ? LeafBatch.Coarse : LeafBatch.ReloadOnly);
+    }
+
+    private async Task DispatchReleaseAsync()
+    {
+        try
+        {
+            await dispatch(ReleaseAsync);
+        }
+        catch (Exception ex)
+        {
+            logger?.LogWarning(ex, "A live list of wall {WallId} could not apply what was held during its load", Scope.WallId);
+        }
     }
 
     private async Task DispatchAsync(LeafBatch batch)

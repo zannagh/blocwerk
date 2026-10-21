@@ -127,7 +127,12 @@
             var list = _list;
             var boulderId = BoulderId;
             var read = () => CommentService.GetCommentsAsync(boulderId, 0, list.Window);
-            void Commit((List<BoulderComment> Items, int Total) page) => list.Load(page.Items, page.Total, _feed?.Viewer);
+            void Commit((List<BoulderComment> Items, int Total) page)
+            {
+                list.Load(page.Items, page.Total, _feed?.Viewer);
+                _error = null; // here, not after LoadAsync: a nested reload may land before it returns
+            }
+
             if (_feed is { } feed)
             {
                 await feed.LoadAsync(read, Commit);
@@ -136,8 +141,6 @@
             {
                 Commit(await read());
             }
-
-            _error = null;
         }
         catch (Exception ex)
         {

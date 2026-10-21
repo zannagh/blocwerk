@@ -4,7 +4,6 @@
    through IWall3DViewService, which reads the wall exactly as the host page does (members, the
    kiosk on its own wall, share tokens), so it can show nothing the page could not. A view3d.changed
    (another model activated) rebuilds it, and the new view instance remounts the stage. *@
-@using Blocwerk.Contracts.Feed
 @using Blocwerk.Core.Geometry.View3D
 @using Blocwerk.Web.State.Live
 @inject IWall3DViewService ViewService
@@ -64,7 +63,6 @@
         _ => "The 3D view is not available.",
     };
 
-    private static readonly IReadOnlySet<string> Kinds = new HashSet<string> { FeedKinds.View3DChanged };
     private LeafFeed? feed;
 
     // Parameters, not OnInitializedAsync: the host page is retained across wall/boulder navigation.
@@ -82,7 +80,7 @@
 
         // Share routes are not live, as on the host pages.
         feed = string.IsNullOrEmpty(ShareToken)
-            ? LeafFeed.Open(Cache, new LeafScope(WallId, null, Kinds), InvokeAsync, RebuildAsync, logger: Logger)
+            ? LeafFeed.Open(Cache, Wall3DViewIdentity.Scope(WallId), InvokeAsync, RebuildAsync, logger: Logger)
             : null;
         await BuildAsync(key, keepSameModel: false);
     }
@@ -120,12 +118,13 @@
         Task<Wall3DViewResult> Build() => ViewService.BuildAsync(key.Wall, key.Boulder, key.Token);
     }
 
-    // On the dispatcher: the active model may have changed, so the view is rebuilt; a new model remounts the stage.
+    // On the dispatcher: the wall's content changed (model, holds, volumes, links, resync), so the view is rebuilt and the
+    // stage remounts, carrying the camera over; a delivery resync or a changed viewer keeps a view of the same model.
     private async Task RebuildAsync(LeafBatch batch)
     {
         if (loaded is { } key && Cache.ViewerOf(WallId) is not null)
         {
-            await BuildAsync(key, keepSameModel: true);
+            await BuildAsync(key, keepSameModel: !batch.Structural);
             StateHasChanged();
         }
     }

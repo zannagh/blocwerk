@@ -1,7 +1,6 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
-using Blocwerk.Contracts.Feed;
 using Blocwerk.Web.State;
 using Blocwerk.Web.State.Live;
 using Microsoft.AspNetCore.Components;
@@ -9,16 +8,18 @@ using Microsoft.AspNetCore.Components;
 namespace Blocwerk.Web.Components.Pages.Walls;
 
 /// <summary>
-/// The live side of the 3D page (design §5.5): a <c>view3d.changed</c> (another wall model was activated) or a wall
-/// resync rebuilds the view, and the new view instance remounts the stage. Held while a correction is picked or saving:
+/// The live side of the 3D page (design §5.5): a <c>view3d.changed</c> (another wall model was activated), a hold, volume
+/// or link change, or a wall resync rebuilds the view, and the new view instance remounts the stage, which keeps the camera
+/// and the mode. Held while a correction is picked or saving:
 /// the correction's own rebuild then reads the newest model, and what arrived meanwhile is applied when it ends. A resync
 /// or a changed viewer that yields the same active model keeps the mounted stage (camera, mode, WebGL context).
 /// </summary>
 public partial class Wall3D
 {
-    private static readonly IReadOnlySet<string> Kinds = new HashSet<string> { FeedKinds.View3DChanged };
-
     private LeafFeed? feed;
+
+    // Bumped by every build that lands; the correction state is read for the newest one only.
+    private int buildEpoch;
 
     [Inject]
     private WallCacheState Cache { get; set; } = null!;
@@ -33,7 +34,7 @@ public partial class Wall3D
     {
         feed?.Dispose();
         feed = string.IsNullOrEmpty(ShareToken)
-            ? LeafFeed.Open(Cache, new LeafScope(WallId, null, Kinds), InvokeAsync, ApplyFeedAsync, () => correcting || tappedFacet is not null, Logger)
+            ? LeafFeed.Open(Cache, Wall3DViewIdentity.Scope(WallId), InvokeAsync, ApplyFeedAsync, () => correcting || tappedFacet is not null, Logger)
             : null;
     }
 
@@ -52,7 +53,8 @@ public partial class Wall3D
 
     private Task ReleaseFeedAsync() => feed?.ReleaseAsync() ?? Task.CompletedTask;
 
-    // On the dispatcher. The model may have changed: rebuild, keeping the stage when it did not.
+    // On the dispatcher. The wall's content changed (another model, holds, volumes, links, a wall resync): rebuild and
+    // remount, the stage carrying the camera over. A delivery resync or a changed viewer keeps a view of the same model.
     private async Task ApplyFeedAsync(LeafBatch batch)
     {
         if (Cache.ViewerOf(WallId) is null)
@@ -60,7 +62,7 @@ public partial class Wall3D
             return; // the circuit left the wall; the layout navigates away
         }
 
-        await ReloadAsync(keepSameModel: true);
+        await ReloadAsync(keepSameModel: !batch.Structural);
         StateHasChanged();
     }
 }

@@ -8,9 +8,8 @@ namespace Blocwerk.Web.Components.Pages.Walls;
 
 /// <summary>
 /// The boulder page's live counts (design §5.5). <c>boulder.stats</c> is coarse (ticks, ratings or grade proposals of the
-/// boulder changed): it re-queries the rating summary and the open grade proposal, computed at read time. The viewer's
-/// own rows (<c>tick.mine</c>, <c>rating.mine</c>, <c>favorite.changed</c>, from their other devices; never on a kiosk)
-/// re-query their history, summary, rating and favourite. Held while the name/grade or the proposal form is open, so a
+/// boulder changed), and so are the viewer's own rows (<c>tick.mine</c>, <c>rating.mine</c>, <c>favorite.changed</c>, from
+/// their other devices; never on a kiosk): each re-reads every count, computed at read time. Held while the name/grade or the proposal form is open, so a
 /// refresh never replaces what the user is choosing; applied when the form closes.
 /// </summary>
 public partial class BoulderDetail
@@ -62,12 +61,11 @@ public partial class BoulderDetail
             return;
         }
 
-        var kinds = batch.Reload ? StatsKinds : batch.Events.Select(e => e.Kind).ToHashSet();
         var boulderId = BoulderId;
         var anonymous = _isAnonymous;
         try
         {
-            await feed.LoadAsync(() => ReadStatsAsync(boulderId, anonymous, kinds), stats =>
+            await feed.LoadAsync(() => ReadStatsAsync(boulderId, anonymous), stats =>
             {
                 if (BoulderId == boulderId && _boulder?.Id == boulderId)
                 {
@@ -83,36 +81,24 @@ public partial class BoulderDetail
         StateHasChanged();
     }
 
-    private async Task<BoulderStatsRead> ReadStatsAsync(Guid boulderId, bool anonymous, IReadOnlySet<string> kinds)
+    // Every count, whatever kind arrived: the read is a full load of the stats (it sets their CursorAtLoad), so a partial
+    // one would let a held rating or favourite event below its cursor be dropped unread.
+    private async Task<BoulderStatsRead> ReadStatsAsync(Guid boulderId, bool anonymous)
     {
-        var read = new BoulderStatsRead();
-        if (kinds.Contains(FeedKinds.BoulderStats))
+        var read = new BoulderStatsRead
         {
-            read.ProposalRead = true;
-            read.Proposal = await BoulderService.GetActiveProposalAsync(boulderId);
-        }
-
+            ProposalRead = true,
+            Proposal = await BoulderService.GetActiveProposalAsync(boulderId),
+        };
         if (anonymous)
         {
             return read;
         }
 
-        if (kinds.Contains(FeedKinds.TickMine))
-        {
-            read.Attempts = await AttemptService.GetAttemptsForBoulderAsync(boulderId);
-            read.Summary = await AttemptService.GetBoulderSummaryForUserAsync(boulderId);
-        }
-
-        if (kinds.Contains(FeedKinds.BoulderStats) || kinds.Contains(FeedKinds.RatingMine))
-        {
-            read.Rating = await FeedbackService.GetRatingAsync(boulderId);
-        }
-
-        if (kinds.Contains(FeedKinds.FavoriteChanged))
-        {
-            read.Favorite = await FeedbackService.IsFavoritedAsync(boulderId);
-        }
-
+        read.Attempts = await AttemptService.GetAttemptsForBoulderAsync(boulderId);
+        read.Summary = await AttemptService.GetBoulderSummaryForUserAsync(boulderId);
+        read.Rating = await FeedbackService.GetRatingAsync(boulderId);
+        read.Favorite = await FeedbackService.IsFavoritedAsync(boulderId);
         return read;
     }
 

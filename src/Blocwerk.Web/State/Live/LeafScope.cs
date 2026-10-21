@@ -15,7 +15,11 @@ namespace Blocwerk.Web.State.Live;
 /// <param name="WallId">The wall.</param>
 /// <param name="BoulderId">The boulder of a boulder-level list; null for a wall-level one.</param>
 /// <param name="Kinds">The kinds the list patches or reloads on (<c>wall.resync</c> always reloads).</param>
-public sealed record LeafScope(Guid WallId, Guid? BoulderId, IReadOnlySet<string> Kinds)
+/// <param name="CoarseKinds">
+/// Kinds that only mean "the content changed, re-read" for this list (holds and volumes for a 3D view): they reload like
+/// <c>wall.resync</c>, coalesced, as a <see cref="LeafBatch.Structural"/> reload.
+/// </param>
+public sealed record LeafScope(Guid WallId, Guid? BoulderId, IReadOnlySet<string> Kinds, IReadOnlySet<string>? CoarseKinds = null)
 {
     // Wall rows that concern every list of the wall, boulder-level ones too.
     private static readonly HashSet<string> WallWide = [FeedKinds.WallResync, FeedKinds.UserProfile, FeedKinds.View3DChanged];
@@ -44,15 +48,22 @@ public sealed record LeafScope(Guid WallId, Guid? BoulderId, IReadOnlySet<string
                 continue;
             }
 
-            if (!FeedCursor.TryParse(e.Cursor, out var cursor) || !IsSupported(e.Data) || e.Kind == FeedKinds.WallResync)
+            if (!FeedCursor.TryParse(e.Cursor, out var cursor) || !IsSupported(e.Data))
             {
-                return LeafBatch.ReloadOnly;
+                return LeafBatch.Coarse;
             }
 
-            if (loadedAt is not { } at || at.Epoch != cursor.Epoch || at.Position < cursor.Position)
+            if (loadedAt is { } at && at.Epoch == cursor.Epoch && at.Position >= cursor.Position)
             {
-                events.Add(e);
+                continue; // the load already has it
             }
+
+            if (e.Kind == FeedKinds.WallResync || CoarseKinds?.Contains(e.Kind) == true)
+            {
+                return LeafBatch.Coarse;
+            }
+
+            events.Add(e);
         }
 
         return events.Count == 0 ? null : new LeafBatch(events, false);
@@ -60,12 +71,13 @@ public sealed record LeafScope(Guid WallId, Guid? BoulderId, IReadOnlySet<string
 
     private bool Concerns(FeedEnvelope e)
     {
-        if (e.Kind != FeedKinds.WallResync && !Kinds.Contains(e.Kind))
+        var coarse = CoarseKinds?.Contains(e.Kind) == true;
+        if (e.Kind != FeedKinds.WallResync && !Kinds.Contains(e.Kind) && !coarse)
         {
             return false;
         }
 
-        return BoulderId is null || e.BoulderId == BoulderId || (e.BoulderId is null && WallWide.Contains(e.Kind));
+        return BoulderId is null || coarse || e.BoulderId == BoulderId || (e.BoulderId is null && WallWide.Contains(e.Kind));
     }
 
     private static bool IsSupported(JsonElement? data) =>

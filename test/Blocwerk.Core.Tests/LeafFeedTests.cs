@@ -73,6 +73,7 @@ public sealed class LeafFeedTests : IAsyncLifetime
             f.Row(FeedKinds.AccessRevoked, f.WallId, new MemberPayload(nameof(WallRole.Member)), FeedAudience.User, user: f.Harness.Owner.Id));
 
         await CircuitCacheFixture.WaitUntilAsync(() => Batches().Any(b => b.Reload));
+        Assert.DoesNotContain(Batches(), b => b.Structural); // only the viewer changed: a 3D view keeps its stage
     }
 
     [Fact]
@@ -168,6 +169,7 @@ public sealed class LeafFeedTests : IAsyncLifetime
             committed.Add));
 
         Assert.Equal([1], committed);
+        await CircuitCacheFixture.WaitUntilAsync(() => Batches().Count == 1);
         Assert.Equal([during.EntityId], Assert.Single(Batches()).Events.Select(e => e.EntityId));
     }
 
@@ -196,7 +198,69 @@ public sealed class LeafFeedTests : IAsyncLifetime
         await CircuitCacheFixture.WaitUntilAsync(() => Batches().Count == 1);
         await Task.Delay(LeafFeed.ReloadDelay * 2);
 
-        Assert.True(Assert.Single(Batches()).Reload);
+        var batch = Assert.Single(Batches());
+        Assert.True(batch.Reload);
+        Assert.True(batch.Structural); // a wall resync: the content may really have changed
+    }
+
+    [Fact]
+    public async Task HeldBatches_AreAppliedAfterTheLoadReturned_NeverInsideIt()
+    {
+        var order = new List<string>();
+        LeafFeed? feed = null;
+        feed = LeafFeed.Open(f.Cache, new LeafScope(f.WallId, boulder.Id, CommentList.Kinds), dispatcher.Run, async batch =>
+        {
+            // The list re-reads on what was held: a nested load, as a component's apply would run.
+            await feed!.LoadAsync(() => Task.FromResult("inner"), v => order.Add(v));
+        });
+        using var opened = feed;
+
+        await dispatcher.Run(async () =>
+        {
+            await feed.LoadAsync(
+                async () =>
+                {
+                    var before = f.Deliveries.Count;
+                    await f.CommitAsync(true, Row(FeedKinds.CommentAdded, Guid.NewGuid()));
+                    await CircuitCacheFixture.WaitUntilAsync(() => f.Deliveries.Count > before);
+                    await Task.Delay(50);
+                    return "outer";
+                },
+                v => order.Add(v));
+            order.Add("returned"); // what a component assigns after the load: the held batch must not overtake it
+        });
+
+        await CircuitCacheFixture.WaitUntilAsync(() => order.Count == 3);
+        Assert.Equal(["outer", "returned", "inner"], order);
+    }
+
+    [Fact]
+    public async Task AHoldChange_RebuildsA3DView_Structurally()
+    {
+        var batches = new List<LeafBatch>();
+        using var feed = LeafFeed.Open(f.Cache, Web.State.Live.Wall3DViewIdentity.Scope(f.WallId), dispatcher.Run, b =>
+        {
+            lock (batches)
+            {
+                batches.Add(b);
+            }
+
+            return Task.CompletedTask;
+        });
+
+        await f.CommitAsync(true, f.Row(FeedKinds.HoldChanged, f.Holds[0].Id, new HoldPayload(0, null)));
+        await CircuitCacheFixture.WaitUntilAsync(() =>
+        {
+            lock (batches)
+            {
+                return batches.Count == 1;
+            }
+        });
+
+        lock (batches)
+        {
+            Assert.True(batches[0].Reload && batches[0].Structural);
+        }
     }
 
     [Fact]
