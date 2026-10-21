@@ -40,9 +40,9 @@ internal static class WallEnhancementScenarios
         Assert.Equal([(WallEnhancementItemKind.Shape, 2), (WallEnhancementItemKind.Colour, 1), (WallEnhancementItemKind.Duplicate, 1)],
             view.Counts.Select(c => (c.Kind, c.Pending)).ToList());
         var batches = await f.BatchesAsync();
-        foreach (var label in new[] { "wall-enhance:outlines", "wall-enhance:cleanup", "wall-enhance:colours" })
+        foreach (var batch in new[] { "wall-enhance:outlines", "wall-enhance:cleanup", "wall-enhance:colours" }
+                     .Select(label => Assert.Single(batches, b => b.Label == label)))
         {
-            var batch = Assert.Single(batches, b => b.Label == label);
             Assert.Equal((ChangeJournalScopeKind.Wall, f.WallId, f.Harness.Owner.Id.ToString()), (batch.ScopeKind, batch.ScopeId, batch.Actor));
         }
 

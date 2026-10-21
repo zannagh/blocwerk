@@ -90,7 +90,11 @@ public sealed partial class WallEnhancementJob
 
             await work;
         }
-        catch (Exception ex)
+        catch (OperationCanceledException)
+        {
+            // The stopped step honoured its cancellation after all.
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogInformation(ex, "A stopped wall enhancement step ended late");
         }

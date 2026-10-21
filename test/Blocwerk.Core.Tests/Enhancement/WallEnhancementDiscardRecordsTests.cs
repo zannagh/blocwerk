@@ -55,7 +55,11 @@ public sealed class WallEnhancementDiscardRecordsTests
         Assert.False(await db.HoldLinks.AnyAsync());
         Assert.Equal(2, await db.HoldLinkSuggestions.CountAsync(s => s.Status == HoldLinkSuggestionStatus.Pending));
         var proposals = await db.HoldProposals.AsNoTracking().ToListAsync();
-        Assert.All(proposals, p => Assert.Equal((HoldProposalStatus.Pending, (Guid?)null), (p.Status, p.HoldId)));
+        Assert.All(proposals, p =>
+        {
+            Assert.Equal(HoldProposalStatus.Pending, p.Status);
+            Assert.Null(p.HoldId);
+        });
         Assert.Equal(8, await db.Holds.CountAsync());
     }
 

@@ -98,7 +98,7 @@ public sealed partial class WallEnhancementJob
             run.UpdatedAt = DateTimeOffset.UtcNow;
             await db.SaveChangesAsync();
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "Could not record the failed wall enhancement {RunId}", runId);
         }

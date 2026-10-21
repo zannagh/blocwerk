@@ -40,7 +40,7 @@ public sealed partial class WallEnhancementJob
             await db.SaveChangesAsync();
             logger.LogInformation("Wall enhancement {RunId} cancelled during step {Step}", runId, (object?)during ?? "none (between steps or queued)");
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "Could not record the cancelled wall enhancement {RunId}", runId);
         }
@@ -94,7 +94,7 @@ public sealed partial class WallEnhancementJob
                 await db.SaveChangesAsync();
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "Wall enhancement {RunId}: the writes of stopped step {Step} could not be listed again", runId, stepKey);
         }
@@ -116,7 +116,7 @@ public sealed partial class WallEnhancementJob
             {
                 return;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
                 logger.LogWarning(ex, "Wall enhancement {RunId}: a heartbeat could not be saved; trying again", runId);
                 await DelayQuietlyAsync(HeartbeatInterval, ct);

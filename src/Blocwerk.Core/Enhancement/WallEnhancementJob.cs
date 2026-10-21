@@ -93,7 +93,13 @@ public sealed partial class WallEnhancementJob(
         {
             await MarkCancelledAsync(runId);
         }
-        catch (Exception ex)
+        catch (OperationCanceledException ex)
+        {
+            // A timeout inside the job that is neither the shutdown nor the cancel: a failure like any other.
+            logger.LogWarning(ex, "Wall enhancement {RunId} failed", runId);
+            await MarkFailedAsync(runId, ex.Message);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "Wall enhancement {RunId} failed", runId);
             await MarkFailedAsync(runId, ex.Message);
@@ -221,8 +227,9 @@ public sealed partial class WallEnhancementJob(
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
+            // Isolation on purpose: whatever a step throws (its own timeouts included) fails that step, never the run.
             logger.LogWarning(ex, "Wall enhancement {RunId}: step {Step} failed; the next steps still run", run.Id, step.Key);
             var text = ex is UserFacingException or UnauthorizedAccessException or InvalidOperationException ? $": {ex.Message}" : ".";
             return (WallEnhancementStepOutcome.Done($"{step.Title} failed{text}"), WallEnhancementStepOutcomeKind.Failed, null);

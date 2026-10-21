@@ -25,7 +25,7 @@ public sealed class WallEnhancementFixture : IDisposable
     private WallEnhancementFixture(WallTestHarness harness)
     {
         Harness = harness;
-        var connection = ((TestDbContextFactory)harness.DbContextFactory).ConnectionString;
+        var connection = harness.DbContextFactory.ConnectionString;
         Journalling = new EnhancementJournallingFactory(connection, journal);
     }
 
