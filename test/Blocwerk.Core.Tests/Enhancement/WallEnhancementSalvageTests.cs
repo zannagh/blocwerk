@@ -89,7 +89,8 @@ public sealed class WallEnhancementSalvageTests
         await running.WaitAsync(TimeSpan.FromSeconds(10));
 
         var run = await f.RunAsync();
-        Assert.Equal((WallEnhancementStatus.Running, (string?)null), (run.Status, run.Error));
+        Assert.Equal(WallEnhancementStatus.Running, run.Status);
+        Assert.Null(run.Error);
         release.SetResult();
     }
 
