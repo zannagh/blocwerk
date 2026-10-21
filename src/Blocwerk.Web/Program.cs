@@ -387,6 +387,9 @@ public static class Program
         // Device reports of the photo-real view (start, level steps, lost contexts), logged only.
         app.MapPhotoRealDiagnostics();
 
+        // The on-device storage probe's progress beacons (/storage-probe), logged only.
+        app.MapStorageProbe();
+
         // User avatar bytes; same browser-only auth posture as the wall photo routes above.
         app.MapUserAvatars();
 
