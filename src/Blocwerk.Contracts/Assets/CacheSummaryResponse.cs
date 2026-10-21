@@ -9,4 +9,8 @@ namespace Blocwerk.Contracts.Assets;
 /// over the walls the viewer may fetch: their walls as a member, the bound wall for a kiosk tablet that may cache it, none
 /// for an anonymous viewer (a share link is not membership).
 /// </param>
-public sealed record CacheSummaryResponse(int WallsWith3d);
+/// <param name="Walls">
+/// The ids of those same walls: the ones the client keeps on the device whether or not they were opened (the page's fill
+/// queue walks them). A share-linked wall is not listed; the page caches it only while it is open.
+/// </param>
+public sealed record CacheSummaryResponse(int WallsWith3d, IReadOnlyList<Guid> Walls);

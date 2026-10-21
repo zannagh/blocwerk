@@ -1,0 +1,72 @@
+@rendermode InteractiveServer
+@inject IJSRuntime JS
+@inject Blocwerk.Core.Abstractions.IKioskContext KioskContext
+
+@* The wall-asset cache's storage notices (design 2026-10-21 §6.8). Which one shows, if any, is a client fact
+   (bwAssetNotice.current: the viewer's 3D wall count, the 3D setting, the iOS tab, a remembered dismissal), so this
+   renders nothing until it has answered. Never on a kiosk. Shares the bottom-banner slot with InstallPrompt and
+   NotificationPrompt: app.css shows one .bw-install at a time. *@
+@if (_notice != null)
+{
+    <div class="bw-install bw-storage-notice" role="region" aria-label="Storage on this device">
+        <div class="bw-install-body">
+            @if (_notice.Kind == "high-storage")
+            {
+                <p class="bw-install-title">3D data for your @_notice.WallsWith3d walls takes a lot of storage on this device.</p>
+            }
+            else
+            {
+                <p class="bw-install-title">Safari may clear walls saved in this tab. Add Blocwerk to your Home Screen to keep them.</p>
+            }
+        </div>
+        <div class="bw-install-actions">
+            @if (_notice.Kind == "high-storage")
+            {
+                <button type="button" class="bw-install-accept" @onclick="Skip3dAsync">Don't keep 3D</button>
+            }
+            <button type="button" class="bw-install-dismiss" @onclick="DismissAsync" aria-label="Dismiss">&times;</button>
+        </div>
+    </div>
+}
+
+@code {
+    private StorageNoticeState? _notice;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || KioskContext.IsKiosk)
+        {
+            return;
+        }
+
+        try
+        {
+            _notice = await JS.InvokeAsync<StorageNoticeState?>("bwAssetNotice.current");
+        }
+        catch (JSException)
+        {
+            _notice = null;
+        }
+
+        if (_notice != null)
+        {
+            StateHasChanged();
+        }
+    }
+
+    private async Task Skip3dAsync()
+    {
+        _notice = null;
+        await JS.InvokeVoidAsync("bwAssetNotice.skip3d");
+    }
+
+    private async Task DismissAsync()
+    {
+        var kind = _notice?.Kind;
+        _notice = null;
+        if (kind != null)
+        {
+            await JS.InvokeVoidAsync("bwAssetNotice.dismiss", kind);
+        }
+    }
+}

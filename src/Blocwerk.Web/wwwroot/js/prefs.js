@@ -17,6 +17,7 @@ window.bwPrefs = (function () {
     const TOOLBAR_PLACEMENT_SIDEBAR = 'sidebar';
     const TOOLBAR_PLACEMENT_TOPBAR = 'topbar';
     const WALL_VIEW_KEY = 'blocwerk-wall-view';
+    const CACHE_3D_KEY = 'blocwerk-cache-3d';
     const ONE_YEAR = 60 * 60 * 24 * 365;
 
     function readCookie(name) {
@@ -167,6 +168,15 @@ window.bwPrefs = (function () {
                 : TOOLBAR_PLACEMENT_TOPBAR;
             writeCookie(TOOLBAR_PLACEMENT_KEY, v);
             return v;
+        },
+        // Keep 3D data on this device (asset-cache.js). The one cache setting: wall data is always kept, 3D is kept
+        // unless this says "off". A cookie, so 2.9's settings page can read it on the first paint.
+        getCache3d: function () {
+            return readCookie(CACHE_3D_KEY) !== 'off';
+        },
+        setCache3d: function (on) {
+            writeCookie(CACHE_3D_KEY, on ? 'on' : 'off');
+            return !!on;
         },
         recordLastPage: recordLastPage
     };
