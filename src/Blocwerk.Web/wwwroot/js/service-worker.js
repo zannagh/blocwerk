@@ -82,8 +82,11 @@ self.addEventListener('message', event => {
         // `partition`: the label the asset cache serves right now (sw-asset-cache.js), null before any lookup.
         reply(event, { proto: PROTO, type: 'sw-info', shell: CACHE, partition: assetPartitions.current });
     } else if (data.type === 'sw-refresh-partition') {
+        // Answers `partition-refreshed` with the label served once the lookup is done, so the page can fill at once.
         const clientId = event.source && event.source.id;
-        const done = refreshPartition(clientId).catch(() => undefined);
+        const done = refreshPartition(clientId)
+            .then(() => reply(event, { proto: PROTO, type: 'partition-refreshed', partition: assetPartitions.current }))
+            .catch(() => undefined);
         if (typeof event.waitUntil === 'function') {
             event.waitUntil(done);
         }

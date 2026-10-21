@@ -75,16 +75,13 @@ public static class WallGalleryImageEndpoint
         {
             // The row IS the metadata here — the bytes live on disk — so this path never had the
             // blob problem. It only lacked a validator: size and capture time identify the file. The
-            // privacy pass rewrites it in place and moves the size, so only a url naming the current
-            // size may be cached immutable; an unversioned one revalidates against the ETag.
+            // privacy pass rewrites it in place and moves the size. Every url revalidates against the
+            // ETag (private, no-cache), versioned or not.
             var image = await imageService.GetImageAsync(id, ct);
             if (image == null || image.WallId != wallId)
             {
                 return Results.NotFound();
             }
-
-            var versioned = ImageResponse.IsVersioned(
-                http.Request, ResponsiveImage.GalleryVersion(source, id, image.SizeBytes));
 
             var path = storage.ResolvePhysicalPath(image.StoragePath);
             if (path == null || !File.Exists(path))
@@ -104,7 +101,6 @@ public static class WallGalleryImageEndpoint
                     http,
                     ImageResponse.Etag(uploadedKey.Identity, uploadedKey.Version, uploadedWidth),
                     image.ContentType,
-                    immutable: versioned,
                     () => variants.GetOrCreateAsync(
                         uploadedKey,
                         uploadedWidth,
@@ -115,9 +111,7 @@ public static class WallGalleryImageEndpoint
             // Handed to Results.File as an entity tag rather than run through ImageResponse: the
             // physical-file result already does conditional and range handling, and keeping it means
             // the file is still streamed instead of buffered.
-            http.Response.Headers.CacheControl = versioned
-                ? ImageResponse.ImmutableCacheControl
-                : ImageResponse.MutableCacheControl;
+            http.Response.Headers.CacheControl = ImageResponse.MutableCacheControl;
 
             return Results.File(
                 path,
@@ -129,8 +123,8 @@ public static class WallGalleryImageEndpoint
         }
 
         // The two legacy sources are blobs on the wall/reset rows. Tag first, bytes only on a miss. An
-        // archived reset photo is never replaced, but the privacy pass does rewrite it in place, so it
-        // too is immutable only under a url that names its current length.
+        // archived reset photo is never replaced, but the privacy pass does rewrite it in place; it too
+        // revalidates on every reuse.
         var tag = await imageService.GetLegacyImageTagAsync(wallId, gallerySource, id, ct);
         if (tag is null)
         {
@@ -142,7 +136,6 @@ public static class WallGalleryImageEndpoint
             variants,
             w,
             tag,
-            tag.IsArchived && ImageResponse.IsVersioned(http.Request, ResponsiveImage.GalleryVersion(source, id, tag.Length)),
             async () => (await imageService.GetLegacyImageContentAsync(wallId, gallerySource, id, ct))?.Data,
             wallId, source, id);
     }

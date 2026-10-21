@@ -122,8 +122,11 @@ window.bwAssetCache = (function (win) {
         // A worker serving another identity's label would store nothing for this page: wait, backing off.
         const served = await Store().workerPartition(win);
         if (served && REAL_LABEL.test(served) && served !== state.active) {
-            Store().refreshWorkerPartition(win); // look again now, so the backed-off retry usually matches
-            return 'mismatch';
+            // Have the worker look again; when its fresh label is this page's, fill now instead of after the backoff.
+            const refreshed = await Store().refreshWorkerPartition(win);
+            if (refreshed !== state.active) {
+                return 'mismatch';
+            }
         }
         const { walls, assets } = await snapshot();
         const classified = Budget().classify(walls, assets);

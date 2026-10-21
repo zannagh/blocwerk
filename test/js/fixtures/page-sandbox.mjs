@@ -121,6 +121,10 @@ export function loadPage(opts = {}) {
     const controller = swReply === null ? null : {
         postMessage: (message, ports) => {
             posted.push(message);
+            if (message && message.type === 'sw-refresh-partition' && opts.swRefreshed !== undefined && ports && ports[0]) {
+                ports[0].postMessage({ proto: 1, type: 'partition-refreshed', partition: opts.swRefreshed });
+                return; // `swRefreshed`: a worker that answers the refresh with this label (else it stays silent)
+            }
             if (swReply === 'none' || !message || message.type !== 'sw-info') {
                 return; // an old worker ignores sw-info
             }

@@ -70,7 +70,6 @@ public static class UserAvatarEndpoints
                 etag,
                 avatar.AvatarContentType,
                 avatar.Length,
-                immutable: false,
                 () => db.Users
                     .AsNoTracking()
                     .Where(u => u.Id == userId)
@@ -82,7 +81,7 @@ public static class UserAvatarEndpoints
     /// <summary>
     /// The avatar's validator: its content hash once the row has one, so any replacement, however close in size,
     /// moves it. Until then the stored size and type, which miss only a replacement that re-encodes to the identical
-    /// byte count. Either way the avatar stays <c>no-cache</c> and off the immutable hashed routes: an erasure or a
+    /// byte count. Either way the avatar stays <c>no-cache</c> and off the hashed routes: an erasure or a
     /// new avatar must show on the next revalidation, never a year later.
     /// </summary>
     internal static string AvatarEtag(Guid userId, int length, string? contentType, byte[]? sha) =>

@@ -17,9 +17,9 @@ namespace Blocwerk.Core.Tests;
 
 /// <summary>
 /// The privacy pass rewrites an uploaded gallery file (and an archived reset photo) in place under the
-/// same route. A url cached <c>immutable</c> would keep the photo WITH its location for a year, so the
-/// gallery hands out urls that name the bytes (<c>?v=</c>), only those are immutable, and an old or
-/// unversioned url revalidates against the ETag.
+/// same route, so the gallery hands out urls that name the bytes (<c>?v=</c>), and every url, versioned or not,
+/// revalidates against the ETag (<c>private, no-cache</c>): the browser's HTTP cache is shared by every identity on
+/// the device, so no copy is reused without asking the gate.
 /// </summary>
 public sealed class StaleGalleryImageCacheTests : IDisposable
 {
@@ -36,7 +36,7 @@ public sealed class StaleGalleryImageCacheTests : IDisposable
     [Theory]
     [InlineData(WallGallerySource.Uploaded)]
     [InlineData(WallGallerySource.ResetPhoto)]
-    public async Task ThePrivacyRewrite_GivesTheImageANewUrl_AndTheOldOneIsNoLongerImmutable(WallGallerySource source)
+    public async Task ThePrivacyRewrite_GivesTheImageANewUrl_AndEveryUrlRevalidates(WallGallerySource source)
     {
         using var h = new WallTestHarness();
         await SeedDirtyGalleryAsync(h);
@@ -44,7 +44,7 @@ public sealed class StaleGalleryImageCacheTests : IDisposable
         var beforeThumb = await UrlAsync(h, source, thumbnail: true);
 
         var (freshResult, fresh) = await ServeAsync(h, before);
-        Assert.Equal(ImageResponse.ImmutableCacheControl, fresh.Response.Headers.CacheControl.ToString());
+        Assert.Equal(ImageResponse.MutableCacheControl, fresh.Response.Headers.CacheControl.ToString());
 
         await new WallPhotoPrivacyService(
             h.DbContextFactory, h.CurrentUser, h.WallImageStorage, NullLogger<WallPhotoPrivacyService>.Instance)
@@ -61,7 +61,7 @@ public sealed class StaleGalleryImageCacheTests : IDisposable
         Assert.Equal(ImageResponse.MutableCacheControl, staleThumb.Response.Headers.CacheControl.ToString());
 
         var (currentResult, current) = await ServeAsync(h, after);
-        Assert.Equal(ImageResponse.ImmutableCacheControl, current.Response.Headers.CacheControl.ToString());
+        Assert.Equal(ImageResponse.MutableCacheControl, current.Response.Headers.CacheControl.ToString());
         Assert.NotEqual(EtagOf(freshResult, fresh), EtagOf(currentResult, current));
     }
 
@@ -79,9 +79,9 @@ public sealed class StaleGalleryImageCacheTests : IDisposable
         Assert.Equal(ImageResponse.MutableCacheControl, http.Response.Headers.CacheControl.ToString());
         Assert.False(string.IsNullOrEmpty(EtagOf(result, http)));
 
-        // An old client's thumbnail never named a version: it keeps the bounded variant max-age.
+        // An old client's thumbnail never named a version: it revalidates as well.
         var (_, thumb) = await ServeAsync(h, ResponsiveImage.AtWidth(url, ResponsiveImage.ThumbnailWidth));
-        Assert.Equal(ImageResponse.VariantCacheControl, thumb.Response.Headers.CacheControl.ToString());
+        Assert.Equal(ImageResponse.MutableCacheControl, thumb.Response.Headers.CacheControl.ToString());
     }
 
     [Fact]

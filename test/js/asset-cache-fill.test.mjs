@@ -203,6 +203,18 @@ test('a worker serving another partition than the page\'s gets no fill, and the 
     assert.equal(same.assetFetches().length, 4);
 });
 
+test('a worker whose refresh answers with the page\'s label fills at once, without waiting out the backoff', async () => {
+    const page = memberPage({ swPartition: USER_B, swRefreshed: USER_A });
+    await page.boot();
+    assert.ok(page.posted.some(m => m.type === 'sw-refresh-partition'));
+    assert.equal(page.assetFetches().length, 4);
+    assert.ok(!page.timers.some(t => t.ms === 30000 && !t.done), 'no backed-off retry is pending');
+    const still = memberPage({ swPartition: USER_B, swRefreshed: USER_B });
+    await still.boot();
+    assert.equal(still.assetFetches().length, 0);
+    assert.ok(still.timers.some(t => t.ms === 30000 && !t.done));
+});
+
 test('a phone gets no 3D background fill, and the hook for 2.8 says so', async () => {
     const phone = memberPage({ ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148' });
     await phone.boot();
