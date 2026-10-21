@@ -9,9 +9,11 @@ using Microsoft.Extensions.Logging;
 namespace Blocwerk.Core.Feed;
 
 /// <summary>
-/// Creates the feed's epoch row and, on Postgres, starts a new epoch when the stored transaction ids come from another
-/// cluster's xid space (after a dump and restore: prod was moved by <c>pg_restore</c> on 2026-09-02). Such ids would
-/// compare wrongly against the new cluster's, so the feed is truncated and every old cursor is answered with a resync.
+/// Creates the feed's epoch row and, on Postgres, starts a new epoch after a restore or copy (prod was moved by
+/// <c>pg_restore</c> on 2026-09-02): when the database identity differs from the stored one (a restore into a new
+/// database gets a new oid, a new cluster a new system identifier), or when stored transaction ids come from another
+/// cluster's xid space. Such ids would compare wrongly against the new cluster's, so the feed is truncated and every old
+/// cursor is answered with a resync. The identity check also covers a live dump, whose later rows the restore lost.
 /// </summary>
 public static class FeedEpochStore
 {
@@ -34,27 +36,33 @@ public static class FeedEpochStore
 
     private static async Task<FeedEpoch> EnsurePostgresAsync(BlocwerkDbContext db, ILogger logger, CancellationToken cancellationToken)
     {
+        // Read outside the transaction: a refused pg_control_system() call must not abort it.
+        var identity = await FeedDatabaseIdentity.ReadAsync(db, logger, cancellationToken);
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
 
         // Serialises concurrent checks; plain reads of the epoch (ACCESS SHARE) are not blocked.
         await db.Database.ExecuteSqlRawAsync("LOCK TABLE \"FeedEpochs\" IN EXCLUSIVE MODE", cancellationToken);
         var current = await db.FeedEpochs.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
         var foreign = await db.Database.SqlQueryRaw<bool>(ForeignTxIdsSql).SingleAsync(cancellationToken);
-        if (current is not null && !foreign)
+        var moved = current is not null && !identity.Matches(current);
+        if (current is not null && !foreign && !moved)
         {
             await transaction.CommitAsync(cancellationToken);
             return current;
         }
 
-        if (foreign)
+        // A replaced epoch keeps no rows: their transaction ids may belong to another cluster's xid space. The very first
+        // epoch keeps them (rows written before it was created are this database's own).
+        if (moved || foreign)
         {
             logger.LogWarning(
-                "The live-update feed holds transaction ids from another cluster (a restore?). Truncating it and starting a new epoch; connected clients resync.");
+                "The live-update feed was restored or copied ({Reason}). Truncating it and starting a new epoch; connected clients resync.",
+                moved ? "another database or cluster" : "transaction ids from another cluster");
             await db.Database.ExecuteSqlRawAsync("TRUNCATE \"WallChanges\"", cancellationToken);
         }
 
         await db.FeedEpochs.ExecuteDeleteAsync(cancellationToken);
-        var next = new FeedEpoch();
+        var next = new FeedEpoch { DatabaseOid = identity.DatabaseOid, SystemIdentifier = identity.SystemIdentifier };
         db.FeedEpochs.Add(next);
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);

@@ -18,6 +18,12 @@ public class FeedEpoch
 
     public DateTimeOffset StartedAt { get; set; } = DateTimeOffset.UtcNow;
 
+    /// <summary>Gets or sets the oid of the database the epoch was started in (null on SQLite). A restore into a new database changes it.</summary>
+    public long? DatabaseOid { get; set; }
+
+    /// <summary>Gets or sets the cluster's <c>system_identifier</c>, or null when the role may not read it (or on SQLite). A new cluster changes it.</summary>
+    public long? SystemIdentifier { get; set; }
+
     /// <summary>Gets or sets the transaction id of the newest row retention deleted (null until it deletes one, and on SQLite).</summary>
     public long? FloorTxId { get; set; }
 

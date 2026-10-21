@@ -19,6 +19,8 @@ namespace Blocwerk.Core.Migrations
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
                     StartedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    DatabaseOid = table.Column<long>(type: "bigint", nullable: true),
+                    SystemIdentifier = table.Column<long>(type: "bigint", nullable: true),
                     FloorTxId = table.Column<long>(type: "bigint", nullable: true),
                     FloorSeq = table.Column<long>(type: "bigint", nullable: false)
                 },

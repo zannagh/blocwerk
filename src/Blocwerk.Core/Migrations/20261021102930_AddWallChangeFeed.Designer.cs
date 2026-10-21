@@ -13,7 +13,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Blocwerk.Core.Migrations
 {
     [DbContext(typeof(BlocwerkDbContext))]
-    [Migration("20261021102228_AddWallChangeFeed")]
+    [Migration("20261021102930_AddWallChangeFeed")]
     partial class AddWallChangeFeed
     {
         /// <inheritdoc />
@@ -796,6 +796,9 @@ namespace Blocwerk.Core.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<long?>("DatabaseOid")
+                        .HasColumnType("bigint");
+
                     b.Property<long>("FloorSeq")
                         .HasColumnType("bigint");
 
@@ -804,6 +807,9 @@ namespace Blocwerk.Core.Migrations
 
                     b.Property<DateTimeOffset>("StartedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<long?>("SystemIdentifier")
+                        .HasColumnType("bigint");
 
                     b.HasKey("Id");
 
