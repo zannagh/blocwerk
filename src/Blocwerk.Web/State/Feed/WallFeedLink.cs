@@ -241,7 +241,9 @@ public sealed partial class WallFeedLink(IWallFeedHub hub, IWallFeed feed, ICirc
         Delivered?.Invoke(delivery);
         if (slot.Viewer.UserId is { } user)
         {
-            Schedule(slot.WallId, user, WallFeedAccess.Decide(events, user));
+            // A delivery-level resync (retention, a new epoch) may hide the same changes a wall.resync row does.
+            var action = WallFeedAccess.Decide(events, user);
+            Schedule(slot.WallId, user, delivery.Resync && action.Kind == WallFeedAccessKind.None ? WallFeedAccessAction.Reread : action);
         }
     }
 

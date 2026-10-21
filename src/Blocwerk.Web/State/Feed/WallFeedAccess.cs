@@ -26,7 +26,9 @@ public static class WallFeedAccess
 
     /// <summary>
     /// What the batch asks of the subscription, the last access-relevant event winning: a removal followed by a re-add
-    /// in the same batch re-reads the viewer instead of leaving.
+    /// in the same batch re-reads the viewer instead of leaving. A <c>wall.resync</c> re-reads too, unless the batch
+    /// already left or demoted: an erasure, a merge or a promotion inside a bulk operation writes only the resync, and
+    /// the role query that follows (one per resync and circuit) is what notices the viewer changed or is gone.
     /// </summary>
     public static WallFeedAccessAction Decide(IReadOnlyList<FeedEnvelope> events, Guid userId)
     {
@@ -38,6 +40,10 @@ public static class WallFeedAccess
                 action = Role(e) is { } role ? WallFeedAccessAction.Demote(role) : WallFeedAccessAction.Leave;
             }
             else if (MayChangeViewer(e, userId))
+            {
+                action = WallFeedAccessAction.Reread;
+            }
+            else if (e.Kind == FeedKinds.WallResync && action.Kind == WallFeedAccessKind.None)
             {
                 action = WallFeedAccessAction.Reread;
             }

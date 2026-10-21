@@ -30,7 +30,11 @@ internal static class FeedCommentCompaction
     /// </summary>
     public static void Collect(DbContext context, IReadOnlyList<WallChange> rows)
     {
-        var comments = rows.Where(r => r.Kind == FeedKinds.CommentDeleted && r.EntityId is not null).Select(r => r.EntityId!.Value).ToList();
+        // With the wall, so the delete is a (WallId, ...) index range and not a scan of the whole feed. A placed row
+        // always has its wall; an unplaced one was dropped before this runs.
+        var comments = rows.Where(r => r.Kind == FeedKinds.CommentDeleted && r.EntityId is not null && r.WallId is not null)
+            .Select(r => (r.WallId!.Value, r.EntityId!.Value))
+            .ToList();
         var boulders = rows.Where(r => r.Kind == FeedKinds.BoulderDeleted && r.BoulderId is not null && r.WallId is not null)
             .Select(r => (r.WallId!.Value, r.BoulderId!.Value))
             .ToList();
@@ -59,7 +63,8 @@ internal static class FeedCommentCompaction
         }
 
         Queued.Remove(context);
-        var ids = queued.Comments.Distinct().ToList();
+        var commentWalls = queued.Comments.Select(c => c.WallId).Distinct().ToList();
+        var ids = queued.Comments.Select(c => c.CommentId).Distinct().ToList();
         var boulders = queued.Boulders.Distinct().ToList();
         var walls = boulders.Select(b => b.WallId).Distinct().ToList();
         var boulderIds = boulders.Select(b => b.BoulderId).ToList();
@@ -74,8 +79,7 @@ internal static class FeedCommentCompaction
 
             if (ids.Count > 0)
             {
-                var rows = context.Set<WallChange>()
-                    .Where(c => c.Kind == FeedKinds.CommentAdded && c.EntityId != null && ids.Contains(c.EntityId.Value));
+                IQueryable<WallChange> rows = OfComments(context, commentWalls, ids);
                 _ = async ? await rows.ExecuteDeleteAsync(none) : rows.ExecuteDelete();
             }
 
@@ -105,6 +109,10 @@ internal static class FeedCommentCompaction
     /// The <c>comment.added</c> rows of deleted boulders. Filtered by wall first, so it runs on the <c>(WallId, TxId, Seq)</c>
     /// index instead of scanning the table inside the user's transaction on every boulder delete.
     /// </summary>
+    internal static IQueryable<WallChange> OfComments(DbContext context, List<Guid> walls, List<Guid> comments) =>
+        context.Set<WallChange>().Where(c => c.WallId != null && walls.Contains(c.WallId.Value)
+            && c.Kind == FeedKinds.CommentAdded && c.EntityId != null && comments.Contains(c.EntityId.Value));
+
     internal static IQueryable<WallChange> OfBoulders(DbContext context, List<Guid> walls, List<Guid> boulders) =>
         context.Set<WallChange>().Where(c => c.WallId != null && walls.Contains(c.WallId.Value)
             && c.Kind == FeedKinds.CommentAdded && c.BoulderId != null && boulders.Contains(c.BoulderId.Value));

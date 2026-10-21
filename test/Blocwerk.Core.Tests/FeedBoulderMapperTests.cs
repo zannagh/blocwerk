@@ -18,8 +18,8 @@ public sealed class FeedBoulderMapperTests
 {
     [Theory]
     [InlineData(false, FeedAudience.Wall)]
-    [InlineData(true, FeedAudience.Setters)]
-    public async Task ANewBoulder_GoesToTheWall_OrToTheSettersWhileADraft(bool isDraft, FeedAudience audience)
+    [InlineData(true, FeedAudience.Members)]
+    public async Task ANewBoulder_GoesToTheWall_OrToTheMembersWhileADraft(bool isDraft, FeedAudience audience)
     {
         using var harness = new WallTestHarness();
         var hold = (await harness.SeedWallAsync(holdCount: 1, generation: 2))[0];
@@ -41,8 +41,8 @@ public sealed class FeedBoulderMapperTests
     [Theory]
     [InlineData(true, false, FeedAudience.Wall)] // published
     [InlineData(false, true, FeedAudience.Wall)] // taken back: viewers who saw it must learn it left
-    [InlineData(true, true, FeedAudience.Setters)] // a draft edited
-    public async Task ADraftFlip_ReachesTheWall_AndADraftEditStaysWithTheSetters(bool from, bool to, FeedAudience audience)
+    [InlineData(true, true, FeedAudience.Members)] // a draft edited
+    public async Task ADraftFlip_ReachesTheWall_AndADraftEditStaysWithTheMembers(bool from, bool to, FeedAudience audience)
     {
         using var harness = new WallTestHarness();
         var hold = (await harness.SeedWallAsync(holdCount: 1))[0];
@@ -60,7 +60,7 @@ public sealed class FeedBoulderMapperTests
     }
 
     [Fact]
-    public async Task ADeletedDraft_WritesBoulderDeleted_ForTheSetters()
+    public async Task ADeletedDraft_WritesBoulderDeleted_ForTheMembers()
     {
         using var harness = new WallTestHarness();
         var hold = (await harness.SeedWallAsync(holdCount: 1))[0];
@@ -73,7 +73,7 @@ public sealed class FeedBoulderMapperTests
         }
 
         var row = Assert.Single(await RowsAsync(harness));
-        Assert.Equal((FeedKinds.BoulderDeleted, boulder.Id, FeedAudience.Setters), (row.Kind, row.EntityId, row.Audience));
+        Assert.Equal((FeedKinds.BoulderDeleted, boulder.Id, FeedAudience.Members), (row.Kind, row.EntityId, row.Audience));
     }
 
     [Fact]
@@ -185,7 +185,7 @@ public sealed class FeedBoulderMapperTests
         }
 
         var row = Assert.Single(await RowsAsync(harness));
-        Assert.Equal((FeedKinds.BoulderChanged, boulder.Id, harness.WallId, FeedAudience.Setters), (row.Kind, row.EntityId, row.WallId!.Value, row.Audience));
+        Assert.Equal((FeedKinds.BoulderChanged, boulder.Id, harness.WallId, FeedAudience.Members), (row.Kind, row.EntityId, row.WallId!.Value, row.Audience));
         Assert.DoesNotContain(harness.Owner.Id.ToString(), row.DataJson);
     }
 }

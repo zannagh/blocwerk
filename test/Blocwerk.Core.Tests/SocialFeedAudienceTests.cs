@@ -12,7 +12,7 @@ namespace Blocwerk.Core.Tests;
 /// <summary>
 /// The social rows end to end, from a save through the interceptor and the hub to each kind of viewer: "mine" rows reach
 /// only their own user (never another member, a setter, a share viewer or a kiosk), stats name nobody, a draft's rows
-/// reach setters only, and members-only rows skip share and kiosk viewers.
+/// reach every member but never a share or kiosk viewer, and members-only rows skip those viewers too.
 /// </summary>
 public sealed class SocialFeedAudienceTests : IAsyncLifetime
 {
@@ -71,11 +71,11 @@ public sealed class SocialFeedAudienceTests : IAsyncLifetime
         string[] stats = [FeedKinds.BoulderStats, FeedKinds.BoulderStats];
         Assert.Equal(
             [FeedKinds.BoulderStats, FeedKinds.TickMine, FeedKinds.FavoriteChanged, FeedKinds.BoulderStats, FeedKinds.RatingMine,
-             FeedKinds.ActivityAdded, FeedKinds.UserProfile],
+             FeedKinds.CommentAdded, FeedKinds.ActivityAdded, FeedKinds.UserProfile],
             Before(asMe, sentinel.Id));
         Assert.Equal(stats, Before(anonymous, sentinel.Id));
         Assert.Equal(stats, Before(kiosk, sentinel.Id));
-        Assert.Equal([.. stats, FeedKinds.ActivityAdded, FeedKinds.UserProfile], Before(asOther, sentinel.Id));
+        Assert.Equal([.. stats, FeedKinds.CommentAdded, FeedKinds.ActivityAdded, FeedKinds.UserProfile], Before(asOther, sentinel.Id));
         Assert.Equal([.. stats, FeedKinds.CommentAdded, FeedKinds.ActivityAdded, FeedKinds.UserProfile], Before(asSetter, sentinel.Id));
         Assert.All(anonymous.Events, e => Assert.Null(e.Actor));
     }
