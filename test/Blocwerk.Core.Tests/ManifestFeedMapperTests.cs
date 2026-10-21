@@ -101,6 +101,28 @@ public sealed class ManifestFeedMapperTests : IDisposable
         Assert.Single(await fixture.RowsAsync(), r => r.Kind == FeedKinds.WallManifest);
     }
 
+    /// <summary>The capture processor's re-texture and splat swap track the model first, so their rows find the wall.</summary>
+    [Fact]
+    public async Task ATextureSavedBesideItsTrackedModel_WritesTheManifestRow()
+    {
+        await fixture.SeedAsync();
+        var model = new WallGeometryModel { WallId = fixture.WallId, Json = "{}", Source = "test", IsActive = true };
+        await using (var db = fixture.Harness.CreateContext())
+        {
+            db.WallGeometryModels.Add(model);
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = fixture.Context())
+        {
+            await db.WallGeometryModels.FindAsync([model.Id]);
+            db.WallGeometryTextures.Add(new WallGeometryTexture { GeometryModelId = model.Id, FacetId = "F1", StoredPath = "t.jpg" });
+            await db.SaveChangesAsync();
+        }
+
+        Assert.Equal(fixture.WallId, Assert.Single(await fixture.RowsAsync(), r => r.Kind == FeedKinds.WallManifest).WallId);
+    }
+
     /// <summary>A texture saved without its model knows no wall (no query in a mapper): it writes nothing, and the cache ages.</summary>
     [Fact]
     public async Task ATextureOfAnUntrackedModel_WritesNothing()

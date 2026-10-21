@@ -29,9 +29,26 @@ public class ManifestEndpointTests
         Assert.Equal(StatusCodes.Status200OK, http.Response.StatusCode);
         Assert.StartsWith("application/json", http.Response.ContentType);
         Assert.Equal("private, no-cache", http.Response.Headers.CacheControl.ToString());
-        Assert.Equal($"\"{body.Sha}\"", http.Response.Headers.ETag.ToString());
+        Assert.Equal($"W/\"{body.Sha}\"", http.Response.Headers.ETag.ToString());
         Assert.Equal(body.Sha, ManifestAssembly.WallHash(body));
         Assert.NotNull(body.Cursor);
+    }
+
+    /// <summary>The cursor (epoch id, xid positions) serves a member's feed catch-up; nobody else gets it.</summary>
+    [Fact]
+    public async Task OnlyAMember_GetsTheCursor()
+    {
+        using var f = new ManifestFixture();
+        await f.SeedAsync();
+        Assert.NotNull((await f.GetAsync())!.Cursor);
+
+        f.Assets.Caller = null;
+        var share = await f.GetHttpAsync(AssetRouteFixture.ShareToken);
+        Assert.DoesNotContain("cursor", System.Text.Encoding.UTF8.GetString(AssetRouteFixture.Body(share)));
+        f.BindKiosk();
+        Assert.Null((await f.GetAsync())!.Cursor);
+        f.Assets.Caller = f.Assets.Harness.Owner;
+        Assert.Null((await f.GetAsync())!.Cursor); // a kiosk acting as a member is still the kiosk class
     }
 
     [Fact]

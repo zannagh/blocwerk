@@ -130,7 +130,7 @@ public sealed class WallCacheFeedAccessTests : IAsyncLifetime
         await CircuitCacheFixture.WaitUntilAsync(() => !throws);
         await f.Cache.GetWallAsync(f.WallId);
 
-        await f.DeliverAsync(f.Row(FeedKinds.WallManifest));
+        await f.DeliverAsync(f.Row(FeedKinds.MemberChanged, Guid.NewGuid(), audience: FeedAudience.Members));
         Assert.False(f.Store.Walls.TryPeek(f.WallId, out _));
     }
 

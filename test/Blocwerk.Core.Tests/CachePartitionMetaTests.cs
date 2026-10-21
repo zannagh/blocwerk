@@ -36,14 +36,14 @@ public sealed partial class CachePartitionMetaTests : IDisposable
         Assert.Equal($"<meta name=\"bw-partition\" content=\"{partition}\" />", (await RenderAsync(resolver)).Trim());
     }
 
-    /// <summary>An undecidable partition says <c>none</c>, which wipes: never a stale label that would keep a cache.</summary>
+    /// <summary>An undecidable partition says <c>offline</c> (keep): a server fault must not wipe every device on every page.</summary>
     [Fact]
-    public async Task AResolverThatFails_RendersNone()
+    public async Task AResolverThatFails_RendersOffline()
     {
         var resolver = Substitute.For<ICachePartitionResolver>();
         resolver.ResolveAsync().Returns<string>(_ => throw new InvalidOperationException("boom"));
 
-        Assert.Contains("content=\"none\"", await RenderAsync(resolver));
+        Assert.Contains("content=\"offline\"", await RenderAsync(resolver));
     }
 
     [Fact]
@@ -87,7 +87,24 @@ public sealed partial class CachePartitionMetaTests : IDisposable
 
         var replaced = Key(file).Key;
         Assert.Equal(replaced, Key(file).Key);
+        var bad = Assert.Single(Directory.GetFiles(keyDir, "partition.key.*.bad"));
+        Assert.Equal("not protected", File.ReadAllText(bad));
         Assert.NotEqual(Key(null).Key, Key(null).Key);
+    }
+
+    /// <summary>A key ring that cannot protect gives a key for this run, never an exception the Lazy would keep.</summary>
+    [Fact]
+    public void AKeyRingThatThrows_GivesARunKey_NotAnException()
+    {
+        var protector = Substitute.For<IDataProtector>();
+        protector.Protect(Arg.Any<byte[]>()).Returns<byte[]>(_ => throw new System.Security.Cryptography.CryptographicException("ring"));
+        var provider = Substitute.For<IDataProtectionProvider>();
+        provider.CreateProtector(Arg.Any<string>()).Returns(protector);
+        var key = new DataProtectionCachePartitionKey(provider, Path.Combine(keyDir, "partition.key"), NullLogger<DataProtectionCachePartitionKey>.Instance);
+
+        Assert.Equal(32, key.Key.Length);
+        Assert.Equal(key.Key, key.Key);
+        Assert.False(File.Exists(Path.Combine(keyDir, "partition.key")));
     }
 
     public void Dispose()

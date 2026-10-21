@@ -15,8 +15,9 @@ namespace Blocwerk.Authentication.Services;
 /// only its <c>*.xml</c> files there).
 /// </summary>
 /// <remarks>
-/// Never fatal: a file that cannot be read, unprotected or written is replaced by a fresh key (logged). A new key gives
-/// every device a new label, which only makes each of them wipe and refill its asset cache once. With no
+/// Never fatal, and never throws: a file that cannot be unprotected is moved aside (<c>*.bad</c>, so a key ring restored
+/// from a backup can still read it) and replaced; any other failure gives a key for this run only (logged as an error). A
+/// new key gives every device a new label, which only makes each of them wipe and refill its asset cache once. With no
 /// <paramref name="keyFile"/> (Development) the key lives in memory, so labels change with each restart.
 /// </remarks>
 public sealed class DataProtectionCachePartitionKey(
@@ -49,7 +50,10 @@ public sealed class DataProtectionCachePartitionKey(
                     return stored;
                 }
 
-                logger.LogWarning("The cache-partition key at {Path} cannot be unprotected; replacing it", path);
+                // Kept, not overwritten: a key ring restored from a backup can still read it.
+                var bad = $"{path}.{DateTimeOffset.UtcNow:yyyyMMddHHmmss}.bad";
+                File.Move(path, bad);
+                logger.LogWarning("The cache-partition key at {Path} cannot be unprotected; moved it to {Bad} and created a new one", path, bad);
             }
 
             var fresh = RandomNumberGenerator.GetBytes(KeyBytes);
@@ -57,9 +61,12 @@ public sealed class DataProtectionCachePartitionKey(
             logger.LogInformation("Created the cache-partition key at {Path}", path);
             return fresh;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex)
         {
-            logger.LogWarning(ex, "Could not read or write the cache-partition key at {Path}; using a key for this run only", path);
+            // Any failure (I/O, permissions, a key ring that cannot protect) gives one key for this run rather than an
+            // exception the Lazy would cache: an exception would make every page say "offline" until a restart, while a
+            // run key costs each device one wipe.
+            logger.LogError(ex, "Could not read or write the cache-partition key at {Path}; using a key for this run only", path);
             return RandomNumberGenerator.GetBytes(KeyBytes);
         }
     }

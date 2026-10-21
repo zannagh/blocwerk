@@ -12,9 +12,12 @@ namespace Blocwerk.Contracts.Assets;
 /// <param name="WallId">The wall.</param>
 /// <param name="Sha">
 /// The "wall hash": SHA-256 (lowercase hex) of the canonical JSON of this manifest without <see cref="Sha"/> and
-/// <see cref="Cursor"/>. It is the response's ETag, so an unchanged manifest answers <c>If-None-Match</c> with a 304.
+/// <see cref="Cursor"/>. It is the response's weak ETag, so an unchanged manifest answers <c>If-None-Match</c> with a 304.
 /// </param>
-/// <param name="Cursor">The feed cursor the manifest was read at; every change at or below it is reflected.</param>
+/// <param name="Cursor">
+/// The feed cursor the manifest was read at; every change at or below it is reflected. Members only (their client
+/// catches up from the feed by cursor); left out for share-link and kiosk viewers.
+/// </param>
 /// <param name="Generation">The wall's current generation.</param>
 /// <param name="Pending">How many listed assets have no hash yet (<c>sha: null</c>): network-only until hashed.</param>
 /// <param name="Totals">

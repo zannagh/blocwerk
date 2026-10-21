@@ -1,6 +1,7 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using Blocwerk.Core.Capture;
 using Blocwerk.Core.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -27,10 +28,22 @@ internal static class ManifestPendingWalls
             .Where(t => t.GeometryModel.IsActive && (t.Sha256 == null || (t.MaskStoredPath != null && t.MaskSha256 == null)))
             .Select(t => t.GeometryModel.WallId).Distinct().ToListAsync(ct));
         walls.UnionWith(await db.WallGeometrySplats.IgnoreQueryFilters()
-            .Where(s => s.GeometryModel.IsActive && (s.Sha256 == null || (s.MobileStoredPath != null && s.MobileSha256 == null) || s.LodLevelsJson != null))
+            .Where(s => s.GeometryModel.IsActive && (s.Sha256 == null || (s.MobileStoredPath != null && s.MobileSha256 == null)))
             .Select(s => s.GeometryModel.WallId).Distinct().ToListAsync(ct));
+        walls.UnionWith(await LadderPendingAsync(db, ct));
         walls.UnionWith(await db.BetaVideos.IgnoreQueryFilters()
             .Where(v => v.Thumbnail != null && v.ThumbnailSha256 == null).Select(v => v.Boulder.WallId).Distinct().ToListAsync(ct));
         return walls;
+    }
+
+    // A ladder level's hash is a hex string inside LodLevelsJson, so which level lacks one is read here, not in SQL: only
+    // the active models' ladders, a few hundred bytes each.
+    private static async Task<IEnumerable<Guid>> LadderPendingAsync(BlocwerkDbContext db, CancellationToken ct)
+    {
+        var ladders = await db.WallGeometrySplats.IgnoreQueryFilters()
+            .Where(s => s.GeometryModel.IsActive && s.LodLevelsJson != null)
+            .Select(s => new { s.GeometryModel.WallId, s.LodLevelsJson })
+            .ToListAsync(ct);
+        return ladders.Where(l => SplatLodLadder.Parse(l.LodLevelsJson).Any(level => level.Sha is null)).Select(l => l.WallId);
     }
 }

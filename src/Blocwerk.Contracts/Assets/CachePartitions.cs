@@ -25,6 +25,9 @@ public static class CachePartitions
     /// <summary>Cache nothing, and wipe what is cached (a kiosk whose wall allows no anonymous cache).</summary>
     public const string None = "none";
 
-    /// <summary>A page served from the device itself (<c>offline.html</c>): no decision, keep the active partition.</summary>
+    /// <summary>
+    /// No decision, keep the active partition: a page served from the device itself (<c>offline.html</c>), or a server
+    /// page whose partition could not be resolved.
+    /// </summary>
     public const string Offline = "offline";
 }

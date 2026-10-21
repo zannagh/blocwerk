@@ -49,7 +49,7 @@ public sealed class WallManifestService(
         if (cache.TryGet(wallId, cls, out var cached) && await StillHoldsAsync(wallId, cached, ct) is { } held)
         {
             cache.Set(wallId, cls, held);
-            return held.Served;
+            return ForAudience(held, cls);
         }
 
         var cursor = await CurrentCursorAsync(ct);
@@ -65,7 +65,7 @@ public sealed class WallManifestService(
             cache.Set(wallId, cls, entry);
         }
 
-        return entry.Served;
+        return ForAudience(entry, cls);
     }
 
     /// <summary>The caller's class on <paramref name="wallId"/>, or null when it gets no manifest.</summary>
@@ -80,6 +80,11 @@ public sealed class WallManifestService(
         var access = await AssetAccessGate.DecideAsync(db, wallId, shareToken, currentUserService, kioskContext, ct);
         return ManifestAudiences.From(access, kioskContext, wallId);
     }
+
+    // The cursor (epoch id and xid positions) is for a member's catch-up from the feed after loading (§5.8). Share-link and
+    // kiosk viewers do not read the feed by cursor; they refetch on wall.manifest, so they get no cursor at all.
+    private static WallManifest ForAudience(CachedManifest entry, ManifestAudience audience) =>
+        audience == ManifestAudience.Member ? entry.Served : entry.Manifest;
 
     private async Task<CachedManifest?> StillHoldsAsync(Guid wallId, CachedManifest cached, CancellationToken ct)
     {

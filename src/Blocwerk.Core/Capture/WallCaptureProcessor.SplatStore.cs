@@ -83,6 +83,9 @@ public sealed partial class WallCaptureProcessor
             }
 
             await using var db = dbContextFactory.CreateDbContext();
+
+            // Tracked, so the new row's model navigation is fixed up and the feed writes this wall's wall.manifest.
+            await db.WallGeometryModels.FindAsync([row.GeometryModelId], ct);
             var old = await db.WallGeometrySplats.Where(s => s.GeometryModelId == row.GeometryModelId).ToListAsync(ct);
             db.WallGeometrySplats.RemoveRange(old);
             db.WallGeometrySplats.Add(row);
