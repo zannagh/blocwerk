@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Wire types shared by the server and the later Blocwerk.Client (standalone Blazor WebAssembly): the live-update feed's
+    envelope, kinds and payloads. No EF, no ASP.NET, no Core reference, so the WASM client can take it as it is.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+
+  <!-- Server-side telemetry and logging packages from Directory.Build.props have no place in a client-shared library. -->
+  <ItemGroup>
+    <PackageReference Remove="Serilog" />
+    <PackageReference Remove="Serilog.Sinks.Console" />
+    <PackageReference Remove="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <PackageReference Remove="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Remove="OpenTelemetry.Instrumentation.AspNetCore" />
+    <PackageReference Remove="OpenTelemetry.Instrumentation.Http" />
+    <PackageReference Remove="OpenTelemetry.Instrumentation.Runtime" />
+  </ItemGroup>
+
+</Project>
