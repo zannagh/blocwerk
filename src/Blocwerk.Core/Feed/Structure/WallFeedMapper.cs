@@ -21,8 +21,8 @@ internal sealed class WallFeedMapper : IFeedMapper
 
     private static readonly IReadOnlySet<string> Unseen = new HashSet<string>(StringComparer.Ordinal)
     {
-        nameof(Wall.StagedPhoto), nameof(Wall.StagedPhotoContentType), nameof(Wall.StagedAt), nameof(Wall.StagedByUserId),
-        nameof(Wall.LinkedHoldSyncVersion),
+        nameof(Wall.StagedPhoto), nameof(Wall.StagedPhotoContentType), nameof(Wall.StagedPhotoSha256), nameof(Wall.StagedAt),
+        nameof(Wall.StagedByUserId), nameof(Wall.LinkedHoldSyncVersion),
     };
 
     public IReadOnlyCollection<Type> EntityTypes { get; } = [typeof(Wall)];

@@ -53,6 +53,9 @@ public sealed class FeedStructureMapperTests
         }
 
         Assert.Empty(await RowsAsync(harness));
+        await using var read = harness.CreateContext();
+        Assert.NotNull((await read.Walls.SingleAsync()).StagedPhotoSha256); // the hash stamp ran in that save
+        Assert.NotNull((await read.WallPanels.SingleAsync()).StagedPhotoSha256);
     }
 
     [Fact]

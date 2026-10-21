@@ -19,8 +19,8 @@ internal sealed class WallPartFeedMapper : IFeedMapper
 {
     private static readonly IReadOnlySet<string> UnseenPanel = new HashSet<string>(StringComparer.Ordinal)
     {
-        nameof(WallPanel.StagedPhoto), nameof(WallPanel.StagedPhotoContentType), nameof(WallPanel.StagedAt),
-        nameof(WallPanel.StagedByUserId),
+        nameof(WallPanel.StagedPhoto), nameof(WallPanel.StagedPhotoContentType), nameof(WallPanel.StagedPhotoSha256),
+        nameof(WallPanel.StagedAt), nameof(WallPanel.StagedByUserId),
     };
 
     public IReadOnlyCollection<Type> EntityTypes { get; } = [typeof(WallSegment), typeof(WallPanel), typeof(HoldLink), typeof(WallVolume)];

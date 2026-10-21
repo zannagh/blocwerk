@@ -42,6 +42,17 @@ public sealed class FeedMapContext
     }
 
     /// <summary>
+    /// Adds a row that names no actor, whoever saved: a coarse event any viewer sees (<c>boulder.stats</c>) must not tell
+    /// them who just rated or ticked.
+    /// </summary>
+    public void AddWithoutActor(WallChange row)
+    {
+        row.ActorUserId = null;
+        row.CreatedAt = Now;
+        rows.Add(row);
+    }
+
+    /// <summary>
     /// Records that a part of a boulder changed (its holds, setters or move hints). After the save is mapped each touched
     /// boulder gets one <c>boulder.changed</c> (<see cref="FeedBoulderResolver"/>), unless the boulder wrote its own row.
     /// Pass the boulder when it is tracked (the part's navigation), and its wall when the part knows it. A boulder that is

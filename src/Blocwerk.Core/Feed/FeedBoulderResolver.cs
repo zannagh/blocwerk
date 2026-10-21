@@ -72,11 +72,11 @@ internal static class FeedBoulderResolver
         {
             if (touch.Boulder is { } boulder)
             {
-                map.Add(Row(touch, boulder.WallId, boulder.Generation, boulder.IsDraft, map));
+                AddRow(map, touch, boulder.WallId, boulder.Generation, boulder.IsDraft);
             }
             else if (scope is not null)
             {
-                map.Add(FeedRows.Resync(touch.WallId ?? scope.WallId, scope.Label, map.ActorUserId, map.Now));
+                map.AddWithoutActor(FeedRows.Resync(touch.WallId ?? scope.WallId, scope.Label, null, map.Now));
             }
             else
             {
@@ -106,7 +106,7 @@ internal static class FeedBoulderResolver
         {
             if (byId.TryGetValue(touch.BoulderId, out var fact))
             {
-                map.Add(Row(touch, fact.WallId, fact.Generation, fact.IsDraft, map));
+                AddRow(map, touch, fact.WallId, fact.Generation, fact.IsDraft);
             }
             else if (touch.MappingFailed)
             {
@@ -115,11 +115,18 @@ internal static class FeedBoulderResolver
         }
     }
 
-    // A part whose mapper threw resyncs the boulder's wall; any other touch is the boulder's one boulder.changed.
-    private static WallChange Row(FeedBoulderTouch touch, Guid wallId, int generation, bool isDraft, FeedMapContext map) =>
-        touch.MappingFailed
-            ? FeedRows.Resync(wallId, FeedCollector.MappingFailedReason, map.ActorUserId, map.Now)
-            : FeedBoulderRows.Changed(touch.BoulderId, wallId, generation, isDraft, isDraft);
+    // A part whose mapper threw resyncs the boulder's wall, actorless (the part may be a tick or a rating, and every viewer
+    // of the wall sees the resync); any other touch is the boulder's one boulder.changed, credited to the editor.
+    private static void AddRow(FeedMapContext map, FeedBoulderTouch touch, Guid wallId, int generation, bool isDraft)
+    {
+        if (touch.MappingFailed)
+        {
+            map.AddWithoutActor(FeedRows.Resync(wallId, FeedCollector.MappingFailedReason, null, map.Now));
+            return;
+        }
+
+        map.Add(FeedBoulderRows.Changed(touch.BoulderId, wallId, generation, isDraft, isDraft));
+    }
 
     // A failed lookup resyncs every wall it can name (the part's, else the scope's) and says plainly what it could not.
     private static void Fallback(FeedMapContext map, List<FeedBoulderTouch> lookup, Exception ex, ILogger logger)
@@ -135,7 +142,7 @@ internal static class FeedBoulderResolver
 
         foreach (var wall in walls)
         {
-            map.Add(FeedRows.Resync(wall, FeedCollector.MappingFailedReason, map.ActorUserId, map.Now));
+            map.AddWithoutActor(FeedRows.Resync(wall, FeedCollector.MappingFailedReason, null, map.Now));
         }
     }
 }

@@ -94,6 +94,8 @@ internal static class FeedCollector
 
         logger.LogError(error, "Feed mapper {Mapper} failed on {Entity} ({State}); writing a resync of wall {WallId} instead",
             mapper.GetType().Name, entry.Metadata.ClrType.Name, entry.State, wall);
-        map.Add(FeedRows.Resync(wall, MappingFailedReason, map.ActorUserId, map.Now));
+
+        // Actorless: the failed entry may be a tick or a rating, and the resync goes to every viewer of the wall.
+        map.AddWithoutActor(FeedRows.Resync(wall, MappingFailedReason, null, map.Now));
     }
 }
