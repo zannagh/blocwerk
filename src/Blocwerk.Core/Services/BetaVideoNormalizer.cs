@@ -2,7 +2,9 @@ using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Assets;
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Data;
+using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Feed;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -213,17 +215,25 @@ public sealed class BetaVideoNormalizer
     private async Task SetStatusAsync(Guid videoId, BetaVideoEncodingStatus status, CancellationToken ct)
     {
         await using var db = dbContextFactory.CreateDbContext();
-        await db.BetaVideos
-            .Where(v => v.Id == videoId)
-            .ExecuteUpdateAsync(s => s.SetProperty(v => v.EncodingStatus, status), ct);
+        var target = db.BetaVideos.Where(v => v.Id == videoId);
+        await FeedVideoBulk.StatusAsync(
+            db, "video-status", target, () => target.ExecuteUpdateAsync(s => s.SetProperty(v => v.EncodingStatus, status), ct), status, null, logger, ct);
     }
 
     private async Task MarkReadyAsync(
         Guid videoId, string storedName, VideoTranscodeResult result, bool hasHls, byte[]? poster, CancellationToken ct)
     {
         await using var db = dbContextFactory.CreateDbContext();
-        await db.BetaVideos
-            .Where(v => v.Id == videoId)
+        var target = db.BetaVideos.Where(v => v.Id == videoId);
+        await FeedVideoBulk.StatusAsync(
+            db, "video-ready", target, () => WriteReadyAsync(target, storedName, result, hasHls, poster, ct), BetaVideoEncodingStatus.Ready, hasHls, logger, ct);
+    }
+
+    // The file, the state and (when one was made) the poster move in one transaction with their video.status row.
+    private static async Task<int> WriteReadyAsync(
+        IQueryable<BetaVideo> target, string storedName, VideoTranscodeResult result, bool hasHls, byte[]? poster, CancellationToken ct)
+    {
+        var written = await target
             .ExecuteUpdateAsync(s => s
                 .SetProperty(v => v.StoragePath, storedName)
                 .SetProperty(v => v.ContentType, result.ContentType)
@@ -239,10 +249,10 @@ public sealed class BetaVideoNormalizer
         // separate, conditional write rather than part of the update above.
         if (poster is { Length: > 0 })
         {
-            await db.BetaVideos
-                .Where(v => v.Id == videoId)
-                .ExecuteUpdateAsync(s => s.SetProperty(v => v.Thumbnail, poster).SetProperty(v => v.ThumbnailSha256, ContentHash.Of(poster)), ct);
+            await target.ExecuteUpdateAsync(s => s.SetProperty(v => v.Thumbnail, poster).SetProperty(v => v.ThumbnailSha256, ContentHash.Of(poster)), ct);
         }
+
+        return written;
     }
 
     private async Task MarkFailedAsync(Guid videoId, string error, CancellationToken ct)
@@ -250,11 +260,18 @@ public sealed class BetaVideoNormalizer
         try
         {
             await using var db = dbContextFactory.CreateDbContext();
-            await db.BetaVideos
-                .Where(v => v.Id == videoId)
-                .ExecuteUpdateAsync(s => s
-                    .SetProperty(v => v.EncodingStatus, BetaVideoEncodingStatus.Failed)
-                    .SetProperty(v => v.EncodingError, Truncate(error)), CancellationToken.None);
+            var target = db.BetaVideos.Where(v => v.Id == videoId);
+            await FeedVideoBulk.StatusAsync(
+                db,
+                "video-failed",
+                target,
+                () => target.ExecuteUpdateAsync(
+                    s => s.SetProperty(v => v.EncodingStatus, BetaVideoEncodingStatus.Failed).SetProperty(v => v.EncodingError, Truncate(error)),
+                    CancellationToken.None),
+                BetaVideoEncodingStatus.Failed,
+                null,
+                logger,
+                CancellationToken.None);
         }
         catch (Exception ex)
         {

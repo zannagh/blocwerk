@@ -6,6 +6,7 @@ using System.Runtime.CompilerServices;
 using Blocwerk.Core.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 
@@ -158,6 +159,32 @@ public sealed class FeedInterceptor : SaveChangesInterceptor, IDbTransactionInte
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// The wakes of rows a bulk site appended with raw SQL (<see cref="FeedBulkWrite"/>): held for the commit of the open
+    /// transaction they were written in, exactly as a save's, and dropped if it rolls back.
+    /// </summary>
+    internal void HoldOrWake(DbContext context, IReadOnlyList<FeedWake> wakes)
+    {
+        if (context.Database.CurrentTransaction?.GetDbTransaction() is { } transaction)
+        {
+            var held = awaitingCommit.GetValue(context, _ => new FeedPendingCommit(transaction));
+            if (!ReferenceEquals(held.Transaction, transaction))
+            {
+                awaitingCommit.Remove(context); // left over from a transaction that ended unseen
+                held = awaitingCommit.GetValue(context, _ => new FeedPendingCommit(transaction));
+            }
+
+            held.Wakes.AddRange(wakes);
+            return;
+        }
+
+        WakeAll(wakes);
+    }
+
+    /// <summary>The feed interceptor registered on <paramref name="context"/>, or null for a context built without it.</summary>
+    internal static FeedInterceptor? Of(DbContext context) =>
+        context.GetService<IDbContextOptions>().FindExtension<CoreOptionsExtension>()?.Interceptors?.OfType<FeedInterceptor>().FirstOrDefault();
+
     private void Collect(DbContext? context)
     {
         // Nothing is mapped (a test context without mappers): the save pays one check and no change-tracker walk.
@@ -199,20 +226,7 @@ public sealed class FeedInterceptor : SaveChangesInterceptor, IDbTransactionInte
         var written = rows.Where(r => !context.Entry(r).Property(c => c.Seq).IsTemporary).ToList();
         var wakes = Wakes(written);
         Detach(context, rows);
-        if (context.Database.CurrentTransaction?.GetDbTransaction() is { } transaction)
-        {
-            var held = awaitingCommit.GetValue(context, _ => new FeedPendingCommit(transaction));
-            if (!ReferenceEquals(held.Transaction, transaction))
-            {
-                awaitingCommit.Remove(context); // left over from a transaction that ended unseen
-                held = awaitingCommit.GetValue(context, _ => new FeedPendingCommit(transaction));
-            }
-
-            held.Wakes.AddRange(wakes);
-            return;
-        }
-
-        WakeAll(wakes);
+        HoldOrWake(context, wakes);
     }
 
     private void Drop(DbContext? context)
