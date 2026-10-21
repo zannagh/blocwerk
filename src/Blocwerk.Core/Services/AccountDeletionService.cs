@@ -148,6 +148,10 @@ public partial class AccountDeletionService : IAccountDeletionService
 
         await transaction.CommitAsync(ct);
 
+        // The user's other devices may have committed feed rows naming them while the serializable
+        // snapshot above could not see them; a short read-committed pass catches those. Never fails.
+        await FeedAccountRows.ScrubCommittedAsync(db, userId, logger);
+
         DeleteBetaVideoFiles(userId, betaVideoFiles);
 
         // The audit record: that a deletion happened, when, and how much moved — and nothing about

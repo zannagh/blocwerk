@@ -8,7 +8,7 @@ namespace Blocwerk.Core.Tests;
 
 /// <summary>
 /// The source-scan guard (design §5.3, B2): every <c>ExecuteUpdate</c>/<c>ExecuteDelete</c> on an entity the feed covers
-/// (mapped, or reviewed-excluded in <see cref="FeedCoverage"/>) bypasses the feed interceptor, so each one is classified in
+/// (mapped, or reviewed-excluded in <see cref="FeedCoverage"/>, or user-scoped: <see cref="FeedBulkSites.UserScoped"/>) bypasses the feed interceptor, so each one is classified in
 /// <see cref="FeedBulkSites"/>: it appends its rows itself, or is excluded with a reason. A new call, a moved one or one
 /// on another entity fails here until it is classified.
 /// </summary>
@@ -60,7 +60,7 @@ public sealed class FeedBulkSiteGuardTests
     }
 
     [Fact]
-    public void TheScanner_ReadsTheEntity_OfADirectALocalAndATypedQuery()
+    public void TheScanner_ReadsTheEntity_OfADirectALocalATypedAndAReturnedQuery()
     {
         const string source = """
             await db.Holds.Where(h => h.Id == id).ExecuteUpdateAsync(s => s.SetProperty(h => h.X, 1));
@@ -70,16 +70,18 @@ public sealed class FeedBulkSiteGuardTests
             // await db.Boulders.ExecuteDeleteAsync(); a comment is not a call
             await clips.Where(v => v.HasHls).ExecuteDeleteAsync();
             await rows(db).ExecuteUpdateAsync(s => s.SetProperty(x => x.Photo, clean));
+            await Narrow(ids).ExecuteDeleteAsync();
+            private static IQueryable<Hold> Narrow(List<Guid> ids) => null!;
             """;
 
         var calls = FeedBulkSiteScanner.ScanText("probe.cs", source).Select(c => c.Entity).ToList();
 
-        Assert.Equal([typeof(Hold), typeof(WallImage), typeof(BetaVideo), null], calls);
+        Assert.Equal([typeof(Hold), typeof(WallImage), typeof(BetaVideo), null, typeof(Hold)], calls);
     }
 
     private static Dictionary<(string File, Type? Entity), int> Found()
     {
-        var covered = new FeedMapperRegistry(FeedMappers.Create()).MappedTypes.Concat(FeedCoverage.ReviewedExcluded.Keys).ToHashSet();
+        var covered = new FeedMapperRegistry(FeedMappers.Create()).MappedTypes.Concat(FeedCoverage.ReviewedExcluded.Keys).Concat(FeedBulkSites.UserScoped).ToHashSet();
         return FeedBulkSiteScanner.Scan()
             .Where(c => c.Entity is null || covered.Contains(c.Entity))
             .GroupBy(c => (c.File, c.Entity))

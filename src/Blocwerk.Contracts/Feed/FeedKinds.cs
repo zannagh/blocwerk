@@ -46,13 +46,16 @@ public static class FeedKinds
     /// <summary>A user's own ascents changed in bulk (an external import): reload them.</summary>
     public const string TicksResync = "ticks.resync";
 
+    /// <summary>A user's own state changed in bulk (an account merged into theirs): their devices reload all of it.</summary>
+    public const string UserResync = "user.resync";
+
     /// <summary>Gets every known kind.</summary>
     public static IReadOnlySet<string> All { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
         WallUpdated, WallManifest, WallResync, MemberChanged, AccessRevoked, SegmentChanged, PanelChanged, LinkChanged,
         VolumeChanged, HoldChanged, HoldDeleted, BoulderChanged, BoulderDeleted, BoulderStats, CommentAdded, CommentDeleted,
         VideoAdded, VideoStatus, VideoDeleted, GalleryChanged, GalleryDeleted, View3DChanged, ActivityAdded, FavoriteChanged,
-        RatingMine, TickMine, UserProfile, TicksResync,
+        RatingMine, TickMine, UserProfile, TicksResync, UserResync,
     };
 
     /// <summary>True for a kind this assembly knows; a client ignores the rest.</summary>

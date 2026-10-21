@@ -7,6 +7,7 @@ using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using static Blocwerk.Core.Tests.FeedBulkKit;
 
@@ -60,6 +61,41 @@ public sealed class FeedBulkAssetTests
     {
         using var h = new WallTestHarness();
         using var s = await SupersededModelRetentionTests.ScenarioAsync(h);
+        var stored = await RetiredModelAsync(h, s);
+        await using var db = h.CreateContext();
+        var candidates = await SupersededModelSelection.SelectAsync(db, 1, s.Options, DateTimeOffset.UtcNow, CancellationToken.None);
+
+        var stripped = await SupersededModelRetention.StripWallAsync(
+            db, h.WallId, candidates, 1, s.Options, DateTimeOffset.UtcNow, [], NullLogger.Instance, CancellationToken.None);
+
+        Assert.Equal(1, stripped);
+
+        var row = Assert.Single(await RowsAsync(h));
+        Assert.Equal((FeedKinds.View3DChanged, h.WallId, stored), (row.Kind, row.WallId!.Value, row.EntityId!.Value));
+    }
+
+    [Fact]
+    public async Task AFailedView3DRow_IsLogged_AndTheStripStands()
+    {
+        using var h = new WallTestHarness();
+        using var s = await SupersededModelRetentionTests.ScenarioAsync(h);
+        await RetiredModelAsync(h, s);
+        var logger = new CapturingLogger<FeedBulkAssetTests>();
+        await using var db = TestDb.Create(h.DbContextFactory.ConnectionString, new FailingFeedInsert());
+        var candidates = await SupersededModelSelection.SelectAsync(db, 1, s.Options, DateTimeOffset.UtcNow, CancellationToken.None);
+
+        var stripped = await SupersededModelRetention.StripWallAsync(
+            db, h.WallId, candidates, 1, s.Options, DateTimeOffset.UtcNow, [], logger, CancellationToken.None);
+
+        Assert.Equal(1, stripped);
+
+        Assert.Empty(await RowsAsync(h));
+        Assert.Contains(logger.Lines, l => l.Level == LogLevel.Error && l.Message.Contains("superseded-model-retention"));
+    }
+
+    // An active model, and a never-active one old enough for the retention to strip.
+    private static async Task<Guid> RetiredModelAsync(WallTestHarness h, CaptureScenario s)
+    {
         var glyphs = WallGlyphSettingsTests.Service(h);
         await glyphs.ImportGeometryAsync(h.WallId, GlyphGeometryJson.Build(), null);
         var stored = (await glyphs.ImportGeometryAsync(h.WallId, GlyphGeometryJson.Build(), null, null, new GeometryImportOptions(Activate: false))).Model!.Id;
@@ -71,12 +107,6 @@ public sealed class FeedBulkAssetTests
         }
 
         await ClearAsync(h);
-        await using var db = h.CreateContext();
-        var candidates = await SupersededModelSelection.SelectAsync(db, 1, s.Options, DateTimeOffset.UtcNow, CancellationToken.None);
-
-        Assert.Equal(1, await SupersededModelRetention.StripWallAsync(db, h.WallId, candidates, 1, s.Options, DateTimeOffset.UtcNow, [], CancellationToken.None));
-
-        var row = Assert.Single(await RowsAsync(h));
-        Assert.Equal((FeedKinds.View3DChanged, h.WallId, stored), (row.Kind, row.WallId!.Value, row.EntityId!.Value));
+        return stored;
     }
 }

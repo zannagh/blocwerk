@@ -3,6 +3,7 @@
 
 using Blocwerk.Contracts.Feed;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Feed;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Tests;
@@ -10,7 +11,7 @@ namespace Blocwerk.Core.Tests;
 /// <summary>
 /// Comments deleted by the database's cascade (a boulder deleted) write no <c>comment.deleted</c> of their own: the
 /// boulder's <c>boulder.deleted</c> compacts their <c>comment.added</c> rows instead (PR 1.3), and leaves other boulders'
-/// rows alone.
+/// rows alone. The compaction filters by wall first, so it uses the wall index.
 /// </summary>
 public sealed class FeedBulkCascadeTests
 {
@@ -19,6 +20,18 @@ public sealed class FeedBulkCascadeTests
 
     [PostgresFact]
     public Task DeletingABoulder_CompactsItsCommentRows_Postgres() => CascadeAsync(new SocialFeedFixture(PostgresTestDatabase.Create()));
+
+    [Fact]
+    public void TheBoulderCompaction_FiltersByWall_SoItCanRunOnTheWallIndex()
+    {
+        using var db = TestDb.Create("Host=unused;Database=unused");
+
+        var sql = FeedCommentCompaction.OfBoulders(db, [Guid.NewGuid()], [Guid.NewGuid()]).ToQueryString();
+
+        var where = sql[sql.IndexOf("WHERE", StringComparison.Ordinal)..];
+        Assert.Contains("\"WallId\"", where);
+        Assert.Contains("\"BoulderId\"", where);
+    }
 
     private static async Task CascadeAsync(SocialFeedFixture fixture)
     {

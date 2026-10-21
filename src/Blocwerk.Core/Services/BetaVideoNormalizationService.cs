@@ -1,4 +1,5 @@
 using Blocwerk.Core.Data;
+using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Feed;
 using Microsoft.EntityFrameworkCore;
@@ -119,7 +120,7 @@ public sealed class BetaVideoNormalizationService : BackgroundService
                 db,
                 "video-stale-reset",
                 stale,
-                () => stale.ExecuteUpdateAsync(s => s.SetProperty(v => v.EncodingStatus, BetaVideoEncodingStatus.Pending), ct),
+                (IQueryable<BetaVideo> locked) => locked.ExecuteUpdateAsync(s => s.SetProperty(v => v.EncodingStatus, BetaVideoEncodingStatus.Pending), ct),
                 BetaVideoEncodingStatus.Pending,
                 null,
                 logger,

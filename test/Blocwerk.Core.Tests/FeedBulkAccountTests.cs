@@ -15,7 +15,8 @@ namespace Blocwerk.Core.Tests;
 
 /// <summary>
 /// The GDPR side of the feed (design §5.7, PR 1.3): an erasure leaves no stored row naming the user and resyncs their walls,
-/// and a merge moves the source's rows to the target without revoking the target's access. Both write no wall rows of
+/// and a merge forgets the source's rows, revokes nothing, and tells the target's devices with a <c>user.resync</c>. Rows
+/// that the user's other devices commit during the erasure are caught by the read-committed pass after it. Both write no wall rows of
 /// their own saves (a silent account scope), on SQLite and Postgres.
 /// </summary>
 public sealed class FeedBulkAccountTests
@@ -27,10 +28,39 @@ public sealed class FeedBulkAccountTests
     public Task Erasure_LeavesNoRowNamingTheUser_AndResyncsTheirWalls_Postgres() => EraseAsync(new WallTestHarness(PostgresTestDatabase.Create()));
 
     [Fact]
-    public Task Merge_MovesTheSourcesRows_AndRevokesNothing_Sqlite() => MergeAsync(new WallTestHarness());
+    public Task Merge_ForgetsTheSourcesRows_RevokesNothing_AndTellsTheTarget_Sqlite() => MergeAsync(new WallTestHarness());
 
     [PostgresFact]
-    public Task Merge_MovesTheSourcesRows_AndRevokesNothing_Postgres() => MergeAsync(new WallTestHarness(PostgresTestDatabase.Create()));
+    public Task Merge_ForgetsTheSourcesRows_RevokesNothing_AndTellsTheTarget_Postgres() => MergeAsync(new WallTestHarness(PostgresTestDatabase.Create()));
+
+    [Fact]
+    public async Task TheScrubAfterTheErasure_CatchesRowsWrittenMeanwhile_AndNeverThrows()
+    {
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync(holdCount: 0);
+        var late = Guid.NewGuid();
+        await SeedAsync(
+            h,
+            SeedRow(h.WallId, FeedKinds.CommentAdded, Guid.NewGuid(), actor: late),
+            SeedRow(null, FeedKinds.TickMine, Guid.NewGuid(), actor: late, audienceUser: late));
+
+        await using (var db = h.CreateContext())
+        {
+            await FeedAccountRows.ScrubCommittedAsync(db, late, NullLogger.Instance);
+        }
+
+        var row = Assert.Single(await RowsAsync(h));
+        Assert.Equal(GhostUser.Id, row.ActorUserId);
+
+        var logger = new CapturingLogger<FeedBulkAccountTests>();
+        await using (var broken = h.CreateContext())
+        {
+            await broken.DisposeAsync();
+            await FeedAccountRows.ScrubCommittedAsync(broken, late, logger);
+        }
+
+        Assert.Contains(logger.Lines, l => l.Level == Microsoft.Extensions.Logging.LogLevel.Error);
+    }
 
     [Fact]
     public async Task ASilentScope_DropsWallRows_AndKeepsUserRows()
@@ -102,8 +132,10 @@ public sealed class FeedBulkAccountTests
         var rows = await RowsAsync(h);
         Assert.DoesNotContain(rows, r => r.ActorUserId == source.Id || r.AudienceUserId == source.Id || r.EntityId == source.Id);
         Assert.DoesNotContain(rows, r => r.Kind == FeedKinds.AccessRevoked);
-        Assert.Equal(target.Id, Assert.Single(rows, r => r.Kind == FeedKinds.CommentAdded).ActorUserId);
+        Assert.DoesNotContain(rows, r => r.Kind == FeedKinds.CommentAdded);
         Assert.Contains(rows, r => r.Kind == FeedKinds.RatingMine && r.AudienceUserId == target.Id);
+        var mine = Assert.Single(rows, r => r.Kind == FeedKinds.UserResync);
+        Assert.Equal((FeedAudience.User, target.Id, null), (mine.Audience, mine.AudienceUserId!.Value, mine.WallId));
         var resync = Assert.Single(rows, r => r.Kind == FeedKinds.WallResync);
         Assert.Equal(FeedAccountRows.MergeReason, Field(resync, "reason"));
         Assert.DoesNotContain(rows, r => r.Kind == FeedKinds.MemberChanged);

@@ -217,7 +217,7 @@ public sealed class BetaVideoNormalizer
         await using var db = dbContextFactory.CreateDbContext();
         var target = db.BetaVideos.Where(v => v.Id == videoId);
         await FeedVideoBulk.StatusAsync(
-            db, "video-status", target, () => target.ExecuteUpdateAsync(s => s.SetProperty(v => v.EncodingStatus, status), ct), status, null, logger, ct);
+            db, "video-status", target, (IQueryable<BetaVideo> locked) => locked.ExecuteUpdateAsync(s => s.SetProperty(v => v.EncodingStatus, status), ct), status, null, logger, ct);
     }
 
     private async Task MarkReadyAsync(
@@ -226,7 +226,7 @@ public sealed class BetaVideoNormalizer
         await using var db = dbContextFactory.CreateDbContext();
         var target = db.BetaVideos.Where(v => v.Id == videoId);
         await FeedVideoBulk.StatusAsync(
-            db, "video-ready", target, () => WriteReadyAsync(target, storedName, result, hasHls, poster, ct), BetaVideoEncodingStatus.Ready, hasHls, logger, ct);
+            db, "video-ready", target, (IQueryable<BetaVideo> locked) => WriteReadyAsync(locked, storedName, result, hasHls, poster, ct), BetaVideoEncodingStatus.Ready, hasHls, logger, ct);
     }
 
     // The file, the state and (when one was made) the poster move in one transaction with their video.status row.
@@ -265,7 +265,7 @@ public sealed class BetaVideoNormalizer
                 db,
                 "video-failed",
                 target,
-                () => target.ExecuteUpdateAsync(
+                (IQueryable<BetaVideo> locked) => locked.ExecuteUpdateAsync(
                     s => s.SetProperty(v => v.EncodingStatus, BetaVideoEncodingStatus.Failed).SetProperty(v => v.EncodingError, Truncate(error)),
                     CancellationToken.None),
                 BetaVideoEncodingStatus.Failed,

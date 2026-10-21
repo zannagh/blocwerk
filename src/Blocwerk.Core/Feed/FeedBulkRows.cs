@@ -71,6 +71,20 @@ public static class FeedBulkRows
         SchemaVersion = FeedSchema.PayloadVersion,
     };
 
+    /// <summary>
+    /// <c>user.resync</c> to one user, wall-less: their memberships, ratings, favourites and history changed in bulk (another
+    /// account was merged into theirs), so their devices reload everything of theirs.
+    /// </summary>
+    public static WallChange UserResync(Guid userId) => new()
+    {
+        Kind = FeedKinds.UserResync,
+        EntityId = userId,
+        Audience = FeedAudience.User,
+        AudienceUserId = userId,
+        ActorUserId = userId,
+        SchemaVersion = FeedSchema.PayloadVersion,
+    };
+
     private static WallChange Plain(string kind, Guid wallId, Guid entityId, FeedAudience audience, Guid? actor) => new()
     {
         WallId = wallId,

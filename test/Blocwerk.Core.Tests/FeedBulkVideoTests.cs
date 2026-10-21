@@ -86,6 +86,34 @@ public sealed class FeedBulkVideoTests
         Assert.Equal(nameof(BetaVideoEncodingStatus.Pending), Field(row, "encodingStatus"));
     }
 
+    // The other transaction moves the first clip out of the queue's predicate and holds its row. The queue's lookup waits for
+    // it, judges the clip on its committed state, and narrows the write to what it reports, so no row describes a clip the
+    // write skipped. Postgres only: SQLite has one writer at a time.
+    [PostgresFact]
+    public async Task TheReencodeQueue_ReportsOnlyTheClipsItChanged_WhenAnotherWriterHoldsOne_Postgres()
+    {
+        using var h = new WallTestHarness(PostgresTestDatabase.Create());
+        var (boulder, first) = await SeedClipAsync(h);
+        var second = (await h.BetaVideoService.AddVideoAsync(boulder, Clip, "video/mp4", null, "b.mp4")).Id;
+        await ClearAsync(h);
+        await using (var admin = h.CreateContext())
+        {
+            await admin.Users.Where(u => u.Id == h.Owner.Id).ExecuteUpdateAsync(s => s.SetProperty(u => u.Role, IdentityRole.Admin));
+        }
+
+        await using var other = h.CreateContext();
+        await using var held = await other.Database.BeginTransactionAsync();
+        await other.BetaVideos.Where(v => v.Id == first).ExecuteUpdateAsync(s => s.SetProperty(v => v.EncodingStatus, BetaVideoEncodingStatus.Ready));
+        var queue = Service(h, new RecordingFeedSignal()).RequestReencodeAsync(all: false);
+        await Task.Delay(1000);
+        Assert.False(queue.IsCompleted);
+        await held.CommitAsync();
+
+        Assert.Equal(1, await queue);
+        var row = Assert.Single(await RowsAsync(h));
+        Assert.Equal(second, row.EntityId);
+    }
+
     [Fact]
     public async Task TheNormalizer_WritesProcessingThenReady()
     {

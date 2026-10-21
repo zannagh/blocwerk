@@ -464,7 +464,7 @@ public class BetaVideoService : IBetaVideoService
                 db,
                 "video-reencode",
                 query,
-                () => query.ExecuteUpdateAsync(s => s.SetProperty(v => v.EncodingStatus, BetaVideoEncodingStatus.Pending)),
+                (IQueryable<BetaVideo> locked) => locked.ExecuteUpdateAsync(s => s.SetProperty(v => v.EncodingStatus, BetaVideoEncodingStatus.Pending)),
                 BetaVideoEncodingStatus.Pending,
                 hasHls: null,
                 logger,

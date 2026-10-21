@@ -34,7 +34,7 @@ public static class FeedBulkWrite
     /// </summary>
     /// <typeparam name="TFacts">What the rows need to know, read before the write.</typeparam>
     /// <typeparam name="T">The write's result, e.g. the affected row count.</typeparam>
-    public static async Task<T> RunAsync<TFacts, T>(
+    public static Task<T> RunAsync<TFacts, T>(
         BlocwerkDbContext db,
         string site,
         Func<Task<TFacts>> facts,
@@ -42,10 +42,28 @@ public static class FeedBulkWrite
         Func<TFacts, T, IEnumerable<WallChange>> rows,
         ILogger logger,
         CancellationToken ct)
+        where TFacts : notnull =>
+        RunAsync(db, site, facts, (Func<TFacts?, Task<T>>)(_ => write()), rows, logger, ct);
+
+    /// <summary>
+    /// As the overload above, but <paramref name="write"/> is handed the facts (null when the lookup failed), so it can
+    /// write exactly the rows the lookup read and locked, and the feed rows describe exactly what it changed.
+    /// </summary>
+    /// <typeparam name="TFacts">What the rows need to know, read before the write.</typeparam>
+    /// <typeparam name="T">The write's result, e.g. the affected row count.</typeparam>
+    public static async Task<T> RunAsync<TFacts, T>(
+        BlocwerkDbContext db,
+        string site,
+        Func<Task<TFacts>> facts,
+        Func<TFacts?, Task<T>> write,
+        Func<TFacts, T, IEnumerable<WallChange>> rows,
+        ILogger logger,
+        CancellationToken ct)
+        where TFacts : notnull
     {
         await using var own = db.Database.CurrentTransaction is null ? await db.Database.BeginTransactionAsync(ct) : null;
         var known = await LookupAsync(db, site, facts, logger);
-        var result = await write();
+        var result = await write(known.Ok ? known.Value : default);
         if (known.Ok)
         {
             await AppendAsync(db, site, Build(site, () => rows(known.Value!, result), logger), logger);

@@ -20,6 +20,12 @@ internal static class FeedBulkSites
     private const string MergedWalls = "the source's walls each get a wall.resync in the merge's transaction (FeedAccountRows.MergeAsync)";
     private const string GpuQueue = "GPU job queue bookkeeping (claim, lease, preview, result); progress goes through IWallPulse and results land on mapped rows";
 
+    /// <summary>
+    /// Gets the entities that are not wall-scoped but whose bulk writes still reach the feed as rows for one user (an
+    /// external ascent: <c>ticks.resync</c>), so the guard scans them too.
+    /// </summary>
+    public static IReadOnlySet<Type> UserScoped { get; } = new HashSet<Type> { typeof(ExternalAscent) };
+
     /// <summary>Gets the calls a handled site's class must make (in the file or a sibling partial).</summary>
     public static IReadOnlyList<string> Markers { get; } = ["FeedBulkWrite.", "FeedVideoBulk.", "FeedAccountRows."];
 
@@ -35,7 +41,7 @@ internal static class FeedBulkSites
     private static IEnumerable<FeedBulkSite> Handled() =>
     [
         Rows("Services/BetaVideoService.cs", typeof(BetaVideo), 1, "admin re-encode queue: video.status per queued clip (FeedVideoBulk.StatusAsync)"),
-        Rows("Feed/FeedVideoBulk.cs", typeof(BetaVideo), 1, "the uploader's delete: video.deleted per clip, read before the delete"),
+        Rows("Feed/FeedVideoBulk.cs", typeof(BetaVideo), 1, "the uploader's delete: video.deleted per clip, the clips locked and the delete narrowed to them"),
         Rows("Services/BetaVideoNormalizer.cs", typeof(BetaVideo), 4, "Processing, Ready (file + poster in one transaction) and Failed: video.status"),
         Rows("Services/BetaVideoNormalizationService.cs", typeof(BetaVideo), 1, "startup reset of stale Processing clips to Pending: video.status"),
         Rows("Services/WallPhotoPrivacyService.Slots.cs", typeof(WallImage), 2, "gallery rewrite and size/hash repair: gallery.changed in the rewrite's transaction"),
@@ -45,6 +51,7 @@ internal static class FeedBulkSites
         Excluded("Services/HoldTexturePlacementService.EditedWrite.cs", typeof(Hold), 1, "a no-op row lock (FacetId = FacetId) that guards the edited write"),
         Excluded("Data/LinkedHoldSyncStartup.cs", typeof(Wall), 1, "Wall.LinkedHoldSyncVersion only (an unseen column); the hold writes before it are SaveChanges and mapped"),
         Excluded("Feed/WallChangeRetention.cs", null, 1, "the feed's own retention of WallChange rows"),
+        Resync("Services/TopLogger/TopLoggerImportService.cs", typeof(ExternalAscent), 2, "grade mapping and disconnect: ticks.resync to the user"),
     ];
 
     private static IEnumerable<FeedBulkSite> Account() =>
@@ -53,6 +60,7 @@ internal static class FeedBulkSites
         Resync(Erase, typeof(Attempt), 1, "tick notes blanked; " + ErasedWalls),
         Resync(Erase, typeof(BetaVideo), 1, "the user's clips deleted; " + ErasedWalls),
         Resync(Erase, typeof(WallMember), 1, "memberships deleted; " + ErasedWalls + "; their devices reload and lose the wall"),
+        Resync(Erase, typeof(ExternalAscent), 1, "imported ascents deleted; the erasure scrubs every row addressed to the user"),
         Resync(Erase, typeof(BoulderFavorite), 1, "user-private (favorite.changed is User); the erasure scrubs every row addressed to the user"),
         Excluded(Erase, typeof(Activity), 1, "user-private training activity (FeedCoverage: excluded)"),
         Excluded(Erase, typeof(ClimbingSession), 1, "user-private check-ins (FeedCoverage: excluded)"),

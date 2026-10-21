@@ -1,6 +1,7 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using System.Data;
 using System.Linq.Expressions;
 using Blocwerk.Contracts.Feed;
 using Blocwerk.Core.Data;
@@ -15,8 +16,8 @@ namespace Blocwerk.Core.Feed;
 /// The feed side of an account erasure or merge (design §5.7), run inside the operation's transaction after its last
 /// save. Both operations write in bulk across walls under a silent <see cref="FeedScope.BeginAccount"/>, so they write no
 /// wall rows of their own: here every wall of the user's footprint (<see cref="FeedUserFootprint"/>, read before the
-/// writes) gets one actorless <c>wall.resync</c>, and the stored rows that name the user are scrubbed (erasure) or moved
-/// to the surviving account (merge).
+/// writes) gets one actorless <c>wall.resync</c>, and the stored rows that name the user are scrubbed (erasure) or deleted
+/// (merge, whose target gets a <c>user.resync</c>).
 /// <para>
 /// Never fatal: each step runs under a savepoint and a failure is logged. The rows carry ids only, and an erased user's
 /// row stays as an anonymous tombstone under the same id, so a missed scrub leaves nothing personal behind; retention
@@ -48,17 +49,40 @@ internal static class FeedAccountRows
     /// that resync and find their membership gone, so no <c>access.revoked</c> is written: it would keep their id in the feed.
     /// </summary>
     public static Task EraseAsync(BlocwerkDbContext db, Guid userId, IReadOnlyList<Guid> walls, ILogger logger) =>
-        ApplyAsync(db, "account-erase", () => ScrubAsync(db, userId), walls, EraseReason, logger);
+        ApplyAsync(db, "account-erase", () => ScrubAsync(db, userId), [.. FeedBulkRows.Resyncs(walls, EraseReason)], logger);
 
     /// <summary>
-    /// Merge: deletes the source's revocations (its memberships were handed over, not lost) and the rows about its
-    /// membership or profile, moves the rest of its rows to the target, and resyncs <paramref name="walls"/>.
+    /// Merge: deletes every row by, to or about the source (moving them would hand the target the source's revocations,
+    /// and its history is covered by the resyncs), resyncs <paramref name="walls"/>, and tells the target's own devices with
+    /// one <c>user.resync</c>: their memberships, ratings and favourites changed.
     /// </summary>
     public static Task MergeAsync(BlocwerkDbContext db, Guid sourceUserId, Guid targetUserId, IReadOnlyList<Guid> walls, ILogger logger) =>
-        ApplyAsync(db, "account-merge", () => MoveAsync(db, sourceUserId, targetUserId), walls, MergeReason, logger);
+        ApplyAsync(
+            db,
+            "account-merge",
+            () => ForgetAsync(db, sourceUserId),
+            [.. FeedBulkRows.Resyncs(walls, MergeReason), FeedBulkRows.UserResync(targetUserId)],
+            logger);
 
-    private static async Task ApplyAsync(
-        BlocwerkDbContext db, string site, Func<Task> rewrite, IReadOnlyList<Guid> walls, string reason, ILogger logger)
+    /// <summary>
+    /// After the erasure has committed: rows naming the user that their other devices committed while the erasure's
+    /// serializable snapshot could not see them. Re-runs the scrub in a short read-committed transaction. Never throws.
+    /// </summary>
+    public static async Task ScrubCommittedAsync(BlocwerkDbContext db, Guid userId, ILogger logger)
+    {
+        try
+        {
+            await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, CancellationToken.None);
+            await ScrubAsync(db, userId);
+            await transaction.CommitAsync(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Feed scrub after the erasure of user {UserId} failed; rows written meanwhile stay until retention", userId);
+        }
+    }
+
+    private static async Task ApplyAsync(BlocwerkDbContext db, string site, Func<Task> rewrite, IReadOnlyList<WallChange> rows, ILogger logger)
     {
         try
         {
@@ -76,7 +100,7 @@ internal static class FeedAccountRows
             logger.LogError(ex, "Feed rewrite of {Site} failed; the user's feed rows stay until retention removes them", site);
         }
 
-        await FeedBulkWrite.AppendAsync(db, site, FeedBulkRows.Resyncs(walls, reason), logger);
+        await FeedBulkWrite.AppendAsync(db, site, rows, logger);
     }
 
     private static async Task ScrubAsync(BlocwerkDbContext db, Guid userId)
@@ -88,15 +112,11 @@ internal static class FeedAccountRows
             .ExecuteUpdateAsync(s => s.SetProperty(c => c.ActorUserId, (Guid?)GhostUser.Id), none);
     }
 
-    private static async Task MoveAsync(BlocwerkDbContext db, Guid sourceUserId, Guid targetUserId)
+    private static async Task ForgetAsync(BlocwerkDbContext db, Guid sourceUserId)
     {
         var none = CancellationToken.None;
-        await db.WallChanges.Where(c => c.AudienceUserId == sourceUserId && c.Kind == FeedKinds.AccessRevoked).ExecuteDeleteAsync(none);
+        await db.WallChanges.Where(c => c.ActorUserId == sourceUserId || c.AudienceUserId == sourceUserId).ExecuteDeleteAsync(none);
         await db.WallChanges.Where(AboutUser(sourceUserId)).ExecuteDeleteAsync(none);
-        await db.WallChanges.Where(c => c.ActorUserId == sourceUserId)
-            .ExecuteUpdateAsync(s => s.SetProperty(c => c.ActorUserId, (Guid?)targetUserId), none);
-        await db.WallChanges.Where(c => c.AudienceUserId == sourceUserId)
-            .ExecuteUpdateAsync(s => s.SetProperty(c => c.AudienceUserId, (Guid?)targetUserId), none);
     }
 
     // The kinds whose entity is the user themselves.

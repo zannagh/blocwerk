@@ -86,7 +86,9 @@ internal static partial class FeedBulkSiteScanner
                 return local;
             }
 
-            var typed = Regex.Matches(before, $@"IQueryable<(\w+)>\s+{Regex.Escape(root)}\b").LastOrDefault();
+            // A typed local or parameter above the call, else a method of that name returning the query anywhere in the file.
+            var typed = Regex.Matches(before, $@"IQueryable<(\w+)>\s+{Regex.Escape(root)}\b").LastOrDefault()
+                ?? Regex.Matches(text, $@"IQueryable<(\w+)>\s+{Regex.Escape(root)}\s*\(").FirstOrDefault();
             if (typed is not null && types.TryGetValue(typed.Groups[1].Value, out var type))
             {
                 return type;
@@ -115,6 +117,7 @@ internal static partial class FeedBulkSiteScanner
     }
 
     // The receiver identifiers of the statement: names not reached through a member access, followed by '.', '(' or the call.
+    // A method that returns the query (Narrow(...)) resolves through its IQueryable<T> return type.
     private static IEnumerable<string> Roots(string statement) =>
         RootIdentifier().Matches(statement).Select(m => m.Groups[1].Value).Where(r => !Keywords.Contains(r)).Distinct();
 
@@ -152,7 +155,7 @@ internal static partial class FeedBulkSiteScanner
     [GeneratedRegex(@"\.(?<set>[A-Z]\w*)\b(?!\s*[(<])|\bSet<(?<type>\w+)>\s*\(")]
     private static partial Regex SetReference();
 
-    [GeneratedRegex(@"(?<![\.\w])([a-z]\w*)(?=\s*[\.(]|\s*$)")]
+    [GeneratedRegex(@"(?<![\.\w])([A-Za-z_]\w*)(?=\s*[\.(]|\s*$)")]
     private static partial Regex RootIdentifier();
 
     [GeneratedRegex(@"(?m)^\s*///?.*$")]
