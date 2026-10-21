@@ -16,12 +16,17 @@
  * NEVER cached: anything under /api/* and /_blazor/* (SignalR), and any non-GET request. Those are
  * strictly network-only so auth, the circuit and the offline queue always talk to the live server.
  *
+ * Page <-> worker messages carry `proto` (PROTO below). Both sides ignore a message whose proto or type they
+ * do not know, and the worker never depends on the page talking to it: skipWaiting + clients.claim means a new
+ * worker can end up serving an older page's JS (and the reverse), and that pairing must stay harmless.
+ *
  * NICE-TO-HAVE not implemented: the Background Sync API could flush the queue when the tab is
  * closed. The baseline here is the existing `online` event + circuit-reconnect flush in
  * offline-queue.js / blazor-boot.js, which covers the tab-open case; Background Sync would only add
  * closed-tab flushing and needs its own IndexedDB replay in the SW, so it is deferred.
  */
 const CACHE = 'blocwerk-shell-v3';
+const PROTO = 1;
 
 // Stable-path assets only. The app's own CSS/JS are referenced from BlocwerkApp.razor through
 // @Assets[...], so the page requests them under a build-specific fingerprinted name that this file
@@ -46,16 +51,39 @@ self.addEventListener('install', event => {
 self.addEventListener('activate', event => {
     event.waitUntil(
         caches.keys()
-            // Only this worker's own older shells, plus the storage probe's size-ladder scratch (up to 1.5 GB a
-            // crashed run can leave behind). Every other cache on the origin (the probe's markers in
-            // 'bw-storage-probe', later on-device wall data in 'bw-a1-*') is not the shell's to delete.
+            // Only this worker's own older shells, the retired asset-cache schema 'bw-a0-*', and the storage
+            // probe's size-ladder scratch (up to 1.5 GB a crashed run can leave behind). Every other cache on
+            // the origin (the probe's markers in 'bw-storage-probe', on-device wall data in 'bw-a1-*') is not
+            // the shell's to delete. Keeping 'bw-a1-*' here, before anything writes it, is what makes rolling
+            // back to this worker or any later one safe once the asset cache ships.
             .then(keys => Promise.all(keys.filter(isDisposableCache).map(k => caches.delete(k))))
             .then(() => self.clients.claim())
     );
 });
 
 function isDisposableCache(name) {
-    return (name.startsWith('blocwerk-shell-') && name !== CACHE) || name === 'bw-storage-probe-ladder';
+    return (name.startsWith('blocwerk-shell-') && name !== CACHE)
+        || name.startsWith('bw-a0-')
+        || name === 'bw-storage-probe-ladder';
+}
+
+// The one message this protocol version answers: a page asking which worker it is talking to. The reply goes
+// to the sender's MessagePort when it passed one, otherwise back to the sending client.
+self.addEventListener('message', event => {
+    const data = event.data;
+    if (!data || typeof data !== 'object' || data.proto !== PROTO) {
+        return;
+    }
+    if (data.type === 'sw-info') {
+        reply(event, { proto: PROTO, type: 'sw-info', shell: CACHE });
+    }
+});
+
+function reply(event, message) {
+    const target = (event.ports && event.ports[0]) || event.source;
+    if (target && typeof target.postMessage === 'function') {
+        target.postMessage(message);
+    }
 }
 
 function isBypassed(url, request) {
