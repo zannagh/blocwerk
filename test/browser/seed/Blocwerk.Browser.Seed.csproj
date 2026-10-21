@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Seeds the throwaway database the browser harness (test/browser) runs the app against. Not a test project and
+       not shipped: it migrates the given database and writes users, walls and hashed assets, then prints their ids. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The panel photos are encoded with SkiaSharp; its base package has no Linux natives (CI). -->
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Blocwerk.Core\Blocwerk.Core.csproj" />
+  </ItemGroup>
+</Project>

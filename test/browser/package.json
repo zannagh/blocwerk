@@ -1,0 +1,13 @@
+{
+  "name": "blocwerk-browser-tests",
+  "private": true,
+  "description": "Real-browser tests of the service worker and the page-side asset cache (design 2026-10-21, PR 2.10).",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "browsers": "playwright install chromium webkit"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}

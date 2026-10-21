@@ -212,6 +212,81 @@ jobs:
           BLOCWERK_TEST_PG: Host=localhost;Port=${{ job.services.postgres.ports['5432'] }};Username=blocwerk;Password=blocwerk
         run: dotnet test test/Blocwerk.Core.Tests --filter "Db=Postgres"
 
+  # Real-browser tests of the service worker and the page-side asset cache (test/browser). Non-blocking: it reports, it
+  # never fails the workflow. GitHub-hosted, because the browsers' system dependencies need sudo to install.
+  browser-tests:
+    name: Browser Tests (non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: blocwerk
+          POSTGRES_DB: bw_browser_ci
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: "global.json"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: test/browser/package-lock.json
+
+      # The browser builds follow the pinned @playwright/test version, so the lock file keys them. Their system
+      # libraries are not cached and are installed every run (install-deps).
+      - name: Cache the Playwright browsers
+        id: browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('test/browser/package-lock.json') }}
+
+      - name: Install the harness and its browsers
+        working-directory: test/browser
+        env:
+          BROWSERS_CACHED: ${{ steps.browsers.outputs.cache-hit }}
+        run: |
+          npm ci
+          if [ "$BROWSERS_CACHED" = "true" ]; then
+            npx playwright install-deps chromium webkit
+          else
+            npx playwright install --with-deps chromium webkit
+          fi
+
+      - name: Browser tests
+        working-directory: test/browser
+        env:
+          CI: "true"
+          BW_BROWSER_PG: postgres://postgres:blocwerk@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/bw_browser_ci
+        run: npm test
+
+      - name: Upload the report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-tests-report
+          path: |
+            test/browser/playwright-report
+            test/browser/test-results
+            test/browser/.out/app.log
+          retention-days: 7
+
   upload-to-release:
     name: Upload to GitHub Release
     needs: [determine-runner, build, determine-jobs]
