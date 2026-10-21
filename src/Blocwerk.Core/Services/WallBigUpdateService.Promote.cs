@@ -335,6 +335,7 @@ public partial class WallBigUpdateService
         // opened, so a discarded staging is a closed, net-zero unit — its staging INSERTs and these
         // DELETEs cancel out — that cannot be resumed and leaves no dangling open batch or orphan staged
         // holds in the journal. Null in unit tests; the delete behaviour below is unchanged either way.
+        using (FeedAudienceScope.Begin(FeedAudience.Setters))
         using (FeedScope.Begin(wallId, ChangeJournal.WallUpdateBatchLabel))
         using (var journalBatch = changeJournal?.BeginWallUpdateBatch(wallId))
         {

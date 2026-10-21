@@ -12,17 +12,28 @@ namespace Blocwerk.Core.Feed.Structure;
 
 /// <summary>
 /// <see cref="WallMember"/>: <c>member.changed</c> for the wall's members (the member's user id and role, nothing else: the
-/// kiosk consent and PIN columns never leave the row). A subscription's audiences are fixed when it starts, so a member
+/// kiosk consent and PIN columns never leave the row, and a change to them alone writes nothing). A subscription's audiences are fixed when it starts, so a member
 /// who loses some of them also gets <c>access.revoked</c>, addressed to that user alone: removed (payload null, their views
 /// leave the wall) or demoted (payload <c>{ role }</c>, the new role, so their views subscribe again with the audiences
 /// that role still has and stop receiving, say, a setter's draft rows).
 /// </summary>
 internal sealed class WallMemberFeedMapper : IFeedMapper
 {
+    // The kiosk picker's consent and PIN: no member's view shows them, so a change to them alone writes nothing.
+    private static readonly IReadOnlySet<string> Unseen = new HashSet<string>(StringComparer.Ordinal)
+    {
+        nameof(WallMember.KioskConsentedAt), nameof(WallMember.KioskPinHash), nameof(WallMember.KioskPinLength),
+    };
+
     public IReadOnlyCollection<Type> EntityTypes { get; } = [typeof(WallMember)];
 
     public void Map(EntityEntry entry, FeedMapContext context)
     {
+        if (FeedEntryValues.OnlyModified(entry, Unseen))
+        {
+            return;
+        }
+
         var member = (WallMember)entry.Entity;
         var role = FeedEntryValues.Value<WallRole>(entry, nameof(WallMember.Role));
         context.Add(StructureRows.Row(FeedKinds.MemberChanged, member.WallId, member.UserId, FeedAudience.Members, new MemberPayload(role.ToString())));

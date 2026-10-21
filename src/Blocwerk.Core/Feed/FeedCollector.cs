@@ -22,7 +22,7 @@ internal static class FeedCollector
     {
         var map = Map(context, registry, logger);
         FeedBoulderResolver.Resolve(context, map, logger);
-        return FeedCollapse.Apply(map.Rows, FeedScope.Active, map.ActorUserId, map.Now);
+        return Finish(map);
     }
 
     public static async Task<IReadOnlyList<WallChange>> CollectAsync(
@@ -30,7 +30,14 @@ internal static class FeedCollector
     {
         var map = Map(context, registry, logger);
         await FeedBoulderResolver.ResolveAsync(context, map, logger, ct);
-        return FeedCollapse.Apply(map.Rows, FeedScope.Active, map.ActorUserId, map.Now);
+        return Finish(map);
+    }
+
+    private static IReadOnlyList<WallChange> Finish(FeedMapContext map)
+    {
+        var rows = FeedCollapse.Apply(map.Rows, FeedScope.Active, map.ActorUserId, map.Now);
+        FeedAudienceScope.Apply(rows);
+        return rows;
     }
 
     private static FeedMapContext Map(DbContext context, FeedMapperRegistry registry, ILogger logger)

@@ -4,6 +4,7 @@
 
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Feed;
 using Blocwerk.Core.Geometry;
 using Blocwerk.Core.Geometry.Footprints;
 using Blocwerk.Core.Geometry.View3D;
@@ -30,6 +31,7 @@ public sealed partial class WallVolumeService
     internal static async Task<(int Placed, int Changed)> PlaceHoldsAsync(
         BlocwerkDbContext db, Guid wallId, Guid modelId, ICollection<Guid>? changedIds, CancellationToken ct, IReadOnlySet<Guid>? only = null)
     {
+        using var feedScope = FeedBulkScope.Begin(wallId, "volume-placement", only?.Count);
         var json = await db.WallGeometryModels.AsNoTracking().Where(m => m.Id == modelId).Select(m => m.Json).FirstAsync(ct);
         var (frames, _) = FacetsOf(WallGeometryDocument.Parse(json));
         var rows = await db.WallVolumes.Where(v => v.GeometryModelId == modelId).ToListAsync(ct);

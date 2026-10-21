@@ -104,6 +104,7 @@ public partial class WallBigUpdateService
         {
             using var batch = changeJournal?.BeginWallUpdateBatch(wallId);
             using var feedScope = FeedScope.Begin(wallId, ChangeJournal.WallUpdateBatchLabel);
+            using var stagedAudience = FeedAudienceScope.Begin(FeedAudience.Setters);
             await db.SaveChangesAsync();
         }
     }

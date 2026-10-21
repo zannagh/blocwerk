@@ -1,6 +1,7 @@
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Feed;
 using Blocwerk.Core.HoldStacks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -68,6 +69,7 @@ public partial class WallPanelService
 
         db.Holds.Add(hold);
         await HoldStacker.StackNewAsync(db, [hold]);
+        using (FeedAudienceScope.Begin(FeedAudience.Setters))
         using (BeginUpdateBatch(wallId))
         {
             await db.SaveChangesAsync();
@@ -101,6 +103,7 @@ public partial class WallPanelService
             await HoldGlyphRefresher.TryRefreshAsync(db, [hold], logger);
         }
 
+        using (FeedAudienceScope.Begin(FeedAudience.Setters))
         using (BeginUpdateBatch(wallId))
         {
             await db.SaveChangesAsync();
@@ -122,6 +125,7 @@ public partial class WallPanelService
         var hold = await LoadStagedHoldAsync(db, wallId, holdId);
         await HoldDeletion.UnstackAsync(db, [hold.Id]);
         db.Holds.Remove(hold);
+        using (FeedAudienceScope.Begin(FeedAudience.Setters))
         using (BeginUpdateBatch(wallId))
         {
             await db.SaveChangesAsync();

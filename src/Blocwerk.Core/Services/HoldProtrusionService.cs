@@ -6,6 +6,7 @@ using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Capture;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Feed;
 using Blocwerk.Core.Geometry;
 using Blocwerk.Core.Geometry.Footprints;
 using Blocwerk.Core.Geometry.View3D;
@@ -35,6 +36,7 @@ public sealed class HoldProtrusionService(
 
     private async Task<HoldProtrusionRunResult?> RunSafelyAsync(Guid wallId, IReadOnlySet<Guid>? only, CancellationToken ct)
     {
+        using var feedScope = FeedBulkScope.Begin(wallId, "hold-protrusion", only?.Count);
         try
         {
             return await RunAsync(wallId, only, ct);

@@ -18,6 +18,9 @@ namespace Blocwerk.Core.Feed;
 /// </summary>
 internal static class FeedBoulderResolver
 {
+    /// <summary>The SQL comment on the boulder lookup, so a test or a slow-query log can tell it apart.</summary>
+    public const string LookupTag = "feed-boulder-lookup";
+
     public static void Resolve(DbContext context, FeedMapContext map, ILogger logger)
     {
         var lookup = Prepare(map);
@@ -28,7 +31,7 @@ internal static class FeedBoulderResolver
 
         try
         {
-            AddFacts(map, lookup, Query(context, lookup).ToList(), logger);
+            AddFacts(map, lookup, FeedLookupSavepoint.Run(context, () => Query(context, lookup).ToList()), logger);
         }
         catch (Exception ex)
         {
@@ -46,7 +49,7 @@ internal static class FeedBoulderResolver
 
         try
         {
-            AddFacts(map, lookup, await Query(context, lookup).ToListAsync(ct), logger);
+            AddFacts(map, lookup, await FeedLookupSavepoint.RunAsync(context, () => Query(context, lookup).ToListAsync(ct), ct), logger);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -90,6 +93,7 @@ internal static class FeedBoulderResolver
         return context.Set<Boulder>()
             .IgnoreQueryFilters()
             .AsNoTracking()
+            .TagWith(LookupTag)
             .Where(b => ids.Contains(b.Id))
             .Select(b => new FeedBoulderFacts(b.Id, b.WallId, b.IsDraft, b.Generation));
     }
@@ -117,10 +121,18 @@ internal static class FeedBoulderResolver
             ? FeedRows.Resync(wallId, FeedCollector.MappingFailedReason, map.ActorUserId, map.Now)
             : FeedBoulderRows.Changed(touch.BoulderId, wallId, generation, isDraft, isDraft);
 
+    // A failed lookup resyncs every wall it can name (the part's, else the scope's) and says plainly what it could not.
     private static void Fallback(FeedMapContext map, List<FeedBoulderTouch> lookup, Exception ex, ILogger logger)
     {
-        var walls = lookup.Where(t => t.WallId is not null).Select(t => t.WallId!.Value).Distinct().ToList();
+        var scopeWall = FeedScope.Active?.WallId;
+        var walls = lookup.Select(t => t.WallId ?? scopeWall).OfType<Guid>().Distinct().ToList();
+        var lost = lookup.Where(t => (t.WallId ?? scopeWall) is null).Select(t => t.BoulderId).ToList();
         logger.LogError(ex, "Feed boulder lookup failed for {Count} boulder(s); writing a resync of {Walls} instead", lookup.Count, walls);
+        if (lost.Count > 0)
+        {
+            logger.LogError("Feed boulder lookup failed and the wall of boulder(s) {BoulderIds} is unknown: no feed row was written for them", lost);
+        }
+
         foreach (var wall in walls)
         {
             map.Add(FeedRows.Resync(wall, FeedCollector.MappingFailedReason, map.ActorUserId, map.Now));

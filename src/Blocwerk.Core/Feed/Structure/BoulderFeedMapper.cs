@@ -10,7 +10,8 @@ namespace Blocwerk.Core.Feed.Structure;
 /// <summary>
 /// <see cref="Boulder"/>: <c>boulder.changed</c> or <c>boulder.deleted</c> with <c>{ generation, isDraft }</c>. A draft
 /// stays with the setters while it is one (added as a draft, edited as a draft, deleted as a draft). Publishing it, and
-/// taking a published boulder back to a draft, go to the whole wall (<see cref="FeedBoulderRows"/>).
+/// taking a published boulder back to a draft, go to the whole wall (<see cref="FeedBoulderRows"/>). A boulder restamped onto
+/// another generation writes a second row with the old one, as a hold does, so that generation's views reload too.
 /// </summary>
 internal sealed class BoulderFeedMapper : IFeedMapper
 {
@@ -29,5 +30,10 @@ internal sealed class BoulderFeedMapper : IFeedMapper
 
         var isDraft = boulder.IsDraft;
         context.Add(FeedBoulderRows.Changed(boulder.Id, boulder.WallId, generation, isDraft, settersOnly: isDraft && wasDraft));
+        var oldGeneration = FeedEntryValues.Original<int>(entry, nameof(Boulder.Generation));
+        if (entry.State == EntityState.Modified && oldGeneration != generation)
+        {
+            context.Add(FeedBoulderRows.Changed(boulder.Id, boulder.WallId, oldGeneration, wasDraft, settersOnly: isDraft && wasDraft));
+        }
     }
 }
