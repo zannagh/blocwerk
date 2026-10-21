@@ -125,8 +125,8 @@
         {
             // The result goes into the list it was read for, and only if this is still the latest load of that list.
             var list = _list;
-            var boulderId = BoulderId;
-            var read = () => CommentService.GetCommentsAsync(boulderId, 0, list.Window);
+            var (boulderId, token) = (BoulderId, ShareToken);
+            var read = () => CommentService.GetCommentsAsync(boulderId, 0, list.Window, token);
             void Commit((List<BoulderComment> Items, int Total) page)
             {
                 list.Load(page.Items, page.Total, _feed?.Viewer);

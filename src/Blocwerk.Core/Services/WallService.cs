@@ -130,11 +130,14 @@ public class WallService : IWallService
     /// <summary>
     /// Loads the wall's non-archived boulders with their creator and holds into the context, so EF fix-up
     /// fills <c>wall.Boulders</c> (and each boulder's <c>Wall</c>, <c>CreatedBy</c>, <c>BoulderHolds</c>).
+    /// Drafts only when <paramref name="includeDrafts"/>: they belong to the wall's members, never to a
+    /// share-token or anonymous-kiosk viewer, and every consumer of <c>wall.Boulders</c> (the 3D view's
+    /// highlighted boulder, the wall page's count) would otherwise hand them on.
     /// </summary>
-    private static async Task LoadActiveBouldersAsync(BlocwerkDbContext db, Guid wallId)
+    private static async Task LoadActiveBouldersAsync(BlocwerkDbContext db, Guid wallId, bool includeDrafts)
     {
         await db.Boulders
-            .Where(b => b.WallId == wallId && !b.IsArchived)
+            .Where(b => b.WallId == wallId && !b.IsArchived && (includeDrafts || !b.IsDraft))
             .Include(b => b.CreatedBy)
             .Include(b => b.BoulderHolds)
             .AsSplitQuery()
@@ -180,7 +183,9 @@ public class WallService : IWallService
                         || (h.WallPanelId == null && h.Generation == currentGeneration)
                         || h.Generation == currentGeneration + 1))
                 .ToListAsync();
-            await LoadActiveBouldersAsync(db, wallId);
+
+            // Guid.Empty is the anonymous kiosk: it reads like a share viewer, so it gets no drafts.
+            await LoadActiveBouldersAsync(db, wallId, includeDrafts: viewerId != Guid.Empty);
 
             return wall;
         }
@@ -210,7 +215,7 @@ public class WallService : IWallService
                 db.Attach(wall);
                 await db.WallMembers.Where(m => m.WallId == wall.Id).ToListAsync();
                 await db.Holds.Where(h => h.WallId == wall.Id).ToListAsync();
-                await LoadActiveBouldersAsync(db, wall.Id);
+                await LoadActiveBouldersAsync(db, wall.Id, includeDrafts: false);
 
                 // Live holds only for a share viewer — no in-flight staged rows. As in GetWallAsync the
                 // live set spans generations after a subset promote, so filter by the latest live panel
@@ -1933,6 +1938,32 @@ public class WallService : IWallService
                 .Where(wm => wm.WallId == wallId)
                 .OrderBy(wm => wm.JoinedAt)
                 .ToListAsync();
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
+    }
+
+    public async Task<bool> IsMemberAsync(Guid wallId)
+    {
+        using var op = BlocwerkMetrics.TimeOperation("Wall.IsMember", wallId);
+        try
+        {
+            User user;
+            try
+            {
+                user = await _currentUserService.GetCurrentUserAsync();
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return false;
+            }
+
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
+            return await db.Walls.AnyAsync(w => w.Id == wallId);
         }
         catch (Exception ex)
         {

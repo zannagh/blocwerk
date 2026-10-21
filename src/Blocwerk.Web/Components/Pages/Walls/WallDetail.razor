@@ -647,7 +647,7 @@ else
                             <span class="stat-label">Holds</span>
                         </div>
                         <button type="button" class="stat clickable" @onclick="GoToBoulders">
-                            <span class="stat-value">@_wall.Boulders.Count</span>
+                            <span class="stat-value">@ActiveBoulderCount</span>
                             <span class="stat-label">Boulders</span>
                         </button>
                         <button type="button" class="stat clickable" @onclick="GoToMembers">
@@ -1199,6 +1199,10 @@ else
             .ToList();
         _archivedCache = ApplySort(ApplyFilters(_items.Where(i => i.Boulder.IsArchived))).ToList();
     }
+
+    // The overview's count is the boulder list's own rows (drafts only where the list shows them), never
+    // _wall.Boulders: the count must not tell a share or anonymous-kiosk viewer that drafts exist.
+    private int ActiveBoulderCount => _boulders.Count(b => !b.IsArchived);
 
     private List<BoulderListItem> ActiveBoulders
     {
