@@ -5,6 +5,7 @@
 using System.Threading.Channels;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
+using Blocwerk.Core.Feed;
 using Blocwerk.Core.Geometry.Volumes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -58,6 +59,7 @@ public sealed class HoldRefinementQueue(IServiceScopeFactory scopes, ILogger<Hol
     /// <returns>A task.</returns>
     public async Task RunAsync(Guid wallId, IReadOnlyCollection<Guid> holdIds, CancellationToken ct)
     {
+        using var feedScope = FeedBulkScope.Begin(wallId, "hold-refinement", holdIds.Count);
         await using var scope = scopes.CreateAsyncScope();
         var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<BlocwerkDbContext>>();
         await using (var db = await factory.CreateDbContextAsync(ct))

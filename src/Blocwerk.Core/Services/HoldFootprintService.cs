@@ -43,6 +43,7 @@ public sealed class HoldFootprintService(
             await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, ct);
         }
 
+        using var feedScope = FeedBulkScope.Begin(wallId, "hold-footprints");
         return await RunAsync(wallId, null, ct)
             ?? throw new UserFacingException("This wall has no active geometry model, or outline detection is off.");
     }

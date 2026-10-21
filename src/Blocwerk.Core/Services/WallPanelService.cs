@@ -76,6 +76,10 @@ public partial class WallPanelService : IWallPanelService
         await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
         image = StoredPhotoSanitizer.Sanitize(image);
 
+        // A staged panel and its detections are the editors' until confirmed: one resync, for the setters only.
+        using var stagedAudience = FeedAudienceScope.Begin(FeedAudience.Setters);
+        using var feedScope = FeedScope.Begin(wallId, "panel-stage");
+
         var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId);
         if (wall is null)
         {
@@ -413,6 +417,9 @@ public partial class WallPanelService : IWallPanelService
         {
             throw new InvalidOperationException("Panel not found");
         }
+
+        using var stagedAudience = FeedAudienceScope.Begin(FeedAudience.Setters);
+        using var feedScope = FeedScope.Begin(wallId, "panel-discard");
 
         // Delete the panel's holds FIRST: Hold→WallPanel is SetNull on delete, so removing the
         // panel first would orphan its staged holds onto the center wall instead of deleting them.

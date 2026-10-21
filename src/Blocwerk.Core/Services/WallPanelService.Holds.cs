@@ -1,6 +1,7 @@
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Feed;
 using Blocwerk.Core.HoldStacks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -76,7 +77,13 @@ public partial class WallPanelService
         }
         db.Holds.Add(hold);
         await HoldStacker.StackNewAsync(db, [hold]);
-        await db.SaveChangesAsync();
+
+        // A hold on a staged panel is the editors' until the update is promoted, as for AddStagedHoldAsync.
+        using (stagedPanel ? FeedAudienceScope.Begin(FeedAudience.Setters) : null)
+        {
+            await db.SaveChangesAsync();
+        }
+
         if (!stagedPanel)
         {
             // The 3D model follows in the background, as for holds added through WallService.
