@@ -4,7 +4,7 @@
  * GET /api/walls/{w}/a/{sha} and /a/{sha}/{width} are content-addressed and immutable, so they are served
  * cache-first from `bw-a1-{partition}-img` (images) or `-3d` (everything else), keyed `/__bw/{sha}[/{width}]`: the
  * key drops the wall, `token`, `rev` and `bwretry`, because the bytes are fully named by the sha. A miss goes to the
- * network and only a plain 200 is stored. 404s, 206s, Range requests and anything uncacheable stay network-only.
+ * network and only a plain 200 whose ETag names the sha is stored (a proxy's 200 error page carries none). 404s, 206s, Range requests and anything uncacheable stay network-only.
  *
  * THE PARTITION. Each page (client) gets its label from /api/me/cache-partition, once, at its first asset request:
  * that is the cookie identity the page's requests carry, with no page cooperation needed, so a page with old JS (or
@@ -16,8 +16,11 @@
  *   - `none` (or a failed lookup) is network-only.
  * Wiping the old partition is the page's job (2.7's wipe rules), never this file's.
  *
- * OFFLINE. An unreachable lookup falls back to the last label, kept in `bw-sw-state` so it survives the worker being
- * stopped. The cookie cannot change while the server is unreachable, so that is still the identity on the wire.
+ * OFFLINE. An unreachable lookup (no network, a 5xx such as the proxy's 502 during a deploy, a body that is not the
+ * endpoint's JSON) falls back to the last label, kept in `bw-sw-state` so it survives the worker being stopped. The
+ * cookie cannot change while the server is unreachable, so that is still the identity on the wire. A lookup that
+ * hangs past ASSET_LOOKUP_TIMEOUT_MS is abandoned and that request goes network-only. Neither outcome is remembered
+ * for the page, so its next asset asks again.
  *
  * STORAGE REFUSED. Any error from the cache (QuotaExceededError, a full device, a private window) leaves that asset
  * network-only. The page always gets the network response; caching never fails a request.
@@ -28,6 +31,8 @@ const ASSET_LABEL = /^(anon|[uk]-[a-z2-7]{20})$/;
 const ASSET_STATE_CACHE = 'bw-sw-state';
 const ASSET_STATE_KEY = '/__bw/partition';
 const ASSET_MAX_CLIENTS = 64;
+const ASSET_LOOKUP_TIMEOUT_MS = 2500;
+// PROTO (the message protocol version) is service-worker.js's, which imports this file after declaring it.
 
 const assetPartitions = {
     current: null,
@@ -65,17 +70,21 @@ function storePartition(label) {
         .catch(() => undefined);
 }
 
-// The server's answer for the cookie this request carries. Answers apply in the order they were asked, so a slow
-// lookup never overwrites a newer one.
+// The server's answer for the cookie this request carries, as `{ label, settled }`. Only a real answer is settled
+// (remembered for the page); a fallback is not. Answers apply in the order they were asked, so a slow lookup never
+// overwrites a newer one.
 function lookupPartition() {
     const seq = ++assetPartitions.issued;
-    return fetch(ASSET_PARTITION_URL, { credentials: 'same-origin', cache: 'no-store' })
-        .then(
-            response => (response.ok ? response.json().then(body => body && body.partition, () => null) : null),
-            () => undefined)
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ASSET_LOOKUP_TIMEOUT_MS);
+    return fetch(ASSET_PARTITION_URL, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
+        .then(readPartitionAnswer, () => undefined)
         .then(answer => {
+            if (controller.signal.aborted) {
+                return { label: 'none', settled: false };
+            }
             if (answer === undefined) {
-                return lastKnownPartition();
+                return lastKnownPartition().then(label => ({ label, settled: false }));
             }
             const label = isCachingPartition(answer) ? answer : 'none';
             if (seq > assetPartitions.applied) {
@@ -85,9 +94,24 @@ function lookupPartition() {
                     storePartition(label);
                 }
             }
-            return label;
+            return { label, settled: true };
         })
-        .catch(() => 'none');
+        .catch(() => ({ label: 'none', settled: false }))
+        .finally(() => clearTimeout(timer));
+}
+
+// The endpoint's `partition`, or undefined when the server could not answer: a 5xx, status 0, an opaque or
+// redirected response, or a body that is not its JSON. A 4xx is an answer and means `none`.
+function readPartitionAnswer(response) {
+    if (!response || response.type !== 'basic' || response.status === 0 || response.status >= 500) {
+        return undefined;
+    }
+    if (!response.ok) {
+        return 'none';
+    }
+    return response.json().then(
+        body => (body && typeof body === 'object' && 'partition' in body ? body.partition : undefined),
+        () => undefined);
 }
 
 function lastKnownPartition() {
@@ -107,12 +131,18 @@ function partitionFor(clientId) {
     if (!clientId) {
         return Promise.resolve('none');
     }
-    let pending = assetPartitions.byClient.get(clientId);
+    const byClient = assetPartitions.byClient;
+    let pending = byClient.get(clientId);
     if (!pending) {
-        pending = lookupPartition();
-        assetPartitions.byClient.set(clientId, pending);
-        if (assetPartitions.byClient.size > ASSET_MAX_CLIENTS) {
-            assetPartitions.byClient.delete(assetPartitions.byClient.keys().next().value);
+        pending = lookupPartition().then(result => {
+            if (!result.settled && byClient.get(clientId) === pending) {
+                byClient.delete(clientId);
+            }
+            return result.label;
+        });
+        byClient.set(clientId, pending);
+        if (byClient.size > ASSET_MAX_CLIENTS) {
+            byClient.delete(byClient.keys().next().value);
         }
     }
     return pending;
@@ -130,14 +160,17 @@ function matchAsset(partition, key) {
         .catch(() => undefined);
 }
 
-function isStorableAsset(response) {
+// A no-store answer is never kept: the /a/ route sends one where the bytes must not outlive the request (a kiosk
+// session asking for a kind outside the tablet's cacheable class).
+function isStorableAsset(response, route) {
     return !!response
         && response.status === 200
         && response.type === 'basic'
+        && (response.headers.get('etag') || '').includes(route.sha)
         && !/no-store/i.test(response.headers.get('cache-control') || '');
 }
 
-function storeAsset(event, copy, route, key, partition) {
+function storeAsset(clientId, copy, route, key, partition) {
     if (assetPartitions.current !== partition) {
         return Promise.resolve();
     }
@@ -150,7 +183,7 @@ function storeAsset(event, copy, route, key, partition) {
             if (assetPartitions.current !== partition) {
                 return undefined;
             }
-            return cache.put(key, copy).then(() => announceCached(event.clientId, route, length));
+            return cache.put(key, copy).then(() => announceCached(clientId, route, length));
         })
         .catch(() => undefined);
 }
@@ -173,8 +206,8 @@ function announceCached(clientId, route, length) {
 
 function fetchAndStoreAsset(event, route, key, partition) {
     return fetch(event.request).then(response => {
-        if (isStorableAsset(response)) {
-            event.waitUntil(storeAsset(event, response.clone(), route, key, partition));
+        if (isStorableAsset(response, route)) {
+            event.waitUntil(storeAsset(event.clientId, response.clone(), route, key, partition));
         }
         return response;
     });

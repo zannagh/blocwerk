@@ -32,7 +32,10 @@ function workerFor(label, { status = 200, type = 'image/jpeg', body = 'jpeg-byte
         [PARTITION]: () => response(200, JSON.stringify({ partition: label }), { 'content-type': 'application/json' }),
     };
     for (const path of [asset(), asset(SHA, 1280, '?token=t1'), asset(SHA, 0), asset(OTHER_SHA), asset(OTHER_SHA, null)]) {
-        routes[path] = () => response(status, body, { 'content-type': type, 'content-length': String(body.length) });
+        const [, sha, width] = /\/a\/([0-9a-f]{64})(?:\/(\d+))?/.exec(path);
+        const etag = `"${sha}${width ? '-' + width : ''}"`;
+        routes[path] = () => response(status, body,
+            { 'content-type': type, 'content-length': String(body.length), etag });
     }
     return loadWorker({ routes, caches });
 }
@@ -115,8 +118,9 @@ test('a 404 (or any non-200) is passed through and never stored', async () => {
 
 test('an opaque or no-store response is not stored', async () => {
     const worker = workerFor(ALICE);
-    worker.routes[asset()] = () => response(200, 'x', { 'content-type': 'image/jpeg' }, 'opaque');
-    worker.routes[asset(OTHER_SHA)] = () => response(200, 'x', { 'content-type': 'image/jpeg', 'cache-control': 'no-store' });
+    worker.routes[asset()] = () => response(200, 'x', { 'content-type': 'image/jpeg', etag: `"${SHA}-1280"` }, 'opaque');
+    worker.routes[asset(OTHER_SHA)] = () => response(200, 'x',
+        { 'content-type': 'image/jpeg', 'cache-control': 'no-store', etag: `"${OTHER_SHA}-1280"` });
     await dispatchFetch(worker, asset()).settle();
     await dispatchFetch(worker, asset(OTHER_SHA)).settle();
     assert.equal(worker.stored.get(`bw-a1-${ALICE}-img`)?.size ?? 0, 0);
@@ -144,7 +148,7 @@ test('a switch while the bytes are in flight discards them instead of caching un
     const worker = workerFor(ALICE);
     let release;
     worker.routes[asset()] = () => new Promise(resolve => {
-        release = () => resolve(response(200, 'late', { 'content-type': 'image/jpeg' }));
+        release = () => resolve(response(200, 'late', { 'content-type': 'image/jpeg', etag: `"${SHA}-1280"` }));
     });
     const inFlight = dispatchFetch(worker, asset(), { clientId: 'alice-tab' });
     await new Promise(r => setTimeout(r, 0));
@@ -243,4 +247,71 @@ test('requests other than a same-origin GET of an /a/ sha URL are left as they w
     }
     assert.deepEqual(worker.fetches, [], 'not even a partition lookup');
     assert.equal(dispatchFetch(worker, '/css/app.css').handled, true, 'the shell routes still apply');
+});
+
+test("a 200 whose ETag does not name the sha (a proxy's error page) is served but not stored", async () => {
+    const worker = workerFor(ALICE);
+    worker.routes[asset()] = () => response(200, '<html>maintenance</html>', { 'content-type': 'image/jpeg' });
+    worker.routes[asset(OTHER_SHA)] = () => response(200, 'x', { 'content-type': 'image/jpeg', etag: `"${SHA}-1280"` });
+    assert.equal(await (await dispatchFetch(worker, asset()).settle()).text(), '<html>maintenance</html>');
+    await dispatchFetch(worker, asset(OTHER_SHA)).settle();
+    assert.equal(worker.stored.get(`bw-a1-${ALICE}-img`)?.size ?? 0, 0);
+});
+
+test("a kiosk session's no-store answer (a kind outside the tablet's class) is never stored", async () => {
+    const KIOSK = 'k-' + 'k'.repeat(20);
+    const worker = workerFor(KIOSK);
+    worker.routes[asset()] = () => response(200, 'thumb', {
+        'content-type': 'image/jpeg', etag: `"${SHA}-1280"`, 'cache-control': 'private, no-store' });
+    assert.equal(await (await dispatchFetch(worker, asset()).settle()).text(), 'thumb');
+    await dispatchFetch(worker, asset(), { clientId: 'tab-2' }).settle();
+    assert.equal(assetFetches(worker), 2, 'the second viewer asks the server again');
+    assert.equal(worker.stored.get(`bw-a1-${KIOSK}-img`)?.size ?? 0, 0);
+});
+
+test('a lookup the server cannot answer keeps the last label, persists nothing and is asked again', async () => {
+    const failures = {
+        '502': () => response(502, 'Bad Gateway'),
+        'opaque': () => response(200, JSON.stringify({ partition: BOB }), {}, 'opaque'),
+        'html 200': () => response(200, '<html>login</html>', { 'content-type': 'text/html' }),
+        'no partition': () => response(200, '{}', { 'content-type': 'application/json' }),
+    };
+    for (const [name, failure] of Object.entries(failures)) {
+        const worker = workerFor(ALICE);
+        await dispatchFetch(worker, asset(), { clientId: 'first' }).settle();
+        worker.routes[PARTITION] = failure;
+        const lookups = () => worker.fetches.filter(f => f.path === PARTITION).length;
+
+        const served = await dispatchFetch(worker, asset(), { clientId: 'during-deploy' }).settle();
+        assert.equal(await served.text(), 'jpeg-bytes', name);
+        assert.equal(assetFetches(worker), 1, `${name}: still served from the last label's cache`);
+        await dispatchFetch(worker, asset(OTHER_SHA), { clientId: 'during-deploy' }).settle();
+        assert.equal(worker.stored.get(`bw-a1-${ALICE}-img`).size, 2, `${name}: and still stored there`);
+        assert.equal(await worker.stored.get('bw-sw-state').get('/__bw/partition').clone().text(), ALICE, name);
+        assert.equal(lookups(), 3, `${name}: a failed lookup is not remembered for the page`);
+
+        worker.routes[PARTITION] = () => response(200, JSON.stringify({ partition: BOB }));
+        await dispatchFetch(worker, asset(), { clientId: 'during-deploy' }).settle();
+        assert.equal(worker.stored.has(`bw-a1-${BOB}-img`), true, `${name}: the next real answer applies`);
+    }
+});
+
+test('a lookup that hangs is abandoned at the timeout: that request goes to the network and nothing is remembered', async () => {
+    const timers = [];
+    const worker = loadWorker({ setTimeout: (fn, ms) => { timers.push({ fn, ms }); return timers.length; } });
+    Object.assign(worker.routes, workerFor(ALICE).routes);
+    await dispatchFetch(worker, asset(), { clientId: 'first' }).settle();
+    worker.routes[PARTITION] = () => new Promise(() => {});
+
+    const hung = dispatchFetch(worker, asset(), { clientId: 'stuck' });
+    await new Promise(r => setTimeout(r, 0));
+    assert.equal(timers.at(-1).ms, 2500);
+    timers.at(-1).fn();
+    assert.equal(await (await hung.settle()).text(), 'jpeg-bytes');
+    assert.equal(assetFetches(worker), 2, 'network-only, not served from the cache');
+    assert.equal(worker.stored.get(`bw-a1-${ALICE}-img`).size, 1);
+
+    worker.routes[PARTITION] = () => response(200, JSON.stringify({ partition: ALICE }));
+    await dispatchFetch(worker, asset(), { clientId: 'stuck' }).settle();
+    assert.equal(assetFetches(worker), 2, 'the page asks again and, answered, reads its cache');
 });

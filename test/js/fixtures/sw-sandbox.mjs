@@ -59,8 +59,9 @@ function fakeCaches(initial) {
 }
 
 // `routes` maps a path (or a path + search) to a function returning a Response, a promise of one, or throwing for a
-// network failure. Every call is recorded in `fetches`.
-export function loadWorker({ cacheNames = [], caches: initial = {}, routes = {} } = {}) {
+// network failure. Every call is recorded in `fetches`, and a fetch whose signal aborts rejects as fetch does.
+// `setTimeout` replaces the worker's timer (to fire a lookup timeout without waiting for it).
+export function loadWorker({ cacheNames = [], caches: initial = {}, routes = {}, setTimeout: timer = setTimeout } = {}) {
     const listeners = {};
     const posted = [];
     const fetches = [];
@@ -83,9 +84,20 @@ export function loadWorker({ cacheNames = [], caches: initial = {}, routes = {} 
         if (!route) {
             throw new TypeError('Failed to fetch');
         }
-        return route(input, init);
+        const signal = init && init.signal;
+        const answer = Promise.resolve().then(() => route(input, init));
+        if (!signal) {
+            return answer;
+        }
+        const aborted = new Promise((_, reject) => {
+            signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+        });
+        return Promise.race([answer, aborted]);
     };
-    const context = vm.createContext({ self, caches, fetch, Response, URL, Promise, Number, console });
+    const context = vm.createContext({
+        self, caches, fetch, Response, URL, Promise, Number, console,
+        AbortController, setTimeout: timer, clearTimeout,
+    });
     context.importScripts = (...paths) => {
         for (const path of paths) {
             vm.runInContext(readFileSync(fileURLToPath(new URL('.' + path, wwwroot + '/')), 'utf8'), context);
