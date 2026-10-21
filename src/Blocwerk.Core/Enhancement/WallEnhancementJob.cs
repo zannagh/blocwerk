@@ -44,6 +44,9 @@ public sealed partial class WallEnhancementJob(
     private readonly ConcurrentDictionary<Guid, byte> cancelled = new();
     private readonly ConcurrentDictionary<Guid, string> inHand = new();
 
+    /// <summary>The clock the step watchdog runs on (tests fire it by hand, so a step's timing never races the watchdog).</summary>
+    public TimeProvider Clock { get; init; } = TimeProvider.System;
+
     /// <summary>The watchdog: a step that runs longer is stopped and recorded as failed (then retried or discarded).</summary>
     public TimeSpan StepTimeout { get; init; } = TimeSpan.FromHours(4);
 

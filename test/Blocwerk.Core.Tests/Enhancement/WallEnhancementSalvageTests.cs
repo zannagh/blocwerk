@@ -16,10 +16,10 @@ public sealed class WallEnhancementSalvageTests
     {
         using var f = await WallEnhancementFixture.CreateAsync();
         var hold = await f.AddHoldAsync(0.3, 0.3);
-        var step = WritesThenWaits(f, hold, deaf: false, release: null);
-        var service = f.Service(step);
+        var written = new TaskCompletionSource();
+        var service = f.Service(WritesThenWaits(f, hold, written, release: null));
         await service.StartAsync(f.WallId);
-        await WaitUntilAsync(async () => (await f.GetHoldAsync(hold)).Radius > 0.04);
+        await Eventually.SignalAsync(written.Task, "the step's write");
 
         await service.CancelAsync(f.WallId);
         await f.Runner!.WhenIdleAsync((await f.RunAsync()).Id);
@@ -29,16 +29,25 @@ public sealed class WallEnhancementSalvageTests
         Assert.Equal(0.03, (await f.GetHoldAsync(hold)).Radius);
     }
 
+    /// <summary>A step the watchdog times out but that does not stop: what it wrote is listed, and Discard undoes it.</summary>
+    /// <remarks>
+    /// The watchdog runs on a hand-fired clock and fires only once the step's write is committed. With a real 150 ms
+    /// timer a loaded CI machine could time the step out while its write was still in flight; the write then honours
+    /// the cancellation, nothing is written and there is nothing to review (correct, but not what this test is about).
+    /// </remarks>
     [Fact]
     public async Task AStepTheWatchdogCouldNotStop_StillGetsItsReviewItems_AndDiscardUndoesThem()
     {
         using var f = await WallEnhancementFixture.CreateAsync();
-        (f.StepTimeout, f.StopGrace) = (TimeSpan.FromMilliseconds(150), TimeSpan.FromMilliseconds(100));
+        (f.Clock, f.StopGrace) = (new ManualTimeProvider(), TimeSpan.FromMilliseconds(100));
         var hold = await f.AddHoldAsync(0.3, 0.3);
-        var release = new TaskCompletionSource();
-        var service = f.Service(WritesThenWaits(f, hold, deaf: true, release));
+        var (written, release) = (new TaskCompletionSource(), new TaskCompletionSource());
+        var service = f.Service(WritesThenWaits(f, hold, written, release));
         await service.StartAsync(f.WallId);
-        await WaitUntilAsync(async () => (await f.RunAsync()).Status == WallEnhancementStatus.Failed);
+        await Eventually.SignalAsync(written.Task, "the step's write");
+
+        f.Clock.FireAll();
+        await Eventually.UntilAsync(async () => (await f.RunAsync()).Status == WallEnhancementStatus.Failed, "the run to stop");
 
         Assert.Equal(hold, Assert.Single(await f.ItemsAsync()).HoldId);
         release.SetResult();
@@ -47,17 +56,54 @@ public sealed class WallEnhancementSalvageTests
         Assert.Equal(0.03, (await f.GetHoldAsync(hold)).Radius);
     }
 
+    /// <summary>
+    /// The CI failure's interleaving, pinned: the watchdog fires while the step's write is still on its way. The write
+    /// honours the cancellation, so nothing is written, nothing is listed, and the run reviews a failed step: correct.
+    /// </summary>
+    [Fact]
+    public async Task AStepTimedOutBeforeItsWriteLands_WritesNothing_AndHasNothingToReview()
+    {
+        using var f = await WallEnhancementFixture.CreateAsync();
+        f.Clock = new ManualTimeProvider();
+        var hold = await f.AddHoldAsync(0.3, 0.3);
+        var entered = new TaskCompletionSource();
+        var slow = new FakeEnhancementStep("outlines", 100, WallEnhancementItemKind.Shape, async (ctx, ct) =>
+        {
+            entered.TrySetResult();
+            await Task.Delay(Timeout.Infinite, ct);
+            await using var db = await f.Journalling.CreateDbContextAsync(ct);
+            (await db.Holds.FirstAsync(h => h.Id == hold, ct)).Radius = 0.05;
+            await db.SaveChangesAsync(ct);
+            return WallEnhancementStepOutcome.Done("never");
+        });
+        var service = f.Service(slow);
+        var runId = (await service.StartAsync(f.WallId)).RunId!.Value;
+        await Eventually.SignalAsync(entered.Task, "the step to start");
+
+        f.Clock.FireAll();
+        await Eventually.SignalAsync(f.Runner!.WhenIdleAsync(runId), "the run to finish");
+
+        var view = await service.GetAsync(f.WallId);
+        Assert.Equal(WallEnhancementState.Review, view.State);
+        Assert.Contains("took longer", Assert.Single(view.Steps).Summary);
+        Assert.Empty(await f.ItemsAsync());
+        Assert.Equal(0.03, (await f.GetHoldAsync(hold)).Radius);
+    }
+
     [Fact]
     public async Task AStepThatNeverReturns_IsLetGoAfterTheObserveLimit_SoTheWallIsFreeAgain()
     {
         using var f = await WallEnhancementFixture.CreateAsync();
-        (f.StepTimeout, f.StopGrace, f.ObserveLimit) = (TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(300));
+        (f.Clock, f.StopGrace, f.ObserveLimit) = (new ManualTimeProvider(), TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(300));
         var hold = await f.AddHoldAsync(0.3, 0.3);
-        var service = f.Service(WritesThenWaits(f, hold, deaf: true, release: new TaskCompletionSource()));
+        var written = new TaskCompletionSource();
+        var service = f.Service(WritesThenWaits(f, hold, written, release: new TaskCompletionSource()));
         await service.StartAsync(f.WallId);
         var runId = (await f.RunAsync()).Id;
+        await Eventually.SignalAsync(written.Task, "the step's write");
 
-        await f.Runner!.WhenIdleAsync(runId).WaitAsync(TimeSpan.FromSeconds(10));
+        f.Clock.FireAll();
+        await Eventually.SignalAsync(f.Runner!.WhenIdleAsync(runId), "the run to be let go");
 
         Assert.False(WallEnhancementRunner.IsLive(runId));
         await using var db = f.Harness.CreateContext();
@@ -72,8 +118,8 @@ public sealed class WallEnhancementSalvageTests
         using var f = await WallEnhancementFixture.CreateAsync();
         f.StopGrace = TimeSpan.FromMilliseconds(100);
         var hold = await f.AddHoldAsync(0.3, 0.3);
-        var release = new TaskCompletionSource();
-        var job = f.Job([WritesThenWaits(f, hold, deaf: true, release)]);
+        var (written, release) = (new TaskCompletionSource(), new TaskCompletionSource());
+        var job = f.Job([WritesThenWaits(f, hold, written, release)]);
         await using (var db = f.Harness.CreateContext())
         {
             db.WallEnhancementRuns.Add(new WallEnhancementRun { WallId = f.WallId, Generation = 0, CreatedByUserId = f.Harness.Owner.Id });
@@ -83,10 +129,10 @@ public sealed class WallEnhancementSalvageTests
         var runId = (await f.RunAsync()).Id;
         using var shutdown = new CancellationTokenSource();
         var running = job.RunAsync(runId, shutdown.Token);
-        await WaitUntilAsync(async () => (await f.GetHoldAsync(hold)).Radius > 0.04);
+        await Eventually.SignalAsync(written.Task, "the step's write");
 
         await shutdown.CancelAsync();
-        await running.WaitAsync(TimeSpan.FromSeconds(10));
+        await Eventually.SignalAsync(running, "the job to return on shutdown");
 
         var run = await f.RunAsync();
         Assert.Equal(WallEnhancementStatus.Running, run.Status);
@@ -133,8 +179,12 @@ public sealed class WallEnhancementSalvageTests
         Assert.Single(WallEnhancementStepRecord.Parse((await f.RunAsync()).StepsJson).Single().BatchIds);
     }
 
-    /// <summary>A step that writes one hold in its batch, then waits: cooperatively, or (deaf) for a release only.</summary>
-    private static FakeEnhancementStep WritesThenWaits(WallEnhancementFixture f, Guid hold, bool deaf, TaskCompletionSource? release) =>
+    /// <summary>
+    /// A step that writes one hold in its batch, signals <paramref name="written"/> once that write is committed, then
+    /// waits: for its cancellation (no <paramref name="release"/>), or deaf to it for the release only.
+    /// </summary>
+    private static FakeEnhancementStep WritesThenWaits(
+        WallEnhancementFixture f, Guid hold, TaskCompletionSource written, TaskCompletionSource? release) =>
         new("outlines", 100, WallEnhancementItemKind.Shape, async (ctx, ct) =>
         {
             await using (var db = await f.Journalling.CreateDbContextAsync(ct))
@@ -144,23 +194,16 @@ public sealed class WallEnhancementSalvageTests
                 await db.SaveChangesAsync(ct);
             }
 
-            if (deaf)
+            written.TrySetResult();
+            if (release is null)
             {
-                await release!.Task;
+                await Task.Delay(Timeout.Infinite, ct);
             }
             else
             {
-                await Task.Delay(Timeout.Infinite, ct);
+                await release.Task;
             }
 
             return WallEnhancementStepOutcome.Done("written");
         });
-
-    private static async Task WaitUntilAsync(Func<Task<bool>> condition)
-    {
-        for (var i = 0; i < 250 && !await condition(); i++)
-        {
-            await Task.Delay(20);
-        }
-    }
 }
