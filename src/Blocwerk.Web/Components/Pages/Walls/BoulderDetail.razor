@@ -81,6 +81,9 @@ else
                 </div>
             </div>
 
+            @* An open inline editor, kept in the browser when the page is hidden (deploy-drafts.js). *@
+            <div hidden aria-hidden="true" data-bw-keep-key="@KeepKey" data-bw-keep-payload="@KeepPayload"></div>
+
             @if (_editMeta)
             {
                 <div class="boulder-meta-edit">
@@ -648,7 +651,7 @@ else
 
     private async Task SyncEditGuardAsync()
     {
-        _editGuardActive = await EditGuardInterop.SyncAsync(JS, "boulder-edit", _editLease is not null, _editGuardActive);
+        _editGuardActive = await EditGuardInterop.SyncAsync(JS, "boulder-edit", _editLease is not null, _editGuardActive, EditActivity);
     }
 
     private ElementReference _photoViewportRef;
@@ -711,6 +714,10 @@ else
 
         // Every render, not just the first: the lease toggles when an inline editor opens or closes.
         await SyncEditGuardAsync();
+        if (!_restoreChecked)
+        {
+            await RestoreKeptAsync();
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -718,6 +725,7 @@ else
         Cache.Changed -= OnCacheChanged;
         _statsFeed?.Dispose();
         _editLease?.Dispose();
+        DisposeDeployFlush();
 
         if (_editGuardActive)
         {
@@ -1137,10 +1145,12 @@ else
         _rating = new(null, 0, null);
         _publishError = null;
         OpenStatsFeed();
+        _restoreChecked = true;
         StateHasChanged();
 
         await LoadForCurrentRouteAsync();
         ReleaseStats();
+        _restoreChecked = false;
     }
 
     private async Task LoadForCurrentRouteAsync()
@@ -1756,6 +1766,8 @@ else
             _editLease = null;
             ReleaseStats();
         }
+
+        SyncDeployFlush();
     }
 
     private Task SaveMeta() => Guard(async () =>

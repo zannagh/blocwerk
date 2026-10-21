@@ -1,0 +1,145 @@
+// <copyright file="BoulderRevise.DeployFlush.cs" company="Blocwerk">
+// Copyright (c) Blocwerk. All rights reserved.
+// </copyright>
+
+using Blocwerk.Web.State;
+using Microsoft.AspNetCore.Components;
+
+namespace Blocwerk.Web.Components.Pages.Walls;
+
+/// <summary>
+/// The pre-deploy flush of an unsaved revise (see <see cref="CircuitEditFlush"/>). There is no "draft revision" of a
+/// live or historic boulder: <c>ReviseBoulderAsync</c> rewrites it in place and, for a historic one, brings it back
+/// live, so saving half a revise would publish it. Only a DRAFT boulder is saved on the server (its revise keeps it a
+/// draft). Everything else is kept on the device and restored into this page after the reload.
+/// </summary>
+public partial class BoulderRevise
+{
+    private IDisposable? _flushRegistration;
+    private Guid? _flushUserId;
+    private string? _pristineSnapshot;
+    private bool _restoreChecked;
+
+    [Inject]
+    private CircuitEditFlush EditFlush { get; set; } = default!;
+
+    [Inject]
+    private Blocwerk.Core.Abstractions.IKioskContext KioskContext { get; set; } = default!;
+
+    private string KeepKey => KeptCopyKey.For(_flushUserId, KioskContext, $"boulder-revise:{BoulderId}");
+
+    private string ReviseUrl => $"/walls/{WallId}/boulders/{BoulderId}/revise";
+
+    private bool IsDirty => _pristineSnapshot is not null && SnapshotJson != _pristineSnapshot;
+
+    // The form with the boulder as it was when this edit began (see BaseKeep).
+    private string? KeepPayload => IsDirty ? new BaseKeep(SnapshotJson, _pristineSnapshot!).ToJson() : null;
+
+    /// <summary>Called once a boulder this user may revise has loaded: what it looks like now is "nothing to save".</summary>
+    private void ArmDeployFlush()
+    {
+        _pristineSnapshot = SnapshotJson;
+        _restoreChecked = false;
+        _flushRegistration ??= EditFlush.Register(
+            InvokeAsync, FlushForDeployAsync, () => new EditFlushTarget("boulder revise", WallId, _flushUserId));
+    }
+
+    private void DisarmDeployFlush()
+    {
+        _pristineSnapshot = null;
+        _restoreChecked = true;
+    }
+
+    private async Task<EditFlushOutcome> FlushForDeployAsync()
+    {
+        var action = _boulder is null
+            ? EditFlushAction.Nothing
+            : EditorFlushPolicy.BoulderRevise(IsDirty, _isSubmitting, _boulder.IsDraft);
+        if (action == EditFlushAction.Nothing)
+        {
+            return EditFlushOutcome.NothingToSave;
+        }
+
+        if (action == EditFlushAction.SaveOnServer && await TrySaveDraftAsync())
+        {
+            return EditFlushOutcome.SavedOnServer;
+        }
+
+        var notice = $"Your changes to “{_name}” were kept on this device before an update; they are back in Revise.";
+        return KeepPayload is { } payload && await DeployDraftInterop.KeepAsync(JS, KeepKey, payload, notice, ReviseUrl)
+            ? EditFlushOutcome.KeptOnDevice
+            : EditFlushOutcome.NotSaved;
+    }
+
+    private async Task<bool> TrySaveDraftAsync()
+    {
+        try
+        {
+            _isSubmitting = true;
+            await BoulderService.ReviseBoulderAsync(
+                BoulderId, _selectedHolds, _name, _grade, _allKickboardOn, EffectiveHandsFollowFeet,
+                _footColorOnly ?? string.Empty, _noMatch, _selectedSetters.ToList());
+
+            // Saved. Everything below needs the browser, is bounded, and cannot undo the save.
+            await DeployDraftInterop.TellSavedAsync(JS, KeepKey, $"Your draft “{_name}” was saved before an update.", DetailUrl);
+            try
+            {
+                Navigation.NavigateTo(DetailUrl);
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or NavigationException)
+            {
+                // The browser is unreachable; the saved draft is what this page reloads with.
+            }
+
+            return true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _isSubmitting = false;
+            Logger.LogWarning(ex, "Pre-deploy save of draft {BoulderId} failed; keeping it on the device", BoulderId);
+            return false;
+        }
+    }
+
+    /// <summary>Takes back a revise kept on this device for this boulder, once per loaded route.</summary>
+    private async Task RestoreKeptAsync()
+    {
+        _restoreChecked = true;
+        var kept = BaseKeep.TryParse((await DeployDraftInterop.TakeAsync(JS, KeepKey))?.Payload);
+        var snapshot = BoulderFormSnapshot.TryParse(kept?.State);
+        if (kept is null || snapshot is null || snapshot.Id != BoulderId)
+        {
+            return;
+        }
+
+        if (kept.Base != _pristineSnapshot)
+        {
+            await DeployDraftInterop.ShowAsync(JS, BaseKeep.ChangedSince, ReviseUrl);
+        }
+
+        var displayIds = _displayHolds.Select(h => h.Id).ToHashSet();
+        _name = string.IsNullOrWhiteSpace(snapshot.Name) ? _name : snapshot.Name;
+        _grade = snapshot.Grade;
+        _allKickboardOn = snapshot.KickboardFootholdsOn;
+        _handsFollowFeet = snapshot.HandsFollowFeet;
+        _footColorOnly = string.IsNullOrEmpty(snapshot.FootColorOnly) ? null : snapshot.FootColorOnly;
+        _noMatch = snapshot.NoMatch;
+        _selectedHolds = (snapshot.Holds ?? []).Where(h => displayIds.Contains(h.HoldId)).Select(h => h.ToInput()).ToList();
+        _selectedSetters.Clear();
+        foreach (var id in (snapshot.Setters ?? []).Where(id => _members.Any(m => m.UserId == id)))
+        {
+            _selectedSetters.Add(id);
+        }
+
+        StateHasChanged();
+    }
+
+    private void DisposeDeployFlush()
+    {
+        _flushRegistration?.Dispose();
+        if (!EditFlush.Stopping)
+        {
+            _ = DeployDraftInterop.DropAsync(JS, KeepKey);
+        }
+    }
+}

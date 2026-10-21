@@ -178,6 +178,8 @@
 
         @* Live form snapshot for the offline submit path (offline-boulder.js). *@
         <div id="bw-boulder-form" hidden aria-hidden="true" data-bw-boulder-snapshot="@SnapshotJson"></div>
+        @* Kept in the browser when the page is hidden, so a deploy while it sleeps cannot lose it (deploy-drafts.js). *@
+        <div hidden aria-hidden="true" data-bw-keep-key="@KeepKey" data-bw-keep-payload="@KeepPayload"></div>
 
         <button class="btn-submit" @onclick="OnSaveClicked"
                 data-bw-boulder-action="revise" data-bw-boulder-form="#bw-boulder-form"
@@ -256,11 +258,15 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         await SyncEditGuardAsync();
+        if (!_restoreChecked && _pristineSnapshot is not null)
+        {
+            await RestoreKeptAsync();
+        }
     }
 
     private async Task SyncEditGuardAsync()
     {
-        _editGuardActive = await EditGuardInterop.SyncAsync(JS, "boulder-revise", _editLease is not null, _editGuardActive);
+        _editGuardActive = await EditGuardInterop.SyncAsync(JS, "boulder-revise", _editLease is not null, _editGuardActive, EditActivity);
     }
 
     // A dedicated foothold in the radial experience is either a per-hold "Foot" mark or a foot-colour rule.
@@ -323,6 +329,7 @@
     private void ResetRouteState()
     {
         ResetPrefillState();
+        DisarmDeployFlush();
         _wall = null;
         _boulder = null;
         _notFound = false;
@@ -368,6 +375,7 @@
         }
 
         _isCreator = _boulder.CreatedByUserId == user.Id;
+        _flushUserId = user.Id;
         // A wall admin (a WallRole.Admin member of this wall) may revise ANY boulder on the wall,
         // not only the ones they created — same membership-role check used across the wall UI.
         // The wall owner counts as an admin even without an explicit Admin member row, matching
@@ -440,6 +448,8 @@
                 _referenceGeneration = holdGen;
             }
         }
+
+        ArmDeployFlush();
     }
 
     // The photo behind the picker: the current panel's image, else null so the picker falls back to
@@ -559,6 +569,7 @@
     public void Dispose()
     {
         _editLease?.Dispose();
+        DisposeDeployFlush();
 
         if (_editGuardActive)
         {

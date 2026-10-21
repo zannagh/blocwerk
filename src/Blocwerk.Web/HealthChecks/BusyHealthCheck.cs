@@ -1,5 +1,6 @@
 using Blocwerk.Web.State;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Options;
 
 namespace Blocwerk.Web.HealthChecks;
 
@@ -9,14 +10,15 @@ namespace Blocwerk.Web.HealthChecks;
 /// Unhealthy) while busy, so the main <c>/health</c> endpoint stays 200 during normal editing; the
 /// deploy gate at <c>/health/ready-to-deploy</c> maps Degraded to 503 to hold a deploy back.
 /// </summary>
-public sealed class BusyHealthCheck : IHealthCheck
+/// <remarks>
+/// An open editor counts only while its user is present (<see cref="EditDeployGatePolicy"/>): input within
+/// <see cref="EditPresenceOptions.PresenceWindow"/>, and the day's cutoff after the lease started not yet passed
+/// (<see cref="EditDeployCutoff"/>).
+/// Leases that do not hold the gate are still listed, with <c>holdsGate = false</c>, so an idle report says why.
+/// </remarks>
+public sealed class BusyHealthCheck(EditActivityRegistry registry, IOptions<EditPresenceOptions>? options = null) : IHealthCheck
 {
-    private readonly EditActivityRegistry registry;
-
-    public BusyHealthCheck(EditActivityRegistry registry)
-    {
-        this.registry = registry;
-    }
+    private readonly EditPresenceOptions presence = options?.Value ?? new EditPresenceOptions();
 
     public Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context, CancellationToken cancellationToken = default)
@@ -24,51 +26,44 @@ public sealed class BusyHealthCheck : IHealthCheck
         // One clock for the whole check, so the count and the ages can never disagree.
         var now = DateTimeOffset.UtcNow;
         var snapshot = registry.Snapshot(now);
+        var holding = snapshot.Count(e => EditDeployGatePolicy.HoldsGate(e, now, presence));
 
-        if (snapshot.Count == 0)
+        // The clocks are reported separately, so the next incident says WHICH one was about to run out
+        // rather than leaving it to be re-derived: idleSeconds is how long the circuit has not proved it
+        // is connected, userIdleSeconds how long no human has touched the editor, hiddenSeconds how long
+        // its page has been out of sight.
+        var data = new Dictionary<string, object>
         {
-            var idleData = new Dictionary<string, object>
-            {
-                ["busy"] = false,
-                ["count"] = 0,
-            };
-
-            return Task.FromResult(HealthCheckResult.Healthy("Idle: no in-flight edits.", idleData));
-        }
-
-        // Two clocks, reported separately, so the next incident says WHICH one was about to run out
-        // rather than leaving it to be re-derived: idleSeconds is how long the circuit has not
-        // proved it is connected, userIdleSeconds how long no human has done anything in it. A
-        // Maintenance entry has neither — nothing heartbeats it and nobody clicks in it — so it is
-        // measured against its absolute cap instead, and its idle seconds simply equal its age.
-        var details = snapshot.Select(e => Describe(e, now)).ToList();
-
-        var busyData = new Dictionary<string, object>
-        {
-            ["busy"] = true,
-            ["count"] = snapshot.Count,
-            ["leaseTtlSeconds"] = (int)EditActivityPolicy.LeaseTimeToLive.TotalSeconds,
-            ["inactivityTtlSeconds"] = (int)EditActivityPolicy.InactivityTimeToLive.TotalSeconds,
-            ["details"] = details,
+            ["busy"] = holding > 0,
+            ["count"] = holding,
         };
 
+        if (snapshot.Count > 0)
+        {
+            data["leases"] = snapshot.Count;
+            data["leaseTtlSeconds"] = (int)EditActivityPolicy.LeaseTimeToLive.TotalSeconds;
+            data["inactivityTtlSeconds"] = (int)EditActivityPolicy.InactivityTimeToLive.TotalSeconds;
+            data["presenceWindowSeconds"] = (int)presence.PresenceWindow.TotalSeconds;
+            data["cutoffTimeZone"] = presence.CutoffTimeZone;
+            data["cutoffTimeOfDay"] = presence.CutoffTimeOfDay.ToString("hh\\:mm", System.Globalization.CultureInfo.InvariantCulture);
+            data["details"] = snapshot.Select(e => Describe(e, now)).ToList();
+        }
+
+        if (holding == 0)
+        {
+            var message = snapshot.Count == 0
+                ? "Idle: no in-flight edits."
+                : $"Idle: {snapshot.Count} open edit(s), none with a present user.";
+            return Task.FromResult(HealthCheckResult.Healthy(message, data));
+        }
+
         return Task.FromResult(HealthCheckResult.Degraded(
-            $"Busy: {snapshot.Count} in-flight edit(s).", data: busyData));
+            $"Busy: {holding} in-flight edit(s).", data: data));
     }
 
-    private static object Describe(EditActivityEntry entry, DateTimeOffset now)
+    private object Describe(EditActivityEntry entry, DateTimeOffset now)
     {
-        var maintenance = EditActivityPolicy.IsBackgroundWork(entry.EditKind);
-        var heartbeat = EditActivityPolicy.HeartbeatRemaining(entry, now);
-        var activity = EditActivityPolicy.ActivityRemaining(entry, now);
-
-        var expiresIn = maintenance
-            ? EditActivityPolicy.MaintenanceRemaining(entry, now)
-            : (heartbeat <= activity ? heartbeat : activity);
-
-        var expiresBy = maintenance
-            ? "maintenanceCap"
-            : (heartbeat <= activity ? "heartbeat" : "inactivity");
+        var (expiresIn, expiresBy) = EditDeployGatePolicy.Remaining(entry, now, presence);
 
         return new
         {
@@ -77,9 +72,16 @@ public sealed class BusyHealthCheck : IHealthCheck
             startedUtc = entry.StartedUtc,
             lastSeenUtc = entry.LastSeenUtc,
             lastActivityUtc = entry.LastActivityUtc,
+            hiddenSinceUtc = entry.HiddenSinceUtc,
+            cutoffUtc = EditActivityPolicy.IsBackgroundWork(entry.EditKind)
+                ? (DateTimeOffset?)null
+                : EditDeployCutoff.NextAfter(entry.StartedUtc, EditDeployCutoff.Zone(presence), presence.CutoffTimeOfDay),
             ageSeconds = (int)(now - entry.StartedUtc).TotalSeconds,
             idleSeconds = (int)(now - entry.LastSeenUtc).TotalSeconds,
             userIdleSeconds = (int)(now - entry.LastActivityUtc).TotalSeconds,
+            hiddenSeconds = entry.HiddenSinceUtc is { } hidden ? (int)(now - hidden).TotalSeconds : 0,
+            presenceReported = entry.PresenceReported,
+            holdsGate = expiresIn > TimeSpan.Zero,
             expiresBy,
             expiresInSeconds = (int)expiresIn.TotalSeconds,
         };

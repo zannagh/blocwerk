@@ -151,6 +151,12 @@
         event.preventDefault();
 
         queue.enqueue(entry.kind, entry.payload).then(() => {
+            // The queue owns this form now: a copy kept for a deploy (deploy-drafts.js) must not bring it back as
+            // a second boulder.
+            if (window.bwDeployDrafts && window.bwDeployDrafts.forgetVisible) {
+                window.bwDeployDrafts.forgetVisible();
+            }
+
             const nav = element.getAttribute('data-bw-boulder-nav');
             if (nav) {
                 // Optimistic navigation. Offline this lands on the PWA offline fallback (the

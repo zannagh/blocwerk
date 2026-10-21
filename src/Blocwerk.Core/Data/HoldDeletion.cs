@@ -45,12 +45,14 @@ public static class HoldDeletion
     /// promote path does, since a boulder it just retired is not awaiting a review any more.
     /// </param>
     /// <param name="ct">Cancellation token.</param>
+    /// <param name="retired">When given, receives each boulder this flagged historic (for a caller that names them).</param>
     public static async Task<int> PrepareHoldsForDeleteAsync(
         BlocwerkDbContext db,
         IReadOnlyCollection<Guid> holdIds,
         HoldDeleteBoulderPolicy boulderPolicy = HoldDeleteBoulderPolicy.DetachAndFlagHistoric,
         bool clearNeedsReview = false,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        ICollection<Boulder>? retired = null)
     {
         if (holdIds.Count == 0)
         {
@@ -61,7 +63,7 @@ public static class HoldDeletion
         var historic = 0;
         if (boulderPolicy == HoldDeleteBoulderPolicy.DetachAndFlagHistoric)
         {
-            historic = await DetachBoulderHoldsAsync(db, ids, clearNeedsReview, ct);
+            historic = await DetachBoulderHoldsAsync(db, ids, clearNeedsReview, retired, ct);
         }
 
         await RemoveHoldLinksAsync(db, ids, ct);
@@ -76,9 +78,10 @@ public static class HoldDeletion
         Guid holdId,
         HoldDeleteBoulderPolicy boulderPolicy = HoldDeleteBoulderPolicy.DetachAndFlagHistoric,
         bool clearNeedsReview = false,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        ICollection<Boulder>? retired = null)
     {
-        return PrepareHoldsForDeleteAsync(db, new[] { holdId }, boulderPolicy, clearNeedsReview, ct);
+        return PrepareHoldsForDeleteAsync(db, new[] { holdId }, boulderPolicy, clearNeedsReview, ct, retired);
     }
 
     /// <summary>
@@ -100,7 +103,7 @@ public static class HoldDeletion
     }
 
     private static async Task<int> DetachBoulderHoldsAsync(
-        BlocwerkDbContext db, List<Guid> ids, bool clearNeedsReview, CancellationToken ct)
+        BlocwerkDbContext db, List<Guid> ids, bool clearNeedsReview, ICollection<Boulder>? retired, CancellationToken ct)
     {
         // A membership the caller already took off the hold in this unit of work (moved onto another hold) is not on
         // the dying hold any more, and its boulder is not retired with it.
@@ -118,6 +121,7 @@ public static class HoldDeletion
             {
                 membership.Boulder.IsHistoric = true;
                 historic++;
+                retired?.Add(membership.Boulder);
 
                 if (clearNeedsReview)
                 {

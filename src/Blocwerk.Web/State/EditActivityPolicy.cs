@@ -118,6 +118,13 @@ public static class EditActivityPolicy
     public static readonly TimeSpan MaintenanceMaxLifetime = TimeSpan.FromHours(6);
 
     /// <summary>
+    /// How long an editing lease may go without any presence report from its page before the heartbeat logs a
+    /// warning. The page reports its visibility as soon as the editor opens, so a few minutes of silence means
+    /// <c>edit-presence.js</c> is not running there, and that lease looks idle to the deploy gate.
+    /// </summary>
+    public static readonly TimeSpan PresenceReportExpectedWithin = TimeSpan.FromMinutes(3);
+
+    /// <summary>
     /// Whether an entry has gone quiet for long enough to stop counting as in-flight work.
     /// </summary>
     public static bool IsExpired(EditActivityEntry entry, DateTimeOffset now)

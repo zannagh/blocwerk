@@ -120,6 +120,12 @@ public interface IWallService
 
     Task DeleteHoldAsync(Guid holdId);
 
+    /// <summary>
+    /// <see cref="DeleteHoldAsync"/>, answering with the boulders the delete retired (made historic), so a caller can
+    /// name them to the user.
+    /// </summary>
+    Task<IReadOnlyList<RetiredBoulder>> DeleteHoldRetiringAsync(Guid holdId);
+
     Task ClearAutoDetectedHoldsAsync(Guid wallId);
 
     Task SetBorderPointsAsync(Guid wallId, List<ShapePoint> points);

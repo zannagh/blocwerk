@@ -380,7 +380,7 @@
     else if (CanEdit && (_pendingChanges > 0 || _alignmentChangedIds.Count > 0))
     {
         <div class="batch-bar">
-            <button class="batch-save" @onclick="SaveChanges">
+            <button class="batch-save" @onclick="SaveChanges" disabled="@_isSavingBatch">
                 @if (_pendingChanges > 0)
                 {
                     @($"Save Changes ({_pendingChanges})")
@@ -2837,45 +2837,6 @@
         _pendingShapeFocus = false;
         var zoom = Math.Clamp(0.12 / Math.Max(hold.Radius, 0.004), 2.0, 10.0);
         await JS.InvokeVoidAsync("bwViewport.centerOn", _viewportRef, hold.X, hold.Y, zoom);
-    }
-
-    private async Task SaveChanges()
-    {
-        var added = _addedHolds.ToList();
-        var manuallyTouchedIds = new HashSet<Guid>(_updatedHoldIds);
-        manuallyTouchedIds.UnionWith(_alignmentChangedIds);
-        var updated = Holds.Where(h => manuallyTouchedIds.Contains(h.Id) && !_addedHolds.Any(a => a.Id == h.Id)).ToList();
-        var deleted = _deletedHoldIds.ToList();
-
-        var markedChanged = _markChangedHoldIds.ToList();
-
-        if (OnBatchSave.HasDelegate)
-        {
-            // Only a hold that still has no outline is a reset: one redrawn afterwards saves its new outline.
-            var resetToCircle = updated.Where(h => circleResetIds.Contains(h.Id) && h.ShapePoints == null).Select(h => h.Id).ToHashSet();
-            var restacked = updated.Select(h => h.Id).Where(restackedIds.Contains).ToHashSet();
-            await OnBatchSave.InvokeAsync(new BatchChanges(added, updated, deleted, markedChanged) { ResetToCircle = resetToCircle, Restacked = restacked });
-        }
-        else
-        {
-            foreach (var h in added) await OnHoldAdded.InvokeAsync(h);
-            foreach (var h in updated) await OnHoldUpdated.InvokeAsync(h);
-            foreach (var id in deleted) await OnHoldDeleted.InvokeAsync(id);
-
-            // The mark goes through OnMarkHoldModified, never through the hold write, so a marked
-            // hold's peripheral and overlap twins are flagged the same way whichever surface asked
-            // for it. Geometry first: the flag describes the hold as saved.
-            foreach (var id in markedChanged) await OnMarkHoldModified.InvokeAsync(id);
-        }
-
-        _addedHolds.Clear();
-        _updatedHoldIds.Clear();
-        circleResetIds.Clear();
-        restackedIds.Clear();
-        _deletedHoldIds.Clear();
-        _markChangedHoldIds.Clear();
-        _alignmentChangedIds.Clear();
-        _snapshotHolds = null;
     }
 
     private void DiscardChanges()

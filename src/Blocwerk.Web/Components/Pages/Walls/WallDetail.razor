@@ -1041,7 +1041,11 @@ else
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         // Every render, not just the first: the lease toggles when edit mode is entered or left.
-        _editGuardActive = await EditGuardInterop.SyncAsync(JS, "wall-edit", _editLease is not null, _editGuardActive);
+        _editGuardActive = await EditGuardInterop.SyncAsync(JS, "wall-edit", _editLease is not null, _editGuardActive, EditActivity);
+        if (!_wallKeepChecked && _isEditing && _panelEditor is not null)
+        {
+            await RestoreKeptDecisionsAsync();
+        }
 
         // Not on firstRender: the boulder section only exists once the wall has loaded. watchFold is
         // a no-op on a page it already watches, and it needs no teardown (its listeners live on nodes
@@ -1489,6 +1493,7 @@ else
     {
         Cache.Changed -= OnCacheChanged;
         _editLease?.Dispose();
+        _flushRegistration?.Dispose();
 
         if (_editGuardActive)
         {
@@ -1649,7 +1654,7 @@ else
 
         foreach (var holdId in changes.Deleted)
         {
-            await WallService.DeleteHoldAsync(holdId);
+            _lastBatchRetired.AddRange(await WallService.DeleteHoldRetiringAsync(holdId));
             _holds.RemoveAll(h => h.Id == holdId);
         }
 
@@ -1871,7 +1876,7 @@ else
 
         foreach (var holdId in changes.Deleted)
         {
-            await WallService.DeleteHoldAsync(holdId);
+            _lastBatchRetired.AddRange(await WallService.DeleteHoldRetiringAsync(holdId));
         }
 
         await LoadEditingPanelHolds();
@@ -1930,6 +1935,8 @@ else
             _editLease?.Dispose();
             _editLease = null;
         }
+
+        SyncDeployFlush();
     }
 
     private Task GoToBoulders() => _carousel?.GoToPageAsync(3) ?? Task.CompletedTask;

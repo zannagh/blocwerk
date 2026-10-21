@@ -3,6 +3,7 @@
 @using Blocwerk.Web.Components.Layout
 @using Blocwerk.Core.Abstractions
 @inject ICurrentUserService CurrentUserService
+@inject IKioskContext KioskContext
 
 <!DOCTYPE html>
 <html lang="en">
@@ -88,7 +89,7 @@
    real page load: the header Login/Logout links and the kiosk act-as/release forms all carry
    data-enhance-nav="false". *@
 
-<body data-bw-user="@ActingUserId">
+<body data-bw-user="@ActingUserId" data-bw-kiosk="@KioskKeyId">
     <Routes />
 
     @* Blazor sets components-reconnect-* classes and raises components-reconnect-state-changed on
@@ -186,6 +187,8 @@
        it, and before maintenance.js reads it in safeToReload(). Order is otherwise not load-bearing:
        both sides read window.bwEditGuard lazily, inside functions. *@
     <script src="@Assets["js/edit-guard.js"]"></script>
+    <script src="@Assets["js/edit-presence.js"]"></script>
+    <script src="@Assets["js/deploy-drafts.js"]"></script>
     <script src="@Assets["js/maintenance.js"]"></script>
     <script src="@Assets["js/offline-status.js"]"></script>
     <script src="@Assets["js/pwa.js"]"></script>
@@ -197,6 +200,10 @@
 
 @code {
     private string? ActingUserId;
+
+    // The tablet's kiosk key id, so deploy-drafts.js can tell a kiosk member from the same member at home (its kept
+    // copies are partitioned by this plus the user; see KeptCopyKey).
+    private string? KioskKeyId;
 
     // Empty for anonymous pages, which is exactly right: an action queued with no known user stays
     // unstamped and keeps the pre-existing behaviour. GetCurrentUserAsync throws for anonymous
@@ -212,5 +219,8 @@
         {
             ActingUserId = null;
         }
+
+        await KioskContext.InitializeAsync();
+        KioskKeyId = KioskContext.IsKiosk ? KioskContext.KioskApiKeyId?.ToString() : null;
     }
 }

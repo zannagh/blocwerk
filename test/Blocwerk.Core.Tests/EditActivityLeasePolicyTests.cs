@@ -202,7 +202,8 @@ public class EditActivityLeasePolicyTests
 
         activity.Touch(DateTimeOffset.UtcNow);
 
-        var result = await new BusyHealthCheck(registry).CheckHealthAsync(
+        var options = Microsoft.Extensions.Options.Options.Create(EditDeployGatePresenceTests.WithCutoffFarFrom(opened));
+        var result = await new BusyHealthCheck(registry, options).CheckHealthAsync(
             new HealthCheckContext(), CancellationToken.None);
 
         Assert.Equal(HealthStatus.Degraded, result.Status);
@@ -216,9 +217,10 @@ public class EditActivityLeasePolicyTests
         Assert.InRange((int)fields["idleSeconds"]!, 0, 5);
         Assert.InRange((int)fields["userIdleSeconds"]!, 1615, 1630);
 
-        // Both clocks are running; the report names the one that will run out first. Here that is
-        // the inactivity window, which is the whole point of tracking it separately.
-        Assert.Equal("inactivity", fields["expiresBy"]);
+        // Both clocks are running; the report names the one that will let go first. Here that is the
+        // presence window, which is the whole point of tracking it separately.
+        Assert.Equal("presence", fields["expiresBy"]);
+        Assert.Equal(true, fields["holdsGate"]);
         Assert.InRange((int)fields["expiresInSeconds"]!, 170, 190);
     }
 }
