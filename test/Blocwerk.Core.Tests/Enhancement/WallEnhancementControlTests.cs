@@ -18,10 +18,12 @@ public sealed class WallEnhancementControlTests
         using var f = await WallEnhancementFixture.CreateAsync();
         var hold = await f.AddHoldAsync(0.3, 0.3);
         var hang = true;
+        var entered = new TaskCompletionSource();
         var step = new FakeEnhancementStep("new-holds", 700, WallEnhancementItemKind.NewHold, async (ctx, ct) =>
         {
             if (hang)
             {
+                entered.TrySetResult();
                 await Task.Delay(Timeout.Infinite, ct);
             }
 
@@ -29,7 +31,7 @@ public sealed class WallEnhancementControlTests
         });
         var service = f.Service(FakeEnhancementStep.Writing(f, "outlines", 100, WallEnhancementItemKind.Shape, [hold], h => h.Radius = 0.05), step);
         await service.StartAsync(f.WallId);
-        await WaitUntilAsync(async () => (await f.RunAsync()).CurrentStep == "new-holds");
+        await Eventually.SignalAsync(entered.Task, "the step to start");
 
         var view = await service.CancelAsync(f.WallId);
 
@@ -98,13 +100,5 @@ public sealed class WallEnhancementControlTests
         var stopped = await f.RunAsync();
         Assert.Equal(WallEnhancementStatus.Failed, stopped.Status);
         Assert.Contains("no sign of its job", stopped.Error);
-    }
-
-    private static async Task WaitUntilAsync(Func<Task<bool>> condition)
-    {
-        for (var i = 0; i < 200 && !await condition(); i++)
-        {
-            await Task.Delay(20);
-        }
     }
 }

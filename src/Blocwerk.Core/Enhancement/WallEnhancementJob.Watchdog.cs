@@ -17,8 +17,8 @@ public sealed partial class WallEnhancementJob
     private async Task<(WallEnhancementStepOutcome? Outcome, WallEnhancementStepOutcomeKind Kind, string? Stale)> RunWatchedAsync(
         WallEnhancementRun run, IWallEnhancementStep step, WallEnhancementStepTracker tracker, CancellationToken ct)
     {
-        using var watchdog = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        watchdog.CancelAfter(StepTimeout);
+        using var timeout = new CancellationTokenSource(StepTimeout, Clock);
+        using var watchdog = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
         var work = RunInBatchAsync(run, step, tracker, watchdog.Token);
         await Task.WhenAny(work, UntilCancelledAsync(watchdog.Token));
         if (!work.IsCompleted && await Task.WhenAny(work, Task.Delay(StopGrace, CancellationToken.None)) != work)

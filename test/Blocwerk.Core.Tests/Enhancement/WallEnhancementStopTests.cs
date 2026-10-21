@@ -22,13 +22,18 @@ public sealed class WallEnhancementStopTests
     {
         using var f = await WallEnhancementFixture.CreateAsync();
         var editing = true;
+        var waiting = new TaskCompletionSource();
         f.Presence = Substitute.For<IWallEditPresence>();
-        f.Presence.IsBeingEdited(f.WallId).Returns(_ => editing);
+        f.Presence.IsBeingEdited(f.WallId).Returns(_ =>
+        {
+            waiting.TrySetResult();
+            return editing;
+        });
         var first = FakeEnhancementStep.Suggesting("duplicates", 500, WallEnhancementItemKind.Duplicate);
         var second = FakeEnhancementStep.Suggesting("links", 600, WallEnhancementItemKind.Link);
         var service = f.Service(first, second);
         await service.StartAsync(f.WallId);
-        await Task.Delay(200);
+        await Eventually.SignalAsync(waiting.Task, "the job to wait for the editor");
 
         var view = await service.CancelAsync(f.WallId);
 
@@ -68,7 +73,7 @@ public sealed class WallEnhancementStopTests
         await service.StartAsync(otherWall);
 
         // Only once the other wall holds the runner is this wall's run certainly still queued when it is cancelled.
-        await otherWallBlocking.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        await Eventually.SignalAsync(otherWallBlocking.Task, "the other wall's run to hold the only slot");
         await service.StartAsync(f.WallId);
 
         var view = await service.CancelAsync(f.WallId);
@@ -83,15 +88,11 @@ public sealed class WallEnhancementStopTests
     {
         using var f = await WallEnhancementFixture.CreateAsync();
         f.StopGrace = TimeSpan.FromMilliseconds(100);
-        var release = new TaskCompletionSource();
-        var deaf = new FakeEnhancementStep("links", 600, WallEnhancementItemKind.Link, async (_, _) =>
-        {
-            await release.Task;
-            return WallEnhancementStepOutcome.Done("late");
-        });
+        var (entered, release) = (new TaskCompletionSource(), new TaskCompletionSource());
+        var deaf = Deaf(entered, release);
         var service = f.Service(deaf);
         await service.StartAsync(f.WallId);
-        await WaitUntilAsync(async () => (await f.RunAsync()).CurrentStep == "links");
+        await Eventually.SignalAsync(entered.Task, "the step to start");
 
         await service.CancelAsync(f.WallId);
 
@@ -115,17 +116,15 @@ public sealed class WallEnhancementStopTests
     public async Task AStepThatIgnoresItsTimeOut_StopsTheRunThere_AndTheNextStepNeverStarts()
     {
         using var f = await WallEnhancementFixture.CreateAsync();
-        (f.StepTimeout, f.StopGrace) = (TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(100));
-        var release = new TaskCompletionSource();
-        var deaf = new FakeEnhancementStep("links", 600, WallEnhancementItemKind.Link, async (_, _) =>
-        {
-            await release.Task;
-            return WallEnhancementStepOutcome.Done("late");
-        });
+        (f.Clock, f.StopGrace) = (new ManualTimeProvider(), TimeSpan.FromMilliseconds(100));
+        var (entered, release) = (new TaskCompletionSource(), new TaskCompletionSource());
         var next = FakeEnhancementStep.Suggesting("new-holds", 700, WallEnhancementItemKind.NewHold);
-        var service = f.Service(deaf, next);
+        var service = f.Service(Deaf(entered, release), next);
         await service.StartAsync(f.WallId);
-        await WaitUntilAsync(async () => (await f.RunAsync()).Status == WallEnhancementStatus.Failed);
+        await Eventually.SignalAsync(entered.Task, "the step to start");
+
+        f.Clock.FireAll();
+        await Eventually.UntilAsync(async () => (await f.RunAsync()).Status == WallEnhancementStatus.Failed, "the run to stop");
 
         var run = await f.RunAsync();
         Assert.Contains("did not stop", run.Error);
@@ -227,11 +226,12 @@ public sealed class WallEnhancementStopTests
         return p.Id;
     }
 
-    private static async Task WaitUntilAsync(Func<Task<bool>> condition)
-    {
-        for (var i = 0; i < 250 && !await condition(); i++)
+    /// <summary>A step that signals it started, then ignores its cancellation until released.</summary>
+    private static FakeEnhancementStep Deaf(TaskCompletionSource entered, TaskCompletionSource release) =>
+        new("links", 600, WallEnhancementItemKind.Link, async (_, _) =>
         {
-            await Task.Delay(20);
-        }
-    }
+            entered.TrySetResult();
+            await release.Task;
+            return WallEnhancementStepOutcome.Done("late");
+        });
 }

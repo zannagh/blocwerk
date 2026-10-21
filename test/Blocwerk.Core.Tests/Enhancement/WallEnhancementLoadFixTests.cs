@@ -44,24 +44,32 @@ public sealed class WallEnhancementLoadFixTests
     {
         var scopes = Substitute.For<IServiceScopeFactory>();
         var searching = true;
+        var asked = 0;
+        var heldBack = new TaskCompletionSource();
         var queue = new HoldRefinementQueue(scopes, NullLogger<HoldRefinementQueue>.Instance)
         {
-            SearchRunning = () => searching, BurstQuiet = TimeSpan.FromMilliseconds(20), SearchWait = TimeSpan.FromMilliseconds(20),
+            SearchRunning = () =>
+            {
+                // Asked again and again: the queued work is in the wait loop, held back by the search.
+                if (Interlocked.Increment(ref asked) >= 3)
+                {
+                    heldBack.TrySetResult();
+                }
+
+                return Volatile.Read(ref searching);
+            },
+            BurstQuiet = TimeSpan.FromMilliseconds(20),
+            SearchWait = TimeSpan.FromMilliseconds(20),
         };
         using var stop = new CancellationTokenSource();
         await queue.StartAsync(stop.Token);
         queue.Enqueue(Guid.NewGuid(), [Guid.NewGuid()]);
 
-        await Task.Delay(400);
+        await Eventually.SignalAsync(heldBack.Task, "the refinement to wait for the search");
         Assert.Empty(scopes.ReceivedCalls());
 
-        searching = false;
-        for (var i = 0; i < 100 && !scopes.ReceivedCalls().Any(); i++)
-        {
-            await Task.Delay(20);
-        }
-
-        Assert.NotEmpty(scopes.ReceivedCalls());
+        Volatile.Write(ref searching, false);
+        await Eventually.UntilAsync(() => Task.FromResult(scopes.ReceivedCalls().Any()), "the refinement to run");
         await stop.CancelAsync();
         await queue.StopAsync(CancellationToken.None);
     }

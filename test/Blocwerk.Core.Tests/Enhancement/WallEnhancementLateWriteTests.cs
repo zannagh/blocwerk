@@ -18,17 +18,18 @@ public sealed class WallEnhancementLateWriteTests
         using var f = await WallEnhancementFixture.CreateAsync();
         f.StopGrace = TimeSpan.FromMilliseconds(100);
         var (early, late) = (await f.AddHoldAsync(0.2, 0.2), await f.AddHoldAsync(0.7, 0.7));
-        var release = new TaskCompletionSource();
+        var (earlyWritten, release) = (new TaskCompletionSource(), new TaskCompletionSource());
         var step = new FakeEnhancementStep("outlines", 100, WallEnhancementItemKind.Shape, async (ctx, _) =>
         {
             await WriteInOwnBatchAsync(f, ctx.UserId, early);
+            earlyWritten.TrySetResult();
             await release.Task;
             await WriteInOwnBatchAsync(f, ctx.UserId, late);
             return WallEnhancementStepOutcome.Done("late");
         });
         var service = f.Service(step);
         await service.StartAsync(f.WallId);
-        await WaitUntilAsync(async () => (await f.GetHoldAsync(early)).Radius > 0.04);
+        await Eventually.SignalAsync(earlyWritten.Task, "the step's first write");
 
         await service.CancelAsync(f.WallId);
         Assert.Equal(early, Assert.Single(await f.ItemsAsync()).HoldId);
@@ -119,14 +120,6 @@ public sealed class WallEnhancementLateWriteTests
             db.CurrentUserId = userId;
             (await db.Holds.FirstAsync(h => h.Id == hold)).Radius = 0.05;
             await db.SaveChangesAsync();
-        }
-    }
-
-    private static async Task WaitUntilAsync(Func<Task<bool>> condition)
-    {
-        for (var i = 0; i < 250 && !await condition(); i++)
-        {
-            await Task.Delay(20);
         }
     }
 }
