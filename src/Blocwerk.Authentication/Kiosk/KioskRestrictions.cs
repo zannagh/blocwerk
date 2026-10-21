@@ -280,6 +280,10 @@ public static class KioskRestrictions
         // Permanently erasing the acting member's account from a public tablet.
         "Blocwerk.Web.Components.Pages.Settings.DeleteAccount",
 
+        // The storage probe fills the device with up to 1.5 GB of test data and may crash the page: a
+        // member's own-device diagnostic, not a tablet's. /storage-probe is under no allowed prefix either.
+        "Blocwerk.Web.Components.Pages.Diagnostics.StorageProbe",
+
         // Authority over every wall in the installation.
         "Blocwerk.Web.Components.Pages.Administration.Dashboard",
         "Blocwerk.Web.Components.Pages.Administration.DbStats",

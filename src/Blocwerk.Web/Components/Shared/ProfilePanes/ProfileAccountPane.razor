@@ -238,6 +238,15 @@
         </div>
     </div>
 
+    @* The storage probe is a static page whose scripts only run on a real load, hence no enhanced nav. *@
+    <div class="section profile-section-card">
+        <h2>Device diagnostics</h2>
+        <p class="member-since">Tests how much this device lets Blocwerk keep offline, and reports it to the server log.</p>
+        <div class="profile-links">
+            <a class="btn-secondary" href="/storage-probe" data-enhance-nav="false">Storage probe</a>
+        </div>
+    </div>
+
     @* Deliberately its own card, not a button among the links above: it is the one irreversible
        action on this page. /settings/delete-account is on the kiosk deny-list and the deletion
        service refuses a kiosk session outright. *@

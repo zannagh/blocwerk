@@ -1,0 +1,49 @@
+@page "/storage-probe"
+@layout EmptyLayout
+@attribute [Authorize]
+
+@* Static SSR on purpose: a plain page with plain scripts, so the tests run with nothing else on the page and a
+   crash during the size ladder reloads straight back here. Its scripts only run on a real page load, which is
+   why every link to it carries data-enhance-nav="false". Reports go to POST /api/probe/storage
+   (StorageProbeEndpoints), which writes them to the server log; nothing is stored server-side. *@
+
+<PageTitle>Storage probe - Blocwerk</PageTitle>
+
+<div id="storage-probe" class="probe-page"
+     data-core="@Assets["js/storage-probe-core.js"]"
+     data-worker="@Assets["js/storage-probe-worker.js"]">
+    <h1>Storage probe</h1>
+    <p class="probe-run">Run <strong id="probe-run">(starting...)</strong> &middot; <span id="probe-ctx"></span></p>
+    <p class="probe-note">
+        Tests what this device lets Blocwerk keep offline. Every result goes to the server log under the run id
+        above, so tell whoever asked which run is which. If this text stays and nothing below fills in, reload.
+    </p>
+
+    <div class="probe-actions">
+        <button type="button" class="btn-primary probe-btn" data-probe-action="quick" disabled>1. Quick checks</button>
+        <button type="button" class="btn-primary probe-btn" data-probe-action="write-markers" disabled>2. Write markers</button>
+        <button type="button" class="btn-primary probe-btn" data-probe-action="check-markers" disabled>3. Check markers</button>
+        <button type="button" class="btn-primary probe-btn" data-probe-action="ladder" disabled>4. Size ladder</button>
+    </div>
+    <p id="probe-state" class="probe-note">Loading...</p>
+
+    <ul id="probe-log" class="probe-log" aria-live="polite"></ul>
+
+    <details class="probe-help">
+        <summary>What each button does</summary>
+        <p><strong>Quick checks</strong> asks whether storage is persistent, requests persistence, and reports the quota, usage and device.</p>
+        <p><strong>Write markers</strong> leaves a timestamped note in localStorage, a cookie, IndexedDB, the Cache API and OPFS. <strong>Check markers</strong> reads them back on a later visit and says which survived. The tab and the home-screen app each have their own.</p>
+        <p><strong>Size ladder</strong> writes 25 MB up to 1.5 GB of generated data into the Cache API and OPFS and reads it back. It may crash the page; just reopen it and press the button again, it continues where it stopped. It deletes its data as it goes.</p>
+        <p>
+            <button type="button" class="btn-secondary" data-probe-action="reset-ladder" disabled>Reset ladder progress</button>
+        </p>
+    </details>
+
+    <p><a href="/profile" data-enhance-nav="false">Back to your profile</a></p>
+</div>
+
+<script src="@Assets["js/storage-probe-core.js"]"></script>
+<script src="@Assets["js/storage-probe-io.js"]"></script>
+<script src="@Assets["js/storage-probe-checks.js"]"></script>
+<script src="@Assets["js/storage-probe-ladder.js"]"></script>
+<script src="@Assets["js/storage-probe.js"]"></script>
