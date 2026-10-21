@@ -18,11 +18,12 @@ public static class BoulderSetterNames
     /// </summary>
     public static async Task<Dictionary<Guid, List<string>>> LoadForWallAsync(
         BlocwerkDbContext db,
-        Guid wallId)
+        Guid wallId,
+        bool includeDrafts = true)
     {
         var rows = await db.BoulderSetters
             .AsNoTracking()
-            .Where(s => s.Boulder.WallId == wallId)
+            .Where(s => s.Boulder.WallId == wallId && (includeDrafts || !s.Boulder.IsDraft))
             .OrderBy(s => s.CreatedAt)
             .Select(s => new
             {

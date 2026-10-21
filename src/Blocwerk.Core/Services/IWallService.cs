@@ -14,9 +14,11 @@ public interface IWallService
 
     /// <summary>
     /// The display names of every boulder's setters on the wall, keyed by boulder id, in one query.
-    /// Boulders without a recorded setter are absent; callers fall back to the creator.
+    /// Boulders without a recorded setter are absent; callers fall back to the creator. Empty for a caller who
+    /// cannot see the wall; pass the share token on the share route. Drafts' setters are left out unless the
+    /// caller is a member. Throws for an anonymous caller that is neither a share viewer nor the wall's kiosk.
     /// </summary>
-    Task<Dictionary<Guid, List<string>>> GetBoulderSetterNamesAsync(Guid wallId);
+    Task<Dictionary<Guid, List<string>>> GetBoulderSetterNamesAsync(Guid wallId, string? shareToken = null);
 
     Task<List<Wall>> GetMyWallsAsync();
 

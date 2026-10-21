@@ -237,13 +237,26 @@ public class WallService : IWallService
         }
     }
 
-    public async Task<Dictionary<Guid, List<string>>> GetBoulderSetterNamesAsync(Guid wallId)
+    public async Task<Dictionary<Guid, List<string>>> GetBoulderSetterNamesAsync(Guid wallId, string? shareToken = null)
     {
         using var op = BlocwerkMetrics.TimeOperation("Wall.GetBoulderSetterNames", wallId);
         try
         {
+            // Same gate as the wall read the page made: the share token for its own wall, else the membership filter
+            // (or the anonymous kiosk on its wall, Guid.Empty). Drafts' setters only for a member, as drafts are.
+            var isShare = !string.IsNullOrEmpty(shareToken);
+            var viewerId = isShare ? Guid.Empty : await ResolveViewerIdAsync(wallId);
             await using var db = await _dbContextFactory.CreateDbContextAsync();
-            return await BoulderSetterNames.LoadForWallAsync(db, wallId);
+            db.CurrentUserId = viewerId;
+            var visible = isShare
+                ? await db.Walls.AnyAsync(w => w.Id == wallId && w.ShareToken == shareToken)
+                : await db.Walls.AnyAsync(w => w.Id == wallId);
+            if (!visible)
+            {
+                return [];
+            }
+
+            return await BoulderSetterNames.LoadForWallAsync(db, wallId, includeDrafts: viewerId != Guid.Empty);
         }
         catch (Exception ex)
         {
@@ -1932,10 +1945,13 @@ public class WallService : IWallService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
+            // WallMember carries no query filter of its own, so the wall id alone used to hand ANY signed-in
+            // caller any wall's member list. Reaching through to db.Walls puts it under the membership filter (and the
+            // kiosk wall gate); anyone else gets an empty list.
             return await db.WallMembers
                 .AsNoTracking()
                 .Include(wm => wm.User)
-                .Where(wm => wm.WallId == wallId)
+                .Where(wm => wm.WallId == wallId && db.Walls.Any(w => w.Id == wallId))
                 .OrderBy(wm => wm.JoinedAt)
                 .ToListAsync();
         }
