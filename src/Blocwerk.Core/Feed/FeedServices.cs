@@ -39,6 +39,11 @@ public static class FeedServices
             sp.GetRequiredService<ILogger<WallFeedHub>>()));
         services.AddSingleton<IWallFeedHub>(sp => sp.GetRequiredService<WallFeedHub>());
         services.AddHostedService(sp => sp.GetRequiredService<WallFeedHub>());
+
+        // The HTTP catch-up (PR 1.6): the routes decide the viewer (FeedAccessGate), this reads and hydrates as it.
+        services.AddSingleton(sp => new FeedCatchUp(
+            sp.GetRequiredService<IWallFeed>(),
+            () => sp.GetRequiredService<RootDbContextFactory>().CreateDbContext()));
         services.AddHostedService<WallChangeRetentionService>();
         services.AddHostedService<FeedLagCollector>();
         return services;

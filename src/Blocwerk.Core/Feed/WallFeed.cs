@@ -82,9 +82,11 @@ public sealed class WallFeed : IWallFeed
             return new FeedPage(rows, new FeedCursor(epoch.Id, FeedPosition.Of(rows[^1])), Resync: false);
         }
 
-        // A short page has seen everything up to the ceiling, but the cursor moves only to the high-water mark.
+        // A short page has seen everything up to the ceiling, but the cursor moves only to the high-water mark: never past
+        // it, not even when the client's own cursor is (a forged or foreign cursor). No row lies between the mark and the
+        // ceiling, so going back to the mark re-reads nothing, and every row it returned is at or below the mark.
         var highWater = await HighWaterAsync(db, horizon, ceiling, epoch, cancellationToken);
-        return new FeedPage(rows, new FeedCursor(epoch.Id, FeedPosition.Max(after.Position, highWater)), Resync: false);
+        return new FeedPage(rows, new FeedCursor(epoch.Id, highWater), Resync: false);
     }
 
     public Task<long?> AppendAsync(BlocwerkDbContext db, WallChange row, CancellationToken cancellationToken = default) =>
