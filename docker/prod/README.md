@@ -7,8 +7,13 @@ truth, and you copy them over by hand.
 
 - `autodeploy.sh`: run by cron every minute (and at boot). First the app, exactly as before: `blocwerk`
   is recreated behind the app's `/health/ready-to-deploy` gate (30 min cap) and a maintenance notice.
-  Past the cap it keeps waiting while `/health/busy-eta` (seconds; 0 when none) reports long background
-  work that said when it ends, such as a wall enhancement's hold search, up to 360 polls (6 h) in all.
+  Past the cap it keeps waiting while `/health/busy-eta` (seconds; 0 when none) reports an end: long
+  background work that said when it ends (a wall enhancement's hold search, capped at 6 h by the app),
+  or an editor whose user is present, which reports the app's daily cutoff (next midnight Europe/Berlin
+  after the edit started). Safety cap 1440 polls (24 h). Before every deploy it calls
+  `POST /api/v1/maintenance/flush-edits` (same `BLOCWERK_DEPLOY_API_KEY`) so open editors save or keep
+  their unsaved state; a 404 from an older app is logged and the deploy goes ahead.
+  `test-autodeploy.sh` is a dry-run harness for these decisions (fake docker, no host access).
   **The live copy on the IONOS box is separate**: until `autodeploy.sh` is reinstalled there (see
   "Install / update on the box" or `rollout.sh`), the box keeps the plain 30 min cap. The search
   checkpoints per photo, so a deploy that still cuts it costs only the photo in hand.
