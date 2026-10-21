@@ -74,8 +74,23 @@ export function loadPage(opts = {}) {
         const t = { fn, ms, done: false };
         timers.push(t);
         if (ms < 10000) {
-            // Scaled down, order kept: a reply posted through setImmediate always beats a 1.5 s timeout's 30 ms.
-            setTimeout(() => { if (!t.done) { t.done = true; fn(); } }, Math.max(5, Math.min(60, ms / 50)));
+            // Scaled down to event-loop turns, not wall-clock time, so the order is kept however loaded the machine
+            // is: a reply already posted through setImmediate (sw-info, asset-cached) is delivered within the first
+            // turn, long before a 1.5 s timeout's 30 turns. A wall-clock delay lost that race whenever the loop stalled
+            // past it (about 1 full-suite run in 10), and the page then saw no worker and filled nothing.
+            const turns = Math.max(5, Math.min(60, Math.round(ms / 50)));
+            const hop = left => setImmediate(() => {
+                if (t.done) {
+                    return;
+                }
+                if (left > 1) {
+                    hop(left - 1);
+                    return;
+                }
+                t.done = true;
+                fn();
+            });
+            hop(turns);
         }
         return t;
     };
