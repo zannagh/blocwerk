@@ -260,7 +260,7 @@
 
     private async Task SyncEditGuardAsync()
     {
-        _editGuardActive = await EditGuardInterop.SyncAsync(JS, "boulder-revise", _editLease is not null, _editGuardActive);
+        _editGuardActive = await EditGuardInterop.SyncAsync(JS, "boulder-revise", _editLease is not null, _editGuardActive, EditActivity);
     }
 
     // A dedicated foothold in the radial experience is either a per-hold "Foot" mark or a foot-colour rule.

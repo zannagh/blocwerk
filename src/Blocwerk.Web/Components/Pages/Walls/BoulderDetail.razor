@@ -648,7 +648,7 @@ else
 
     private async Task SyncEditGuardAsync()
     {
-        _editGuardActive = await EditGuardInterop.SyncAsync(JS, "boulder-edit", _editLease is not null, _editGuardActive);
+        _editGuardActive = await EditGuardInterop.SyncAsync(JS, "boulder-edit", _editLease is not null, _editGuardActive, EditActivity);
     }
 
     private ElementReference _photoViewportRef;

@@ -287,7 +287,7 @@
 
     private async Task SyncEditGuardAsync()
     {
-        _editGuardActive = await EditGuardInterop.SyncAsync(JS, "boulder-create", _editLease is not null, _editGuardActive);
+        _editGuardActive = await EditGuardInterop.SyncAsync(JS, "boulder-create", _editLease is not null, _editGuardActive, EditActivity);
     }
 
     protected override async Task OnInitializedAsync()

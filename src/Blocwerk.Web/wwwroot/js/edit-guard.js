@@ -14,19 +14,27 @@
  * The state is per page load only: a reload starts fresh, which is exactly right — nothing is being
  * edited across a reload. It lives outside the circuit so a dropped connection cannot clear it.
  *
+ * enter() also takes the circuit's presence handle (a DotNetObjectReference to EditPresenceInterop), which
+ * edit-presence.js reports real user input and page visibility through while any key is held.
+ *
  * Exposes window.bwEditGuard:
- *   enter(key) -> increment the ref-count for key
+ *   enter(key, presence?) -> increment the ref-count for key; remember the presence handle if given
  *   exit(key)  -> decrement it, never below zero
  *   isEditing() -> bool, true while any key is held
+ *   presence() -> the last presence handle passed to enter(), or null
  */
 (function () {
     'use strict';
 
     var counts = Object.create(null);
+    var presenceHandle = null;
 
-    function enter(key) {
+    function enter(key, presence) {
         var k = key || 'default';
         counts[k] = (counts[k] || 0) + 1;
+        if (presence) {
+            presenceHandle = presence;
+        }
     }
 
     function exit(key) {
@@ -51,9 +59,14 @@
         return false;
     }
 
+    function presence() {
+        return presenceHandle;
+    }
+
     window.bwEditGuard = {
         enter: enter,
         exit: exit,
-        isEditing: isEditing
+        isEditing: isEditing,
+        presence: presence
     };
 })();

@@ -205,7 +205,11 @@ public class EditActivityLeasePolicyTests
         var result = await new BusyHealthCheck(registry).CheckHealthAsync(
             new HealthCheckContext(), CancellationToken.None);
 
-        Assert.Equal(HealthStatus.Degraded, result.Status);
+        // Since the presence gate, an editor nobody has touched for 27 minutes no longer holds deploys
+        // back, but it is still listed so the idle report says why.
+        Assert.Equal(HealthStatus.Healthy, result.Status);
+        Assert.Equal(0, (int)result.Data["count"]);
+        Assert.Equal(1, (int)result.Data["leases"]);
         Assert.Equal(
             (int)EditActivityPolicy.InactivityTimeToLive.TotalSeconds,
             (int)result.Data["inactivityTtlSeconds"]);
@@ -216,9 +220,10 @@ public class EditActivityLeasePolicyTests
         Assert.InRange((int)fields["idleSeconds"]!, 0, 5);
         Assert.InRange((int)fields["userIdleSeconds"]!, 1615, 1630);
 
-        // Both clocks are running; the report names the one that will run out first. Here that is
-        // the inactivity window, which is the whole point of tracking it separately.
-        Assert.Equal("inactivity", fields["expiresBy"]);
-        Assert.InRange((int)fields["expiresInSeconds"]!, 170, 190);
+        // Both clocks are running; the report names the one that let go of the gate. Here that is the
+        // presence window, which is the whole point of tracking it separately.
+        Assert.Equal("presence", fields["expiresBy"]);
+        Assert.Equal(false, fields["holdsGate"]);
+        Assert.Equal(0, (int)fields["expiresInSeconds"]!);
     }
 }

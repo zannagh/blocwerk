@@ -231,6 +231,9 @@ public static class Program
         builder.Services.AddSingleton<EditActivityRegistry>();
         builder.Services.AddScoped<CircuitEditActivity>();
 
+        // When an open editor holds the deploy gate: recent real input, page not hidden for long, bounded hold.
+        builder.Services.Configure<EditPresenceOptions>(builder.Configuration.GetSection(EditPresenceOptions.SectionName));
+
         // Core's long-running work (capture video upload + frame extraction) holds the same gate.
         builder.Services.AddSingleton<IDeployBusyGate, EditActivityDeployBusyGate>();
 

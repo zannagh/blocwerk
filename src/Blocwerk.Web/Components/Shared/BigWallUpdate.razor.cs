@@ -226,7 +226,7 @@ public partial class BigWallUpdate : IDisposable
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        _editGuardActive = await EditGuardInterop.SyncAsync(JS, "wall-bigupdate", _editLease is not null, _editGuardActive);
+        _editGuardActive = await EditGuardInterop.SyncAsync(JS, "wall-bigupdate", _editLease is not null, _editGuardActive, EditActivity);
 
         // The keyboard layer lives in BigWallUpdate.Keys.cs; it reconciles itself against the phase.
         await ReconcileShortcutsAsync(firstRender);
