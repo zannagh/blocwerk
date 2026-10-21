@@ -1913,6 +1913,25 @@ img.avatar { object-fit: cover; }
     padding: 16px;
 }
 
+/* Settings → Offline storage (OfflineStorageCard.razor). */
+.offline-storage-total { margin-top: 8px; color: var(--text-heading); }
+.offline-storage-nudge {
+    margin-top: 8px; padding: 8px 10px; border-radius: var(--r-md);
+    background: var(--info-bg); color: var(--info-text); font-size: 0.85rem;
+}
+.offline-storage-walls { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 10px; }
+.offline-storage-wall { border-top: 1px solid var(--border-light); padding-top: 10px; }
+.offline-storage-wall-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.offline-storage-wall-name { font-weight: 600; color: var(--text-heading); min-width: 0; overflow-wrap: anywhere; }
+.offline-storage-wall-size { margin-left: auto; color: var(--text-secondary); font-size: 0.85rem; }
+.offline-storage-wall .member-since { margin-top: 2px; }
+.offline-storage-wall .checkbox-label { margin-top: 6px; }
+
+/* The offline-ready mark (OfflineReadyMark.razor): hidden until asset-report.js finds the wall's core cached. */
+.bw-offline-ready { display: inline-flex; vertical-align: -0.1em; color: var(--success-text); }
+.bw-offline-ready:not([data-ready]) { display: none; }
+.bw-topbar-title .bw-offline-ready { color: var(--status-success); margin-right: 2px; }
+
 /* ---- Staged profile shell -------------------------------------------------
    /profile is content the app authors end to end, so it is a fixed composition sized to the viewport
    instead of a 3.4-viewport scroll: a persistent identity/links side column plus four tabbed screens.

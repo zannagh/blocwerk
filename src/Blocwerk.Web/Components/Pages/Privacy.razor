@@ -196,11 +196,14 @@
         </li>
         <li><strong><code>blocwerk-kiosk</code></strong> &mdash; marks a device as a registered kiosk tablet (see above)</li>
         <li><strong><code>blocwerk-last-page</code>, <code>blocwerk-zoom-lens-mag</code>, <code>blocwerk-toolbar-placement</code>, <code>blocwerk-wall-view</code></strong> &mdash; interface preferences the server reads on first paint</li>
+        <li><strong><code>blocwerk-cache-3d</code></strong> &mdash; whether this device keeps 3D data offline (Profile &rarr; Account &rarr; Offline storage)</li>
     </ul>
     <p>
         Your browser additionally keeps, on your device only and never sent to us: theme and layout
         preferences, the boulder focus setting, the collapsed state of the navigation bar,
-        the app-install prompt state, and &mdash; when you are offline &mdash; an IndexedDB queue of
+        the app-install prompt state, copies of your walls' photos (and, unless you turn it off, their
+        3D data) with a list of what is stored, which you can clear under Profile &rarr; Account &rarr;
+        Offline storage, and &mdash; when you are offline &mdash; an IndexedDB queue of
         actions (logged attempts, comments, boulders) waiting to be sent when you reconnect.
     </p>
 

@@ -1,0 +1,98 @@
+@* Settings → "Offline storage" (design 2026-10-21 §6.8, PR 2.9). Everything shown is a fact of THIS device's
+   wall-asset cache (bwAssetReport.report, asset-report.js), so the card renders a placeholder until the browser has
+   answered. Wall data is always cached: there is no switch for it, only the 3D opt-out, the per-wall pin and a
+   clear. Not on a kiosk: see the code-behind. *@
+@if (!KioskContext.IsKiosk)
+{
+    <div class="section profile-section-card offline-storage" id="offline-storage">
+        <h2>Offline storage</h2>
+        <p class="member-since">
+            Blocwerk keeps the photos of your walls on this device, so they open fast and keep working on a weak
+            signal at the gym. This is always on.
+        </p>
+
+        @if (facts == null)
+        {
+            <p class="member-since">Checking this device…</p>
+        }
+        else if (!facts.Caching)
+        {
+            <p class="member-since">This browser isn't saving walls right now, for example in a private window or with site storage blocked.</p>
+        }
+        else
+        {
+            <p class="offline-storage-total">
+                <strong>@OfflineStorageText.Bytes(facts.Total)</strong> used on this device
+            </p>
+            <p class="member-since">@OfflineStorageText.Persistence(facts)</p>
+
+            @if (facts.IosTab)
+            {
+                <p class="offline-storage-nudge">
+                    Install Blocwerk to keep your walls: storage persists in the installed app, while Safari may clear
+                    it in a tab. @facts.InstallHint
+                </p>
+            }
+
+            @if (facts.Paused)
+            {
+                <p class="field-error">This device has no room for more right now, so walls load from the network.</p>
+            }
+
+            <label class="toggle-label">
+                <input type="checkbox" checked="@facts.Keep3d" disabled="@busy" @onchange="OnKeep3dChange" @key="(rev, 0)" />
+                Keep 3D data offline
+            </label>
+            <p class="member-since">@OfflineStorageText.ThreeDNote(facts)</p>
+
+            @if (facts.Walls is { Count: > 0 } walls)
+            {
+                <ul class="offline-storage-walls">
+                    @foreach (var wall in walls)
+                    {
+                        <li class="offline-storage-wall" @key="wall.WallId">
+                            <div class="offline-storage-wall-head">
+                                <span class="offline-storage-wall-name">@OfflineStorageText.WallName(wall, names)</span>
+                                @if (wall.Ready)
+                                {
+                                    <span class="role-badge">Offline ready</span>
+                                }
+                                @if (wall.Saved3d)
+                                {
+                                    <span class="role-badge">3D saved</span>
+                                }
+                                <span class="offline-storage-wall-size">@OfflineStorageText.Bytes(wall.Total)</span>
+                            </div>
+                            <p class="member-since">@OfflineStorageText.Breakdown(wall)</p>
+                            <label class="checkbox-label">
+                                <input type="checkbox" checked="@wall.KeepOffline" disabled="@busy"
+                                       @onchange="e => OnKeepOfflineChange(wall, e)" @key="(rev, wall.WallId)" />
+                                Keep offline
+                            </label>
+                        </li>
+                    }
+                </ul>
+                <p class="member-since">A kept wall is never cleared to make room for another one. Turning it off also undoes "Save 3D offline" for that wall.</p>
+            }
+
+            <div class="field-actions">
+                @if (confirmingClear)
+                {
+                    <span class="field-label">Remove every wall saved on this device?</span>
+                    <button type="button" class="btn-primary" disabled="@busy" @onclick="ClearAsync">Clear</button>
+                    <button type="button" class="btn-secondary" disabled="@busy" @onclick="() => confirmingClear = false">Cancel</button>
+                }
+                else
+                {
+                    <button type="button" class="btn-secondary" disabled="@busy" @onclick="() => confirmingClear = true">Clear offline data</button>
+                }
+            </div>
+            <p class="member-since">Clearing frees the space now. Your walls download again the next time you open Blocwerk. Unsent ticks and comments are kept.</p>
+        }
+
+        @if (error != null)
+        {
+            <p class="field-error">@error</p>
+        }
+    </div>
+}

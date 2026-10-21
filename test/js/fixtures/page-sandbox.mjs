@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 const js = new URL('../../../src/Blocwerk.Web/wwwroot/js/', import.meta.url);
-const MODULES = ['asset-ledger.js', 'asset-budget.js', 'asset-wipe.js', 'asset-manifest.js', 'asset-store.js', 'asset-session.js', 'asset-plan.js', 'asset-fill.js', 'asset-cache.js', 'asset-notice.js', 'asset-3d.js'];
+const MODULES = ['asset-ledger.js', 'asset-budget.js', 'asset-wipe.js', 'asset-manifest.js', 'asset-store.js', 'asset-session.js', 'asset-plan.js', 'asset-fill.js', 'asset-cache.js', 'asset-notice.js', 'asset-3d.js', 'asset-report.js'];
 export const ORIGIN = 'https://blocwerk.test';
 export const USER_A = 'u-aaaaaaaaaaaaaaaaaaaa';
 export const USER_B = 'u-bbbbbbbbbbbbbbbbbbbb';
@@ -51,7 +51,8 @@ export function manifest(wallId, assets, extra = {}) {
 /**
  * opts: { label (meta content, null = no meta), path, search, caches, routes: { path → fn(init, url) }, partitionOfWorker,
  *         swReply ('v4' | 'none' | 'v3' | null = no controller), maxTouchPoints, coarse (a coarse pointer), refuse (worker posts asset-refused), silent (worker
- *         neither stores nor answers: a slow write), prefs3d, ua, quota, ledger, user, connection }
+ *         neither stores nor answers: a slow write), prefs3d, ua, quota, ledger, user, connection, persisted (persisted()'s answer),
+ *         marks (the elements querySelectorAll answers: offline-ready marks), gate (awaited before an asset fetch) }
  */
 export function loadPage(opts = {}) {
     const timers = [];
@@ -108,6 +109,9 @@ export function loadPage(opts = {}) {
             return route(init, url);
         }
         if (asset) {
+            if (opts.gate) {
+                await opts.gate(url.pathname);
+            }
             // The worker's part: store in the partition's cache, then announce.
             const key = `${ORIGIN}/__bw/${asset[1]}` + (asset[2] ? `/${asset[2]}` : '');
             const announced = { proto: 1, sha: asset[1], width: asset[2] ? Number(asset[2]) : null, bytes: 5000 };
@@ -175,7 +179,7 @@ export function loadPage(opts = {}) {
             onLine: opts.onLine ?? true,
             userAgentData: opts.userAgentData,
             serviceWorker: { controller, addEventListener: (type, fn) => { if (type === 'message') { swListeners.push(fn); } } },
-            storage: { estimate: async () => ({ quota: opts.quota ?? 50e9, usage: 41e9 }), persisted: async () => false, persist: async () => { persisted.push(Date.now()); return true; } },
+            storage: { estimate: async () => ({ quota: opts.quota ?? 50e9, usage: 41e9 }), persisted: async () => !!opts.persisted, persist: async () => { persisted.push(Date.now()); return true; } },
         },
         matchMedia: q => ({ matches: q === '(pointer: coarse)' ? !!opts.coarse : !!opts.standalone }),
         localStorage: { getItem: k => (storage.has(k) ? storage.get(k) : null), setItem: (k, v) => storage.set(k, String(v)), removeItem: k => storage.delete(k) },
@@ -183,6 +187,7 @@ export function loadPage(opts = {}) {
             readyState: 'complete',
             visibilityState: 'visible',
             querySelector: selector => (selector === 'meta[name="bw-partition"]' ? meta : null),
+            querySelectorAll: () => opts.marks || [],
             body: { getAttribute: name => (name === 'data-bw-user' ? (opts.user ?? '') : null), dataset: opts.kioskKey ? { bwKiosk: opts.kioskKey } : {} },
             addEventListener: (type, fn) => { (docListeners[type] = docListeners[type] || []).push(fn); },
             removeEventListener: () => {},
