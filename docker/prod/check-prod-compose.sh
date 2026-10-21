@@ -8,7 +8,8 @@
 #  3. a shared service runs a different image,
 #  4. a shared service differs in environment keys, volume mount targets, published container
 #     ports or healthcheck presence,
-#  5. prod publishes any port beyond 127.0.0.1 (Caddy on the `edge` network is the only way in),
+#  5. prod publishes any port beyond 127.0.0.1, except the ones in EDGE_PUBLISHED (the reverse proxy in front is
+#     the only way in),
 # unless the difference is listed as intentional below.
 # COMPOSE overrides the compose command (e.g. a standalone `docker-compose` binary).
 set -euo pipefail
@@ -62,8 +63,15 @@ blocwerk:volume:prod:/app/wall-images
 blocwerk:volume:prod:/app/models/climbingcrux.onnx
 blocwerk:volume:prod:/app/models/hold-segmenter-encoder.onnx
 blocwerk:volume:prod:/app/models/hold-segmenter-decoder.onnx
-blocwerk:port:base:5050
 postgres:healthcheck:prod
+"
+
+# Ports prod publishes on the Docker `edge` network's gateway, one per line: <service>:<container port>:<host ip>.
+#  blocwerk:5050  Traefik (k3s on the same box, infra repo Phase 10) cannot join a Docker network and Docker drops
+#                 routed traffic to unpublished container ports, so the app is published on the gateway address
+#                 only. That address is not reachable from outside the box.
+EDGE_PUBLISHED="
+blocwerk:5050:172.20.0.1
 "
 
 tmp=$(mktemp -d)
@@ -116,11 +124,12 @@ for s in $(comm -12 <(services "$tmp/base.json") <(services "$tmp/prod.json")); 
   done
 done
 
-# Nothing in prod may listen beyond loopback.
-while read -r line; do
-  fail "prod publishes $line beyond 127.0.0.1"
+# Nothing in prod may listen beyond loopback, except the listed ports on the edge gateway.
+while read -r s target host_ip; do
+  grep -qxF "$s:$target:$host_ip" <<< "$EDGE_PUBLISHED" && continue
+  fail "prod publishes $s port $target on '${host_ip:-all addresses}' beyond 127.0.0.1"
 done < <(jq -r '.services | to_entries[] | .key as $s | (.value.ports // [])[]
-                | select((.host_ip // "") != "127.0.0.1") | "\($s) port \(.target)"' "$tmp/prod.json")
+                | select((.host_ip // "") != "127.0.0.1") | "\($s) \(.target) \(.host_ip // "")"' "$tmp/prod.json")
 
 if [ "$errors" -gt 0 ]; then
   echo "$errors drift problem(s). Fix docker-compose.prod.yml (and the box), or list the difference as intentional in $0."
