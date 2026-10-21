@@ -37,7 +37,7 @@ public sealed class WallListCache
 
     /// <summary>True when the commit may let a signed-in user see a wall they could not before (cached "no access" answers go).</summary>
     public static bool GrantsWalls(FeedCommit commit) =>
-        commit.Rows.Any(r => r.Kind is FeedKinds.WallsChanged or FeedKinds.UserResync);
+        commit.Events.Any(e => e.Envelope.Kind is FeedKinds.WallsChanged or FeedKinds.UserResync);
 
     /// <summary>The memoised list; a failed load is dropped, so the next call retries.</summary>
     public Task<List<Wall>> GetAsync(Func<Task<List<Wall>>> load)
@@ -82,9 +82,9 @@ public sealed class WallListCache
         }
 
         var listed = current.IsCompletedSuccessfully ? current.Result.Select(w => w.Id).ToHashSet() : null;
-        return commit.Rows.Any(r =>
-            (r.Audience == FeedAudience.User && AboutWalls.Contains(r.Kind))
-            || (r.WallId is { } id && Shown.Contains(r.Kind) && (listed?.Contains(id) ?? true)));
+        return commit.Events.Any(e =>
+            (e.Audience == FeedAudience.User && AboutWalls.Contains(e.Envelope.Kind))
+            || (e.Envelope.WallId is { } id && Shown.Contains(e.Envelope.Kind) && (listed?.Contains(id) ?? true)));
     }
 
     // Only that load: a newer one started after a Forget stays.

@@ -1,21 +1,20 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
-using Blocwerk.Contracts.Feed;
 using Blocwerk.Core.Entities;
 
 namespace Blocwerk.Core.Feed;
 
 /// <summary>
-/// One batch of committed feed rows, as <see cref="FeedCommits"/> hands it to its observers: the rows (read-only, detached
-/// from their context) and, aligned with them, their envelopes without actor or content.
+/// One batch of committed feed rows, as <see cref="FeedCommits"/> hands it to its observers: one actor-free event per row
+/// (<see cref="FeedCommitEvent"/>). The rows themselves, with their actor and addressee ids, stay inside Core.
 /// </summary>
 public sealed class FeedCommit
 {
     internal FeedCommit(IReadOnlyList<WallChange> rows)
     {
         Rows = rows;
-        Events = rows.Select(FeedEnvelopes.Committed).ToList();
+        Events = rows.Select(r => new FeedCommitEvent(FeedEnvelopes.Committed(r), r.Audience)).ToList();
     }
 
     /// <summary>
@@ -25,9 +24,9 @@ public sealed class FeedCommit
     /// </summary>
     public static FeedCursor Cursor { get; } = new(Guid.Empty, new FeedPosition(long.MaxValue, long.MaxValue));
 
-    /// <summary>Gets the committed rows. Observers must not change them.</summary>
-    public IReadOnlyList<WallChange> Rows { get; }
+    /// <summary>Gets one event per committed row, in commit order.</summary>
+    public IReadOnlyList<FeedCommitEvent> Events { get; }
 
-    /// <summary>Gets one envelope per row (same order), carrying <see cref="Cursor"/>, no actor and no hydrated content.</summary>
-    public IReadOnlyList<FeedEnvelope> Events { get; }
+    /// <summary>Gets the committed rows (Core and tests only). Bulk-site rows carry the <c>Seq</c> and <c>TxId</c> read back on insert.</summary>
+    internal IReadOnlyList<WallChange> Rows { get; }
 }

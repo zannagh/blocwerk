@@ -133,7 +133,7 @@ public sealed class FeedBoulderMapperTests
         var boulder = await SeedBoulderAsync(harness, holds[0].Id);
         var feed = new FeedInterceptor(
             new FeedMapperRegistry([new ThrowingMapper(typeof(BoulderHold))]), new RecordingFeedSignal(),
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<FeedInterceptor>.Instance);
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<FeedInterceptor>.Instance, TestFeedCommits.Unobserved());
 
         await using (var db = TestDb.Create(harness.DbContextFactory.ConnectionString, feed))
         {

@@ -37,17 +37,20 @@ public sealed class WallCacheState : IDisposable
     private readonly IWallService walls;
     private readonly IBoulderService boulders;
     private readonly WallFeedLink link;
+    private readonly ILogger<WallCacheState> logger;
     private readonly IDisposable commitObservation;
     private readonly WallCacheStore store = new();
     private readonly WallFeedWatches watches = new();
     private readonly WallListCache wallList = new();
     private int disposed;
 
-    public WallCacheState(IWallService walls, IBoulderService boulders, FeedCommits commits, WallFeedLink link)
+    public WallCacheState(
+        IWallService walls, IBoulderService boulders, FeedCommits commits, WallFeedLink link, ILogger<WallCacheState> logger)
     {
         this.walls = walls;
         this.boulders = boulders;
         this.link = link;
+        this.logger = logger;
         commitObservation = commits.Observe(OnCommitted);
         link.Delivered += OnDelivered;
         link.ViewerChanged += OnViewerChanged;
@@ -56,7 +59,8 @@ public sealed class WallCacheState : IDisposable
 
     /// <summary>
     /// Raised (on the writer's thread for an own write, on the feed hub's loop for a delivery) after a change evicted cache
-    /// entries. Components filter by the ids they show and marshal a reload via <c>InvokeAsync</c>, never awaited.
+    /// entries. Components filter by the ids they show and marshal a reload via <c>InvokeAsync</c>, never awaited. Each
+    /// handler is called on its own: one that throws is logged and never stops the other handlers or the evictions.
     /// </summary>
     public event Action<WallCacheChange>? Changed;
 
@@ -166,19 +170,30 @@ public sealed class WallCacheState : IDisposable
             return;
         }
 
-        foreach (var wall in commit.Events.Where(e => e.WallId is not null).GroupBy(e => e.WallId!.Value))
-        {
-            Evict(wall.Key, wall, resync: false);
-        }
-
+        // The list and the denied answers first: they touch no handler until the list's own raise.
         if (WallListCache.GrantsWalls(commit))
         {
             link.ForgetDenied(); // a wall the user joined may now be subscribed to
         }
 
-        if (wallList.IsStaleAfter(commit) && wallList.Forget())
+        var listStale = wallList.IsStaleAfter(commit) && wallList.Forget();
+        foreach (var wall in commit.Events.Select(e => e.Envelope).Where(e => e.WallId is not null).GroupBy(e => e.WallId!.Value))
         {
-            Changed?.Invoke(WallCacheChange.WallList);
+            try
+            {
+                Evict(wall.Key, wall, resync: false);
+            }
+            catch (Exception ex)
+            {
+                // Never reached by a handler (Raise isolates them); a fault in the eviction itself drops the wall whole.
+                logger.LogError(ex, "Own-write eviction of wall {WallId} failed; the wall is evicted whole", wall.Key);
+                store.EvictWall(wall.Key);
+            }
+        }
+
+        if (listStale)
+        {
+            Raise(WallCacheChange.WallList);
         }
     }
 
@@ -215,7 +230,7 @@ public sealed class WallCacheState : IDisposable
             {
                 if (!changedBoulders.Contains(id) && Volatile.Read(ref disposed) == 0)
                 {
-                    Changed?.Invoke(WallCacheChange.OfBoulder(wallId, id));
+                    Raise(WallCacheChange.OfBoulder(wallId, id));
                 }
             });
         }
@@ -225,13 +240,34 @@ public sealed class WallCacheState : IDisposable
     {
         if (wall)
         {
-            Changed?.Invoke(WallCacheChange.OfWall(wallId));
+            Raise(WallCacheChange.OfWall(wallId));
             return;
         }
 
         foreach (var boulderId in changedBoulders)
         {
-            Changed?.Invoke(WallCacheChange.OfBoulder(wallId, boulderId));
+            Raise(WallCacheChange.OfBoulder(wallId, boulderId));
+        }
+    }
+
+    // One handler at a time, so a component that throws (a disposed page, a bug) costs only its own reload.
+    private void Raise(WallCacheChange change)
+    {
+        if (Changed is not { } handlers)
+        {
+            return;
+        }
+
+        foreach (var handler in handlers.GetInvocationList())
+        {
+            try
+            {
+                ((Action<WallCacheChange>)handler)(change);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "A wall cache Changed handler threw on {Change}", change);
+            }
         }
     }
 
@@ -241,7 +277,7 @@ public sealed class WallCacheState : IDisposable
         if (Volatile.Read(ref disposed) == 0)
         {
             store.EvictWall(wallId);
-            Changed?.Invoke(WallCacheChange.OfWall(wallId));
+            Raise(WallCacheChange.OfWall(wallId));
             ViewerChanged?.Invoke(wallId);
         }
     }
@@ -255,8 +291,8 @@ public sealed class WallCacheState : IDisposable
 
         store.EvictWall(wallId);
         wallList.Forget();
-        Changed?.Invoke(WallCacheChange.WallList);
-        Changed?.Invoke(WallCacheChange.OfWall(wallId));
+        Raise(WallCacheChange.WallList);
+        Raise(WallCacheChange.OfWall(wallId));
         AccessLost?.Invoke(wallId);
     }
 }

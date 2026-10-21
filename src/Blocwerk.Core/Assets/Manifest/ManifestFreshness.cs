@@ -23,7 +23,8 @@ public static class ManifestFreshness
 
     /// <summary>
     /// Gets the kinds that never touch a manifest input: holds, structure without photos, membership and access (the
-    /// classes do not depend on who is a member), and the social and per-user rows. <c>boulder.changed</c> is not here:
+    /// classes do not depend on who is a member, so neither does <c>walls.changed</c>), staged photos (<c>panel.staged</c>: the
+/// manifest never lists a staged photo), and the social and per-user rows. <c>boulder.changed</c> is not here:
     /// a draft flip moves the boulder's thumbnails in or out of the share class.
     /// </summary>
     public static IReadOnlySet<string> Unrelated { get; } = new HashSet<string>(StringComparer.Ordinal)
@@ -31,7 +32,7 @@ public static class ManifestFreshness
         FeedKinds.MemberChanged, FeedKinds.AccessRevoked, FeedKinds.SegmentChanged, FeedKinds.LinkChanged, FeedKinds.VolumeChanged,
         FeedKinds.HoldChanged, FeedKinds.HoldDeleted, FeedKinds.BoulderStats, FeedKinds.CommentAdded, FeedKinds.CommentDeleted,
         FeedKinds.ActivityAdded, FeedKinds.FavoriteChanged, FeedKinds.RatingMine, FeedKinds.TickMine, FeedKinds.UserProfile,
-        FeedKinds.TicksResync, FeedKinds.UserResync,
+        FeedKinds.TicksResync, FeedKinds.UserResync, FeedKinds.WallsChanged, FeedKinds.PanelStaged,
     };
 
     /// <summary>The cursor the entry may move up to when it still holds, or null when it must be rebuilt.</summary>

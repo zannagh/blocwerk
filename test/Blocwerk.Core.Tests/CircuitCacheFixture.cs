@@ -34,7 +34,7 @@ internal sealed class CircuitCacheFixture : IAsyncDisposable
         Hub = new WallFeedHub(Feed, Signal, () => TestDb.Create(connectionString), NullLogger<WallFeedHub>.Instance);
         Viewers = viewers?.Invoke(Harness) ?? Fake;
         Link = new WallFeedLink(wrapHub?.Invoke(Hub) ?? Hub, Feed, Viewers, NullLogger<WallFeedLink>.Instance);
-        Cache = new WallCacheState(Harness.WallService, Harness.BoulderService, Commits, Link);
+        Cache = new WallCacheState(Harness.WallService, Harness.BoulderService, Commits, Link, NullLogger<WallCacheState>.Instance);
         Cache.Changed += c => Record(changes, c);
         Cache.FeedDelivered += d => Record(deliveries, d);
         Cache.AccessLost += w => Record(lost, w);

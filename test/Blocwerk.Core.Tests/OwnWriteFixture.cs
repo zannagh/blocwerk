@@ -33,7 +33,7 @@ internal sealed class OwnWriteFixture : IAsyncDisposable
         var feed = new WallFeed(() => TestDb.Create(connectionString), NullLogger<WallFeed>.Instance);
         Hub = new WallFeedHub(feed, new InProcessFeedSignal(), () => TestDb.Create(connectionString), NullLogger<WallFeedHub>.Instance);
         Link = new WallFeedLink(Hub, feed, Viewer, NullLogger<WallFeedLink>.Instance);
-        Cache = new WallCacheState(Circuit.Walls, Circuit.Boulders, Recorded.Commits, Link);
+        Cache = new WallCacheState(Circuit.Walls, Circuit.Boulders, Recorded.Commits, Link, NullLogger<WallCacheState>.Instance);
         Cache.Changed += c =>
         {
             lock (changes)

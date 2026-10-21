@@ -223,10 +223,11 @@ public sealed class WallCacheFeedReviewFixTests
         Assert.Null(await f.Link.EnsureAsync(f.WallId));
         Assert.Equal(before + 1, f.Fake.Resolved);
 
-        f.Commits.Publish([new WallChange
+        var joined = new WallChange
         {
             WallId = f.WallId, Kind = FeedKinds.WallsChanged, EntityId = f.WallId, Audience = FeedAudience.User, AudienceUserId = Guid.NewGuid(),
-        }]);
+        };
+        f.Commits.Publish([joined]);
         f.Fake.Viewer = FeedViewer.Member(f.Harness.Owner.Id);
         Assert.NotNull(await f.Link.EnsureAsync(f.WallId));
     }

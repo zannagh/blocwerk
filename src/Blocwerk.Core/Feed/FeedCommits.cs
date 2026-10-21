@@ -18,8 +18,9 @@ namespace Blocwerk.Core.Feed;
 /// delivery of the same rows is then skipped by the reload's <c>CursorAtLoad</c>.
 /// </para>
 /// <para>
-/// Observers see every row of every wall and every audience, User rows included: they run inside the server and may only
-/// evict and raise id-only events, never hand a row's content to a viewer. They run on the writer's thread, so they must
+/// Observers see every row of every wall and every audience, User rows included, but only as actor-free events
+/// (<see cref="FeedCommitEvent"/>): no actor id, no addressee id. They run inside the server and may only evict and raise
+/// id-only events, never hand an event to a viewer. They run on the writer's thread, so they must
 /// not block; one that throws is logged and skipped, and never fails the save. Single instance: a second app instance
 /// would see these commits only through the feed (design §5.10).
 /// </para>

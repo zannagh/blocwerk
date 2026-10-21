@@ -116,7 +116,7 @@ public sealed class MatchedSessionCache
 
     private void OnCommitted(FeedCommit commit)
     {
-        foreach (var wallId in commit.Rows.Where(r => r.WallId is not null).Select(r => r.WallId!.Value).Distinct())
+        foreach (var wallId in commit.Events.Select(e => e.Envelope.WallId).OfType<Guid>().Distinct())
         {
             Bump(wallId);
         }

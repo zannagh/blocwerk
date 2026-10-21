@@ -131,15 +131,14 @@ public static class FeedBulkWrite
         }
     }
 
-    // The rows learn their transaction id (Postgres) for the wakes; their Seq stays unknown, which nothing after the
-    // insert reads (the own-write observers evict unconditionally).
-    private static async Task<bool> InsertAsync(BlocwerkDbContext db, IReadOnlyList<WallChange> rows)
+    // Each row reads back its Seq and TxId, so the commit observers and the wakes see it as stored. Returns the count.
+    private static async Task<int> InsertAsync(BlocwerkDbContext db, IReadOnlyList<WallChange> rows)
     {
         foreach (var row in rows)
         {
-            row.TxId = await WallChangeInsert.ExecuteAsync(db, row, CancellationToken.None);
+            await WallChangeInsert.ExecuteAsync(db, row, CancellationToken.None);
         }
 
-        return true;
+        return rows.Count;
     }
 }

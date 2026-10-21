@@ -28,7 +28,7 @@ namespace Blocwerk.Core.Feed;
 /// </para>
 /// </summary>
 public sealed class FeedInterceptor(
-    FeedMapperRegistry registry, IFeedSignal signal, ILogger<FeedInterceptor> logger, FeedCommits? commits = null)
+    FeedMapperRegistry registry, IFeedSignal signal, ILogger<FeedInterceptor> logger, FeedCommits commits)
     : SaveChangesInterceptor, IDbTransactionInterceptor
 {
     private readonly ConditionalWeakTable<DbContext, List<WallChange>> pending = new();
@@ -260,7 +260,7 @@ public sealed class FeedInterceptor(
     // hub re-polls until that one is below the horizon. Wall-less User rows reach the observers and wake nothing.
     private void Release(IReadOnlyList<WallChange> rows)
     {
-        commits?.Publish(rows);
+        commits.Publish(rows);
         foreach (var wake in Wakes(rows).GroupBy(w => w.WallId).Select(g => g.MaxBy(w => w.TxId ?? 0)))
         {
             signal.Wake(wake);

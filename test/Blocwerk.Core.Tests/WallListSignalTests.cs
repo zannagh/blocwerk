@@ -96,6 +96,60 @@ public sealed class WallListSignalTests
         Assert.DoesNotContain(f.Changes, c => c == WallCacheChange.WallList);
     }
 
+    [Fact]
+    public async Task ARoleChangeOfAListedWall_ReloadsTheList()
+    {
+        await using var f = new OwnWriteFixture();
+        await f.StartAsync();
+        var member = await f.Harness.AddMemberAsync("member@test", WallRole.Member);
+        Assert.Equal(WallRole.Member, Assert.Single(await f.Cache.GetMyWallsAsync()).Members.Single(m => m.UserId == member.Id).Role);
+
+        await f.Circuit.Walls.SetMemberRoleAsync(f.WallId, member.Id, WallRole.Moderator);
+
+        Assert.Equal(WallRole.Moderator, Assert.Single(await f.Cache.GetMyWallsAsync()).Members.Single(m => m.UserId == member.Id).Role);
+        Assert.Contains(f.Changes, c => c == WallCacheChange.WallList);
+    }
+
+    [Fact]
+    public async Task AnOwnershipTransfer_ReloadsTheList()
+    {
+        // No service moves the owner outside account deletion (whose resync reaches listed walls as wall.resync); a tracked
+        // save of OwnerId writes wall.updated with ownerChanged.
+        await using var f = new OwnWriteFixture();
+        await f.StartAsync();
+        var heir = await f.Harness.AddMemberAsync("heir@test", WallRole.Admin);
+        Assert.Equal(f.Harness.Owner.Id, Assert.Single(await f.Cache.GetMyWallsAsync()).OwnerId);
+
+        await using (var db = TestDb.Create(f.Harness.DbContextFactory.ConnectionString, f.Interceptor))
+        {
+            (await db.Walls.SingleAsync(w => w.Id == f.WallId)).OwnerId = heir.Id;
+            await db.SaveChangesAsync();
+        }
+
+        Assert.Equal(heir.Id, Assert.Single(await f.Cache.GetMyWallsAsync()).OwnerId);
+    }
+
+    [Fact]
+    public async Task ADeniedAnswerStillLoading_WhenTheJoinCommits_IsReadAgain()
+    {
+        var viewer = new GatedCircuitFeedViewer();
+        await using var f = new CircuitCacheFixture(viewers: _ => viewer);
+        await f.StartAsync();
+        var ensuring = f.Link.EnsureAsync(f.WallId);
+        await viewer.Entered; // the role read began before the join
+
+        viewer.Viewer = FeedViewer.Member(f.Harness.Owner.Id);
+        var joined = new WallChange
+        {
+            WallId = f.WallId, Kind = FeedKinds.WallsChanged, EntityId = f.WallId, Audience = FeedAudience.User, AudienceUserId = f.Harness.Owner.Id,
+        };
+        f.Commits.Publish([joined]);
+        viewer.Release();
+
+        Assert.NotNull(await ensuring);
+        Assert.Equal(2, viewer.Calls);
+    }
+
     private static async Task<User> AddUserAsync(OwnWriteFixture f, string identifier)
     {
         var user = new User { Identifier = identifier, DisplayName = identifier };
