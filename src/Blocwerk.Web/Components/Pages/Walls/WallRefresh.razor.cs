@@ -4,9 +4,12 @@
 
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Pulse;
 using Blocwerk.Core.Refresh;
 using Blocwerk.Core.Services;
 using Blocwerk.Web.Components.Shared.Refresh;
+using Blocwerk.Web.State;
+using Blocwerk.Web.State.Live;
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
 
@@ -15,14 +18,15 @@ namespace Blocwerk.Web.Components.Pages.Walls;
 /// <summary>
 /// The "Update panels + 3D" page of a wall: the update's header with its steps, one status line while something is
 /// being worked on, and the run's current screen (drop zone, sort, check and apply); the timeline is behind
-/// "Details". It polls while the worker is busy or the 3D capture is still running, and survives reloads: the run
-/// lives on the server.
+/// "Details". It re-reads on the run's, the capture's and the runner jobs' pulses (<see cref="PulseLoop"/>), with a
+/// safety poll while the worker is busy or the 3D capture is still running, and survives reloads: the run lives on the
+/// server.
 /// </summary>
 public partial class WallRefresh : IDisposable
 {
-    private static readonly TimeSpan PollEvery = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan SummaryRecheck = TimeSpan.FromMilliseconds(400);
 
+    private readonly PulseHolder<PulseLoop> pulses = new();
     private WallRefreshView? view;
     private bool loading = true;
     private bool busy;
@@ -33,8 +37,7 @@ public partial class WallRefresh : IDisposable
     private ElementReference discardButton;
     private string? error;
     private string? blocked;
-    private PeriodicTimer? timer;
-    private CancellationTokenSource? polling;
+    private bool closed;
     private Task? beginning;
     private SplatQuality splatQuality = SplatQuality.High;
 
@@ -50,6 +53,18 @@ public partial class WallRefresh : IDisposable
     [Inject]
     private IJSRuntime JS { get; set; } = default!;
 
+    [Inject]
+    private WallCacheState Cache { get; set; } = default!;
+
+    [Inject]
+    private IWallPulse Pulse { get; set; } = default!;
+
+    [Inject]
+    private ILogger<WallRefresh> Logger { get; set; } = default!;
+
+    /// <summary>Something of the run is being worked on: only then does the page re-read without a pulse.</summary>
+    private bool Working => view is not null && (view.IsWorking || view.Check3DPending || view.SummaryUpdating || view.Capture is { IsRunning: true });
+
     /// <summary>Starting the wall over is checked on its summary, which is a list: there is nothing to compare card by card.</summary>
     private bool StartsOver => view is { Summary.FullRevision: not null };
 
@@ -62,9 +77,8 @@ public partial class WallRefresh : IDisposable
 
     public void Dispose()
     {
-        polling?.Cancel();
-        polling?.Dispose();
-        timer?.Dispose();
+        closed = true;
+        pulses.Dispose();
     }
 
     protected override async Task OnParametersSetAsync()
@@ -136,6 +150,7 @@ public partial class WallRefresh : IDisposable
             beginning ??= RunAsync(async () => view = await Refreshes.BeginAsync(WallId));
             await beginning;
             beginning = null;
+            pulses.Current?.Nudge(); // the run's state changed here: the loop's wait starts over with it
         }
 
         return view;
@@ -149,7 +164,7 @@ public partial class WallRefresh : IDisposable
     {
         await ReloadAsync();
         StateHasChanged();
-        for (var i = 0; i < 4 && view is { SummaryUpdating: true } && polling is { IsCancellationRequested: false }; i++)
+        for (var i = 0; i < 4 && view is { SummaryUpdating: true } && !closed; i++)
         {
             await Task.Delay(SummaryRecheck);
             await ReloadAsync();
@@ -208,6 +223,9 @@ public partial class WallRefresh : IDisposable
                 await ReloadAsync();
             }
         });
+
+        // The action may have started work ("working"): the loop waits again with the new state, safety poll included.
+        pulses.Current?.Nudge();
     }
 
     private async Task RunAsync(Func<Task> action)
@@ -232,46 +250,22 @@ public partial class WallRefresh : IDisposable
         }
     }
 
+    // Once per wall: enhanced navigation keeps this page for another wall's route.
     private void StartPolling()
     {
-        if (timer is not null)
+        // After the page's await: once it closed, the holder opens nothing.
+        if (pulses.IsFor(WallId))
         {
             return;
         }
 
-        timer = new PeriodicTimer(PollEvery);
-        polling = new CancellationTokenSource();
-        _ = PollAsync(timer, polling.Token);
+        pulses.Open(WallId, () => PulseLoop.Start(
+            Cache, Pulse, WallId, [PulseTopics.Refresh, PulseTopics.Capture, PulseTopics.GpuJob], () => Working, InvokeAsync, RenderReloadAsync, Logger));
     }
 
-    private async Task PollAsync(PeriodicTimer ticks, CancellationToken ct)
+    private async Task RenderReloadAsync()
     {
-        try
-        {
-            while (await ticks.WaitForNextTickAsync(ct))
-            {
-                if (view is null || !(view.IsWorking || view.Check3DPending || view.SummaryUpdating || view.Capture is { IsRunning: true }))
-                {
-                    continue;
-                }
-
-                try
-                {
-                    await InvokeAsync(async () =>
-                    {
-                        await ReloadAsync();
-                        StateHasChanged();
-                    });
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    // A missed poll is retried on the next tick.
-                }
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            // The page closed.
-        }
+        await ReloadAsync();
+        StateHasChanged();
     }
 }

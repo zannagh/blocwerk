@@ -3,15 +3,19 @@
 // </copyright>
 
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Pulse;
 using Blocwerk.Core.Services;
+using Blocwerk.Web.State;
+using Blocwerk.Web.State.Live;
 using Microsoft.AspNetCore.Components;
 
 namespace Blocwerk.Web.Components.Shared;
 
 /// <summary>
 /// The optional shape-recognition step of the big-wall update. The run itself lives on the server
-/// (<see cref="IWallUpdateShapeService"/>), so this component only starts it, polls its progress once a
-/// second while it is alive, and reports the outcome; closing the page does not stop it.
+/// (<see cref="IWallUpdateShapeService"/>), so this component only starts it, follows its progress on the session's
+/// pulses (<see cref="PulseLoop"/>, with a safety poll while it is alive), and reports the outcome; closing the page does
+/// not stop it.
 /// </summary>
 public partial class ShapeRecognitionStep : IDisposable
 {
@@ -23,12 +27,11 @@ public partial class ShapeRecognitionStep : IDisposable
         (ShapeRecognitionScope.All, "All holds on the new photos", "slowest"),
     ];
 
-    private readonly CancellationTokenSource disposed = new();
+    private readonly PulseHolder<PulseLoop> pulses = new();
     private ShapeRecognitionStatusInfo? _status;
     private ShapeRecognitionScope _scope = ShapeRecognitionScope.NewAndChanged;
     private bool _overwriteManual;
     private string? _error;
-    private bool _polling;
     private (Guid, Guid?)? _loadedFor;
 
     [Parameter]
@@ -80,11 +83,19 @@ public partial class ShapeRecognitionStep : IDisposable
         }
     }
 
-    // Cancelled but not disposed: the poll loop may still be reading the token when this runs.
-    public void Dispose() => disposed.Cancel();
+    public void Dispose() => pulses.Dispose();
 
     [Inject]
     private IWallUpdateShapeService Shapes { get; set; } = default!;
+
+    [Inject]
+    private WallCacheState Cache { get; set; } = default!;
+
+    [Inject]
+    private IWallPulse Pulse { get; set; } = default!;
+
+    [Inject]
+    private ILogger<ShapeRecognitionStep> Logger { get; set; } = default!;
 
     // Enhanced-nav rule: parameters can change on a retained instance, so the status load lives here —
     // once per (wall, session), not on every parent render, or the user's scope choice would reset.
@@ -129,38 +140,21 @@ public partial class ShapeRecognitionStep : IDisposable
         }
     }
 
+    // One loop per wall; it idles while no run is alive. Called after awaits: once disposed, the holder opens nothing.
     private void EnsurePolling()
     {
-        if (_polling || !IsRunning)
+        if (pulses.IsFor(WallId))
         {
+            pulses.Current?.Nudge();
             return;
         }
 
-        _polling = true;
-        _ = PollAsync();
+        pulses.Open(WallId, () => PulseLoop.Start(Cache, Pulse, WallId, [PulseTopics.Update], () => IsRunning, InvokeAsync, RefreshAndRenderAsync, Logger));
     }
 
-    private async Task PollAsync()
+    private async Task RefreshAndRenderAsync()
     {
-        try
-        {
-            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
-            while (IsRunning && await timer.WaitForNextTickAsync(disposed.Token))
-            {
-                await InvokeAsync(async () =>
-                {
-                    await RefreshAsync();
-                    StateHasChanged();
-                });
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            // Component gone; the run carries on server-side.
-        }
-        finally
-        {
-            _polling = false;
-        }
+        await RefreshAsync();
+        StateHasChanged();
     }
 }

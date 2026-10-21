@@ -31,7 +31,8 @@ public sealed partial class GpuJobQueue(
     TimeProvider? clock = null,
     DiskSpaceProbe? diskSpace = null,
     GpuPreviewQueue? previews = null,
-    WallTextureRerenderQueue? textureQueue = null)
+    WallTextureRerenderQueue? textureQueue = null,
+    Pulse.IWallPulse? pulse = null)
 {
     /// <summary>nvidia-smi's total of a "12 GB" card is 12282 MB; 98 % of 12 GB, like the worker's own ultra gate.</summary>
     public const int UltraMinVramMb = 12042;

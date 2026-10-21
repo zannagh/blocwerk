@@ -26,7 +26,8 @@ public sealed partial class WallRefreshProcessor(
     ICaptureVideoJoiner? videoJoiner = null,
     WallRefreshLocks? locks = null,
     HoldMoves.HoldMoveOptions? moveOptions = null,
-    MatchedSessionCache? matchCache = null)
+    MatchedSessionCache? matchCache = null,
+    Pulse.IWallPulse? pulse = null)
 {
     private readonly WallRefreshLocks wallLocks = locks ?? new WallRefreshLocks();
     private readonly MatchedSessionCache matches = matchCache ?? new MatchedSessionCache();

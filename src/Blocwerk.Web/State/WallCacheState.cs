@@ -32,7 +32,7 @@ namespace Blocwerk.Web.State;
 /// already reloaded for costs no second reload.
 /// </para>
 /// </summary>
-public sealed class WallCacheState : IDisposable
+public sealed partial class WallCacheState : IDisposable
 {
     private readonly IWallService walls;
     private readonly IBoulderService boulders;

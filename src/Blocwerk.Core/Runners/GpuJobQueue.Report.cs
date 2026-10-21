@@ -118,7 +118,13 @@ public sealed partial class GpuJobQueue
                     .SetProperty(j => j.SplatCount, facts.Splats)
                     .SetProperty(j => j.Error, (string?)null),
                 ct);
-        return updated == 0 ? RunnerJobOutcome.Gone : RunnerJobOutcome.Ok;
+        if (updated == 0)
+        {
+            return RunnerJobOutcome.Gone;
+        }
+
+        PulseJob(job.WallId, job.Id, progress);
+        return RunnerJobOutcome.Ok;
     }
 
     /// <summary>

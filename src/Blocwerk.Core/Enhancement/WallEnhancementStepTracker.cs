@@ -37,11 +37,23 @@ public sealed class WallEnhancementStepTracker : IProgress<WallEnhancementProgre
     /// <summary>When the step is expected to be done, once the pace is known.</summary>
     public DateTimeOffset? ExpectedEnd { get; private set; }
 
+    /// <summary>Told about every report, after the pace is updated (the card's pulse).</summary>
+    public Action<WallEnhancementProgress>? Reported { get; init; }
+
     /// <summary>The reports the pace is taken over: the recent ones, so a resumed search's rush through its checkpointed photos is soon forgotten.</summary>
     public int Window { get; init; } = 20;
 
     /// <inheritdoc/>
     public void Report(WallEnhancementProgress value)
+    {
+        Track(value);
+        Reported?.Invoke(value);
+    }
+
+    /// <summary>The step ended: the deploy gate no longer waits for it.</summary>
+    public void Clear() => eta?.Set(runId, null);
+
+    private void Track(WallEnhancementProgress value)
     {
         lock (gate)
         {
@@ -65,7 +77,4 @@ public sealed class WallEnhancementStepTracker : IProgress<WallEnhancementProgre
             eta?.Set(runId, ExpectedEnd);
         }
     }
-
-    /// <summary>The step ended: the deploy gate no longer waits for it.</summary>
-    public void Clear() => eta?.Set(runId, null);
 }

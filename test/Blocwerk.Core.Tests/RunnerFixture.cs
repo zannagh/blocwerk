@@ -27,10 +27,14 @@ internal sealed class RunnerFixture : IDisposable
         Files = new FileSystemCaptureFileStore(settings);
         Options = options ?? new GpuRunnerOptions { ClaimWait = TimeSpan.Zero };
         Queue = new GpuJobQueue(
-            harness.RootContextFactory, Files, CaptureQueue, Options, new GpuJobSignal(), NullLogger<GpuJobQueue>.Instance, clock: Clock, diskSpace: Disk);
+            harness.RootContextFactory, Files, CaptureQueue, Options, new GpuJobSignal(), NullLogger<GpuJobQueue>.Instance, clock: Clock, diskSpace: Disk,
+            pulse: Pulses);
     }
 
     public WallTestHarness Harness { get; }
+
+    /// <summary>The queue's job pulses, unthrottled.</summary>
+    public Pulse.RecordingWallPulse Pulses { get; } = new();
 
     public MutableTestClock Clock { get; }
 
