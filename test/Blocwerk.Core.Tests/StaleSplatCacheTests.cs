@@ -87,6 +87,10 @@ public class StaleSplatCacheTests
 
         Assert.Equal(ImageResponse.MutableCacheControl, await CacheControlAsync(h, s, url));
         Assert.Equal(ImageResponse.MutableCacheControl, await CacheControlAsync(h, s, url + "?v=stale"));
+
+        // The full scene's version on a level the row does not have is not that level's version.
+        var full = AssetRequests.Query((await ViewAsync(h)).SplatUrl!, AssetVersion.QueryName);
+        Assert.Equal(ImageResponse.MutableCacheControl, await CacheControlAsync(h, s, $"{url}?lod=77&v={full}"));
     }
 
     [Fact]
@@ -135,6 +139,9 @@ public class StaleSplatCacheTests
         Assert.NotEqual(WallGeometrySplats.Url(wall, splat), WallGeometrySplats.Url(wall, rerun));
         Assert.NotEqual(WallGeometrySplats.Url(wall, splat, mobile: true), WallGeometrySplats.Url(wall, rerun, mobile: true));
         Assert.NotEqual(WallGeometrySplats.Url(wall, splat), WallGeometrySplats.Url(wall, splat, mobile: true));
+
+        // A level the row lacks serves the full scene, but under its own version, never the full scene's.
+        Assert.NotEqual(WallGeometrySplats.Version(splat, null), WallGeometrySplats.Version(splat, "77"));
 
         var before = WallGeometrySplats.LevelUrl(wall, splat, 40_000);
         splat.LodLevelsJson = SplatLodLadder.Serialize([new SplatLodLevel(40_000, "l.spz", 3)]);

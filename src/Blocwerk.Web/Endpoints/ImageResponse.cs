@@ -112,8 +112,12 @@ public static class ImageResponse
         bool immutable,
         Func<Task<ImageVariant?>> load)
     {
+        // A url that names a version which is no longer current must revalidate: it is exactly the copy a
+        // rewrite replaced. The bounded max-age is only for a url that never named a version at all.
         http.Response.Headers.ETag = etag;
-        http.Response.Headers.CacheControl = immutable ? ImmutableCacheControl : VariantCacheControl;
+        http.Response.Headers.CacheControl = immutable
+            ? ImmutableCacheControl
+            : http.Request.Query.ContainsKey(AssetVersion.QueryName) ? MutableCacheControl : VariantCacheControl;
 
         if (Matches(http.Request, etag))
         {

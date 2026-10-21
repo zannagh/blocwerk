@@ -21,8 +21,18 @@ namespace Blocwerk.Core.Tests;
 /// gallery hands out urls that name the bytes (<c>?v=</c>), only those are immutable, and an old or
 /// unversioned url revalidates against the ETag.
 /// </summary>
-public class StaleGalleryImageCacheTests
+public sealed class StaleGalleryImageCacheTests : IDisposable
 {
+    private readonly List<string> cacheRoots = [];
+
+    public void Dispose()
+    {
+        foreach (var root in cacheRoots.Where(Directory.Exists))
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Theory]
     [InlineData(WallGallerySource.Uploaded)]
     [InlineData(WallGallerySource.ResetPhoto)]
@@ -48,7 +58,7 @@ public class StaleGalleryImageCacheTests
         var (_, stale) = await ServeAsync(h, before);
         Assert.Equal(ImageResponse.MutableCacheControl, stale.Response.Headers.CacheControl.ToString());
         var (_, staleThumb) = await ServeAsync(h, beforeThumb);
-        Assert.DoesNotContain("immutable", staleThumb.Response.Headers.CacheControl.ToString());
+        Assert.Equal(ImageResponse.MutableCacheControl, staleThumb.Response.Headers.CacheControl.ToString());
 
         var (currentResult, current) = await ServeAsync(h, after);
         Assert.Equal(ImageResponse.ImmutableCacheControl, current.Response.Headers.CacheControl.ToString());
@@ -68,6 +78,10 @@ public class StaleGalleryImageCacheTests
 
         Assert.Equal(ImageResponse.MutableCacheControl, http.Response.Headers.CacheControl.ToString());
         Assert.False(string.IsNullOrEmpty(EtagOf(result, http)));
+
+        // An old client's thumbnail never named a version: it keeps the bounded variant max-age.
+        var (_, thumb) = await ServeAsync(h, ResponsiveImage.AtWidth(url, ResponsiveImage.ThumbnailWidth));
+        Assert.Equal(ImageResponse.VariantCacheControl, thumb.Response.Headers.CacheControl.ToString());
     }
 
     [Fact]
@@ -92,13 +106,13 @@ public class StaleGalleryImageCacheTests
         return ResponsiveImage.Gallery(h.WallId, item.Source.ToString(), item.Id, item.SizeBytes, null, thumbnail);
     }
 
-    private static async Task<(IResult Result, HttpContext Http)> ServeAsync(WallTestHarness h, string url)
+    private async Task<(IResult Result, HttpContext Http)> ServeAsync(WallTestHarness h, string url)
     {
         var http = AssetRequests.For(url);
         return (await ServeAsync(h, url, http), http);
     }
 
-    private static Task<IResult> ServeAsync(WallTestHarness h, string url, HttpContext http)
+    private Task<IResult> ServeAsync(WallTestHarness h, string url, HttpContext http)
     {
         var parts = url.Split('?')[0].Split('/');
         var width = AssetRequests.Query(url, "w");
@@ -125,10 +139,11 @@ public class StaleGalleryImageCacheTests
         await db.SaveChangesAsync();
     }
 
-    private static FileSystemImageVariantCache NewCache()
+    private FileSystemImageVariantCache NewCache()
     {
         var settings = new BlocwerkSettings();
         settings.WallImage.StoragePath = Path.Combine(Path.GetTempPath(), "bwk-stale-gallery", Guid.NewGuid().ToString("N"));
+        cacheRoots.Add(settings.WallImage.StoragePath);
         return new FileSystemImageVariantCache(settings, NullLogger<FileSystemImageVariantCache>.Instance);
     }
 }

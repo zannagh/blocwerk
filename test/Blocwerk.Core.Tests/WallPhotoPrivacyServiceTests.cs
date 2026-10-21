@@ -99,6 +99,33 @@ public class WallPhotoPrivacyServiceTests
         Assert.True((await db.WallPanels.Select(p => p.Photo).FirstAsync(p => p != null))!.AsSpan().IndexOf(ExifJpeg.GpsLatitudeBytes) >= 0);
     }
 
+    [Fact]
+    public async Task AGalleryRowWhoseSizeLagsItsFile_IsRepairedByTheNextRun_SoItsUrlVersionMoves()
+    {
+        using var h = new WallTestHarness();
+        var seeded = await SeedDirtyWallAsync(h);
+        var dirtyLength = (await File.ReadAllBytesAsync(seeded.GalleryPath)).LongLength;
+        await Service(h).RemoveMetadataAsync(h.WallId);
+
+        // A crash between the file move and the commit: clean file, the row still on the old size.
+        await using (var db = h.CreateContext())
+        {
+            await db.WallImages.ExecuteUpdateAsync(s => s.SetProperty(i => i.SizeBytes, dirtyLength));
+        }
+
+        var dryRun = await Service(h).ScanAsync(h.WallId);
+        Assert.Equal(0, dryRun.WithMetadata);                  // the file is clean: nothing would ever rewrite it
+        await using (var db = h.CreateContext())
+        {
+            Assert.Equal(dirtyLength, await db.WallImages.Select(i => i.SizeBytes).SingleAsync()); // a dry run never writes
+        }
+
+        await Service(h).RemoveMetadataAsync(h.WallId);
+
+        await using var check = h.CreateContext();
+        Assert.Equal(new FileInfo(seeded.GalleryPath).Length, await check.WallImages.Select(i => i.SizeBytes).SingleAsync());
+    }
+
     private static WallPhotoPrivacyService Service(WallTestHarness h, IKioskContext? kiosk = null) =>
         new(h.DbContextFactory, h.CurrentUser, h.WallImageStorage, NullLogger<WallPhotoPrivacyService>.Instance, kiosk);
 

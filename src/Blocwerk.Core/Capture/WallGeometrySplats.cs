@@ -31,13 +31,15 @@ public static class WallGeometrySplats
         Url(wallId, splat, shareToken, splats.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
     /// <summary>
-    /// The <see cref="AssetVersion"/> of the file <paramref name="lod"/> selects: the same parts as the
-    /// route's ETag, so a new row (re-run) or a level added later (LOD backfill) moves it.
+    /// The <see cref="AssetVersion"/> of the file <paramref name="lod"/> selects: the parts of the route's
+    /// ETag, so a new row (re-run) or a level added later (LOD backfill) moves it, plus the requested
+    /// <paramref name="lod"/> itself, so a level the row lacks (served the full scene) never shares the full
+    /// scene's version.
     /// </summary>
     public static string Version(WallGeometrySplat splat, string? lod)
     {
         var (_, size, kind) = Select(splat, lod);
-        return AssetVersion.Of(kind, splat.Id, size);
+        return AssetVersion.Of(kind, splat.Id, size, lod);
     }
 
     /// <summary>
