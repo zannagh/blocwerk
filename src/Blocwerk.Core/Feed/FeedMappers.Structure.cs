@@ -5,7 +5,7 @@ using Blocwerk.Core.Feed.Structure;
 
 namespace Blocwerk.Core.Feed;
 
-/// <summary>The wall-structure family (PR 1.2b): wall, members, segments, panels, links, volumes, holds and boulders.</summary>
+/// <summary>The wall-structure family (PR 1.2b): wall, members, segments, panels, links, volumes, holds and boulders, and the manifest signal (PR 2.4).</summary>
 public static partial class FeedMappers
 {
     static partial void AddStructure(List<IFeedMapper> mappers)
@@ -16,5 +16,6 @@ public static partial class FeedMappers
         mappers.Add(new HoldFeedMapper());
         mappers.Add(new BoulderFeedMapper());
         mappers.Add(new BoulderPartFeedMapper());
+        mappers.Add(new ManifestFeedMapper());
     }
 }

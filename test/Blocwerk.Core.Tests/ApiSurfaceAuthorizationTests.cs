@@ -106,6 +106,7 @@ public class ApiSurfaceAuthorizationTests
         Assert.Contains("/api/walls/{wallId:guid}/geometry/{modelId:guid}/splat", routes);
         Assert.Contains("/api/walls/{wallId:guid}/a/{sha}", routes);
         Assert.Contains("/api/walls/{wallId:guid}/a/{sha}/{width:int}", routes);
+        Assert.Contains("/api/walls/{wallId:guid}/manifest", routes);
         Assert.Contains("/api/v1/me/sessions", routes);
         Assert.Contains("/api/captures/{captureId:guid}/video", routes);
         Assert.Contains("/api/refreshes/{refreshId:guid}/files", routes);
@@ -155,7 +156,9 @@ public class ApiSurfaceAuthorizationTests
                 || (e.RoutePattern.RawText ?? string.Empty)
                     .Contains("/gallery/", StringComparison.Ordinal)
                 || (e.RoutePattern.RawText ?? string.Empty)
-                    .Contains("/a/{sha}", StringComparison.Ordinal))
+                    .Contains("/a/{sha}", StringComparison.Ordinal)
+                || (e.RoutePattern.RawText ?? string.Empty)
+                    .EndsWith("/manifest", StringComparison.Ordinal))
             .ToList();
 
         Assert.NotEmpty(mediaRoutes);
@@ -275,6 +278,9 @@ public class ApiSurfaceAuthorizationTests
 
         // The content-addressed asset routes (immutable, hashed) sit under /api/walls as well.
         app.MapAssets();
+
+        // Their manifest sits under /api/walls too; the partition route under /api/me, outside the prefixes.
+        app.MapAssetManifest();
 
         // The capture video upload sits under /api/captures, an API-key prefix for personal keys.
         app.MapCaptureVideoUpload();

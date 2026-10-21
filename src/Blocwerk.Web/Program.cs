@@ -391,6 +391,9 @@ public static class Program
         // Content-addressed wall assets (/api/walls/{w}/a/{sha}), immutable; same posture as the wall media above.
         app.MapAssets();
 
+        // Their manifest per wall and the device's cache partition (design §6.4, §6.6).
+        app.MapAssetManifest();
+
         // Device reports of the photo-real view (start, level steps, lost contexts), logged only.
         app.MapPhotoRealDiagnostics();
 

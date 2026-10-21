@@ -129,7 +129,9 @@ public sealed class SocialFeedMapperTests : IDisposable
         await fixture.ChangeAsync<WallImage>(i => i.Id == image.Id, (i, _) => i.Caption = "Overhang");
         await fixture.ChangeAsync<WallImage>(i => i.Id == image.Id, (i, db) => db.Remove(i));
 
-        var rows = await fixture.RowsAsync();
+        var all = await fixture.RowsAsync();
+        Assert.Equal(2, all.Count(r => r.Kind == FeedKinds.WallManifest)); // the upload and the delete move the manifest (PR 2.4)
+        var rows = all.Where(r => r.Kind != FeedKinds.WallManifest).ToList();
         Assert.Equal([FeedKinds.GalleryChanged, FeedKinds.GalleryChanged, FeedKinds.GalleryDeleted], rows.Select(r => r.Kind));
         Assert.All(rows, r => Assert.Equal((image.Id, FeedAudience.Wall, (string?)null), (r.EntityId, r.Audience, r.DataJson)));
     }

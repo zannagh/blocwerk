@@ -54,7 +54,9 @@ public sealed class SocialFeedProfileTests : IDisposable
         await fixture.ChangeAsync<WallGeometryModel>(m => m.Id == model.Id, (m, _) => m.IsActive = true);
         await fixture.ChangeAsync<WallGeometryModel>(m => m.Id == model.Id, (m, _) => (m.IsActive, m.RetiredAt) = (false, DateTimeOffset.UtcNow));
 
-        var rows = await fixture.RowsAsync();
+        var all = await fixture.RowsAsync();
+        Assert.Equal(2, all.Count(r => r.Kind == FeedKinds.WallManifest)); // activation and retirement move the manifest (PR 2.4)
+        var rows = all.Where(r => r.Kind != FeedKinds.WallManifest).ToList();
         Assert.Equal(2, rows.Count);
         Assert.All(rows, r => Assert.Equal((FeedKinds.View3DChanged, (Guid?)fixture.WallId, (Guid?)model.Id, FeedAudience.Wall), (r.Kind, r.WallId, r.EntityId, r.Audience)));
     }
