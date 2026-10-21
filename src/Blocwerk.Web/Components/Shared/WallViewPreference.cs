@@ -6,7 +6,8 @@ namespace Blocwerk.Web.Components.Shared;
 
 /// <summary>
 /// The member's wall-editor overlay preferences — the "view" toolbar group: hold names, the wall
-/// border, the changed-hold highlight and the missing-information overlay's criteria.
+/// border, the changed-hold highlight, the missing-information overlay's criteria and the
+/// suggested-colour marks.
 /// <para>
 /// Stored as one plain cookie by <c>wwwroot/js/prefs.js</c> (<c>bwPrefs.getWallView</c> /
 /// <c>setWallView</c>), exactly like the toolbar placement: a cookie rather than localStorage so
@@ -23,12 +24,14 @@ namespace Blocwerk.Web.Components.Shared;
 /// <param name="ShowChanges">Whether holds marked changed are highlighted.</param>
 /// <param name="IncompleteCriteria">Which missing-information criteria the "?" overlay badges.</param>
 /// <param name="Tool">The tool the editor was last left in, if it is one worth reopening in.</param>
+/// <param name="ShowSuggested">Whether the "?" marks on holds with an unconfirmed, suggested colour are drawn.</param>
 public readonly record struct WallViewPreference(
     bool ShowNames,
     bool ShowBorder,
     bool ShowChanges,
     HoldCompletenessCriteria IncompleteCriteria,
-    HoldTouchupTool Tool = HoldTouchupTool.None)
+    HoldTouchupTool Tool = HoldTouchupTool.None,
+    bool ShowSuggested = true)
 {
     /// <summary>
     /// The tools the editor may REOPEN in. Two kinds are deliberately missing.
@@ -61,8 +64,8 @@ public readonly record struct WallViewPreference(
     public const string CookieName = "blocwerk-wall-view";
 
     /// <summary>
-    /// What a member who has never touched the toggles sees: border and change highlight on, names
-    /// off, no missing-information badges. Identical to the editor's own field initialisers — keep
+    /// What a member who has never touched the toggles sees: border, change highlight and
+    /// suggested-colour marks on, names off, no missing-information badges. Identical to the editor's own field initialisers — keep
     /// the two in step, because an unset cookie must not change what the editor looks like.
     /// </summary>
     public static WallViewPreference Default { get; } = new(
@@ -70,7 +73,8 @@ public readonly record struct WallViewPreference(
         ShowBorder: true,
         ShowChanges: true,
         HoldCompletenessCriteria.None,
-        HoldTouchupTool.None);
+        HoldTouchupTool.None,
+        ShowSuggested: true);
 
     /// <summary>Whether the editor may open straight into <paramref name="tool"/>.</summary>
     public static bool IsRestorable(HoldTouchupTool tool) => Array.IndexOf(RestorableTools, tool) >= 0;
@@ -136,6 +140,9 @@ public readonly record struct WallViewPreference(
                 case 'i':
                     result = result with { IncompleteCriteria = ParseCriteria(value) };
                     break;
+                case 's':
+                    result = result with { ShowSuggested = value != 0 };
+                    break;
                 default:
                     break;
             }
@@ -147,7 +154,7 @@ public readonly record struct WallViewPreference(
     /// <summary>The cookie value for these preferences.</summary>
     public string ToCookieValue() => string.Create(
         System.Globalization.CultureInfo.InvariantCulture,
-        $"n{(ShowNames ? 1 : 0)}.b{(ShowBorder ? 1 : 0)}.c{(ShowChanges ? 1 : 0)}.i{(int)IncompleteCriteria}.t{(IsRestorable(Tool) ? Tool : HoldTouchupTool.None)}");
+        $"n{(ShowNames ? 1 : 0)}.b{(ShowBorder ? 1 : 0)}.c{(ShowChanges ? 1 : 0)}.i{(int)IncompleteCriteria}.s{(ShowSuggested ? 1 : 0)}.t{(IsRestorable(Tool) ? Tool : HoldTouchupTool.None)}");
 
     /// <summary>
     /// Keeps only bits the enum actually defines, so a stale cookie written by a future (or edited)

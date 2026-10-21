@@ -28,6 +28,21 @@ public class WallViewPreferenceTests
         Assert.Equal(original, WallViewPreference.Parse(original.ToCookieValue()));
     }
 
+    [Fact]
+    public void RemembersHiddenSuggestedColourMarks()
+    {
+        var hidden = WallViewPreference.Default with { ShowSuggested = false };
+
+        Assert.False(WallViewPreference.Parse(hidden.ToCookieValue()).ShowSuggested);
+        Assert.True(WallViewPreference.Parse(WallViewPreference.Default.ToCookieValue()).ShowSuggested);
+    }
+
+    [Fact]
+    public void ShowsSuggestedColourMarksForACookieWrittenBeforeTheToggle()
+    {
+        Assert.True(WallViewPreference.Parse("n1.b0.c0.i1.tMove").ShowSuggested);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]
