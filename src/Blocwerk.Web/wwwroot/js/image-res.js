@@ -31,8 +31,8 @@ window.bwImageRes = (function () {
     // The full ladder the cap indexes against: every WIDTHS rung, then ORIGINAL as the top.
     const LADDER = WIDTHS.concat([ORIGINAL]);
 
-    // How long an upgrade holds the gate before a later measurement may ask for another rung. The download is
-    // not cancelled then: the original is 3-4 MB, which a slow phone connection needs a good while for.
+    // How long an upgrade holds the gate before a later measurement may ask for another rung (the 3-4 MB original
+    // needs a good while on a slow phone; its download goes on).
     const UPGRADE_STALL_MS = 45000;
 
     // The query parameter image-watchdog.js adds when it re-requests a stalled image; never part of the base.
@@ -116,13 +116,9 @@ window.bwImageRes = (function () {
     }
 
     /**
-     * Loads and decodes the replacement off-screen, then swaps it in. The pending URL is recorded
-     * on the element and gates further upgrades while it is outstanding. A load that lands late (a
-     * slower rung after a sharper one, or after the viewer swapped panels) is dropped, never a downgrade.
-     *
-     * A slow download is never cancelled or started twice: after UPGRADE_STALL_MS only the gate opens
-     * (a later measurement may ask for a sharper rung), and asking for a url already on its way just
-     * waits on that download, so a phone on a slow line is not sent back to byte 0 on every zoom.
+     * Loads and decodes the replacement off-screen, then swaps it in; the pending URL gates further upgrades. A late
+     * load (a slower rung after a sharper one, or after a panel swap) is dropped, never a downgrade. A slow download is
+     * neither cancelled nor started twice (after UPGRADE_STALL_MS only the gate opens), so a slow phone keeps its bytes.
      */
     function upgrade(img, level) {
         const base = img._bwBase;
@@ -139,7 +135,21 @@ window.bwImageRes = (function () {
         next.decoding = 'async';
         loading[url] = next;
 
+        // Asked again after a hang: a fresh url, so the browser does not wait on the dead request.
+        const hung = img._bwHung || (img._bwHung = {});
+        const fetchUrl = hung[url] ? url + (url.indexOf('?') >= 0 ? '&' : '?') + 'bwretry=' + hung[url] : url;
+
+        // A truly hung download fires neither load nor error: past twice the stall time it is let go, to be asked again.
+        const hang = setTimeout(function () {
+            if (loading[url] === next) {
+                delete loading[url];
+                hung[url] = (hung[url] || 0) + 1;
+                next.removeAttribute('src');
+            }
+        }, 2 * UPGRADE_STALL_MS);
+
         const done = function () {
+            clearTimeout(hang);
             delete loading[url];
             if (img._bwPending === url) {
                 clearTimeout(img._bwStall);
@@ -165,7 +175,7 @@ window.bwImageRes = (function () {
             }
 
             img._bwLevel = level;
-            img.src = url;
+            img.src = fetchUrl;
         };
 
         // decode() resolves only once the bitmap is ready to paint, which is the whole point — the
@@ -177,7 +187,7 @@ window.bwImageRes = (function () {
             }
         };
         next.onerror = done;
-        next.src = url;
+        next.src = fetchUrl;
 
         if (next.decode) {
             next.decode().then(swap, function () {
@@ -234,14 +244,9 @@ window.bwImageRes = (function () {
         upgrade(img, wanted);
     }
 
-    /** The url without its width and without the retry marker image-watchdog.js adds to a stalled load. */
+    /** The url without its width and without image-watchdog.js's retry marker (only that parameter is touched). */
     function stripWidth(url) {
-        return withoutRetry(urlAt(url, ORIGINAL));
-    }
-
-    /** `url` without the retry parameter; only that one parameter is touched, the rest stays byte for byte. */
-    function withoutRetry(url) {
-        return url.replace(RETRY_PATTERN, '$1').replace(/[?&]$/, '');
+        return urlAt(url, ORIGINAL).replace(RETRY_PATTERN, '$1').replace(/[?&]$/, '');
     }
 
     /**

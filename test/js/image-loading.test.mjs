@@ -47,6 +47,7 @@ function page(images) {
     const loads = [];
     const listeners = {};
     let observe = null;
+    const unobserved = [];
     class Image {
         set src(value) {
             this._src = value;
@@ -57,6 +58,13 @@ function page(images) {
 
         get src() {
             return this._src;
+        }
+
+        removeAttribute(name) {
+            if (name === 'src') {
+                this._src = undefined;
+                this.removed = true;
+            }
         }
 
         decode() {
@@ -72,6 +80,10 @@ function page(images) {
         }
 
         observe() {}
+
+        unobserve(img) {
+            unobserved.push(img);
+        }
     }
 
     const window = {
@@ -109,9 +121,11 @@ function page(images) {
         dog,
         loads,
         listeners,
+        unobserved,
         see: (img, inView = true) => { dog.check(img, 0); observe(img, inView); },
         frame: () => frames.splice(0).forEach(cb => cb()),
-        runTimers: () => timers.splice(0).forEach(t => t.cb && t.cb()),
+        // Fires the pending timers due within `upTo` ms (all of them without it); later ones stay pending.
+        runTimers: (upTo = Infinity) => timers.filter(t => t.cb && t.ms <= upTo).forEach(t => { const cb = t.cb; t.cb = null; cb(); }),
         settle: async () => { for (let i = 0; i < 5; i++) { await Promise.resolve(); } },
         measure: zoom => { window.bwImageRes.refresh(null, zoom); frames.splice(0).forEach(cb => cb()); },
     };
@@ -193,7 +207,7 @@ test('image-res: a slow upgrade is neither cancelled nor started twice, and stil
     assert.equal(p.loads.length, 1);
     const slow = p.loads[0];
 
-    p.runTimers();
+    p.runTimers(60000);
     p.measure(4);
     p.measure(5);
     assert.equal(p.loads.length, 1, 'the download in flight is reused');
@@ -223,6 +237,39 @@ test('image-res: once an upgrade has held the gate too long, a sharper rung may 
     mid.finish(true);
     await p.settle();
     assert.equal(img.getAttribute('src'), '/api/walls/w/panels/p/photo');
+});
+
+test('watchdog: an image stops being observed once it has loaded or left the page', () => {
+    const loaded = new FakeImg('/a.jpg');
+    const gone = new FakeImg('/b.jpg');
+    const p = page([loaded, gone]);
+    p.see(loaded);
+    p.see(gone);
+
+    loaded.complete = true;
+    gone.isConnected = false;
+    p.dog.check(loaded, 1);
+    p.dog.check(gone, 1);
+
+    assert.deepEqual(p.unobserved, [loaded, gone]);
+});
+
+test('image-res: an upgrade to the top rung that truly hangs is let go and asked for again under a fresh url', async () => {
+    const img = new FakeImg('/api/walls/w/panels/p/photo?w=1280', { complete: true, width: 1000 });
+    const p = page([img]);
+    p.measure(4);
+    const hung = p.loads[0];
+    assert.equal(hung.src, '/api/walls/w/panels/p/photo');
+
+    p.runTimers();
+    p.measure(4);
+
+    assert.ok(hung.removed, 'the hung request is dropped');
+    assert.equal(p.loads.length, 2);
+    assert.equal(p.loads[1].src, '/api/walls/w/panels/p/photo?bwretry=1');
+    p.loads[1].finish(true);
+    await p.settle();
+    assert.equal(img.getAttribute('src'), '/api/walls/w/panels/p/photo?bwretry=1');
 });
 
 test('image-res: an upgrade that lands after the viewer swapped panels does not bring the old photo back', async () => {

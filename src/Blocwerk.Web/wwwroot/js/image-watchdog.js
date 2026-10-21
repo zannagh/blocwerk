@@ -66,6 +66,15 @@ window.bwImageWatchdog = (function () {
             && r.top < window.innerHeight && r.left < window.innerWidth;
     }
 
+    /** Done with this image (loaded, or gone from the page); it is observed again if it starts another load. */
+    function stopObserving(img) {
+        if (observer && img._bwObserved) {
+            img._bwObserved = false;
+            img._bwInView = undefined;
+            observer.unobserve(img);
+        }
+    }
+
     /**
      * One look at one image at time `now`. Exposed for the tests. The element carries its own state:
      * which picture it is waiting for, since when, and how often that picture was asked for again.
@@ -73,6 +82,7 @@ window.bwImageWatchdog = (function () {
     function check(img, now) {
         const src = img.getAttribute('src');
         if (!src || !img.isConnected) {
+            stopObserving(img);
             return false;
         }
 
@@ -83,7 +93,13 @@ window.bwImageWatchdog = (function () {
             img._bwWatchSince = null;
         }
 
-        if (img.complete || !inView(img)) {
+        if (img.complete) {
+            stopObserving(img);
+            img._bwWatchSince = null;
+            return false;
+        }
+
+        if (!inView(img)) {
             img._bwWatchSince = null;
             return false;
         }
