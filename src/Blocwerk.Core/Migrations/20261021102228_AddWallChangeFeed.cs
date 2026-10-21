@@ -77,6 +77,11 @@ namespace Blocwerk.Core.Migrations
                 column: "CreatedAt");
 
             migrationBuilder.CreateIndex(
+                name: "IX_WallChanges_TxId_Seq",
+                table: "WallChanges",
+                columns: new[] { "TxId", "Seq" });
+
+            migrationBuilder.CreateIndex(
                 name: "IX_WallChanges_WallId_TxId_Seq",
                 table: "WallChanges",
                 columns: new[] { "WallId", "TxId", "Seq" });

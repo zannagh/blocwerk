@@ -33,6 +33,7 @@ public partial class BlocwerkDbContext
             entity.Property(c => c.DataJson).HasColumnType("jsonb");
 
             entity.HasIndex(c => new { c.WallId, c.TxId, c.Seq });
+            entity.HasIndex(c => new { c.TxId, c.Seq }); // the high-water mark every short read caps its cursor at
             entity.HasIndex(c => new { c.AudienceUserId, c.TxId, c.Seq }).HasFilter("\"AudienceUserId\" IS NOT NULL");
             entity.HasIndex(c => c.ActorUserId).HasFilter("\"ActorUserId\" IS NOT NULL");
             entity.HasIndex(c => c.CreatedAt);

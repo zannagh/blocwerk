@@ -14,8 +14,8 @@ namespace Blocwerk.Core.Feed;
 public interface IFeedHorizon
 {
     /// <summary>
-    /// The newest position no future commit can land at or below. Doubles as the <c>CursorAtLoad</c>: every transaction at
-    /// or below it has ended, so a query run after this call sees all of them.
+    /// The newest position no future commit can land at or below: every transaction at or below it has ended, so a query
+    /// run after this call sees all of them. Cursors are handed out at the stored high-water mark under it, never above.
     /// </summary>
     Task<FeedPosition> CeilingAsync(BlocwerkDbContext db, CancellationToken cancellationToken);
 

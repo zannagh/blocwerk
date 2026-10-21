@@ -53,8 +53,9 @@ public sealed class WallFeed : IWallFeed
     {
         await using var db = await OpenReadContextAsync(cancellationToken);
         var epoch = await EpochAsync(db, cancellationToken);
-        var ceiling = await FeedHorizons.For(db).CeilingAsync(db, cancellationToken);
-        return new FeedCursor(epoch.Id, ceiling);
+        var horizon = FeedHorizons.For(db);
+        var ceiling = await horizon.CeilingAsync(db, cancellationToken);
+        return new FeedCursor(epoch.Id, await HighWaterAsync(db, horizon, ceiling, epoch, cancellationToken));
     }
 
     public async Task<FeedPage> ReadAsync(FeedFilter filter, FeedCursor after, int limit, CancellationToken cancellationToken = default)
@@ -66,19 +67,40 @@ public sealed class WallFeed : IWallFeed
         var ceiling = await horizon.CeilingAsync(db, cancellationToken);
         if (after.Epoch != epoch.Id || IsBelowFloor(after.Position, epoch))
         {
-            return new FeedPage([], new FeedCursor(epoch.Id, ceiling), Resync: true);
+            return new FeedPage([], new FeedCursor(epoch.Id, await HighWaterAsync(db, horizon, ceiling, epoch, cancellationToken)), Resync: true);
         }
 
         var query = horizon.Between(db.WallChanges.AsNoTracking().Where(filter.Predicate), after.Position, ceiling);
         var rows = await horizon.InOrder(query).Take(limit).ToListAsync(cancellationToken);
+        if (rows.Count == limit)
+        {
+            // A full page may have more below the ceiling.
+            return new FeedPage(rows, new FeedCursor(epoch.Id, FeedPosition.Of(rows[^1])), Resync: false);
+        }
 
-        // A full page may have more below the ceiling; a short one has seen everything up to it.
-        var next = rows.Count == limit ? FeedPosition.Of(rows[^1]) : FeedPosition.Max(after.Position, ceiling);
-        return new FeedPage(rows, new FeedCursor(epoch.Id, next), Resync: false);
+        // A short page has seen everything up to the ceiling, but the cursor moves only to the high-water mark.
+        var highWater = await HighWaterAsync(db, horizon, ceiling, epoch, cancellationToken);
+        return new FeedPage(rows, new FeedCursor(epoch.Id, FeedPosition.Max(after.Position, highWater)), Resync: false);
     }
 
     public Task<long?> AppendAsync(BlocwerkDbContext db, WallChange row, CancellationToken cancellationToken = default) =>
         WallChangeInsert.ExecuteAsync(db, row, cancellationToken);
+
+    // The newest stored position at or below the ceiling, or the retention floor if that is higher. No cursor is handed
+    // out above it: the mark moves only when rows are written, so the startup check (high-water >= current xid) stays
+    // sound after a restore. A cursor above every stored row would be invisible to that check (E1). No row exists between
+    // the mark and the ceiling, so a capped cursor re-reads nothing.
+    private static async Task<FeedPosition> HighWaterAsync(
+        BlocwerkDbContext db, IFeedHorizon horizon, FeedPosition ceiling, FeedEpoch epoch, CancellationToken cancellationToken)
+    {
+        var newest = await horizon.InOrder(horizon.Between(db.WallChanges, FeedPosition.Start, ceiling))
+            .Select(c => new { c.TxId, c.Seq })
+            .LastOrDefaultAsync(cancellationToken);
+        var stored = newest is null
+            ? new FeedPosition(ceiling.TxId is null ? null : 0, 0) // SQLite positions carry no transaction id
+            : new FeedPosition(newest.TxId, newest.Seq);
+        return epoch.FloorSeq > 0 ? FeedPosition.Max(stored, new FeedPosition(epoch.FloorTxId, epoch.FloorSeq)) : stored;
+    }
 
     // A cursor exactly at the floor saw the newest deleted row, so it lost nothing; one below it may have.
     private static bool IsBelowFloor(FeedPosition position, FeedEpoch epoch) =>

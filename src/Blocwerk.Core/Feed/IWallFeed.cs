@@ -16,7 +16,7 @@ public interface IWallFeed
     Task<Guid> InitializeAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// The current horizon cursor. Taken before an aggregate is loaded it is the <c>CursorAtLoad</c>: the load sees every
+    /// The current cursor: the newest stored row below the horizon (or the retention floor). Taken before an aggregate is loaded it is the <c>CursorAtLoad</c>: the load sees every
     /// change at or below it. After a restart, a reader with nobody to replay to starts here.
     /// </summary>
     Task<FeedCursor> CurrentAsync(CancellationToken cancellationToken = default);

@@ -18,9 +18,11 @@ public static class FeedEpochStore
     /// <summary>SQLite's fixed epoch: it has no xid space to be restored out of.</summary>
     public static readonly Guid SqliteEpoch = new("5c7e1b0a-2f4d-4e0b-9a1d-7f3c8e6b2a10");
 
-    // Any stored id at or above this transaction's own xid cannot have been issued by this cluster.
+    // Any stored id at or above this transaction's own xid cannot have been issued by this cluster. The floor counts too:
+    // retention may have deleted every row, and no cursor is ever handed out above max(stored, floor).
     private const string ForeignTxIdsSql =
-        "SELECT COALESCE(MAX(\"TxId\") >= pg_current_xact_id()::text::bigint, FALSE) AS \"Value\" FROM \"WallChanges\"";
+        "SELECT GREATEST(COALESCE((SELECT MAX(\"TxId\") FROM \"WallChanges\"), 0), "
+        + "COALESCE((SELECT MAX(\"FloorTxId\") FROM \"FeedEpochs\"), 0)) >= pg_current_xact_id()::text::bigint AS \"Value\"";
 
     /// <summary>Returns the current epoch, creating it, or replacing it after a restore (Postgres), as needed.</summary>
     public static Task<FeedEpoch> EnsureAsync(BlocwerkDbContext db, ILogger logger, CancellationToken cancellationToken) =>

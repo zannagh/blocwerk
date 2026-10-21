@@ -13,7 +13,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Blocwerk.Core.Migrations
 {
     [DbContext(typeof(BlocwerkDbContext))]
-    [Migration("20261021101515_AddWallChangeFeed")]
+    [Migration("20261021102228_AddWallChangeFeed")]
     partial class AddWallChangeFeed
     {
         /// <inheritdoc />
@@ -2502,6 +2502,8 @@ namespace Blocwerk.Core.Migrations
                         .HasFilter("\"ActorUserId\" IS NOT NULL");
 
                     b.HasIndex("CreatedAt");
+
+                    b.HasIndex("TxId", "Seq");
 
                     b.HasIndex("AudienceUserId", "TxId", "Seq")
                         .HasFilter("\"AudienceUserId\" IS NOT NULL");
