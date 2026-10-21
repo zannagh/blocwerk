@@ -42,6 +42,7 @@ public sealed partial class WallEnhancementJob(
     private readonly IReadOnlyList<IWallEnhancementStep> ordered = steps.OrderBy(s => s.Order).ToList();
     private readonly ConcurrentDictionary<Guid, WallEnhancementStepTracker> trackers = new();
     private readonly ConcurrentDictionary<Guid, byte> cancelled = new();
+    private readonly ConcurrentDictionary<Guid, string> inHand = new();
 
     /// <summary>The watchdog: a step that runs longer is stopped and recorded as failed (then retried or discarded).</summary>
     public TimeSpan StepTimeout { get; init; } = TimeSpan.FromHours(4);
@@ -102,6 +103,14 @@ public sealed partial class WallEnhancementJob(
             await either.CancelAsync();
             await heartbeat;
             cancelled.TryRemove(runId, out _);
+
+            // A step that was stopped from outside may have written more after its stop was recorded, until its work
+            // really returned (or was let go): those writes become review items too, so a discard undoes them.
+            if (inHand.TryRemove(runId, out var stepKey))
+            {
+                await ResalvageAsync(runId, stepKey);
+            }
+
             if (trackers.TryRemove(runId, out var tracker))
             {
                 tracker.Clear();
@@ -160,6 +169,7 @@ public sealed partial class WallEnhancementJob(
             step.Key, step.Title, WallEnhancementStepOutcomeKind.Running, string.Empty, started, null, recorded?.BatchIds ?? [],
             Kind: step.Kind, Labels: WallEnhancementJournal.StepLabels(step));
         await SaveStepAsync(run.Id, running, step.Key, ct);
+        inHand[run.Id] = step.Key;
         var (outcome, kind, stale) = await RunStepAsync(run, step, ct);
         if (stale is not null)
         {
@@ -177,6 +187,7 @@ public sealed partial class WallEnhancementJob(
 
         var done = running with { Outcome = kind, Summary = outcome.Summary, FinishedAt = DateTimeOffset.UtcNow, BatchIds = batches };
         await SaveStepAsync(run.Id, done, null, ct);
+        inHand.TryRemove(run.Id, out _);
         logger.LogInformation(
             "Wall enhancement {RunId} on wall {WallId}, step {Step}: {Outcome} — {Summary} ({Batches} journal batches)",
             run.Id, run.WallId, step.Key, kind, outcome.Summary, batches.Count);

@@ -41,6 +41,13 @@ public partial class BlocwerkDbContext
                 .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasIndex(i => new { i.RunId, i.Kind, i.Decision });
+
+            // One item per run, kind and hold for the kinds a step wrote (Shape, Stack, Colour): two stops of one run
+            // salvaging at once cannot list a hold twice. Suggestions can name a hold in several pairs, so they are left out.
+            entity.HasIndex(i => new { i.RunId, i.Kind, i.HoldId })
+                .IsUnique()
+                .HasFilter("\"Kind\" IN (0, 1, 2)")
+                .HasDatabaseName("IX_WallEnhancementItems_RunId_Kind_HoldId_Written");
         });
 
         modelBuilder.Entity<CaptureDetectionRecord>(entity =>

@@ -55,7 +55,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("UserId", "StartedAt");
 
-                    b.ToTable("Activities");
+                    b.ToTable("Activities", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.ActivityLogEntry", b =>
@@ -91,7 +91,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("WallId", "Timestamp");
 
-                    b.ToTable("ActivityLog");
+                    b.ToTable("ActivityLog", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.ApiKey", b =>
@@ -153,7 +153,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("WallId");
 
-                    b.ToTable("ApiKeys");
+                    b.ToTable("ApiKeys", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.Attempt", b =>
@@ -196,7 +196,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("Attempts");
+                    b.ToTable("Attempts", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.BetaVideo", b =>
@@ -257,7 +257,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("BoulderId", "CreatedAt");
 
-                    b.ToTable("BetaVideos");
+                    b.ToTable("BetaVideos", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.Boulder", b =>
@@ -321,7 +321,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("WallId");
 
-                    b.ToTable("Boulders");
+                    b.ToTable("Boulders", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.BoulderComment", b =>
@@ -357,7 +357,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("BoulderComments");
+                    b.ToTable("BoulderComments", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.BoulderFavorite", b =>
@@ -375,7 +375,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("BoulderFavorites");
+                    b.ToTable("BoulderFavorites", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.BoulderHold", b =>
@@ -396,7 +396,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("HoldId");
 
-                    b.ToTable("BoulderHolds");
+                    b.ToTable("BoulderHolds", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.BoulderHoldMove", b =>
@@ -460,7 +460,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("WallId");
 
-                    b.ToTable("BoulderHoldMoves");
+                    b.ToTable("BoulderHoldMoves", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.BoulderRating", b =>
@@ -484,7 +484,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("BoulderRatings");
+                    b.ToTable("BoulderRatings", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.BoulderSetter", b =>
@@ -502,7 +502,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("BoulderSetters");
+                    b.ToTable("BoulderSetters", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.CaptureDetectionRecord", b =>
@@ -524,7 +524,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasKey("StoredPath", "Detector");
 
-                    b.ToTable("CaptureDetectionRecords");
+                    b.ToTable("CaptureDetectionRecords", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.ChangeJournalBatch", b =>
@@ -567,7 +567,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("ScopeKind", "ScopeId");
 
-                    b.ToTable("ChangeJournalBatches");
+                    b.ToTable("ChangeJournalBatches", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.ChangeJournalEntry", b =>
@@ -608,7 +608,7 @@ namespace Blocwerk.Core.Migrations
                     b.HasIndex("BatchId", "Seq")
                         .IsUnique();
 
-                    b.ToTable("ChangeJournalEntries");
+                    b.ToTable("ChangeJournalEntries", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.ClimbingSession", b =>
@@ -635,7 +635,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("WallId");
 
-                    b.ToTable("ClimbingSessions");
+                    b.ToTable("ClimbingSessions", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.EmailVerificationCode", b =>
@@ -675,7 +675,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("Email", "Purpose");
 
-                    b.ToTable("EmailVerificationCodes");
+                    b.ToTable("EmailVerificationCodes", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.ExternalAscent", b =>
@@ -747,7 +747,7 @@ namespace Blocwerk.Core.Migrations
                     b.HasIndex("UserId", "Source", "ExternalId")
                         .IsUnique();
 
-                    b.ToTable("ExternalAscents");
+                    b.ToTable("ExternalAscents", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.ExternalGym", b =>
@@ -784,7 +784,7 @@ namespace Blocwerk.Core.Migrations
                     b.HasIndex("Source", "ExternalId")
                         .IsUnique();
 
-                    b.ToTable("ExternalGyms");
+                    b.ToTable("ExternalGyms", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.GpuJob", b =>
@@ -981,7 +981,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("Status", "CreatedAt");
 
-                    b.ToTable("GpuJobs");
+                    b.ToTable("GpuJobs", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.GpuRunner", b =>
@@ -1066,7 +1066,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("OwnerUserId");
 
-                    b.ToTable("GpuRunners");
+                    b.ToTable("GpuRunners", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.GpuRunnerApproval", b =>
@@ -1087,7 +1087,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("RunnerId");
 
-                    b.ToTable("GpuRunnerApprovals");
+                    b.ToTable("GpuRunnerApprovals", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.GpuRunnerFailure", b =>
@@ -1118,7 +1118,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("RunnerId", "At");
 
-                    b.ToTable("GpuRunnerFailures");
+                    b.ToTable("GpuRunnerFailures", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.GpuRunnerWall", b =>
@@ -1133,7 +1133,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("WallId");
 
-                    b.ToTable("GpuRunnerWalls");
+                    b.ToTable("GpuRunnerWalls", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.GradeProposal", b =>
@@ -1165,7 +1165,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("ProposedByUserId");
 
-                    b.ToTable("GradeProposals");
+                    b.ToTable("GradeProposals", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.GymGradePoint", b =>
@@ -1190,7 +1190,7 @@ namespace Blocwerk.Core.Migrations
                     b.HasIndex("ExternalGymId", "Grade")
                         .IsUnique();
 
-                    b.ToTable("GymGradePoints");
+                    b.ToTable("GymGradePoints", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.HangboardSession", b =>
@@ -1230,7 +1230,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("HangboardSessions");
+                    b.ToTable("HangboardSessions", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.Hold", b =>
@@ -1362,7 +1362,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("WallId", "Generation");
 
-                    b.ToTable("Holds");
+                    b.ToTable("Holds", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.HoldDuplicateDismissal", b =>
@@ -1391,7 +1391,7 @@ namespace Blocwerk.Core.Migrations
                     b.HasIndex("WallId", "HoldAId", "HoldBId")
                         .IsUnique();
 
-                    b.ToTable("HoldDuplicateDismissals");
+                    b.ToTable("HoldDuplicateDismissals", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.HoldGenerationLink", b =>
@@ -1448,7 +1448,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("WallId", "ToGeneration");
 
-                    b.ToTable("HoldGenerationLinks");
+                    b.ToTable("HoldGenerationLinks", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.HoldLink", b =>
@@ -1484,7 +1484,7 @@ namespace Blocwerk.Core.Migrations
                     b.HasIndex("HoldAId", "HoldBId")
                         .IsUnique();
 
-                    b.ToTable("HoldLinks");
+                    b.ToTable("HoldLinks", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.HoldLinkSuggestion", b =>
@@ -1522,7 +1522,7 @@ namespace Blocwerk.Core.Migrations
                     b.HasIndex("WallId", "HoldAId", "HoldBId")
                         .IsUnique();
 
-                    b.ToTable("HoldLinkSuggestions");
+                    b.ToTable("HoldLinkSuggestions", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.HoldOutlineUpgradeRun", b =>
@@ -1575,7 +1575,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("WallId", "CreatedAt");
 
-                    b.ToTable("HoldOutlineUpgradeRuns");
+                    b.ToTable("HoldOutlineUpgradeRuns", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.HoldPlacementRun", b =>
@@ -1632,7 +1632,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("WallId", "CreatedAt");
 
-                    b.ToTable("HoldPlacementRuns");
+                    b.ToTable("HoldPlacementRuns", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.HoldProposal", b =>
@@ -1724,7 +1724,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("WallId", "Status");
 
-                    b.ToTable("HoldProposals");
+                    b.ToTable("HoldProposals", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.JournalBlob", b =>
@@ -1742,7 +1742,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasKey("Sha256");
 
-                    b.ToTable("JournalBlobs");
+                    b.ToTable("JournalBlobs", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.PullupSession", b =>
@@ -1779,7 +1779,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("PullupSessions");
+                    b.ToTable("PullupSessions", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.PushSubscription", b =>
@@ -1823,7 +1823,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("PushSubscriptions");
+                    b.ToTable("PushSubscriptions", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.RefreshToken", b =>
@@ -1853,7 +1853,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("RefreshTokens");
+                    b.ToTable("RefreshTokens", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.TopLoggerConnection", b =>
@@ -1907,7 +1907,7 @@ namespace Blocwerk.Core.Migrations
                     b.HasIndex("UserId")
                         .IsUnique();
 
-                    b.ToTable("TopLoggerConnections");
+                    b.ToTable("TopLoggerConnections", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.User", b =>
@@ -2008,7 +2008,7 @@ namespace Blocwerk.Core.Migrations
                         .IsUnique()
                         .HasFilter("\"LoginUsername\" IS NOT NULL");
 
-                    b.ToTable("Users");
+                    b.ToTable("Users", (string)null);
 
                     b.HasData(
                         new
@@ -2056,7 +2056,7 @@ namespace Blocwerk.Core.Migrations
                     b.HasIndex("UserId", "RawGradeKey")
                         .IsUnique();
 
-                    b.ToTable("UserGradeMappings");
+                    b.ToTable("UserGradeMappings", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.UserIdentity", b =>
@@ -2088,7 +2088,7 @@ namespace Blocwerk.Core.Migrations
                     b.HasIndex("Provider", "ProviderUserId")
                         .IsUnique();
 
-                    b.ToTable("UserIdentities");
+                    b.ToTable("UserIdentities", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.Wall", b =>
@@ -2213,7 +2213,7 @@ namespace Blocwerk.Core.Migrations
                         .IsUnique()
                         .HasFilter("\"ShareToken\" IS NOT NULL");
 
-                    b.ToTable("Walls");
+                    b.ToTable("Walls", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallCapture", b =>
@@ -2349,7 +2349,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("WallId", "CreatedAt");
 
-                    b.ToTable("WallCaptures");
+                    b.ToTable("WallCaptures", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallCapturePhoto", b =>
@@ -2425,7 +2425,7 @@ namespace Blocwerk.Core.Migrations
                     b.HasIndex("CaptureId", "Index")
                         .IsUnique();
 
-                    b.ToTable("WallCapturePhotos");
+                    b.ToTable("WallCapturePhotos", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallEnhancementItem", b =>
@@ -2480,7 +2480,12 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("RunId", "Kind", "Decision");
 
-                    b.ToTable("WallEnhancementItems");
+                    b.HasIndex("RunId", "Kind", "HoldId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_WallEnhancementItems_RunId_Kind_HoldId_Written")
+                        .HasFilter("\"Kind\" IN (0, 1, 2)");
+
+                    b.ToTable("WallEnhancementItems", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallEnhancementRun", b =>
@@ -2543,7 +2548,7 @@ namespace Blocwerk.Core.Migrations
                     b.HasIndex("WallId", "Generation")
                         .IsUnique();
 
-                    b.ToTable("WallEnhancementRuns");
+                    b.ToTable("WallEnhancementRuns", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallGeometryModel", b =>
@@ -2613,7 +2618,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("WallId", "CreatedAt");
 
-                    b.ToTable("WallGeometryModels");
+                    b.ToTable("WallGeometryModels", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallGeometrySplat", b =>
@@ -2665,7 +2670,7 @@ namespace Blocwerk.Core.Migrations
                     b.HasIndex("GeometryModelId")
                         .IsUnique();
 
-                    b.ToTable("WallGeometrySplats");
+                    b.ToTable("WallGeometrySplats", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallGeometryTexture", b =>
@@ -2735,7 +2740,7 @@ namespace Blocwerk.Core.Migrations
                     b.HasIndex("GeometryModelId", "FacetId")
                         .IsUnique();
 
-                    b.ToTable("WallGeometryTextures");
+                    b.ToTable("WallGeometryTextures", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallImage", b =>
@@ -2774,7 +2779,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("WallId", "CapturedAt");
 
-                    b.ToTable("WallImages");
+                    b.ToTable("WallImages", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallLookOverFinding", b =>
@@ -2909,7 +2914,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("WallId", "Status");
 
-                    b.ToTable("WallLookOverFindings");
+                    b.ToTable("WallLookOverFindings", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallMarkerObservation", b =>
@@ -2956,7 +2961,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("WallPanelId", "PanelGeneration");
 
-                    b.ToTable("WallMarkerObservations");
+                    b.ToTable("WallMarkerObservations", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallMarkerPlan", b =>
@@ -3003,7 +3008,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("WallId", "Revision");
 
-                    b.ToTable("WallMarkerPlans");
+                    b.ToTable("WallMarkerPlans", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallMember", b =>
@@ -3034,7 +3039,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("WallId");
 
-                    b.ToTable("WallMembers");
+                    b.ToTable("WallMembers", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallPanel", b =>
@@ -3086,7 +3091,7 @@ namespace Blocwerk.Core.Migrations
                     b.HasIndex("WallId", "Col", "Row", "Generation")
                         .IsUnique();
 
-                    b.ToTable("WallPanels");
+                    b.ToTable("WallPanels", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallPanelCrop", b =>
@@ -3122,7 +3127,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasKey("WallPanelId");
 
-                    b.ToTable("WallPanelCrops");
+                    b.ToTable("WallPanelCrops", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallRefresh", b =>
@@ -3191,7 +3196,7 @@ namespace Blocwerk.Core.Migrations
                         .HasDatabaseName("IX_WallRefreshes_WallId_Open")
                         .HasFilter("\"Status\" IN (0, 1, 2, 3, 4, 5)");
 
-                    b.ToTable("WallRefreshes");
+                    b.ToTable("WallRefreshes", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallReset", b =>
@@ -3226,7 +3231,7 @@ namespace Blocwerk.Core.Migrations
                     b.HasIndex("WallId", "Generation")
                         .IsUnique();
 
-                    b.ToTable("WallResets");
+                    b.ToTable("WallResets", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallSegment", b =>
@@ -3272,7 +3277,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("WallId", "SortOrder");
 
-                    b.ToTable("WallSegments");
+                    b.ToTable("WallSegments", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallTemperatureReading", b =>
@@ -3294,7 +3299,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("WallId", "RecordedAt");
 
-                    b.ToTable("WallTemperatureReadings");
+                    b.ToTable("WallTemperatureReadings", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallUpdateException", b =>
@@ -3366,7 +3371,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("SessionId", "Kind");
 
-                    b.ToTable("WallUpdateExceptions");
+                    b.ToTable("WallUpdateExceptions", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallUpdateHoldDecision", b =>
@@ -3414,7 +3419,7 @@ namespace Blocwerk.Core.Migrations
                     b.HasIndex("SessionId", "Kind", "HoldId")
                         .IsUnique();
 
-                    b.ToTable("WallUpdateHoldDecisions");
+                    b.ToTable("WallUpdateHoldDecisions", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallUpdateNeighbourDecision", b =>
@@ -3454,7 +3459,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("SessionId", "PanelId");
 
-                    b.ToTable("WallUpdateNeighbourDecisions");
+                    b.ToTable("WallUpdateNeighbourDecisions", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallUpdateRelocationProposal", b =>
@@ -3505,7 +3510,7 @@ namespace Blocwerk.Core.Migrations
                     b.HasIndex("SessionId", "OldHoldId")
                         .IsUnique();
 
-                    b.ToTable("WallUpdateRelocationProposals");
+                    b.ToTable("WallUpdateRelocationProposals", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallUpdateSession", b =>
@@ -3597,7 +3602,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("WallId", "Status");
 
-                    b.ToTable("WallUpdateSessions");
+                    b.ToTable("WallUpdateSessions", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallUpdateShapeProposal", b =>
@@ -3667,7 +3672,7 @@ namespace Blocwerk.Core.Migrations
                     b.HasIndex("SessionId", "HoldId")
                         .IsUnique();
 
-                    b.ToTable("WallUpdateShapeProposals");
+                    b.ToTable("WallUpdateShapeProposals", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallVolume", b =>
@@ -3742,7 +3747,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("GeometryModelId", "Index");
 
-                    b.ToTable("WallVolumes");
+                    b.ToTable("WallVolumes", (string)null);
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.Activity", b =>

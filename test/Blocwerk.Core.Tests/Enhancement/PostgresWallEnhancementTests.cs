@@ -23,6 +23,13 @@ public class PostgresWallEnhancementTests
     }
 
     [PostgresFact]
+    public async Task TwoStopsSalvagingAtOnce_ListAHoldOnce()
+    {
+        using var f = await WallEnhancementFixture.CreateAsync(PostgresTestDatabase.Create());
+        await WallEnhancementLateWriteTests.RaceAsync(f);
+    }
+
+    [PostgresFact]
     public async Task ARunCutOffByARestart_ResumesWithTheInterruptedStep()
     {
         using var f = await WallEnhancementFixture.CreateAsync(PostgresTestDatabase.Create());

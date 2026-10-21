@@ -24,16 +24,34 @@ internal static class WallEnhancementSalvage
     /// <returns>When done.</returns>
     public static async Task SalvageRunningAsync(BlocwerkDbContext db, WallEnhancementRun run, CancellationToken ct)
     {
-        var records = WallEnhancementStepRecord.Parse(run.StepsJson);
-        foreach (var r in records.Where(r => r is { Outcome: WallEnhancementStepOutcomeKind.Running, Kind: not null }).ToList())
+        foreach (var r in WallEnhancementStepRecord.Parse(run.StepsJson).Where(r => r.Outcome == WallEnhancementStepOutcomeKind.Running).ToList())
         {
-            var labels = r.Labels ?? [WallEnhancementKinds.BatchLabel(r.Key)];
-            var batches = await WallEnhancementJournal.StepBatchesAsync(db, run.WallId, run.CreatedByUserId, labels, r.StartedAt, ct);
-            await AddItemsAsync(db, run.Id, r.Kind!.Value, batches, [], ct);
-            records = WallEnhancementStepRecord.With(records, r with { BatchIds = batches });
+            await SalvageStepAsync(db, run, r.Key, ct);
+        }
+    }
+
+    /// <summary>
+    /// Lists one step's writes again, whatever its record says now: for stopped work that went on writing after its stop
+    /// was recorded. The batches are merged into the record and new ones become review items.
+    /// </summary>
+    /// <param name="db">A context tracking <paramref name="run"/>.</param>
+    /// <param name="run">The run.</param>
+    /// <param name="stepKey">The step.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>When done (the items saved; the caller saves the run).</returns>
+    public static async Task SalvageStepAsync(BlocwerkDbContext db, WallEnhancementRun run, string stepKey, CancellationToken ct)
+    {
+        var records = WallEnhancementStepRecord.Parse(run.StepsJson);
+        if (records.FirstOrDefault(r => r.Key == stepKey) is not { Kind: { } kind } record)
+        {
+            return;
         }
 
-        run.StepsJson = WallEnhancementStepRecord.Write(records);
+        var labels = record.Labels ?? [WallEnhancementKinds.BatchLabel(record.Key)];
+        var found = await WallEnhancementJournal.StepBatchesAsync(db, run.WallId, run.CreatedByUserId, labels, record.StartedAt, ct);
+        var batches = record.BatchIds.Concat(found).Distinct().ToList();
+        await AddItemsAsync(db, run.Id, kind, batches, [], ct);
+        run.StepsJson = WallEnhancementStepRecord.Write(WallEnhancementStepRecord.With(records, record with { BatchIds = batches }));
     }
 
     /// <summary>
@@ -65,8 +83,48 @@ internal static class WallEnhancementSalvage
                 ? existing.All(e => e.HoldId != i.HoldId)
                 : !known.Contains((i.HoldId, i.OtherHoldId, i.ReferenceId)))
             .ToList();
+        await InsertAsync(db, fresh, ct);
+    }
+
+    /// <summary>
+    /// Saves new items. A written kind's item is unique per run and hold (a filtered unique index): when two stops of one
+    /// run salvage at once, the second save hits it, and that item counts as already salvaged. The others are saved one
+    /// by one then, each skipped if it is there.
+    /// </summary>
+    private static async Task InsertAsync(BlocwerkDbContext db, List<WallEnhancementItem> fresh, CancellationToken ct)
+    {
+        if (fresh.Count == 0)
+        {
+            return;
+        }
+
         db.WallEnhancementItems.AddRange(fresh);
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+            return;
+        }
+        catch (DbUpdateException)
+        {
+            foreach (var item in fresh)
+            {
+                db.Entry(item).State = EntityState.Detached;
+            }
+        }
+
+        foreach (var item in fresh)
+        {
+            db.WallEnhancementItems.Add(item);
+            try
+            {
+                await db.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateException)
+            {
+                // Already salvaged by the concurrent stop.
+                db.Entry(item).State = EntityState.Detached;
+            }
+        }
     }
 
     private static async Task<List<WallEnhancementItem>> WrittenItemsAsync(
