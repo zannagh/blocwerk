@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Entities;
@@ -156,6 +157,7 @@ public class BetaVideoNormalizerTests
 
         var row = await RowAsync(h, info.Id);
         Assert.Equal(Poster, row.Thumbnail);
+        Assert.Equal(SHA256.HashData(Poster), row.ThumbnailSha256);
     }
 
     [Fact]
@@ -172,6 +174,7 @@ public class BetaVideoNormalizerTests
         Assert.Equal(BetaVideoNormalizeOutcome.Ready, outcome);
         var row = await RowAsync(h, info.Id);
         Assert.Equal(Poster, row.Thumbnail);
+        Assert.Equal(SHA256.HashData(Poster), row.ThumbnailSha256);
     }
 
     [Fact]

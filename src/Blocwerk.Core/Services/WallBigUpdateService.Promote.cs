@@ -154,6 +154,7 @@ public partial class WallBigUpdateService
         // Centre panel goes live at (0,0).
         await WallMarkerObservationPromotion.PromoteStagedAsync(db, centerPanel.Id, newGen);
         centerPanel.Photo = centerPanel.StagedPhoto;
+        db.CarryStagedPhotoHash(centerPanel);
         centerPanel.PhotoContentType = centerPanel.StagedPhotoContentType;
         ClearStaged(centerPanel);
 
@@ -169,6 +170,7 @@ public partial class WallBigUpdateService
         var reshaped = await ApplyShapeDecisionsAsync(db, wallId, newGen);
 
         wall.Photo = centerPanel.Photo;
+        db.CarryHashFrom(centerPanel, nameof(WallPanel.Photo), nameof(WallPanel.PhotoSha256), wall, nameof(Wall.PhotoSha256), wall.Photo);
         wall.PhotoContentType = centerPanel.PhotoContentType;
         wall.UsesMultipleImages = true;
         wall.CurrentGeneration = newGen;
@@ -274,6 +276,7 @@ public partial class WallBigUpdateService
 
             await WallMarkerObservationPromotion.PromoteStagedAsync(db, panel.Id, newGen);
             panel.Photo = panel.StagedPhoto;
+            db.CarryStagedPhotoHash(panel);
             panel.PhotoContentType = panel.StagedPhotoContentType;
             ClearStaged(panel);
 

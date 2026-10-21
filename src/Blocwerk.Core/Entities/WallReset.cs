@@ -24,6 +24,9 @@ public class WallReset
     [MaxLength(64)]
     public string? PreviousPhotoContentType { get; set; }
 
+    /// <summary>SHA-256 of <see cref="PreviousPhoto"/>, kept by <c>ContentHashStamp</c> on every save; null without bytes or before the backfill.</summary>
+    public byte[]? PreviousPhotoSha256 { get; set; }
+
     public DateTimeOffset ResetAt { get; set; } = DateTimeOffset.UtcNow;
 
     public Guid ResetByUserId { get; set; }

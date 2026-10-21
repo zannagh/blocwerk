@@ -29,6 +29,9 @@ public class WallImage
 
     public long SizeBytes { get; set; }
 
+    /// <summary>SHA-256 of the stored file (<see cref="StoragePath"/>), set by the writer; null for rows not yet backfilled.</summary>
+    public byte[]? Sha256 { get; set; }
+
     [MaxLength(200)]
     public string? Caption { get; set; }
 

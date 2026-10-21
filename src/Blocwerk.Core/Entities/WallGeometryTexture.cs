@@ -33,6 +33,9 @@ public class WallGeometryTexture
 
     public long SizeBytes { get; set; }
 
+    /// <summary>SHA-256 of the texture file (<see cref="StoredPath"/>), set by the writer; null for rows not yet backfilled.</summary>
+    public byte[]? Sha256 { get; set; }
+
     /// <summary>
     /// Stored name of the photo-coverage mask (8-bit grayscale PNG, same pixel grid as the image: 0 = no
     /// photo there, 255 = covered). Null for textures made before the worker returned masks: those
@@ -42,6 +45,9 @@ public class WallGeometryTexture
     public string? MaskStoredPath { get; set; }
 
     public long? MaskSizeBytes { get; set; }
+
+    /// <summary>SHA-256 of <see cref="MaskStoredPath"/>, set by the writer; null for rows not yet backfilled.</summary>
+    public byte[]? MaskSha256 { get; set; }
 
     /// <summary>
     /// Stored name of the source-view map (JSON, <c>docker/wall-geometry/wallgeometry/sourcemap.py</c>): which

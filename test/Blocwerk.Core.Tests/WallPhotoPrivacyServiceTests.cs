@@ -108,10 +108,10 @@ public class WallPhotoPrivacyServiceTests
         var dirtyLength = (await File.ReadAllBytesAsync(seeded.GalleryPath)).LongLength;
         await Service(h).RemoveMetadataAsync(h.WallId);
 
-        // A crash between the file move and the commit: clean file, the row still on the old size.
+        // A crash between the file move and the commit: clean file, the row still on the old size and hash.
         await using (var db = h.CreateContext())
         {
-            await db.WallImages.ExecuteUpdateAsync(s => s.SetProperty(i => i.SizeBytes, dirtyLength));
+            await db.WallImages.ExecuteUpdateAsync(s => s.SetProperty(i => i.SizeBytes, dirtyLength).SetProperty(i => i.Sha256, new byte[32]));
         }
 
         var dryRun = await Service(h).ScanAsync(h.WallId);
@@ -132,6 +132,61 @@ public class WallPhotoPrivacyServiceTests
 
         await using var check = h.CreateContext();
         Assert.Equal(new FileInfo(seeded.GalleryPath).Length, await check.WallImages.Select(i => i.SizeBytes).SingleAsync());
+        Assert.Equal(SHA256.HashData(await File.ReadAllBytesAsync(seeded.GalleryPath)), await check.WallImages.Select(i => i.Sha256).SingleAsync());
+    }
+
+    [Fact]
+    public async Task Apply_MovesEveryContentHash_WithTheCleanBytes()
+    {
+        using var h = new WallTestHarness();
+        var seeded = await SeedDirtyWallAsync(h);
+
+        await Service(h).RemoveMetadataAsync(h.WallId);
+
+        var after = await StoredAsync(h, seeded);
+        await using var db = h.CreateContext();
+        var panels = db.WallPanels.AsNoTracking();
+        Assert.Equal(SHA256.HashData(after["live"]), await panels.Where(p => p.Id == seeded.LivePanel).Select(p => p.PhotoSha256).SingleAsync());
+        Assert.Equal(SHA256.HashData(after["old"]), await panels.Where(p => p.Id == seeded.OldPanel).Select(p => p.PhotoSha256).SingleAsync());
+        Assert.Equal(SHA256.HashData(after["staged"]), await panels.Where(p => p.Id == seeded.StagedPanel).Select(p => p.StagedPhotoSha256).SingleAsync());
+        Assert.Equal(SHA256.HashData(after["reset"]), await db.WallResets.Where(r => r.Id == seeded.Reset).Select(r => r.PreviousPhotoSha256).SingleAsync());
+        Assert.Equal(SHA256.HashData(after["gallery"]), await db.WallImages.Select(i => i.Sha256).SingleAsync());
+    }
+
+    [Fact]
+    public async Task AGalleryRowWhoseHashLagsAnEquallyLongFile_IsRepairedByTheNextRun()
+    {
+        using var h = new WallTestHarness();
+        var seeded = await SeedDirtyWallAsync(h);
+        await Service(h).RemoveMetadataAsync(h.WallId);
+
+        // A crash between the move and the commit, where the clean file came out exactly as long: only the hash lags.
+        var stale = SHA256.HashData([0]);
+        await using (var db = h.CreateContext())
+        {
+            await db.WallImages.ExecuteUpdateAsync(s => s.SetProperty(i => i.Sha256, stale));
+        }
+
+        Assert.Equal(1, (await Service(h).ScanAsync(h.WallId)).NeedsRepair);
+        Assert.Equal(1, (await Service(h).RemoveMetadataAsync(h.WallId)).NeedsRepair);
+        Assert.Equal(0, (await Service(h).ScanAsync(h.WallId)).NeedsRepair);
+
+        await using var check = h.CreateContext();
+        Assert.Equal(SHA256.HashData(await File.ReadAllBytesAsync(seeded.GalleryPath)), await check.WallImages.Select(i => i.Sha256).SingleAsync());
+    }
+
+    [Fact]
+    public async Task AGalleryRowWithoutAHashYet_IsNotDrift()
+    {
+        using var h = new WallTestHarness();
+        await SeedDirtyWallAsync(h);
+        await Service(h).RemoveMetadataAsync(h.WallId);
+        await using (var db = h.CreateContext())
+        {
+            await db.WallImages.ExecuteUpdateAsync(s => s.SetProperty(i => i.Sha256, (byte[]?)null));
+        }
+
+        Assert.Equal(0, (await Service(h).ScanAsync(h.WallId)).NeedsRepair);
     }
 
     private static WallPhotoPrivacyService Service(WallTestHarness h, IKioskContext? kiosk = null) =>

@@ -30,6 +30,9 @@ public class WallGeometrySplat
 
     public long SizeBytes { get; set; }
 
+    /// <summary>SHA-256 of the full scene (<see cref="StoredPath"/>), set by the writer; null for rows not yet backfilled.</summary>
+    public byte[]? Sha256 { get; set; }
+
     /// <summary>
     /// Stored name of the lighter <c>.spz</c> for phones and low-memory devices (the full scene pruned
     /// to its most visible splats, <see cref="Capture.SpzDecimator"/>), or null when the full one is
@@ -40,6 +43,9 @@ public class WallGeometrySplat
 
     /// <summary>Byte size of <see cref="MobileStoredPath"/>; null without it.</summary>
     public long? MobileSizeBytes { get; set; }
+
+    /// <summary>SHA-256 of <see cref="MobileStoredPath"/>, set by the writer; null for rows not yet backfilled.</summary>
+    public byte[]? MobileSha256 { get; set; }
 
     /// <summary>Splat count of the full scene (<see cref="StoredPath"/>); null for rows that predate it.</summary>
     public int? SplatCount { get; set; }

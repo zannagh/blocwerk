@@ -294,6 +294,7 @@ public partial class WallPanelService : IWallPanelService
 
         await WallMarkerObservationPromotion.PromoteStagedAsync(db, panel.Id, panel.Generation);
         panel.Photo = panel.StagedPhoto;
+        db.CarryStagedPhotoHash(panel);
         panel.PhotoContentType = panel.StagedPhotoContentType;
         panel.StagedPhoto = null;
         panel.StagedPhotoContentType = null;

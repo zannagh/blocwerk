@@ -1,6 +1,7 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using Blocwerk.Core.Assets;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -55,7 +56,8 @@ public sealed class SplatLodBackfill(
         var levels = new List<SplatLodLevel>();
         foreach (var (splats, bytes) in SplatLodLadder.Build(spz))
         {
-            levels.Add(new SplatLodLevel(splats, await files.SaveAsync(bytes, ".spz", ct), bytes.LongLength));
+            levels.Add(new SplatLodLevel(
+                splats, await files.SaveAsync(bytes, ".spz", ct), bytes.LongLength, ContentHash.ToHex(ContentHash.Of(bytes))));
         }
 
         return (SpzDecimator.CountOf(spz), levels);

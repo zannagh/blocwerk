@@ -1,3 +1,4 @@
+using Blocwerk.Core.Assets;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
@@ -142,18 +143,21 @@ public sealed class ChangeJournalInterceptor : SaveChangesInterceptor
             _ => ChangeJournalOp.Update,
         };
 
+        // Content hashes are derived from the bytes beside them, and a revert or replay that writes the bytes gets
+        // them again from the save-time stamp; journalled, each would also be a "photo" blob to the privacy scan.
+        var properties = entry.Properties.Where(p => !ContentHashColumn.IsHash(entry.Metadata.ClrType, p.Metadata.Name)).ToList();
         string? before = null;
         string? after = null;
         switch (op)
         {
             case ChangeJournalOp.Insert:
-                after = ChangeJournalValueWriter.Serialize(entry.Properties.ToList(), useCurrent: true, pendingBlobs);
+                after = ChangeJournalValueWriter.Serialize(properties, useCurrent: true, pendingBlobs);
                 break;
             case ChangeJournalOp.Delete:
-                before = ChangeJournalValueWriter.Serialize(entry.Properties.ToList(), useCurrent: false, pendingBlobs);
+                before = ChangeJournalValueWriter.Serialize(properties, useCurrent: false, pendingBlobs);
                 break;
             default:
-                var changed = entry.Properties.Where(p => p.IsModified).ToList();
+                var changed = properties.Where(p => p.IsModified).ToList();
                 before = ChangeJournalValueWriter.Serialize(changed, useCurrent: false, pendingBlobs);
                 after = ChangeJournalValueWriter.Serialize(changed, useCurrent: true, pendingBlobs);
                 break;

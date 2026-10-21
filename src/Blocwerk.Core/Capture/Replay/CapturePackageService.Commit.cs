@@ -103,6 +103,7 @@ public sealed partial class CapturePackageService
         var referenceHere = m.ReferenceModelId is { } reference && await db.WallGeometryModels.AnyAsync(x => x.Id == reference, ct);
         var model = CapturePackageRowCopies.Model(rows.Model, previous, m.ReferenceModelId, referenceHere);
         var capture = CapturePackageRowCopies.Capture(rows.Capture);
+        CapturePackageRowCopies.StampHashes(rows.Textures, m.Files);
         if (m.PlanRevision is not null && (await TargetPlanRevisionAsync(db, m, ct)).Revision is { } planRevision)
         {
             capture.PlanRevision = planRevision;

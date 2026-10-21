@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Blocwerk.Core.Assets;
 using Blocwerk.Core.Compute;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Geometry.View3D;
@@ -135,8 +136,10 @@ public sealed partial class WallCaptureProcessor
             StoredPath = await files.SaveAsync(bytes, CapturePhotoFormat.Extension(kind), ct),
             ContentType = CapturePhotoFormat.ContentType(kind),
             SizeBytes = bytes.LongLength,
+            Sha256 = ContentHash.Of(bytes),
             MaskStoredPath = mask is null ? null : await files.SaveAsync(mask, ".png", ct),
             MaskSizeBytes = mask?.LongLength,
+            MaskSha256 = ContentHash.Of(mask),
             SourceMapStoredPath = sourceMap is null ? null : await files.SaveAsync(sourceMap, ".json", ct),
             SourceMapSizeBytes = sourceMap?.LongLength,
             AMin = entry.AMin,

@@ -1,4 +1,5 @@
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Assets;
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Enums;
@@ -240,7 +241,7 @@ public sealed class BetaVideoNormalizer
         {
             await db.BetaVideos
                 .Where(v => v.Id == videoId)
-                .ExecuteUpdateAsync(s => s.SetProperty(v => v.Thumbnail, poster), ct);
+                .ExecuteUpdateAsync(s => s.SetProperty(v => v.Thumbnail, poster).SetProperty(v => v.ThumbnailSha256, ContentHash.Of(poster)), ct);
         }
     }
 

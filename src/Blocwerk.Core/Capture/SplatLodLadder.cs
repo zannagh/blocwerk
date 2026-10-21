@@ -10,7 +10,8 @@ namespace Blocwerk.Core.Capture;
 /// <param name="Splats">Splat count of the level.</param>
 /// <param name="StoredPath">Stored name under the capture file store (a bare file name).</param>
 /// <param name="SizeBytes">Byte size of the file.</param>
-public sealed record SplatLodLevel(int Splats, string StoredPath, long SizeBytes);
+/// <param name="Sha">SHA-256 of the file, lowercase hex; null for levels saved before content hashes.</param>
+public sealed record SplatLodLevel(int Splats, string StoredPath, long SizeBytes, string? Sha = null);
 
 /// <summary>
 /// The level-of-detail ladder of a photo-real scene (<see cref="WallGeometrySplat.LodLevelsJson"/>):

@@ -53,6 +53,9 @@ public class BetaVideo
     /// </summary>
     public byte[]? Thumbnail { get; set; }
 
+    /// <summary>SHA-256 of <see cref="Thumbnail"/>, kept by <c>ContentHashStamp</c> on every save; null without bytes or before the backfill.</summary>
+    public byte[]? ThumbnailSha256 { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
     /// <summary>
