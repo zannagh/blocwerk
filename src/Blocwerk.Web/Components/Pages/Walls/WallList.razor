@@ -3,6 +3,7 @@
 @attribute [Authorize]
 @inject IWallService WallService
 @inject WallCacheState Cache
+@inject IAssetHashReader AssetHashes
 @inject NavigationManager Navigation
 @implements IDisposable
 
@@ -41,7 +42,7 @@
                             @* Card thumbnail on the PWA start page: a modest rendition, lazily
                                loaded. Never the stored camera original, which a width-less request
                                would serve. *@
-                            <img src="@ResponsiveImage.AtWidth($"/api/walls/{wall.Id}/photo", 640)"
+                            <img src="@ResponsiveImage.AtWidth(AssetUrls.WallPhoto(wall.Id, _photoShas.GetValueOrDefault(wall.Id)), 640)"
                                  loading="lazy" decoding="async" alt="@wall.Name" />
                         }
                         else
@@ -69,25 +70,50 @@
     private string _shareToken = string.Empty;
     private string? _error;
 
+    // The card photos' hashes, read from the database: the cached walls can hold pre-backfill nulls, and a wall
+    // update moves the centre panel's hash without changing the wall list.
+    private IReadOnlyDictionary<Guid, string> _photoShas = new Dictionary<Guid, string>();
+
     protected override async Task OnInitializedAsync()
     {
         Cache.Changed += OnCacheChanged;
         _walls = await Cache.GetMyWallsAsync();
+        await LoadPhotoShasAsync();
     }
 
-    // Live-refresh when the set of walls changes (created/deleted/joined) on any circuit.
+    // Live-refresh when the set of walls changes (created/deleted/joined) on any circuit, and re-read the card
+    // photos' hashes when one of the listed walls changed (its centre panel may have been replaced).
     private void OnCacheChanged(DomainChange change)
     {
-        if (change.Scope != DomainChangeScope.WallList)
+        var listed = change.Scope == DomainChangeScope.Wall && _walls?.Any(w => w.Id == change.WallId) == true;
+        if (change.Scope != DomainChangeScope.WallList && !listed)
         {
             return;
         }
 
         _ = InvokeAsync(async () =>
         {
-            _walls = await Cache.GetMyWallsAsync();
+            if (change.Scope == DomainChangeScope.WallList)
+            {
+                _walls = await Cache.GetMyWallsAsync();
+            }
+
+            await LoadPhotoShasAsync();
             StateHasChanged();
         });
+    }
+
+    private async Task LoadPhotoShasAsync()
+    {
+        try
+        {
+            _photoShas = await AssetHashes.WallPhotosAsync(_walls?.Select(w => w.Id).ToList() ?? []);
+        }
+        catch (Exception)
+        {
+            // The legacy /photo urls still work without them.
+            _photoShas = new Dictionary<Guid, string>();
+        }
     }
 
     public void Dispose()

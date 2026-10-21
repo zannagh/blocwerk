@@ -67,12 +67,33 @@ public sealed class FileSystemImageVariantCache : IImageVariantCache
             : GetOrCreateHashedAsync(key, width, loadOriginal, ct);
     }
 
+    /// <inheritdoc/>
+    public (long Length, string ContentType)? PeekHashed(ImageVariantKey key, int width)
+    {
+        if (key.Sha is not { } sha || !ImageVariantNames.IsSha(sha) || !ImageVariants.IsAllowed(width))
+        {
+            return null;
+        }
+
+        var stem = Path.Combine(root, ShaFolder, sha[..2], $"{sha}-{width}");
+        foreach (var extension in ImageRendition.Extensions)
+        {
+            var file = new FileInfo(stem + extension);
+            if (file.Exists)
+            {
+                return (file.Length, ImageVariantNames.TypeOf(extension));
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>A source with no content hash yet: keyed by its ETag parts, one directory per image.</summary>
     private async Task<ImageVariant?> GetOrCreateLegacyAsync(
         ImageVariantKey key, int width, Func<Task<byte[]?>> loadOriginal, CancellationToken ct)
     {
         // An identity that is not a plain hash would be a path.
-        if (!IsHash(key.Identity) || !IsHash(key.Version))
+        if (!ImageVariantNames.IsHash(key.Identity) || !ImageVariantNames.IsHash(key.Version))
         {
             return null;
         }
@@ -114,7 +135,7 @@ public sealed class FileSystemImageVariantCache : IImageVariantCache
         ImageVariantKey key, int width, Func<Task<byte[]?>> loadOriginal, CancellationToken ct)
     {
         var sha = key.Sha!;
-        if (!IsSha(sha))
+        if (!ImageVariantNames.IsSha(sha))
         {
             return null;
         }
@@ -159,7 +180,7 @@ public sealed class FileSystemImageVariantCache : IImageVariantCache
     private async Task<ImageVariant?> TryAdoptLegacyAsync(
         ImageVariantKey key, int width, string directory, string stem, CancellationToken ct)
     {
-        if (!IsHash(key.Identity) || !IsHash(key.Version))
+        if (!ImageVariantNames.IsHash(key.Identity) || !ImageVariantNames.IsHash(key.Version))
         {
             return null;
         }
@@ -208,8 +229,7 @@ public sealed class FileSystemImageVariantCache : IImageVariantCache
                 }
 
                 var bytes = await File.ReadAllBytesAsync(path, ct);
-                var type = extension == ".webp" ? "image/webp" : "image/jpeg";
-                return new ImageVariant(bytes, type, IsOriginal: false);
+                return new ImageVariant(bytes, ImageVariantNames.TypeOf(extension), IsOriginal: false);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -279,14 +299,4 @@ public sealed class FileSystemImageVariantCache : IImageVariantCache
             // Nothing to do; a leftover file is swept on the next write.
         }
     }
-
-    /// <summary>
-    /// Lowercase hex only. Both key parts are hashes produced by the byte routes, so anything else
-    /// is either a bug or an attempt to escape the cache root.
-    /// </summary>
-    private static bool IsHash(string value) =>
-        value.Length is > 0 and <= 64 && value.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f');
-
-    /// <summary>A content hash: exactly 64 lowercase hex characters.</summary>
-    private static bool IsSha(string value) => value.Length == ContentHash.Length * 2 && IsHash(value);
 }

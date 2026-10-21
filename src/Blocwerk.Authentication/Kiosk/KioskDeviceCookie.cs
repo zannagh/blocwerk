@@ -1,3 +1,4 @@
+using Blocwerk.Authentication.Services;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 
@@ -70,6 +71,10 @@ public sealed class KioskDeviceCookie
             $"{PayloadVersion}:{apiKeyId:N}:{wallId:N}:{registration.DeviceId:N}:{now.ToUnixTimeSeconds()}");
 
         context.Response.Cookies.Append(Name, payload, BuildOptions(context, now.Add(Lifetime)));
+
+        // Becoming a tablet is an identity switch: whatever this browser cached before must not be served to the
+        // wall's visitors from now on.
+        SiteDataClearing.Apply(context.Response);
         return registration;
     }
 
@@ -77,6 +82,7 @@ public sealed class KioskDeviceCookie
     public void Clear(HttpContext context)
     {
         context.Response.Cookies.Delete(Name, BuildOptions(context, expires: null));
+        SiteDataClearing.Apply(context.Response);
     }
 
     /// <summary>

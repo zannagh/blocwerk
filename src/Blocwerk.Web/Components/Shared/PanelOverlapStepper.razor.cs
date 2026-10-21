@@ -68,6 +68,9 @@ public partial class PanelOverlapStepper
     private readonly List<ConfirmedLink> _manualLinks = [];
     private List<WallPanelInfo> _neighborPanels = [];
 
+    // The live panels' photo hashes, read with them, so their photos take the content-addressed url.
+    private Dictionary<Guid, string> _livePhotoShas = [];
+
     private ElementReference _rootRef;
     private Dictionary<Guid, PanelHold> _stagedHolds = [];
     private List<PanelHold> _stagedList = [];
@@ -107,6 +110,7 @@ public partial class PanelOverlapStepper
             (Col - 1, Row), (Col + 1, Row), (Col, Row - 1), (Col, Row + 1),
         };
         var panels = await WallPanelService.GetPanelsAsync(WallId);
+        _livePhotoShas = panels.Where(p => p.IsLive && p.PhotoSha is not null).ToDictionary(p => p.Id, p => p.PhotoSha!);
         _neighborPanels = panels
             .Where(p => p.IsLive && neighborPositions.Contains((p.Col, p.Row)))
             .ToList();

@@ -1,6 +1,7 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using Blocwerk.Core.Assets;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Services;
@@ -80,7 +81,31 @@ public static class WallGeometrySplats
             .Where(s => s.GeometryModel.WallId == wallId && s.GeometryModel.IsActive)
             .FirstOrDefaultAsync(ct);
 
-    private static string Url(Guid wallId, WallGeometrySplat splat, string? shareToken, string? lod)
+    /// <summary>
+    /// The content hash (lowercase hex) of the file <paramref name="lod"/> selects, as <see cref="Select"/> picks it;
+    /// null when that file is not hashed yet.
+    /// </summary>
+    public static string? Sha(WallGeometrySplat splat, string? lod)
+    {
+        if (lod == MobileLod && splat.MobileStoredPath is not null)
+        {
+            return ContentHash.ToHex(splat.MobileSha256);
+        }
+
+        if (int.TryParse(lod, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var splats)
+            && SplatLodLadder.Parse(splat.LodLevelsJson).FirstOrDefault(l => l.Splats == splats) is { } level)
+        {
+            return level.Sha?.ToLowerInvariant();
+        }
+
+        return ContentHash.ToHex(splat.Sha256);
+    }
+
+    /// <summary>The hashed URL of the selected file when it has a hash, else the versioned legacy route.</summary>
+    private static string Url(Guid wallId, WallGeometrySplat splat, string? shareToken, string? lod) =>
+        AssetUrls.Hashed(wallId, Sha(splat, lod), shareToken) ?? LegacyUrl(wallId, splat, shareToken, lod);
+
+    private static string LegacyUrl(Guid wallId, WallGeometrySplat splat, string? shareToken, string? lod)
     {
         var query = new List<string>(3);
         if (!string.IsNullOrEmpty(shareToken))

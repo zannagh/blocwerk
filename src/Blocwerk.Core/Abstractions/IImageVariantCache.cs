@@ -28,6 +28,15 @@ public interface IImageVariantCache
         int width,
         Func<Task<byte[]?>> loadOriginal,
         CancellationToken ct);
+
+    /// <summary>
+    /// The length and content type of the rendition of a HASHED source (<see cref="ImageVariantKey.Sha"/>) already in
+    /// the cache, from the file system alone: nothing is read, loaded or rendered. Null when it is not cached yet, or
+    /// for a key without a sha. What a HEAD is answered from.
+    /// </summary>
+    /// <param name="key">The source; only its <see cref="ImageVariantKey.Sha"/> is used.</param>
+    /// <param name="width">Target width in pixels.</param>
+    (long Length, string ContentType)? PeekHashed(ImageVariantKey key, int width);
 }
 
 /// <summary>

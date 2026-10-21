@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Assets;
 using Blocwerk.Core.Capture.FollowUp;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
@@ -52,14 +53,14 @@ public sealed partial class WallCaptureService
         return textures.Select(t => new WallGeometryTextureInfo(
             t.GeometryModelId,
             t.FacetId,
-            AssetVersion.Append($"{TextureUrl(wallId, t.GeometryModelId, t.FacetId)}{query}", TextureVersion(t)),
+            AssetUrls.HashedOr(wallId, ContentHash.ToHex(t.Sha256), shareToken, VersionedUrl(TextureUrl(wallId, t.GeometryModelId, t.FacetId), query, TextureVersion(t))),
             t.AMin,
             t.AMax,
             t.BMin,
             t.BMax,
             t.WidthPx,
             t.HeightPx,
-            t.MaskStoredPath is null ? null : AssetVersion.Append($"{MaskUrl(wallId, t.GeometryModelId, t.FacetId)}{query}", MaskVersion(t)))).ToList();
+            t.MaskStoredPath is null ? null : MaskUrlOf(wallId, t, shareToken, query))).ToList();
     }
 
     /// <summary>
@@ -223,4 +224,9 @@ public sealed partial class WallCaptureService
             return null;
         }
     }
+
+    private static string VersionedUrl(string route, string query, string version) => AssetVersion.Append(route + query, version);
+
+    private static string MaskUrlOf(Guid wallId, WallGeometryTexture t, string? shareToken, string query) =>
+        AssetUrls.HashedOr(wallId, ContentHash.ToHex(t.MaskSha256), shareToken, VersionedUrl(MaskUrl(wallId, t.GeometryModelId, t.FacetId), query, MaskVersion(t)));
 }

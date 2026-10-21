@@ -332,9 +332,7 @@ else
         (Neighbour(-1, 0) is not null || Neighbour(1, 0) is not null
             || Neighbour(0, -1) is not null || Neighbour(0, 1) is not null);
 
-    private string PhotoUrl(WallPanelInfo panel) => panel.WithPhotoRevision(string.IsNullOrEmpty(ShareToken)
-        ? $"/api/walls/{WallId}/panels/{panel.Id}/photo"
-        : $"/api/walls/{WallId}/panels/{panel.Id}/photo?token={Uri.EscapeDataString(ShareToken)}");
+    private string PhotoUrl(WallPanelInfo panel) => AssetUrls.Panel(WallId, panel, ShareToken);
 
     private string CloseUpUrl(WallPanelInfo panel) => panel.WithPhotoRevision(string.IsNullOrEmpty(ShareToken)
         ? $"/api/walls/{WallId}/panels/{panel.Id}/closeup"

@@ -15,7 +15,7 @@ namespace Blocwerk.Web.Endpoints;
 /// row still holds that hash and is then hashed again in memory, a buffered file is hashed after it is read, and a
 /// streamed splat is hashed before it is streamed (remembered per file version). Bytes that fail the check are a 404
 /// without cache headers, never the new bytes under the old sha. A 304, and a HEAD of a buffered asset, are answered
-/// from the resolved row, since neither carries a body.
+/// from the resolved row, since neither carries a body; a HEAD of a rendition from the variant cache's file system.
 /// </remarks>
 public static class AssetResponse
 {
@@ -68,18 +68,29 @@ public static class AssetResponse
             return early;
         }
 
-        var variant = await variants.GetOrCreateAsync(
-            new ImageVariantKey(string.Empty, string.Empty, asset.Hex), width, () => resolver.LoadAsync(asset, ct), ct);
+        var key = new ImageVariantKey(string.Empty, string.Empty, asset.Hex);
+        if (HttpMethods.IsHead(http.Request.Method))
+        {
+            return HeadOfVariant(http, variants.PeekHashed(key, width));
+        }
+
+        var variant = await variants.GetOrCreateAsync(key, width, () => resolver.LoadAsync(asset, ct), ct);
         if (variant is null)
         {
             return ImageResponse.NotFound(http);
         }
 
-        var type = variant.IsOriginal ? asset.ContentType : variant.ContentType;
-        return HttpMethods.IsHead(http.Request.Method)
-            ? Head(http, type, variant.Bytes.LongLength)
-            : Results.File(variant.Bytes, type);
+        return Results.File(variant.Bytes, variant.IsOriginal ? asset.ContentType : variant.ContentType);
     }
+
+    /// <summary>
+    /// A HEAD of a rendition, answered from the variant cache's file system alone: rendering a rendition (or loading
+    /// its original) to report a length would let a HEAD cost what a GET does. A rendition not cached yet answers
+    /// with its validator and policy but no type and no length, which a HEAD may leave out; a cache freshening a
+    /// stored GET from it then keeps the stored ones.
+    /// </summary>
+    private static IResult HeadOfVariant(HttpContext http, (long Length, string ContentType)? cached) =>
+        cached is { } file ? Head(http, file.ContentType, file.Length) : Results.Empty;
 
     private static string Etag(string value) => $"\"{value}\"";
 

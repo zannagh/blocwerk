@@ -67,8 +67,14 @@ public sealed class AssetRouteFixture : IDisposable
 
     public SeededAssets Seeded { get; private set; } = null!;
 
+    /// <summary>The blob memo the resolvers of this fixture share, as the app's singleton is shared.</summary>
+    public VerifiedBlobMemo Blobs { get; } = new();
+
+    /// <summary>The file memo the resolvers of this fixture share.</summary>
+    public FileHashMemo FileHashes { get; } = new();
+
     public AssetResolver Resolver() =>
-        new(Harness.DbContextFactory, CurrentUser, ImageStorage, CaptureFiles, new FileHashMemo(), NullLogger<AssetResolver>.Instance, Kiosk);
+        new(Harness.DbContextFactory, CurrentUser, ImageStorage, CaptureFiles, FileHashes, Blobs, NullLogger<AssetResolver>.Instance, Kiosk);
 
     /// <summary>Makes this a kiosk tablet bound to <paramref name="wallId"/>.</summary>
     public void BindKiosk(Guid wallId)

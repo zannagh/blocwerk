@@ -61,6 +61,9 @@ public class StaleSplatCacheTests
             await db.SaveChangesAsync();
         }
 
+        // These are the legacy versioned urls: the row as it was before the hash backfill.
+        (row.Sha256, row.MobileSha256) = (null, null);
+
         // Before the backfill ?lod=120000 is the full scene (the row has no such level).
         var early = WallGeometrySplats.LevelUrl(h.WallId, row, 120_000);
         Assert.Single((await ViewAsync(h)).SplatLevels);
@@ -153,7 +156,14 @@ public class StaleSplatCacheTests
         Assert.NotEqual(WallCaptureService.MaskVersion(texture), WallCaptureService.MaskVersion(retextured));
     }
 
-    private static async Task<Wall3DView> ViewAsync(WallTestHarness h) =>
+    /// <summary>The view of the legacy routes: the rows unhashed first, as before the backfill.</summary>
+    private static async Task<Wall3DView> ViewAsync(WallTestHarness h)
+    {
+        await UnhashedGeometry.ClearAsync(h);
+        return await BuildViewAsync(h);
+    }
+
+    private static async Task<Wall3DView> BuildViewAsync(WallTestHarness h) =>
         (await new Wall3DViewService(
             h.WallService, h.CurrentUser, h.DbContextFactory, Wall3DViewAccessTests.Captures(h),
             NullLogger<Wall3DViewService>.Instance).BuildAsync(h.WallId, null)).View!;

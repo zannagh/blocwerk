@@ -2,7 +2,7 @@
  * bwImageRes — picks which rendition of a wall photo the browser should be holding.
  *
  * The server stores the camera original (hold detection depends on it) and serves downscaled
- * renditions off a fixed width ladder via `?w=`. Markup starts every opted-in <img> at a modest
+ * renditions off a fixed width ladder via `?w=` (or `/a/{sha}/{width}` on a content-addressed url). Markup starts every opted-in <img> at a modest
  * width; this module measures what the element is actually displayed at — CSS pixels times the
  * device pixel ratio — and upgrades to the next rung whenever that grows, which is exactly what
  * happens when the viewport zooms in (the content layer widens via `--zoom`, so the img's own
@@ -84,10 +84,18 @@ window.bwImageRes = (function () {
         return LADDER[index];
     }
 
-    /** `url` with its `w` parameter set to `level`, or removed entirely for the original. */
+    // A content-addressed asset (AssetUrls on the server): the width is a path segment, /a/{sha}/{width}, not `?w=`.
+    const HASHED_PATH = /^(\/api\/walls\/[0-9a-fA-F-]{36}\/a\/[0-9a-f]{64})(?:\/(\d+))?$/;
+
+    /** `url` with its width set to `level` (a `w` parameter, or the hashed path's segment), or removed for the original. */
     function urlAt(url, level) {
         try {
             const parsed = new URL(url, document.baseURI);
+            const hashed = HASHED_PATH.exec(parsed.pathname);
+            if (hashed) {
+                return hashed[1] + (level === ORIGINAL ? '' : '/' + level) + parsed.search;
+            }
+
             if (level === ORIGINAL) {
                 parsed.searchParams.delete('w');
             } else {
@@ -107,7 +115,9 @@ window.bwImageRes = (function () {
     function currentLevel(img) {
         const src = img.getAttribute('src') || '';
         try {
-            const w = new URL(src, document.baseURI).searchParams.get('w');
+            const parsed = new URL(src, document.baseURI);
+            const hashed = HASHED_PATH.exec(parsed.pathname);
+            const w = hashed ? hashed[2] : parsed.searchParams.get('w');
             const level = w ? parseInt(w, 10) : ORIGINAL;
             return WIDTHS.indexOf(level) >= 0 ? level : ORIGINAL;
         } catch (_) {

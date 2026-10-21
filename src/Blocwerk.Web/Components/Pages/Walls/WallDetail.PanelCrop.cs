@@ -2,6 +2,8 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using Blocwerk.Core.Assets;
+
 namespace Blocwerk.Web.Components.Pages.Walls;
 
 /// <summary>
@@ -16,7 +18,7 @@ public partial class WallDetail
     private bool CanCropPanel => _isAdmin && !_isAnonymous && _editingPanel is not null;
 
     private string EditingPanelPhotoUrl =>
-        _editingPanel is null ? string.Empty : _editingPanel.WithPhotoRevision($"/api/walls/{WallId}/panels/{_editingPanel.Id}/photo");
+        _editingPanel is null ? string.Empty : AssetUrls.Panel(WallId, _editingPanel);
 
     private async Task OpenCropTool()
     {

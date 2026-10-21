@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Blocwerk.Authentication.Kiosk;
+using Blocwerk.Authentication.Services;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
@@ -299,6 +300,10 @@ public sealed class KioskController : Controller
     public async Task<IActionResult> Release()
     {
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+
+        // The member's private immutable assets (their other walls included) must not outlive the session on the
+        // tablet. Explicit, so it does not hang on the cookie handler's events alone.
+        SiteDataClearing.Apply(Response);
 
         var registration = deviceCookie.Read(HttpContext);
         return LocalRedirect(registration is null ? "/" : $"/walls/{registration.WallId}");

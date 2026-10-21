@@ -34,7 +34,7 @@ else
                 <div class="panel-cell panel-thumb" style="@CellStyle(p.Col, p.Row)">
                     @* Management grid: a modest thumbnail rendition, lazily loaded. This is not a
                        precision surface, so it never needs the full-res original. *@
-                    <img src="@ResponsiveImage.AtWidth($"/api/walls/{WallId}/panels/{p.Id}/photo", 640)"
+                    <img src="@ResponsiveImage.AtWidth(AssetUrls.Panel(WallId, p), 640)"
                          loading="lazy" alt="Panel @p.Col,@p.Row" />
                     @if (p.IsOutdated)
                     {

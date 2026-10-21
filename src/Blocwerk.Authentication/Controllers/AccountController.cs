@@ -244,6 +244,10 @@ public partial class AccountController : Controller
     {
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
 
+        // Explicit as well as through the cookie events: a logout must never leave the signed-out user's private
+        // immutable assets in the HTTP cache of a shared device.
+        Services.SiteDataClearing.Apply(Response);
+
         // Drop the remembered method so an explicit logout isn't immediately undone by silent re-auth.
         Response.Cookies.Delete(RememberedMethodCookie);
         return LocalRedirect("/");

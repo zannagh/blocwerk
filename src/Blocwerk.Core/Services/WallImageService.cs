@@ -214,7 +214,8 @@ public class WallImageService : IWallImageService
                 i.ContentType,
                 i.SizeBytes,
                 i.Caption,
-                i.CapturedAt))
+                i.CapturedAt,
+                ContentHash.ToHex(i.Sha256)))
             .ToListAsync(ct);
 
     private static async Task<List<WallGalleryItem>> LoadWallPhotoAsync(
@@ -232,7 +233,8 @@ public class WallImageService : IWallImageService
                 w.PhotoContentType ?? "image/jpeg",
                 w.Photo!.Length,
                 "Current wall photo",
-                w.LastResetAt ?? w.CreatedAt))
+                w.LastResetAt ?? w.CreatedAt,
+                ContentHash.ToHex(w.PhotoSha256)))
             .ToListAsync(ct);
 
     private static async Task<List<WallGalleryItem>> LoadResetPhotosAsync(
@@ -250,7 +252,8 @@ public class WallImageService : IWallImageService
                 r.PreviousPhotoContentType ?? "image/jpeg",
                 r.PreviousPhoto!.Length,
                 "Generation " + r.Generation,
-                r.ResetAt))
+                r.ResetAt,
+                ContentHash.ToHex(r.PreviousPhotoSha256)))
             .ToListAsync(ct);
 
     /// <summary>

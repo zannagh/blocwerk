@@ -388,7 +388,7 @@
     // the wall's centre-photo default when no panel loaded (a failed panel read).
     private string? PickerPhotoUrl =>
         _currentPanel is not null
-            ? $"/api/walls/{WallId}/panels/{_currentPanel.Id}/photo"
+            ? AssetUrls.Panel(WallId, _currentPanel)
             : null;
 
     // Recomputes the picker's hold set for the current view: only the current panel's holds, so they

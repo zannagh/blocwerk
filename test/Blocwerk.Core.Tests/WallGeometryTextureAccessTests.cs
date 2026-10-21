@@ -138,6 +138,7 @@ public class WallGeometryTextureAccessTests
     {
         var captureId = await s.StartCaptureAsync();
         await s.Processor.ProcessAsync(captureId, CancellationToken.None);
+        await UnhashedGeometry.ClearAsync(h);
         await using var db = h.CreateContext();
         return ((await db.WallGeometryModels.SingleAsync()).Id, captureId);
     }

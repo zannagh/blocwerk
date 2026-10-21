@@ -333,6 +333,33 @@ public class KioskEndpointTests
         Assert.False(fixture.HasDeviceCookie());
     }
 
+    /// <summary>
+    /// Every identity switch on the tablet clears the HTTP cache: the private immutable assets one identity fetched
+    /// (an acting member's other walls among them) must not be served to the next person from the browser cache.
+    /// </summary>
+    [Fact]
+    public async Task Register_Release_AndUnregister_EachClearTheHttpCache()
+    {
+        using var fixture = await KioskFixture.CreateAsync();
+        var (_, token) = await fixture.CreateKioskKeyAsync();
+
+        await fixture.RegisterAsync(token);
+        Assert.Equal("\"cache\"", TakeClearSiteData(fixture));
+
+        await fixture.Controller.Release();
+        Assert.Equal("\"cache\"", TakeClearSiteData(fixture));
+
+        await fixture.Controller.Unregister();
+        Assert.Equal("\"cache\"", TakeClearSiteData(fixture));
+
+        static string TakeClearSiteData(KioskFixture fixture)
+        {
+            var value = fixture.HttpContext.Response.Headers[SiteDataClearing.HeaderName].ToString();
+            fixture.HttpContext.Response.Headers.Remove(SiteDataClearing.HeaderName);
+            return value;
+        }
+    }
+
     [Fact]
     public async Task CompletePairing_WritesTheDeviceRegistrationAndLandsOnTheWall()
     {

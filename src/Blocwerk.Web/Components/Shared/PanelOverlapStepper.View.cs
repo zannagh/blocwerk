@@ -1,3 +1,4 @@
+using Blocwerk.Core.Assets;
 using Blocwerk.Core.Services;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
@@ -62,8 +63,9 @@ public partial class PanelOverlapStepper : IAsyncDisposable
 
     private static (double X, double Y)? Point(PanelHold? h) => h is null ? null : (h.X, h.Y);
 
-    private string PhotoUrl(Guid panelId, bool staged) =>
-        $"/api/walls/{WallId}/panels/{panelId}/{(staged ? "staged-photo" : "photo")}";
+    private string PhotoUrl(Guid panelId, bool staged) => staged
+        ? $"/api/walls/{WallId}/panels/{panelId}/staged-photo"
+        : AssetUrls.Panel(WallId, panelId, _livePhotoShas.GetValueOrDefault(panelId));
 
     private int RemainingHighConfidence =>
         _steps.Skip(_index).Count(p => p.Confidence >= HighConfidence && !_removed.Contains(p.HoldAId));

@@ -1,3 +1,4 @@
+using Blocwerk.Core.Assets;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
 using Microsoft.AspNetCore.Components;
@@ -16,6 +17,9 @@ public partial class CarryoverReview
 {
     [Inject]
     private IWallPanelService WallPanelService { get; set; } = default!;
+
+    [Inject]
+    private IAssetHashReader AssetHashes { get; set; } = default!;
 
     [Parameter] public Guid WallId { get; set; }
     [Parameter] public BigUpdateSession Session { get; set; } = default!;
@@ -43,6 +47,11 @@ public partial class CarryoverReview
     private bool _loading = true;
     private CarryReviewMode? _reviewMode;
 
+    // The hashes of the "before" photo and of the live wall photo (the steppers' "before"), read when the review
+    // opens; null keeps the legacy url.
+    private string? _oldPhotoSha;
+    private string? _wallPhotoSha;
+
     // Every old live hold starts carried in place (default-KEEP); the new-centre holds are accepted
     // unless the service suggested discarding one (SeedSuggestedDiscards) or the user discards it.
     private readonly Dictionary<Guid, CarryoverDecision> _decisions = [];
@@ -69,8 +78,8 @@ public partial class CarryoverReview
     // photo underneath it always describe the same panel. Falls back to the wall photo route (which serves
     // the live centre panel, with its own legacy fallback) when the session predates the per-panel shape.
     private string OldPhotoUrl => _displayedPanel?.LivePanelId is { } livePanelId
-        ? $"/api/walls/{WallId}/panels/{livePanelId}/photo"
-        : $"/api/walls/{WallId}/photo";
+        ? AssetUrls.Panel(WallId, livePanelId, _oldPhotoSha)
+        : AssetUrls.WallPhoto(WallId, _oldPhotoSha);
 
     // The displayed panel's photo could not be aligned with its previous one (in this run or an earlier one
     // of the session), so its old holds sit at their OLD positions.
@@ -91,6 +100,10 @@ public partial class CarryoverReview
         _displayedPanel = (Session.CarriedPanels ?? []).FirstOrDefault(p => p is { Col: 0, Row: 0 });
         _oldHolds = (_displayedPanel?.OldHolds ?? []).ToList();
         _displayedOldIds = _oldHolds.Select(h => h.Id).ToHashSet();
+        _wallPhotoSha = await AssetHashes.WallPhotoAsync(WallId);
+        _oldPhotoSha = _displayedPanel?.LivePanelId is { } live
+            ? (await AssetHashes.PanelPhotosAsync(WallId)).GetValueOrDefault(live)
+            : _wallPhotoSha;
         await ReloadNewHoldsAsync();
 
         // Carry-all default: EVERY carried old hold gets a Carried, no-twin decision. This is where the

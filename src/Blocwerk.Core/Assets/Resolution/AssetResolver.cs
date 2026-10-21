@@ -20,6 +20,7 @@ public sealed class AssetResolver(
     IWallImageStorage imageStorage,
     ICaptureFileStore captureFiles,
     FileHashMemo fileHashes,
+    VerifiedBlobMemo verifiedBlobs,
     ILogger<AssetResolver> logger,
     IKioskContext? kioskContext = null) : IAssetResolver
 {
@@ -57,23 +58,19 @@ public sealed class AssetResolver(
             return null;
         }
 
-        byte[]? bytes;
         if (asset.PhysicalPath is { } path)
         {
-            bytes = await ReadFileAsync(path, ct);
-        }
-        else
-        {
-            await using var db = await dbContextFactory.CreateDbContextAsync(ct);
-            bytes = await AssetBlobLookups.LoadAsync(db, asset, ct);
+            return await ReadFileAsync(asset, path, ct);
         }
 
-        if (bytes is null || ContentHash.Same(ContentHash.Of(bytes), asset.Sha256))
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+        var bytes = await AssetBlobLookups.LoadAsync(db, asset, ct);
+        if (bytes is null || verifiedBlobs.Verify(asset, bytes))
         {
             return bytes;
         }
 
-        logger.LogWarning("{Kind} {RowId} no longer hashes to {Sha}; refusing to serve it under that hash", asset.Kind, asset.RowId, asset.Hex);
+        LogMismatch(asset);
         return null;
     }
 
@@ -98,7 +95,7 @@ public sealed class AssetResolver(
             return false;
         }
 
-        logger.LogWarning("{Kind} {RowId} no longer hashes to {Sha}; refusing to serve it under that hash", asset.Kind, asset.RowId, asset.Hex);
+        LogMismatch(asset);
         return false;
     }
 
@@ -112,11 +109,21 @@ public sealed class AssetResolver(
         return hash is not null && string.Equals(ContentHash.ToHex(hash), sha, StringComparison.Ordinal) ? hash : null;
     }
 
-    private async Task<byte[]?> ReadFileAsync(string path, CancellationToken ct)
+    /// <summary>
+    /// The bytes of a buffered file, checked through <see cref="FileHashMemo"/> (hashed once per file version); null
+    /// when the file is gone, unreadable, or no longer hashes to the asset's sha.
+    /// </summary>
+    private async Task<byte[]?> ReadFileAsync(ResolvedAsset asset, string path, CancellationToken ct)
     {
         try
         {
-            return await File.ReadAllBytesAsync(path, ct);
+            var bytes = await fileHashes.ReadVerifiedAsync(path, asset.Sha256, ct);
+            if (bytes is null && File.Exists(path))
+            {
+                LogMismatch(asset);
+            }
+
+            return bytes;
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         {
@@ -128,4 +135,7 @@ public sealed class AssetResolver(
             return null;
         }
     }
+
+    private void LogMismatch(ResolvedAsset asset) =>
+        logger.LogWarning("{Kind} {RowId} no longer hashes to {Sha}; refusing to serve it under that hash", asset.Kind, asset.RowId, asset.Hex);
 }

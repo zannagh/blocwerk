@@ -521,7 +521,7 @@
     /// </summary>
     private string HlsUrl(BetaVideoInfo video) => WithToken($"/api/beta-videos/{video.Id}/hls/master.m3u8");
 
-    private string ThumbnailUrl(BetaVideoInfo video) => WithToken($"/api/beta-videos/{video.Id}/thumbnail");
+    private string ThumbnailUrl(BetaVideoInfo video) => AssetUrls.VideoThumbnail(video.WallId, video.Id, video.ThumbnailSha, ShareToken);
 
     private string WithToken(string url) =>
         string.IsNullOrEmpty(ShareToken) ? url : $"{url}?token={Uri.EscapeDataString(ShareToken)}";

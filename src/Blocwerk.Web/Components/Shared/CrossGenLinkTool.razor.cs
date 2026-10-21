@@ -2,6 +2,7 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using Blocwerk.Core.Assets;
 using Blocwerk.Core.Services;
 using Microsoft.AspNetCore.Components;
 
@@ -20,6 +21,10 @@ public partial class CrossGenLinkTool
 {
     [Parameter] public Guid WallId { get; set; }
     [Parameter] public Guid CenterPanelId { get; set; }
+
+    // The live wall photo's hash (/photo), read by the hosting review; null keeps the legacy url.
+    [Parameter]
+    public string? OldPhotoSha { get; set; }
 
     /// <summary>Previous/current-gen holds (left pane), already loaded by the parent.</summary>
     [Parameter] public IReadOnlyList<PanelHold> OldHolds { get; set; } = [];
@@ -198,6 +203,6 @@ public partial class CrossGenLinkTool
 
     private int LinkedCount => OldHolds.Count(h => Links.ContainsKey(h.Id));
 
-    private string OldPhotoUrl => $"/api/walls/{WallId}/photo";
+    private string OldPhotoUrl => AssetUrls.WallPhoto(WallId, OldPhotoSha);
     private string NewPhotoUrl => $"/api/walls/{WallId}/panels/{CenterPanelId}/staged-photo";
 }

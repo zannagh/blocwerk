@@ -1,4 +1,5 @@
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Assets;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
@@ -206,7 +207,9 @@ public class BetaVideoService : IBetaVideoService
                 video.SizeBytes,
                 thumbnail is { Length: > 0 },
                 video.HasHls,
-                video.EncodingStatus);
+                video.EncodingStatus,
+                boulder.WallId,
+                ContentHash.ToHex(video.ThumbnailSha256));
         }
         catch (Exception ex)
         {
@@ -505,7 +508,9 @@ public class BetaVideoService : IBetaVideoService
                 v.SizeBytes,
                 v.Thumbnail != null && v.Thumbnail.Length > 0,
                 v.HasHls,
-                v.EncodingStatus))
+                v.EncodingStatus,
+                v.Boulder.WallId,
+                ContentHash.ToHex(v.ThumbnailSha256)))
             .ToListAsync();
 
     /// <summary>
