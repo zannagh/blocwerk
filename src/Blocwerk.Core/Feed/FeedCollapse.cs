@@ -21,7 +21,7 @@ public static class FeedCollapse
     /// <summary>The resync reason of a save that collapsed on its own (no scope).</summary>
     public const string BulkReason = "bulk";
 
-    public static IReadOnlyList<WallChange> Apply(IReadOnlyList<WallChange> rows, FeedScopeState? scope, Guid? actorUserId, DateTimeOffset now)
+    public static IReadOnlyList<WallChange> Apply(IReadOnlyList<WallChange> rows, FeedScopeState? scope, DateTimeOffset now)
     {
         if (rows.Count == 0)
         {
@@ -52,8 +52,10 @@ public static class FeedCollapse
             }
             else if (resynced.Add(row.WallId!.Value))
             {
-                // In place of the wall's first row, so the order of the walls' rows is kept.
-                result.Add(FeedRows.Resync(row.WallId!.Value, reason, actorUserId, now));
+                // In place of the wall's first row, so the order of the walls' rows is kept. Actorless: the resync reaches
+                // every viewer of the wall, while the rows it stands for may have named no one (stats) or reached only
+                // setters, so it must not show anyone a byline they would not have seen.
+                result.Add(FeedRows.Resync(row.WallId!.Value, reason, actorUserId: null, now));
             }
         }
 

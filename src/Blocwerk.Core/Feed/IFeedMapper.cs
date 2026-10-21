@@ -8,7 +8,8 @@ namespace Blocwerk.Core.Feed;
 /// <summary>
 /// Turns one changed entity of a family (design §5.4) into feed rows. Runs in <c>SavingChanges</c>, while the entry still
 /// has its state and original values, on the writer's thread: pure, cheap, and without queries (counts and content are
-/// read at delivery, never here). The rows carry ids only.
+/// read at delivery, never here). The rows carry ids only. A mapper that knows only the boulder leaves <c>WallId</c> unset;
+/// the resolver then places the row through the boulder (<see cref="FeedBoulderPlacement"/>).
 /// </summary>
 public interface IFeedMapper
 {

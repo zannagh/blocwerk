@@ -27,6 +27,12 @@ public sealed class FeedViewer
     /// <summary>A share-link or anonymous kiosk viewer.</summary>
     public static FeedViewer Anonymous() => new([FeedAudience.Wall], null);
 
+    /// <summary>
+    /// A kiosk tablet bound to the wall, whoever it is acting as. It never carries the acting member's id: the tablet is
+    /// shared, so a member's own rows (<c>tick.mine</c>, <c>rating.mine</c>, <c>favorite.changed</c>) must not reach it.
+    /// </summary>
+    public static FeedViewer Kiosk() => new([FeedAudience.Wall], null);
+
     /// <summary>A member of the wall.</summary>
     public static FeedViewer Member(Guid userId) => new([FeedAudience.Wall, FeedAudience.Members], userId);
 

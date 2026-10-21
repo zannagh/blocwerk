@@ -110,7 +110,7 @@ public sealed class FeedScopeTests : IDisposable
         var rows = Enumerable.Range(0, FeedCollapse.MaxRowsPerWall + 1).Select(_ => Row(big))
             .Prepend(Row(small)).Append(Row(small)).Append(new WallChange { Kind = FeedKinds.UserProfile }).ToList();
 
-        var collapsed = FeedCollapse.Apply(rows, scope: null, actorUserId: null, DateTimeOffset.UtcNow);
+        var collapsed = FeedCollapse.Apply(rows, scope: null, DateTimeOffset.UtcNow);
 
         var expected = new (Guid?, string)[]
         {
@@ -126,7 +126,7 @@ public sealed class FeedScopeTests : IDisposable
         var wall = Guid.NewGuid();
         var rows = Enumerable.Range(0, FeedCollapse.MaxRowsPerWall).Select(_ => Row(wall)).ToList();
 
-        Assert.Same(rows, FeedCollapse.Apply(rows, scope: null, actorUserId: null, DateTimeOffset.UtcNow));
+        Assert.Same(rows, FeedCollapse.Apply(rows, scope: null, DateTimeOffset.UtcNow));
     }
 
     private static WallChange Row(Guid wallId) => new() { WallId = wallId, Kind = FeedKinds.HoldChanged, EntityId = Guid.NewGuid() };

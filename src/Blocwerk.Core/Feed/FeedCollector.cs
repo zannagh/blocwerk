@@ -10,7 +10,8 @@ using Microsoft.Extensions.Logging;
 namespace Blocwerk.Core.Feed;
 
 /// <summary>
-/// Maps one save's changed entries to feed rows and collapses them (<see cref="FeedCollapse"/>). A mapper that throws
+/// Maps one save's changed entries to feed rows, resolves what the mappers could not know (<see cref="FeedBoulderResolver"/>,
+/// <see cref="FeedResolve"/>) and collapses them (<see cref="FeedCollapse"/>). A mapper that throws
 /// never fails the save: its partial rows are dropped and the entry's wall gets a coarse <c>wall.resync</c> instead.
 /// </summary>
 internal static class FeedCollector
@@ -22,7 +23,9 @@ internal static class FeedCollector
     {
         var map = Map(context, registry, logger);
         FeedBoulderResolver.Resolve(context, map, logger);
-        return Finish(map);
+
+        // With async false the social step's lookups run synchronously and the task is already complete.
+        return Finish(map, FeedResolve.ApplyAsync(context, map.Rows, logger, async: false, CancellationToken.None).GetAwaiter().GetResult());
     }
 
     public static async Task<IReadOnlyList<WallChange>> CollectAsync(
@@ -30,12 +33,12 @@ internal static class FeedCollector
     {
         var map = Map(context, registry, logger);
         await FeedBoulderResolver.ResolveAsync(context, map, logger, ct);
-        return Finish(map);
+        return Finish(map, await FeedResolve.ApplyAsync(context, map.Rows, logger, async: true, ct));
     }
 
-    private static IReadOnlyList<WallChange> Finish(FeedMapContext map)
+    private static IReadOnlyList<WallChange> Finish(FeedMapContext map, IReadOnlyList<WallChange> resolved)
     {
-        var rows = FeedCollapse.Apply(map.Rows, FeedScope.Active, map.ActorUserId, map.Now);
+        var rows = FeedCollapse.Apply(resolved, FeedScope.Active, map.Now);
         FeedAudienceScope.Apply(rows);
         return rows;
     }
