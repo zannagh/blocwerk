@@ -70,7 +70,10 @@ services:
 
   blocwerk:
     image: ghcr.io/zannagh/blocwerk:latest
-    # No ports: Caddy reaches this over `edge` as blocwerk:5050.
+    # Published on the `edge` gateway only (not reachable from outside the box): Traefik in k3s on the same box
+    # cannot join the Docker network (infra repo, Phase 10). Caddy still reaches it over `edge` as blocwerk:5050.
+    ports:
+      - "172.20.0.1:5050:5050"
     environment:
       SMTP__HOST: ${SMTP__HOST}
       SMTP__PORT: ${SMTP__PORT}
