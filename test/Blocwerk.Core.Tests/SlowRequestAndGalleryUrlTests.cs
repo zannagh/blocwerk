@@ -29,14 +29,16 @@ public class SlowRequestAndGalleryUrlTests
         var wall = Guid.NewGuid();
         var id = Guid.NewGuid();
 
+        var v = (string source) => ResponsiveImage.GalleryVersion(source, id, 1000);
+
         Assert.Equal(
-            $"/media/walls/{wall}/gallery/resetphoto/{id}?w=640",
-            ResponsiveImage.Gallery(wall, "ResetPhoto", id, null, thumbnail: true));
+            $"/media/walls/{wall}/gallery/resetphoto/{id}?v={v("resetphoto")}&w=640",
+            ResponsiveImage.Gallery(wall, "ResetPhoto", id, 1000, null, thumbnail: true));
         Assert.Equal(
-            $"/media/walls/{wall}/gallery/wallphoto/{id}?token=a%2Fb&w=640",
-            ResponsiveImage.Gallery(wall, "WallPhoto", id, "a/b", thumbnail: true));
+            $"/media/walls/{wall}/gallery/wallphoto/{id}?token=a%2Fb&v={v("wallphoto")}&w=640",
+            ResponsiveImage.Gallery(wall, "WallPhoto", id, 1000, "a/b", thumbnail: true));
         Assert.Equal(
-            $"/media/walls/{wall}/gallery/uploaded/{id}",
-            ResponsiveImage.Gallery(wall, "Uploaded", id, null, thumbnail: false));
+            $"/media/walls/{wall}/gallery/uploaded/{id}?v={v("uploaded")}",
+            ResponsiveImage.Gallery(wall, "Uploaded", id, 1000, null, thumbnail: false));
     }
 }

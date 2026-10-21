@@ -3,6 +3,7 @@
 
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Capture;
@@ -16,16 +17,28 @@ public static class WallGeometrySplats
     /// <summary>
     /// The splat byte route (served by the web layer under the wall-media policy); with
     /// <paramref name="mobile"/> the pruned level of detail for phones (<see cref="WallGeometrySplat.MobileStoredPath"/>).
+    /// Carries the bytes' <see cref="Version"/>: a re-run keeps the model id but swaps the row, so the
+    /// URL alone does not name the bytes.
     /// </summary>
-    public static string Url(Guid wallId, Guid modelId, string? shareToken = null, bool mobile = false) =>
-        Url(wallId, modelId, shareToken, mobile ? MobileLod : null);
+    public static string Url(Guid wallId, WallGeometrySplat splat, string? shareToken = null, bool mobile = false) =>
+        Url(wallId, splat, shareToken, mobile ? MobileLod : null);
 
     /// <summary>
     /// The byte route of one ladder level (<see cref="SplatLodLadder"/>), addressed by its splat count;
     /// a count the row does not have serves the full scene.
     /// </summary>
-    public static string LevelUrl(Guid wallId, Guid modelId, int splats, string? shareToken = null) =>
-        Url(wallId, modelId, shareToken, splats.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    public static string LevelUrl(Guid wallId, WallGeometrySplat splat, int splats, string? shareToken = null) =>
+        Url(wallId, splat, shareToken, splats.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+    /// <summary>
+    /// The <see cref="AssetVersion"/> of the file <paramref name="lod"/> selects: the same parts as the
+    /// route's ETag, so a new row (re-run) or a level added later (LOD backfill) moves it.
+    /// </summary>
+    public static string Version(WallGeometrySplat splat, string? lod)
+    {
+        var (_, size, kind) = Select(splat, lod);
+        return AssetVersion.Of(kind, splat.Id, size);
+    }
 
     /// <summary>
     /// The stored file (name, size, ETag kind) that <paramref name="lod"/> selects: a ladder level by
@@ -65,9 +78,9 @@ public static class WallGeometrySplats
             .Where(s => s.GeometryModel.WallId == wallId && s.GeometryModel.IsActive)
             .FirstOrDefaultAsync(ct);
 
-    private static string Url(Guid wallId, Guid modelId, string? shareToken, string? lod)
+    private static string Url(Guid wallId, WallGeometrySplat splat, string? shareToken, string? lod)
     {
-        var query = new List<string>(2);
+        var query = new List<string>(3);
         if (!string.IsNullOrEmpty(shareToken))
         {
             query.Add($"token={Uri.EscapeDataString(shareToken)}");
@@ -78,7 +91,7 @@ public static class WallGeometrySplats
             query.Add($"lod={lod}");
         }
 
-        var suffix = query.Count == 0 ? string.Empty : "?" + string.Join('&', query);
-        return $"/api/walls/{wallId}/geometry/{modelId}/splat{suffix}";
+        query.Add($"{AssetVersion.QueryName}={Version(splat, lod)}");
+        return $"/api/walls/{wallId}/geometry/{splat.GeometryModelId}/splat?{string.Join('&', query)}";
     }
 }

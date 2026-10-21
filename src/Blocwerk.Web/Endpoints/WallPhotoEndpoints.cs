@@ -118,16 +118,16 @@ public static class WallPhotoEndpoints
                 return Results.NotFound();
             }
 
-            // A retired generation's photo is archived on its reset row and never rewritten, so this
-            // route is content-addressed and the browser is told it need not ask again. A generation
-            // at or above the current one resolves to the LIVE photo, which is mutable — hence the
-            // flag off the tag rather than off the route shape.
+            // Never immutable: a retired generation's photo is archived on its reset row and never
+            // replaced, but the privacy pass rewrites it in place, and no client builds a versioned
+            // url for this route. A generation at or above the current one is the LIVE photo anyway.
+            // The ETag (which moves with the length) still turns every revalidation into a 304.
             return await ImageResponse.ServeAsync(
                 http,
                 variants,
                 w,
                 tag,
-                tag.IsArchived,
+                immutable: false,
                 async () =>
                 {
                     var photo = string.IsNullOrEmpty(token)

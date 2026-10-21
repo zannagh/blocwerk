@@ -5,6 +5,7 @@ using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Geometry;
 using Blocwerk.Core.MarkerPlanning;
+using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Capture;
@@ -51,15 +52,26 @@ public sealed partial class WallCaptureService
         return textures.Select(t => new WallGeometryTextureInfo(
             t.GeometryModelId,
             t.FacetId,
-            $"{TextureUrl(wallId, t.GeometryModelId, t.FacetId)}{query}",
+            AssetVersion.Append($"{TextureUrl(wallId, t.GeometryModelId, t.FacetId)}{query}", TextureVersion(t)),
             t.AMin,
             t.AMax,
             t.BMin,
             t.BMax,
             t.WidthPx,
             t.HeightPx,
-            t.MaskStoredPath is null ? null : $"{MaskUrl(wallId, t.GeometryModelId, t.FacetId)}{query}")).ToList();
+            t.MaskStoredPath is null ? null : AssetVersion.Append($"{MaskUrl(wallId, t.GeometryModelId, t.FacetId)}{query}", MaskVersion(t)))).ToList();
     }
+
+    /// <summary>
+    /// The <see cref="AssetVersion"/> of a texture's bytes (the parts of its ETag). A re-texture replaces
+    /// the model's rows under the same model and facet, so the route URL alone does not name the bytes.
+    /// </summary>
+    public static string TextureVersion(WallGeometryTexture texture) =>
+        AssetVersion.Of("geometry-texture", texture.Id, texture.SizeBytes);
+
+    /// <summary>The <see cref="AssetVersion"/> of a texture's coverage mask (the parts of its ETag).</summary>
+    public static string MaskVersion(WallGeometryTexture texture) =>
+        AssetVersion.Of("geometry-texture-mask", texture.Id, texture.MaskSizeBytes ?? 0);
 
     /// <summary>The texture byte route (served by the web layer under the wall-media policy).</summary>
     public static string TextureUrl(Guid wallId, Guid modelId, string facetId) =>

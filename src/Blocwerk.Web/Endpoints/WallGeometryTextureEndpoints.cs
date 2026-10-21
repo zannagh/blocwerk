@@ -13,8 +13,10 @@ namespace Blocwerk.Web.Endpoints;
 /// The per-facet textures of a solved glyph wall model, for the 3D view. Gated exactly like the
 /// other wall media (<see cref="WallPanelPhotoEndpoints"/>, <see cref="WallGalleryImageEndpoint"/>):
 /// a member of the wall, an anonymous viewer holding its share token, or the wall's own kiosk
-/// tablet; API-key principals are rejected. A texture row is written once and never rewritten, so
-/// it is served immutable under an ETag of its id. Its coverage mask (<see cref="MaskRoute"/>) is
+/// tablet; API-key principals are rejected. A texture row is written once, but a re-texture replaces
+/// the model's rows under the same URL, so it is served immutable only when its <c>?v=</c> matches
+/// <see cref="WallCaptureService.TextureVersion"/> (the URLs the 3D view hands out) and with
+/// revalidation against the ETag of its id otherwise. Its coverage mask (<see cref="MaskRoute"/>) is
 /// served by the same gate from the same row.
 /// </summary>
 public static class WallGeometryTextureEndpoints
@@ -113,7 +115,7 @@ public static class WallGeometryTextureEndpoints
                 ImageResponse.Etag("geometry-texture-mask", texture.Id, maskSize),
                 "image/png",
                 maskSize,
-                immutable: true,
+                immutable: ImageResponse.IsVersioned(http.Request, WallCaptureService.MaskVersion(texture)),
                 () => files.ReadAsync(maskPath, ct));
         }
 
@@ -122,7 +124,7 @@ public static class WallGeometryTextureEndpoints
             ImageResponse.Etag("geometry-texture", texture.Id, texture.SizeBytes),
             texture.ContentType,
             texture.SizeBytes,
-            immutable: true,
+            immutable: ImageResponse.IsVersioned(http.Request, WallCaptureService.TextureVersion(texture)),
             () => files.ReadAsync(texture.StoredPath, ct));
     }
 }

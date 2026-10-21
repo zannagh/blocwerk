@@ -25,7 +25,7 @@ namespace Blocwerk.Core.Tests;
 public class WallGeometrySplatAccessTests
 {
     [Fact]
-    public async Task Member_GetsTheSplat_StreamedImmutable_AndARevalidationIsA304()
+    public async Task Member_GetsTheSplat_Streamed_AnUnversionedUrlRevalidates_AndARevalidationIsA304()
     {
         using var h = new WallTestHarness();
         using var s = new CaptureScenario(h);
@@ -37,7 +37,7 @@ public class WallGeometrySplatAccessTests
         Assert.Equal("application/octet-stream", file.ContentType);
         Assert.True(file.EnableRangeProcessing);
         Assert.Equal(s.SplatClient.Spz, await File.ReadAllBytesAsync(file.FileName));
-        Assert.Equal("private, max-age=31536000, immutable", http.Response.Headers.CacheControl.ToString());
+        Assert.Equal("private, no-cache", http.Response.Headers.CacheControl.ToString());
         Assert.False(string.IsNullOrEmpty(http.Response.Headers.ETag.ToString()));
 
         var head = new DefaultHttpContext();
@@ -107,16 +107,16 @@ public class WallGeometrySplatAccessTests
 
         var member = (await ViewService(h).BuildAsync(h.WallId, null)).View!;
         Assert.Equal(["0", "5a"], member.Textures.Select(t => t.FacetId));
-        Assert.Equal($"/api/walls/{h.WallId}/geometry/{modelId}/textures/0", member.Textures[0].Url);
+        Assert.StartsWith($"/api/walls/{h.WallId}/geometry/{modelId}/textures/0?v=", member.Textures[0].Url);
         Assert.Equal(new(-100, 3000, -100, 2500), member.Textures[0].Bounds);
-        Assert.Equal($"/api/walls/{h.WallId}/geometry/{modelId}/splat", member.SplatUrl);
+        Assert.StartsWith($"/api/walls/{h.WallId}/geometry/{modelId}/splat?v=", member.SplatUrl);
         Assert.Equal(new double[] { 1000, 0, 0, 0, 0, 1000, 0, 0, 0, 0, 1000, 0, 10, 20, 30, 1 }, member.SplatMatrix!.ToArray());
 
         await SetShareTokenAsync(h, "tok en");
         h.CurrentUser.GetCurrentUserAsync().Returns(_ => Task.FromException<User>(new UnauthorizedAccessException()));
         var shared = (await ViewService(h).BuildAsync(h.WallId, null, "tok en")).View!;
-        Assert.All(shared.Textures, t => Assert.EndsWith("?token=tok%20en", t.Url));
-        Assert.Equal($"/api/walls/{h.WallId}/geometry/{modelId}/splat?token=tok%20en", shared.SplatUrl);
+        Assert.All(shared.Textures, t => Assert.Contains("?token=tok%20en&v=", t.Url));
+        Assert.StartsWith($"/api/walls/{h.WallId}/geometry/{modelId}/splat?token=tok%20en&v=", shared.SplatUrl);
     }
 
     [Fact]
@@ -129,7 +129,7 @@ public class WallGeometrySplatAccessTests
 
         var view = (await ViewService(h).BuildAsync(h.WallId, null)).View!;
         Assert.Equal([40_000, 120_000, 250_000, 330_000], view.SplatLevels.Select(l => l.Splats));
-        Assert.Equal($"/api/walls/{h.WallId}/geometry/{modelId}/splat?lod=120000", view.SplatLevels[1].Url);
+        Assert.StartsWith($"/api/walls/{h.WallId}/geometry/{modelId}/splat?lod=120000&v=", view.SplatLevels[1].Url);
         Assert.Equal(view.SplatUrl, view.SplatLevels[^1].Url);
         Assert.Null(view.SplatMobileUrl);                    // the ladder supersedes the mobile copy
 

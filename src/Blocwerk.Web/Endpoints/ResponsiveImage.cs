@@ -30,9 +30,10 @@ public static class ResponsiveImage
 
     /// <summary>
     /// The url of one gallery item's bytes. A <paramref name="thumbnail"/> asks for the small rendition; without
-    /// it the stored photo is served, which is only for the photo opened full screen.
+    /// it the stored photo is served, which is only for the photo opened full screen. It carries the item's
+    /// <see cref="GalleryVersion"/>, because the privacy pass rewrites stored photos under the same url.
     /// </summary>
-    public static string Gallery(Guid wallId, string source, Guid id, string? shareToken, bool thumbnail)
+    public static string Gallery(Guid wallId, string source, Guid id, long sizeBytes, string? shareToken, bool thumbnail)
     {
         var url = $"/media/walls/{wallId}/gallery/{source.ToLowerInvariant()}/{id}";
         if (!string.IsNullOrEmpty(shareToken))
@@ -40,8 +41,17 @@ public static class ResponsiveImage
             url += "?token=" + Uri.EscapeDataString(shareToken);
         }
 
+        url = AssetVersion.Append(url, GalleryVersion(source, id, sizeBytes));
         return thumbnail ? AtWidth(url, ThumbnailWidth) : url;
     }
+
+    /// <summary>
+    /// The <see cref="AssetVersion"/> of a gallery item's stored bytes. The size is what the privacy pass
+    /// moves when it strips a photo's metadata in place (and what the ETag already keys on), so a cleaned
+    /// photo gets a new url instead of the year-long cached copy of the old one.
+    /// </summary>
+    public static string GalleryVersion(string source, Guid id, long sizeBytes) =>
+        AssetVersion.Of("gallery", source.ToLowerInvariant(), id, sizeBytes);
 
     /// <summary>
     /// <paramref name="url"/> with the initial width appended, preserving any query it already

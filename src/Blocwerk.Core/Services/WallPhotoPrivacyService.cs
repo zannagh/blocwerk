@@ -15,8 +15,12 @@ namespace Blocwerk.Core.Services;
 /// The rewrites go through <c>ExecuteUpdate</c> and so bypass the change journal and the domain-change
 /// broadcast on purpose: removing metadata is not a wall edit to replay or revert, and nothing cached per
 /// circuit holds photo bytes. The journal's own copies of the photos are cleaned in the same run instead.
-/// Browsers refetch without any extra version bump: every image ETag and variant-cache key includes the
-/// stored length, which shrinks whenever something is removed.
+/// Every image ETag and variant-cache key includes the stored length, which shrinks whenever something is
+/// removed. That alone makes browsers refetch only the routes served with revalidation (panel and wall
+/// photos, avatars): an ETag is never consulted for a copy held <c>immutable</c>. The gallery's uploads
+/// and archived reset photos therefore get a new url as well — it carries <c>?v=</c> of the length
+/// (<c>ResponsiveImage.GalleryVersion</c>) — so a browser holding the location-tagged copy misses and
+/// fetches the clean one.
 /// </remarks>
 public sealed partial class WallPhotoPrivacyService : IWallPhotoPrivacyService
 {
