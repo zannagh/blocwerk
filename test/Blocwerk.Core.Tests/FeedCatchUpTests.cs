@@ -78,7 +78,7 @@ public sealed class FeedCatchUpTests
     public async Task AShortPagesNext_IsCappedAtTheNewestStoredRow_AndALaterRowIsStillRead()
     {
         await using var f = await FeedRouteAccessTests.SeededAsync();
-        var viewer = FeedViewer.Anonymous();
+        var viewer = FeedViewer.Member(f.Member.Id);
         var newest = (await f.CommitAsync(false, f.Row("elsewhere", wallId: f.OtherWallId)))[0];
 
         var first = await f.CatchUp.ReadWallAsync(f.WallId, viewer, await f.BeginningAsync(), null);
@@ -88,6 +88,42 @@ public sealed class FeedCatchUpTests
 
         await f.CommitAsync(false, f.Row("later"));
         Assert.Equal(["later"], (await f.CatchUp.ReadWallAsync(f.WallId, viewer, first.Next, null)).Events.Select(e => e.Kind));
+    }
+
+    /// <summary>
+    /// An outsider's next is the newest row of its own filter, not the global mark, so a share viewer cannot watch other
+    /// walls' writes move it (the W4 side channel); a member's next is the global mark.
+    /// </summary>
+    [Fact]
+    public async Task AnOutsidersNext_IgnoresOtherWallsWrites_AndStillReadsWhatFollows()
+    {
+        await using var f = await FeedRouteAccessTests.SeededAsync();
+        var start = await f.BeginningAsync();
+        var before = await f.CatchUp.ReadWallAsync(f.WallId, FeedViewer.Anonymous(), start, null);
+        await f.CommitAsync(false, f.Row("elsewhere", wallId: f.OtherWallId), f.Row("members-only", FeedAudience.Members));
+
+        var after = await f.CatchUp.ReadWallAsync(f.WallId, FeedViewer.Anonymous(), before.Next, null);
+        var member = await f.CatchUp.ReadWallAsync(f.WallId, FeedViewer.Member(f.Member.Id), start, null);
+
+        Assert.Equal(before.Next, after.Next);
+        Assert.Equal(before.Next, (await f.CatchUp.ReadWallAsync(f.WallId, FeedViewer.Anonymous(), "garbage", null)).Next);
+        Assert.Equal((await f.Feed.CurrentAsync()).ToString(), member.Next);
+        await f.CommitAsync(false, f.Row("shared"));
+        Assert.Equal(["shared"], (await f.CatchUp.ReadWallAsync(f.WallId, FeedViewer.Anonymous(), after.Next, null)).Events.Select(e => e.Kind));
+    }
+
+    /// <summary>A cursor ahead of everything stored (forged, or of a lost dump) is brought back to the high-water mark.</summary>
+    [Fact]
+    public async Task AForgedCursorAheadOfTheMark_IsCappedAtIt()
+    {
+        await using var f = await FeedRouteAccessTests.SeededAsync();
+        var current = await f.Feed.CurrentAsync();
+        var forged = new FeedCursor(current.Epoch, new FeedPosition(current.Position.TxId is null ? null : current.Position.TxId + 1_000_000, current.Position.Seq + 1_000_000));
+
+        var page = await f.CatchUp.ReadWallAsync(f.WallId, FeedViewer.Setter(f.Harness.Owner.Id), forged.ToString(), null);
+
+        Assert.False(page.Resync);
+        Assert.Equal(current.ToString(), page.Next);
     }
 
     [Fact]

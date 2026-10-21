@@ -4,12 +4,19 @@
 namespace Blocwerk.Web.Endpoints.Feed;
 
 /// <summary>
-/// Counts open feed streams, in the process and per signed-in user, so a runaway client (or many tabs) cannot hold every
-/// connection. Anonymous viewers (share link, kiosk) count only toward the process cap: a gym's phones share one address.
+/// Counts open feed streams so no one caller can hold every connection.
+/// <list type="bullet">
+/// <item><description>The process: <see cref="FeedStreamOptions.MaxStreams"/>.</description></item>
+/// <item><description>A signed-in user, a non-member on a share link included: <see cref="FeedStreamOptions.MaxStreamsPerUser"/>.</description></item>
+/// <item><description>An anonymous stream (share link, kiosk) counts per address partition
+/// (<see cref="FeedStreamOptions.MaxAnonymousPerAddress"/>; IPv6 per /64) and per wall
+/// (<see cref="FeedStreamOptions.MaxAnonymousPerWall"/>), so a free share token cannot exhaust the process cap.
+/// Signed-in streams skip the address cap: a gym's members share one NAT address.</description></item>
+/// </list>
 /// </summary>
 public sealed class FeedStreamLimits(FeedStreamOptions options)
 {
-    private readonly Dictionary<Guid, int> perUser = [];
+    private readonly Dictionary<string, int> counts = [];
     private readonly Lock gate = new();
     private int total;
 
@@ -26,34 +33,41 @@ public sealed class FeedStreamLimits(FeedStreamOptions options)
     }
 
     /// <summary>A lease to dispose when the stream ends, or null when a cap is reached.</summary>
-    public IDisposable? TryAcquire(Guid? userId)
+    public IDisposable? TryAcquire(FeedStreamClaim claim)
     {
+        var keys = KeysOf(claim);
         lock (gate)
         {
-            if (total >= options.MaxStreams
-                || (userId is { } user && perUser.GetValueOrDefault(user) >= options.MaxStreamsPerUser))
+            if (total >= options.MaxStreams || keys.Any(k => counts.GetValueOrDefault(k.Key) >= k.Cap))
             {
                 return null;
             }
 
             total++;
-            if (userId is { } id)
+            foreach (var (key, _) in keys)
             {
-                perUser[id] = perUser.GetValueOrDefault(id) + 1;
+                counts[key] = counts.GetValueOrDefault(key) + 1;
             }
 
-            return new FeedStreamLease(() => Release(userId));
+            return new FeedStreamLease(() => Release(keys));
         }
     }
 
-    private void Release(Guid? userId)
+    private (string Key, int Cap)[] KeysOf(FeedStreamClaim claim) => claim.UserId is { } user
+        ? [("user:" + user, options.MaxStreamsPerUser)]
+        : [("addr:" + claim.Address, options.MaxAnonymousPerAddress), ("wall:" + claim.WallId, options.MaxAnonymousPerWall)];
+
+    private void Release((string Key, int Cap)[] keys)
     {
         lock (gate)
         {
             total--;
-            if (userId is { } id && --perUser[id] == 0)
+            foreach (var (key, _) in keys)
             {
-                perUser.Remove(id);
+                if (--counts[key] == 0)
+                {
+                    counts.Remove(key);
+                }
             }
         }
     }

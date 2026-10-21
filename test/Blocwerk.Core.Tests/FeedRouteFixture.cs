@@ -42,6 +42,8 @@ internal sealed class FeedRouteFixture : IAsyncDisposable
         Options = options ?? new FeedStreamOptions { Lifetime = TimeSpan.FromSeconds(30) };
         Limits = new FeedStreamLimits(Options);
         Kiosk = Substitute.For<IKioskContext>();
+        KioskKeys = Substitute.For<IKioskKeyValidator>();
+        KioskKeys.IsKeyValidAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(true);
         CurrentUser = Substitute.For<ICurrentUserService>();
         CurrentUser.GetCurrentUserAsync().Returns(_ => Caller is { } user
             ? Task.FromResult(user)
@@ -63,6 +65,9 @@ internal sealed class FeedRouteFixture : IAsyncDisposable
     public FeedStreamLimits Limits { get; }
 
     public IKioskContext Kiosk { get; }
+
+    /// <summary>Gets the kiosk key check; every key is live until a test says otherwise.</summary>
+    public IKioskKeyValidator KioskKeys { get; }
 
     /// <summary>Gets the app's shutdown, as the stream host sees it.</summary>
     public CancellationTokenSource Stopping { get; } = new();
@@ -120,7 +125,11 @@ internal sealed class FeedRouteFixture : IAsyncDisposable
     {
         Kiosk.IsKiosk.Returns(true);
         Kiosk.KioskWallId.Returns(wallId);
+        Kiosk.KioskApiKeyId.Returns(KioskKeyId);
     }
+
+    /// <summary>Gets the key id a bound kiosk carries.</summary>
+    public Guid KioskKeyId { get; } = Guid.NewGuid();
 
     public static ClaimsPrincipal SignedIn() => new(new ClaimsIdentity([new Claim(ClaimTypes.Name, "x")], "Cookies"));
 
@@ -221,6 +230,7 @@ internal sealed class FeedRouteFixture : IAsyncDisposable
         builder.Services.AddSingleton<RootDbContextFactory>(Harness.RootContextFactory);
         builder.Services.AddSingleton(CurrentUser);
         builder.Services.AddSingleton(Kiosk);
+        builder.Services.AddSingleton(KioskKeys);
         builder.Services.AddSingleton(CatchUp);
         var lifetime = Substitute.For<IHostApplicationLifetime>();
         lifetime.ApplicationStopping.Returns(Stopping.Token);

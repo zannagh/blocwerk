@@ -7,6 +7,7 @@ using Blocwerk.Core.Enums;
 using Blocwerk.Core.Feed;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using NSubstitute;
 
 namespace Blocwerk.Core.Tests;
 
@@ -94,6 +95,34 @@ public sealed class FeedRouteAccessTests
             await f.WallChangesAsync($"?after={await f.BeginningAsync()}&token=other-token", f.OtherWallId), 403, FeedRefusals.NoAccess);
     }
 
+    /// <summary>A revoked or re-bound kiosk key stops reading at once, not at cookie expiry.</summary>
+    [Fact]
+    public async Task AKioskWhoseKeyIsNoLongerLive_Is403()
+    {
+        await using var f = await SeededAsync();
+        f.BindKiosk(f.WallId);
+        f.Caller = null;
+        f.KioskKeys.IsKeyValidAsync(f.KioskKeyId, f.WallId, Arg.Any<CancellationToken>()).Returns(false);
+
+        FeedRouteFixture.AssertRefused(await f.WallChangesAsync("?after=" + await f.BeginningAsync()), 403, FeedRefusals.NoAccess);
+    }
+
+    /// <summary>A signed-in non-member reading through a share link is anonymous to the feed but counted as themselves.</summary>
+    [Fact]
+    public async Task AShareTokenGrant_CarriesTheSignedInCallersId()
+    {
+        await using var f = await SeededAsync();
+        var outsider = new User { Identifier = "nobody@test" };
+        f.Caller = outsider;
+        await using var db = f.Harness.CreateContext();
+        var session = new FeedSession(new FeedCaller(true, IsApiKey: false), f.CurrentUser, null, null);
+
+        var access = await FeedAccessGate.ForWallAsync(db, f.WallId, FeedRouteFixture.ShareToken, session, default);
+
+        Assert.Null(access.Viewer!.UserId);
+        Assert.Equal(outsider.Id, access.CallerUserId);
+    }
+
     [Fact]
     public async Task AnApiKey_IsRefused_EvenForItsOwnersWall()
     {
@@ -104,7 +133,8 @@ public sealed class FeedRouteAccessTests
 
         Assert.Equal(StatusCodes.Status404NotFound, http.Response.StatusCode); // DenyApiKeyPrincipals; the policy says 403 first
         await using var db = f.Harness.CreateContext();
-        var gate = await FeedAccessGate.ForWallAsync(db, f.WallId, null, new FeedCaller(true, IsApiKey: true), f.CurrentUser, null, default);
+        var session = new FeedSession(new FeedCaller(true, IsApiKey: true), f.CurrentUser, null, null);
+        var gate = await FeedAccessGate.ForWallAsync(db, f.WallId, null, session, default);
         Assert.Equal(FeedAccessRefusal.NoAccess, gate.Refusal);
     }
 

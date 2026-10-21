@@ -559,6 +559,12 @@ public static class Program
                 var redirectToLogin = options.Events.OnRedirectToLogin;
                 options.Events.OnRedirectToLogin = context =>
                 {
+                    // The feed routes answer with their own refusal body, so an offline client reads one shape (PR 1.6).
+                    if (FeedEndpoints.IsFeedPath(context.Request.Path))
+                    {
+                        return FeedRequestAccess.WriteChallengeAsync(context.Response);
+                    }
+
                     if (IsApiRequest(context.Request))
                     {
                         context.Response.StatusCode = StatusCodes.Status401Unauthorized;

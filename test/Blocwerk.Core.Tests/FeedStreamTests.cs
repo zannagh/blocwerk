@@ -8,6 +8,7 @@ using Blocwerk.Core.Feed;
 using Blocwerk.Web.Endpoints.Feed;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using NSubstitute;
 
 namespace Blocwerk.Core.Tests;
 
@@ -27,7 +28,7 @@ public sealed class FeedStreamTests
         await f.CommitAsync(true, f.Row("live"));
         await run.Body.WaitUntilAsync(b => b.Events.Count == 5);
 
-        Assert.Equal("3000", run.Body.Frames[0].Retry);
+        Assert.InRange(int.Parse(run.Body.Frames[0].Retry!, System.Globalization.CultureInfo.InvariantCulture), 2400, 3600);
         Assert.Equal(["wall", "members", "setters", "owner.mine", "live"], run.Body.Events.Select(e => e.Kind));
         var frames = run.Body.Frames.Where(x => x.Event is null && x.Data is not null).ToList();
         Assert.All(frames, x => Assert.Equal(JsonSerializer.Deserialize<FeedEnvelope>(x.Data!, FeedJson.Options)!.Cursor, x.Id));
@@ -117,6 +118,64 @@ public sealed class FeedStreamTests
         await run.EndedAsync();
 
         Assert.Equal(FeedKinds.AccessRevoked, run.Body.Events[^1].Kind);
+        AssertBye(run, FeedStreamEvents.ByeAccess);
+    }
+
+    /// <summary>
+    /// W1: a revocation committed before the stream connects (the gate still granted: the membership row was not yet
+    /// gone) arrives in the replay, and the hub's later copy is a repeat. Either way it ends the stream.
+    /// </summary>
+    [Fact]
+    public async Task ARevocationInTheReplay_EndsTheStream_AndItsHubRepeatDoesNotSlipPast()
+    {
+        await using var f = await FeedRouteAccessTests.SeededAsync();
+        f.Caller = f.Member;
+        var early = new RecordingFeedSubscriber();
+        using var tracked = await f.Hub.SubscribeAsync(f.WallId, FeedViewer.Anonymous(), early);
+        await f.CommitAsync(false, f.Row(FeedKinds.AccessRevoked, FeedAudience.User, f.Member.Id, entityId: f.WallId), f.Row("after"));
+
+        await using var run = FeedStreamRun.Open(f, "?after=" + await f.BeginningAsync());
+        await run.EndedAsync();
+
+        Assert.Equal(["wall", "members", "member.mine", FeedKinds.AccessRevoked], run.Body.Events.Select(e => e.Kind));
+        AssertBye(run, FeedStreamEvents.ByeAccess);
+    }
+
+    /// <summary>N3: the rows after a <c>wall.updated</c> in the same batch go out only once access was decided again.</summary>
+    [Fact]
+    public async Task RowsAfterAnAccessChangeInOneBatch_AreNotWritten_WhenTheGrantIsGone()
+    {
+        await using var f = await FeedRouteAccessTests.SeededAsync();
+        f.Caller = null;
+        await using var run = FeedStreamRun.Open(f, $"?after={await f.BeginningAsync()}&token={FeedRouteFixture.ShareToken}");
+        await run.Body.WaitUntilAsync(b => b.Events.Count == 1);
+        await using (var db = f.Harness.CreateContext())
+        {
+            await db.Walls.Where(w => w.Id == f.WallId).ExecuteUpdateAsync(u => u.SetProperty(w => w.ShareToken, "rotated"));
+        }
+
+        await f.CommitAsync(true, f.Row(FeedKinds.WallUpdated, entityId: f.WallId), f.Row("secret"));
+        await run.EndedAsync();
+
+        Assert.Equal(["wall", FeedKinds.WallUpdated], run.Body.Events.Select(e => e.Kind));
+        AssertBye(run, FeedStreamEvents.ByeAccess);
+    }
+
+    /// <summary>N1: a kiosk whose key is revoked mid-stream is cut off at the next access check.</summary>
+    [Fact]
+    public async Task AKioskStream_EndsWhenItsKeyIsRevoked()
+    {
+        await using var f = await FeedRouteAccessTests.SeededAsync();
+        f.BindKiosk(f.WallId);
+        f.Caller = null;
+        await using var run = FeedStreamRun.Open(f, "?after=" + await f.BeginningAsync());
+        await run.Body.WaitUntilAsync(b => b.Events.Count == 1);
+
+        f.KioskKeys.IsKeyValidAsync(f.KioskKeyId, f.WallId, Arg.Any<CancellationToken>()).Returns(false);
+        await f.CommitAsync(true, f.Row(FeedKinds.WallUpdated, entityId: f.WallId), f.Row("later"));
+        await run.EndedAsync();
+
+        Assert.DoesNotContain(run.Body.Events, e => e.Kind == "later");
         AssertBye(run, FeedStreamEvents.ByeAccess);
     }
 
@@ -217,7 +276,8 @@ public sealed class FeedStreamTests
         f.Caller = f.Member;
         FeedRouteFixture.AssertRefused(await f.GetAsync(stream, f.OtherWallId), 403, FeedRefusals.NoAccess);
 
-        var leases = Enumerable.Range(0, f.Options.MaxStreamsPerUser).Select(_ => f.Limits.TryAcquire(f.Member.Id)!).ToList();
+        var claim = new FeedStreamClaim(f.Member.Id, f.WallId, "unknown");
+        var leases = Enumerable.Range(0, f.Options.MaxStreamsPerUser).Select(_ => f.Limits.TryAcquire(claim)!).ToList();
         try
         {
             var busy = await f.GetAsync(stream, f.WallId);

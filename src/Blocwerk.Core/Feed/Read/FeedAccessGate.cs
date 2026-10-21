@@ -14,7 +14,8 @@ namespace Blocwerk.Core.Feed;
 /// <list type="bullet">
 /// <item><description>An API key never reads the feed: it is a device secret, and the feed spans every kind of the wall.</description></item>
 /// <item><description>A kiosk tablet reads its own wall only, always as <see cref="FeedViewer.Kiosk"/> whoever it is acting
-/// as, so a member's own rows never reach the shared tablet; it never reads <c>/api/me</c>.</description></item>
+/// as, so a member's own rows never reach the shared tablet, and only while its key is live; it never reads
+/// <c>/api/me</c>.</description></item>
 /// <item><description>A signed-in user reads as their role (<see cref="FeedViewers.ForUserAsync"/>, read from the database).</description></item>
 /// <item><description>Anyone else, a signed-in non-member included, needs the wall's current share token and reads as
 /// <see cref="FeedViewer.Anonymous"/>. Membership wins over a token, as on the asset routes.</description></item>
@@ -27,24 +28,22 @@ public static class FeedAccessGate
         BlocwerkDbContext db,
         Guid wallId,
         string? shareToken,
-        FeedCaller caller,
-        ICurrentUserService currentUser,
-        IKioskContext? kiosk,
+        FeedSession session,
         CancellationToken cancellationToken)
     {
-        if (caller.IsApiKey)
+        if (session.Caller.IsApiKey)
         {
             return FeedAccess.Refuse(FeedAccessRefusal.NoAccess);
         }
 
-        if (await IsKioskAsync(kiosk))
+        if (await IsKioskAsync(session.Kiosk))
         {
-            return KioskViewing.AllowsAnonymousViewOf(kiosk, wallId)
-                ? FeedAccess.Grant(FeedViewer.Kiosk())
+            return await KioskMayReadAsync(session, wallId, cancellationToken)
+                ? FeedAccess.Grant(FeedViewer.Kiosk(), null)
                 : FeedAccess.Refuse(FeedAccessRefusal.NoAccess);
         }
 
-        var (user, gone) = await ResolveAsync(currentUser, caller);
+        var (user, gone) = await ResolveAsync(session.CurrentUser, session.Caller);
         if (gone)
         {
             return FeedAccess.Refuse(FeedAccessRefusal.AccountGone);
@@ -52,14 +51,14 @@ public static class FeedAccessGate
 
         if (user is not null && await FeedViewers.ForUserAsync(db, wallId, user.Id, cancellationToken) is { } viewer)
         {
-            return FeedAccess.Grant(viewer);
+            return FeedAccess.Grant(viewer, user.Id);
         }
 
         var hasToken = !string.IsNullOrEmpty(shareToken);
         if (hasToken && await db.Walls.IgnoreQueryFilters().AsNoTracking()
                 .AnyAsync(w => w.Id == wallId && w.ShareToken == shareToken, cancellationToken))
         {
-            return FeedAccess.Grant(FeedViewer.Anonymous());
+            return FeedAccess.Grant(FeedViewer.Anonymous(), user?.Id);
         }
 
         return FeedAccess.Refuse(user is null && !hasToken ? FeedAccessRefusal.Unauthenticated : FeedAccessRefusal.NoAccess);
@@ -69,14 +68,14 @@ public static class FeedAccessGate
     /// The viewer for the caller's own rows across walls (<c>/api/me/changes</c>): a signed-in person only, never a kiosk
     /// tablet (per-user data is never stored on one, design §7.2).
     /// </summary>
-    public static async Task<FeedAccess> ForSelfAsync(FeedCaller caller, ICurrentUserService currentUser, IKioskContext? kiosk)
+    public static async Task<FeedAccess> ForSelfAsync(FeedSession session)
     {
-        if (caller.IsApiKey || await IsKioskAsync(kiosk))
+        if (session.Caller.IsApiKey || await IsKioskAsync(session.Kiosk))
         {
             return FeedAccess.Refuse(FeedAccessRefusal.NoAccess);
         }
 
-        var (user, gone) = await ResolveAsync(currentUser, caller);
+        var (user, gone) = await ResolveAsync(session.CurrentUser, session.Caller);
         if (gone)
         {
             return FeedAccess.Refuse(FeedAccessRefusal.AccountGone);
@@ -84,8 +83,16 @@ public static class FeedAccessGate
 
         return user is null
             ? FeedAccess.Refuse(FeedAccessRefusal.Unauthenticated)
-            : FeedAccess.Grant(FeedViewer.Member(user.Id));
+            : FeedAccess.Grant(FeedViewer.Member(user.Id), user.Id);
     }
+
+    // The tablet's own wall, and its key still live: a revoked or re-bound kiosk key stops reading on its next request,
+    // and an open stream on its next access check, instead of at cookie expiry. No validator means no grant.
+    private static async Task<bool> KioskMayReadAsync(FeedSession session, Guid wallId, CancellationToken cancellationToken) =>
+        KioskViewing.AllowsAnonymousViewOf(session.Kiosk, wallId)
+        && session.Kiosk?.KioskApiKeyId is { } keyId && keyId != Guid.Empty
+        && session.KioskKeys is { } keys
+        && await keys.IsKeyValidAsync(keyId, wallId, cancellationToken);
 
     private static async Task<bool> IsKioskAsync(IKioskContext? kiosk)
     {

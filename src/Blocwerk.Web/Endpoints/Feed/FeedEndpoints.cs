@@ -41,6 +41,19 @@ public static class FeedEndpoints
 
     private const int RetryAfterSeconds = 5;
 
+    /// <summary>True for a request to one of the feed routes (the cookie challenge gives those a refusal body).</summary>
+    public static bool IsFeedPath(PathString path)
+    {
+        if (path.StartsWithSegments(SelfChangesRoute, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var segments = (path.Value ?? string.Empty).ToLowerInvariant().Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return (segments is ["api", "walls", var wall, "changes"] && Guid.TryParse(wall, out _))
+            || (segments is ["api", "walls", var streamWall, "feed", "stream"] && Guid.TryParse(streamWall, out _));
+    }
+
     public static void MapFeed(this WebApplication app)
     {
         app.MapGet(WallChangesRoute, WallChangesAsync)
@@ -57,12 +70,15 @@ public static class FeedEndpoints
             .RequireRateLimiting(RateLimitPolicy);
     }
 
-    /// <summary>Per address: about two requests a second sustained, bursts up to <see cref="AddressBurst"/>.</summary>
+    /// <summary>
+    /// Per address (an IPv6 caller per /64, <see cref="FeedAddress"/>): about two requests a second sustained, bursts up to
+    /// <see cref="AddressBurst"/>.
+    /// </summary>
     public static IServiceCollection AddFeedRateLimit(this IServiceCollection services) =>
         services.AddRateLimitPolicy(
             RateLimitPolicy,
             http => RateLimitPartition.GetTokenBucketLimiter(
-                http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                FeedAddress.PartitionOf(http.Connection.RemoteIpAddress),
                 _ => new TokenBucketRateLimiterOptions
                 {
                     TokenLimit = AddressBurst,

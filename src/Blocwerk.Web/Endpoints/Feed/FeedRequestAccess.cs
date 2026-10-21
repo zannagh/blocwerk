@@ -19,25 +19,19 @@ internal static class FeedRequestAccess
     public static FeedCaller CallerOf(HttpContext http) =>
         new(http.User.Identity?.IsAuthenticated == true, http.User.IsApiKeyPrincipal());
 
+    public static FeedSession SessionOf(HttpContext http) => new(
+        CallerOf(http),
+        http.RequestServices.GetRequiredService<ICurrentUserService>(),
+        http.RequestServices.GetService<IKioskContext>(),
+        http.RequestServices.GetService<IKioskKeyValidator>());
+
     public static async Task<FeedAccess> ForWallAsync(HttpContext http, Guid wallId, string? shareToken, CancellationToken ct)
     {
-        var services = http.RequestServices;
-        await using var db = services.GetRequiredService<RootDbContextFactory>().CreateDbContext();
-        return await FeedAccessGate.ForWallAsync(
-            db,
-            wallId,
-            shareToken,
-            CallerOf(http),
-            services.GetRequiredService<ICurrentUserService>(),
-            services.GetService<IKioskContext>(),
-            ct);
+        await using var db = http.RequestServices.GetRequiredService<RootDbContextFactory>().CreateDbContext();
+        return await FeedAccessGate.ForWallAsync(db, wallId, shareToken, SessionOf(http), ct);
     }
 
-    public static Task<FeedAccess> ForSelfAsync(HttpContext http) =>
-        FeedAccessGate.ForSelfAsync(
-            CallerOf(http),
-            http.RequestServices.GetRequiredService<ICurrentUserService>(),
-            http.RequestServices.GetService<IKioskContext>());
+    public static Task<FeedAccess> ForSelfAsync(HttpContext http) => FeedAccessGate.ForSelfAsync(SessionOf(http));
 
     public static IResult Refused(HttpContext http, FeedAccessRefusal refusal)
     {
@@ -52,6 +46,17 @@ internal static class FeedRequestAccess
 
     /// <summary>Feed answers are per viewer and per moment: never stored by the browser or a proxy.</summary>
     public static void NoStore(HttpContext http) => http.Response.Headers.CacheControl = "no-store";
+
+    /// <summary>
+    /// The body of a 401 the authorization policy answers before a feed handler runs (the cookie challenge), so a
+    /// signed-out client reads the same <c>unauthenticated</c> refusal either way.
+    /// </summary>
+    public static Task WriteChallengeAsync(HttpResponse response)
+    {
+        response.StatusCode = StatusCodes.Status401Unauthorized;
+        response.Headers.CacheControl = "no-store";
+        return response.WriteAsJsonAsync(new FeedRefusal(FeedRefusals.Unauthenticated), FeedJson.Options);
+    }
 
     private static IResult Refusal(string error, int status) =>
         Results.Json(new FeedRefusal(error), FeedJson.Options, statusCode: status);

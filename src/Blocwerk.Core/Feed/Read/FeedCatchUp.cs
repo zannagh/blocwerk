@@ -3,6 +3,7 @@
 
 using Blocwerk.Contracts.Feed;
 using Blocwerk.Core.Data;
+using Blocwerk.Core.Enums;
 
 namespace Blocwerk.Core.Feed;
 
@@ -26,7 +27,14 @@ public sealed class FeedCatchUp(IWallFeed feed, Func<BlocwerkDbContext> createCo
     /// <summary>One wall's rows for <paramref name="viewer"/>: its audiences, plus its own User rows of that wall.</summary>
     public Task<FeedChanges> ReadWallAsync(
         Guid wallId, FeedViewer viewer, string? after, int? limit, CancellationToken cancellationToken = default) =>
-        ReadAsync(FeedFilter.ForWall(wallId, viewer.Audiences.ToArray(), viewer.UserId), viewer, after, limit, cancellationToken);
+        ReadAsync(WallFilter(wallId, viewer), viewer, after, limit, cancellationToken);
+
+    /// <summary>
+    /// The cursor a reload of <paramref name="wallId"/> continues from: the global high-water mark for a member, the
+    /// wall's own mark (<see cref="FeedScopedMark"/>) for an outsider.
+    /// </summary>
+    public async Task<FeedCursor> MarkAsync(Guid wallId, FeedViewer viewer, CancellationToken cancellationToken = default) =>
+        await ScopeAsync(WallFilter(wallId, viewer), viewer, await feed.CurrentAsync(cancellationToken), cancellationToken);
 
     /// <summary>A user's own rows across every wall (<c>access.revoked</c>, mine rows, profile, the resyncs).</summary>
     public Task<FeedChanges> ReadSelfAsync(Guid userId, string? after, int? limit, CancellationToken cancellationToken = default) =>
@@ -55,6 +63,25 @@ public sealed class FeedCatchUp(IWallFeed feed, Func<BlocwerkDbContext> createCo
         var size = Math.Clamp(limit ?? DefaultLimit, 1, WallFeed.MaxLimit);
         var page = await feed.ReadAsync(filter, Parse(after), size, cancellationToken);
         var events = await HydrateAsync(page, viewer, cancellationToken);
-        return new FeedChanges(events, page.Next.ToString(), page.Resync, More: !page.Resync && page.Changes.Count == size);
+        var more = !page.Resync && page.Changes.Count == size;
+
+        // A full page ends on a row of the filter; a short one or a resync ends on the global mark, which outsiders do not get.
+        var next = more ? page.Next : await ScopeAsync(filter, viewer, page.Next, cancellationToken);
+        return new FeedChanges(events, next.ToString(), page.Resync, more);
+    }
+
+    private static FeedFilter WallFilter(Guid wallId, FeedViewer viewer) =>
+        FeedFilter.ForWall(wallId, viewer.Audiences.ToArray(), viewer.UserId);
+
+    // Members see the wall's member list and every author id anyway; the global mark tells them nothing they may not know.
+    private async Task<FeedCursor> ScopeAsync(FeedFilter filter, FeedViewer viewer, FeedCursor global, CancellationToken cancellationToken)
+    {
+        if (viewer.Audiences.Contains(FeedAudience.Members))
+        {
+            return global;
+        }
+
+        await using var db = createContext();
+        return await FeedScopedMark.OfAsync(db, filter, global, cancellationToken);
     }
 }

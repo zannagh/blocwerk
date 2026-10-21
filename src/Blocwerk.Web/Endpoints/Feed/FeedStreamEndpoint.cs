@@ -10,7 +10,7 @@ namespace Blocwerk.Web.Endpoints.Feed;
 /// (<see cref="Blocwerk.Contracts.Feed.FeedStreamEvents"/>). The cursor is <c>Last-Event-ID</c> when the browser
 /// reconnects, else <c>?after=</c> (an <c>EventSource</c> cannot set headers on its first request); without either the
 /// stream opens with a resync. Refused like the catch-up (401/403/410), and 429 with <c>Retry-After</c> when the
-/// process or the user holds too many streams.
+/// process, the user, the anonymous viewers of the address or of the wall hold too many streams.
 /// </summary>
 internal static class FeedStreamEndpoint
 {
@@ -32,7 +32,8 @@ internal static class FeedStreamEndpoint
             return FeedRequestAccess.Refused(http, access.Refusal);
         }
 
-        using var lease = host.Limits.TryAcquire(viewer.UserId);
+        using var lease = host.Limits.TryAcquire(
+            new FeedStreamClaim(access.CallerUserId, wallId, FeedAddress.PartitionOf(http.Connection.RemoteIpAddress)));
         if (lease is null)
         {
             FeedRequestAccess.NoStore(http);
