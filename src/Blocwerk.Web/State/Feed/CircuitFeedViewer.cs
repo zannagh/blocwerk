@@ -18,6 +18,7 @@ public sealed class CircuitFeedViewer(
 {
     public async Task<FeedViewer?> ResolveAsync(Guid wallId)
     {
+        await kiosk.InitializeAsync(); // idempotent; never read IsKiosk before the circuit's kiosk state is primed
         if (kiosk.IsKiosk)
         {
             return kiosk.KioskWallId == wallId ? FeedViewer.Kiosk() : null;

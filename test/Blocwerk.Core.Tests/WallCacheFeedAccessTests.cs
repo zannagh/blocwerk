@@ -91,7 +91,7 @@ public sealed class WallCacheFeedAccessTests : IAsyncLifetime
     {
         var before = f.Fake.Resolved;
         f.Fake.Viewer = FeedViewer.Member(Me); // ownership moved away; still a member
-        await f.DeliverAsync(f.Row(FeedKinds.WallUpdated, f.WallId, new GenerationPayload(0)));
+        await f.DeliverAsync(f.Row(FeedKinds.WallUpdated, f.WallId, new WallPayload(0, OwnerChanged: true)));
 
         await CircuitCacheFixture.WaitUntilAsync(() => f.Link.ViewerOf(f.WallId)!.SameAs(FeedViewer.Member(Me)));
         Assert.True(f.Fake.Resolved > before);
@@ -109,7 +109,7 @@ public sealed class WallCacheFeedAccessTests : IAsyncLifetime
 
         Assert.True(f.Store.Walls.TryPeek(f.WallId, out _));
         Assert.Empty(f.Changes);
-        Assert.Equal(0, f.Hub.TrackedWallCount);
+        await CircuitCacheFixture.WaitUntilAsync(() => f.Hub.TrackedWallCount == 0); // retired by Dispose's continuation
         Assert.Null(await f.Link.EnsureAsync(f.WallId));
     }
 

@@ -18,11 +18,12 @@ namespace Blocwerk.Web.State.Feed;
 /// <para>
 /// <b>Access.</b> <c>access.revoked</c> with a role is a demotion: resubscribe with that role's audiences. Without one it
 /// is a removal: leave the wall (<see cref="AccessLost"/>). Promotions and ownership transfers write no access event, so
-/// a <c>member.changed</c> of the circuit's own user, or any <c>wall.updated</c> for a signed-in viewer, re-reads the
-/// viewer from the database and resubscribes when its audiences changed (<see cref="ViewerChanged"/>).
+/// a <c>member.changed</c> of the circuit's own user, or a <c>wall.updated</c> that moved the owner, re-reads the viewer
+/// from the database and resubscribes when its audiences changed (<see cref="ViewerChanged"/>). The last
+/// access-relevant event of a batch wins.
 /// </para>
 /// </summary>
-public sealed class WallFeedLink(IWallFeedHub hub, IWallFeed feed, ICircuitFeedViewer viewers, ILogger<WallFeedLink> logger)
+public sealed partial class WallFeedLink(IWallFeedHub hub, IWallFeed feed, ICircuitFeedViewer viewers, ILogger<WallFeedLink> logger)
     : IDisposable
 {
     private readonly ConcurrentDictionary<Guid, Task<WallFeedSlot?>> slots = new();
@@ -54,7 +55,11 @@ public sealed class WallFeedLink(IWallFeedHub hub, IWallFeed feed, ICircuitFeedV
         }
     }
 
-    /// <summary>The circuit's subscription to the wall, opened on first use; null when it has none (no access, failure).</summary>
+    /// <summary>
+    /// The circuit's subscription to the wall, opened on first use; null when it has none. A "no access" answer is kept, so
+    /// a signed-in non-member does not read their role again on every cache miss (<see cref="ForgetDenied"/> clears it); a
+    /// failure is not, and the next load tries again.
+    /// </summary>
     public async Task<WallFeedSlot?> EnsureAsync(Guid wallId)
     {
         if (IsDisposed || wallId == Guid.Empty)
@@ -63,13 +68,16 @@ public sealed class WallFeedLink(IWallFeedHub hub, IWallFeed feed, ICircuitFeedV
         }
 
         var task = slots.GetOrAdd(wallId, id => OpenAsync(id, null));
-        var slot = await task;
-        if (slot is null)
+        try
         {
-            slots.TryRemove(new KeyValuePair<Guid, Task<WallFeedSlot?>>(wallId, task)); // the next load tries again
+            return await task;
         }
-
-        return slot;
+        catch (Exception ex)
+        {
+            slots.TryRemove(new KeyValuePair<Guid, Task<WallFeedSlot?>>(wallId, task));
+            logger.LogWarning(ex, "Could not subscribe to the feed of wall {WallId}; its cache relies on the domain-change path", wallId);
+            return null;
+        }
     }
 
     /// <summary>
@@ -87,6 +95,31 @@ public sealed class WallFeedLink(IWallFeedHub hub, IWallFeed feed, ICircuitFeedV
     public FeedViewer? ViewerOf(Guid wallId) =>
         slots.TryGetValue(wallId, out var task) && task.IsCompletedSuccessfully ? task.Result?.Viewer : null;
 
+    /// <summary>Forgets the kept "no access" answers (the user's set of walls changed).</summary>
+    public void ForgetDenied()
+    {
+        foreach (var (wallId, task) in slots)
+        {
+            if (task.IsCompletedSuccessfully && task.Result is null)
+            {
+                slots.TryRemove(new KeyValuePair<Guid, Task<WallFeedSlot?>>(wallId, task));
+            }
+        }
+    }
+
+    /// <summary>Unsubscribes from every wall that <paramref name="keep"/> declines (the circuit caches nothing of it).</summary>
+    public void Release(Func<Guid, bool> keep)
+    {
+        foreach (var (wallId, task) in slots)
+        {
+            if (task.IsCompletedSuccessfully && task.Result is { } slot && !keep(wallId)
+                && slots.TryRemove(new KeyValuePair<Guid, Task<WallFeedSlot?>>(wallId, task)))
+            {
+                slot.Retire();
+            }
+        }
+    }
+
     public void Dispose()
     {
         if (Interlocked.Exchange(ref disposed, 1) == 1)
@@ -96,43 +129,43 @@ public sealed class WallFeedLink(IWallFeedHub hub, IWallFeed feed, ICircuitFeedV
 
         foreach (var task in slots.Values)
         {
-            if (task.IsCompletedSuccessfully)
-            {
-                task.Result?.Retire();
-            }
+            // A subscribe still in flight is retired when it lands, so it cannot outlive the circuit.
+            _ = task.ContinueWith(t => RetireIfOpened(t), TaskScheduler.Default);
         }
 
         slots.Clear();
     }
 
-    private async Task<WallFeedSlot?> OpenAsync(Guid wallId, FeedViewer? viewer)
+    private static void RetireIfOpened(Task<WallFeedSlot?> task)
     {
-        try
+        if (task.IsCompletedSuccessfully)
         {
-            viewer ??= await viewers.ResolveAsync(wallId);
-            if (viewer is null)
-            {
-                return null;
-            }
-
-            var slot = new WallFeedSlot(wallId, viewer, Receive);
-            slot.Attach(await hub.SubscribeAsync(wallId, viewer, slot));
-            if (IsDisposed)
-            {
-                slot.Retire(); // the circuit went while the subscribe ran
-                return null;
-            }
-
-            return slot;
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Could not subscribe to the feed of wall {WallId}; its cache relies on the domain-change path", wallId);
-            return null;
+            task.Result?.Retire();
         }
     }
 
-    // On the hub's loop, under the wall's gate: no waiting here.
+    // Throws on a failed resolve or subscribe; null means "no access".
+    private async Task<WallFeedSlot?> OpenAsync(Guid wallId, FeedViewer? viewer)
+    {
+        viewer ??= await viewers.ResolveAsync(wallId);
+        if (viewer is null)
+        {
+            return null;
+        }
+
+        var slot = new WallFeedSlot(wallId, viewer, Receive);
+        slot.Attach(await hub.SubscribeAsync(wallId, viewer, slot));
+        if (IsDisposed)
+        {
+            slot.Retire(); // the circuit went while the subscribe ran
+            return null;
+        }
+
+        return slot;
+    }
+
+    // On the hub's loop, under the wall's gate: no waiting here, and no call back into the hub. A batch is cut after its
+    // first access.revoked and the slot is revoked on the spot: the rest was narrowed to audiences the viewer lost.
     private void Receive(WallFeedSlot slot, FeedDelivery delivery)
     {
         if (IsDisposed)
@@ -146,90 +179,34 @@ public sealed class WallFeedLink(IWallFeedHub hub, IWallFeed feed, ICircuitFeedV
         }
 
         slot.Epoch = delivery.Cursor.Epoch;
+        var events = delivery.Events;
+        var cut = slot.Viewer.UserId is null ? -1 : events.ToList().FindIndex(e => e.Kind == FeedKinds.AccessRevoked);
+        if (cut >= 0)
+        {
+            slot.Revoke();
+            delivery = delivery with { Events = events.Take(cut + 1).ToList() };
+        }
+
         Delivered?.Invoke(delivery);
-        React(slot, delivery.Events);
-    }
-
-    private void React(WallFeedSlot slot, IReadOnlyList<FeedEnvelope> events)
-    {
-        var me = slot.Viewer.UserId;
-        var revoked = events.LastOrDefault(e => e.Kind == FeedKinds.AccessRevoked);
-        if (revoked is not null && me is { } user)
+        if (slot.Viewer.UserId is { } user)
         {
-            if (WallFeedAccess.Role(revoked) is { } role)
-            {
-                Background(() => ChangeAsync(slot.WallId, FeedViewers.ForRoleName(role, user)));
-            }
-            else
-            {
-                Background(() => LeaveAsync(slot.WallId));
-            }
-
-            return;
-        }
-
-        if (me is not null && events.Any(e => WallFeedAccess.MayChangeViewer(e, me.Value)))
-        {
-            Background(() => ChangeAsync(slot.WallId, null));
+            Schedule(slot.WallId, user, WallFeedAccess.Decide(events, user));
         }
     }
 
-    // Resubscribes as viewer (null: read it from the database again), when its audiences differ from the current ones.
-    private async Task ChangeAsync(Guid wallId, FeedViewer? viewer)
+    private void Schedule(Guid wallId, Guid user, WallFeedAccessAction action)
     {
-        await changes.WaitAsync();
-        try
+        switch (action.Kind)
         {
-            if (IsDisposed || !slots.TryGetValue(wallId, out var task) || await task is not { } current)
-            {
-                return;
-            }
-
-            viewer ??= await viewers.ResolveAsync(wallId);
-            if (viewer is null)
-            {
-                LeaveCore(wallId);
-                return;
-            }
-
-            if (viewer.SameAs(current.Viewer) || await OpenAsync(wallId, viewer) is not { } fresh)
-            {
-                return;
-            }
-
-            slots[wallId] = Task.FromResult<WallFeedSlot?>(fresh);
-            current.Retire();
-            ViewerChanged?.Invoke(wallId);
-        }
-        finally
-        {
-            changes.Release();
-        }
-    }
-
-    private async Task LeaveAsync(Guid wallId)
-    {
-        await changes.WaitAsync();
-        try
-        {
-            LeaveCore(wallId);
-        }
-        finally
-        {
-            changes.Release();
-        }
-    }
-
-    private void LeaveCore(Guid wallId)
-    {
-        if (slots.TryRemove(wallId, out var task) && task.IsCompletedSuccessfully)
-        {
-            task.Result?.Retire();
-        }
-
-        if (!IsDisposed)
-        {
-            AccessLost?.Invoke(wallId);
+            case WallFeedAccessKind.Leave:
+                Background(() => LeaveAsync(wallId));
+                break;
+            case WallFeedAccessKind.Demote:
+                Background(() => ChangeAsync(wallId, FeedViewers.ForRoleName(action.Role, user)));
+                break;
+            case WallFeedAccessKind.Reread:
+                Background(() => ChangeAsync(wallId, null));
+                break;
         }
     }
 

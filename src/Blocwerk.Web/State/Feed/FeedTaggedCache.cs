@@ -21,8 +21,23 @@ public sealed class FeedTaggedCache<TKey, T>
     public IEnumerable<TKey> Keys => entries.Keys;
 
     /// <summary>The cached load of <paramref name="key"/>, or a new one that <paramref name="load"/> runs.</summary>
-    public Task<CacheLoad<T>> GetOrLoad(TKey key, Func<Task<CacheLoad<T>>> load) =>
-        entries.GetOrAdd(key, k => LoadOrDrop(k, load));
+    public Task<CacheLoad<T>> GetOrLoad(TKey key, Func<Task<CacheLoad<T>>> load)
+    {
+        while (true)
+        {
+            if (entries.TryGetValue(key, out var cached))
+            {
+                return cached;
+            }
+
+            var pending = new TaskCompletionSource<CacheLoad<T>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            if (entries.TryAdd(key, pending.Task))
+            {
+                _ = RunAsync(key, pending, load);
+                return pending.Task;
+            }
+        }
+    }
 
     /// <summary>The finished value of <paramref name="key"/>, if it is cached and loaded.</summary>
     public bool TryPeek(TKey key, out CacheLoad<T> load)
@@ -60,16 +75,17 @@ public sealed class FeedTaggedCache<TKey, T>
     }
 
     /// <summary>
-    /// Removes every entry whose key or finished value matches <paramref name="match"/> (a load in flight matches when its
-    /// key does). Returns the removed keys.
+    /// Removes every finished entry whose key and value match <paramref name="match"/>, and every load still in flight
+    /// whose key matches <paramref name="inFlight"/> (default: every one): what an unfinished load will hold is unknown,
+    /// so it may belong to the evicted scope and may predate the event. Returns the removed keys.
     /// </summary>
-    public List<TKey> EvictWhere(Func<TKey, T?, bool> match)
+    public List<TKey> EvictWhere(Func<TKey, T, bool> match, Func<TKey, bool>? inFlight = null)
     {
         var removed = new List<TKey>();
         foreach (var (key, task) in entries)
         {
-            var value = task.IsCompletedSuccessfully ? task.Result.Value : default;
-            if (match(key, value) && entries.TryRemove(new KeyValuePair<TKey, Task<CacheLoad<T>>>(key, task)))
+            var hit = task.IsCompletedSuccessfully ? match(key, task.Result.Value) : inFlight?.Invoke(key) ?? true;
+            if (hit && entries.TryRemove(new KeyValuePair<TKey, Task<CacheLoad<T>>>(key, task)))
             {
                 removed.Add(key);
             }
@@ -78,16 +94,21 @@ public sealed class FeedTaggedCache<TKey, T>
         return removed;
     }
 
-    private async Task<CacheLoad<T>> LoadOrDrop(TKey key, Func<Task<CacheLoad<T>>> load)
+    /// <summary>True when any entry matches: a finished one by key and value, one in flight by key.</summary>
+    public bool Any(Func<TKey, T, bool> match, Func<TKey, bool> inFlight) =>
+        entries.Any(e => e.Value.IsCompletedSuccessfully ? match(e.Key, e.Value.Result.Value) : inFlight(e.Key));
+
+    // A failed load is dropped by identity, so it can never take a newer entry of the same key with it.
+    private async Task RunAsync(TKey key, TaskCompletionSource<CacheLoad<T>> pending, Func<Task<CacheLoad<T>>> load)
     {
         try
         {
-            return await load();
+            pending.SetResult(await load());
         }
-        catch
+        catch (Exception ex)
         {
-            entries.TryRemove(key, out _);
-            throw;
+            entries.TryRemove(new KeyValuePair<TKey, Task<CacheLoad<T>>>(key, pending.Task));
+            pending.SetException(ex);
         }
     }
 }

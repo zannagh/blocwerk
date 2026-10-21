@@ -3,5 +3,5 @@
 
 namespace Blocwerk.Contracts.Feed.Payloads;
 
-/// <summary>Payload of <c>wall.updated</c> and of the structural kinds (segment, panel, link, volume).</summary>
+/// <summary>Payload of <c>panel.changed</c> (and of older <c>wall.updated</c> rows, before <see cref="WallPayload"/>).</summary>
 public sealed record GenerationPayload(int Generation) : FeedPayload;

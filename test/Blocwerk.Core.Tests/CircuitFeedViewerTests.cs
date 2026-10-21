@@ -43,6 +43,7 @@ public sealed class CircuitFeedViewerTests : IAsyncLifetime
         Assert.Equal([FeedAudience.Wall], viewer.Audiences);
         Assert.False(viewer.Allows(new WallChange { Kind = FeedKinds.TickMine, Audience = FeedAudience.User, AudienceUserId = member.Id }));
         Assert.Null(await Viewers().ResolveAsync(Guid.NewGuid())); // another wall
+        await kiosk.Received().InitializeAsync(); // primed before IsKiosk is read
     }
 
     [Fact]

@@ -34,10 +34,22 @@ public sealed class WallCacheStore
         }
 
         var any = Walls.Evict(wallId);
-        any |= HoldSets.EvictWhere((key, _) => key.Wall == wallId).Count > 0;
-        any |= Boulders.EvictWhere((_, boulder) => boulder?.WallId == wallId).Count > 0;
+        any |= EvictHoldSets(wallId);
+        any |= Boulders.EvictWhere((_, boulder) => boulder?.WallId == wallId).Count > 0; // and every boulder in flight
         return any;
     }
+
+    /// <summary>Every hold set of the wall, finished or in flight.</summary>
+    public bool EvictHoldSets(Guid wallId) =>
+        HoldSets.EvictWhere((key, _) => key.Wall == wallId, key => key.Wall == wallId).Count > 0;
+
+    /// <summary>
+    /// True while anything of the wall is cached or may be: a boulder in flight counts, because its wall is not known yet.
+    /// </summary>
+    public bool HasAnyOf(Guid wallId) =>
+        Walls.Keys.Contains(wallId)
+        || HoldSets.Keys.Any(key => key.Wall == wallId)
+        || Boulders.Any((_, boulder) => boulder?.WallId == wallId, _ => true);
 
     /// <summary>The wall aggregate, unless it already reflects the event.</summary>
     public bool EvictAggregate(Guid wallId, FeedCursor cursor) => Walls.EvictFor(wallId, cursor);
@@ -48,7 +60,10 @@ public sealed class WallCacheStore
     /// <summary>One generation's hold set; nothing when that generation is not cached.</summary>
     public bool EvictHoldSet(Guid wallId, int generation, FeedCursor cursor) => HoldSets.EvictFor((wallId, generation), cursor);
 
-    /// <summary>Every cached boulder of the wall that matches and predates the event; returns their ids.</summary>
+    /// <summary>
+    /// Every cached boulder of the wall that matches and predates the event, and every boulder still in flight (its wall
+    /// and its cursor are not known yet); returns their ids.
+    /// </summary>
     public List<Guid> EvictBoulders(Guid wallId, FeedCursor cursor, Func<Boulder, bool> match) =>
         Boulders.EvictWhere((_, boulder) => boulder is not null && boulder.WallId == wallId && match(boulder)
             && PredatesOrUnknown(boulder.Id, cursor));

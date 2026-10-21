@@ -41,6 +41,7 @@ internal sealed class WallFeedMapper : IFeedMapper
             return;
         }
 
-        context.Add(StructureRows.Wall(FeedKinds.WallUpdated, wall.Id, wall.Id, new GenerationPayload(wall.CurrentGeneration)));
+        context.Add(StructureRows.Wall(FeedKinds.WallUpdated, wall.Id, wall.Id, new WallPayload(
+            wall.CurrentGeneration, entry.State == EntityState.Modified && entry.Property(nameof(Wall.OwnerId)).IsModified)));
     }
 }

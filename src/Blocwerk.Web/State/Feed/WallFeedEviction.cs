@@ -61,7 +61,7 @@ public static class WallFeedEviction
     {
         var sets = Generation(e.Data) is { } generation
             ? store.EvictHoldSet(wallId, generation, cursor)
-            : store.HoldSets.EvictWhere((key, _) => key.Wall == wallId).Count > 0;
+            : store.EvictHoldSets(wallId);
         var boulders = store.EvictBoulders(wallId, cursor, b => b.BoulderHolds.Any(bh => bh.HoldId == e.EntityId));
         var aggregate = store.EvictAggregate(wallId, cursor);
         return new WallFeedEvicted(aggregate || sets, boulders);

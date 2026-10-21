@@ -25,6 +25,7 @@ public sealed class FeedContractsTests
         [nameof(MemberPayload)] = ["Role", "Sv"],
         [nameof(ResyncPayload)] = ["Reason", "Sv"],
         [nameof(VideoPayload)] = ["BoulderId", "EncodingStatus", "HasHls", "Sv"],
+        [nameof(WallPayload)] = ["Generation", "OwnerChanged", "Sv"],
     };
 
     [Fact]

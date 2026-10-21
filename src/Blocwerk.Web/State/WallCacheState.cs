@@ -102,8 +102,16 @@ public sealed class WallCacheState : IDisposable
     // Subscribed first, so the cursor read next is at or after the subscription's start and no event falls in between.
     private async Task<CacheLoad<T>> LoadOnWallAsync<T>(Guid wallId, Func<Task<T>> load)
     {
-        await link.EnsureAsync(wallId);
+        await SubscribeAsync(wallId);
         return await LoadTaggedAsync(load);
+    }
+
+    // Walls the circuit no longer caches anything of are unsubscribed whenever another wall subscribes, so subscriptions
+    // do not pile up over a long session. A wall on screen reloads straight after an eviction, so it keeps its slot.
+    private Task SubscribeAsync(Guid wallId)
+    {
+        link.Release(w => w == wallId || store.HasAnyOf(w));
+        return link.EnsureAsync(wallId);
     }
 
     // A boulder's wall is known only after the load. When that wall's subscription started after the load's cursor, the
@@ -153,6 +161,7 @@ public sealed class WallCacheState : IDisposable
         {
             case DomainChangeScope.WallList:
                 ForgetMyWalls();
+                link.ForgetDenied(); // a wall the user joined may now be subscribed to
                 break;
 
             case DomainChangeScope.Wall:

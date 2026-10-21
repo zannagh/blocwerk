@@ -24,14 +24,17 @@ internal sealed class CircuitCacheFixture : IAsyncDisposable
     private readonly List<FeedDelivery> deliveries = [];
     private readonly List<Guid> lost = [];
 
-    public CircuitCacheFixture(PostgresTestDatabase? postgres = null, Func<WallTestHarness, ICircuitFeedViewer>? viewers = null)
+    public CircuitCacheFixture(
+        PostgresTestDatabase? postgres = null,
+        Func<WallTestHarness, ICircuitFeedViewer>? viewers = null,
+        Func<IWallFeedHub, IWallFeedHub>? wrapHub = null)
     {
         Harness = new WallTestHarness(postgres);
         var connectionString = Harness.DbContextFactory.ConnectionString;
         Feed = new WallFeed(() => TestDb.Create(connectionString), NullLogger<WallFeed>.Instance);
         Hub = new WallFeedHub(Feed, Signal, () => TestDb.Create(connectionString), NullLogger<WallFeedHub>.Instance);
         Viewers = viewers?.Invoke(Harness) ?? Fake;
-        Link = new WallFeedLink(Hub, Feed, Viewers, NullLogger<WallFeedLink>.Instance);
+        Link = new WallFeedLink(wrapHub?.Invoke(Hub) ?? Hub, Feed, Viewers, NullLogger<WallFeedLink>.Instance);
         Cache = new WallCacheState(Harness.WallService, Harness.BoulderService, Notifier, Link);
         Cache.Changed += c => Record(changes, c);
         Cache.FeedDelivered += d => Record(deliveries, d);

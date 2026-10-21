@@ -8,12 +8,14 @@ namespace Blocwerk.Web.State.Feed;
 /// <summary>
 /// One circuit's subscription to one wall, as one viewer. It is the hub's <see cref="IFeedSubscriber"/>: deliveries arrive
 /// synchronously on the hub's loop under the wall's gate, so it only forwards them; a retired slot (disposed, replaced by
-/// a resubscribe, or left) drops the one late delivery the hub may still hand it.
+/// a resubscribe, or left) drops the one late delivery the hub may still hand it, and so does a revoked one: after an
+/// <c>access.revoked</c> its audiences are no longer the viewer's, until a resubscribe replaces it.
 /// </summary>
 public sealed class WallFeedSlot(Guid wallId, FeedViewer viewer, Action<WallFeedSlot, FeedDelivery> receive) : IFeedSubscriber
 {
     private FeedSubscription? subscription;
     private int retired;
+    private int revoked;
 
     public Guid WallId { get; } = wallId;
 
@@ -27,9 +29,12 @@ public sealed class WallFeedSlot(Guid wallId, FeedViewer viewer, Action<WallFeed
 
     public bool IsRetired => Volatile.Read(ref retired) == 1;
 
+    /// <summary>Gets a value indicating whether an access event made this slot's audiences stale.</summary>
+    public bool IsRevoked => Volatile.Read(ref revoked) == 1;
+
     public void OnFeed(FeedDelivery delivery)
     {
-        if (!IsRetired)
+        if (!IsRetired && !IsRevoked)
         {
             receive(this, delivery);
         }
@@ -45,6 +50,12 @@ public sealed class WallFeedSlot(Guid wallId, FeedViewer viewer, Action<WallFeed
             opened.Dispose();
         }
     }
+
+    /// <summary>
+    /// Drops every later delivery, synchronously and without touching the hub: it runs inside the hub's fan-out, so the
+    /// subscription itself is disposed later, by <see cref="Retire"/>.
+    /// </summary>
+    public void Revoke() => Volatile.Write(ref revoked, 1);
 
     /// <summary>Stops the deliveries (idempotent).</summary>
     public void Retire()

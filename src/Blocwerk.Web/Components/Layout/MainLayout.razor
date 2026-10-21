@@ -2,6 +2,7 @@
 @implements IDisposable
 @using Blocwerk.Web.Components.Shared
 @using Blocwerk.Web.State
+@using Blocwerk.Web.State.Feed
 @using Blocwerk.Core.Services.TopLogger
 @using Microsoft.Extensions.DependencyInjection
 @using Microsoft.AspNetCore.WebUtilities
@@ -10,6 +11,7 @@
 @inject IServiceScopeFactory ScopeFactory
 @inject Blocwerk.Core.Abstractions.IKioskContext KioskContext
 @inject NavigationManager Navigation
+@inject WallCacheState WallCache
 @inject IJSRuntime JS
 
 <div class="app-shell">
@@ -247,6 +249,7 @@
     protected override async Task OnInitializedAsync()
     {
         SessionState.Changed += OnSessionChanged;
+        WallCache.AccessLost += OnWallAccessLost;
         await SessionState.EnsureLoadedAsync();
         await RefreshHomeWallAsync();
     }
@@ -398,5 +401,25 @@
     private string SessionHref =>
         SessionState.Current is { } s ? $"/walls/{s.WallId}?view=boulders" : "/activity";
 
-    public void Dispose() => SessionState.Changed -= OnSessionChanged;
+    public void Dispose()
+    {
+        SessionState.Changed -= OnSessionChanged;
+        WallCache.AccessLost -= OnWallAccessLost;
+    }
+
+    /// <summary>
+    /// The live feed says this circuit lost its access to a wall (the member was removed). Whatever page of that wall is
+    /// open (detail, boulder, update, 3D...), leave it instead of showing what may no longer be read. Raised off the
+    /// dispatcher, so the navigation is marshalled.
+    /// </summary>
+    private void OnWallAccessLost(Guid wallId)
+    {
+        _ = InvokeAsync(() =>
+        {
+            if (WallRoutes.IsMemberPageOf(Navigation.ToBaseRelativePath(Navigation.Uri), wallId))
+            {
+                Navigation.NavigateTo("/walls");
+            }
+        });
+    }
 }
