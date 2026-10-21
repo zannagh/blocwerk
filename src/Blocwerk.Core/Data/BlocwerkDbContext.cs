@@ -205,6 +205,7 @@ public partial class BlocwerkDbContext : DbContext
         ConfigureWallUpdateSession(modelBuilder);
         ConfigureRelocationProposals(modelBuilder);
         ConfigureUpdateExceptions(modelBuilder);
+        ConfigureReviewAnswers(modelBuilder);
         ConfigureShapeProposals(modelBuilder);
         ConfigureTopLogger(modelBuilder);
         ConfigureGlyphGeometry(modelBuilder);
@@ -221,6 +222,7 @@ public partial class BlocwerkDbContext : DbContext
         ConfigureHoldLinkSuggestions(modelBuilder);
         ConfigurePanelCrops(modelBuilder);
         ConfigureLookOver(modelBuilder);
+        ConfigureWallEnhancement(modelBuilder);
     }
 
     private static void ConfigureTopLogger(ModelBuilder modelBuilder)

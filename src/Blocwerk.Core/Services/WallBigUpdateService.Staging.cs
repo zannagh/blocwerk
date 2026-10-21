@@ -26,6 +26,9 @@ public partial class WallBigUpdateService
         db.CurrentUserId = user.Id;
         await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
 
+        // Not while the wall is being enhanced: the run must finish on the generation it started on.
+        await Blocwerk.Core.Enhancement.WallEnhancementGuard.EnsureNotRunningAsync(db, wallId);
+
         var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId)
             ?? throw new InvalidOperationException("Wall not found");
 

@@ -25,6 +25,11 @@ SERVICE=blocwerk
 # busy while someone is mid-edit (creating a boulder, editing a wall); at one poll a minute
 # this defers a redeploy for at most half an hour.
 MAX_DEFER=30
+# Long background work that reports when it expects to finish (/health/busy-eta: seconds, 0 when
+# none; a wall enhancement's hold search runs for most of an hour) keeps the deploy waiting past
+# MAX_DEFER while its ETA is ahead, up to ETA_MAX_DEFER busy polls in all (6 h, the busy lease's
+# own cap). Older apps without the endpoint answer nothing here and keep the plain MAX_DEFER rule.
+ETA_MAX_DEFER=360
 STATE=$DIR/.autodeploy-deferrals
 # The image a deferral is waiting on, so a pending target is logged once rather than
 # once a minute while the busy gate holds it back.
@@ -266,6 +271,17 @@ if [ "$ready" = "busy" ] && [ "$deferrals" -lt "$MAX_DEFER" ]; then
   echo $((deferrals + 1)) > "$STATE"
   echo "app busy, deferring ($((deferrals + 1))/$MAX_DEFER)"
   exit 0
+fi
+
+if [ "$ready" = "busy" ] && [ "$deferrals" -lt "$ETA_MAX_DEFER" ]; then
+  eta=$(docker run --rm --network edge curlimages/curl:latest -s --max-time 5 \
+          http://blocwerk:5050/health/busy-eta 2>/dev/null || echo 0)
+  case "$eta" in ''|*[!0-9]*) eta=0 ;; esac
+  if [ "$eta" -gt 0 ]; then
+    echo $((deferrals + 1)) > "$STATE"
+    echo "app busy with background work for about $((eta / 60)) more min, deferring ($((deferrals + 1))/$ETA_MAX_DEFER)"
+    exit 0
+  fi
 fi
 
 rm -f "$STATE" "$TARGET"

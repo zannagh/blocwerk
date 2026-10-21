@@ -3,9 +3,10 @@
 window.bwRefreshUpload = {
     /**
      * Resolves to the number of files sent once all are done. Photos past `photoRoom` (what the capture still takes) are
-     * refused here, before a byte is sent; `photoLimit` is the capture's limit, for the message.
+     * refused here, before a byte is sent; `photoLimit` is the capture's limit, for the message. Videos are checked the
+     * same way against `videos` ({ accepted, room, maxBytes, refusal }): one the server would refuse is never sent.
      */
-    upload(inputId, url, dotNetRef, photoRoom, photoLimit) {
+    upload(inputId, url, dotNetRef, photoRoom, photoLimit, videos) {
         const input = document.getElementById(inputId);
         const picked = input && input.files ? Array.from(input.files) : [];
         if (picked.length === 0) {
@@ -14,16 +15,42 @@ window.bwRefreshUpload = {
 
         const isVideo = (f) => /\.(mp4|mov|m4v)$/i.test(f.name) || (f.type || '').startsWith('video/');
         let room = typeof photoRoom === 'number' ? photoRoom : Infinity;
+        const rules = videos || { accepted: true, room: Infinity, maxBytes: Infinity, refusal: '' };
+        let videoRoom = typeof rules.room === 'number' ? rules.room : Infinity;
+        const refuse = (f, video, problem) => {
+            dotNetRef.invokeMethodAsync('OnFileUploaded', { photoId: null, fileName: f.name, isVideo: video, problem })
+                .catch(() => { /* the circuit went away */ });
+            return false;
+        };
+        const videoProblem = (f) => {
+            if (!rules.accepted) {
+                return rules.refusal;
+            }
+            if (!/\.(mp4|mov|m4v)$/i.test(f.name)) {
+                return 'Not sent: only MP4 and MOV videos are used.';
+            }
+            if (rules.maxBytes && f.size > rules.maxBytes) {
+                return 'Not sent: the video is larger than ' + Math.round(rules.maxBytes / 1048576) + ' MB.';
+            }
+            if (videoRoom <= 0) {
+                return 'Not sent: an update takes no more videos.';
+            }
+            return null;
+        };
         const files = picked.filter((f) => {
-            if (isVideo(f) || room > 0) {
-                room -= isVideo(f) ? 0 : 1;
+            if (isVideo(f)) {
+                const problem = videoProblem(f);
+                if (problem) {
+                    return refuse(f, true, problem);
+                }
+                videoRoom -= 1;
                 return true;
             }
-            dotNetRef.invokeMethodAsync('OnFileUploaded', {
-                photoId: null, fileName: f.name, isVideo: false,
-                problem: 'Not sent: a capture takes at most ' + photoLimit + ' photos.',
-            }).catch(() => { /* the circuit went away */ });
-            return false;
+            if (room > 0) {
+                room -= 1;
+                return true;
+            }
+            return refuse(f, false, 'Not sent: a capture takes at most ' + photoLimit + ' photos.');
         });
         if (files.length === 0) {
             input.value = '';

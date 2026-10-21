@@ -48,7 +48,7 @@ public sealed partial class WallRefreshProcessor
 
         // The panels were checked when the decisions were recorded; here only a matcher that cannot run stops the apply.
         MatcherHealth.EnsureUsable(matched, panels: false);
-        var promotable = await RefreshDecisions.LoadAsync(refresh.WallId, actors, matched, await StagedHoldsByPanelAsync(refresh.WallId, ct));
+        var promotable = await LoadDecisionsAsync(refresh, actors, matched, ct);
         var summary = RefreshTimeline.Summary(refresh);
 
         // The version the user CONFIRMED, not the stored summary's: a summary rewritten after the confirm (a re-check, an
@@ -70,6 +70,7 @@ public sealed partial class WallRefreshProcessor
 
     private async Task FinishPromotedAsync(WallRefresh refresh, WallRefreshActors actors, CancellationToken ct)
     {
+        matches.Forget(refresh.WallId);
         await StepAsync(refresh, RefreshTimeline.Review, RefreshStepState.Done, "Confirmed", ct);
         var placed = await PlaceHoldsAsync(refresh, actors.Placement, ct);
         await FinishAsync(refresh, RefreshStepState.Done, "The new panel photos and holds are live", placed, ct);

@@ -311,6 +311,10 @@ public static class KioskRestrictions
         // hold or move boulders onto another one. From their own device; WallLookOverService refuses a kiosk too.
         "Blocwerk.Web.Components.Pages.Walls.WallLookOver",
 
+        // "Enhance this wall": an admin reviewing what the one-time enhancement changed (undo, merge, add holds). From
+        // their own device; WallEnhancementService refuses a kiosk too.
+        "Blocwerk.Web.Components.Pages.Walls.WallEnhance",
+
         // The APPROVING half of device pairing. This page is for a wall admin on their own phone,
         // scanning the QR the tablet is showing; a tablet has no business on it. Approving mints a
         // kiosk key, which is precisely the "credential that outlives the session" this list exists

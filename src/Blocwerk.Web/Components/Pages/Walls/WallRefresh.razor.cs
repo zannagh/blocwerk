@@ -128,7 +128,7 @@ public partial class WallRefresh : IDisposable
         }
     }
 
-    private async Task<Guid?> EnsureRefreshAsync()
+    private async Task<WallRefreshView?> EnsureRefreshAsync()
     {
         if (view is null)
         {
@@ -138,7 +138,7 @@ public partial class WallRefresh : IDisposable
             beginning = null;
         }
 
-        return view?.Id;
+        return view;
     }
 
     /// <summary>

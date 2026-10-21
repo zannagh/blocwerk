@@ -1,6 +1,6 @@
-using System.Reflection;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Configuration;
+using Blocwerk.Core.Services;
 using Blocwerk.HoldDetection.Matching;
 using Blocwerk.HoldDetection.Outlines;
 using Blocwerk.HoldDetection.Segmentation;
@@ -54,15 +54,6 @@ public static class HoldDetectionServices
             : new OpenCvHoldOutlineService();
     }
 
-    public static string ResolveModelPath(string configuredPath)
-    {
-        if (Path.IsPathRooted(configuredPath))
-        {
-            return configuredPath;
-        }
-
-        var assemblyDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? ".";
-        var resolved = Path.Combine(assemblyDir, configuredPath);
-        return File.Exists(resolved) ? resolved : configuredPath;
-    }
+    public static string ResolveModelPath(string configuredPath) =>
+        InAppCaptureHoldDetector.ResolveModelPath(configuredPath);
 }

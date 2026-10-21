@@ -5,6 +5,7 @@ using Blocwerk.Core.Data;
 using Blocwerk.Core.HoldMoves;
 using Blocwerk.Core.HoldStacks;
 using Blocwerk.Core.Detection.Enrichment;
+using Blocwerk.Core.Enhancement;
 using Blocwerk.Core.LookOver;
 using Blocwerk.Core.MarkerPlanning;
 using Blocwerk.Core.Redetect;
@@ -253,6 +254,9 @@ public static class CoreServices
         builder.Services.AddSingleton<WallShapeRecognitionRunner>();
         builder.Services.AddScoped<IWallUpdateShapeService, WallUpdateShapeService>();
         builder.Services.AddHostedService<WallShapeRecognitionResumer>();
+
+        // "Enhance this wall": every enhancing step once per wall generation, then a review (see WallEnhancementJob).
+        builder.Services.AddWallEnhancement();
 
         ConfigureTopLogger(builder);
 

@@ -26,7 +26,7 @@ namespace Blocwerk.Core.Services;
 /// non-journalled header would make it aggregate-aware, which is exactly what it is not.
 /// </para>
 /// </summary>
-public sealed class ChangeJournalReverter
+public sealed partial class ChangeJournalReverter
 {
     private readonly IDbContextFactory<BlocwerkDbContext> factory;
     private readonly ChangeJournal journal;

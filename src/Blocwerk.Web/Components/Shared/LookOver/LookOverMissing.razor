@@ -73,5 +73,9 @@
             <ConfirmAction @ref="remove" Label="Not there any more" Question="@LookOverCopy.RemoveQuestion(Finding)" ConfirmLabel="Remove the hold"
                            Disabled="Disabled" OnConfirm="() => AnswerAsync(LookOverAnswer.RemoveHold)" />
         }
+        @if (Other is not null)
+        {
+            <button type="button" class="btn-secondary" disabled="@Disabled" @onclick="ChooseOther">It is the new hold here</button>
+        }
     }
 </div>

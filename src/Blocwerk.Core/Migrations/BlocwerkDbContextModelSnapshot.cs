@@ -505,6 +505,28 @@ namespace Blocwerk.Core.Migrations
                     b.ToTable("BoulderSetters");
                 });
 
+            modelBuilder.Entity("Blocwerk.Core.Entities.CaptureDetectionRecord", b =>
+                {
+                    b.Property<string>("StoredPath")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<string>("Detector")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DetectionsJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("StoredPath", "Detector");
+
+                    b.ToTable("CaptureDetectionRecords");
+                });
+
             modelBuilder.Entity("Blocwerk.Core.Entities.ChangeJournalBatch", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2406,6 +2428,129 @@ namespace Blocwerk.Core.Migrations
                     b.ToTable("WallCapturePhotos");
                 });
 
+            modelBuilder.Entity("Blocwerk.Core.Entities.WallEnhancementItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("DecidedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DecidedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Decision")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Detail")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid?>("HoldId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<Guid?>("OtherHoldId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("PriorState")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid?>("ReferenceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ResultBatchId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RunId", "Kind", "Decision");
+
+                    b.HasIndex("RunId", "Kind", "HoldId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_WallEnhancementItems_RunId_Kind_HoldId_Written")
+                        .HasFilter("\"Kind\" IN (0, 1, 2)");
+
+                    b.ToTable("WallEnhancementItems");
+                });
+
+            modelBuilder.Entity("Blocwerk.Core.Entities.WallEnhancementRun", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CurrentStep")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTimeOffset?>("FinalizedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("FinalizedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Generation")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("HeartbeatAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("OutcomeJson")
+                        .HasColumnType("text");
+
+                    b.Property<string>("PanelGenerationsJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("StepsFinishedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("StepsJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("WallId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WallId", "Generation")
+                        .IsUnique();
+
+                    b.ToTable("WallEnhancementRuns");
+                });
+
             modelBuilder.Entity("Blocwerk.Core.Entities.WallGeometryModel", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3368,6 +3513,40 @@ namespace Blocwerk.Core.Migrations
                     b.ToTable("WallUpdateRelocationProposals");
                 });
 
+            modelBuilder.Entity("Blocwerk.Core.Entities.WallUpdateReviewAnswer", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Answer")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("HoldId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("SessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Subject")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("HoldId");
+
+                    b.HasIndex("SessionId", "HoldId", "Subject")
+                        .IsUnique();
+
+                    b.ToTable("WallUpdateReviewAnswers");
+                });
+
             modelBuilder.Entity("Blocwerk.Core.Entities.WallUpdateSession", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4277,6 +4456,28 @@ namespace Blocwerk.Core.Migrations
                     b.Navigation("Capture");
                 });
 
+            modelBuilder.Entity("Blocwerk.Core.Entities.WallEnhancementItem", b =>
+                {
+                    b.HasOne("Blocwerk.Core.Entities.WallEnhancementRun", "Run")
+                        .WithMany()
+                        .HasForeignKey("RunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Run");
+                });
+
+            modelBuilder.Entity("Blocwerk.Core.Entities.WallEnhancementRun", b =>
+                {
+                    b.HasOne("Blocwerk.Core.Entities.Wall", "Wall")
+                        .WithMany()
+                        .HasForeignKey("WallId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Wall");
+                });
+
             modelBuilder.Entity("Blocwerk.Core.Entities.WallGeometryModel", b =>
                 {
                     b.HasOne("Blocwerk.Core.Entities.Wall", "Wall")
@@ -4545,6 +4746,21 @@ namespace Blocwerk.Core.Migrations
                     b.Navigation("NewHold");
 
                     b.Navigation("OldHold");
+                });
+
+            modelBuilder.Entity("Blocwerk.Core.Entities.WallUpdateReviewAnswer", b =>
+                {
+                    b.HasOne("Blocwerk.Core.Entities.Hold", null)
+                        .WithMany()
+                        .HasForeignKey("HoldId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Blocwerk.Core.Entities.WallUpdateSession", null)
+                        .WithMany()
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallUpdateSession", b =>

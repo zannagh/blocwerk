@@ -1,0 +1,44 @@
+@* The steps of a wall enhancement with what each did: a done mark, "skipped" or "failed", and its one-line summary.
+   Steps that have not run yet are listed greyed out, so the card shows the whole chain from the start. *@
+
+@using Blocwerk.Core.Enhancement
+
+<ol class="enhance-steps">
+    @foreach (var step in Steps)
+    {
+        <li class="enhance-step @Css(step.Outcome)" @key="step.Key">
+            <span class="enhance-step-mark" aria-hidden="true">@Mark(step.Outcome)</span>
+            <span class="enhance-step-text">
+                <span class="enhance-step-title">@step.Title</span>
+                @if (!string.IsNullOrWhiteSpace(step.Summary))
+                {
+                    <span class="enhance-step-summary">@step.Summary</span>
+                }
+            </span>
+        </li>
+    }
+</ol>
+
+@code {
+    /// <summary>The steps in order.</summary>
+    [Parameter, EditorRequired]
+    public IReadOnlyList<WallEnhancementStepView> Steps { get; set; } = [];
+
+    private static string Mark(WallEnhancementStepOutcomeKind? outcome) => outcome switch
+    {
+        WallEnhancementStepOutcomeKind.Done => "✓",
+        WallEnhancementStepOutcomeKind.Skipped => "–",
+        WallEnhancementStepOutcomeKind.Failed => "!",
+        WallEnhancementStepOutcomeKind.Running => "…",
+        _ => "·",
+    };
+
+    private static string Css(WallEnhancementStepOutcomeKind? outcome) => outcome switch
+    {
+        null => "is-waiting",
+        WallEnhancementStepOutcomeKind.Running => "is-running",
+        WallEnhancementStepOutcomeKind.Failed => "is-failed",
+        WallEnhancementStepOutcomeKind.Skipped => "is-skipped",
+        _ => "is-done",
+    };
+}

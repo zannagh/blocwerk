@@ -25,9 +25,11 @@ public sealed partial class WallRefreshProcessor(
     ILogger<WallRefreshProcessor> logger,
     ICaptureVideoJoiner? videoJoiner = null,
     WallRefreshLocks? locks = null,
-    HoldMoves.HoldMoveOptions? moveOptions = null)
+    HoldMoves.HoldMoveOptions? moveOptions = null,
+    MatchedSessionCache? matchCache = null)
 {
     private readonly WallRefreshLocks wallLocks = locks ?? new WallRefreshLocks();
+    private readonly MatchedSessionCache matches = matchCache ?? new MatchedSessionCache();
 
     public async Task ProcessAsync(Guid refreshId, CancellationToken ct)
     {

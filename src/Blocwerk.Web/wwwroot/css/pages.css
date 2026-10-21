@@ -3067,6 +3067,16 @@ html.bw-fullscreen .panel-link-dialog .panel-step-viewport {
     font-size: 1rem; line-height: 1.25; font-family: inherit;
 }
 .update-actions .field-hint { margin: 4px 0 12px; }
+/* The manual wizard, one disclosure below the one way in. */
+.update-advanced { margin-top: 4px; }
+.update-advanced > summary { cursor: pointer; padding: 8px 0; font-size: 0.9rem; color: var(--text-secondary); }
+/* "Update wall" under "View in 3D": the wall page's one way into an update (wall admins). */
+a.wall-update-link {
+    display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none;
+    margin: -12px 0 20px;
+}
+/* Deleting the wall: its own collapsed card at the very bottom of the settings. */
+.danger-card > .settings-card-summary h2 { color: var(--danger-text); }
 
 .bigupdate { margin: 8px 0; }
 .bigupdate-head {

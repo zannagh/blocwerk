@@ -26,6 +26,18 @@ public sealed class HoldRefinementQueue(IServiceScopeFactory scopes, ILogger<Hol
     /// <summary>Quiet time after the last queued edit before a run starts.</summary>
     public static readonly TimeSpan Debounce = TimeSpan.FromSeconds(20);
 
+    /// <summary>How often a refinement waiting for a running hold search looks again.</summary>
+    public static readonly TimeSpan SearchPoll = TimeSpan.FromSeconds(10);
+
+    /// <summary>Whether a hold search runs (the wait condition; tests replace it).</summary>
+    internal Func<bool> SearchRunning { get; init; } = () => HoldProposalService.IsSearching;
+
+    /// <summary>The quiet time of a burst (<see cref="Debounce"/>; tests shorten it).</summary>
+    internal TimeSpan BurstQuiet { get; init; } = Debounce;
+
+    /// <summary>The poll while a search runs (<see cref="SearchPoll"/>; tests shorten it).</summary>
+    internal TimeSpan SearchWait { get; init; } = SearchPoll;
+
     private readonly Channel<(Guid WallId, Guid[] HoldIds)> channel =
         Channel.CreateUnbounded<(Guid WallId, Guid[] HoldIds)>(new UnboundedChannelOptions { SingleReader = true });
 
@@ -146,6 +158,14 @@ public sealed class HoldRefinementQueue(IServiceScopeFactory scopes, ILogger<Hol
                 var item = await channel.Reader.ReadAsync(stoppingToken);
                 Add(pending, item);
                 await DrainBurstAsync(pending, stoppingToken);
+
+                // Not alongside a hold search (minutes of detection on the same CPU): the edits keep collecting meanwhile.
+                while (SearchRunning())
+                {
+                    await Task.Delay(SearchWait, stoppingToken);
+                    await DrainBurstAsync(pending, stoppingToken);
+                }
+
                 foreach (var (wallId, ids) in pending)
                 {
                     await RunAsync(wallId, ids, stoppingToken);
@@ -181,7 +201,7 @@ public sealed class HoldRefinementQueue(IServiceScopeFactory scopes, ILogger<Hol
         while (true)
         {
             using var quiet = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            quiet.CancelAfter(Debounce);
+            quiet.CancelAfter(BurstQuiet);
             try
             {
                 Add(pending, await channel.Reader.ReadAsync(quiet.Token));

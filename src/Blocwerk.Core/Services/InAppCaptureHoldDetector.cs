@@ -13,12 +13,35 @@ namespace Blocwerk.Core.Services;
 /// the photo's raw pixel grid, the grid the cameras were solved on. Boxes of the "volume" class (reported white)
 /// are left out.
 /// </summary>
-public sealed class InAppCaptureHoldDetector(IHoldDetectionService detector) : ICaptureHoldDetector
+/// <remarks>
+/// Without its model file the app's detector falls back to colour-based detection; the name then says so
+/// ("color-cpu"), because detections are cached and checkpointed per photo under the detector's name, and a colour
+/// pass must never be read back as a model pass once the model is there again.
+/// </remarks>
+public sealed class InAppCaptureHoldDetector(IHoldDetectionService detector, Configuration.BlocwerkSettings? settings = null) : ICaptureHoldDetector
 {
     private const string VolumeColor = "white";
 
     /// <inheritdoc />
-    public string Name => "yolo-cpu";
+    public string Name => settings is null || File.Exists(ResolveModelPath(settings.HoldDetection.ModelPath)) ? "yolo-cpu" : "color-cpu";
+
+    /// <summary>
+    /// Where the app's detector reads its model from: a rooted path as it is, a relative one next to the app's assemblies
+    /// when it is there, else as given (relative to the working directory). The detector itself resolves it this way.
+    /// </summary>
+    /// <param name="configuredPath">The configured path.</param>
+    /// <returns>The path the detector opens.</returns>
+    public static string ResolveModelPath(string configuredPath)
+    {
+        if (Path.IsPathRooted(configuredPath))
+        {
+            return configuredPath;
+        }
+
+        var assemblyDir = Path.GetDirectoryName(typeof(InAppCaptureHoldDetector).Assembly.Location) ?? ".";
+        var resolved = Path.Join(assemblyDir, configuredPath);
+        return File.Exists(resolved) ? resolved : configuredPath;
+    }
 
     /// <inheritdoc />
     public Task<bool> IsAvailableAsync(CancellationToken ct = default) => Task.FromResult(true);

@@ -66,6 +66,7 @@ public sealed partial class WallRefreshService(
         var (db, userId) = await OpenForAdminAsync(wallId);
         await using (db)
         {
+            await Blocwerk.Core.Enhancement.WallEnhancementGuard.EnsureNotRunningAsync(db, wallId);
             var current = await CurrentAsync(db, wallId);
             if (current is not null && !IsFinished(current.Status))
             {

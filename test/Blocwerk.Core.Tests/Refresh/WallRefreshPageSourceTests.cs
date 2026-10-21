@@ -19,15 +19,58 @@ public class WallRefreshPageSourceTests
     {
         var markup = Read("src/Blocwerk.Web/Components/Pages/Walls/WallDetail.razor");
 
-        var entry = markup.IndexOf("href=\"/walls/@WallId/update\">Update panels + 3D</a>", StringComparison.Ordinal);
-        var guard = markup.LastIndexOf("@if (!KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))", entry, StringComparison.Ordinal);
-        var settings = markup.IndexOf("<h2>Wall Settings</h2>", StringComparison.Ordinal);
-        var adminOnly = markup.LastIndexOf("@if (_isAdmin)", settings, StringComparison.Ordinal);
-        Assert.True(entry > 0, "entry link missing");
-        Assert.True(guard > 0 && entry - guard < 200, "entry must sit right inside the kiosk/share-link guard");
-        Assert.True(adminOnly > 0 && settings > adminOnly && entry > settings, "entry must live in the admin-only Wall Settings card");
-        Assert.Equal(entry, markup.LastIndexOf("href=\"/walls/@WallId/update\"", StringComparison.Ordinal));
-        Assert.Contains("\"Update step by step\"", markup);
+        // Two links to the one update page: the wall rail's "Update wall" and the settings card's; both admin-only,
+        // both inside the kiosk/share-link guard.
+        var links = AllIndexesOf(markup, "href=\"/walls/@WallId/update\"");
+        Assert.Equal(2, links.Count);
+        foreach (var link in links)
+        {
+            var guard = markup.LastIndexOf("!KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken)", link, StringComparison.Ordinal);
+            Assert.True(guard > 0 && link - guard < 200, "each entry must sit right inside the kiosk/share-link guard");
+            Assert.True(markup.LastIndexOf("_isAdmin", link, StringComparison.Ordinal) > 0, "each entry is for wall admins");
+        }
+
+        var rail = markup.IndexOf("class=\"btn-secondary wall-update-link\" href=\"/walls/@WallId/update\">Update wall</a>", StringComparison.Ordinal);
+        Assert.True(rail > 0, "the wall page offers \"Update wall\" beside the photo");
+
+        // The manual wizard is an advanced route, and deleting the wall is far from every update control.
+        var advanced = markup.IndexOf("<summary>Advanced: step by step</summary>", StringComparison.Ordinal);
+        Assert.True(advanced > 0 && markup.IndexOf("\"Update step by step\"", advanced, StringComparison.Ordinal) > advanced);
+        var delete = markup.IndexOf("Label=\"Delete Wall\"", StringComparison.Ordinal);
+        var deleteCard = markup.IndexOf("<h2>Delete this wall</h2>", StringComparison.Ordinal);
+        var lastCard = markup.IndexOf("<h2>Kiosk Registration</h2>", StringComparison.Ordinal);
+        Assert.True(deleteCard > lastCard && delete > deleteCard, "Delete Wall lives in its own card after every other settings card");
+    }
+
+    [Fact]
+    public void TheReviewsWriter_SurvivesAnyFailure_KeepsUnsavedAnswers_AndGuardsTheTab()
+    {
+        var writes = Read("src/Blocwerk.Web/Components/Shared/Refresh/Review/UpdateReviewScreen.Writes.cs");
+        var screen = Read("src/Blocwerk.Web/Components/Shared/Refresh/Review/UpdateReviewScreen.razor");
+
+        // The loop clears its flag in a finally, whatever a batch throws, and a failed batch is kept for Retry.
+        var loop = writes.IndexOf("private async Task WriteLoopAsync()", StringComparison.Ordinal);
+        var finallyAt = writes.IndexOf("finally", loop, StringComparison.Ordinal);
+        Assert.True(finallyAt > loop && writes.IndexOf("sending = false;", finallyAt, StringComparison.Ordinal) > finallyAt);
+        Assert.Contains("catch (Exception ex) when (ex is not OperationCanceledException", writes);
+        Assert.Contains("pending.Failed(batch);", writes);
+
+        // Leaving the review takes the "leave this page?" guard down (it is about this page's answers only).
+        var code = Read("src/Blocwerk.Web/Components/Shared/Refresh/Review/UpdateReviewScreen.razor.cs");
+        var dispose = code.IndexOf("public async ValueTask DisposeAsync()", StringComparison.Ordinal);
+        Assert.True(dispose > 0 && code.IndexOf("await GuardTabAsync(false);", dispose, StringComparison.Ordinal) > dispose);
+        Assert.Contains("export function guard(enabled)", Read("src/Blocwerk.Web/wwwroot/js/unsaved-guard.js"));
+        Assert.Contains("removeEventListener('beforeunload', ask)", Read("src/Blocwerk.Web/wwwroot/js/unsaved-guard.js"));
+        Assert.Contains("@onclick=\"RetryAsync\"", screen);
+
+        // An answer reads "saving…" until the server has it; closing the tab meanwhile asks first.
+        Assert.Contains("AnsweredBy = answer is null ? null : Saving", Read("src/Blocwerk.Web/Components/Shared/Refresh/Review/UpdateReviewScreen.razor.cs"));
+        Assert.Contains("\"/js/unsaved-guard.js\"", writes);
+        Assert.Contains("beforeunload", Read("src/Blocwerk.Web/wwwroot/js/unsaved-guard.js"));
+
+        // "All as suggested" is the server's (it fills only what is unanswered there) and never offered for "not found".
+        Assert.Contains("Reviews.AcceptSuggestedAsync(View.Id, g, panel)", writes);
+        Assert.Contains("UpdateReviewService.AcceptsAll(bulk)", screen);
     }
 
     [Fact]
@@ -133,5 +176,16 @@ public class WallRefreshPageSourceTests
 
         Assert.NotNull(dir);
         return dir.FullName;
+    }
+
+    private static List<int> AllIndexesOf(string text, string value)
+    {
+        var found = new List<int>();
+        for (var at = text.IndexOf(value, StringComparison.Ordinal); at >= 0; at = text.IndexOf(value, at + 1, StringComparison.Ordinal))
+        {
+            found.Add(at);
+        }
+
+        return found;
     }
 }

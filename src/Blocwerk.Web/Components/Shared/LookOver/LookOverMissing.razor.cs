@@ -75,6 +75,11 @@ public partial class LookOverMissing
             remove?.Open();
         }
 
+        if (number == 3)
+        {
+            ChooseOther();
+        }
+
         return Task.CompletedTask;
     }
 
@@ -125,13 +130,28 @@ public partial class LookOverMissing
 
     private (double X, double Y) Spot(LookOverFindingView finding) => Ghost(finding) is { } ghost ? (ghost.X, ghost.Y) : (finding.SpotX, finding.SpotY);
 
-    /// <summary>Turns to the hold: nothing is picked, except the new hold the update found on its very spot.</summary>
+    /// <summary>
+    /// Turns to the hold with nothing picked: the card opens on its answers, never on a confirm nobody asked for. The new
+    /// hold the update found on its very spot is offered as an answer of its own (<see cref="ChooseOther"/>).
+    /// </summary>
     private void Show()
     {
         shownId = Finding.Id;
-        targetId = Finding is { CanReassign: true } ? Finding.OtherHoldId : null;
+        targetId = null;
         movedTo = null;
         focusKey++;
+    }
+
+    /// <summary>The new hold on the old hold's spot, when the update knows it and the user may reassign.</summary>
+    private Guid? Other => Finding is { CanReassign: true, OtherHoldId: { } other } ? other : null;
+
+    /// <summary>"It is the new hold here": picks it, so the question with both pictures opens.</summary>
+    private void ChooseOther()
+    {
+        if (Other is { } other)
+        {
+            (targetId, movedTo) = (other, null);
+        }
     }
 
     private void ClearChoice() => (targetId, movedTo) = (null, null);
