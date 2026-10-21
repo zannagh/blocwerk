@@ -92,7 +92,7 @@ public sealed class View3DDocumentFixture : IDisposable
         builder.Services.AddAuthorization();
         builder.Services.AddSingleton(_ => new View3DDocumentService(
             Assets.Harness.DbContextFactory, Assets.CurrentUser, Views, Store, TimeProvider.System,
-            NullLogger<View3DDocumentService>.Instance, Assets.Kiosk));
+            NullLogger<View3DDocumentService>.Instance, Assets.Kiosk, Assets.KioskKeys));
         var built = builder.Build();
         built.MapWallDocuments();
         return built;

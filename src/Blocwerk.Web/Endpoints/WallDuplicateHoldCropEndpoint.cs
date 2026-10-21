@@ -32,8 +32,7 @@ public static class WallDuplicateHoldCropEndpoint
                 return Results.NotFound();
             }
 
-            http.Response.Headers.CacheControl = "private, max-age=300";
-            return Results.File(bytes, "image/jpeg");
+            return RevalidatedResponse.Bytes(http, bytes, "image/jpeg");
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or KioskRestrictedException)
         {

@@ -21,19 +21,50 @@ public class ImageVariantShaKeyTests
     private static readonly byte[] Original = TestImages.Noise(1800, 900, SKEncodedImageFormat.Jpeg, 85);
 
     [Fact]
-    public async Task ALegacyRendition_IsMovedToTheShaKey_WithoutReadingTheOriginal()
+    public async Task ALegacyRendition_IsMovedToTheShaKey_OnceTheOriginalHashesToIt()
     {
         var cache = NewCache(out var root);
         var legacy = new ImageVariantKey(ImageResponse.Key(Guid.NewGuid(), "live"), ImageResponse.Key(1, Original.Length, "image/jpeg"));
         var rendered = await cache.GetOrCreateAsync(legacy, 640, Load(Original), default);
+        File.WriteAllBytes(Directory.GetFiles(Path.Combine(root, legacy.Identity)).Single(), [42, 42]); // a marker no render makes
 
         var reads = 0;
         var hashed = await cache.GetOrCreateAsync(legacy with { Sha = Sha(Original) }, 640, Counting(() => reads++), default);
 
-        Assert.Equal(0, reads);
-        Assert.Equal(rendered!.Bytes, hashed!.Bytes);
+        Assert.Equal(1, reads);
+        Assert.Equal([42, 42], hashed!.Bytes);
+        Assert.NotNull(rendered);
         Assert.Empty(Directory.GetFiles(Path.Combine(root, legacy.Identity)));
         Assert.Single(Directory.GetFiles(Path.Combine(root, "sha"), "*-640.jpg", SearchOption.AllDirectories));
+    }
+
+    /// <summary>Release fix W3: a legacy rendition of bytes that no longer hash to the key is never moved under it.</summary>
+    [Fact]
+    public async Task ALegacyRendition_OfOtherBytes_IsNotAdopted()
+    {
+        var cache = NewCache(out var root);
+        var legacy = new ImageVariantKey(ImageResponse.Key(Guid.NewGuid(), "live"), ImageResponse.Key(1, Original.Length, "image/jpeg"));
+        await cache.GetOrCreateAsync(legacy, 640, Load(Original), default);
+
+        await cache.GetOrCreateAsync(legacy with { Sha = Sha([9, 9, 9]) }, 640, Load(Original), default);
+
+        Assert.Single(Directory.GetFiles(Path.Combine(root, legacy.Identity)));
+        Assert.False(Directory.Exists(Path.Combine(root, "sha")) && Directory.GetFiles(Path.Combine(root, "sha"), "*", SearchOption.AllDirectories).Length > 0);
+    }
+
+    /// <summary>Release fix W1a: a wall photo cached under another route's key (an alternate) is found and adopted.</summary>
+    [Fact]
+    public async Task AnAlternateLegacyKey_IsAdoptedToo()
+    {
+        var cache = NewCache(out var root);
+        var gallery = new ImageVariantKey(ImageResponse.Key(Guid.NewGuid(), "gallery"), ImageResponse.Key(1, Original.Length, "image/jpeg"));
+        await cache.GetOrCreateAsync(gallery, 640, Load(Original), default);
+        File.WriteAllBytes(Directory.GetFiles(Path.Combine(root, gallery.Identity)).Single(), [7, 7]);
+
+        var key = new ImageVariantKey(ImageResponse.Key(Guid.NewGuid(), "photo"), ImageResponse.Key(1), Sha(Original), [(gallery.Identity, gallery.Version)]);
+        var hashed = await cache.GetOrCreateAsync(key, 640, Load(Original), default, originalVerified: true);
+
+        Assert.Equal([7, 7], hashed!.Bytes);
     }
 
     [Fact]

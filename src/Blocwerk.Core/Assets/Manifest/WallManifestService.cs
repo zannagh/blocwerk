@@ -29,7 +29,8 @@ public sealed class WallManifestService(
     IWallFeed feed,
     TimeProvider timeProvider,
     ILogger<WallManifestService> logger,
-    IKioskContext? kioskContext = null)
+    IKioskContext? kioskContext = null,
+    IKioskKeyValidator? kioskKeys = null)
 {
     /// <summary>How long a complete manifest is reused at most.</summary>
     public static readonly TimeSpan MaxAge = TimeSpan.FromMinutes(10);
@@ -77,7 +78,7 @@ public sealed class WallManifestService(
         }
 
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);
-        var access = await AssetAccessGate.DecideAsync(db, wallId, shareToken, currentUserService, kioskContext, ct);
+        var access = await AssetAccessGate.DecideAsync(db, wallId, shareToken, currentUserService, kioskContext, kioskKeys, ct);
         return ManifestAudiences.From(access, kioskContext, wallId);
     }
 

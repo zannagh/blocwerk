@@ -5,8 +5,10 @@ using System.Security.Claims;
 using Blocwerk.Authentication.Authorization;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Assets.Resolution;
+using Blocwerk.Core.Data;
 using Blocwerk.Core.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Web.Endpoints;
 
@@ -81,6 +83,7 @@ public static class AssetEndpoints
         HttpContext http,
         [FromServices] IAssetResolver resolver,
         [FromServices] IImageVariantCache variants,
+        [FromServices] IDbContextFactory<BlocwerkDbContext> dbContextFactory,
         CancellationToken ct)
     {
         if (user.IsApiKeyPrincipal() || !ImageVariants.IsAllowed(width))
@@ -94,6 +97,6 @@ public static class AssetEndpoints
             return Results.NotFound();
         }
 
-        return await AssetResponse.VariantAsync(http, resolver, variants, asset, width, ct);
+        return await AssetResponse.VariantAsync(http, resolver, variants, dbContextFactory, asset, width, ct);
     }
 }

@@ -23,11 +23,16 @@ public interface IImageVariantCache
     /// <c>ImageVariants.Widths</c>; anything else is a request for an unbounded render.</param>
     /// <param name="loadOriginal">Reads the stored original. Called only on a cache miss.</param>
     /// <param name="ct">Cancellation token.</param>
+    /// <param name="originalVerified">
+    /// True when <paramref name="loadOriginal"/> only ever returns bytes that hash to <see cref="ImageVariantKey.Sha"/>
+    /// (the hashed route's resolver, which checks them through its memo), so the cache need not hash them again.
+    /// </param>
     Task<ImageVariant?> GetOrCreateAsync(
         ImageVariantKey key,
         int width,
         Func<Task<byte[]?>> loadOriginal,
-        CancellationToken ct);
+        CancellationToken ct,
+        bool originalVerified = false);
 
     /// <summary>
     /// The length and content type of the rendition of a HASHED source (<see cref="ImageVariantKey.Sha"/>) already in
@@ -55,9 +60,14 @@ public interface IImageVariantCache
 /// The content hash of the source (lowercase hex), when its row has one. A keyed rendition is stored under
 /// <c>(Sha, width)</c> instead, shared by every route that serves the same bytes; <paramref name="Identity"/> and
 /// <paramref name="Version"/> then only name the legacy file the cache moves over on first use (dual-read). Either
-/// may be empty when the caller (the hashed route) has no legacy key.
+/// may be empty when the caller has no legacy key.
 /// </param>
-public sealed record ImageVariantKey(string Identity, string Version, string? Sha = null);
+/// <param name="Alternates">
+/// Further legacy <c>(Identity, Version)</c> keys the same bytes may have been cached under by other routes (a wall photo
+/// is addressed three ways); a hashed miss tries each before rendering.
+/// </param>
+public sealed record ImageVariantKey(
+    string Identity, string Version, string? Sha = null, IReadOnlyList<(string Identity, string Version)>? Alternates = null);
 
 /// <summary>A rendition's bytes and the type they are encoded in.</summary>
 /// <param name="Bytes">The encoded image.</param>

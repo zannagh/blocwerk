@@ -107,7 +107,7 @@ public class CacheSummaryTests
     }
 
     private static CacheSummaryService Service(ManifestFixture f) =>
-        new(f.Assets.Harness.DbContextFactory, f.Assets.CurrentUser, f.Assets.Kiosk);
+        new(f.Assets.Harness.DbContextFactory, f.Assets.CurrentUser, f.Assets.Kiosk, f.Assets.KioskKeys);
 
     private static async Task<int> CountAsync(ManifestFixture f) => (await Service(f).GetAsync(default)).WallsWith3d;
 

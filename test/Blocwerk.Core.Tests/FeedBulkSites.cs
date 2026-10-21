@@ -18,6 +18,8 @@ internal static class FeedBulkSites
     private const string Merge = Core + "Services/AccountMergeService.cs";
     private const string ErasedWalls = "the erasure's walls each get a wall.resync in its transaction (FeedAccountRows.EraseAsync)";
     private const string MergedWalls = "the source's walls each get a wall.resync in the merge's transaction (FeedAccountRows.MergeAsync)";
+    private const string Quarantined = "Assets/Resolution/AssetHashQuarantine.cs";
+    private const string QuarantineReason = "a mismatched hash cleared WHERE hash = the failed sha: wall.manifest in the clear's transaction";
     private const string GpuQueue = "GPU job queue bookkeeping (claim, lease, preview, result); progress goes through IWallPulse and results land on mapped rows";
 
     /// <summary>
@@ -52,6 +54,18 @@ internal static class FeedBulkSites
         Excluded("Data/LinkedHoldSyncStartup.cs", typeof(Wall), 1, "Wall.LinkedHoldSyncVersion only (an unseen column); the hold writes before it are SaveChanges and mapped"),
         Excluded("Feed/WallChangeRetention.cs", null, 1, "the feed's own retention of WallChange rows"),
         Resync("Services/TopLogger/TopLoggerImportService.cs", typeof(ExternalAscent), 2, "grade mapping and disconnect: ticks.resync to the user"),
+        .. Quarantine(),
+    ];
+
+    private static IEnumerable<FeedBulkSite> Quarantine() =>
+    [
+        Rows(Quarantined, typeof(WallPanel), 1, QuarantineReason),
+        Rows(Quarantined, typeof(Wall), 1, QuarantineReason),
+        Rows(Quarantined, typeof(WallReset), 1, QuarantineReason),
+        Rows(Quarantined, typeof(BetaVideo), 1, QuarantineReason),
+        Rows(Quarantined, typeof(WallImage), 1, QuarantineReason),
+        Rows(Quarantined, typeof(WallGeometryTexture), 2, QuarantineReason + " (texture and mask)"),
+        Rows(Quarantined, typeof(WallGeometrySplat), 3, QuarantineReason + " (full scene, mobile copy, ladder level)"),
     ];
 
     private static IEnumerable<FeedBulkSite> Account() =>

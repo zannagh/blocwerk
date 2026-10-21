@@ -88,7 +88,9 @@ public static class WallPanelCloseUpEndpoint
     private static IResult Respond(HttpContext http, CloseUpResult result)
     {
         var headers = http.Response.Headers;
-        headers.CacheControl = "private, max-age=600";
+
+        // Revalidated on every use under the render's ETag (a 304 costs no render), never kept by max-age.
+        headers.CacheControl = ImageResponse.MutableCacheControl;
         if (result.Volume is { } volume)
         {
             headers[VolumeHeader] = volume.Id.ToString();

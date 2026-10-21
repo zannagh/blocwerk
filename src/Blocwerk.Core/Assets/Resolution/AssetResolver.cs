@@ -23,7 +23,8 @@ public sealed class AssetResolver(
     FileHashMemo fileHashes,
     VerifiedBlobMemo verifiedBlobs,
     ILogger<AssetResolver> logger,
-    IKioskContext? kioskContext = null) : IAssetResolver
+    IKioskContext? kioskContext = null,
+    IKioskKeyValidator? kioskKeys = null) : IAssetResolver
 {
     /// <inheritdoc/>
     public async Task<ResolvedAsset?> ResolveAsync(Guid wallId, string sha, string? shareToken, CancellationToken ct)
@@ -35,13 +36,13 @@ public sealed class AssetResolver(
         }
 
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);
-        var access = await AssetAccessGate.DecideAsync(db, wallId, shareToken, currentUserService, kioskContext, ct);
+        var access = await AssetAccessGate.DecideAsync(db, wallId, shareToken, currentUserService, kioskContext, kioskKeys, ct);
         if (access == AssetAccess.None)
         {
             return null;
         }
 
-        var asset = await LookUpAsync(db, wallId, hash, access, ct);
+        var asset = await LookUpAsync(db, wallId, hash, access, ct) is { } found ? found with { WallId = wallId } : null;
         return asset is null || kioskContext is not { IsKiosk: true } || ManifestAudiences.Lists(ManifestAudience.Kiosk, asset.Kind)
             ? asset
             : asset with { NoStore = true };
@@ -67,7 +68,7 @@ public sealed class AssetResolver(
             return bytes;
         }
 
-        LogMismatch(asset);
+        await MismatchAsync(asset);
         return null;
     }
 
@@ -92,7 +93,7 @@ public sealed class AssetResolver(
             return false;
         }
 
-        LogMismatch(asset);
+        await MismatchAsync(asset);
         return false;
     }
 
@@ -129,7 +130,7 @@ public sealed class AssetResolver(
             var bytes = await fileHashes.ReadVerifiedAsync(path, asset.Sha256, ct);
             if (bytes is null && File.Exists(path))
             {
-                LogMismatch(asset);
+                await MismatchAsync(asset);
             }
 
             return bytes;
@@ -145,6 +146,21 @@ public sealed class AssetResolver(
         }
     }
 
-    private void LogMismatch(ResolvedAsset asset) =>
+    /// <summary>
+    /// A confirmed mismatch: logged, and the row's hash cleared (<see cref="AssetHashQuarantine"/>) so the row falls back
+    /// to its legacy URL and is hashed again, instead of failing closed under a sha it no longer has.
+    /// </summary>
+    private async Task MismatchAsync(ResolvedAsset asset)
+    {
         logger.LogWarning("{Kind} {RowId} no longer hashes to {Sha}; refusing to serve it under that hash", asset.Kind, asset.RowId, asset.Hex);
+        try
+        {
+            await using var db = await dbContextFactory.CreateDbContextAsync(CancellationToken.None);
+            await AssetHashQuarantine.ClearAsync(db, asset, logger);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "Could not open a context to clear the hash of {Kind} {RowId}", asset.Kind, asset.RowId);
+        }
+    }
 }

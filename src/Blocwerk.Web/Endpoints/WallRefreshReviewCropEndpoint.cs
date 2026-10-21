@@ -39,9 +39,8 @@ public static class WallRefreshReviewCropEndpoint
                 return Results.NotFound();
             }
 
-            // Short: a spot can be worked out anew (a touch-up, the match coming back after a restart).
-            http.Response.Headers.CacheControl = "private, max-age=60";
-            return Results.File(bytes, "image/jpeg");
+            // A spot can be worked out anew (a touch-up, the match coming back after a restart): revalidated on every use.
+            return RevalidatedResponse.Bytes(http, bytes, "image/jpeg");
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or KioskRestrictedException)
         {

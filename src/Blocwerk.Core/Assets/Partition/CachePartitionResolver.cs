@@ -22,7 +22,8 @@ namespace Blocwerk.Core.Assets.Partition;
 public sealed class CachePartitionResolver(
     ICachePartitionKey key,
     ICurrentUserService currentUserService,
-    IKioskContext? kioskContext = null) : ICachePartitionResolver
+    IKioskContext? kioskContext = null,
+    IKioskKeyValidator? kioskKeys = null) : ICachePartitionResolver
 {
     /// <summary>The length of the hashed part of a label: 20 base32 characters, 100 bits.</summary>
     public const int LabelLength = 20;
@@ -37,7 +38,7 @@ public sealed class CachePartitionResolver(
             await kioskContext.InitializeAsync();
             if (kioskContext.IsKiosk)
             {
-                return kioskContext.KioskApiKeyId is { } keyId && KioskCacheRules.CachedWallId(kioskContext) is { } wallId
+                return kioskContext.KioskApiKeyId is { } keyId && await KioskCacheRules.CachedWallIdAsync(kioskContext, kioskKeys, CancellationToken.None) is { } wallId
                     ? CachePartitions.KioskPrefix + Label($"kiosk:{keyId:N}:{wallId:N}")
                     : CachePartitions.None;
             }

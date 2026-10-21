@@ -42,11 +42,9 @@ public static class WallLookOverCropEndpoint
                 return which == CheckCropView.Model && await lookOver.HasFindingAsync(wallId, findingId, ct) ? Results.NoContent() : Results.NotFound();
             }
 
-            // Never in a shared cache (only who may look over the wall sees them). The two photo crops never change;
-            // the 3D picture can follow the hold's placement, so the browser keeps it for a few minutes only: long
-            // enough that opening the large view does not fetch it again.
-            http.Response.Headers.CacheControl = which == CheckCropView.Model ? "private, max-age=300" : "private, max-age=3600";
-            return Results.File(bytes, "image/jpeg");
+            // Revalidated on every use (only who may look over the wall sees them); an unchanged crop is a 304, and the
+            // 3D picture that followed the hold's placement is the new bytes at once.
+            return RevalidatedResponse.Bytes(http, bytes, "image/jpeg");
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or KioskRestrictedException)
         {

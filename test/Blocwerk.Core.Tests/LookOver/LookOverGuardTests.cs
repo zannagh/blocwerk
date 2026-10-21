@@ -61,10 +61,11 @@ public class LookOverGuardTests
         Assert.Empty(service.ReceivedCalls());
     }
 
+    /// <summary>Never publicly cached, and never kept by a max-age: revalidated on every use under an ETag of the bytes.</summary>
     [Theory]
-    [InlineData("old", "private, max-age=3600")]
-    [InlineData("Model", "private, max-age=300")]
-    public async Task ThePictures_AreNeverPubliclyCached_AndTheModelPictureOnlyBriefly(string view, string cacheControl)
+    [InlineData("old", "private, no-cache")]
+    [InlineData("Model", "private, no-cache")]
+    public async Task ThePictures_AreRevalidatedOnEveryUse_NeverKeptByMaxAge(string view, string cacheControl)
     {
         var service = Substitute.For<IWallLookOverService>();
         service.GetCropAsync(default, default, default, default).ReturnsForAnyArgs(new byte[] { 1 });
@@ -74,6 +75,7 @@ public class LookOverGuardTests
 
         Assert.IsType<FileContentHttpResult>(result);
         Assert.Equal(cacheControl, http.Response.Headers.CacheControl.ToString());
+        Assert.False(string.IsNullOrEmpty(http.Response.Headers.ETag.ToString()));
     }
 
     [Fact]

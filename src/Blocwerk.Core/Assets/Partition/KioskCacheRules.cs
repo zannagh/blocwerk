@@ -22,7 +22,23 @@ public static class KioskCacheRules
     public static bool AllowsKioskCache(IKioskContext kioskContext, Guid wallId) =>
         kioskContext.KioskApiKeyId is not null && KioskViewing.AllowsAnonymousViewOf(kioskContext, wallId);
 
-    /// <summary>The wall a kiosk session caches, or null when it caches none.</summary>
-    public static Guid? CachedWallId(IKioskContext kioskContext) =>
-        KioskViewing.ViewableWallId(kioskContext) is { } wallId && AllowsKioskCache(kioskContext, wallId) ? wallId : null;
+    /// <summary>
+    /// The wall a kiosk session caches, or null when it caches none: also null once its key is revoked or re-bound
+    /// (<see cref="IKioskKeyValidator"/>), and null without a validator. A revoked tablet's partition is then
+    /// <c>none</c>, which wipes its page-side caches.
+    /// </summary>
+    public static async Task<Guid?> CachedWallIdAsync(IKioskContext kioskContext, IKioskKeyValidator? keys, CancellationToken ct) =>
+        KioskViewing.ViewableWallId(kioskContext) is { } wallId && await AllowsKioskCacheAsync(kioskContext, wallId, keys, ct) ? wallId : null;
+
+    /// <summary><see cref="AllowsKioskCache"/>, and the tablet's key is still live for the wall.</summary>
+    public static async Task<bool> AllowsKioskCacheAsync(IKioskContext kioskContext, Guid wallId, IKioskKeyValidator? keys, CancellationToken ct) =>
+        AllowsKioskCache(kioskContext, wallId) && await KeyIsLiveAsync(kioskContext, wallId, keys, ct);
+
+    /// <summary>
+    /// Whether the kiosk session's key is still live for <paramref name="wallId"/>, as <c>FeedAccessGate</c> asks it: a
+    /// revoked or re-bound key stops every asset, manifest, document, partition and summary read on its next request,
+    /// not at cookie expiry. No validator means no grant.
+    /// </summary>
+    public static async Task<bool> KeyIsLiveAsync(IKioskContext kioskContext, Guid wallId, IKioskKeyValidator? keys, CancellationToken ct) =>
+        kioskContext.KioskApiKeyId is { } keyId && keyId != Guid.Empty && keys is not null && await keys.IsKeyValidAsync(keyId, wallId, ct);
 }

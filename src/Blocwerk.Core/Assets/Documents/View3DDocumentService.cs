@@ -36,7 +36,8 @@ public sealed class View3DDocumentService(
     View3DDocumentStore store,
     TimeProvider timeProvider,
     ILogger<View3DDocumentService> logger,
-    IKioskContext? kioskContext = null)
+    IKioskContext? kioskContext = null,
+    IKioskKeyValidator? kioskKeys = null)
 {
     /// <summary>The document, or null for every refusal alike (the route's 404).</summary>
     /// <param name="wallId">The wall in the route.</param>
@@ -65,7 +66,7 @@ public sealed class View3DDocumentService(
         }
 
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);
-        return await AssetAccessGate.DecideAsync(db, wallId, shareToken, currentUserService, kioskContext, ct);
+        return await AssetAccessGate.DecideAsync(db, wallId, shareToken, currentUserService, kioskContext, kioskKeys, ct);
     }
 
     private async Task<StoredView3DDocument?> RebuildAsync(Guid wallId, string sha, string? shareToken, Guid? boulderId, CancellationToken ct)
