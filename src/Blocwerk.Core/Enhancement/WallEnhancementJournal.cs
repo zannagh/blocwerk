@@ -23,10 +23,18 @@ internal static class WallEnhancementJournal
     /// The wall-scoped batches a step wrote: its own label and those its service opens itself, created since the step
     /// first started, by the run's admin (or by nobody, for a save with no acting user), not reverted. Oldest first.
     /// </summary>
+    public static Task<List<Guid>> StepBatchesAsync(
+        BlocwerkDbContext db, Guid wallId, Guid userId, IWallEnhancementStep step, DateTimeOffset since, CancellationToken ct) =>
+        StepBatchesAsync(db, wallId, userId, StepLabels(step), since, ct);
+
+    /// <summary>The journal labels a step's writes land under: its own and those its service opens itself.</summary>
+    public static List<string> StepLabels(IWallEnhancementStep step) =>
+        step.OwnBatchLabels.Append(WallEnhancementKinds.BatchLabel(step.Key)).ToList();
+
+    /// <summary>The batches under <paramref name="labels"/> (see the step overload).</summary>
     public static async Task<List<Guid>> StepBatchesAsync(
-        BlocwerkDbContext db, Guid wallId, Guid userId, IWallEnhancementStep step, DateTimeOffset since, CancellationToken ct)
+        BlocwerkDbContext db, Guid wallId, Guid userId, IReadOnlyList<string> labels, DateTimeOffset since, CancellationToken ct)
     {
-        var labels = step.OwnBatchLabels.Append(WallEnhancementKinds.BatchLabel(step.Key)).ToList();
         var actor = userId.ToString();
         var rows = await db.ChangeJournalBatches.AsNoTracking()
             .Where(b => b.ScopeKind == ChangeJournalScopeKind.Wall && b.ScopeId == wallId && labels.Contains(b.Label)

@@ -140,7 +140,10 @@ public sealed class WallEnhancementFixture : IDisposable
         steps,
         journal,
         NullLogger<WallEnhancementJob>.Instance,
-        editPresence: Presence) { EditorPoll = TimeSpan.FromMilliseconds(20), StepTimeout = StepTimeout, HeartbeatInterval = HeartbeatInterval, StopGrace = StopGrace };
+        editPresence: Presence) { EditorPoll = TimeSpan.FromMilliseconds(20), StepTimeout = StepTimeout, HeartbeatInterval = HeartbeatInterval, StopGrace = StopGrace, ObserveLimit = ObserveLimit };
+
+    /// <summary>How long the job waits for a stopped step before it lets go.</summary>
+    public TimeSpan ObserveLimit { get; set; } = TimeSpan.FromMinutes(30);
 
     /// <summary>How long a stopped step gets to return.</summary>
     public TimeSpan StopGrace { get; set; } = TimeSpan.FromSeconds(30);

@@ -3,6 +3,7 @@
 // </copyright>
 
 using System.Text.Json;
+using Blocwerk.Core.Entities;
 
 namespace Blocwerk.Core.Enhancement;
 
@@ -35,6 +36,8 @@ public enum WallEnhancementStepOutcomeKind
 /// <param name="FinishedAt">When it ended, or null while running.</param>
 /// <param name="BatchIds">The journal batches it wrote, oldest first.</param>
 /// <param name="NeverRan">True for a step a cancel stopped before it started: it failed without doing anything.</param>
+/// <param name="Kind">What its review items are about (recorded when it starts, so a stop from outside can list its writes).</param>
+/// <param name="Labels">The journal labels its writes land under (likewise).</param>
 public sealed record WallEnhancementStepRecord(
     string Key,
     string Title,
@@ -43,7 +46,9 @@ public sealed record WallEnhancementStepRecord(
     DateTimeOffset StartedAt,
     DateTimeOffset? FinishedAt,
     IReadOnlyList<Guid> BatchIds,
-    bool NeverRan = false)
+    bool NeverRan = false,
+    WallEnhancementItemKind? Kind = null,
+    IReadOnlyList<string>? Labels = null)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 

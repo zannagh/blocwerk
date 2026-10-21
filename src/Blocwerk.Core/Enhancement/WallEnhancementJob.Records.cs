@@ -61,58 +61,6 @@ public sealed partial class WallEnhancementJob
         return await db.WallGeometryModels.AsNoTracking().AnyAsync(m => m.WallId == wallId && m.IsActive, ct);
     }
 
-    /// <summary>
-    /// The step's review items: one per hold its batches updated (written kinds) or one per suggestion. An item the run
-    /// already has (a resumed step) is not added twice.
-    /// </summary>
-    private static async Task AddItemsAsync(
-        BlocwerkDbContext db,
-        Guid runId,
-        IWallEnhancementStep step,
-        IReadOnlyCollection<Guid> batches,
-        IReadOnlyList<WallEnhancementSuggestion> suggestions,
-        CancellationToken ct)
-    {
-        db.CurrentUserId = Guid.Empty;
-        var existing = await db.WallEnhancementItems.AsNoTracking()
-            .Where(i => i.RunId == runId && i.Kind == step.Kind)
-            .Select(i => new { i.HoldId, i.OtherHoldId, i.ReferenceId })
-            .ToListAsync(ct);
-        var known = existing.Select(e => (e.HoldId, e.OtherHoldId, e.ReferenceId)).ToHashSet();
-        var items = WallEnhancementKinds.IsWritten(step.Kind)
-            ? await WrittenItemsAsync(db, runId, step.Kind, batches, ct)
-            : suggestions.Select(s => new WallEnhancementItem
-            {
-                RunId = runId, Kind = step.Kind, HoldId = s.HoldId, OtherHoldId = s.OtherHoldId, ReferenceId = s.ReferenceId, Detail = s.Detail,
-            }).ToList();
-
-        // A written kind keys on the hold alone: the clean-up's item for a hold the outline step already listed is the same item.
-        var fresh = items.Where(i => WallEnhancementKinds.IsWritten(step.Kind)
-                ? existing.All(e => e.HoldId != i.HoldId)
-                : !known.Contains((i.HoldId, i.OtherHoldId, i.ReferenceId)))
-            .ToList();
-        db.WallEnhancementItems.AddRange(fresh);
-        await db.SaveChangesAsync(ct);
-    }
-
-    private static async Task<List<WallEnhancementItem>> WrittenItemsAsync(
-        BlocwerkDbContext db, Guid runId, WallEnhancementItemKind kind, IReadOnlyCollection<Guid> batches, CancellationToken ct)
-    {
-        var holdIds = (await WallEnhancementJournal.HoldUpdatesAsync(db, batches, ct)).Select(e => e.HoldId).Distinct().ToList();
-        var holds = await db.Holds.IgnoreQueryFilters().AsNoTracking()
-            .Where(h => holdIds.Contains(h.Id))
-            .Select(h => new { h.Id, h.Color, h.StackedOnHoldId })
-            .ToListAsync(ct);
-        return holds.Select(h => new WallEnhancementItem
-        {
-            RunId = runId,
-            Kind = kind,
-            HoldId = h.Id,
-            OtherHoldId = kind == WallEnhancementItemKind.Stack ? h.StackedOnHoldId : null,
-            Detail = kind == WallEnhancementItemKind.Colour ? h.Color : null,
-        }).ToList();
-    }
-
     private async Task FinishAsync(Guid runId, CancellationToken ct)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);
@@ -142,6 +90,8 @@ public sealed partial class WallEnhancementJob
                 return;
             }
 
+            // The writes of a step that was still running get their review items first, so a discard undoes them.
+            await WallEnhancementSalvage.SalvageRunningAsync(db, run, CancellationToken.None);
             run.Status = WallEnhancementStatus.Failed;
             run.CurrentStep = null;
             run.Error = message.Length > 500 ? message[..500] : message;
