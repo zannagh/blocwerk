@@ -37,11 +37,24 @@ esac
 FAKE
 chmod +x "$WORK/bin/docker"
 
+# The fake flock, for hosts without one (macOS): fd 8 is the app lock, taken when
+# $AUTODEPLOY_DIR/fake/app_lock_held exists; every other lock (the compute pass) is taken, so the
+# compute part stays skipped exactly as it is without flock. A host WITH a real flock also runs the
+# real concurrency scenario below.
+REAL_FLOCK=$(command -v flock || true)
+cat > "$WORK/bin/flock" <<'FAKE'
+#!/usr/bin/env bash
+[ "$2" = 8 ] && [ ! -e "$AUTODEPLOY_DIR/fake/app_lock_held" ] && exit 0
+exit 1
+FAKE
+chmod +x "$WORK/bin/flock"
+
 failures=0
 scenario() {
   local name=$1 ready=$2 eta=$3 flush=$4 deferrals=$5 expect=$6 says=${7:-}
   local dir=$WORK/$name
   mkdir -p "$dir/fake"
+  [ -z "${HOLD_APP_LOCK:-}" ] || touch "$dir/fake/app_lock_held"
   printf 'BLOCWERK_DEPLOY_API_KEY=bwk_test\n' > "$dir/.env"
   printf '%s' "$ready" > "$dir/fake/ready"
   printf '%s' "$eta" > "$dir/fake/eta"
@@ -78,6 +91,36 @@ scenario present-edit-long  busy   7200   200    1000      "calls=[] deferrals=1
 scenario safety-cap-forces  busy   7200   200    1440      "calls=[announce flush up] deferrals=none"
 # A newer image while deferred keeps the count (8df10aa): target differs, count goes on.
 scenario new-image-keeps    busy   0      200    12        "calls=[] deferrals=13"
+
+# Another run holds the app lock (a slow deploy still announcing or flushing): this run does nothing at all,
+# not even a deferral count, and leaves the deploy to the run that holds the lock.
+HOLD_APP_LOCK=1 scenario overlapping-run-quiet busy 0 200 3 "calls=[] deferrals=3"
+HOLD_APP_LOCK=1 scenario overlapping-idle-quiet idle 0 200 none "calls=[] deferrals=none"
+
+# The same with the real flock, where there is one: a background holder keeps the lock file locked, and the
+# run under test sees the real flock (its PATH has the fake docker only).
+if [ -n "$REAL_FLOCK" ]; then
+  dir=$WORK/real-lock
+  mkdir -p "$dir/fake" "$WORK/realbin"
+  ln -sf "$WORK/bin/docker" "$WORK/realbin/docker"
+  printf 'idle' > "$dir/fake/ready"
+  printf 'sha:new' > "$dir/fake/latest"
+  printf 'sha:old' > "$dir/fake/running"
+  printf 'BLOCWERK_DEPLOY_API_KEY=bwk_test\n' > "$dir/.env"
+  : > "$dir/calls"
+  "$REAL_FLOCK" "$dir/.autodeploy-app.lock" sleep 8 &
+  holder=$!
+  sleep 1
+  AUTODEPLOY_DIR=$dir PATH="$WORK/realbin:$PATH" bash "$SCRIPT" >/dev/null 2>&1 || true
+  kill "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
+  if [ -s "$dir/calls" ]; then
+    echo "FAIL real-lock: an overlapping run acted: $(tr '\n' ' ' < "$dir/calls")"
+    failures=$((failures + 1))
+  else
+    echo "ok   real-lock"
+  fi
+fi
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures scenario(s) failed"
