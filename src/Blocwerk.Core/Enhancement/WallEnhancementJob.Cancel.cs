@@ -30,6 +30,8 @@ public sealed partial class WallEnhancementJob
                 return;
             }
 
+            // The step in hand may have written already: its batches become review items before it is failed.
+            await WallEnhancementSalvage.SalvageRunningAsync(db, run, CancellationToken.None);
             var during = run.CurrentStep;
             var records = CancelledRecords(WallEnhancementStepRecord.Parse(run.StepsJson), during, DateTimeOffset.UtcNow);
             var now = DateTimeOffset.UtcNow;

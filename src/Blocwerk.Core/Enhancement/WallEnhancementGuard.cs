@@ -23,7 +23,7 @@ public static class WallEnhancementGuard
 
     /// <summary>The message while a cancelled or timed-out step of the wall's enhancement is still working.</summary>
     public const string StillStopping =
-        "The wall's enhancement was stopped, but its last step is still finishing its work. Try again in a moment.";
+        "The wall's enhancement was stopped, but its last step is still finishing its work. Try again in a moment; if this lasts, restart the app.";
 
     /// <summary>A Running run whose heartbeat is older than this has a job that is gone or hung: it no longer blocks the wall.</summary>
     public static readonly TimeSpan StaleAfter = TimeSpan.FromMinutes(10);
@@ -60,6 +60,7 @@ public static class WallEnhancementGuard
 
         foreach (var run in running)
         {
+            await WallEnhancementSalvage.SalvageRunningAsync(db, run, CancellationToken.None);
             var lastSign = run.HeartbeatAt ?? run.UpdatedAt;
             run.Status = WallEnhancementStatus.Failed;
             run.CurrentStep = null;

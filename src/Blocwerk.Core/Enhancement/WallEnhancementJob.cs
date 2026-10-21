@@ -52,6 +52,9 @@ public sealed partial class WallEnhancementJob(
     /// </summary>
     public TimeSpan StopGrace { get; init; } = TimeSpan.FromSeconds(30);
 
+    /// <summary>How long the job waits for a stopped step's work before it lets the run go anyway (see the watchdog).</summary>
+    public TimeSpan ObserveLimit { get; init; } = TimeSpan.FromMinutes(30);
+
     /// <summary>How often the run's heartbeat is renewed (<see cref="WallEnhancementGuard.StaleAfter"/> is far longer).</summary>
     public TimeSpan HeartbeatInterval { get; init; } = TimeSpan.FromMinutes(1);
 
@@ -154,7 +157,8 @@ public sealed partial class WallEnhancementJob(
 
         var started = recorded?.StartedAt ?? DateTimeOffset.UtcNow;
         var running = new WallEnhancementStepRecord(
-            step.Key, step.Title, WallEnhancementStepOutcomeKind.Running, string.Empty, started, null, recorded?.BatchIds ?? []);
+            step.Key, step.Title, WallEnhancementStepOutcomeKind.Running, string.Empty, started, null, recorded?.BatchIds ?? [],
+            Kind: step.Kind, Labels: WallEnhancementJournal.StepLabels(step));
         await SaveStepAsync(run.Id, running, step.Key, ct);
         var (outcome, kind, stale) = await RunStepAsync(run, step, ct);
         if (stale is not null)
@@ -166,8 +170,9 @@ public sealed partial class WallEnhancementJob(
         List<Guid> batches;
         await using (var db = await dbContextFactory.CreateDbContextAsync(ct))
         {
+            db.CurrentUserId = Guid.Empty;
             batches = await WallEnhancementJournal.StepBatchesAsync(db, run.WallId, run.CreatedByUserId, step, started, ct);
-            await AddItemsAsync(db, run.Id, step, batches, outcome!.Suggestions, ct);
+            await WallEnhancementSalvage.AddItemsAsync(db, run.Id, step.Kind, batches, outcome!.Suggestions, ct);
         }
 
         var done = running with { Outcome = kind, Summary = outcome.Summary, FinishedAt = DateTimeOffset.UtcNow, BatchIds = batches };
