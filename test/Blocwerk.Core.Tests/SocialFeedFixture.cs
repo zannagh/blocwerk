@@ -5,6 +5,8 @@ using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Feed;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Blocwerk.Core.Tests;
@@ -27,11 +29,14 @@ internal sealed class SocialFeedFixture : IDisposable
     public Guid OwnerId => Harness.Owner.Id;
 
     /// <summary>A context with the feed interceptor, saving as <paramref name="actor"/>.</summary>
-    public BlocwerkDbContext Context(Guid? actor = null)
+    public BlocwerkDbContext Context(Guid? actor = null) => Context(actor, NullLogger<FeedInterceptor>.Instance);
+
+    /// <summary>A context with the feed interceptor logging to <paramref name="logger"/>, then <paramref name="more"/> interceptors.</summary>
+    public BlocwerkDbContext Context(Guid? actor, ILogger<FeedInterceptor> logger, params IInterceptor[] more)
     {
         var db = TestDb.Create(
             Harness.DbContextFactory.ConnectionString,
-            new FeedInterceptor(new FeedMapperRegistry(FeedMappers.Create()), Signal, NullLogger<FeedInterceptor>.Instance));
+            [new FeedInterceptor(new FeedMapperRegistry(FeedMappers.Create()), Signal, logger), .. more]);
         db.CurrentUserId = actor ?? Guid.Empty;
         return db;
     }

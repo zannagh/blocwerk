@@ -67,7 +67,7 @@ public sealed class FeedInterceptor : SaveChangesInterceptor, IDbTransactionInte
         if (eventData.Context is { } context)
         {
             // With async false the compaction runs synchronously and the task is already complete.
-            FeedCommentCompaction.ApplyAsync(context, logger, async: false, CancellationToken.None).GetAwaiter().GetResult();
+            FeedCommentCompaction.ApplyAsync(context, logger, async: false).GetAwaiter().GetResult();
         }
 
         Saved(eventData.Context);
@@ -79,7 +79,7 @@ public sealed class FeedInterceptor : SaveChangesInterceptor, IDbTransactionInte
     {
         if (eventData.Context is { } context)
         {
-            await FeedCommentCompaction.ApplyAsync(context, logger, async: true, cancellationToken);
+            await FeedCommentCompaction.ApplyAsync(context, logger, async: true);
         }
 
         Saved(eventData.Context);

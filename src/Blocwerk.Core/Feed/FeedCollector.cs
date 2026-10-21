@@ -38,7 +38,7 @@ internal static class FeedCollector
 
     private static IReadOnlyList<WallChange> Finish(FeedMapContext map, IReadOnlyList<WallChange> resolved)
     {
-        var rows = FeedCollapse.Apply(resolved, FeedScope.Active, map.ActorUserId, map.Now);
+        var rows = FeedCollapse.Apply(resolved, FeedScope.Active, map.Now);
         FeedAudienceScope.Apply(rows);
         return rows;
     }

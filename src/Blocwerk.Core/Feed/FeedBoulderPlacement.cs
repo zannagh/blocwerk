@@ -4,6 +4,7 @@
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core.Feed;
 
@@ -33,8 +34,12 @@ internal static class FeedBoulderPlacement
         return new FeedPlacementPlan(known, missing);
     }
 
-    /// <summary>Places the unplaced rows with what the plan and the lookup (<paramref name="looked"/>) know.</summary>
-    public static void Apply(FeedMapContext map, FeedPlacementPlan plan, IEnumerable<FeedBoulderFacts> looked)
+    /// <summary>
+    /// Places the unplaced rows with what the plan and the lookup (<paramref name="looked"/>) know. The rows it drops are
+    /// logged by kind, entity and boulder: as an error when the lookup failed (<paramref name="lookupFailed"/>), since
+    /// their walls then miss an event, and at debug level when their boulder is simply gone.
+    /// </summary>
+    public static void Apply(FeedMapContext map, FeedPlacementPlan plan, IEnumerable<FeedBoulderFacts> looked, bool lookupFailed, ILogger logger)
     {
         if (!map.Rows.Any(IsUnplaced))
         {
@@ -62,6 +67,28 @@ internal static class FeedBoulderPlacement
             {
                 row.WallId = scope.WallId;
             }
+        }
+
+        Drop(map, lookupFailed, logger);
+    }
+
+    private static void Drop(FeedMapContext map, bool lookupFailed, ILogger logger)
+    {
+        var dropped = map.Rows.Where(r => IsUnplaced(r) && r.Audience != FeedAudience.User)
+            .Select(r => $"{r.Kind}:{r.EntityId}@{r.BoulderId}")
+            .ToList();
+        if (dropped.Count == 0)
+        {
+            return;
+        }
+
+        if (lookupFailed)
+        {
+            logger.LogError("Feed boulder lookup failed; dropped {Count} row(s) whose wall is unknown: {Rows}", dropped.Count, dropped);
+        }
+        else
+        {
+            logger.LogDebug("Dropped {Count} feed row(s) of boulders that no longer exist: {Rows}", dropped.Count, dropped);
         }
 
         map.RemoveRows(r => IsUnplaced(r) && r.Audience != FeedAudience.User);

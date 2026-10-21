@@ -35,8 +35,14 @@ internal static class FeedCommentCompaction
     /// <summary>Forgets the queue of a save that failed or was cancelled; a retry queues again.</summary>
     public static void Drop(DbContext context) => Queued.Remove(context);
 
-    public static async Task ApplyAsync(DbContext context, ILogger logger, bool async, CancellationToken cancellationToken)
+    /// <summary>
+    /// Runs the queued compaction. It never takes the request's token: the deletion it follows has already committed (or
+    /// will with the caller's transaction), so a cancelled request must neither turn that success into an exception nor
+    /// leave a savepoint open. Every failure, cancellation included, is logged and rolled back to the savepoint.
+    /// </summary>
+    public static async Task ApplyAsync(DbContext context, ILogger logger, bool async)
     {
+        var none = CancellationToken.None;
         if (!Queued.TryGetValue(context, out var queued))
         {
             return;
@@ -50,18 +56,18 @@ internal static class FeedCommentCompaction
         {
             if (savepoint)
             {
-                await Run(async, () => transaction!.CreateSavepointAsync(Savepoint, cancellationToken), () => transaction!.CreateSavepoint(Savepoint));
+                await Run(async, () => transaction!.CreateSavepointAsync(Savepoint, none), () => transaction!.CreateSavepoint(Savepoint));
             }
 
             var rows = context.Set<WallChange>()
                 .Where(c => c.Kind == FeedKinds.CommentAdded && c.EntityId != null && ids.Contains(c.EntityId.Value));
-            _ = async ? await rows.ExecuteDeleteAsync(cancellationToken) : rows.ExecuteDelete();
+            _ = async ? await rows.ExecuteDeleteAsync(none) : rows.ExecuteDelete();
             if (savepoint)
             {
-                await Run(async, () => transaction!.ReleaseSavepointAsync(Savepoint, cancellationToken), () => transaction!.ReleaseSavepoint(Savepoint));
+                await Run(async, () => transaction!.ReleaseSavepointAsync(Savepoint, none), () => transaction!.ReleaseSavepoint(Savepoint));
             }
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex)
         {
             logger.LogError(ex, "Feed comment compaction failed for {Count} comment(s); their comment.added rows stay as tombstones", ids.Count);
             if (savepoint)

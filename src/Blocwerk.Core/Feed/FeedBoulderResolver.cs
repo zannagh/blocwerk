@@ -29,7 +29,7 @@ internal static class FeedBoulderResolver
         var ids = Ids(lookup, plan);
         if (ids.Count == 0)
         {
-            FeedBoulderPlacement.Apply(map, plan, []);
+            FeedBoulderPlacement.Apply(map, plan, [], lookupFailed: false, logger);
             return;
         }
 
@@ -50,7 +50,7 @@ internal static class FeedBoulderResolver
         var ids = Ids(lookup, plan);
         if (ids.Count == 0)
         {
-            FeedBoulderPlacement.Apply(map, plan, []);
+            FeedBoulderPlacement.Apply(map, plan, [], lookupFailed: false, logger);
             return;
         }
 
@@ -72,14 +72,14 @@ internal static class FeedBoulderResolver
         FeedMapContext map, List<FeedBoulderTouch> lookup, FeedPlacementPlan plan, List<FeedBoulderFacts> facts, ILogger logger)
     {
         AddFacts(map, lookup, facts, logger);
-        FeedBoulderPlacement.Apply(map, plan, facts);
+        FeedBoulderPlacement.Apply(map, plan, facts, lookupFailed: false, logger);
     }
 
     // The unplaced rows of boulders the lookup could not read are dropped (a user's own rows stay wall-less).
     private static void Fail(FeedMapContext map, List<FeedBoulderTouch> lookup, FeedPlacementPlan plan, Exception ex, ILogger logger)
     {
         Fallback(map, lookup, ex, logger);
-        FeedBoulderPlacement.Apply(map, plan, []);
+        FeedBoulderPlacement.Apply(map, plan, [], lookupFailed: true, logger);
     }
 
     // Writes the touches that need no lookup and returns the ones that do.

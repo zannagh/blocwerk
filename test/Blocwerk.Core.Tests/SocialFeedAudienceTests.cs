@@ -58,18 +58,25 @@ public sealed class SocialFeedAudienceTests : IAsyncLifetime
         await fixture.AddAsync(new ActivityLogEntry { WallId = fixture.WallId, UserId = me, Type = ActivityType.HoldAdded }, me);
         await fixture.ChangeAsync<User>(u => u.Id == me, (u, _) => u.CustomDisplayName = "Me Again", me);
 
+        // A sentinel every viewer receives: once each has it, everything before it has been delivered, so a missing
+        // event below is really withheld, not late.
+        var sentinel = new WallImage { WallId = fixture.WallId, StoragePath = "s.jpg", ContentType = "image/jpeg" };
+        await fixture.AddAsync(sentinel);
+        RecordingFeedSubscriber[] all = [anonymous, kiosk, asOther, asSetter, asMe];
+        foreach (var viewer in all)
+        {
+            await UntilAsync(viewer, sentinel.Id);
+        }
+
         string[] stats = [FeedKinds.BoulderStats, FeedKinds.BoulderStats];
-        var mine = await asMe.WaitForEventsAsync(7);
         Assert.Equal(
             [FeedKinds.BoulderStats, FeedKinds.TickMine, FeedKinds.FavoriteChanged, FeedKinds.BoulderStats, FeedKinds.RatingMine,
              FeedKinds.ActivityAdded, FeedKinds.UserProfile],
-            mine.Select(e => e.Kind));
-        Assert.Equal(stats, anonymous.Events.Select(e => e.Kind));
-        Assert.Equal(stats, kiosk.Events.Select(e => e.Kind));
-        Assert.Equal([.. stats, FeedKinds.ActivityAdded, FeedKinds.UserProfile], asOther.Events.Select(e => e.Kind));
-        Assert.Equal(
-            [.. stats, FeedKinds.CommentAdded, FeedKinds.ActivityAdded, FeedKinds.UserProfile],
-            asSetter.Events.Select(e => e.Kind));
+            Before(asMe, sentinel.Id));
+        Assert.Equal(stats, Before(anonymous, sentinel.Id));
+        Assert.Equal(stats, Before(kiosk, sentinel.Id));
+        Assert.Equal([.. stats, FeedKinds.ActivityAdded, FeedKinds.UserProfile], Before(asOther, sentinel.Id));
+        Assert.Equal([.. stats, FeedKinds.CommentAdded, FeedKinds.ActivityAdded, FeedKinds.UserProfile], Before(asSetter, sentinel.Id));
         Assert.All(anonymous.Events, e => Assert.Null(e.Actor));
     }
 
@@ -115,6 +122,29 @@ public sealed class SocialFeedAudienceTests : IAsyncLifetime
         var known = await member.WaitForEventsAsync(3);
         Assert.Equal([(Guid?)fixture.OwnerId, fixture.OwnerId, plain.Id], known.Select(e => e.Actor!.Id));
     }
+
+    [Fact]
+    public void AKioskViewer_CarriesNoUser_AndOnlyTheWallAudience()
+    {
+        var kiosk = FeedViewer.Kiosk();
+
+        Assert.Null(kiosk.UserId);
+        Assert.Equal(FeedAudience.Wall, Assert.Single(kiosk.Audiences));
+        Assert.False(kiosk.Allows(new WallChange { Kind = FeedKinds.TickMine, Audience = FeedAudience.User, AudienceUserId = Guid.NewGuid() }));
+    }
+
+    private static async Task UntilAsync(RecordingFeedSubscriber viewer, Guid entityId)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (!viewer.Events.Any(e => e.EntityId == entityId))
+        {
+            Assert.True(DateTime.UtcNow < deadline, "the sentinel never arrived");
+            await Task.Delay(20);
+        }
+    }
+
+    private static List<string> Before(RecordingFeedSubscriber viewer, Guid sentinel) =>
+        viewer.Events.TakeWhile(e => e.EntityId != sentinel).Select(e => e.Kind).ToList();
 
     private async Task<RecordingFeedSubscriber> SubscribeAsync(FeedViewer viewer)
     {
