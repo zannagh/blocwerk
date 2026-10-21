@@ -15,6 +15,8 @@ truth, and you copy them over by hand.
   wait for an editor who started after it. Safety cap 1440 polls (24 h). Right before `compose up` (after
   the announcement's grace) it calls `POST /api/v1/maintenance/flush-edits` (same `BLOCWERK_DEPLOY_API_KEY`)
   so open editors save or keep their unsaved state; a 404 from an older app is logged and the deploy goes ahead.
+  The app part runs under its own `flock -n` (`.autodeploy-app.lock`): a run that overlaps a slower one
+  (announce grace plus a flush can outlast the cron minute) exits quietly and leaves the deploy to it.
   `test-autodeploy.sh` is a dry-run harness for these decisions (fake docker, no host access).
   **The live copy on the IONOS box is separate**: until `autodeploy.sh` is reinstalled there (see
   "Install / update on the box" or `rollout.sh`), the box keeps the plain 30 min cap. The search

@@ -229,14 +229,30 @@ reset_db_stats() {
   fi
 }
 
+# ---------- one app run at a time ----------
+#
+# A run can now outlast the cron minute (pull, announce plus its grace, a flush of up to FLUSH_TIMEOUT,
+# compose up), and two runs must never overlap a `compose up`. So the app part holds its OWN lock (not the
+# compute one: a slow compute pass must never hold back an app deploy). A run that finds it taken exits
+# quietly before anything else, compute pass and stats reset included; the run holding it carries the
+# deploy and the next minute starts fresh. Without flock, or when the lock file cannot be opened, it runs
+# unlocked (logged once) rather than never deploying again. fd 8 is held until this process exits.
+if ! command -v flock >/dev/null 2>&1; then
+  log_change app-lock "flock not found; running the app part without its lock (logged once)"
+elif ! { exec 8>"$DIR/.autodeploy-app.lock"; } 2>/dev/null; then
+  log_change app-lock "cannot open the app lock file; running the app part without its lock (logged once)"
+elif ! flock -n 8; then
+  exit 0
+else
+  log_clear app-lock
+fi
+
 # The app part below ends with `exit` on every path (nothing to do, deferred, deployed, failed).
 # The EXIT trap runs the stats reset and then the compute part after it, whatever the outcome; the
 # script's exit status stays the app part's.
 trap 'reset_db_stats || true; run_compute || true' EXIT
 
 # ---------- the app (unchanged) ----------
-
-before=$(docker image inspect --format '{{.Id}}' "$IMAGE" 2>/dev/null || echo none)
 
 # Pull, logging in and retrying once if the registry rejects us (token rotated, creds expired).
 if ! docker compose pull -q "$SERVICE" >/dev/null 2>&1; then
@@ -251,7 +267,7 @@ fi
 # "did this pull change anything". The old check did the latter, which made a deferral
 # permanent: once the new image was on disk every later pull changed nothing and the script
 # exited here, before ever reaching the busy gate below - so a deferred deploy never retried
-# and MAX_DEFER could never fire. $before survives only for the pull-failure message above.
+# and MAX_DEFER could never fire.
 latest=$(docker image inspect --format '{{.Id}}' "$IMAGE" 2>/dev/null || echo none)
 running=$(docker inspect --format '{{.Image}}' "$(docker compose ps -q "$SERVICE" 2>/dev/null)" 2>/dev/null || echo none)
 
