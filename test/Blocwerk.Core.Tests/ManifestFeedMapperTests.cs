@@ -123,6 +123,29 @@ public sealed class ManifestFeedMapperTests : IDisposable
         Assert.Equal(fixture.WallId, Assert.Single(await fixture.RowsAsync(), r => r.Kind == FeedKinds.WallManifest).WallId);
     }
 
+    /// <summary>A preview install swaps files of an inactive model: not a manifest input.</summary>
+    [Fact]
+    public async Task ATextureOfATrackedInactiveModel_WritesNothing()
+    {
+        await fixture.SeedAsync();
+        var model = new WallGeometryModel { WallId = fixture.WallId, Json = "{}", Source = "test", IsActive = false };
+        await using (var db = fixture.Harness.CreateContext())
+        {
+            db.WallGeometryModels.Add(model);
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = fixture.Context())
+        {
+            await db.WallGeometryModels.FindAsync([model.Id]);
+            db.WallGeometryTextures.Add(new WallGeometryTexture { GeometryModelId = model.Id, FacetId = "F1", StoredPath = "t.jpg" });
+            db.WallGeometrySplats.Add(new WallGeometrySplat { GeometryModelId = model.Id, StoredPath = "s.spz", FrameJson = "{}" });
+            await db.SaveChangesAsync();
+        }
+
+        Assert.Empty(await fixture.RowsAsync());
+    }
+
     /// <summary>A texture saved without its model knows no wall (no query in a mapper): it writes nothing, and the cache ages.</summary>
     [Fact]
     public async Task ATextureOfAnUntrackedModel_WritesNothing()

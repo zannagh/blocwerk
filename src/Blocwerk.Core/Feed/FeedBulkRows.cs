@@ -49,6 +49,22 @@ public static class FeedBulkRows
     public static WallChange Manifest(Guid wallId, FeedAudience audience, Guid? actor) =>
         Plain(FeedKinds.WallManifest, wallId, wallId, audience, actor);
 
+    /// <summary>
+    /// <c>wall.updated</c> as <c>WallFeedMapper</c> writes it, for a bulk write that changed the wall's own or its panels'
+    /// photo columns: circuits drop their cached aggregate, which carries the photo hashes. A staged photo is the
+    /// editors' (<see cref="FeedAudience.Setters"/>).
+    /// </summary>
+    public static WallChange WallUpdated(Guid wallId, int generation, FeedAudience audience, Guid? actor) => new()
+    {
+        WallId = wallId,
+        Kind = FeedKinds.WallUpdated,
+        EntityId = wallId,
+        Audience = audience,
+        ActorUserId = actor,
+        DataJson = FeedJson.Serialize(new WallPayload(generation, OwnerChanged: false)),
+        SchemaVersion = FeedSchema.PayloadVersion,
+    };
+
     /// <summary>A <c>gallery.changed</c> row as <c>GalleryFeedMapper</c> writes it.</summary>
     public static WallChange Gallery(Guid wallId, Guid imageId, Guid? actor) =>
         Plain(FeedKinds.GalleryChanged, wallId, imageId, FeedAudience.Wall, actor);

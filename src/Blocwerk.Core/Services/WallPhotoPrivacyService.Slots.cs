@@ -32,9 +32,9 @@ public sealed partial class WallPhotoPrivacyService
     {
         var slots = new List<WallPhotoSlot>
         {
-            Column<Wall>(d => d.Walls.IgnoreQueryFilters().Where(w => w.Id == wallId), w => w.Photo, w => w.PhotoSha256, Live(wallId)),
+            Column<Wall>(wallId, d => d.Walls.IgnoreQueryFilters().Where(w => w.Id == wallId), w => w.Photo, w => w.PhotoSha256, LiveStructure),
             Column<Wall>(
-                d => d.Walls.IgnoreQueryFilters().Where(w => w.Id == wallId), w => w.StagedPhoto, w => w.StagedPhotoSha256, Staged(wallId)),
+                wallId, d => d.Walls.IgnoreQueryFilters().Where(w => w.Id == wallId), w => w.StagedPhoto, w => w.StagedPhotoSha256, StagedStructure),
         };
 
         // Every generation's panel rows: a superseded generation keeps its photo for the history views.
@@ -42,16 +42,17 @@ public sealed partial class WallPhotoPrivacyService
             .Where(p => p.WallId == wallId).OrderBy(p => p.Generation).Select(p => p.Id).ToListAsync(ct);
         foreach (var id in panelIds)
         {
-            slots.Add(Column<WallPanel>(d => d.WallPanels.IgnoreQueryFilters().Where(p => p.Id == id), p => p.Photo, p => p.PhotoSha256, Live(wallId)));
             slots.Add(Column<WallPanel>(
-                d => d.WallPanels.IgnoreQueryFilters().Where(p => p.Id == id), p => p.StagedPhoto, p => p.StagedPhotoSha256, Staged(wallId)));
+                wallId, d => d.WallPanels.IgnoreQueryFilters().Where(p => p.Id == id), p => p.Photo, p => p.PhotoSha256, LiveStructure));
+            slots.Add(Column<WallPanel>(
+                wallId, d => d.WallPanels.IgnoreQueryFilters().Where(p => p.Id == id), p => p.StagedPhoto, p => p.StagedPhotoSha256, StagedStructure));
         }
 
         var resetIds = await db.WallResets.IgnoreQueryFilters().AsNoTracking()
             .Where(r => r.WallId == wallId).Select(r => r.Id).ToListAsync(ct);
         slots.AddRange(resetIds.Select(id =>
             Column<WallReset>(
-                d => d.WallResets.IgnoreQueryFilters().Where(r => r.Id == id), r => r.PreviousPhoto, r => r.PreviousPhotoSha256, Live(wallId))));
+                wallId, d => d.WallResets.IgnoreQueryFilters().Where(r => r.Id == id), r => r.PreviousPhoto, r => r.PreviousPhotoSha256, Live)));
 
         var images = await db.WallImages.IgnoreQueryFilters().AsNoTracking()
             .Where(i => i.WallId == wallId).Select(i => new { i.Id, i.StoragePath }).ToListAsync(ct);
@@ -65,25 +66,36 @@ public sealed partial class WallPhotoPrivacyService
     /// <summary>
     /// A blob column on one row, replaced only while it still equals what was read; its content hash
     /// (<paramref name="hash"/>) moves in the same statement, since <c>ExecuteUpdate</c> bypasses the save-time stamp. For
-    /// the same reason the rewrite appends its feed row (<paramref name="feed"/>) itself, in one transaction with it.
+    /// the same reason the rewrite appends its feed rows (<paramref name="feed"/>, given the wall and its generation)
+    /// itself, in one transaction with it.
     /// </summary>
     private WallPhotoSlot Column<T>(
-        Func<BlocwerkDbContext, IQueryable<T>> rows, Expression<Func<T, byte[]?>> column, Expression<Func<T, byte[]?>> hash, Func<WallChange> feed)
+        Guid wallId,
+        Func<BlocwerkDbContext, IQueryable<T>> rows,
+        Expression<Func<T, byte[]?>> column,
+        Expression<Func<T, byte[]?>> hash,
+        Func<Guid, int, IEnumerable<WallChange>> feed)
         where T : class => new(
             (db, ct) => rows(db).AsNoTracking().Select(column).FirstOrDefaultAsync(ct),
             async (db, original, clean, ct) => await FeedBulkWrite.RunAsync(
                 db,
                 FeedSite,
+                () => db.Walls.IgnoreQueryFilters().Where(w => w.Id == wallId).Select(w => w.CurrentGeneration).FirstAsync(ct),
                 () => rows(db).Where(StillEquals(column, original))
                     .ExecuteUpdateAsync(s => s.SetProperty(column, clean).SetProperty(hash, ContentHash.Of(clean)), ct),
-                written => written == 1 ? [feed()] : [],
+                (generation, written) => written == 1 ? feed(wallId, generation) : [],
                 logger,
                 ct) == 1);
 
-    // The live photos and the history views are everyone's; a staged photo is the editors'.
-    private static Func<WallChange> Live(Guid wallId) => () => FeedBulkRows.Manifest(wallId, FeedAudience.Wall, actor: null);
+    // The live photos and the history views are everyone's; a staged photo is the editors'. A wall or panel photo is also
+    // in the circuits' cached wall aggregate (its hash), so those rewrites add a wall.updated for that audience.
+    private static IEnumerable<WallChange> Live(Guid wallId, int generation) => [FeedBulkRows.Manifest(wallId, FeedAudience.Wall, actor: null)];
 
-    private static Func<WallChange> Staged(Guid wallId) => () => FeedBulkRows.Manifest(wallId, FeedAudience.Setters, actor: null);
+    private static IEnumerable<WallChange> LiveStructure(Guid wallId, int generation) =>
+        [FeedBulkRows.Manifest(wallId, FeedAudience.Wall, actor: null), FeedBulkRows.WallUpdated(wallId, generation, FeedAudience.Wall, actor: null)];
+
+    private static IEnumerable<WallChange> StagedStructure(Guid wallId, int generation) =>
+        [FeedBulkRows.Manifest(wallId, FeedAudience.Setters, actor: null), FeedBulkRows.WallUpdated(wallId, generation, FeedAudience.Setters, actor: null)];
 
     /// <summary><c>row => column == original</c>, with <paramref name="original"/> sent as a parameter, never inlined.</summary>
     private static Expression<Func<T, bool>> StillEquals<T>(Expression<Func<T, byte[]?>> column, byte[] original)

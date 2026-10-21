@@ -16,14 +16,15 @@ namespace Blocwerk.Web.State.Feed;
 /// <c>sv</c></term><description>everything of the wall.</description></item>
 /// <item><term><c>wall.updated</c></term><description>the aggregate and the wall's cached boulders (they carry its slim
 /// row).</description></item>
-/// <item><term><c>wall.manifest</c>, <c>member.changed</c></term><description>the aggregate.</description></item>
+/// <item><term><c>member.changed</c></term><description>the aggregate.</description></item>
 /// <item><term><c>hold.changed</c>, <c>hold.deleted</c></term><description>that generation's hold set (if cached), the
 /// aggregate (it carries the live holds) and the cached boulders that link the hold.</description></item>
 /// <item><term><c>boulder.changed</c>, <c>boulder.deleted</c></term><description>that boulder and the aggregate (its
 /// boulder list).</description></item>
 /// <item><term><c>user.profile</c></term><description>the aggregate and the boulders the user created or set.</description></item>
 /// <item><term>everything else</term><description>nothing: stats, comments, videos, gallery, 3D, activity and the user's
-/// own rows live in no cache here (PR 1.5's leaf lists).</description></item>
+/// own rows live in no cache here (PR 1.5's leaf lists), and <c>wall.manifest</c> is read only by the server's manifest
+/// cache (the aggregate holds no manifest data).</description></item>
 /// </list>
 /// </summary>
 public static class WallFeedEviction

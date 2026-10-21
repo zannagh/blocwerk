@@ -2,6 +2,7 @@
 // See License in the project root for license information.
 
 using Blocwerk.Contracts.Feed;
+using Blocwerk.Contracts.Feed.Payloads;
 using Blocwerk.Core.Capture.Retention;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
@@ -21,7 +22,7 @@ namespace Blocwerk.Core.Tests;
 public sealed class FeedBulkAssetTests
 {
     [Fact]
-    public async Task RemovingPhotoMetadata_WritesAManifestPerPhoto_AndAGalleryRowPerUpload()
+    public async Task RemovingPhotoMetadata_WritesAManifestPerPhoto_AWallUpdatePerWallOrPanelPhoto_AndAGalleryRowPerUpload()
     {
         using var h = new WallTestHarness();
         await h.SeedWallAsync(holdCount: 0, generation: 1);
@@ -31,6 +32,7 @@ public sealed class FeedBulkAssetTests
         {
             db.WallPanels.Add(new WallPanel { WallId = h.WallId, Col = 0, Row = 0, Generation = 1, Photo = dirty, PhotoContentType = "image/jpeg" });
             db.WallPanels.Add(new WallPanel { WallId = h.WallId, Col = 1, Row = 0, Generation = 2, StagedPhoto = dirty, StagedAt = DateTimeOffset.UtcNow });
+            db.WallResets.Add(new WallReset { WallId = h.WallId, ResetByUserId = h.Owner.Id, Generation = 1, PreviousPhoto = dirty });
             var temp = h.WallImageStorage.CreateTempPath(".jpg");
             await File.WriteAllBytesAsync(temp, dirty);
             var upload = new WallImage { WallId = h.WallId, StoragePath = h.WallImageStorage.Commit(temp, ".jpg"), ContentType = "image/jpeg", SizeBytes = dirty.Length };
@@ -41,14 +43,23 @@ public sealed class FeedBulkAssetTests
 
         await ClearAsync(h);
         var service = new WallPhotoPrivacyService(h.DbContextFactory, h.CurrentUser, h.WallImageStorage, NullLogger<WallPhotoPrivacyService>.Instance);
-        Assert.Equal(3, (await service.RemoveMetadataAsync(h.WallId)).Cleaned);
+        Assert.Equal(4, (await service.RemoveMetadataAsync(h.WallId)).Cleaned);
 
         var rows = await RowsAsync(h);
         Assert.All(rows, r => Assert.Equal(h.WallId, r.WallId));
+
+        // A panel's (or the wall's) photo hash sits in every circuit's cached aggregate, so it also writes a wall.updated
+        // for the same audience: everyone for a live photo, the editors for a staged one. A reset photo is in no aggregate.
         Assert.Equal(
-            [(FeedKinds.WallManifest, FeedAudience.Wall), (FeedKinds.WallManifest, FeedAudience.Setters), (FeedKinds.GalleryChanged, FeedAudience.Wall)],
+            [
+                (FeedKinds.WallManifest, FeedAudience.Wall), (FeedKinds.WallUpdated, FeedAudience.Wall),
+                (FeedKinds.WallManifest, FeedAudience.Setters), (FeedKinds.WallUpdated, FeedAudience.Setters),
+                (FeedKinds.WallManifest, FeedAudience.Wall), (FeedKinds.GalleryChanged, FeedAudience.Wall),
+            ],
             rows.Select(r => (r.Kind, r.Audience)));
         Assert.Equal(image, rows[^1].EntityId);
+        Assert.All(rows.Where(r => r.Kind == FeedKinds.WallUpdated), r => Assert.Equal(
+            new WallPayload(1, OwnerChanged: false), System.Text.Json.JsonSerializer.Deserialize<WallPayload>(r.DataJson!, FeedJson.Options)));
 
         // A second run finds nothing to clean and writes nothing.
         await ClearAsync(h);

@@ -15,7 +15,8 @@ namespace Blocwerk.Core.Feed.Structure;
 /// </summary>
 /// <remarks>
 /// <para>
-/// A texture or splat row knows its wall only through its model: the tracked model, else the save's
+/// A texture or splat row knows its wall only through its model, and counts only for the active one: the tracked model
+/// (skipped when inactive, e.g. a preview install), else the save's
 /// <see cref="FeedScope"/>. One with neither writes nothing; the server's cached manifest ages out instead
 /// (<c>WallManifestService.MaxAge</c>). Reset photos need no case: a reset is written only in the promote that moves
 /// <see cref="Wall.CurrentGeneration"/>.
@@ -73,6 +74,10 @@ internal sealed class ManifestFeedMapper : IFeedMapper
         return wasActive != isActive;
     }
 
+    // Only the active model's files are manifest inputs: a preview install or an inactive model writes nothing. An untracked
+    // model is unknown, so the save's scope (if any) decides.
     private static Guid? ModelWall(EntityEntry entry) =>
-        (entry.Reference(nameof(WallGeometryTexture.GeometryModel)).CurrentValue as WallGeometryModel)?.WallId ?? FeedScope.Active?.WallId;
+        entry.Reference(nameof(WallGeometryTexture.GeometryModel)).CurrentValue is WallGeometryModel model
+            ? (model.IsActive ? model.WallId : null)
+            : FeedScope.Active?.WallId;
 }
