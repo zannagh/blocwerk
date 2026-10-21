@@ -1,4 +1,5 @@
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Assets;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
@@ -61,8 +62,10 @@ public static class ImageWarmTargets
                 w.CurrentGeneration,
                 PhotoLength = w.Photo == null ? 0 : w.Photo.Length,
                 w.PhotoContentType,
+                w.PhotoSha256,
                 StagedLength = w.StagedPhoto == null ? 0 : w.StagedPhoto.Length,
                 w.StagedPhotoContentType,
+                w.StagedPhotoSha256,
                 w.StagedAt,
             })
             .ToListAsync(ct);
@@ -72,7 +75,7 @@ public static class ImageWarmTargets
             if (wall.PhotoLength > 0)
             {
                 var tag = new WallPhotoTag(
-                    wall.PhotoLength, wall.PhotoContentType, wall.CurrentGeneration, IsArchived: false);
+                    wall.PhotoLength, wall.PhotoContentType, wall.CurrentGeneration, IsArchived: false, ContentHash.ToHex(wall.PhotoSha256));
                 var id = wall.Id;
                 Func<CancellationToken, Task<byte[]?>> load = token => LoadWallPhotoAsync(factory, id, staged: false, token);
 
@@ -91,7 +94,11 @@ public static class ImageWarmTargets
             if (wall.StagedLength > 0)
             {
                 var tag = new WallPhotoTag(
-                    wall.StagedLength, wall.StagedPhotoContentType, wall.StagedAt?.UtcTicks ?? 0L, IsArchived: false);
+                    wall.StagedLength,
+                    wall.StagedPhotoContentType,
+                    wall.StagedAt?.UtcTicks ?? 0L,
+                    IsArchived: false,
+                    ContentHash.ToHex(wall.StagedPhotoSha256));
                 var id = wall.Id;
 
                 targets.Add(new ImageWarmTarget(
@@ -123,13 +130,14 @@ public static class ImageWarmTargets
                 r.Generation,
                 Length = r.PreviousPhoto!.Length,
                 r.PreviousPhotoContentType,
+                r.PreviousPhotoSha256,
             })
             .ToListAsync(ct);
 
         foreach (var reset in resets)
         {
             var tag = new WallPhotoTag(
-                reset.Length, reset.PreviousPhotoContentType, reset.Generation, IsArchived: true);
+                reset.Length, reset.PreviousPhotoContentType, reset.Generation, IsArchived: true, ContentHash.ToHex(reset.PreviousPhotoSha256));
             var resetId = reset.Id;
             Func<CancellationToken, Task<byte[]?>> load = token => LoadResetPhotoAsync(factory, resetId, token);
 
@@ -160,8 +168,10 @@ public static class ImageWarmTargets
                 p.PhotoRevision,
                 PhotoLength = p.Photo == null ? 0 : p.Photo.Length,
                 p.PhotoContentType,
+                p.PhotoSha256,
                 StagedLength = p.StagedPhoto == null ? 0 : p.StagedPhoto.Length,
                 p.StagedPhotoContentType,
+                p.StagedPhotoSha256,
                 p.StagedAt,
             })
             .ToListAsync(ct);
@@ -173,7 +183,11 @@ public static class ImageWarmTargets
             if (panel.PhotoLength > 0)
             {
                 var tag = new WallPhotoTag(
-                    panel.PhotoLength, panel.PhotoContentType, PanelPhotoVersion.Of(panel.Generation, panel.PhotoRevision), IsArchived: false);
+                    panel.PhotoLength,
+                    panel.PhotoContentType,
+                    PanelPhotoVersion.Of(panel.Generation, panel.PhotoRevision),
+                    IsArchived: false,
+                    ContentHash.ToHex(panel.PhotoSha256));
 
                 targets.Add(new ImageWarmTarget(
                     ImageResponse.VariantKey(tag, ImageIdentity.PanelPhoto(id, ImageIdentity.LiveSlot)),
@@ -184,7 +198,11 @@ public static class ImageWarmTargets
             if (panel.StagedLength > 0)
             {
                 var tag = new WallPhotoTag(
-                    panel.StagedLength, panel.StagedPhotoContentType, panel.StagedAt?.UtcTicks ?? 0L, IsArchived: false);
+                    panel.StagedLength,
+                    panel.StagedPhotoContentType,
+                    panel.StagedAt?.UtcTicks ?? 0L,
+                    IsArchived: false,
+                    ContentHash.ToHex(panel.StagedPhotoSha256));
 
                 targets.Add(new ImageWarmTarget(
                     ImageResponse.VariantKey(tag, ImageIdentity.PanelPhoto(id, ImageIdentity.StagedSlot)),
@@ -204,7 +222,7 @@ public static class ImageWarmTargets
         var images = await db.WallImages
             .IgnoreQueryFilters()
             .AsNoTracking()
-            .Select(i => new { i.Id, i.StoragePath, i.ContentType, i.SizeBytes, i.CapturedAt })
+            .Select(i => new { i.Id, i.StoragePath, i.ContentType, i.SizeBytes, i.CapturedAt, i.Sha256 })
             .ToListAsync(ct);
 
         foreach (var image in images)
@@ -216,7 +234,7 @@ public static class ImageWarmTargets
             }
 
             targets.Add(new ImageWarmTarget(
-                ImageResponse.UploadedGalleryKey(image.Id, image.SizeBytes, image.CapturedAt, image.ContentType),
+                ImageResponse.UploadedGalleryKey(image.Id, image.SizeBytes, image.CapturedAt, image.ContentType, image.Sha256),
                 $"uploaded image {image.Id}",
                 token => LoadFileAsync(path, token)));
         }

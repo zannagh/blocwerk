@@ -1,5 +1,6 @@
 ﻿using System.Security.Cryptography;
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Assets;
 using Blocwerk.Core.Capture;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Detection.Outlines;
@@ -1120,12 +1121,13 @@ public class WallService : IWallService
             var wall = await AccessibleWall(db, wallId, shareToken)
                 .AsNoTracking()
                 .Where(w => w.Photo != null)
-                .Select(w => new { Length = w.Photo!.Length, w.PhotoContentType, w.CurrentGeneration })
+                .Select(w => new { Length = w.Photo!.Length, w.PhotoContentType, w.CurrentGeneration, w.PhotoSha256 })
                 .FirstOrDefaultAsync();
 
             return wall is null
                 ? null
-                : new WallPhotoTag(wall.Length, wall.PhotoContentType, wall.CurrentGeneration, IsArchived: false);
+                : new WallPhotoTag(
+                    wall.Length, wall.PhotoContentType, wall.CurrentGeneration, IsArchived: false, ContentHash.ToHex(wall.PhotoSha256));
         }
         catch (Exception ex)
         {
@@ -1226,6 +1228,7 @@ public class WallService : IWallService
                     Length = w.Photo == null ? 0 : w.Photo.Length,
                     w.PhotoContentType,
                     w.CurrentGeneration,
+                    w.PhotoSha256,
                 })
                 .FirstOrDefaultAsync();
 
@@ -1238,20 +1241,22 @@ public class WallService : IWallService
             {
                 return wall.Length == 0
                     ? null
-                    : new WallPhotoTag(wall.Length, wall.PhotoContentType, wall.CurrentGeneration, IsArchived: false);
+                    : new WallPhotoTag(
+                        wall.Length, wall.PhotoContentType, wall.CurrentGeneration, IsArchived: false, ContentHash.ToHex(wall.PhotoSha256));
             }
 
             var reset = await db.WallResets
                 .AsNoTracking()
                 .Where(r => r.WallId == wallId && r.Generation == generation && r.PreviousPhoto != null)
-                .Select(r => new { Length = r.PreviousPhoto!.Length, r.PreviousPhotoContentType })
+                .Select(r => new { Length = r.PreviousPhoto!.Length, r.PreviousPhotoContentType, r.PreviousPhotoSha256 })
                 .FirstOrDefaultAsync();
 
             // A retired generation is content-addressed by its number and is never rewritten, so the
             // browser may hold it without revalidating.
             return reset is null
                 ? null
-                : new WallPhotoTag(reset.Length, reset.PreviousPhotoContentType, generation, IsArchived: true);
+                : new WallPhotoTag(
+                    reset.Length, reset.PreviousPhotoContentType, generation, IsArchived: true, ContentHash.ToHex(reset.PreviousPhotoSha256));
         }
         catch (Exception ex)
         {

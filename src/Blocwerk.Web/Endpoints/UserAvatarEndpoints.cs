@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Blocwerk.Authentication.Authorization;
+using Blocwerk.Core.Assets;
 using Blocwerk.Core.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -54,7 +55,7 @@ public static class UserAvatarEndpoints
             var avatar = await db.Users
                 .AsNoTracking()
                 .Where(u => u.Id == userId && u.AvatarImage != null)
-                .Select(u => new { Length = u.AvatarImage!.Length, u.AvatarContentType })
+                .Select(u => new { Length = u.AvatarImage!.Length, u.AvatarContentType, u.AvatarSha256 })
                 .FirstOrDefaultAsync();
 
             if (avatar is null || avatar.Length == 0)
@@ -62,10 +63,7 @@ public static class UserAvatarEndpoints
                 return Results.NotFound();
             }
 
-            // User carries no avatar-updated column, so the validator is the stored size and type.
-            // Replacing an avatar with a different image that re-encodes to the identical byte count
-            // is the one case this would miss; an AvatarUpdatedAt column would close it.
-            var etag = ImageResponse.Etag(userId, avatar.Length, avatar.AvatarContentType);
+            var etag = AvatarEtag(userId, avatar.Length, avatar.AvatarContentType, avatar.AvatarSha256);
 
             return await ImageResponse.ConditionalAsync(
                 http,
@@ -80,4 +78,13 @@ public static class UserAvatarEndpoints
                     .FirstOrDefaultAsync());
         }).DenyApiKeyPrincipals();
     }
+
+    /// <summary>
+    /// The avatar's validator: its content hash once the row has one, so any replacement, however close in size,
+    /// moves it. Until then the stored size and type, which miss only a replacement that re-encodes to the identical
+    /// byte count. Either way the avatar stays <c>no-cache</c> and off the immutable hashed routes: an erasure or a
+    /// new avatar must show on the next revalidation, never a year later.
+    /// </summary>
+    internal static string AvatarEtag(Guid userId, int length, string? contentType, byte[]? sha) =>
+        sha is null ? ImageResponse.Etag(userId, length, contentType) : $"\"{ContentHash.ToHex(sha)}\"";
 }
