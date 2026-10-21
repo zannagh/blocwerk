@@ -54,6 +54,10 @@ public sealed class PostgresFeedRouteTests
     {
         await using var f = await FeedRouteAccessTests.SeededAsync(PostgresTestDatabase.Create());
         var beginning = await f.BeginningAsync();
+
+        // The catch-up on connect reads below the cluster-wide horizon: let it pass the seeded rows first, so another
+        // database's open transaction cannot hold them back past the stream's wait.
+        await PostgresHorizonWait.UntilNowIsPastAsync(f.Harness.CreateContext);
         string resumeAt;
         await using (var first = FeedStreamRun.Open(f, "?after=" + beginning))
         {
