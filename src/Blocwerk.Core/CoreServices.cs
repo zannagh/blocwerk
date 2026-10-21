@@ -1,4 +1,5 @@
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Assets.Backfill;
 using Blocwerk.Core.Capture;
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Data;
@@ -209,6 +210,9 @@ public static class CoreServices
 
         // In-app glyph capture: photos in, 3D model out, computed by the GEOMETRYSERVICE__URL worker.
         builder.Services.AddWallCapture();
+
+        // Content hashes of rows stored before they were stamped: blobs in SQL, files under an xmin guard (needs both stores).
+        builder.Services.AddContentHashBackfill(builder.Configuration);
 
         // "Update panels + 3D": one drop per wall visit drives the capture and the panel update (see WallRefreshWorker).
         builder.Services.AddWallRefresh();

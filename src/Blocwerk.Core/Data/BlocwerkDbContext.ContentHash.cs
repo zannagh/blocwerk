@@ -2,6 +2,7 @@
 // See License in the project root for license information.
 
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace Blocwerk.Core.Data;
 
@@ -12,14 +13,30 @@ public partial class BlocwerkDbContext
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
-        ContentHashStamp.Apply(ChangeTracker, contentHashCarries);
-        return base.SaveChanges(acceptAllChangesOnSuccess);
+        ChangeTracker.Tracked += StampDiscovered;
+        try
+        {
+            ContentHashStamp.Apply(ChangeTracker, contentHashCarries);
+            return base.SaveChanges(acceptAllChangesOnSuccess);
+        }
+        finally
+        {
+            ChangeTracker.Tracked -= StampDiscovered;
+        }
     }
 
-    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
     {
-        ContentHashStamp.Apply(ChangeTracker, contentHashCarries);
-        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        ChangeTracker.Tracked += StampDiscovered;
+        try
+        {
+            ContentHashStamp.Apply(ChangeTracker, contentHashCarries);
+            return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        }
+        finally
+        {
+            ChangeTracker.Tracked -= StampDiscovered;
+        }
     }
 
     /// <summary>The panel's staged photo just went live (<c>Photo = StagedPhoto</c>): its hash goes with it.</summary>
@@ -63,4 +80,7 @@ public partial class BlocwerkDbContext
             contentHashCarries.Add(target, targetHash, bytes!, sha);
         }
     }
+
+    private void StampDiscovered(object? sender, EntityTrackedEventArgs e) =>
+        ContentHashStamp.StampDiscovered(e, contentHashCarries);
 }

@@ -10,7 +10,8 @@ namespace Blocwerk.Core.Data;
 /// </summary>
 internal sealed class ContentHashCarries
 {
-    // Entities by reference: an entity type may override equality.
+    // A carry matches its bytes by array reference, so a photo array must never be mutated in place between the carry and
+    // the save (the stale hash would be taken for the new bytes). Entities by reference: an entity type may override equality.
     private readonly Dictionary<object, Dictionary<string, (byte[] Bytes, byte[] Sha)>> carried = new(ReferenceEqualityComparer.Instance);
 
     public void Add(object entity, string hashProperty, byte[] bytes, byte[] sha)
