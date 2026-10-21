@@ -6,18 +6,21 @@ import vm from 'node:vm';
 
 const js = name => readFileSync(new URL(`../../src/Blocwerk.Web/wwwroot/js/${name}`, import.meta.url), 'utf8');
 
-/** An <img> the page shows: its src, whether the browser has it all, and where it sits on screen. */
+/** An <img> the page shows: its attributes, whether the browser has it all, and its rect. */
 class FakeImg {
-    constructor(src, { complete = false, visible = true, width = 300 } = {}) {
-        this.attrs = { src };
+    constructor(src, { complete = false, width = 300, attrs = {} } = {}) {
+        this.attrs = { src, ...attrs };
         this.complete = complete;
-        this.visible = visible;
         this.clientWidth = width;
         this.isConnected = true;
     }
 
     getAttribute(name) {
         return this.attrs[name] ?? null;
+    }
+
+    hasAttribute(name) {
+        return Object.hasOwn(this.attrs, name);
     }
 
     get src() {
@@ -30,15 +33,20 @@ class FakeImg {
     }
 
     getBoundingClientRect() {
-        return this.visible ? { width: 300, height: 200, top: 10, left: 10, bottom: 210, right: 310 } : { width: 0, height: 0, top: 0, left: 0, bottom: 0, right: 0 };
+        return { width: 300, height: 200, top: 10, left: 10, bottom: 210, right: 310 };
     }
 }
 
-/** Runs the scripts in one fake page: manual timers and frames, and Image objects whose loads the test settles. */
+/**
+ * Runs both scripts in one fake page: manual timers and frames, Image objects whose loads the test settles, and an
+ * IntersectionObserver the test drives with `see(img, inView)`.
+ */
 function page(images) {
     const timers = [];
     const frames = [];
     const loads = [];
+    const listeners = {};
+    let observe = null;
     class Image {
         set src(value) {
             this._src = value;
@@ -52,8 +60,18 @@ function page(images) {
         }
 
         decode() {
-            return new Promise((resolve, reject) => { this.finish = ok => { this.naturalWidth = ok ? 4000 : 0; this.complete = true; (ok ? resolve : reject)(); }; });
+            return new Promise((resolve, reject) => {
+                this.finish = ok => { this.naturalWidth = ok ? 4000 : 0; this.complete = true; (ok ? resolve : reject)(); };
+            });
         }
+    }
+
+    class IntersectionObserver {
+        constructor(callback) {
+            observe = (img, isIntersecting) => callback([{ target: img, isIntersecting }]);
+        }
+
+        observe() {}
     }
 
     const window = {
@@ -63,98 +81,154 @@ function page(images) {
         addEventListener: () => {},
         requestAnimationFrame: cb => frames.push(cb),
         setInterval: () => 0,
+        IntersectionObserver,
+    };
+    const document = {
+        baseURI: 'https://blocwerk.app/',
+        visibilityState: 'visible',
+        querySelectorAll: () => images,
+        addEventListener: (name, cb) => { listeners[name] = cb; },
     };
     const context = {
         window,
-        document: { baseURI: 'https://blocwerk.app/', visibilityState: 'visible', querySelectorAll: () => images },
+        document,
         Image,
         URL,
         Date,
         setTimeout: (cb, ms) => { timers.push({ cb, ms }); return timers.length; },
         clearTimeout: id => { if (timers[id - 1]) { timers[id - 1].cb = null; } },
     };
-    context.window.document = context.document;
+    window.document = document;
     vm.createContext(context);
     vm.runInContext(js('image-res.js'), context);
     vm.runInContext(js('image-watchdog.js'), context);
+    const dog = window.bwImageWatchdog;
     return {
         window,
+        document,
+        dog,
         loads,
+        listeners,
+        see: (img, inView = true) => { dog.check(img, 0); observe(img, inView); },
         frame: () => frames.splice(0).forEach(cb => cb()),
         runTimers: () => timers.splice(0).forEach(t => t.cb && t.cb()),
         settle: async () => { for (let i = 0; i < 5; i++) { await Promise.resolve(); } },
+        measure: zoom => { window.bwImageRes.refresh(null, zoom); frames.splice(0).forEach(cb => cb()); },
     };
 }
 
-test('watchdog: an on-screen image still loading after the stall time is asked for again', () => {
-    const img = new FakeImg('/api/walls/w/enhancement/items/i/crop');
-    const { window } = page([img]);
-    const dog = window.bwImageWatchdog;
+test('watchdog: an in-view image still loading after its stall time is asked for again', () => {
+    const img = new FakeImg('/api/walls/w/panels/p/photo?w=1280', { attrs: { 'data-bw-res': '' } });
+    const p = page([img]);
+    p.see(img);
+    const stall = p.dog.stallMsFor(img, 0);
 
-    assert.equal(dog.check(img, 0), false);
-    assert.equal(dog.check(img, dog.STALL_MS - 1), false);
-    assert.equal(dog.check(img, dog.STALL_MS), true);
-    assert.equal(img.getAttribute('src'), '/api/walls/w/enhancement/items/i/crop?bwretry=1');
+    assert.equal(p.dog.check(img, 1), false);
+    assert.equal(p.dog.check(img, stall), false);
+    assert.equal(p.dog.check(img, stall + 1), true);
+    assert.equal(img.getAttribute('src'), '/api/walls/w/panels/p/photo?w=1280&bwretry=1');
 });
 
-test('watchdog: a loaded, an off-screen and a lazy-not-yet-asked image are left alone', () => {
+test('watchdog: a loaded image, and a lazy one the observer says is clipped out of view, are left alone', () => {
     const loaded = new FakeImg('/a.jpg', { complete: true });
-    const offscreen = new FakeImg('/b.jpg', { visible: false });
-    const { window } = page([loaded, offscreen]);
-    const dog = window.bwImageWatchdog;
+    const clipped = new FakeImg('/b.jpg', { attrs: { loading: 'lazy' } });
+    const p = page([loaded, clipped]);
+    p.see(loaded);
+    p.see(clipped, false);
 
-    for (const t of [0, dog.STALL_MS, dog.STALL_MS * 3]) {
-        assert.equal(dog.check(loaded, t), false);
-        assert.equal(dog.check(offscreen, t), false);
+    for (const t of [1, 100000, 1000000]) {
+        assert.equal(p.dog.check(loaded, t), false);
+        assert.equal(p.dog.check(clipped, t), false);
     }
 
     assert.equal(loaded.getAttribute('src'), '/a.jpg');
-    assert.equal(offscreen.getAttribute('src'), '/b.jpg');
+    assert.equal(clipped.getAttribute('src'), '/b.jpg');
 });
 
-test('watchdog: retries stop after the limit, and a new picture starts counting afresh', () => {
-    const img = new FakeImg('/p.jpg?w=1280');
-    const { window } = page([img]);
-    const dog = window.bwImageWatchdog;
-    let t = 0;
-    dog.check(img, t);
-    for (let n = 1; n <= dog.MAX_RETRIES; n++) {
-        t += dog.STALL_MS;
-        assert.equal(dog.check(img, t), true);
+test('watchdog: each retry waits twice as long, crops start later, and retries stop at the limit', () => {
+    const photo = new FakeImg('/p.jpg?w=1280', { attrs: { 'data-bw-res': '' } });
+    const crop = new FakeImg('/crop', { attrs: { 'data-bw-watch': '' } });
+    const p = page([photo, crop]);
+    assert.equal(p.dog.stallMsFor(photo, 1), 2 * p.dog.stallMsFor(photo, 0));
+    assert.equal(p.dog.stallMsFor(photo, 2), 4 * p.dog.stallMsFor(photo, 0));
+    assert.ok(p.dog.stallMsFor(crop, 0) > p.dog.stallMsFor(photo, 0));
+
+    p.see(photo);
+    let t = 1;
+    p.dog.check(photo, t);
+    for (let n = 0; n < p.dog.MAX_RETRIES; n++) {
+        const wait = p.dog.stallMsFor(photo, n);
+        assert.equal(p.dog.check(photo, t + wait - 1), false, `retry ${n + 1} not before ${wait} ms`);
+        assert.equal(p.dog.check(photo, t + wait + 1), true, `retry ${n + 1} after ${wait} ms`);
+        t += wait + 1;
     }
 
-    t += dog.STALL_MS;
-    assert.equal(dog.check(img, t), false);
-    assert.equal(img.getAttribute('src'), `/p.jpg?w=1280&bwretry=${dog.MAX_RETRIES}`);
+    assert.equal(p.dog.check(photo, t + 100 * p.dog.stallMsFor(photo, 0)), false);
+    assert.equal(photo.getAttribute('src'), `/p.jpg?w=1280&bwretry=${p.dog.MAX_RETRIES}`);
 
-    img.src = '/other.jpg';
-    dog.check(img, t);
-    assert.equal(dog.check(img, t + dog.STALL_MS), true);
+    photo.src = '/other.jpg';
+    p.dog.check(photo, t);
+    assert.equal(p.dog.check(photo, t + p.dog.stallMsFor(photo, 0) + 1), true, 'a new picture counts afresh');
 });
 
-test('image-res: an upgrade that stalls stops blocking, so the next measurement asks again', async () => {
+test('watchdog: time in a background tab does not count as a stall', () => {
+    const img = new FakeImg('/p.jpg?w=1280', { attrs: { 'data-bw-res': '' } });
+    const p = page([img]);
+    p.see(img);
+    p.dog.check(img, 1);
+
+    p.document.visibilityState = 'hidden';
+    p.document.visibilityState = 'visible';
+    p.listeners.visibilitychange();
+    const back = 10 * p.dog.stallMsFor(img, 0);
+
+    assert.equal(p.dog.check(img, back), false, 'the clock starts again on return');
+    assert.equal(p.dog.check(img, back + p.dog.stallMsFor(img, 0) + 1), true);
+});
+
+test('image-res: a slow upgrade is neither cancelled nor started twice, and still lands', async () => {
     const img = new FakeImg('/api/walls/w/panels/p/photo?w=1280', { complete: true, width: 1000 });
     const p = page([img]);
-    p.window.bwImageRes.refresh(null, 4);
-    p.frame();
+    p.measure(4);
     assert.equal(p.loads.length, 1);
-
-    p.window.bwImageRes.refresh(null, 4);
-    p.frame();
-    assert.equal(p.loads.length, 1, 'still waiting on the first upgrade');
+    const slow = p.loads[0];
 
     p.runTimers();
-    p.window.bwImageRes.refresh(null, 4);
-    p.frame();
-    assert.equal(p.loads.length, 2, 'the stalled load was dropped and a new one started');
-    assert.equal(p.loads.at(-1).src, '/api/walls/w/panels/p/photo');
+    p.measure(4);
+    p.measure(5);
+    assert.equal(p.loads.length, 1, 'the download in flight is reused');
+    assert.equal(slow.src, '/api/walls/w/panels/p/photo', 'and never cancelled');
+
+    slow.finish(true);
+    await p.settle();
+    assert.equal(img.getAttribute('src'), '/api/walls/w/panels/p/photo');
+});
+
+test('image-res: once an upgrade has held the gate too long, a sharper rung may start, and a slower late one never downgrades', async () => {
+    const img = new FakeImg('/api/walls/w/panels/p/photo?w=1280', { complete: true, width: 1000 });
+    const p = page([img]);
+    p.measure(2);
+    assert.equal(p.loads.at(-1).src, '/api/walls/w/panels/p/photo?w=2560');
+    const mid = p.loads.at(-1);
+
+    p.measure(4);
+    assert.equal(p.loads.length, 1, 'gated while the first is outstanding');
+    p.runTimers();
+    p.measure(4);
+    assert.equal(p.loads.length, 2);
+    const original = p.loads.at(-1);
+
+    original.finish(true);
+    await p.settle();
+    mid.finish(true);
+    await p.settle();
+    assert.equal(img.getAttribute('src'), '/api/walls/w/panels/p/photo');
 });
 
 test('image-res: an upgrade that lands after the viewer swapped panels does not bring the old photo back', async () => {
     const img = new FakeImg('/api/walls/w/panels/one/photo?w=1280', { complete: true, width: 1000 });
     const p = page([img]);
-    p.window.bwImageRes.refresh(null, 4);
-    p.frame();
+    p.measure(4);
     const upgrade = p.loads[0];
 
     img.attrs.src = '/api/walls/w/panels/two/photo?w=1280';
@@ -167,8 +241,7 @@ test('image-res: an upgrade that lands after the viewer swapped panels does not 
 test('image-res: the watchdog retry marker never leaks into the upgraded url', async () => {
     const img = new FakeImg('/api/walls/w/panels/p/photo?w=1280&bwretry=1', { complete: true, width: 1000 });
     const p = page([img]);
-    p.window.bwImageRes.refresh(null, 4);
-    p.frame();
+    p.measure(4);
     p.loads[0].finish(true);
     await p.settle();
 

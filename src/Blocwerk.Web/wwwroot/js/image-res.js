@@ -31,12 +31,12 @@ window.bwImageRes = (function () {
     // The full ladder the cap indexes against: every WIDTHS rung, then ORIGINAL as the top.
     const LADDER = WIDTHS.concat([ORIGINAL]);
 
-    // How long an upgrade may take before it counts as stalled and a later measurement may ask again. Generous:
-    // the original is 3-4 MB, which a slow phone connection needs a good while for.
+    // How long an upgrade holds the gate before a later measurement may ask for another rung. The download is
+    // not cancelled then: the original is 3-4 MB, which a slow phone connection needs a good while for.
     const UPGRADE_STALL_MS = 45000;
 
     // The query parameter image-watchdog.js adds when it re-requests a stalled image; never part of the base.
-    const RETRY_PARAM = 'bwretry';
+    const RETRY_PATTERN = /([?&])bwretry=[^&#]*&?/;
 
     // --- Zoom-aware caps (the tunable knobs) -----------------------------------------------------
     // A big/retina display at *fit* has `cssWidth * DPR` already past the top of the ladder, so the
@@ -117,37 +117,50 @@ window.bwImageRes = (function () {
 
     /**
      * Loads and decodes the replacement off-screen, then swaps it in. The pending URL is recorded
-     * on the element so a second, higher upgrade started while this one is in flight simply wins:
-     * the older callback sees it is no longer pending and drops its result instead of downgrading.
+     * on the element and gates further upgrades while it is outstanding. A load that lands late (a
+     * slower rung after a sharper one, or after the viewer swapped panels) is dropped, never a downgrade.
+     *
+     * A slow download is never cancelled or started twice: after UPGRADE_STALL_MS only the gate opens
+     * (a later measurement may ask for a sharper rung), and asking for a url already on its way just
+     * waits on that download, so a phone on a slow line is not sent back to byte 0 on every zoom.
      */
     function upgrade(img, level) {
         const base = img._bwBase;
         const url = urlAt(base, level);
         img._bwPending = url;
+        armStall(img, url);
+
+        const loading = img._bwLoading || (img._bwLoading = {});
+        if (loading[url]) {
+            return;
+        }
 
         const next = new Image();
         next.decoding = 'async';
+        loading[url] = next;
 
-        // A download that stalls (a phone's stream that stops mid-image never errors) must not hold
-        // _bwPending for good: that would refuse every later upgrade of this element.
-        const stall = setTimeout(function () {
+        const done = function () {
+            delete loading[url];
             if (img._bwPending === url) {
+                clearTimeout(img._bwStall);
                 img._bwPending = null;
-                next.src = '';
             }
-        }, UPGRADE_STALL_MS);
+        };
 
         const swap = function () {
-            clearTimeout(stall);
-            if (img._bwPending !== url || !next.naturalWidth) {
+            done();
+            if (!next.naturalWidth) {
                 return;
             }
-
-            img._bwPending = null;
 
             // The element moved on while this loaded (the panel viewer swapped in another panel's photo):
             // writing this url now would put the old panel's photo under the new panel's holds.
             if (img._bwBase !== base || stripWidth(img.getAttribute('src') || '') !== base) {
+                return;
+            }
+
+            // A sharper rung landed first: keep it.
+            if ((img._bwLevel || currentLevel(img)) >= level) {
                 return;
             }
 
@@ -163,12 +176,7 @@ window.bwImageRes = (function () {
                 swap();
             }
         };
-        next.onerror = function () {
-            clearTimeout(stall);
-            if (img._bwPending === url) {
-                img._bwPending = null;
-            }
-        };
+        next.onerror = done;
         next.src = url;
 
         if (next.decode) {
@@ -178,6 +186,16 @@ window.bwImageRes = (function () {
                 }
             });
         }
+    }
+
+    /** Opens the upgrade gate if `url` is still outstanding after UPGRADE_STALL_MS; the download itself goes on. */
+    function armStall(img, url) {
+        clearTimeout(img._bwStall);
+        img._bwStall = setTimeout(function () {
+            if (img._bwPending === url) {
+                img._bwPending = null;
+            }
+        }, UPGRADE_STALL_MS);
     }
 
     /** Measures one opted-in image and upgrades it if the viewport now needs more pixels. */
@@ -221,14 +239,9 @@ window.bwImageRes = (function () {
         return withoutRetry(urlAt(url, ORIGINAL));
     }
 
+    /** `url` without the retry parameter; only that one parameter is touched, the rest stays byte for byte. */
     function withoutRetry(url) {
-        try {
-            const parsed = new URL(url, document.baseURI);
-            parsed.searchParams.delete(RETRY_PARAM);
-            return parsed.pathname + parsed.search;
-        } catch (_) {
-            return url;
-        }
+        return url.replace(RETRY_PATTERN, '$1').replace(/[?&]$/, '');
     }
 
     /**
