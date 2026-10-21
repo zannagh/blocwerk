@@ -39,9 +39,6 @@ public partial class BlocwerkDbContext
         }
     }
 
-    private void StampDiscovered(object? sender, EntityTrackedEventArgs e) =>
-        ContentHashStamp.StampDiscovered(e, contentHashCarries);
-
     /// <summary>The panel's staged photo just went live (<c>Photo = StagedPhoto</c>): its hash goes with it.</summary>
     internal void CarryStagedPhotoHash(Entities.WallPanel panel) => CarryStagedHash(
         panel, nameof(Entities.WallPanel.StagedPhoto), nameof(Entities.WallPanel.StagedPhotoSha256), nameof(Entities.WallPanel.PhotoSha256), panel.Photo);
@@ -83,4 +80,7 @@ public partial class BlocwerkDbContext
             contentHashCarries.Add(target, targetHash, bytes!, sha);
         }
     }
+
+    private void StampDiscovered(object? sender, EntityTrackedEventArgs e) =>
+        ContentHashStamp.StampDiscovered(e, contentHashCarries);
 }

@@ -9,15 +9,8 @@ namespace Blocwerk.Core.Tests;
 /// A wall-image store that runs <see cref="OnResolve"/> (once) when a stored name is resolved: the backfill resolves a
 /// file after reading its row and before hashing it, so this is where a concurrent rewrite lands in that window.
 /// </summary>
-internal sealed class HookedWallImageStorage : IWallImageStorage
+internal sealed class HookedWallImageStorage(IWallImageStorage inner) : IWallImageStorage
 {
-    private readonly IWallImageStorage inner;
-
-    public HookedWallImageStorage(IWallImageStorage inner)
-    {
-        this.inner = inner;
-    }
-
     public Action<string>? OnResolve { get; set; }
 
     public string CreateTempPath(string extension) => inner.CreateTempPath(extension);

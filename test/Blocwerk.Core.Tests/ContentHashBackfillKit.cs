@@ -42,8 +42,10 @@ internal sealed class ContentHashBackfillKit : IDisposable
 
     public HookedWallImageStorage Images { get; }
 
-    public ContentHashBackfill Backfill(params IInterceptor[] interceptors) =>
-        new(new InterceptingRootDbContextFactory(H.DbContextFactory.ConnectionString, interceptors), Images, Captures, FastOptions,
+    public ContentHashBackfill Backfill(params IInterceptor[] interceptors) => Backfill(FastOptions, interceptors);
+
+    public ContentHashBackfill Backfill(ContentHashBackfillOptions options, params IInterceptor[] interceptors) =>
+        new(new InterceptingRootDbContextFactory(H.DbContextFactory.ConnectionString, interceptors), Images, Captures, options,
             NullLogger<ContentHashBackfill>.Instance);
 
     /// <summary>A stored gallery image with <paramref name="bytes"/>; returns its row id.</summary>

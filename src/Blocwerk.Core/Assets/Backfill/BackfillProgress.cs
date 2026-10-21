@@ -7,20 +7,10 @@ using Microsoft.Extensions.Logging;
 namespace Blocwerk.Core.Assets.Backfill;
 
 /// <summary>Logs one column's progress every <see cref="ContentHashBackfillOptions.ProgressInterval"/> and when it is done.</summary>
-internal sealed class BackfillProgress
+internal sealed class BackfillProgress(ILogger logger, string column, TimeSpan interval)
 {
-    private readonly ILogger logger;
-    private readonly string column;
-    private readonly TimeSpan interval;
     private readonly long started = Stopwatch.GetTimestamp();
     private long lastLogged = Stopwatch.GetTimestamp();
-
-    public BackfillProgress(ILogger logger, string column, TimeSpan interval)
-    {
-        this.logger = logger;
-        this.column = column;
-        this.interval = interval;
-    }
 
     public void Report(BackfillCount soFar)
     {

@@ -212,7 +212,7 @@ public static class CoreServices
         builder.Services.AddWallCapture();
 
         // Content hashes of rows stored before they were stamped: blobs in SQL, files under an xmin guard (needs both stores).
-        builder.Services.AddContentHashBackfill();
+        builder.Services.AddContentHashBackfill(builder.Configuration);
 
         // "Update panels + 3D": one drop per wall visit drives the capture and the panel update (see WallRefreshWorker).
         builder.Services.AddWallRefresh();

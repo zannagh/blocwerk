@@ -19,19 +19,11 @@ namespace Blocwerk.Core.Assets.Backfill;
 /// see none of it. SQLite (tests) has no <c>sha256</c>: the app hashes the batch and writes each hash only while the row
 /// still holds the bytes it hashed.
 /// </remarks>
-internal sealed class BlobHashBackfill
+internal sealed class BlobHashBackfill(
+    Func<BlocwerkDbContext> createDb,
+    ContentHashBackfillOptions options,
+    ILogger logger)
 {
-    private readonly Func<BlocwerkDbContext> createDb;
-    private readonly ContentHashBackfillOptions options;
-    private readonly ILogger logger;
-
-    public BlobHashBackfill(Func<BlocwerkDbContext> createDb, ContentHashBackfillOptions options, ILogger logger)
-    {
-        this.createDb = createDb;
-        this.options = options;
-        this.logger = logger;
-    }
-
     public async Task<BackfillCount> RunAsync(ContentHashColumn column, CancellationToken ct)
     {
         var pacer = new BackfillPacer(options);
@@ -66,13 +58,13 @@ internal sealed class BlobHashBackfill
         var sql = ContentHashBackfillSql.For(db, column.Entity);
         if (sql.Postgres)
         {
-            var stamped = await db.Database.SqlQueryRaw<BackfillStampedRow>(sql.StampBlobs(column), after, size).ToListAsync(ct);
+            var stamped = await db.Database.SqlQueryRaw<BackfillStampedRow>(sql.StampBlobs(column), after, size, options.MaxBlobBatchBytes).ToListAsync(ct);
             return stamped.Count == 0
                 ? (BackfillCount.None, null)
                 : (new BackfillCount(stamped.Count, stamped.Sum(r => r.Size), 0, 0), stamped[^1].Id);
         }
 
-        var rows = await db.Database.SqlQueryRaw<BackfillBlobRow>(sql.SelectBlobs(column), after, size).ToListAsync(ct);
+        var rows = await db.Database.SqlQueryRaw<BackfillBlobRow>(sql.SelectBlobs(column), after, size, options.MaxBlobBatchBytes).ToListAsync(ct);
         var count = BackfillCount.None;
         foreach (var row in rows)
         {

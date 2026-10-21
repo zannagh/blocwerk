@@ -23,28 +23,13 @@ namespace Blocwerk.Core.Assets.Backfill;
 /// batch) simply starts over on what is still null. Not a deploy-busy hold for the same reason. Off the startup path,
 /// throttled by <see cref="BackfillPacer"/>, and logged per column.
 /// </remarks>
-public sealed class ContentHashBackfill : BackgroundService
+public sealed class ContentHashBackfill(
+    RootDbContextFactory dbContextFactory,
+    IWallImageStorage images,
+    ICaptureFileStore captures,
+    ContentHashBackfillOptions options,
+    ILogger<ContentHashBackfill> logger) : BackgroundService
 {
-    private readonly RootDbContextFactory dbContextFactory;
-    private readonly IWallImageStorage images;
-    private readonly ICaptureFileStore captures;
-    private readonly ContentHashBackfillOptions options;
-    private readonly ILogger<ContentHashBackfill> logger;
-
-    public ContentHashBackfill(
-        RootDbContextFactory dbContextFactory,
-        IWallImageStorage images,
-        ICaptureFileStore captures,
-        ContentHashBackfillOptions options,
-        ILogger<ContentHashBackfill> logger)
-    {
-        this.dbContextFactory = dbContextFactory;
-        this.images = images;
-        this.captures = captures;
-        this.options = options;
-        this.logger = logger;
-    }
-
     /// <summary>One pass over every column: returns what it did in total.</summary>
     public async Task<BackfillCount> RunPassAsync(CancellationToken ct)
     {
@@ -93,6 +78,12 @@ public sealed class ContentHashBackfill : BackgroundService
     /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (!options.Enabled)
+        {
+            logger.LogInformation("Content-hash backfill is switched off ({Section}:Enabled)", ContentHashBackfillOptions.Section);
+            return;
+        }
+
         try
         {
             await Task.Delay(options.StartDelay, stoppingToken);

@@ -8,17 +8,8 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 namespace Blocwerk.Core.Tests;
 
 /// <summary>A session-less factory over a test database (either provider) whose contexts carry the given interceptors.</summary>
-public sealed class InterceptingRootDbContextFactory : RootDbContextFactory
+public sealed class InterceptingRootDbContextFactory(string connectionString, params IInterceptor[] interceptors)
+    : RootDbContextFactory(new DbContextOptionsBuilder<BlocwerkDbContext>().Options)
 {
-    private readonly string connectionString;
-    private readonly IInterceptor[] interceptors;
-
-    public InterceptingRootDbContextFactory(string connectionString, params IInterceptor[] interceptors)
-        : base(new DbContextOptionsBuilder<BlocwerkDbContext>().Options)
-    {
-        this.connectionString = connectionString;
-        this.interceptors = interceptors;
-    }
-
     public override BlocwerkDbContext CreateDbContext() => TestDb.Create(connectionString, interceptors);
 }

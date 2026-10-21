@@ -15,21 +15,12 @@ namespace Blocwerk.Core.Assets.Backfill;
 /// that has none: the level files are streamed through SHA-256 with no lock held, and the JSON is replaced only if the
 /// row is still the version that was read (<c>xmin</c>). Levels whose file is missing keep a null <c>sha</c>.
 /// </summary>
-internal sealed class LadderHashBackfill
+internal sealed class LadderHashBackfill(
+    Func<BlocwerkDbContext> createDb,
+    ICaptureFileStore captures,
+    ContentHashBackfillOptions options,
+    ILogger logger)
 {
-    private readonly Func<BlocwerkDbContext> createDb;
-    private readonly ICaptureFileStore captures;
-    private readonly ContentHashBackfillOptions options;
-    private readonly ILogger logger;
-
-    public LadderHashBackfill(Func<BlocwerkDbContext> createDb, ICaptureFileStore captures, ContentHashBackfillOptions options, ILogger logger)
-    {
-        this.createDb = createDb;
-        this.captures = captures;
-        this.options = options;
-        this.logger = logger;
-    }
-
     public async Task<BackfillCount> RunAsync(CancellationToken ct)
     {
         var pacer = new BackfillPacer(options);
@@ -75,7 +66,7 @@ internal sealed class LadderHashBackfill
         foreach (var level in levels)
         {
             var path = level.Sha is null ? captures.ResolvePhysicalPath(level.StoredPath) : null;
-            var sha = level.Sha ?? ContentHash.ToHex(await ContentHash.OfFileAsync(path, ct));
+            var sha = level.Sha ?? ContentHash.ToHex(await FileHashBackfill.TryHashAsync(path, logger, ct));
             missing += sha is null ? 1 : 0;
             bytes += level.Sha is null && sha is not null ? FileHashBackfill.SizeOf(path) : 0;
             hashed.Add(level with { Sha = sha });

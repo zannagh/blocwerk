@@ -8,18 +8,10 @@ namespace Blocwerk.Core.Assets.Backfill;
 /// <see cref="ContentHashBackfillOptions.BatchTarget"/>, doubled below a quarter of it), and pauses after every batch or
 /// file at least as long as the work took, so the backfill uses at most about half of one database or app core.
 /// </summary>
-internal sealed class BackfillPacer
+internal sealed class BackfillPacer(ContentHashBackfillOptions options)
 {
-    private readonly ContentHashBackfillOptions options;
-
-    public BackfillPacer(ContentHashBackfillOptions options)
-    {
-        this.options = options;
-        BatchSize = Math.Clamp(options.InitialBlobBatch, 1, options.MaxBlobBatch);
-    }
-
     /// <summary>Gets the rows the next database batch takes.</summary>
-    public int BatchSize { get; private set; }
+    public int BatchSize { get; private set; } = Math.Clamp(options.InitialBlobBatch, 1, options.MaxBlobBatch);
 
     /// <summary>Resizes the next batch from <paramref name="took"/>.</summary>
     public void Measure(TimeSpan took)
