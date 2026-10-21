@@ -11,7 +11,7 @@ namespace Blocwerk.Core.Tests;
 internal static class FeedBulkKit
 {
     private static readonly HashSet<string> AllowedFields =
-        ["sv", "generation", "panelId", "isDraft", "role", "reason", "boulderId", "encodingStatus", "hasHls", "type"];
+        ["sv", "generation", "panelId", "isDraft", "role", "reason", "boulderId", "encodingStatus", "hasHls", "type", "ownerChanged"];
 
     public static async Task<List<WallChange>> RowsAsync(WallTestHarness harness)
     {
