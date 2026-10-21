@@ -14,6 +14,12 @@ public sealed record Wall3DView
 {
     public Guid WallId { get; init; }
 
+    /// <summary>
+    /// Gets the identity of the active geometry model the view was built from (a hash of its document): a live rebuild that
+    /// yields the same key keeps the mounted view instead of remounting it.
+    /// </summary>
+    public string? ModelKey { get; init; }
+
     public string WallName { get; init; } = string.Empty;
 
     /// <summary>The boulder whose holds are highlighted, when one was asked for and found.</summary>

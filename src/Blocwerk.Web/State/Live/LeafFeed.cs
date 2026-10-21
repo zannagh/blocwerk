@@ -12,16 +12,18 @@ namespace Blocwerk.Web.State.Live;
 /// <para>
 /// <b>Reloads.</b> A resync, a coarse <c>wall.resync</c>, an unknown payload schema, and a change of the circuit's viewer
 /// on the wall (<see cref="WallCacheState.ViewerChanged"/>, <see cref="WallCacheState.AccessLost"/>) reach the list as a
-/// reload: a resubscribe changes which rows reach it, and a revoked slot dropped deliveries until the swap.
+/// reload: a resubscribe changes which rows reach it, and a revoked slot dropped deliveries until the swap. Reloads are
+/// coalesced for <see cref="ReloadDelay"/>, so an epoch change or an erasure resync does not stampede every open page.
 /// </para>
 /// <para>
-/// <b>Holding.</b> While <c>isHeld</c> is true (the user is editing in the list), batches are merged, not applied, and
-/// <see cref="ReleaseAsync"/> applies what accumulated once the edit ends. Nothing is lost and nothing is patched under the
-/// user's hands.
+/// <b>Holding.</b> While <c>isHeld</c> is true (the user is editing in the list), and while a load runs, batches are
+/// merged, not applied. A load's end releases what arrived above its cursor; <see cref="ReleaseAsync"/> does when an edit
+/// ends. Nothing is lost and nothing is patched under the user's hands or into a list a load is about to replace.
 /// </para>
 /// <para>
-/// <b>CursorAtLoad.</b> Every full load runs through <see cref="LoadAsync{T}"/>, which reads the feed cursor first. An
-/// event at or below it is already in the list and is skipped; applying a newer one again is idempotent.
+/// <b>CursorAtLoad.</b> Every full load runs through <see cref="LoadAsync{T}"/>: it subscribes first, reads the feed cursor,
+/// then queries, so no event falls between the subscription and the load. An event at or below the cursor is already in
+/// the list and is skipped. Only the latest of overlapping loads commits.
 /// </para>
 /// </summary>
 /// <param name="cache">The circuit's cache, whose feed deliveries the list follows.</param>
@@ -29,56 +31,98 @@ namespace Blocwerk.Web.State.Live;
 /// <param name="dispatch">The component's <c>InvokeAsync</c>.</param>
 /// <param name="apply">Applies a batch on the component's dispatcher (patch, or reload when <see cref="LeafBatch.Reload"/>).</param>
 /// <param name="isHeld">True while the user edits in the list; read on the dispatcher.</param>
+/// <param name="logger">Where a failed hand-off is logged.</param>
 public sealed class LeafFeed(
-    WallCacheState cache, LeafScope scope, Func<Func<Task>, Task> dispatch, Func<LeafBatch, Task> apply, Func<bool>? isHeld = null)
-    : IDisposable
+    WallCacheState cache,
+    LeafScope scope,
+    Func<Func<Task>, Task> dispatch,
+    Func<LeafBatch, Task> apply,
+    Func<bool>? isHeld,
+    ILogger? logger) : IDisposable
 {
+    /// <summary>How long reload requests are gathered into one.</summary>
+    public static readonly TimeSpan ReloadDelay = TimeSpan.FromMilliseconds(300);
+
     private readonly object gate = new();
+    private IDisposable? watch;
     private FeedCursor? loadedAt;
     private LeafBatch? pending;
+    private int loads;
+    private int loading;
+    private int reloadQueued;
     private int disposed;
 
     public LeafScope Scope { get; } = scope;
 
-    /// <summary>Opens a list's feed: it follows the circuit's deliveries from now on, until disposed.</summary>
-    public static LeafFeed Open(
-        WallCacheState cache, LeafScope scope, Func<Func<Task>, Task> dispatch, Func<LeafBatch, Task> apply, Func<bool>? isHeld = null)
-    {
-        var feed = new LeafFeed(cache, scope, dispatch, apply, isHeld);
-        cache.FeedDelivered += feed.OnDelivered;
-        cache.ViewerChanged += feed.OnViewerChanged;
-        cache.AccessLost += feed.OnViewerChanged;
-        _ = cache.EnsureFeedAsync(scope.WallId);
-        return feed;
-    }
-
-    /// <summary>Gets the viewer the circuit is subscribed to the wall as; null without a subscription (share links).</summary>
+    /// <summary>Gets the viewer the circuit is subscribed to the wall as; null without a subscription.</summary>
     public FeedViewer? Viewer => cache.ViewerOf(Scope.WallId);
 
     private bool IsDisposed => Volatile.Read(ref disposed) == 1;
 
+    /// <summary>Opens a list's feed: it follows the circuit's deliveries from now on, until disposed.</summary>
+    public static LeafFeed Open(
+        WallCacheState cache,
+        LeafScope scope,
+        Func<Func<Task>, Task> dispatch,
+        Func<LeafBatch, Task> apply,
+        Func<bool>? isHeld = null,
+        ILogger? logger = null)
+    {
+        var feed = new LeafFeed(cache, scope, dispatch, apply, isHeld, logger);
+        feed.watch = cache.Watch(scope.WallId);
+        cache.FeedDelivered += feed.OnDelivered;
+        cache.ViewerChanged += feed.OnViewerChanged;
+        cache.AccessLost += feed.OnViewerChanged;
+        _ = cache.EnsureFeedAsync(scope.WallId); // started now; every load awaits it again before its cursor read
+        return feed;
+    }
+
     /// <summary>
-    /// Runs a full load of the list on the dispatcher, tagged with the feed cursor read before it. It supersedes what was
-    /// held: those events were committed before the load starts.
+    /// Runs a full load of the list on the dispatcher and hands its result to <paramref name="commit"/>, unless a newer load
+    /// started meanwhile or the feed was disposed (the component moved on). Batches that arrive meanwhile are held; the
+    /// ones above the load's cursor are applied after the commit. False when the result was dropped.
     /// </summary>
     /// <typeparam name="T">The loaded value.</typeparam>
-    public async Task<T> LoadAsync<T>(Func<Task<T>> load)
+    public async Task<bool> LoadAsync<T>(Func<Task<T>> load, Action<T> commit)
     {
-        pending = null; // a load that starts now reflects every event already received
-        var at = await cache.CursorAtLoadAsync();
-        var value = await load();
-        lock (gate)
+        var generation = ++loads;
+        loading++;
+        var committed = false;
+        FeedCursor? at = null;
+        try
         {
-            loadedAt = at;
+            await cache.EnsureFeedAsync(Scope.WallId);
+            at = await cache.CursorAtLoadAsync();
+            var value = await load();
+            if (!IsDisposed && generation == loads)
+            {
+                commit(value);
+                lock (gate)
+                {
+                    loadedAt = at;
+                }
+
+                committed = true;
+            }
+        }
+        finally
+        {
+            loading--;
+            if (committed)
+            {
+                pending = pending?.After(at);
+            }
+
+            await ReleaseAsync();
         }
 
-        return value;
+        return committed;
     }
 
     /// <summary>Applies what arrived while the list was held, unless it still is. Call on the dispatcher when an edit ends.</summary>
     public Task ReleaseAsync()
     {
-        if (IsDisposed || isHeld?.Invoke() == true || pending is not { } batch)
+        if (IsDisposed || loading > 0 || isHeld?.Invoke() == true || pending is not { } batch)
         {
             return Task.CompletedTask;
         }
@@ -94,6 +138,7 @@ public sealed class LeafFeed(
             return;
         }
 
+        watch?.Dispose();
         cache.FeedDelivered -= OnDelivered;
         cache.ViewerChanged -= OnViewerChanged;
         cache.AccessLost -= OnViewerChanged;
@@ -122,7 +167,25 @@ public sealed class LeafFeed(
         }
     }
 
-    private void Post(LeafBatch batch) => _ = DispatchAsync(batch);
+    // A reload supersedes the events of its batch; a second reload within the delay joins the first.
+    private void Post(LeafBatch batch)
+    {
+        if (!batch.Reload)
+        {
+            _ = DispatchAsync(batch);
+        }
+        else if (Interlocked.Exchange(ref reloadQueued, 1) == 0)
+        {
+            _ = ReloadLaterAsync();
+        }
+    }
+
+    private async Task ReloadLaterAsync()
+    {
+        await Task.Delay(ReloadDelay);
+        Volatile.Write(ref reloadQueued, 0);
+        await DispatchAsync(LeafBatch.ReloadOnly);
+    }
 
     private async Task DispatchAsync(LeafBatch batch)
     {
@@ -130,9 +193,9 @@ public sealed class LeafFeed(
         {
             await dispatch(() => ReceiveAsync(batch));
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // The circuit is gone or the list failed to apply: it stays as it is, and the next load reads fresh.
+            logger?.LogWarning(ex, "A live list of wall {WallId} could not apply a feed batch; it stays as it is until its next load", Scope.WallId);
         }
     }
 

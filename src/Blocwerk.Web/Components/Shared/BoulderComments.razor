@@ -1,5 +1,6 @@
 @inject ICommentService CommentService
 @inject WallCacheState Cache
+@inject ILogger<BoulderComments> Logger
 @using Blocwerk.Web.State.Live
 @implements IDisposable
 
@@ -66,25 +67,28 @@
 
     [Parameter] public bool IsAnonymous { get; set; }
 
+    /// <summary>Set on a share-link route. Share routes are not live, as everywhere else on the boulder page.</summary>
+    [Parameter] public string? ShareToken { get; set; }
+
     private CommentList _list = new();
     private LeafFeed? _feed;
-    private (Guid Wall, Guid Boulder)? _key;
+    private (Guid Wall, Guid Boulder, string? Token)? _key;
     private bool _loaded;
     private string? _error;
 
     protected override async Task OnParametersSetAsync()
     {
-        if (_key == (WallId, BoulderId))
+        if (_key == (WallId, BoulderId, ShareToken))
         {
             return;
         }
 
-        _key = (WallId, BoulderId);
+        _key = (WallId, BoulderId, ShareToken);
         _list = new CommentList();
         _feed?.Dispose();
-        _feed = WallId == Guid.Empty
+        _feed = WallId == Guid.Empty || !string.IsNullOrEmpty(ShareToken)
             ? null
-            : LeafFeed.Open(Cache, new LeafScope(WallId, BoulderId, CommentList.Kinds), InvokeAsync, ApplyAsync);
+            : LeafFeed.Open(Cache, new LeafScope(WallId, BoulderId, CommentList.Kinds), InvokeAsync, ApplyAsync, logger: Logger);
         await LoadAsync();
     }
 
@@ -102,7 +106,7 @@
     // On the dispatcher. A patch that cannot be applied from the event alone re-reads.
     private async Task ApplyAsync(LeafBatch batch)
     {
-        if (_list.Apply(batch))
+        if (_list.Apply(batch, signedIn: CurrentUserId != Guid.Empty))
         {
             await LoadAsync();
             return;
@@ -119,9 +123,20 @@
     {
         try
         {
-            var read = () => CommentService.GetCommentsAsync(BoulderId, 0, _list.Window);
-            var (items, total) = _feed is { } feed ? await feed.LoadAsync(read) : await read();
-            _list.Load(items, total, _feed?.Viewer);
+            // The result goes into the list it was read for, and only if this is still the latest load of that list.
+            var list = _list;
+            var boulderId = BoulderId;
+            var read = () => CommentService.GetCommentsAsync(boulderId, 0, list.Window);
+            void Commit((List<BoulderComment> Items, int Total) page) => list.Load(page.Items, page.Total, _feed?.Viewer);
+            if (_feed is { } feed)
+            {
+                await feed.LoadAsync(read, Commit);
+            }
+            else
+            {
+                Commit(await read());
+            }
+
             _error = null;
         }
         catch (Exception ex)

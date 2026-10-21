@@ -1,5 +1,6 @@
 @inject IActivityLogService ActivityLogService
 @inject WallCacheState Cache
+@inject ILogger<BoulderActivityFeed> Logger
 @using Blocwerk.Contracts.Feed
 @using Blocwerk.Web.State.Live
 @implements IDisposable
@@ -66,20 +67,22 @@
     private int _total;
     private int _page;
     private LeafFeed? _feed;
-    private (Guid Wall, Guid Boulder)? _key;
+    private (Guid Wall, Guid Boulder, string? Token)? _key;
 
     protected override Task OnParametersSetAsync()
     {
-        if (_key == (WallId, BoulderId))
+        if (_key == (WallId, BoulderId, ShareToken))
         {
             return Task.CompletedTask;
         }
 
-        _key = (WallId, BoulderId);
+        _key = (WallId, BoulderId, ShareToken);
         _feed?.Dispose();
-        _feed = WallId == Guid.Empty
+
+        // Share routes are not live, as everywhere else on the boulder page.
+        _feed = WallId == Guid.Empty || !string.IsNullOrEmpty(ShareToken)
             ? null
-            : LeafFeed.Open(Cache, new LeafScope(WallId, BoulderId, Kinds), InvokeAsync, ApplyAsync, () => _page > 0);
+            : LeafFeed.Open(Cache, new LeafScope(WallId, BoulderId, Kinds), InvokeAsync, ApplyAsync, () => _page > 0, Logger);
         return LoadAsync(0);
     }
 
@@ -102,12 +105,17 @@
     {
         try
         {
-            var (items, total) = _feed is { } feed && page == 0
-                ? await feed.LoadAsync(() => LoadPageAsync(page))
-                : await LoadPageAsync(page);
-            _page = page;
-            _items = items;
-            _total = total;
+            // Every page goes through the feed, so only the latest load lands, and going back to the newest page
+            // releases what was held while an older one was open.
+            void Commit((List<ActivityLogEntry> Items, int TotalCount) read) => (_page, _items, _total) = (page, read.Items, read.TotalCount);
+            if (_feed is { } feed)
+            {
+                await feed.LoadAsync(() => LoadPageAsync(page), Commit);
+            }
+            else
+            {
+                Commit(await LoadPageAsync(page));
+            }
         }
         catch (Exception)
         {

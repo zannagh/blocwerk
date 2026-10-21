@@ -278,9 +278,11 @@
             // normal query — otherwise a stray/stale ShareToken in the URL (enhanced-nav retains
             // route params, and the last-page cookie can restore a /shared/ link) silently routes
             // the owner through the anonymous filter and returns an empty list.
-            _videos = await ReadTaggedAsync(() => IsAnonymous && !string.IsNullOrEmpty(ShareToken)
-                ? VideoService.GetVideosByShareTokenAsync(BoulderId, ShareToken)
-                : LoadForSignedInViewerAsync());
+            await ReadTaggedAsync(
+                () => IsAnonymous && !string.IsNullOrEmpty(ShareToken)
+                    ? VideoService.GetVideosByShareTokenAsync(BoulderId, ShareToken)
+                    : LoadForSignedInViewerAsync(),
+                videos => _videos = videos);
             _error = null;
         }
         catch (Exception ex)

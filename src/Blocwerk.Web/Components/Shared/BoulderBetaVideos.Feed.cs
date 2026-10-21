@@ -2,6 +2,7 @@
 // See License in the project root for license information.
 
 using Blocwerk.Contracts.Feed;
+using Blocwerk.Core.Services;
 using Blocwerk.Web.State;
 using Blocwerk.Web.State.Live;
 using Microsoft.AspNetCore.Components;
@@ -25,7 +26,7 @@ public partial class BoulderBetaVideos
     private static readonly IReadOnlySet<string> NoUpserts = new HashSet<string>();
 
     private LeafFeed? _feed;
-    private (Guid Wall, Guid Boulder)? _feedKey;
+    private (Guid Wall, Guid Boulder, string? Token)? _feedKey;
 
     /// <summary>The boulder's wall, whose feed keeps the strip live.</summary>
     [Parameter]
@@ -36,21 +37,33 @@ public partial class BoulderBetaVideos
 
     protected override Task OnParametersSetAsync()
     {
-        if (_feedKey == (WallId, BoulderId))
+        if (_feedKey == (WallId, BoulderId, ShareToken))
         {
             return Task.CompletedTask;
         }
 
-        _feedKey = (WallId, BoulderId);
+        _feedKey = (WallId, BoulderId, ShareToken);
         _feed?.Dispose();
-        _feed = WallId == Guid.Empty
+
+        // Share routes are not live, as everywhere else on the boulder page.
+        _feed = WallId == Guid.Empty || !string.IsNullOrEmpty(ShareToken)
             ? null
-            : LeafFeed.Open(Cache, new LeafScope(WallId, BoulderId, Kinds), InvokeAsync, ApplyFeedAsync);
+            : LeafFeed.Open(Cache, new LeafScope(WallId, BoulderId, Kinds), InvokeAsync, ApplyFeedAsync, logger: Logger);
         return LoadAsync();
     }
 
-    private Task<List<Core.Services.BetaVideoInfo>> ReadTaggedAsync(Func<Task<List<Core.Services.BetaVideoInfo>>> read) =>
-        _feed is { } feed ? feed.LoadAsync(read) : read();
+    // Through the feed only the latest load of this boulder lands; one of a boulder the page left is dropped.
+    private async Task ReadTaggedAsync(Func<Task<List<BetaVideoInfo>>> read, Action<List<BetaVideoInfo>> commit)
+    {
+        if (_feed is { } feed)
+        {
+            await feed.LoadAsync(read, commit);
+        }
+        else
+        {
+            commit(await read());
+        }
+    }
 
     // On the dispatcher.
     private async Task ApplyFeedAsync(LeafBatch batch)

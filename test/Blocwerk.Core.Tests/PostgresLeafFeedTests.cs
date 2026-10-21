@@ -23,7 +23,8 @@ public sealed class PostgresLeafFeedTests
         var boulder = await f.AddBoulderAsync("First", f.Holds[0]);
         var batches = new List<LeafBatch>();
         var list = new CommentList();
-        using var feed = LeafFeed.Open(f.Cache, new LeafScope(f.WallId, boulder.Id, CommentList.Kinds), run => run(), b =>
+        var dispatcher = new ExclusiveDispatcher();
+        using var feed = LeafFeed.Open(f.Cache, new LeafScope(f.WallId, boulder.Id, CommentList.Kinds), dispatcher.Run, b =>
         {
             lock (batches)
             {
@@ -36,7 +37,7 @@ public sealed class PostgresLeafFeedTests
 
         var early = await CommentRowAsync(f, boulder, "seen by the load");
         await f.CommitAsync(false, early);
-        await feed.LoadAsync(() => Task.FromResult(0));
+        await dispatcher.Run(() => feed.LoadAsync(() => Task.FromResult(0), _ => { }));
         f.Signal.Wake(new Core.Feed.FeedWake(f.WallId, early.TxId));
 
         var later = await CommentRowAsync(f, boulder, "live");

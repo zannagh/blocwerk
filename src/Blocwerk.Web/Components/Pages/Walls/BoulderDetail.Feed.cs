@@ -22,16 +22,23 @@ public partial class BoulderDetail
 
     private LeafFeed? _statsFeed;
 
-    // Share-link views read through the uncached share path and are not live, as with Cache.Changed.
+    // Share-link views read through the uncached share path and are not live, as with Cache.Changed. Held, besides the
+    // inline forms, until the page's own load has a boulder: it releases them after (ReleaseStats).
     private void OpenStatsFeed()
     {
         _statsFeed?.Dispose();
         _statsFeed = string.IsNullOrEmpty(ShareToken)
-            ? LeafFeed.Open(Cache, new LeafScope(WallId, BoulderId, StatsKinds), InvokeAsync, ApplyStatsAsync, () => _editMeta || _showGradeForm)
+            ? LeafFeed.Open(
+                Cache,
+                new LeafScope(WallId, BoulderId, StatsKinds),
+                InvokeAsync,
+                ApplyStatsAsync,
+                () => _editMeta || _showGradeForm || _boulder is null,
+                Logger)
             : null;
     }
 
-    // Called on the dispatcher when the last inline form closed: applies what arrived while it was open.
+    // Called on the dispatcher when the last inline form closed, or the page's load finished: applies what was held.
     private void ReleaseStats() => _ = ReleaseStatsAsync();
 
     private async Task ReleaseStatsAsync()
@@ -46,53 +53,79 @@ public partial class BoulderDetail
         }
     }
 
-    // On the dispatcher.
+    // On the dispatcher. Through the feed, so the counts land only for the boulder they were read for (a same-template
+    // navigation disposes this feed and drops them), and only the latest refresh lands.
     private async Task ApplyStatsAsync(LeafBatch batch)
     {
-        if (_boulder is null)
+        if (_statsFeed is not { } feed)
         {
-            return; // the page's own load is still running and reads the newest counts
+            return;
         }
 
         var kinds = batch.Reload ? StatsKinds : batch.Events.Select(e => e.Kind).ToHashSet();
+        var boulderId = BoulderId;
+        var anonymous = _isAnonymous;
         try
         {
-            await RefreshStatsAsync(kinds);
+            await feed.LoadAsync(() => ReadStatsAsync(boulderId, anonymous, kinds), stats =>
+            {
+                if (BoulderId == boulderId && _boulder?.Id == boulderId)
+                {
+                    ApplyStats(stats);
+                }
+            });
         }
         catch (Exception ex)
         {
-            Logger.LogDebug(ex, "A live stats refresh of boulder {BoulderId} failed; the counts stay as they are", BoulderId);
+            Logger.LogDebug(ex, "A live stats refresh of boulder {BoulderId} failed; the counts stay as they are", boulderId);
         }
 
         StateHasChanged();
     }
 
-    private async Task RefreshStatsAsync(IReadOnlySet<string> kinds)
+    private async Task<BoulderStatsRead> ReadStatsAsync(Guid boulderId, bool anonymous, IReadOnlySet<string> kinds)
     {
+        var read = new BoulderStatsRead();
         if (kinds.Contains(FeedKinds.BoulderStats))
         {
-            _activeProposal = await BoulderService.GetActiveProposalAsync(BoulderId);
+            read.ProposalRead = true;
+            read.Proposal = await BoulderService.GetActiveProposalAsync(boulderId);
         }
 
-        if (_isAnonymous)
+        if (anonymous)
         {
-            return;
+            return read;
         }
 
         if (kinds.Contains(FeedKinds.TickMine))
         {
-            _attempts = await AttemptService.GetAttemptsForBoulderAsync(BoulderId);
-            _summary = await AttemptService.GetBoulderSummaryForUserAsync(BoulderId);
+            read.Attempts = await AttemptService.GetAttemptsForBoulderAsync(boulderId);
+            read.Summary = await AttemptService.GetBoulderSummaryForUserAsync(boulderId);
         }
 
         if (kinds.Contains(FeedKinds.BoulderStats) || kinds.Contains(FeedKinds.RatingMine))
         {
-            _rating = await FeedbackService.GetRatingAsync(BoulderId);
+            read.Rating = await FeedbackService.GetRatingAsync(boulderId);
         }
 
         if (kinds.Contains(FeedKinds.FavoriteChanged))
         {
-            _isFavorite = await FeedbackService.IsFavoritedAsync(BoulderId);
+            read.Favorite = await FeedbackService.IsFavoritedAsync(boulderId);
         }
+
+        return read;
+    }
+
+    private void ApplyStats(BoulderStatsRead read)
+    {
+        if (read.ProposalRead)
+        {
+            _activeProposal = read.Proposal;
+        }
+
+        _attempts = read.Attempts ?? _attempts;
+        _summary = read.Summary ?? _summary;
+        _rating = read.Rating ?? _rating;
+        _isFavorite = read.Favorite ?? _isFavorite;
     }
 }

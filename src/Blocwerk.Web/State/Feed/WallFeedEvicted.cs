@@ -19,4 +19,23 @@ public sealed record WallFeedEvicted(bool Wall, IReadOnlyCollection<Guid> Boulde
     public bool Any => Wall || Boulders.Count > 0;
 
     public static WallFeedEvicted Whole(bool any) => any ? new(true, []) : None;
+
+    /// <summary>Calls <paramref name="report"/> with each in-flight boulder that turned out to be of the event's wall.</summary>
+    public static void WhenLoaded(IEnumerable<Task<Guid?>> inFlight, Action<Guid> report)
+    {
+        foreach (var load in inFlight)
+        {
+            _ = load.ContinueWith(
+                t =>
+                {
+                    if (t.Result is { } id)
+                    {
+                        report(id);
+                    }
+                },
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnRanToCompletion,
+                TaskScheduler.Default);
+        }
+    }
 }

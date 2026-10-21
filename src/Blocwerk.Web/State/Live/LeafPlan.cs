@@ -11,11 +11,12 @@ namespace Blocwerk.Web.State.Live;
 /// envelope does not carry. A profile change is listed apart: only a list that shows that person re-reads.
 /// </summary>
 /// <param name="Upserts">Events to insert or replace by id, from their hydrated content.</param>
-/// <param name="Removals">Ids to drop.</param>
+/// <param name="Removals">Ids to drop: deleted or tombstoned.</param>
+/// <param name="Deletions">The removals whose last event is an explicit delete (the item existed and is gone now).</param>
 /// <param name="Profiles">Users whose name or avatar changed.</param>
 /// <param name="Reload">True when the list must re-read.</param>
 public sealed record LeafPlan(
-    IReadOnlyList<FeedEnvelope> Upserts, IReadOnlySet<Guid> Removals, IReadOnlySet<Guid> Profiles, bool Reload)
+    IReadOnlyList<FeedEnvelope> Upserts, IReadOnlySet<Guid> Removals, IReadOnlySet<Guid> Deletions, IReadOnlySet<Guid> Profiles, bool Reload)
 {
     /// <summary>
     /// The plan of <paramref name="batch"/>. A <paramref name="upsert"/> kind with hydrated content patches, and becomes a
@@ -43,8 +44,9 @@ public sealed record LeafPlan(
         }
 
         var removals = last.Where(p => p.Value.Tombstone || remove.Contains(p.Value.Kind)).Select(p => p.Key).ToHashSet();
+        var deletions = last.Where(p => remove.Contains(p.Value.Kind)).Select(p => p.Key).ToHashSet();
         var upserts = last.Values.Where(e => !removals.Contains(e.EntityId!.Value)).ToList();
-        return new LeafPlan(upserts, removals, profiles, reload);
+        return new LeafPlan(upserts, removals, deletions, profiles, reload);
     }
 
     private static void AddId(HashSet<Guid> ids, Guid? id)

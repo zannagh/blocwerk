@@ -54,18 +54,23 @@ public sealed class CommentList
         }
     }
 
-    /// <summary>Patches the rows; true when the list must re-read instead (a reload, or a changed byline it shows).</summary>
-    public bool Apply(LeafBatch batch)
+    /// <summary>
+    /// Patches the rows; true when the list must re-read instead: a reload, a changed byline it shows, or (with
+    /// <paramref name="signedIn"/>) a new comment whose author id the feed withheld from this viewer (a kiosk acting as a
+    /// member, a share viewer), since only the query can tell whether it is the viewer's own and may be deleted here.
+    /// </summary>
+    public bool Apply(LeafBatch batch, bool signedIn = false)
     {
         var plan = LeafPlan.Of(batch, UpsertKinds, RemoveKinds);
-        if (plan.Reload || rows.Any(r => r.OwnerId is { } owner && plan.Profiles.Contains(owner)))
+        if (plan.Reload || rows.Any(r => r.OwnerId is { } owner && plan.Profiles.Contains(owner))
+            || (signedIn && plan.Upserts.Any(e => !e.Tombstone && e.Actor?.Id is null && rows.All(r => r.Id != e.EntityId))))
         {
             return true;
         }
 
         foreach (var id in plan.Removals)
         {
-            Drop(id);
+            Remove(id, plan.Deletions.Contains(id));
         }
 
         foreach (var e in plan.Upserts)
@@ -77,6 +82,15 @@ public sealed class CommentList
         }
 
         return false;
+    }
+
+    // A deleted comment beyond a partial window is not shown, but it still counted.
+    private void Remove(Guid id, bool deleted)
+    {
+        if (rows.RemoveAll(r => r.Id == id) > 0 || (deleted && HasMore))
+        {
+            Total--;
+        }
     }
 
     private void Upsert(CommentRow row)

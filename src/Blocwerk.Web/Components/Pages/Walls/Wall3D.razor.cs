@@ -3,6 +3,7 @@
 
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Geometry.View3D;
+using Blocwerk.Web.State.Live;
 using Microsoft.AspNetCore.Components;
 
 namespace Blocwerk.Web.Components.Pages.Walls;
@@ -78,15 +79,17 @@ public partial class Wall3D
 
     /// <summary>
     /// Builds the view for the current wall; a build that returns after the page moved on to another wall
-    /// (or boulder) is dropped, so a slow build of the previous one never replaces the current one.
+    /// (or boulder) is dropped, so a slow build of the previous one never replaces the current one. With
+    /// <paramref name="keepSameModel"/> (a live rebuild) a view of the same active model keeps the mounted stage.
     /// </summary>
-    private async Task ReloadAsync()
+    private async Task ReloadAsync(bool keepSameModel = false)
     {
         var key = Key;
         try
         {
-            var built = await BuildTaggedAsync(() => ViewService.BuildAsync(key.Wall, key.Boulder, key.Token));
-            if (_loaded != key)
+            Wall3DViewResult? built = null;
+            await BuildTaggedAsync(() => ViewService.BuildAsync(key.Wall, key.Boulder, key.Token), r => built = r);
+            if (built is null || _loaded != key || (keepSameModel && Wall3DViewIdentity.SameModel(_result, built)))
             {
                 return;
             }

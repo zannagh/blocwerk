@@ -3,6 +3,7 @@
 
 using Blocwerk.Contracts.Feed;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Services;
 using Blocwerk.Web.State;
 using Blocwerk.Web.State.Live;
 using Microsoft.AspNetCore.Components;
@@ -22,23 +23,30 @@ public partial class WallGalleryPanel
     private static readonly IReadOnlySet<string> NoUpserts = new HashSet<string>();
 
     private LeafFeed? feed;
-    private Guid? feedWall;
+    private (Guid Wall, string? Token)? feedKey;
 
     [Inject]
     private WallCacheState Cache { get; set; } = null!;
+
+    [Inject]
+    private ILogger<WallGalleryPanel> Logger { get; set; } = null!;
 
     public void Dispose() => feed?.Dispose();
 
     protected override async Task OnParametersSetAsync()
     {
-        if (feedWall == WallId)
+        if (feedKey == (WallId, ShareToken))
         {
             return;
         }
 
-        feedWall = WallId;
+        feedKey = (WallId, ShareToken);
         feed?.Dispose();
-        feed = LeafFeed.Open(Cache, new LeafScope(WallId, null, Kinds), InvokeAsync, ApplyFeedAsync, () => Selected is not null || busy);
+
+        // Share routes are not live, as on the wall and boulder pages.
+        feed = string.IsNullOrEmpty(ShareToken)
+            ? LeafFeed.Open(Cache, new LeafScope(WallId, null, Kinds), InvokeAsync, ApplyFeedAsync, () => Selected is not null || busy, Logger)
+            : null;
         items.Clear();
         selectedIndex = -1;
         await LoadMore();
@@ -50,7 +58,7 @@ public partial class WallGalleryPanel
         var plan = LeafPlan.Of(batch, NoUpserts, Removals);
         if (plan.Reload)
         {
-            await ReloadRangeAsync();
+            await ReadRangeAsync(Math.Max(items.Count, PageSize));
         }
         else
         {
@@ -60,21 +68,33 @@ public partial class WallGalleryPanel
         StateHasChanged();
     }
 
-    private async Task ReloadRangeAsync()
+    // The newest take items; through the feed only the latest read lands, and none of a wall the panel left.
+    private async Task ReadRangeAsync(int take)
     {
-        var take = Math.Max(items.Count, PageSize);
-        try
+        var wallId = WallId;
+        void Commit(IReadOnlyList<WallGalleryItem> read)
         {
-            var read = await (feed?.LoadAsync(() => ImageService.GetGalleryAsync(WallId, 0, take))
-                ?? ImageService.GetGalleryAsync(WallId, 0, take));
             items.Clear();
             items.AddRange(read);
             hasMore = read.Count == take;
             error = null;
         }
+
+        try
+        {
+            if (feed is { } f)
+            {
+                await f.LoadAsync(() => ImageService.GetGalleryAsync(wallId, 0, take), Commit);
+            }
+            else
+            {
+                Commit(await ImageService.GetGalleryAsync(wallId, 0, take));
+            }
+        }
         catch (Exception ex)
         {
             error = $"Could not load the gallery: {ex.Message}";
+            hasMore = false;
         }
     }
 }

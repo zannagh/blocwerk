@@ -9,6 +9,7 @@
 @using Blocwerk.Web.State.Live
 @inject IWall3DViewService ViewService
 @inject WallCacheState Cache
+@inject ILogger<Wall3DInline> Logger
 @implements IDisposable
 
 <div class="wall3d-inline">
@@ -77,44 +78,54 @@
 
         loaded = key;
         result = null;
-        if (feed?.Scope.WallId != WallId)
-        {
-            feed?.Dispose();
-            feed = LeafFeed.Open(Cache, new LeafScope(WallId, null, Kinds), InvokeAsync, RebuildAsync);
-        }
+        feed?.Dispose();
 
-        await BuildAsync(key);
+        // Share routes are not live, as on the host pages.
+        feed = string.IsNullOrEmpty(ShareToken)
+            ? LeafFeed.Open(Cache, new LeafScope(WallId, null, Kinds), InvokeAsync, RebuildAsync, logger: Logger)
+            : null;
+        await BuildAsync(key, keepSameModel: false);
     }
 
     public void Dispose() => feed?.Dispose();
 
-    private async Task BuildAsync((Guid Wall, Guid? Boulder, string? Token) key)
+    // Through the feed, an event during the build is held and applied after it, and only the latest build lands.
+    private async Task BuildAsync((Guid Wall, Guid? Boulder, string? Token) key, bool keepSameModel)
     {
-        Wall3DViewResult built;
+        void Commit(Wall3DViewResult built)
+        {
+            // A slow build of the previous wall must not replace the current one's; the same model keeps the stage.
+            if (loaded == key && !(keepSameModel && Wall3DViewIdentity.SameModel(result, built)))
+            {
+                result = built;
+            }
+        }
+
         try
         {
-            built = await (feed?.LoadAsync(Build) ?? Build());
+            if (feed is { } f)
+            {
+                await f.LoadAsync(Build, Commit);
+            }
+            else
+            {
+                Commit(await Build());
+            }
         }
         catch (UnauthorizedAccessException)
         {
-            built = new Wall3DViewResult(Wall3DViewStatus.NotFound);
-        }
-
-        // A slow build of the previous wall must not replace the current one's.
-        if (loaded == key)
-        {
-            result = built;
+            Commit(new Wall3DViewResult(Wall3DViewStatus.NotFound));
         }
 
         Task<Wall3DViewResult> Build() => ViewService.BuildAsync(key.Wall, key.Boulder, key.Token);
     }
 
-    // On the dispatcher: the active model changed, so the view is rebuilt (the stage remounts on the new instance).
+    // On the dispatcher: the active model may have changed, so the view is rebuilt; a new model remounts the stage.
     private async Task RebuildAsync(LeafBatch batch)
     {
-        if (loaded is { } key && result is not null)
+        if (loaded is { } key && Cache.ViewerOf(WallId) is not null)
         {
-            await BuildAsync(key);
+            await BuildAsync(key, keepSameModel: true);
             StateHasChanged();
         }
     }

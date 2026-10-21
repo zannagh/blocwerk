@@ -2,6 +2,7 @@
 // See License in the project root for license information.
 
 using Blocwerk.Contracts.Feed;
+using Blocwerk.Core.Feed;
 
 namespace Blocwerk.Web.State.Live;
 
@@ -22,4 +23,19 @@ public sealed record LeafBatch(IReadOnlyList<FeedEnvelope> Events, bool Reload)
     /// it), so nothing that arrives meanwhile is lost.
     /// </summary>
     public LeafBatch Merge(LeafBatch later) => new([.. Events, .. later.Events], Reload || later.Reload);
+
+    /// <summary>
+    /// What is left of this batch after a load at <paramref name="at"/>: the events above it (an event of another epoch, or
+    /// with a cursor that does not parse, stays), and the reload. Null when nothing is left.
+    /// </summary>
+    public LeafBatch? After(FeedCursor? at)
+    {
+        if (at is not { } cursor)
+        {
+            return this;
+        }
+
+        var left = Events.Where(e => !FeedCursor.TryParse(e.Cursor, out var c) || c.Epoch != cursor.Epoch || c.Position > cursor.Position).ToList();
+        return left.Count == 0 && !Reload ? null : new LeafBatch(left, Reload);
+    }
 }

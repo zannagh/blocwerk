@@ -37,6 +37,7 @@ public sealed class WallCacheState : IDisposable
     private readonly IDomainChangeNotifier notifier;
     private readonly WallFeedLink link;
     private readonly WallCacheStore store = new();
+    private readonly WallFeedWatches watches = new();
     private readonly object myWallsGate = new();
     private Task<List<Wall>>? myWalls;
     private int disposed;
@@ -93,6 +94,9 @@ public sealed class WallCacheState : IDisposable
     /// <summary>Subscribes to the wall's feed if the circuit may see it (a live list on a page that caches nothing).</summary>
     public Task EnsureFeedAsync(Guid wallId) => link.EnsureAsync(wallId);
 
+    /// <summary>Keeps the wall's subscription while a live list follows it, even when nothing of it is cached.</summary>
+    public IDisposable Watch(Guid wallId) => watches.Watch(wallId);
+
     public Task<List<Wall>> GetMyWallsAsync()
     {
         lock (myWallsGate)
@@ -136,7 +140,7 @@ public sealed class WallCacheState : IDisposable
     // do not pile up over a long session. A wall on screen reloads straight after an eviction, so it keeps its slot.
     private Task SubscribeAsync(Guid wallId)
     {
-        link.Release(w => w == wallId || store.HasAnyOf(w));
+        link.Release(w => w == wallId || store.HasAnyOf(w) || watches.Has(w));
         return link.EnsureAsync(wallId);
     }
 
@@ -233,29 +237,17 @@ public sealed class WallCacheState : IDisposable
         RaiseFeedChange(delivery.WallId, wall, changedBoulders);
         if (!wall)
         {
-            ReportWhenLoaded(delivery.WallId, inFlight, changedBoulders);
+            // Reported once the load tells its wall, and only for this wall.
+            WallFeedEvicted.WhenLoaded(inFlight, id =>
+            {
+                if (!changedBoulders.Contains(id) && Volatile.Read(ref disposed) == 0)
+                {
+                    Changed?.Invoke(new DomainChange(DomainChangeScope.Boulder, delivery.WallId, id));
+                }
+            });
         }
 
         FeedDelivered?.Invoke(delivery);
-    }
-
-    // A boulder evicted while its load was in flight is reported once the load tells its wall, and only for this wall.
-    private void ReportWhenLoaded(Guid wallId, List<Task<Guid?>> inFlight, HashSet<Guid> reported)
-    {
-        foreach (var load in inFlight)
-        {
-            _ = load.ContinueWith(
-                t =>
-                {
-                    if (t.Result is { } id && !reported.Contains(id) && Volatile.Read(ref disposed) == 0)
-                    {
-                        Changed?.Invoke(new DomainChange(DomainChangeScope.Boulder, wallId, id));
-                    }
-                },
-                CancellationToken.None,
-                TaskContinuationOptions.OnlyOnRanToCompletion,
-                TaskScheduler.Default);
-        }
     }
 
     private void RaiseFeedChange(Guid wallId, bool wall, IEnumerable<Guid> changedBoulders)

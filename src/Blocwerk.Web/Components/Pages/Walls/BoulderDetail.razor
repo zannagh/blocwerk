@@ -467,7 +467,7 @@ else
         <div class="boulder-wide-col">
         <BoulderActivityFeed @ref="_activityFeed" BoulderId="BoulderId" WallId="WallId" ShareToken="@ShareToken" />
 
-        <BoulderComments @ref="_commentList" BoulderId="BoulderId" WallId="WallId"
+        <BoulderComments @ref="_commentList" BoulderId="BoulderId" WallId="WallId" ShareToken="@ShareToken"
                          CurrentUserId="_currentUserId" IsAnonymous="_isAnonymous" />
 
         @if (!_isAnonymous && _attempts.Count > 0)
@@ -1140,6 +1140,7 @@ else
         StateHasChanged();
 
         await LoadForCurrentRouteAsync();
+        ReleaseStats();
     }
 
     private async Task LoadForCurrentRouteAsync()

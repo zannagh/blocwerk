@@ -19,6 +19,7 @@ public sealed class LeafFeedTests : IAsyncLifetime
 {
     private readonly CircuitCacheFixture f = new();
     private readonly List<LeafBatch> applied = [];
+    private readonly ExclusiveDispatcher dispatcher = new();
     private Boulder boulder = null!;
 
     public async Task InitializeAsync()
@@ -86,7 +87,7 @@ public sealed class LeafFeedTests : IAsyncLifetime
         Assert.Empty(Batches());
 
         held = false;
-        await feed.ReleaseAsync();
+        await dispatcher.Run(feed.ReleaseAsync);
 
         var batch = Assert.Single(Batches());
         Assert.Equal([FeedKinds.CommentAdded, FeedKinds.CommentDeleted], batch.Events.Select(e => e.Kind));
@@ -98,7 +99,7 @@ public sealed class LeafFeedTests : IAsyncLifetime
         using var feed = Open(CommentList.Kinds);
         var early = Row(FeedKinds.CommentAdded, Guid.NewGuid());
         await f.CommitAsync(false, early);
-        await feed.LoadAsync(() => Task.FromResult(0));
+        await dispatcher.Run(() => feed.LoadAsync(() => Task.FromResult(0), _ => { }));
 
         var later = Row(FeedKinds.CommentAdded, Guid.NewGuid());
         await DeliverAsync(later);
@@ -146,8 +147,72 @@ public sealed class LeafFeedTests : IAsyncLifetime
         Assert.Single(Batches());
     }
 
+    [Fact]
+    public async Task AnEventDuringAnInFlightLoad_IsHeld_AndAppliedAfterIt()
+    {
+        using var feed = Open(CommentList.Kinds);
+        var during = Row(FeedKinds.CommentAdded, Guid.NewGuid());
+        var committed = new List<int>();
+
+        await dispatcher.Run(() => feed.LoadAsync(
+            async () =>
+            {
+                // Committed after the load's cursor: the query may or may not see it, so it must not be lost.
+                var before = f.Deliveries.Count;
+                await f.CommitAsync(true, during);
+                await CircuitCacheFixture.WaitUntilAsync(() => f.Deliveries.Count > before);
+                await Task.Delay(50);
+                Assert.Empty(Batches()); // held while the load runs
+                return 1;
+            },
+            committed.Add));
+
+        Assert.Equal([1], committed);
+        Assert.Equal([during.EntityId], Assert.Single(Batches()).Events.Select(e => e.EntityId));
+    }
+
+    [Fact]
+    public async Task OfOverlappingLoads_OnlyTheLatestCommits()
+    {
+        using var feed = Open(CommentList.Kinds);
+        var slow = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var landed = new List<string>();
+
+        var first = dispatcher.Run(() => feed.LoadAsync(() => slow.Task, landed.Add));
+        var second = await dispatcher.Run(() => feed.LoadAsync(() => Task.FromResult("new"), landed.Add));
+        slow.SetResult("old");
+
+        Assert.True(second);
+        Assert.False(await first);
+        Assert.Equal(["new"], landed);
+    }
+
+    [Fact]
+    public async Task ResyncsWithinTheDelay_ReloadOnce()
+    {
+        using var feed = Open(CommentList.Kinds);
+        await f.CommitAsync(true, f.Row(FeedKinds.WallResync));
+        await f.CommitAsync(true, f.Row(FeedKinds.WallResync));
+        await CircuitCacheFixture.WaitUntilAsync(() => Batches().Count == 1);
+        await Task.Delay(LeafFeed.ReloadDelay * 2);
+
+        Assert.True(Assert.Single(Batches()).Reload);
+    }
+
+    [Fact]
+    public async Task AWatchedWall_KeepsItsSubscription_WhenAnotherWallSubscribes()
+    {
+        using var feed = Open(CommentList.Kinds);
+        await dispatcher.Run(() => feed.LoadAsync(() => Task.FromResult(0), _ => { }));
+        Assert.NotNull(f.Link.ViewerOf(f.WallId));
+
+        await f.Cache.GetWallAsync(Guid.NewGuid()); // subscribes another wall and releases idle ones
+
+        Assert.NotNull(f.Link.ViewerOf(f.WallId));
+    }
+
     private LeafFeed Open(IReadOnlySet<string> kinds, Func<bool>? held = null, bool wallLevel = false) =>
-        LeafFeed.Open(f.Cache, new LeafScope(f.WallId, wallLevel ? null : boulder.Id, kinds), run => run(), Record, held);
+        LeafFeed.Open(f.Cache, new LeafScope(f.WallId, wallLevel ? null : boulder.Id, kinds), dispatcher.Run, Record, held);
 
     private Task Record(LeafBatch batch)
     {

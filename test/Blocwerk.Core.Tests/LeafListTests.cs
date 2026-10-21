@@ -5,6 +5,7 @@ using System.Text.Json;
 using Blocwerk.Contracts.Feed;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Feed;
+using Blocwerk.Core.Geometry.View3D;
 using Blocwerk.Core.Helpers;
 using Blocwerk.Web.State.Live;
 
@@ -146,6 +147,53 @@ public sealed class LeafListTests
         Assert.True(merged.Reload);
         Assert.Equal([FeedKinds.CommentAdded, FeedKinds.CommentDeleted], merged.Events.Select(e => e.Kind));
     }
+
+    [Fact]
+    public void ADeletedCommentBeyondAPartialWindow_StillCountsDown()
+    {
+        var list = new CommentList();
+        list.Load([Comment("shown", -1)], total: 5, viewer: null);
+
+        Assert.False(list.Apply(new LeafBatch([Env(FeedKinds.CommentDeleted, seq: 1)], false)));
+        Assert.False(list.Apply(new LeafBatch([Env(FeedKinds.CommentAdded, seq: 2) with { Tombstone = true }], false)));
+
+        Assert.Equal(4, list.Total); // the tombstone of a comment never counted changes nothing
+    }
+
+    [Fact]
+    public void ACommentWhoseAuthorIdIsWithheld_ReReadsForASignedInViewer_SoItsOwnerCanDeleteIt()
+    {
+        var withheld = Added("from a kiosk", 0) with { Actor = new FeedActor(null, "Sam", false, null) };
+
+        Assert.True(Loaded().Apply(new LeafBatch([withheld], false), signedIn: true));
+        Assert.False(Loaded().Apply(new LeafBatch([withheld], false), signedIn: false));
+        Assert.False(Loaded().Apply(new LeafBatch([Added("member", 0)], false), signedIn: true));
+    }
+
+    [Fact]
+    public void WhatALoadAlreadyHas_IsDroppedFromAHeldBatch_AReloadStays()
+    {
+        var batch = new LeafBatch([Env(FeedKinds.CommentAdded, seq: 4), Env(FeedKinds.CommentAdded, seq: 9)], false);
+
+        Assert.Equal(["9"], batch.After(Cursor(5))!.Events.Select(e => e.Cursor.Split('.')[2]));
+        Assert.Null(batch.After(Cursor(9)));
+        Assert.True(LeafBatch.ReloadOnly.After(Cursor(9))!.Reload);
+    }
+
+    [Fact]
+    public void A3DRebuild_KeepsTheStage_OnlyForTheSameModel()
+    {
+        var mounted = View("a");
+
+        Assert.True(Wall3DViewIdentity.SameModel(mounted, View("a")));
+        Assert.False(Wall3DViewIdentity.SameModel(mounted, View("b")));
+        Assert.False(Wall3DViewIdentity.SameModel(mounted, new Wall3DViewResult(Wall3DViewStatus.NoGeometry)));
+        Assert.False(Wall3DViewIdentity.SameModel(null, View("a")));
+        Assert.False(Wall3DViewIdentity.SameModel(View(null), View(null)));
+    }
+
+    private static Wall3DViewResult View(string? model) =>
+        new(Wall3DViewStatus.Ok, "W", new Wall3DView { WallId = Wall, ModelKey = model });
 
     private static CommentList Loaded(params (string Text, int Minutes)[] comments)
     {
