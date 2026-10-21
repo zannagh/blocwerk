@@ -26,26 +26,50 @@ internal static class ContentHashStamp
 {
     private static readonly ILookup<Type, ContentHashColumn> ByEntity = ContentHashColumn.InDatabase.ToLookup(c => c.Entity);
 
+    /// <summary>
+    /// Stamps every added or modified row of a stamped type. Detects changes on those rows only (auto-detect is off for
+    /// the scan and restored after), so a save of thousands of holds is not scanned twice: the save's own detection runs
+    /// once afterwards. A new row that only that detection finds (reachable through a navigation alone) is stamped by
+    /// <see cref="StampDiscovered"/>.
+    /// </summary>
     public static void Apply(ChangeTracker tracker, ContentHashCarries carries)
     {
+        var auto = tracker.AutoDetectChangesEnabled;
+        tracker.AutoDetectChangesEnabled = false;
         try
         {
-            foreach (var entry in tracker.Entries())
+            foreach (var entry in tracker.Entries().Where(e => ByEntity.Contains(e.Metadata.ClrType)).ToList())
             {
-                if (entry.State is not (EntityState.Added or EntityState.Modified))
-                {
-                    continue;
-                }
-
-                foreach (var column in ByEntity[entry.Metadata.ClrType])
-                {
-                    Stamp(entry, column, carries);
-                }
+                entry.DetectChanges();
+                StampEntry(entry, carries);
             }
         }
         finally
         {
+            tracker.AutoDetectChangesEnabled = auto;
             carries.Clear();
+        }
+    }
+
+    /// <summary>Stamps a row that started being tracked during a save (found through a navigation); none other.</summary>
+    public static void StampDiscovered(EntityTrackedEventArgs e, ContentHashCarries carries)
+    {
+        if (!e.FromQuery && e.Entry.State == EntityState.Added && ByEntity.Contains(e.Entry.Metadata.ClrType))
+        {
+            StampEntry(e.Entry, carries);
+        }
+    }
+
+    private static void StampEntry(EntityEntry entry, ContentHashCarries carries)
+    {
+        if (entry.State is not (EntityState.Added or EntityState.Modified))
+        {
+            return;
+        }
+
+        foreach (var column in ByEntity[entry.Metadata.ClrType])
+        {
+            Stamp(entry, column, carries);
         }
     }
 
