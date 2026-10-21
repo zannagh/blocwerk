@@ -713,9 +713,24 @@ else
         await SyncEditGuardAsync();
     }
 
+    /// <summary>
+    /// The live feed says this circuit lost its access to the wall (the member was removed): leave instead of
+    /// showing what it may no longer read. Share-link viewers read through the uncached path and are not affected.
+    /// </summary>
+    private void OnAccessLost(Guid wallId)
+    {
+        if (wallId != WallId || !string.IsNullOrEmpty(ShareToken))
+        {
+            return;
+        }
+
+        _ = InvokeAsync(() => Navigation.NavigateTo("/walls"));
+    }
+
     public async ValueTask DisposeAsync()
     {
         Cache.Changed -= OnCacheChanged;
+        Cache.AccessLost -= OnAccessLost;
         _editLease?.Dispose();
 
         if (_editGuardActive)
@@ -1102,6 +1117,7 @@ else
     protected override void OnInitialized()
     {
         Cache.Changed += OnCacheChanged;
+        Cache.AccessLost += OnAccessLost;
     }
 
     // Reloads whenever the route names a different boulder (or wall, or share token). On a retained

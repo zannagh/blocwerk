@@ -16,6 +16,7 @@ using Blocwerk.Web.Endpoints;
 using Blocwerk.Web.HealthChecks;
 using Blocwerk.Web.Maintenance;
 using Blocwerk.Web.State;
+using Blocwerk.Web.State.Feed;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Components.Server.Circuits;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -181,8 +182,11 @@ public static class Program
         // one source of truth and the "Session" indicator lights up the moment a session starts.
         builder.Services.AddScoped<SessionState>();
 
-        // Per-circuit cache of wall/boulder aggregate reads, invalidated across circuits by the
-        // domain-change notifier so revisits are served from memory and edits live-refresh.
+        // Per-circuit cache of wall/boulder aggregate reads, so revisits are served from memory and edits
+        // live-refresh. Invalidated by the live feed (scoped per event, through the circuit's hub
+        // subscriptions) and, until PR 1.8, by the in-process domain-change notifier.
+        builder.Services.AddScoped<ICircuitFeedViewer, CircuitFeedViewer>();
+        builder.Services.AddScoped<WallFeedLink>();
         builder.Services.AddScoped<WallCacheState>();
 
         // Per-circuit answer to "may this session drive the global keyboard shortcuts?". Scoped so

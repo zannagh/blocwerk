@@ -5,8 +5,8 @@ namespace Blocwerk.Core.Feed;
 
 /// <summary>
 /// The server-side fan-out of the feed (design §5.2): one background loop that reads each subscribed wall below the
-/// horizon, hydrates the rows and hands them to the wall's subscribers. Nothing subscribes in PR 1.2a; circuits move onto
-/// it in 1.4.
+/// horizon, hydrates the rows and hands them to the wall's subscribers. Blazor circuits subscribe through their
+/// <c>WallCacheState</c> (PR 1.4).
 /// </summary>
 public interface IWallFeedHub
 {
@@ -21,4 +21,11 @@ public interface IWallFeedHub
     /// </para>
     /// </summary>
     Task<FeedSubscription> SubscribeAsync(Guid wallId, FeedViewer viewer, IFeedSubscriber subscriber, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Observes every wake the hub drains, of any wall: "this wall committed new rows", with no rows and no viewer. For
+    /// process-wide caches keyed by wall (<c>MatchedSessionCache</c>). The observer runs on the hub's loop, so it must not
+    /// block; one that throws is logged. A wake arrives shortly after the commit, not inside it.
+    /// </summary>
+    IDisposable ObserveWakes(Action<Guid> observer);
 }

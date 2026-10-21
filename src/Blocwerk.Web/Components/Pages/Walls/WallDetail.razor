@@ -1303,6 +1303,7 @@ else
     protected override async Task OnInitializedAsync()
     {
         Cache.Changed += OnCacheChanged;
+        Cache.AccessLost += OnAccessLost;
         await LoadCurrentWall();
     }
 
@@ -1485,9 +1486,24 @@ else
         });
     }
 
+    /// <summary>
+    /// The live feed says this circuit lost its access to the wall (the member was removed): leave instead of
+    /// showing what it may no longer read. Share-link viewers read through the uncached path and are not affected.
+    /// </summary>
+    private void OnAccessLost(Guid wallId)
+    {
+        if (wallId != WallId || !string.IsNullOrEmpty(ShareToken))
+        {
+            return;
+        }
+
+        _ = InvokeAsync(() => Navigation.NavigateTo("/walls"));
+    }
+
     public void Dispose()
     {
         Cache.Changed -= OnCacheChanged;
+        Cache.AccessLost -= OnAccessLost;
         _editLease?.Dispose();
 
         if (_editGuardActive)

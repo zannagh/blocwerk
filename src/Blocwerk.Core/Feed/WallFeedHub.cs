@@ -25,6 +25,7 @@ public sealed class WallFeedHub : BackgroundService, IWallFeedHub
     private readonly Func<BlocwerkDbContext> createContext;
     private readonly ILogger<WallFeedHub> logger;
     private readonly ConcurrentDictionary<Guid, FeedHubWall> walls = new();
+    private readonly FeedWakeObservers wakeObservers;
 
     /// <summary>Gets how many walls the hub tracks (walls with a subscriber, or one on its way).</summary>
     internal int TrackedWallCount => walls.Count;
@@ -35,7 +36,10 @@ public sealed class WallFeedHub : BackgroundService, IWallFeedHub
         this.signal = signal;
         this.createContext = createContext;
         this.logger = logger;
+        wakeObservers = new FeedWakeObservers(logger);
     }
+
+    public IDisposable ObserveWakes(Action<Guid> observer) => wakeObservers.Add(observer);
 
     public async Task<FeedSubscription> SubscribeAsync(
         Guid wallId, FeedViewer viewer, IFeedSubscriber subscriber, CancellationToken cancellationToken = default)
@@ -185,11 +189,12 @@ public sealed class WallFeedHub : BackgroundService, IWallFeedHub
     }
 
     // Wakes of walls nobody subscribed to are dropped: there is nobody to deliver to, and a later subscriber starts at
-    // the horizon anyway.
+    // the horizon anyway. The wake observers hear every wake.
     private void DrainWakes(DateTimeOffset now)
     {
         while (signal.Wakes.TryRead(out var wake))
         {
+            wakeObservers.Notify(wake.WallId);
             if (walls.TryGetValue(wake.WallId, out var wall))
             {
                 wall.Wake(wake.TxId, now);
