@@ -254,11 +254,15 @@ if [ "$latest" = "none" ] || [ "$running" = "$latest" ]; then
   exit 0
 fi
 
+# A newer image arriving mid-deferral does NOT reset the deferral count: the count belongs to the
+# current busy stretch, not to one image. Resetting it here meant that while merges kept landing
+# (27/30, new image, 1/30 on 2026-10-21) MAX_DEFER could never fire behind a stuck lease. The
+# count is cleared only below, once the app is idle or the deploy goes ahead, and above, when the
+# running container is already the latest image.
 last_target=$(cat "$TARGET" 2>/dev/null || echo none)
 if [ "$last_target" != "$latest" ]; then
   echo "new image $latest (was $running)"
   printf "%s" "$latest" > "$TARGET"
-  rm -f "$STATE"
 fi
 
 # Busy gate: avoid recreating the container out from under someone mid-edit. Reached over the
