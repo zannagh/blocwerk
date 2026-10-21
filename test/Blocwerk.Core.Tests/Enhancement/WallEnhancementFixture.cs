@@ -140,7 +140,10 @@ public sealed class WallEnhancementFixture : IDisposable
         steps,
         journal,
         NullLogger<WallEnhancementJob>.Instance,
-        editPresence: Presence) { EditorPoll = TimeSpan.FromMilliseconds(20), StepTimeout = StepTimeout, HeartbeatInterval = HeartbeatInterval };
+        editPresence: Presence) { EditorPoll = TimeSpan.FromMilliseconds(20), StepTimeout = StepTimeout, HeartbeatInterval = HeartbeatInterval, StopGrace = StopGrace };
+
+    /// <summary>How long a stopped step gets to return.</summary>
+    public TimeSpan StopGrace { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>The job's heartbeat interval.</summary>
     public TimeSpan HeartbeatInterval { get; set; } = TimeSpan.FromMinutes(1);

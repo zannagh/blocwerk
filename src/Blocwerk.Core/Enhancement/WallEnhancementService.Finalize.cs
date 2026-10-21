@@ -22,6 +22,11 @@ public sealed partial class WallEnhancementService
         await using (db)
         {
             var run = await ReviewRunAsync(db, wallId, ct);
+            if (WallEnhancementRunner.IsLive(run.Id))
+            {
+                throw new UserFacingException(WallEnhancementGuard.StillStopping);
+            }
+
             var counts = await CountsAsync(db, run.Id, ct);
             var pending = counts.Sum(c => c.Pending);
             if (pending > 0)

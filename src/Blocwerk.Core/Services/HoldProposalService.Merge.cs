@@ -107,7 +107,12 @@ public sealed partial class HoldProposalService
         var mapped = candidates.Select(c => (c, PanelPointMapper.Map(c.World, c.SizeMm, frames[c.FacetId], c.FacetId, inputs.Panels))).ToList();
         var added = Merge(pending, mapped, wallId, modelId);
         db.HoldProposals.AddRange(added);
-        await HoldProposalRetirement.ApplyAsync(db, HoldProposalRetirement.Plan([.. pending, .. added], candidates, modelId), ct);
+        var modelFrames = await db.WallGeometryModels.AsNoTracking()
+            .Where(m => m.WallId == wallId)
+            .Select(m => new { m.Id, m.FrameSource, m.PlanRevision })
+            .ToDictionaryAsync(m => m.Id, m => (m.FrameSource, m.PlanRevision), ct);
+        bool SharesFrame(Guid other) => modelFrames.TryGetValue(other, out var o) && modelFrames.TryGetValue(modelId, out var n) && HoldProposalRetirement.SameFrame(o, n);
+        await HoldProposalRetirement.ApplyAsync(db, HoldProposalRetirement.Plan([.. pending, .. added], modelId, SharesFrame), ct);
         await db.SaveChangesAsync(ct);
         return mapped.Count(m => m.Item2 is not null);
     }

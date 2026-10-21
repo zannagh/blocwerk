@@ -21,6 +21,10 @@ public static class WallEnhancementGuard
     public const string EnhancementRunning =
         "This wall is being enhanced right now. Wait until its steps are done (the review can wait), or cancel the run in the wall's settings, then update the wall.";
 
+    /// <summary>The message while a cancelled or timed-out step of the wall's enhancement is still working.</summary>
+    public const string StillStopping =
+        "The wall's enhancement was stopped, but its last step is still finishing its work. Try again in a moment.";
+
     /// <summary>A Running run whose heartbeat is older than this has a job that is gone or hung: it no longer blocks the wall.</summary>
     public static readonly TimeSpan StaleAfter = TimeSpan.FromMinutes(10);
 
@@ -41,9 +45,15 @@ public static class WallEnhancementGuard
     /// <returns>When it may go on.</returns>
     public static async Task EnsureNotRunningAsync(BlocwerkDbContext db, Guid wallId, CancellationToken ct = default)
     {
-        var running = await db.WallEnhancementRuns.Where(r => r.WallId == wallId && r.Status == WallEnhancementStatus.Running).ToListAsync(ct);
+        var runs = await db.WallEnhancementRuns.Where(r => r.WallId == wallId).ToListAsync(ct);
+        if (runs.Any(r => r.Status != WallEnhancementStatus.Running && WallEnhancementRunner.IsLive(r.Id)))
+        {
+            throw new UserFacingException(StillStopping);
+        }
+
+        var running = runs.Where(r => r.Status == WallEnhancementStatus.Running).ToList();
         var now = DateTimeOffset.UtcNow;
-        if (running.Any(r => !IsStale(r, now)))
+        if (running.Any(r => !IsStale(r, now) || WallEnhancementRunner.IsLive(r.Id)))
         {
             throw new UserFacingException(EnhancementRunning);
         }

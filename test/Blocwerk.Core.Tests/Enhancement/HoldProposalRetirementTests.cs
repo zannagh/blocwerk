@@ -5,7 +5,6 @@
 using Blocwerk.Core.Enhancement;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
-using Blocwerk.Core.Geometry.Proposals;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 
@@ -18,19 +17,58 @@ public sealed class HoldProposalRetirementTests
     private static readonly Guid OldModel = Guid.NewGuid();
 
     [Fact]
-    public void ANewPass_RetiresTheOldModelsUnseenProposals_KeepsTheSeenOnes_AndTheStrongerOfTwoOnOneSpot()
+    public void ANewPass_KeepsTheStrongerOfTwoOnOneSpot_AndRetiresEveryPendingProposalOfASupersededModel()
     {
         var oldUnseen = Pending(500, 0, OldModel);
-        var oldSeen = Pending(0, 0, OldModel);
+        var oldOnASpot = Pending(3, 0, OldModel);
         var strong = Pending(1000, 0, Model, views: 5);
         var weak = Pending(1010, 0, Model, views: 2);
-        var alone = Pending(2000, 0, Model);
+        var fresh = Pending(0, 0, Model);
 
-        var plan = HoldProposalRetirement.Plan([oldUnseen, oldSeen, strong, weak, alone], [Candidate(3, 0), Candidate(1000, 0), Candidate(2000, 0)], Model);
+        var plan = HoldProposalRetirement.Plan([oldUnseen, oldOnASpot, strong, weak, fresh], Model, _ => false);
 
-        Assert.Equal(2, plan.Count);
-        Assert.Contains(plan, r => r.Retired == oldUnseen && r.Survivor is null);
+        Assert.Equal(3, plan.Count);
         Assert.Contains(plan, r => r.Retired == weak && r.Survivor == strong);
+        Assert.Contains(plan, r => r.Retired == oldUnseen && r.Survivor is null);
+        Assert.Contains(plan, r => r.Retired == oldOnASpot && r.Survivor is null);
+    }
+
+    [Fact]
+    public void AnOldModelsProposal_OnTheSpotOfANewRow_IsRetiredWithThatRowAsSurvivor_WhenTheModelsShareAFrame()
+    {
+        var old = Pending(3, 0, OldModel);
+        var fresh = Pending(0, 0, Model);
+
+        var shared = HoldProposalRetirement.Plan([old, fresh], Model, m => m == OldModel);
+        var separate = HoldProposalRetirement.Plan([old, fresh], Model, _ => false);
+
+        Assert.Equal(fresh, Assert.Single(shared).Survivor);
+        Assert.Null(Assert.Single(separate).Survivor);
+        Assert.True(HoldProposalRetirement.SameFrame((WallGeometryFrameSource.Markers, 3), (WallGeometryFrameSource.Markers, 3)));
+        Assert.False(HoldProposalRetirement.SameFrame((WallGeometryFrameSource.Markers, 3), (WallGeometryFrameSource.Markers, 4)));
+        Assert.False(HoldProposalRetirement.SameFrame((WallGeometryFrameSource.Features, null), (WallGeometryFrameSource.Features, null)));
+        Assert.False(HoldProposalRetirement.SameFrame((WallGeometryFrameSource.Markers, null), (WallGeometryFrameSource.Markers, null)));
+    }
+
+    [Fact]
+    public async Task RePointing_NeverLeavesTwoOpenReviewItemsOnOneProposal()
+    {
+        using var f = await WallEnhancementFixture.CreateAsync();
+        var (twin, survivor) = (Pending(1010, 0, Model), Pending(1000, 0, Model, views: 5));
+        await using var db = f.Harness.CreateContext();
+        var run = new WallEnhancementRun { WallId = f.WallId, Generation = 0, CreatedByUserId = f.Harness.Owner.Id, Status = WallEnhancementStatus.Review };
+        db.WallEnhancementRuns.Add(run);
+        db.WallEnhancementItems.AddRange(
+            new WallEnhancementItem { RunId = run.Id, Kind = WallEnhancementItemKind.NewHold, ReferenceId = twin.Id },
+            new WallEnhancementItem { RunId = run.Id, Kind = WallEnhancementItemKind.NewHold, ReferenceId = survivor.Id });
+        await db.SaveChangesAsync();
+
+        await HoldProposalRetirement.ApplyAsync(db, [new ProposalRetirement(twin, survivor)], default);
+        await db.SaveChangesAsync();
+
+        var items = await db.WallEnhancementItems.AsNoTracking().ToListAsync();
+        Assert.Single(items, i => i.Decision == WallEnhancementDecision.Pending && i.ReferenceId == survivor.Id);
+        Assert.Contains("already in this review", items.Single(i => i.Decision == WallEnhancementDecision.Skipped).Note);
     }
 
     [Fact]
@@ -80,7 +118,4 @@ public sealed class HoldProposalRetirementTests
         WallId = Guid.NewGuid(), GeometryModelId = model, FacetId = "f", BestPhoto = "p", X = x, Y = y, SizeMm = 40, Views = views,
         Status = HoldProposalStatus.Pending,
     };
-
-    private static HoldProposalCandidate Candidate(double x, double y) =>
-        new("f", 0, 0, 0, [x, y, 0], 40, 3, 0.9, 1, new CaptureDetection("p", 1, 1, 5, 0.9), []);
 }

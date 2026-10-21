@@ -41,9 +41,16 @@ public sealed partial class WallEnhancementJob(
 
     private readonly IReadOnlyList<IWallEnhancementStep> ordered = steps.OrderBy(s => s.Order).ToList();
     private readonly ConcurrentDictionary<Guid, WallEnhancementStepTracker> trackers = new();
+    private readonly ConcurrentDictionary<Guid, byte> cancelled = new();
 
     /// <summary>The watchdog: a step that runs longer is stopped and recorded as failed (then retried or discarded).</summary>
     public TimeSpan StepTimeout { get; init; } = TimeSpan.FromHours(4);
+
+    /// <summary>
+    /// How long a step that was timed out or cancelled gets to actually return. One that does not is left to finish in
+    /// the background (the run stays live, so nothing else writes the wall) and the run stops there.
+    /// </summary>
+    public TimeSpan StopGrace { get; init; } = TimeSpan.FromSeconds(30);
 
     /// <summary>How often the run's heartbeat is renewed (<see cref="WallEnhancementGuard.StaleAfter"/> is far longer).</summary>
     public TimeSpan HeartbeatInterval { get; init; } = TimeSpan.FromMinutes(1);
@@ -68,6 +75,7 @@ public sealed partial class WallEnhancementJob(
     public async Task RunAsync(Guid runId, CancellationToken shutdown, CancellationToken cancel = default)
     {
         using var either = CancellationTokenSource.CreateLinkedTokenSource(shutdown, cancel);
+        using var marking = cancel.Register(() => cancelled[runId] = 0);
         var heartbeat = HeartbeatAsync(runId, either.Token);
         try
         {
@@ -90,6 +98,7 @@ public sealed partial class WallEnhancementJob(
         {
             await either.CancelAsync();
             await heartbeat;
+            cancelled.TryRemove(runId, out _);
             if (trackers.TryRemove(runId, out var tracker))
             {
                 tracker.Clear();
@@ -107,13 +116,24 @@ public sealed partial class WallEnhancementJob(
 
         foreach (var step in ordered)
         {
-            var recorded = WallEnhancementStepRecord.Parse((await LoadAsync(runId, ct))?.StepsJson).FirstOrDefault(r => r.Key == step.Key);
+            // Cancelled, stopped or discarded from outside since the last step: nothing more runs.
+            if (await LoadAsync(runId, ct) is not { Status: WallEnhancementStatus.Running } current)
+            {
+                return;
+            }
+
+            var recorded = WallEnhancementStepRecord.Parse(current.StepsJson).FirstOrDefault(r => r.Key == step.Key);
             if (recorded?.IsFinished == true)
             {
                 continue;
             }
 
             await WaitForEditorsAsync(run.WallId, ct);
+            if (await LoadAsync(runId, ct) is not { Status: WallEnhancementStatus.Running })
+            {
+                return;
+            }
+
             if (!await RunOneAsync(run, step, recorded, ct))
             {
                 return;
@@ -179,18 +199,7 @@ public sealed partial class WallEnhancementJob(
                 return (null, WallEnhancementStepOutcomeKind.Failed, stale);
             }
 
-            using var watchdog = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            watchdog.CancelAfter(StepTimeout);
-            try
-            {
-                return await RunInBatchAsync(run, step, tracker, watchdog.Token);
-            }
-            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-            {
-                logger.LogWarning("Wall enhancement {RunId}: step {Step} ran longer than {Timeout} and was stopped", run.Id, step.Key, StepTimeout);
-                return (WallEnhancementStepOutcome.Done($"{step.Title} took longer than {StepTimeout.TotalHours:0.#} h and was stopped."),
-                    WallEnhancementStepOutcomeKind.Failed, null);
-            }
+            return await RunWatchedAsync(run, step, tracker, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

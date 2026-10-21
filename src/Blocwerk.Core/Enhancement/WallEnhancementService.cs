@@ -69,6 +69,11 @@ public sealed partial class WallEnhancementService(
                 throw new UserFacingException(blocked);
             }
 
+            if (run is not null && WallEnhancementRunner.IsLive(run.Id))
+            {
+                throw new UserFacingException(WallEnhancementGuard.StillStopping);
+            }
+
             run = run is null ? await CreateRunAsync(db, wallId, generation, userId, ct) : await ContinueAsync(db, run, ct);
             logger.LogInformation("Wall enhancement {RunId} of wall {WallId} generation {Generation} started by {UserId}", run.Id, wallId, generation, userId);
             runner.Launch(run.Id);

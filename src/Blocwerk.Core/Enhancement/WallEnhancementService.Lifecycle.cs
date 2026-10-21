@@ -58,18 +58,24 @@ public sealed partial class WallEnhancementService
                 throw new UserFacingException(blocked);
             }
 
-            if (runner.IsRunning(run.Id))
+            if (WallEnhancementRunner.IsLive(run.Id))
             {
-                throw new UserFacingException("The cancelled step is still finishing. Try again in a moment.");
+                throw new UserFacingException(WallEnhancementGuard.StillStopping);
             }
 
             var records = WallEnhancementStepRecord.Parse(run.StepsJson);
             var failed = records.FirstOrDefault(r => r.Key == stepKey && r.Outcome == WallEnhancementStepOutcomeKind.Failed)
                          ?? throw new UserFacingException("That step did not fail, so there is nothing to retry.");
 
-            // Unfinished again, with its first start and batches kept: what it wrote before failing still counts.
-            var again = failed with { Outcome = WallEnhancementStepOutcomeKind.Running, FinishedAt = null };
-            run.StepsJson = WallEnhancementStepRecord.Write(WallEnhancementStepRecord.With(records, again));
+            // Unfinished again, with its first start and batches kept: what it wrote before failing still counts. Steps a
+            // cancel stopped before they ran lose their record and run too: they never did anything to keep.
+            var reopened = records.Where(r => !r.NeverRan).ToList();
+            if (!failed.NeverRan)
+            {
+                reopened = WallEnhancementStepRecord.With(reopened, failed with { Outcome = WallEnhancementStepOutcomeKind.Running, FinishedAt = null });
+            }
+
+            run.StepsJson = WallEnhancementStepRecord.Write(reopened);
             run.Status = WallEnhancementStatus.Running;
             run.Error = null;
             run.UpdatedAt = DateTimeOffset.UtcNow;
@@ -97,9 +103,25 @@ public sealed partial class WallEnhancementService
                 });
             }
 
+            if (WallEnhancementRunner.IsLive(run.Id))
+            {
+                throw new UserFacingException(WallEnhancementGuard.StillStopping);
+            }
+
             var items = await db.WallEnhancementItems.Where(i => i.RunId == run.Id).ToListAsync(ct);
-            var (answersBack, answersKept) = await RevertAnswersAsync(wallId, items, ct);
-            var records = await RestoreRecordsAsync(wallId, items, ct);
+
+            // Three steps in their own contexts (the reverter opens its own transaction per batch), in an order that is safe
+            // to run again after a failure: a batch reverted before counts as reverted, a record restore is idempotent,
+            // an undo of a hold already back is skipped, and the run row goes last.
+            var reverted = await RevertAnswersAsync(wallId, items, ct);
+            var answersBack = reverted.Count;
+            var answersKept = items.Where(i => i is { Decision: WallEnhancementDecision.Accepted, ResultBatchId: not null })
+                .Select(i => i.ResultBatchId!.Value).Distinct().Count(id => !reverted.Contains(id));
+
+            // A record goes back only where the answer's write went back too: an added hold a setter edited since stays,
+            // and so does its proposal's "accepted" (re-offering it would add the hold twice).
+            var restorable = items.Where(i => i.ResultBatchId is not { } batch || reverted.Contains(batch)).ToList();
+            var records = await RestoreRecordsAsync(wallId, restorable, ct);
             var (undone, kept) = await UndoWrittenAsync(run, items, userId, ct);
 
             // The run row goes (its items with it): the generation counts as not enhanced, and the button works again.
@@ -112,16 +134,28 @@ public sealed partial class WallEnhancementService
         }
     }
 
-    /// <summary>Takes back what the answers wrote (merges, links, added holds, confirmed colours), newest first.</summary>
-    private async Task<(int Back, int Kept)> RevertAnswersAsync(Guid wallId, List<WallEnhancementItem> items, CancellationToken ct)
+    /// <summary>
+    /// Takes back what the answers wrote (merges, links, added holds, confirmed colours), newest first. Returns the batches
+    /// that are reverted now (including ones a previous, interrupted discard already reverted); the others were kept
+    /// because somebody changed their rows since.
+    /// </summary>
+    private async Task<HashSet<Guid>> RevertAnswersAsync(Guid wallId, List<WallEnhancementItem> items, CancellationToken ct)
     {
         var batches = items.Where(i => i is { Decision: WallEnhancementDecision.Accepted, ResultBatchId: not null })
             .OrderByDescending(i => i.DecidedAt)
             .Select(i => i.ResultBatchId!.Value)
             .Distinct()
             .ToList();
-        var (back, kept) = (0, 0);
-        foreach (var batchId in batches)
+        var reverted = new HashSet<Guid>();
+        await using (var db = await dbContextFactory.CreateDbContextAsync(ct))
+        {
+            reverted.UnionWith(await db.ChangeJournalBatches.AsNoTracking()
+                .Where(b => batches.Contains(b.Id) && b.Status == Enums.ChangeJournalStatus.Reverted)
+                .Select(b => b.Id)
+                .ToListAsync(ct));
+        }
+
+        foreach (var batchId in batches.Where(b => !reverted.Contains(b)))
         {
             ChangeJournalRevertResult result;
             using (await WallHoldWriteLock.AcquireAsync(wallId, ct: ct))
@@ -129,10 +163,13 @@ public sealed partial class WallEnhancementService
                 result = await reverter.RevertBatchAsync(batchId, force: false, ct);
             }
 
-            (back, kept) = result.Reverted ? (back + 1, kept) : (back, kept + 1);
+            if (result.Reverted)
+            {
+                reverted.Add(batchId);
+            }
         }
 
-        return (back, kept);
+        return reverted;
     }
 
     /// <summary>Undoes every hold the steps wrote that is not undone yet (only where nobody changed it since).</summary>

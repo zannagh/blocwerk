@@ -36,7 +36,7 @@ public sealed partial class WallCaptureProcessor
         }
 
         await SetStageAsync(captureId, WallCaptureStatus.Solving, 0.55, "Finding the holds in the photos", ct);
-        var detector = new InAppCaptureHoldDetector(holdDetection);
+        var detector = new InAppCaptureHoldDetector(holdDetection, settings);
         var watch = Stopwatch.StartNew();
         foreach (var photo in photos)
         {
