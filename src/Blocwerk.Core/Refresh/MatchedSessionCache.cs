@@ -7,6 +7,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using Blocwerk.Core.Data;
+using Blocwerk.Core.Feed;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 
@@ -32,16 +33,28 @@ public sealed class MatchedSessionCache
 
     /// <summary>Initializes a new instance of the <see cref="MatchedSessionCache"/> class.</summary>
     /// <param name="changes">
-    /// The app's change signal (every saved hold, panel or wall publishes its wall). With it, the expensive part of a
-    /// fingerprint (every hold of the wall) is read once per change and reused for <see cref="GeometryReuse"/>; without
-    /// it, it is read on every lookup.
+    /// The app's in-process change signal (every saved hold, panel or wall publishes its wall, synchronously at commit).
     /// </param>
-    public MatchedSessionCache(Services.IDomainChangeNotifier? changes = null)
+    /// <param name="feed">
+    /// The live feed's hub: every wake of a wall (a commit that wrote feed rows for it) also counts as a change. This is the
+    /// signal that stays when the domain-change notifier goes (PR 1.8). With either, the expensive part of a fingerprint
+    /// (every hold of the wall) is read once per change and reused for <see cref="GeometryReuse"/>; with neither, it is read
+    /// on every lookup.
+    /// </param>
+    public MatchedSessionCache(Services.IDomainChangeNotifier? changes = null, IWallFeedHub? feed = null)
     {
         if (changes is not null)
         {
             notified = true;
-            changes.Changed += change => versions.AddOrUpdate(change.WallId, 1, (_, v) => v + 1);
+            changes.Changed += change => Bump(change.WallId);
+        }
+
+        if (feed is not null)
+        {
+            notified = true;
+
+            // Never disposed: the cache is a singleton beside the hub, so the observation lives exactly as long.
+            _ = feed.ObserveWakes(Bump);
         }
     }
 
@@ -99,6 +112,8 @@ public sealed class MatchedSessionCache
         text.Append(await GeometryAsync(db, wallId));
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text.ToString())), 0, 16);
     }
+
+    private void Bump(Guid wallId) => versions.AddOrUpdate(wallId, 1, (_, v) => v + 1);
 
     /// <summary>The panels and holds part, reused while the wall published no change (and briefly, as a safety net).</summary>
     private async Task<string> GeometryAsync(BlocwerkDbContext db, Guid wallId)

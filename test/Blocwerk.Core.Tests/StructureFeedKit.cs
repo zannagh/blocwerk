@@ -14,7 +14,7 @@ namespace Blocwerk.Core.Tests;
 internal static class StructureFeedKit
 {
     // Every field a structure payload may carry: ids, flags, enums, generation numbers, and an operation label.
-    private static readonly HashSet<string> AllowedFields = ["sv", "generation", "panelId", "isDraft", "role", "reason"];
+    private static readonly HashSet<string> AllowedFields = ["sv", "generation", "panelId", "isDraft", "role", "reason", "ownerChanged"];
 
     public static FeedInterceptor Interceptor(IFeedSignal? signal = null) =>
         new(new FeedMapperRegistry(FeedMappers.Create()), signal ?? new RecordingFeedSignal(), NullLogger<FeedInterceptor>.Instance);
