@@ -87,6 +87,17 @@ test('mobile browsers never background-fill 3D, whatever the connection; desktop
     assert.equal(Plan.isMobile(nav('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/18.0 Safari/605.1.15')), false);
     assert.equal(Plan.isMobile(nav('Mozilla/5.0 (X11; Linux x86_64) Chrome/130.0', { userAgentData: { mobile: true } })), true);
     assert.equal(Plan.isMobile(nav('Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0', { userAgentData: { mobile: false } })), false);
+    const coarse = q => ({ matches: q === '(pointer: coarse)' });
+    const fine = () => ({ matches: false });
+    const desktopLinux = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/130.0 Safari/537.36';
+    assert.equal(Plan.isMobile(nav(desktopLinux, { userAgentData: { mobile: false, platform: 'Android' } })), true, 'Chrome desktop-site mode on an Android tablet');
+    assert.equal(Plan.isMobile(nav('Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0', { maxTouchPoints: 5 }), coarse), true, 'Firefox Android in desktop mode');
+    assert.equal(Plan.isMobile(nav(desktopLinux, { maxTouchPoints: 0 }), coarse), false, 'a desktop Linux has no touch');
+    assert.equal(Plan.isMobile(nav(desktopLinux, { maxTouchPoints: 5 }), fine), false, 'a Linux touch screen with a mouse');
+    assert.equal(Plan.isMobile(nav('Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) Chrome/130.0', { maxTouchPoints: 10 }), coarse), false, 'a Chromebook');
+    const windows = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0 Safari/537.36';
+    assert.equal(Plan.isMobile(nav(windows, { maxTouchPoints: 10, userAgentData: { mobile: false, platform: 'Windows' } }), coarse), false, 'a Windows touch laptop');
+    assert.equal(Plan.isMobile(nav(windows, { maxTouchPoints: 0 }), fine), false, 'a Windows desktop');
 });
 
 test('the gallery\'s room starts after the core this plan adds, and each rendition is charged on its own', () => {

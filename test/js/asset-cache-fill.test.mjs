@@ -196,6 +196,7 @@ test('a worker serving another partition than the page\'s gets no fill, and the 
     const page = memberPage({ swPartition: USER_B });
     await page.boot();
     assert.equal(page.assetFetches().length, 0);
+    assert.ok(page.posted.some(m => m.type === 'sw-refresh-partition' && m.proto === 1), 'the worker is asked to look again');
     assert.ok(page.timers.some(t => t.ms === 30000 && !t.done));
     const same = memberPage({ swPartition: USER_A });
     await same.boot();

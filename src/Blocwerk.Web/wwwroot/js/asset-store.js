@@ -56,6 +56,18 @@ window.bwAssetStore = (function () {
         });
     }
 
+    /** Asks the worker to look its label up again (`sw-refresh-partition`); an older worker ignores it. */
+    function refreshWorkerPartition(win) {
+        try {
+            const controller = win.navigator.serviceWorker && win.navigator.serviceWorker.controller;
+            if (controller) {
+                controller.postMessage({ proto: PROTO, type: 'sw-refresh-partition' });
+            }
+        } catch (e) {
+            /* no worker to ask */
+        }
+    }
+
     /** The label the worker serves right now (`sw-info`'s `partition`), or null when it does not say. */
     function workerPartition(win) {
         return askWorker(win).then(data => (data && typeof data.partition === 'string' ? data.partition : null));
@@ -146,5 +158,5 @@ window.bwAssetStore = (function () {
         }
     }
 
-    return { PROTO, SW_INFO_TIMEOUT_MS, VERIFY_WAIT_MS, probeWorker, workerPartition, verify, reconcile, loadSummary };
+    return { PROTO, SW_INFO_TIMEOUT_MS, VERIFY_WAIT_MS, probeWorker, workerPartition, refreshWorkerPartition, verify, reconcile, loadSummary };
 })();

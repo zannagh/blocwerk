@@ -45,18 +45,35 @@ window.bwAssetPlan = (function () {
 
     /**
      * A phone or tablet, iOS or Android (the 3D background-fill rule; 2.8's data-volume warning reads it too):
-     * `navigator.userAgentData.mobile` where the browser has it, else iPhone/iPad/iPod/Android in the UA, or iPadOS,
-     * which reports itself as a Mac but has touch points.
+     *   - `navigator.userAgentData`: `mobile`, or `platform` 'Android' (an Android tablet in Chrome's desktop-site mode
+     *     reports mobile false);
+     *   - iPhone/iPad/iPod/Android in the UA, or iPadOS, which reports itself as a Mac but has touch points;
+     *   - a Linux UA that is not ChromeOS, with touch points and a coarse pointer: Android in a desktop-site mode
+     *     (Firefox's, or Chrome's without userAgentData). A desktop Linux has no touch; a Windows touch laptop is not
+     *     Linux.
+     * `matchMedia` is the window's (optional; without it the last rule never applies).
      */
-    function isMobile(nav) {
+    function isMobile(nav, matchMedia) {
         if (!nav) {
             return false;
         }
-        if (nav.userAgentData && typeof nav.userAgentData.mobile === 'boolean' && nav.userAgentData.mobile) {
+        const data = nav.userAgentData;
+        if (data && (data.mobile === true || data.platform === 'Android')) {
             return true;
         }
         const ua = nav.userAgent || '';
-        return /iPhone|iPad|iPod|Android/i.test(ua) || (/Macintosh/.test(ua) && nav.maxTouchPoints > 1);
+        if (/iPhone|iPad|iPod|Android/i.test(ua) || (/Macintosh/.test(ua) && nav.maxTouchPoints > 1)) {
+            return true;
+        }
+        return /Linux/.test(ua) && !/CrOS/.test(ua) && nav.maxTouchPoints > 0 && coarsePointer(matchMedia);
+    }
+
+    function coarsePointer(matchMedia) {
+        try {
+            return typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches === true;
+        } catch (e) {
+            return false;
+        }
     }
 
     /** What one rendition of an entry costs: the original at its size, a width at an estimate scaled from it. */

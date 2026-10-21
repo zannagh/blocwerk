@@ -59,6 +59,7 @@ export function loadPage(opts = {}) {
     const docListeners = {};
     const swListeners = [];
     const fetches = [];
+    const posted = [];
     const storage = new Map();
     const assigned = [];
     const events = [];
@@ -119,6 +120,7 @@ export function loadPage(opts = {}) {
     const swReply = opts.swReply === undefined ? 'v4' : opts.swReply;
     const controller = swReply === null ? null : {
         postMessage: (message, ports) => {
+            posted.push(message);
             if (swReply === 'none' || !message || message.type !== 'sw-info') {
                 return; // an old worker ignores sw-info
             }
@@ -194,7 +196,7 @@ export function loadPage(opts = {}) {
     };
 
     return {
-        win: sandbox, caches, fetches, timers, events, assigned, storage, worker,
+        win: sandbox, caches, fetches, posted, timers, events, assigned, storage, worker,
         cache: sandbox.bwAssetCache,
         ledger: () => sandbox.bwAssetLedger.open(),
         boot: async () => { await sandbox.bwAssetCache.boot(); await settle(); await sandbox.bwAssetCache.filled(); await settle(); },

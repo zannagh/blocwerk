@@ -142,3 +142,30 @@ test('unsure retries back off 30 s, 1, 2, 4 min, and the page stops filling afte
     Fill.resumeAfter(win, 'locked', () => {}, other);
     assert.equal(waits.at(-1), 30000);
 });
+
+test('3 fetches failing in a row while online end the run as flaky and give the failures back', async () => {
+    let down = true;
+    const fetched = [];
+    const r = runner({ online: () => true, fetch: async url => { fetched.push(url); if (down) { throw new TypeError('reset'); } return ok(); } });
+    const queue = tasks('/1', '/2', '/3', '/4', '/5', '/6');
+    assert.equal(await r.run(queue), 'flaky');
+    assert.equal(fetched.length, Fill.STREAK_LIMIT);
+    assert.equal(await r.run(queue), 'flaky');
+    assert.equal(await r.run(queue), 'flaky');
+    down = false;
+    const before = fetched.length;
+    assert.equal(await r.run(queue), 'done');
+    assert.deepEqual(fetched.slice(before), queue.map(t => t.url), 'three blips left no asset out of budget');
+});
+
+test('a flaky run retries on a backoff timer and never stops the page for good', () => {
+    const waits = [];
+    const win = { setTimeout: (fn, ms) => { waits.push(ms); return fn; }, document: { addEventListener() {} }, addEventListener() {} };
+    const holder = {};
+    for (let i = 0; i < 7; i++) {
+        holder.retry = null;
+        Fill.resumeAfter(win, 'flaky', () => {}, holder);
+    }
+    assert.deepEqual(waits, [30000, 60000, 120000, 240000, 480000, 900000, 900000]);
+    assert.notEqual(holder.stopped, true);
+});
