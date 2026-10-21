@@ -7,7 +7,18 @@
 @using Blocwerk.Web.Endpoints
 
 <article class="enhance-item @(Item.Decision == WallEnhancementDecision.Pending ? null : "is-answered")" aria-label="@Headline">
-    <img class="enhance-item-crop" src="@WallEnhancementCropEndpoint.Url(WallId, Item.Id)" alt="@Alt" loading="lazy" width="180" height="180" />
+    @if (Item.Kind == WallEnhancementItemKind.Link)
+    {
+        @* A link pair's holds sit on two panels: one picture per panel, so both sides can be judged. *@
+        <div class="enhance-item-crops">
+            <img class="enhance-item-crop" src="@WallEnhancementCropEndpoint.Url(WallId, Item.Id)" alt="The hold on one panel, outlined in yellow" loading="lazy" width="180" height="180" />
+            <img class="enhance-item-crop" src="@WallEnhancementCropEndpoint.Url(WallId, Item.Id, otherSide: true)" alt="The hold it may be on the other panel, outlined in yellow" loading="lazy" width="180" height="180" />
+        </div>
+    }
+    else
+    {
+        <img class="enhance-item-crop" src="@WallEnhancementCropEndpoint.Url(WallId, Item.Id)" alt="@Alt" loading="lazy" width="180" height="180" />
+    }
     <div class="enhance-item-body">
         <p class="enhance-item-title">@Headline</p>
         <p class="hint">@Where</p>
@@ -60,6 +71,7 @@
         WallEnhancementItemKind.Stack => "Yellow: this hold. Dashed: the hold it sits on.",
         WallEnhancementItemKind.Duplicate => "Yellow and dashed: the two holds. Merging keeps one; boulders move over to it.",
         WallEnhancementItemKind.NewHold => "Adding it puts a new hold on its panel.",
+        WallEnhancementItemKind.Link => "Yellow: the hold on each of the two panels.",
         _ => Item.X is { } x && Item.Y is { } y ? $"On its panel {PlainCopy.Position(x, y)}." : string.Empty,
     };
 
