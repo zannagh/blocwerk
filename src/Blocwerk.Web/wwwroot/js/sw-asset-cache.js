@@ -19,9 +19,15 @@
  *
  * OFFLINE. An unreachable lookup (no network, a 5xx such as the proxy's 502 during a deploy, a body that is not the
  * endpoint's JSON) falls back to the last label, kept in `bw-sw-state` so it survives the worker being stopped. The
- * cookie cannot change while the server is unreachable, so that is still the identity on the wire. A lookup that
- * hangs past ASSET_LOOKUP_TIMEOUT_MS is abandoned and that request goes network-only. Neither outcome is remembered
- * for the page, so its next asset asks again.
+ * cookie cannot change while the server is unreachable, so that is still the identity on the wire. That outcome is
+ * not remembered for the page, so its next asset asks again.
+ *
+ * SLOW LOOKUP. A page shares ONE in-flight lookup for all its requests. A request that has waited
+ * ASSET_LOOKUP_TIMEOUT_MS for it goes READ-ONLY on the last known label: a hit is served from that partition's cache,
+ * a miss goes to the network and is never stored. From then on the page's further requests answer read-only at once,
+ * without waiting, until the lookup settles (and is remembered) or fails. The lookup itself is aborted only after
+ * ASSET_LOOKUP_ABORT_MS. Reading only the last label's own cache is safe: a sign-out or switch wipes the old
+ * partition page-side (rule 1, the signed-out page), and nothing is written under a label not confirmed for the page.
  *
  * STORAGE REFUSED. Any error from the cache (QuotaExceededError, a full device, a private window) leaves that asset
  * network-only, and a refused open or put posts `asset-refused` to the page. The page always gets the network
@@ -36,6 +42,7 @@ const ASSET_STATE_CACHE = 'bw-sw-state';
 const ASSET_STATE_KEY = '/__bw/partition';
 const ASSET_MAX_CLIENTS = 64;
 const ASSET_LOOKUP_TIMEOUT_MS = 2500;
+const ASSET_LOOKUP_ABORT_MS = 30000;
 // PROTO (the message protocol version) is service-worker.js's, which imports this file after declaring it.
 
 const assetPartitions = {
@@ -81,7 +88,7 @@ function storePartition(label) {
 function lookupPartition() {
     const seq = ++assetPartitions.issued;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), ASSET_LOOKUP_TIMEOUT_MS);
+    const timer = setTimeout(() => controller.abort(), ASSET_LOOKUP_ABORT_MS);
     return fetch(ASSET_PARTITION_URL, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
         .then(readPartitionAnswer, () => undefined)
         .then(answer => {
@@ -132,25 +139,52 @@ function lastKnownPartition() {
     });
 }
 
-function partitionFor(clientId) {
-    if (!clientId) {
-        return Promise.resolve('none');
-    }
+// The page's entry: its one shared lookup, and once settled its label.
+function entryFor(clientId) {
     const byClient = assetPartitions.byClient;
-    let pending = byClient.get(clientId);
-    if (!pending) {
-        pending = lookupPartition().then(result => {
-            if (!result.settled && byClient.get(clientId) === pending) {
+    let entry = byClient.get(clientId);
+    if (!entry) {
+        entry = { label: null, slow: false };
+        entry.lookup = lookupPartition().then(result => {
+            if (result.settled) {
+                entry.label = result.label;
+            } else if (byClient.get(clientId) === entry) {
                 byClient.delete(clientId);
             }
-            return result.label;
+            return result;
         });
-        byClient.set(clientId, pending);
+        byClient.set(clientId, entry);
         if (byClient.size > ASSET_MAX_CLIENTS) {
             byClient.delete(byClient.keys().next().value);
         }
     }
-    return pending;
+    return entry;
+}
+
+// The page's label as `{ label, readOnly }`; see SLOW LOOKUP above for `readOnly`.
+function partitionFor(clientId) {
+    if (!clientId) {
+        return Promise.resolve({ label: 'none', readOnly: false });
+    }
+    const entry = entryFor(clientId);
+    if (entry.label !== null) {
+        return Promise.resolve({ label: entry.label, readOnly: false });
+    }
+    const readOnly = () => lastKnownPartition().then(label => ({ label, readOnly: true }));
+    if (entry.slow) {
+        return readOnly();
+    }
+    let timer;
+    const waited = new Promise(resolve => { timer = setTimeout(() => resolve(null), ASSET_LOOKUP_TIMEOUT_MS); });
+    return Promise.race([entry.lookup.then(result => ({ label: result.label, readOnly: false })), waited])
+        .then(answer => {
+            clearTimeout(timer);
+            if (answer !== null) {
+                return answer;
+            }
+            entry.slow = true;
+            return readOnly();
+        });
 }
 
 // `sw-refresh-partition` from a page that saw the worker serve another label than its own (sw-info's `partition`):
@@ -161,7 +195,7 @@ function refreshPartition(clientId) {
         return lookupPartition().then(result => result.label);
     }
     assetPartitions.byClient.delete(clientId);
-    return partitionFor(clientId);
+    return entryFor(clientId).lookup.then(result => result.label);
 }
 
 function assetCacheNames(partition) {
@@ -238,12 +272,13 @@ function fetchAndStoreAsset(event, route, key, partition) {
 
 // The fetch handler's entry point. Never rejects on a cache problem: only a failing network fetch reaches the page.
 function respondFromAssetCache(event, route) {
-    return partitionFor(event.clientId).then(partition => {
-        if (!isCachingPartition(partition) || partition !== assetPartitions.current) {
+    return partitionFor(event.clientId).then(({ label, readOnly }) => {
+        if (!isCachingPartition(label) || label !== assetPartitions.current) {
             return fetch(event.request);
         }
         const key = assetKey(route);
-        return matchAsset(partition, key)
-            .then(cached => cached || fetchAndStoreAsset(event, route, key, partition));
+        // Read-only (a slow lookup): a hit is served, a miss streams from the network and is not stored.
+        const miss = readOnly ? () => fetch(event.request, { cache: 'no-store' }) : () => fetchAndStoreAsset(event, route, key, label);
+        return matchAsset(label, key).then(cached => cached || miss());
     });
 }

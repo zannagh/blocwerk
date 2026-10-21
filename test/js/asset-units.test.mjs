@@ -11,8 +11,8 @@ const MB = 1024 * 1024;
 
 test('the ledger keeps walls and assets per partition and wipes all but one', async () => {
     const ledger = Ledger.memory();
-    await ledger.putWall({ partition: 'a', wallId: 'w1', entries: [] });
-    await ledger.putWall({ partition: 'b', wallId: 'w1', entries: [] });
+    await ledger.updateWall('a', 'w1', () => ({ partition: 'a', wallId: 'w1', entries: [] }));
+    await ledger.updateWall('b', 'w1', () => ({ partition: 'b', wallId: 'w1', entries: [] }));
     await ledger.putAsset({ partition: 'a', key: 'k1', sha: 'k1' });
     await ledger.putAsset({ partition: 'b', key: 'k1', sha: 'k1' });
     await ledger.setMeta({ activePartition: 'a' });
@@ -109,6 +109,35 @@ test('the gallery\'s room starts after the core this plan adds, and each renditi
     assert.deepEqual(plain(shas(coreCost + galleryCost)), ['a', 'g']);
     assert.deepEqual(plain(shas(coreCost + galleryCost - 1)), ['a'], 'core\'s planned bytes count, and the 640 is charged beside the original');
     assert.deepEqual(plain(shas(galleryCost)), ['a'], 'core alone would overshoot');
+});
+
+test('on a phone, a tablet or a metered connection the gallery fills its 640 only; desktop unmetered also the original', () => {
+    const walls = [wall('w', 1, [gallery(sha('g'), '2026-06-01T00:00:00+00:00')])];
+    const widths = more => plain(plan(walls, more).map(t => t.width));
+    assert.deepEqual(widths({ mobile: true }), [640]);
+    assert.deepEqual(widths({ metered: true }), [640]);
+    assert.deepEqual(widths({}), [640, null]);
+});
+
+test('a manifest round in flight keeps the "Save 3D offline" marks and docs written meanwhile', async () => {
+    const ledger = Ledger.memory();
+    let release;
+    const env = {
+        ledger, now: () => 1000, partition: () => 'p',
+        fetch: () => new Promise(resolve => { release = () => resolve(new Response(JSON.stringify({ assets: [{ sha: sha('a'), kind: 'panel', tier: 'core', bytes: 1 }], pending: 0 }), { status: 200, headers: { etag: 'W/"x"' } })); }),
+    };
+    await ledger.updateWall('p', 'w', () => ({ partition: 'p', wallId: 'w', entries: [], keepOffline: false, save3d: false, docs: [] }));
+    const round = win.bwAssetManifest.refresh(env, 'p', 'w', { token: null, member: true, opened: false, dropWall: async () => {} });
+    await new Promise(r => setTimeout(r, 0));
+    await ledger.updateWall('p', 'w', current => Object.assign(current, { keepOffline: true, save3d: true, docs: [{ sha: sha('d') }] }));
+    release();
+    assert.equal((await round).outcome, 'updated');
+    const row = await ledger.getWall('p', 'w');
+    assert.deepEqual(plain([row.keepOffline, row.save3d, row.docs.length, row.entries.length, row.etag]), [true, true, 1, 1, 'W/"x"']);
+});
+
+test('a manifest that stays pending is asked again after 60 s, 2 min, 5 min, then every 15 min', () => {
+    assert.deepEqual([1, 2, 3, 4, 9].map(n => win.bwAssetManifest.pendingDelayMs(n)), [60000, 120000, 300000, 900000, 900000]);
 });
 
 test('the fill takes one splat level (the smallest), none if the wall has one, and skips what is cached', () => {

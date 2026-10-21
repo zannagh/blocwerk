@@ -36,7 +36,7 @@ window.bwAssetCache = (function (win) {
     const state = {
         env: null, active: null, capable: false, summary: null, budget: null, context: null,
         openWallId: null, tokens: new Map(), waiters: new Map(), seen: new Map(), runner: null, filling: null, refill: false,
-        pendingTimers: new Map(), retry: null, fresh: new Set(), started: null, summaryLoaded: null
+        pendingTimers: new Map(), pendingRuns: new Map(), retry: null, fresh: new Set(), started: null, summaryLoaded: null
     };
     let summaryResolve = () => undefined;
     state.summaryLoaded = new Promise(resolve => { summaryResolve = resolve; });
@@ -84,10 +84,12 @@ window.bwAssetCache = (function (win) {
             state.fresh.add(wallId);
         }
         win.clearTimeout(state.pendingTimers.get(wallId));
-        if (result.pending > 0 && result.outcome !== 'dropped') {
+        const runs = result.pending > 0 && result.outcome !== 'dropped' ? (state.pendingRuns.get(wallId) || 0) + 1 : 0;
+        state.pendingRuns.set(wallId, runs);
+        if (runs > 0) {
             state.pendingTimers.set(wallId, win.setTimeout(() => {
                 refreshWall(wallId, false).then(() => scheduleFill());
-            }, Manifest().PENDING_RETRY_MS));
+            }, Manifest().pendingDelayMs(runs)));
         }
         return result;
     }

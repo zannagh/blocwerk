@@ -126,7 +126,11 @@ window.bwAssetFill = (function () {
                 env.forget(task);
             }
             const response = await env.fetch(task.url, { priority: 'low', credentials: 'same-origin' });
-            // A 404/403 (the asset or the access went) is the manifest's business: its next fetch drops it.
+            // A 404/403 (the asset or the access went): the manifest's next fetch drops it; until then it counts
+            // against the asset's failure budget, so it is not fetched again on every pass. Any other answer is skipped.
+            if (response.status === 404 || response.status === 403) {
+                return 'gone';
+            }
             if (!response.ok) {
                 return 'skip';
             }
@@ -176,7 +180,9 @@ window.bwAssetFill = (function () {
                         continue;
                     }
                     streak.length = 0;
-                    if (outcome === 'refused') {
+                    if (outcome === 'gone') {
+                        failures.set(task.key, (failures.get(task.key) || 0) + 1);
+                    } else if (outcome === 'refused') {
                         streaming = true;
                         stop = 'streaming';
                     } else if (outcome === 'unknown') {

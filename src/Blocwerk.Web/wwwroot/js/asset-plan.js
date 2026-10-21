@@ -4,7 +4,8 @@
  *
  * ORDER: tier first, then wall.
  *   1. `core` of every wall (the current panels at the fit rendition plus 640), always, whatever the budget;
- *   2. the gallery (640 and the original), newest images first, while the image budget has room;
+ *   2. the gallery, newest images first, while the image budget has room: 640 and the original on a desktop with an
+ *      unmetered connection, the 640 only on a phone, a tablet or a metered connection (originals cache on open);
  *   3. 3D (textures, masks, one splat level), only on a desktop browser (never on a phone or tablet, iOS or Android:
  *      there 3D is cached only when a 3D view is opened), while 3D is kept, the connection is unmetered and the 3D
  *      budget has room.
@@ -173,10 +174,12 @@ window.bwAssetPlan = (function () {
         for (const wall of walls.filter(w => w.save3d && w.keepOffline)) {
             view3dEntries(wall, cachedShas).forEach(entry => within(wall, entry, [null], 'view3d', unbounded));
         }
+        // On a phone, a tablet or a metered connection the gallery fills its 640 grid only; originals cache on open.
+        const galleryWidths = state.mobile || state.metered ? [THUMB] : [THUMB, null];
         // Core is planned whatever the budget; the gallery gets only what is left after it.
         const images = roomOf((state.usedImages || 0) + coreBytes, state.budget.images);
         for (const wall of walls) {
-            galleryEntries(wall).forEach(entry => within(wall, entry, [THUMB, null], 'gallery', images));
+            galleryEntries(wall).forEach(entry => within(wall, entry, galleryWidths, 'gallery', images));
         }
         if (state.keep3d && !state.metered && !state.mobile) {
             const view3d = roomOf(state.used3d || 0, state.budget.view3d);

@@ -134,3 +134,49 @@ test('a notice can list links (the boulders a saved wall batch retired)', () => 
         { text: 'Sloper (review)', href: '/walls/w/boulders/2' },
     ]);
 });
+
+test('a stale tab of identity A writes nothing once another tab recorded B at this browser', () => {
+    const storage = memoryStorage();
+    const a = harness('u1', storage);
+    a.store.checkIdentity();
+    harness('u2', storage).store.checkIdentity();
+    assert.equal(a.store.keep('u1|boulder-revise:1', 'x', 'kept'), false);
+    a.store.keepHidden('u1|wall-create', 'y');
+    assert.deepEqual([...storage.map.keys()].filter(k => k.startsWith('bw-kept:')), []);
+});
+
+test('kept copies older than 7 days are swept on the next page load, whoever they were for', () => {
+    const storage = memoryStorage();
+    const h = harness('u1', storage);
+    h.store.keep('u1|old', 'x');
+    h.clock.now += drafts.MAX_AGE_MS + 1;
+    h.store.keep('u1|new', 'y');
+    h.store.checkIdentity();
+    assert.deepEqual([...storage.map.keys()].filter(k => k.startsWith('bw-kept:')), ['bw-kept:u1|new']);
+});
+
+test('an anonymous kiosk keeps only for the deploy reload: one restore within 2 minutes, never a hidden copy', () => {
+    const who = 'kkey1-anon';
+    const h = harness(who);
+    h.store.keepHidden(`${who}|boulder-create:w`, 'hidden');
+    assert.equal(h.storage.getItem(`bw-kept:${who}|boulder-create:w`), null, 'a hidden copy is never even written');
+    assert.equal(h.store.take(`${who}|boulder-create:w`), null, 'so it is never kept for the next person');
+
+    h.store.keep(`${who}|boulder-create:w`, 'deploy', 'kept');
+    h.clock.now += 60 * 1000;
+    assert.deepEqual(h.store.take(`${who}|boulder-create:w`), { payload: 'deploy', reason: 'deploy' });
+    assert.equal(h.store.take(`${who}|boulder-create:w`), null, 'one restore');
+
+    h.store.keep(`${who}|boulder-create:w`, 'late', 'kept');
+    h.clock.now += drafts.ANON_KIOSK_RESTORE_MS + 1;
+    assert.equal(h.store.take(`${who}|boulder-create:w`), null, 'past the reload window it is not restored');
+
+    h.store.keep(`${who}|boulder-create:w`, 'swept', 'kept');
+    h.clock.now += drafts.ANON_KIOSK_RESTORE_MS + 1;
+    h.store.checkIdentity();
+    assert.equal(h.storage.getItem(`bw-kept:${who}|boulder-create:w`), null, 'and the next page load sweeps it');
+
+    const member = harness('kkey1-u7');
+    member.store.keepHidden('kkey1-u7|boulder-create:w', 'mine');
+    assert.deepEqual(member.store.take('kkey1-u7|boulder-create:w'), { payload: 'mine', reason: 'hidden' }, 'a signed-in kiosk member keeps as before');
+});

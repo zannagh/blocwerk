@@ -166,11 +166,10 @@ window.bwAsset3d = (function (win) {
     async function unsave(wallId) {
         try {
             const s = await settled();
-            const row = caching(s) ? await rowOf(s, lower(wallId)) : null;
+            const id = lower(wallId);
+            const row = caching(s) ? await rowOf(s, id) : null;
             if (row && (row.keepOffline || row.save3d)) {
-                row.keepOffline = false;
-                row.save3d = false;
-                await s.env.ledger.putWall(row);
+                await s.env.ledger.updateWall(s.active, id, current => (current ? Object.assign(current, { keepOffline: false, save3d: false }) : undefined));
                 await Cache().evict();
             }
         } catch (e) {
@@ -180,15 +179,16 @@ window.bwAsset3d = (function (win) {
     }
 
     // keepOffline (2.7's field: eviction never takes the wall) and save3d (its 3D is filled whatever the device).
+    // Through the ledger's one merge (updateWall): a manifest round in flight writes only its own fields, so it can no
+    // longer drop the mark.
     async function mark(s, wallId) {
-        const row = (await rowOf(s, wallId)) || { partition: s.active, wallId, entries: [], etag: null, cursor: null, pending: 0, lastOpened: Date.now() };
-        if (row.keepOffline && row.save3d) {
-            return false;
-        }
-        row.keepOffline = true;
-        row.save3d = true;
-        await s.env.ledger.putWall(row);
-        return true;
+        let changed = false;
+        await s.env.ledger.updateWall(s.active, wallId, current => {
+            const row = current || { partition: s.active, wallId, entries: [], etag: null, cursor: null, pending: 0, lastOpened: Date.now() };
+            changed = !(row.keepOffline && row.save3d);
+            return Object.assign(row, { keepOffline: true, save3d: true });
+        });
+        return changed;
     }
 
     function requestPersist() {
@@ -212,10 +212,6 @@ window.bwAsset3d = (function (win) {
             await mark(s, id);
             await persisting;
             await Cache().manifestChanged(id);
-            // A manifest round that read the row before the mark could have written it back without it.
-            if (await mark(s, id)) {
-                await Cache().manifestChanged(id);
-            }
             await Cache().filled();
             return { saved: (await status(id)).saved };
         } catch (e) {
@@ -232,8 +228,10 @@ window.bwAsset3d = (function (win) {
             }
             const held = (await s.env.ledger.assetsOf(s.active)).find(a => a.key === sha);
             const size = (held && held.bytes) || bytes || 0;
-            row.docs = [{ sha, kind: 'view3d', tier: 'view3d', bytes: size }].concat(row.docs || []).slice(0, MAX_DOCS);
-            await s.env.ledger.putWall(row);
+            const doc = { sha, kind: 'view3d', tier: 'view3d', bytes: size };
+            await s.env.ledger.updateWall(s.active, lower(wallId), current => (current
+                ? Object.assign(current, { docs: [doc].concat((current.docs || []).filter(d => d.sha !== sha)).slice(0, MAX_DOCS) })
+                : undefined));
         } catch (e) {
             /* the document is then an orphan, evicted after its grace */
         }

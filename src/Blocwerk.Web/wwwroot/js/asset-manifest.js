@@ -9,7 +9,8 @@
  *              cache it.
  *   anything else, or no network → the stored copy stands (offline: render from cache).
  * `pending > 0` means some assets have no hash yet (listed with `sha: null`, used network-only); the caller asks again
- * after PENDING_RETRY_MS, when the server's backfill will have stamped them.
+ * after pendingDelayMs (60 s, 2 min, 5 min, then every 15 min while it stays pending), when the server's backfill
+ * will have stamped them.
  *
  * Retention: a stored copy older than RETENTION_MS is not revalidated but fetched whole, and its feed cursor is
  * dropped. The feed keeps 30 days, so an older cursor is past its horizon and means a full resync.
@@ -18,6 +19,13 @@ window.bwAssetManifest = (function () {
     'use strict';
 
     const PENDING_RETRY_MS = 60 * 1000;
+    const PENDING_DELAYS_MS = [PENDING_RETRY_MS, 2 * 60 * 1000, 5 * 60 * 1000];
+    const PENDING_CAP_MS = 15 * 60 * 1000;
+
+    /** The wait before the n-th refetch (1-based) of a manifest that is still pending. */
+    function pendingDelayMs(n) {
+        return PENDING_DELAYS_MS[Math.max(0, n - 1)] ?? PENDING_CAP_MS;
+    }
     const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
     function compact(assets) {
@@ -45,6 +53,19 @@ window.bwAssetManifest = (function () {
      * Refreshes one wall's row. env: { fetch, ledger, now(), partition() }. opts: { token, member, opened, dropWall }.
      * Returns { outcome: 'updated'|'unchanged'|'dropped'|'offline'|'switched', pending }.
      */
+    // The fields the manifest round owns; every other field of the row (keepOffline, save3d, docs) is kept as stored.
+    const MANIFEST_FIELDS = ['partition', 'wallId', 'entries', 'etag', 'cursor', 'pending', 'member', 'fetchedAt'];
+
+    // Writes this round's fields onto the row as it is stored NOW (not as it was read before the fetch).
+    function write(env, row) {
+        return env.ledger.updateWall(row.partition, row.wallId, current => {
+            const next = Object.assign({}, current || {});
+            MANIFEST_FIELDS.forEach(field => { next[field] = row[field]; });
+            next.lastOpened = Math.max(row.lastOpened || 0, (current && current.lastOpened) || 0);
+            return next;
+        });
+    }
+
     async function refresh(env, partition, wallId, opts) {
         const now = env.now();
         const stored = await env.ledger.getWall(partition, wallId);
@@ -66,7 +87,7 @@ window.bwAssetManifest = (function () {
             response = await env.fetch(manifestUrl(wallId, opts.token), { credentials: 'same-origin', cache: 'no-store', headers });
         } catch (e) {
             if (stored || opts.opened) {
-                await env.ledger.putWall(row);
+                await write(env, row);
             }
             return { outcome: 'offline', pending: row.pending || 0 };
         }
@@ -79,12 +100,12 @@ window.bwAssetManifest = (function () {
         }
         if (response.status === 304) {
             row.fetchedAt = now;
-            await env.ledger.putWall(row);
+            await write(env, row);
             return { outcome: 'unchanged', pending: row.pending || 0 };
         }
         if (!response.ok) {
             if (stored || opts.opened) {
-                await env.ledger.putWall(row);
+                await write(env, row);
             }
             return { outcome: 'offline', pending: row.pending || 0 };
         }
@@ -99,9 +120,9 @@ window.bwAssetManifest = (function () {
         row.cursor = body.cursor || null;
         row.pending = body.pending || 0;
         row.fetchedAt = now;
-        await env.ledger.putWall(row);
+        await write(env, row);
         return { outcome: 'updated', pending: row.pending };
     }
 
-    return { PENDING_RETRY_MS, RETENTION_MS, compact, manifestUrl, refresh };
+    return { PENDING_RETRY_MS, PENDING_CAP_MS, RETENTION_MS, pendingDelayMs, compact, manifestUrl, refresh };
 })();
