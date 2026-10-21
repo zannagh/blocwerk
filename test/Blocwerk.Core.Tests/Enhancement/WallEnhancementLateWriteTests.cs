@@ -48,6 +48,27 @@ public sealed class WallEnhancementLateWriteTests
         await RaceAsync(f);
     }
 
+    [Fact]
+    public async Task AFailedSaveThatIsNotAUniqueViolation_Surfaces()
+    {
+        using var f = await WallEnhancementFixture.CreateAsync();
+        await ForeignKeyFailureSurfacesAsync(f);
+    }
+
+    /// <summary>Items for a run that does not exist: a foreign-key failure, which must not pass for "already salvaged".</summary>
+    internal static async Task ForeignKeyFailureSurfacesAsync(WallEnhancementFixture f)
+    {
+        var hold = await f.AddHoldAsync(0.3, 0.3);
+        await WriteInOwnBatchAsync(f, f.Harness.Owner.Id, hold);
+        var batches = (await f.BatchesAsync()).Select(b => b.Id).ToList();
+        await using var db = await f.Journalling.CreateDbContextAsync();
+
+        var thrown = await Assert.ThrowsAsync<DbUpdateException>(
+            () => WallEnhancementSalvage.AddItemsAsync(db, Guid.NewGuid(), WallEnhancementItemKind.Shape, batches, [], CancellationToken.None));
+
+        Assert.False(Data.DatabaseErrors.IsUniqueViolation(thrown));
+    }
+
     /// <summary>Two contexts salvage the same step at once; the unique index keeps one item per run, kind and hold.</summary>
     internal static async Task RaceAsync(WallEnhancementFixture f)
     {
@@ -68,7 +89,8 @@ public sealed class WallEnhancementLateWriteTests
         Assert.Single(await f.ItemsAsync());
         await using var check = f.Harness.CreateContext();
         check.WallEnhancementItems.Add(new WallEnhancementItem { RunId = runId, Kind = WallEnhancementItemKind.Shape, HoldId = hold });
-        await Assert.ThrowsAsync<DbUpdateException>(() => check.SaveChangesAsync());
+        var duplicate = await Assert.ThrowsAsync<DbUpdateException>(() => check.SaveChangesAsync());
+        Assert.True(Data.DatabaseErrors.IsUniqueViolation(duplicate));
     }
 
     private static async Task<Guid> AddRunningRunAsync(WallEnhancementFixture f)
