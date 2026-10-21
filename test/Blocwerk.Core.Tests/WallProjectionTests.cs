@@ -53,12 +53,16 @@ public class WallProjectionTests
         foreach (var p in scalars)
         {
             Assert.True(
-                Equals(p.GetValue(reference), p.GetValue(slim)) || p.Name == nameof(Wall.BorderPoints),
+                SameValue(p.GetValue(reference), p.GetValue(slim)) || p.Name == nameof(Wall.BorderPoints),
                 $"Wall.{p.Name} is not copied by WithoutPhotos");
         }
 
         Assert.Single(slim.BorderPoints!);
     }
+
+    /// <summary>Value equality, with byte[] (the content hashes) compared by content.</summary>
+    private static bool SameValue(object? a, object? b) =>
+        a is byte[] x && b is byte[] y ? x.AsSpan().SequenceEqual(y) : Equals(a, b);
 
     private static bool IsScalar(Type t) =>
         !(t.IsGenericType && t.GetGenericTypeDefinition() == typeof(ICollection<>)) && t != typeof(User);

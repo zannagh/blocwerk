@@ -2,6 +2,7 @@
 // See License in the project root for license information.
 
 using System.Text;
+using Blocwerk.Core.Assets;
 using Blocwerk.Core.Compute;
 using Blocwerk.Core.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -53,6 +54,7 @@ public sealed partial class WallCaptureProcessor
             GeometryModelId = modelId,
             StoredPath = await files.SaveAsync(spz, ".spz", ct),
             SizeBytes = spz.LongLength,
+            Sha256 = ContentHash.Of(spz),
             SplatCount = count,
             LodLevelsJson = SplatLodLadder.Serialize(levels),
             UncleanedStoredPath = uncleaned is null ? null : await files.SaveAsync(uncleaned, ".spz", ct),

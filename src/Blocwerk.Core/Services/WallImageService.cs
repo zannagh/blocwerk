@@ -1,4 +1,5 @@
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Assets;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
@@ -49,6 +50,7 @@ public class WallImageService : IWallImageService
             StoragePath = storagePath,
             ContentType = contentType,
             SizeBytes = sizeBytes,
+            Sha256 = await ContentHash.OfFileAsync(storage.ResolvePhysicalPath(storagePath), ct),
             Caption = caption,
             CapturedAt = capturedAt ?? DateTimeOffset.UtcNow,
         };

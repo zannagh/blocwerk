@@ -21,10 +21,16 @@ public class Wall
     [MaxLength(64)]
     public string? PhotoContentType { get; set; }
 
+    /// <summary>SHA-256 of <see cref="Photo"/>, kept by <c>ContentHashStamp</c> on every save; null without bytes or before the backfill.</summary>
+    public byte[]? PhotoSha256 { get; set; }
+
     public byte[]? StagedPhoto { get; set; }
 
     [MaxLength(64)]
     public string? StagedPhotoContentType { get; set; }
+
+    /// <summary>SHA-256 of <see cref="StagedPhoto"/>, kept by <c>ContentHashStamp</c> on every save; null without bytes or before the backfill.</summary>
+    public byte[]? StagedPhotoSha256 { get; set; }
 
     public DateTimeOffset? StagedAt { get; set; }
 

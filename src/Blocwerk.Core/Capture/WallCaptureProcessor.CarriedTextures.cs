@@ -2,6 +2,7 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using Blocwerk.Core.Assets;
 using Blocwerk.Core.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -45,8 +46,10 @@ public sealed partial class WallCaptureProcessor
                 StoredPath = await files.SaveAsync(bytes, CapturePhotoFormat.Extension(CapturePhotoFormat.Sniff(bytes)), ct),
                 ContentType = source.ContentType,
                 SizeBytes = bytes.LongLength,
+                Sha256 = ContentHash.Of(bytes),
                 MaskStoredPath = mask is null ? null : await files.SaveAsync(mask, ".png", ct),
                 MaskSizeBytes = mask?.LongLength,
+                MaskSha256 = ContentHash.Of(mask),
                 AMin = source.AMin,
                 AMax = source.AMax,
                 BMin = source.BMin,

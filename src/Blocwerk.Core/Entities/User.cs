@@ -30,6 +30,9 @@ public class User : IEquatable<User>
     [MaxLength(64)]
     public string? AvatarContentType { get; set; }
 
+    /// <summary>SHA-256 of <see cref="AvatarImage"/>, kept by <c>ContentHashStamp</c> on every save; null without bytes or before the backfill.</summary>
+    public byte[]? AvatarSha256 { get; set; }
+
     /// <summary>
     /// The user's email address, or null when they have not set one. Stored normalized (trimmed,
     /// lower-cased) and unique (case-insensitively) across users where present. Set only after the

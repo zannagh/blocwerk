@@ -1,6 +1,7 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using Blocwerk.Core.Assets;
 using Blocwerk.Core.Entities;
 
 namespace Blocwerk.Core.Capture.Replay;
@@ -77,5 +78,19 @@ internal static class CapturePackageRowCopies
         job.InstalledPreviewPath = null;
         job.PreviewInstalledStep = null;
         return job;
+    }
+
+    /// <summary>
+    /// The textures' content hashes, from the package's file list (every file was checked against its hash when it
+    /// arrived or was found in the store), not from the rows, which only the source vouches for.
+    /// </summary>
+    public static void StampHashes(IEnumerable<WallGeometryTexture> textures, IEnumerable<CapturePackageFile> files)
+    {
+        var shas = files.GroupBy(f => f.Name, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First().Sha256, StringComparer.Ordinal);
+        foreach (var texture in textures)
+        {
+            texture.Sha256 = ContentHash.FromHex(shas.GetValueOrDefault(texture.StoredPath));
+            texture.MaskSha256 = texture.MaskStoredPath is { } mask ? ContentHash.FromHex(shas.GetValueOrDefault(mask)) : null;
+        }
     }
 }

@@ -246,6 +246,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<byte[]>("Thumbnail")
                         .HasColumnType("bytea");
 
+                    b.Property<byte[]>("ThumbnailSha256")
+                        .HasColumnType("bytea");
+
                     b.Property<Guid>("UploadedByUserId")
                         .HasColumnType("uuid");
 
@@ -1949,6 +1952,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<byte[]>("AvatarImage")
                         .HasColumnType("bytea");
 
+                    b.Property<byte[]>("AvatarSha256")
+                        .HasColumnType("bytea");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -2202,6 +2208,9 @@ namespace Blocwerk.Core.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<byte[]>("PhotoSha256")
+                        .HasColumnType("bytea");
+
                     b.Property<string>("ShareToken")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
@@ -2218,6 +2227,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<string>("StagedPhotoContentType")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
+
+                    b.Property<byte[]>("StagedPhotoSha256")
+                        .HasColumnType("bytea");
 
                     b.Property<int>("StagingMode")
                         .HasColumnType("integer");
@@ -2728,12 +2740,18 @@ namespace Blocwerk.Core.Migrations
                     b.Property<string>("LodLevelsJson")
                         .HasColumnType("text");
 
+                    b.Property<byte[]>("MobileSha256")
+                        .HasColumnType("bytea");
+
                     b.Property<long?>("MobileSizeBytes")
                         .HasColumnType("bigint");
 
                     b.Property<string>("MobileStoredPath")
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
+
+                    b.Property<byte[]>("Sha256")
+                        .HasColumnType("bytea");
 
                     b.Property<long>("SizeBytes")
                         .HasColumnType("bigint");
@@ -2798,12 +2816,18 @@ namespace Blocwerk.Core.Migrations
                     b.Property<int>("HeightPx")
                         .HasColumnType("integer");
 
+                    b.Property<byte[]>("MaskSha256")
+                        .HasColumnType("bytea");
+
                     b.Property<long?>("MaskSizeBytes")
                         .HasColumnType("bigint");
 
                     b.Property<string>("MaskStoredPath")
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
+
+                    b.Property<byte[]>("Sha256")
+                        .HasColumnType("bytea");
 
                     b.Property<long>("SizeBytes")
                         .HasColumnType("bigint");
@@ -2851,6 +2875,9 @@ namespace Blocwerk.Core.Migrations
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<byte[]>("Sha256")
+                        .HasColumnType("bytea");
 
                     b.Property<long>("SizeBytes")
                         .HasColumnType("bigint");
@@ -3155,6 +3182,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<int>("PhotoRevision")
                         .HasColumnType("integer");
 
+                    b.Property<byte[]>("PhotoSha256")
+                        .HasColumnType("bytea");
+
                     b.Property<int>("Row")
                         .HasColumnType("integer");
 
@@ -3170,6 +3200,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<string>("StagedPhotoContentType")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
+
+                    b.Property<byte[]>("StagedPhotoSha256")
+                        .HasColumnType("bytea");
 
                     b.Property<Guid>("WallId")
                         .HasColumnType("uuid");
@@ -3302,6 +3335,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<string>("PreviousPhotoContentType")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
+
+                    b.Property<byte[]>("PreviousPhotoSha256")
+                        .HasColumnType("bytea");
 
                     b.Property<DateTimeOffset>("ResetAt")
                         .HasColumnType("timestamp with time zone");

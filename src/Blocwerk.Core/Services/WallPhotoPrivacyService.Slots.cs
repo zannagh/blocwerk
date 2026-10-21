@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using System.Text.Json;
+using Blocwerk.Core.Assets;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -27,8 +28,8 @@ public sealed partial class WallPhotoPrivacyService
     {
         var slots = new List<WallPhotoSlot>
         {
-            Column<Wall>(d => d.Walls.IgnoreQueryFilters().Where(w => w.Id == wallId), w => w.Photo),
-            Column<Wall>(d => d.Walls.IgnoreQueryFilters().Where(w => w.Id == wallId), w => w.StagedPhoto),
+            Column<Wall>(d => d.Walls.IgnoreQueryFilters().Where(w => w.Id == wallId), w => w.Photo, w => w.PhotoSha256),
+            Column<Wall>(d => d.Walls.IgnoreQueryFilters().Where(w => w.Id == wallId), w => w.StagedPhoto, w => w.StagedPhotoSha256),
         };
 
         // Every generation's panel rows: a superseded generation keeps its photo for the history views.
@@ -36,14 +37,15 @@ public sealed partial class WallPhotoPrivacyService
             .Where(p => p.WallId == wallId).OrderBy(p => p.Generation).Select(p => p.Id).ToListAsync(ct);
         foreach (var id in panelIds)
         {
-            slots.Add(Column<WallPanel>(d => d.WallPanels.IgnoreQueryFilters().Where(p => p.Id == id), p => p.Photo));
-            slots.Add(Column<WallPanel>(d => d.WallPanels.IgnoreQueryFilters().Where(p => p.Id == id), p => p.StagedPhoto));
+            slots.Add(Column<WallPanel>(d => d.WallPanels.IgnoreQueryFilters().Where(p => p.Id == id), p => p.Photo, p => p.PhotoSha256));
+            slots.Add(Column<WallPanel>(
+                d => d.WallPanels.IgnoreQueryFilters().Where(p => p.Id == id), p => p.StagedPhoto, p => p.StagedPhotoSha256));
         }
 
         var resetIds = await db.WallResets.IgnoreQueryFilters().AsNoTracking()
             .Where(r => r.WallId == wallId).Select(r => r.Id).ToListAsync(ct);
         slots.AddRange(resetIds.Select(id =>
-            Column<WallReset>(d => d.WallResets.IgnoreQueryFilters().Where(r => r.Id == id), r => r.PreviousPhoto)));
+            Column<WallReset>(d => d.WallResets.IgnoreQueryFilters().Where(r => r.Id == id), r => r.PreviousPhoto, r => r.PreviousPhotoSha256)));
 
         var images = await db.WallImages.IgnoreQueryFilters().AsNoTracking()
             .Where(i => i.WallId == wallId).Select(i => new { i.Id, i.StoragePath }).ToListAsync(ct);
@@ -54,13 +56,17 @@ public sealed partial class WallPhotoPrivacyService
         return slots;
     }
 
-    /// <summary>A blob column on one row, replaced only while it still equals what was read.</summary>
-    private static WallPhotoSlot Column<T>(Func<BlocwerkDbContext, IQueryable<T>> rows, Expression<Func<T, byte[]?>> column)
+    /// <summary>
+    /// A blob column on one row, replaced only while it still equals what was read; its content hash
+    /// (<paramref name="hash"/>) moves in the same statement, since <c>ExecuteUpdate</c> bypasses the save-time stamp.
+    /// </summary>
+    private static WallPhotoSlot Column<T>(
+        Func<BlocwerkDbContext, IQueryable<T>> rows, Expression<Func<T, byte[]?>> column, Expression<Func<T, byte[]?>> hash)
         where T : class => new(
             (db, ct) => rows(db).AsNoTracking().Select(column).FirstOrDefaultAsync(ct),
             async (db, original, clean, ct) => await rows(db)
                 .Where(StillEquals(column, original))
-                .ExecuteUpdateAsync(s => s.SetProperty(column, clean), ct) == 1);
+                .ExecuteUpdateAsync(s => s.SetProperty(column, clean).SetProperty(hash, ContentHash.Of(clean)), ct) == 1);
 
     /// <summary><c>row => column == original</c>, with <paramref name="original"/> sent as a parameter, never inlined.</summary>
     private static Expression<Func<T, bool>> StillEquals<T>(Expression<Func<T, byte[]?>> column, byte[] original)
@@ -71,9 +77,9 @@ public sealed partial class WallPhotoPrivacyService
 
     /// <summary>
     /// A gallery upload on disk: replaced through a temp file and an atomic move, and its row's size
-    /// updated — which also moves the image's variant-cache key, ETag and url version. The size is written
+    /// and content hash updated — which also moves the image's variant-cache key, ETag and url version. Both are written
     /// in a transaction that commits only after the move, so a crash before the move changes nothing; a
-    /// crash between the move and the commit leaves a clean file under the old size, which
+    /// crash between the move and the commit leaves a clean file under the old size and hash, which
     /// <see cref="WallPhotoSlot.Repair"/> puts right on the next run (a rerun sees a clean file and would
     /// otherwise never touch the row again).
     /// </summary>
@@ -88,7 +94,7 @@ public sealed partial class WallPhotoPrivacyService
                 await File.WriteAllBytesAsync(temp, clean, ct);
                 await using var tx = await db.Database.BeginTransactionAsync(ct);
                 await db.WallImages.IgnoreQueryFilters().Where(i => i.Id == imageId)
-                    .ExecuteUpdateAsync(s => s.SetProperty(i => i.SizeBytes, clean.LongLength), ct);
+                    .ExecuteUpdateAsync(s => s.SetProperty(i => i.SizeBytes, clean.LongLength).SetProperty(i => i.Sha256, ContentHash.Of(clean)), ct);
                 File.Move(temp, path!, overwrite: true);
                 await tx.CommitAsync(ct);
                 return true;
@@ -102,9 +108,13 @@ public sealed partial class WallPhotoPrivacyService
 
                 var length = new FileInfo(path).Length;
                 var drifted = db.WallImages.IgnoreQueryFilters().Where(i => i.Id == imageId && i.SizeBytes != length);
-                return apply
-                    ? await drifted.ExecuteUpdateAsync(s => s.SetProperty(i => i.SizeBytes, length), ct) > 0
-                    : await drifted.AnyAsync(ct);
+                if (!apply)
+                {
+                    return await drifted.AnyAsync(ct);
+                }
+
+                var sha = await ContentHash.OfFileAsync(path, ct);
+                return await drifted.ExecuteUpdateAsync(s => s.SetProperty(i => i.SizeBytes, length).SetProperty(i => i.Sha256, sha), ct) > 0;
             });
     }
 
