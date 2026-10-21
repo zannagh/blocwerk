@@ -19,11 +19,14 @@ namespace Blocwerk.Web.Endpoints;
 /// </remarks>
 public static class AssetResponse
 {
+    /// <summary>The policy of an asset a kiosk session may see but its shared caches may not keep.</summary>
+    public const string NoStoreCacheControl = "no-store";
+
     /// <summary>A database blob or a small file, buffered and checked before it is sent.</summary>
     public static async Task<IResult> OriginalAsync(
         HttpContext http, IAssetResolver resolver, ResolvedAsset asset, CancellationToken ct)
     {
-        if (Prepare(http, Etag(asset.Hex)) is { } early)
+        if (Prepare(http, asset, Etag(asset.Hex)) is { } early)
         {
             return early;
         }
@@ -41,7 +44,7 @@ public static class AssetResponse
     public static async Task<IResult> StreamAsync(
         HttpContext http, IAssetResolver resolver, ResolvedAsset asset, CancellationToken ct)
     {
-        if (Prepare(http, Etag(asset.Hex)) is { } early)
+        if (Prepare(http, asset, Etag(asset.Hex)) is { } early)
         {
             return early;
         }
@@ -63,7 +66,7 @@ public static class AssetResponse
         int width,
         CancellationToken ct)
     {
-        if (Prepare(http, Etag($"{asset.Hex}-{width}")) is { } early)
+        if (Prepare(http, asset, Etag($"{asset.Hex}-{width}")) is { } early)
         {
             return early;
         }
@@ -94,9 +97,21 @@ public static class AssetResponse
 
     private static string Etag(string value) => $"\"{value}\"";
 
-    /// <summary>Writes the validator and the immutable policy; a 304 when the caller already holds these bytes.</summary>
-    private static IResult? Prepare(HttpContext http, string etag)
+    /// <summary>
+    /// Writes the validator and the immutable policy; a 304 when the caller already holds these bytes. A
+    /// <see cref="ResolvedAsset.NoStore"/> asset gets <c>no-store</c> instead, with no validator (so no 304 either) and
+    /// <c>Vary: Cookie</c>: nothing on the shared tablet, neither the service worker (which skips no-store) nor the HTTP
+    /// cache, may keep it for the next identity.
+    /// </summary>
+    private static IResult? Prepare(HttpContext http, ResolvedAsset asset, string etag)
     {
+        if (asset.NoStore)
+        {
+            http.Response.Headers.CacheControl = NoStoreCacheControl;
+            http.Response.Headers.Vary = "Cookie";
+            return null;
+        }
+
         http.Response.Headers.ETag = etag;
         http.Response.Headers.CacheControl = ImageResponse.ImmutableCacheControl;
         return ImageResponse.Matches(http.Request, etag) ? Results.StatusCode(StatusCodes.Status304NotModified) : null;

@@ -2,6 +2,7 @@
 // See License in the project root for license information.
 
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Assets.Manifest;
 using Blocwerk.Core.Capture;
 using Blocwerk.Core.Data;
 using Microsoft.EntityFrameworkCore;
@@ -40,14 +41,10 @@ public sealed class AssetResolver(
             return null;
         }
 
-        return await AssetBlobLookups.PanelAsync(db, wallId, hash, ct)
-            ?? await AssetBlobLookups.WallPhotoAsync(db, wallId, hash, ct)
-            ?? await AssetBlobLookups.ResetPhotoAsync(db, wallId, hash, ct)
-            ?? await AssetFileLookups.GalleryAsync(db, imageStorage, wallId, hash, ct)
-            ?? await AssetFileLookups.TextureAsync(db, captureFiles, wallId, hash, ct)
-            ?? await AssetFileLookups.MaskAsync(db, captureFiles, wallId, hash, ct)
-            ?? await AssetFileLookups.SplatAsync(db, captureFiles, wallId, hash, ct)
-            ?? await AssetBlobLookups.VideoThumbnailAsync(db, wallId, hash, access, ct);
+        var asset = await LookUpAsync(db, wallId, hash, access, ct);
+        return asset is null || kioskContext is not { IsKiosk: true } || ManifestAudiences.Lists(ManifestAudience.Kiosk, asset.Kind)
+            ? asset
+            : asset with { NoStore = true };
     }
 
     /// <inheritdoc/>
@@ -107,6 +104,18 @@ public sealed class AssetResolver(
     {
         var hash = ContentHash.FromHex(sha);
         return hash is not null && string.Equals(ContentHash.ToHex(hash), sha, StringComparison.Ordinal) ? hash : null;
+    }
+
+    private async Task<ResolvedAsset?> LookUpAsync(BlocwerkDbContext db, Guid wallId, byte[] hash, AssetAccess access, CancellationToken ct)
+    {
+        return await AssetBlobLookups.PanelAsync(db, wallId, hash, ct)
+            ?? await AssetBlobLookups.WallPhotoAsync(db, wallId, hash, ct)
+            ?? await AssetBlobLookups.ResetPhotoAsync(db, wallId, hash, ct)
+            ?? await AssetFileLookups.GalleryAsync(db, imageStorage, wallId, hash, ct)
+            ?? await AssetFileLookups.TextureAsync(db, captureFiles, wallId, hash, ct)
+            ?? await AssetFileLookups.MaskAsync(db, captureFiles, wallId, hash, ct)
+            ?? await AssetFileLookups.SplatAsync(db, captureFiles, wallId, hash, ct)
+            ?? await AssetBlobLookups.VideoThumbnailAsync(db, wallId, hash, access, ct);
     }
 
     /// <summary>

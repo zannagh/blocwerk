@@ -2,6 +2,7 @@
 // See License in the project root for license information.
 
 using Blocwerk.Contracts.Assets;
+using Blocwerk.Core.Assets.Resolution;
 using Blocwerk.Core.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -15,7 +16,7 @@ internal static class ManifestVideoEntries
 {
     public static async Task<List<ManifestAsset>> ThumbnailsAsync(BlocwerkDbContext db, Guid wallId, ManifestAudience audience, CancellationToken ct)
     {
-        if (audience == ManifestAudience.Kiosk)
+        if (!ManifestAudiences.Lists(audience, AssetKind.VideoThumbnail))
         {
             return [];
         }
