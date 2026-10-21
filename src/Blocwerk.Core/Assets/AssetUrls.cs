@@ -58,6 +58,16 @@ public static partial class AssetUrls
     public static string VideoThumbnail(Guid wallId, Guid videoId, string? sha, string? shareToken = null) =>
         Hashed(wallId, sha, shareToken) ?? WithToken($"/api/beta-videos/{videoId}/thumbnail", shareToken);
 
+    /// <summary>
+    /// A wall's view3d working-data document (<c>/d/view3d/{sha}</c>, design §6.5), with the share token, and the boulder
+    /// whose page it was derived from (only a hint for rebuilding it after a restart; the bytes are the sha's either way).
+    /// </summary>
+    public static string View3DDocument(Guid wallId, string sha, string? shareToken = null, Guid? boulderId = null)
+    {
+        var url = WithToken($"/api/walls/{wallId}/d/view3d/{sha}", shareToken);
+        return boulderId is { } b ? url + (url.Contains('?', StringComparison.Ordinal) ? "&" : "?") + "boulder=" + b : url;
+    }
+
     /// <summary>Whether <paramref name="url"/> is a content-addressed asset URL (with or without a width).</summary>
     public static bool IsHashed(string? url) => url is not null && HashedPath().IsMatch(PathOf(url));
 

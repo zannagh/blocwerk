@@ -64,3 +64,19 @@
 }
 
 .wall3d-stage-tools ::deep > .heat-tool { position: static; }
+
+/* After "Cancel" on the mobile-data notice: the stage stays empty with a way to load it after all. */
+.wall3d-stage-declined {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 16px;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.wall3d-stage-declined p { margin: 0; }

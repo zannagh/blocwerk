@@ -159,6 +159,11 @@ public sealed record Wall3DMarker(int Id, string FacetId, IReadOnlyList<double[]
 /// to (PlaneA, PlaneB) like <see cref="Wall3DHoldShape.Outline"/>; the Photos mode draws it instead of the
 /// shape. Null when the texture has no source-view map or the hold shows where its shape is.
 /// </param>
+/// <param name="BoulderOnly">
+/// True when the hold is drawn only because the highlighted boulder uses it (a copy the last update did not find,
+/// <see cref="Entities.Hold.KeptUnconfirmedGeneration"/>): the wall-level view3d document leaves it out and the
+/// boulder's overlay carries it (<see cref="View3DDocument"/>). Never serialised.
+/// </param>
 public sealed record Wall3DHold(
     Guid Id,
     string FacetId,
@@ -178,7 +183,8 @@ public sealed record Wall3DHold(
     IReadOnlyList<Guid>? DuplicateIds = null,
     Wall3DHoldProtrusion? Protrusion = null,
     bool PlacementApproximate = false,
-    IReadOnlyList<double[]>? PhotoOutline = null);
+    IReadOnlyList<double[]>? PhotoOutline = null,
+    [property: JsonIgnore] bool BoulderOnly = false);
 
 /// <summary>
 /// A hold's relief for the renderer, mm along the facet normal above the facet plane

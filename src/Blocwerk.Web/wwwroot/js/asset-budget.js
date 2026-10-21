@@ -104,7 +104,8 @@ window.bwAssetBudget = (function () {
     function classify(walls, assets) {
         const bySha = new Map();
         for (const wall of walls) {
-            for (const entry of wall.entries || []) {
+            // `docs`: the view3d documents the wall's 3D views loaded (bwAsset3d.noteDoc), 3D like its textures.
+            for (const entry of (wall.entries || []).concat(wall.docs || [])) {
                 const known = bySha.get(entry.sha) || { tier: entry.tier, kind: entry.kind, splats: entry.splats, bytes: entry.bytes, walls: [] };
                 if ((TIER_RANK[entry.tier] ?? 9) < (TIER_RANK[known.tier] ?? 9)) {
                     known.tier = entry.tier;
@@ -169,7 +170,7 @@ window.bwAssetBudget = (function () {
      *   1. orphans, when `orphans` says every wall's manifest is current: no manifest of this partition lists them any
      *      more (a wall update replaced them). Offline, or with a ledger that lost its walls, nothing is an orphan; and
      *      an orphan cached within ORPHAN_GRACE_MS stays (a page still showing it would only fetch it again);
-     *   2. every 3D asset when 3D is opted out, else the superseded splat levels;
+     *   2. every 3D asset when 3D is opted out (but a saved wall's), else the superseded splat levels;
      *   3. 3D over the 3D budget;
      *   4. over the image budget: other lazy assets first, then the gallery (core counts toward the budget but is
      *      never a victim).
@@ -184,7 +185,8 @@ window.bwAssetBudget = (function () {
         }
         const view3d = items.filter(item => item.tier === 'view3d');
         if (!state.keep3d) {
-            take(view3d);
+            // A wall saved for offline 3D keeps it: the save was asked for, the opt-out is only the default.
+            take(view3d.filter(item => !item.walls.some(w => w.save3d && w.keepOffline)));
         } else {
             take(supersededSplats(view3d));
             const left = view3d.filter(item => !chosen.has(item.asset.key));

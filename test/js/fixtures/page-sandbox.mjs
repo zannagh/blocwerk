@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 const js = new URL('../../../src/Blocwerk.Web/wwwroot/js/', import.meta.url);
-const MODULES = ['asset-ledger.js', 'asset-budget.js', 'asset-wipe.js', 'asset-manifest.js', 'asset-store.js', 'asset-session.js', 'asset-plan.js', 'asset-fill.js', 'asset-cache.js', 'asset-notice.js'];
+const MODULES = ['asset-ledger.js', 'asset-budget.js', 'asset-wipe.js', 'asset-manifest.js', 'asset-store.js', 'asset-session.js', 'asset-plan.js', 'asset-fill.js', 'asset-cache.js', 'asset-notice.js', 'asset-3d.js'];
 export const ORIGIN = 'https://blocwerk.test';
 export const USER_A = 'u-aaaaaaaaaaaaaaaaaaaa';
 export const USER_B = 'u-bbbbbbbbbbbbbbbbbbbb';
@@ -63,6 +63,7 @@ export function loadPage(opts = {}) {
     const storage = new Map();
     const assigned = [];
     const events = [];
+    const persisted = [];
     const caches = opts.caches || fakeCaches();
     const label = opts.label === undefined ? USER_A : opts.label;
     const meta = label === null ? null : { getAttribute: () => label };
@@ -158,7 +159,7 @@ export function loadPage(opts = {}) {
             onLine: opts.onLine ?? true,
             userAgentData: opts.userAgentData,
             serviceWorker: { controller, addEventListener: (type, fn) => { if (type === 'message') { swListeners.push(fn); } } },
-            storage: { estimate: async () => ({ quota: opts.quota ?? 50e9, usage: 41e9 }), persisted: async () => false, persist: async () => true },
+            storage: { estimate: async () => ({ quota: opts.quota ?? 50e9, usage: 41e9 }), persisted: async () => false, persist: async () => { persisted.push(Date.now()); return true; } },
         },
         matchMedia: () => ({ matches: !!opts.standalone }),
         localStorage: { getItem: k => (storage.has(k) ? storage.get(k) : null), setItem: (k, v) => storage.set(k, String(v)), removeItem: k => storage.delete(k) },
@@ -200,7 +201,7 @@ export function loadPage(opts = {}) {
     };
 
     return {
-        win: sandbox, caches, fetches, posted, timers, events, assigned, storage, worker,
+        win: sandbox, caches, fetches, posted, timers, events, assigned, storage, worker, persisted,
         cache: sandbox.bwAssetCache,
         ledger: () => sandbox.bwAssetLedger.open(),
         boot: async () => { await sandbox.bwAssetCache.boot(); await settle(); await sandbox.bwAssetCache.filled(); await settle(); },

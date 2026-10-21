@@ -1,0 +1,47 @@
+@* The 3D view's mobile-data notice (Wall3DStage.DataNotice.cs): shown over the unstarted stage on a phone or tablet
+   whose device does not hold the wall's 3D yet. Continue starts the view (optionally never asking again, remembered
+   per user by bwAsset3d.accept); Cancel leaves it unloaded. *@
+
+<div class="wall3d-data-notice" role="dialog" aria-modal="false" aria-labelledby="@titleId">
+    <p class="wall3d-data-notice-title" id="@titleId">3D can use a lot of mobile data</p>
+    <p class="wall3d-data-notice-text">
+        @if (Bytes is { } size && size > 0)
+        {
+            <text>Opening it downloads about @SizeText(size) the first time. </text>
+        }
+        else
+        {
+            <text>Opening it downloads the wall's 3D model and photos the first time. </text>
+        }
+        On Wi-Fi this costs nothing extra.
+    </p>
+    <label class="wall3d-data-notice-remember">
+        <input type="checkbox" @bind="remember" /> Don't ask again
+    </label>
+    <div class="wall3d-data-notice-actions">
+        <button type="button" class="btn-secondary" @onclick="() => OnAnswer.InvokeAsync((false, false))">Cancel</button>
+        <button type="button" class="btn-primary" @onclick="() => OnAnswer.InvokeAsync((true, remember))">Continue</button>
+    </div>
+</div>
+
+@code {
+    private readonly string titleId = $"w3d-data-{Guid.NewGuid():N}";
+    private bool remember;
+
+    /// <summary>What the 3D view still downloads, from the wall's manifest; null when unknown.</summary>
+    [Parameter]
+    public long? Bytes { get; set; }
+
+    /// <summary>The viewer's answer: start the view, and whether to stop asking.</summary>
+    [Parameter]
+    public EventCallback<(bool Go, bool Remember)> OnAnswer { get; set; }
+
+    /// <summary>A rounded size: "8 MB", "1.2 GB" (decimal units, as phones show data use).</summary>
+    public static string SizeText(long bytes) => bytes switch
+    {
+        >= 1_000_000_000 => $"{bytes / 1e9:0.#} GB",
+        >= 10_000_000 => $"{Math.Round(bytes / 1e6):0} MB",
+        >= 1_000_000 => $"{bytes / 1e6:0.#} MB",
+        _ => "1 MB",
+    };
+}

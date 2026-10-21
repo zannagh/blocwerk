@@ -1,0 +1,16 @@
+.save3d-tool:disabled { cursor: progress; }
+
+.save3d-spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: save3d-spin 0.9s linear infinite;
+}
+
+@keyframes save3d-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+    .save3d-spinner { animation: none; }
+}

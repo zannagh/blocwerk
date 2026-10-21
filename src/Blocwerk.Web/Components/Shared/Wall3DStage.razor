@@ -15,11 +15,22 @@
     {
         <p class="wall3d-stage-failed">@failure</p>
     }
+    @if (notice is not null)
+    {
+        <Wall3DDataNotice Bytes="notice.Bytes" OnAnswer="a => AnswerNoticeAsync(a.Go, a.Remember)" />
+    }
+    else if (declined)
+    {
+        <div class="wall3d-stage-declined">
+            <p>The 3D view is not loaded.</p>
+            <button type="button" class="btn-secondary" @onclick="LoadAfterDecline">Load 3D</button>
+        </div>
+    }
     @if (ShowFullscreen && !fullscreen)
     {
         <StageOpenButton RealFullscreen="false" OnOpen="() => SetFullscreen(true)" />
     }
-    @if (BoulderFocus || Tools is not null)
+    @if (BoulderFocus || Tools is not null || OfferSaveOffline)
     {
         @* Round tools down the right edge, under the full-screen (or close) button: clear of the mode
            switch top left, the camera presets along the bottom and the hold card above them. *@
@@ -28,6 +39,10 @@
             @if (BoulderFocus)
             {
                 <BoulderFocusButton />
+            }
+            @if (OfferSaveOffline)
+            {
+                <Save3DOfflineButton WallId="View.WallId" />
             }
         </div>
     }

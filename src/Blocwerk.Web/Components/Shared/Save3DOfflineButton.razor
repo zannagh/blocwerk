@@ -1,0 +1,102 @@
+@inject IJSRuntime JS
+@inject ILogger<Save3DOfflineButton> Logger
+@implements IDisposable
+
+@* "Save 3D offline" in the 3D view's tool column (design §6.8, PR 2.8): keeps this wall's 3D (textures, masks, one
+   splat level, the model document) on the device and asks the browser to keep the storage (persist()). Offered only
+   where the device cache runs for a signed-in viewer (bwAsset3d.status); a browser that refuses the storage leaves the
+   view streaming, and the button simply goes back to offering the save. *@
+@if (available)
+{
+    <button type="button" class="heat-tool save3d-tool@(saved ? " active" : string.Empty)" disabled="@busy"
+            aria-label="@Label" title="@Label" aria-pressed="@(saved ? "true" : "false")" @onclick="SaveAsync">
+        @if (busy)
+        {
+            <span class="save3d-spinner" aria-hidden="true"></span>
+        }
+        else if (saved)
+        {
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                 stroke-linejoin="round" width="22" height="22" aria-hidden="true">
+                <path d="M5 13l4 4L19 7" />
+            </svg>
+        }
+        else
+        {
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                 stroke-linejoin="round" width="22" height="22" aria-hidden="true">
+                <path d="M12 4v11" />
+                <path d="M7 10l5 5 5-5" />
+                <path d="M5 20h14" />
+            </svg>
+        }
+    </button>
+}
+
+@code {
+    private readonly CancellationTokenSource gone = new();
+    private bool available;
+    private bool saved;
+    private bool busy;
+
+    /// <summary>The wall whose 3D is saved.</summary>
+    [Parameter, EditorRequired]
+    public Guid WallId { get; set; }
+
+    private string Label => busy ? "Saving 3D offline…" : saved ? "3D saved on this device" : "Save 3D offline";
+
+    public void Dispose()
+    {
+        gone.Cancel();
+        gone.Dispose();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await RefreshAsync();
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        try
+        {
+            var status = await JS.InvokeAsync<Save3DStatus>("bwAsset3d.status", gone.Token, WallId);
+            available = status.Available;
+            saved = status.Saved;
+            StateHasChanged();
+        }
+        catch (Exception ex) when (ex is JSDisconnectedException or JSException or OperationCanceledException or ObjectDisposedException)
+        {
+            // No answer: the save is simply not offered.
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (busy || saved)
+        {
+            return;
+        }
+
+        busy = true;
+        try
+        {
+            // A whole 3D download: no interop timeout, only the component going away ends the wait.
+            var result = await JS.InvokeAsync<Save3DResult>("bwAsset3d.save", gone.Token, WallId);
+            saved = result.Saved;
+        }
+        catch (Exception ex) when (ex is JSDisconnectedException or JSException or OperationCanceledException or ObjectDisposedException)
+        {
+            Logger.LogDebug(ex, "Save 3D offline of wall {WallId} did not answer", WallId);
+        }
+
+        busy = false;
+        if (!gone.IsCancellationRequested)
+        {
+            StateHasChanged();
+        }
+    }
+}

@@ -244,7 +244,19 @@ test('a slow older lookup never overwrites a newer answer', async () => {
     assert.equal(assetFetches(worker), 2, "Bob's second request is a hit; the old tab went to the network");
 });
 
-test('requests other than a same-origin GET of an /a/ sha URL are left as they were', () => {
+test('a view3d document is stored in the 3D cache under its bare sha, whatever its token or boulder hint, and hits from there', async () => {
+    const worker = workerFor(ALICE);
+    const doc = query => `/api/walls/w1/d/view3d/${OTHER_SHA}${query}`;
+    worker.routes[doc('?token=t1&boulder=b1')] = () => response(200, '{"wallId":"w1"}',
+        { 'content-type': 'application/json', 'content-length': '15', etag: `"${OTHER_SHA}"` });
+    await dispatchFetch(worker, doc('?token=t1&boulder=b1')).settle();
+    assert.deepEqual([...worker.stored.get(`bw-a1-${ALICE}-3d`).keys()], [`${ORIGIN}/__bw/${OTHER_SHA}`]);
+    assert.equal(await (await dispatchFetch(worker, doc('')).settle()).text(), '{"wallId":"w1"}');
+    assert.equal(worker.fetches.filter(f => f.path.includes('/d/')).length, 1);
+    assert.deepEqual(worker.posted.map(({ message: m }) => [m.type, m.sha, m.width]), [['asset-cached', OTHER_SHA, null]]);
+});
+
+test('requests other than a same-origin GET of an /a/ sha URL or a view3d document are left as they were', () => {
     const worker = workerFor(ALICE);
     const untouched = [
         ['/api/walls/w1/photo'],
@@ -253,7 +265,9 @@ test('requests other than a same-origin GET of an /a/ sha URL are left as they w
         [`/api/walls/w1/a/${SHA.toUpperCase()}`],
         [`/api/walls/w1/a/${SHA.slice(1)}`],
         [`/api/walls/w1/a/${SHA}/wide`],
-        [`/api/walls/w1/d/view3d/${SHA}`],
+        [`/api/walls/w1/d/holds/${SHA}`],
+        [`/api/walls/w1/d/view3d/${SHA}/640`],
+        [`/api/walls/w1/d/view3d/${SHA.toUpperCase()}`],
         [`/api/users/u1/avatar`],
         [asset(), { method: 'POST' }],
         [asset(), { method: 'HEAD' }],
