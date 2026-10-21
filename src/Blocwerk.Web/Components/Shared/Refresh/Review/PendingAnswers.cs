@@ -43,13 +43,10 @@ public sealed class PendingAnswers
     /// <summary>A batch that could not be sent: kept for Retry, unless the item was answered again meanwhile.</summary>
     public void Failed(IEnumerable<ReviewAnswerRequest> batch)
     {
-        foreach (var answer in batch.GroupBy(a => a.Key, StringComparer.Ordinal).Select(g => g.Last()))
+        foreach (var answer in batch.GroupBy(a => a.Key, StringComparer.Ordinal).Select(g => g.Last()).Where(a => !IsWaiting(a.Key)))
         {
-            if (!IsWaiting(answer.Key))
-            {
-                unsaved.RemoveAll(u => u.Key == answer.Key);
-                unsaved.Add(answer);
-            }
+            unsaved.RemoveAll(u => u.Key == answer.Key);
+            unsaved.Add(answer);
         }
     }
 

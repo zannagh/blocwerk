@@ -65,7 +65,7 @@ public class RevisePrefillAtticTests
 
     private static Fixture Load()
     {
-        using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(AtticRealData.Dir, "revise-lineage.json")));
+        using var doc = JsonDocument.Parse(File.ReadAllText(Path.Join(AtticRealData.Dir, "revise-lineage.json")));
         var root = doc.RootElement;
         var holds = root.GetProperty("holds").EnumerateArray().ToDictionary(
             h => h.GetProperty("id").GetGuid(),
