@@ -51,10 +51,13 @@ internal static class ContentHashStamp
         }
     }
 
-    /// <summary>Stamps a row that started being tracked during a save (found through a navigation); none other.</summary>
+    /// <summary>
+    /// Stamps a row that started being tracked during a save (found through a navigation): Added for a new row, and
+    /// Modified for a detached row whose key is set (every property marked modified, so its bytes are hashed again).
+    /// </summary>
     public static void StampDiscovered(EntityTrackedEventArgs e, ContentHashCarries carries)
     {
-        if (!e.FromQuery && e.Entry.State == EntityState.Added && ByEntity.Contains(e.Entry.Metadata.ClrType))
+        if (!e.FromQuery && e.Entry.State is (EntityState.Added or EntityState.Modified) && ByEntity.Contains(e.Entry.Metadata.ClrType))
         {
             StampEntry(e.Entry, carries);
         }
