@@ -1,4 +1,5 @@
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Assets;
 using Blocwerk.Core.Configuration;
 using Microsoft.Extensions.Logging;
 
@@ -23,9 +24,18 @@ namespace Blocwerk.Core.Services;
 /// correctly, this one re-renders. See <see cref="WallPhotoTag"/> for what those parts are and the
 /// invariants they rest on.
 /// </para>
+/// <para>
+/// A source whose row has a content hash (<see cref="ImageVariantKey.Sha"/>) is keyed by the hash instead:
+/// <c>variants/sha/{sha[..2]}/{sha}-{width}.{jpg|webp}</c>. One rendition then serves every route that serves those
+/// bytes, and nothing needs sweeping, since a new photo is a new hash. Renditions of hashes no row holds any more are
+/// not collected yet; they are small, and deleting the folder is always safe.
+/// </para>
 /// </remarks>
 public sealed class FileSystemImageVariantCache : IImageVariantCache
 {
+    /// <summary>The folder of the hashed renditions, next to the per-identity folders of the legacy ones.</summary>
+    private const string ShaFolder = "sha";
+
     private readonly string root;
     private readonly string tempRoot;
     private readonly ILogger<FileSystemImageVariantCache> logger;
@@ -39,15 +49,30 @@ public sealed class FileSystemImageVariantCache : IImageVariantCache
     }
 
     /// <inheritdoc/>
-    public async Task<ImageVariant?> GetOrCreateAsync(
+    public Task<ImageVariant?> GetOrCreateAsync(
         ImageVariantKey key,
         int width,
         Func<Task<byte[]?>> loadOriginal,
         CancellationToken ct)
     {
         // Belt and braces over the endpoint's own check: an unvalidated width reaching here would
-        // be an unbounded render, and an identity that is not a plain hash would be a path.
-        if (!ImageVariants.IsAllowed(width) || !IsHash(key.Identity) || !IsHash(key.Version))
+        // be an unbounded render.
+        if (!ImageVariants.IsAllowed(width))
+        {
+            return Task.FromResult<ImageVariant?>(null);
+        }
+
+        return key.Sha is null
+            ? GetOrCreateLegacyAsync(key, width, loadOriginal, ct)
+            : GetOrCreateHashedAsync(key, width, loadOriginal, ct);
+    }
+
+    /// <summary>A source with no content hash yet: keyed by its ETag parts, one directory per image.</summary>
+    private async Task<ImageVariant?> GetOrCreateLegacyAsync(
+        ImageVariantKey key, int width, Func<Task<byte[]?>> loadOriginal, CancellationToken ct)
+    {
+        // An identity that is not a plain hash would be a path.
+        if (!IsHash(key.Identity) || !IsHash(key.Version))
         {
             return null;
         }
@@ -77,6 +102,91 @@ public sealed class FileSystemImageVariantCache : IImageVariantCache
 
         await WriteAsync(directory, stem + rendered.Extension, key.Version, rendered.Bytes, ct);
         return new ImageVariant(rendered.Bytes, rendered.ContentType, IsOriginal: false);
+    }
+
+    /// <summary>
+    /// A hashed source, keyed by <c>(sha, width)</c> under <c>variants/sha/{sha[..2]}/</c>. On a miss the rendition
+    /// the legacy key names is moved over (dual-read), so a deploy does not re-render every cached variant. A fresh
+    /// rendition is cached only when the original really hashes to the key's sha: a photo rewritten between the
+    /// caller's metadata read and its byte read must never land under the old hash.
+    /// </summary>
+    private async Task<ImageVariant?> GetOrCreateHashedAsync(
+        ImageVariantKey key, int width, Func<Task<byte[]?>> loadOriginal, CancellationToken ct)
+    {
+        var sha = key.Sha!;
+        if (!IsSha(sha))
+        {
+            return null;
+        }
+
+        var directory = Path.Combine(root, ShaFolder, sha[..2]);
+        var stem = Path.Combine(directory, $"{sha}-{width}");
+
+        var cached = await TryReadAsync(stem, ct) ?? await TryAdoptLegacyAsync(key, width, directory, stem, ct);
+        if (cached is not null)
+        {
+            return cached;
+        }
+
+        var original = await loadOriginal();
+        if (original is not { Length: > 0 })
+        {
+            return null;
+        }
+
+        var rendered = ImageRendition.Render(original, width);
+        if (rendered is null)
+        {
+            return new ImageVariant(original, string.Empty, IsOriginal: true);
+        }
+
+        if (ContentHash.ToHex(ContentHash.Of(original)) == sha)
+        {
+            await WriteAsync(directory, stem + rendered.Extension, version: null, rendered.Bytes, ct);
+        }
+        else
+        {
+            logger.LogWarning("Image bytes no longer hash to {Sha}; the rendition is served but not cached", sha);
+        }
+
+        return new ImageVariant(rendered.Bytes, rendered.ContentType, IsOriginal: false);
+    }
+
+    /// <summary>
+    /// Moves the rendition stored under the legacy ETag-parts key into the hashed slot and reads it from there. A
+    /// rename, not a copy; a lost race with another request doing the same just means the hashed slot is now full.
+    /// </summary>
+    private async Task<ImageVariant?> TryAdoptLegacyAsync(
+        ImageVariantKey key, int width, string directory, string stem, CancellationToken ct)
+    {
+        if (!IsHash(key.Identity) || !IsHash(key.Version))
+        {
+            return null;
+        }
+
+        var legacyStem = Path.Combine(root, key.Identity, $"{key.Version}-{width}");
+        foreach (var extension in ImageRendition.Extensions)
+        {
+            var legacy = legacyStem + extension;
+            if (!File.Exists(legacy))
+            {
+                continue;
+            }
+
+            try
+            {
+                Directory.CreateDirectory(directory);
+                File.Move(legacy, stem + extension, overwrite: false);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                logger.LogDebug(ex, "Could not move legacy image variant {Path}", legacy);
+            }
+
+            return await TryReadAsync(stem, ct);
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -117,7 +227,7 @@ public sealed class FileSystemImageVariantCache : IImageVariantCache
     /// racing on the same uncached variant either both publish identical bytes or one overwrites
     /// the other — a reader can never observe a half-written file.
     /// </summary>
-    private async Task WriteAsync(string directory, string path, string version, byte[] bytes, CancellationToken ct)
+    private async Task WriteAsync(string directory, string path, string? version, byte[] bytes, CancellationToken ct)
     {
         var temp = Path.Combine(tempRoot, $"{Guid.NewGuid():N}.tmp");
         try
@@ -125,7 +235,10 @@ public sealed class FileSystemImageVariantCache : IImageVariantCache
             Directory.CreateDirectory(directory);
             await File.WriteAllBytesAsync(temp, bytes, ct);
             File.Move(temp, path, overwrite: true);
-            Sweep(directory, version);
+            if (version is not null)
+            {
+                Sweep(directory, version);
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -173,4 +286,7 @@ public sealed class FileSystemImageVariantCache : IImageVariantCache
     /// </summary>
     private static bool IsHash(string value) =>
         value.Length is > 0 and <= 64 && value.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f');
+
+    /// <summary>A content hash: exactly 64 lowercase hex characters.</summary>
+    private static bool IsSha(string value) => value.Length == ContentHash.Length * 2 && IsHash(value);
 }

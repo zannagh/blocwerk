@@ -81,15 +81,20 @@ public class ImageVariantWarmingTests
     }
 
     /// <summary>
-    /// Every servable slot gets its own cache entry, because every one has its own identity: the
-    /// live photo alone is addressable through three different routes.
+    /// An UNHASHED photo (not yet backfilled) gets a cache entry per servable slot, because each has its own
+    /// identity: the live photo alone is addressable through three different routes.
     /// </summary>
     [Fact]
-    public async Task WarmingCoversEveryRouteThatCanServeTheSameBytes()
+    public async Task WarmingCoversEveryRouteThatCanServeTheSameBytes_WhileUnhashed()
     {
         using var harness = new WallTestHarness();
         var photo = TestImages.Noise(2000, 1500);
         await SeedPhotoAsync(harness, photo);
+        await using (var db = harness.CreateContext())
+        {
+            await db.Walls.IgnoreQueryFilters().ExecuteUpdateAsync(u => u.SetProperty(w => w.PhotoSha256, (byte[]?)null));
+            await db.WallPanels.ExecuteUpdateAsync(u => u.SetProperty(p => p.PhotoSha256, (byte[]?)null));
+        }
 
         var (cache, storageRoot) = Cache();
         await Warmer(harness, cache).WarmAsync(Log(), CancellationToken.None);
@@ -107,6 +112,24 @@ public class ImageVariantWarmingTests
             Assert.True(Directory.Exists(directory), $"no cache directory for identity {key.Identity}");
             Assert.NotEmpty(Directory.GetFiles(directory, $"{key.Version}-640.*"));
         }
+    }
+
+    /// <summary>A HASHED photo is one rendition per width, whichever of its routes or panels serves it.</summary>
+    [Fact]
+    public async Task WarmingAHashedPhoto_FillsOneShaSlotPerWidth()
+    {
+        using var harness = new WallTestHarness();
+        var photo = TestImages.Noise(2000, 1500);
+        await SeedPhotoAsync(harness, photo);
+
+        var (cache, storageRoot) = Cache();
+        await Warmer(harness, cache).WarmAsync(Log(), CancellationToken.None);
+
+        var sha = Sha(photo);
+        var slot = Path.Combine(storageRoot, "variants", "sha", sha[..2]);
+        Assert.Single(Directory.GetFiles(slot, $"{sha}-640.*"));
+        Assert.DoesNotContain(
+            Directory.GetDirectories(Path.Combine(storageRoot, "variants")), d => Path.GetFileName(d) is not ("sha" or "tmp"));
     }
 
     /// <summary>An image the warmer cannot read must be counted and stepped over, not fatal.</summary>
@@ -172,8 +195,10 @@ public class ImageVariantWarmingTests
         WallTestHarness harness, byte[] photo, IImageVariantCache cache)
     {
         var panelService = Substitute.For<IWallPanelService>();
+
+        // The tag carries the row's hash, as the real service reads it with the rest of the tag.
         panelService.GetPanelPhotoTagAsync(harness.WallId, Arg.Any<Guid>())
-            .Returns(new WallPhotoTag(photo.Length, "image/jpeg", 0, IsArchived: false));
+            .Returns(new WallPhotoTag(photo.Length, "image/jpeg", 0, IsArchived: false, Sha(photo)));
         panelService.GetPanelPhotoAsync(harness.WallId, Arg.Any<Guid>())
             .Returns(new WallPhoto(photo, "image/jpeg"));
 
@@ -215,4 +240,6 @@ public class ImageVariantWarmingTests
     }
 
     private static byte[] Body(HttpContext http) => ((MemoryStream)http.Response.Body).ToArray();
+
+    private static string Sha(byte[] bytes) => Blocwerk.Core.Assets.ContentHash.ToHex(Blocwerk.Core.Assets.ContentHash.Of(bytes))!;
 }

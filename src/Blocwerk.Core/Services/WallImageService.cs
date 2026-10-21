@@ -151,12 +151,13 @@ public class WallImageService : IWallImageService
                 .IgnoreQueryFilters()
                 .AsNoTracking()
                 .Where(w => w.Id == wallId && w.Id == sourceId && w.Photo != null)
-                .Select(w => new { Length = w.Photo!.Length, w.PhotoContentType, w.CurrentGeneration })
+                .Select(w => new { Length = w.Photo!.Length, w.PhotoContentType, w.CurrentGeneration, w.PhotoSha256 })
                 .FirstOrDefaultAsync(ct);
 
             return wall is null
                 ? null
-                : new WallPhotoTag(wall.Length, wall.PhotoContentType, wall.CurrentGeneration, IsArchived: false);
+                : new WallPhotoTag(
+                    wall.Length, wall.PhotoContentType, wall.CurrentGeneration, IsArchived: false, ContentHash.ToHex(wall.PhotoSha256));
         }
 
         if (source == WallGallerySource.ResetPhoto)
@@ -166,12 +167,13 @@ public class WallImageService : IWallImageService
                 .IgnoreQueryFilters()
                 .AsNoTracking()
                 .Where(r => r.Id == sourceId && r.WallId == wallId && r.PreviousPhoto != null)
-                .Select(r => new { Length = r.PreviousPhoto!.Length, r.PreviousPhotoContentType, r.Generation })
+                .Select(r => new { Length = r.PreviousPhoto!.Length, r.PreviousPhotoContentType, r.Generation, r.PreviousPhotoSha256 })
                 .FirstOrDefaultAsync(ct);
 
             return reset is null
                 ? null
-                : new WallPhotoTag(reset.Length, reset.PreviousPhotoContentType, reset.Generation, IsArchived: true);
+                : new WallPhotoTag(
+                    reset.Length, reset.PreviousPhotoContentType, reset.Generation, IsArchived: true, ContentHash.ToHex(reset.PreviousPhotoSha256));
         }
 
         return null;

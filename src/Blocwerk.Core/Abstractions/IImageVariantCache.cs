@@ -42,7 +42,13 @@ public interface IImageVariantCache
 /// (generation or staging timestamp, length, content type). A re-uploaded or re-staged photo
 /// therefore lands on a different cache file and can never serve a stale variant.
 /// </param>
-public sealed record ImageVariantKey(string Identity, string Version);
+/// <param name="Sha">
+/// The content hash of the source (lowercase hex), when its row has one. A keyed rendition is stored under
+/// <c>(Sha, width)</c> instead, shared by every route that serves the same bytes; <paramref name="Identity"/> and
+/// <paramref name="Version"/> then only name the legacy file the cache moves over on first use (dual-read). Either
+/// may be empty when the caller (the hashed route) has no legacy key.
+/// </param>
+public sealed record ImageVariantKey(string Identity, string Version, string? Sha = null);
 
 /// <summary>A rendition's bytes and the type they are encoded in.</summary>
 /// <param name="Bytes">The encoded image.</param>

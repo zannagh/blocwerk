@@ -1,4 +1,5 @@
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Assets;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.HoldStacks;
 using Blocwerk.Core.Services.PanelCrop;
@@ -305,6 +306,7 @@ public partial class WallPanelService
                     ? (p.StagedPhoto == null ? 0 : p.StagedPhoto.Length)
                     : (p.Photo == null ? 0 : p.Photo.Length),
                 Type = staged ? p.StagedPhotoContentType : p.PhotoContentType,
+                Sha = staged ? p.StagedPhotoSha256 : p.PhotoSha256,
                 p.StagedAt,
                 p.Generation,
                 p.PhotoRevision,
@@ -329,7 +331,7 @@ public partial class WallPanelService
         // This is load-bearing for the ETag AND for the variant cache key, which is derived from
         // exactly these parts — see FileSystemImageVariantCache.
         var version = staged ? row.StagedAt?.UtcTicks ?? 0L : PanelPhotoVersion.Of(row.Generation, row.PhotoRevision);
-        return new WallPhotoTag(row.Length, row.Type, version, IsArchived: false);
+        return new WallPhotoTag(row.Length, row.Type, version, IsArchived: false, ContentHash.ToHex(row.Sha));
     }
 
     private static (List<MatcherHold> Holds, Guid[] IndexToGuid) BuildMatcherHolds(IReadOnlyList<Hold> holds)

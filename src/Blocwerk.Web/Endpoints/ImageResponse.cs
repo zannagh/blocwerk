@@ -1,4 +1,5 @@
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Assets;
 using Blocwerk.Core.Services;
 using Microsoft.Net.Http.Headers;
 
@@ -188,8 +189,13 @@ public static class ImageResponse
     /// byte routes and the cache warmer use — a warmed entry addressed by anything else would never
     /// be found by a real request.
     /// </summary>
+    /// <remarks>
+    /// A tag that carries its content hash keys the rendition by that hash (shared with the hashed route and every
+    /// other identity serving the same bytes); the ETag-parts key is kept beside it so the cache can move a rendition
+    /// cached before the hash existed (dual-read).
+    /// </remarks>
     public static ImageVariantKey VariantKey(WallPhotoTag tag, params object?[] identity) =>
-        new(Key(identity), Key(VersionParts(tag)));
+        new(Key(identity), Key(VersionParts(tag)), tag.Sha);
 
     /// <summary>
     /// The cache key for an uploaded gallery image, whose bytes live in the file store rather than
@@ -197,8 +203,11 @@ public static class ImageResponse
     /// so its size and capture time identify it for good.
     /// </summary>
     public static ImageVariantKey UploadedGalleryKey(
-        Guid imageId, long sizeBytes, DateTimeOffset capturedAt, string? contentType) =>
-        new(Key(ImageIdentity.UploadedGalleryImage(imageId)), Key(sizeBytes, capturedAt.UtcTicks, contentType));
+        Guid imageId, long sizeBytes, DateTimeOffset capturedAt, string? contentType, byte[]? sha) =>
+        new(
+            Key(ImageIdentity.UploadedGalleryImage(imageId)),
+            Key(sizeBytes, capturedAt.UtcTicks, contentType),
+            ContentHash.ToHex(sha));
 
     /// <summary>
     /// The parts of <paramref name="tag"/> that say which bytes are stored. Shared by the plain
@@ -251,7 +260,7 @@ public static class ImageResponse
     /// otherwise be answered 404 under <c>max-age=31536000, immutable</c> — telling the browser to
     /// hold that failure for a year and never ask again, even once the image is restored.
     /// </summary>
-    private static IResult NotFound(HttpContext http)
+    internal static IResult NotFound(HttpContext http)
     {
         http.Response.Headers.Remove(HeaderNames.ETag);
         http.Response.Headers.Remove(HeaderNames.CacheControl);

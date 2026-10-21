@@ -98,7 +98,7 @@ public static class WallGalleryImageEndpoint
             if (w is { } uploadedWidth)
             {
                 var uploadedKey = ImageResponse.UploadedGalleryKey(
-                    id, image.SizeBytes, image.CapturedAt, image.ContentType);
+                    id, image.SizeBytes, image.CapturedAt, image.ContentType, image.Sha256);
 
                 return await ImageResponse.VariantAsync(
                     http,

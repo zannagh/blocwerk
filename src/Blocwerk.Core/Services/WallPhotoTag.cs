@@ -34,4 +34,9 @@ namespace Blocwerk.Core.Services;
 /// True for a retired generation's photo, which can never change again and may therefore be cached
 /// by the browser without revalidating.
 /// </param>
-public sealed record WallPhotoTag(int Length, string? ContentType, long Version, bool IsArchived);
+/// <param name="Sha">
+/// The bytes' content hash as lowercase hex, read from the row's hash column with the rest of the tag; null until the
+/// row is hashed. Only the variant cache key uses it (renditions are shared per hash); the ETag does not, so no
+/// existing browser cache is invalidated by it.
+/// </param>
+public sealed record WallPhotoTag(int Length, string? ContentType, long Version, bool IsArchived, string? Sha = null);

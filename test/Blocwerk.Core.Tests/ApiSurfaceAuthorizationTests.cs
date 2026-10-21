@@ -104,6 +104,8 @@ public class ApiSurfaceAuthorizationTests
         Assert.Contains("/api/walls/{wallId:guid}/panels/{panelId:guid}/closeup", routes);
         Assert.Contains("/api/walls/{wallId:guid}/geometry/{modelId:guid}/textures/{facetId}", routes);
         Assert.Contains("/api/walls/{wallId:guid}/geometry/{modelId:guid}/splat", routes);
+        Assert.Contains("/api/walls/{wallId:guid}/a/{sha}", routes);
+        Assert.Contains("/api/walls/{wallId:guid}/a/{sha}/{width:int}", routes);
         Assert.Contains("/api/v1/me/sessions", routes);
         Assert.Contains("/api/captures/{captureId:guid}/video", routes);
         Assert.Contains("/api/refreshes/{refreshId:guid}/files", routes);
@@ -151,7 +153,9 @@ public class ApiSurfaceAuthorizationTests
             .Where(e => (e.RoutePattern.RawText ?? string.Empty)
                 .Contains("/panels/", StringComparison.Ordinal)
                 || (e.RoutePattern.RawText ?? string.Empty)
-                    .Contains("/gallery/", StringComparison.Ordinal))
+                    .Contains("/gallery/", StringComparison.Ordinal)
+                || (e.RoutePattern.RawText ?? string.Empty)
+                    .Contains("/a/{sha}", StringComparison.Ordinal))
             .ToList();
 
         Assert.NotEmpty(mediaRoutes);
@@ -250,6 +254,8 @@ public class ApiSurfaceAuthorizationTests
         builder.Services.AddSingleton(Substitute.For<Blocwerk.Core.Refresh.IWallRefreshService>());
         builder.Services.AddSingleton(new Blocwerk.Core.Services.HybridZoom.HybridZoomOptions());
         builder.Services.AddSingleton(Substitute.For<Blocwerk.Core.Services.HybridZoom.IHybridZoomService>());
+        builder.Services.AddSingleton(Substitute.For<Blocwerk.Core.Assets.Resolution.IAssetResolver>());
+        builder.Services.AddSingleton(Substitute.For<IImageVariantCache>());
 
         var app = builder.Build();
         app.MapControllers();
@@ -266,6 +272,9 @@ public class ApiSurfaceAuthorizationTests
         // Glyph model textures (3D view) sit under /api/walls as well.
         app.MapWallGeometryTextures();
         app.MapWallGeometrySplats();
+
+        // The content-addressed asset routes (immutable, hashed) sit under /api/walls as well.
+        app.MapAssets();
 
         // The capture video upload sits under /api/captures, an API-key prefix for personal keys.
         app.MapCaptureVideoUpload();
