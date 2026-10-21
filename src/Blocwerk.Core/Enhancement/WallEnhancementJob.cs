@@ -7,6 +7,7 @@ using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Feed;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -260,6 +261,7 @@ public sealed partial class WallEnhancementJob(
     {
         await using var actors = await actorFactory.CreateAsync(run.CreatedByUserId, ct);
         WallEnhancementStepOutcome outcome;
+        using (FeedScope.Begin(run.WallId, WallEnhancementKinds.BatchLabel(step.Key)))
         using (journal.BeginBatch(WallEnhancementKinds.BatchLabel(step.Key), ChangeJournalScopeKind.Wall, run.WallId))
         {
             outcome = await step.RunAsync(new WallEnhancementStepContext(run.WallId, run.CreatedByUserId, actors, tracker), ct);

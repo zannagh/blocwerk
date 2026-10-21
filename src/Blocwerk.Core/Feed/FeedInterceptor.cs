@@ -51,15 +51,15 @@ public sealed class FeedInterceptor : SaveChangesInterceptor, IDbTransactionInte
         return base.SavingChanges(eventData, result);
     }
 
-    public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+    public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
         DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
     {
-        if (!result.HasResult)
+        if (!result.HasResult && eventData.Context is { } context && !registry.IsEmpty)
         {
-            Collect(eventData.Context);
+            Track(context, await FeedCollector.CollectAsync(context, registry, logger, cancellationToken));
         }
 
-        return base.SavingChangesAsync(eventData, result, cancellationToken);
+        return await base.SavingChangesAsync(eventData, result, cancellationToken);
     }
 
     public override int SavedChanges(SaveChangesCompletedEventData eventData, int result)
@@ -149,13 +149,17 @@ public sealed class FeedInterceptor : SaveChangesInterceptor, IDbTransactionInte
 
     private void Collect(DbContext? context)
     {
-        // Nothing is mapped (PR 1.2a ships so): the save pays one check and no change-tracker walk.
+        // Nothing is mapped (a test context without mappers): the save pays one check and no change-tracker walk.
         if (context is null || registry.IsEmpty)
         {
             return;
         }
 
-        var rows = FeedCollector.Collect(context, registry, logger);
+        Track(context, FeedCollector.Collect(context, registry, logger));
+    }
+
+    private void Track(DbContext context, IReadOnlyList<WallChange> rows)
+    {
         if (rows.Count == 0)
         {
             return;

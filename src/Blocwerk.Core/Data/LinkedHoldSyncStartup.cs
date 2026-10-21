@@ -4,6 +4,7 @@
 
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Feed;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -75,6 +76,7 @@ public static class LinkedHoldSyncStartup
         if (report.Any)
         {
             using var scope = journal.BeginBatch(BatchLabel, ChangeJournalScopeKind.Wall, wallId);
+            using var feedScope = FeedScope.Begin(wallId, BatchLabel);
             await db.SaveChangesAsync();
         }
 

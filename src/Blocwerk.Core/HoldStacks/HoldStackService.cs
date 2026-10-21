@@ -5,6 +5,7 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Feed;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -69,6 +70,7 @@ public sealed class HoldStackService : IHoldStackService
         HoldStacker.Apply(plan);
         ct.ThrowIfCancellationRequested();
         using var scope = journal?.BeginBatch(BatchLabel, ChangeJournalScopeKind.Wall, wallId);
+        using var feedScope = FeedScope.Begin(wallId, BatchLabel);
         await db.SaveChangesAsync(ct);
         var batchId = (scope as ChangeJournalBatchScope)?.BatchId;
         logger.LogInformation(

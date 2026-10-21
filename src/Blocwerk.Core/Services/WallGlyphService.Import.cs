@@ -3,6 +3,7 @@ using Blocwerk.Core.Capture;
 using Blocwerk.Core.Capture.Corrections;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Feed;
 using Blocwerk.Core.Geometry;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -186,6 +187,7 @@ public partial class WallGlyphService
     internal static async Task SwapActiveModelAsync(
         BlocwerkDbContext db, Guid wallId, WallGeometryDocument document, Guid? keep, Action activate)
     {
+        using var feedScope = FeedScope.Begin(wallId, "glyph-import");
         await using var transaction = await db.Database.BeginTransactionAsync();
         var active = await db.WallGeometryModels
             .Where(m => m.WallId == wallId && m.IsActive && m.Id != keep)

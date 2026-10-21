@@ -4,6 +4,7 @@
 
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Feed;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 
@@ -105,6 +106,7 @@ public sealed partial class WallEnhancementService
             Record(item, WallEnhancementDecision.Accepted, string.Empty, userId);
         }
 
+        using (FeedScope.Begin(wallId, WallEnhancementKinds.ReviewBatchLabel))
         using (var scope = journal.BeginBatch(WallEnhancementKinds.ReviewBatchLabel, ChangeJournalScopeKind.Wall, wallId))
         {
             await db.SaveChangesAsync(ct);

@@ -8,11 +8,13 @@ using Microsoft.Extensions.Hosting;
 
 namespace Blocwerk.Core.Tests;
 
-/// <summary>The feed's registrations resolve, and PR 1.2a ships with no mapper, so nothing writes rows yet.</summary>
+/// <summary>The feed's registrations resolve, with the production mappers (<see cref="FeedMappers"/>) in the registry.</summary>
 public sealed class FeedServicesTests
 {
+    private static readonly IComparer<Type> TypeNames = Comparer<Type>.Create((a, b) => string.CompareOrdinal(a.FullName, b.FullName));
+
     [Fact]
-    public void TheFeedResolves_WithTheHubAsItsOwnHostedService_AndNoMapper()
+    public void TheFeedResolves_WithTheHubAsItsOwnHostedService_AndTheProductionMappers()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -22,7 +24,9 @@ public sealed class FeedServicesTests
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
 
         Assert.NotNull(provider.GetRequiredService<FeedInterceptor>());
-        Assert.True(provider.GetRequiredService<FeedMapperRegistry>().IsEmpty);
+        var mapped = provider.GetRequiredService<FeedMapperRegistry>().MappedTypes;
+        Assert.Equal(new FeedMapperRegistry(FeedMappers.Create()).MappedTypes.Order(TypeNames), mapped.Order(TypeNames));
+        Assert.NotEmpty(mapped);
         var hub = provider.GetRequiredService<IWallFeedHub>();
         Assert.Contains(provider.GetServices<IHostedService>(), s => ReferenceEquals(s, hub));
     }

@@ -6,6 +6,7 @@ using Blocwerk.Core.Data;
 using Blocwerk.Core.Detection.Outlines;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Feed;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 
@@ -114,6 +115,7 @@ public sealed partial class WallEnhancementService
     {
         item.PriorState = await PriorStateAsync(wallId, item, ct);
         using var scope = journal.BeginBatch(WallEnhancementKinds.ReviewBatchLabel, ChangeJournalScopeKind.Wall, wallId);
+        using var feedScope = FeedScope.Begin(wallId, WallEnhancementKinds.ReviewBatchLabel);
         var result = await SuggestionAsync(wallId, item, accept, ct);
         if (accept && item.ResultBatchId is null && scope is ChangeJournalBatchScope { BatchRowCreated: true } written)
         {

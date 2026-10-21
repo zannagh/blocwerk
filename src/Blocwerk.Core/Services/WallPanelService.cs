@@ -4,6 +4,7 @@ using Blocwerk.Core.Data;
 using Blocwerk.Core.Detection.Enrichment;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Feed;
 using Blocwerk.Core.Helpers;
 using Blocwerk.Core.HoldStacks;
 using Microsoft.EntityFrameworkCore;
@@ -309,6 +310,7 @@ public partial class WallPanelService : IWallPanelService
         // the user flagged as removed (making their boulders historic). That is the most destructive
         // thing this service does, so it must be findable in the journal for a later revert instead of
         // landing in an anonymous adhoc batch.
+        using (FeedScope.Begin(wallId, "panel-confirm"))
         using (changeJournal?.BeginBatch("panel-confirm", ChangeJournalScopeKind.Wall, wallId))
         {
             await db.SaveChangesAsync();

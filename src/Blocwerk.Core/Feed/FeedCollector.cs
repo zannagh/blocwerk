@@ -20,6 +20,21 @@ internal static class FeedCollector
 
     public static IReadOnlyList<WallChange> Collect(DbContext context, FeedMapperRegistry registry, ILogger logger)
     {
+        var map = Map(context, registry, logger);
+        FeedBoulderResolver.Resolve(context, map, logger);
+        return FeedCollapse.Apply(map.Rows, FeedScope.Active, map.ActorUserId, map.Now);
+    }
+
+    public static async Task<IReadOnlyList<WallChange>> CollectAsync(
+        DbContext context, FeedMapperRegistry registry, ILogger logger, CancellationToken ct)
+    {
+        var map = Map(context, registry, logger);
+        await FeedBoulderResolver.ResolveAsync(context, map, logger, ct);
+        return FeedCollapse.Apply(map.Rows, FeedScope.Active, map.ActorUserId, map.Now);
+    }
+
+    private static FeedMapContext Map(DbContext context, FeedMapperRegistry registry, ILogger logger)
+    {
         var actor = context is BlocwerkDbContext { CurrentUserId: var id } && id != Guid.Empty ? id : (Guid?)null;
         var now = DateTimeOffset.UtcNow;
         var map = new FeedMapContext(context, actor, now);
@@ -47,25 +62,23 @@ internal static class FeedCollector
             }
         }
 
-        return FeedCollapse.Apply(map.Rows, scope, actor, now);
+        return map;
     }
 
-    // The entry's wall gets a resync whenever it can be known; only an entry of no knowable wall writes nothing, and that
-    // is logged as such.
+    // The entry's wall gets a resync whenever it can be known. A boulder-scoped entry hands its boulder to the resolver,
+    // which finds the wall with the save's other touched boulders; only an entry of no knowable wall writes nothing.
     private static void Fallback(EntityEntry entry, IFeedMapper mapper, Exception error, FeedMapContext map, FeedScopeState? scope, ILogger logger)
     {
-        Guid? wallId;
-        try
+        var wallId = FeedEntryWall.Of(entry);
+        if (wallId is null && FeedEntryWall.BoulderOf(entry) is { } boulder)
         {
-            wallId = FeedEntryWall.Of(entry) ?? scope?.WallId;
-        }
-        catch (Exception lookup)
-        {
-            logger.LogError(lookup, "Resolving the wall of {Entity} for a feed resync failed", entry.Metadata.ClrType.Name);
-            wallId = scope?.WallId;
+            logger.LogError(error, "Feed mapper {Mapper} failed on {Entity} ({State}); writing a resync of boulder {BoulderId}'s wall instead",
+                mapper.GetType().Name, entry.Metadata.ClrType.Name, entry.State, boulder.Id);
+            map.FailBoulder(boulder.Id, boulder.Tracked);
+            return;
         }
 
-        if (wallId is not { } wall)
+        if ((wallId ?? scope?.WallId) is not { } wall)
         {
             logger.LogError(error, "Feed mapper {Mapper} failed on {Entity} ({State}) and its wall is unknown; no feed row is written for it",
                 mapper.GetType().Name, entry.Metadata.ClrType.Name, entry.State);

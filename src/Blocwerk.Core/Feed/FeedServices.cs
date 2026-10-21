@@ -21,7 +21,7 @@ public static class FeedServices
             () => sp.GetRequiredService<RootDbContextFactory>().CreateDbContext(),
             sp.GetRequiredService<ILogger<WallFeed>>()));
 
-        // The write side: the mappers (FeedMappers, none before PR 1.2b) and the interceptor that runs them, added to the
+        // The write side: the mappers (FeedMappers) and the interceptor that runs them, added to the
         // context options in CoreServices. Singletons: they hold no per-save state outside their per-context tables.
         services.AddSingleton(_ => new FeedMapperRegistry(FeedMappers.Create()));
         services.AddSingleton<IFeedSignal, InProcessFeedSignal>();

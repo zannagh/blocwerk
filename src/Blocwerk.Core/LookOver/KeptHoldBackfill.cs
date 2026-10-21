@@ -6,6 +6,7 @@ using System.Text.Json;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Feed;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -48,6 +49,7 @@ public static class KeptHoldBackfill
             {
                 await using var db = await factory.CreateDbContextAsync();
                 using var batch = journal?.BeginBatch(BatchLabel, ChangeJournalScopeKind.Wall, wallId);
+                using var feedScope = FeedScope.Begin(wallId, BatchLabel);
                 var result = await BackfillWallAsync(db, wallId, CancellationToken.None);
                 logger.LogInformation(
                     "Kept-hold backfill on wall {WallId}: {Kept} holds marked as not found again, {Findings} look-over findings added", wallId, result.Kept, result.Findings);

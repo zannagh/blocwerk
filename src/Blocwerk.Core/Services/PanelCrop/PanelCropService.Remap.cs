@@ -6,6 +6,7 @@ using System.Text.Json;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Feed;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Services.PanelCrop;
@@ -82,6 +83,7 @@ public sealed partial class PanelCropService
 
         await RemapMarkersAsync(db, target.Panel.Id, map, ct);
         await RemapProposalsAsync(db, target.Panel.Id, map, ct);
+        using (FeedScope.Begin(target.Panel.WallId, label))
         using (changeJournal?.BeginBatch(label, ChangeJournalScopeKind.Wall, target.Panel.WallId))
         {
             await db.SaveChangesAsync(ct);

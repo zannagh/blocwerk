@@ -32,25 +32,14 @@ public static class FeedCoverage
         [typeof(HoldProposal)] = "shape proposals, an editor workflow; accepting one changes Hold rows",
         [typeof(HoldLinkSuggestion)] = "link suggestions, an editor workflow; accepting one writes HoldLink rows",
         [typeof(HoldDuplicateDismissal)] = "editor bookkeeping of dismissed duplicate pairs",
+        [typeof(WallReset)] = "written only by the promote, inside its FeedScope, in the save that moves Wall.CurrentGeneration (wall.updated)",
+        [typeof(HoldGenerationLink)] = "lineage is written with the holds it links (carry, merge repoint, delete tombstone), whose hold rows evict the same sets",
+        [typeof(WallTemperatureReading)] = "sensor telemetry every few minutes; the wall card polls it, and no viewer's state depends on a sample",
     };
 
     /// <summary>Gets the user-visible entities whose mapper has not landed yet, with the PR that brings it.</summary>
     public static IReadOnlyDictionary<Type, string> Pending { get; } = new Dictionary<Type, string>
     {
-        [typeof(Wall)] = "1.2b: wall.updated (generation, photo, settings)",
-        [typeof(WallMember)] = "1.2b: member.changed, access.revoked",
-        [typeof(WallSegment)] = "1.2b: segment.changed",
-        [typeof(WallPanel)] = "1.2b: panel.changed",
-        [typeof(HoldLink)] = "1.2b: link.changed",
-        [typeof(WallVolume)] = "1.2b: volume.changed",
-        [typeof(Hold)] = "1.2b: hold.changed, hold.deleted",
-        [typeof(Boulder)] = "1.2b: boulder.changed, boulder.deleted",
-        [typeof(BoulderHold)] = "1.2b: boulder holds, as boulder.changed",
-        [typeof(BoulderSetter)] = "1.2b: setters are shown with the boulder, as boulder.changed",
-        [typeof(BoulderHoldMove)] = "1.2b: move hints are shown with the boulder, as boulder.changed",
-        [typeof(HoldGenerationLink)] = "1.2b: lineage feeds the historic views; map or exclude with the hold family",
-        [typeof(WallReset)] = "1.2b: a reset moves the generation, as wall.updated",
-        [typeof(WallTemperatureReading)] = "1.2b: not in §5.4; decide (the wall card polls it today)",
         [typeof(BoulderComment)] = "1.2c: comment.added, comment.deleted (with compaction)",
         [typeof(BetaVideo)] = "1.2c: video.added, video.status, video.deleted",
         [typeof(Attempt)] = "1.2c: boulder.stats, tick.mine",

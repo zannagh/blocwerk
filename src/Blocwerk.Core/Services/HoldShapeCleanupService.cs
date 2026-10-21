@@ -4,6 +4,7 @@ using Blocwerk.Core.Data;
 using Blocwerk.Core.Detection.Outlines;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Feed;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -156,6 +157,7 @@ public sealed partial class HoldShapeCleanupService : IHoldShapeCleanupService
     private async Task<Guid> SaveInBatchAsync(BlocwerkDbContext db, Guid wallId, CancellationToken ct)
     {
         using var scope = journal.BeginBatch(BatchLabel, ChangeJournalScopeKind.Wall, wallId);
+        using var feedScope = FeedScope.Begin(wallId, BatchLabel);
         var batchId = ((ChangeJournalBatchScope)scope).BatchId;
         await db.SaveChangesAsync(ct);
         return batchId;
