@@ -114,7 +114,19 @@ public sealed partial class WallEnhancementJob(
             // really returned (or was let go): those writes become review items too, so a discard undoes them.
             if (inHand.TryRemove(runId, out var stepKey))
             {
-                await ResalvageAsync(runId, stepKey);
+                try
+                {
+                    await ResalvageAsync(runId, stepKey);
+                }
+                catch (OperationCanceledException ex)
+                {
+                    // Nothing may skip the cleanup below, not even a cancellation from the listing.
+                    logger.LogWarning(ex, "Wall enhancement {RunId}: listing the writes of stopped step {Step} again was cancelled", runId, stepKey);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    logger.LogWarning(ex, "Wall enhancement {RunId}: listing the writes of stopped step {Step} again failed", runId, stepKey);
+                }
             }
 
             if (trackers.TryRemove(runId, out var tracker))

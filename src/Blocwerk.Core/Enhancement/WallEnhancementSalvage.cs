@@ -89,7 +89,8 @@ internal static class WallEnhancementSalvage
     /// <summary>
     /// Saves new items. A written kind's item is unique per run and hold (a filtered unique index): when two stops of one
     /// run salvage at once, the second save hits it, and that item counts as already salvaged. The others are saved one
-    /// by one then, each skipped if it is there.
+    /// by one then, each skipped if it is there. Any other failed save is not caught here: it reaches the caller, which
+    /// logs it (the job's stop paths, the wall-update guard's caller).
     /// </summary>
     private static async Task InsertAsync(BlocwerkDbContext db, List<WallEnhancementItem> fresh, CancellationToken ct)
     {
@@ -104,7 +105,7 @@ internal static class WallEnhancementSalvage
             await db.SaveChangesAsync(ct);
             return;
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException ex) when (DatabaseErrors.IsUniqueViolation(ex))
         {
             foreach (var item in fresh)
             {
@@ -119,7 +120,7 @@ internal static class WallEnhancementSalvage
             {
                 await db.SaveChangesAsync(ct);
             }
-            catch (DbUpdateException)
+            catch (DbUpdateException ex) when (DatabaseErrors.IsUniqueViolation(ex))
             {
                 // Already salvaged by the concurrent stop.
                 db.Entry(item).State = EntityState.Detached;

@@ -30,6 +30,13 @@ public class PostgresWallEnhancementTests
     }
 
     [PostgresFact]
+    public async Task AFailedSaveThatIsNotAUniqueViolation_Surfaces()
+    {
+        using var f = await WallEnhancementFixture.CreateAsync(PostgresTestDatabase.Create());
+        await WallEnhancementLateWriteTests.ForeignKeyFailureSurfacesAsync(f);
+    }
+
+    [PostgresFact]
     public async Task ARunCutOffByARestart_ResumesWithTheInterruptedStep()
     {
         using var f = await WallEnhancementFixture.CreateAsync(PostgresTestDatabase.Create());
