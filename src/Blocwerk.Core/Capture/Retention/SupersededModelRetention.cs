@@ -4,6 +4,7 @@
 using Blocwerk.Core.Capture.Corrections;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Feed;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -55,7 +56,7 @@ public static class SupersededModelRetention
             .Select(m => new { m.Id, m.WallId }).ToListAsync(ct);
         foreach (var wall in walls.GroupBy(m => m.WallId))
         {
-            count += await StripWallAsync(db, wall.Key, wall.Select(m => m.Id).ToList(), keep, options, now, removed, ct);
+            count += await StripWallAsync(db, wall.Key, wall.Select(m => m.Id).ToList(), keep, options, now, removed, logger, ct);
         }
 
         var shared = await SharedCaptureFiles.ReferencedAsync(db, ct);
@@ -69,7 +70,7 @@ public static class SupersededModelRetention
     /// </summary>
     internal static async Task<int> StripWallAsync(
         BlocwerkDbContext db, Guid wallId, IReadOnlyCollection<Guid> candidates, int keep, WallCapturePipelineOptions options,
-        DateTimeOffset now, List<string> removed, CancellationToken ct)
+        DateTimeOffset now, List<string> removed, ILogger logger, CancellationToken ct)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var still = (await SupersededModelSelection.SelectAsync(db, keep, options, now, ct, wallId)).Intersect(candidates).ToList();
@@ -88,6 +89,13 @@ public static class SupersededModelRetention
         db.WallGeometryTextures.RemoveRange(textures);
         db.WallGeometrySplats.RemoveRange(splats);
         await db.SaveChangesAsync(ct);
+
+        // The marks are ExecuteUpdates, which the feed interceptor does not see: the 3D views are told in this transaction.
+        if (stripped.Count > 0)
+        {
+            await FeedBulkWrite.AppendAsync(db, "superseded-model-retention", [FeedBulkRows.View3D(wallId, stripped[0])], logger);
+        }
+
         await transaction.CommitAsync(ct);
         removed.AddRange(FilesOf(textures, splats));
         return stripped.Count;

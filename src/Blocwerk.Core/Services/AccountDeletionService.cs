@@ -1,6 +1,7 @@
 using System.Data;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
+using Blocwerk.Core.Feed;
 using Blocwerk.Core.Helpers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -125,6 +126,9 @@ public partial class AccountDeletionService : IAccountDeletionService
         // co-admins deleting at the same moment would otherwise each see the other as a live
         // successor and hand each other the wall. Under PostgreSQL one of the two transactions is
         // then refused with a serialization failure and nothing of it stands.
+        // The erasure writes across walls, mostly in bulk: its saves write no wall rows, and every wall
+        // it changes gets one resync in the transaction instead (FeedAccountRows).
+        using var feedScope = FeedScope.BeginAccount("account-erase");
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
 
         // The authoritative decision, re-taken under the transaction against the same rows the
@@ -135,12 +139,18 @@ public partial class AccountDeletionService : IAccountDeletionService
             throw new AccountDeletionBlockedException(blocking);
         }
 
+        var feedWalls = await FeedAccountRows.WallsAsync(db, userId, logger);
         await TransferWallOwnershipAsync(db, userId, transfers, ct);
         await ErasePersonalRowsAsync(db, userId, tokenOwnership, ct);
         await ScrubUserRowAsync(db, user, ct);
         await AssertNoWallLeftToADeletedOwnerAsync(db, transfers, ct);
+        await FeedAccountRows.EraseAsync(db, userId, feedWalls, logger);
 
         await transaction.CommitAsync(ct);
+
+        // The user's other devices may have committed feed rows naming them while the serializable
+        // snapshot above could not see them; a short read-committed pass catches those. Never fails.
+        await FeedAccountRows.ScrubCommittedAsync(db, userId, logger);
 
         DeleteBetaVideoFiles(userId, betaVideoFiles);
 

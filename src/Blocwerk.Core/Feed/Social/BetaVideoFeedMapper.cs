@@ -12,7 +12,7 @@ namespace Blocwerk.Core.Feed.Social;
 /// <summary>
 /// <c>video.added</c> (credited to the uploader), <c>video.status</c> when what a player shows changed (encoding state,
 /// HLS, thumbnail, the stored file), and <c>video.deleted</c>. Bookkeeping-only updates (an error text, a timestamp)
-/// map to nothing. The bulk status writes of the normalizer are PR 1.3's bulk sites.
+/// map to nothing. The bulk writes (the normalizer, the re-encode queue, the delete) append the same rows (FeedVideoBulk).
 /// </summary>
 internal sealed class BetaVideoFeedMapper : IFeedMapper
 {

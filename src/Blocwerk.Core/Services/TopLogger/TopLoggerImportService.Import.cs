@@ -1,6 +1,7 @@
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Feed;
 using Blocwerk.Core.Helpers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -35,6 +36,13 @@ public sealed partial class TopLoggerImportService
             connection.LastSyncAt = DateTimeOffset.UtcNow;
             connection.NeedsReauth = false;
             MarkAttempt(connection, TopLoggerSyncOutcome.Success, null);
+
+            // External ascents are not mapped, so the user's devices are told in the same save, coarsely.
+            if (imported > 0)
+            {
+                db.WallChanges.Add(FeedBulkRows.TicksResync(userId));
+            }
+
             await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
             logger.LogInformation(

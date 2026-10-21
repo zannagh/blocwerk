@@ -12,11 +12,12 @@ public sealed class FeedScopeState
 {
     private volatile bool closed;
 
-    internal FeedScopeState(Guid wallId, string label, FeedScopeState? parent)
+    internal FeedScopeState(Guid wallId, string label, FeedScopeState? parent, bool silent = false)
     {
         WallId = wallId;
         Label = label;
         Parent = parent;
+        Silent = silent;
     }
 
     /// <summary>Gets the wall the operation is about; it takes the resync of a change no mapper could attribute.</summary>
@@ -27,6 +28,12 @@ public sealed class FeedScopeState
 
     /// <summary>Gets the scope this one was opened inside, or null.</summary>
     public FeedScopeState? Parent { get; }
+
+    /// <summary>
+    /// Gets a value indicating whether the enclosed saves write no wall rows at all, not even the resync: the operation
+    /// spans walls and appends its own resync per wall it touched (<see cref="FeedScope.BeginAccount"/>).
+    /// </summary>
+    public bool Silent { get; }
 
     /// <summary>Gets a value indicating whether the scope's operation has ended.</summary>
     public bool Closed => closed;

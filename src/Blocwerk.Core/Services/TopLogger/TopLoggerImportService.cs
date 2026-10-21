@@ -1,6 +1,7 @@
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Feed;
 using Blocwerk.Core.Helpers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -80,9 +81,15 @@ public sealed partial class TopLoggerImportService : ITopLoggerImportService
 
         if (deleteImportedAscents)
         {
-            await db.ExternalAscents
-                .Where(a => a.UserId == userId && a.Source == ExternalSource.TopLogger)
-                .ExecuteDeleteAsync(cancellationToken)
+            IQueryable<ExternalAscent> imported = db.ExternalAscents
+                .Where(a => a.UserId == userId && a.Source == ExternalSource.TopLogger);
+            await FeedBulkWrite.RunAsync(
+                    db,
+                    "toplogger-disconnect",
+                    () => imported.ExecuteDeleteAsync(cancellationToken),
+                    deleted => deleted > 0 ? [FeedBulkRows.TicksResync(userId)] : [],
+                    logger,
+                    cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -200,11 +207,16 @@ public sealed partial class TopLoggerImportService : ITopLoggerImportService
             ? query.Where(a => a.RawGrade == null || a.RawGrade == string.Empty)
             : query.Where(a => a.RawGrade == rawGradeKey);
 
-        int updated = await query
-            .ExecuteUpdateAsync(
-                s => s
-                    .SetProperty(a => a.MappedGrade, normalized)
-                    .SetProperty(a => a.NeedsGradeMapping, false),
+        int updated = await FeedBulkWrite.RunAsync(
+                db,
+                "toplogger-grade-mapping",
+                () => query.ExecuteUpdateAsync(
+                    s => s
+                        .SetProperty(a => a.MappedGrade, normalized)
+                        .SetProperty(a => a.NeedsGradeMapping, false),
+                    cancellationToken),
+                changed => changed > 0 ? [FeedBulkRows.TicksResync(userId)] : [],
+                logger,
                 cancellationToken)
             .ConfigureAwait(false);
 

@@ -37,6 +37,20 @@ public static class FeedScope
         return new FeedScopeHandle(scope);
     }
 
+    /// <summary>
+    /// Opens a silent scope for an operation on a user across walls (account erasure, merge). Its saves write no wall
+    /// rows, since a mapper or the boulder resolver cannot attribute them without a lookup per wall; rows for one user
+    /// (<c>FeedAudience.User</c>) are kept. The operation appends one <c>wall.resync</c> per wall it touched itself, in
+    /// its transaction (<see cref="FeedAccountRows"/>).
+    /// </summary>
+    public static IDisposable BeginAccount(string label)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(label);
+        var scope = new FeedScopeState(Guid.Empty, label, Active, silent: true);
+        Ambient.Value = scope;
+        return new FeedScopeHandle(scope);
+    }
+
     internal static void End(FeedScopeState scope)
     {
         scope.Close();

@@ -28,6 +28,12 @@ public static class FeedCollapse
             return rows;
         }
 
+        if (scope is { Silent: true })
+        {
+            // The operation appends its own resync per wall (FeedScope.BeginAccount).
+            return rows.Where(r => !Collapsible(r)).ToList();
+        }
+
         var shared = rows.Where(Collapsible).ToList();
         var collapse = scope is not null
             ? shared.Select(r => r.WallId!.Value).ToHashSet()
