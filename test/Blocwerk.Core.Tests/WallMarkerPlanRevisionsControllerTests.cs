@@ -10,7 +10,7 @@ using Blocwerk.Core.Services;
 using Blocwerk.Web.Controllers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -20,9 +20,29 @@ namespace Blocwerk.Core.Tests;
 /// "Markers swapped on the wall" over the machine API is a wall-admin write: a wall key needs write access for it,
 /// like every other wall-admin route, and no device flow uses it.
 /// </summary>
-public class WallMarkerPlanRevisionsControllerTests
+public sealed class WallMarkerPlanRevisionsControllerTests : IDisposable
 {
     private static readonly Guid WallId = Guid.NewGuid();
+
+    // The audit's throwaway in-memory database lives only while a connection to it is open. This one
+    // is a field, so the test instance roots it: a local would be collectable as soon as the setup
+    // returned, and a GC before the audit's first write would drop the schema ("no such table").
+    private readonly SqliteConnection keepAlive;
+    private readonly TestDbContextFactory factory;
+
+    public WallMarkerPlanRevisionsControllerTests()
+    {
+        var connectionString = TestDbContextFactory.IsolatedDatabase();
+        keepAlive = new SqliteConnection(connectionString);
+        keepAlive.Open();
+        factory = new TestDbContextFactory(connectionString);
+        using (var db = factory.CreateDbContext())
+        {
+            db.Database.EnsureCreated();
+        }
+    }
+
+    public void Dispose() => keepAlive.Dispose();
 
     [Fact]
     public async Task WallKeyWithoutWriteAccess_CannotMarkARevisionEffective()
@@ -49,19 +69,15 @@ public class WallMarkerPlanRevisionsControllerTests
         Assert.IsType<NoContentResult>(result);
     }
 
-    private static WallMarkerPlanRevisionsController Api(IMarkerPlanService plans, ClaimsPrincipal key) =>
+    private WallMarkerPlanRevisionsController Api(IMarkerPlanService plans, ClaimsPrincipal key) =>
         new(plans, Audit(), NullLogger<WallMarkerPlanRevisionsController>.Instance)
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = key } },
         };
 
     /// <summary>A real audit over a throwaway database: these tests are about the key guard.</summary>
-    private static ApiWriteAudit Audit()
+    private ApiWriteAudit Audit()
     {
-        var factory = new TestDbContextFactory(TestDbContextFactory.IsolatedDatabase());
-        var keepAlive = factory.CreateDbContext();
-        keepAlive.Database.OpenConnection();
-        keepAlive.Database.EnsureCreated();
         var users = Substitute.For<ICurrentUserService>();
         users.GetCurrentUserAsync().Returns(new User { Identifier = "owner@test" });
         return new ApiWriteAudit(new ChangeJournal(factory.CreateDbContext), users, NullLogger<ApiWriteAudit>.Instance);
