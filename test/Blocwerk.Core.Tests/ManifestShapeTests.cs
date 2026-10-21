@@ -28,6 +28,8 @@ public class ManifestShapeTests
         Assert.Equal(ManifestTiers.Lazy, Tier(m, s.WallPhoto));
         Assert.Equal(ManifestTiers.Lazy, Tier(m, s.ResetPhoto));
         Assert.Equal(ManifestTiers.Lazy, Tier(m, s.Gallery));
+        Assert.NotNull(Assert.Single(m.Assets, a => a.Sha == s.Gallery).At);
+        Assert.All(m.Assets.Where(a => a.Kind != ManifestAssetKinds.Gallery), a => Assert.Null(a.At));
         Assert.Equal(ManifestTiers.Lazy, Tier(m, s.VideoThumbnail));
         Assert.Equal(ManifestTiers.View3d, Tier(m, s.Texture));
         Assert.Equal("F1", Assert.Single(m.Assets, a => a.Sha == s.Mask).Facet);

@@ -193,7 +193,8 @@
     <script src="@Assets["js/maintenance.js"]"></script>
     <script src="@Assets["js/offline-status.js"]"></script>
     <script src="@Assets["js/pwa.js"]"></script>
-    @* The page side of the on-device wall-asset cache: the ledger, budgets, wipe rules, manifests, the fill, then
+    @* The page side of the on-device wall-asset cache: the ledger, budgets, wipe rules, manifests, the page's
+       partition session, the fill plan and its runner, then
        the coordinator, which reads the others lazily off window and boots on DOM-ready. After pwa.js only for
        readability; it works with any worker, or none. asset-notice.js feeds StorageNotice.razor. *@
     <script src="@Assets["js/asset-ledger.js"]"></script>
@@ -201,6 +202,8 @@
     <script src="@Assets["js/asset-wipe.js"]"></script>
     <script src="@Assets["js/asset-manifest.js"]"></script>
     <script src="@Assets["js/asset-store.js"]"></script>
+    <script src="@Assets["js/asset-session.js"]"></script>
+    <script src="@Assets["js/asset-plan.js"]"></script>
     <script src="@Assets["js/asset-fill.js"]"></script>
     <script src="@Assets["js/asset-cache.js"]"></script>
     <script src="@Assets["js/asset-notice.js"]"></script>

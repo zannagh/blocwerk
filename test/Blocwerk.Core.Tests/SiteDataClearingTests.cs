@@ -55,7 +55,7 @@ public class SiteDataClearingTests
         Assert.Equal("\"cache\"", http.Response.Headers[SiteDataClearing.HeaderName].ToString());
         Assert.Equal("no-store", http.Response.Headers.CacheControl.ToString());
         Assert.StartsWith("text/html", page.ContentType);
-        Assert.Contains("<meta http-equiv=\"refresh\" content=\"1;url=/\">", page.Content);
+        Assert.Contains("<meta http-equiv=\"refresh\" content=\"2;url=/\">", page.Content);
         Assert.Contains("<a href=\"/\">Continue</a>", page.Content);
         Assert.Contains("location.replace(\"/\")", page.Content);
         Assert.Contains("new Event('bw:identity-changed')", page.Content);

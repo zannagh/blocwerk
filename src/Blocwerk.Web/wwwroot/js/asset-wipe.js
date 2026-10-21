@@ -6,19 +6,23 @@
  * `blocwerk-offline` (unsent ticks), `bw-sw-state` (the worker's last label) or the shell cache.
  *
  *   1. A server-rendered page whose `bw-partition` meta is missing, `none`, or differs from the ledger's
- *      `activePartition` wipes, and its label becomes active. `offline` (offline.html, a server that could not
- *      decide) decides nothing. A switch from a known label also fires `bw:identity-changed` and clears the deploy
- *      drafts (`bwDeployDrafts.clearAll`, when that module is loaded).
- *   2. Logout: the header's /account/logout link and the kiosk unregister form wipe everything first, then go on;
- *      they fire the identity change as well (rules 1 and 6 do when they wipe after a known label).
- *      The server adds `Clear-Site-Data: "cache"` to those responses (PR 2.5) for the HTTP cache. The kiosk release
- *      form does NOT wipe: the tablet's `k-` partition is the same for every identity on it and holds only the bound
- *      wall's kiosk-class assets, so wiping on every member's release would only refill the tablet.
+ *      `activePartition` wipes, and its label becomes active. `offline` (offline.html only) decides nothing.
+ *      `unknown` (the server could not resolve it) caches nothing on that page and wipes only if the acting user
+ *      changed. A changed acting user (`data-bw-user`, which also covers a kiosk member's release) or a change of
+ *      the label's class (u- / k- / anon / none) fires `bw:identity-changed` and clears the deploy drafts
+ *      (`bwDeployDrafts.clearAll`, when loaded). A new label of the same class and user (a partition-key rotation)
+ *      wipes but announces nothing.
+ *   2. Logout: a plain click on the /account/logout link wipes everything first, then goes on, and fires the identity
+ *      change. The server answers account sign-out and kiosk unregister with a signed-out page (PR 2.5) that carries
+ *      `Clear-Site-Data: "cache"` and calls signedOut() itself, so a sign-out the interceptor missed wipes too. The
+ *      kiosk release does NOT wipe: the tablet's `k-` partition is the same for every identity on it and holds only
+ *      the bound wall's kiosk-class assets, so wiping on every member's release would only refill the tablet.
  *   3. A server-forced sign-out is caught by rule 1 on the next page.
  *   4. A manifest 403/404 drops that wall: its assets that no other wall lists go (dropWall).
  *   5. Revoked access does the same: dropWall is the hook, and a wall that left the viewer's /api/me/cache-summary
  *      list is dropped on the next start.
- *   6. `anon` hygiene: a page in the `anon` partition without a share token in its URL wipes `anon` too.
+ *   6. `anon` hygiene: a page in the `anon` partition without a share token in its URL wipes `anon` too; it
+ *      announces only when the device was not anonymous before.
  */
 window.bwAssetWipe = (function () {
     'use strict';
@@ -26,7 +30,6 @@ window.bwAssetWipe = (function () {
     const PREFIX = 'bw-a1-';
     const CACHE_NAME = /^bw-a1-(.+)-(img|3d)$/;
     const LOGOUT_PATH = '/account/logout';
-    const UNREGISTER_PATH = '/kiosk/unregister';
     const LOGOUT_WAIT_MS = 1500;
     const REAL_LABEL = /^(anon|[uk]-[a-z2-7]{20})$/;
 
@@ -45,25 +48,43 @@ window.bwAssetWipe = (function () {
 
     /**
      * What a page load means. `previous`: the ledger's activePartition (null on a first run). `label`: the page's
-     * meta content, null when the meta is missing. Returns { wipe, keep, active, identityChanged }, where `keep` is the
-     * one partition a wipe spares (null spares none).
+     * meta content, null when the meta is missing. `userChanged`: the acting user differs from the last page's.
+     * Returns { wipe, keep, active, page, identityChanged }: `keep` is the one partition a wipe spares (null spares
+     * none), `active` what the ledger records, `page` the label this page caches under (only a real label caches).
+     *   offline  offline.html: decides nothing.
+     *   unknown  the server could not resolve the partition: trust nothing, cache nothing on this page, keep the
+     *            ledger's label; but a changed acting user still wipes everything.
      */
-    function decide(previous, label, hasToken) {
+    function decide(previous, label, hasToken, userChanged) {
         if (label === 'offline') {
-            return { wipe: false, keep: previous, active: previous, identityChanged: false };
+            return { wipe: false, keep: previous, active: previous, page: 'offline', identityChanged: false };
+        }
+        if (label === 'unknown') {
+            return userChanged
+                ? { wipe: true, keep: null, active: 'none', page: 'unknown', identityChanged: true }
+                : { wipe: false, keep: previous, active: previous, page: 'unknown', identityChanged: false };
         }
         const real = typeof label === 'string' && REAL_LABEL.test(label);
         const active = real ? label : 'none';
         const changed = active !== previous;
-        const identityChanged = changed && previous !== null && previous !== undefined;
+        // A label is not an identity: a server restarting on a run-only partition key (Development, or after an I/O
+        // fault) gives the same user a new label. That wipes the cache, but announces nothing, so the drafts a deploy
+        // kept for this very reload survive. Only a changed acting user or a change of class (u- / k- / anon / none)
+        // is an identity change; anon→anon (rule 6 on every tokenless load) is not.
+        const known = previous !== null && previous !== undefined;
+        const identityChanged = !!userChanged || (known && classOf(active) !== classOf(previous));
         if (!real) {
-            return { wipe: true, keep: null, active, identityChanged };
+            return { wipe: true, keep: null, active, page: active, identityChanged };
         }
-        // Rule 6 ends whatever the shared device last held, so it clears the device-kept drafts too.
         if (active === 'anon' && !hasToken) {
-            return { wipe: true, keep: null, active, identityChanged: previous !== null && previous !== undefined };
+            return { wipe: true, keep: null, active, page: active, identityChanged };
         }
-        return { wipe: changed, keep: active, active, identityChanged };
+        return { wipe: changed, keep: active, active, page: active, identityChanged };
+    }
+
+    function classOf(label) {
+        const value = String(label);
+        return value.startsWith('u-') ? 'u' : value.startsWith('k-') ? 'k' : value;
     }
 
     function cacheUrl(origin, key) {
@@ -154,23 +175,6 @@ window.bwAssetWipe = (function () {
         }
     }
 
-    // Wipes, but never holds the navigation longer than LOGOUT_WAIT_MS.
-    function wipeThen(win, env, go) {
-        let gone = false;
-        const leave = () => {
-            if (!gone) {
-                gone = true;
-                go();
-            }
-        };
-        win.setTimeout(leave, LOGOUT_WAIT_MS);
-        announceIdentityChange(win);
-        env.ledger.setMeta({ activePartition: null })
-            .then(() => wipe(env, null))
-            .catch(() => undefined)
-            .then(leave);
-    }
-
     function pathOf(win, href) {
         try {
             return new win.URL(href, win.location.href).pathname;
@@ -179,46 +183,56 @@ window.bwAssetWipe = (function () {
         }
     }
 
-    /**
-     * The signed-out page (SignedOutMarkup.cs, PR 2.5) calls this, so an account sign-out wipes even when no
-     * interceptor below ran (a forced load of /account/logout, a link outside the app's pages). It fires nothing: that
-     * page dispatches `bw:identity-changed` itself. A second wipe after the interceptor's finds nothing to delete.
-     */
-    function signedOut(win) {
-        return win.bwAssetLedger.open()
-            .then(ledger => ledger.setMeta({ activePartition: null })
-                .then(() => wipe({ caches: win.caches, ledger, origin: win.location.origin }, null)))
-            .catch(() => undefined);
+    async function wipeAll(win, ledger) {
+        await ledger.setMeta({ activePartition: null });
+        await wipe({ caches: win.caches, ledger, origin: win.location.origin }, null);
     }
 
     /**
-     * Rule 2: the logout link and the kiosk unregister form wipe first. `env` is resolved lazily (getEnv). On a kiosk
-     * (`k-` partition) the logout link only ends a member's session, a plain redirect server-side, so it keeps the
-     * tablet's cache; the next page's acting-user check clears the drafts.
+     * The signed-out page (SignedOutMarkup.cs, PR 2.5) calls this, so an account sign-out wipes even when no
+     * interceptor below ran (a forced load of /account/logout, a link outside the app's pages, a kiosk unregister). It
+     * fires nothing: that page dispatches `bw:identity-changed` itself. A second wipe after the interceptor's finds
+     * nothing to delete.
      */
-    function installLogout(win, getEnv) {
+    function signedOut(win) {
+        return win.bwAssetLedger.open().then(ledger => wipeAll(win, ledger)).catch(() => undefined);
+    }
+
+    const isPlainClick = event => (event.button === undefined || event.button === 0)
+        && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+
+    /**
+     * Rule 2: a plain click on the logout link wipes first, then follows it. The LOGOUT_WAIT_MS timer is armed before
+     * anything is awaited, so a ledger that never opens cannot hold the navigation. A modified or non-primary click
+     * (a new tab, a download) is left to the browser. On a kiosk (the page's meta is `k-…`) the link only ends a member's
+     * session, a plain redirect server-side, so it keeps the tablet's cache; the next page's acting-user check clears the
+     * drafts.
+     */
+    function installLogout(win, getLedger) {
         win.document.addEventListener('click', event => {
             const link = event.target && event.target.closest ? event.target.closest('a[href]') : null;
-            if (!link || pathOf(win, link.getAttribute('href')) !== LOGOUT_PATH || event.defaultPrevented) {
+            if (!link || event.defaultPrevented || !isPlainClick(event) || pathOf(win, link.getAttribute('href')) !== LOGOUT_PATH) {
+                return;
+            }
+            const meta = win.document.querySelector('meta[name="bw-partition"]');
+            if (meta && String(meta.getAttribute('content')).startsWith('k-')) {
                 return;
             }
             event.preventDefault();
-            const go = () => win.location.assign(link.href);
-            getEnv()
-                .then(env => env.ledger.getMeta().then(meta => (String(meta.activePartition).startsWith('k-') ? go() : wipeThen(win, env, go))))
-                .catch(go);
-        }, true);
-        win.document.addEventListener('submit', event => {
-            const form = event.target;
-            if (!form || form.dataset?.bwWiped === '1' || pathOf(win, form.getAttribute('action') || '') !== UNREGISTER_PATH) {
-                return;
-            }
-            event.preventDefault();
+            let gone = false;
             const go = () => {
-                form.dataset.bwWiped = '1';
-                form.submit();
+                if (!gone) {
+                    gone = true;
+                    win.location.assign(link.href);
+                }
             };
-            getEnv().then(env => wipeThen(win, env, go), go);
+            win.setTimeout(go, LOGOUT_WAIT_MS);
+            announceIdentityChange(win);
+            Promise.resolve()
+                .then(getLedger)
+                .then(ledger => wipeAll(win, ledger))
+                .catch(() => undefined)
+                .then(go);
         }, true);
     }
 

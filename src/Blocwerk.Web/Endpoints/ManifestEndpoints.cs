@@ -78,7 +78,18 @@ public static class ManifestEndpoints
     internal static async Task<IResult> HandlePartitionAsync(HttpContext http, [FromServices] ICachePartitionResolver partitions)
     {
         http.Response.Headers.CacheControl = "no-store";
-        return Results.Json(new CachePartitionResponse(await partitions.ResolveAsync()));
+        string partition;
+        try
+        {
+            partition = await partitions.ResolveAsync();
+        }
+        catch (Exception)
+        {
+            // An answer, not a 5xx: a 5xx makes the worker fall back to its last label, which may be the identity that left.
+            partition = CachePartitions.Unknown;
+        }
+
+        return Results.Json(new CachePartitionResponse(partition));
     }
 
     internal static async Task<IResult> HandleSummaryAsync(HttpContext http, [FromServices] CacheSummaryService summaries, CancellationToken ct)

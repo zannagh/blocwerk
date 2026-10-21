@@ -45,6 +45,9 @@ public sealed record ManifestAsset
     /// <summary>Gets the size of the original in bytes, as the row records it.</summary>
     public long Bytes { get; init; }
 
+    /// <summary>Gets when a gallery image was uploaded: the client's background fill takes the newest first.</summary>
+    public DateTimeOffset? At { get; init; }
+
     /// <summary>Gets the rendition widths (<c>/a/{sha}/{width}</c>) of a photo kind; null for the others.</summary>
     public IReadOnlyList<int>? Widths { get; init; }
 

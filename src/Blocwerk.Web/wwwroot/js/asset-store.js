@@ -4,8 +4,9 @@
  *   probeWorker: does the controlling worker cache `/a/` (PR 2.6b, blocwerk-shell-v4 or later)? It asks `sw-info`;
  *                a worker from before 2.6a ignores the message, so no reply within SW_INFO_TIMEOUT_MS is normal and
  *                just means "no background fill".
- *   verify:      did the worker store what the fill just fetched? Its `asset-cached` message, else a cache match.
- *                Neither means the browser refused the write (quota, a full device).
+ *   verify:      did the worker store what the fill just fetched? 'stored' on its `asset-cached` message or a cache
+ *                match, 'refused' on its `asset-refused` (the put threw: quota, a full device), else 'unknown'. A
+ *                timeout is never a refusal: a slow lookup or a large put may still be writing.
  *   reconcile:   the ledger follows the caches. The worker caches without the page and the browser (or
  *                Clear-Site-Data) can empty a cache behind our back, so on start rows without an entry go and entries
  *                without a row are added, sized from their Content-Length.
@@ -65,20 +66,20 @@ window.bwAssetStore = (function () {
         return false;
     }
 
-    // `seen` holds the keys announced so far (the message can beat the fill's own read of the body); `waiters` maps a
-    // key to the resolver the `asset-cached` handler calls.
+    // `seen` maps the keys announced so far to 'stored' or 'refused' (the message can beat the fill's own read of the
+    // body); `waiters` maps a key to the resolver the message handler calls.
     function verify(win, seen, waiters, partition, task) {
         if (seen.has(task.key)) {
-            return Promise.resolve(true);
+            return Promise.resolve(seen.get(task.key));
         }
         return new Promise(resolve => {
             const timer = win.setTimeout(() => {
                 waiters.delete(task.key);
-                inCache(win, partition, task.key).then(resolve);
+                inCache(win, partition, task.key).then(hit => resolve(hit ? 'stored' : 'unknown'));
             }, VERIFY_WAIT_MS);
-            waiters.set(task.key, ok => {
+            waiters.set(task.key, outcome => {
                 win.clearTimeout(timer);
-                resolve(ok);
+                resolve(outcome);
             });
         });
     }

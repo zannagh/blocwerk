@@ -10,8 +10,8 @@ namespace Blocwerk.Authentication.Services;
 /// The markup of <see cref="SiteDataClearing.SignedOutPage"/>: a bare page that tells the page-side caches the identity
 /// changed and moves on at once. It loads <c>deploy-drafts.js</c>, whose <c>bw:identity-changed</c> listener drops
 /// the editor copies kept on the device for the identity that left, and <c>asset-ledger.js</c> + <c>asset-wipe.js</c>,
-/// whose <c>bwAssetWipe.signedOut()</c> wipes the on-device asset cache before it moves on (capped at 1.5 s; the next
-/// page's partition check wipes anyway). Its target is always a local path; anything else becomes "/".
+/// whose <c>bwAssetWipe.signedOut()</c> wipes the on-device asset cache before it moves on (capped at 1.5 s, inside the
+/// 2 s meta refresh; the next page's partition check wipes anyway). Its target is always a local path; anything else becomes "/".
 /// </summary>
 internal static class SignedOutMarkup
 {
@@ -29,7 +29,7 @@ internal static class SignedOutMarkup
             <head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1">
-            <meta http-equiv="refresh" content="1;url={{html}}">
+            <meta http-equiv="refresh" content="2;url={{html}}">
             <title>Signed out - Blocwerk</title>
             </head>
             <body>

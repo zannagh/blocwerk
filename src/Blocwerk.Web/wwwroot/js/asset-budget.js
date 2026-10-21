@@ -29,6 +29,7 @@ window.bwAssetBudget = (function () {
     // A quota this small is a private window or a crippled profile.
     const CONSTRAINED_QUOTA = 512 * MB;
     const TIER_RANK = { core: 0, view3d: 1, lazy: 2 };
+    const ORPHAN_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
 
     function isStandalone(win) {
         try {
@@ -166,17 +167,20 @@ window.bwAssetBudget = (function () {
     /**
      * The asset keys to evict, in order. `state`: { walls, assets, budget: {images, view3d}, openWallId, keep3d, orphans }.
      *   1. orphans, when `orphans` says every wall's manifest is current: no manifest of this partition lists them any
-     *      more (a wall update replaced them). Offline, or with a ledger that lost its walls, nothing is an orphan;
+     *      more (a wall update replaced them). Offline, or with a ledger that lost its walls, nothing is an orphan; and
+     *      an orphan cached within ORPHAN_GRACE_MS stays (a page still showing it would only fetch it again);
      *   2. every 3D asset when 3D is opted out, else the superseded splat levels;
      *   3. 3D over the 3D budget;
-     *   4. lazy over the image budget (core counts toward the budget but is never a victim).
+     *   4. over the image budget: other lazy assets first, then the gallery (core counts toward the budget but is
+     *      never a victim).
      */
     function planEviction(state) {
         const items = classify(state.walls, state.assets);
         const chosen = new Set();
         const take = list => list.forEach(item => chosen.add(item.asset.key));
         if (state.orphans) {
-            take(items.filter(item => item.tier === 'orphan'));
+            const now = state.now ?? Date.now();
+            take(items.filter(item => item.tier === 'orphan' && now - (item.asset.cachedAt || 0) > ORPHAN_GRACE_MS));
         }
         const view3d = items.filter(item => item.tier === 'view3d');
         if (!state.keep3d) {
@@ -186,10 +190,15 @@ window.bwAssetBudget = (function () {
             const left = view3d.filter(item => !chosen.has(item.asset.key));
             take(victimsOver(left, state.budget.view3d, state.openWallId));
         }
-        // Core takes its share of the image budget first; lazy gets what is left.
-        const coreBytes = items.filter(item => item.tier === 'core').reduce((sum, item) => sum + bytesOf(item), 0);
-        const lazy = items.filter(item => item.tier === 'lazy');
-        take(victimsOver(lazy, Math.max(0, state.budget.images - coreBytes), state.openWallId));
+        // Core takes its share of the image budget first; lazy gets what is left, the gallery last.
+        const sum = list => list.reduce((total, item) => total + bytesOf(item), 0);
+        const coreBytes = sum(items.filter(item => item.tier === 'core'));
+        const lazy = items.filter(item => item.tier === 'lazy' && item.kind !== 'gallery');
+        const gallery = items.filter(item => item.tier === 'lazy' && item.kind === 'gallery');
+        const lazyVictims = victimsOver(lazy, Math.max(0, state.budget.images - coreBytes - sum(gallery)), state.openWallId);
+        take(lazyVictims);
+        const lazyLeft = sum(lazy) - sum(lazyVictims);
+        take(victimsOver(gallery, Math.max(0, state.budget.images - coreBytes - lazyLeft), state.openWallId));
         return [...chosen];
     }
 
@@ -204,5 +213,5 @@ window.bwAssetBudget = (function () {
         return items.filter(item => recencyOf(item) === oldest).map(item => item.asset.key);
     }
 
-    return { CAPS, TIER_RANK, detect, budgetFor, shouldRequestPersist, classify, planEviction, oneWallToFree };
+    return { CAPS, TIER_RANK, ORPHAN_GRACE_MS, detect, budgetFor, shouldRequestPersist, classify, planEviction, oneWallToFree };
 })();

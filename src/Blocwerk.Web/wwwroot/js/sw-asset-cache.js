@@ -23,7 +23,10 @@
  * for the page, so its next asset asks again.
  *
  * STORAGE REFUSED. Any error from the cache (QuotaExceededError, a full device, a private window) leaves that asset
- * network-only. The page always gets the network response; caching never fails a request.
+ * network-only, and a refused open or put posts `asset-refused` to the page. The page always gets the network
+ * response; caching never fails a request.
+ *
+ * `unknown` (the server could not resolve the partition) is an answer like `none`: network-only, never the last label.
  */
 const ASSET_ROUTE = /^\/api\/walls\/[^/]+\/a\/([0-9a-f]{64})(?:\/(\d{1,5}))?$/;
 const ASSET_PARTITION_URL = '/api/me/cache-partition';
@@ -183,18 +186,23 @@ function storeAsset(clientId, copy, route, key, partition) {
             if (assetPartitions.current !== partition) {
                 return undefined;
             }
-            return cache.put(key, copy).then(() => announceCached(clientId, route, length));
+            return cache.put(key, copy).then(
+                () => announce(clientId, 'asset-cached', route, length),
+                () => announce(clientId, 'asset-refused', route, length));
         })
-        .catch(() => undefined);
+        // An open that throws is the browser refusing storage too.
+        .catch(() => announce(clientId, 'asset-refused', route, length));
 }
 
-function announceCached(clientId, route, length) {
+// `asset-cached` after a put, `asset-refused` when the browser refused it (quota, a full device): only a refusal the
+// worker saw counts as one on the page, never a slow write.
+function announce(clientId, type, route, length) {
     return self.clients.get(clientId)
         .then(client => {
             if (client) {
                 client.postMessage({
                     proto: PROTO,
-                    type: 'asset-cached',
+                    type,
                     sha: route.sha,
                     width: route.width,
                     bytes: Number.isFinite(length) && length > 0 ? length : null

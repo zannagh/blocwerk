@@ -184,7 +184,19 @@ test('a refused put (quota, full device) still hands the page the network respon
     assert.equal(served.status, 200);
     assert.equal(await served.text(), 'jpeg-bytes');
     assert.equal(worker.stored.get(`bw-a1-${ALICE}-img`)?.size ?? 0, 0);
-    assert.deepEqual(worker.posted, []);
+    assert.deepEqual(worker.posted.map(p => [p.message.type, p.message.sha, p.message.width]), [['asset-refused', SHA, 1280]],
+        'the page hears of the refusal, so a slow write is never taken for one');
+});
+
+test('`unknown` (the server could not resolve the partition) is network-only and never falls back to the last label', async () => {
+    const worker = workerFor(ALICE);
+    await dispatchFetch(worker, asset()).settle();
+    assert.equal(assetFetches(worker), 1);
+    worker.routes[PARTITION] = () => response(200, JSON.stringify({ partition: 'unknown' }), { 'content-type': 'application/json' });
+
+    await dispatchFetch(worker, asset(), { clientId: 'page-2' }).settle();
+    assert.equal(assetFetches(worker), 2, 'the cached copy under the last label is not served');
+    assert.notEqual(await worker.stored.get('bw-sw-state').get('/__bw/partition').clone().text(), ALICE);
 });
 
 test('a failing cache lookup falls back to the network', async () => {

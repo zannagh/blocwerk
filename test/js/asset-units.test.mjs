@@ -2,10 +2,10 @@
 // threshold. Run by `node --test test/js/`.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { loadPage, sha, USER_A, KIOSK } from './fixtures/page-sandbox.mjs';
+import { loadPage, sha, USER_A, USER_B, KIOSK } from './fixtures/page-sandbox.mjs';
 
 const { win } = loadPage();
-const { bwAssetLedger: Ledger, bwAssetBudget: Budget, bwAssetFill: Fill, bwAssetWipe: Wipe, bwAssetNotice: Notice } = win;
+const { bwAssetLedger: Ledger, bwAssetBudget: Budget, bwAssetPlan: Plan, bwAssetFill: Fill, bwAssetWipe: Wipe, bwAssetNotice: Notice } = win;
 const plain = value => JSON.parse(JSON.stringify(value));
 const MB = 1024 * 1024;
 
@@ -37,42 +37,57 @@ test('a ledger whose storage refuses a write moves to memory and keeps working',
 const wall = (wallId, lastOpened, entries, more = {}) => Object.assign({ partition: 'p', wallId, lastOpened, entries }, more);
 const photo = (s, tier, bytes = 1000) => ({ sha: s, kind: 'panel', tier, bytes, widths: [640, 1280, 1920, 2560] });
 
-test('the fill goes tier by tier: every wall\'s core before any 3D, the open wall first, lazy never', () => {
+const plan = (walls, more = {}) => Plan.planFill(Object.assign({ walls, cachedKeys: new Set(), openWallId: null, keep3d: true, metered: false, budget: { images: 1e9, view3d: 1e9 }, usedImages: 0, used3d: 0, width: 1280, tokens: new Map() }, more));
+const gallery = (s, at, bytes = 1000) => ({ sha: s, kind: 'gallery', tier: 'lazy', bytes, at, widths: [640, 1280, 1920, 2560] });
+
+test('the fill goes tier by tier: every wall\'s core, then the gallery newest first, then 3D; the open wall first; other lazy never', () => {
     const walls = [
-        wall('old', 1, [photo(sha('a'), 'core'), photo(sha('b'), 'lazy'), { sha: sha('c'), kind: 'texture', tier: 'view3d', bytes: 10 }]),
+        wall('old', 1, [photo(sha('a'), 'core'), photo(sha('b'), 'lazy'), { sha: sha('c'), kind: 'texture', tier: 'view3d', bytes: 10 }, gallery(sha('g'), '2026-01-01T00:00:00+00:00'), gallery(sha('h'), '2026-06-01T00:00:00+00:00')]),
         wall('new', 5, [photo(sha('d'), 'core'), { sha: sha('e'), kind: 'texture', tier: 'view3d', bytes: 10 }]),
         wall('open', 0, [photo(sha('f'), 'core')]),
     ];
-    const tasks = Fill.planFill({ walls, cachedKeys: new Set(), openWallId: 'open', keep3d: true, budget3d: 1e9, used3d: 0, width: 1280, tokens: new Map() });
-    assert.deepEqual(plain(tasks.map(t => [t.wallId, t.tier, t.width])), [
-        ['open', 'core', 1280], ['open', 'core', 640], ['new', 'core', 1280], ['new', 'core', 640],
-        ['old', 'core', 1280], ['old', 'core', 640], ['new', 'view3d', null], ['old', 'view3d', null],
+    const tasks = plan(walls, { openWallId: 'open' });
+    assert.deepEqual(plain(tasks.map(t => [t.wallId, t.tier, t.sha[0], t.width])), [
+        ['open', 'core', 'f', 1280], ['open', 'core', 'f', 640], ['new', 'core', 'd', 1280], ['new', 'core', 'd', 640],
+        ['old', 'core', 'a', 1280], ['old', 'core', 'a', 640],
+        ['old', 'gallery', 'h', 640], ['old', 'gallery', 'h', null], ['old', 'gallery', 'g', 640], ['old', 'gallery', 'g', null],
+        ['new', 'view3d', 'e', null], ['old', 'view3d', 'c', null],
     ]);
     assert.ok(!tasks.some(t => t.sha === sha('b')));
 });
 
-test('the 3D opt-out plans no view3d, and core is planned whatever the 3D budget', () => {
+test('the gallery fills only while the image budget has room; core fills whatever the budget', () => {
+    const walls = [wall('w', 1, [photo(sha('a'), 'core', 500), gallery(sha('g'), '2026-06-01T00:00:00+00:00', 300), gallery(sha('h'), '2026-01-01T00:00:00+00:00', 300)])];
+    const tasks = plan(walls, { usedImages: 500, budget: { images: 900, view3d: 1e9 } });
+    assert.deepEqual(plain([...new Set(tasks.map(t => t.sha[0]))]), ['a', 'g']);
+    assert.deepEqual(plain([...new Set(plan(walls, { usedImages: 5000, budget: { images: 1, view3d: 1 } }).map(t => t.sha[0]))]), ['a']);
+});
+
+test('3D fills only while kept, unmetered and within its budget', () => {
     const walls = [wall('w', 1, [photo(sha('a'), 'core'), { sha: sha('c'), kind: 'texture', tier: 'view3d', bytes: 10 }])];
-    const off = Fill.planFill({ walls, cachedKeys: new Set(), openWallId: null, keep3d: false, budget3d: 1e9, used3d: 0, width: 1920 });
-    assert.ok(off.every(t => t.tier === 'core'));
-    const full = Fill.planFill({ walls, cachedKeys: new Set(), openWallId: null, keep3d: true, budget3d: 5, used3d: 0, width: 1920 });
-    assert.ok(full.every(t => t.tier === 'core') && full.length === 2);
+    assert.ok(plan(walls, { keep3d: false }).every(t => t.tier === 'core'));
+    assert.ok(plan(walls, { metered: true }).every(t => t.tier === 'core'));
+    assert.ok(plan(walls, { budget: { images: 1e9, view3d: 5 } }).every(t => t.tier === 'core'));
+    assert.ok(plan(walls).some(t => t.tier === 'view3d'));
+    assert.equal(Plan.isMetered({ connection: { type: 'cellular' } }), true);
+    assert.equal(Plan.isMetered({ connection: { saveData: true } }), true);
+    assert.equal(Plan.isMetered({ connection: { effectiveType: '4g', type: 'wifi' } }), false);
+    assert.equal(Plan.isMetered({}), false, 'no Network Information API counts as unmetered');
 });
 
 test('the fill takes one splat level (the smallest), none if the wall has one, and skips what is cached', () => {
     const levels = [{ sha: sha('1'), kind: 'splat', tier: 'view3d', bytes: 5, splats: 250000 }, { sha: sha('2'), kind: 'splat', tier: 'view3d', bytes: 2, splats: 40000 }];
     const w = [wall('w', 1, levels)];
-    const plan = cached => Fill.planFill({ walls: w, cachedKeys: new Set(cached), openWallId: 'w', keep3d: true, budget3d: 1e9, used3d: 0, width: 1920 });
-    assert.deepEqual(plain(plan([]).map(t => t.sha)), [sha('2')]);
-    assert.deepEqual(plain(plan([sha('1')])), []);
+    assert.deepEqual(plain(plan(w).map(t => t.sha)), [sha('2')]);
+    assert.deepEqual(plain(plan(w, { cachedKeys: new Set([sha('1')]) })), []);
 });
 
 test('a share token rides on the fill URL; the fit width follows image-res.js FIT_CAP', () => {
-    const tasks = Fill.planFill({ walls: [wall('w', 1, [{ sha: sha('a'), kind: 'texture', tier: 'core', bytes: 1 }])], cachedKeys: new Set(), openWallId: 'w', keep3d: true, budget3d: 0, used3d: 0, width: 1920, tokens: new Map([['w', 't k']]) });
+    const tasks = plan([wall('w', 1, [{ sha: sha('a'), kind: 'texture', tier: 'core', bytes: 1 }])], { tokens: new Map([['w', 't k']]) });
     assert.equal(tasks[0].url, `/api/walls/w/a/${sha('a')}?token=t%20k`);
-    assert.equal(Fill.fitWidth(390, 3), 1280);
-    assert.equal(Fill.fitWidth(1440, 2), 1920);
-    assert.equal(Fill.fitWidth(300, 1), 640);
+    assert.equal(Plan.fitWidth(390, 3), 1280);
+    assert.equal(Plan.fitWidth(1440, 2), 1920);
+    assert.equal(Plan.fitWidth(300, 1), 640);
 });
 
 test('fill concurrency is 1 on cellular or Save-Data, else 2', () => {
@@ -107,6 +122,21 @@ test('eviction: 3D over its budget, superseded splat levels, every 3D asset on o
     assert.equal(optOut.length, 6);
 });
 
+test('eviction: other lazy assets go before the gallery, the gallery after 3D, core never', () => {
+    const walls = [wall('w', 1, [photo(sha('a'), 'core'), photo(sha('b'), 'lazy'), gallery(sha('g'), null), { sha: sha('t'), kind: 'texture', tier: 'view3d' }])];
+    const assets = [asset(sha('a'), 50 * MB), asset(sha('b'), 30 * MB), asset(sha('g'), 30 * MB), asset(sha('t'), 30 * MB)];
+    const evict = images => plain(Budget.planEviction({ walls, assets, budget: { images, view3d: 0 }, openWallId: null, keep3d: true }));
+    assert.deepEqual(evict(85 * MB), [sha('t'), sha('b')]);
+    assert.deepEqual(evict(60 * MB), [sha('t'), sha('b'), sha('g')]);
+});
+
+test('an orphan cached in the last 7 days is kept; an older one goes', () => {
+    const now = Date.parse('2026-10-21T12:00:00Z');
+    const assets = [asset(sha('n'), 1, now - 24 * 3600 * 1000), asset(sha('o'), 1, now - 8 * 24 * 3600 * 1000)];
+    const keys = Budget.planEviction({ walls: [], assets, budget: { images: 1e9, view3d: 1e9 }, openWallId: null, keep3d: true, orphans: true, now });
+    assert.deepEqual(plain(keys), [sha('o')]);
+});
+
 test('an asset that one wall lists as core is never another wall\'s lazy victim', () => {
     const walls = [wall('b', 0, [photo(sha('s'), 'lazy')]), wall('a', 1, [photo(sha('s'), 'core')])];
     assert.deepEqual(plain(Budget.planEviction({ walls, assets: [asset(sha('s'), 500 * MB)], budget: { images: 1, view3d: 1 }, openWallId: null, keep3d: true })), []);
@@ -124,18 +154,28 @@ test('budget contexts, from the quota only: estimate().usage is never read', asy
     assert.deepEqual(plain(Budget.budgetFor({ name: 'safariTab', quota: 40e9 })), { images: 250 * MB, view3d: 250 * MB });
 });
 
-test('the wipe decision: rules 1 and 6', () => {
-    const d = (prev, label, token = false) => plain(Wipe.decide(prev, label, token));
-    assert.deepEqual(d(USER_A, USER_A), { wipe: false, keep: USER_A, active: USER_A, identityChanged: false });
-    assert.deepEqual(d(USER_A, KIOSK), { wipe: true, keep: KIOSK, active: KIOSK, identityChanged: true });
-    assert.deepEqual(d(null, USER_A), { wipe: true, keep: USER_A, active: USER_A, identityChanged: false });
-    assert.deepEqual(d(USER_A, null), { wipe: true, keep: null, active: 'none', identityChanged: true });
-    assert.deepEqual(d(USER_A, 'none'), { wipe: true, keep: null, active: 'none', identityChanged: true });
-    assert.deepEqual(d(USER_A, 'garbage'), { wipe: true, keep: null, active: 'none', identityChanged: true });
-    assert.deepEqual(d(USER_A, 'offline'), { wipe: false, keep: USER_A, active: USER_A, identityChanged: false });
-    assert.deepEqual(d('anon', 'anon'), { wipe: true, keep: null, active: 'anon', identityChanged: true });
-    assert.deepEqual(d(null, 'anon'), { wipe: true, keep: null, active: 'anon', identityChanged: false });
-    assert.deepEqual(d('anon', 'anon', true), { wipe: false, keep: 'anon', active: 'anon', identityChanged: false });
+test('the wipe decision: rules 1 and 6, offline and unknown', () => {
+    const d = (prev, label, token = false, userChanged = false) => {
+        const r = plain(Wipe.decide(prev, label, token, userChanged));
+        return [r.wipe, r.keep, r.active, r.page, r.identityChanged];
+    };
+    assert.deepEqual(d(USER_A, USER_A), [false, USER_A, USER_A, USER_A, false]);
+    assert.deepEqual(d(USER_A, KIOSK), [true, KIOSK, KIOSK, KIOSK, true]);
+    assert.deepEqual(d(null, USER_A), [true, USER_A, USER_A, USER_A, false]);
+    assert.deepEqual(d(USER_B, USER_A), [true, USER_A, USER_A, USER_A, false], 'a new label alone (key rotation) is no identity change');
+    assert.deepEqual(d(USER_B, USER_A, false, true), [true, USER_A, USER_A, USER_A, true]);
+    assert.deepEqual(d(USER_A, 'anon'), [true, null, 'anon', 'anon', true]);
+    assert.deepEqual(d(USER_A, null), [true, null, 'none', 'none', true]);
+    assert.deepEqual(d(USER_A, 'none'), [true, null, 'none', 'none', true]);
+    assert.deepEqual(d(USER_A, 'garbage'), [true, null, 'none', 'none', true]);
+    assert.deepEqual(d(USER_A, 'offline'), [false, USER_A, USER_A, 'offline', false]);
+    assert.deepEqual(d(USER_A, 'offline', false, true), [false, USER_A, USER_A, 'offline', false]);
+    assert.deepEqual(d(USER_A, 'unknown'), [false, USER_A, USER_A, 'unknown', false]);
+    assert.deepEqual(d(USER_A, 'unknown', false, true), [true, null, 'none', 'unknown', true]);
+    assert.deepEqual(d(KIOSK, KIOSK, false, true), [false, KIOSK, KIOSK, KIOSK, true]);
+    assert.deepEqual(d('anon', 'anon'), [true, null, 'anon', 'anon', false], 'rule 6 announces only when the device was not anonymous');
+    assert.deepEqual(d(null, 'anon'), [true, null, 'anon', 'anon', false]);
+    assert.deepEqual(d('anon', 'anon', true), [false, 'anon', 'anon', 'anon', false]);
 });
 
 test('the share token comes from the /shared/ segment or ?token=', () => {

@@ -98,6 +98,22 @@ public class CachePartitionTests
         Assert.Equal(await Resolver().ResolveAsync(), body.RootElement.GetProperty("partition").GetString());
     }
 
+    /// <summary>A resolver fault answers <c>unknown</c> with a 200: a 5xx would send the worker back to its last label.</summary>
+    [Fact]
+    public async Task ThePartitionRoute_AnswersUnknown_WhenTheResolverFails()
+    {
+        var resolver = Substitute.For<ICachePartitionResolver>();
+        resolver.ResolveAsync().Returns<string>(_ => throw new InvalidOperationException("boom"));
+        var http = new DefaultHttpContext { RequestServices = new ServiceCollection().AddLogging().BuildServiceProvider() };
+        http.Response.Body = new MemoryStream();
+
+        await (await ManifestEndpoints.HandlePartitionAsync(http, resolver)).ExecuteAsync(http);
+
+        Assert.Equal(StatusCodes.Status200OK, http.Response.StatusCode);
+        using var body = JsonDocument.Parse(((MemoryStream)http.Response.Body).ToArray());
+        Assert.Equal("unknown", body.RootElement.GetProperty("partition").GetString());
+    }
+
     private CachePartitionResolver Resolver(ICachePartitionKey? key = null) => new(key ?? new FixedPartitionKey(1), currentUser, kiosk);
 
     private void Bind(Guid wallId)

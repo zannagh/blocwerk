@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 const js = new URL('../../../src/Blocwerk.Web/wwwroot/js/', import.meta.url);
-const MODULES = ['asset-ledger.js', 'asset-budget.js', 'asset-wipe.js', 'asset-manifest.js', 'asset-store.js', 'asset-fill.js', 'asset-cache.js', 'asset-notice.js'];
+const MODULES = ['asset-ledger.js', 'asset-budget.js', 'asset-wipe.js', 'asset-manifest.js', 'asset-store.js', 'asset-session.js', 'asset-plan.js', 'asset-fill.js', 'asset-cache.js', 'asset-notice.js'];
 export const ORIGIN = 'https://blocwerk.test';
 export const USER_A = 'u-aaaaaaaaaaaaaaaaaaaa';
 export const USER_B = 'u-bbbbbbbbbbbbbbbbbbbb';
@@ -50,7 +50,8 @@ export function manifest(wallId, assets, extra = {}) {
 
 /**
  * opts: { label (meta content, null = no meta), path, search, caches, routes: { path → fn(init, url) }, partitionOfWorker,
- *         swReply ('v4' | 'none' | 'v3' | null = no controller), refuse (worker never stores), prefs3d, ua, quota, ledger }
+ *         swReply ('v4' | 'none' | 'v3' | null = no controller), refuse (worker posts asset-refused), silent (worker
+ *         neither stores nor answers: a slow write), prefs3d, ua, quota, ledger, user, connection }
  */
 export function loadPage(opts = {}) {
     const timers = [];
@@ -64,14 +65,15 @@ export function loadPage(opts = {}) {
     const caches = opts.caches || fakeCaches();
     const label = opts.label === undefined ? USER_A : opts.label;
     const meta = label === null ? null : { getAttribute: () => label };
-    const worker = { label: opts.workerLabel || label, refuse: !!opts.refuse };
+    const worker = { label: opts.workerLabel || label, refuse: !!opts.refuse, silent: !!opts.silent };
 
     const timer = (fn, ms) => {
-        // Short waits (verify, sw-info, the logout cap) run at once; long ones (the pending refetch) wait for fire().
+        // Short waits (verify, sw-info, the logout cap) run scaled down; long ones (the pending refetch, retries) wait for fireLong().
         const t = { fn, ms, done: false };
         timers.push(t);
         if (ms < 10000) {
-            setTimeout(() => { if (!t.done) { t.done = true; fn(); } }, 5);
+            // Scaled down, order kept: a reply posted through setImmediate always beats a 1.5 s timeout's 30 ms.
+            setTimeout(() => { if (!t.done) { t.done = true; fn(); } }, Math.max(5, Math.min(60, ms / 50)));
         }
         return t;
     };
@@ -91,10 +93,13 @@ export function loadPage(opts = {}) {
         if (asset) {
             // The worker's part: store in the partition's cache, then announce.
             const key = `${ORIGIN}/__bw/${asset[1]}` + (asset[2] ? `/${asset[2]}` : '');
-            if (!worker.refuse) {
+            const announced = { proto: 1, sha: asset[1], width: asset[2] ? Number(asset[2]) : null, bytes: 5000 };
+            if (worker.refuse) {
+                postFromWorker(Object.assign({ type: 'asset-refused' }, announced));
+            } else if (!worker.silent) {
                 const cache = await caches.open(`bw-a1-${worker.label}-img`);
                 await cache.put(key, new Response('x', { headers: { 'content-length': '5000' } }));
-                postFromWorker({ proto: 1, type: 'asset-cached', sha: asset[1], width: asset[2] ? Number(asset[2]) : null, bytes: 5000 });
+                postFromWorker(Object.assign({ type: 'asset-cached' }, announced));
             }
             return new Response('bytes', { status: 200 });
         }

@@ -2,13 +2,13 @@
  * bwAssetLedger — the page's own record of what the on-device wall-asset cache holds (design 2026-10-21 §6.8).
  *
  * IndexedDB `blocwerk-assets` v1, three stores:
- *   walls  [partition, wallId] → { partition, wallId, etag, cursor, entries, pending, member, shared,
+ *   walls  [partition, wallId] → { partition, wallId, etag, cursor, entries, pending, member,
  *                                  lastOpened, fetchedAt, keepOffline }
  *          `entries` is the manifest's asset list, compacted to what the fill and eviction read:
- *          [{ sha, kind, tier, bytes, widths?, splats? }].
+ *          [{ sha, kind, tier, bytes, widths?, splats?, at? }] (`at`: a gallery image's upload time).
  *   assets [partition, key]    → { partition, key, sha, width, cache, bytes, cachedAt, verifiedAt }
  *          `key` is the service worker's cache key path without the origin: `{sha}` or `{sha}/{width}`.
- *   meta   'meta'              → { id: 'meta', activePartition, schema, proto }
+ *   meta   'meta'              → { id: 'meta', activePartition, userTag, schema, proto }
  *
  * The budgets count bytes from here, never from navigator.storage.estimate(): on iOS estimate() reported 41 GB in use
  * during a 400 MB write. The ledger is a record, not the truth: asset-cache.js reconciles it against cache.keys() on

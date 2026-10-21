@@ -68,10 +68,11 @@ internal static class ManifestPhotoEntries
     {
         var rows = await db.WallImages.IgnoreQueryFilters().AsNoTracking()
             .Where(i => i.WallId == wallId)
-            .Select(i => new { i.Id, i.StoragePath, i.ContentType, i.SizeBytes, i.Sha256 })
+            .Select(i => new { i.Id, i.StoragePath, i.ContentType, i.SizeBytes, i.Sha256, i.CreatedAt })
             .ToListAsync(ct);
         return rows.Where(i => storage.ResolvePhysicalPath(i.StoragePath) is not null)
-            .Select(i => Photo(ManifestAssetKinds.Gallery, i.Id, i.Sha256, i.ContentType, i.SizeBytes, ManifestTiers.Lazy))
+            .Select(i => Photo(ManifestAssetKinds.Gallery, i.Id, i.Sha256, i.ContentType, i.SizeBytes, ManifestTiers.Lazy)
+                with { At = i.CreatedAt })
             .ToList();
     }
 

@@ -29,6 +29,9 @@ window.bwAssetManifest = (function () {
             if (a.splats) {
                 entry.splats = a.splats;
             }
+            if (a.at) {
+                entry.at = a.at;
+            }
             return entry;
         });
     }
@@ -51,9 +54,6 @@ window.bwAssetManifest = (function () {
             row.cursor = null;
         }
         row.member = !!opts.member;
-        if (opts.token) {
-            row.shared = true;
-        }
         if (opts.opened) {
             row.lastOpened = now;
         }
