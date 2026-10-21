@@ -6,6 +6,7 @@ using Blocwerk.Core.HoldMoves;
 using Blocwerk.Core.HoldStacks;
 using Blocwerk.Core.Detection.Enrichment;
 using Blocwerk.Core.Enhancement;
+using Blocwerk.Core.Feed;
 using Blocwerk.Core.LookOver;
 using Blocwerk.Core.MarkerPlanning;
 using Blocwerk.Core.Redetect;
@@ -237,6 +238,9 @@ public static class CoreServices
         // Polls the DB for the "how many exist now" telemetry gauges (walls, boulders, users...).
         builder.Services.AddHostedService<TelemetryStatsCollector>();
 
+        // The durable live-update feed (outbox): reads, retention and the horizon-lag gauge. Nothing writes rows yet.
+        builder.Services.AddWallFeed();
+
         // Post-detection hold outlines/fingerprints (all walls) and glyph metrics (glyph walls). Its CV
         // dependencies come from the HoldDetection project and are optional; stateless, so a singleton.
         builder.Services.AddSingleton<IHoldEnrichmentService, HoldEnrichmentService>();
@@ -354,6 +358,17 @@ public static class CoreServices
             {
                 logger.LogWarning(ex, "Dev wall-admin seed failed; continuing without all-wall admin.");
             }
+        }
+
+        // The feed's epoch, before any reader starts (and after the dev clone above). A restored database's transaction
+        // ids come from another cluster's xid space, so the feed is truncated and a new epoch makes every old cursor resync.
+        try
+        {
+            scope.ServiceProvider.GetRequiredService<IWallFeed>().InitializeAsync().GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Feed epoch check failed; the feed retries it on its first read.");
         }
 
         // Reconstruct Activity rows for any events that predate the activity model. Idempotent, so it
