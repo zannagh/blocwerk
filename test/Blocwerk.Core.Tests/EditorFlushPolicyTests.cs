@@ -73,6 +73,34 @@ public class EditorFlushPolicyTests
         Assert.Equal(expected, EditorFlushPolicy.RestoreCreate(fromDeploy, exists));
     }
 
+    /// <summary>
+    /// The notice after a saved wall batch names every live boulder a deleted hold retired, and every live boulder a
+    /// "changed" mark flagged that was not retired anyway, once each and in name order; historic ones are left out.
+    /// </summary>
+    [Fact]
+    public void TheWallNoticeNamesEachRetiredAndFlaggedBoulderOnce()
+    {
+        var deletedA = Guid.NewGuid();
+        var deletedB = Guid.NewGuid();
+        var marked = Guid.NewGuid();
+        var crimp = Guid.NewGuid();
+        var sloper = Guid.NewGuid();
+        var arete = Guid.NewGuid();
+        var old = Guid.NewGuid();
+        HoldUsageRef Use(Guid id, string name, bool historic = false) => new(id, name, null, HoldType.Normal, HoldUsage.HandAndFoot, false, historic);
+        var usage = new Dictionary<Guid, List<HoldUsageRef>>
+        {
+            [deletedA] = [Use(crimp, "Crimp"), Use(old, "Old", historic: true)],
+            [deletedB] = [Use(crimp, "Crimp"), Use(arete, "Arete")],
+            [marked] = [Use(crimp, "Crimp"), Use(sloper, "Sloper")],
+        };
+
+        var (retired, flagged) = EditorFlushPolicy.AffectedBoulders([deletedA, deletedB], [marked], id => usage.GetValueOrDefault(id) ?? []);
+
+        Assert.Equal(["Arete", "Crimp"], retired.Select(b => b.Name));
+        Assert.Equal([sloper], flagged.Select(b => b.Id));
+    }
+
     /// <summary>Kept copies are partitioned by who is at the browser, in the shape deploy-drafts.js builds.</summary>
     [Fact]
     public void KeptCopyKeysCarryTheIdentity()

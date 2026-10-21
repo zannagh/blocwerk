@@ -2,6 +2,9 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using Blocwerk.Core.Services;
+using Blocwerk.Web.Components.Shared;
+
 namespace Blocwerk.Web.State;
 
 /// <summary>
@@ -21,6 +24,7 @@ public static class EditorFlushPolicy
     /// <see cref="WallFlushScope.Everything"/> saves them like the button; <see cref="WallFlushScope.AddsAndMovesOnly"/>
     /// keeps them on the device for the user to confirm.
     /// </summary>
+    /// <remarks>Decided 2026-10-21: save everything, and name the retired and flagged boulders in the notice.</remarks>
     public static readonly WallFlushScope WallFlush = WallFlushScope.Everything;
 
     /// <summary>
@@ -32,6 +36,20 @@ public static class EditorFlushPolicy
         !dirty || submitting ? EditFlushAction.Nothing
         : anonymous ? EditFlushAction.KeepOnDevice
         : EditFlushAction.SaveOnServer;
+
+    /// <summary>
+    /// The live boulders a flushed wall batch affects, for the notice after the reload: those using a deleted hold are
+    /// retired (made historic); those using a hold marked as changed, and not already retired, are flagged for review.
+    /// Historic boulders are untouched by either and are left out. Each boulder is named once, in name order.
+    /// </summary>
+    public static (List<AffectedBoulder> Retired, List<AffectedBoulder> Flagged) AffectedBoulders(
+        IEnumerable<Guid> deletedHoldIds, IEnumerable<Guid> markedHoldIds, Func<Guid, List<HoldUsageRef>> usage)
+    {
+        var retired = Live(deletedHoldIds, usage);
+        var retiredIds = retired.Select(b => b.Id).ToHashSet();
+        var flagged = Live(markedHoldIds, usage).Where(b => !retiredIds.Contains(b.Id)).ToList();
+        return (retired, flagged);
+    }
 
     /// <summary>
     /// A restored create copy: its id is reused ONLY for a copy a deploy flush kept that no boulder carries yet. A copy
@@ -69,4 +87,12 @@ public static class EditorFlushPolicy
         manualAlignment ? (alignmentWork ? EditFlushAction.CannotKeep : EditFlushAction.Nothing)
         : canEdit && pending && !submitting ? EditFlushAction.SaveOnServer
         : EditFlushAction.Nothing;
+
+    private static List<AffectedBoulder> Live(IEnumerable<Guid> holdIds, Func<Guid, List<HoldUsageRef>> usage) =>
+        holdIds.SelectMany(usage)
+            .Where(u => !u.IsHistoric)
+            .GroupBy(u => u.BoulderId)
+            .Select(g => new AffectedBoulder(g.Key, g.First().Name))
+            .OrderBy(b => b.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
 }

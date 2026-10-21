@@ -13,7 +13,7 @@
  * kept copy has a Discard button: it forgets the copy, and reloads when the editor has already taken it back.
  *
  * Exposes window.bwDeployDrafts (called from DeployDraftInterop.cs):
- *   keep(key, payloadJson, notice?, href?)  notice(text, href?)  take(key) -> payloadJson|null  drop(key)
+ *   keep(key, payloadJson, notice?, href?)  notice(text, href?, links?: [{text, href}])  take(key) -> payloadJson|null  drop(key)
  *   show(text, href?)  (a notice right now, for state the server already saved)
  *   clearAll()  forgetVisible()   (identity switch; the offline queue took the form)
  *
@@ -83,7 +83,8 @@
         const who = identity || function () { return 'anon'; };
         const owned = function (key) { return String(key).split('|')[0] === who(); };
 
-        function notice(text, href, key) {
+        // links: optional [{ text, href }] listed under the notice (e.g. the boulders a saved wall batch retired).
+        function notice(text, href, key, links) {
             if (!text) {
                 return;
             }
@@ -92,7 +93,10 @@
             const list = (read(storage, NOTICES) || []).filter(function (n) {
                 return key ? n.key !== key : !(n.text === String(text) && n.href === (href || null));
             });
-            list.push({ text: String(text), href: href || null, key: key || null, at: now() });
+            const listed = Array.isArray(links)
+                ? links.filter(function (l) { return l && l.text && l.href; }).map(function (l) { return { text: String(l.text), href: String(l.href) }; })
+                : [];
+            list.push({ text: String(text), href: href || null, key: key || null, links: listed, at: now() });
             write(storage, NOTICES, list);
         }
 
@@ -195,7 +199,7 @@
         return b;
     }
 
-    function banner(doc, text, href, onDiscard) {
+    function banner(doc, text, href, onDiscard, links) {
         const el = doc.createElement('div');
         el.className = 'bw-deploy-notice';
         el.setAttribute('role', 'status');
@@ -212,6 +216,22 @@
         const close = button(doc, 'OK', function () { el.remove(); });
         close.style.marginLeft = 'auto';
         el.appendChild(message);
+        if (links && links.length) {
+            el.style.flexWrap = 'wrap';
+            const list = doc.createElement('ul');
+            list.style.cssText = 'flex-basis:100%;order:3;margin:4px 0 0;padding-left:18px;max-height:40vh;overflow:auto;';
+            links.forEach(function (l) {
+                const item = doc.createElement('li');
+                const a = doc.createElement('a');
+                a.href = l.href;
+                a.textContent = l.text;
+                a.style.color = 'inherit';
+                item.appendChild(a);
+                list.appendChild(item);
+            });
+            el.appendChild(list);
+        }
+
         el.appendChild(close);
         if (onDiscard) {
             el.appendChild(button(doc, 'Discard', function () { el.remove(); onDiscard(); }));
@@ -228,14 +248,14 @@
 
         let store = null;
         let discarding = false;
-        const show = function (text, href, key) {
+        const show = function (text, href, key, links) {
             banner(doc, text, href, key ? function () {
                 if (store.discard(key)) {
                     // The reload's pagehide must not copy the discarded state straight back.
                     discarding = true;
                     win.location.reload();
                 }
-            } : null);
+            } : null, links);
         };
         // The identity the server rendered onto <body> (BlocwerkApp.razor), in the same shape KeptCopyKey.cs builds.
         const identity = function () {
@@ -276,7 +296,7 @@
         doc.addEventListener('freeze', captureHidden);
 
         const showQueued = function () {
-            store.takeNotices().forEach(function (n) { show(n.text, n.href, n.key); });
+            store.takeNotices().forEach(function (n) { show(n.text, n.href, n.key, n.links); });
         };
         if (doc.readyState === 'loading') {
             doc.addEventListener('DOMContentLoaded', showQueued);
@@ -285,7 +305,7 @@
         }
 
         return {
-            keep: store.keep, notice: store.notice, take: store.take, drop: store.drop, clearAll: store.clearAll,
+            keep: store.keep, notice: function (text, href, links) { store.notice(text, href, null, links); }, take: store.take, drop: store.drop, clearAll: store.clearAll,
             forgetVisible: forgetVisible, show: function (text, href) { show(text, href, null); }
         };
     }

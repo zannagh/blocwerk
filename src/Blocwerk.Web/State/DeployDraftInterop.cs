@@ -30,10 +30,10 @@ public static class DeployDraftInterop
         }
     }
 
-    /// <summary>Queues a notice shown on the next page load (the reload after the deploy).</summary>
-    public static async Task<bool> NoticeAsync(IJSRuntime js, string notice, string? href = null)
+    /// <summary>Queues a notice shown on the next page load (the reload after the deploy), with optional links under it.</summary>
+    public static async Task<bool> NoticeAsync(IJSRuntime js, string notice, string? href = null, IReadOnlyList<NoticeLink>? links = null)
     {
-        return await TryAsync(js, DefaultTimeout, "bwDeployDrafts.notice", notice, href);
+        return await TryAsync(js, DefaultTimeout, "bwDeployDrafts.notice", notice, href, links);
     }
 
     /// <summary>Shows a notice right now (for state the server already saved while the browser was away).</summary>

@@ -22,14 +22,15 @@ public partial class WallPhotoEditor
             ManualAlignment, _hasPendingAlignmentWork, CanEdit, _pendingChanges > 0 || _alignmentChangedIds.Count > 0, _isSavingBatch);
         if (action != EditFlushAction.SaveOnServer)
         {
-            return new WallFlushResult(action == EditFlushAction.CannotKeep ? EditFlushOutcome.NotSaved : EditFlushOutcome.NothingToSave, [], []);
+            return WallFlushResult.Plain(action == EditFlushAction.CannotKeep ? EditFlushOutcome.NotSaved : EditFlushOutcome.NothingToSave);
         }
 
         var everything = EditorFlushPolicy.WallFlush == WallFlushScope.Everything;
+        var (retired, flagged) = everything ? await AffectedByDestructiveAsync() : ([], []);
         if (!await SaveBatchAsync(includeDestructive: everything))
         {
             // The user's own save is in flight; it carries the batch.
-            return new WallFlushResult(EditFlushOutcome.NothingToSave, [], []);
+            return WallFlushResult.Plain(EditFlushOutcome.NothingToSave);
         }
 
         StateHasChanged();
@@ -37,7 +38,9 @@ public partial class WallPhotoEditor
         return new WallFlushResult(
             unsent == 0 ? EditFlushOutcome.SavedOnServer : EditFlushOutcome.NotSaved,
             [.. _deletedHoldIds],
-            [.. _markChangedHoldIds]);
+            [.. _markChangedHoldIds],
+            retired,
+            flagged);
     }
 
     /// <summary>
@@ -64,5 +67,20 @@ public partial class WallPhotoEditor
         _markChangedHoldIds.UnionWith(marked.Where(shown.Contains));
         StateHasChanged();
         return (leftDeleted, leftMarked);
+    }
+
+    /// <summary>
+    /// Which live boulders the pending deletions will retire and which the pending "Mark as changed" will flag, read
+    /// afresh from the server (it needs no browser) right before the save, as the Delete tool's own confirm does.
+    /// </summary>
+    private async Task<(List<AffectedBoulder> Retired, List<AffectedBoulder> Flagged)> AffectedByDestructiveAsync()
+    {
+        if (_deletedHoldIds.Count == 0 && _markChangedHoldIds.Count == 0)
+        {
+            return ([], []);
+        }
+
+        await RefreshHoldUsageAsync();
+        return EditorFlushPolicy.AffectedBoulders(_deletedHoldIds, _markChangedHoldIds, UsageFor);
     }
 }

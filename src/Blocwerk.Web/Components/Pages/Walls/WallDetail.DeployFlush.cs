@@ -61,7 +61,7 @@ public partial class WallDetail
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             Logger.LogWarning(ex, "Pre-deploy save of hold edits on wall {WallId} failed", WallId);
-            result = new Shared.WallFlushResult(EditFlushOutcome.NotSaved, [], []);
+            result = Shared.WallFlushResult.Plain(EditFlushOutcome.NotSaved);
         }
 
         var outcome = result.Outcome;
@@ -77,17 +77,43 @@ public partial class WallDetail
 
         var notice = outcome switch
         {
-            EditFlushOutcome.SavedOnServer => "Your unsaved hold edits were saved before an update.",
+            EditFlushOutcome.SavedOnServer => SavedNotice(result),
             EditFlushOutcome.NotSaved => "Your unsaved hold edits or alignment could not be saved before an update; please check the wall.",
             _ => null,
         };
         if (notice is not null)
         {
-            await DeployDraftInterop.NoticeAsync(JS, notice, $"/walls/{WallId}");
+            await DeployDraftInterop.NoticeAsync(JS, notice, $"/walls/{WallId}", AffectedLinks(result));
         }
 
         return outcome;
     }
+
+    private static string SavedNotice(Shared.WallFlushResult result)
+    {
+        var parts = new List<string>();
+        if (result.Retired.Count > 0)
+        {
+            parts.Add($"{result.Retired.Count} boulder(s) were retired by the deleted holds");
+        }
+
+        if (result.FlaggedForReview.Count > 0)
+        {
+            parts.Add($"{result.FlaggedForReview.Count} flagged for review by the \u201cchanged\u201d marks");
+        }
+
+        return parts.Count == 0
+            ? "Your unsaved hold edits were saved before an update."
+            : $"Your unsaved hold edits were saved before an update; {string.Join(", and ", parts)}. Open each to review it or revise it back:";
+    }
+
+    // Each links to the boulder's page: a retired one offers Revise there (for whoever may revise it) to bring it
+    // back onto the current holds, a flagged one is reviewed there.
+    private List<NoticeLink> AffectedLinks(Shared.WallFlushResult result) =>
+    [
+        .. result.Retired.Select(b => new NoticeLink($"{b.Name} (retired)", $"/walls/{WallId}/boulders/{b.Id}")),
+        .. result.FlaggedForReview.Select(b => new NoticeLink($"{b.Name} (review)", $"/walls/{WallId}/boulders/{b.Id}")),
+    ];
 
     /// <summary>Once per entry into edit mode: re-drafts decisions an adds-and-moves-only flush kept on the device.</summary>
     private async Task RestoreKeptDecisionsAsync()

@@ -120,3 +120,17 @@ test('one notice per editor however often the flush runs', () => {
     store.notice('saved', '/walls/w');
     assert.deepEqual(store.takeNotices().map((n) => n.text), ['kept a', 'saved']);
 });
+
+test('a notice can list links (the boulders a saved wall batch retired)', () => {
+    const { store } = harness();
+    store.notice('Saved; 2 boulders were retired', '/walls/w', null, [
+        { text: 'Crimp Line (retired)', href: '/walls/w/boulders/1' },
+        { text: 'Sloper (review)', href: '/walls/w/boulders/2' },
+        { text: '', href: '/ignored' },
+    ]);
+    const [n] = store.takeNotices();
+    assert.deepEqual(n.links, [
+        { text: 'Crimp Line (retired)', href: '/walls/w/boulders/1' },
+        { text: 'Sloper (review)', href: '/walls/w/boulders/2' },
+    ]);
+});
