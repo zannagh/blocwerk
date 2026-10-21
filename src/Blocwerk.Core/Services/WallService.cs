@@ -1946,6 +1946,32 @@ public class WallService : IWallService
         }
     }
 
+    public async Task<bool> IsMemberAsync(Guid wallId)
+    {
+        using var op = BlocwerkMetrics.TimeOperation("Wall.IsMember", wallId);
+        try
+        {
+            User user;
+            try
+            {
+                user = await _currentUserService.GetCurrentUserAsync();
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return false;
+            }
+
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
+            return await db.Walls.AnyAsync(w => w.Id == wallId);
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
+    }
+
     public async Task<bool> UsersShareAWallAsync(Guid userA, Guid userB)
     {
         using var op = BlocwerkMetrics.TimeOperation("Wall.UsersShareAWall");

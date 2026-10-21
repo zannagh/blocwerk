@@ -141,7 +141,7 @@ internal static class CommentAccessChecks
         return comment.Id;
     }
 
-    private static async Task<Guid> SeedOtherWallAsync(WallTestHarness h, Guid memberId)
+    internal static async Task<Guid> SeedOtherWallAsync(WallTestHarness h, Guid memberId)
     {
         await using var db = h.CreateContext();
         var wall = new Wall { Name = "Other Wall", OwnerId = h.Owner.Id, Photo = [1], PhotoContentType = "image/jpeg" };

@@ -135,6 +135,12 @@ public interface IWallService
     Task<List<WallMember>> GetMembersAsync(Guid wallId);
 
     /// <summary>
+    /// Whether the signed-in caller may write social data (ticks, comments, favorites) on the wall: the same
+    /// membership filter the services gate those writes on. False for an anonymous caller.
+    /// </summary>
+    Task<bool> IsMemberAsync(Guid wallId);
+
+    /// <summary>
     /// True when both users are members of at least one common wall. Used to gate whether a viewer
     /// may see another member's profile. Independent of the current-user context.
     /// </summary>

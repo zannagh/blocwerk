@@ -448,6 +448,12 @@ else
                     <a href="/kiosk/users">Pick yourself</a> to log attempts and comment.
                 </div>
             }
+            else if (_isShareGuest)
+            {
+                <div class="bw-anon-notice">
+                    <a href="/join/@Uri.EscapeDataString(ShareToken ?? string.Empty)">Join this wall</a> to comment and log ticks.
+                </div>
+            }
             else
             {
                 <div class="bw-anon-notice">
@@ -555,6 +561,9 @@ else
     private AttemptSummary _summary = new(0, false, false);
     private Guid _currentUserId;
     private bool _isAnonymous;
+
+    // Signed in, on the share route, not a member of the wall: anonymous for every write, but told how to join.
+    private bool _isShareGuest;
     private bool _isCreator;
 
     /// <summary>
@@ -1149,6 +1158,7 @@ else
         // survive a load that ends not-found.
         _boulder = null;
         _isAnonymous = false;
+        _isShareGuest = false;
         _currentUserId = Guid.Empty;
         _isCreator = false;
         _isSetter = false;
@@ -1179,8 +1189,19 @@ else
             try
             {
                 var user = await CurrentUserService.GetCurrentUserAsync();
-                _currentUserId = user.Id;
-                _isAnonymous = false;
+
+                // Ticks, comments and favorites are for the wall's members, and the services refuse anyone else.
+                // A signed-in NON-member on the share link therefore reads like a guest (as on WallDetail) and is
+                // offered the join link instead of buttons that could only fail.
+                if (await WallService.IsMemberAsync(WallId))
+                {
+                    _currentUserId = user.Id;
+                    _isAnonymous = false;
+                }
+                else
+                {
+                    _isShareGuest = true;
+                }
             }
             catch (UnauthorizedAccessException ex)
             {
