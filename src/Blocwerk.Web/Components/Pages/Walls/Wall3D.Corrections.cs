@@ -53,10 +53,11 @@ public partial class Wall3D
         }
     }
 
-    private void FacetTapped(string? facetId)
+    private Task FacetTapped(string? facetId)
     {
         tappedFacet = facetId is null ? null : correction?.Facets.FirstOrDefault(f => f.Id == facetId);
         correctionMessage = null;
+        return ReleaseFeedAsync(); // a model change held while a facet was picked
     }
 
     private Task VerticalAsync(string facetId) => CorrectAsync(() => Corrections.SetVerticalSurfaceAsync(WallId, facetId));
@@ -86,5 +87,7 @@ public partial class Wall3D
         {
             correcting = false;
         }
+
+        await ReleaseFeedAsync();
     }
 }

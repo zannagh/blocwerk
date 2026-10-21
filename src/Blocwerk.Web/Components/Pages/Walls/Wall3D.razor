@@ -2,6 +2,7 @@
 @page "/walls/{WallId:guid}/shared/{ShareToken}/3d"
 @rendermode InteractiveServer
 @using Blocwerk.Core.Geometry.View3D
+@implements IDisposable
 
 <PageTitle>@(_result?.WallName ?? "Wall") in 3D - Blocwerk</PageTitle>
 

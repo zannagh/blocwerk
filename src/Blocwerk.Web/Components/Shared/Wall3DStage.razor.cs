@@ -2,6 +2,7 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using System.Text.Json;
 using Blocwerk.Core.Geometry.View3D;
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
@@ -261,6 +262,7 @@ public partial class Wall3DStage : IAsyncDisposable
             return;
         }
 
+        var restore = await CaptureRestoreAsync(view);
         await UnmountAsync();
         failure = null;
         try
@@ -271,7 +273,7 @@ public partial class Wall3DStage : IAsyncDisposable
                 return;
             }
 
-            var handle = await module.InvokeAsync<IJSObjectReference>("mount", stage, view, MountOptions());
+            var handle = await module.InvokeAsync<IJSObjectReference>("mount", stage, view, MountOptions(restore));
             if (!IsCurrent(view))
             {
                 await DisposeViewerAsync(handle);
@@ -279,6 +281,7 @@ public partial class Wall3DStage : IAsyncDisposable
             }
 
             viewer = handle;
+            viewerView = view;
             await ListenFacetTapsAsync();
         }
         catch (JSDisconnectedException)
@@ -311,7 +314,7 @@ public partial class Wall3DStage : IAsyncDisposable
         }
     }
 
-    private Dictionary<string, object?> MountOptions()
+    private Dictionary<string, object?> MountOptions(JsonElement? restore)
     {
         var options = new Dictionary<string, object?>
         {
@@ -322,6 +325,11 @@ public partial class Wall3DStage : IAsyncDisposable
             ["hintOnce"] = HintOnce,
             ["highlight"] = Highlight,
         };
+        if (restore is { } carried)
+        {
+            options["restore"] = carried;
+        }
+
         foreach (var (key, value) in ExtraOptions ?? new Dictionary<string, object?>())
         {
             options[key] = value;

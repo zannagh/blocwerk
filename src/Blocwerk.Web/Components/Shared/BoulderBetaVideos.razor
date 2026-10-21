@@ -14,6 +14,9 @@
     the offline queue): a clip has no business sitting in IndexedDB waiting for a network, and the
     circuit's message cap cannot carry a large file. Offline, the section simply cannot accept an
     upload — the rest of the page still works.
+
+    Live (BoulderBetaVideos.Feed.cs): other people's uploads, encode progress and deletes arrive
+    through the feed. The open lightbox is never swapped under the viewer.
 *@
 
 <details class="beta-section" open="@(StartExpanded || _videos is { Count: > 0 })">
@@ -194,8 +197,6 @@
         : _uploadPercent > 0 ? $"Uploading {_uploadPercent}%"
         : "Uploading…";
 
-    protected override Task OnInitializedAsync() => LoadAsync();
-
     /// <summary>Re-reads the list. Called by the boulder page after the offline queue flushed.</summary>
     public Task ReloadAsync() => LoadAsync();
 
@@ -277,10 +278,11 @@
             // normal query — otherwise a stray/stale ShareToken in the URL (enhanced-nav retains
             // route params, and the last-page cookie can restore a /shared/ link) silently routes
             // the owner through the anonymous filter and returns an empty list.
-            _videos = IsAnonymous && !string.IsNullOrEmpty(ShareToken)
-                ? await VideoService.GetVideosByShareTokenAsync(BoulderId, ShareToken)
-                : await LoadForSignedInViewerAsync();
-            _error = null;
+            await ReadTaggedAsync(
+                () => IsAnonymous && !string.IsNullOrEmpty(ShareToken)
+                    ? VideoService.GetVideosByShareTokenAsync(BoulderId, ShareToken)
+                    : LoadForSignedInViewerAsync(),
+                videos => (_videos, _error) = (videos, null)); // in the commit: a nested reload may land first
         }
         catch (Exception ex)
         {
@@ -354,6 +356,7 @@
 
     public async ValueTask DisposeAsync()
     {
+        _feed?.Dispose();
         await DestroyHlsAsync();
         _selfRef?.Dispose();
     }
@@ -479,10 +482,11 @@
             }
 
             // Reload rather than a local remove so a concurrently uploaded/deleted clip is reflected
-            // too, then notify the parent so its count and activity feed refresh.
+            // too, then notify the parent so its count and activity feed refresh. The error is cleared
+            // first, so the reload's own error is not wiped afterwards.
+            _error = null;
             await ReloadAsync();
             await Uploaded.InvokeAsync();
-            _error = null;
         }
         catch (Exception ex)
         {

@@ -255,7 +255,16 @@ function build(container, renderer, view, options) {
     const startMode = normalizeMode(options.initialMode);
     modeCtl.set(startMode && modes.includes(startMode) && startMode !== 'photoreal' ? startMode : 'schematic');
     if (startMode === 'photoreal') modeCtl.set('photoreal');
-    if (locator) {
+    const restore = options.restore;
+    if (restore?.position && restore?.target) {
+        // A live refresh of the same wall (new holds, another model): the viewer keeps where it looked and its mode.
+        framed = null;
+        ui.setActive(null);
+        camera.position.fromArray(restore.position);
+        controls.target.fromArray(restore.target);
+        controls.update();
+        if (restore.mode) modeCtl.set(restore.mode);
+    } else if (locator) {
         framed = null;
         ui.setActive(null);
         if (options.orbit) {
@@ -285,6 +294,8 @@ function build(container, renderer, view, options) {
         photoReal: on => modeCtl.set(on ? 'photoreal' : 'schematic'),
         /** Camera pose (tests, probes). */
         pose: () => ({ position: camera.position.toArray(), target: controls.target.toArray() }),
+        /** What a remount of the same wall carries over (`options.restore`): the camera pose and the mode. */
+        state: () => ({ position: camera.position.toArray(), target: controls.target.toArray(), mode: modeCtl.mode }),
         /** Scene statistics for the screenshot harness / perf checks. */
         stats: () => ({
             holds: holds.all.length, drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles,

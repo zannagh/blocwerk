@@ -37,6 +37,7 @@ public sealed class WallCacheState : IDisposable
     private readonly IDomainChangeNotifier notifier;
     private readonly WallFeedLink link;
     private readonly WallCacheStore store = new();
+    private readonly WallFeedWatches watches = new();
     private readonly object myWallsGate = new();
     private Task<List<Wall>>? myWalls;
     private int disposed;
@@ -65,6 +66,12 @@ public sealed class WallCacheState : IDisposable
     /// <summary>Raised on the hub's loop for every feed delivery, after eviction; for the live leaf lists (PR 1.5).</summary>
     public event Action<FeedDelivery>? FeedDelivered;
 
+    /// <summary>
+    /// Raised (off the circuit's dispatcher) after a resubscribe gave the circuit other audiences on a wall. Live lists
+    /// re-read: other rows reach them now, and the revoked subscription dropped deliveries until the swap.
+    /// </summary>
+    public event Action<Guid>? ViewerChanged;
+
     internal WallCacheStore Store => store;
 
     public async Task<Wall?> GetWallAsync(Guid wallId) =>
@@ -77,6 +84,18 @@ public sealed class WallCacheState : IDisposable
         (await store.HoldSets.GetOrLoad(
             (wallId, generation),
             () => LoadOnWallAsync(wallId, () => walls.GetHoldsForGenerationAsync(wallId, generation)))).Value;
+
+    /// <summary>The <c>CursorAtLoad</c> for a component's own load (a live list); null when the feed cannot be read.</summary>
+    public Task<FeedCursor?> CursorAtLoadAsync() => link.CursorAtLoadAsync();
+
+    /// <summary>The viewer the circuit is subscribed to the wall as; null without a subscription.</summary>
+    public FeedViewer? ViewerOf(Guid wallId) => link.ViewerOf(wallId);
+
+    /// <summary>Subscribes to the wall's feed if the circuit may see it (a live list on a page that caches nothing).</summary>
+    public Task EnsureFeedAsync(Guid wallId) => link.EnsureAsync(wallId);
+
+    /// <summary>Keeps the wall's subscription while a live list follows it, even when nothing of it is cached.</summary>
+    public IDisposable Watch(Guid wallId) => watches.Watch(wallId);
 
     public Task<List<Wall>> GetMyWallsAsync()
     {
@@ -121,7 +140,7 @@ public sealed class WallCacheState : IDisposable
     // do not pile up over a long session. A wall on screen reloads straight after an eviction, so it keeps its slot.
     private Task SubscribeAsync(Guid wallId)
     {
-        link.Release(w => w == wallId || store.HasAnyOf(w));
+        link.Release(w => w == wallId || store.HasAnyOf(w) || watches.Has(w));
         return link.EnsureAsync(wallId);
     }
 
@@ -206,14 +225,28 @@ public sealed class WallCacheState : IDisposable
 
         var wall = delivery.Resync && store.EvictWall(delivery.WallId);
         var changedBoulders = new HashSet<Guid>();
+        var inFlight = new List<Task<Guid?>>();
         foreach (var e in delivery.Events)
         {
             var evicted = WallFeedEviction.Apply(store, delivery.WallId, e);
             wall |= evicted.Wall;
             changedBoulders.UnionWith(evicted.Boulders);
+            inFlight.AddRange(evicted.InFlight);
         }
 
         RaiseFeedChange(delivery.WallId, wall, changedBoulders);
+        if (!wall)
+        {
+            // Reported once the load tells its wall, and only for this wall.
+            WallFeedEvicted.WhenLoaded(inFlight, id =>
+            {
+                if (!changedBoulders.Contains(id) && Volatile.Read(ref disposed) == 0)
+                {
+                    Changed?.Invoke(new DomainChange(DomainChangeScope.Boulder, delivery.WallId, id));
+                }
+            });
+        }
+
         FeedDelivered?.Invoke(delivery);
     }
 
@@ -238,6 +271,7 @@ public sealed class WallCacheState : IDisposable
         {
             store.EvictWall(wallId);
             Changed?.Invoke(new DomainChange(DomainChangeScope.Wall, wallId, Guid.Empty));
+            ViewerChanged?.Invoke(wallId);
         }
     }
 

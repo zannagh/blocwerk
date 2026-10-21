@@ -3,6 +3,7 @@
 
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Geometry.View3D;
+using Blocwerk.Web.State.Live;
 using Microsoft.AspNetCore.Components;
 
 namespace Blocwerk.Web.Components.Pages.Walls;
@@ -72,26 +73,36 @@ public partial class Wall3D
 
         _loaded = Key;
         _result = null;
+        OpenFeed();
         await ReloadAsync();
     }
 
     /// <summary>
     /// Builds the view for the current wall; a build that returns after the page moved on to another wall
-    /// (or boulder) is dropped, so a slow build of the previous one never replaces the current one.
+    /// (or boulder) is dropped, so a slow build of the previous one never replaces the current one. With
+    /// <paramref name="keepSameModel"/> (a live rebuild) a view of the same active model keeps the mounted stage.
     /// </summary>
-    private async Task ReloadAsync()
+    private async Task ReloadAsync(bool keepSameModel = false)
     {
         var key = Key;
+        var built = 0;
         try
         {
-            var built = await ViewService.BuildAsync(key.Wall, key.Boulder, key.Token);
-            if (_loaded != key)
+            // Assigned in the commit: the feed may apply a held batch (a nested rebuild) before LoadAsync returns,
+            // and an assignment after it would put this older build back over the newer one.
+            await BuildTaggedAsync(() => ViewService.BuildAsync(key.Wall, key.Boulder, key.Token), result =>
             {
-                return;
-            }
+                if (_loaded == key && !(keepSameModel && Wall3DViewIdentity.SameModel(_result, result)))
+                {
+                    _result = result;
+                    built = ++buildEpoch;
+                }
+            });
 
-            _result = built;
-            await LoadCorrectionAsync(key);
+            if (built != 0 && built == buildEpoch)
+            {
+                await LoadCorrectionAsync(key);
+            }
         }
         catch (UnauthorizedAccessException)
         {

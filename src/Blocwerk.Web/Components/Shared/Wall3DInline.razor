@@ -2,9 +2,14 @@
    with every hold as its real outline, the boulder highlighted (glowing outlines, with the focus lightbulb)
    when BoulderId is set. The view is built
    through IWall3DViewService, which reads the wall exactly as the host page does (members, the
-   kiosk on its own wall, share tokens), so it can show nothing the page could not. *@
+   kiosk on its own wall, share tokens), so it can show nothing the page could not. A view3d.changed
+   (another model activated) rebuilds it, and the new view instance remounts the stage. *@
 @using Blocwerk.Core.Geometry.View3D
+@using Blocwerk.Web.State.Live
 @inject IWall3DViewService ViewService
+@inject WallCacheState Cache
+@inject ILogger<Wall3DInline> Logger
+@implements IDisposable
 
 <div class="wall3d-inline">
     @if (result is null)
@@ -58,6 +63,8 @@
         _ => "The 3D view is not available.",
     };
 
+    private LeafFeed? feed;
+
     // Parameters, not OnInitializedAsync: the host page is retained across wall/boulder navigation.
     protected override async Task OnParametersSetAsync()
     {
@@ -69,20 +76,56 @@
 
         loaded = key;
         result = null;
-        Wall3DViewResult built;
+        feed?.Dispose();
+
+        // Share routes are not live, as on the host pages.
+        feed = string.IsNullOrEmpty(ShareToken)
+            ? LeafFeed.Open(Cache, Wall3DViewIdentity.Scope(WallId), InvokeAsync, RebuildAsync, logger: Logger)
+            : null;
+        await BuildAsync(key, keepSameModel: false);
+    }
+
+    public void Dispose() => feed?.Dispose();
+
+    // Through the feed, an event during the build is held and applied after it, and only the latest build lands.
+    private async Task BuildAsync((Guid Wall, Guid? Boulder, string? Token) key, bool keepSameModel)
+    {
+        void Commit(Wall3DViewResult built)
+        {
+            // A slow build of the previous wall must not replace the current one's; the same model keeps the stage.
+            if (loaded == key && !(keepSameModel && Wall3DViewIdentity.SameModel(result, built)))
+            {
+                result = built;
+            }
+        }
+
         try
         {
-            built = await ViewService.BuildAsync(WallId, BoulderId, ShareToken);
+            if (feed is { } f)
+            {
+                await f.LoadAsync(Build, Commit);
+            }
+            else
+            {
+                Commit(await Build());
+            }
         }
         catch (UnauthorizedAccessException)
         {
-            built = new Wall3DViewResult(Wall3DViewStatus.NotFound);
+            Commit(new Wall3DViewResult(Wall3DViewStatus.NotFound));
         }
 
-        // A slow build of the previous wall must not replace the current one's.
-        if (loaded == key)
+        Task<Wall3DViewResult> Build() => ViewService.BuildAsync(key.Wall, key.Boulder, key.Token);
+    }
+
+    // On the dispatcher: the wall's content changed (model, holds, volumes, links, resync), so the view is rebuilt and the
+    // stage remounts, carrying the camera over; a delivery resync or a changed viewer keeps a view of the same model.
+    private async Task RebuildAsync(LeafBatch batch)
+    {
+        if (loaded is { } key && Cache.ViewerOf(WallId) is not null)
         {
-            result = built;
+            await BuildAsync(key, keepSameModel: !batch.Structural);
+            StateHasChanged();
         }
     }
 }
