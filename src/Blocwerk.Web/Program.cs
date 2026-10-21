@@ -235,6 +235,11 @@ public static class Program
         // When an open editor holds the deploy gate: recent real input, page not hidden for long, bounded hold.
         builder.Services.Configure<EditPresenceOptions>(builder.Configuration.GetSection(EditPresenceOptions.SectionName));
 
+        // The pre-deploy flush: open editors register how to persist their unsaved state (scoped), and the
+        // autodeploy hook's POST /api/v1/maintenance/flush-edits runs them all (singleton hub).
+        builder.Services.AddSingleton<EditFlushHub>();
+        builder.Services.AddScoped<CircuitEditFlush>();
+
         // Core's long-running work (capture video upload + frame extraction) holds the same gate.
         builder.Services.AddSingleton<IDeployBusyGate, EditActivityDeployBusyGate>();
 

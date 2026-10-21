@@ -178,15 +178,16 @@ public class ApiSurfaceAuthorizationTests
     }
 
     /// <summary>
-    /// The deploy hook's announce route has to live under an <see cref="ApiKeySurface"/> prefix,
-    /// or the bearer would be forwarded to the cookie scheme and arrive anonymous — and it must be
+    /// The deploy hook's announce and pre-deploy flush routes have to live under an <see cref="ApiKeySurface"/> prefix,
+    /// or the bearer would be forwarded to the cookie scheme and arrive anonymous — and they must be
     /// gated by the installation policy specifically, not by "any key".
     /// </summary>
-    [Fact]
-    public void TheMaintenanceAnnounceRoute_IsCovered_AndInstallationScoped()
+    [Theory]
+    [InlineData("api/v1/maintenance/announce")]
+    [InlineData("api/v1/maintenance/flush-edits")]
+    public void TheMaintenanceRoutes_AreCovered_AndInstallationScoped(string route)
     {
-        var announce = Assert.Single(
-            AllEndpoints().Where(e => e.RoutePattern.RawText == "api/v1/maintenance/announce"));
+        var announce = Assert.Single(AllEndpoints().Where(e => e.RoutePattern.RawText == route));
 
         Assert.True(ApiKeySurface.Covers(ToPath(announce.RoutePattern.RawText)));
 
@@ -249,6 +250,7 @@ public class ApiSurfaceAuthorizationTests
         builder.Services.AddSingleton(Substitute.For<ICurrentUserService>());
         builder.Services.AddSingleton(Substitute.For<IWallPanelService>());
         builder.Services.AddSingleton(Substitute.For<IMaintenanceAnnouncer>());
+        builder.Services.AddSingleton(new Blocwerk.Web.State.EditFlushHub(Microsoft.Extensions.Logging.Abstractions.NullLogger<Blocwerk.Web.State.EditFlushHub>.Instance));
         builder.Services.AddSingleton(Substitute.For<IKioskContext>());
         builder.Services.AddSingleton(Substitute.For<IDbContextFactory<BlocwerkDbContext>>());
         builder.Services.AddSingleton(Substitute.For<Blocwerk.Core.Capture.ICaptureFileStore>());

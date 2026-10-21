@@ -1489,6 +1489,7 @@ else
     {
         Cache.Changed -= OnCacheChanged;
         _editLease?.Dispose();
+        _flushRegistration?.Dispose();
 
         if (_editGuardActive)
         {
@@ -1930,6 +1931,8 @@ else
             _editLease?.Dispose();
             _editLease = null;
         }
+
+        SyncDeployFlush();
     }
 
     private Task GoToBoulders() => _carousel?.GoToPageAsync(3) ?? Task.CompletedTask;

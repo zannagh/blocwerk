@@ -178,6 +178,8 @@
 
         @* Live form snapshot for the offline submit path (offline-boulder.js). *@
         <div id="bw-boulder-form" hidden aria-hidden="true" data-bw-boulder-snapshot="@SnapshotJson"></div>
+        @* Kept in the browser when the page is hidden, so a deploy while it sleeps cannot lose it (deploy-drafts.js). *@
+        <div hidden aria-hidden="true" data-bw-keep-key="@KeepKey" data-bw-keep-payload="@KeepPayload"></div>
 
         <button class="btn-submit" @onclick="OnSaveClicked"
                 data-bw-boulder-action="revise" data-bw-boulder-form="#bw-boulder-form"
@@ -256,6 +258,10 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         await SyncEditGuardAsync();
+        if (!_restoreChecked && _pristineSnapshot is not null)
+        {
+            await RestoreKeptAsync();
+        }
     }
 
     private async Task SyncEditGuardAsync()
@@ -323,6 +329,7 @@
     private void ResetRouteState()
     {
         ResetPrefillState();
+        DisarmDeployFlush();
         _wall = null;
         _boulder = null;
         _notFound = false;
@@ -440,6 +447,8 @@
                 _referenceGeneration = holdGen;
             }
         }
+
+        ArmDeployFlush();
     }
 
     // The photo behind the picker: the current panel's image, else null so the picker falls back to
@@ -559,6 +568,7 @@
     public void Dispose()
     {
         _editLease?.Dispose();
+        DisposeDeployFlush();
 
         if (_editGuardActive)
         {

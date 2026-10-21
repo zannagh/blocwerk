@@ -12,8 +12,6 @@ public class EditDeployCutoffTests
 {
     private static readonly TimeZoneInfo Berlin = TimeZoneInfo.FindSystemTimeZoneById("Europe/Berlin");
 
-    private static DateTimeOffset Utc(int y, int mo, int d, int h, int mi) => new(y, mo, d, h, mi, 0, TimeSpan.Zero);
-
     /// <summary>Summer: Berlin midnight is 22:00 UTC the evening before.</summary>
     [Fact]
     public void InSummerTheCutoffIsBerlinMidnightNotUtcMidnight()
@@ -94,4 +92,6 @@ public class EditDeployCutoffTests
         Assert.Equal(0, EditDeployGatePolicy.SecondsUntilEditCutoff([absent], now, options));
         Assert.Equal(0, EditDeployGatePolicy.SecondsUntilEditCutoff([], now, options));
     }
+
+    private static DateTimeOffset Utc(int y, int mo, int d, int h, int mi) => new(y, mo, d, h, mi, 0, TimeSpan.Zero);
 }
