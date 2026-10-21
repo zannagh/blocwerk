@@ -72,6 +72,7 @@ public partial class Wall3D
 
         _loaded = Key;
         _result = null;
+        OpenFeed();
         await ReloadAsync();
     }
 
@@ -84,7 +85,7 @@ public partial class Wall3D
         var key = Key;
         try
         {
-            var built = await ViewService.BuildAsync(key.Wall, key.Boulder, key.Token);
+            var built = await BuildTaggedAsync(() => ViewService.BuildAsync(key.Wall, key.Boulder, key.Token));
             if (_loaded != key)
             {
                 return;

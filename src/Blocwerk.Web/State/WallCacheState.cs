@@ -65,6 +65,12 @@ public sealed class WallCacheState : IDisposable
     /// <summary>Raised on the hub's loop for every feed delivery, after eviction; for the live leaf lists (PR 1.5).</summary>
     public event Action<FeedDelivery>? FeedDelivered;
 
+    /// <summary>
+    /// Raised (off the circuit's dispatcher) after a resubscribe gave the circuit other audiences on a wall. Live lists
+    /// re-read: other rows reach them now, and the revoked subscription dropped deliveries until the swap.
+    /// </summary>
+    public event Action<Guid>? ViewerChanged;
+
     internal WallCacheStore Store => store;
 
     public async Task<Wall?> GetWallAsync(Guid wallId) =>
@@ -77,6 +83,15 @@ public sealed class WallCacheState : IDisposable
         (await store.HoldSets.GetOrLoad(
             (wallId, generation),
             () => LoadOnWallAsync(wallId, () => walls.GetHoldsForGenerationAsync(wallId, generation)))).Value;
+
+    /// <summary>The <c>CursorAtLoad</c> for a component's own load (a live list); null when the feed cannot be read.</summary>
+    public Task<FeedCursor?> CursorAtLoadAsync() => link.CursorAtLoadAsync();
+
+    /// <summary>The viewer the circuit is subscribed to the wall as; null without a subscription.</summary>
+    public FeedViewer? ViewerOf(Guid wallId) => link.ViewerOf(wallId);
+
+    /// <summary>Subscribes to the wall's feed if the circuit may see it (a live list on a page that caches nothing).</summary>
+    public Task EnsureFeedAsync(Guid wallId) => link.EnsureAsync(wallId);
 
     public Task<List<Wall>> GetMyWallsAsync()
     {
@@ -206,15 +221,41 @@ public sealed class WallCacheState : IDisposable
 
         var wall = delivery.Resync && store.EvictWall(delivery.WallId);
         var changedBoulders = new HashSet<Guid>();
+        var inFlight = new List<Task<Guid?>>();
         foreach (var e in delivery.Events)
         {
             var evicted = WallFeedEviction.Apply(store, delivery.WallId, e);
             wall |= evicted.Wall;
             changedBoulders.UnionWith(evicted.Boulders);
+            inFlight.AddRange(evicted.InFlight);
         }
 
         RaiseFeedChange(delivery.WallId, wall, changedBoulders);
+        if (!wall)
+        {
+            ReportWhenLoaded(delivery.WallId, inFlight, changedBoulders);
+        }
+
         FeedDelivered?.Invoke(delivery);
+    }
+
+    // A boulder evicted while its load was in flight is reported once the load tells its wall, and only for this wall.
+    private void ReportWhenLoaded(Guid wallId, List<Task<Guid?>> inFlight, HashSet<Guid> reported)
+    {
+        foreach (var load in inFlight)
+        {
+            _ = load.ContinueWith(
+                t =>
+                {
+                    if (t.Result is { } id && !reported.Contains(id) && Volatile.Read(ref disposed) == 0)
+                    {
+                        Changed?.Invoke(new DomainChange(DomainChangeScope.Boulder, wallId, id));
+                    }
+                },
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnRanToCompletion,
+                TaskScheduler.Default);
+        }
     }
 
     private void RaiseFeedChange(Guid wallId, bool wall, IEnumerable<Guid> changedBoulders)
@@ -238,6 +279,7 @@ public sealed class WallCacheState : IDisposable
         {
             store.EvictWall(wallId);
             Changed?.Invoke(new DomainChange(DomainChangeScope.Wall, wallId, Guid.Empty));
+            ViewerChanged?.Invoke(wallId);
         }
     }
 

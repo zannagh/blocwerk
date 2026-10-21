@@ -94,6 +94,33 @@ public sealed class FeedTaggedCache<TKey, T>
         return removed;
     }
 
+    /// <summary>
+    /// Removes every finished entry that matches and every load still in flight; returns the finished keys, and the
+    /// in-flight loads in <paramref name="inFlight"/>, whose values tell later whether they were in scope.
+    /// </summary>
+    public List<TKey> EvictWhere(Func<TKey, T, bool> match, out List<Task<CacheLoad<T>>> inFlight)
+    {
+        var removed = new List<TKey>();
+        inFlight = [];
+        foreach (var (key, task) in entries)
+        {
+            var finished = task.IsCompletedSuccessfully;
+            if ((!finished || match(key, task.Result.Value)) && entries.TryRemove(new KeyValuePair<TKey, Task<CacheLoad<T>>>(key, task)))
+            {
+                if (finished)
+                {
+                    removed.Add(key);
+                }
+                else
+                {
+                    inFlight.Add(task);
+                }
+            }
+        }
+
+        return removed;
+    }
+
     /// <summary>True when any entry matches: a finished one by key and value, one in flight by key.</summary>
     public bool Any(Func<TKey, T, bool> match, Func<TKey, bool> inFlight) =>
         entries.Any(e => e.Value.IsCompletedSuccessfully ? match(e.Key, e.Value.Result.Value) : inFlight(e.Key));

@@ -452,7 +452,7 @@ else
             }
         }
 
-        <BoulderBetaVideos @ref="_betaVideos" BoulderId="BoulderId" CurrentUserId="_currentUserId"
+        <BoulderBetaVideos @ref="_betaVideos" BoulderId="BoulderId" WallId="WallId" CurrentUserId="_currentUserId"
                            IsAnonymous="_isAnonymous" ShareToken="@ShareToken"
                            Uploaded="OnBetaVideoUploaded" />
         </div>
@@ -465,9 +465,9 @@ else
            Same display:contents trick as the two columns above, so the phone tier is untouched and
            the DOM order stays exactly the order the phone stack has always rendered. *@
         <div class="boulder-wide-col">
-        <BoulderActivityFeed @ref="_activityFeed" BoulderId="BoulderId" ShareToken="@ShareToken" />
+        <BoulderActivityFeed @ref="_activityFeed" BoulderId="BoulderId" WallId="WallId" ShareToken="@ShareToken" />
 
-        <BoulderComments @ref="_commentList" BoulderId="BoulderId"
+        <BoulderComments @ref="_commentList" BoulderId="BoulderId" WallId="WallId"
                          CurrentUserId="_currentUserId" IsAnonymous="_isAnonymous" />
 
         @if (!_isAnonymous && _attempts.Count > 0)
@@ -716,6 +716,7 @@ else
     public async ValueTask DisposeAsync()
     {
         Cache.Changed -= OnCacheChanged;
+        _statsFeed?.Dispose();
         _editLease?.Dispose();
 
         if (_editGuardActive)
@@ -1135,6 +1136,7 @@ else
         _isFavorite = false;
         _rating = new(null, 0, null);
         _publishError = null;
+        OpenStatsFeed();
         StateHasChanged();
 
         await LoadForCurrentRouteAsync();
@@ -1751,6 +1753,7 @@ else
         {
             _editLease?.Dispose();
             _editLease = null;
+            ReleaseStats();
         }
     }
 

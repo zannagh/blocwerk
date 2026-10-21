@@ -10,6 +10,12 @@ public sealed record WallFeedEvicted(bool Wall, IReadOnlyCollection<Guid> Boulde
 {
     public static WallFeedEvicted None { get; } = new(false, []);
 
+    /// <summary>
+    /// Gets the boulders evicted while their load was in flight: each resolves to the boulder's id once it loaded, if it
+    /// is of the event's wall, else to null. Their wall is unknown until then, so they are reported only after.
+    /// </summary>
+    public IReadOnlyCollection<Task<Guid?>> InFlight { get; init; } = [];
+
     public bool Any => Wall || Boulders.Count > 0;
 
     public static WallFeedEvicted Whole(bool any) => any ? new(true, []) : None;

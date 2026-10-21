@@ -62,11 +62,28 @@ public sealed class WallCacheStore
 
     /// <summary>
     /// Every cached boulder of the wall that matches and predates the event, and every boulder still in flight (its wall
-    /// and its cursor are not known yet); returns their ids.
+    /// and its cursor are not known yet). The loaded ones are reported straight away; one in flight only once its load
+    /// shows it is of this wall (<see cref="WallFeedEvicted.InFlight"/>).
     /// </summary>
-    public List<Guid> EvictBoulders(Guid wallId, FeedCursor cursor, Func<Boulder, bool> match) =>
-        Boulders.EvictWhere((_, boulder) => boulder is not null && boulder.WallId == wallId && match(boulder)
-            && PredatesOrUnknown(boulder.Id, cursor));
+    public WallFeedEvicted EvictBoulders(Guid wallId, FeedCursor cursor, Func<Boulder, bool> match)
+    {
+        var loaded = Boulders.EvictWhere(
+            (_, boulder) => boulder is not null && boulder.WallId == wallId && match(boulder) && PredatesOrUnknown(boulder.Id, cursor),
+            out var inFlight);
+        return new WallFeedEvicted(false, loaded) { InFlight = inFlight.Select(load => OfWall(load, wallId)).ToList() };
+    }
+
+    private static async Task<Guid?> OfWall(Task<CacheLoad<Boulder?>> load, Guid wallId)
+    {
+        try
+        {
+            return (await load).Value is { } boulder && boulder.WallId == wallId ? boulder.Id : null;
+        }
+        catch
+        {
+            return null; // a failed load cached nothing
+        }
+    }
 
     private bool PredatesOrUnknown(Guid boulderId, FeedCursor cursor) =>
         !Boulders.TryPeek(boulderId, out var load) || load.Predates(cursor);

@@ -46,7 +46,7 @@ public static class WallFeedEviction
             FeedKinds.WallResync or FeedKinds.SegmentChanged or FeedKinds.PanelChanged or FeedKinds.LinkChanged
                 or FeedKinds.VolumeChanged or FeedKinds.AccessRevoked => WallFeedEvicted.Whole(store.EvictWall(wallId)),
             FeedKinds.WallUpdated => Aggregate(store, wallId, cursor, store.EvictBoulders(wallId, cursor, _ => true)),
-            FeedKinds.MemberChanged => Aggregate(store, wallId, cursor, []),
+            FeedKinds.MemberChanged => Aggregate(store, wallId, cursor, WallFeedEvicted.None),
             FeedKinds.HoldChanged or FeedKinds.HoldDeleted => Hold(store, wallId, cursor, e),
             FeedKinds.BoulderChanged or FeedKinds.BoulderDeleted => Boulder(store, wallId, cursor, e.EntityId),
             FeedKinds.UserProfile => Aggregate(store, wallId, cursor, store.EvictBoulders(
@@ -55,8 +55,8 @@ public static class WallFeedEviction
         };
     }
 
-    private static WallFeedEvicted Aggregate(WallCacheStore store, Guid wallId, FeedCursor cursor, List<Guid> boulders) =>
-        new(store.EvictAggregate(wallId, cursor), boulders);
+    private static WallFeedEvicted Aggregate(WallCacheStore store, Guid wallId, FeedCursor cursor, WallFeedEvicted boulders) =>
+        boulders with { Wall = store.EvictAggregate(wallId, cursor) };
 
     private static WallFeedEvicted Hold(WallCacheStore store, Guid wallId, FeedCursor cursor, FeedEnvelope e)
     {
@@ -65,7 +65,7 @@ public static class WallFeedEviction
             : store.EvictHoldSets(wallId);
         var boulders = store.EvictBoulders(wallId, cursor, b => b.BoulderHolds.Any(bh => bh.HoldId == e.EntityId));
         var aggregate = store.EvictAggregate(wallId, cursor);
-        return new WallFeedEvicted(aggregate || sets, boulders);
+        return boulders with { Wall = aggregate || sets };
     }
 
     private static WallFeedEvicted Boulder(WallCacheStore store, Guid wallId, FeedCursor cursor, Guid? boulderId)

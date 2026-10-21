@@ -1,9 +1,18 @@
 @inject IActivityLogService ActivityLogService
+@inject WallCacheState Cache
+@using Blocwerk.Contracts.Feed
+@using Blocwerk.Web.State.Live
+@implements IDisposable
 
 @*
     Self-contained activity feed: it owns its own paging so the boulder page does not have to
     carry three more fields for it. BoulderDetail calls ReloadAsync() through an @ref after the
     offline queue flushes, since a replayed attempt or comment shows up here.
+
+    Live (design §5.5): an activity.added of this boulder re-reads the newest page (the envelope
+    carries the entry's type but not its details, so it cannot be drawn from the event alone).
+    While an older page is open the list is held, so it never shifts under the reader; going
+    back to the newest page reads fresh anyway.
 *@
 
 <div class="activity-feed">
@@ -12,10 +21,11 @@
     {
         @foreach (var item in _items)
         {
-            <div class="activity-row">
-                <UserAvatar UserId="item.User.Id" Name="@item.User.Name"
-                            HasAvatar="item.User.HasAvatar" CssClass="avatar-sm" />
-                <span class="activity-text">@Describe(item)</span>
+            var author = LeafAuthors.Describe(item.User, _feed?.Viewer);
+            <div class="activity-row" @key="item.Id">
+                <UserAvatar UserId="author.Id" Name="@author.Name"
+                            HasAvatar="author.HasAvatar" CssClass="avatar-sm" />
+                <span class="activity-text">@Describe(item, author.Name)</span>
                 <span class="activity-time"><LocalTime Value="@item.Timestamp" Format="LocalTimeFormat.Relative" /></span>
             </div>
         }
@@ -46,14 +56,45 @@
     /// </summary>
     [Parameter] public string? ShareToken { get; set; }
 
+    /// <summary>The boulder's wall, whose feed keeps the list live.</summary>
+    [Parameter] public Guid WallId { get; set; }
+
+    private static readonly IReadOnlySet<string> Kinds = new HashSet<string> { FeedKinds.ActivityAdded, FeedKinds.UserProfile };
+    private static readonly IReadOnlySet<string> None = new HashSet<string>();
+
     private List<ActivityLogEntry>? _items;
     private int _total;
     private int _page;
+    private LeafFeed? _feed;
+    private (Guid Wall, Guid Boulder)? _key;
 
-    protected override Task OnInitializedAsync() => LoadAsync(0);
+    protected override Task OnParametersSetAsync()
+    {
+        if (_key == (WallId, BoulderId))
+        {
+            return Task.CompletedTask;
+        }
+
+        _key = (WallId, BoulderId);
+        _feed?.Dispose();
+        _feed = WallId == Guid.Empty
+            ? null
+            : LeafFeed.Open(Cache, new LeafScope(WallId, BoulderId, Kinds), InvokeAsync, ApplyAsync, () => _page > 0);
+        return LoadAsync(0);
+    }
 
     /// <summary>Re-reads the newest page. Called after the offline queue delivered something.</summary>
     public Task ReloadAsync() => LoadAsync(0);
+
+    public void Dispose() => _feed?.Dispose();
+
+    // On the dispatcher, only on the newest page. A profile change matters only when it names someone shown.
+    private Task ApplyAsync(LeafBatch batch)
+    {
+        var plan = LeafPlan.Of(batch, None, None);
+        var shown = _items?.Any(i => plan.Profiles.Contains(i.UserId)) ?? false;
+        return plan.Reload || shown ? LoadAsync(0) : Task.CompletedTask;
+    }
 
     // Renders itself for the same reason BoulderComments does: ReloadAsync is driven by
     // BoulderDetail's queue-flush callback, not by an event on this component.
@@ -61,7 +102,9 @@
     {
         try
         {
-            var (items, total) = await LoadPageAsync(page);
+            var (items, total) = _feed is { } feed && page == 0
+                ? await feed.LoadAsync(() => LoadPageAsync(page))
+                : await LoadPageAsync(page);
             _page = page;
             _items = items;
             _total = total;
@@ -95,14 +138,14 @@
         }
     }
 
-    private static string Describe(ActivityLogEntry item) => item.Type switch
+    private static string Describe(ActivityLogEntry item, string name) => item.Type switch
     {
-        ActivityType.AttemptLogged => $"{item.User.Name} {AttemptVerb(item.Details)} this",
-        ActivityType.CommentAdded => $"{item.User.Name} commented",
-        ActivityType.BoulderCreated => $"{item.User.Name} created this",
-        ActivityType.BoulderRevised => $"{item.User.Name} revised this",
-        ActivityType.BetaVideoUploaded => $"{item.User.Name} added a beta video",
-        _ => $"{item.User.Name} made a change",
+        ActivityType.AttemptLogged => $"{name} {AttemptVerb(item.Details)} this",
+        ActivityType.CommentAdded => $"{name} commented",
+        ActivityType.BoulderCreated => $"{name} created this",
+        ActivityType.BoulderRevised => $"{name} revised this",
+        ActivityType.BetaVideoUploaded => $"{name} added a beta video",
+        _ => $"{name} made a change",
     };
 
     private static string AttemptVerb(string? details) => details switch

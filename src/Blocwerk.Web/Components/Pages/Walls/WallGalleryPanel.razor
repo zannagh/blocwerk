@@ -1,5 +1,7 @@
-@* Browsable image gallery of a wall: uploads, the current wall photo and retired generation photos. *@
+@* Browsable image gallery of a wall: uploads, the current wall photo and retired generation photos.
+   Live through the feed (WallGalleryPanel.Feed.cs); held while the lightbox is open. *@
 @inject IWallImageService ImageService
+@implements IDisposable
 
 <div class="settings-panel wall-gallery-panel">
     <div class="wall-panel-head">
@@ -116,7 +118,6 @@
     private WallGalleryItem? Selected =>
         selectedIndex >= 0 && selectedIndex < items.Count ? items[selectedIndex] : null;
 
-    protected override async Task OnInitializedAsync() => await LoadMore();
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -162,10 +163,11 @@
         focusPending = true;
     }
 
-    private void Close()
+    private Task Close()
     {
         selectedIndex = -1;
         confirmingDelete = false;
+        return feed?.ReleaseAsync() ?? Task.CompletedTask; // what arrived while it was open
     }
 
     private void Previous()
@@ -186,7 +188,7 @@
         }
     }
 
-    private void OnKeyDown(KeyboardEventArgs args)
+    private async Task OnKeyDown(KeyboardEventArgs args)
     {
         switch (args.Key)
         {
@@ -197,7 +199,7 @@
                 Next();
                 break;
             case "Escape":
-                Close();
+                await Close();
                 break;
         }
     }

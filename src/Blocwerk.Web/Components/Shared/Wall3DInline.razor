@@ -2,9 +2,14 @@
    with every hold as its real outline, the boulder highlighted (glowing outlines, with the focus lightbulb)
    when BoulderId is set. The view is built
    through IWall3DViewService, which reads the wall exactly as the host page does (members, the
-   kiosk on its own wall, share tokens), so it can show nothing the page could not. *@
+   kiosk on its own wall, share tokens), so it can show nothing the page could not. A view3d.changed
+   (another model activated) rebuilds it, and the new view instance remounts the stage. *@
+@using Blocwerk.Contracts.Feed
 @using Blocwerk.Core.Geometry.View3D
+@using Blocwerk.Web.State.Live
 @inject IWall3DViewService ViewService
+@inject WallCacheState Cache
+@implements IDisposable
 
 <div class="wall3d-inline">
     @if (result is null)
@@ -58,6 +63,9 @@
         _ => "The 3D view is not available.",
     };
 
+    private static readonly IReadOnlySet<string> Kinds = new HashSet<string> { FeedKinds.View3DChanged };
+    private LeafFeed? feed;
+
     // Parameters, not OnInitializedAsync: the host page is retained across wall/boulder navigation.
     protected override async Task OnParametersSetAsync()
     {
@@ -69,10 +77,23 @@
 
         loaded = key;
         result = null;
+        if (feed?.Scope.WallId != WallId)
+        {
+            feed?.Dispose();
+            feed = LeafFeed.Open(Cache, new LeafScope(WallId, null, Kinds), InvokeAsync, RebuildAsync);
+        }
+
+        await BuildAsync(key);
+    }
+
+    public void Dispose() => feed?.Dispose();
+
+    private async Task BuildAsync((Guid Wall, Guid? Boulder, string? Token) key)
+    {
         Wall3DViewResult built;
         try
         {
-            built = await ViewService.BuildAsync(WallId, BoulderId, ShareToken);
+            built = await (feed?.LoadAsync(Build) ?? Build());
         }
         catch (UnauthorizedAccessException)
         {
@@ -83,6 +104,18 @@
         if (loaded == key)
         {
             result = built;
+        }
+
+        Task<Wall3DViewResult> Build() => ViewService.BuildAsync(key.Wall, key.Boulder, key.Token);
+    }
+
+    // On the dispatcher: the active model changed, so the view is rebuilt (the stage remounts on the new instance).
+    private async Task RebuildAsync(LeafBatch batch)
+    {
+        if (loaded is { } key && result is not null)
+        {
+            await BuildAsync(key);
+            StateHasChanged();
         }
     }
 }
