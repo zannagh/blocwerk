@@ -41,6 +41,10 @@ public static class Wall3DViewBuilder
     /// overlapping panels is drawn once. Optional: without them only the geometric fallback merges copies.
     /// </param>
     /// <param name="planTriangles">Plan triangles by segment: parent and right angle (<see cref="Wall3DFacetOutlines"/>); optional.</param>
+    /// <param name="viewerSeesDrafts">
+    /// Whether the viewer may see draft boulders (a member, not a share-token or anonymous-kiosk viewer). Without
+    /// it a draft <paramref name="boulderId"/> is not highlighted even if the wall carries it.
+    /// </param>
     /// <returns>The view.</returns>
     public static Wall3DView Build(
         Wall wall,
@@ -48,13 +52,14 @@ public static class Wall3DViewBuilder
         Guid? boulderId,
         IReadOnlyDictionary<Wall3DPhotoKey, Wall3DPhotoMarkers>? photoMarkers = null,
         IEnumerable<HoldLinkPair>? holdLinks = null,
-        IReadOnlyDictionary<int, PlanTriangle>? planTriangles = null)
+        IReadOnlyDictionary<int, PlanTriangle>? planTriangles = null,
+        bool viewerSeesDrafts = false)
     {
         var frames = new Dictionary<string, FacetFrame>(StringComparer.Ordinal);
         var facets = Wall3DFacetOutlines.Apply(BuildFacets(doc, wall, frames), doc, planTriangles);
         var markers = BuildMarkers(doc);
 
-        var boulder = boulderId is { } bid ? wall.Boulders.FirstOrDefault(b => b.Id == bid) : null;
+        var boulder = boulderId is { } bid ? wall.Boulders.FirstOrDefault(b => b.Id == bid && (viewerSeesDrafts || !b.IsDraft)) : null;
         var bounds = facets.GroupBy(f => f.Id, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => (frames[g.Key], g.First().Extent), StringComparer.Ordinal);
         var (candidates, unplaced) = BuildHolds(wall, doc, frames, bounds, boulder, photoMarkers);

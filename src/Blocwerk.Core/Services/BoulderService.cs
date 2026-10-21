@@ -635,8 +635,10 @@ public partial class BoulderService : IBoulderService
                 // in the model — so the id alone used to be the whole check and ANY signed-in caller
                 // could read ANY boulder (name, grade, setters, holds) by guessing a guid. Reaching
                 // through to db.Walls puts the read back under the membership filter, and picks up
-                // the kiosk wall gate with it.
-                .Where(b => db.Walls.Any(w => w.Id == b.WallId))
+                // the kiosk wall gate with it. Drafts are for members: the anonymous kiosk (Guid.Empty)
+                // reads like a share viewer and gets not-found for one; a kiosk acting as a member
+                // resolves to that member and keeps them.
+                .Where(b => db.Walls.Any(w => w.Id == b.WallId) && (viewerId != Guid.Empty || !b.IsDraft))
                 .FirstOrDefaultAsync(b => b.Id == boulderId);
 
             await AttachWallWithoutPhotosAsync(db, boulder);
@@ -717,12 +719,14 @@ public partial class BoulderService : IBoulderService
             await using var db = await _dbContextFactory.CreateDbContextAsync(ct);
             db.CurrentUserId = viewerId;
 
+            // Neither the share arm nor the anonymous kiosk (Guid.Empty) answers for a draft, as in GetBoulderAsync.
             var gated = isShare
-                ? db.Boulders.Where(b => b.Id == boulderId && b.Wall.ShareToken == shareToken)
+                ? db.Boulders.Where(b => b.Id == boulderId && b.Wall.ShareToken == shareToken && !b.IsDraft)
 
                 // Same reach-through as GetBoulderAsync: Boulder carries no filter of its own, so the
                 // wall read is what puts this under membership (and the kiosk wall gate).
-                : db.Boulders.Where(b => b.Id == boulderId && db.Walls.Any(w => w.Id == b.WallId));
+                : db.Boulders.Where(b => b.Id == boulderId && db.Walls.Any(w => w.Id == b.WallId)
+                    && (viewerId != Guid.Empty || !b.IsDraft));
 
             // One round trip: per boulder hold, its own generation and the generation of each ancestor
             // pointing at it (null when it has none), plus the wall's current generation to compare
@@ -780,7 +784,8 @@ public partial class BoulderService : IBoulderService
             // hold geometry here, which no other read on the share path lets them do.
             var gated = isShare
                 ? db.Boulders.Where(b => b.Id == boulderId && b.Wall.ShareToken == shareToken && !b.IsDraft)
-                : db.Boulders.Where(b => b.Id == boulderId && db.Walls.Any(w => w.Id == b.WallId));
+                : db.Boulders.Where(b => b.Id == boulderId && db.Walls.Any(w => w.Id == b.WallId)
+                    && (viewerId != Guid.Empty || !b.IsDraft));
 
             var wallId = await gated.Select(b => (Guid?)b.WallId).FirstOrDefaultAsync(ct);
             if (wallId is not { } wall)
