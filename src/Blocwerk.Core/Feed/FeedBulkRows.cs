@@ -18,14 +18,14 @@ public static class FeedBulkRows
     public static IEnumerable<WallChange> Resyncs(IEnumerable<Guid> wallIds, string reason) =>
         wallIds.Distinct().Select(wallId => FeedRows.Resync(wallId, reason, actorUserId: null, DateTimeOffset.UtcNow));
 
-    /// <summary>A <c>video.*</c> row as <c>BetaVideoFeedMapper</c> writes it; a draft's goes to setters only.</summary>
+    /// <summary>A <c>video.*</c> row as <c>BetaVideoFeedMapper</c> writes it; a draft's goes to the wall's members only.</summary>
     public static WallChange Video(FeedVideoFacts video, string kind, BetaVideoEncodingStatus status, bool hasHls) => new()
     {
         WallId = video.WallId,
         BoulderId = video.BoulderId,
         Kind = kind,
         EntityId = video.Id,
-        Audience = video.IsDraft ? FeedAudience.Setters : FeedAudience.Wall,
+        Audience = video.IsDraft ? FeedAudience.Members : FeedAudience.Wall,
         DataJson = FeedJson.Serialize(new VideoPayload(video.BoulderId, status.ToString(), hasHls)),
         SchemaVersion = FeedSchema.PayloadVersion,
     };

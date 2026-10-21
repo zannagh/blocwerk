@@ -156,7 +156,7 @@ public sealed class SocialFeedMapperTests : IDisposable
     }
 
     [Fact]
-    public async Task ADraftBouldersComment_VideoAndActivity_ReachSettersOnly_ButTheTickersOwnRowStaysTheirs()
+    public async Task ADraftBouldersComment_VideoAndActivity_ReachMembersOnly_ButTheTickersOwnRowStaysTheirs()
     {
         await fixture.SeedAsync();
         var draft = await fixture.AddBoulderAsync(isDraft: true);
@@ -167,7 +167,7 @@ public sealed class SocialFeedMapperTests : IDisposable
 
         var rows = await fixture.RowsAsync();
         Assert.Equal(
-            [FeedAudience.Setters, FeedAudience.Setters, FeedAudience.Setters, FeedAudience.User],
+            [FeedAudience.Members, FeedAudience.Members, FeedAudience.Members, FeedAudience.User],
             rows.Select(r => r.Audience));
         Assert.All(rows, r => Assert.Equal(fixture.WallId, r.WallId));
     }

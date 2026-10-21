@@ -7,12 +7,14 @@ using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Feed;
 using Blocwerk.Web.State;
+using Blocwerk.Web.State.Feed;
 
 namespace Blocwerk.Core.Tests;
 
 /// <summary>
 /// The circuit's subscription follows its access (PR 1.4): a demotion resubscribes with the new role's audiences, a
-/// removal leaves the wall, a promotion or an ownership change (which write no access event) re-reads the viewer, and a
+/// removal leaves the wall, a promotion, an ownership change or a resync (which write no access event) re-reads the
+/// viewer, and a
 /// disposed circuit ignores the late delivery the hub may still hand it.
 /// </summary>
 public sealed class WallCacheFeedAccessTests : IAsyncLifetime
@@ -84,6 +86,40 @@ public sealed class WallCacheFeedAccessTests : IAsyncLifetime
         await Task.Delay(200);
 
         Assert.Equal(before, f.Fake.Resolved);
+    }
+
+    [Fact]
+    public async Task AResync_RereadsTheViewer_AndLeavesWhenTheViewerIsGone()
+    {
+        f.Fake.Viewer = null; // erased: the erasure writes only wall.resync, no access event
+        await f.DeliverAsync(f.Row(FeedKinds.WallResync));
+        await CircuitCacheFixture.WaitUntilAsync(() => f.Lost.Count == 1);
+
+        Assert.Equal(f.WallId, f.Lost[0]);
+        Assert.Null(f.Link.ViewerOf(f.WallId));
+    }
+
+    [Fact]
+    public async Task AResync_RereadsTheViewer_AndAPromotionInsideABulkOperationResubscribes()
+    {
+        f.Fake.Viewer = FeedViewer.Member(Me);
+        await f.DeliverAsync(f.Row(FeedKinds.MemberChanged, Me, new MemberPayload("Member"), FeedAudience.Members));
+        await CircuitCacheFixture.WaitUntilAsync(() => f.Link.ViewerOf(f.WallId)!.SameAs(FeedViewer.Member(Me)));
+
+        f.Fake.Viewer = FeedViewer.Setter(Me); // promoted inside a scope: the member.changed collapsed into the resync
+        await f.DeliverAsync(f.Row(FeedKinds.WallResync));
+        await CircuitCacheFixture.WaitUntilAsync(() => f.Link.ViewerOf(f.WallId)!.SameAs(FeedViewer.Setter(Me)));
+        Assert.Empty(f.Lost);
+    }
+
+    [Fact]
+    public void AResyncAfterARemoval_StillLeaves_AndAResyncAloneRereads()
+    {
+        var revoked = new FeedEnvelope { Cursor = "c1", Kind = FeedKinds.AccessRevoked, WallId = f.WallId };
+        var resync = new FeedEnvelope { Cursor = "c2", Kind = FeedKinds.WallResync, WallId = f.WallId };
+
+        Assert.Equal(WallFeedAccessKind.Leave, WallFeedAccess.Decide([revoked, resync], Me).Kind);
+        Assert.Equal(WallFeedAccessKind.Reread, WallFeedAccess.Decide([resync], Me).Kind);
     }
 
     [Fact]

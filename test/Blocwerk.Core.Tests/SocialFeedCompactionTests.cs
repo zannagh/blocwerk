@@ -46,6 +46,18 @@ public sealed class SocialFeedCompactionTests
     public Task AnAddedRowAlreadyGone_DoesNotFailTheDeletion_Postgres() => AlreadyGoneAsync(new SocialFeedFixture(PostgresTestDatabase.Create()));
 
     [Fact]
+    public void TheCommentCompaction_FiltersByWall_SoItCanRunOnTheWallIndex()
+    {
+        using var db = TestDb.Create("Host=unused;Database=unused");
+
+        var sql = FeedCommentCompaction.OfComments(db, [Guid.NewGuid()], [Guid.NewGuid()]).ToQueryString();
+
+        var where = sql[sql.IndexOf("WHERE", StringComparison.Ordinal)..];
+        Assert.Contains("\"WallId\"", where);
+        Assert.Contains("\"EntityId\"", where);
+    }
+
+    [Fact]
     public async Task InsideAScope_TheDeletionCollapsesToAResync_AndStillCompacts()
     {
         using var fixture = new SocialFeedFixture();

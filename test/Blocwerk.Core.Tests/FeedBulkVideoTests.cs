@@ -39,7 +39,7 @@ public sealed class FeedBulkVideoTests
     }
 
     [Fact]
-    public async Task DeletingAClipOfADraft_TellsOnlyTheSetters()
+    public async Task DeletingAClipOfADraft_TellsOnlyTheMembers()
     {
         using var h = new WallTestHarness();
         var (boulder, video) = await SeedClipAsync(h);
@@ -50,7 +50,7 @@ public sealed class FeedBulkVideoTests
 
         await Service(h, new RecordingFeedSignal()).DeleteVideoAsync(video);
 
-        Assert.Equal(FeedAudience.Setters, Assert.Single(await RowsAsync(h)).Audience);
+        Assert.Equal(FeedAudience.Members, Assert.Single(await RowsAsync(h)).Audience);
     }
 
     [Fact]
