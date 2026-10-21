@@ -16,4 +16,6 @@ public record BetaVideoInfo(
     long SizeBytes,
     bool HasThumbnail,
     bool HasHls,
-    BetaVideoEncodingStatus EncodingStatus);
+    BetaVideoEncodingStatus EncodingStatus,
+    Guid WallId = default,
+    string? ThumbnailSha = null);

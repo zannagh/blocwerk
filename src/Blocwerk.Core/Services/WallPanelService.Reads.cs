@@ -56,7 +56,10 @@ public partial class WallPanelService
         var panels = await db.WallPanels
             .AsNoTracking()
             .Where(p => p.WallId == wallId && (p.Photo != null || p.StagedPhoto != null))
-            .Select(p => new { p.Id, p.Col, p.Row, p.Generation, p.PhotoRevision, HasLive = p.Photo != null, HasStaged = p.StagedPhoto != null })
+            .Select(p => new
+            {
+                p.Id, p.Col, p.Row, p.Generation, p.PhotoRevision, p.PhotoSha256, HasLive = p.Photo != null, HasStaged = p.StagedPhoto != null,
+            })
             .ToListAsync();
 
         return panels
@@ -70,7 +73,8 @@ public partial class WallPanelService
             // cell to a different photo between two identical loads. Arbitrary, but stable everywhere.
             .Select(g => g.OrderByDescending(p => p.HasLive).ThenByDescending(p => p.Generation).ThenBy(p => p.Id).First())
             .OrderBy(p => p.Row).ThenBy(p => p.Col)
-            .Select(p => new WallPanelInfo(p.Id, p.Col, p.Row, p.HasLive, p.HasStaged, p.Generation, p.Generation < currentGeneration, p.PhotoRevision))
+            .Select(p => new WallPanelInfo(
+                p.Id, p.Col, p.Row, p.HasLive, p.HasStaged, p.Generation, p.Generation < currentGeneration, p.PhotoRevision, p.HasLive ? ContentHash.ToHex(p.PhotoSha256) : null))
             .ToList();
     }
 
@@ -102,7 +106,7 @@ public partial class WallPanelService
         var panels = await db.WallPanels
             .AsNoTracking()
             .Where(p => p.WallId == wallId && p.Photo != null && p.Generation <= generation)
-            .Select(p => new { p.Id, p.Col, p.Row, p.Generation, p.PhotoRevision })
+            .Select(p => new { p.Id, p.Col, p.Row, p.Generation, p.PhotoRevision, p.PhotoSha256 })
             .ToListAsync(ct);
 
         return panels
@@ -113,7 +117,7 @@ public partial class WallPanelService
             .Select(g => g.OrderByDescending(p => p.Generation).ThenBy(p => p.Id).First())
             .OrderBy(p => p.Row).ThenBy(p => p.Col)
             .Select(p => new WallPanelInfo(
-                p.Id, p.Col, p.Row, true, false, p.Generation, p.Generation < currentGeneration, p.PhotoRevision))
+                p.Id, p.Col, p.Row, true, false, p.Generation, p.Generation < currentGeneration, p.PhotoRevision, ContentHash.ToHex(p.PhotoSha256)))
             .ToList();
     }
 

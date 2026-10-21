@@ -1,3 +1,4 @@
+using Blocwerk.Core.Assets;
 using Blocwerk.Core.Services;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
@@ -14,6 +15,9 @@ namespace Blocwerk.Web.Components.Shared;
 /// </summary>
 public partial class PanelOverlapStepper : IAsyncDisposable
 {
+    // The live panels' photo hashes, read with them, so their photos take the content-addressed url.
+    private Dictionary<Guid, string> _livePhotoShas = [];
+
     [Inject]
     private IJSRuntime JS { get; set; } = default!;
 
@@ -62,8 +66,9 @@ public partial class PanelOverlapStepper : IAsyncDisposable
 
     private static (double X, double Y)? Point(PanelHold? h) => h is null ? null : (h.X, h.Y);
 
-    private string PhotoUrl(Guid panelId, bool staged) =>
-        $"/api/walls/{WallId}/panels/{panelId}/{(staged ? "staged-photo" : "photo")}";
+    private string PhotoUrl(Guid panelId, bool staged) => staged
+        ? $"/api/walls/{WallId}/panels/{panelId}/staged-photo"
+        : AssetUrls.Panel(WallId, panelId, _livePhotoShas.GetValueOrDefault(panelId));
 
     private int RemainingHighConfidence =>
         _steps.Skip(_index).Count(p => p.Confidence >= HighConfidence && !_removed.Contains(p.HoldAId));

@@ -1,4 +1,5 @@
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Assets;
 using Blocwerk.Core.Assets.Backfill;
 using Blocwerk.Core.Assets.Manifest;
 using Blocwerk.Core.Assets.Resolution;
@@ -161,8 +162,10 @@ public static class CoreServices
         builder.Services.AddSingleton<IImageVariantCache, FileSystemImageVariantCache>();
 
         // The hashed asset routes (/api/walls/{w}/a/{sha}): sha to row, under the wall's own gate.
-        builder.Services.AddSingleton<FileHashMemo>();
+        builder.Services.AddSingleton(new FileHashMemo());
+        builder.Services.AddSingleton<VerifiedBlobMemo>();
         builder.Services.AddScoped<IAssetResolver, AssetResolver>();
+        builder.Services.AddScoped<IAssetHashReader, AssetHashReader>();
 
         // Their manifest (/api/walls/{w}/manifest) and the device's cache partition (/api/me/cache-partition).
         builder.Services.AddWallManifest();

@@ -12,7 +12,7 @@ else if (_reviewMode is { } mode)
     @* The staged add / resize / delete path is THIS component's (see CarryoverReview.Tools.cs), so the
        stepper gets it as callbacks rather than injecting IWallPanelService a second time — which also
        keeps the deliberate needsReview:true default in one place. *@
-    <CarryoverStepper WallId="WallId" CenterPanelId="CenterPanelId" Mode="mode"
+    <CarryoverStepper WallId="WallId" CenterPanelId="CenterPanelId" OldPhotoSha="@_wallPhotoSha" Mode="mode"
                       Items="ReviewItems" OldHolds="_oldHolds" NewHolds="_newHolds"
                       OnCarryDecision="ApplyCarryDecision" OnNewDecision="ApplyNewDecision"
                       ReviewedNote="ReviewedNoteFor" OnClose="CloseReview"
@@ -22,7 +22,7 @@ else if (_reviewMode is { } mode)
 }
 else if (_crossGenOpen)
 {
-    <CrossGenLinkTool WallId="WallId" CenterPanelId="CenterPanelId"
+    <CrossGenLinkTool WallId="WallId" CenterPanelId="CenterPanelId" OldPhotoSha="@_wallPhotoSha"
                       OldHolds="_oldHolds" NewHolds="_newHolds"
                       Links="CrossGenLinks()" AttentionOldIds="_crossGenQueue"
                       OnLink="LinkCrossGen" OnUnlink="UnlinkCrossGen"

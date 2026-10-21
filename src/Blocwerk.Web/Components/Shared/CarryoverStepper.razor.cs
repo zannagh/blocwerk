@@ -1,3 +1,4 @@
+using Blocwerk.Core.Assets;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
 using Microsoft.AspNetCore.Components;
@@ -17,6 +18,11 @@ public partial class CarryoverStepper
 {
     [Parameter] public Guid WallId { get; set; }
     [Parameter] public Guid CenterPanelId { get; set; }
+
+    // The live wall photo's hash (/photo), read by the hosting review; null keeps the legacy url.
+    [Parameter]
+    public string? OldPhotoSha { get; set; }
+
     [Parameter] public CarryReviewMode Mode { get; set; }
     [Parameter] public IReadOnlyList<CarryReviewItem> Items { get; set; } = [];
     [Parameter] public IReadOnlyList<PanelHold> OldHolds { get; set; } = [];
@@ -52,7 +58,7 @@ public partial class CarryoverStepper
     // carried on the item. Independent of the "changed" toggle.
     private readonly Dictionary<Guid, Guid> _retargeted = [];
 
-    private string OldPhotoUrl => $"/api/walls/{WallId}/photo";
+    private string OldPhotoUrl => AssetUrls.WallPhoto(WallId, OldPhotoSha);
     private string NewPhotoUrl => $"/api/walls/{WallId}/panels/{CenterPanelId}/staged-photo";
 
     protected override void OnParametersSet()

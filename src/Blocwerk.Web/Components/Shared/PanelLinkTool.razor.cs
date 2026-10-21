@@ -1,3 +1,4 @@
+using Blocwerk.Core.Assets;
 using Blocwerk.Core.Services;
 using Microsoft.AspNetCore.Components;
 
@@ -268,7 +269,8 @@ public partial class PanelLinkTool
         return p is null ? side : $"{side} ({p.Col}, {p.Row}) — tap a hold";
     }
 
-    private string PhotoUrl(Guid panelId) => $"/api/walls/{WallId}/panels/{panelId}/photo";
+    private string PhotoUrl(Guid panelId) =>
+        AssetUrls.Panel(WallId, panelId, _livePanels.FirstOrDefault(p => p.Id == panelId)?.PhotoSha);
 
     private Task Close() => OnClose.InvokeAsync();
 

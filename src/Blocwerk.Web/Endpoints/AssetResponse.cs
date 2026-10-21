@@ -15,15 +15,18 @@ namespace Blocwerk.Web.Endpoints;
 /// row still holds that hash and is then hashed again in memory, a buffered file is hashed after it is read, and a
 /// streamed splat is hashed before it is streamed (remembered per file version). Bytes that fail the check are a 404
 /// without cache headers, never the new bytes under the old sha. A 304, and a HEAD of a buffered asset, are answered
-/// from the resolved row, since neither carries a body.
+/// from the resolved row, since neither carries a body; a HEAD of a rendition from the variant cache's file system.
 /// </remarks>
 public static class AssetResponse
 {
+    /// <summary>The policy of an asset a kiosk session may see but its shared caches may not keep.</summary>
+    public const string NoStoreCacheControl = "no-store";
+
     /// <summary>A database blob or a small file, buffered and checked before it is sent.</summary>
     public static async Task<IResult> OriginalAsync(
         HttpContext http, IAssetResolver resolver, ResolvedAsset asset, CancellationToken ct)
     {
-        if (Prepare(http, Etag(asset.Hex)) is { } early)
+        if (Prepare(http, asset, Etag(asset.Hex)) is { } early)
         {
             return early;
         }
@@ -41,7 +44,7 @@ public static class AssetResponse
     public static async Task<IResult> StreamAsync(
         HttpContext http, IAssetResolver resolver, ResolvedAsset asset, CancellationToken ct)
     {
-        if (Prepare(http, Etag(asset.Hex)) is { } early)
+        if (Prepare(http, asset, Etag(asset.Hex)) is { } early)
         {
             return early;
         }
@@ -63,29 +66,61 @@ public static class AssetResponse
         int width,
         CancellationToken ct)
     {
-        if (Prepare(http, Etag($"{asset.Hex}-{width}")) is { } early)
+        if (Prepare(http, asset, Etag($"{asset.Hex}-{width}")) is { } early)
         {
             return early;
         }
 
-        var variant = await variants.GetOrCreateAsync(
-            new ImageVariantKey(string.Empty, string.Empty, asset.Hex), width, () => resolver.LoadAsync(asset, ct), ct);
+        var key = new ImageVariantKey(string.Empty, string.Empty, asset.Hex);
+        if (HttpMethods.IsHead(http.Request.Method))
+        {
+            return await HeadOfVariantAsync(http, resolver, asset, variants.PeekHashed(key, width), ct);
+        }
+
+        var variant = await variants.GetOrCreateAsync(key, width, () => resolver.LoadAsync(asset, ct), ct);
         if (variant is null)
         {
             return ImageResponse.NotFound(http);
         }
 
-        var type = variant.IsOriginal ? asset.ContentType : variant.ContentType;
-        return HttpMethods.IsHead(http.Request.Method)
-            ? Head(http, type, variant.Bytes.LongLength)
-            : Results.File(variant.Bytes, type);
+        return Results.File(variant.Bytes, variant.IsOriginal ? asset.ContentType : variant.ContentType);
+    }
+
+    /// <summary>
+    /// A HEAD of a rendition, never rendered: rendering one (a few hundred milliseconds of CPU) to report a length would
+    /// let a HEAD cost what a GET does. A cached rendition answers with its file's length and type. For one not cached
+    /// yet the original is loaded and checked as the GET would check it (cheap once the hash memo has it), so a HEAD
+    /// never claims a 200 the GET would answer with a 404; it then carries the validator and policy but no type and no
+    /// length, which a HEAD may leave out (a cache freshening a stored GET from it keeps the stored ones).
+    /// </summary>
+    private static async Task<IResult> HeadOfVariantAsync(
+        HttpContext http, IAssetResolver resolver, ResolvedAsset asset, (long Length, string ContentType)? cached, CancellationToken ct)
+    {
+        if (cached is { } file)
+        {
+            return Head(http, file.ContentType, file.Length);
+        }
+
+        return await resolver.LoadAsync(asset, ct) is null ? ImageResponse.NotFound(http) : Results.Empty;
     }
 
     private static string Etag(string value) => $"\"{value}\"";
 
-    /// <summary>Writes the validator and the immutable policy; a 304 when the caller already holds these bytes.</summary>
-    private static IResult? Prepare(HttpContext http, string etag)
+    /// <summary>
+    /// Writes the validator and the immutable policy; a 304 when the caller already holds these bytes. A
+    /// <see cref="ResolvedAsset.NoStore"/> asset gets <c>no-store</c> instead, with no validator (so no 304 either) and
+    /// <c>Vary: Cookie</c>: nothing on the shared tablet, neither the service worker (which skips no-store) nor the HTTP
+    /// cache, may keep it for the next identity.
+    /// </summary>
+    private static IResult? Prepare(HttpContext http, ResolvedAsset asset, string etag)
     {
+        if (asset.NoStore)
+        {
+            http.Response.Headers.CacheControl = NoStoreCacheControl;
+            http.Response.Headers.Vary = "Cookie";
+            return null;
+        }
+
         http.Response.Headers.ETag = etag;
         http.Response.Headers.CacheControl = ImageResponse.ImmutableCacheControl;
         return ImageResponse.Matches(http.Request, etag) ? Results.StatusCode(StatusCodes.Status304NotModified) : null;

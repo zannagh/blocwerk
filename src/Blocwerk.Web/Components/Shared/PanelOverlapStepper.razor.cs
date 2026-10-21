@@ -107,6 +107,7 @@ public partial class PanelOverlapStepper
             (Col - 1, Row), (Col + 1, Row), (Col, Row - 1), (Col, Row + 1),
         };
         var panels = await WallPanelService.GetPanelsAsync(WallId);
+        _livePhotoShas = panels.Where(p => p.IsLive && p.PhotoSha is not null).ToDictionary(p => p.Id, p => p.PhotoSha!);
         _neighborPanels = panels
             .Where(p => p.IsLive && neighborPositions.Contains((p.Col, p.Row)))
             .ToList();
@@ -277,19 +278,6 @@ public partial class PanelOverlapStepper
     /// promote. A resumed walk seeds restored links into <c>_manualLinks</c>, so scanning only the
     /// decisions let the user confirm a proposal onto a hold a restored link had already taken.
     /// </summary>
-    private bool IsNewHoldTaken(Guid newHoldId, int exceptIndex)
-    {
-        for (var i = 0; i < _decisions.Length; i++)
-        {
-            if (i != exceptIndex && _decisions[i] is { } d && d.NewHoldId == newHoldId)
-            {
-                return true;
-            }
-        }
-
-        return _manualLinks.Any(l => l.NewHoldId == newHoldId);
-    }
-
     private async Task Finish()
     {
         // A link the bin tool took away is the user's own work: never close the panel over one without

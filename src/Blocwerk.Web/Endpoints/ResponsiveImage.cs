@@ -1,3 +1,4 @@
+using Blocwerk.Core.Assets;
 using Blocwerk.Core.Services;
 
 namespace Blocwerk.Web.Endpoints;
@@ -30,18 +31,26 @@ public static class ResponsiveImage
 
     /// <summary>
     /// The url of one gallery item's bytes. A <paramref name="thumbnail"/> asks for the small rendition; without
-    /// it the stored photo is served, which is only for the photo opened full screen. It carries the item's
-    /// <see cref="GalleryVersion"/>, because the privacy pass rewrites stored photos under the same url.
+    /// it the stored photo is served, which is only for the photo opened full screen. With the item's
+    /// <paramref name="sha"/> (read from the database with the item) it is the content-addressed url; without one, the
+    /// legacy route carrying the item's <see cref="GalleryVersion"/>, because the privacy pass rewrites stored photos
+    /// under the same url.
     /// </summary>
-    public static string Gallery(Guid wallId, string source, Guid id, long sizeBytes, string? shareToken, bool thumbnail)
+    public static string Gallery(
+        Guid wallId, string source, Guid id, long sizeBytes, string? shareToken, bool thumbnail, string? sha = null)
     {
-        var url = $"/media/walls/{wallId}/gallery/{source.ToLowerInvariant()}/{id}";
-        if (!string.IsNullOrEmpty(shareToken))
+        var url = AssetUrls.Hashed(wallId, sha, shareToken);
+        if (url is null)
         {
-            url += "?token=" + Uri.EscapeDataString(shareToken);
+            url = $"/media/walls/{wallId}/gallery/{source.ToLowerInvariant()}/{id}";
+            if (!string.IsNullOrEmpty(shareToken))
+            {
+                url += "?token=" + Uri.EscapeDataString(shareToken);
+            }
+
+            url = AssetVersion.Append(url, GalleryVersion(source, id, sizeBytes));
         }
 
-        url = AssetVersion.Append(url, GalleryVersion(source, id, sizeBytes));
         return thumbnail ? AtWidth(url, ThumbnailWidth) : url;
     }
 
@@ -60,15 +69,20 @@ public static class ResponsiveImage
     public static string Initial(string url) => AtWidth(url, InitialWidth);
 
     /// <summary>
-    /// <paramref name="url"/> asking for the <paramref name="width"/> rendition. Returns it
-    /// unchanged for a width the byte routes will not render, so a bad constant degrades into the
-    /// original rather than into a 404.
+    /// <paramref name="url"/> asking for the <paramref name="width"/> rendition: a <c>?w=</c> on a legacy route, a
+    /// path segment on a content-addressed one (<see cref="AssetUrls.HashedAtWidth"/>). Returns it unchanged for a
+    /// width the byte routes will not render, so a bad constant degrades into the original rather than into a 404.
     /// </summary>
     public static string AtWidth(string url, int width)
     {
         if (!ImageVariants.IsAllowed(width))
         {
             return url;
+        }
+
+        if (AssetUrls.IsHashed(url))
+        {
+            return AssetUrls.HashedAtWidth(url, width);
         }
 
         return url + (url.Contains('?') ? '&' : '?') + "w=" + width;

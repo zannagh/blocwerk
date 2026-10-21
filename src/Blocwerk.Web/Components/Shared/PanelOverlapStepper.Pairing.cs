@@ -140,4 +140,17 @@ public partial class PanelOverlapStepper
         _warning = null;
         await ReportProgressAsync();
     }
+
+    private bool IsNewHoldTaken(Guid newHoldId, int exceptIndex)
+    {
+        for (var i = 0; i < _decisions.Length; i++)
+        {
+            if (i != exceptIndex && _decisions[i] is { } d && d.NewHoldId == newHoldId)
+            {
+                return true;
+            }
+        }
+
+        return _manualLinks.Any(l => l.NewHoldId == newHoldId);
+    }
 }

@@ -2,6 +2,7 @@
 // See License in the project root for license information.
 
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Assets.Manifest;
 using Blocwerk.Core.Capture;
 using Blocwerk.Core.Data;
 using Microsoft.EntityFrameworkCore;
@@ -20,6 +21,7 @@ public sealed class AssetResolver(
     IWallImageStorage imageStorage,
     ICaptureFileStore captureFiles,
     FileHashMemo fileHashes,
+    VerifiedBlobMemo verifiedBlobs,
     ILogger<AssetResolver> logger,
     IKioskContext? kioskContext = null) : IAssetResolver
 {
@@ -39,14 +41,10 @@ public sealed class AssetResolver(
             return null;
         }
 
-        return await AssetBlobLookups.PanelAsync(db, wallId, hash, ct)
-            ?? await AssetBlobLookups.WallPhotoAsync(db, wallId, hash, ct)
-            ?? await AssetBlobLookups.ResetPhotoAsync(db, wallId, hash, ct)
-            ?? await AssetFileLookups.GalleryAsync(db, imageStorage, wallId, hash, ct)
-            ?? await AssetFileLookups.TextureAsync(db, captureFiles, wallId, hash, ct)
-            ?? await AssetFileLookups.MaskAsync(db, captureFiles, wallId, hash, ct)
-            ?? await AssetFileLookups.SplatAsync(db, captureFiles, wallId, hash, ct)
-            ?? await AssetBlobLookups.VideoThumbnailAsync(db, wallId, hash, access, ct);
+        var asset = await LookUpAsync(db, wallId, hash, access, ct);
+        return asset is null || kioskContext is not { IsKiosk: true } || ManifestAudiences.Lists(ManifestAudience.Kiosk, asset.Kind)
+            ? asset
+            : asset with { NoStore = true };
     }
 
     /// <inheritdoc/>
@@ -57,23 +55,19 @@ public sealed class AssetResolver(
             return null;
         }
 
-        byte[]? bytes;
         if (asset.PhysicalPath is { } path)
         {
-            bytes = await ReadFileAsync(path, ct);
-        }
-        else
-        {
-            await using var db = await dbContextFactory.CreateDbContextAsync(ct);
-            bytes = await AssetBlobLookups.LoadAsync(db, asset, ct);
+            return await ReadFileAsync(asset, path, ct);
         }
 
-        if (bytes is null || ContentHash.Same(ContentHash.Of(bytes), asset.Sha256))
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+        var bytes = await AssetBlobLookups.LoadAsync(db, asset, ct);
+        if (bytes is null || verifiedBlobs.Verify(asset, bytes))
         {
             return bytes;
         }
 
-        logger.LogWarning("{Kind} {RowId} no longer hashes to {Sha}; refusing to serve it under that hash", asset.Kind, asset.RowId, asset.Hex);
+        LogMismatch(asset);
         return null;
     }
 
@@ -98,7 +92,7 @@ public sealed class AssetResolver(
             return false;
         }
 
-        logger.LogWarning("{Kind} {RowId} no longer hashes to {Sha}; refusing to serve it under that hash", asset.Kind, asset.RowId, asset.Hex);
+        LogMismatch(asset);
         return false;
     }
 
@@ -112,11 +106,33 @@ public sealed class AssetResolver(
         return hash is not null && string.Equals(ContentHash.ToHex(hash), sha, StringComparison.Ordinal) ? hash : null;
     }
 
-    private async Task<byte[]?> ReadFileAsync(string path, CancellationToken ct)
+    private async Task<ResolvedAsset?> LookUpAsync(BlocwerkDbContext db, Guid wallId, byte[] hash, AssetAccess access, CancellationToken ct)
+    {
+        return await AssetBlobLookups.PanelAsync(db, wallId, hash, ct)
+            ?? await AssetBlobLookups.WallPhotoAsync(db, wallId, hash, ct)
+            ?? await AssetBlobLookups.ResetPhotoAsync(db, wallId, hash, ct)
+            ?? await AssetFileLookups.GalleryAsync(db, imageStorage, wallId, hash, ct)
+            ?? await AssetFileLookups.TextureAsync(db, captureFiles, wallId, hash, ct)
+            ?? await AssetFileLookups.MaskAsync(db, captureFiles, wallId, hash, ct)
+            ?? await AssetFileLookups.SplatAsync(db, captureFiles, wallId, hash, ct)
+            ?? await AssetBlobLookups.VideoThumbnailAsync(db, wallId, hash, access, ct);
+    }
+
+    /// <summary>
+    /// The bytes of a buffered file, checked through <see cref="FileHashMemo"/> (hashed once per file version); null
+    /// when the file is gone, unreadable, or no longer hashes to the asset's sha.
+    /// </summary>
+    private async Task<byte[]?> ReadFileAsync(ResolvedAsset asset, string path, CancellationToken ct)
     {
         try
         {
-            return await File.ReadAllBytesAsync(path, ct);
+            var bytes = await fileHashes.ReadVerifiedAsync(path, asset.Sha256, ct);
+            if (bytes is null && File.Exists(path))
+            {
+                LogMismatch(asset);
+            }
+
+            return bytes;
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         {
@@ -128,4 +144,7 @@ public sealed class AssetResolver(
             return null;
         }
     }
+
+    private void LogMismatch(ResolvedAsset asset) =>
+        logger.LogWarning("{Kind} {RowId} no longer hashes to {Sha}; refusing to serve it under that hash", asset.Kind, asset.RowId, asset.Hex);
 }

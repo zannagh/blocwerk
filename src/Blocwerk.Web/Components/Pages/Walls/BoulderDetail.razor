@@ -6,6 +6,7 @@
 @inject IAttemptService AttemptService
 @inject IWallService WallService
 @inject IWallPanelService WallPanelService
+@inject IAssetHashReader AssetHashes
 @inject WallCacheState Cache
 @inject ICurrentUserService CurrentUserService
 @inject IKioskContext KioskContext
@@ -837,6 +838,8 @@ else
                     ? g
                     : null;
         }
+
+        await LoadPhotoShasAsync();
     }
 
     /// <summary>
@@ -1052,14 +1055,28 @@ else
     /// </summary>
     private string CreatorDisplay => BoulderSetterNames.Describe(null, _boulder?.CreatedBy);
 
-    private string PhotoUrl
+    private string PhotoUrl => _showHistoric && _historicGeneration is { } g
+        ? AssetUrls.WallPhoto(WallId, _historicPhotoSha, ShareToken, g)
+        : AssetUrls.WallPhoto(WallId, _livePhotoSha, ShareToken);
+
+    // The hashes of the two wall photos PhotoUrl can show, read from the database with the historic generation.
+    private string? _livePhotoSha;
+    private string? _historicPhotoSha;
+
+    private async Task LoadPhotoShasAsync()
     {
-        get
+        try
         {
-            var gen = _showHistoric && _historicGeneration is { } g ? $"/{g}" : string.Empty;
-            return !string.IsNullOrEmpty(ShareToken)
-                ? $"/api/walls/{WallId}/photo{gen}?token={ShareToken}"
-                : $"/api/walls/{WallId}/photo{gen}";
+            _livePhotoSha = await AssetHashes.WallPhotoAsync(WallId);
+            _historicPhotoSha = _historicGeneration is { } g
+                ? await AssetHashes.WallPhotoAtGenerationAsync(WallId, ShareToken, g)
+                : null;
+        }
+        catch (Exception ex)
+        {
+            // The legacy urls still work; only the content-addressed ones are lost.
+            Logger.LogWarning(ex, "Could not read the photo hashes of wall {WallId}", WallId);
+            (_livePhotoSha, _historicPhotoSha) = (null, null);
         }
     }
 
@@ -1138,6 +1155,7 @@ else
         _isAdmin = false;
         _showHistoric = false;
         _historicGeneration = null;
+        (_livePhotoSha, _historicPhotoSha) = (null, null);
         _boulderHoldIds = [];
         _renderHolds = [];
         _activeProposal = null;

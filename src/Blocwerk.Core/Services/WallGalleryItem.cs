@@ -17,6 +17,10 @@ namespace Blocwerk.Core.Services;
 /// <param name="SizeBytes">Size of the image in bytes.</param>
 /// <param name="Caption">Caption for uploads, or a generated label for the legacy photos.</param>
 /// <param name="CapturedAt">When the shot was taken; the sort key of the gallery.</param>
+/// <param name="Sha">
+/// The content hash of the stored bytes (lowercase hex), read with the row; null until it is hashed. With it the
+/// gallery hands out the content-addressed URL (<see cref="Assets.AssetUrls"/>).
+/// </param>
 public sealed record WallGalleryItem(
     Guid Id,
     WallGallerySource Source,
@@ -24,7 +28,8 @@ public sealed record WallGalleryItem(
     string ContentType,
     long SizeBytes,
     string? Caption,
-    DateTimeOffset CapturedAt);
+    DateTimeOffset CapturedAt,
+    string? Sha = null);
 
 /// <summary>Raw bytes of a legacy (database-stored) gallery item, ready to be served.</summary>
 public sealed record WallImageContent(byte[] Data, string ContentType);
