@@ -59,7 +59,8 @@ public sealed class ManifestFixture : IDisposable
         Feed,
         Time,
         NullLogger<WallManifestService>.Instance,
-        Assets.Kiosk);
+        Assets.Kiosk,
+        Assets.KioskKeys);
 
     public Task<WallManifest?> GetAsync(string? token = null) => Service().GetAsync(WallId, token, default);
 

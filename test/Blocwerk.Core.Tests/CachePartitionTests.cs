@@ -24,6 +24,7 @@ public class CachePartitionTests
 
     private readonly ICurrentUserService currentUser = Substitute.For<ICurrentUserService>();
     private readonly IKioskContext kiosk = Substitute.For<IKioskContext>();
+    private readonly IKioskKeyValidator kioskKeys = KeysThatAreLive();
     private User? caller;
 
     public CachePartitionTests()
@@ -114,7 +115,14 @@ public class CachePartitionTests
         Assert.Equal("unknown", body.RootElement.GetProperty("partition").GetString());
     }
 
-    private CachePartitionResolver Resolver(ICachePartitionKey? key = null) => new(key ?? new FixedPartitionKey(1), currentUser, kiosk);
+    private CachePartitionResolver Resolver(ICachePartitionKey? key = null) => new(key ?? new FixedPartitionKey(1), currentUser, kiosk, kioskKeys);
+
+    private static IKioskKeyValidator KeysThatAreLive()
+    {
+        var keys = Substitute.For<IKioskKeyValidator>();
+        keys.IsKeyValidAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(true);
+        return keys;
+    }
 
     private void Bind(Guid wallId)
     {

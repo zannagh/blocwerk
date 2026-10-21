@@ -3,6 +3,8 @@
 
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Assets.Resolution;
+using Blocwerk.Core.Data;
+using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Web.Endpoints;
 
@@ -65,13 +67,16 @@ public static class AssetResponse
     }
 
     /// <summary>
-    /// A rendition, cached by <c>(sha, width)</c>. Only a rendition of checked bytes is ever cached (the variant cache
-    /// re-hashes the original before it writes), so the cached file is as trustworthy as the original.
+    /// A rendition, cached by <c>(sha, width)</c>. Only a rendition of checked bytes is ever cached: the resolver's load
+    /// returns only bytes that hash to the sha (through its memo), and the cache writes or adopts nothing else. The key
+    /// carries the row's legacy keys (<see cref="AssetLegacyVariantKeys"/>), so a rendition the legacy routes already
+    /// made is moved into the sha slot rather than rendered again.
     /// </summary>
     public static async Task<IResult> VariantAsync(
         HttpContext http,
         IAssetResolver resolver,
         IImageVariantCache variants,
+        IDbContextFactory<BlocwerkDbContext> dbContextFactory,
         ResolvedAsset asset,
         int width,
         CancellationToken ct)
@@ -81,13 +86,14 @@ public static class AssetResponse
             return early;
         }
 
-        var key = new ImageVariantKey(string.Empty, string.Empty, asset.Hex);
         if (HttpMethods.IsHead(http.Request.Method))
         {
-            return await HeadOfVariantAsync(http, resolver, asset, variants.PeekHashed(key, width), ct);
+            var shaKey = new ImageVariantKey(string.Empty, string.Empty, asset.Hex);
+            return await HeadOfVariantAsync(http, resolver, asset, variants.PeekHashed(shaKey, width), ct);
         }
 
-        var variant = await variants.GetOrCreateAsync(key, width, () => resolver.LoadAsync(asset, ct), ct);
+        var key = await AssetLegacyVariantKeys.ForAsync(dbContextFactory, asset, ct);
+        var variant = await variants.GetOrCreateAsync(key, width, () => resolver.LoadAsync(asset, ct), ct, originalVerified: true);
         if (variant is null)
         {
             return ImageResponse.NotFound(http);

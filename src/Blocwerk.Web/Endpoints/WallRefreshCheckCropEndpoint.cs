@@ -38,8 +38,7 @@ public static class WallRefreshCheckCropEndpoint
                 return Results.NotFound();
             }
 
-            http.Response.Headers.CacheControl = "private, max-age=3600";
-            return Results.File(bytes, "image/jpeg");
+            return RevalidatedResponse.Bytes(http, bytes, "image/jpeg");
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or KioskRestrictedException)
         {

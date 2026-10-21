@@ -111,24 +111,25 @@ public class View3DDocumentRouteTests
     }
 
     [Fact]
-    public async Task TheKiosk_GetsItsOwnWallsDocument_NoStoreWhenItMayNotCacheIt()
+    public async Task TheKiosk_GetsItsOwnWallsDocument_OnlyWithALiveKey()
     {
         using var f = new View3DDocumentFixture();
         var sha = await f.SeedAsync();
         f.Assets.Caller = null;
         f.Assets.BindKiosk(f.WallId);
 
-        var unkeyed = await f.GetAsync(f.WallId, sha, configure: h => h.Request.Headers.IfNoneMatch = $"\"{sha}\"");
-        f.Assets.Kiosk.KioskApiKeyId.Returns(Guid.NewGuid());
         var keyed = await f.GetAsync(f.WallId, sha);
+        f.Assets.Kiosk.KioskApiKeyId.Returns((Guid?)null);
+        var unkeyed = await f.GetAsync(f.WallId, sha);
+        f.Assets.BindKiosk(f.WallId);
+        f.Assets.KioskKeys.IsKeyValidAsync(AssetRouteFixture.KioskKeyId, f.WallId, Arg.Any<CancellationToken>()).Returns(false);
+        var revoked = await f.GetAsync(f.WallId, sha);
         f.Assets.BindKiosk(f.Assets.Seeded.OtherWallId);
         var elsewhere = await f.GetAsync(f.WallId, sha);
 
-        Assert.Equal(StatusCodes.Status200OK, unkeyed.Response.StatusCode);
-        Assert.Equal(AssetResponse.NoStoreCacheControl, unkeyed.Response.Headers.CacheControl.ToString());
-        Assert.False(unkeyed.Response.Headers.ContainsKey("ETag"));
-        Assert.Contains("Cookie", unkeyed.Response.Headers.Vary.ToString(), StringComparison.Ordinal);
         Assert.Equal(AssetResponse.RevalidateCacheControl, keyed.Response.Headers.CacheControl.ToString());
+        AssetRouteAccessTests.AssertRefused(unkeyed);
+        AssetRouteAccessTests.AssertRefused(revoked);
         AssetRouteAccessTests.AssertRefused(elsewhere);
     }
 

@@ -33,8 +33,7 @@ public static class CapturePhotoEndpoint
         try
         {
             var photo = await captures.ReadPhotoAsync(captureId, photoId, ct);
-            http.Response.Headers.CacheControl = "private, max-age=600";
-            return Results.File(photo.Bytes, photo.ContentType);
+            return RevalidatedResponse.Bytes(http, photo.Bytes, photo.ContentType);
         }
         catch (UnauthorizedAccessException)
         {

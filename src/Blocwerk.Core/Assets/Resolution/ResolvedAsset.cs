@@ -27,6 +27,9 @@ public sealed record ResolvedAsset(
     /// <summary>Whether a width ladder (<c>ImageVariants.Widths</c>) applies: only the photos are rescaled.</summary>
     public bool HasVariants => Kind is AssetKind.Panel or AssetKind.WallPhoto or AssetKind.ResetPhoto or AssetKind.Gallery;
 
+    /// <summary>The wall the request named, which the row belongs to (set by the resolver).</summary>
+    public Guid WallId { get; init; }
+
     /// <summary>
     /// Whether the response must not be stored anywhere (<c>Cache-Control: no-store</c>, no validator): a kiosk
     /// session, anonymous or act-as, asking for a kind outside the manifest's Kiosk class. The tablet's caches are

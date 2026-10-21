@@ -18,7 +18,8 @@ namespace Blocwerk.Core.Assets.Manifest;
 public sealed class CacheSummaryService(
     IDbContextFactory<BlocwerkDbContext> dbContextFactory,
     ICurrentUserService currentUserService,
-    IKioskContext? kioskContext = null)
+    IKioskContext? kioskContext = null,
+    IKioskKeyValidator? kioskKeys = null)
 {
     public async Task<CacheSummaryResponse> GetAsync(CancellationToken ct)
     {
@@ -46,7 +47,7 @@ public sealed class CacheSummaryService(
             await kioskContext.InitializeAsync();
             if (kioskContext.IsKiosk)
             {
-                return KioskCacheRules.CachedWallId(kioskContext) is { } wallId ? [wallId] : [];
+                return await KioskCacheRules.CachedWallIdAsync(kioskContext, kioskKeys, ct) is { } wallId ? [wallId] : [];
             }
         }
 
