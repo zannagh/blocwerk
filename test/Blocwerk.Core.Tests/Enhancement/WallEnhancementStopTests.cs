@@ -134,6 +134,19 @@ public sealed class WallEnhancementStopTests
     }
 
     [Fact]
+    public async Task AStepsOwnInnerTimeout_IsReportedAsItsFailure_NotAsTheWatchdog()
+    {
+        using var f = await WallEnhancementFixture.CreateAsync();
+        var inner = new FakeEnhancementStep("links", 600, WallEnhancementItemKind.Link, (_, _) => throw new TaskCanceledException("HTTP request timed out"));
+
+        var view = await f.StartAndWaitAsync(f.Service(inner));
+
+        var step = view.Steps.Single();
+        Assert.Equal(WallEnhancementStepOutcomeKind.Failed, step.Outcome);
+        Assert.DoesNotContain("took longer", step.Summary);
+    }
+
+    [Fact]
     public async Task Discard_KeepsTheRecordOfAnAnswerWhoseWriteWasKept()
     {
         using var f = await WallEnhancementFixture.CreateAsync();
