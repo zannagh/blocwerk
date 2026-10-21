@@ -6,6 +6,7 @@ using System.Runtime.CompilerServices;
 using Blocwerk.Core.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core.Feed;
@@ -19,7 +20,8 @@ namespace Blocwerk.Core.Feed;
 /// After the commit the walls are woken (<see cref="IFeedSignal"/>): straight after a save without an explicit
 /// transaction, on <c>TransactionCommitted</c> with one, never after a rollback (the same rule as
 /// <see cref="Data.DomainChangeInterceptor"/>). A failed or cancelled save drops its rows and wakes (E5), and detaches the
-/// rows so a retried save collects them afresh instead of writing them twice. A singleton: per-context state lives in
+/// rows so a retried save collects them afresh instead of writing them twice. A suppressed save writes and wakes nothing.
+/// Held wakes belong to one transaction: its commit releases them, and anything else that ends it drops them. A singleton: per-context state lives in
 /// <see cref="ConditionalWeakTable{TKey,TValue}"/>s.
 /// </para>
 /// </summary>
@@ -29,7 +31,7 @@ public sealed class FeedInterceptor : SaveChangesInterceptor, IDbTransactionInte
     private readonly IFeedSignal signal;
     private readonly ILogger<FeedInterceptor> logger;
     private readonly ConditionalWeakTable<DbContext, List<WallChange>> pending = new();
-    private readonly ConditionalWeakTable<DbContext, List<FeedWake>> awaitingCommit = new();
+    private readonly ConditionalWeakTable<DbContext, FeedPendingCommit> awaitingCommit = new();
 
     public FeedInterceptor(FeedMapperRegistry registry, IFeedSignal signal, ILogger<FeedInterceptor> logger)
     {
@@ -38,16 +40,25 @@ public sealed class FeedInterceptor : SaveChangesInterceptor, IDbTransactionInte
         this.logger = logger;
     }
 
+    // An earlier interceptor that suppressed the save (HasResult) means nothing is written: nothing to collect.
     public override InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result)
     {
-        Collect(eventData.Context);
+        if (!result.HasResult)
+        {
+            Collect(eventData.Context);
+        }
+
         return base.SavingChanges(eventData, result);
     }
 
     public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
         DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
     {
-        Collect(eventData.Context);
+        if (!result.HasResult)
+        {
+            Collect(eventData.Context);
+        }
+
         return base.SavingChangesAsync(eventData, result, cancellationToken);
     }
 
@@ -80,12 +91,50 @@ public sealed class FeedInterceptor : SaveChangesInterceptor, IDbTransactionInte
         return Task.CompletedTask;
     }
 
-    public void TransactionCommitted(DbTransaction transaction, TransactionEndEventData eventData) => WakeCommitted(eventData.Context);
+    public void TransactionCommitted(DbTransaction transaction, TransactionEndEventData eventData) =>
+        WakeCommitted(eventData.Context, transaction);
 
     public Task TransactionCommittedAsync(
         DbTransaction transaction, TransactionEndEventData eventData, CancellationToken cancellationToken = default)
     {
-        WakeCommitted(eventData.Context);
+        WakeCommitted(eventData.Context, transaction);
+        return Task.CompletedTask;
+    }
+
+    // EF has no "transaction disposed" event. A transaction disposed without commit or rollback has rolled back, and the
+    // next one the context starts or adopts (or a failure) is where that shows: its held wakes are dropped there, and a
+    // commit only ever releases the wakes of its own transaction.
+    public DbTransaction TransactionStarted(DbConnection connection, TransactionEndEventData eventData, DbTransaction result)
+    {
+        DropUncommitted(eventData.Context);
+        return result;
+    }
+
+    public ValueTask<DbTransaction> TransactionStartedAsync(
+        DbConnection connection, TransactionEndEventData eventData, DbTransaction result, CancellationToken cancellationToken = default)
+    {
+        DropUncommitted(eventData.Context);
+        return ValueTask.FromResult(result);
+    }
+
+    public DbTransaction TransactionUsed(DbConnection connection, TransactionEventData eventData, DbTransaction result)
+    {
+        DropUncommitted(eventData.Context);
+        return result;
+    }
+
+    public ValueTask<DbTransaction> TransactionUsedAsync(
+        DbConnection connection, TransactionEventData eventData, DbTransaction result, CancellationToken cancellationToken = default)
+    {
+        DropUncommitted(eventData.Context);
+        return ValueTask.FromResult(result);
+    }
+
+    public void TransactionFailed(DbTransaction transaction, TransactionErrorEventData eventData) => DropUncommitted(eventData.Context);
+
+    public Task TransactionFailedAsync(DbTransaction transaction, TransactionErrorEventData eventData, CancellationToken cancellationToken = default)
+    {
+        DropUncommitted(eventData.Context);
         return Task.CompletedTask;
     }
 
@@ -127,13 +176,24 @@ public sealed class FeedInterceptor : SaveChangesInterceptor, IDbTransactionInte
 
         pending.Remove(context);
 
-        // EF has read the database-generated Seq and TxId back. The rows are immutable from here, so the context stops
-        // tracking them: a long transaction of many saves (a replay) would otherwise drag them through every DetectChanges.
-        var wakes = Wakes(rows);
+        // EF has read the database-generated Seq and TxId back. A row whose Seq is still temporary was never written (a
+        // later interceptor suppressed the save): it wakes nothing, and leaving it tracked would let the next save insert
+        // it beside the rows that save collects afresh. The written rows are immutable from here, so the context stops
+        // tracking them too: a long transaction of many saves (a replay) would otherwise drag them through every
+        // DetectChanges.
+        var written = rows.Where(r => !context.Entry(r).Property(c => c.Seq).IsTemporary).ToList();
+        var wakes = Wakes(written);
         Detach(context, rows);
-        if (context.Database.CurrentTransaction is not null)
+        if (context.Database.CurrentTransaction?.GetDbTransaction() is { } transaction)
         {
-            awaitingCommit.GetValue(context, _ => []).AddRange(wakes);
+            var held = awaitingCommit.GetValue(context, _ => new FeedPendingCommit(transaction));
+            if (!ReferenceEquals(held.Transaction, transaction))
+            {
+                awaitingCommit.Remove(context); // left over from a transaction that ended unseen
+                held = awaitingCommit.GetValue(context, _ => new FeedPendingCommit(transaction));
+            }
+
+            held.Wakes.AddRange(wakes);
             return;
         }
 
@@ -149,12 +209,15 @@ public sealed class FeedInterceptor : SaveChangesInterceptor, IDbTransactionInte
         }
     }
 
-    private void WakeCommitted(DbContext? context)
+    private void WakeCommitted(DbContext? context, DbTransaction transaction)
     {
-        if (context is not null && awaitingCommit.TryGetValue(context, out var wakes))
+        if (context is not null && awaitingCommit.TryGetValue(context, out var held))
         {
             awaitingCommit.Remove(context);
-            WakeAll(wakes);
+            if (ReferenceEquals(held.Transaction, transaction))
+            {
+                WakeAll(held.Wakes);
+            }
         }
     }
 

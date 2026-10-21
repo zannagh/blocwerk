@@ -8,8 +8,11 @@ using Microsoft.EntityFrameworkCore.ChangeTracking;
 namespace Blocwerk.Core.Feed;
 
 /// <summary>
-/// The wall of a changed entry without its mapper: the wall itself, or the entry's <c>WallId</c> property (the original
-/// value of a deleted row). Used only when a mapper threw, to aim the fallback <c>wall.resync</c>.
+/// The wall of a changed entry without its mapper, to aim the fallback <c>wall.resync</c> when a mapper threw: the wall
+/// itself, the entry's <c>WallId</c>, or, for boulder-scoped rows (comments, boulder holds, ticks, ratings, videos,
+/// setters, favourites, grade proposals), the wall of its <c>BoulderId</c>. Values of a deleted row are its original
+/// ones. The boulder is taken from the tracker when it is there (also one being added or deleted in the same save),
+/// else looked up with one query. That query runs only on this failure path.
 /// </summary>
 internal static class FeedEntryWall
 {
@@ -20,7 +23,31 @@ internal static class FeedEntryWall
             return wall.Id;
         }
 
-        var property = entry.Metadata.FindProperty(nameof(Hold.WallId));
+        if (Value(entry, nameof(Hold.WallId)) is { } wallId)
+        {
+            return wallId;
+        }
+
+        return Value(entry, nameof(BoulderComment.BoulderId)) is { } boulderId ? WallOfBoulder(entry.Context, boulderId) : null;
+    }
+
+    private static Guid? WallOfBoulder(DbContext context, Guid boulderId)
+    {
+        var tracked = context.ChangeTracker.Entries<Boulder>().FirstOrDefault(e => e.Entity.Id == boulderId);
+        if (tracked is not null)
+        {
+            return Value(tracked, nameof(Boulder.WallId));
+        }
+
+        return context.Set<Boulder>().AsNoTracking()
+            .Where(b => b.Id == boulderId)
+            .Select(b => (Guid?)b.WallId)
+            .FirstOrDefault();
+    }
+
+    private static Guid? Value(EntityEntry entry, string propertyName)
+    {
+        var property = entry.Metadata.FindProperty(propertyName);
         if (property is null)
         {
             return null;

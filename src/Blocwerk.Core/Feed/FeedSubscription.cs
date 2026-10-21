@@ -21,6 +21,7 @@ public sealed class FeedSubscription : IDisposable
     /// <summary>Gets the hub's cursor at subscription: deliveries carry only rows after it.</summary>
     public FeedCursor Start { get; }
 
+    /// <summary>Stops the deliveries. One already being handed out may still reach the subscriber once.</summary>
     public void Dispose()
     {
         if (Interlocked.Exchange(ref disposed, 1) == 0)

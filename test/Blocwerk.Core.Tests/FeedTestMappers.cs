@@ -80,3 +80,15 @@ internal sealed class RecordingFeedSignal : IFeedSignal
         inner.Wake(wake);
     }
 }
+
+/// <summary>Counts how often it is asked to map.</summary>
+internal sealed class CountingMapper : IFeedMapper
+{
+    private int calls;
+
+    public IReadOnlyCollection<Type> EntityTypes { get; } = [typeof(Hold)];
+
+    public int Calls => calls;
+
+    public void Map(EntityEntry entry, FeedMapContext context) => Interlocked.Increment(ref calls);
+}

@@ -26,6 +26,9 @@ public sealed class WallFeedHub : BackgroundService, IWallFeedHub
     private readonly ILogger<WallFeedHub> logger;
     private readonly ConcurrentDictionary<Guid, FeedHubWall> walls = new();
 
+    /// <summary>Gets how many walls the hub tracks (walls with a subscriber, or one on its way).</summary>
+    internal int TrackedWallCount => walls.Count;
+
     public WallFeedHub(IWallFeed feed, IFeedSignal signal, Func<BlocwerkDbContext> createContext, ILogger<WallFeedHub> logger)
     {
         this.feed = feed;
@@ -41,7 +44,7 @@ public sealed class WallFeedHub : BackgroundService, IWallFeedHub
         while (true)
         {
             var wall = walls.GetOrAdd(wallId, id => new FeedHubWall(id));
-            await wall.Gate.WaitAsync(cancellationToken);
+            await EnterAsync(wall, cancellationToken);
             try
             {
                 if (wall.IsRemoved)
@@ -82,36 +85,20 @@ public sealed class WallFeedHub : BackgroundService, IWallFeedHub
         await wall.Gate.WaitAsync(cancellationToken);
         try
         {
-            if (wall.IsRemoved || wall.Cursor is not { } cursor)
+            if (wall.IsRemoved)
             {
                 return;
             }
 
-            var filter = FeedFilter.AllOfWall(wall.WallId);
-            while (true)
+            if (wall.Cursor is not { } cursor)
             {
-                var page = await feed.ReadAsync(filter, cursor, PageSize, cancellationToken);
-                if (page.Resync)
-                {
-                    FeedFanOut.DeliverResync(wall, page.Next, logger);
-                    cursor = page.Next;
-                    break;
-                }
-
-                if (page.Changes.Count > 0)
-                {
-                    await using var db = createContext();
-                    var hydrated = await FeedHydration.LoadAsync(db, page.Changes, cancellationToken);
-                    FeedFanOut.Deliver(wall, page.Changes, hydrated, page.Next, logger);
-                }
-
-                cursor = page.Next;
-                if (page.Changes.Count < PageSize)
-                {
-                    break;
-                }
+                // No subscriber has taken a cursor yet (a subscribe in flight or one that failed): never due again
+                // before the safety poll, so no path can make the loop spin on it.
+                wall.Defer(DateTimeOffset.UtcNow);
+                return;
             }
 
+            cursor = await ReadPagesAsync(wall, cursor, cancellationToken);
             wall.AfterRead(cursor, DateTimeOffset.UtcNow);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
@@ -137,6 +124,55 @@ public sealed class WallFeedHub : BackgroundService, IWallFeedHub
             }
 
             await WaitAsync(NextDelay(DateTimeOffset.UtcNow), stoppingToken);
+        }
+    }
+
+    // Page by page from the cursor. The wall's cursor moves after every delivered page, not once at the end: a later
+    // page that fails must not make the retry hand out the pages already delivered again.
+    private async Task<FeedCursor> ReadPagesAsync(FeedHubWall wall, FeedCursor cursor, CancellationToken cancellationToken)
+    {
+        var filter = FeedFilter.AllOfWall(wall.WallId);
+        while (true)
+        {
+            var page = await feed.ReadAsync(filter, cursor, PageSize, cancellationToken);
+            if (page.Resync)
+            {
+                FeedFanOut.DeliverResync(wall, page.Next, logger);
+                cursor = page.Next;
+                wall.Cursor = cursor;
+                break;
+            }
+
+            if (page.Changes.Count > 0)
+            {
+                await using var db = createContext();
+                var hydrated = await FeedHydration.LoadAsync(db, page.Changes, cancellationToken);
+                FeedFanOut.Deliver(wall, page.Changes, hydrated, page.Next, logger);
+            }
+
+            cursor = page.Next;
+            wall.Cursor = cursor;
+            if (page.Changes.Count < PageSize)
+            {
+                break;
+            }
+        }
+
+        return cursor;
+    }
+
+    // Takes the wall's gate. A wait that is cancelled or fails retires the wall if nobody holds it, so a cancelled first
+    // subscribe leaves no cursor-less wall behind for the loop.
+    private async Task EnterAsync(FeedHubWall wall, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await wall.Gate.WaitAsync(cancellationToken);
+        }
+        catch
+        {
+            Retire(wall, null);
+            throw;
         }
     }
 

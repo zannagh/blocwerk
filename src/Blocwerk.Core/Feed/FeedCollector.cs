@@ -4,6 +4,7 @@
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core.Feed;
@@ -41,17 +42,38 @@ internal static class FeedCollector
                 catch (Exception ex)
                 {
                     map.TruncateTo(mark);
-                    var wallId = FeedEntryWall.Of(entry) ?? scope?.WallId;
-                    logger.LogError(ex, "Feed mapper {Mapper} failed on {Entity} ({State}); writing a resync of wall {WallId} instead",
-                        mapper.GetType().Name, entry.Metadata.ClrType.Name, entry.State, wallId);
-                    if (wallId is { } wall)
-                    {
-                        map.Add(FeedRows.Resync(wall, MappingFailedReason, actor, now));
-                    }
+                    Fallback(entry, mapper, ex, map, scope, logger);
                 }
             }
         }
 
         return FeedCollapse.Apply(map.Rows, scope, actor, now);
+    }
+
+    // The entry's wall gets a resync whenever it can be known; only an entry of no knowable wall writes nothing, and that
+    // is logged as such.
+    private static void Fallback(EntityEntry entry, IFeedMapper mapper, Exception error, FeedMapContext map, FeedScopeState? scope, ILogger logger)
+    {
+        Guid? wallId;
+        try
+        {
+            wallId = FeedEntryWall.Of(entry) ?? scope?.WallId;
+        }
+        catch (Exception lookup)
+        {
+            logger.LogError(lookup, "Resolving the wall of {Entity} for a feed resync failed", entry.Metadata.ClrType.Name);
+            wallId = scope?.WallId;
+        }
+
+        if (wallId is not { } wall)
+        {
+            logger.LogError(error, "Feed mapper {Mapper} failed on {Entity} ({State}) and its wall is unknown; no feed row is written for it",
+                mapper.GetType().Name, entry.Metadata.ClrType.Name, entry.State);
+            return;
+        }
+
+        logger.LogError(error, "Feed mapper {Mapper} failed on {Entity} ({State}); writing a resync of wall {WallId} instead",
+            mapper.GetType().Name, entry.Metadata.ClrType.Name, entry.State, wall);
+        map.Add(FeedRows.Resync(wall, MappingFailedReason, map.ActorUserId, map.Now));
     }
 }

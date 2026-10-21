@@ -112,6 +112,9 @@ internal sealed class FeedHubWall
         DueAt = now + FeedRepoll.SafetyPoll;
     }
 
+    /// <summary>Nothing to read yet: due again only at the safety poll.</summary>
+    public void Defer(DateTimeOffset now) => DueAt = now + FeedRepoll.SafetyPoll;
+
     /// <summary>A read that failed (the database is away): try again with backoff.</summary>
     public void AfterFailure(DateTimeOffset now)
     {

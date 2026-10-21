@@ -104,7 +104,7 @@ public sealed class WallFeedHubTests : IAsyncLifetime
 
         Assert.True(events[0].Tombstone);
         Assert.Null(events[0].Hydrated);
-        Assert.All(events, e => Assert.Equal((GhostUser.Id, PlaceholderIdentity.DisplayName), (e.Actor!.Id, e.Actor.Name)));
+        Assert.All(events, e => Assert.Equal(((Guid?)null, PlaceholderIdentity.DisplayName), (e.Actor!.Id, e.Actor.Name))); // no ids outside the wall
     }
 
     [Fact]
