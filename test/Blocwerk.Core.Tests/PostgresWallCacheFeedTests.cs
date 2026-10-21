@@ -36,6 +36,9 @@ public sealed class PostgresWallCacheFeedTests
         await f.CommitAsync(false, row);
         f.Store.Walls.Evict(f.WallId);
         f.Store.HoldSets.Evict((f.WallId, 0));
+
+        // The reload's cursor must cover the row: on Postgres that waits for the cluster-wide horizon to pass it.
+        await PostgresHorizonWait.UntilCeilingReachesAsync(f.Harness.CreateContext, row.TxId!.Value);
         await f.WarmAsync();
 
         f.Signal.Wake(new Core.Feed.FeedWake(f.WallId, row.TxId));

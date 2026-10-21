@@ -21,6 +21,9 @@ public sealed class PostgresFeedRetentionTests
         await kit.Feed.InitializeAsync();
         var first = await kit.CommitAsync(kit.Row("old-1", createdAt: Old));
 
+        // Retention deletes only below the horizon, which is cluster-wide: let it pass `first` before `late` opens.
+        await PostgresHorizonWait.UntilCeilingReachesAsync(() => pg.CreateContext(), first.TxId!.Value);
+
         await using var late = pg.CreateContext();
         await using var lateTx = await late.Database.BeginTransactionAsync();
         var second = await PostgresFeedTestKit.InsertAsync(late, kit.Row("old-2", createdAt: Old));
@@ -28,6 +31,7 @@ public sealed class PostgresFeedRetentionTests
         await lateTx.CommitAsync();
 
         var fromFloor = await kit.DrainUntilAsync(await FloorCursorAsync(pg), expected: 1);
+        await PostgresHorizonWait.UntilCeilingReachesAsync(() => pg.CreateContext(), second.TxId!.Value);
         var secondRun = await RetainAsync(pg);
 
         Assert.Equal(1, firstRun);
@@ -45,6 +49,9 @@ public sealed class PostgresFeedRetentionTests
         var start = await kit.Feed.CurrentAsync();
         var a = await kit.CommitAsync(kit.Row("a"));
 
+        // The horizon is cluster-wide: it must pass `a` before T opens, so p1 is not held back by another database.
+        await PostgresHorizonWait.UntilCeilingReachesAsync(() => pg.CreateContext(), a.TxId!.Value);
+
         // T takes the older xid and stays open; D commits after it.
         await using var t = pg.CreateContext();
         await using var txT = await t.Database.BeginTransactionAsync();
@@ -55,6 +62,7 @@ public sealed class PostgresFeedRetentionTests
         var p2 = await kit.Feed.ReadAsync(kit.Filter, p1.Next, 1);
         var tRow = await PostgresFeedTestKit.InsertAsync(t, kit.Row("t"));
         await txT.CommitAsync();
+        await PostgresHorizonWait.UntilCeilingReachesAsync(() => pg.CreateContext(), d.TxId!.Value);
         var p3 = await kit.Feed.ReadAsync(kit.Filter, p2.Next, 1);
         var p4 = await kit.Feed.ReadAsync(kit.Filter, p3.Next, 1);
         var p5 = await kit.Feed.ReadAsync(kit.Filter, p4.Next, 1);
