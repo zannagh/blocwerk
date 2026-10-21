@@ -38,20 +38,20 @@ public sealed class WallPulseHubTests : IDisposable
         Assert.Empty(none.Received);
     }
 
-    [Fact]
-    public async Task AWallPulse_ReachesAKiosk_AndAUserPulseReachesNobody()
+    [Theory]
+    [InlineData(FeedAudience.Wall)]
+    [InlineData(FeedAudience.Members)]
+    [InlineData(FeedAudience.User)]
+    public async Task APulseForAnyAudienceButSetters_IsRejected_ForEveryViewer(FeedAudience audience)
     {
-        var kiosk = Inbox(FeedViewer.Kiosk());
         var user = Guid.NewGuid();
-        var member = Inbox(FeedViewer.Member(user));
+        var inboxes = new[] { Inbox(FeedViewer.Kiosk()), Inbox(FeedViewer.Member(user)), Inbox(FeedViewer.Setter(user)) };
 
-        hub.Publish(new WallPulse(WallId, PulseTopics.Refresh, Guid.NewGuid(), FeedAudience.Wall));
-        hub.Publish(new WallPulse(WallId, PulseTopics.Refresh, Guid.NewGuid(), FeedAudience.User));
+        hub.Publish(new WallPulse(WallId, PulseTopics.Refresh, Guid.NewGuid(), audience));
         await DrainAsync();
 
-        Assert.Single(kiosk.Received);
-        Assert.Single(member.Received); // the Wall one: a pulse never carries a user, so User reaches no one
-        Assert.All(member.Received, p => Assert.Equal(FeedAudience.Wall, p.Audience));
+        Assert.All(inboxes, i => Assert.Empty(i.Received));
+        Assert.Equal(0, hub.SlotCount); // dropped before the throttle
     }
 
     [Fact]

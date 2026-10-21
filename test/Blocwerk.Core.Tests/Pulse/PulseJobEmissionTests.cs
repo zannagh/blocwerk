@@ -2,8 +2,8 @@
 // See License in the project root for license information.
 
 using Blocwerk.Core.Abstractions;
-using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enhancement;
+using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Jobs;
 using Blocwerk.Core.Pulse;

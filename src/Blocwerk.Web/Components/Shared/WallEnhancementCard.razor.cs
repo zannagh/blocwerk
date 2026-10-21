@@ -19,12 +19,12 @@ namespace Blocwerk.Web.Components.Shared;
 /// </summary>
 public partial class WallEnhancementCard : IDisposable
 {
+    private readonly PulseHolder<PulseLoop> pulses = new();
     private Guid loadedWallId;
     private bool busy;
     private bool disposed;
     private string? failure;
     private WallEnhancementView? view;
-    private PulseLoop? pulses;
 
     /// <summary>The wall being administered.</summary>
     [Parameter]
@@ -55,7 +55,7 @@ public partial class WallEnhancementCard : IDisposable
     public void Dispose()
     {
         disposed = true;
-        pulses?.Dispose();
+        pulses.Dispose();
     }
 
     /// <summary>"Done: 412 changes to look over." for a run waiting for its review.</summary>
@@ -105,12 +105,17 @@ public partial class WallEnhancementCard : IDisposable
             return;
         }
 
-        loadedWallId = WallId;
+        var wallId = loadedWallId = WallId;
         failure = null;
         await ReloadAsync();
-        pulses?.Dispose();
-        pulses = PulseLoop.Start(
-            Cache, Pulse, WallId, [PulseTopics.Enhancement], () => view?.State == WallEnhancementState.Running, InvokeAsync, PollAsync, Logger);
+        if (loadedWallId != wallId)
+        {
+            return; // a newer wall's load opens its own
+        }
+
+        // Gone meanwhile: the holder opens nothing.
+        pulses.Open(wallId, () => PulseLoop.Start(
+            Cache, Pulse, wallId, [PulseTopics.Enhancement], () => view?.State == WallEnhancementState.Running, InvokeAsync, PollAsync, Logger));
     }
 
     private async Task ReloadAsync()
@@ -149,7 +154,7 @@ public partial class WallEnhancementCard : IDisposable
         try
         {
             view = await Enhancement.CancelAsync(WallId);
-            pulses?.Nudge();
+            pulses.Current?.Nudge();
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidOperationException or KioskRestrictedException or UserFacingException)
         {
@@ -175,7 +180,7 @@ public partial class WallEnhancementCard : IDisposable
         try
         {
             view = await Enhancement.StartAsync(WallId);
-            pulses?.Nudge();
+            pulses.Current?.Nudge();
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidOperationException or KioskRestrictedException or UserFacingException)
         {

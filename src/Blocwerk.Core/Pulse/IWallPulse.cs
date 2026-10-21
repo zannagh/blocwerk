@@ -19,7 +19,11 @@ namespace Blocwerk.Core.Pulse;
 /// </summary>
 public interface IWallPulse
 {
-    /// <summary>Publishes a pulse. Never blocks and never throws, so a job can call it from anywhere.</summary>
+    /// <summary>
+    /// Publishes a pulse. Never blocks and never throws, so a job can call it from anywhere. Only
+    /// <see cref="Enums.FeedAudience.Setters"/> pulses are accepted: every job is wall-admin workflow, so any other audience
+    /// is dropped (and logged) rather than widened.
+    /// </summary>
     void Publish(WallPulse pulse);
 
     /// <summary>

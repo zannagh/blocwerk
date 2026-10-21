@@ -15,12 +15,14 @@ namespace Blocwerk.Web.Components.Pages.Walls;
 /// The wall's "3D runners" card: runners that can serve it (its own and shared ones) with their
 /// online state and current job, the wall's waiting photo-real jobs, and creating a runner (whose
 /// key and run commands are shown exactly once). Refreshes on the wall's runner-job pulses, and every
-/// <see cref="PulseWake.SafetyPoll"/> for what no pulse carries (a runner going on or offline).
+/// <see cref="RunnerStateEvery"/> for what no pulse carries (a runner going on or offline).
 /// </summary>
 public partial class WallGpuRunnersPanel : IAsyncDisposable
 {
-    private PulseLoop? pulses;
-    private Guid pulsesWallId;
+    /// <summary>The old cadence, kept for what no pulse carries: a runner going online, offline or paused.</summary>
+    internal static readonly TimeSpan RunnerStateEvery = TimeSpan.FromSeconds(5);
+
+    private readonly PulseHolder<PulseLoop> pulses = new();
     private IReadOnlyList<GpuRunnerInfo>? runners;
     private IReadOnlyList<GpuJobInfo>? jobs;
     private GpuRunnerCreated? created;
@@ -53,7 +55,7 @@ public partial class WallGpuRunnersPanel : IAsyncDisposable
 
     public ValueTask DisposeAsync()
     {
-        pulses?.Dispose();
+        pulses.Dispose();
         GC.SuppressFinalize(this);
         return ValueTask.CompletedTask;
     }
@@ -74,11 +76,10 @@ public partial class WallGpuRunnersPanel : IAsyncDisposable
 
     protected override Task OnParametersSetAsync()
     {
-        if (pulses is null || pulsesWallId != WallId)
+        if (!pulses.IsFor(WallId))
         {
-            pulses?.Dispose();
-            pulsesWallId = WallId;
-            pulses = PulseLoop.Start(Cache, Pulse, WallId, [PulseTopics.GpuJob], () => true, InvokeAsync, ReloadAndRenderAsync, Logger);
+            pulses.Open(WallId, () => PulseLoop.Start(
+                Cache, Pulse, WallId, [PulseTopics.GpuJob], () => true, InvokeAsync, ReloadAndRenderAsync, Logger, safety: RunnerStateEvery));
         }
 
         return ReloadAsync();

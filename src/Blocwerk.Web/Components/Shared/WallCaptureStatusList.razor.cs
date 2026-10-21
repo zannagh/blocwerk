@@ -21,13 +21,13 @@ public partial class WallCaptureStatusList : IAsyncDisposable
     private readonly CancellationTokenSource disposed = new();
     private readonly HashSet<Guid> notified = [];
     private readonly Dictionary<Guid, TextureRouting> routings = [];
+    private readonly PulseHolder<PulseWake> wake = new();
     private Dictionary<Guid, Blocwerk.Core.Runners.GpuJobInfo> textureJobs = [];
     private Guid loadedWallId;
     private IReadOnlyList<WallCaptureSummary> history = [];
     private WallCaptureSummary? running;
     private string? failure;
     private Task? pollLoop;
-    private PulseWake? wake;
     private bool retraining;
     private bool ultraAvailable;
 
@@ -70,7 +70,7 @@ public partial class WallCaptureStatusList : IAsyncDisposable
     {
         await disposed.CancelAsync();
         disposed.Dispose();
-        wake?.Dispose();
+        wake.Dispose();
         GC.SuppressFinalize(this);
     }
 
@@ -81,10 +81,14 @@ public partial class WallCaptureStatusList : IAsyncDisposable
             return;
         }
 
-        loadedWallId = WallId;
-        wake?.Dispose();
-        wake = null;
-        wake = await PulseWake.OpenAsync(Cache, Pulse, WallId, [PulseTopics.Capture, PulseTopics.GpuJob]);
+        var wallId = loadedWallId = WallId;
+
+        // Null when the component went, or the wall changed, while the wake opened (the holder disposes it then).
+        if (await wake.OpenAsync(wallId, () => PulseWake.OpenAsync(Cache, Pulse, wallId, [PulseTopics.Capture, PulseTopics.GpuJob])) is null)
+        {
+            return;
+        }
+
         await LoadAsync();
     }
 

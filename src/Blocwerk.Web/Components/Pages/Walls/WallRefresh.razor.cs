@@ -26,6 +26,7 @@ public partial class WallRefresh : IDisposable
 {
     private static readonly TimeSpan SummaryRecheck = TimeSpan.FromMilliseconds(400);
 
+    private readonly PulseHolder<PulseLoop> pulses = new();
     private WallRefreshView? view;
     private bool loading = true;
     private bool busy;
@@ -36,8 +37,6 @@ public partial class WallRefresh : IDisposable
     private ElementReference discardButton;
     private string? error;
     private string? blocked;
-    private PulseLoop? pulses;
-    private Guid pulsesWallId;
     private bool closed;
     private Task? beginning;
     private SplatQuality splatQuality = SplatQuality.High;
@@ -79,7 +78,7 @@ public partial class WallRefresh : IDisposable
     public void Dispose()
     {
         closed = true;
-        pulses?.Dispose();
+        pulses.Dispose();
     }
 
     protected override async Task OnParametersSetAsync()
@@ -151,6 +150,7 @@ public partial class WallRefresh : IDisposable
             beginning ??= RunAsync(async () => view = await Refreshes.BeginAsync(WallId));
             await beginning;
             beginning = null;
+            pulses.Current?.Nudge(); // the run's state changed here: the loop's wait starts over with it
         }
 
         return view;
@@ -223,6 +223,9 @@ public partial class WallRefresh : IDisposable
                 await ReloadAsync();
             }
         });
+
+        // The action may have started work ("working"): the loop waits again with the new state, safety poll included.
+        pulses.Current?.Nudge();
     }
 
     private async Task RunAsync(Func<Task> action)
@@ -250,15 +253,14 @@ public partial class WallRefresh : IDisposable
     // Once per wall: enhanced navigation keeps this page for another wall's route.
     private void StartPolling()
     {
-        if (pulses is not null && pulsesWallId == WallId)
+        // After the page's await: once it closed, the holder opens nothing.
+        if (pulses.IsFor(WallId))
         {
             return;
         }
 
-        pulses?.Dispose();
-        pulsesWallId = WallId;
-        pulses = PulseLoop.Start(
-            Cache, Pulse, WallId, [PulseTopics.Refresh, PulseTopics.Capture, PulseTopics.GpuJob], () => Working, InvokeAsync, RenderReloadAsync, Logger);
+        pulses.Open(WallId, () => PulseLoop.Start(
+            Cache, Pulse, WallId, [PulseTopics.Refresh, PulseTopics.Capture, PulseTopics.GpuJob], () => Working, InvokeAsync, RenderReloadAsync, Logger));
     }
 
     private async Task RenderReloadAsync()

@@ -22,11 +22,20 @@ public static class WallPulseRows
         tracker.AutoDetectChangesEnabled = false; // detect on these rows only: a save of thousands of holds is not scanned again
         try
         {
-            Add<WallCapture>(tracker, pulses, c => new WallPulse(c.WallId, PulseTopics.Capture, c.Id, Progress: c.Progress));
-            Add<GpuJob>(tracker, pulses, j => new WallPulse(j.WallId, PulseTopics.GpuJob, j.Id, Progress: j.Progress, Ended: IsOver(j.Status)));
-            Add<WallEnhancementRun>(tracker, pulses, r => new WallPulse(r.WallId, PulseTopics.Enhancement, r.Id));
-            Add<WallRefresh>(tracker, pulses, r => new WallPulse(r.WallId, PulseTopics.Refresh, r.Id));
-            Add<WallUpdateSession>(tracker, pulses, s => new WallPulse(s.WallId, PulseTopics.Update, s.Id, Progress: ShapeProgress(s)));
+            // One pass over the tracker, detecting changes on the job rows only.
+            foreach (var entry in tracker.Entries())
+            {
+                if (Of(entry.Entity) is not { } pulse)
+                {
+                    continue;
+                }
+
+                entry.DetectChanges();
+                if (entry.State is EntityState.Added or EntityState.Modified)
+                {
+                    pulses.Add(pulse);
+                }
+            }
         }
         finally
         {
@@ -41,16 +50,13 @@ public static class WallPulseRows
 
     private static double? ShapeProgress(WallUpdateSession s) => s.ShapeTotal > 0 ? (double)s.ShapeDone / s.ShapeTotal : null;
 
-    private static void Add<T>(ChangeTracker tracker, List<WallPulse> pulses, Func<T, WallPulse> pulse)
-        where T : class
+    private static WallPulse? Of(object entity) => entity switch
     {
-        foreach (var entry in tracker.Entries<T>())
-        {
-            entry.DetectChanges();
-            if (entry.State is EntityState.Added or EntityState.Modified)
-            {
-                pulses.Add(pulse(entry.Entity));
-            }
-        }
-    }
+        WallCapture c => new WallPulse(c.WallId, PulseTopics.Capture, c.Id, Progress: c.Progress),
+        GpuJob j => new WallPulse(j.WallId, PulseTopics.GpuJob, j.Id, Progress: j.Progress, Ended: IsOver(j.Status)),
+        WallEnhancementRun r => new WallPulse(r.WallId, PulseTopics.Enhancement, r.Id),
+        WallRefresh r => new WallPulse(r.WallId, PulseTopics.Refresh, r.Id),
+        WallUpdateSession s => new WallPulse(s.WallId, PulseTopics.Update, s.Id, Progress: ShapeProgress(s)),
+        _ => null,
+    };
 }

@@ -63,7 +63,7 @@ public partial class WallCaptureStatusList
     // A pulse, or the safety poll; after a failed read the backoff alone, so a broken read is not retried per pulse.
     private async Task WaitAsync(int failures, CancellationToken ct)
     {
-        if (failures > 0 || wake is not { } current)
+        if (failures > 0 || wake.Current is not { } current)
         {
             await Task.Delay(failures > 0 ? PollDelay(failures) : PulseWake.SafetyPoll, ct);
             return;

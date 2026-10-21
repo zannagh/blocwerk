@@ -3,6 +3,7 @@
 
 using System.Collections.Concurrent;
 using System.Threading.Channels;
+using Blocwerk.Core.Enums;
 using Blocwerk.Core.Feed;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -19,6 +20,11 @@ public sealed class WallPulseHub : IWallPulse, IDisposable
     /// <summary>The default throttle: at most four pulses per second per job.</summary>
     public static readonly TimeSpan DefaultInterval = TimeSpan.FromMilliseconds(250);
 
+    // A slot is a few dozen bytes and lives from a job's first pulse to its ended one. Jobs that never say they ended
+    // (tracked rows without an end state, a process step that died) leave theirs: the sweep runs only once more than
+    // SweepAbove slots exist, which a single instance's handful of concurrent jobs never reaches in normal use, and then
+    // drops every slot idle for IdleSlot. The bound keeps the common publish free of the scan; IdleSlot is far above any
+    // throttle interval, so a live job's slot is never swept.
     private const int SweepAbove = 512;
     private static readonly TimeSpan IdleSlot = TimeSpan.FromMinutes(10);
 
@@ -57,6 +63,13 @@ public sealed class WallPulseHub : IWallPulse, IDisposable
     {
         try
         {
+            if (pulse.Audience != FeedAudience.Setters)
+            {
+                // Every job pulse is wall-admin workflow (design §5.6, PR 1.7 review N1): a wider audience is a bug.
+                logger.LogWarning("A {Topic} pulse of wall {WallId} for {Audience} was dropped: job pulses go to Setters only", pulse.Topic, pulse.WallId, pulse.Audience);
+                return;
+            }
+
             if (Volatile.Read(ref disposed) == 0 && pulse.WallId != Guid.Empty)
             {
                 Throttle(pulse);

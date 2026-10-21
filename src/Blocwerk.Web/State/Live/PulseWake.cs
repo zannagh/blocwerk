@@ -26,6 +26,9 @@ public sealed class PulseWake : IDisposable
     /// </summary>
     public static readonly TimeSpan SafetyPoll = TimeSpan.FromSeconds(15);
 
+    /// <summary>How often a page with nothing running re-reads anyway: a job started without a pulse reaching it shows.</summary>
+    public static readonly TimeSpan IdlePoll = TimeSpan.FromSeconds(60);
+
     private readonly HashSet<string> topics;
     private readonly TimeSpan minGap;
     private readonly Lock gate = new();

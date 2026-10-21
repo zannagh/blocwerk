@@ -12,7 +12,7 @@ namespace Blocwerk.Core.Pulse;
 /// <param name="WallId">The wall the job works on.</param>
 /// <param name="Topic">Which kind of job (<see cref="PulseTopics"/>).</param>
 /// <param name="JobId">The job (capture, GPU job, run, refresh, session; the wall for a hold search).</param>
-/// <param name="Audience">Who may receive it. <see cref="FeedAudience.User"/> is never delivered: a pulse has no user.</param>
+/// <param name="Audience">Who may receive it: <see cref="FeedAudience.Setters"/>, the only audience the hub accepts.</param>
 /// <param name="Progress">How far it is (0..1), when the job says.</param>
 /// <param name="Ended">The job ended (any outcome). An ended pulse is never held back by the throttle.</param>
 public sealed record WallPulse(

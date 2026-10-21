@@ -6,8 +6,9 @@ using Blocwerk.Core.Pulse;
 namespace Blocwerk.Web.State.Live;
 
 /// <summary>
-/// A job page's refresh loop on <see cref="PulseWake"/>: re-reads on a pulse of its topics, and after
-/// <see cref="PulseWake.SafetyPoll"/> while <c>active</c> says a job of the page is still running. Started per wall,
+/// A job page's refresh loop on <see cref="PulseWake"/>: re-reads on a pulse of its topics, after
+/// <see cref="PulseWake.SafetyPoll"/> while <c>active</c> says a job of the page is still running, and after
+/// <see cref="PulseWake.IdlePoll"/> otherwise, so a page whose circuit gets no pulses (no feed viewer) still recovers. Started per wall,
 /// disposed when the wall changes or the page goes. A refresh runs on the component's dispatcher (its <c>InvokeAsync</c>);
 /// one that throws is logged and the loop carries on.
 /// </summary>
@@ -16,6 +17,8 @@ public sealed class PulseLoop : IDisposable
     private readonly CancellationTokenSource stop = new();
     private readonly ILogger logger;
     private PulseWake? wake;
+    private TimeSpan safetyPoll;
+    private TimeSpan idlePoll;
 
     private PulseLoop(ILogger logger) => this.logger = logger;
 
@@ -31,6 +34,8 @@ public sealed class PulseLoop : IDisposable
     /// <param name="invoke">The component's <c>InvokeAsync</c>.</param>
     /// <param name="refresh">Re-reads the page's jobs and renders.</param>
     /// <param name="logger">Logs a failed refresh.</param>
+    /// <param name="safety">The re-read interval while active (default <see cref="PulseWake.SafetyPoll"/>).</param>
+    /// <param name="idle">The re-read interval while not active (default <see cref="PulseWake.IdlePoll"/>).</param>
     /// <returns>The loop; dispose it to stop.</returns>
     public static PulseLoop Start(
         WallCacheState cache,
@@ -40,9 +45,11 @@ public sealed class PulseLoop : IDisposable
         Func<bool> active,
         Func<Func<Task>, Task> invoke,
         Func<Task> refresh,
-        ILogger logger)
+        ILogger logger,
+        TimeSpan? safety = null,
+        TimeSpan? idle = null)
     {
-        var loop = new PulseLoop(logger);
+        var loop = new PulseLoop(logger) { safetyPoll = safety ?? PulseWake.SafetyPoll, idlePoll = idle ?? PulseWake.IdlePoll };
         var token = loop.stop.Token;
         _ = Task.Run(() => loop.RunAsync(() => PulseWake.OpenAsync(cache, pulse, wallId, topics), active, invoke, refresh, token), CancellationToken.None);
         return loop;
@@ -75,7 +82,7 @@ public sealed class PulseLoop : IDisposable
 
             while (true)
             {
-                await wake.WaitAsync(active() ? PulseWake.SafetyPoll : Timeout.InfiniteTimeSpan, ct);
+                await wake.WaitAsync(active() ? safetyPoll : idlePoll, ct);
                 await RefreshAsync(invoke, refresh);
             }
         }

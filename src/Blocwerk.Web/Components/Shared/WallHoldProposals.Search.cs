@@ -19,9 +19,8 @@ namespace Blocwerk.Web.Components.Shared;
 /// </summary>
 public partial class WallHoldProposals : IDisposable
 {
+    private readonly PulseHolder<PulseLoop> searchPulses = new();
     private HoldSearchStatus? search;
-    private PulseLoop? searchPulses;
-    private Guid searchPulsesWallId;
 
     [Inject]
     private IHoldSearchService Search { get; set; } = default!;
@@ -54,8 +53,7 @@ public partial class WallHoldProposals : IDisposable
     /// <inheritdoc />
     public void Dispose()
     {
-        searchPulses?.Dispose();
-        searchPulses = null;
+        searchPulses.Dispose();
         GC.SuppressFinalize(this);
     }
 
@@ -72,32 +70,40 @@ public partial class WallHoldProposals : IDisposable
     /// <summary>Reads the wall's latest search (after the page opened or the wall changed) and watches it if it runs.</summary>
     private async Task LoadSearchAsync()
     {
+        var wallId = WallId;
         search = null;
+        HoldSearchStatus? read = null;
         try
         {
-            search = await Search.GetAsync(WallId);
+            read = await Search.GetAsync(wallId);
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidOperationException)
         {
-            Logger.LogWarning(ex, "Could not read the hold search of wall {WallId}", WallId);
+            Logger.LogWarning(ex, "Could not read the hold search of wall {WallId}", wallId);
         }
 
+        if (wallId != WallId)
+        {
+            return; // the wall changed while this read ran: the newer load shows and watches its own
+        }
+
+        search = read;
         StartPolling();
     }
 
-    // One loop per wall; it idles (pulses only) between searches, so one started on another device shows up too.
+    // One loop per wall; it idles (idle poll) between searches, so one started on another device shows up too.
     private void StartPolling()
     {
-        if (searchPulses is not null && searchPulsesWallId == WallId)
+        // Called after awaits (LoadSearchAsync, a start): once the page is disposed, the holder opens nothing.
+        if (searchPulses.IsFor(WallId))
         {
-            searchPulses.Nudge();
+            searchPulses.Current?.Nudge();
             return;
         }
 
-        searchPulses?.Dispose();
-        var wallId = searchPulsesWallId = WallId;
-        searchPulses = PulseLoop.Start(
-            Cache, Pulse, wallId, [PulseTopics.HoldSearch], () => Searching, InvokeAsync, () => RefreshSearchAsync(wallId), Logger);
+        var wallId = WallId;
+        searchPulses.Open(wallId, () => PulseLoop.Start(
+            Cache, Pulse, wallId, [PulseTopics.HoldSearch], () => Searching, InvokeAsync, () => RefreshSearchAsync(wallId), Logger));
     }
 
     /// <summary>One look at the search; true while it still runs. When it ends the proposals are listed again.</summary>

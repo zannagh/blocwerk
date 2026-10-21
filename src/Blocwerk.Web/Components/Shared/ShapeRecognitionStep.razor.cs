@@ -27,12 +27,11 @@ public partial class ShapeRecognitionStep : IDisposable
         (ShapeRecognitionScope.All, "All holds on the new photos", "slowest"),
     ];
 
+    private readonly PulseHolder<PulseLoop> pulses = new();
     private ShapeRecognitionStatusInfo? _status;
     private ShapeRecognitionScope _scope = ShapeRecognitionScope.NewAndChanged;
     private bool _overwriteManual;
     private string? _error;
-    private PulseLoop? pulses;
-    private Guid pulsesWallId;
     private (Guid, Guid?)? _loadedFor;
 
     [Parameter]
@@ -84,7 +83,7 @@ public partial class ShapeRecognitionStep : IDisposable
         }
     }
 
-    public void Dispose() => pulses?.Dispose();
+    public void Dispose() => pulses.Dispose();
 
     [Inject]
     private IWallUpdateShapeService Shapes { get; set; } = default!;
@@ -141,18 +140,16 @@ public partial class ShapeRecognitionStep : IDisposable
         }
     }
 
-    // One loop per wall; it idles (pulses only) while no run is alive.
+    // One loop per wall; it idles while no run is alive. Called after awaits: once disposed, the holder opens nothing.
     private void EnsurePolling()
     {
-        if (pulses is not null && pulsesWallId == WallId)
+        if (pulses.IsFor(WallId))
         {
-            pulses.Nudge();
+            pulses.Current?.Nudge();
             return;
         }
 
-        pulses?.Dispose();
-        pulsesWallId = WallId;
-        pulses = PulseLoop.Start(Cache, Pulse, WallId, [PulseTopics.Update], () => IsRunning, InvokeAsync, RefreshAndRenderAsync, Logger);
+        pulses.Open(WallId, () => PulseLoop.Start(Cache, Pulse, WallId, [PulseTopics.Update], () => IsRunning, InvokeAsync, RefreshAndRenderAsync, Logger));
     }
 
     private async Task RefreshAndRenderAsync()
