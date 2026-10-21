@@ -405,7 +405,7 @@ public static class Program
         // The photo-real (Gaussian splat) scene of the same model; same posture as its textures.
         app.MapWallGeometrySplats();
 
-        // Content-addressed wall assets (/api/walls/{w}/a/{sha}), immutable; same posture as the wall media above.
+        // Content-addressed wall assets (/api/walls/{w}/a/{sha}), revalidated (no-cache); same posture as the wall media above.
         app.MapAssets();
 
         // Their manifest per wall and the device's cache partition (design §6.4, §6.6).

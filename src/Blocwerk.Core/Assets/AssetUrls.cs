@@ -9,9 +9,9 @@ namespace Blocwerk.Core.Assets;
 
 /// <summary>
 /// The one place that builds the URLs of a wall's stored assets. With the row's content hash it is the
-/// content-addressed <c>/api/walls/{w}/a/{sha}</c> (served immutable, cacheable by the service worker); without one
-/// it is the legacy route with whatever version that route already carries (<c>?rev=</c>, <c>?v=</c>), so a row not
-/// yet backfilled keeps working exactly as before (dual-read).
+/// content-addressed <c>/api/walls/{w}/a/{sha}</c> (revalidated through the access gate by the HTTP cache, kept
+/// cache-first by the service worker); without one it is the legacy route with whatever version that route already
+/// carries (<c>?rev=</c>, <c>?v=</c>), so a row not yet backfilled keeps working exactly as before (dual-read).
 /// </summary>
 /// <remarks>
 /// <para>

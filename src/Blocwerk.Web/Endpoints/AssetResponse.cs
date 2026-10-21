@@ -7,11 +7,18 @@ using Blocwerk.Core.Assets.Resolution;
 namespace Blocwerk.Web.Endpoints;
 
 /// <summary>
-/// Responses of <see cref="AssetEndpoints"/>: <c>private, max-age=31536000, immutable</c> with <c>ETag: "{sha}"</c>
+/// Responses of <see cref="AssetEndpoints"/>: <c>private, no-cache</c> with <c>ETag: "{sha}"</c>
 /// (<c>"{sha}-{width}"</c> for a rendition), the content type and the length.
 /// </summary>
 /// <remarks>
-/// Immutable is only ever sent with bytes that were checked against the sha in the URL: a blob is read only while its
+/// <para>
+/// Not <c>immutable</c>, although the bytes are: the browser's HTTP cache is one per browser, not one per identity, and
+/// WebKit ignores <c>Clear-Site-Data: "cache"</c> even on the signed-out 200 page, so an immutable copy would outlive a
+/// sign-out and be handed to the next identity without a request. With <c>no-cache</c> every reuse revalidates, and the
+/// 304 is answered only after the endpoint's access gate. The cache-first copy lives in the service worker's per-identity
+/// Cache Storage instead (sw-asset-cache.js), which stores any 200 without <c>no-store</c>.
+/// </para>
+/// The ETag is only ever sent with bytes that were checked against the sha in the URL: a blob is read only while its
 /// row still holds that hash and is then hashed again in memory, a buffered file is hashed after it is read, and a
 /// streamed splat is hashed before it is streamed (remembered per file version). Bytes that fail the check are a 404
 /// without cache headers, never the new bytes under the old sha. A 304, and a HEAD of a buffered asset, are answered
@@ -21,6 +28,9 @@ public static class AssetResponse
 {
     /// <summary>The policy of an asset a kiosk session may see but its shared caches may not keep.</summary>
     public const string NoStoreCacheControl = "no-store";
+
+    /// <summary>Every other asset: kept by the HTTP cache, but revalidated (through the access gate) on every reuse.</summary>
+    public const string RevalidateCacheControl = ImageResponse.MutableCacheControl;
 
     /// <summary>A database blob or a small file, buffered and checked before it is sent.</summary>
     public static async Task<IResult> OriginalAsync(
@@ -107,7 +117,7 @@ public static class AssetResponse
     private static string Etag(string value) => $"\"{value}\"";
 
     /// <summary>
-    /// Writes the validator and the immutable policy; a 304 when the caller already holds these bytes. A
+    /// Writes the validator and the revalidate policy; a 304 when the caller already holds these bytes. A
     /// <see cref="ResolvedAsset.NoStore"/> asset gets <c>no-store</c> instead, with no validator (so no 304 either) and
     /// <c>Vary: Cookie</c>: nothing on the shared tablet, neither the service worker (which skips no-store) nor the HTTP
     /// cache, may keep it for the next identity.
@@ -122,7 +132,7 @@ public static class AssetResponse
         }
 
         http.Response.Headers.ETag = etag;
-        http.Response.Headers.CacheControl = ImageResponse.ImmutableCacheControl;
+        http.Response.Headers.CacheControl = RevalidateCacheControl;
         return ImageResponse.Matches(http.Request, etag) ? Results.StatusCode(StatusCodes.Status304NotModified) : null;
     }
 
