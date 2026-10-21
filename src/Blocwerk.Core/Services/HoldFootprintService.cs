@@ -6,6 +6,7 @@ using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Capture;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Feed;
 using Blocwerk.Core.Geometry;
 using Blocwerk.Core.Geometry.Footprints;
 using Blocwerk.Core.Geometry.View3D;
@@ -42,6 +43,7 @@ public sealed class HoldFootprintService(
             await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, ct);
         }
 
+        using var feedScope = FeedBulkScope.Begin(wallId, "hold-footprints");
         return await RunAsync(wallId, null, ct)
             ?? throw new UserFacingException("This wall has no active geometry model, or outline detection is off.");
     }
@@ -56,6 +58,7 @@ public sealed class HoldFootprintService(
 
     private async Task<HoldFootprintRunResult?> RunSafelyAsync(Guid wallId, IReadOnlySet<Guid>? only, CancellationToken ct)
     {
+        using var feedScope = FeedBulkScope.Begin(wallId, "hold-footprints", only?.Count);
         try
         {
             return await RunAsync(wallId, only, ct);

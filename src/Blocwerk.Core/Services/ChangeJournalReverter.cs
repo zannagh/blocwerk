@@ -1,6 +1,7 @@
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Feed;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 
@@ -79,6 +80,7 @@ public sealed partial class ChangeJournalReverter
         }
 
         Guid? revertBatchId;
+        using (JournalFeedScope.Begin(batch.ScopeKind, batch.ScopeId, "revert"))
         using (journal.BeginBatch($"revert:{batch.Label}", batch.ScopeKind, batch.ScopeId))
         {
             foreach (var entry in entries)

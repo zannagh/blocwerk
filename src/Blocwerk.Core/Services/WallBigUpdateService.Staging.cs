@@ -3,6 +3,7 @@ using Blocwerk.Core.Capture;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Feed;
 using Blocwerk.Core.HoldStacks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -53,6 +54,8 @@ public partial class WallBigUpdateService
         // later RESUMES this same open batch. That makes the staged-hold creations part of the one unit the
         // promote seals — so reverting/replaying the update is self-contained. Null in tests.
         using var journalBatch = changeJournal?.BeginWallUpdateBatch(wallId);
+        using var stagedAudience = FeedAudienceScope.Begin(FeedAudience.Setters);
+        using var feedScope = FeedScope.Begin(wallId, ChangeJournal.WallUpdateBatchLabel);
 
         var centerPanelId = await StageAndDetectAsync(db, wall, photos, stagedGen, user.Id);
         WallUpdateSessions.Open(db, wallId, stagedGen, user.Id).FullRevision = fullRevision;
@@ -145,6 +148,8 @@ public partial class WallBigUpdateService
             return;
         }
 
+        using (FeedAudienceScope.Begin(FeedAudience.Setters))
+        using (FeedScope.Begin(wallId, ChangeJournal.WallUpdateBatchLabel))
         using (var supersedeBatch = changeJournal?.BeginWallUpdateBatch(wallId))
         {
             await DiscardStagedAsync(db, wallId, stagedGen);

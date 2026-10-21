@@ -2,6 +2,7 @@
 // See License in the project root for license information.
 
 using Blocwerk.Core.Data;
+using Blocwerk.Core.Feed;
 using Blocwerk.Core.Geometry.Corrections;
 using Microsoft.EntityFrameworkCore;
 
@@ -52,6 +53,7 @@ public static partial class CorrectionCarry
             return null;
         }
 
+        using var feedScope = FeedScope.Begin(wallId, "correction-carry");
         var owns = db.Database.CurrentTransaction is null;
         await using var transaction = owns ? await db.Database.BeginTransactionAsync(ct) : null;
         CorrectionCarryResult? last = null;

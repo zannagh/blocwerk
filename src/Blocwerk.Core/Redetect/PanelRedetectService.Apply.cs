@@ -6,6 +6,7 @@ using Blocwerk.Core.Data;
 using Blocwerk.Core.Detection.Outlines;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Feed;
 using Blocwerk.Core.HoldStacks;
 using Blocwerk.Core.Services;
 using Microsoft.Extensions.Logging;
@@ -89,6 +90,7 @@ public sealed partial class PanelRedetectService
         BlocwerkDbContext db, Wall wall, WallPanel panel, RedetectInput input, RedetectDecisions decisions, CancellationToken ct)
     {
         using var batch = journal?.BeginBatch(BatchLabel, ChangeJournalScopeKind.Wall, wall.Id);
+        using var feedScope = FeedScope.Begin(wall.Id, BatchLabel);
         var byId = input.Existing.ToDictionary(e => e.Hold.Id, e => e.Hold);
         foreach (var update in decisions.Shapes)
         {

@@ -4,6 +4,7 @@ using Blocwerk.Core.Data;
 using Blocwerk.Core.Detection.Enrichment;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Feed;
 using Blocwerk.Core.Helpers;
 using Blocwerk.Core.HoldStacks;
 using Microsoft.EntityFrameworkCore;
@@ -74,6 +75,10 @@ public partial class WallPanelService : IWallPanelService
         db.CurrentUserId = user.Id;
         await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
         image = StoredPhotoSanitizer.Sanitize(image);
+
+        // A staged panel and its detections are the editors' until confirmed: one resync, for the setters only.
+        using var stagedAudience = FeedAudienceScope.Begin(FeedAudience.Setters);
+        using var feedScope = FeedScope.Begin(wallId, "panel-stage");
 
         var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId);
         if (wall is null)
@@ -309,6 +314,7 @@ public partial class WallPanelService : IWallPanelService
         // the user flagged as removed (making their boulders historic). That is the most destructive
         // thing this service does, so it must be findable in the journal for a later revert instead of
         // landing in an anonymous adhoc batch.
+        using (FeedScope.Begin(wallId, "panel-confirm"))
         using (changeJournal?.BeginBatch("panel-confirm", ChangeJournalScopeKind.Wall, wallId))
         {
             await db.SaveChangesAsync();
@@ -411,6 +417,9 @@ public partial class WallPanelService : IWallPanelService
         {
             throw new InvalidOperationException("Panel not found");
         }
+
+        using var stagedAudience = FeedAudienceScope.Begin(FeedAudience.Setters);
+        using var feedScope = FeedScope.Begin(wallId, "panel-discard");
 
         // Delete the panel's holds FIRST: Hold→WallPanel is SetNull on delete, so removing the
         // panel first would orphan its staged holds onto the center wall instead of deleting them.

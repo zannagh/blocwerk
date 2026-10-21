@@ -2,14 +2,16 @@
 // See License in the project root for license information.
 
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Enums;
 
 namespace Blocwerk.Core.Feed;
 
 /// <summary>
 /// Reduces one save's mapped rows before they are written (design §5.3, N1, E3). Inside an open <see cref="FeedScope"/>
 /// every wall the save touched gets one <c>wall.resync</c> instead of its rows. Outside a scope, a wall with more than
-/// <see cref="MaxRowsPerWall"/> rows in one save collapses the same way. Wall-less rows (a user's own profile) are kept as
-/// they are: they are few, and a wall resync would not reach them.
+/// <see cref="MaxRowsPerWall"/> rows in one save collapses the same way. Rows addressed to one user
+/// (<see cref="FeedAudience.User"/>: <c>access.revoked</c>, a user's own profile) are always kept as they are and never
+/// counted: they are few, and a wall resync would not reach them (nor tear down a revoked subscription).
 /// </summary>
 public static class FeedCollapse
 {
@@ -26,9 +28,10 @@ public static class FeedCollapse
             return rows;
         }
 
+        var shared = rows.Where(Collapsible).ToList();
         var collapse = scope is not null
-            ? rows.Where(r => r.WallId is not null).Select(r => r.WallId!.Value).ToHashSet()
-            : rows.Where(r => r.WallId is not null)
+            ? shared.Select(r => r.WallId!.Value).ToHashSet()
+            : shared
                 .GroupBy(r => r.WallId!.Value)
                 .Where(g => g.Count() > MaxRowsPerWall)
                 .Select(g => g.Key)
@@ -43,17 +46,19 @@ public static class FeedCollapse
         var resynced = new HashSet<Guid>();
         foreach (var row in rows)
         {
-            if (row.WallId is not { } wallId || !collapse.Contains(wallId))
+            if (!Collapsible(row) || !collapse.Contains(row.WallId!.Value))
             {
                 result.Add(row);
             }
-            else if (resynced.Add(wallId))
+            else if (resynced.Add(row.WallId!.Value))
             {
                 // In place of the wall's first row, so the order of the walls' rows is kept.
-                result.Add(FeedRows.Resync(wallId, reason, actorUserId, now));
+                result.Add(FeedRows.Resync(row.WallId!.Value, reason, actorUserId, now));
             }
         }
 
         return result;
     }
+
+    private static bool Collapsible(WallChange row) => row.WallId is not null && row.Audience != FeedAudience.User;
 }

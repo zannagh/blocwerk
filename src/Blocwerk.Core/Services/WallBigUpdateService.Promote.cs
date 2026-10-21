@@ -3,6 +3,7 @@ using Blocwerk.Core.Data;
 using Blocwerk.Core.Detection.Enrichment;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Feed;
 using Blocwerk.Core.HoldMoves;
 using Blocwerk.Core.LookOver;
 using Microsoft.EntityFrameworkCore;
@@ -56,6 +57,7 @@ public partial class WallBigUpdateService
         // it undoes the staged-hold creations too, and replaying it recreates them. Null when the journal
         // isn't wired (e.g. unit tests); capture then falls back to per-SaveChanges adhoc batches.
         using var journalBatch = changeJournal?.BeginWallUpdateBatch(wallId);
+        using var feedScope = FeedScope.Begin(wallId, ChangeJournal.WallUpdateBatchLabel);
 
         var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId)
             ?? throw new InvalidOperationException("Wall not found");
@@ -333,6 +335,8 @@ public partial class WallBigUpdateService
         // opened, so a discarded staging is a closed, net-zero unit — its staging INSERTs and these
         // DELETEs cancel out — that cannot be resumed and leaves no dangling open batch or orphan staged
         // holds in the journal. Null in unit tests; the delete behaviour below is unchanged either way.
+        using (FeedAudienceScope.Begin(FeedAudience.Setters))
+        using (FeedScope.Begin(wallId, ChangeJournal.WallUpdateBatchLabel))
         using (var journalBatch = changeJournal?.BeginWallUpdateBatch(wallId))
         {
             await DiscardStagedAsync(db, wallId, wall.CurrentGeneration + 1);

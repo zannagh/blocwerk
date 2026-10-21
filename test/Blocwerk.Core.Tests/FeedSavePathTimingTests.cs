@@ -13,8 +13,8 @@ namespace Blocwerk.Core.Tests;
 
 /// <summary>
 /// A measurement, not a check: the hold-edit save (<see cref="IWallService.UpdateHoldAsync"/>) on Postgres with the
-/// production interceptors, then with the feed interceptor as PR 1.2a ships it (no mapper), then with a stand-in hold
-/// mapper (what PR 1.2b adds: one row per save). Runs only with <c>BLOCWERK_FEED_BENCH=1</c> and a Postgres server; the
+/// production interceptors, then with the feed interceptor and no mapper (PR 1.2a), then with the production mappers
+/// (PR 1.2b: one hold row per save). Runs only with <c>BLOCWERK_FEED_BENCH=1</c> and a Postgres server; the
 /// configurations are interleaved rotated so drift and position hit all of them alike.
 /// </summary>
 [Collection(PostgresFeedCollection.Name)]
@@ -43,7 +43,7 @@ public sealed class FeedSavePathTimingTests
         {
             ("main (journal + domain change)", Service(harness, cs)),
             ("1.2a (+ feed interceptor, no mapper)", Service(harness, cs, Feed(signal))),
-            ("1.2b preview (+ one hold row per save)", Service(harness, cs, Feed(signal, new ProbeHoldMapper()))),
+            ("1.2b (+ the structure mappers)", Service(harness, cs, Feed(signal, [.. FeedMappers.Create()]))),
         };
         var samples = configs.Select(_ => new List<double>()).ToArray();
 

@@ -1,4 +1,5 @@
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Feed;
 using Blocwerk.Core.Geometry.TextureRegistration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -11,6 +12,7 @@ public sealed partial class HoldTexturePlacementService
     /// <inheritdoc/>
     public async Task<HoldPlacementRevertResult> RevertAsync(Guid wallId, Guid runId, CancellationToken ct = default)
     {
+        using var feedScope = FeedBulkScope.Begin(wallId, "hold-texture-placement-revert");
         var (db, userId) = await OpenForAdminAsync(wallId, ct);
         await using (db)
         {

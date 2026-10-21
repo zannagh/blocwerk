@@ -5,6 +5,7 @@ using Blocwerk.Core.Data;
 using Blocwerk.Core.Detection.Outlines;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Feed;
 using Blocwerk.Core.Helpers;
 using Blocwerk.Core.HoldStacks;
 using Blocwerk.Core.Telemetry;
@@ -1785,6 +1786,7 @@ public class WallService : IWallService
             db.Holds.RemoveRange(autoHolds);
 
             // A named batch, so this bulk delete is findable in the journal for a later revert.
+            using (FeedScope.Begin(wallId, "hold-clear-autodetected"))
             using (_changeJournal?.BeginBatch("hold-clear-autodetected", ChangeJournalScopeKind.Wall, wallId))
             {
                 await db.SaveChangesAsync();
@@ -1888,6 +1890,7 @@ public class WallService : IWallService
             db.Holds.RemoveRange(toRemove);
 
             // A named batch, so this bulk delete is findable in the journal for a later revert.
+            using (FeedScope.Begin(wallId, "hold-clean-outside-border"))
             using (_changeJournal?.BeginBatch("hold-clean-outside-border", ChangeJournalScopeKind.Wall, wallId))
             {
                 await db.SaveChangesAsync();

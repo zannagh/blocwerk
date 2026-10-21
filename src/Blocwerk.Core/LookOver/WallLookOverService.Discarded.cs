@@ -5,6 +5,7 @@
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Feed;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -42,6 +43,7 @@ public sealed partial class WallLookOverService
                 .ToList();
             var areas = await DiscardedDetections.LiveAreasAsync(db, wallId, open.Select(f => f.PanelId!.Value).Distinct().ToList(), ct);
             using var batch = BeginBatch(wallId);
+            using var feedScope = FeedScope.Begin(wallId, BatchLabel);
             var added = new List<Guid>();
             foreach (var finding in open)
             {

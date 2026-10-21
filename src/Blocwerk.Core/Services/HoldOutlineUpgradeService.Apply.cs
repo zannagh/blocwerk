@@ -3,6 +3,7 @@ using Blocwerk.Core.Detection.Enrichment;
 using Blocwerk.Core.Detection.Outlines;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Feed;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -37,6 +38,7 @@ public sealed partial class HoldOutlineUpgradeService
     private async Task<(HoldOutlineUpgradeResult Result, List<Guid> Outlined)> WriteInChunksAsync(
         Guid wallId, HoldOutlineUpgradeOptions options, CancellationToken ct)
     {
+        using var feedScope = FeedBulkScope.Begin(wallId, "hold-outline-upgrade");
         var (db, userId) = await OpenForAdminAsync(wallId, ct);
         await using (db)
         {

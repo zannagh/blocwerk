@@ -1,5 +1,6 @@
 using Blocwerk.Core.Detection.Outlines;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Feed;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -11,6 +12,7 @@ public sealed partial class HoldOutlineUpgradeService
     /// <inheritdoc/>
     public async Task<HoldOutlineRevertResult> RevertAsync(Guid wallId, Guid runId, CancellationToken ct = default)
     {
+        using var feedScope = FeedBulkScope.Begin(wallId, "hold-outline-upgrade-revert");
         using var holdWrite = await WallHoldWriteLock.AcquireAsync(wallId, ct: ct);
         var (db, userId) = await OpenForAdminAsync(wallId, ct);
         await using (db)

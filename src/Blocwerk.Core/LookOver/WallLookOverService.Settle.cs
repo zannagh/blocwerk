@@ -5,6 +5,7 @@
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Feed;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -41,6 +42,7 @@ public sealed partial class WallLookOverService
                 .ToListAsync(ct);
             var views = (await ToViewsAsync(db, wallId, open, access, ct)).ToDictionary(v => v.Id);
             using var batch = BeginBatch(wallId);
+            using var feedScope = FeedScope.Begin(wallId, BatchLabel);
             await using var transaction = await db.Database.BeginTransactionAsync(ct);
             var settled = 0;
             foreach (var finding in open.Where(f => !onlyWithoutBoulders || views[f.Id].Boulders.Count == 0))

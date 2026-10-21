@@ -9,40 +9,27 @@ namespace Blocwerk.Core.Feed;
 
 /// <summary>
 /// The wall of a changed entry without its mapper, to aim the fallback <c>wall.resync</c> when a mapper threw: the wall
-/// itself, the entry's <c>WallId</c>, or, for boulder-scoped rows (comments, boulder holds, ticks, ratings, videos,
-/// setters, favourites, grade proposals), the wall of its <c>BoulderId</c>. Values of a deleted row are its original
-/// ones. The boulder is taken from the tracker when it is there (also one being added or deleted in the same save),
-/// else looked up with one query. That query runs only on this failure path.
+/// itself or the entry's <c>WallId</c>. A boulder-scoped row (comments, boulder holds, ticks, ratings, videos, setters,
+/// favourites, grade proposals) names its boulder instead (<see cref="BoulderOf"/>), and the
+/// <see cref="FeedBoulderResolver"/> finds that boulder's wall with the save's other touched boulders. Values of a
+/// deleted row are its original ones. Never queries.
 /// </summary>
 internal static class FeedEntryWall
 {
-    public static Guid? Of(EntityEntry entry)
+    public static Guid? Of(EntityEntry entry) =>
+        entry.Entity is Wall wall ? wall.Id : Value(entry, nameof(Hold.WallId));
+
+    /// <summary>The entry's boulder id, and the boulder when the context tracks it (navigation fix-up), or null.</summary>
+    public static (Guid Id, Boulder? Tracked)? BoulderOf(EntityEntry entry)
     {
-        if (entry.Entity is Wall wall)
+        if (Value(entry, nameof(BoulderHold.BoulderId)) is not { } boulderId)
         {
-            return wall.Id;
+            return null;
         }
 
-        if (Value(entry, nameof(Hold.WallId)) is { } wallId)
-        {
-            return wallId;
-        }
-
-        return Value(entry, nameof(BoulderComment.BoulderId)) is { } boulderId ? WallOfBoulder(entry.Context, boulderId) : null;
-    }
-
-    private static Guid? WallOfBoulder(DbContext context, Guid boulderId)
-    {
-        var tracked = context.ChangeTracker.Entries<Boulder>().FirstOrDefault(e => e.Entity.Id == boulderId);
-        if (tracked is not null)
-        {
-            return Value(tracked, nameof(Boulder.WallId));
-        }
-
-        return context.Set<Boulder>().AsNoTracking()
-            .Where(b => b.Id == boulderId)
-            .Select(b => (Guid?)b.WallId)
-            .FirstOrDefault();
+        var tracked = entry.References
+            .FirstOrDefault(r => r.Metadata.TargetEntityType.ClrType == typeof(Boulder))?.CurrentValue as Boulder;
+        return (boulderId, tracked);
     }
 
     private static Guid? Value(EntityEntry entry, string propertyName)

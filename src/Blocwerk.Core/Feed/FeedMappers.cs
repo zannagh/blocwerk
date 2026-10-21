@@ -4,11 +4,22 @@
 namespace Blocwerk.Core.Feed;
 
 /// <summary>
-/// The production mapper families, in one list so the app and the model-coverage guard see the same set. PR 1.2b adds the
-/// wall-structure family, PR 1.2c the social one; until then nothing is mapped and the interceptor writes nothing.
+/// The production mapper families, in one list so the app and the model-coverage guard see the same set. Each family
+/// registers itself in its own file through one partial method: the wall-structure family (PR 1.2b) in
+/// <c>FeedMappers.Structure.cs</c>, the social family (PR 1.2c) in <c>FeedMappers.Social.cs</c>.
 /// </summary>
-public static class FeedMappers
+public static partial class FeedMappers
 {
     /// <summary>Creates every production mapper.</summary>
-    public static IReadOnlyList<IFeedMapper> Create() => [];
+    public static IReadOnlyList<IFeedMapper> Create()
+    {
+        var mappers = new List<IFeedMapper>();
+        AddStructure(mappers);
+        AddSocial(mappers);
+        return mappers;
+    }
+
+    static partial void AddStructure(List<IFeedMapper> mappers);
+
+    static partial void AddSocial(List<IFeedMapper> mappers);
 }

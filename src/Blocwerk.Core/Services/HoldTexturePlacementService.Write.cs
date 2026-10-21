@@ -1,6 +1,7 @@
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Detection.Enrichment;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Feed;
 using Blocwerk.Core.Geometry;
 using Blocwerk.Core.Geometry.TextureRegistration;
 using Blocwerk.Core.Geometry.View3D;
@@ -15,6 +16,7 @@ public sealed partial class HoldTexturePlacementService
     private async Task<HoldPlacementResult> ExecuteAsync(
         BlocwerkDbContext db, Guid wallId, Guid userId, string trigger, bool enqueue, CancellationToken ct, IReadOnlySet<Guid>? only = null)
     {
+        using var feedScope = FeedBulkScope.Begin(wallId, "hold-texture-placement", only?.Count);
         var model = await LoadActiveModelAsync(db, wallId, ct);
         var live = await (await LiveHoldsQueryAsync(db, wallId, ct)).AsNoTracking().ToListAsync(ct);
 

@@ -1,5 +1,6 @@
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Feed;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 
@@ -82,6 +83,7 @@ public sealed class ChangeJournalReplayer
         var scope = ReplayScope(package);
         Guid? replayBatchId;
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        using (JournalFeedScope.Begin(scope.ScopeKind, scope.ScopeId, "replay"))
         using (journal.BeginBatch("replay", scope.ScopeKind, scope.ScopeId))
         {
             for (var i = 0; i < package.Entries.Count; i++)

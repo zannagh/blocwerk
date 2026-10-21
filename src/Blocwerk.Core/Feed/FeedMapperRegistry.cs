@@ -3,7 +3,7 @@
 
 namespace Blocwerk.Core.Feed;
 
-/// <summary>The mappers by entity type. Empty in PR 1.2a: the families arrive in 1.2b (structure) and 1.2c (social).</summary>
+/// <summary>The mappers by entity type (the families of <see cref="FeedMappers"/>).</summary>
 public sealed class FeedMapperRegistry
 {
     private readonly Dictionary<Type, IFeedMapper[]> byType;

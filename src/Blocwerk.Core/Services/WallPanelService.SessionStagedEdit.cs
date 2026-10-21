@@ -5,6 +5,7 @@
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Feed;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -25,6 +26,7 @@ public partial class WallPanelService
         Guid wallId, Guid? expectedSessionId, Guid panelId, double x, double y, double radius, bool needsReview = true)
     {
         var userId = await EnsureSessionForStagedEditAsync(wallId, expectedSessionId);
+        using (FeedAudienceScope.Begin(FeedAudience.Setters))
         using (BeginUpdateBatch(wallId))
         {
             var id = await AddStagedHoldAsync(wallId, panelId, x, y, radius, needsReview: needsReview);
@@ -37,6 +39,7 @@ public partial class WallPanelService
     public async Task UpdateStagedHoldInSessionAsync(Guid wallId, Guid? expectedSessionId, Guid holdId, double x, double y, double radius)
     {
         var userId = await EnsureSessionForStagedEditAsync(wallId, expectedSessionId);
+        using (FeedAudienceScope.Begin(FeedAudience.Setters))
         using (BeginUpdateBatch(wallId))
         {
             await UpdateStagedHoldAsync(wallId, holdId, x, y, radius);
@@ -69,6 +72,7 @@ public partial class WallPanelService
         // Guards and the twin refusal ran above, so a refused delete opens no batch; the one save (hold delete, unstack,
         // released verdicts, session touch) lands in the wall's open wall-update batch, like the plain staged delete.
         // Only the allow-listed rows (the hold and its stack links) are journalled; session rows are not, by design.
+        using (FeedAudienceScope.Begin(FeedAudience.Setters))
         using (BeginUpdateBatch(wallId))
         {
             await db.SaveChangesAsync();

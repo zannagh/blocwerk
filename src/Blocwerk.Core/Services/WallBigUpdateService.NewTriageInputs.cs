@@ -7,6 +7,7 @@ using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Feed;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -102,6 +103,8 @@ public partial class WallBigUpdateService
         if (db.ChangeTracker.HasChanges())
         {
             using var batch = changeJournal?.BeginWallUpdateBatch(wallId);
+            using var feedScope = FeedScope.Begin(wallId, ChangeJournal.WallUpdateBatchLabel);
+            using var stagedAudience = FeedAudienceScope.Begin(FeedAudience.Setters);
             await db.SaveChangesAsync();
         }
     }

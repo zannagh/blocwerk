@@ -5,6 +5,7 @@
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Feed;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Services;
@@ -63,6 +64,7 @@ public sealed partial class ChangeJournalReverter
         }
 
         Guid? revertBatchId;
+        using (JournalFeedScope.Begin(request.ScopeKind, request.ScopeId, "revert"))
         using (journal.BeginBatch(request.Label, request.ScopeKind, request.ScopeId))
         {
             await db.SaveChangesAsync(cancellationToken);
