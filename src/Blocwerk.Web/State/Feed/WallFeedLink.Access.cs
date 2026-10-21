@@ -14,8 +14,9 @@ public sealed partial class WallFeedLink
         await changes.WaitAsync();
         try
         {
-            if (IsDisposed || !slots.TryGetValue(wallId, out var task) || !task.IsCompletedSuccessfully
-                || task.Result is not { } current)
+            // Awaited, not peeked: a revoke can arrive in the first batch, while the subscribe that delivered it is still
+            // returning. Safe here, off the hub's gate (Background runs on the thread pool).
+            if (IsDisposed || !slots.TryGetValue(wallId, out var task) || await OpenedOrNullAsync(task) is not { } current)
             {
                 return;
             }
@@ -25,6 +26,18 @@ public sealed partial class WallFeedLink
         finally
         {
             changes.Release();
+        }
+    }
+
+    private static async Task<WallFeedSlot?> OpenedOrNullAsync(Task<WallFeedSlot?> task)
+    {
+        try
+        {
+            return await task;
+        }
+        catch
+        {
+            return null; // EnsureAsync logs and drops a failed subscribe
         }
     }
 

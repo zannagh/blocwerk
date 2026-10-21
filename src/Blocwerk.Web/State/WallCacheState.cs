@@ -86,6 +86,17 @@ public sealed class WallCacheState : IDisposable
         }
     }
 
+    /// <summary>
+    /// Follows the page on screen (base-relative path): the wall of a member page is subscribed and pinned, so a removal
+    /// reaches every page of it (editor, gallery, 3D, update procedure...), not only those that read this cache.
+    /// </summary>
+    public Task WatchRouteAsync(string relativePath)
+    {
+        var wallId = WallRoutes.MemberWallOf(relativePath);
+        link.Pin(wallId);
+        return wallId is { } id ? link.EnsureAsync(id) : Task.CompletedTask;
+    }
+
     public void Dispose()
     {
         if (Interlocked.Exchange(ref disposed, 1) == 1)

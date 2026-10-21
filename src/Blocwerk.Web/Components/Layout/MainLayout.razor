@@ -263,6 +263,8 @@
             return;
         }
         _startupTriggered = true;
+        Navigation.LocationChanged += OnLocationChanged;
+        WatchRoute(Navigation.Uri);
 
         Guid userId;
         try
@@ -405,7 +407,14 @@
     {
         SessionState.Changed -= OnSessionChanged;
         WallCache.AccessLost -= OnWallAccessLost;
+        Navigation.LocationChanged -= OnLocationChanged;
     }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e) =>
+        WatchRoute(e.Location);
+
+    // Subscribes the wall of the page on screen to the live feed, so losing access to it leaves any of its pages.
+    private void WatchRoute(string uri) => _ = WallCache.WatchRouteAsync(Navigation.ToBaseRelativePath(uri));
 
     /// <summary>
     /// The live feed says this circuit lost its access to a wall (the member was removed). Whatever page of that wall is

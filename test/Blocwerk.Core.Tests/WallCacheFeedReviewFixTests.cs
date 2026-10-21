@@ -189,6 +189,61 @@ public sealed class WallCacheFeedReviewFixTests
         Assert.NotNull(await f.Link.EnsureAsync(f.WallId));
     }
 
+    [Fact]
+    public async Task ADemotionInTheFirstBatch_BeforeTheSubscribeReturned_StillResubscribes()
+    {
+        GatedWallFeedHub? gated = null;
+        await using var f = new CircuitCacheFixture(wrapHub: h => gated = new GatedWallFeedHub(h));
+        await f.StartAsync();
+        var me = f.Harness.Owner.Id;
+        gated!.Close();
+        var ensuring = f.Link.EnsureAsync(f.WallId);
+        await CircuitCacheFixture.WaitUntilAsync(() => gated.Waiting == 1); // subscribed at the hub, not yet returned
+
+        await f.DeliverAsync(f.Row(FeedKinds.AccessRevoked, f.WallId, new MemberPayload("Member"), FeedAudience.User, me));
+        gated.Open();
+        await ensuring;
+
+        await CircuitCacheFixture.WaitUntilAsync(() => f.Link.ViewerOf(f.WallId)?.SameAs(FeedViewer.Member(me)) == true);
+        await f.DeliverAsync(f.Row(FeedKinds.WallManifest)); // the replacement delivers
+    }
+
+    [Fact]
+    public async Task TheWallOnScreen_IsSubscribedAndPinned_AndARemovalReachesIt()
+    {
+        await using var f = new CircuitCacheFixture();
+        await f.StartAsync();
+        var other = await AddWallAsync(f);
+
+        await f.Cache.WatchRouteAsync($"walls/{f.WallId}/3d"); // a page that reads nothing through the cache
+        Assert.NotNull(f.Link.ViewerOf(f.WallId));
+        await f.Cache.GetWallAsync(other);
+        Assert.NotNull(f.Link.ViewerOf(f.WallId)); // pinned: the cross-wall load did not release it
+
+        await f.DeliverAsync(f.Row(FeedKinds.AccessRevoked, f.WallId, null, FeedAudience.User, f.Harness.Owner.Id));
+        await CircuitCacheFixture.WaitUntilAsync(() => f.Lost.Contains(f.WallId));
+
+        await f.Cache.WatchRouteAsync("walls"); // unpinned
+        await f.Cache.GetWallAsync(other);
+        Assert.Null(f.Link.ViewerOf(f.WallId));
+    }
+
+    [Fact]
+    public async Task EnsureNeverHandsOutARetiredSlot()
+    {
+        await using var f = new CircuitCacheFixture();
+        await f.StartAsync();
+        var first = (await f.Link.EnsureAsync(f.WallId))!;
+        first.Retire(); // as Release does, racing this circuit's next EnsureAsync
+
+        var second = await f.Link.EnsureAsync(f.WallId);
+
+        Assert.NotNull(second);
+        Assert.NotSame(first, second);
+        Assert.False(second.IsRetired);
+        await f.DeliverAsync(f.Row(FeedKinds.WallManifest));
+    }
+
     [Theory]
     [InlineData("walls/{0}", true)]
     [InlineData("walls/{0}/boulders/5d9c8a43-40a8-4a8e-9c83-0c6c1b4ab0a1", true)]

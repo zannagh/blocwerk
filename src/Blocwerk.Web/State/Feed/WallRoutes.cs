@@ -11,13 +11,18 @@ public static class WallRoutes
     /// is a page of <paramref name="wallId"/>: <c>walls/{wallId}</c> or anything under it, except the share-link pages,
     /// which read without membership.
     /// </summary>
-    public static bool IsMemberPageOf(string relativePath, Guid wallId)
+    public static bool IsMemberPageOf(string relativePath, Guid wallId) => MemberWallOf(relativePath) == wallId;
+
+    /// <summary>The wall whose member page <paramref name="relativePath"/> is, or null (see <see cref="IsMemberPageOf"/>).</summary>
+    public static Guid? MemberWallOf(string relativePath)
     {
         var path = relativePath.Split('?', '#')[0];
         var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
         return segments.Length >= 2
             && string.Equals(segments[0], "walls", StringComparison.OrdinalIgnoreCase)
-            && Guid.TryParse(segments[1], out var id) && id == wallId
-            && !segments.Contains("shared", StringComparer.OrdinalIgnoreCase);
+            && Guid.TryParse(segments[1], out var id)
+            && !segments.Contains("shared", StringComparer.OrdinalIgnoreCase)
+            ? id
+            : null;
     }
 }

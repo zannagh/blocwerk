@@ -29,6 +29,7 @@ public sealed partial class WallFeedLink(IWallFeedHub hub, IWallFeed feed, ICirc
     private readonly ConcurrentDictionary<Guid, Task<WallFeedSlot?>> slots = new();
     private readonly SemaphoreSlim changes = new(1, 1);
     private int disposed;
+    private Guid? pinned;
 
     /// <summary>Raised on the hub's loop for every delivery; a resync, or a delivery of another epoch, has Resync set.</summary>
     public event Action<FeedDelivery>? Delivered;
@@ -67,18 +68,36 @@ public sealed partial class WallFeedLink(IWallFeedHub hub, IWallFeed feed, ICirc
             return null;
         }
 
-        var task = slots.GetOrAdd(wallId, id => OpenAsync(id, null));
-        try
+        // Twice at most: a slot that Release retired between the lookup and here is replaced once.
+        for (var attempt = 0; ; attempt++)
         {
-            return await task;
-        }
-        catch (Exception ex)
-        {
+            var task = slots.GetOrAdd(wallId, id => OpenAsync(id, null));
+            WallFeedSlot? slot;
+            try
+            {
+                slot = await task;
+            }
+            catch (Exception ex)
+            {
+                slots.TryRemove(new KeyValuePair<Guid, Task<WallFeedSlot?>>(wallId, task));
+                logger.LogWarning(ex, "Could not subscribe to the feed of wall {WallId}; its cache relies on the domain-change path", wallId);
+                return null;
+            }
+
+            if (slot is not { IsRetired: true } || IsDisposed || attempt == 1)
+            {
+                return slot is { IsRetired: true } ? null : slot;
+            }
+
             slots.TryRemove(new KeyValuePair<Guid, Task<WallFeedSlot?>>(wallId, task));
-            logger.LogWarning(ex, "Could not subscribe to the feed of wall {WallId}; its cache relies on the domain-change path", wallId);
-            return null;
         }
     }
+
+    /// <summary>
+    /// Keeps <paramref name="wallId"/> (the wall of the page on screen) subscribed whatever <see cref="Release"/> is asked,
+    /// so a removal reaches every page of it; null unpins.
+    /// </summary>
+    public void Pin(Guid? wallId) => pinned = wallId;
 
     /// <summary>
     /// False when <paramref name="load"/> may miss events: it was read before the wall's subscription started, so the
@@ -107,12 +126,15 @@ public sealed partial class WallFeedLink(IWallFeedHub hub, IWallFeed feed, ICirc
         }
     }
 
-    /// <summary>Unsubscribes from every wall that <paramref name="keep"/> declines (the circuit caches nothing of it).</summary>
+    /// <summary>
+    /// Unsubscribes from every wall that <paramref name="keep"/> declines (the circuit caches nothing of it), except the
+    /// pinned one. A concurrent <see cref="EnsureAsync"/> that got a slot retired here subscribes again.
+    /// </summary>
     public void Release(Func<Guid, bool> keep)
     {
         foreach (var (wallId, task) in slots)
         {
-            if (task.IsCompletedSuccessfully && task.Result is { } slot && !keep(wallId)
+            if (wallId != pinned && task.IsCompletedSuccessfully && task.Result is { } slot && !keep(wallId)
                 && slots.TryRemove(new KeyValuePair<Guid, Task<WallFeedSlot?>>(wallId, task)))
             {
                 slot.Retire();
