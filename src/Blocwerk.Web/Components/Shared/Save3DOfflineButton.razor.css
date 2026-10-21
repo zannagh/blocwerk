@@ -14,3 +14,16 @@
 @media (prefers-reduced-motion: reduce) {
     .save3d-spinner { animation: none; }
 }
+
+/* The iOS tab's install nudge, beside the tool column. */
+.save3d-install {
+    margin: 0;
+    max-width: 220px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-surface);
+    color: var(--text);
+    font-size: 0.85rem;
+    box-shadow: 0 2px 10px var(--shadow-md);
+}

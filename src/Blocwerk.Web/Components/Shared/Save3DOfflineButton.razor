@@ -2,14 +2,16 @@
 @inject ILogger<Save3DOfflineButton> Logger
 @implements IDisposable
 
-@* "Save 3D offline" in the 3D view's tool column (design §6.8, PR 2.8): keeps this wall's 3D (textures, masks, one
-   splat level, the model document) on the device and asks the browser to keep the storage (persist()). Offered only
-   where the device cache runs for a signed-in viewer (bwAsset3d.status); a browser that refuses the storage leaves the
-   view streaming, and the button simply goes back to offering the save. *@
+@* "Save 3D offline" in the 3D view's tool column (design §6.8, PR 2.8), a toggle: it keeps this wall's 3D (textures,
+   masks, one splat level, the model document) on the device and asks the browser to keep the storage (persist());
+   once saved it reads "Saved offline. Remove", which hands the wall back to eviction and the 3D opt-out.
+   Offered only where the device cache runs for a signed-in viewer (bwAsset3d.status). In an iOS Safari tab, whose
+   storage is not kept, it is the install nudge instead. A browser that refuses the storage leaves the view
+   streaming, and the button simply goes back to offering the save. *@
 @if (available)
 {
     <button type="button" class="heat-tool save3d-tool@(saved ? " active" : string.Empty)" disabled="@busy"
-            aria-label="@Label" title="@Label" aria-pressed="@(saved ? "true" : "false")" @onclick="SaveAsync">
+            aria-label="@Label" title="@Label" aria-pressed="@(saved ? "true" : "false")" @onclick="ToggleAsync">
         @if (busy)
         {
             <span class="save3d-spinner" aria-hidden="true"></span>
@@ -32,18 +34,37 @@
         }
     </button>
 }
+else if (install is not null)
+{
+    <button type="button" class="heat-tool save3d-tool" aria-label="Install the app to keep 3D offline"
+            title="Install the app to keep 3D offline" aria-expanded="@(showInstall ? "true" : "false")"
+            @onclick="() => showInstall = !showInstall">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+             stroke-linejoin="round" width="22" height="22" aria-hidden="true">
+            <rect x="7" y="2" width="10" height="20" rx="2" />
+            <path d="M12 7v7" />
+            <path d="M9.5 11.5L12 14l2.5-2.5" />
+        </svg>
+    </button>
+    @if (showInstall)
+    {
+        <p class="save3d-install" role="status">@install</p>
+    }
+}
 
 @code {
     private readonly CancellationTokenSource gone = new();
     private bool available;
     private bool saved;
     private bool busy;
+    private string? install;
+    private bool showInstall;
 
     /// <summary>The wall whose 3D is saved.</summary>
     [Parameter, EditorRequired]
     public Guid WallId { get; set; }
 
-    private string Label => busy ? "Saving 3D offline…" : saved ? "3D saved on this device" : "Save 3D offline";
+    private string Label => busy ? "Saving 3D offline…" : saved ? "Saved offline. Remove" : "Save 3D offline";
 
     public void Dispose()
     {
@@ -66,6 +87,7 @@
             var status = await JS.InvokeAsync<Save3DStatus>("bwAsset3d.status", gone.Token, WallId);
             available = status.Available;
             saved = status.Saved;
+            install = status.Install;
             StateHasChanged();
         }
         catch (Exception ex) when (ex is JSDisconnectedException or JSException or OperationCanceledException or ObjectDisposedException)
@@ -74,9 +96,9 @@
         }
     }
 
-    private async Task SaveAsync()
+    private async Task ToggleAsync()
     {
-        if (busy || saved)
+        if (busy)
         {
             return;
         }
@@ -85,7 +107,7 @@
         try
         {
             // A whole 3D download: no interop timeout, only the component going away ends the wait.
-            var result = await JS.InvokeAsync<Save3DResult>("bwAsset3d.save", gone.Token, WallId);
+            var result = await JS.InvokeAsync<Save3DResult>(saved ? "bwAsset3d.unsave" : "bwAsset3d.save", gone.Token, WallId);
             saved = result.Saved;
         }
         catch (Exception ex) when (ex is JSDisconnectedException or JSException or OperationCanceledException or ObjectDisposedException)

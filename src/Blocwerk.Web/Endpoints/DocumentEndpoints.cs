@@ -27,12 +27,6 @@ public static class DocumentEndpoints
     /// <summary>A wall's working-data document; <c>?token=</c> for a share link, <c>?boulder=</c> as a rebuild hint.</summary>
     public const string Route = "/api/walls/{wallId:guid}/d/{kind}/{sha}";
 
-    /// <summary>
-    /// The policy of a served document: the <c>/a/</c> routes' revalidating one (<c>fix/asset-http-cache-isolation</c>'s
-    /// <c>AssetResponse.RevalidateCacheControl</c>, which this constant joins once that branch is on staging).
-    /// </summary>
-    public const string CacheControl = "private, no-cache";
-
     private static readonly string[] Verbs = [HttpMethods.Get, HttpMethods.Head];
 
     public static void MapWallDocuments(this WebApplication app)
@@ -68,7 +62,7 @@ public static class DocumentEndpoints
         else
         {
             http.Response.Headers.ETag = etag;
-            http.Response.Headers.CacheControl = CacheControl;
+            http.Response.Headers.CacheControl = AssetResponse.RevalidateCacheControl;
             http.Response.Headers.Vary = "Accept-Encoding";
             if (ImageResponse.Matches(http.Request, etag))
             {

@@ -15,11 +15,11 @@
     {
         <p class="wall3d-stage-failed">@failure</p>
     }
-    @if (notice is not null)
+    @if (noticeGate.Open is { } notice)
     {
         <Wall3DDataNotice Bytes="notice.Bytes" OnAnswer="a => AnswerNoticeAsync(a.Go, a.Remember)" />
     }
-    else if (declined)
+    else if (noticeGate.Declined)
     {
         <div class="wall3d-stage-declined">
             <p>The 3D view is not loaded.</p>

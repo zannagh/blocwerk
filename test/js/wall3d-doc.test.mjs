@@ -2,7 +2,7 @@
 // Run by `node --test test/js/`.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DOC_FAILED, applyOverlay, resolveView, tokenized, withToken } from '../../src/Blocwerk.Web/wwwroot/js/wall3d-doc.js';
+import { DOC_FAILED, DOC_TIMEOUT_MS, applyOverlay, resolveView, tokenized, withToken } from '../../src/Blocwerk.Web/wwwroot/js/wall3d-doc.js';
 
 const WALL = '11111111-1111-1111-1111-111111111111';
 const SHA = 'a'.repeat(64);
@@ -49,4 +49,13 @@ test('a whole view (no document) is drawn as it is, and no token or overlay leav
     assert.equal(withToken(view, null), view);
     assert.equal(applyOverlay(view, null), view);
     assert.equal(tokenized(null, 't'), null);
+});
+
+test('a document that does not answer within the timeout is aborted and throws DOC_FAILED, well inside Blazor\'s 60 s', async () => {
+    let signal = null;
+    const hung = (url, init) => { signal = init.signal; return new Promise(() => {}); };
+
+    await assert.rejects(resolveView({ doc: '/d', wallId: WALL, sha: SHA }, hung, 20), err => err.message.startsWith(DOC_FAILED));
+    assert.equal(signal.aborted, true);
+    assert.ok(DOC_TIMEOUT_MS <= 30_000);
 });

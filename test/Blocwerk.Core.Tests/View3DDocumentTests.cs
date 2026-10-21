@@ -92,12 +92,12 @@ public class View3DDocumentTests
         Assert.Equal(view.WallId, parsed.RootElement.GetProperty("wallId").GetGuid());
         Assert.True(parsed.RootElement.TryGetProperty("holds", out _));
         Assert.Equal(published.Sha, ContentHash.ToHex(ContentHash.Of(stored.Json)));
-        Assert.Equal(stored.Json.LongLength, published.Bytes);
+        Assert.Equal(stored.Brotli.LongLength, published.Bytes);
         Assert.Null(store.Find(Guid.NewGuid(), published.Sha));
     }
 
     [Fact]
-    public void TheStore_DropsTheLeastRecentlyUsed_AndARebuildBlocksTheNextForAWindow()
+    public void TheStore_DropsTheLeastRecentlyUsed()
     {
         var store = new View3DDocumentStore();
         var firstWall = Guid.NewGuid();
@@ -108,14 +108,55 @@ public class View3DDocumentTests
             store.Publish(new Wall3DView { WallId = Guid.NewGuid(), WallName = $"w{i}" });
         }
 
+        Assert.Null(store.Find(firstWall, first.Sha));
+    }
+
+    [Fact]
+    public void ARebuild_IsOnePerWallAtATime_AndOnePerWindow()
+    {
+        var store = new View3DDocumentStore();
         var wallId = Guid.NewGuid();
         var now = DateTimeOffset.UtcNow;
 
-        Assert.Null(store.Find(firstWall, first.Sha));
-        Assert.True(store.TryBeginRebuild(wallId, null, now));
-        Assert.False(store.TryBeginRebuild(wallId, null, now.AddSeconds(30)));
-        Assert.True(store.TryBeginRebuild(wallId, Guid.NewGuid(), now));
-        Assert.True(store.TryBeginRebuild(wallId, null, now + View3DDocumentStore.RebuildWindow));
+        Assert.True(store.TryBeginRebuild(wallId, now));
+        Assert.False(store.TryBeginRebuild(wallId, now + View3DDocumentStore.RebuildWindow), "still running: single-flight");
+        store.EndRebuild(wallId);
+        Assert.False(store.TryBeginRebuild(wallId, now.AddSeconds(30)), "inside the window");
+        Assert.True(store.TryBeginRebuild(wallId, now + View3DDocumentStore.RebuildWindow));
+        Assert.True(store.TryBeginRebuild(Guid.NewGuid(), now), "another wall has its own window");
+    }
+
+    [Fact]
+    public void AFullWindowTable_DropsItsOldestStart_NotEveryWindow()
+    {
+        var store = new View3DDocumentStore();
+        var now = DateTimeOffset.UtcNow;
+        var oldest = Guid.NewGuid();
+        var walls = Enumerable.Range(0, View3DDocumentStore.MaxEntries * 4).Select(_ => Guid.NewGuid()).ToList();
+        store.TryBeginRebuild(oldest, now.AddSeconds(-50));
+        store.EndRebuild(oldest);
+        foreach (var wall in walls.Skip(1))
+        {
+            store.TryBeginRebuild(wall, now);
+            store.EndRebuild(wall);
+        }
+
+        Assert.True(store.TryBeginRebuild(walls[0], now)); // the table is full: the oldest start makes room
+        Assert.True(store.TryBeginRebuild(oldest, now), "the oldest start was dropped");
+        Assert.False(store.TryBeginRebuild(walls[1], now), "every other window still holds");
+    }
+
+    [Fact]
+    public void ThePublishedSize_IsTheBrotliCopy_TheBytesTheWorkerAnnounces()
+    {
+        var store = new View3DDocumentStore();
+        var view = new Wall3DView { WallId = Guid.NewGuid(), WallName = new string('x', 5000) };
+
+        var published = store.Publish(view);
+        var again = store.Publish(view);
+
+        Assert.Equal(store.Find(view.WallId, published.Sha)!.Brotli.LongLength, published.Bytes);
+        Assert.Equal(published.Bytes, again.Bytes);
     }
 
     [Fact]

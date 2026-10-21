@@ -29,7 +29,8 @@ public sealed class View3DDocumentStore
     private readonly object gate = new();
     private readonly Dictionary<(Guid WallId, string Sha), LinkedListNode<StoredView3DDocument>> entries = [];
     private readonly LinkedList<StoredView3DDocument> order = new();
-    private readonly Dictionary<(Guid WallId, Guid? BoulderId), DateTimeOffset> rebuilds = [];
+    private readonly Dictionary<Guid, DateTimeOffset> rebuilds = [];
+    private readonly HashSet<Guid> rebuilding = [];
     private long bytes;
 
     /// <summary>Stores the document of <paramref name="view"/> (once per sha) and returns its sha and the boulder overlay.</summary>
@@ -46,7 +47,7 @@ public sealed class View3DDocumentStore
             {
                 order.Remove(known);
                 order.AddFirst(known);
-                return new View3DPublished(sha, json.LongLength, overlay, View3DDocument.TokenOf(view));
+                return new View3DPublished(sha, known.Value.Brotli.LongLength, overlay, View3DDocument.TokenOf(view));
             }
         }
 
@@ -61,7 +62,7 @@ public sealed class View3DDocumentStore
             }
         }
 
-        return new View3DPublished(sha, json.LongLength, overlay, View3DDocument.TokenOf(view));
+        return new View3DPublished(sha, stored.Brotli.LongLength, overlay, View3DDocument.TokenOf(view));
     }
 
     /// <summary>The stored document of <paramref name="wallId"/> named <paramref name="sha"/>, if this instance has it.</summary>
@@ -81,25 +82,38 @@ public sealed class View3DDocumentStore
     }
 
     /// <summary>
-    /// True when a rebuild of this wall's (and boulder's) document may start now; it then blocks the next one for
-    /// <see cref="RebuildWindow"/>, so random shas under a share link cannot each cost a build.
+    /// True when a rebuild of this wall's document may start now: none is running for the wall and none started within
+    /// <see cref="RebuildWindow"/>. Keyed by the wall alone (whatever the boulder hint), so neither random shas nor random
+    /// boulder ids under a share link can buy more than one build per wall per window. A true answer must be followed by
+    /// <see cref="EndRebuild"/>.
     /// </summary>
-    public bool TryBeginRebuild(Guid wallId, Guid? boulderId, DateTimeOffset now)
+    public bool TryBeginRebuild(Guid wallId, DateTimeOffset now)
     {
         lock (gate)
         {
-            if (rebuilds.TryGetValue((wallId, boulderId), out var at) && now - at < RebuildWindow)
+            if (rebuilding.Contains(wallId) || (rebuilds.TryGetValue(wallId, out var at) && now - at < RebuildWindow))
             {
                 return false;
             }
 
-            if (rebuilds.Count >= MaxEntries * 4)
+            if (rebuilds.Count >= MaxEntries * 4 && !rebuilds.ContainsKey(wallId))
             {
-                rebuilds.Clear();
+                // The oldest start is the first whose window ran out; dropping it lets nothing in early.
+                rebuilds.Remove(rebuilds.MinBy(r => r.Value).Key);
             }
 
-            rebuilds[(wallId, boulderId)] = now;
+            rebuilds[wallId] = now;
+            rebuilding.Add(wallId);
             return true;
+        }
+    }
+
+    /// <summary>The rebuild of <paramref name="wallId"/> finished (or failed); the window still runs from its start.</summary>
+    public void EndRebuild(Guid wallId)
+    {
+        lock (gate)
+        {
+            rebuilding.Remove(wallId);
         }
     }
 

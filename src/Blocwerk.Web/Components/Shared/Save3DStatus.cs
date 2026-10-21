@@ -7,4 +7,7 @@ namespace Blocwerk.Web.Components.Shared;
 /// <param name="Available">The device cache runs for a signed-in viewer and is not streaming.</param>
 /// <param name="Saved">The wall is kept offline with its 3D on the device.</param>
 /// <param name="Cached">The wall's 3D is on the device (saved or not).</param>
-public sealed record Save3DStatus(bool Available, bool Saved, bool Cached);
+/// <param name="Install">
+/// In an iOS Safari tab, where the save is not offered (tab storage is not kept): the install nudge's text; else null.
+/// </param>
+public sealed record Save3DStatus(bool Available, bool Saved, bool Cached, string? Install = null);

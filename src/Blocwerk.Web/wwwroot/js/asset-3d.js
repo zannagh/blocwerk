@@ -8,14 +8,19 @@
  *                      "Don't ask again" (kept per user like the storage notices) or a "Continue" on this page.
  *                      `bytes` is what is still to download, from the wall's manifest; null when it is not known.
  *   accept(wallId, remember)  the viewer chose to continue.
- *   status(wallId)   → { available, saved, cached }: whether "Save 3D offline" is offered (a signed-in viewer, a worker
- *                      that caches, a page that is not streaming) and whether the wall's 3D is saved.
+ *   status(wallId)   → { available, saved, cached, install }: whether "Save 3D offline" is offered (a signed-in viewer,
+ *                      a worker that caches, a page that is not streaming, and not an iOS Safari tab, whose storage is not
+ *                      persisted and is wiped after 7 days unused) and whether the wall's 3D is saved. In that iOS tab
+ *                      `install` holds bwInstall's instructions instead: the button becomes the install nudge.
  *   save(wallId)     → { saved }: marks the wall keepOffline and save3d in the ledger, asks for persistent storage, and
  *                      fills the wall's 3D now (asset-plan.js plans a saved wall's 3D on every device and connection,
  *                      past the 3D budget and the opt-out; eviction never takes it). A browser that refuses the storage
  *                      leaves the page streaming (asset-fill.js), silently: `saved` is simply false.
+ *   unsave(wallId)   → { saved: false }: the undo. Clears save3d and keepOffline and runs eviction, so the budget and
+ *                      the opt-out apply to the wall's 3D again.
  *   noteDoc(wallId, sha, bytes)  wall3d-doc.js loaded a view3d document; the wall's row lists it (the newest
- *                      MAX_DOCS), so eviction counts it as that wall's 3D instead of an orphan.
+ *                      MAX_DOCS), so eviction counts it as that wall's 3D instead of an orphan. Its size is the ledger's
+ *                      count of the cached copy when there is one (the worker's Content-Length), else the page's.
  * Every failure answers "no notice" / "not available": nothing here may keep a 3D view from starting.
  */
 window.bwAsset3d = (function (win) {
@@ -40,6 +45,29 @@ window.bwAsset3d = (function (win) {
         }
         await Promise.race([Promise.resolve(cache.ready).catch(() => undefined), wait(READY_WAIT_MS)]);
         return cache.state();
+    }
+
+    // bwAssetPlan's one phone-or-tablet test, with matchMedia for the Android desktop-mode rule (a coarse pointer).
+    const isMobile = () => Plan().isMobile(win.navigator, typeof win.matchMedia === 'function' ? q => win.matchMedia(q) : null);
+
+    // An iPhone or iPad Safari tab, not the installed app: its storage is best-effort and wiped after 7 days unused.
+    function isIosTab() {
+        const nav = win.navigator || {};
+        const ua = nav.userAgent || '';
+        const ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && nav.maxTouchPoints > 1);
+        let standalone = nav.standalone === true;
+        try {
+            standalone = standalone || (typeof win.matchMedia === 'function' && win.matchMedia('(display-mode: standalone)').matches);
+        } catch (e) {
+            /* treated as a tab */
+        }
+        return ios && !standalone;
+    }
+
+    function installHint() {
+        const install = win.bwInstall;
+        const how = install && typeof install.instructions === 'function' ? install.instructions() : 'In Safari: tap Share, then "Add to Home Screen".';
+        return `Install the app to keep 3D offline. ${how}`;
     }
 
     const labelOf = s => (s && typeof s.active === 'string' ? s.active : 'none');
@@ -87,7 +115,7 @@ window.bwAsset3d = (function (win) {
     async function gate(wallId) {
         try {
             const id = lower(wallId);
-            if (!Plan() || !Plan().isMobile(win.navigator) || accepted.has(id)) {
+            if (!Plan() || !isMobile() || accepted.has(id)) {
                 return { ask: false, bytes: null };
             }
             const s = await settled();
@@ -116,18 +144,39 @@ window.bwAsset3d = (function (win) {
         return caching(s) && labelOf(s).startsWith('u-') && !isKiosk(s) && !!s.capable && !!s.runner && !s.runner.streaming;
     }
 
+    const none = { available: false, saved: false, cached: false, install: null };
+
     async function status(wallId) {
         try {
             const s = await settled();
             if (!offerable(s)) {
-                return { available: false, saved: false, cached: false };
+                return none;
+            }
+            if (isIosTab()) {
+                return Object.assign({}, none, { install: installHint() });
             }
             const row = await rowOf(s, lower(wallId));
             const cached = (await missing(s, row)).cached;
-            return { available: true, saved: !!(row && row.keepOffline && row.save3d && cached), cached };
+            return { available: true, saved: !!(row && row.keepOffline && row.save3d && cached), cached, install: null };
         } catch (e) {
-            return { available: false, saved: false, cached: false };
+            return none;
         }
+    }
+
+    async function unsave(wallId) {
+        try {
+            const s = await settled();
+            const row = caching(s) ? await rowOf(s, lower(wallId)) : null;
+            if (row && (row.keepOffline || row.save3d)) {
+                row.keepOffline = false;
+                row.save3d = false;
+                await s.env.ledger.putWall(row);
+                await Cache().evict();
+            }
+        } catch (e) {
+            /* the wall stays saved; the button offers the removal again */
+        }
+        return { saved: false };
     }
 
     // keepOffline (2.7's field: eviction never takes the wall) and save3d (its 3D is filled whatever the device).
@@ -157,7 +206,7 @@ window.bwAsset3d = (function (win) {
         try {
             const s = await settled();
             const id = lower(wallId);
-            if (!offerable(s)) {
+            if (!offerable(s) || isIosTab()) {
                 return { saved: false };
             }
             await mark(s, id);
@@ -181,12 +230,14 @@ window.bwAsset3d = (function (win) {
             if (!row || (row.docs || []).some(d => d.sha === sha)) {
                 return;
             }
-            row.docs = [{ sha, kind: 'view3d', tier: 'view3d', bytes: bytes || 0 }].concat(row.docs || []).slice(0, MAX_DOCS);
+            const held = (await s.env.ledger.assetsOf(s.active)).find(a => a.key === sha);
+            const size = (held && held.bytes) || bytes || 0;
+            row.docs = [{ sha, kind: 'view3d', tier: 'view3d', bytes: size }].concat(row.docs || []).slice(0, MAX_DOCS);
             await s.env.ledger.putWall(row);
         } catch (e) {
             /* the document is then an orphan, evicted after its grace */
         }
     }
 
-    return { NOTICE_KIND, MAX_DOCS, gate, accept, status, save, noteDoc };
+    return { NOTICE_KIND, MAX_DOCS, gate, accept, status, save, unsave, noteDoc };
 })(window);

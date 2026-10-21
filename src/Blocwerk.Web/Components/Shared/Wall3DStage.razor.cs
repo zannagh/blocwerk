@@ -83,7 +83,7 @@ public partial class Wall3DStage : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         disposed = true;
-        notice?.Answer.TrySetResult(false);
+        noticeGate.Abandon();
         try
         {
             // A mount in flight disposes its own viewer when it returns (it sees `disposed`).

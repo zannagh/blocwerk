@@ -8,6 +8,7 @@ import { W1, W2, keys, plain } from './fixtures/asset-pages.mjs';
 
 const PHONE = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36';
 const DESKTOP = 'Mozilla/5.0 (X11; Linux x86_64) Chrome/130.0 Safari/537.36';
+const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
 const THREE_D = [sha('3'), sha('5'), sha('6'), sha('7')];
 
 // W1 has 3D: a texture, its mask and two splat levels; W2 has 3D too (one texture).
@@ -70,7 +71,7 @@ test('Save 3D offline on a phone caches the wall\'s 3D (one splat level), asks f
     const page = page3d();
     await page.boot();
     const before = page.persisted.length;
-    assert.deepEqual(plain(await page.win.bwAsset3d.status(W1)), { available: true, saved: false, cached: false });
+    assert.deepEqual(plain(await page.win.bwAsset3d.status(W1)), { available: true, saved: false, cached: false, install: null });
 
     assert.deepEqual(plain(await page.win.bwAsset3d.save(W1)), { saved: true });
 
@@ -79,7 +80,7 @@ test('Save 3D offline on a phone caches the wall\'s 3D (one splat level), asks f
     const row = await (await page.ledger()).getWall(USER_A, W1);
     assert.equal(row.keepOffline, true);
     assert.equal(row.save3d, true);
-    assert.deepEqual(plain(await page.win.bwAsset3d.status(W1)), { available: true, saved: true, cached: true });
+    assert.deepEqual(plain(await page.win.bwAsset3d.status(W1)), { available: true, saved: true, cached: true, install: null });
     assert.equal((await page.win.bwAsset3d.gate(W1)).ask, false);
 });
 
@@ -126,4 +127,59 @@ test('no Save 3D offline for an anonymous share viewer, a kiosk or a page withou
         assert.equal((await page.win.bwAsset3d.status(W1)).available, false, JSON.stringify(more));
         assert.deepEqual(plain(await page.win.bwAsset3d.save(W1)), { saved: false });
     }
+});
+
+test('an Android tablet in desktop mode (Linux UA, touch, a coarse pointer) counts as mobile for the notice', async () => {
+    const tablet = page3d({ ua: DESKTOP, maxTouchPoints: 5, coarse: true, connection: { type: 'cellular' } });
+    await tablet.boot();
+    assert.equal((await tablet.win.bwAsset3d.gate(W1)).ask, true);
+
+    const desktop = page3d({ ua: DESKTOP, maxTouchPoints: 5, coarse: false, connection: { type: 'cellular' } });
+    await desktop.boot();
+    assert.equal((await desktop.win.bwAsset3d.gate(W1)).ask, false, 'a touch laptop with a fine pointer is a desktop');
+});
+
+test('an iOS Safari tab gets the install nudge instead of the save; the installed app keeps the save', async () => {
+    const tab = page3d({ ua: IPHONE });
+    await tab.boot();
+    const nudge = plain(await tab.win.bwAsset3d.status(W1));
+    assert.equal(nudge.available, false);
+    assert.match(nudge.install, /^Install the app to keep 3D offline\./);
+    assert.deepEqual(plain(await tab.win.bwAsset3d.save(W1)), { saved: false });
+    assert.equal((await (await tab.ledger()).getWall(USER_A, W1)).save3d, undefined);
+
+    const app = page3d({ ua: IPHONE, standalone: true });
+    await app.boot();
+    assert.equal((await app.win.bwAsset3d.status(W1)).available, true);
+    assert.deepEqual(plain(await app.win.bwAsset3d.save(W1)), { saved: true });
+});
+
+test('Remove undoes the save: the wall is no longer kept, and the opt-out and eviction apply again', async () => {
+    const page = page3d({ ua: DESKTOP });
+    await page.boot();
+    await page.win.bwAsset3d.save(W1);
+    page.win.bwPrefs.setCache3d(false);
+
+    assert.deepEqual(plain(await page.win.bwAsset3d.unsave(W1)), { saved: false });
+    await page.settle();
+
+    const row = await (await page.ledger()).getWall(USER_A, W1);
+    assert.equal(row.keepOffline, false);
+    assert.equal(row.save3d, false);
+    const left = (await (await page.ledger()).assetsOf(USER_A)).map(a => a.key);
+    assert.ok(!THREE_D.some(s => left.includes(s)), 'the opt-out evicts the unsaved wall\'s 3D');
+    assert.equal((await page.win.bwAsset3d.status(W1)).saved, false);
+});
+
+test('a document already in the ledger is listed at the ledger\'s size, so the two agree', async () => {
+    const page = page3d({ ua: DESKTOP });
+    await page.boot();
+    const ledger = await page.ledger();
+    await ledger.putAsset({ partition: USER_A, key: sha('8'), sha: sha('8'), width: null, cache: null, bytes: 4321, cachedAt: 1, verifiedAt: 1 });
+
+    await page.win.bwAsset3d.noteDoc(W1, sha('8'), 9999);
+    await page.win.bwAsset3d.noteDoc(W2, sha('9'), 777);
+
+    assert.equal((await ledger.getWall(USER_A, W1)).docs[0].bytes, 4321);
+    assert.equal((await ledger.getWall(USER_A, W2)).docs[0].bytes, 777, 'not cached yet: the page\'s count, the same wire size');
 });

@@ -19,8 +19,9 @@ namespace Blocwerk.Core.Assets.Documents;
 /// <remarks>
 /// <para>
 /// A rebuilt document is served only when it hashes to the requested sha; anything else is the route's bare 404, and the
-/// page falls back to the view over interop. A rebuild per wall (and boulder) runs at most once per
-/// <see cref="View3DDocumentStore.RebuildWindow"/>, so a share link cannot turn random shas into builds.
+/// page falls back to the view over interop. One rebuild per wall runs at a time and at most once per
+/// <see cref="View3DDocumentStore.RebuildWindow"/>, whatever the boulder hint, so a share link cannot turn random shas or
+/// boulder ids into builds.
 /// </para>
 /// <para>
 /// The document is wall-level (no boulder, no viewer, no token; <see cref="View3DDocument"/>), so it is of the kiosk class:
@@ -69,7 +70,7 @@ public sealed class View3DDocumentService(
 
     private async Task<StoredView3DDocument?> RebuildAsync(Guid wallId, string sha, string? shareToken, Guid? boulderId, CancellationToken ct)
     {
-        if (!store.TryBeginRebuild(wallId, boulderId, timeProvider.GetUtcNow()))
+        if (!store.TryBeginRebuild(wallId, timeProvider.GetUtcNow()))
         {
             return null;
         }
@@ -82,6 +83,10 @@ public sealed class View3DDocumentService(
         catch (UnauthorizedAccessException)
         {
             return null;
+        }
+        finally
+        {
+            store.EndRebuild(wallId);
         }
 
         if (result is not { Status: Wall3DViewStatus.Ok, View: { } view })

@@ -27,7 +27,7 @@ public class View3DDocumentRouteTests
         var http = await f.GetAsync(f.WallId, sha);
 
         Assert.Equal(StatusCodes.Status200OK, http.Response.StatusCode);
-        Assert.Equal(DocumentEndpoints.CacheControl, http.Response.Headers.CacheControl.ToString());
+        Assert.Equal(AssetResponse.RevalidateCacheControl, http.Response.Headers.CacheControl.ToString());
         Assert.Equal($"\"{sha}\"", http.Response.Headers.ETag.ToString());
         Assert.Equal("application/json", http.Response.ContentType);
         Assert.Equal(sha, ContentHash.ToHex(ContentHash.Of(AssetRouteFixture.Body(http))));
@@ -128,7 +128,7 @@ public class View3DDocumentRouteTests
         Assert.Equal(AssetResponse.NoStoreCacheControl, unkeyed.Response.Headers.CacheControl.ToString());
         Assert.False(unkeyed.Response.Headers.ContainsKey("ETag"));
         Assert.Contains("Cookie", unkeyed.Response.Headers.Vary.ToString(), StringComparison.Ordinal);
-        Assert.Equal(DocumentEndpoints.CacheControl, keyed.Response.Headers.CacheControl.ToString());
+        Assert.Equal(AssetResponse.RevalidateCacheControl, keyed.Response.Headers.CacheControl.ToString());
         AssetRouteAccessTests.AssertRefused(elsewhere);
     }
 
@@ -152,20 +152,81 @@ public class View3DDocumentRouteTests
     }
 
     [Fact]
-    public async Task RandomShas_CostOneRebuildPerWindow_AndTheBoulderHintIsPassedOn()
+    public async Task RandomShasAndRandomBoulderIds_CostOneRebuildPerWallPerWindow()
     {
         using var f = new View3DDocumentFixture();
         await f.SeedAsync();
         f.Restart();
         var boulderId = Guid.NewGuid();
 
+        AssetRouteAccessTests.AssertRefused(await f.GetAsync(f.WallId, new string('9', 64), query: $"?boulder={boulderId}"));
         for (var i = 0; i < 5; i++)
         {
-            AssetRouteAccessTests.AssertRefused(await f.GetAsync(f.WallId, new string((char)('0' + i), 64)));
+            AssetRouteAccessTests.AssertRefused(await f.GetAsync(f.WallId, new string((char)('0' + i), 64), query: $"?boulder={Guid.NewGuid()}"));
+            AssetRouteAccessTests.AssertRefused(await f.GetAsync(f.WallId, new string((char)('a' + i), 64)));
         }
 
-        AssetRouteAccessTests.AssertRefused(await f.GetAsync(f.WallId, new string('9', 64), query: $"?boulder={boulderId}"));
-        await f.Views.Received(1).BuildAsync(f.WallId, null, null, Arg.Any<CancellationToken>());
+        await f.Views.Received(1).BuildAsync(Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
         await f.Views.Received(1).BuildAsync(f.WallId, boulderId, null, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ConcurrentMisses_ShareOneRebuild()
+    {
+        using var f = new View3DDocumentFixture();
+        var sha = await f.SeedAsync();
+        f.Restart();
+        var release = new TaskCompletionSource();
+        f.Views.BuildAsync(Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(async c =>
+            {
+                await release.Task;
+                return new Blocwerk.Core.Geometry.View3D.Wall3DViewResult(
+                    Blocwerk.Core.Geometry.View3D.Wall3DViewStatus.Ok, "W", View3DDocumentFixture.ViewOf(c.ArgAt<Guid>(0)));
+            });
+
+        var first = Task.Run(() => f.GetAsync(f.WallId, sha));
+        for (var i = 0; i < 500 && !f.Views.ReceivedCalls().Any(); i++)
+        {
+            await Task.Delay(10);
+        }
+
+        var second = await f.GetAsync(f.WallId, sha);
+        release.SetResult();
+
+        Assert.Equal(StatusCodes.Status200OK, (await first).Response.StatusCode);
+        AssetRouteAccessTests.AssertRefused(second); // the build was still running: no second one
+        await f.Views.Received(1).BuildAsync(Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task A304_ComesOnlyAfterTheGate_AndOnlyForAKnownDocument()
+    {
+        using var f = new View3DDocumentFixture();
+        var sha = await f.SeedAsync();
+        void Revalidate(HttpContext http) => http.Request.Headers.IfNoneMatch = $"\"{sha}\"";
+        f.Restart();
+
+        var member = await f.GetAsync(f.WallId, sha, configure: Revalidate);
+        var unknown = await f.GetAsync(f.WallId, new string('e', 64), configure: h => h.Request.Headers.IfNoneMatch = $"\"{new string('e', 64)}\"");
+        f.Assets.Caller = null;
+        var anonymous = await f.GetAsync(f.WallId, sha, configure: Revalidate);
+
+        Assert.Equal(StatusCodes.Status304NotModified, member.Response.StatusCode);
+        Assert.Equal(AssetResponse.RevalidateCacheControl, member.Response.Headers.CacheControl.ToString());
+        AssetRouteAccessTests.AssertRefused(unknown);
+        AssetRouteAccessTests.AssertRefused(anonymous);
+    }
+
+    [Fact]
+    public async Task TheBrotliLength_IsThePublishedSize()
+    {
+        using var f = new View3DDocumentFixture();
+        await f.SeedAsync();
+        var published = f.Store.Publish(View3DDocumentFixture.ViewOf(f.WallId));
+
+        var br = await f.GetAsync(f.WallId, published.Sha, configure: h => h.Request.Headers.AcceptEncoding = "br");
+
+        Assert.Equal(published.Bytes, AssetRouteFixture.Body(br).LongLength);
     }
 }

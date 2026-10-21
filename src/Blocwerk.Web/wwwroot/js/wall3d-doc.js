@@ -11,16 +11,27 @@
 /** Prefix of the error `resolveView` throws when the document could not be used. */
 export const DOC_FAILED = 'wall3d-doc:';
 
+/**
+ * How long the document may take, body included. Well inside Blazor's 60 s JS-call timeout, so a stalled fetch
+ * falls back to the view over interop instead of failing the mount.
+ */
+export const DOC_TIMEOUT_MS = 30_000;
+
 /** The view to draw: the payload itself, or its document with the token and the overlay applied. */
-export async function resolveView(payload, fetchImpl = (url, init) => fetch(url, init)) {
+export async function resolveView(payload, fetchImpl = (url, init) => fetch(url, init), timeoutMs = DOC_TIMEOUT_MS) {
     if (!payload || !payload.doc) return payload;
+    const abort = new AbortController();
+    let timer = 0;
+    const expired = new Promise((_, reject) => {
+        timer = setTimeout(() => { abort.abort(); reject(new Error(`no answer in ${Math.round(timeoutMs / 1000)} s`)); }, timeoutMs);
+    });
     let doc;
     try {
-        const res = await fetchImpl(payload.doc, { credentials: 'same-origin' });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        doc = await res.json();
+        doc = await Promise.race([readDoc(payload.doc, fetchImpl, abort.signal), expired]);
     } catch (err) {
         throw new Error(`${DOC_FAILED} ${err?.message || err}`);
+    } finally {
+        clearTimeout(timer);
     }
     if (!doc || doc.wallId !== payload.wallId) throw new Error(`${DOC_FAILED} not this wall's document`);
     try {
@@ -29,6 +40,12 @@ export async function resolveView(payload, fetchImpl = (url, init) => fetch(url,
         // The ledger is a convenience: a failed note only lets eviction treat the document as an orphan.
     }
     return applyOverlay(withToken(doc, payload.token), payload.overlay);
+}
+
+async function readDoc(url, fetchImpl, signal) {
+    const res = await fetchImpl(url, { credentials: 'same-origin', signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
 }
 
 /** `url` with the share token appended, as the server's AssetUrls would have put it. */

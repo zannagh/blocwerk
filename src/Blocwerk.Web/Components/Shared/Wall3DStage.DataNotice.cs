@@ -15,9 +15,7 @@ namespace Blocwerk.Web.Components.Shared;
 /// </summary>
 public partial class Wall3DStage
 {
-    private Wall3DNoticeState? notice;
-    private bool declined;
-    private bool noticePassed;
+    private readonly Wall3DNoticeGate noticeGate = new();
 
     /// <summary>Offer "Save 3D offline" in the tool column (not in small insets).</summary>
     [Parameter]
@@ -25,35 +23,8 @@ public partial class Wall3DStage
 
     private async Task<bool> PassDataNoticeAsync(Wall3DView view)
     {
-        if (noticePassed)
-        {
-            return true;
-        }
-
-        Wall3DDataGate? gate;
-        try
-        {
-            gate = await JS.InvokeAsync<Wall3DDataGate?>("bwAsset3d.gate", view.WallId);
-        }
-        catch (Exception ex) when (ex is JSDisconnectedException or JSException or OperationCanceledException)
-        {
-            gate = null;
-        }
-
-        if (gate is not { Ask: true })
-        {
-            noticePassed = true;
-            return true;
-        }
-
-        var waiting = new Wall3DNoticeState(gate.Bytes, new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously));
-        notice = waiting;
-        await InvokeAsync(StateHasChanged);
-        var go = await waiting.Answer.Task;
-        notice = null;
-        noticePassed = go;
-        declined = !go && !disposed;
-        if (!disposed)
+        var go = await noticeGate.PassAsync(() => AskGateAsync(view), () => InvokeAsync(StateHasChanged));
+        if (!go && !disposed)
         {
             await InvokeAsync(StateHasChanged);
         }
@@ -61,13 +32,20 @@ public partial class Wall3DStage
         return go;
     }
 
+    private async Task<Wall3DDataGate?> AskGateAsync(Wall3DView view)
+    {
+        try
+        {
+            return await JS.InvokeAsync<Wall3DDataGate?>("bwAsset3d.gate", view.WallId);
+        }
+        catch (Exception ex) when (ex is JSDisconnectedException or JSException or OperationCanceledException)
+        {
+            return null;
+        }
+    }
+
     private async Task AnswerNoticeAsync(bool go, bool remember)
     {
-        if (notice is not { } waiting)
-        {
-            return;
-        }
-
         if (go)
         {
             try
@@ -80,14 +58,13 @@ public partial class Wall3DStage
             }
         }
 
-        waiting.Answer.TrySetResult(go);
+        noticeGate.Answer(go);
     }
 
     // "Load 3D" after a Cancel: mount the current view as if it were new.
     private void LoadAfterDecline()
     {
-        declined = false;
-        noticePassed = true;
+        noticeGate.Load();
         mounted = null;
         StateHasChanged();
     }
