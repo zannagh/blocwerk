@@ -278,7 +278,7 @@ public class ApiSurfaceAuthorizationTests
         app.MapWallGeometryTextures();
         app.MapWallGeometrySplats();
 
-        // The content-addressed asset routes (immutable, hashed) sit under /api/walls as well.
+        // The content-addressed asset routes (hashed) sit under /api/walls as well.
         app.MapAssets();
 
         // Their manifest sits under /api/walls too; the partition route under /api/me, outside the prefixes.

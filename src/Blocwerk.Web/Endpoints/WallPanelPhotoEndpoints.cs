@@ -128,7 +128,6 @@ public static class WallPanelPhotoEndpoints
             variants,
             width,
             tag,
-            immutable: false,
             async () => (await load())?.Photo,
             ImageIdentity.PanelPhoto(panelId, slot));
     }
@@ -239,7 +238,6 @@ public static class WallPanelPhotoEndpoints
                     variants,
                     width,
                     priorTag,
-                    immutable: false,
                     async () => (await panelService.GetPanelPhotoAsync(wallId, priorId))?.Photo,
                     ImageIdentity.PanelPhoto(priorId, ImageIdentity.LiveSlot));
             }
@@ -263,7 +261,6 @@ public static class WallPanelPhotoEndpoints
             variants,
             width,
             tag,
-            immutable: false,
             () => string.IsNullOrEmpty(token)
                 ? wallService.GetPhotoAsync(wallId)
                 : wallService.GetPhotoByShareTokenAsync(wallId, token),

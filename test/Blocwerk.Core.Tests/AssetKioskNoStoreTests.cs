@@ -10,12 +10,13 @@ namespace Blocwerk.Core.Tests;
 
 /// <summary>
 /// A kiosk tablet's caches are shared by every identity on it (one <c>k-</c> partition). So a kiosk session, act-as
-/// included, gets every kind outside the manifest's Kiosk class (video thumbnails) as <c>no-store</c>, never immutable,
-/// while the kinds the Kiosk class lists stay immutable, and a member off the tablet keeps the immutable thumbnail.
+/// included, gets every kind outside the manifest's Kiosk class (video thumbnails) as <c>no-store</c>, without a
+/// validator, while the kinds the Kiosk class lists keep the ordinary revalidating policy, and a member off the tablet
+/// keeps the revalidating thumbnail.
 /// </summary>
 public class AssetKioskNoStoreTests
 {
-    private const string Immutable = "private, max-age=31536000, immutable";
+    private const string Revalidated = "private, no-cache";
 
     [Fact]
     public async Task AnActAsMember_GetsAThumbnail_AsNoStore_WithoutAValidator()
@@ -37,7 +38,7 @@ public class AssetKioskNoStoreTests
     }
 
     [Fact]
-    public async Task AnActAsMember_StillGetsTheKioskClassKinds_Immutable()
+    public async Task AnActAsMember_StillGetsTheKioskClassKinds_Revalidating()
     {
         using var f = new AssetRouteFixture();
         var s = await f.SeedAsync();
@@ -45,7 +46,7 @@ public class AssetKioskNoStoreTests
 
         foreach (var sha in new[] { s.Panel, s.Gallery, s.Texture, s.Splat })
         {
-            Assert.Equal(Immutable, (await f.GetAsync(f.Harness.WallId, sha)).Response.Headers.CacheControl.ToString());
+            Assert.Equal(Revalidated, (await f.GetAsync(f.Harness.WallId, sha)).Response.Headers.CacheControl.ToString());
         }
     }
 
@@ -61,14 +62,14 @@ public class AssetKioskNoStoreTests
     }
 
     [Fact]
-    public async Task AMemberOffTheTablet_GetsTheThumbnail_Immutable()
+    public async Task AMemberOffTheTablet_GetsTheThumbnail_Revalidating()
     {
         using var f = new AssetRouteFixture();
         var s = await f.SeedAsync();
 
         var http = await f.GetAsync(f.Harness.WallId, s.VideoThumbnail);
 
-        Assert.Equal(Immutable, http.Response.Headers.CacheControl.ToString());
+        Assert.Equal(Revalidated, http.Response.Headers.CacheControl.ToString());
         Assert.Equal($"\"{s.VideoThumbnail}\"", http.Response.Headers.ETag.ToString());
     }
 

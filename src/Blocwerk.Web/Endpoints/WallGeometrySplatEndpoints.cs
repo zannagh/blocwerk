@@ -18,8 +18,8 @@ namespace Blocwerk.Web.Endpoints;
 /// viewer holding its share token, or the wall's own kiosk tablet; API-key principals are rejected;
 /// a model of another wall is a 404. A splat row is written once, but a re-run replaces it by a NEW row
 /// under the same model id and a LOD backfill adds levels to it, so the route URL does not name the bytes:
-/// it is served immutable only when its <c>?v=</c> matches <see cref="WallGeometrySplats.Version"/> (the
-/// URLs the 3D view hands out), and with revalidation against the ETag otherwise.
+/// it is always served <c>private, no-cache</c> and revalidates against the ETag, also under the <c>?v=</c> of
+/// <see cref="WallGeometrySplats.Version"/> the 3D view hands out (see <see cref="ImageResponse.MutableCacheControl"/>).
 /// </summary>
 public static class WallGeometrySplatEndpoints
 {
@@ -80,9 +80,7 @@ public static class WallGeometrySplatEndpoints
 
         var etag = ImageResponse.Etag(kind, splat.Id, size);
         http.Response.Headers.ETag = etag;
-        http.Response.Headers.CacheControl = ImageResponse.IsVersioned(http.Request, WallGeometrySplats.Version(splat, lod))
-            ? ImageResponse.ImmutableCacheControl
-            : ImageResponse.MutableCacheControl;
+        http.Response.Headers.CacheControl = ImageResponse.MutableCacheControl;
         return ImageResponse.Matches(http.Request, etag)
             ? Results.StatusCode(StatusCodes.Status304NotModified)
             : Results.File(path, ContentType, enableRangeProcessing: true);

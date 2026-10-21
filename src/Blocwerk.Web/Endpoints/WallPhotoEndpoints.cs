@@ -92,7 +92,6 @@ public static class WallPhotoEndpoints
                 variants,
                 w,
                 tag,
-                immutable: false,
                 async () => (await panelService.GetPanelPhotoAsync(wallId, panelId.Value))?.Photo,
                 ImageIdentity.PanelPhoto(panelId.Value, ImageIdentity.LiveSlot));
         }).DenyApiKeyPrincipals();
@@ -118,7 +117,7 @@ public static class WallPhotoEndpoints
                 return Results.NotFound();
             }
 
-            // Never immutable: a retired generation's photo is archived on its reset row and never
+            // Revalidated like every image route: a retired generation's photo is archived on its reset row and never
             // replaced, but the privacy pass rewrites it in place, and no client builds a versioned
             // url for this route. A generation at or above the current one is the LIVE photo anyway.
             // The ETag (which moves with the length) still turns every revalidation into a 304.
@@ -127,7 +126,6 @@ public static class WallPhotoEndpoints
                 variants,
                 w,
                 tag,
-                immutable: false,
                 async () =>
                 {
                     var photo = string.IsNullOrEmpty(token)
@@ -231,7 +229,6 @@ public static class WallPhotoEndpoints
             variants,
             w,
             tag,
-            immutable: false,
             () => string.IsNullOrEmpty(token)
                 ? wallService.GetPhotoAsync(wallId)
                 : wallService.GetPhotoByShareTokenAsync(wallId, token),

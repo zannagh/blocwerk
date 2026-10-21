@@ -1,7 +1,7 @@
 /*
  * The on-device wall-asset cache (design 2026-10-21 §6.6, §6.7), loaded into service-worker.js by importScripts.
  *
- * GET /api/walls/{w}/a/{sha} and /a/{sha}/{width} are content-addressed and immutable, so they are served
+ * GET /api/walls/{w}/a/{sha} and /a/{sha}/{width} are content-addressed (their bytes never change), so they are served
  * cache-first from `bw-a1-{partition}-img` (images) or `-3d` (everything else), keyed `/__bw/{sha}[/{width}]`: the
  * key drops the wall, `token`, `rev` and `bwretry`, because the bytes are fully named by the sha. A miss goes to the
  * network and only a plain 200 whose ETag names the sha is stored (a proxy's 200 error page carries none). 404s, 206s, Range requests and anything uncacheable stay network-only.
@@ -223,8 +223,10 @@ function announce(clientId, type, route, length) {
         .catch(() => undefined);
 }
 
+// The miss skips the browser's HTTP cache (`no-store`): that cache is one per browser, not per identity, so a copy the
+// previous identity loaded would otherwise answer this one without a request, and be stored in its partition.
 function fetchAndStoreAsset(event, route, key, partition) {
-    return fetch(event.request).then(response => {
+    return fetch(event.request, { cache: 'no-store' }).then(response => {
         if (isStorableAsset(response, route)) {
             event.waitUntil(storeAsset(event.clientId, response.clone(), route, key, partition));
         }

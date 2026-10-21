@@ -18,6 +18,8 @@ window.bwAssetStore = (function () {
 
     const PROTO = 1;
     const SW_INFO_TIMEOUT_MS = 1500;
+    // Above the worker's own partition lookup timeout (2.5 s), so a slow server still answers in time.
+    const REFRESH_TIMEOUT_MS = 3000;
     const VERIFY_WAIT_MS = 3000;
     const MIN_ROUTING_SHELL = 4;
     const SUFFIXES = ['img', '3d'];
@@ -25,8 +27,8 @@ window.bwAssetStore = (function () {
     const cacheName = (partition, suffix) => `bw-a1-${partition}-${suffix}`;
     const cacheUrl = (win, key) => `${win.location.origin}/__bw/${key}`;
 
-    // The worker's `sw-info` reply, or null (no worker, an old one that ignores it, a timeout).
-    function askWorker(win) {
+    // The worker's reply of `replyType` to a `type` message, or null (no worker, an old one that ignores it, a timeout).
+    function askWorker(win, type = 'sw-info', replyType = 'sw-info', timeoutMs = SW_INFO_TIMEOUT_MS) {
         const sw = win.navigator.serviceWorker;
         const controller = sw && sw.controller;
         if (!controller || typeof win.MessageChannel !== 'function') {
@@ -34,14 +36,14 @@ window.bwAssetStore = (function () {
         }
         return new Promise(resolve => {
             const channel = new win.MessageChannel();
-            const timer = win.setTimeout(() => resolve(null), SW_INFO_TIMEOUT_MS);
+            const timer = win.setTimeout(() => resolve(null), timeoutMs);
             channel.port1.onmessage = event => {
                 win.clearTimeout(timer);
                 const data = event.data || {};
-                resolve(data.proto === PROTO && data.type === 'sw-info' ? data : null);
+                resolve(data.proto === PROTO && data.type === replyType ? data : null);
             };
             try {
-                controller.postMessage({ proto: PROTO, type: 'sw-info' }, [channel.port2]);
+                controller.postMessage({ proto: PROTO, type }, [channel.port2]);
             } catch (e) {
                 win.clearTimeout(timer);
                 resolve(null);
@@ -56,16 +58,14 @@ window.bwAssetStore = (function () {
         });
     }
 
-    /** Asks the worker to look its label up again (`sw-refresh-partition`); an older worker ignores it. */
+    /**
+     * Asks the worker to look its label up again (`sw-refresh-partition`). Resolves with the label it serves once the
+     * lookup answered (its `partition-refreshed` reply), or null: no worker, a timeout, or a worker from before that
+     * reply, which still refreshes but does not answer.
+     */
     function refreshWorkerPartition(win) {
-        try {
-            const controller = win.navigator.serviceWorker && win.navigator.serviceWorker.controller;
-            if (controller) {
-                controller.postMessage({ proto: PROTO, type: 'sw-refresh-partition' });
-            }
-        } catch (e) {
-            /* no worker to ask */
-        }
+        return askWorker(win, 'sw-refresh-partition', 'partition-refreshed', REFRESH_TIMEOUT_MS)
+            .then(data => (data && typeof data.partition === 'string' ? data.partition : null));
     }
 
     /** The label the worker serves right now (`sw-info`'s `partition`), or null when it does not say. */

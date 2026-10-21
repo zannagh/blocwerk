@@ -28,7 +28,7 @@ public sealed record ResolvedAsset(
     public bool HasVariants => Kind is AssetKind.Panel or AssetKind.WallPhoto or AssetKind.ResetPhoto or AssetKind.Gallery;
 
     /// <summary>
-    /// Whether the response must not be stored anywhere (<c>Cache-Control: no-store</c>, never immutable): a kiosk
+    /// Whether the response must not be stored anywhere (<c>Cache-Control: no-store</c>, no validator): a kiosk
     /// session, anonymous or act-as, asking for a kind outside the manifest's Kiosk class. The tablet's caches are
     /// shared by every identity on it, so what the anonymous tablet may not fetch must never land in them.
     /// </summary>
