@@ -117,6 +117,12 @@ internal sealed class DraftExposureScenario
         return new Wall3DViewService(Walls(viewer), users, factory, captures, NullLogger<Wall3DViewService>.Instance);
     }
 
+    public ICommentService Comments(DraftViewer viewer)
+    {
+        var (factory, users, kiosk) = Parts(viewer);
+        return new CommentService(factory, users, Harness.ActivityLog, NullLogger<CommentService>.Instance, kioskContext: kiosk);
+    }
+
     /// <summary>The wall as the viewer's wall page loads it: by share token on the share route, by id otherwise.</summary>
     public async Task<Wall?> LoadWallAsync(DraftViewer viewer) =>
         UsesShareLink(viewer)

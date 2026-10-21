@@ -15,10 +15,17 @@ public interface ICommentService
     /// be replayed from an offline queue: a second call with the same id returns the
     /// comment already stored instead of posting it twice.
     /// </summary>
+    /// <remarks>Only a member of the boulder's wall may comment (a kiosk acting as a member included).</remarks>
     Task<BoulderComment> AddCommentAsync(Guid boulderId, string text, Guid? clientRequestId = null);
 
-    Task<(List<BoulderComment> Items, int TotalCount)> GetCommentsAsync(Guid boulderId, int page = 0, int pageSize = 10);
+    /// <summary>
+    /// A page of the boulder's comments, under the same visibility as the boulder itself: a member (or a kiosk
+    /// acting as one), the wall's <paramref name="shareToken"/> for a published boulder, or the anonymous kiosk on
+    /// its own wall for a published boulder. Anyone else gets an empty page, as for a boulder without comments.
+    /// </summary>
+    Task<(List<BoulderComment> Items, int TotalCount)> GetCommentsAsync(Guid boulderId, int page = 0, int pageSize = 10, string? shareToken = null);
 
+    /// <summary>Deletes one of the caller's own comments, on a wall the caller can still see.</summary>
     Task DeleteCommentAsync(Guid commentId);
 }
 
@@ -29,19 +36,22 @@ public class CommentService : ICommentService
     private readonly IActivityLogService _activityLogService;
     private readonly ILogger<CommentService> _logger;
     private readonly IPushNotificationService? _pushNotificationService;
+    private readonly IKioskContext? _kioskContext;
 
     public CommentService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
         ICurrentUserService currentUserService,
         IActivityLogService activityLogService,
         ILogger<CommentService> logger,
-        IPushNotificationService? pushNotificationService = null)
+        IPushNotificationService? pushNotificationService = null,
+        IKioskContext? kioskContext = null)
     {
         _dbContextFactory = dbContextFactory;
         _currentUserService = currentUserService;
         _activityLogService = activityLogService;
         _logger = logger;
         _pushNotificationService = pushNotificationService;
+        _kioskContext = kioskContext;
     }
 
     public async Task<BoulderComment> AddCommentAsync(Guid boulderId, string text, Guid? clientRequestId = null)
@@ -53,7 +63,12 @@ public class CommentService : ICommentService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
-            var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId);
+            // Boulder carries no query filter of its own, so the id alone used to let ANY signed-in caller comment on
+            // ANY boulder in the installation. Reaching through to db.Walls puts the write under the membership filter
+            // (and the kiosk wall gate). A non-member gets the same not-found as a missing boulder, so no oracle.
+            var boulder = await db.Boulders
+                .Where(b => db.Walls.Any(w => w.Id == b.WallId))
+                .FirstOrDefaultAsync(b => b.Id == boulderId);
             if (boulder is null)
             {
                 _logger.LogWarning("Cannot add comment: boulder {BoulderId} not found for {UserId}", boulderId, user.Id);
@@ -106,13 +121,17 @@ public class CommentService : ICommentService
         }
     }
 
-    public async Task<(List<BoulderComment> Items, int TotalCount)> GetCommentsAsync(Guid boulderId, int page = 0, int pageSize = 10)
+    public async Task<(List<BoulderComment> Items, int TotalCount)> GetCommentsAsync(
+        Guid boulderId, int page = 0, int pageSize = 10, string? shareToken = null)
     {
         using var op = BlocwerkMetrics.TimeOperation("Comment.Get");
         try
         {
             await using var db = await _dbContextFactory.CreateDbContextAsync();
-            db.CurrentUserId = Guid.Empty;
+            if (!await CanReadBoulderAsync(db, boulderId, shareToken))
+            {
+                return ([], 0);
+            }
 
             var query = db.BoulderComments
                 .AsNoTracking()
@@ -139,8 +158,13 @@ public class CommentService : ICommentService
         {
             var user = await _currentUserService.GetCurrentUserAsync();
             await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
 
-            var comment = await db.BoulderComments.FirstOrDefaultAsync(c => c.Id == commentId && c.UserId == user.Id);
+            // Own comments only, and only on a wall the caller can still see: a kiosk acting as a member stays on
+            // the tablet's wall, as every other kiosk write does.
+            var comment = await db.BoulderComments
+                .Where(c => db.Walls.Any(w => w.Id == c.Boulder.WallId))
+                .FirstOrDefaultAsync(c => c.Id == commentId && c.UserId == user.Id);
             if (comment is null)
             {
                 _logger.LogWarning("Cannot delete comment {CommentId}: not found for {UserId}", commentId, user.Id);
@@ -157,5 +181,39 @@ public class CommentService : ICommentService
             op.Fail(ex);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Whether this caller may read the boulder, with the context's filter set for that answer. Mirrors
+    /// <see cref="BoulderService.GetBoulderAsync"/> and <see cref="BoulderService.GetBoulderByShareTokenAsync"/>:
+    /// the share token opens a published boulder of its own wall; otherwise the wall filter decides, with the
+    /// anonymous kiosk (<see cref="Guid.Empty"/>) kept to published boulders; any other anonymous caller may not.
+    /// </summary>
+    private async Task<bool> CanReadBoulderAsync(BlocwerkDbContext db, Guid boulderId, string? shareToken)
+    {
+        if (!string.IsNullOrEmpty(shareToken))
+        {
+            db.CurrentUserId = Guid.Empty;
+            return await db.Boulders.AnyAsync(b => b.Id == boulderId && b.Wall.ShareToken == shareToken && !b.IsDraft);
+        }
+
+        Guid viewerId;
+        try
+        {
+            viewerId = (await _currentUserService.GetCurrentUserAsync()).Id;
+        }
+        catch (UnauthorizedAccessException) when (KioskViewing.ViewableWallId(_kioskContext) is not null)
+        {
+            viewerId = Guid.Empty;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+
+        db.CurrentUserId = viewerId;
+        return await db.Boulders.AnyAsync(b => b.Id == boulderId
+            && db.Walls.Any(w => w.Id == b.WallId)
+            && (viewerId != Guid.Empty || !b.IsDraft));
     }
 }
