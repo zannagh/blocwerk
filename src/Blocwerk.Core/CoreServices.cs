@@ -1,5 +1,6 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Assets.Backfill;
+using Blocwerk.Core.Assets.Manifest;
 using Blocwerk.Core.Assets.Resolution;
 using Blocwerk.Core.Capture;
 using Blocwerk.Core.Configuration;
@@ -162,6 +163,10 @@ public static class CoreServices
         // The hashed asset routes (/api/walls/{w}/a/{sha}): sha to row, under the wall's own gate.
         builder.Services.AddSingleton<FileHashMemo>();
         builder.Services.AddScoped<IAssetResolver, AssetResolver>();
+
+        // Their manifest (/api/walls/{w}/manifest) and the device's cache partition (/api/me/cache-partition).
+        builder.Services.AddWallManifest();
+
         builder.Services.AddScoped<IWallImageService, WallImageService>();
         builder.Services.AddScoped<IWallTemperatureService, WallTemperatureService>();
         // API-key MINTING is blocked for kiosk sessions on the service, not just in the UI: the

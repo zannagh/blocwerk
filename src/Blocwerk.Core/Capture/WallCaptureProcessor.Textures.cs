@@ -216,6 +216,9 @@ public sealed partial class WallCaptureProcessor
     private async Task ReplaceTexturesAsync(Guid modelId, List<WallGeometryTexture> rows, CancellationToken ct)
     {
         await using var db = dbContextFactory.CreateDbContext();
+
+        // Tracked, so the new rows' model navigation is fixed up and the feed writes this wall's wall.manifest.
+        await db.WallGeometryModels.FindAsync([modelId], ct);
         var old = await db.WallGeometryTextures.Where(t => t.GeometryModelId == modelId).ToListAsync(ct);
         db.WallGeometryTextures.RemoveRange(old);
         db.WallGeometryTextures.AddRange(rows);

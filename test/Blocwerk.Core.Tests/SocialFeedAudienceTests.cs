@@ -143,8 +143,9 @@ public sealed class SocialFeedAudienceTests : IAsyncLifetime
         }
     }
 
+    // The sentinel gallery upload also writes its wall's wall.manifest (PR 2.4), just ahead of its own row: not a social row.
     private static List<string> Before(RecordingFeedSubscriber viewer, Guid sentinel) =>
-        viewer.Events.TakeWhile(e => e.EntityId != sentinel).Select(e => e.Kind).ToList();
+        viewer.Events.TakeWhile(e => e.EntityId != sentinel).Select(e => e.Kind).Where(k => k != FeedKinds.WallManifest).ToList();
 
     private async Task<RecordingFeedSubscriber> SubscribeAsync(FeedViewer viewer)
     {

@@ -45,7 +45,7 @@ public static class WallFeedEviction
             FeedKinds.WallResync or FeedKinds.SegmentChanged or FeedKinds.PanelChanged or FeedKinds.LinkChanged
                 or FeedKinds.VolumeChanged or FeedKinds.AccessRevoked => WallFeedEvicted.Whole(store.EvictWall(wallId)),
             FeedKinds.WallUpdated => Aggregate(store, wallId, cursor, store.EvictBoulders(wallId, cursor, _ => true)),
-            FeedKinds.WallManifest or FeedKinds.MemberChanged => Aggregate(store, wallId, cursor, []),
+            FeedKinds.MemberChanged => Aggregate(store, wallId, cursor, []),
             FeedKinds.HoldChanged or FeedKinds.HoldDeleted => Hold(store, wallId, cursor, e),
             FeedKinds.BoulderChanged or FeedKinds.BoulderDeleted => Boulder(store, wallId, cursor, e.EntityId),
             FeedKinds.UserProfile => Aggregate(store, wallId, cursor, store.EvictBoulders(

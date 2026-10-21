@@ -2,8 +2,10 @@
 // See License in the project root for license information.
 
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Assets.Manifest;
 using Blocwerk.Core.Capture;
 using Blocwerk.Core.Data;
+using Blocwerk.Core.Feed;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -22,31 +24,31 @@ namespace Blocwerk.Core.Assets.Backfill;
 /// so it is idempotent and resumes by itself: a restart (or a deploy cutting a pass off, which rolls back at most one
 /// batch) simply starts over on what is still null. Not a deploy-busy hold for the same reason. Off the startup path,
 /// throttled by <see cref="BackfillPacer"/>, and logged per column.
+/// <para>
+/// Since nothing reaches the feed, a pass that hashed anything announces the walls that listed unhashed rows before it
+/// (<see cref="ManifestBackfillAnnouncer"/>, the lazy-sha half of the manifest). Without a feed (tests) it announces
+/// nothing.
+/// </para>
 /// </remarks>
 public sealed class ContentHashBackfill(
     RootDbContextFactory dbContextFactory,
     IWallImageStorage images,
     ICaptureFileStore captures,
     ContentHashBackfillOptions options,
-    ILogger<ContentHashBackfill> logger) : BackgroundService
+    ILogger<ContentHashBackfill> logger,
+    IWallFeed? feed = null) : BackgroundService
 {
     /// <summary>One pass over every column: returns what it did in total.</summary>
     public async Task<BackfillCount> RunPassAsync(CancellationToken ct)
     {
-        var blobs = new BlobHashBackfill(dbContextFactory.CreateDbContext, options, logger);
-        var files = new FileHashBackfill(dbContextFactory.CreateDbContext, images, captures, options, logger);
-        var total = BackfillCount.None;
-        foreach (var column in ContentHashColumn.InDatabase)
+        var announcer = feed is null ? null : new ManifestBackfillAnnouncer(dbContextFactory.CreateDbContext, feed, logger);
+        var pending = announcer is null ? [] : await announcer.PendingAsync(ct);
+        var total = await HashAllAsync(ct);
+        if (announcer is not null && total.Stamped > 0 && pending.Count > 0)
         {
-            total += await blobs.RunAsync(column, ct);
+            await announcer.AnnounceAsync(pending, ct);
         }
 
-        foreach (var column in ContentHashFileColumn.Stored)
-        {
-            total += await files.RunAsync(column, ct);
-        }
-
-        total += await new LadderHashBackfill(dbContextFactory.CreateDbContext, captures, options, logger).RunAsync(ct);
         return total;
     }
 
@@ -98,5 +100,24 @@ public sealed class ContentHashBackfill(
             // Never take the app down: unhashed rows keep their legacy URLs, and the next start tries again.
             logger.LogWarning(ex, "Content-hash backfill failed; the next start tries again");
         }
+    }
+
+    private async Task<BackfillCount> HashAllAsync(CancellationToken ct)
+    {
+        var blobs = new BlobHashBackfill(dbContextFactory.CreateDbContext, options, logger);
+        var files = new FileHashBackfill(dbContextFactory.CreateDbContext, images, captures, options, logger);
+        var total = BackfillCount.None;
+        foreach (var column in ContentHashColumn.InDatabase)
+        {
+            total += await blobs.RunAsync(column, ct);
+        }
+
+        foreach (var column in ContentHashFileColumn.Stored)
+        {
+            total += await files.RunAsync(column, ct);
+        }
+
+        total += await new LadderHashBackfill(dbContextFactory.CreateDbContext, captures, options, logger).RunAsync(ct);
+        return total;
     }
 }

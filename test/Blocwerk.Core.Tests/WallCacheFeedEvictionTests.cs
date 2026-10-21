@@ -85,8 +85,7 @@ public sealed class WallCacheFeedEvictionTests : IAsyncLifetime
 
     [Theory]
     [InlineData(FeedKinds.MemberChanged)]
-    [InlineData(FeedKinds.WallManifest)]
-    public async Task MemberAndManifest_EvictTheAggregateOnly(string kind)
+    public async Task AMemberChange_EvictsTheAggregateOnly(string kind)
     {
         await f.DeliverAsync(f.Row(kind, audience: FeedAudience.Members));
 
@@ -112,6 +111,7 @@ public sealed class WallCacheFeedEvictionTests : IAsyncLifetime
     [InlineData(FeedKinds.GalleryChanged)]
     [InlineData(FeedKinds.View3DChanged)]
     [InlineData(FeedKinds.ActivityAdded)]
+    [InlineData(FeedKinds.WallManifest)] // the aggregate holds no manifest data; only the server's manifest cache reads it
     [InlineData("some.future.kind")]
     public async Task KindsInNoCache_EvictNothing_AndRaiseNoChange(string kind)
     {

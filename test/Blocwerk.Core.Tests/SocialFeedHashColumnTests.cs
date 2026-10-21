@@ -44,8 +44,9 @@ public sealed class SocialFeedHashColumnTests : IDisposable
         Assert.Equal([FeedKinds.VideoStatus], (await fixture.RowsAsync()).Select(r => r.Kind));
     }
 
+    /// <summary>The hash is what the manifest lists, so a hash alone is a <c>wall.manifest</c> (PR 2.4), and only that.</summary>
     [Fact]
-    public async Task AGalleryImagesHashAlone_MapsToNothing_ButItsCaptionDoes()
+    public async Task AGalleryImagesHashAlone_MapsOnlyToTheManifest_ButItsCaptionToTheGallery()
     {
         await fixture.SeedAsync();
         var image = new WallImage { WallId = fixture.WallId, StoragePath = "a.jpg", ContentType = "image/jpeg" };
@@ -53,7 +54,8 @@ public sealed class SocialFeedHashColumnTests : IDisposable
         await fixture.ClearRowsAsync();
 
         await fixture.ChangeAsync<WallImage>(i => i.Id == image.Id, (i, _) => i.Sha256 = new byte[32]);
-        Assert.Empty(await fixture.RowsAsync());
+        Assert.Equal([FeedKinds.WallManifest], (await fixture.RowsAsync()).Select(r => r.Kind));
+        await fixture.ClearRowsAsync();
 
         await fixture.ChangeAsync<WallImage>(i => i.Id == image.Id, (i, _) => i.Caption = "Roof");
         Assert.Equal([FeedKinds.GalleryChanged], (await fixture.RowsAsync()).Select(r => r.Kind));
