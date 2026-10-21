@@ -31,6 +31,13 @@ window.bwImageRes = (function () {
     // The full ladder the cap indexes against: every WIDTHS rung, then ORIGINAL as the top.
     const LADDER = WIDTHS.concat([ORIGINAL]);
 
+    // How long an upgrade may take before it counts as stalled and a later measurement may ask again. Generous:
+    // the original is 3-4 MB, which a slow phone connection needs a good while for.
+    const UPGRADE_STALL_MS = 45000;
+
+    // The query parameter image-watchdog.js adds when it re-requests a stalled image; never part of the base.
+    const RETRY_PARAM = 'bwretry';
+
     // --- Zoom-aware caps (the tunable knobs) -----------------------------------------------------
     // A big/retina display at *fit* has `cssWidth * DPR` already past the top of the ladder, so the
     // raw "ideal" rung would fetch the 2.6-4.2 MB original while the wall is fully zoomed out and no
@@ -114,18 +121,36 @@ window.bwImageRes = (function () {
      * the older callback sees it is no longer pending and drops its result instead of downgrading.
      */
     function upgrade(img, level) {
-        const url = urlAt(img._bwBase, level);
+        const base = img._bwBase;
+        const url = urlAt(base, level);
         img._bwPending = url;
 
         const next = new Image();
         next.decoding = 'async';
 
+        // A download that stalls (a phone's stream that stops mid-image never errors) must not hold
+        // _bwPending for good: that would refuse every later upgrade of this element.
+        const stall = setTimeout(function () {
+            if (img._bwPending === url) {
+                img._bwPending = null;
+                next.src = '';
+            }
+        }, UPGRADE_STALL_MS);
+
         const swap = function () {
+            clearTimeout(stall);
             if (img._bwPending !== url || !next.naturalWidth) {
                 return;
             }
 
             img._bwPending = null;
+
+            // The element moved on while this loaded (the panel viewer swapped in another panel's photo):
+            // writing this url now would put the old panel's photo under the new panel's holds.
+            if (img._bwBase !== base || stripWidth(img.getAttribute('src') || '') !== base) {
+                return;
+            }
+
             img._bwLevel = level;
             img.src = url;
         };
@@ -139,6 +164,7 @@ window.bwImageRes = (function () {
             }
         };
         next.onerror = function () {
+            clearTimeout(stall);
             if (img._bwPending === url) {
                 img._bwPending = null;
             }
@@ -171,6 +197,7 @@ window.bwImageRes = (function () {
             img._bwBase = stripWidth(src);
             img._bwBaseFor = img._bwBase;
             img._bwLevel = currentLevel(img);
+            img._bwPending = null;
         }
 
         const displayed = img.clientWidth;
@@ -189,8 +216,19 @@ window.bwImageRes = (function () {
         upgrade(img, wanted);
     }
 
+    /** The url without its width and without the retry marker image-watchdog.js adds to a stalled load. */
     function stripWidth(url) {
-        return urlAt(url, ORIGINAL);
+        return withoutRetry(urlAt(url, ORIGINAL));
+    }
+
+    function withoutRetry(url) {
+        try {
+            const parsed = new URL(url, document.baseURI);
+            parsed.searchParams.delete(RETRY_PARAM);
+            return parsed.pathname + parsed.search;
+        } catch (_) {
+            return url;
+        }
     }
 
     /**

@@ -11,13 +11,13 @@
     {
         @* A link pair's holds sit on two panels: one picture per panel, so both sides can be judged. *@
         <div class="enhance-item-crops">
-            <img class="enhance-item-crop" src="@WallEnhancementCropEndpoint.Url(WallId, Item.Id)" alt="The hold on one panel, outlined in yellow" loading="lazy" width="180" height="180" />
-            <img class="enhance-item-crop" src="@WallEnhancementCropEndpoint.Url(WallId, Item.Id, otherSide: true)" alt="The hold it may be on the other panel, outlined in yellow" loading="lazy" width="180" height="180" />
+            <img class="enhance-item-crop" data-bw-watch src="@WallEnhancementCropEndpoint.Url(WallId, Item.Id)" alt="The hold on one panel, outlined in yellow" loading="lazy" width="180" height="180" />
+            <img class="enhance-item-crop" data-bw-watch src="@WallEnhancementCropEndpoint.Url(WallId, Item.Id, otherSide: true)" alt="The hold it may be on the other panel, outlined in yellow" loading="lazy" width="180" height="180" />
         </div>
     }
     else
     {
-        <img class="enhance-item-crop" src="@WallEnhancementCropEndpoint.Url(WallId, Item.Id)" alt="@Alt" loading="lazy" width="180" height="180" />
+        <img class="enhance-item-crop" data-bw-watch src="@WallEnhancementCropEndpoint.Url(WallId, Item.Id)" alt="@Alt" loading="lazy" width="180" height="180" />
     }
     <div class="enhance-item-body">
         <p class="enhance-item-title">@Headline</p>
