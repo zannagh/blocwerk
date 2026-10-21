@@ -12,12 +12,24 @@ namespace Blocwerk.Core.Enhancement;
 
 /// <summary>
 /// The review pictures: the hold on its panel photo in yellow, with the other hold of a pair — or, for a shape, the
-/// hold as it was before the enhancement — dashed in magenta (<see cref="HoldPairCrop"/>).
+/// hold as it was before the enhancement — dashed in magenta (<see cref="HoldPairCrop"/>). A pair whose holds sit on
+/// two panels (every link suggestion) gets a second picture, of the other hold on its own photo.
 /// </summary>
 public sealed partial class WallEnhancementService
 {
     /// <inheritdoc/>
-    public async Task<byte[]?> CropAsync(Guid wallId, Guid itemId, CancellationToken ct = default)
+    public Task<byte[]?> CropAsync(Guid wallId, Guid itemId, CancellationToken ct = default) =>
+        RenderAsync(wallId, itemId, otherSide: false, ct);
+
+    /// <inheritdoc/>
+    public Task<byte[]?> OtherCropAsync(Guid wallId, Guid itemId, CancellationToken ct = default) =>
+        RenderAsync(wallId, itemId, otherSide: true, ct);
+
+    /// <summary>
+    /// The picture of the item's hold (or, for <paramref name="otherSide"/>, of its other hold) on that hold's own panel
+    /// photo, with the pair's other hold dashed when it sits on the same photo.
+    /// </summary>
+    private async Task<byte[]?> RenderAsync(Guid wallId, Guid itemId, bool otherSide, CancellationToken ct)
     {
         var (db, _) = await OpenForAdminAsync(wallId, ct);
         await using (db)
@@ -33,18 +45,21 @@ public sealed partial class WallEnhancementService
 
             if (found.Item.Kind == WallEnhancementItemKind.NewHold)
             {
-                return found.Item.ReferenceId is { } proposalId ? await proposals.CropAsync(wallId, proposalId, ct) : null;
+                return !otherSide && found.Item.ReferenceId is { } proposalId ? await proposals.CropAsync(wallId, proposalId, ct) : null;
             }
 
-            var focus = found.Item.HoldId is { } holdId ? await db.Holds.AsNoTracking().FirstOrDefaultAsync(h => h.Id == holdId && h.WallId == wallId, ct) : null;
-            if (focus?.WallPanelId is not { } panelId)
+            var shownId = otherSide ? found.Item.OtherHoldId : found.Item.HoldId;
+            var shown = shownId is { } holdId
+                ? await db.Holds.AsNoTracking().FirstOrDefaultAsync(h => h.Id == holdId && h.WallId == wallId, ct) ?? await DeletedHoldAsync(found.Run, found.Item, holdId, ct)
+                : null;
+            if (shown?.WallPanelId is not { } panelId)
             {
                 return null;
             }
 
-            var other = await OtherAsync(db, found.Run, found.Item, focus, ct);
+            var dashed = otherSide ? await PartnerAsync(db, wallId, found.Item.HoldId, shown, ct) : await OtherAsync(db, found.Run, found.Item, shown, ct);
             var photo = await db.WallPanels.AsNoTracking().Where(p => p.Id == panelId && p.WallId == wallId).Select(p => p.Photo).FirstOrDefaultAsync(ct);
-            return photo is null ? null : await Task.Run(() => HoldPairCrop.Render(photo, focus, other), ct);
+            return photo is null ? null : await Task.Run(() => HoldPairCrop.Render(photo, shown, dashed), ct);
         }
     }
 
@@ -56,13 +71,19 @@ public sealed partial class WallEnhancementService
             return await BeforeAsync(run, focus, ct) ?? focus;
         }
 
-        if (item.OtherHoldId is not { } otherId)
+        return await PartnerAsync(db, run.WallId, item.OtherHoldId, focus, ct);
+    }
+
+    /// <summary>The pair's other hold when it sits on the same photo as <paramref name="shown"/>; otherwise the hold itself.</summary>
+    private static async Task<Hold> PartnerAsync(BlocwerkDbContext db, Guid wallId, Guid? partnerId, Hold shown, CancellationToken ct)
+    {
+        if (partnerId is not { } id)
         {
-            return focus;
+            return shown;
         }
 
-        var other = await db.Holds.AsNoTracking().FirstOrDefaultAsync(h => h.Id == otherId, ct);
-        return other is not null && other.WallPanelId == focus.WallPanelId ? other : focus;
+        var partner = await db.Holds.AsNoTracking().FirstOrDefaultAsync(h => h.Id == id && h.WallId == wallId, ct);
+        return partner is not null && partner.WallPanelId == shown.WallPanelId ? partner : shown;
     }
 
     /// <summary>

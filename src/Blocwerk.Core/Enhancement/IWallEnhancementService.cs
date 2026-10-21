@@ -96,4 +96,14 @@ public interface IWallEnhancementService
     /// <param name="ct">Cancellation.</param>
     /// <returns>The picture.</returns>
     Task<byte[]?> CropAsync(Guid wallId, Guid itemId, CancellationToken ct = default);
+
+    /// <summary>
+    /// The review picture of an item's other hold (JPEG) on that hold's own panel photo, or null when the item has no
+    /// other hold. A link pair's two holds sit on two panels, so one picture can never show both.
+    /// </summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="itemId">The item.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>The picture.</returns>
+    Task<byte[]?> OtherCropAsync(Guid wallId, Guid itemId, CancellationToken ct = default);
 }

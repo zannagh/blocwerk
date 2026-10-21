@@ -28,11 +28,11 @@
                 <p class="hint">@Reason(item.Kind) (@((int)Math.Round(item.Confidence * 100))% sure)</p>
                 <div class="dup-pair">
                     <figure class="dup-side">
-                        <img src="@CropUrl(item.Left.Id, item.Right.Id)" alt="Left hold, outlined in yellow, with the other outlined in pink" loading="lazy" />
+                        <img data-bw-watch src="@CropUrl(item.Left.Id, item.Right.Id)" alt="Left hold, outlined in yellow, with the other outlined in pink" loading="lazy" />
                         <figcaption><strong>Left</strong>, @SideKind(item.Left)@(string.IsNullOrWhiteSpace(item.Left.Name) ? "" : " - " + item.Left.Name)<br />@BoulderText(item.Left)</figcaption>
                     </figure>
                     <figure class="dup-side">
-                        <img src="@CropUrl(item.Right.Id, item.Left.Id)" alt="Right hold, outlined in yellow, with the other outlined in pink" loading="lazy" />
+                        <img data-bw-watch src="@CropUrl(item.Right.Id, item.Left.Id)" alt="Right hold, outlined in yellow, with the other outlined in pink" loading="lazy" />
                         <figcaption><strong>Right</strong>, @SideKind(item.Right)@(string.IsNullOrWhiteSpace(item.Right.Name) ? "" : " - " + item.Right.Name)<br />@BoulderText(item.Right)</figcaption>
                     </figure>
                 </div>

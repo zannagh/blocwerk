@@ -5,6 +5,8 @@
 }
 .enhance-item.is-answered { opacity: 0.72; }
 .enhance-item-crop { flex: none; width: 38%; max-width: 180px; height: auto; aspect-ratio: 1 / 1; object-fit: cover; border-radius: 6px; background: #000; }
+.enhance-item-crops { flex: none; width: 52%; max-width: 368px; display: flex; gap: 4px; }
+.enhance-item-crops .enhance-item-crop { flex: 1 1 0; width: auto; min-width: 0; max-width: 180px; }
 .enhance-item-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .enhance-item-body p { margin: 0; overflow-wrap: anywhere; }
 .enhance-item-title { font-weight: 600; }

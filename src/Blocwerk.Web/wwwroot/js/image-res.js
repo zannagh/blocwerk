@@ -31,6 +31,13 @@ window.bwImageRes = (function () {
     // The full ladder the cap indexes against: every WIDTHS rung, then ORIGINAL as the top.
     const LADDER = WIDTHS.concat([ORIGINAL]);
 
+    // How long an upgrade holds the gate before a later measurement may ask for another rung (the 3-4 MB original
+    // needs a good while on a slow phone; its download goes on).
+    const UPGRADE_STALL_MS = 45000;
+
+    // The query parameter image-watchdog.js adds when it re-requests a stalled image; never part of the base.
+    const RETRY_PATTERN = /([?&])bwretry=[^&#]*&?/;
+
     // --- Zoom-aware caps (the tunable knobs) -----------------------------------------------------
     // A big/retina display at *fit* has `cssWidth * DPR` already past the top of the ladder, so the
     // raw "ideal" rung would fetch the 2.6-4.2 MB original while the wall is fully zoomed out and no
@@ -109,25 +116,66 @@ window.bwImageRes = (function () {
     }
 
     /**
-     * Loads and decodes the replacement off-screen, then swaps it in. The pending URL is recorded
-     * on the element so a second, higher upgrade started while this one is in flight simply wins:
-     * the older callback sees it is no longer pending and drops its result instead of downgrading.
+     * Loads and decodes the replacement off-screen, then swaps it in; the pending URL gates further upgrades. A late
+     * load (a slower rung after a sharper one, or after a panel swap) is dropped, never a downgrade. A slow download is
+     * neither cancelled nor started twice (after UPGRADE_STALL_MS only the gate opens), so a slow phone keeps its bytes.
      */
     function upgrade(img, level) {
-        const url = urlAt(img._bwBase, level);
+        const base = img._bwBase;
+        const url = urlAt(base, level);
         img._bwPending = url;
+        armStall(img, url);
+
+        const loading = img._bwLoading || (img._bwLoading = {});
+        if (loading[url]) {
+            return;
+        }
 
         const next = new Image();
         next.decoding = 'async';
+        loading[url] = next;
+
+        // Asked again after a hang: a fresh url, so the browser does not wait on the dead request.
+        const hung = img._bwHung || (img._bwHung = {});
+        const fetchUrl = hung[url] ? url + (url.indexOf('?') >= 0 ? '&' : '?') + 'bwretry=' + hung[url] : url;
+
+        // A truly hung download fires neither load nor error: past twice the stall time it is let go, to be asked again.
+        const hang = setTimeout(function () {
+            if (loading[url] === next) {
+                delete loading[url];
+                hung[url] = (hung[url] || 0) + 1;
+                next.removeAttribute('src');
+            }
+        }, 2 * UPGRADE_STALL_MS);
+
+        const done = function () {
+            clearTimeout(hang);
+            delete loading[url];
+            if (img._bwPending === url) {
+                clearTimeout(img._bwStall);
+                img._bwPending = null;
+            }
+        };
 
         const swap = function () {
-            if (img._bwPending !== url || !next.naturalWidth) {
+            done();
+            if (!next.naturalWidth) {
                 return;
             }
 
-            img._bwPending = null;
+            // The element moved on while this loaded (the panel viewer swapped in another panel's photo):
+            // writing this url now would put the old panel's photo under the new panel's holds.
+            if (img._bwBase !== base || stripWidth(img.getAttribute('src') || '') !== base) {
+                return;
+            }
+
+            // A sharper rung landed first: keep it.
+            if ((img._bwLevel || currentLevel(img)) >= level) {
+                return;
+            }
+
             img._bwLevel = level;
-            img.src = url;
+            img.src = fetchUrl;
         };
 
         // decode() resolves only once the bitmap is ready to paint, which is the whole point — the
@@ -138,12 +186,8 @@ window.bwImageRes = (function () {
                 swap();
             }
         };
-        next.onerror = function () {
-            if (img._bwPending === url) {
-                img._bwPending = null;
-            }
-        };
-        next.src = url;
+        next.onerror = done;
+        next.src = fetchUrl;
 
         if (next.decode) {
             next.decode().then(swap, function () {
@@ -152,6 +196,16 @@ window.bwImageRes = (function () {
                 }
             });
         }
+    }
+
+    /** Opens the upgrade gate if `url` is still outstanding after UPGRADE_STALL_MS; the download itself goes on. */
+    function armStall(img, url) {
+        clearTimeout(img._bwStall);
+        img._bwStall = setTimeout(function () {
+            if (img._bwPending === url) {
+                img._bwPending = null;
+            }
+        }, UPGRADE_STALL_MS);
     }
 
     /** Measures one opted-in image and upgrades it if the viewport now needs more pixels. */
@@ -171,6 +225,7 @@ window.bwImageRes = (function () {
             img._bwBase = stripWidth(src);
             img._bwBaseFor = img._bwBase;
             img._bwLevel = currentLevel(img);
+            img._bwPending = null;
         }
 
         const displayed = img.clientWidth;
@@ -189,8 +244,9 @@ window.bwImageRes = (function () {
         upgrade(img, wanted);
     }
 
+    /** The url without its width and without image-watchdog.js's retry marker (only that parameter is touched). */
     function stripWidth(url) {
-        return urlAt(url, ORIGINAL);
+        return urlAt(url, ORIGINAL).replace(RETRY_PATTERN, '$1').replace(/[?&]$/, '');
     }
 
     /**
