@@ -28,10 +28,11 @@ public class EditDeployGatePresenceTests
         var registry = new EditActivityRegistry();
         var activity = new CircuitEditActivity(registry);
         activity.BeginWallEdit(Wall, userId: null, Now);
-        activity.RecordActivity(Now + TimeSpan.FromSeconds(7));
+        var input = Now + TimeSpan.FromSeconds(7);
+        activity.RecordActivity(input);
 
-        var clock = Now + TimeSpan.FromSeconds(7);
-        for (var tick = 0; tick < 50; tick++)
+        var clock = input;
+        for (var tick = 0; tick < 58; tick++)
         {
             clock += EditActivityPolicy.HeartbeatInterval;
             activity.Touch(clock);
@@ -42,13 +43,15 @@ public class EditDeployGatePresenceTests
             }
         }
 
+        // 29 minutes of reconnect traffic did not move presence at all...
         var entry = Assert.Single(registry.Snapshot(clock));
-        Assert.Equal(Now + TimeSpan.FromSeconds(7), entry.LastActivityUtc);
-        Assert.False(EditDeployGatePolicy.HoldsGate(entry, clock, Defaults));
-        Assert.Equal("presence", EditDeployGatePolicy.Remaining(entry, clock, Defaults).Clock);
+        Assert.Equal(input, entry.LastActivityUtc);
+        Assert.Equal(TimeSpan.FromMinutes(1), EditDeployGatePolicy.Remaining(entry, clock, Defaults).Remaining);
 
-        // The lease itself survives, so background hold writers still stay off the wall until it expires.
-        Assert.True(registry.IsBusy(clock));
+        // ...so the gate lets go on the presence clock, and a shorter configured window lets go sooner.
+        Assert.False(EditDeployGatePolicy.HoldsGate(entry, input + Defaults.PresenceWindow, Defaults));
+        Assert.False(EditDeployGatePolicy.HoldsGate(entry, clock, new EditPresenceOptions { PresenceWindow = TimeSpan.FromMinutes(10) }));
+        Assert.Equal("presence", EditDeployGatePolicy.Remaining(entry, input + Defaults.PresenceWindow, Defaults).Clock);
     }
 
     /// <summary>Somebody at the editor keeps it, and loses it exactly one presence window after their last input.</summary>
@@ -61,9 +64,11 @@ public class EditDeployGatePresenceTests
         var input = Now + TimeSpan.FromMinutes(4);
         activity.RecordActivity(input);
 
-        var entry = Assert.Single(registry.Snapshot(input));
-        Assert.True(EditDeployGatePolicy.HoldsGate(entry, input + Defaults.PresenceWindow - TimeSpan.FromSeconds(1), Defaults));
-        Assert.False(EditDeployGatePolicy.HoldsGate(entry, input + Defaults.PresenceWindow, Defaults));
+        // The heartbeat keeps the socket side alive meanwhile; only the presence clock is under test.
+        var end = input + Defaults.PresenceWindow;
+        var entry = Assert.Single(registry.Snapshot(input)) with { LastSeenUtc = end - TimeSpan.FromSeconds(1) };
+        Assert.True(EditDeployGatePolicy.HoldsGate(entry, end - TimeSpan.FromSeconds(1), Defaults));
+        Assert.False(EditDeployGatePolicy.HoldsGate(entry, end, Defaults));
     }
 
     /// <summary>A hidden page lets go after the grace; showing it again is not input, but input clears the mark.</summary>
@@ -121,24 +126,27 @@ public class EditDeployGatePresenceTests
         Assert.Equal(Now, Assert.Single(registry.Snapshot(late)).HiddenSinceUtc);
     }
 
-    /// <summary>However busy the user is, one lease cannot hold deploys back past the cap.</summary>
+    /// <summary>However busy the user is, no lease holds the gate past the first midnight (Berlin) after it started.</summary>
     [Fact]
-    public void OneLeaseCannotHoldTheGatePastTheCap()
+    public void OneLeaseCannotHoldTheGatePastTheCutoff()
     {
         var registry = new EditActivityRegistry();
         var activity = new CircuitEditActivity(registry);
         activity.BeginWallEdit(Wall, userId: null, Now);
 
+        // 17:15 UTC on 2026-10-21 is 19:15 CEST, so the cutoff is 22:00 UTC.
+        var cutoff = new DateTimeOffset(2026, 10, 21, 22, 0, 0, TimeSpan.Zero);
         var clock = Now;
-        while (clock < Now + Defaults.MaxHold)
+        while (clock < cutoff)
         {
             clock += TimeSpan.FromMinutes(2);
             activity.RecordActivity(clock);
         }
 
         var entry = Assert.Single(registry.Snapshot(clock));
-        Assert.False(EditDeployGatePolicy.HoldsGate(entry, clock, Defaults));
-        Assert.Equal("cap", EditDeployGatePolicy.Remaining(entry, clock, Defaults).Clock);
+        Assert.True(EditDeployGatePolicy.HoldsGate(entry, cutoff - TimeSpan.FromSeconds(1), Defaults));
+        Assert.False(EditDeployGatePolicy.HoldsGate(entry, cutoff, Defaults));
+        Assert.Equal("cutoff", EditDeployGatePolicy.Remaining(entry, cutoff, Defaults).Clock);
     }
 
     /// <summary>The window is configuration, not a constant.</summary>
@@ -148,6 +156,7 @@ public class EditDeployGatePresenceTests
         var shortWindow = new EditPresenceOptions { PresenceWindow = TimeSpan.FromMinutes(1) };
         var entry = new EditActivityEntry(EditKind.WallEdit, Wall, null, Now, Now, Now);
 
+        Assert.Equal(TimeSpan.FromMinutes(30), Defaults.PresenceWindow);
         Assert.True(EditDeployGatePolicy.HoldsGate(entry, Now + TimeSpan.FromMinutes(5), Defaults));
         Assert.False(EditDeployGatePolicy.HoldsGate(entry, Now + TimeSpan.FromMinutes(5), shortWindow));
     }
@@ -165,9 +174,12 @@ public class EditDeployGatePresenceTests
     public async Task TheHealthCheckOnlyReportsBusyForAPresentUser()
     {
         var registry = new EditActivityRegistry();
-        var check = new BusyHealthCheck(registry, Options.Create(new EditPresenceOptions()));
+        var started = DateTimeOffset.UtcNow - TimeSpan.FromMinutes(20);
+        var options = WithCutoffFarFrom(started);
+        options.PresenceWindow = TimeSpan.FromMinutes(10);
+        var check = new BusyHealthCheck(registry, Options.Create(options));
         var activity = new CircuitEditActivity(registry);
-        activity.BeginWallEdit(Wall, userId: null, DateTimeOffset.UtcNow - TimeSpan.FromMinutes(20));
+        activity.BeginWallEdit(Wall, userId: null, started);
         activity.Touch(DateTimeOffset.UtcNow);
 
         var absent = await check.CheckHealthAsync(new HealthCheckContext(), CancellationToken.None);
@@ -178,6 +190,16 @@ public class EditDeployGatePresenceTests
         var present = await check.CheckHealthAsync(new HealthCheckContext(), CancellationToken.None);
         Assert.Equal(HealthStatus.Degraded, present.Status);
         Assert.Equal(1, (int)present.Data["count"]);
-        Assert.Equal((int)Defaults.PresenceWindow.TotalSeconds, (int)present.Data["presenceWindowSeconds"]);
+        Assert.Equal((int)options.PresenceWindow.TotalSeconds, (int)present.Data["presenceWindowSeconds"]);
     }
+
+    /// <summary>
+    /// Options whose cutoff lies about a day after <paramref name="started"/>, for tests that run on the real clock:
+    /// with the Berlin-midnight default they would fail when run just after midnight.
+    /// </summary>
+    internal static EditPresenceOptions WithCutoffFarFrom(DateTimeOffset started) => new()
+    {
+        CutoffTimeZone = "UTC",
+        CutoffTimeOfDay = TimeSpan.FromMinutes(Math.Floor((started.UtcDateTime.TimeOfDay - TimeSpan.FromMinutes(1)).TotalMinutes + 1440) % 1440),
+    };
 }

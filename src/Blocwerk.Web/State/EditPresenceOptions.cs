@@ -18,16 +18,30 @@ public sealed class EditPresenceOptions
     public const string SectionName = "EditPresence";
 
     /// <summary>
-    /// How recent the last real user input must be for an editor to hold the gate. Ten minutes covers somebody
-    /// thinking over a wall without touching it; a sleeping laptop or an abandoned tab produces no input at all.
+    /// How recent the last real user input must be for an editor to hold the gate. Thirty minutes, because a setter
+    /// drafting a boulder on the kiosk tablet walks off to try the moves on the wall between two taps; a sleeping
+    /// laptop or an abandoned tab produces no input at all.
     /// </summary>
-    public TimeSpan PresenceWindow { get; set; } = TimeSpan.FromMinutes(10);
+    public TimeSpan PresenceWindow { get; set; } = TimeSpan.FromMinutes(30);
 
     /// <summary>How long a hidden, frozen or unloaded editor page still holds the gate (a quick app switch).</summary>
     public TimeSpan HiddenGrace { get; set; } = TimeSpan.FromMinutes(2);
 
     /// <summary>
-    /// The longest one editing lease may hold the gate, measured from when it started, however busy its user is.
+    /// The IANA (or Windows) id of the time zone <see cref="CutoffTimeOfDay"/> is read in. An unknown id falls back
+    /// to UTC, so a typo can shift the cutoff but never remove it.
     /// </summary>
-    public TimeSpan MaxHold { get; set; } = TimeSpan.FromHours(3);
+    public string CutoffTimeZone { get; set; } = "Europe/Berlin";
+
+    /// <summary>
+    /// The local time of day after which no editing lease holds the gate any more: a lease lets go at the first
+    /// occurrence of this time after it started (see <see cref="EditDeployCutoff"/>). Midnight by default, so a
+    /// pending deploy waits at most until the coming midnight.
+    /// </summary>
+    public TimeSpan CutoffTimeOfDay { get; set; } = TimeSpan.Zero;
+
+    /// <summary>
+    /// How long <c>POST /api/v1/maintenance/flush-edits</c> waits for the open editors to save before it answers.
+    /// </summary>
+    public TimeSpan FlushTimeout { get; set; } = TimeSpan.FromSeconds(30);
 }

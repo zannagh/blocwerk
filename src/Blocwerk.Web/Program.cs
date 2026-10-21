@@ -24,6 +24,7 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Options;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
@@ -360,9 +361,11 @@ public static class Program
             },
         });
 
-        // Seconds until long background work (a wall enhancement's hold search) expects to finish; 0 when none. Plain
-        // text next to ready-to-deploy, whose "idle"/"busy" body stays exactly as the deployed autodeploy hook reads it.
-        app.MapGet("/health/busy-eta", (DeployBusyEtaBoard board) => Results.Text(board.SecondsLeft().ToString(System.Globalization.CultureInfo.InvariantCulture)))
+        // Seconds until whatever holds the gate expects to let go (background work's ETA, or the cutoff of a present
+        // editor); 0 when none. Plain text next to ready-to-deploy, whose "idle"/"busy" body stays exactly as the
+        // deployed autodeploy hook reads it. See BusyEta.
+        app.MapGet("/health/busy-eta", (DeployBusyEtaBoard board, EditActivityRegistry registry, IOptions<EditPresenceOptions> presence) =>
+                Results.Text(BusyEta.SecondsLeft(board, registry, presence).ToString(System.Globalization.CultureInfo.InvariantCulture)))
             .AllowAnonymous();
 
         // Liveness beacon for the "server is updating" overlay: anonymous, no database, and it
