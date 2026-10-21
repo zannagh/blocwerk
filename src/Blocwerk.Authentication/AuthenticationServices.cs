@@ -151,10 +151,6 @@ public static class AuthenticationServices
                 // claim leaves the validator untouched on its first line, so the 8h sliding window,
                 // the claims and the cookie of an ordinary login are exactly as they were.
                 KioskSessionValidator.Configure(options);
-
-                // Every sign-in and sign-out clears the browser's HTTP cache, so private immutable assets of one
-                // identity never outlive it on a shared device.
-                SiteDataClearing.Configure(options);
             })
             .AddScheme<ApiKeyAuthenticationOptions, ApiKeyAuthenticationHandler>(
                 ApiKeyAuthenticationHandler.SchemeName,

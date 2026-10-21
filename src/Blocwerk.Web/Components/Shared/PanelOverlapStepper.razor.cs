@@ -68,9 +68,6 @@ public partial class PanelOverlapStepper
     private readonly List<ConfirmedLink> _manualLinks = [];
     private List<WallPanelInfo> _neighborPanels = [];
 
-    // The live panels' photo hashes, read with them, so their photos take the content-addressed url.
-    private Dictionary<Guid, string> _livePhotoShas = [];
-
     private ElementReference _rootRef;
     private Dictionary<Guid, PanelHold> _stagedHolds = [];
     private List<PanelHold> _stagedList = [];
@@ -281,19 +278,6 @@ public partial class PanelOverlapStepper
     /// promote. A resumed walk seeds restored links into <c>_manualLinks</c>, so scanning only the
     /// decisions let the user confirm a proposal onto a hold a restored link had already taken.
     /// </summary>
-    private bool IsNewHoldTaken(Guid newHoldId, int exceptIndex)
-    {
-        for (var i = 0; i < _decisions.Length; i++)
-        {
-            if (i != exceptIndex && _decisions[i] is { } d && d.NewHoldId == newHoldId)
-            {
-                return true;
-            }
-        }
-
-        return _manualLinks.Any(l => l.NewHoldId == newHoldId);
-    }
-
     private async Task Finish()
     {
         // A link the bin tool took away is the user's own work: never close the panel over one without

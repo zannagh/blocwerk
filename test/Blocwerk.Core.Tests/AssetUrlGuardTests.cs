@@ -54,22 +54,66 @@ public partial class AssetUrlGuardTests
 
     /// <summary>
     /// A hashed URL must never be built from an entity's own hash column: the circuit-cached Wall (WallCacheState)
-    /// carries PhotoSha256, which the privacy rewrite moves by ExecuteUpdate without evicting the circuit. Hashes reach
-    /// <c>AssetUrls</c> only from database projections (WallPanelInfo, gallery and video rows, IAssetHashReader).
+    /// carries PhotoSha256, which the privacy rewrite moves by ExecuteUpdate. Hashes reach <c>AssetUrls</c> only from
+    /// database projections (WallPanelInfo, gallery and video rows, IAssetHashReader). Flagged: an <c>AssetUrls</c> call
+    /// whose arguments name a <c>*Sha256</c> member, directly or through a variable or field that file assigns from one.
     /// </summary>
     [Fact]
     public void NoComponentHandsAnEntitysHashColumnToAssetUrls()
     {
-        var offenders = Directory.EnumerateFiles(Path.Combine(RepoRoot, "src", "Blocwerk.Web"), "*.*", SearchOption.AllDirectories)
-            .Where(f => f.EndsWith(".razor", StringComparison.Ordinal) || f.EndsWith(".cs", StringComparison.Ordinal))
-            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
-            .SelectMany(f => File.ReadLines(f).Select(l => (File: f, Line: l)))
-            .Where(x => x.Line.Contains("Sha256", StringComparison.Ordinal) && x.Line.Contains("AssetUrls.", StringComparison.Ordinal))
-            .Select(x => $"{Path.GetRelativePath(RepoRoot, x.File)}: {x.Line.Trim()}")
-            .ToList();
+        var offenders = new List<string>();
+        foreach (var file in WebSources())
+        {
+            var source = File.ReadAllText(file);
+            var tainted = TaintedName().Matches(source).Select(m => m.Groups["name"].Value).ToHashSet();
+            foreach (Match call in AssetUrlsCall().Matches(source))
+            {
+                var args = call.Groups["args"].Value;
+                if (args.Contains("Sha256", StringComparison.Ordinal) || Identifier().Matches(args).Any(m => tainted.Contains(m.Value)))
+                {
+                    offenders.Add($"{Path.GetRelativePath(RepoRoot, file)}: {call.Value}");
+                }
+            }
+        }
 
         Assert.Empty(offenders);
     }
+
+    /// <summary>The scan itself: a direct column, and one laundered through a local, are both caught.</summary>
+    [Fact]
+    public void TheHashColumnScan_CatchesADirectAndALaunderedColumn()
+    {
+        const string source = """
+            var sha = ContentHash.ToHex(wall.PhotoSha256);
+            var url = AssetUrls.WallPhoto(WallId, sha);
+            var direct = AssetUrls.Hashed(wall.Id, ContentHash.ToHex(wall.PhotoSha256));
+            var fine = AssetUrls.Panel(WallId, panel);
+            """;
+        var tainted = TaintedName().Matches(source).Select(m => m.Groups["name"].Value).ToHashSet();
+        var flagged = AssetUrlsCall().Matches(source)
+            .Where(c => c.Groups["args"].Value.Contains("Sha256", StringComparison.Ordinal)
+                || Identifier().Matches(c.Groups["args"].Value).Any(m => tainted.Contains(m.Value)))
+            .Count();
+
+        Assert.Equal(2, flagged);
+    }
+
+    private static IEnumerable<string> WebSources() =>
+        Directory.EnumerateFiles(Path.Combine(RepoRoot, "src", "Blocwerk.Web"), "*.*", SearchOption.AllDirectories)
+            .Where(f => f.EndsWith(".razor", StringComparison.Ordinal) || f.EndsWith(".cs", StringComparison.Ordinal))
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal));
+
+    /// <summary>A name assigned from an expression that reads a <c>*Sha256</c> member (a local, a field or a property).</summary>
+    [GeneratedRegex(@"(?<name>\b[A-Za-z_]\w*)\s*=\s*[^;=]*?\w*Sha256\b")]
+    private static partial Regex TaintedName();
+
+    /// <summary>An <c>AssetUrls.*(...)</c> call, with its arguments up to the balanced closing parenthesis.</summary>
+    [GeneratedRegex(@"AssetUrls\.\w+\((?<args>(?:[^()]|\((?<d>)|\)(?<-d>))*)\)")]
+    private static partial Regex AssetUrlsCall();
+
+    [GeneratedRegex(@"\b[A-Za-z_]\w*\b")]
+    private static partial Regex Identifier();
 
     private static bool IsComment(string line)
     {

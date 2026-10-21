@@ -12,17 +12,18 @@ namespace Blocwerk.Core.Assets.Resolution;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The guarantee of the <c>/a/</c> routes is that the bytes served hash to the sha in the URL. A blob is always read
-/// with <c>WHERE Id = @id AND hash = @sha</c>, so hash and bytes come from one row version; the full rehash on top of
-/// that exists only to catch a writer that changed the bytes without moving the hash (a bug, since the stamp and
-/// every bulk writer set both together).
+/// <b>The guarantee</b> is that of the query, not of this memo: a blob is always read with
+/// <c>WHERE Id = @id AND hash = @sha</c>, so the bytes served come from a row version whose hash column held the sha.
+/// Correct writers move bytes and hash together (the content-hash stamp on every save, the bulk writers in the same
+/// <c>SetProperty</c>, the backfill only where the hash is null), so that match is the real proof.
 /// </para>
 /// <para>
-/// The memo keeps that check honest without repeating it: an entry is keyed by <c>(kind, row, sha, length)</c> and
-/// holds a fingerprint of the verified bytes (SHA-256 over their first and last <see cref="EdgeBytes"/>). A later
-/// read is trusted only when its length and fingerprint both match; anything else is hashed in full again. So a
-/// rewrite that kept the hash is still caught unless it kept the length AND both edges too, which an image re-encode
-/// or a metadata strip (the header) never does. The memo holds no bytes and is bounded by <see cref="Capacity"/>.
+/// The full rehash on top of it is a backstop against a buggy writer that changed the bytes and left the hash. The memo
+/// keeps a heuristic version of that backstop instead of repeating it: an entry is keyed by
+/// <c>(kind, row, sha, length)</c> and holds a fingerprint (SHA-256 over the first and last <see cref="EdgeBytes"/>).
+/// A later read is trusted only when its length and fingerprint both match, and is hashed in full otherwise. A buggy
+/// rewrite is therefore caught unless it kept the length and both edges, which an image re-encode or a metadata strip
+/// (the header) does not. The memo holds no bytes and is bounded by <see cref="Capacity"/>.
 /// </para>
 /// </remarks>
 public sealed class VerifiedBlobMemo

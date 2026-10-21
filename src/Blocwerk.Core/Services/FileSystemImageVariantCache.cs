@@ -70,7 +70,7 @@ public sealed class FileSystemImageVariantCache : IImageVariantCache
     /// <inheritdoc/>
     public (long Length, string ContentType)? PeekHashed(ImageVariantKey key, int width)
     {
-        if (key.Sha is not { } sha || !ImageVariantNames.IsSha(sha) || !ImageVariants.IsAllowed(width))
+        if (key.Sha is not { } sha || !ImageVariantFiles.IsSha(sha) || !ImageVariants.IsAllowed(width))
         {
             return null;
         }
@@ -81,7 +81,7 @@ public sealed class FileSystemImageVariantCache : IImageVariantCache
             var file = new FileInfo(stem + extension);
             if (file.Exists)
             {
-                return (file.Length, ImageVariantNames.TypeOf(extension));
+                return (file.Length, ImageVariantFiles.TypeOf(extension));
             }
         }
 
@@ -93,7 +93,7 @@ public sealed class FileSystemImageVariantCache : IImageVariantCache
         ImageVariantKey key, int width, Func<Task<byte[]?>> loadOriginal, CancellationToken ct)
     {
         // An identity that is not a plain hash would be a path.
-        if (!ImageVariantNames.IsHash(key.Identity) || !ImageVariantNames.IsHash(key.Version))
+        if (!ImageVariantFiles.IsHash(key.Identity) || !ImageVariantFiles.IsHash(key.Version))
         {
             return null;
         }
@@ -101,7 +101,7 @@ public sealed class FileSystemImageVariantCache : IImageVariantCache
         var directory = Path.Combine(root, key.Identity);
         var stem = Path.Combine(directory, $"{key.Version}-{width}");
 
-        var cached = await TryReadAsync(stem, ct);
+        var cached = await ImageVariantFiles.TryReadAsync(stem, ct);
         if (cached is not null)
         {
             return cached;
@@ -135,7 +135,7 @@ public sealed class FileSystemImageVariantCache : IImageVariantCache
         ImageVariantKey key, int width, Func<Task<byte[]?>> loadOriginal, CancellationToken ct)
     {
         var sha = key.Sha!;
-        if (!ImageVariantNames.IsSha(sha))
+        if (!ImageVariantFiles.IsSha(sha))
         {
             return null;
         }
@@ -143,7 +143,7 @@ public sealed class FileSystemImageVariantCache : IImageVariantCache
         var directory = Path.Combine(root, ShaFolder, sha[..2]);
         var stem = Path.Combine(directory, $"{sha}-{width}");
 
-        var cached = await TryReadAsync(stem, ct) ?? await TryAdoptLegacyAsync(key, width, directory, stem, ct);
+        var cached = await ImageVariantFiles.TryReadAsync(stem, ct) ?? await TryAdoptLegacyAsync(key, width, directory, stem, ct);
         if (cached is not null)
         {
             return cached;
@@ -180,7 +180,7 @@ public sealed class FileSystemImageVariantCache : IImageVariantCache
     private async Task<ImageVariant?> TryAdoptLegacyAsync(
         ImageVariantKey key, int width, string directory, string stem, CancellationToken ct)
     {
-        if (!ImageVariantNames.IsHash(key.Identity) || !ImageVariantNames.IsHash(key.Version))
+        if (!ImageVariantFiles.IsHash(key.Identity) || !ImageVariantFiles.IsHash(key.Version))
         {
             return null;
         }
@@ -204,38 +204,7 @@ public sealed class FileSystemImageVariantCache : IImageVariantCache
                 logger.LogDebug(ex, "Could not move legacy image variant {Path}", legacy);
             }
 
-            return await TryReadAsync(stem, ct);
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Reads whichever encoding this rendition was written under. Two probes rather than one
-    /// because the format follows the SOURCE — a transparent original is kept as WebP, everything
-    /// else is JPEG — and which it was is not knowable without loading the original, which is the
-    /// very thing a cache hit exists to avoid.
-    /// </summary>
-    private static async Task<ImageVariant?> TryReadAsync(string stem, CancellationToken ct)
-    {
-        foreach (var extension in ImageRendition.Extensions)
-        {
-            var path = stem + extension;
-            try
-            {
-                if (!File.Exists(path))
-                {
-                    continue;
-                }
-
-                var bytes = await File.ReadAllBytesAsync(path, ct);
-                return new ImageVariant(bytes, ImageVariantNames.TypeOf(extension), IsOriginal: false);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                // Treated as a miss: the rendition is regenerated rather than failing the request.
-                return null;
-            }
+            return await ImageVariantFiles.TryReadAsync(stem, ct);
         }
 
         return null;
@@ -265,7 +234,7 @@ public sealed class FileSystemImageVariantCache : IImageVariantCache
             // A cache that cannot be written is a performance problem, not a correctness one: the
             // rendition was already produced and is on its way to the caller.
             logger.LogWarning(ex, "Could not cache image variant at {Path}", path);
-            TryDelete(temp);
+            ImageVariantFiles.TryDelete(temp);
         }
     }
 
@@ -278,25 +247,13 @@ public sealed class FileSystemImageVariantCache : IImageVariantCache
             {
                 if (!Path.GetFileName(stale).StartsWith(version, StringComparison.Ordinal))
                 {
-                    TryDelete(stale);
+                    ImageVariantFiles.TryDelete(stale);
                 }
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             logger.LogDebug(ex, "Could not sweep stale image variants in {Directory}", directory);
-        }
-    }
-
-    private static void TryDelete(string path)
-    {
-        try
-        {
-            File.Delete(path);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // Nothing to do; a leftover file is swept on the next write.
         }
     }
 }

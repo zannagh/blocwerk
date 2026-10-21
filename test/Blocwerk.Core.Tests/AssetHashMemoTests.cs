@@ -139,7 +139,7 @@ public class AssetHashMemoTests
     }
 
     [Fact]
-    public async Task AHeadOfAnUncachedRendition_RendersNothing_AndOfACachedOne_ReportsItsLength()
+    public async Task AHeadOfAnUncachedRendition_RendersNothing_ButChecksTheOriginal_AndOfACachedOne_ReportsItsLength()
     {
         using var f = new AssetRouteFixture();
         var s = await f.SeedAsync();
@@ -150,7 +150,7 @@ public class AssetHashMemoTests
         Assert.Null(cold.Response.ContentLength);
         Assert.Equal($"\"{s.Panel}-640\"", cold.Response.Headers.ETag.ToString());
         Assert.Null(f.Variants.PeekHashed(new(string.Empty, string.Empty, s.Panel), 640));
-        Assert.Equal(0, f.Blobs.FullHashes);
+        Assert.Equal(1, f.Blobs.FullHashes);
 
         var rendered = await f.GetAsync(f.Harness.WallId, s.Panel, width: 640);
         var warm = await f.GetAsync(f.Harness.WallId, s.Panel, width: 640, method: "HEAD");
@@ -159,5 +159,20 @@ public class AssetHashMemoTests
         Assert.Equal("image/jpeg", warm.Response.ContentType);
         Assert.Empty(AssetRouteFixture.Body(warm));
         Assert.Equal(1, f.Blobs.FullHashes);
+    }
+
+    /// <summary>A HEAD of an uncached rendition checks the original as the GET would, so it never claims a 200 the GET denies.</summary>
+    [Fact]
+    public async Task AHeadOfAnUncachedRendition_OfBytesThatNoLongerHash_IsA404LikeTheGet()
+    {
+        using var f = new AssetRouteFixture();
+        var s = await f.SeedAsync();
+        await using (var db = f.Harness.CreateContext())
+        {
+            await db.WallPanels.Where(p => p.Id == s.PanelId).ExecuteUpdateAsync(u => u.SetProperty(p => p.Photo, new byte[] { 1 }));
+        }
+
+        AssetRouteAccessTests.AssertRefused(await f.GetAsync(f.Harness.WallId, s.Panel, width: 640, method: "HEAD"));
+        AssetRouteAccessTests.AssertRefused(await f.GetAsync(f.Harness.WallId, s.Panel, width: 640));
     }
 }

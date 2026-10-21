@@ -329,35 +329,35 @@ public class KioskEndpointTests
         var (_, token) = await fixture.CreateKioskKeyAsync();
         await fixture.RegisterAsync(token);
 
-        Assert.IsType<LocalRedirectResult>(await fixture.Controller.Unregister());
+        Assert.IsType<ContentResult>(await fixture.Controller.Unregister());
         Assert.False(fixture.HasDeviceCookie());
     }
 
     /// <summary>
-    /// Every identity switch on the tablet clears the HTTP cache: the private immutable assets one identity fetched
-    /// (an acting member's other walls among them) must not be served to the next person from the browser cache.
+    /// Only unregistering clears the tablet's HTTP cache, on a 200 page (WebKit ignores the header on a redirect).
+    /// Registering, act-as and release keep it: every identity on the tablet shares the wall-pinned partition.
     /// </summary>
     [Fact]
-    public async Task Register_Release_AndUnregister_EachClearTheHttpCache()
+    public async Task OnlyUnregister_ClearsTheHttpCache_OnA200Page()
     {
         using var fixture = await KioskFixture.CreateAsync();
         var (_, token) = await fixture.CreateKioskKeyAsync();
+        var member = await fixture.AddConsentingMemberAsync("csd@test", pin: null);
 
         await fixture.RegisterAsync(token);
-        Assert.Equal("\"cache\"", TakeClearSiteData(fixture));
-
+        Assert.False(HasClearSiteData(fixture));
+        await fixture.Controller.ActAs(member.Id, null, null, null, null);
+        Assert.False(HasClearSiteData(fixture));
         await fixture.Controller.Release();
-        Assert.Equal("\"cache\"", TakeClearSiteData(fixture));
+        Assert.False(HasClearSiteData(fixture));
 
-        await fixture.Controller.Unregister();
-        Assert.Equal("\"cache\"", TakeClearSiteData(fixture));
+        var page = Assert.IsType<ContentResult>(await fixture.Controller.Unregister());
+        Assert.Equal(StatusCodes.Status200OK, page.StatusCode);
+        Assert.True(HasClearSiteData(fixture));
+        Assert.False(fixture.HasDeviceCookie());
 
-        static string TakeClearSiteData(KioskFixture fixture)
-        {
-            var value = fixture.HttpContext.Response.Headers[SiteDataClearing.HeaderName].ToString();
-            fixture.HttpContext.Response.Headers.Remove(SiteDataClearing.HeaderName);
-            return value;
-        }
+        static bool HasClearSiteData(KioskFixture fixture) =>
+            fixture.HttpContext.Response.Headers[SiteDataClearing.HeaderName].ToString() == SiteDataClearing.CacheOnly;
     }
 
     [Fact]

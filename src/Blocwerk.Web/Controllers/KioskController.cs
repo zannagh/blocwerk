@@ -301,10 +301,8 @@ public sealed class KioskController : Controller
     {
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
 
-        // The member's private immutable assets (their other walls included) must not outlive the session on the
-        // tablet. Explicit, so it does not hang on the cookie handler's events alone.
-        SiteDataClearing.Apply(Response);
-
+        // No Clear-Site-Data: the tablet's cache is the bound wall's, shared by every identity on it, and a kiosk
+        // session is pinned to that wall and gets member-only kinds as no-store (see SiteDataClearing).
         var registration = deviceCookie.Read(HttpContext);
         return LocalRedirect(registration is null ? "/" : $"/walls/{registration.WallId}");
     }
@@ -324,7 +322,10 @@ public sealed class KioskController : Controller
         }
 
         deviceCookie.Clear(HttpContext);
-        return LocalRedirect("/");
+
+        // The browser stops being the tablet: what the wall's visitors cached on it goes, on a 200 page (WebKit
+        // ignores Clear-Site-Data on a redirect).
+        return SiteDataClearing.SignedOutPage(Response, "/");
     }
 
     private IActionResult RegistrationFailure(

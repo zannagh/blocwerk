@@ -4,6 +4,9 @@
 @inject IWallService WallService
 @inject WallCacheState Cache
 @inject IAssetHashReader AssetHashes
+@inject ILogger<WallList> Logger
+@using Blocwerk.Contracts.Feed
+@using Blocwerk.Core.Feed
 @inject NavigationManager Navigation
 @implements IDisposable
 
@@ -70,37 +73,63 @@
     private string _shareToken = string.Empty;
     private string? _error;
 
-    // The card photos' hashes, read from the database: the cached walls can hold pre-backfill nulls, and a wall
-    // update moves the centre panel's hash without changing the wall list.
+    // The card photos' hashes, read from the database: the cached walls can hold pre-backfill nulls, and a wall update
+    // or a privacy rewrite moves the centre photo's hash without changing the wall list.
     private IReadOnlyDictionary<Guid, string> _photoShas = new Dictionary<Guid, string>();
+
+    // The listed walls' feed subscriptions, held so their wall.manifest / wall.updated events reach this page.
+    private readonly List<IDisposable> _watches = [];
 
     protected override async Task OnInitializedAsync()
     {
         Cache.Changed += OnCacheChanged;
-        _walls = await Cache.GetMyWallsAsync();
-        await LoadPhotoShasAsync();
+        Cache.FeedDelivered += OnFeedDelivered;
+        await ReloadWallsAsync();
     }
 
-    // Live-refresh when the set of walls changes (created/deleted/joined) on any circuit, and re-read the card
-    // photos' hashes when one of the listed walls changed (its centre panel may have been replaced).
+    // Live-refresh when the set of walls changes (created/deleted/joined) on any circuit.
     private void OnCacheChanged(DomainChange change)
     {
-        var listed = change.Scope == DomainChangeScope.Wall && _walls?.Any(w => w.Id == change.WallId) == true;
-        if (change.Scope != DomainChangeScope.WallList && !listed)
+        if (change.Scope != DomainChangeScope.WallList)
         {
             return;
         }
 
         _ = InvokeAsync(async () =>
         {
-            if (change.Scope == DomainChangeScope.WallList)
-            {
-                _walls = await Cache.GetMyWallsAsync();
-            }
+            await ReloadWallsAsync();
+            StateHasChanged();
+        });
+    }
 
+    // Only what can move a card photo's hash re-reads them: a manifest change or a wall update of a listed wall (or a
+    // resync of one). Hold edits and ticks reach the feed too, and cost nothing here.
+    private void OnFeedDelivered(FeedDelivery delivery)
+    {
+        var listed = _walls?.Any(w => w.Id == delivery.WallId) == true;
+        if (!listed || !(delivery.Resync || delivery.Events.Any(e => e.Kind is FeedKinds.WallManifest or FeedKinds.WallUpdated)))
+        {
+            return;
+        }
+
+        _ = InvokeAsync(async () =>
+        {
             await LoadPhotoShasAsync();
             StateHasChanged();
         });
+    }
+
+    private async Task ReloadWallsAsync()
+    {
+        _walls = await Cache.GetMyWallsAsync();
+        DisposeWatches();
+        foreach (var wall in _walls)
+        {
+            _watches.Add(Cache.Watch(wall.Id));
+            _ = Cache.EnsureFeedAsync(wall.Id);
+        }
+
+        await LoadPhotoShasAsync();
     }
 
     private async Task LoadPhotoShasAsync()
@@ -109,16 +138,25 @@
         {
             _photoShas = await AssetHashes.WallPhotosAsync(_walls?.Select(w => w.Id).ToList() ?? []);
         }
-        catch (Exception)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // The legacy /photo urls still work without them.
+            Logger.LogWarning(ex, "Could not read the card photo hashes of the wall list");
             _photoShas = new Dictionary<Guid, string>();
         }
+    }
+
+    private void DisposeWatches()
+    {
+        _watches.ForEach(w => w.Dispose());
+        _watches.Clear();
     }
 
     public void Dispose()
     {
         Cache.Changed -= OnCacheChanged;
+        Cache.FeedDelivered -= OnFeedDelivered;
+        DisposeWatches();
     }
 
     private async Task JoinWall()

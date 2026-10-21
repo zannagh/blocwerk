@@ -100,10 +100,7 @@ public partial class CarryoverReview
         _displayedPanel = (Session.CarriedPanels ?? []).FirstOrDefault(p => p is { Col: 0, Row: 0 });
         _oldHolds = (_displayedPanel?.OldHolds ?? []).ToList();
         _displayedOldIds = _oldHolds.Select(h => h.Id).ToHashSet();
-        _wallPhotoSha = await AssetHashes.WallPhotoAsync(WallId);
-        _oldPhotoSha = _displayedPanel?.LivePanelId is { } live
-            ? (await AssetHashes.PanelPhotosAsync(WallId)).GetValueOrDefault(live)
-            : _wallPhotoSha;
+        await LoadPhotoShasAsync();
         await ReloadNewHoldsAsync();
 
         // Carry-all default: EVERY carried old hold gets a Carried, no-twin decision. This is where the
@@ -260,5 +257,22 @@ public partial class CarryoverReview
             .ToList();
 
         await OnContinue.InvokeAsync(new CarryoverOutcome(_decisions.Values.ToList(), accepted, removed));
+    }
+
+    // A failed read keeps the legacy urls, which still work; only the content-addressed ones are lost.
+    private async Task LoadPhotoShasAsync()
+    {
+        try
+        {
+            _wallPhotoSha = await AssetHashes.WallPhotoAsync(WallId);
+            _oldPhotoSha = _displayedPanel?.LivePanelId is { } live
+                ? (await AssetHashes.PanelPhotosAsync(WallId)).GetValueOrDefault(live)
+                : _wallPhotoSha;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Logger.LogWarning(ex, "Could not read the photo hashes of wall {WallId}", WallId);
+            (_wallPhotoSha, _oldPhotoSha) = (null, null);
+        }
     }
 }

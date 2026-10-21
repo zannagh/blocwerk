@@ -244,13 +244,19 @@ public partial class AccountController : Controller
     {
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
 
-        // Explicit as well as through the cookie events: a logout must never leave the signed-out user's private
-        // immutable assets in the HTTP cache of a shared device.
-        Services.SiteDataClearing.Apply(Response);
-
         // Drop the remembered method so an explicit logout isn't immediately undone by silent re-auth.
         Response.Cookies.Delete(RememberedMethodCookie);
-        return LocalRedirect("/");
+
+        // A kiosk session ending (release, idle) keeps the tablet's cache: every identity on it shares the wall's
+        // partition, and nothing member-only is cached there (see SiteDataClearing).
+        if (_kioskContext.IsKiosk)
+        {
+            return LocalRedirect("/");
+        }
+
+        // An account leaving the device: clear the HTTP cache of its private immutable assets. On a 200 page, since
+        // WebKit ignores Clear-Site-Data on a redirect.
+        return Services.SiteDataClearing.SignedOutPage(Response, "/");
     }
 
     /// <summary>

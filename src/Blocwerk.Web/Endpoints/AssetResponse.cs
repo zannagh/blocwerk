@@ -74,7 +74,7 @@ public static class AssetResponse
         var key = new ImageVariantKey(string.Empty, string.Empty, asset.Hex);
         if (HttpMethods.IsHead(http.Request.Method))
         {
-            return HeadOfVariant(http, variants.PeekHashed(key, width));
+            return await HeadOfVariantAsync(http, resolver, asset, variants.PeekHashed(key, width), ct);
         }
 
         var variant = await variants.GetOrCreateAsync(key, width, () => resolver.LoadAsync(asset, ct), ct);
@@ -87,13 +87,22 @@ public static class AssetResponse
     }
 
     /// <summary>
-    /// A HEAD of a rendition, answered from the variant cache's file system alone: rendering a rendition (or loading
-    /// its original) to report a length would let a HEAD cost what a GET does. A rendition not cached yet answers
-    /// with its validator and policy but no type and no length, which a HEAD may leave out; a cache freshening a
-    /// stored GET from it then keeps the stored ones.
+    /// A HEAD of a rendition, never rendered: rendering one (a few hundred milliseconds of CPU) to report a length would
+    /// let a HEAD cost what a GET does. A cached rendition answers with its file's length and type. For one not cached
+    /// yet the original is loaded and checked as the GET would check it (cheap once the hash memo has it), so a HEAD
+    /// never claims a 200 the GET would answer with a 404; it then carries the validator and policy but no type and no
+    /// length, which a HEAD may leave out (a cache freshening a stored GET from it keeps the stored ones).
     /// </summary>
-    private static IResult HeadOfVariant(HttpContext http, (long Length, string ContentType)? cached) =>
-        cached is { } file ? Head(http, file.ContentType, file.Length) : Results.Empty;
+    private static async Task<IResult> HeadOfVariantAsync(
+        HttpContext http, IAssetResolver resolver, ResolvedAsset asset, (long Length, string ContentType)? cached, CancellationToken ct)
+    {
+        if (cached is { } file)
+        {
+            return Head(http, file.ContentType, file.Length);
+        }
+
+        return await resolver.LoadAsync(asset, ct) is null ? ImageResponse.NotFound(http) : Results.Empty;
+    }
 
     private static string Etag(string value) => $"\"{value}\"";
 

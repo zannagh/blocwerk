@@ -15,6 +15,9 @@ namespace Blocwerk.Web.Components.Shared;
 /// </summary>
 public partial class PanelOverlapStepper : IAsyncDisposable
 {
+    // The live panels' photo hashes, read with them, so their photos take the content-addressed url.
+    private Dictionary<Guid, string> _livePhotoShas = [];
+
     [Inject]
     private IJSRuntime JS { get; set; } = default!;
 

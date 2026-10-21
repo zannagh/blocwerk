@@ -20,13 +20,8 @@
 window.bwImageRes = (function () {
     'use strict';
 
-    // Must match ImageVariants.Widths on the server. A width that is not on this ladder is
-    // refused by the byte routes, so guessing one would only produce a broken image.
-    const WIDTHS = [640, 1280, 1920, 2560];
-
-    // ORIGINAL is the top of the ladder: past the widest rendition the stored photo is served, and
-    // there is nothing sharper to ask for.
-    const ORIGINAL = Number.MAX_SAFE_INTEGER;
+    // The width ladder, the original's marker and the url rules live in image-res-url.js.
+    const { WIDTHS, ORIGINAL, urlAt, levelOf, stripWidth } = window.bwImageResUrl;
 
     // The full ladder the cap indexes against: every WIDTHS rung, then ORIGINAL as the top.
     const LADDER = WIDTHS.concat([ORIGINAL]);
@@ -34,9 +29,6 @@ window.bwImageRes = (function () {
     // How long an upgrade holds the gate before a later measurement may ask for another rung (the 3-4 MB original
     // needs a good while on a slow phone; its download goes on).
     const UPGRADE_STALL_MS = 45000;
-
-    // The query parameter image-watchdog.js adds when it re-requests a stalled image; never part of the base.
-    const RETRY_PATTERN = /([?&])bwretry=[^&#]*&?/;
 
     // --- Zoom-aware caps (the tunable knobs) -----------------------------------------------------
     // A big/retina display at *fit* has `cssWidth * DPR` already past the top of the ladder, so the
@@ -84,45 +76,12 @@ window.bwImageRes = (function () {
         return LADDER[index];
     }
 
-    // A content-addressed asset (AssetUrls on the server): the width is a path segment, /a/{sha}/{width}, not `?w=`.
-    const HASHED_PATH = /^(\/api\/walls\/[0-9a-fA-F-]{36}\/a\/[0-9a-f]{64})(?:\/(\d+))?$/;
-
-    /** `url` with its width set to `level` (a `w` parameter, or the hashed path's segment), or removed for the original. */
-    function urlAt(url, level) {
-        try {
-            const parsed = new URL(url, document.baseURI);
-            const hashed = HASHED_PATH.exec(parsed.pathname);
-            if (hashed) {
-                return hashed[1] + (level === ORIGINAL ? '' : '/' + level) + parsed.search;
-            }
-
-            if (level === ORIGINAL) {
-                parsed.searchParams.delete('w');
-            } else {
-                parsed.searchParams.set('w', String(level));
-            }
-
-            return parsed.pathname + parsed.search;
-        } catch (_) {
-            return url;
-        }
-    }
-
     /**
      * What the element is showing right now. Read from the markup on first sight so a server
      * re-render that resets `src` is picked up rather than trusted blindly from JS state.
      */
     function currentLevel(img) {
-        const src = img.getAttribute('src') || '';
-        try {
-            const parsed = new URL(src, document.baseURI);
-            const hashed = HASHED_PATH.exec(parsed.pathname);
-            const w = hashed ? hashed[2] : parsed.searchParams.get('w');
-            const level = w ? parseInt(w, 10) : ORIGINAL;
-            return WIDTHS.indexOf(level) >= 0 ? level : ORIGINAL;
-        } catch (_) {
-            return ORIGINAL;
-        }
+        return levelOf(img.getAttribute('src') || '');
     }
 
     /**
@@ -252,11 +211,6 @@ window.bwImageRes = (function () {
         }
 
         upgrade(img, wanted);
-    }
-
-    /** The url without its width and without image-watchdog.js's retry marker (only that parameter is touched). */
-    function stripWidth(url) {
-        return urlAt(url, ORIGINAL).replace(RETRY_PATTERN, '$1').replace(/[?&]$/, '');
     }
 
     /**
