@@ -23,4 +23,8 @@
     <PackageReference Include="SkiaSharp" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Blocwerk.Contracts\Blocwerk.Contracts.csproj" />
+  </ItemGroup>
+
 </Project>
