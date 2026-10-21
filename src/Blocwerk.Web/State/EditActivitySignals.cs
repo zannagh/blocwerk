@@ -20,9 +20,9 @@ public static class EditActivitySignals
     {
         return signal switch
         {
-            EditSignal.Input => e => e with { LastSeenUtc = now, LastActivityUtc = now, HiddenSinceUtc = null },
-            EditSignal.Hidden => e => e with { HiddenSinceUtc = e.HiddenSinceUtc ?? now },
-            EditSignal.Visible => e => e with { HiddenSinceUtc = null },
+            EditSignal.Input => e => e with { LastSeenUtc = now, LastActivityUtc = now, HiddenSinceUtc = null, PresenceReported = true },
+            EditSignal.Hidden => e => e with { HiddenSinceUtc = e.HiddenSinceUtc ?? now, PresenceReported = true },
+            EditSignal.Visible => e => e with { HiddenSinceUtc = null, PresenceReported = true },
             _ => e => e with { LastSeenUtc = now },
         };
     }

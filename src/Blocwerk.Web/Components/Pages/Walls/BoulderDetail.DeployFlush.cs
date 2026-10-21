@@ -38,7 +38,10 @@ public partial class BoulderDetail
     {
         if (_editMeta || _showGradeForm)
         {
-            _flushRegistration ??= EditFlush.Register(InvokeAsync, FlushForDeployAsync);
+            _flushRegistration ??= EditFlush.Register(
+                InvokeAsync,
+                FlushForDeployAsync,
+                () => new EditFlushTarget("inline boulder edit", WallId, _currentUserId == Guid.Empty ? null : _currentUserId));
         }
         else if (_flushRegistration is not null)
         {

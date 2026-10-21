@@ -25,9 +25,9 @@ public class EditFlushHubTests
         var hub = NewHub();
         using var first = new CircuitEditFlush(hub);
         using var second = new CircuitEditFlush(hub);
-        first.Register(Inline, () => Task.FromResult(EditFlushOutcome.SavedOnServer));
-        first.Register(Inline, () => Task.FromResult(EditFlushOutcome.NothingToSave));
-        second.Register(Inline, () => Task.FromResult(EditFlushOutcome.KeptOnDevice));
+        first.Register(Inline, () => Task.FromResult(EditFlushOutcome.SavedOnServer), Target);
+        first.Register(Inline, () => Task.FromResult(EditFlushOutcome.NothingToSave), Target);
+        second.Register(Inline, () => Task.FromResult(EditFlushOutcome.KeptOnDevice), Target);
 
         var report = await hub.FlushAsync(TimeSpan.FromSeconds(30));
 
@@ -39,8 +39,8 @@ public class EditFlushHubTests
     {
         var hub = NewHub();
         using var circuit = new CircuitEditFlush(hub);
-        circuit.Register(Inline, () => throw new InvalidOperationException("save failed"));
-        circuit.Register(Inline, () => Task.FromResult(EditFlushOutcome.SavedOnServer));
+        circuit.Register(Inline, () => throw new InvalidOperationException("save failed"), Target);
+        circuit.Register(Inline, () => Task.FromResult(EditFlushOutcome.SavedOnServer), Target);
 
         var report = await hub.FlushAsync(TimeSpan.FromSeconds(30));
 
@@ -56,8 +56,8 @@ public class EditFlushHubTests
         using var stuck = new CircuitEditFlush(hub);
         using var quick = new CircuitEditFlush(hub);
         var never = new TaskCompletionSource<EditFlushOutcome>();
-        stuck.Register(Inline, () => never.Task);
-        quick.Register(Inline, () => Task.FromResult(EditFlushOutcome.SavedOnServer));
+        stuck.Register(Inline, () => never.Task, Target);
+        quick.Register(Inline, () => Task.FromResult(EditFlushOutcome.SavedOnServer), Target);
 
         var clock = Stopwatch.StartNew();
         var report = await hub.FlushAsync(TimeSpan.FromMilliseconds(200));
@@ -73,18 +73,18 @@ public class EditFlushHubTests
     {
         var hub = NewHub();
         var circuit = new CircuitEditFlush(hub);
-        var registration = circuit.Register(Inline, () => Task.FromResult(EditFlushOutcome.SavedOnServer));
+        var registration = circuit.Register(Inline, () => Task.FromResult(EditFlushOutcome.SavedOnServer), Target);
         Assert.Equal(1, hub.Count);
 
         registration.Dispose();
         Assert.Equal(0, hub.Count);
 
-        circuit.Register(Inline, () => Task.FromResult(EditFlushOutcome.SavedOnServer));
+        circuit.Register(Inline, () => Task.FromResult(EditFlushOutcome.SavedOnServer), Target);
         circuit.Dispose();
         Assert.Equal(EditFlushReport.Empty, await hub.FlushAsync(TimeSpan.FromSeconds(1)));
 
         // Registering on a torn-down circuit is a no-op, not a leak.
-        circuit.Register(Inline, () => Task.FromResult(EditFlushOutcome.SavedOnServer));
+        circuit.Register(Inline, () => Task.FromResult(EditFlushOutcome.SavedOnServer), Target);
         Assert.Equal(0, hub.Count);
     }
 
@@ -101,7 +101,8 @@ public class EditFlushHubTests
                 dispatched++;
                 return work();
             },
-            () => Task.FromResult(EditFlushOutcome.SavedOnServer));
+            () => Task.FromResult(EditFlushOutcome.SavedOnServer),
+            Target);
 
         await hub.FlushAsync(TimeSpan.FromSeconds(30));
 
@@ -112,4 +113,6 @@ public class EditFlushHubTests
     private static Task Inline(Func<Task> work) => work();
 
     private static EditFlushHub NewHub() => new(NullLogger<EditFlushHub>.Instance);
+
+    private static EditFlushTarget Target() => new("test editor", null, null);
 }

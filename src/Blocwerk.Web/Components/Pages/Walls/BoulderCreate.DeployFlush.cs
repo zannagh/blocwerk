@@ -20,6 +20,7 @@ public partial class BoulderCreate
     private const string KeptNotice = "Your unsaved boulder was kept on this device before an update; it is back in the form.";
 
     private IDisposable? _flushRegistration;
+    private Guid? _flushUserId;
     private string? _pristineSnapshot;
     private bool _restoreChecked;
 
@@ -42,7 +43,8 @@ public partial class BoulderCreate
     private void ArmDeployFlush()
     {
         _pristineSnapshot = SnapshotJson;
-        _flushRegistration ??= EditFlush.Register(InvokeAsync, FlushForDeployAsync);
+        _flushRegistration ??= EditFlush.Register(
+            InvokeAsync, FlushForDeployAsync, () => new EditFlushTarget("boulder create", WallId, _flushUserId));
     }
 
     private async Task<EditFlushOutcome> FlushForDeployAsync()
@@ -77,9 +79,10 @@ public partial class BoulderCreate
                 WallId, _name, _grade, _selectedHolds, isDraft: true,
                 _allKickboardOn, EffectiveHandsFollowFeet, _footColorOnly, _clientId, _noMatch,
                 _selectedSetters.ToList());
-            await DeployDraftInterop.DropAsync(JS, KeepKey);
-            await DeployDraftInterop.NoticeAsync(JS, $"Your boulder “{boulder.Name}” was saved as a draft before an update.", DetailUrl);
+
+            // Saved. Everything below needs the browser, is bounded, and cannot undo the save.
             NavigateQuietly(DetailUrl);
+            await DeployDraftInterop.TellSavedAsync(JS, KeepKey, $"Your boulder “{boulder.Name}” was saved as a draft before an update.", DetailUrl);
             return true;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

@@ -11,6 +11,10 @@ namespace Blocwerk.Web.State;
 /// <remarks>
 /// These narrow the gate only. A lease that stops holding the gate is still a lease: it still keeps background hold
 /// writers off the wall (<see cref="EditActivityWallEditPresence"/>) until <see cref="EditActivityPolicy"/> expires it.
+/// <para>A hidden page does NOT release the gate: a setter locks the phone between attempts, and the circuit is kept
+/// for <see cref="EditActivityPolicy.DisconnectedCircuitRetention"/> precisely so the unsaved boulder survives that.
+/// The hidden mark is diagnostics only (and the browser's cue to keep a copy). Checked at startup by
+/// <see cref="EditPresenceOptionsValidator"/>.</para>
 /// </remarks>
 public sealed class EditPresenceOptions
 {
@@ -23,9 +27,6 @@ public sealed class EditPresenceOptions
     /// laptop or an abandoned tab produces no input at all.
     /// </summary>
     public TimeSpan PresenceWindow { get; set; } = TimeSpan.FromMinutes(30);
-
-    /// <summary>How long a hidden, frozen or unloaded editor page still holds the gate (a quick app switch).</summary>
-    public TimeSpan HiddenGrace { get; set; } = TimeSpan.FromMinutes(2);
 
     /// <summary>
     /// The IANA (or Windows) id of the time zone <see cref="CutoffTimeOfDay"/> is read in. An unknown id falls back

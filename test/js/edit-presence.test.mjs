@@ -69,3 +69,50 @@ test('the first input after the page was hidden is reported at once, not throttl
     assert.equal(reporter.input({ type: 'pointerdown' }), true);
     assert.deepEqual(sent.at(-1), ['OnUserInput']);
 });
+
+// The review's probe: the phone is unlocked while the socket is still reconnecting. The visible report and the first
+// tap fail to send; neither may be remembered as sent, and the next tap once connected must go through at once.
+test('a report lost to a reconnect is rolled back, so the next tap is not throttled away', async () => {
+    let t = 0;
+    let up = true;
+    const server = [];
+    const r = presence.createReporter({
+        now: () => t,
+        active: () => true,
+        send: (m, a) => (up ? (server.push([t, m, a]), Promise.resolve()) : Promise.reject(new Error('reconnecting'))),
+    });
+    const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+    r.input({ type: 'pointerdown', isTrusted: true });
+    t = 60000; r.visibility(false);
+    t = 600000; up = false; r.visibility(true);
+    r.input({ type: 'pointerdown', isTrusted: true });
+    await flush();
+    t = 605000; up = true;
+    assert.equal(r.input({ type: 'pointerdown', isTrusted: true }), true, 'the tap after the reconnect is sent');
+    await flush();
+    assert.deepEqual(server.map((s) => s[1]), ['OnUserInput', 'OnVisibility', 'OnUserInput']);
+    assert.equal(server.at(-1)[0], 605000);
+});
+
+test('resync re-sends the current visibility even when it did not change', () => {
+    const { sent, reporter } = harness();
+    reporter.visibility(true);
+    reporter.resync(true);
+    assert.deepEqual(sent, [['OnVisibility', true], ['OnVisibility', true]]);
+});
+
+test('a send that throws synchronously is rolled back too', async () => {
+    let fail = true;
+    const sent = [];
+    const r = presence.createReporter({
+        now: () => 0,
+        active: () => true,
+        send: (...args) => { if (fail) { throw new Error('no handle'); } sent.push(args); return Promise.resolve(); },
+    });
+    r.visibility(false);
+    await new Promise((resolve) => setImmediate(resolve));
+    fail = false;
+    assert.equal(r.visibility(false), true, 'the failed hidden report is sent again');
+    assert.deepEqual(sent, [['OnVisibility', false]]);
+});

@@ -37,7 +37,7 @@ public partial class WallCreate
 
     private void ArmDeployFlush()
     {
-        _flushRegistration ??= EditFlush.Register(InvokeAsync, FlushForDeployAsync);
+        _flushRegistration ??= EditFlush.Register(InvokeAsync, FlushForDeployAsync, () => new EditFlushTarget("new wall form", null, null));
     }
 
     private async Task<EditFlushOutcome> FlushForDeployAsync()

@@ -43,6 +43,19 @@ public sealed class EditFlushHub(ILogger<EditFlushHub> logger)
         }
 
         var report = Tally(runs);
+        for (var i = 0; i < runs.Count; i++)
+        {
+            if (!runs[i].IsCompleted)
+            {
+                foreach (var target in sessions[i].Targets)
+                {
+                    logger.LogWarning(
+                        "Pre-deploy flush timed out after {Timeout} on the {Editor} on wall {WallId} for user {UserId}",
+                        timeout, target.Editor, target.WallId, target.UserId);
+                }
+            }
+        }
+
         logger.LogInformation(
             "Pre-deploy flush over {Sessions} circuit(s): {Saved} saved, {Kept} kept on device, {Nothing} with nothing to save, {NotSaved} not saved, {TimedOut} timed out",
             report.Sessions, report.SavedOnServer, report.KeptOnDevice, report.NothingToSave, report.NotSaved, report.TimedOut);

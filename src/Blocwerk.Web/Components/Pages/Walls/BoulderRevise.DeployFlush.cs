@@ -16,6 +16,7 @@ namespace Blocwerk.Web.Components.Pages.Walls;
 public partial class BoulderRevise
 {
     private IDisposable? _flushRegistration;
+    private Guid? _flushUserId;
     private string? _pristineSnapshot;
     private bool _restoreChecked;
 
@@ -35,7 +36,8 @@ public partial class BoulderRevise
     {
         _pristineSnapshot = SnapshotJson;
         _restoreChecked = false;
-        _flushRegistration ??= EditFlush.Register(InvokeAsync, FlushForDeployAsync);
+        _flushRegistration ??= EditFlush.Register(
+            InvokeAsync, FlushForDeployAsync, () => new EditFlushTarget("boulder revise", WallId, _flushUserId));
     }
 
     private void DisarmDeployFlush()
@@ -73,8 +75,9 @@ public partial class BoulderRevise
             await BoulderService.ReviseBoulderAsync(
                 BoulderId, _selectedHolds, _name, _grade, _allKickboardOn, EffectiveHandsFollowFeet,
                 _footColorOnly ?? string.Empty, _noMatch, _selectedSetters.ToList());
-            await DeployDraftInterop.DropAsync(JS, KeepKey);
-            await DeployDraftInterop.NoticeAsync(JS, $"Your draft “{_name}” was saved before an update.", DetailUrl);
+
+            // Saved. Everything below needs the browser, is bounded, and cannot undo the save.
+            await DeployDraftInterop.TellSavedAsync(JS, KeepKey, $"Your draft “{_name}” was saved before an update.", DetailUrl);
             try
             {
                 Navigation.NavigateTo(DetailUrl);

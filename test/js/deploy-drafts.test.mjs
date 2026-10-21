@@ -20,14 +20,14 @@ function harness() {
     const storage = memoryStorage();
     const shown = [];
     const clock = { now: 1000 };
-    const store = drafts.createStore(storage, () => clock.now, (text, href) => shown.push([text, href]));
+    const store = drafts.createStore(storage, () => clock.now, (text, href, key) => shown.push(key ? [text, href, key] : [text, href]));
     return { storage, shown, clock, store };
 }
 
 test('a kept editor state is taken back exactly once, with its notice queued for the reload', () => {
     const { store, shown } = harness();
     store.keep('boulder-revise:1', '{"name":"Crimp"}', 'Your changes were kept.', '/walls/w/boulders/1/revise');
-    assert.deepEqual(store.takeNotices().map((n) => [n.text, n.href]), [['Your changes were kept.', '/walls/w/boulders/1/revise']]);
+    assert.deepEqual(store.takeNotices().map((n) => [n.text, n.href, n.key]), [['Your changes were kept.', '/walls/w/boulders/1/revise', 'boulder-revise:1']]);
     assert.deepEqual(store.takeNotices(), [], 'a notice is shown once');
     assert.equal(store.take('boulder-revise:1'), '{"name":"Crimp"}');
     assert.equal(store.take('boulder-revise:1'), null);
@@ -38,7 +38,7 @@ test('a copy made when the page was hidden says it was restored', () => {
     const { store, shown } = harness();
     store.keepHidden('wall-create', '{"name":"Attic"}');
     assert.equal(store.take('wall-create'), '{"name":"Attic"}');
-    assert.deepEqual(shown, [[drafts.RESTORED, null]]);
+    assert.deepEqual(shown, [[drafts.RESTORED, null, 'wall-create']]);
 });
 
 test('a hidden copy after a deploy keep keeps the deploy reason, so no second notice', () => {
@@ -66,4 +66,15 @@ test('blocked storage degrades to nothing kept, never a throw', () => {
     store.keep('a', 'x', 'n');
     assert.equal(store.take('a'), null);
     assert.deepEqual(store.takeNotices(), []);
+});
+
+test('discard forgets a kept copy, and says when the editor already took it back', () => {
+    const { store } = harness();
+    store.keep('a', 'x', 'kept');
+    assert.equal(store.discard('a'), false, 'not restored yet: just forgotten');
+    assert.equal(store.take('a'), null);
+
+    store.keepHidden('b', 'y');
+    assert.equal(store.take('b'), 'y');
+    assert.equal(store.discard('b'), true, 'already in the editor: the page must reload to drop it');
 });

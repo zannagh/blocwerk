@@ -17,6 +17,7 @@ internal sealed class CircuitEditLease(CircuitEditActivity owner, IEditLease lea
     private CircuitEditActivity? owner = owner;
     private IEditLease? lease = lease;
     private EditActivityEntry template = template;
+    private bool warnedSilent;
 
     /// <summary>
     /// Applies <paramref name="signal"/> to the live entry, or (when <paramref name="restore"/> and the registry
@@ -45,6 +46,21 @@ internal sealed class CircuitEditLease(CircuitEditActivity owner, IEditLease lea
         }
 
         return restore && Restore(registry, now, change(snapshot), current);
+    }
+
+    /// <summary>The entry, once, if it is older than <paramref name="after"/> and never had a presence report.</summary>
+    public EditActivityEntry? TakeIfSilent(DateTimeOffset now, TimeSpan after)
+    {
+        lock (gate)
+        {
+            if (owner is null || warnedSilent || template.PresenceReported || now - template.StartedUtc < after)
+            {
+                return null;
+            }
+
+            warnedSilent = true;
+            return template;
+        }
     }
 
     public void Dispose()

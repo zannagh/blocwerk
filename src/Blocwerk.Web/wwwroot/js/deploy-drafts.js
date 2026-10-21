@@ -9,7 +9,8 @@
  *
  * A sleeping laptop cannot answer a flush, so editors that keep state on the device also render it into a hidden
  * element (data-bw-keep-key / data-bw-keep-payload) while it is unsaved, and this file copies those into storage
- * when the page is hidden, frozen or unloaded. Taking such a copy back says so ("restored").
+ * when the page is hidden, frozen or unloaded. Taking such a copy back says so ("restored"). Every notice about a
+ * kept copy has a Discard button: it forgets the copy, and reloads when the editor has already taken it back.
  *
  * Exposes window.bwDeployDrafts (called from DeployDraftInterop.cs):
  *   keep(key, payloadJson, notice?, href?)  notice(text, href?)  take(key) -> payloadJson|null  drop(key)
@@ -57,21 +58,23 @@
         } catch (e) { /* storage blocked: nothing was kept anyway */ }
     }
 
-    // storage: a Storage; now(): ms; show(text, href): displays a notice now.
+    // storage: a Storage; now(): ms; show(text, href, key): displays a notice now (key: the copy it can discard).
     function createStore(storage, now, show) {
-        function notice(text, href) {
+        const restored = new Set();
+
+        function notice(text, href, key) {
             if (!text) {
                 return;
             }
 
             const list = read(storage, NOTICES) || [];
-            list.push({ text: String(text), href: href || null, at: now() });
+            list.push({ text: String(text), href: href || null, key: key || null, at: now() });
             write(storage, NOTICES, list);
         }
 
         function keep(key, payload, text, href) {
             write(storage, PREFIX + key, { payload: String(payload), reason: 'deploy', at: now() });
-            notice(text, href);
+            notice(text, href, key);
         }
 
         function keepHidden(key, payload) {
@@ -87,8 +90,9 @@
                 return null;
             }
 
+            restored.add(key);
             if (entry.reason === 'hidden') {
-                show(RESTORED, null);
+                show(RESTORED, null, key);
             }
 
             return entry.payload;
@@ -105,10 +109,26 @@
             return list.filter(function (n) { return now() - n.at <= MAX_AGE_MS; });
         }
 
-        return { keep: keep, keepHidden: keepHidden, take: take, drop: drop, notice: notice, takeNotices: takeNotices };
+        // The user dismissed a kept copy: forget it, and say whether the open editor already took it back (then only a
+        // reload gets the editor back to what the server has).
+        function discard(key) {
+            remove(storage, PREFIX + key);
+            return restored.has(key);
+        }
+
+        return { keep: keep, keepHidden: keepHidden, take: take, drop: drop, notice: notice, takeNotices: takeNotices, discard: discard };
     }
 
-    function banner(doc, text, href) {
+    function button(doc, label, onClick) {
+        const b = doc.createElement('button');
+        b.type = 'button';
+        b.textContent = label;
+        b.style.cssText = 'font:inherit;color:inherit;background:transparent;border:1px solid rgba(255,255,255,.5);border-radius:6px;padding:2px 10px;cursor:pointer;';
+        b.addEventListener('click', onClick);
+        return b;
+    }
+
+    function banner(doc, text, href, onDiscard) {
         const el = doc.createElement('div');
         el.className = 'bw-deploy-notice';
         el.setAttribute('role', 'status');
@@ -122,14 +142,13 @@
             message.style.color = 'inherit';
         }
 
-        const close = doc.createElement('button');
-        close.type = 'button';
-        close.textContent = 'OK';
-        close.setAttribute('aria-label', 'Dismiss');
-        close.style.cssText = 'margin-left:auto;font:inherit;color:inherit;background:transparent;border:1px solid rgba(255,255,255,.5);border-radius:6px;padding:2px 10px;cursor:pointer;';
-        close.addEventListener('click', function () { el.remove(); });
+        const close = button(doc, 'OK', function () { el.remove(); });
+        close.style.marginLeft = 'auto';
         el.appendChild(message);
         el.appendChild(close);
+        if (onDiscard) {
+            el.appendChild(button(doc, 'Discard', function () { el.remove(); onDiscard(); }));
+        }
         doc.body.appendChild(el);
     }
 
@@ -140,11 +159,25 @@
             storage = win.localStorage;
         } catch (e) { /* blocked: every call below degrades to a no-op */ }
 
-        const show = function (text, href) { banner(doc, text, href); };
-        const store = createStore(storage || { getItem: function () { return null; }, setItem: function () { throw new Error('no storage'); }, removeItem: function () { } },
+        let store = null;
+        let discarding = false;
+        const show = function (text, href, key) {
+            banner(doc, text, href, key ? function () {
+                if (store.discard(key)) {
+                    // The reload's pagehide must not copy the discarded state straight back.
+                    discarding = true;
+                    win.location.reload();
+                }
+            } : null);
+        };
+        store = createStore(storage || { getItem: function () { return null; }, setItem: function () { throw new Error('no storage'); }, removeItem: function () { } },
             function () { return Date.now(); }, show);
 
         const captureHidden = function () {
+            if (discarding) {
+                return;
+            }
+
             doc.querySelectorAll('[data-bw-keep-key]').forEach(function (el) {
                 if (el.dataset.bwKeepPayload) {
                     store.keepHidden(el.dataset.bwKeepKey, el.dataset.bwKeepPayload);
@@ -160,7 +193,7 @@
         doc.addEventListener('freeze', captureHidden);
 
         const showQueued = function () {
-            store.takeNotices().forEach(function (n) { show(n.text, n.href); });
+            store.takeNotices().forEach(function (n) { show(n.text, n.href, n.key); });
         };
         if (doc.readyState === 'loading') {
             doc.addEventListener('DOMContentLoaded', showQueued);
@@ -168,7 +201,7 @@
             showQueued();
         }
 
-        return { keep: store.keep, notice: store.notice, take: store.take, drop: store.drop, show: show };
+        return { keep: store.keep, notice: store.notice, take: store.take, drop: store.drop, show: function (text, href) { show(text, href, null); } };
     }
 
     return { createStore: createStore, install: install, MAX_AGE_MS: MAX_AGE_MS, RESTORED: RESTORED };

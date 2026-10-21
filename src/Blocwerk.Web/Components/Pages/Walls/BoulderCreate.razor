@@ -325,6 +325,7 @@
         // The whole page is "create mode": hold a busy lease while it's mounted. An anonymous kiosk
         // edit is stamped to the Ghost row, so the deploy gate still sees the tablet as busy.
         _editLease = EditActivity.BeginBoulderCreate(WallId, currentUser?.Id ?? GhostUser.Id);
+        _flushUserId = currentUser?.Id;
 
         _wall = await WallService.GetWallAsync(WallId);
 

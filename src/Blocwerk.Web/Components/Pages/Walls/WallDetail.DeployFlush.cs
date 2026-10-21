@@ -23,7 +23,10 @@ public partial class WallDetail
     {
         if (_isEditing)
         {
-            _flushRegistration ??= EditFlush.Register(InvokeAsync, FlushForDeployAsync);
+            _flushRegistration ??= EditFlush.Register(
+                InvokeAsync,
+                FlushForDeployAsync,
+                () => new EditFlushTarget("wall edit", WallId, _currentUserId == Guid.Empty ? null : _currentUserId));
         }
         else
         {

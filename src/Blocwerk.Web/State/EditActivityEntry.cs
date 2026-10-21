@@ -23,7 +23,12 @@ namespace Blocwerk.Web.State;
 /// </param>
 /// <param name="HiddenSinceUtc">
 /// When the editor's page was hidden, frozen or unloaded (and not shown again since), or <c>null</c> while
-/// it is visible. A hidden editor stops holding the deploy gate after <see cref="EditPresenceOptions.HiddenGrace"/>.
+/// it is visible. Diagnostics only: a hidden editor still holds the deploy gate (see <see cref="EditPresenceOptions"/>).
+/// </param>
+/// <param name="PresenceReported">
+/// Whether the browser has reported presence at all (input or visibility) for this lease. A lease that never does is
+/// one whose page has no working presence reporter, and it would look idle to the deploy gate however busy its user
+/// is; <see cref="EditActivityCircuitHandler"/> logs a warning for it.
 /// </param>
 public sealed record EditActivityEntry(
     EditKind EditKind,
@@ -32,4 +37,5 @@ public sealed record EditActivityEntry(
     DateTimeOffset StartedUtc,
     DateTimeOffset LastSeenUtc,
     DateTimeOffset LastActivityUtc,
-    DateTimeOffset? HiddenSinceUtc = null);
+    DateTimeOffset? HiddenSinceUtc = null,
+    bool PresenceReported = false);

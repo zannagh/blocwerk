@@ -94,17 +94,34 @@ public sealed class CircuitEditActivity : IDisposable
         Pulse(nowOverride, visible ? EditSignal.Visible : EditSignal.Hidden, restore: false);
 
     /// <summary>
-    /// The handle <c>edit-presence.js</c> reports through. Created once per circuit and disposed with it.
+    /// The handle <c>edit-presence.js</c> reports through. Created once per circuit and disposed with it; null once
+    /// the circuit is gone, so a late render cannot mint a reference nothing would ever dispose.
     /// </summary>
-    public DotNetObjectReference<EditPresenceInterop> PresenceReference
+    public DotNetObjectReference<EditPresenceInterop>? PresenceReference
     {
         get
         {
             lock (gate)
             {
-                return presenceReference ??= DotNetObjectReference.Create(new EditPresenceInterop(this));
+                return disposed ? null : presenceReference ??= DotNetObjectReference.Create(new EditPresenceInterop(this));
             }
         }
+    }
+
+    /// <summary>
+    /// The leases that are at least <paramref name="after"/> old and have never had a presence report, each returned
+    /// once. Read by the heartbeat, which logs them: such a lease looks idle to the deploy gate however busy its user is.
+    /// </summary>
+    public IReadOnlyList<EditActivityEntry> TakeSilentLeases(TimeSpan after, DateTimeOffset? nowOverride = null)
+    {
+        var now = nowOverride ?? DateTimeOffset.UtcNow;
+        List<CircuitEditLease> current;
+        lock (gate)
+        {
+            current = new List<CircuitEditLease>(leases);
+        }
+
+        return current.Select(l => l.TakeIfSilent(now, after)).OfType<EditActivityEntry>().ToList();
     }
 
     public void Dispose()

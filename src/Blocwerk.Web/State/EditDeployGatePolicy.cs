@@ -12,13 +12,13 @@ namespace Blocwerk.Web.State;
 /// up with nobody there: on 2026-10-21 a MacBook asleep with the wall editor open reconnected its circuit on every
 /// dark wake, and the circuit traffic of each reconnect was counted as user activity, so the gate stayed closed for
 /// as long as the laptop slept. The gate now asks the question it actually cares about: did a person touch the editor
-/// recently, is the page still in front of them, and has the day's cutoff (<see cref="EditDeployCutoff"/>) passed.</para>
+/// recently, and has the day's cutoff (<see cref="EditDeployCutoff"/>) passed.</para>
 /// <para>Background work (<see cref="EditActivityPolicy.IsBackgroundWork"/>) has no person and no page, so it holds
 /// the gate for as long as its lease lives (bounded by <see cref="EditActivityPolicy.MaintenanceMaxLifetime"/>).</para>
 /// </remarks>
 public static class EditDeployGatePolicy
 {
-    /// <summary>The clock that lets go of the gate first: heartbeat, presence, hidden or cutoff.</summary>
+    /// <summary>The clock that lets go of the gate first: heartbeat, presence or cutoff.</summary>
     public static (TimeSpan Remaining, string Clock) Remaining(EditActivityEntry entry, DateTimeOffset now, EditPresenceOptions options)
     {
         return Remaining(entry, now, options, EditDeployCutoff.Zone(options));
@@ -36,11 +36,8 @@ public static class EditDeployGatePolicy
         var best = (Remaining: EditActivityPolicy.HeartbeatRemaining(entry, now), Clock: "heartbeat");
         best = Earlier(best, options.PresenceWindow - (now - entry.LastActivityUtc), "presence");
         best = Earlier(best, EditDeployCutoff.NextAfter(entry.StartedUtc, zone, options.CutoffTimeOfDay) - now, "cutoff");
-        if (entry.HiddenSinceUtc is { } hidden)
-        {
-            best = Earlier(best, options.HiddenGrace - (now - hidden), "hidden");
-        }
 
+        // Deliberately no hidden clock: a locked phone between two attempts is the normal case, not an absence.
         return best;
     }
 

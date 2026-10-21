@@ -233,7 +233,10 @@ public static class Program
         builder.Services.AddScoped<CircuitEditActivity>();
 
         // When an open editor holds the deploy gate: recent real input, page not hidden for long, bounded hold.
-        builder.Services.Configure<EditPresenceOptions>(builder.Configuration.GetSection(EditPresenceOptions.SectionName));
+        builder.Services.AddOptions<EditPresenceOptions>()
+            .Bind(builder.Configuration.GetSection(EditPresenceOptions.SectionName))
+            .ValidateOnStart();
+        builder.Services.AddSingleton<IValidateOptions<EditPresenceOptions>, EditPresenceOptionsValidator>();
 
         // The pre-deploy flush: open editors register how to persist their unsaved state (scoped), and the
         // autodeploy hook's POST /api/v1/maintenance/flush-edits runs them all (singleton hub).

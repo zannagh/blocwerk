@@ -12,8 +12,7 @@ namespace Blocwerk.Web.HealthChecks;
 /// </summary>
 /// <remarks>
 /// An open editor counts only while its user is present (<see cref="EditDeployGatePolicy"/>): input within
-/// <see cref="EditPresenceOptions.PresenceWindow"/>, the page not hidden for longer than
-/// <see cref="EditPresenceOptions.HiddenGrace"/>, and the day's cutoff after the lease started not yet passed
+/// <see cref="EditPresenceOptions.PresenceWindow"/>, and the day's cutoff after the lease started not yet passed
 /// (<see cref="EditDeployCutoff"/>).
 /// Leases that do not hold the gate are still listed, with <c>holdsGate = false</c>, so an idle report says why.
 /// </remarks>
@@ -45,7 +44,6 @@ public sealed class BusyHealthCheck(EditActivityRegistry registry, IOptions<Edit
             data["leaseTtlSeconds"] = (int)EditActivityPolicy.LeaseTimeToLive.TotalSeconds;
             data["inactivityTtlSeconds"] = (int)EditActivityPolicy.InactivityTimeToLive.TotalSeconds;
             data["presenceWindowSeconds"] = (int)presence.PresenceWindow.TotalSeconds;
-            data["hiddenGraceSeconds"] = (int)presence.HiddenGrace.TotalSeconds;
             data["cutoffTimeZone"] = presence.CutoffTimeZone;
             data["cutoffTimeOfDay"] = presence.CutoffTimeOfDay.ToString("hh\\:mm", System.Globalization.CultureInfo.InvariantCulture);
             data["details"] = snapshot.Select(e => Describe(e, now)).ToList();
@@ -82,6 +80,7 @@ public sealed class BusyHealthCheck(EditActivityRegistry registry, IOptions<Edit
             idleSeconds = (int)(now - entry.LastSeenUtc).TotalSeconds,
             userIdleSeconds = (int)(now - entry.LastActivityUtc).TotalSeconds,
             hiddenSeconds = entry.HiddenSinceUtc is { } hidden ? (int)(now - hidden).TotalSeconds : 0,
+            presenceReported = entry.PresenceReported,
             holdsGate = expiresIn > TimeSpan.Zero,
             expiresBy,
             expiresInSeconds = (int)expiresIn.TotalSeconds,

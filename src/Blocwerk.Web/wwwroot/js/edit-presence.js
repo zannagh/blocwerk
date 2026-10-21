@@ -12,7 +12,8 @@
  *
  * Reports go through the presence handle bwEditGuard.enter() received (EditPresenceInterop), and only while an
  * editor is open (bwEditGuard.isEditing()). Input is throttled to one report per INPUT_EVERY_MS: the server's
- * presence window is minutes long, so finer reports buy nothing. Visibility is reported on every change.
+ * presence window is minutes long, so finer reports buy nothing. Visibility is reported on every change, when an
+ * editor opens (so the server knows the reporter works) and again whenever the circuit reconnects.
  *
  * The decision core (createReporter) is pure, so node tests it (test/js/edit-presence.test.mjs).
  */
@@ -23,7 +24,7 @@
         module.exports = api;
     } else {
         root.bwEditPresence = api;
-        api.install(root);
+        api.install(root, api);
     }
 })(typeof self !== 'undefined' ? self : this, function () {
     'use strict';
@@ -48,10 +49,25 @@
         }
     }
 
-    // opts: { now(): ms, active(): bool, send(method, ...args) }
+    // opts: { now(): ms, active(): bool, send(method, ...args) -> Promise (rejects when it did not reach the server) }
+    //
+    // State is committed optimistically and ROLLED BACK when the send fails, so a report lost to a reconnect (the
+    // phone unlocked while the socket is still coming back) is neither remembered as sent nor throttles away the next
+    // tap. resync(visible) re-sends the current state after a reconnect or when a new editor hands over its handle.
     function createReporter(opts) {
         let lastInput = -Infinity;
         let hidden = null;
+
+        function deliver(method, args, rollback) {
+            let sent;
+            try {
+                sent = Promise.resolve(opts.send.apply(null, [method].concat(args)));
+            } catch (e) {
+                sent = Promise.reject(e);
+            }
+
+            sent.catch(rollback);
+        }
 
         function input(e) {
             if (!isUserInput(e) || !opts.active()) {
@@ -63,9 +79,16 @@
                 return false;
             }
 
+            const before = { lastInput: lastInput, hidden: hidden };
             lastInput = t;
             hidden = false;
-            opts.send('OnUserInput');
+            deliver('OnUserInput', [], function () {
+                // Only undo what this send set; a later success must not be overwritten.
+                if (lastInput === t) {
+                    lastInput = before.lastInput;
+                    hidden = before.hidden;
+                }
+            });
             return true;
         }
 
@@ -74,15 +97,25 @@
                 return false;
             }
 
+            const before = hidden;
             hidden = !visible;
-            opts.send('OnVisibility', !!visible);
+            deliver('OnVisibility', [!!visible], function () {
+                if (hidden === !visible) {
+                    hidden = before;
+                }
+            });
             return true;
         }
 
-        return { input: input, visibility: visibility };
+        function resync(visible) {
+            hidden = null;
+            return visibility(visible);
+        }
+
+        return { input: input, visibility: visibility, resync: resync };
     }
 
-    function install(win) {
+    function install(win, api) {
         const doc = win.document;
         const guard = function () { return win.bwEditGuard; };
         const reporter = createReporter({
@@ -91,15 +124,14 @@
             send: function (method, arg) {
                 const handle = guard() && guard().presence();
                 if (!handle) {
-                    return;
+                    return Promise.reject(new Error('no presence handle'));
                 }
 
                 const args = arguments.length > 1 ? [method, arg] : [method];
-                Promise.resolve()
-                    .then(function () { return handle.invokeMethodAsync.apply(handle, args); })
-                    .catch(function () { /* the circuit is down or gone; presence simply goes stale */ });
+                return handle.invokeMethodAsync.apply(handle, args);
             }
         });
+        const visibleNow = function () { return doc.visibilityState === 'visible'; };
 
         const onInput = function (e) { reporter.input(e); };
         ['pointerdown', 'pointermove', 'keydown', 'wheel'].forEach(function (type) {
@@ -107,10 +139,28 @@
         });
 
         doc.addEventListener('visibilitychange', function () {
-            reporter.visibility(doc.visibilityState === 'visible');
+            reporter.visibility(visibleNow());
         });
         win.addEventListener('pagehide', function () { reporter.visibility(false); });
         doc.addEventListener('freeze', function () { reporter.visibility(false); });
+
+        // An editor opened (edit-guard.js calls this with its handle) or the circuit came back: say where we are.
+        api.resync = function () { reporter.resync(visibleNow()); };
+        const subscribe = function () {
+            if (win.blocwerkConnection && win.blocwerkConnection.subscribe) {
+                win.blocwerkConnection.subscribe(function (status) {
+                    if (status === 'connected') {
+                        api.resync();
+                    }
+                });
+                return true;
+            }
+
+            return false;
+        };
+        if (!subscribe()) {
+            doc.addEventListener('DOMContentLoaded', subscribe);
+        }
     }
 
     return { createReporter: createReporter, isUserInput: isUserInput, install: install, INPUT_EVERY_MS: INPUT_EVERY_MS };

@@ -375,6 +375,7 @@
         }
 
         _isCreator = _boulder.CreatedByUserId == user.Id;
+        _flushUserId = user.Id;
         // A wall admin (a WallRole.Admin member of this wall) may revise ANY boulder on the wall,
         // not only the ones they created — same membership-role check used across the wall UI.
         // The wall owner counts as an admin even without an explicit Admin member row, matching

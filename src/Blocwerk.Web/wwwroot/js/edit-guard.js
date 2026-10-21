@@ -34,6 +34,11 @@
         counts[k] = (counts[k] || 0) + 1;
         if (presence) {
             presenceHandle = presence;
+
+            // Tell the server at once that this page reports presence (edit-presence.js).
+            if (window.bwEditPresence && window.bwEditPresence.resync) {
+                window.bwEditPresence.resync();
+            }
         }
     }
 

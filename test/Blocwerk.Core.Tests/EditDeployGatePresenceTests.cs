@@ -71,19 +71,24 @@ public class EditDeployGatePresenceTests
         Assert.False(EditDeployGatePolicy.HoldsGate(entry, end, Defaults));
     }
 
-    /// <summary>A hidden page lets go after the grace; showing it again is not input, but input clears the mark.</summary>
+    /// <summary>
+    /// A locked phone between two attempts keeps the gate: the circuit is retained for exactly that, with the unsaved
+    /// boulder in it. The hidden mark is diagnostics only; input clears it, showing the page again clears it too.
+    /// </summary>
     [Fact]
-    public void AHiddenEditorLetsGoAfterTheGrace()
+    public void AHiddenEditorStillHoldsTheGateUntilThePresenceWindow()
     {
         var registry = new EditActivityRegistry();
         var activity = new CircuitEditActivity(registry);
         activity.BeginWallEdit(Wall, userId: null, Now);
         Assert.Equal(1, activity.RecordVisibility(visible: false, Now));
 
-        var entry = Assert.Single(registry.Snapshot(Now));
-        Assert.True(EditDeployGatePolicy.HoldsGate(entry, Now + Defaults.HiddenGrace - TimeSpan.FromSeconds(1), Defaults));
-        Assert.False(EditDeployGatePolicy.HoldsGate(entry, Now + Defaults.HiddenGrace, Defaults));
-        Assert.Equal("hidden", EditDeployGatePolicy.Remaining(entry, Now + Defaults.HiddenGrace, Defaults).Clock);
+        var locked = Now + EditActivityPolicy.DisconnectedCircuitRetention;
+        var entry = Assert.Single(registry.Snapshot(Now)) with { LastSeenUtc = locked };
+        Assert.Equal(Now, entry.HiddenSinceUtc);
+        Assert.True(entry.PresenceReported);
+        Assert.True(EditDeployGatePolicy.HoldsGate(entry, locked, Defaults));
+        Assert.NotEqual("hidden", EditDeployGatePolicy.Remaining(entry, locked, Defaults).Clock);
 
         var shown = Now + TimeSpan.FromMinutes(3);
         activity.RecordVisibility(visible: true, shown);
@@ -99,7 +104,62 @@ public class EditDeployGatePresenceTests
         Assert.True(EditDeployGatePolicy.HoldsGate(entry, back, Defaults));
     }
 
-    /// <summary>A second hidden report does not restart the grace.</summary>
+    /// <summary>The cutoff never drops a present editor before the coming midnight, whenever in the day they started.</summary>
+    [Theory]
+    [InlineData(0, 1)]
+    [InlineData(6, 0)]
+    [InlineData(12, 30)]
+    [InlineData(21, 59)]
+    public void APresentEditorHoldsUntilTheComingMidnight(int startHourUtc, int startMinute)
+    {
+        var started = new DateTimeOffset(2026, 7, 1, startHourUtc, startMinute, 0, TimeSpan.Zero);
+        var midnight = EditDeployCutoff.NextAfter(started, EditDeployCutoff.Zone(Defaults), TimeSpan.Zero);
+        Assert.Equal(0, TimeZoneInfo.ConvertTime(midnight, EditDeployCutoff.Zone(Defaults)).TimeOfDay.Ticks);
+        Assert.InRange(midnight - started, TimeSpan.FromTicks(1), TimeSpan.FromDays(1));
+
+        for (var at = started; at < midnight; at += TimeSpan.FromMinutes(7))
+        {
+            var present = new EditActivityEntry(EditKind.BoulderCreate, Wall, null, started, at, at);
+            Assert.True(EditDeployGatePolicy.HoldsGate(present, at, Defaults), $"released at {at:o}");
+        }
+
+        var atMidnight = new EditActivityEntry(EditKind.BoulderCreate, Wall, null, started, midnight, midnight);
+        Assert.False(EditDeployGatePolicy.HoldsGate(atMidnight, midnight, Defaults));
+    }
+
+    /// <summary>Only a report from the page counts as "presence reported"; a heartbeat or reconnect does not.</summary>
+    [Fact]
+    public void ALeaseWithoutAnyPresenceReportIsFlaggedOnceAfterAFewMinutes()
+    {
+        var registry = new EditActivityRegistry();
+        var activity = new CircuitEditActivity(registry);
+        activity.BeginBoulderCreate(Wall, userId: null, Now);
+        activity.Touch(Now + TimeSpan.FromMinutes(1));
+        activity.Resume(Now + TimeSpan.FromMinutes(2));
+
+        var within = EditActivityPolicy.PresenceReportExpectedWithin;
+        Assert.Empty(activity.TakeSilentLeases(within, Now + within - TimeSpan.FromSeconds(1)));
+        var silent = Assert.Single(activity.TakeSilentLeases(within, Now + within));
+        Assert.False(silent.PresenceReported);
+        Assert.Empty(activity.TakeSilentLeases(within, Now + within + TimeSpan.FromMinutes(1)));
+
+        var reported = new CircuitEditActivity(registry);
+        reported.BeginWallEdit(Wall, userId: null, Now);
+        reported.RecordVisibility(visible: true, Now + TimeSpan.FromSeconds(2));
+        Assert.Empty(reported.TakeSilentLeases(within, Now + within));
+    }
+
+    /// <summary>A torn-down circuit hands out no new interop reference.</summary>
+    [Fact]
+    public void NoPresenceReferenceAfterTheCircuitIsGone()
+    {
+        var activity = new CircuitEditActivity(new EditActivityRegistry());
+        Assert.NotNull(activity.PresenceReference);
+        activity.Dispose();
+        Assert.Null(activity.PresenceReference);
+    }
+
+    /// <summary>A second hidden report keeps the first timestamp (how long it has really been out of sight).</summary>
     [Fact]
     public void RepeatedHiddenReportsKeepTheFirstTimestamp()
     {

@@ -100,6 +100,16 @@ public sealed class EditActivityCircuitHandler : CircuitHandler, IAsyncDisposabl
         shutdown.Dispose();
     }
 
+    private void WarnAboutSilentLeases()
+    {
+        foreach (var entry in activity.TakeSilentLeases(EditActivityPolicy.PresenceReportExpectedWithin))
+        {
+            logger.LogWarning(
+                "Edit lease {Kind} on wall {WallId} for user {UserId} has had no presence report from its page after {Minutes} min; the deploy gate treats it as idle",
+                entry.EditKind, entry.WallId, entry.UserId, (int)EditActivityPolicy.PresenceReportExpectedWithin.TotalMinutes);
+        }
+    }
+
     private async Task RunHeartbeatAsync(CancellationToken ct)
     {
         // Yield first so circuit startup is never blocked by this loop.
@@ -117,6 +127,7 @@ public sealed class EditActivityCircuitHandler : CircuitHandler, IAsyncDisposabl
                 }
 
                 activity.Touch();
+                WarnAboutSilentLeases();
             }
         }
         catch (OperationCanceledException)
