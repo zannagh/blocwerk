@@ -64,15 +64,26 @@ public sealed class FeedInterceptor : SaveChangesInterceptor, IDbTransactionInte
 
     public override int SavedChanges(SaveChangesCompletedEventData eventData, int result)
     {
+        if (eventData.Context is { } context)
+        {
+            // With async false the compaction runs synchronously and the task is already complete.
+            FeedCommentCompaction.ApplyAsync(context, logger, async: false, CancellationToken.None).GetAwaiter().GetResult();
+        }
+
         Saved(eventData.Context);
         return base.SavedChanges(eventData, result);
     }
 
-    public override ValueTask<int> SavedChangesAsync(
+    public override async ValueTask<int> SavedChangesAsync(
         SaveChangesCompletedEventData eventData, int result, CancellationToken cancellationToken = default)
     {
+        if (eventData.Context is { } context)
+        {
+            await FeedCommentCompaction.ApplyAsync(context, logger, async: true, cancellationToken);
+        }
+
         Saved(eventData.Context);
-        return base.SavedChangesAsync(eventData, result, cancellationToken);
+        return await base.SavedChangesAsync(eventData, result, cancellationToken);
     }
 
     public override void SaveChangesFailed(DbContextErrorEventData eventData) => Drop(eventData.Context);
@@ -206,6 +217,11 @@ public sealed class FeedInterceptor : SaveChangesInterceptor, IDbTransactionInte
 
     private void Drop(DbContext? context)
     {
+        if (context is not null)
+        {
+            FeedCommentCompaction.Drop(context);
+        }
+
         if (context is not null && pending.TryGetValue(context, out var rows))
         {
             pending.Remove(context);

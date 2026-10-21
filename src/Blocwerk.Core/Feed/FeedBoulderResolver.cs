@@ -15,6 +15,7 @@ namespace Blocwerk.Core.Feed;
 /// the database, in one query per save. That lookup runs before EF writes anything, so a boulder deleted in the same
 /// save is still there; it never fails the save: on an error the known walls get a resync instead. A part whose mapper
 /// threw (<see cref="FeedMapContext.FailBoulder"/>) gets a <c>mapping-failed</c> resync of the boulder's wall, found the same way.
+/// The same lookup places the rows a mapper wrote on a boulder without its wall (<see cref="FeedBoulderPlacement"/>).
 /// </summary>
 internal static class FeedBoulderResolver
 {
@@ -24,37 +25,61 @@ internal static class FeedBoulderResolver
     public static void Resolve(DbContext context, FeedMapContext map, ILogger logger)
     {
         var lookup = Prepare(map);
-        if (lookup.Count == 0)
+        var plan = FeedBoulderPlacement.Plan(context, map);
+        var ids = Ids(lookup, plan);
+        if (ids.Count == 0)
         {
+            FeedBoulderPlacement.Apply(map, plan, []);
             return;
         }
 
         try
         {
-            AddFacts(map, lookup, FeedLookupSavepoint.Run(context, () => Query(context, lookup).ToList()), logger);
+            Finish(map, lookup, plan, FeedLookupSavepoint.Run(context, () => Query(context, ids).ToList()), logger);
         }
         catch (Exception ex)
         {
-            Fallback(map, lookup, ex, logger);
+            Fail(map, lookup, plan, ex, logger);
         }
     }
 
     public static async Task ResolveAsync(DbContext context, FeedMapContext map, ILogger logger, CancellationToken ct)
     {
         var lookup = Prepare(map);
-        if (lookup.Count == 0)
+        var plan = FeedBoulderPlacement.Plan(context, map);
+        var ids = Ids(lookup, plan);
+        if (ids.Count == 0)
         {
+            FeedBoulderPlacement.Apply(map, plan, []);
             return;
         }
 
         try
         {
-            AddFacts(map, lookup, await FeedLookupSavepoint.RunAsync(context, () => Query(context, lookup).ToListAsync(ct), ct), logger);
+            Finish(map, lookup, plan, await FeedLookupSavepoint.RunAsync(context, () => Query(context, ids).ToListAsync(ct), ct), logger);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            Fallback(map, lookup, ex, logger);
+            Fail(map, lookup, plan, ex, logger);
         }
+    }
+
+    // One lookup per save, for the touched boulders and the unplaced rows' boulders alike.
+    private static List<Guid> Ids(List<FeedBoulderTouch> lookup, FeedPlacementPlan plan) =>
+        lookup.Select(t => t.BoulderId).Concat(plan.Missing).Distinct().ToList();
+
+    private static void Finish(
+        FeedMapContext map, List<FeedBoulderTouch> lookup, FeedPlacementPlan plan, List<FeedBoulderFacts> facts, ILogger logger)
+    {
+        AddFacts(map, lookup, facts, logger);
+        FeedBoulderPlacement.Apply(map, plan, facts);
+    }
+
+    // The unplaced rows of boulders the lookup could not read are dropped (a user's own rows stay wall-less).
+    private static void Fail(FeedMapContext map, List<FeedBoulderTouch> lookup, FeedPlacementPlan plan, Exception ex, ILogger logger)
+    {
+        Fallback(map, lookup, ex, logger);
+        FeedBoulderPlacement.Apply(map, plan, []);
     }
 
     // Writes the touches that need no lookup and returns the ones that do.
@@ -87,9 +112,8 @@ internal static class FeedBoulderResolver
         return lookup;
     }
 
-    private static IQueryable<FeedBoulderFacts> Query(DbContext context, List<FeedBoulderTouch> lookup)
+    private static IQueryable<FeedBoulderFacts> Query(DbContext context, List<Guid> ids)
     {
-        var ids = lookup.Select(t => t.BoulderId).ToList();
         return context.Set<Boulder>()
             .IgnoreQueryFilters()
             .AsNoTracking()

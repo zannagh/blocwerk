@@ -63,6 +63,9 @@ public sealed class FeedMapContext
     /// <summary>Records that a mapper threw on a part of the boulder: the resolver resyncs the boulder's wall.</summary>
     internal void FailBoulder(Guid boulderId, Boulder? boulder) => Touch(boulderId, boulder, null, mappingFailed: true);
 
+    /// <summary>Drops the collected rows matching <paramref name="match"/> (rows the resolver could not place).</summary>
+    internal void RemoveRows(Predicate<WallChange> match) => rows.RemoveAll(match);
+
     /// <summary>Drops the rows added after <paramref name="count"/>: a mapper that threw half-way leaves nothing behind.</summary>
     internal void TruncateTo(int count) => rows.RemoveRange(count, rows.Count - count);
 

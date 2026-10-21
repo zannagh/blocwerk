@@ -35,22 +35,14 @@ public static class FeedCoverage
         [typeof(WallReset)] = "written only by the promote, inside its FeedScope, in the save that moves Wall.CurrentGeneration (wall.updated)",
         [typeof(HoldGenerationLink)] = "lineage is written with the holds it links (carry, merge repoint, delete tombstone), whose hold rows evict the same sets",
         [typeof(WallTemperatureReading)] = "sensor telemetry every few minutes; the wall card polls it, and no viewer's state depends on a sample",
+        [typeof(Activity)] = "a user's own training activity (ascents grouped by time gap), derived from their attempts; no "
+            + "wall view shows it, and the attempt's tick.mine already tells the user's devices",
+        [typeof(ClimbingSession)] = "a user's own check-in at a wall, read only by themselves (/api/me/sessions, their session "
+            + "state); no other viewer of the wall sees it",
     };
 
     /// <summary>Gets the user-visible entities whose mapper has not landed yet, with the PR that brings it.</summary>
     public static IReadOnlyDictionary<Type, string> Pending { get; } = new Dictionary<Type, string>
     {
-        [typeof(BoulderComment)] = "1.2c: comment.added, comment.deleted (with compaction)",
-        [typeof(BetaVideo)] = "1.2c: video.added, video.status, video.deleted",
-        [typeof(Attempt)] = "1.2c: boulder.stats, tick.mine",
-        [typeof(BoulderRating)] = "1.2c: boulder.stats, rating.mine",
-        [typeof(GradeProposal)] = "1.2c: boulder.stats",
-        [typeof(BoulderFavorite)] = "1.2c: favorite.changed",
-        [typeof(WallImage)] = "1.2c: gallery.changed, gallery.deleted",
-        [typeof(ActivityLogEntry)] = "1.2c: activity.added",
-        [typeof(WallGeometryModel)] = "1.2c: view3d.changed",
-        [typeof(User)] = "1.2c: user.profile (in the guard through its home-wall key)",
-        [typeof(Activity)] = "1.2c: per-user progression, not in §5.4; decide (likely excluded, derived from attempts)",
-        [typeof(ClimbingSession)] = "1.2c: per-user sessions, not in §5.4; decide",
     };
 }
