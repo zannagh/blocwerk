@@ -37,6 +37,9 @@ public sealed class PostgresLeafFeedTests
 
         var early = await CommentRowAsync(f, boulder, "seen by the load");
         await f.CommitAsync(false, early);
+
+        // The load's cursor must cover `early`: on Postgres that waits for the cluster-wide horizon to pass it.
+        await PostgresHorizonWait.UntilCeilingReachesAsync(f.Harness.CreateContext, early.TxId!.Value);
         await dispatcher.Run(() => feed.LoadAsync(() => Task.FromResult(0), _ => { }));
         f.Signal.Wake(new Core.Feed.FeedWake(f.WallId, early.TxId));
 
