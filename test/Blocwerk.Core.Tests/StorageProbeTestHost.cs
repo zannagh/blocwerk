@@ -98,7 +98,10 @@ internal sealed class StorageProbeLogSink : ILoggerProvider
     }
 }
 
-/// <summary>"person" signs in as a browser user; "personal-write-key" as an API key; anything else is anonymous.</summary>
+/// <summary>
+/// "person" signs in as a browser user, "person-without-id" as one with no NameIdentifier claim, and
+/// "personal-write-key" as an API key; anything else is anonymous.
+/// </summary>
 internal sealed class StorageProbeAuthHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options, ILoggerFactory logger, UrlEncoder encoder)
     : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
@@ -108,7 +111,7 @@ internal sealed class StorageProbeAuthHandler(
         var who = Request.Headers[StorageProbeTestHost.Who].ToString();
         var type = who switch
         {
-            "person" => "test",
+            "person" or "person-without-id" => "test",
             "personal-write-key" => ApiKeyAuthenticationHandler.SchemeName,
             _ => null,
         };
@@ -117,7 +120,9 @@ internal sealed class StorageProbeAuthHandler(
             return Task.FromResult(AuthenticateResult.NoResult());
         }
 
-        var claims = new[] { new Claim(ClaimTypes.NameIdentifier, "probe|" + Guid.NewGuid()) };
+        var claims = who == "person-without-id"
+            ? [new Claim(ClaimTypes.Name, "Nobody")]
+            : new[] { new Claim(ClaimTypes.NameIdentifier, "probe|" + Guid.NewGuid()) };
         var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, type));
         return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(principal, "test")));
     }

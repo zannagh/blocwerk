@@ -180,10 +180,11 @@
 
     /**
      * The JSON body for a report, trimmed under maxBytes: long strings in data are cut first, then data is
-     * replaced by a note. The server caps at 8 KB and refuses anything larger outright.
+     * replaced by a note. The server refuses bodies over 8 KB and cuts logged data at 2 KB.
      */
     function fitReport(report, maxBytes) {
-        const limit = maxBytes || 7600;
+        // The server logs at most 2 KB of data, so aim the whole body there and keep the 8 KB cap far away.
+        const limit = maxBytes || 2000;
         const bytes = text => (typeof TextEncoder === 'function' ? new TextEncoder().encode(text).length : text.length * 3);
         let body = JSON.stringify(report);
         if (bytes(body) <= limit) {

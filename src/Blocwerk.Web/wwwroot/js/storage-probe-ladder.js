@@ -259,5 +259,5 @@
         }
     });
 
-    probe.ladder = { run: run, detectCrashes: detectCrashes, reset: reset, summary: () => summary(load()) };
+    probe.ladder = { run: run, detectCrashes: detectCrashes, cleanup: cleanup, reset: reset, summary: () => summary(load()) };
 })();

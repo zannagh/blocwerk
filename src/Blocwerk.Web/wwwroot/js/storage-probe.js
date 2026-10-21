@@ -24,7 +24,15 @@
         quick: ['Quick checks', () => probe.checks.quick()],
         'write-markers': ['Write markers', () => probe.checks.writeMarkers()],
         'check-markers': ['Check markers', () => probe.checks.checkMarkers(false)],
-        ladder: ['Size ladder', () => probe.ladder.run()],
+        ladder: ['Size ladder', async () => {
+            const ok = window.confirm('The size ladder writes up to 1.5 GB of temporary test data to this device '
+                + '(deleted again after each step) and may crash this page. Start it?');
+            if (!ok) {
+                probe.log('Size ladder not started.', 'info');
+                return;
+            }
+            await probe.ladder.run();
+        }],
         'reset-ladder': ['Reset ladder', async () => {
             await probe.ladder.reset();
             await probe.post('ladder', 'reset', {});
@@ -63,6 +71,8 @@
             }
             probe.previousVisit = localStorage.getItem('bw-storage-probe-last-visit');
             await probe.ladder.detectCrashes();
+            // A run that died mid-step left its test data (up to 1.5 GB) behind; free it now, not on the next run.
+            await probe.ladder.cleanup();
             await probe.checks.checkMarkers(true);
             localStorage.setItem('bw-storage-probe-last-visit', new Date().toISOString());
         } catch (e) {

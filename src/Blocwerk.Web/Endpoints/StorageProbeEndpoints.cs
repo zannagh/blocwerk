@@ -3,6 +3,7 @@
 
 using System.Collections.Concurrent;
 using System.Security.Claims;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Blocwerk.Authentication.Authorization;
@@ -25,12 +26,19 @@ public static partial class StorageProbeEndpoints
     /// <summary>Largest body accepted; the client trims its payload to fit.</summary>
     public const int MaxBodyBytes = 8 * 1024;
 
-    /// <summary>Reports per user per <see cref="Window"/>: a full size ladder is about 150.</summary>
-    public const int MaxReports = 600;
+    /// <summary>Reports per user per <see cref="Window"/>: a full size ladder is about 130.</summary>
+    public const int MaxReports = 200;
+
+    /// <summary>Longest serialized <c>data</c> logged; anything longer is cut and marked.</summary>
+    public const int MaxDataChars = 2048;
 
     public static readonly TimeSpan Window = TimeSpan.FromMinutes(10);
 
-    private static readonly ConcurrentDictionary<string, Queue<DateTimeOffset>> Recent = new();
+    private static readonly ConcurrentDictionary<string, ReportWindow> Recent = new();
+
+    // Relaxed: quotes and </> stay readable in the log. It still escapes every control character, which is
+    // what keeps a report on one line (StorageProbeEndpointTests pins that for \n and NUL).
+    private static readonly JsonSerializerOptions DataJson = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
     public static void MapStorageProbe(this WebApplication app)
     {
@@ -62,7 +70,13 @@ public static partial class StorageProbeEndpoints
             return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
         }
 
-        var key = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? user.Identity?.Name ?? "?";
+        // No id, no bucket: such callers would otherwise share one window and starve each other.
+        var key = user.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(key))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
         if (!Admit(key, DateTimeOffset.UtcNow))
         {
             return Results.StatusCode(StatusCodes.Status429TooManyRequests);
@@ -114,45 +128,66 @@ public static partial class StorageProbeEndpoints
             }
 
             var seq = root.TryGetProperty("seq", out var s) && s.TryGetInt32(out var n) ? n : 0;
-            var data = root.TryGetProperty("data", out var d) ? JsonSerializer.Serialize(d) : "{}";
+            var data = root.TryGetProperty("data", out var d) ? JsonSerializer.Serialize(d, DataJson) : "{}";
+            if (data.Length > MaxDataChars)
+            {
+                data = data[..MaxDataChars] + $"...(cut, {data.Length} chars)";
+            }
+
             return new StorageProbeLine(run, context, seq, step, result, data);
         }
     }
 
-    /// <summary>Sliding-window admission, the photo-real diagnostics' scheme; forgets idle users.</summary>
+    /// <summary>Sliding-window admission per user; idle users are pruned once the map grows past 1000.</summary>
     internal static bool Admit(string key, DateTimeOffset now)
     {
-        var queue = Recent.GetOrAdd(key, _ => new Queue<DateTimeOffset>());
-        lock (queue)
+        while (true)
         {
-            while (queue.Count > 0 && now - queue.Peek() > Window)
+            var entry = Recent.GetOrAdd(key, _ => new ReportWindow());
+            lock (entry)
             {
-                queue.Dequeue();
+                if (entry.Retired)
+                {
+                    // Pruned between GetOrAdd and the lock: take the fresh window instead.
+                    continue;
+                }
+
+                while (entry.Times.Count > 0 && now - entry.Times.Peek() > Window)
+                {
+                    entry.Times.Dequeue();
+                }
+
+                if (entry.Times.Count >= MaxReports)
+                {
+                    return false;
+                }
+
+                entry.Times.Enqueue(now);
             }
 
-            if (queue.Count >= MaxReports)
-            {
-                return false;
-            }
+            Prune(now);
+            return true;
+        }
+    }
 
-            queue.Enqueue(now);
+    private static void Prune(DateTimeOffset now)
+    {
+        if (Recent.Count <= 1000)
+        {
+            return;
         }
 
-        if (Recent.Count > 1000)
+        foreach (var (k, entry) in Recent)
         {
-            foreach (var (k, q) in Recent)
+            lock (entry)
             {
-                lock (q)
+                // Removed only while locked and only this exact instance, so a live window is never dropped.
+                if (entry.IsIdle(now, Window) && Recent.TryRemove(new KeyValuePair<string, ReportWindow>(k, entry)))
                 {
-                    if (q.Count == 0 || now - q.Peek() > Window)
-                    {
-                        Recent.TryRemove(k, out _);
-                    }
+                    entry.Retired = true;
                 }
             }
         }
-
-        return true;
     }
 
     /// <summary>The body, or null once it runs past <see cref="MaxBodyBytes"/> (a chunked body has no length).</summary>

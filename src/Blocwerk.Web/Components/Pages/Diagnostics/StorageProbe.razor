@@ -19,6 +19,12 @@
         above, so tell whoever asked which run is which. If this text stays and nothing below fills in, reload.
     </p>
 
+    <div class="probe-help">
+        <p><strong>1. Quick checks</strong> asks whether storage is persistent, requests persistence, and reports the quota, usage and device.</p>
+        <p><strong>2. Write markers</strong> leaves a timestamped note in localStorage, a cookie, IndexedDB, the Cache API and OPFS. <strong>3. Check markers</strong> reads them back on a later visit and says which survived. The tab and the home-screen app each have their own.</p>
+        <p><strong>4. Size ladder</strong> writes up to <strong>1.5 GB</strong> of generated test data (25 MB, then larger steps) into the Cache API and OPFS and reads it back. The data is temporary: each step deletes it again. It may crash the page; just reopen it and press the button again, it continues where it stopped.</p>
+    </div>
+
     <div class="probe-actions">
         <button type="button" class="btn-primary probe-btn" data-probe-action="quick" disabled>1. Quick checks</button>
         <button type="button" class="btn-primary probe-btn" data-probe-action="write-markers" disabled>2. Write markers</button>
@@ -29,15 +35,9 @@
 
     <ul id="probe-log" class="probe-log" aria-live="polite"></ul>
 
-    <details class="probe-help">
-        <summary>What each button does</summary>
-        <p><strong>Quick checks</strong> asks whether storage is persistent, requests persistence, and reports the quota, usage and device.</p>
-        <p><strong>Write markers</strong> leaves a timestamped note in localStorage, a cookie, IndexedDB, the Cache API and OPFS. <strong>Check markers</strong> reads them back on a later visit and says which survived. The tab and the home-screen app each have their own.</p>
-        <p><strong>Size ladder</strong> writes 25 MB up to 1.5 GB of generated data into the Cache API and OPFS and reads it back. It may crash the page; just reopen it and press the button again, it continues where it stopped. It deletes its data as it goes.</p>
-        <p>
-            <button type="button" class="btn-secondary" data-probe-action="reset-ladder" disabled>Reset ladder progress</button>
-        </p>
-    </details>
+    <p>
+        <button type="button" class="btn-secondary" data-probe-action="reset-ladder" disabled>Reset ladder progress</button>
+    </p>
 
     <p><a href="/profile" data-enhance-nav="false">Back to your profile</a></p>
 </div>

@@ -118,6 +118,68 @@ public sealed class StorageProbeEndpointTests
     }
 
     [Fact]
+    public async Task ControlCharacters_StayEscaped_WhileQuotesAndAnglesStayReadable()
+    {
+        await using var host = await StorageProbeTestHost.StartAsync();
+        var body = """{"run":"r","ctx":"tab","seq":1,"step":"s","result":"ok","data":{"e":"a\nb\u0000c\r\"<x>'"}}""";
+
+        await host.PostAsync("person", Json(body));
+
+        var (_, message) = Assert.Single(host.Logs.Entries);
+        Assert.DoesNotContain('\n', message);
+        Assert.DoesNotContain('\r', message);
+        Assert.DoesNotContain('\0', message);
+        Assert.EndsWith("""data={"e":"a\nb\u0000c\r\"<x>'"}""", message);
+    }
+
+    [Fact]
+    public async Task LongData_IsCutAtTheLogCap_AndMarked()
+    {
+        await using var host = await StorageProbeTestHost.StartAsync();
+        var body = """{"run":"r","ctx":"tab","seq":1,"step":"s","result":"ok","data":{"pad":"PAD"}}""".Replace("PAD", new string('x', 5000));
+
+        Assert.Equal(HttpStatusCode.NoContent, (await host.PostAsync("person", Json(body))).StatusCode);
+
+        var (_, message) = Assert.Single(host.Logs.Entries);
+        var data = message[(message.IndexOf("data=", StringComparison.Ordinal) + 5)..];
+        Assert.StartsWith("{\"pad\":\"xxx", data);
+        Assert.EndsWith("...(cut, 5010 chars)", data);
+        Assert.Equal(StorageProbeEndpoints.MaxDataChars + "...(cut, 5010 chars)".Length, data.Length);
+    }
+
+    [Fact]
+    public async Task ASignedInCallerWithoutAnId_IsRefused_RatherThanSharingABucket()
+    {
+        await using var host = await StorageProbeTestHost.StartAsync();
+
+        var response = await host.PostAsync("person-without-id", Json(Valid));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Empty(host.Logs.Entries);
+    }
+
+    [Fact]
+    public async Task ConcurrentReports_FromManyUsers_AreEachAdmitted_ThroughPruning()
+    {
+        // Past 1000 users every admission prunes; a window pruned under a racing admission must not lose it.
+        var now = DateTimeOffset.UtcNow;
+        var keys = Enumerable.Range(0, 3000).Select(_ => Guid.NewGuid().ToString()).ToList();
+        await Parallel.ForEachAsync(keys, (key, _) =>
+        {
+            Assert.True(StorageProbeEndpoints.Admit(key, now));
+            return ValueTask.CompletedTask;
+        });
+
+        var hot = keys[0];
+        for (var i = 1; i < StorageProbeEndpoints.MaxReports; i++)
+        {
+            Assert.True(StorageProbeEndpoints.Admit(hot, now));
+        }
+
+        Assert.False(StorageProbeEndpoints.Admit(hot, now));
+    }
+
+    [Fact]
     public void Reports_AreRateLimitedPerUser_InASlidingWindow()
     {
         var key = Guid.NewGuid().ToString();

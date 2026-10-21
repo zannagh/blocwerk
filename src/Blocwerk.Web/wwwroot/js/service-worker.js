@@ -46,12 +46,17 @@ self.addEventListener('install', event => {
 self.addEventListener('activate', event => {
     event.waitUntil(
         caches.keys()
-            // Only this worker's own older shells: other caches on the origin (the storage probe's
-            // markers, later on-device wall data) are not the shell's to delete on an update.
-            .then(keys => Promise.all(keys.filter(k => k.startsWith('blocwerk-shell-') && k !== CACHE).map(k => caches.delete(k))))
+            // Only this worker's own older shells, plus the storage probe's size-ladder scratch (up to 1.5 GB a
+            // crashed run can leave behind). Every other cache on the origin (the probe's markers in
+            // 'bw-storage-probe', later on-device wall data in 'bw-a1-*') is not the shell's to delete.
+            .then(keys => Promise.all(keys.filter(isDisposableCache).map(k => caches.delete(k))))
             .then(() => self.clients.claim())
     );
 });
+
+function isDisposableCache(name) {
+    return (name.startsWith('blocwerk-shell-') && name !== CACHE) || name === 'bw-storage-probe-ladder';
+}
 
 function isBypassed(url, request) {
     if (request.method !== 'GET') {
