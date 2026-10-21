@@ -50,7 +50,7 @@ public class WallImageService : IWallImageService
             StoragePath = storagePath,
             ContentType = contentType,
             SizeBytes = sizeBytes,
-            Sha256 = await ContentHash.OfFileAsync(storage.ResolvePhysicalPath(storagePath), ct),
+            Sha256 = await HashStoredFileAsync(storagePath, ct),
             Caption = caption,
             CapturedAt = capturedAt ?? DateTimeOffset.UtcNow,
         };
@@ -250,4 +250,21 @@ public class WallImageService : IWallImageService
                 "Generation " + r.Generation,
                 r.ResetAt))
             .ToListAsync(ct);
+
+    /// <summary>
+    /// The stored file's content hash, or null when it cannot be read: the file is committed by now, so a failed read must
+    /// not fail the upload (that would orphan the file); the backfill hashes the row later.
+    /// </summary>
+    private async Task<byte[]?> HashStoredFileAsync(string storagePath, CancellationToken ct)
+    {
+        try
+        {
+            return await ContentHash.OfFileAsync(storage.ResolvePhysicalPath(storagePath), ct);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            logger.LogWarning(ex, "Could not hash stored wall image {StoragePath}; the backfill will", storagePath);
+            return null;
+        }
+    }
 }

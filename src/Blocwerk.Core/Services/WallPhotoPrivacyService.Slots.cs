@@ -79,7 +79,7 @@ public sealed partial class WallPhotoPrivacyService
     /// A gallery upload on disk: replaced through a temp file and an atomic move, and its row's size
     /// and content hash updated — which also moves the image's variant-cache key, ETag and url version. Both are written
     /// in a transaction that commits only after the move, so a crash before the move changes nothing; a
-    /// crash between the move and the commit leaves a clean file under the old size and hash, which
+    /// crash between the move and the commit leaves a clean file under the old size and hash (or the old hash alone, when the clean file is as long), which
     /// <see cref="WallPhotoSlot.Repair"/> puts right on the next run (a rerun sees a clean file and would
     /// otherwise never touch the row again).
     /// </summary>
@@ -106,15 +106,20 @@ public sealed partial class WallPhotoPrivacyService
                     return false;
                 }
 
+                // The size alone misses a clean re-encode of the same length; a stored hash catches it (a null one is
+                // the backfill's to fill, not drift).
                 var length = new FileInfo(path).Length;
-                var drifted = db.WallImages.IgnoreQueryFilters().Where(i => i.Id == imageId && i.SizeBytes != length);
-                if (!apply)
+                var sha = await ContentHash.OfFileAsync(path, ct);
+                if (sha is null)
                 {
-                    return await drifted.AnyAsync(ct);
+                    return false;
                 }
 
-                var sha = await ContentHash.OfFileAsync(path, ct);
-                return await drifted.ExecuteUpdateAsync(s => s.SetProperty(i => i.SizeBytes, length).SetProperty(i => i.Sha256, sha), ct) > 0;
+                var drifted = db.WallImages.IgnoreQueryFilters()
+                    .Where(i => i.Id == imageId && (i.SizeBytes != length || (i.Sha256 != null && i.Sha256 != sha)));
+                return apply
+                    ? await drifted.ExecuteUpdateAsync(s => s.SetProperty(i => i.SizeBytes, length).SetProperty(i => i.Sha256, sha), ct) > 0
+                    : await drifted.AnyAsync(ct);
             });
     }
 

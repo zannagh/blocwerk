@@ -9,8 +9,9 @@ namespace Blocwerk.Core.Data;
 
 /// <summary>
 /// Keeps the hash columns of <see cref="ContentHashColumn.InDatabase"/> in step with their blobs: on every save, an
-/// Added row, or a Modified row whose blob or hash changed, gets the hash of its current bytes (null for none). A hash
-/// set by hand is therefore overwritten; the column only ever holds the hash of the bytes beside it.
+/// Added row, or a Modified row whose blob changed, gets the hash of its current bytes (null for none), or the hash a
+/// writer carried with exactly those bytes (<see cref="ContentHashCarries"/>). A hash set by hand over unchanged bytes is
+/// reverted to its stored value.
 /// </summary>
 /// <remarks>
 /// Run by <see cref="BlocwerkDbContext"/> itself before <c>base.SaveChanges</c>, so every context has it whatever
@@ -25,32 +26,48 @@ internal static class ContentHashStamp
 {
     private static readonly ILookup<Type, ContentHashColumn> ByEntity = ContentHashColumn.InDatabase.ToLookup(c => c.Entity);
 
-    public static void Apply(ChangeTracker tracker)
+    public static void Apply(ChangeTracker tracker, ContentHashCarries carries)
     {
-        foreach (var entry in tracker.Entries())
+        try
         {
-            if (entry.State is not (EntityState.Added or EntityState.Modified))
+            foreach (var entry in tracker.Entries())
             {
-                continue;
-            }
+                if (entry.State is not (EntityState.Added or EntityState.Modified))
+                {
+                    continue;
+                }
 
-            foreach (var column in ByEntity[entry.Metadata.ClrType])
-            {
-                Stamp(entry, column);
+                foreach (var column in ByEntity[entry.Metadata.ClrType])
+                {
+                    Stamp(entry, column, carries);
+                }
             }
+        }
+        finally
+        {
+            carries.Clear();
         }
     }
 
-    private static void Stamp(EntityEntry entry, ContentHashColumn column)
+    private static void Stamp(EntityEntry entry, ContentHashColumn column, ContentHashCarries carries)
     {
         var bytes = entry.Property(column.Bytes);
         var hash = entry.Property(column.Hash);
-        if (entry.State == EntityState.Modified && !bytes.IsModified && !hash.IsModified)
+        if (entry.State == EntityState.Modified && !bytes.IsModified)
         {
+            // A hash set by hand over unchanged bytes is put back, so the row is not written for it (and nothing journals
+            // or feeds it). Never rehash here: a wall read without its photos holds null bytes beside a real hash.
+            if (hash.IsModified)
+            {
+                hash.CurrentValue = hash.OriginalValue;
+                hash.IsModified = false;
+            }
+
             return;
         }
 
-        var current = ContentHash.Of((byte[]?)bytes.CurrentValue);
+        var value = (byte[]?)bytes.CurrentValue;
+        var current = carries.Find(entry.Entity, column.Hash, value) ?? ContentHash.Of(value);
         if (entry.State == EntityState.Added || !ContentHash.Same(current, (byte[]?)hash.CurrentValue))
         {
             hash.CurrentValue = current;

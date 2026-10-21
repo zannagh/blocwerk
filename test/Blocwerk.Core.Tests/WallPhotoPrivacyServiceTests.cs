@@ -153,6 +153,42 @@ public class WallPhotoPrivacyServiceTests
         Assert.Equal(SHA256.HashData(after["gallery"]), await db.WallImages.Select(i => i.Sha256).SingleAsync());
     }
 
+    [Fact]
+    public async Task AGalleryRowWhoseHashLagsAnEquallyLongFile_IsRepairedByTheNextRun()
+    {
+        using var h = new WallTestHarness();
+        var seeded = await SeedDirtyWallAsync(h);
+        await Service(h).RemoveMetadataAsync(h.WallId);
+
+        // A crash between the move and the commit, where the clean file came out exactly as long: only the hash lags.
+        var stale = SHA256.HashData([0]);
+        await using (var db = h.CreateContext())
+        {
+            await db.WallImages.ExecuteUpdateAsync(s => s.SetProperty(i => i.Sha256, stale));
+        }
+
+        Assert.Equal(1, (await Service(h).ScanAsync(h.WallId)).NeedsRepair);
+        Assert.Equal(1, (await Service(h).RemoveMetadataAsync(h.WallId)).NeedsRepair);
+        Assert.Equal(0, (await Service(h).ScanAsync(h.WallId)).NeedsRepair);
+
+        await using var check = h.CreateContext();
+        Assert.Equal(SHA256.HashData(await File.ReadAllBytesAsync(seeded.GalleryPath)), await check.WallImages.Select(i => i.Sha256).SingleAsync());
+    }
+
+    [Fact]
+    public async Task AGalleryRowWithoutAHashYet_IsNotDrift()
+    {
+        using var h = new WallTestHarness();
+        await SeedDirtyWallAsync(h);
+        await Service(h).RemoveMetadataAsync(h.WallId);
+        await using (var db = h.CreateContext())
+        {
+            await db.WallImages.ExecuteUpdateAsync(s => s.SetProperty(i => i.Sha256, (byte[]?)null));
+        }
+
+        Assert.Equal(0, (await Service(h).ScanAsync(h.WallId)).NeedsRepair);
+    }
+
     private static WallPhotoPrivacyService Service(WallTestHarness h, IKioskContext? kiosk = null) =>
         new(h.DbContextFactory, h.CurrentUser, h.WallImageStorage, NullLogger<WallPhotoPrivacyService>.Instance, kiosk);
 
