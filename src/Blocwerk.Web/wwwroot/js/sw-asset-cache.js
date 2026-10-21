@@ -151,6 +151,17 @@ function partitionFor(clientId) {
     return pending;
 }
 
+// `sw-refresh-partition` from a page that saw the worker serve another label than its own (sw-info's `partition`):
+// forget what that page was told and ask the server again, so `current` follows the cookie even on a page that loads
+// no /a/ image (which is otherwise the only thing that makes the worker look). Resolves with the fresh label.
+function refreshPartition(clientId) {
+    if (!clientId) {
+        return lookupPartition().then(result => result.label);
+    }
+    assetPartitions.byClient.delete(clientId);
+    return partitionFor(clientId);
+}
+
 function assetCacheNames(partition) {
     return [`bw-a1-${partition}-img`, `bw-a1-${partition}-3d`];
 }

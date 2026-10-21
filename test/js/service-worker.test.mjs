@@ -333,3 +333,16 @@ test('a lookup that hangs is abandoned at the timeout: that request goes to the 
     await dispatchFetch(worker, asset(), { clientId: 'stuck' }).settle();
     assert.equal(assetFetches(worker), 2, 'the page asks again and, answered, reads its cache');
 });
+
+test('sw-refresh-partition makes the worker ask the server again, so sw-info follows the cookie without an /a/ request', async () => {
+    const worker = workerFor(ALICE);
+    await dispatchFetch(worker, asset()).settle();
+    worker.routes[PARTITION] = () => response(200, JSON.stringify({ partition: BOB }), { 'content-type': 'application/json' });
+    assert.equal(send(worker, { proto: 1, type: 'sw-info' }, true)[0].partition, ALICE);
+
+    let pending;
+    worker.listeners.message({ data: { proto: 1, type: 'sw-refresh-partition' }, ports: [], source: { id: 'tab-1' }, waitUntil: p => { pending = p; } });
+    await pending;
+    assert.equal(send(worker, { proto: 1, type: 'sw-info' }, true)[0].partition, BOB);
+    assert.equal(worker.fetches.filter(f => f.path === PARTITION).length, 2);
+});

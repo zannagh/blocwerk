@@ -10,6 +10,8 @@
  *   'offline'   a fetch failed while the browser says it is offline (the caller resumes on `online`; the next run's
  *               plan includes that task again). A fetch that fails while online is that task's failure: it is retried
  *               on later runs and skipped for the page's life after FAILURE_LIMIT failures; the run goes on;
+ *   'flaky'     STREAK_LIMIT fetches failed in a row while online: the network, not the assets (their failures are
+ *               taken back); the caller retries on a backoff timer;
  *   'unsure'    UNSURE_LIMIT assets in a row were neither confirmed stored nor refused (a slow worker), or the worker
  *               serves another partition than this page's ('mismatch' from the caller): try later, backing off;
  *   'streaming' a refusal survived freeing one wall and one retry: no fill again for this page, everything streams;
@@ -24,6 +26,9 @@ window.bwAssetFill = (function () {
 
     const UNSURE_LIMIT = 3;
     const FAILURE_LIMIT = 3;
+    // This many fetches failing in a row while the browser says it is online (a wifi blip, a captive portal) end the
+    // run as 'flaky', so one outage cannot burn every task's FAILURE_LIMIT.
+    const STREAK_LIMIT = 3;
     const RETRY_MS = 30 * 1000;
     const BACKOFF_CAP_MS = 15 * 60 * 1000;
     // After this many 'unsure' (or 'mismatch') runs the page gives up filling: a worker that never confirms would
@@ -38,12 +43,17 @@ window.bwAssetFill = (function () {
     /**
      * A stopped run resumes on what stopped it: the page coming back ('hidden'), the network coming back ('offline'),
      * or a timer: 'locked' after RETRY_MS, 'unsure'/'mismatch' after backoffMs and not at all past UNSURE_RUNS_LIMIT
-     * (`holder.stopped`). One timer at a time, held in `holder.retry`; `holder.unsureRuns` counts, a 'done' resets it.
+     * (`holder.stopped`), 'flaky' after backoffMs on its own count and never giving up. One timer at a time, held in
+     * `holder.retry`; `holder.unsureRuns` / `holder.flakyRuns` count, a 'done' resets both.
      */
     function resumeAfter(win, result, again, holder) {
         if (result === 'done') {
             holder.unsureRuns = 0;
+            holder.flakyRuns = 0;
             return;
+        }
+        if (result === 'flaky') {
+            holder.flakyRuns = (holder.flakyRuns || 0) + 1;
         }
         if (result === 'unsure' || result === 'mismatch') {
             holder.unsureRuns = (holder.unsureRuns || 0) + 1;
@@ -62,8 +72,9 @@ window.bwAssetFill = (function () {
             win.document.addEventListener('visibilitychange', onVisible);
         } else if (result === 'offline') {
             win.addEventListener('online', () => again(), { once: true });
-        } else if ((result === 'locked' || result === 'unsure' || result === 'mismatch') && !holder.retry) {
-            const wait = result === 'locked' ? RETRY_MS : backoffMs(holder.unsureRuns);
+        } else if (['locked', 'unsure', 'mismatch', 'flaky'].includes(result) && !holder.retry) {
+            const runs = result === 'flaky' ? holder.flakyRuns : holder.unsureRuns;
+            const wait = result === 'locked' ? RETRY_MS : backoffMs(runs);
             holder.retry = win.setTimeout(() => { holder.retry = null; again(); }, wait);
         }
     }
@@ -133,6 +144,7 @@ window.bwAssetFill = (function () {
             const queue = tasks.filter(task => (failures.get(task.key) || 0) < FAILURE_LIMIT);
             let stop = null;
             let unsure = 0;
+            const streak = [];
 
             async function drain() {
                 while (!stop && queue.length > 0) {
@@ -155,8 +167,15 @@ window.bwAssetFill = (function () {
                             break;
                         }
                         failures.set(task.key, (failures.get(task.key) || 0) + 1);
+                        streak.push(task.key);
+                        if (streak.length >= STREAK_LIMIT) {
+                            // A run of failures in a row is the network, not these assets: give their budget back.
+                            streak.forEach(key => failures.set(key, failures.get(key) - 1));
+                            stop = stop || 'flaky';
+                        }
                         continue;
                     }
+                    streak.length = 0;
                     if (outcome === 'refused') {
                         streaming = true;
                         stop = 'streaming';
@@ -182,5 +201,5 @@ window.bwAssetFill = (function () {
         return { run, get streaming() { return streaming; } };
     }
 
-    return { UNSURE_LIMIT, FAILURE_LIMIT, UNSURE_RUNS_LIMIT, RETRY_MS, backoffMs, concurrencyOf, lock, discard, resumeAfter, createRunner };
+    return { UNSURE_LIMIT, FAILURE_LIMIT, STREAK_LIMIT, UNSURE_RUNS_LIMIT, RETRY_MS, backoffMs, concurrencyOf, lock, discard, resumeAfter, createRunner };
 })();

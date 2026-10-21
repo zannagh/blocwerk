@@ -43,6 +43,7 @@ window.bwAssetCache = (function (win) {
 
     const now = () => Date.now();
     const keep3d = () => !(win.bwPrefs && typeof win.bwPrefs.getCache3d === 'function' && win.bwPrefs.getCache3d() === false);
+    const mobile = () => Plan().isMobile(win.navigator, win.matchMedia ? query => win.matchMedia(query) : null);
     const caching = () => typeof state.active === 'string' && REAL_LABEL.test(state.active);
     const snapshot = async () => ({ walls: await state.env.ledger.wallsOf(state.active), assets: await state.env.ledger.assetsOf(state.active) });
 
@@ -121,6 +122,7 @@ window.bwAssetCache = (function (win) {
         // A worker serving another identity's label would store nothing for this page: wait, backing off.
         const served = await Store().workerPartition(win);
         if (served && REAL_LABEL.test(served) && served !== state.active) {
+            Store().refreshWorkerPartition(win); // look again now, so the backed-off retry usually matches
             return 'mismatch';
         }
         const { walls, assets } = await snapshot();
@@ -128,7 +130,7 @@ window.bwAssetCache = (function (win) {
         const bytesIn = test => classified.filter(test).reduce((sum, item) => sum + (item.asset.bytes || 0), 0);
         const tasks = Plan().planFill({
             walls, cachedKeys: new Set(assets.map(a => a.key)), openWallId: state.openWallId, keep3d: keep3d(),
-            metered: Plan().isMetered(win.navigator), mobile: Plan().isMobile(win.navigator), budget: state.budget,
+            metered: Plan().isMetered(win.navigator), mobile: mobile(), budget: state.budget,
             usedImages: bytesIn(item => item.tier === 'core' || item.tier === 'lazy'), used3d: bytesIn(item => item.tier === 'view3d'),
             width: Plan().fitWidth(win.innerWidth, win.devicePixelRatio), tokens: state.tokens
         });
@@ -282,7 +284,7 @@ window.bwAssetCache = (function (win) {
         keep3d,
         // Whether this device background-fills 3D (2.8's data-volume warning on opening 3D reads it): never on a phone
         // or tablet (bwAssetPlan.isMobile), nor on a metered connection, nor with 3D opted out.
-        fills3dInBackground: () => keep3d() && !Plan().isMobile(win.navigator) && !Plan().isMetered(win.navigator),
+        fills3dInBackground: () => keep3d() && !mobile() && !Plan().isMetered(win.navigator),
         summary: () => state.summaryLoaded,
         // The running fill, for tests and 2.9's progress: resolves when the queue is drained.
         filled: () => state.filling || Promise.resolve()
