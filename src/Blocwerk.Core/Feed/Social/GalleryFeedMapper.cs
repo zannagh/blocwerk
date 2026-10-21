@@ -9,13 +9,28 @@ using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace Blocwerk.Core.Feed.Social;
 
-/// <summary><c>gallery.changed</c> (an image added, or its caption or file replaced) and <c>gallery.deleted</c>, by image id.</summary>
+/// <summary>
+/// <c>gallery.changed</c> (an image added, or what the gallery shows of it changed: caption, file, type, size, capture
+/// time) and <c>gallery.deleted</c>, by image id. A write of the content hash alone (the PR 2.2 backfill) changes
+/// nothing a viewer sees and maps to nothing; a rewrite of the file itself also changes its size or path.
+/// </summary>
 internal sealed class GalleryFeedMapper : IFeedMapper
 {
+    private static readonly IReadOnlySet<string> Visible = new HashSet<string>
+    {
+        nameof(WallImage.Caption), nameof(WallImage.StoragePath), nameof(WallImage.ContentType), nameof(WallImage.SizeBytes),
+        nameof(WallImage.CapturedAt), nameof(WallImage.WallId),
+    };
+
     public IReadOnlyCollection<Type> EntityTypes { get; } = [typeof(WallImage)];
 
     public void Map(EntityEntry entry, FeedMapContext context)
     {
+        if (!SocialRows.Changed(entry, Visible))
+        {
+            return;
+        }
+
         var image = (WallImage)entry.Entity;
         context.Add(new WallChange
         {
