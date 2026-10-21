@@ -24,15 +24,9 @@ public class ContentHashGuardTests
         [(typeof(JournalBlob), nameof(JournalBlob.Bytes))] = "change-journal storage, keyed by its own Sha256, never served",
     };
 
-    /// <summary>Stored-file columns of asset rows and the column holding each file's hash.</summary>
-    private static readonly Dictionary<(Type, string), string> HashedFiles = new()
-    {
-        [(typeof(WallImage), nameof(WallImage.StoragePath))] = nameof(WallImage.Sha256),
-        [(typeof(WallGeometrySplat), nameof(WallGeometrySplat.StoredPath))] = nameof(WallGeometrySplat.Sha256),
-        [(typeof(WallGeometrySplat), nameof(WallGeometrySplat.MobileStoredPath))] = nameof(WallGeometrySplat.MobileSha256),
-        [(typeof(WallGeometryTexture), nameof(WallGeometryTexture.StoredPath))] = nameof(WallGeometryTexture.Sha256),
-        [(typeof(WallGeometryTexture), nameof(WallGeometryTexture.MaskStoredPath))] = nameof(WallGeometryTexture.MaskSha256),
-    };
+    /// <summary>Stored-file columns of asset rows and the column holding each file's hash (the backfill's list too).</summary>
+    private static readonly Dictionary<(Type, string), string> HashedFiles =
+        ContentHashFileColumn.Stored.ToDictionary(c => (c.Entity, c.Path), c => c.Hash);
 
     /// <summary>Stored-file columns that are never served on the hashed asset path, with why.</summary>
     private static readonly Dictionary<(Type, string), string> UnhashedFiles = new()
