@@ -148,6 +148,15 @@ test('changed() refreshes once per 10 s burst, at its end', async () => {
     page.win.bwAssetData.changed(W1);
     await page.fireLong();
     assert.equal(count(), before + 2, 'the next burst refreshes again');
+
+    const manifests = () => page.fetches.filter(f => f.path === `/api/walls/${W1}/manifest`).length;
+    const manifestsBefore = manifests();
+    page.win.bwAssetData.changed(W1);
+    page.win.bwAssetData.changed(W1, true); // a wall.manifest within the burst
+    page.win.bwAssetData.changed(W1);
+    await page.fireLong();
+    assert.equal(manifests(), manifestsBefore + 1, 'a burst with a manifest event refetches the manifest once');
+    assert.equal(count(), before + 3, 'and the docs index after it');
 });
 
 test('compact keeps well-formed kinds and shas only, never view3d', () => {

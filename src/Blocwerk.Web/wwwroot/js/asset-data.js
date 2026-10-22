@@ -3,9 +3,10 @@
  * `holds`, `boulders`, `gallery` and `comments` documents the offline client reads, beside the manifest's assets.
  *
  * GET /api/walls/{w}/docs[?token=] with If-None-Match on the stored ETag, after every manifest round that left the
- * wall current (asset-cache.js), and on bwAssetData.changed(wallId): the circuit saw a feed event of a document's input
- * kinds (AssetCacheFeedRelay). Those come in bursts while someone sets, so a wall refreshes at most once per
- * DEBOUNCE_MS, at its end.
+ * wall current (asset-cache.js), and on bwAssetData.changed(wallId, manifest): the circuit saw a feed event of a
+ * document's input kinds (AssetCacheFeedRelay.cs), or with `manifest` a wall.manifest / wall.resync, which refetches the
+ * manifest first (bwAssetCache.manifestChanged). Those come in bursts while someone sets, so a wall refreshes at most
+ * once per DEBOUNCE_MS, at its end, and the call returns at once (the circuit never waits on a fill).
  *   200      → the row's `data` becomes { kind → { sha, bytes, cursor } } and `dataEtag` the ETag. The fill downloads
  *              each document like core (asset-plan.js; the worker caches it in `-3d`). A sha that left `data` (a
  *              rebuilt document: a comment deleted, an author erased) is deleted from the device at once, not after
@@ -102,19 +103,30 @@ window.bwAssetData = (function (win) {
         return 'updated';
     }
 
-    /** A document input of the wall changed (the circuit's feed): refresh it once DEBOUNCE_MS from the first call. */
-    function changed(wallId) {
+    /**
+     * A document input of the wall changed (the circuit's feed): refresh it DEBOUNCE_MS after the first call of a
+     * burst; the manifest too when any call of the burst said so.
+     */
+    function changed(wallId, manifest) {
         const id = String(wallId || '').toLowerCase();
-        if (!id || timers.has(id)) {
+        if (!id) {
             return;
         }
-        timers.set(id, win.setTimeout(() => {
+        const pending = timers.get(id);
+        if (pending) {
+            pending.manifest = pending.manifest || !!manifest;
+            return;
+        }
+        const burst = { manifest: !!manifest };
+        timers.set(id, burst);
+        win.setTimeout(() => {
             timers.delete(id);
             const cache = Cache();
-            if (cache && typeof cache.dataChanged === 'function') {
-                cache.dataChanged(id).catch(() => undefined);
+            const run = cache && (burst.manifest ? cache.manifestChanged : cache.dataChanged);
+            if (typeof run === 'function') {
+                Promise.resolve(run(id)).catch(() => undefined);
             }
-        }, DEBOUNCE_MS));
+        }, DEBOUNCE_MS);
     }
 
     return { DEBOUNCE_MS, indexUrl, compact, refresh, changed };
