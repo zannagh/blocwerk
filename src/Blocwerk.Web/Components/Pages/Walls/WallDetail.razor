@@ -48,11 +48,12 @@ else
     <WallCarousel @ref="_carousel" InitialPage="@InitialCarouselPage" Locked="_isEditing"
                   PageClasses="|||boulders-page|" PageViews="@CarouselPageViews">
         <Page1>
-            @* Activity is visible to all wall members; settings/shape/API keys stay admin-only. *@
+            @* Activity is visible to all wall members, and read-only to the wall's own kiosk tablet (what it may read is
+               KioskActivityVisibility's); settings/shape/API keys stay admin-only. *@
             <details open class="settings-panel settings-card">
                 <summary class="settings-card-summary"><h2>Activity</h2></summary>
                 <div class="settings-card-body">
-                    @if (_isAnonymous)
+                    @if (_isAnonymous && !ReadsKioskActivity)
                     {
                         <p class="empty-activity">Log in to see this wall's activity.</p>
                     }
@@ -65,8 +66,8 @@ else
                         @foreach (var item in _activityItems)
                         {
                             <div class="activity-row">
-                                <span class="activity-icon">@ActivityIcon(item.Type)</span>
-                                <span class="activity-text">@item.User.Name @ActivityVerb(item.Type)</span>
+                                <span class="activity-icon">@WallActivityText.Icon(item.Type)</span>
+                                <span class="activity-text">@ActivityAuthor(item) @WallActivityText.Verb(item.Type)</span>
                                 <span class="activity-time"><LocalTime Value="@item.Timestamp" Format="LocalTimeFormat.Relative" /></span>
                             </div>
                         }
@@ -1605,7 +1606,7 @@ else
         // Independent reads, side by side instead of one after another: each opens its own context, and their
         // continuations still run one at a time on this circuit. Each writes only its own fields.
         var loads = new List<Task> { LoadOpenUpdateAsync(), LoadPanels(), LoadHoldLinksAsync(), LoadBoulderItemsAsync(wall) };
-        if (withMemberData && !_isAnonymous)
+        if (withMemberData && (!_isAnonymous || ReadsKioskActivity))
         {
             loads.Add(LoadActivity(0));
             if (_isMember)
@@ -1909,14 +1910,6 @@ else
 
     private Task GoToBoulders() => _carousel?.GoToPageAsync(3) ?? Task.CompletedTask;
     private Task GoToMembers() => _carousel?.GoToPageAsync(1) ?? Task.CompletedTask;
-
-    private async Task LoadActivity(int page)
-    {
-        _activityPage = page;
-        var (items, total) = await ActivityLogService.GetWallActivityAsync(WallId, page);
-        _activityItems = items;
-        _activityTotal = total;
-    }
 
     private async Task OnMemberRoleChanged(WallMember member, ChangeEventArgs e)
     {
@@ -2277,58 +2270,6 @@ else
             await ShowToast($"Restore failed: {ex.Message}");
         }
     }
-
-    private static string ActivityIcon(ActivityType type) => type switch
-    {
-        ActivityType.HoldAdded => "+",
-        ActivityType.HoldMoved => "~",
-        ActivityType.HoldDeleted => "-",
-        ActivityType.HoldColorChanged => "~",
-        ActivityType.HoldShapeChanged => "~",
-        ActivityType.HoldNamed => "T",
-        ActivityType.BoulderCreated => "B",
-        ActivityType.BoulderRevised => "R",
-        ActivityType.WallPhotoUploaded => "P",
-        ActivityType.WallPhotoStaged => "P",
-        ActivityType.WallPhotoConfirmed => "P",
-        ActivityType.WallPhotoDiscarded => "P",
-        ActivityType.WallRecreated => "!",
-        ActivityType.HoldMarkedModified => "!",
-        ActivityType.HoldMerged => "M",
-        ActivityType.WallReset => "!",
-        ActivityType.MemberJoined => "J",
-        ActivityType.MemberRoleChanged => "R",
-        ActivityType.AttemptLogged => "A",
-        ActivityType.CommentAdded => "C",
-        ActivityType.BetaVideoUploaded => "V",
-        _ => "?",
-    };
-
-    private static string ActivityVerb(ActivityType type) => type switch
-    {
-        ActivityType.HoldAdded => "added a hold",
-        ActivityType.HoldMoved => "moved a hold",
-        ActivityType.HoldDeleted => "removed a hold",
-        ActivityType.HoldColorChanged => "changed a hold color",
-        ActivityType.HoldShapeChanged => "refined a hold shape",
-        ActivityType.HoldNamed => "named a hold",
-        ActivityType.BoulderCreated => "created a boulder",
-        ActivityType.BoulderRevised => "revised a boulder",
-        ActivityType.WallPhotoUploaded => "uploaded a photo",
-        ActivityType.WallPhotoStaged => "staged a new photo",
-        ActivityType.WallPhotoConfirmed => "confirmed the new photo",
-        ActivityType.WallPhotoDiscarded => "discarded the staged photo",
-        ActivityType.WallRecreated => "recreated the wall",
-        ActivityType.HoldMarkedModified => "marked a hold as modified",
-        ActivityType.HoldMerged => "merged holds across photos",
-        ActivityType.WallReset => "reset the wall",
-        ActivityType.MemberJoined => "joined the wall",
-        ActivityType.MemberRoleChanged => "role was changed",
-        ActivityType.AttemptLogged => "logged an attempt",
-        ActivityType.CommentAdded => "commented on a boulder",
-        ActivityType.BetaVideoUploaded => "added a beta video",
-        _ => "did something",
-    };
 
     private async Task ShowToast(string message)
     {
