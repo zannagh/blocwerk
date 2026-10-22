@@ -37,7 +37,7 @@ public class WallRefreshPageSourceTests
         // started an update).
         var activity = markup.IndexOf("<h2>Activity</h2>", StringComparison.Ordinal);
         var activityEnd = markup.IndexOf("</details>", activity, StringComparison.Ordinal);
-        var wallSettings = markup.IndexOf("<h2>Wall Settings</h2>", StringComparison.Ordinal);
+        var wallSettings = markup.IndexOf("<LazySettingsCard Title=\"Wall Settings\"", StringComparison.Ordinal);
         Assert.True(activityEnd > 0 && rail > activityEnd && rail < wallSettings, "\"Update wall\" sits between the Activity and Wall Settings cards");
         Assert.True(rail < markup.IndexOf("<Wall3DLink", StringComparison.Ordinal), "\"Update wall\" is not on the overview");
 
@@ -45,8 +45,8 @@ public class WallRefreshPageSourceTests
         var advanced = markup.IndexOf("<summary>Advanced: step by step</summary>", StringComparison.Ordinal);
         Assert.True(advanced > 0 && markup.IndexOf("\"Update step by step\"", advanced, StringComparison.Ordinal) > advanced);
         var delete = markup.IndexOf("Label=\"Delete Wall\"", StringComparison.Ordinal);
-        var deleteCard = markup.IndexOf("<h2>Delete this wall</h2>", StringComparison.Ordinal);
-        var lastCard = markup.IndexOf("<h2>Kiosk Registration</h2>", StringComparison.Ordinal);
+        var deleteCard = markup.IndexOf("<LazySettingsCard Title=\"Delete this wall\"", StringComparison.Ordinal);
+        var lastCard = markup.IndexOf("<LazySettingsCard Title=\"Kiosk Registration\"", StringComparison.Ordinal);
         Assert.True(deleteCard > lastCard && delete > deleteCard, "Delete Wall lives in its own card after every other settings card");
     }
 

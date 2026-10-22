@@ -97,9 +97,7 @@ else
 
             @if (_isAdmin)
             {
-                <details class="settings-panel settings-card">
-                    <summary class="settings-card-summary"><h2>Wall Settings</h2></summary>
-                    <div class="settings-card-body">
+                <LazySettingsCard Title="Wall Settings" Reveals="wall-panels" Eager="@(_showBigUpdate || _resumePanelId is not null)">
 
                     <div class="form-group">
                         <label class="filter-check">
@@ -186,8 +184,7 @@ else
                         }
 
                     }
-                    </div>
-                </details>
+                </LazySettingsCard>
 
                 @* Hidden alongside the controls above while the big-wall update wizard is open;
                    restored when it closes. See the note on the guard inside the Wall Settings card. *@
@@ -198,9 +195,7 @@ else
                    hide themselves there and their services refuse. *@
                 @if (!KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))
                 {
-                <details class="settings-panel settings-card" id="wall-enhance">
-                    <summary class="settings-card-summary"><h2>Enhance this wall</h2></summary>
-                    <div class="settings-card-body">
+                <LazySettingsCard Title="Enhance this wall" Id="wall-enhance">
                         <WallEnhancementCard WallId="_wall.Id" ShareToken="@ShareToken" />
                         <details class="segment-settings" id="wall-enhance-advanced">
                             <summary>Advanced: run one step on its own</summary>
@@ -210,13 +205,10 @@ else
                             <WallLinkedHoldSync WallId="_wall.Id" ShareToken="@ShareToken" />
                             <WallHoldColorSuggestions WallId="_wall.Id" ShareToken="@ShareToken" />
                         </details>
-                    </div>
-                </details>
+                </LazySettingsCard>
                 }
 
-                <details class="settings-panel settings-card">
-                    <summary class="settings-card-summary"><h2>Wall Shape</h2></summary>
-                    <div class="settings-card-body">
+                <LazySettingsCard Title="Wall Shape">
                     <div class="form-group">
                         <label>Fallback angle: @_wall.Angle&deg; <span class="segment-angle-word">@WallAngleRange.Label(_wall.Angle)</span></label>
                         <input type="range" min="@WallAngleRange.Min" max="@WallAngleRange.Max" value="@_wall.Angle"
@@ -274,8 +266,7 @@ else
                     }
                     <Wall3DHoldStats WallId="_wall.Id" ShareToken="@ShareToken" />
                     <WallPhotoPrivacy WallId="_wall.Id" ShareToken="@ShareToken" />
-                    </div>
-                </details>
+                </LazySettingsCard>
 
                 @if (_currentUserId != Guid.Empty)
                 {
@@ -288,12 +279,9 @@ else
                     }
                     else
                     {
-                        <details class="settings-panel settings-card">
-                            <summary class="settings-card-summary"><h2>API key</h2></summary>
-                            <div class="settings-card-body">
+                        <LazySettingsCard Title="API key">
                                 <WallApiKeyPanel WallId="WallId" CurrentUserId="_currentUserId" />
-                            </div>
-                        </details>
+                        </LazySettingsCard>
                     }
 
                     @* Pairing a tablet by code, so nobody has to type a bwk_ key on an on-screen
@@ -308,12 +296,9 @@ else
                         }
                         else
                         {
-                            <details class="settings-panel settings-card">
-                                <summary class="settings-card-summary"><h2>Kiosk Registration</h2></summary>
-                                <div class="settings-card-body">
+                            <LazySettingsCard Title="Kiosk Registration">
                                     <WallKioskPairingPanel WallId="WallId" CurrentUserId="_currentUserId" />
-                                </div>
-                            </details>
+                            </LazySettingsCard>
                         }
                     }
                 }
@@ -322,9 +307,7 @@ else
                 @* Deleting the wall is a card of its own at the very bottom, collapsed, far from every update control. *@
                 @if (_isAdmin && !_showBigUpdate && !KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))
                 {
-                    <details class="settings-panel settings-card danger-card">
-                        <summary class="settings-card-summary"><h2>Delete this wall</h2></summary>
-                        <div class="settings-card-body">
+                    <LazySettingsCard Title="Delete this wall" Class="settings-panel settings-card danger-card">
                             <section class="danger-zone" aria-labelledby="danger-zone-title">
                                 <h3 id="danger-zone-title">Danger zone</h3>
                                 <p class="hint">Deleting a wall removes its boulders, ascents, photos and members for good. This cannot be undone.</p>
@@ -333,8 +316,7 @@ else
                                                Question="@($"Delete \"{_wall.Name}\" with all its boulders, ascents and photos?")"
                                                OnConfirm="DeleteWall" />
                             </section>
-                        </div>
-                    </details>
+                    </LazySettingsCard>
                 }
             }
         </Page1>
