@@ -41,7 +41,7 @@ public sealed class DataDocumentFreshnessTests
         var first = await f.IndexAsync();
         var held = f.Store.Current(f.WallId, DocumentAudience.Setters, DataDocumentKinds.Boulders);
 
-        await f.AddFeedRowAsync(FeedKinds.CommentAdded);
+        await f.AddFeedRowAsync(FeedKinds.VideoStatus);
         var second = await f.IndexAsync();
 
         Assert.Equal(first.Cursor, second.Cursor);

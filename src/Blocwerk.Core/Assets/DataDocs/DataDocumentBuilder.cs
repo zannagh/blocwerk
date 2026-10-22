@@ -28,6 +28,13 @@ public sealed class DataDocumentBuilder(RootDbContextFactory dbContextFactory, I
                 : null;
         }
 
+        if (kind == DataDocumentKinds.Comments)
+        {
+            return await CommentsDocumentBuilder.BuildAsync(db, wallId, audience, ct) is var (comments, authors)
+                ? new BuiltDataDocument(Serialize(comments), authors)
+                : null;
+        }
+
         object? document = kind switch
         {
             DataDocumentKinds.Wall => await WallDocumentBuilder.BuildAsync(db, wallId, ct),

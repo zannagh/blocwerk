@@ -12,10 +12,11 @@ namespace Blocwerk.Core.Feed;
 /// Places the rows a mapper wrote on a boulder without knowing its wall (a comment, a tick, a video carry only a
 /// <c>BoulderId</c>), as part of <see cref="FeedBoulderResolver"/>: the wall comes from a tracked boulder, or from the
 /// resolver's one lookup per save. A row of a draft meant for the whole wall goes to its members only, as the draft itself
-/// does (<see cref="FeedBoulderRows"/>): every member may open a draft, while share and kiosk viewers never learn its id. Inside a <see cref="FeedScope"/> nothing is
-/// looked up: an unknown boulder's row goes to the scope's wall, where it collapses to the resync anyway. A row whose
-/// boulder is gone, or could not be looked up, is dropped, except a user's own row, which stays wall-less for
-/// <c>/api/me</c>.
+/// does (<see cref="FeedBoulderRows"/>): every member may open a draft, while share and kiosk viewers never learn its id.
+/// A comment row of an archived boulder goes to members only too, as the outside classes' comments document leaves it out
+/// (<see cref="FeedOutsideComments"/>). Inside a <see cref="FeedScope"/> nothing is looked up: an unknown boulder's row
+/// goes to the scope's wall, where it collapses to the resync anyway. A row whose boulder is gone, or could not be looked
+/// up, is dropped, except a user's own row, which stays wall-less for <c>/api/me</c>.
 /// </summary>
 internal static class FeedBoulderPlacement
 {
@@ -58,7 +59,7 @@ internal static class FeedBoulderPlacement
             if (known.TryGetValue(row.BoulderId!.Value, out var boulder))
             {
                 row.WallId = boulder.WallId;
-                if (boulder.IsDraft && row.Audience == FeedAudience.Wall)
+                if (row.Audience == FeedAudience.Wall && MembersOnly(row, boulder))
                 {
                     row.Audience = FeedAudience.Members;
                 }
@@ -71,6 +72,10 @@ internal static class FeedBoulderPlacement
 
         Drop(map, lookupFailed, logger);
     }
+
+    // A draft's rows, and an archived boulder's comment rows: the outside classes see neither (FeedOutsideComments).
+    private static bool MembersOnly(WallChange row, FeedBoulderFacts boulder) =>
+        boulder.IsDraft || (boulder.IsArchived && FeedOutsideComments.IsComment(row.Kind));
 
     private static void Drop(FeedMapContext map, bool lookupFailed, ILogger logger)
     {
@@ -105,7 +110,7 @@ internal static class FeedBoulderPlacement
                 .Where(e => ids.Contains(e.Entity.Id))
                 .Select(e => e.Entity)
                 .DistinctBy(b => b.Id)
-                .ToDictionary(b => b.Id, b => new FeedBoulderFacts(b.Id, b.WallId, b.IsDraft, b.Generation));
+                .ToDictionary(b => b.Id, b => new FeedBoulderFacts(b.Id, b.WallId, b.IsDraft, b.Generation, b.IsArchived));
         }
         finally
         {
