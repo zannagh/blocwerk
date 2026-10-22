@@ -6,7 +6,7 @@ namespace Blocwerk.Web.State.Feed;
 /// <summary>What a feed delivery asks of the page's device cache (<see cref="AssetCacheSignals"/>).</summary>
 public enum AssetCacheSignal
 {
-    /// <summary>Nothing the device keeps changed (ticks, comments, videos: leaf rows no cached document reads yet).</summary>
+    /// <summary>No document or manifest changed (videos, activity: rows no cached document reads; own marks go by <see cref="AssetCacheSignals.ChangesMine"/>).</summary>
     None,
 
     /// <summary>A data document's input changed: refresh the wall's docs index (<c>bwAssetData.changed</c>).</summary>

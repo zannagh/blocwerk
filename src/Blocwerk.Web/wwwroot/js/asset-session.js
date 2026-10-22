@@ -12,15 +12,16 @@
  * is still announced (bw:identity-changed, the deploy drafts cleared). When localStorage cannot be read either, the
  * previous user counts as unknown and changed, so it fails towards announcing (the drafts go), never towards keeping.
  *
- * guard(): a ledger whose writes (putAsset, updateWall) go through only while the ledger's `activePartition` is the
+ * guard(): a ledger whose writes (putAsset, updateWall, putMine) go through only while the ledger's `activePartition` is the
  * row's partition. A tab still showing an old identity (another tab signed out or in since) can then never rewrite
- * rows for the partition it no longer owns.
+ * rows for the partition it no longer owns. putMine also needs a `u-` row: a kiosk or share page never stores marks.
  */
 window.bwAssetSession = (function () {
     'use strict';
 
     const PROTO = 1;
     const REAL_LABEL = /^(anon|[uk]-[a-z2-7]{20})$/;
+    const USER_LABEL = /^u-[a-z2-7]{20}$/;
     const MIRROR_KEY = 'blocwerk-asset-identity';
     // Equal to no user tag, so an unreadable mirror counts as a changed user.
     const UNKNOWN_TAG = '\u0000unknown';
@@ -94,7 +95,9 @@ window.bwAssetSession = (function () {
         const owned = async row => (await ledger.getMeta()).activePartition === row.partition;
         return Object.assign(Object.create(ledger), {
             updateWall: async (partition, wallId, change) => ((await owned({ partition })) ? ledger.updateWall(partition, wallId, change) : undefined),
-            putAsset: async row => ((await owned(row)) ? ledger.putAsset(row) : undefined)
+            putAsset: async row => ((await owned(row)) ? ledger.putAsset(row) : undefined),
+            // The viewer's own marks: only a `u-` partition ever holds them (asset-mine.js), and only while it is active.
+            putMine: async row => (USER_LABEL.test(String(row && row.partition)) && (await owned(row)) ? ledger.putMine(row) : undefined)
         });
     }
 

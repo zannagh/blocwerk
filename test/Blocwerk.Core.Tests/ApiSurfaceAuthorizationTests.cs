@@ -236,6 +236,22 @@ public class ApiSurfaceAuthorizationTests
     }
 
     /// <summary>
+    /// The reader's own marks (Phase 3, PR 3.4) are one person's data: outside the API-key prefixes, so a bearer there
+    /// authenticates nobody, the default policy (a signed-in human), and the API-key rejection on top.
+    /// </summary>
+    [Fact]
+    public void TheMineRoute_IsForASignedInHumanOnly()
+    {
+        var mine = Assert.Single(AllEndpoints().Where(e => e.RoutePattern.RawText == MineEndpoints.Route));
+
+        Assert.False(ApiKeySurface.Covers(ToPath(MineEndpoints.Route)));
+        Assert.NotNull(mine.Metadata.GetMetadata<IAuthorizeData>());
+        Assert.Null(mine.Metadata.GetMetadata<IAuthorizeData>()!.Policy);
+        Assert.Null(mine.Metadata.GetMetadata<IAllowAnonymous>());
+        Assert.NotNull(mine.Metadata.GetMetadata<DeniesApiKeyPrincipals>());
+    }
+
+    /// <summary>
     /// The deploy hook's announce and pre-deploy flush routes have to live under an <see cref="ApiKeySurface"/> prefix,
     /// or the bearer would be forwarded to the cookie scheme and arrive anonymous — and they must be
     /// gated by the installation policy specifically, not by "any key".
@@ -347,6 +363,9 @@ public class ApiSurfaceAuthorizationTests
 
         // The live feed's catch-up and stream routes sit under /api/walls too (and /api/me/changes beside them).
         app.MapFeed();
+
+        // The reader's own marks sit under /api/me, outside the prefixes (PR 3.4).
+        app.MapMine();
 
         // The capture video upload sits under /api/captures, an API-key prefix for personal keys.
         app.MapCaptureVideoUpload();

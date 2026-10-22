@@ -419,6 +419,9 @@ public static class Program
         // Their manifest per wall and the device's cache partition (design §6.4, §6.6).
         app.MapAssetManifest();
 
+        // The signed-in reader's own ticks and favourites of a wall (/api/me/walls/{w}/mine), for the offline client.
+        app.MapMine();
+
         // The live feed over HTTP: a wall's catch-up pages and event stream, and the caller's own rows (/api/me/changes).
         app.MapFeed();
 
