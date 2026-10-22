@@ -18,18 +18,24 @@
 # running this every minute is negligible.
 set -euo pipefail
 
-DIR=/home/patrickweindl/blocwerk
+# AUTODEPLOY_DIR exists only for the dry-run harness (docker/prod/test-autodeploy.sh); production leaves it unset.
+DIR=${AUTODEPLOY_DIR:-/home/patrickweindl/blocwerk}
 IMAGE=ghcr.io/zannagh/blocwerk:latest
 SERVICE=blocwerk
-# How many consecutive busy checks to tolerate before deploying regardless. The app reports
-# busy while someone is mid-edit (creating a boulder, editing a wall); at one poll a minute
-# this defers a redeploy for at most half an hour.
+# How many consecutive busy checks to tolerate before deploying regardless when the app gives no
+# ETA (/health/busy-eta answers 0): at one poll a minute, half an hour.
 MAX_DEFER=30
-# Long background work that reports when it expects to finish (/health/busy-eta: seconds, 0 when
-# none; a wall enhancement's hold search runs for most of an hour) keeps the deploy waiting past
-# MAX_DEFER while its ETA is ahead, up to ETA_MAX_DEFER busy polls in all (6 h, the busy lease's
-# own cap). Older apps without the endpoint answer nothing here and keep the plain MAX_DEFER rule.
-ETA_MAX_DEFER=360
+# While the gate is busy AND /health/busy-eta is above zero the deploy keeps waiting past MAX_DEFER,
+# up to ETA_MAX_DEFER busy polls in all. Two things report an ETA: long background work (a wall
+# enhancement's hold search; the app caps that at 6 h) and, since the edit-presence gate, an editor
+# whose user is present, which reports the time to the app's daily cutoff (the next midnight in
+# Europe/Berlin after the edit started; after it the app stops counting the edit). So the app
+# enforces the real limit, and this is only a safety net: 24 h. Older apps report background work
+# only, capped at 6 h by the app, so for them this changes nothing.
+ETA_MAX_DEFER=1440
+# How long the pre-deploy flush (POST /api/v1/maintenance/flush-edits) may take. The app waits for
+# its open editors at most 30 s; the rest is headroom for the request itself.
+FLUSH_TIMEOUT=45
 STATE=$DIR/.autodeploy-deferrals
 # The image a deferral is waiting on, so a pending target is logged once rather than
 # once a minute while the busy gate holds it back.
@@ -223,14 +229,30 @@ reset_db_stats() {
   fi
 }
 
+# ---------- one app run at a time ----------
+#
+# A run can now outlast the cron minute (pull, announce plus its grace, a flush of up to FLUSH_TIMEOUT,
+# compose up), and two runs must never overlap a `compose up`. So the app part holds its OWN lock (not the
+# compute one: a slow compute pass must never hold back an app deploy). A run that finds it taken exits
+# quietly before anything else, compute pass and stats reset included; the run holding it carries the
+# deploy and the next minute starts fresh. Without flock, or when the lock file cannot be opened, it runs
+# unlocked (logged once) rather than never deploying again. fd 8 is held until this process exits.
+if ! command -v flock >/dev/null 2>&1; then
+  log_change app-lock "flock not found; running the app part without its lock (logged once)"
+elif ! { exec 8>"$DIR/.autodeploy-app.lock"; } 2>/dev/null; then
+  log_change app-lock "cannot open the app lock file; running the app part without its lock (logged once)"
+elif ! flock -n 8; then
+  exit 0
+else
+  log_clear app-lock
+fi
+
 # The app part below ends with `exit` on every path (nothing to do, deferred, deployed, failed).
 # The EXIT trap runs the stats reset and then the compute part after it, whatever the outcome; the
 # script's exit status stays the app part's.
 trap 'reset_db_stats || true; run_compute || true' EXIT
 
 # ---------- the app (unchanged) ----------
-
-before=$(docker image inspect --format '{{.Id}}' "$IMAGE" 2>/dev/null || echo none)
 
 # Pull, logging in and retrying once if the registry rejects us (token rotated, creds expired).
 if ! docker compose pull -q "$SERVICE" >/dev/null 2>&1; then
@@ -245,7 +267,7 @@ fi
 # "did this pull change anything". The old check did the latter, which made a deferral
 # permanent: once the new image was on disk every later pull changed nothing and the script
 # exited here, before ever reaching the busy gate below - so a deferred deploy never retried
-# and MAX_DEFER could never fire. $before survives only for the pull-failure message above.
+# and MAX_DEFER could never fire.
 latest=$(docker image inspect --format '{{.Id}}' "$IMAGE" 2>/dev/null || echo none)
 running=$(docker inspect --format '{{.Image}}' "$(docker compose ps -q "$SERVICE" 2>/dev/null)" 2>/dev/null || echo none)
 
@@ -254,11 +276,15 @@ if [ "$latest" = "none" ] || [ "$running" = "$latest" ]; then
   exit 0
 fi
 
+# A newer image arriving mid-deferral does NOT reset the deferral count: the count belongs to the
+# current busy stretch, not to one image. Resetting it here meant that while merges kept landing
+# (27/30, new image, 1/30 on 2026-10-21) MAX_DEFER could never fire behind a stuck lease. The
+# count is cleared only below, once the app is idle or the deploy goes ahead, and above, when the
+# running container is already the latest image.
 last_target=$(cat "$TARGET" 2>/dev/null || echo none)
 if [ "$last_target" != "$latest" ]; then
   echo "new image $latest (was $running)"
   printf "%s" "$latest" > "$TARGET"
-  rm -f "$STATE"
 fi
 
 # Busy gate: avoid recreating the container out from under someone mid-edit. Reached over the
@@ -317,7 +343,36 @@ announce() {
   fi
 }
 
+# Ask every open editor to persist its unsaved state right before the container goes: a draft boulder, a
+# draft's revise, the wall editor's pending batch, or state kept in the browser for after the reload.
+# Called before EVERY deploy (it is a no-op when no editor is open), so it covers both a deploy past
+# an absent user's lease and one forced by a cap. Best effort like the announcement: an app without
+# the endpoint (404, older than the flush) or any failure is logged and the deploy goes ahead.
+flush_edits() {
+  local key out code
+  key=$(grep -m1 '^BLOCWERK_DEPLOY_API_KEY=' .env | cut -d= -f2- || true)
+  if [ -z "$key" ]; then
+    echo "no BLOCWERK_DEPLOY_API_KEY in .env; deploying without flushing open editors"
+    return 0
+  fi
+
+  out=$(docker run --rm --network edge curlimages/curl:latest -s --max-time "$FLUSH_TIMEOUT" \
+          -X POST \
+          -H "Authorization: Bearer $key" \
+          -w '\n%{http_code}' \
+          http://blocwerk:5050/api/v1/maintenance/flush-edits 2>/dev/null || true)
+  code=${out##*$'\n'}
+  case "$code" in
+    200) echo "flushed open editors: ${out%$'\n'*}" ;;
+    404) echo "flush endpoint missing (older app); deploying anyway" ;;
+    *) echo "flush failed (HTTP ${code:-none}); deploying anyway" ;;
+  esac
+}
+
+# Announce first, flush last: the flush runs after the announcement's grace, right before the container
+# goes, so an edit made while the "updating" notice was on its way is still in what gets saved.
 announce
+flush_edits
 
 echo "deploying..."
 docker compose up -d "$SERVICE"

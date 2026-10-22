@@ -8,6 +8,7 @@ using Blocwerk.Core.Capture;
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Feed;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -47,6 +48,11 @@ internal sealed class ContentHashBackfillKit : IDisposable
     public ContentHashBackfill Backfill(ContentHashBackfillOptions options, params IInterceptor[] interceptors) =>
         new(new InterceptingRootDbContextFactory(H.DbContextFactory.ConnectionString, interceptors), Images, Captures, options,
             NullLogger<ContentHashBackfill>.Instance);
+
+    /// <summary>A backfill that announces the walls it hashed on <paramref name="feed"/> (the manifest's lazy sha).</summary>
+    public ContentHashBackfill Backfill(IWallFeed feed) =>
+        new(new InterceptingRootDbContextFactory(H.DbContextFactory.ConnectionString, []), Images, Captures, FastOptions,
+            NullLogger<ContentHashBackfill>.Instance, feed);
 
     /// <summary>A stored gallery image with <paramref name="bytes"/>; returns its row id.</summary>
     public async Task<Guid> AddImageAsync(byte[] bytes)

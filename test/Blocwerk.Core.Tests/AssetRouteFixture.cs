@@ -40,6 +40,8 @@ public sealed class AssetRouteFixture : IDisposable
         CaptureFiles = new FileSystemCaptureFileStore(settings);
         Variants = new FileSystemImageVariantCache(settings, NullLogger<FileSystemImageVariantCache>.Instance);
         Kiosk = Substitute.For<IKioskContext>();
+        KioskKeys = Substitute.For<IKioskKeyValidator>();
+        KioskKeys.IsKeyValidAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(true);
         CurrentUser = Substitute.For<ICurrentUserService>();
         CurrentUser.GetCurrentUserAsync().Returns(_ => Caller is { } user
             ? Task.FromResult(user)
@@ -57,6 +59,15 @@ public sealed class AssetRouteFixture : IDisposable
 
     public IKioskContext Kiosk { get; }
 
+    /// <summary>The folder of the variant cache's renditions.</summary>
+    public string VariantRoot => Path.Combine(storage, "variants");
+
+    /// <summary>The kiosk key check; every key is live unless a test revokes it.</summary>
+    public IKioskKeyValidator KioskKeys { get; }
+
+    /// <summary>The kiosk key <see cref="BindKiosk"/> registers the tablet with.</summary>
+    public static readonly Guid KioskKeyId = Guid.Parse("6f1c0a6e-0000-4000-8000-00000000000b");
+
     public ICurrentUserService CurrentUser { get; }
 
     /// <summary>Who is signed in; null for an anonymous caller. Defaults to the wall's owner.</summary>
@@ -67,14 +78,21 @@ public sealed class AssetRouteFixture : IDisposable
 
     public SeededAssets Seeded { get; private set; } = null!;
 
+    /// <summary>The blob memo the resolvers of this fixture share, as the app's singleton is shared.</summary>
+    public VerifiedBlobMemo Blobs { get; } = new();
+
+    /// <summary>The file memo the resolvers of this fixture share.</summary>
+    public FileHashMemo FileHashes { get; } = new();
+
     public AssetResolver Resolver() =>
-        new(Harness.DbContextFactory, CurrentUser, ImageStorage, CaptureFiles, new FileHashMemo(), NullLogger<AssetResolver>.Instance, Kiosk);
+        new(Harness.DbContextFactory, CurrentUser, ImageStorage, CaptureFiles, FileHashes, Blobs, NullLogger<AssetResolver>.Instance, Kiosk, KioskKeys);
 
     /// <summary>Makes this a kiosk tablet bound to <paramref name="wallId"/>.</summary>
     public void BindKiosk(Guid wallId)
     {
         Kiosk.IsKiosk.Returns(true);
         Kiosk.KioskWallId.Returns(wallId);
+        Kiosk.KioskApiKeyId.Returns(KioskKeyId);
     }
 
     public async Task<SeededAssets> SeedAsync()
@@ -150,6 +168,7 @@ public sealed class AssetRouteFixture : IDisposable
         builder.Services.AddAuthorization();
         builder.Services.AddSingleton<IAssetResolver>(Resolver());
         builder.Services.AddSingleton(Variants);
+        builder.Services.AddSingleton<Microsoft.EntityFrameworkCore.IDbContextFactory<Blocwerk.Core.Data.BlocwerkDbContext>>(Harness.DbContextFactory);
         var built = builder.Build();
         built.MapAssets();
         return built;

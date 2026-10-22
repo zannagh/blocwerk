@@ -3,7 +3,10 @@
 
 using System.Globalization;
 using Blocwerk.Core.Jobs;
+using Blocwerk.Core.Pulse;
 using Blocwerk.Core.Services;
+using Blocwerk.Web.State;
+using Blocwerk.Web.State.Live;
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
 
@@ -12,7 +15,8 @@ namespace Blocwerk.Web.Components.Shared;
 /// <summary>
 /// The list behind the administration's "Background jobs" page and the wall's compact panel: every job the user may watch
 /// (<see cref="IJobProgressService"/>), polled every <see cref="RefreshEvery"/> while the list is on screen
-/// (<see cref="ShownPoller"/>).
+/// (<see cref="ShownPoller"/>). A wall's list re-reads on that wall's job pulses instead (<see cref="PulseWake"/>); the
+/// administration's list of every wall keeps polling.
 /// </summary>
 public partial class JobProgressList : IAsyncDisposable
 {
@@ -20,10 +24,12 @@ public partial class JobProgressList : IAsyncDisposable
     public static readonly TimeSpan RefreshEvery = TimeSpan.FromSeconds(4);
 
     private readonly CancellationTokenSource disposed = new();
+    private readonly PulseHolder<PulseWake> wake = new();
     private ElementReference root;
     private JobProgressSnapshot? snapshot;
     private string? error;
     private bool showRecent = true;
+    private Guid? wakeWallId;
 
     /// <summary>Only this wall's jobs (null: every wall the user may watch).</summary>
     [Parameter]
@@ -40,6 +46,12 @@ public partial class JobProgressList : IAsyncDisposable
     private IJSRuntime JS { get; set; } = default!;
 
     [Inject]
+    private WallCacheState Cache { get; set; } = default!;
+
+    [Inject]
+    private IWallPulse Pulse { get; set; } = default!;
+
+    [Inject]
     private ILogger<JobProgressList> Logger { get; set; } = default!;
 
     private int RunningCount => snapshot?.Jobs.Count(j => j.State == JobStates.Running) ?? 0;
@@ -48,8 +60,16 @@ public partial class JobProgressList : IAsyncDisposable
     {
         // Cancelled, not disposed: the refresh loop may still observe its token (a source without timers holds nothing).
         await disposed.CancelAsync();
+        wake.Dispose();
         GC.SuppressFinalize(this);
     }
+
+    /// <summary>
+    /// Whether the list keeps its interval although it has pulses: an active capture import (its byte count lives in
+    /// memory and pulses nothing) or an active runner job, whose runner's online and paused state no pulse carries.
+    /// </summary>
+    internal static bool PollsOnInterval(JobProgressSnapshot? snapshot) =>
+        snapshot?.Jobs.Any(j => JobStates.IsActive(j.State) && (j.Kind == JobKinds.Import || JobKinds.IsGpu(j.Kind))) == true;
 
     /// <summary>The line under a job: when it started, when it last moved or ended, and the remaining time.</summary>
     internal static string Meta(JobProgressItem job)
@@ -107,12 +127,30 @@ public partial class JobProgressList : IAsyncDisposable
         _ => kind,
     };
 
+    protected override async Task OnParametersSetAsync()
+    {
+        if (WallId == wakeWallId)
+        {
+            return;
+        }
+
+        wakeWallId = WallId;
+        if (WallId is not { } wallId)
+        {
+            wake.Close();
+            return;
+        }
+
+        // The holder drops a wake that lands after the list went or after another wall's open started.
+        await wake.OpenAsync(wallId, () => PulseWake.OpenAsync(Cache, Pulse, wallId, [PulseTopics.Capture, PulseTopics.GpuJob, PulseTopics.HoldSearch]));
+    }
+
     protected override void OnAfterRender(bool firstRender)
     {
         if (firstRender)
         {
             // The token is taken once, here: the loop never touches the source again (disposing only cancels it).
-            _ = new ShownPoller(JS, () => root, InvokeAsync, LoadAsync, Logger).RunAsync(RefreshEvery, disposed.Token);
+            _ = new ShownPoller(JS, () => root, InvokeAsync, LoadAsync, Logger, () => PollsOnInterval(snapshot) ? null : wake.Current).RunAsync(RefreshEvery, disposed.Token);
         }
     }
 

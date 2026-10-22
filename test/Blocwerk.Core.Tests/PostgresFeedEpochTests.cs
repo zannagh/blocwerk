@@ -53,8 +53,10 @@ public sealed class PostgresFeedEpochTests
         var kit = new PostgresFeedTestKit(pg);
         var epoch = await kit.Feed.InitializeAsync();
         var start = await kit.Feed.CurrentAsync();
-        await kit.CommitAsync(kit.Row("kept"));
+        var kept = await kit.CommitAsync(kit.Row("kept"));
 
+        // The read is capped at the cluster-wide horizon: let it pass `kept` (another database may hold it back).
+        await PostgresHorizonWait.UntilCeilingReachesAsync(() => pg.CreateContext(), kept.TxId!.Value);
         var restarted = new WallFeed(() => pg.CreateContext(), NullLogger<WallFeed>.Instance);
 
         Assert.Equal(epoch, await restarted.InitializeAsync());

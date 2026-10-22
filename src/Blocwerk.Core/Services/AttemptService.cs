@@ -87,7 +87,13 @@ public class AttemptService : IAttemptService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
-            var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId);
+            // Boulder carries no query filter of its own, so the id alone used to let ANY signed-in caller tick ANY
+            // boulder in the installation. Reaching through to db.Walls puts the write under the membership filter (and
+            // the kiosk wall gate, so a kiosk acting as a member ticks only on its wall). A non-member gets the same
+            // "Boulder not found" as a missing boulder, so the refusal says nothing about whether the boulder exists.
+            var boulder = await db.Boulders
+                .Where(b => db.Walls.Any(w => w.Id == b.WallId))
+                .FirstOrDefaultAsync(b => b.Id == boulderId);
             if (boulder is null)
             {
                 _logger.LogWarning("Cannot log attempt: boulder {BoulderId} not found for {UserId}", boulderId, user.Id);
@@ -190,10 +196,11 @@ public class AttemptService : IAttemptService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
+            // Who ticked what is for the wall's members: through db.Walls, not the bare boulder id.
             return await db.Attempts
                 .AsNoTracking()
                 .Include(a => a.User)
-                .Where(a => a.BoulderId == boulderId)
+                .Where(a => a.BoulderId == boulderId && db.Walls.Any(w => w.Id == a.Boulder.WallId))
                 .OrderByDescending(a => a.Timestamp)
                 .ToListAsync();
         }
@@ -241,7 +248,10 @@ public class AttemptService : IAttemptService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
-            var attempt = await db.Attempts.FirstOrDefaultAsync(a => a.Id == attemptId && a.UserId == user.Id);
+            // Own attempts only, on a wall the caller can still see (a kiosk acting as a member: the tablet's wall).
+            var attempt = await db.Attempts
+                .Where(a => db.Walls.Any(w => w.Id == a.Boulder.WallId))
+                .FirstOrDefaultAsync(a => a.Id == attemptId && a.UserId == user.Id);
             if (attempt is null)
             {
                 _logger.LogWarning("Cannot delete attempt {AttemptId}: not found for {UserId}", attemptId, user.Id);

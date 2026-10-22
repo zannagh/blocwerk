@@ -11,8 +11,8 @@ namespace Blocwerk.Core.Feed;
 /// <summary>
 /// Places the rows a mapper wrote on a boulder without knowing its wall (a comment, a tick, a video carry only a
 /// <c>BoulderId</c>), as part of <see cref="FeedBoulderResolver"/>: the wall comes from a tracked boulder, or from the
-/// resolver's one lookup per save. A row of a draft meant for the wall or its members goes to setters only, as the draft
-/// itself does (§5.4), so share and kiosk viewers never learn a draft's id. Inside a <see cref="FeedScope"/> nothing is
+/// resolver's one lookup per save. A row of a draft meant for the whole wall goes to its members only, as the draft itself
+/// does (<see cref="FeedBoulderRows"/>): every member may open a draft, while share and kiosk viewers never learn its id. Inside a <see cref="FeedScope"/> nothing is
 /// looked up: an unknown boulder's row goes to the scope's wall, where it collapses to the resync anyway. A row whose
 /// boulder is gone, or could not be looked up, is dropped, except a user's own row, which stays wall-less for
 /// <c>/api/me</c>.
@@ -58,9 +58,9 @@ internal static class FeedBoulderPlacement
             if (known.TryGetValue(row.BoulderId!.Value, out var boulder))
             {
                 row.WallId = boulder.WallId;
-                if (boulder.IsDraft && row.Audience is FeedAudience.Wall or FeedAudience.Members)
+                if (boulder.IsDraft && row.Audience == FeedAudience.Wall)
                 {
-                    row.Audience = FeedAudience.Setters;
+                    row.Audience = FeedAudience.Members;
                 }
             }
             else if (scope is not null && row.Audience != FeedAudience.User)

@@ -3,6 +3,7 @@
 @using Blocwerk.Web.Components.Layout
 @using Blocwerk.Core.Abstractions
 @inject ICurrentUserService CurrentUserService
+@inject IKioskContext KioskContext
 
 <!DOCTYPE html>
 <html lang="en">
@@ -23,6 +24,7 @@
     <base href="/" />
     <link rel="manifest" href="manifest.webmanifest" />
     <meta name="theme-color" content="#16162a" />
+    <CachePartitionMeta />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Blocwerk" />
@@ -87,7 +89,7 @@
    real page load: the header Login/Logout links and the kiosk act-as/release forms all carry
    data-enhance-nav="false". *@
 
-<body data-bw-user="@ActingUserId">
+<body data-bw-user="@ActingUserId" data-bw-kiosk="@KioskKeyId">
     <Routes />
 
     @* Blazor sets components-reconnect-* classes and raises components-reconnect-state-changed on
@@ -111,6 +113,7 @@
     </div>
 
     <script src="@Assets["_framework/blazor.web.js"]" autostart="false"></script>
+    <script src="@Assets["js/image-res-url.js"]"></script>
     <script src="@Assets["js/image-res.js"]"></script>
     <script src="@Assets["js/image-watchdog.js"]"></script>
     @* The shared wheel recogniser must load before both surfaces that page off a trackpad
@@ -185,9 +188,27 @@
        it, and before maintenance.js reads it in safeToReload(). Order is otherwise not load-bearing:
        both sides read window.bwEditGuard lazily, inside functions. *@
     <script src="@Assets["js/edit-guard.js"]"></script>
+    <script src="@Assets["js/edit-presence.js"]"></script>
+    <script src="@Assets["js/deploy-drafts.js"]"></script>
     <script src="@Assets["js/maintenance.js"]"></script>
     <script src="@Assets["js/offline-status.js"]"></script>
     <script src="@Assets["js/pwa.js"]"></script>
+    @* The page side of the on-device wall-asset cache: the ledger, budgets, wipe rules, manifests, the page's
+       partition session, the fill plan and its runner, then
+       the coordinator, which reads the others lazily off window and boots on DOM-ready. After pwa.js only for
+       readability; it works with any worker, or none. asset-notice.js feeds StorageNotice.razor; asset-3d.js the 3D
+       view's mobile-data notice and "Save 3D offline" (Wall3DStage). *@
+    <script src="@Assets["js/asset-ledger.js"]"></script>
+    <script src="@Assets["js/asset-budget.js"]"></script>
+    <script src="@Assets["js/asset-wipe.js"]"></script>
+    <script src="@Assets["js/asset-manifest.js"]"></script>
+    <script src="@Assets["js/asset-store.js"]"></script>
+    <script src="@Assets["js/asset-session.js"]"></script>
+    <script src="@Assets["js/asset-plan.js"]"></script>
+    <script src="@Assets["js/asset-fill.js"]"></script>
+    <script src="@Assets["js/asset-cache.js"]"></script>
+    <script src="@Assets["js/asset-notice.js"]"></script>
+    <script src="@Assets["js/asset-3d.js"]"></script>
     @* Defines bwPush; inert until NotificationPrompt.razor / the profile notification card calls it.
        No parse-time event to catch (unlike install-prompt.js), so it loads with the deferred bundle. *@
     <script src="@Assets["js/push.js"]"></script>
@@ -196,6 +217,10 @@
 
 @code {
     private string? ActingUserId;
+
+    // The tablet's kiosk key id, so deploy-drafts.js can tell a kiosk member from the same member at home (its kept
+    // copies are partitioned by this plus the user; see KeptCopyKey).
+    private string? KioskKeyId;
 
     // Empty for anonymous pages, which is exactly right: an action queued with no known user stays
     // unstamped and keeps the pre-existing behaviour. GetCurrentUserAsync throws for anonymous
@@ -211,5 +236,8 @@
         {
             ActingUserId = null;
         }
+
+        await KioskContext.InitializeAsync();
+        KioskKeyId = KioskContext.IsKiosk ? KioskContext.KioskApiKeyId?.ToString() : null;
     }
 }

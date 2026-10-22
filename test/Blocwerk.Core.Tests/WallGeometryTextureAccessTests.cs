@@ -17,7 +17,7 @@ namespace Blocwerk.Core.Tests;
 public class WallGeometryTextureAccessTests
 {
     [Fact]
-    public async Task Member_GetsTheTexture_RevalidatedUnlessTheUrlNamesItsVersion()
+    public async Task Member_GetsTheTexture_Revalidated_EvenUnderItsVersionedUrl()
     {
         using var h = new WallTestHarness();
         using var s = new CaptureScenario(h);
@@ -34,7 +34,36 @@ public class WallGeometryTextureAccessTests
         await WallGeometryTextureEndpoints.HandleAsync(
             h.WallId, modelId, "0", null, new ClaimsPrincipal(), versioned, h.WallService, h.CurrentUser,
             h.DbContextFactory, Kiosk(null), s.Files, CancellationToken.None);
-        Assert.Contains("immutable", versioned.Response.Headers.CacheControl.ToString());
+        Assert.Equal("private, no-cache", versioned.Response.Headers.CacheControl.ToString());
+    }
+
+    /// <summary>
+    /// Every reuse revalidates, so the 304 is the gate: a holder of the texture's ETag who may not see the wall (an
+    /// anonymous caller, a stranger's kiosk) gets the 404, never a 304; the member still gets the 304.
+    /// </summary>
+    [Fact]
+    public async Task ARevalidation_IsAnsweredOnlyAfterTheGate()
+    {
+        using var h = new WallTestHarness();
+        using var s = new CaptureScenario(h);
+        var (modelId, _) = await ComputeModelAsync(h, s);
+        var (_, member) = await ServeAsync(h, s, h.WallId, modelId, "0", token: null, Kiosk(null));
+        var etag = member.Response.Headers.ETag.ToString();
+        Assert.False(string.IsNullOrEmpty(etag));
+
+        async Task<IResult> RevalidateAsync(IKioskContext kiosk)
+        {
+            var http = new DefaultHttpContext();
+            http.Request.Headers.IfNoneMatch = etag;
+            return await WallGeometryTextureEndpoints.HandleAsync(
+                h.WallId, modelId, "0", null, new ClaimsPrincipal(), http, h.WallService, h.CurrentUser,
+                h.DbContextFactory, kiosk, s.Files, CancellationToken.None);
+        }
+
+        Assert.Equal(StatusCodes.Status304NotModified, Assert.IsAssignableFrom<IStatusCodeHttpResult>(await RevalidateAsync(Kiosk(null))).StatusCode);
+        h.CurrentUser.GetCurrentUserAsync().Returns(_ => Task.FromException<User>(new UnauthorizedAccessException()));
+        Assert.IsType<NotFound>(await RevalidateAsync(Kiosk(null)));
+        Assert.IsType<NotFound>(await RevalidateAsync(Kiosk(Guid.NewGuid())));
     }
 
     [Fact]
@@ -138,6 +167,7 @@ public class WallGeometryTextureAccessTests
     {
         var captureId = await s.StartCaptureAsync();
         await s.Processor.ProcessAsync(captureId, CancellationToken.None);
+        await UnhashedGeometry.ClearAsync(h);
         await using var db = h.CreateContext();
         return ((await db.WallGeometryModels.SingleAsync()).Id, captureId);
     }

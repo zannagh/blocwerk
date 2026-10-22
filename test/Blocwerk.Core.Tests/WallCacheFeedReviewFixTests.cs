@@ -6,7 +6,7 @@ using Blocwerk.Contracts.Feed.Payloads;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Feed;
-using Blocwerk.Core.Services;
+using Blocwerk.Web.State;
 using Blocwerk.Web.State.Feed;
 
 namespace Blocwerk.Core.Tests;
@@ -27,15 +27,54 @@ public sealed class WallCacheFeedReviewFixTests
         var gate = new TaskCompletionSource<CacheLoad<Boulder?>>();
         var pending = store.Boulders.GetOrLoad(boulderId, () => gate.Task);
 
-        Assert.Equal([boulderId], store.EvictBoulders(wallId, cursor, _ => true));
+        var evicted = store.EvictBoulders(wallId, cursor, _ => true);
+        Assert.Empty(evicted.Boulders); // reported only once its load shows its wall
         gate.SetResult(new CacheLoad<Boulder?>(new Boulder { Id = boulderId, WallId = wallId, Name = "x" }, new FeedCursor(cursor.Epoch, new FeedPosition(9, 1))));
         await pending;
+        Assert.Equal(boulderId, await Assert.Single(evicted.InFlight));
         Assert.False(store.Boulders.TryPeek(boulderId, out _)); // the stale result is handed out once, never cached
 
         var again = new TaskCompletionSource<CacheLoad<Boulder?>>();
         _ = store.Boulders.GetOrLoad(boulderId, () => again.Task);
-        Assert.True(store.EvictWall(wallId)); // the DomainChange path too
+        Assert.True(store.EvictWall(wallId)); // the own-write path too
         Assert.False(store.Boulders.Keys.Any());
+    }
+
+    [Fact]
+    public async Task ABoulderInFlightOfAnotherWall_IsNeverReported()
+    {
+        var store = new WallCacheStore();
+        var cursor = new FeedCursor(Guid.NewGuid(), new FeedPosition(10, 5));
+        var gate = new TaskCompletionSource<CacheLoad<Boulder?>>();
+        var boulderId = Guid.NewGuid();
+        _ = store.Boulders.GetOrLoad(boulderId, () => gate.Task);
+
+        var evicted = store.EvictBoulders(Guid.NewGuid(), cursor, _ => true);
+        gate.SetResult(new CacheLoad<Boulder?>(new Boulder { Id = boulderId, WallId = Guid.NewGuid(), Name = "x" }, null));
+
+        Assert.Null(await Assert.Single(evicted.InFlight));
+    }
+
+    [Fact]
+    public async Task ABoulderInFlight_IsReportedToThePage_OnlyForItsOwnWall()
+    {
+        var gate = new TaskCompletionSource();
+        await using var f = new CircuitCacheFixture();
+        await f.StartAsync();
+        var boulder = await f.AddBoulderAsync("Mine", f.Holds[0]);
+        await f.Cache.EnsureFeedAsync(f.WallId); // subscribed, nothing wall-level cached
+        var loading = f.Store.Boulders.GetOrLoad(boulder.Id, async () =>
+        {
+            await gate.Task;
+            return new CacheLoad<Boulder?>(boulder, null);
+        });
+
+        await f.DeliverAsync(f.Row(FeedKinds.WallUpdated, f.WallId, new WallPayload(0, false)));
+        Assert.DoesNotContain(f.Changes, c => c.Scope == WallCacheChangeScope.Boulder);
+        gate.SetResult();
+        await loading;
+
+        await CircuitCacheFixture.WaitUntilAsync(() => f.Changes.Any(c => c.Scope == WallCacheChangeScope.Boulder && c.BoulderId == boulder.Id));
     }
 
     [Fact]
@@ -184,7 +223,11 @@ public sealed class WallCacheFeedReviewFixTests
         Assert.Null(await f.Link.EnsureAsync(f.WallId));
         Assert.Equal(before + 1, f.Fake.Resolved);
 
-        f.Notifier.Publish(new DomainChange(DomainChangeScope.WallList, Guid.Empty, Guid.Empty));
+        var joined = new WallChange
+        {
+            WallId = f.WallId, Kind = FeedKinds.WallsChanged, EntityId = f.WallId, Audience = FeedAudience.User, AudienceUserId = Guid.NewGuid(),
+        };
+        f.Commits.Publish([joined]);
         f.Fake.Viewer = FeedViewer.Member(f.Harness.Owner.Id);
         Assert.NotNull(await f.Link.EnsureAsync(f.WallId));
     }

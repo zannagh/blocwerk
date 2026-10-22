@@ -36,7 +36,7 @@ internal sealed class SocialFeedFixture : IDisposable
     {
         var db = TestDb.Create(
             Harness.DbContextFactory.ConnectionString,
-            [new FeedInterceptor(new FeedMapperRegistry(FeedMappers.Create()), Signal, logger), .. more]);
+            [new FeedInterceptor(new FeedMapperRegistry(FeedMappers.Create()), Signal, logger, TestFeedCommits.Unobserved()), .. more]);
         db.CurrentUserId = actor ?? Guid.Empty;
         return db;
     }

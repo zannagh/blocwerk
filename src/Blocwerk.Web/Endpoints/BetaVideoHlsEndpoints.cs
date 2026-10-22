@@ -75,7 +75,7 @@ public static class BetaVideoHlsEndpoints
         }
         else
         {
-            http.Response.Headers.CacheControl = "private, max-age=5";
+            http.Response.Headers.CacheControl = ImageResponse.MutableCacheControl;
         }
 
         return Results.Text(content, PlaylistContentType);
@@ -83,11 +83,10 @@ public static class BetaVideoHlsEndpoints
 
     private static IResult ServeSegment(HttpContext http, string file)
     {
-        // Segment names are deterministic (v%v_%03d.ts), so a re-encode reuses the same URLs. Keep the
-        // cache short (a few minutes) so a client's private cache cannot serve stale segment bytes against
-        // a freshly re-encoded playlist for up to an hour. Still long enough to cover a single playback.
-        http.Response.Headers.CacheControl = "private, max-age=300";
-        return Results.File(file, ContentTypeFor(file), enableRangeProcessing: true);
+        // Segment names are deterministic (v%v_%03d.ts), so a re-encode reuses the same URLs: not immutable per clip.
+        // Revalidated on every use (the gate runs per request) under an ETag of the file's length and write time, so a
+        // re-encode is fresh at once and an unchanged segment is a 304.
+        return RevalidatedResponse.File(http, file, ContentTypeFor(file));
     }
 
     private static bool IsPlaylist(string file) =>

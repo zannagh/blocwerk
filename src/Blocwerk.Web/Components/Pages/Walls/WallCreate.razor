@@ -16,6 +16,9 @@
 <div class="create-wall">
     <h1>Create Wall</h1>
 
+    @* The form, kept in the browser when the page is hidden (deploy-drafts.js). *@
+    <div hidden aria-hidden="true" data-bw-keep-key="@KeepKey" data-bw-keep-payload="@KeepPayload"></div>
+
     <EditForm Model="_model" OnValidSubmit="Submit" FormName="create-wall">
         <div class="form-group">
             <label>Wall Name</label>
@@ -116,21 +119,27 @@
     protected override void OnInitialized()
     {
         _editLease = EditActivity.BeginWallCreate(userId: null);
+        ArmDeployFlush();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         await SyncEditGuardAsync();
+        if (!_restoreChecked)
+        {
+            await RestoreKeptAsync();
+        }
     }
 
     private async Task SyncEditGuardAsync()
     {
-        _editGuardActive = await EditGuardInterop.SyncAsync(JS, "wall-create", _editLease is not null, _editGuardActive);
+        _editGuardActive = await EditGuardInterop.SyncAsync(JS, "wall-create", _editLease is not null, _editGuardActive, EditActivity);
     }
 
     public void Dispose()
     {
         _editLease?.Dispose();
+        DisposeDeployFlush();
 
         if (_editGuardActive)
         {

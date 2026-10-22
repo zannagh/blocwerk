@@ -2,6 +2,7 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using Blocwerk.Core.Assets;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.LookOver;
 using Blocwerk.Core.Refresh;
@@ -20,6 +21,9 @@ public partial class LookOverMissing
 {
     private readonly Dictionary<Guid, IReadOnlyList<PanelHold>> holdsByPanel = [];
     private readonly Dictionary<Guid, (int Width, int Height)?> photoSizes = [];
+    private IReadOnlyDictionary<Guid, string> photoShas = new Dictionary<Guid, string>();
+    private Guid? photoShasFor;
+    private int photoShasVersion = -1;
     private ConfirmAction? remove;
     private Guid? shownId;
     private Guid? targetId;
@@ -52,6 +56,9 @@ public partial class LookOverMissing
 
     [Inject]
     private IWallLookOverService LookOver { get; set; } = default!;
+
+    [Inject]
+    private IAssetHashReader AssetHashes { get; set; } = default!;
 
     private Guid[] Shown => [.. Finding.Boulders.Select(b => b.Id)];
 
@@ -89,6 +96,15 @@ public partial class LookOverMissing
         {
             loadedVersion = Version;
             holdsByPanel.Clear();
+            photoShasVersion = -1;
+        }
+
+        if (photoShasFor != WallId || photoShasVersion != Version)
+        {
+            // Read before the photo is first shown (the markup waits for it), so it is fetched once, under its hash;
+            // re-read with every reload of the list, without hiding the photo meanwhile.
+            photoShas = await AssetHashes.PanelPhotosAsync(WallId);
+            (photoShasFor, photoShasVersion) = (WallId, Version);
         }
 
         if (Finding.Id != shownId)
@@ -117,7 +133,7 @@ public partial class LookOverMissing
 
     private static bool CanMove(LookOverFindingView finding) => finding.Answers.Contains(LookOverAnswer.RemoveHold);
 
-    private string PhotoUrl(Guid panelId) => $"/api/walls/{WallId}/panels/{panelId}/photo";
+    private string PhotoUrl(Guid panelId) => AssetUrls.Panel(WallId, panelId, photoShas.GetValueOrDefault(panelId));
 
     private IReadOnlyList<PanelHold> PanelHolds(Guid panelId) => holdsByPanel.GetValueOrDefault(panelId) ?? [];
 

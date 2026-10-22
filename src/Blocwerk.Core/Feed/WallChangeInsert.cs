@@ -11,10 +11,11 @@ namespace Blocwerk.Core.Feed;
 /// <summary>
 /// The raw-SQL insert of one <see cref="WallChange"/> behind <see cref="IWallFeed.AppendAsync"/>. Column names, value
 /// conversions and the <c>jsonb</c> cast come from the EF model, so the statement matches whatever the model maps (and the
-/// SQLite test model's converters). <c>Seq</c> and <c>TxId</c> are left to the database.
+/// SQLite test model's converters). <c>Seq</c> and <c>TxId</c> are left to the database and read back into the row.
 /// </summary>
 internal static class WallChangeInsert
 {
+    /// <summary>Inserts the row and sets its database-generated <c>Seq</c> and <c>TxId</c>; returns the <c>TxId</c>.</summary>
     public static async Task<long?> ExecuteAsync(BlocwerkDbContext db, WallChange row, CancellationToken cancellationToken)
     {
         if (db.Database.CurrentTransaction is null)
@@ -47,13 +48,19 @@ internal static class WallChangeInsert
         }
 
         var target = table.Schema is null ? $"\"{table.Name}\"" : $"\"{table.Schema}\".\"{table.Name}\"";
-        var txId = $"\"{entityType.FindProperty(nameof(WallChange.TxId))!.GetColumnName(table)}\"";
-        var sql = $"INSERT INTO {target} ({string.Join(", ", columns)}) VALUES ({string.Join(", ", placeholders)}) RETURNING {txId} AS \"Value\"";
+        var seq = Column(entityType, table, nameof(WallChange.Seq));
+        var txId = Column(entityType, table, nameof(WallChange.TxId));
+        var sql = $"INSERT INTO {target} ({string.Join(", ", columns)}) VALUES ({string.Join(", ", placeholders)}) "
+            + $"RETURNING {seq} AS \"Seq\", {txId} AS \"TxId\"";
 
         // Not composed (no Single over it), so EF runs the INSERT as written instead of wrapping it in a subquery.
-        var returned = await db.Database.SqlQueryRaw<long?>(sql, values.ToArray()).ToListAsync(cancellationToken);
-        return returned.Single();
+        var returned = (await db.Database.SqlQueryRaw<WallChangeInserted>(sql, values.ToArray()).ToListAsync(cancellationToken)).Single();
+        (row.Seq, row.TxId) = (returned.Seq, returned.TxId);
+        return returned.TxId;
     }
+
+    private static string Column(IEntityType entityType, StoreObjectIdentifier table, string property) =>
+        $"\"{entityType.FindProperty(property)!.GetColumnName(table)}\"";
 
     private static object? ToProvider(IProperty property, object? value)
     {

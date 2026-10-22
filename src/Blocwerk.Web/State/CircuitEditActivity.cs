@@ -1,3 +1,5 @@
+using Microsoft.JSInterop;
+
 namespace Blocwerk.Web.State;
 
 /// <summary>
@@ -13,12 +15,16 @@ namespace Blocwerk.Web.State;
 /// it has been expired out. Every editing component acquires ONCE, in its initialisation, so without
 /// that a user who reconnected after the TTL would have gone on editing with no protection at all
 /// and appeared nowhere in the health check.
+/// <para>Presence comes from the browser, not the circuit: <c>edit-presence.js</c> reports real user input and the
+/// page being hidden or shown through <see cref="PresenceReference"/>, which editors hand to <c>bwEditGuard.enter</c>
+/// via <see cref="EditGuardInterop"/>.</para>
 /// </remarks>
 public sealed class CircuitEditActivity : IDisposable
 {
     private readonly EditActivityRegistry registry;
-    private readonly List<TrackedLease> leases = new();
+    private readonly List<CircuitEditLease> leases = new();
     private readonly object gate = new();
+    private DotNetObjectReference<EditPresenceInterop>? presenceReference;
     private bool disposed;
 
     public CircuitEditActivity(EditActivityRegistry registry)
@@ -59,7 +65,7 @@ public sealed class CircuitEditActivity : IDisposable
     /// <returns>How many leases were touched; zero for the overwhelming majority of circuits, which
     /// are only reading.</returns>
     public int Touch(DateTimeOffset? nowOverride = null) =>
-        Pulse(nowOverride, userActivity: false, restore: false);
+        Pulse(nowOverride, EditSignal.Heartbeat, restore: false);
 
     /// <summary>
     /// A reconnect: the connection coming back up is proof the client is there, so leases the
@@ -67,18 +73,60 @@ public sealed class CircuitEditActivity : IDisposable
     /// timed out for want of a human stays gone.
     /// </summary>
     public int Resume(DateTimeOffset? nowOverride = null) =>
-        Pulse(nowOverride, userActivity: false, restore: true);
+        Pulse(nowOverride, EditSignal.Heartbeat, restore: true);
 
     /// <summary>
-    /// Inbound circuit activity: a real UI event or JS-to-.NET call. Restarts both clocks, and
-    /// restores a lease that had expired while the user was away.
+    /// Real user input in the editor (pointer down or a drag, a key, the wheel), reported by <c>edit-presence.js</c>.
+    /// Restarts both clocks, clears the hidden mark, and restores a lease that had expired while the user was away.
     /// </summary>
+    /// <remarks>
+    /// NOT called for inbound circuit traffic in general: a reconnect, a render acknowledgement or a JS reply is
+    /// produced by a sleeping laptop's tab on every dark wake, which is how a lease once looked "active" all night.
+    /// </remarks>
     public int RecordActivity(DateTimeOffset? nowOverride = null) =>
-        Pulse(nowOverride, userActivity: true, restore: true);
+        Pulse(nowOverride, EditSignal.Input, restore: true);
+
+    /// <summary>
+    /// The editor's page was hidden, frozen or unloaded (<paramref name="visible"/> false), or shown again. Neither
+    /// is presence: shown again only clears the hidden mark, and neither restores an expired lease.
+    /// </summary>
+    public int RecordVisibility(bool visible, DateTimeOffset? nowOverride = null) =>
+        Pulse(nowOverride, visible ? EditSignal.Visible : EditSignal.Hidden, restore: false);
+
+    /// <summary>
+    /// The handle <c>edit-presence.js</c> reports through. Created once per circuit and disposed with it; null once
+    /// the circuit is gone, so a late render cannot mint a reference nothing would ever dispose.
+    /// </summary>
+    public DotNetObjectReference<EditPresenceInterop>? PresenceReference
+    {
+        get
+        {
+            lock (gate)
+            {
+                return disposed ? null : presenceReference ??= DotNetObjectReference.Create(new EditPresenceInterop(this));
+            }
+        }
+    }
+
+    /// <summary>
+    /// The leases that are at least <paramref name="after"/> old and have never had a presence report, each returned
+    /// once. Read by the heartbeat, which logs them: such a lease looks idle to the deploy gate however busy its user is.
+    /// </summary>
+    public IReadOnlyList<EditActivityEntry> TakeSilentLeases(TimeSpan after, DateTimeOffset? nowOverride = null)
+    {
+        var now = nowOverride ?? DateTimeOffset.UtcNow;
+        List<CircuitEditLease> current;
+        lock (gate)
+        {
+            current = new List<CircuitEditLease>(leases);
+        }
+
+        return current.Select(l => l.TakeIfSilent(now, after)).OfType<EditActivityEntry>().ToList();
+    }
 
     public void Dispose()
     {
-        List<TrackedLease> toRelease;
+        List<CircuitEditLease> toRelease;
         lock (gate)
         {
             if (disposed)
@@ -87,8 +135,10 @@ public sealed class CircuitEditActivity : IDisposable
             }
 
             disposed = true;
-            toRelease = new List<TrackedLease>(leases);
+            toRelease = new List<CircuitEditLease>(leases);
             leases.Clear();
+            presenceReference?.Dispose();
+            presenceReference = null;
         }
 
         foreach (var lease in toRelease)
@@ -97,9 +147,17 @@ public sealed class CircuitEditActivity : IDisposable
         }
     }
 
-    private int Pulse(DateTimeOffset? nowOverride, bool userActivity, bool restore)
+    internal void Forget(CircuitEditLease lease)
     {
-        List<TrackedLease> current;
+        lock (gate)
+        {
+            leases.Remove(lease);
+        }
+    }
+
+    private int Pulse(DateTimeOffset? nowOverride, EditSignal signal, bool restore)
+    {
+        List<CircuitEditLease> current;
         lock (gate)
         {
             if (disposed || leases.Count == 0)
@@ -107,14 +165,14 @@ public sealed class CircuitEditActivity : IDisposable
                 return 0;
             }
 
-            current = new List<TrackedLease>(leases);
+            current = new List<CircuitEditLease>(leases);
         }
 
         var now = nowOverride ?? DateTimeOffset.UtcNow;
         var touched = 0;
         foreach (var tracked in current)
         {
-            if (tracked.Pulse(registry, now, userActivity, restore))
+            if (tracked.Pulse(registry, now, signal, restore))
             {
                 touched++;
             }
@@ -130,7 +188,7 @@ public sealed class CircuitEditActivity : IDisposable
         var now = nowOverride ?? DateTimeOffset.UtcNow;
         var lease = registry.Acquire(kind, wallId, userId, now);
         var template = new EditActivityEntry(kind, wallId, userId, now, now, now);
-        var tracked = new TrackedLease(this, lease, template);
+        var tracked = new CircuitEditLease(this, lease, template);
 
         lock (gate)
         {
@@ -145,126 +203,5 @@ public sealed class CircuitEditActivity : IDisposable
         }
 
         return tracked;
-    }
-
-    private void Forget(TrackedLease lease)
-    {
-        lock (gate)
-        {
-            leases.Remove(lease);
-        }
-    }
-
-    // Wraps a registry lease so disposing it also drops our tracking reference (avoids the
-    // backstop list growing across many enter/leave-edit cycles in one long-lived circuit), and so
-    // the session can be re-registered under a NEW lease id if the registry expired the old one
-    // while the client was away.
-    private sealed class TrackedLease : IDisposable
-    {
-        private readonly object gate = new();
-        private CircuitEditActivity? owner;
-        private IEditLease? lease;
-        private EditActivityEntry template;
-
-        public TrackedLease(CircuitEditActivity owner, IEditLease lease, EditActivityEntry template)
-        {
-            this.owner = owner;
-            this.lease = lease;
-            this.template = template;
-        }
-
-        public bool Pulse(
-            EditActivityRegistry registry, DateTimeOffset now, bool userActivity, bool restore)
-        {
-            IEditLease? current;
-            EditActivityEntry snapshot;
-            lock (gate)
-            {
-                if (owner is null)
-                {
-                    return false;
-                }
-
-                current = lease;
-                snapshot = template;
-            }
-
-            if (current is not null && registry.Touch(current.Id, now, userActivity))
-            {
-                Remember(snapshot with
-                {
-                    LastSeenUtc = now,
-                    LastActivityUtc = userActivity ? now : snapshot.LastActivityUtc,
-                });
-                return true;
-            }
-
-            return restore && Restore(registry, now, userActivity, snapshot, current);
-        }
-
-        public void Dispose()
-        {
-            CircuitEditActivity? current;
-            IEditLease? held;
-            lock (gate)
-            {
-                current = owner;
-                held = lease;
-                owner = null;
-                lease = null;
-            }
-
-            if (current is null)
-            {
-                return;
-            }
-
-            current.Forget(this);
-            held?.Dispose();
-        }
-
-        private bool Restore(
-            EditActivityRegistry registry,
-            DateTimeOffset now,
-            bool userActivity,
-            EditActivityEntry snapshot,
-            IEditLease? stale)
-        {
-            // The registry has dropped the entry. Hand it back the history it had, so the policy —
-            // not this class — decides whether the session is genuinely over.
-            var candidate = userActivity ? snapshot with { LastActivityUtc = now } : snapshot;
-            var replacement = registry.Restore(candidate, now);
-            if (replacement is null)
-            {
-                return false;
-            }
-
-            stale?.Dispose();
-
-            lock (gate)
-            {
-                if (owner is null)
-                {
-                    replacement.Dispose();
-                    return false;
-                }
-
-                lease = replacement;
-                template = candidate with { LastSeenUtc = now };
-            }
-
-            return true;
-        }
-
-        private void Remember(EditActivityEntry updated)
-        {
-            lock (gate)
-            {
-                if (owner is not null)
-                {
-                    template = updated;
-                }
-            }
-        }
     }
 }

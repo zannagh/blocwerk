@@ -8,6 +8,7 @@ using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Feed;
+using Blocwerk.Core.Pulse;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -35,7 +36,8 @@ public sealed partial class WallEnhancementJob(
     ILogger<WallEnhancementJob> logger,
     IDeployBusyGate? busyGate = null,
     IWallEditPresence? editPresence = null,
-    IDeployBusyEta? busyEta = null)
+    IDeployBusyEta? busyEta = null,
+    IWallPulse? pulse = null)
 {
     /// <summary>How long the job waits for another hold writer of the wall before the step fails.</summary>
     public static readonly TimeSpan WriterWait = TimeSpan.FromMinutes(10);
@@ -220,7 +222,11 @@ public sealed partial class WallEnhancementJob(
         WallEnhancementRun run, IWallEnhancementStep step, CancellationToken ct)
     {
         using var busy = busyGate?.Hold(DeployBusyWork.WallEnhancement, run.WallId, run.CreatedByUserId);
-        var tracker = trackers[run.Id] = new WallEnhancementStepTracker(run.Id, busyEta);
+        var tracker = trackers[run.Id] = new WallEnhancementStepTracker(run.Id, busyEta)
+        {
+            Reported = p => pulse?.Publish(new WallPulse(
+                run.WallId, PulseTopics.Enhancement, run.Id, FeedAudience.Setters, p.Total > 0 ? (double)p.Done / p.Total : null)),
+        };
         try
         {
             if (step.NeedsModel && !await HasActiveModelAsync(run.WallId, ct))

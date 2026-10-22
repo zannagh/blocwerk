@@ -12,7 +12,7 @@ namespace Blocwerk.Core.Feed.Social;
 
 /// <summary>
 /// The row shapes of the social family. Boulder-scoped rows leave <c>WallId</c> unset: the collector fills it from the
-/// boulder and narrows a draft's rows to setters (<see cref="FeedBoulderPlacement"/>).
+/// boulder and narrows a draft's wall-wide rows to members (<see cref="FeedBoulderPlacement"/>).
 /// </summary>
 internal static class SocialRows
 {

@@ -24,25 +24,10 @@ public static class ImageResponse
     /// </summary>
     public const string MutableCacheControl = "private, no-cache";
 
-    /// <summary>
-    /// A URL whose bytes can never change again: a texture, splat or gallery image requested with its
-    /// current <see cref="AssetVersion"/> (<see cref="IsVersioned"/>). Still <c>private</c>, but the browser
-    /// may serve it for a year without even revalidating. A URL that does not name its bytes must never
-    /// get this, however rarely they change: a privacy rewrite or a re-run would then stay stale for a year.
-    /// </summary>
-    public const string ImmutableCacheControl = "private, max-age=31536000, immutable";
-
-    /// <summary>
-    /// A downscaled rendition of a MUTABLE image (a live wall photo, a staged photo, a panel photo).
-    /// Unlike the width-less original — which is <c>no-cache</c> because a wall update rewrites its
-    /// bytes in place under the same URL, and stale would mean showing the wrong wall — a sized
-    /// variant is content-stable per photo version and only ever a thumbnail, so it tolerates a few
-    /// minutes of staleness. A bounded <c>max-age</c> removes the per-request revalidation round-trip
-    /// that <c>no-cache</c> forces on every use of a cached variant, while a re-composition still
-    /// takes effect within five minutes (and the ETag still ends the staleness on the next
-    /// revalidation). <c>private</c> for the same reason as the others: authenticated content.
-    /// </summary>
-    public const string VariantCacheControl = "private, max-age=300";
+    // No policy here lets the HTTP cache answer without the server, not even for a URL that names its bytes (`?v=`)
+    // or a sized rendition. That cache is one per browser, not one per identity, and WebKit ignores Clear-Site-Data, so
+    // a fresh copy would outlive a sign-out and be handed to the next identity without a request. With no-cache every
+    // reuse revalidates, and the 304 comes only after the route's access gate (fix/asset-http-cache-isolation).
 
     /// <summary>
     /// A strong ETag over the identifying metadata. The parts are hashed rather than concatenated
@@ -58,13 +43,6 @@ public static class ImageResponse
     public static string Key(params object?[] parts) => AssetVersion.Of(parts);
 
     /// <summary>
-    /// Whether the request names the current bytes through <see cref="AssetVersion.QueryName"/>, which is
-    /// the only case in which an asset whose bytes can change under its URL may be served immutable.
-    /// </summary>
-    public static bool IsVersioned(HttpRequest request, string version) =>
-        AssetVersion.Matches(request.Query[AssetVersion.QueryName], version);
-
-    /// <summary>
     /// Emits the validator and cache policy, then either short-circuits (304 on a match, a bodyless
     /// 200 for HEAD) or calls <paramref name="load"/> — which is the only thing that reads the blob.
     /// </summary>
@@ -73,13 +51,12 @@ public static class ImageResponse
         string etag,
         string? contentType,
         long length,
-        bool immutable,
         Func<Task<byte[]?>> load)
     {
         var type = string.IsNullOrEmpty(contentType) ? "image/jpeg" : contentType;
 
         http.Response.Headers.ETag = etag;
-        http.Response.Headers.CacheControl = immutable ? ImmutableCacheControl : MutableCacheControl;
+        http.Response.Headers.CacheControl = MutableCacheControl;
 
         if (Matches(http.Request, etag))
         {
@@ -110,15 +87,10 @@ public static class ImageResponse
         HttpContext http,
         string etag,
         string? originalContentType,
-        bool immutable,
         Func<Task<ImageVariant?>> load)
     {
-        // A url that names a version which is no longer current must revalidate: it is exactly the copy a
-        // rewrite replaced. The bounded max-age is only for a url that never named a version at all.
         http.Response.Headers.ETag = etag;
-        http.Response.Headers.CacheControl = immutable
-            ? ImmutableCacheControl
-            : http.Request.Query.ContainsKey(AssetVersion.QueryName) ? MutableCacheControl : VariantCacheControl;
+        http.Response.Headers.CacheControl = MutableCacheControl;
 
         if (Matches(http.Request, etag))
         {
@@ -164,14 +136,13 @@ public static class ImageResponse
         IImageVariantCache variants,
         int? width,
         WallPhotoTag tag,
-        bool immutable,
         Func<Task<byte[]?>> load,
         params object?[] identity)
     {
         if (width is not { } w)
         {
             return ConditionalAsync(
-                http, Etag([.. identity, .. VersionParts(tag)]), tag.ContentType, tag.Length, immutable, load);
+                http, Etag([.. identity, .. VersionParts(tag)]), tag.ContentType, tag.Length, load);
         }
 
         var key = VariantKey(tag, identity);
@@ -180,7 +151,6 @@ public static class ImageResponse
             http,
             Etag(key.Identity, key.Version, w),
             tag.ContentType,
-            immutable,
             () => variants.GetOrCreateAsync(key, w, load, http.RequestAborted));
     }
 
@@ -257,8 +227,8 @@ public static class ImageResponse
     /// <summary>
     /// A 404 with the validator and cache policy taken back off. Both are written up front, before
     /// the bytes are known to exist, so an archived image whose blob has gone missing would
-    /// otherwise be answered 404 under <c>max-age=31536000, immutable</c> — telling the browser to
-    /// hold that failure for a year and never ask again, even once the image is restored.
+    /// otherwise be answered 404 under the route's cache policy and validator, which a browser could
+    /// then revalidate into a stored failure.
     /// </summary>
     internal static IResult NotFound(HttpContext http)
     {

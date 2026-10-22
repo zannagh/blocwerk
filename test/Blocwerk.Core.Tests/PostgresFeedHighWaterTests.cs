@@ -27,6 +27,7 @@ public sealed class PostgresFeedHighWaterTests
         elsewhere.WallId = Guid.NewGuid();
         var otherWall = FeedPosition.Of(await kit.CommitAsync(elsewhere));
         await BurnXidsAsync(pg);
+        await PostgresHorizonWait.UntilNowIsPastAsync(() => pg.CreateContext());
 
         var quiet = await kit.DrainAsync(await kit.Feed.CurrentAsync());
         var again = await kit.DrainAsync(quiet.Next);
@@ -51,6 +52,7 @@ public sealed class PostgresFeedHighWaterTests
         var start = await kit.Feed.CurrentAsync();
         var row = await kit.CommitAsync(kit.Row("before-restore"));
         await BurnXidsAsync(pg);
+        await PostgresHorizonWait.UntilNowIsPastAsync(() => pg.CreateContext());
         var client = (await kit.DrainAsync(start)).Next;
         var oldCeiling = await CeilingAsync(pg);
 

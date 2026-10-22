@@ -1,5 +1,7 @@
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Assets;
 using Blocwerk.Core.Assets.Backfill;
+using Blocwerk.Core.Assets.Manifest;
 using Blocwerk.Core.Assets.Resolution;
 using Blocwerk.Core.Capture;
 using Blocwerk.Core.Configuration;
@@ -11,6 +13,7 @@ using Blocwerk.Core.Enhancement;
 using Blocwerk.Core.Feed;
 using Blocwerk.Core.LookOver;
 using Blocwerk.Core.MarkerPlanning;
+using Blocwerk.Core.Pulse;
 using Blocwerk.Core.Redetect;
 using Blocwerk.Core.Refresh;
 using Blocwerk.Core.Services;
@@ -56,22 +59,16 @@ public static class CoreServices
         builder.Services.AddSingleton(builder.Configuration.GetSection(HoldMoveOptions.Section).Get<HoldMoveOptions>() ?? new HoldMoveOptions());
         builder.Services.AddSingleton(builder.Configuration.GetSection(HoldSamenessOptions.Section).Get<HoldSamenessOptions>() ?? new HoldSamenessOptions());
 
-        // In-process pub/sub for wall/boulder changes + the EF interceptor that publishes them.
-        // Singletons so a mutation on any circuit invalidates every circuit's cache (see
-        // IDomainChangeNotifier / DomainChangeInterceptor).
-        builder.Services.AddSingleton<IDomainChangeNotifier, DomainChangeNotifier>();
-
         // The "this server is about to be replaced" notice. A singleton for the same reason and with
         // the same single-instance caveat: it is one fact about this process, read by every circuit
         // and by the anonymous /alive beacon.
         builder.Services.AddSingleton<IMaintenanceAnnouncer, MaintenanceAnnouncer>();
-        builder.Services.AddSingleton<DomainChangeInterceptor>();
 
         // The persisting mutation log (Phase A: capture only). The ambient batch tracker is a
         // singleton because its "current batch" lives in an AsyncLocal that flows with the call
         // chain; the interceptor reads it and writes journal rows into the same SaveChanges as the
         // effect. Registered as both the concrete type (the interceptor takes it) and IChangeJournal
-        // (callers open batches through it). Runs alongside DomainChangeInterceptor — both fire.
+        // (callers open batches through it). Runs alongside FeedInterceptor — both fire.
         // The registry factory is a LAZY delegate (resolved only when a wall-update batch is opened/sealed),
         // so building the singleton never resolves RootDbContextFactory — which would otherwise cycle back
         // through the DbContextOptions → ChangeJournalInterceptor → ChangeJournal. RootDbContextFactory is
@@ -115,9 +112,9 @@ public static class CoreServices
         {
             options.UseNpgsql(config.Postgres.ConnectionString);
             options.AddInterceptors(sp.GetRequiredService<SlowCommandInterceptor>());
-            options.AddInterceptors(sp.GetRequiredService<DomainChangeInterceptor>());
             options.AddInterceptors(sp.GetRequiredService<ChangeJournalInterceptor>());
             options.AddInterceptors(sp.GetRequiredService<FeedInterceptor>());
+            options.AddInterceptors(sp.GetRequiredService<WallPulseInterceptor>());
         });
 
         // Kiosk wall scoping is stamped on EVERY context, centrally, at creation — see
@@ -160,8 +157,14 @@ public static class CoreServices
         builder.Services.AddSingleton<IImageVariantCache, FileSystemImageVariantCache>();
 
         // The hashed asset routes (/api/walls/{w}/a/{sha}): sha to row, under the wall's own gate.
-        builder.Services.AddSingleton<FileHashMemo>();
+        builder.Services.AddSingleton(new FileHashMemo());
+        builder.Services.AddSingleton<VerifiedBlobMemo>();
         builder.Services.AddScoped<IAssetResolver, AssetResolver>();
+        builder.Services.AddScoped<IAssetHashReader, AssetHashReader>();
+
+        // Their manifest (/api/walls/{w}/manifest) and the device's cache partition (/api/me/cache-partition).
+        builder.Services.AddWallManifest();
+
         builder.Services.AddScoped<IWallImageService, WallImageService>();
         builder.Services.AddScoped<IWallTemperatureService, WallTemperatureService>();
         // API-key MINTING is blocked for kiosk sessions on the service, not just in the UI: the
@@ -251,6 +254,7 @@ public static class CoreServices
         // The durable live-update feed (outbox): reads, retention, the horizon-lag gauge, the interceptor and the hub.
         // No mapper is registered yet (PR 1.2b/c), so nothing writes rows.
         builder.Services.AddWallFeed();
+        builder.Services.AddWallPulse();
 
         // Post-detection hold outlines/fingerprints (all walls) and glyph metrics (glyph walls). Its CV
         // dependencies come from the HoldDetection project and are optional; stateless, so a singleton.

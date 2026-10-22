@@ -9,6 +9,7 @@ using Blocwerk.Core.Migrations;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Blocwerk.Core.Tests;
 
@@ -139,7 +140,7 @@ public class SupersededModelRetentionGuardTests
 
         var removed = new List<string>();
         var stripped = await SupersededModelRetention.StripWallAsync(
-            db, h.WallId, candidates, 0, s.Options, DateTimeOffset.UtcNow, removed, CancellationToken.None);
+            db, h.WallId, candidates, 0, s.Options, DateTimeOffset.UtcNow, removed, NullLogger.Instance, CancellationToken.None);
 
         Assert.Equal(0, stripped);
         Assert.Empty(removed);

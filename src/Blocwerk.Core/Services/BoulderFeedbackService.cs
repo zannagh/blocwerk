@@ -284,8 +284,9 @@ public class BoulderFeedbackService : IBoulderFeedbackService
                 .Include(b => b.CreatedBy)
 
                 // Drafts are visible to every wall member (they just can't be logged until published),
-                // so no creator-only draft filter here.
-                .Where(b => b.WallId == wallId)
+                // so no creator-only draft filter here. Boulder carries no query filter of its own: reaching
+                // through to db.Walls is what keeps a non-member (and a kiosk acting as a member, off its wall) out.
+                .Where(b => b.WallId == wallId && db.Walls.Any(w => w.Id == wallId))
                 .ToListAsync();
 
             var ids = boulders.Select(b => b.Id).ToList();

@@ -1,5 +1,7 @@
-@* Browsable image gallery of a wall: uploads, the current wall photo and retired generation photos. *@
+@* Browsable image gallery of a wall: uploads, the current wall photo and retired generation photos.
+   Live through the feed (WallGalleryPanel.Feed.cs); held while the lightbox is open. *@
 @inject IWallImageService ImageService
+@implements IDisposable
 
 <div class="settings-panel wall-gallery-panel">
     <div class="wall-panel-head">
@@ -116,7 +118,6 @@
     private WallGalleryItem? Selected =>
         selectedIndex >= 0 && selectedIndex < items.Count ? items[selectedIndex] : null;
 
-    protected override async Task OnInitializedAsync() => await LoadMore();
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -134,20 +135,15 @@
         }
     }
 
+    // The loaded range widened by a page and read again (WallGalleryPanel.Feed.cs), so a live insert or delete in
+    // between can never shift a page boundary into a duplicate or a gap.
     private async Task LoadMore()
     {
         loading = true;
         error = null;
         try
         {
-            var batch = await ImageService.GetGalleryAsync(WallId, items.Count, PageSize);
-            items.AddRange(batch);
-            hasMore = batch.Count == PageSize;
-        }
-        catch (Exception ex)
-        {
-            error = $"Could not load the gallery: {ex.Message}";
-            hasMore = false;
+            await ReadRangeAsync(items.Count + PageSize);
         }
         finally
         {
@@ -162,10 +158,11 @@
         focusPending = true;
     }
 
-    private void Close()
+    private Task Close()
     {
         selectedIndex = -1;
         confirmingDelete = false;
+        return feed?.ReleaseAsync() ?? Task.CompletedTask; // what arrived while it was open
     }
 
     private void Previous()
@@ -186,7 +183,7 @@
         }
     }
 
-    private void OnKeyDown(KeyboardEventArgs args)
+    private async Task OnKeyDown(KeyboardEventArgs args)
     {
         switch (args.Key)
         {
@@ -197,7 +194,7 @@
                 Next();
                 break;
             case "Escape":
-                Close();
+                await Close();
                 break;
         }
     }
@@ -240,11 +237,16 @@
             busy = false;
             confirmingDelete = false;
         }
+
+        if (Selected is null)
+        {
+            await (feed?.ReleaseAsync() ?? Task.CompletedTask); // the last image went: the lightbox closed with it
+        }
     }
 
     // The grid asks for the small rendition; only the photo opened in the lightbox is the stored one.
     private string ImageUrl(WallGalleryItem item, bool thumbnail = false) =>
-        ResponsiveImage.Gallery(WallId, item.Source.ToString(), item.Id, item.SizeBytes, ShareToken, thumbnail);
+        ResponsiveImage.Gallery(WallId, item.Source.ToString(), item.Id, item.SizeBytes, ShareToken, thumbnail, item.Sha);
 
     private static string ItemKey(WallGalleryItem item) => $"{item.Source}:{item.Id}";
 

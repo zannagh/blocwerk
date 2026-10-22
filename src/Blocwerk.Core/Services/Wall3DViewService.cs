@@ -89,10 +89,16 @@ public sealed partial class Wall3DViewService(
                 .ToListAsync(ct);
         }
 
-        var view = Wall3DViewBuilder.Build(wall, doc, boulderId, photoMarkers, holdLinks, triangles);
+        // The wall read already leaves drafts out for share and anonymous-kiosk viewers; this is the second lock.
+        var seesDrafts = string.IsNullOrEmpty(shareToken) && await CurrentUserIdOrEmptyAsync() != Guid.Empty;
+        var view = Wall3DViewBuilder.Build(wall, doc, boulderId, photoMarkers, holdLinks, triangles, seesDrafts);
         view = await WithImageryAsync(view, shareToken, ct);
         view = await WithPhotoOutlinesAsync(wall, view, doc, json, ct);
-        view = view with { PanelsNewerThanModelCount = await NewerPanelCountAsync(wall.Id, ct) };
+        view = view with
+        {
+            PanelsNewerThanModelCount = await NewerPanelCountAsync(wall.Id, ct),
+            ModelKey = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(json))),
+        };
         return new Wall3DViewResult(Wall3DViewStatus.Ok, wall.Name, await WithVolumesAsync(wall, view, json, ct));
     }
 

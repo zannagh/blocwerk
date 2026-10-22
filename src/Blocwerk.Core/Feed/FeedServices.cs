@@ -9,7 +9,7 @@ namespace Blocwerk.Core.Feed;
 
 /// <summary>
 /// Registers the live-update feed: storage, reads, retention and the lag gauge (PR 1.1); the interceptor, the wake signal
-/// and the hub (PR 1.2a). No mapper is registered yet, so nothing writes rows and nothing subscribes.
+/// and the hub (PR 1.2a); the mappers (PR 1.2b, 1.2c); the in-process commit observers (PR 1.8).
 /// </summary>
 public static class FeedServices
 {
@@ -25,6 +25,9 @@ public static class FeedServices
         // context options in CoreServices. Singletons: they hold no per-save state outside their per-context tables.
         services.AddSingleton(_ => new FeedMapperRegistry(FeedMappers.Create()));
         services.AddSingleton<IFeedSignal, InProcessFeedSignal>();
+
+        // The own-write path (PR 1.8): committed rows reach the circuit caches synchronously, before the save returns.
+        services.AddSingleton<FeedCommits>();
         services.AddSingleton<FeedInterceptor>();
 
         // The fan-out. Hydration reads through the session-less factory, like the feed: the subscriber's viewer, not a
@@ -36,6 +39,11 @@ public static class FeedServices
             sp.GetRequiredService<ILogger<WallFeedHub>>()));
         services.AddSingleton<IWallFeedHub>(sp => sp.GetRequiredService<WallFeedHub>());
         services.AddHostedService(sp => sp.GetRequiredService<WallFeedHub>());
+
+        // The HTTP catch-up (PR 1.6): the routes decide the viewer (FeedAccessGate), this reads and hydrates as it.
+        services.AddSingleton(sp => new FeedCatchUp(
+            sp.GetRequiredService<IWallFeed>(),
+            () => sp.GetRequiredService<RootDbContextFactory>().CreateDbContext()));
         services.AddHostedService<WallChangeRetentionService>();
         services.AddHostedService<FeedLagCollector>();
         return services;

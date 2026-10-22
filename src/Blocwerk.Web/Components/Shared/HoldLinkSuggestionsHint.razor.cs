@@ -4,6 +4,7 @@
 
 using System.Globalization;
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Assets;
 using Blocwerk.Core.HoldLinks;
 using Blocwerk.Core.Services;
 using Blocwerk.Web.Endpoints;
@@ -28,6 +29,9 @@ public partial class HoldLinkSuggestionsHint
     private string? failure;
     private List<HoldLinkSuggestionView>? rows;
 
+    // The panels' photo hashes, read with the rows, so their thumbnails take the content-addressed url.
+    private IReadOnlyDictionary<Guid, string> photoShas = new Dictionary<Guid, string>();
+
     /// <summary>The wall.</summary>
     [Parameter]
     public Guid WallId { get; set; }
@@ -45,6 +49,9 @@ public partial class HoldLinkSuggestionsHint
 
     [Inject]
     private IKioskContext KioskContext { get; set; } = default!;
+
+    [Inject]
+    private IAssetHashReader AssetHashes { get; set; } = default!;
 
     [Inject]
     private ILogger<HoldLinkSuggestionsHint> Logger { get; set; } = default!;
@@ -93,7 +100,7 @@ public partial class HoldLinkSuggestionsHint
 
     private static string F(double v) => v.ToString("0.####", CultureInfo.InvariantCulture);
 
-    private string PhotoUrl(Guid panelId) => ResponsiveImage.Initial($"/api/walls/{WallId}/panels/{panelId}/photo");
+    private string PhotoUrl(Guid panelId) => ResponsiveImage.Initial(AssetUrls.Panel(WallId, panelId, photoShas.GetValueOrDefault(panelId)));
 
     private async Task ToggleAsync()
     {
@@ -106,7 +113,11 @@ public partial class HoldLinkSuggestionsHint
 
     private async Task LoadRowsAsync()
     {
-        await RunAsync(async () => rows = [.. await Suggestions.ListAsync(WallId)]);
+        await RunAsync(async () =>
+        {
+            rows = [.. await Suggestions.ListAsync(WallId)];
+            photoShas = await AssetHashes.PanelPhotosAsync(WallId);
+        });
         count = rows?.Count ?? count;
     }
 

@@ -6,7 +6,7 @@ using Blocwerk.Contracts.Feed.Payloads;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Feed;
-using Blocwerk.Core.Services;
+using Blocwerk.Web.State;
 
 namespace Blocwerk.Core.Tests;
 
@@ -38,7 +38,7 @@ public sealed class WallCacheFeedEvictionTests : IAsyncLifetime
         Assert.False(f.Store.Walls.TryPeek(f.WallId, out _));
         Assert.Equal([(f.WallId, 1)], f.Store.HoldSets.Keys);
         Assert.Equal([second.Id], f.Store.Boulders.Keys);
-        Assert.Contains(f.Changes, c => c is { Scope: DomainChangeScope.Wall } && c.WallId == f.WallId);
+        Assert.Contains(f.Changes, c => c is { Scope: WallCacheChangeScope.Wall } && c.WallId == f.WallId);
     }
 
     [Fact]
@@ -85,8 +85,7 @@ public sealed class WallCacheFeedEvictionTests : IAsyncLifetime
 
     [Theory]
     [InlineData(FeedKinds.MemberChanged)]
-    [InlineData(FeedKinds.WallManifest)]
-    public async Task MemberAndManifest_EvictTheAggregateOnly(string kind)
+    public async Task AMemberChange_EvictsTheAggregateOnly(string kind)
     {
         await f.DeliverAsync(f.Row(kind, audience: FeedAudience.Members));
 
@@ -112,6 +111,7 @@ public sealed class WallCacheFeedEvictionTests : IAsyncLifetime
     [InlineData(FeedKinds.GalleryChanged)]
     [InlineData(FeedKinds.View3DChanged)]
     [InlineData(FeedKinds.ActivityAdded)]
+    [InlineData(FeedKinds.WallManifest)] // the aggregate holds no manifest data; only the server's manifest cache reads it
     [InlineData("some.future.kind")]
     public async Task KindsInNoCache_EvictNothing_AndRaiseNoChange(string kind)
     {

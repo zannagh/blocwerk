@@ -123,6 +123,8 @@
         @* Live form snapshot, recomputed every render so the offline submit path (offline-boulder.js)
            always reads the last state that reached the browser. Hidden from view and a11y. *@
         <div id="bw-boulder-form" hidden aria-hidden="true" data-bw-boulder-snapshot="@SnapshotJson"></div>
+        @* Kept in the browser when the page is hidden, so a deploy while it sleeps cannot lose it (deploy-drafts.js). *@
+        <div hidden aria-hidden="true" data-bw-keep-key="@KeepKey" data-bw-keep-payload="@KeepPayload"></div>
 
         <div class="submit-row">
             <button class="btn-secondary" @onclick="SaveDraft" @attributes="SubmitAttributes(isDraft: true)"
@@ -231,7 +233,7 @@
 
     // Minted once, offline-safe. Both the online (CreateBoulderAsync) and the queued offline path
     // key on this id, so a create is an idempotent upsert no matter which path (or a replay) runs.
-    private readonly Guid _clientId = Guid.NewGuid();
+    private Guid _clientId = Guid.NewGuid();
     private string _name = string.Empty;
 
     // The names already taken on this wall, kept so the shuffle button can keep suggesting unique ones.
@@ -283,11 +285,15 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         await SyncEditGuardAsync();
+        if (!_restoreChecked && _pristineSnapshot is not null)
+        {
+            await RestoreKeptAsync();
+        }
     }
 
     private async Task SyncEditGuardAsync()
     {
-        _editGuardActive = await EditGuardInterop.SyncAsync(JS, "boulder-create", _editLease is not null, _editGuardActive);
+        _editGuardActive = await EditGuardInterop.SyncAsync(JS, "boulder-create", _editLease is not null, _editGuardActive, EditActivity);
     }
 
     protected override async Task OnInitializedAsync()
@@ -319,6 +325,7 @@
         // The whole page is "create mode": hold a busy lease while it's mounted. An anonymous kiosk
         // edit is stamped to the Ghost row, so the deploy gate still sees the tablet as busy.
         _editLease = EditActivity.BeginBoulderCreate(WallId, currentUser?.Id ?? GhostUser.Id);
+        _flushUserId = currentUser?.Id;
 
         _wall = await WallService.GetWallAsync(WallId);
 
@@ -373,6 +380,7 @@
             await BuildTwinMapAsync();
 
             RefreshPickerHolds();
+            ArmDeployFlush();
         }
     }
 
@@ -380,7 +388,7 @@
     // the wall's centre-photo default when no panel loaded (a failed panel read).
     private string? PickerPhotoUrl =>
         _currentPanel is not null
-            ? $"/api/walls/{WallId}/panels/{_currentPanel.Id}/photo"
+            ? AssetUrls.Panel(WallId, _currentPanel)
             : null;
 
     // Recomputes the picker's hold set for the current view: only the current panel's holds, so they
@@ -481,6 +489,7 @@
     public void Dispose()
     {
         _editLease?.Dispose();
+        DisposeDeployFlush();
 
         // Best-effort: clears the guard on navigate-away while the circuit is still up. On a circuit
         // teardown this no-ops (interop gone), which is the safe failure — the browser drops the whole

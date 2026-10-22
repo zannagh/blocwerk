@@ -38,9 +38,8 @@ public static class WallEnhancementCropEndpoint
                 return Results.NotFound();
             }
 
-            // A decision can change what the picture shows (an undone shape): short private cache only.
-            http.Response.Headers.CacheControl = "private, max-age=30";
-            return Results.File(bytes, "image/jpeg");
+            // A decision can change what the picture shows (an undone shape): revalidated on every use.
+            return RevalidatedResponse.Bytes(http, bytes, "image/jpeg");
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or KioskRestrictedException)
         {

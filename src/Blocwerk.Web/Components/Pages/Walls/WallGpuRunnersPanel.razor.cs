@@ -1,8 +1,11 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using Blocwerk.Core.Pulse;
 using Blocwerk.Core.Runners;
 using Blocwerk.Core.Services;
+using Blocwerk.Web.State;
+using Blocwerk.Web.State.Live;
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
 
@@ -11,11 +14,15 @@ namespace Blocwerk.Web.Components.Pages.Walls;
 /// <summary>
 /// The wall's "3D runners" card: runners that can serve it (its own and shared ones) with their
 /// online state and current job, the wall's waiting photo-real jobs, and creating a runner (whose
-/// key and run commands are shown exactly once). Refreshes every 5 s while open.
+/// key and run commands are shown exactly once). Refreshes on the wall's runner-job pulses, and every
+/// <see cref="RunnerStateEvery"/> for what no pulse carries (a runner going on or offline).
 /// </summary>
 public partial class WallGpuRunnersPanel : IAsyncDisposable
 {
-    private readonly CancellationTokenSource disposed = new();
+    /// <summary>The old cadence, kept for what no pulse carries: a runner going online, offline or paused.</summary>
+    internal static readonly TimeSpan RunnerStateEvery = TimeSpan.FromSeconds(5);
+
+    private readonly PulseHolder<PulseLoop> pulses = new();
     private IReadOnlyList<GpuRunnerInfo>? runners;
     private IReadOnlyList<GpuJobInfo>? jobs;
     private GpuRunnerCreated? created;
@@ -40,11 +47,17 @@ public partial class WallGpuRunnersPanel : IAsyncDisposable
     [Inject]
     private ILogger<WallGpuRunnersPanel> Logger { get; set; } = default!;
 
-    public async ValueTask DisposeAsync()
+    [Inject]
+    private WallCacheState Cache { get; set; } = default!;
+
+    [Inject]
+    private IWallPulse Pulse { get; set; } = default!;
+
+    public ValueTask DisposeAsync()
     {
-        await disposed.CancelAsync();
-        disposed.Dispose();
+        pulses.Dispose();
         GC.SuppressFinalize(this);
+        return ValueTask.CompletedTask;
     }
 
     internal static string Ago(DateTimeOffset? at)
@@ -61,9 +74,16 @@ public partial class WallGpuRunnersPanel : IAsyncDisposable
             : $"{(int)age.TotalDays} days ago";
     }
 
-    protected override void OnInitialized() => _ = RefreshLoopAsync(disposed.Token);
+    protected override Task OnParametersSetAsync()
+    {
+        if (!pulses.IsFor(WallId))
+        {
+            pulses.Open(WallId, () => PulseLoop.Start(
+                Cache, Pulse, WallId, [PulseTopics.GpuJob], () => true, InvokeAsync, ReloadAndRenderAsync, Logger, safety: RunnerStateEvery));
+        }
 
-    protected override Task OnParametersSetAsync() => ReloadAsync();
+        return ReloadAsync();
+    }
 
     private string ServerUrl => Navigation.BaseUri.TrimEnd('/');
 
@@ -82,24 +102,10 @@ public partial class WallGpuRunnersPanel : IAsyncDisposable
         _ => $"On runner “{job.RunnerName}”: {job.Stage} ({job.Progress:P0})",
     };
 
-    private async Task RefreshLoopAsync(CancellationToken ct)
+    private async Task ReloadAndRenderAsync()
     {
-        try
-        {
-            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
-            while (await timer.WaitForNextTickAsync(ct))
-            {
-                await InvokeAsync(async () =>
-                {
-                    await ReloadAsync();
-                    StateHasChanged();
-                });
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            // Disposed.
-        }
+        await ReloadAsync();
+        StateHasChanged();
     }
 
     private async Task ReloadAsync()

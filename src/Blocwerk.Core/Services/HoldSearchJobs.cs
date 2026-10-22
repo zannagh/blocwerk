@@ -4,7 +4,9 @@
 
 using System.Collections.Concurrent;
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Enums;
 using Blocwerk.Core.Jobs;
+using Blocwerk.Core.Pulse;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -45,7 +47,7 @@ public sealed record HoldSearchStatus(
 /// wall's latest search (running or ended) for the page and the job list. The proposals themselves are stored by
 /// the search, so only this status is in memory: a restart forgets it but keeps every proposal.
 /// </summary>
-public sealed class HoldSearchJobs(TimeProvider? clock = null, ILogger<HoldSearchJobs>? logger = null) : IDisposable
+public sealed class HoldSearchJobs(TimeProvider? clock = null, ILogger<HoldSearchJobs>? logger = null, IWallPulse? pulse = null) : IDisposable
 {
     private readonly TimeProvider time = clock ?? TimeProvider.System;
     private readonly ILogger log = (ILogger?)logger ?? NullLogger.Instance;
@@ -88,6 +90,7 @@ public sealed class HoldSearchJobs(TimeProvider? clock = null, ILogger<HoldSearc
             statuses[wallId] = status;
         }
 
+        Pulse(status);
         _ = Task.Run(() => RunAsync(wallId, work));
         return true;
     }
@@ -128,14 +131,24 @@ public sealed class HoldSearchJobs(TimeProvider? clock = null, ILogger<HoldSearc
 
     private void Update(Guid wallId, Func<HoldSearchStatus, HoldSearchStatus> change)
     {
+        HoldSearchStatus? changed = null;
         lock (gate)
         {
             if (statuses.TryGetValue(wallId, out var current))
             {
-                statuses[wallId] = change(current) with { UpdatedAt = time.GetUtcNow() };
+                statuses[wallId] = changed = change(current) with { UpdatedAt = time.GetUtcNow() };
             }
         }
+
+        if (changed is not null)
+        {
+            Pulse(changed);
+        }
     }
+
+    // One search per wall at a time, so the wall is the job.
+    private void Pulse(HoldSearchStatus s) => pulse?.Publish(new WallPulse(
+        s.WallId, PulseTopics.HoldSearch, s.WallId, FeedAudience.Setters, s.Total > 0 ? (double)s.Done / s.Total : null, !s.Active));
 }
 
 // Progress<T> would post to a captured context; the status must change at once, on the reporting thread.

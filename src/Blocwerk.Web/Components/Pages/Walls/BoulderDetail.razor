@@ -6,6 +6,7 @@
 @inject IAttemptService AttemptService
 @inject IWallService WallService
 @inject IWallPanelService WallPanelService
+@inject IAssetHashReader AssetHashes
 @inject WallCacheState Cache
 @inject ICurrentUserService CurrentUserService
 @inject IKioskContext KioskContext
@@ -80,6 +81,9 @@ else
                     }
                 </div>
             </div>
+
+            @* An open inline editor, kept in the browser when the page is hidden (deploy-drafts.js). *@
+            <div hidden aria-hidden="true" data-bw-keep-key="@KeepKey" data-bw-keep-payload="@KeepPayload"></div>
 
             @if (_editMeta)
             {
@@ -444,6 +448,12 @@ else
                     <a href="/kiosk/users">Pick yourself</a> to log attempts and comment.
                 </div>
             }
+            else if (_isShareGuest)
+            {
+                <div class="bw-anon-notice">
+                    <a href="/join/@Uri.EscapeDataString(ShareToken ?? string.Empty)">Join this wall</a> to comment and log ticks.
+                </div>
+            }
             else
             {
                 <div class="bw-anon-notice">
@@ -452,7 +462,7 @@ else
             }
         }
 
-        <BoulderBetaVideos @ref="_betaVideos" BoulderId="BoulderId" CurrentUserId="_currentUserId"
+        <BoulderBetaVideos @ref="_betaVideos" BoulderId="BoulderId" WallId="WallId" CurrentUserId="_currentUserId"
                            IsAnonymous="_isAnonymous" ShareToken="@ShareToken"
                            Uploaded="OnBetaVideoUploaded" />
         </div>
@@ -465,9 +475,9 @@ else
            Same display:contents trick as the two columns above, so the phone tier is untouched and
            the DOM order stays exactly the order the phone stack has always rendered. *@
         <div class="boulder-wide-col">
-        <BoulderActivityFeed @ref="_activityFeed" BoulderId="BoulderId" ShareToken="@ShareToken" />
+        <BoulderActivityFeed @ref="_activityFeed" BoulderId="BoulderId" WallId="WallId" ShareToken="@ShareToken" />
 
-        <BoulderComments @ref="_commentList" BoulderId="BoulderId"
+        <BoulderComments @ref="_commentList" BoulderId="BoulderId" WallId="WallId" ShareToken="@ShareToken"
                          CurrentUserId="_currentUserId" IsAnonymous="_isAnonymous" />
 
         @if (!_isAnonymous && _attempts.Count > 0)
@@ -551,6 +561,9 @@ else
     private AttemptSummary _summary = new(0, false, false);
     private Guid _currentUserId;
     private bool _isAnonymous;
+
+    // Signed in, on the share route, not a member of the wall: anonymous for every write, but told how to join.
+    private bool _isShareGuest;
     private bool _isCreator;
 
     /// <summary>
@@ -648,7 +661,7 @@ else
 
     private async Task SyncEditGuardAsync()
     {
-        _editGuardActive = await EditGuardInterop.SyncAsync(JS, "boulder-edit", _editLease is not null, _editGuardActive);
+        _editGuardActive = await EditGuardInterop.SyncAsync(JS, "boulder-edit", _editLease is not null, _editGuardActive, EditActivity);
     }
 
     private ElementReference _photoViewportRef;
@@ -711,12 +724,18 @@ else
 
         // Every render, not just the first: the lease toggles when an inline editor opens or closes.
         await SyncEditGuardAsync();
+        if (!_restoreChecked)
+        {
+            await RestoreKeptAsync();
+        }
     }
 
     public async ValueTask DisposeAsync()
     {
         Cache.Changed -= OnCacheChanged;
+        _statsFeed?.Dispose();
         _editLease?.Dispose();
+        DisposeDeployFlush();
 
         if (_editGuardActive)
         {
@@ -828,6 +847,8 @@ else
                     ? g
                     : null;
         }
+
+        await LoadPhotoShasAsync();
     }
 
     /// <summary>
@@ -1043,14 +1064,28 @@ else
     /// </summary>
     private string CreatorDisplay => BoulderSetterNames.Describe(null, _boulder?.CreatedBy);
 
-    private string PhotoUrl
+    private string PhotoUrl => _showHistoric && _historicGeneration is { } g
+        ? AssetUrls.WallPhoto(WallId, _historicPhotoSha, ShareToken, g)
+        : AssetUrls.WallPhoto(WallId, _livePhotoSha, ShareToken);
+
+    // The hashes of the two wall photos PhotoUrl can show, read from the database with the historic generation.
+    private string? _livePhotoSha;
+    private string? _historicPhotoSha;
+
+    private async Task LoadPhotoShasAsync()
     {
-        get
+        try
         {
-            var gen = _showHistoric && _historicGeneration is { } g ? $"/{g}" : string.Empty;
-            return !string.IsNullOrEmpty(ShareToken)
-                ? $"/api/walls/{WallId}/photo{gen}?token={ShareToken}"
-                : $"/api/walls/{WallId}/photo{gen}";
+            _livePhotoSha = await AssetHashes.WallPhotoAsync(WallId);
+            _historicPhotoSha = _historicGeneration is { } g
+                ? await AssetHashes.WallPhotoAtGenerationAsync(WallId, ShareToken, g)
+                : null;
+        }
+        catch (Exception ex)
+        {
+            // The legacy urls still work; only the content-addressed ones are lost.
+            Logger.LogWarning(ex, "Could not read the photo hashes of wall {WallId}", WallId);
+            (_livePhotoSha, _historicPhotoSha) = (null, null);
         }
     }
 
@@ -1123,21 +1158,27 @@ else
         // survive a load that ends not-found.
         _boulder = null;
         _isAnonymous = false;
+        _isShareGuest = false;
         _currentUserId = Guid.Empty;
         _isCreator = false;
         _isSetter = false;
         _isAdmin = false;
         _showHistoric = false;
         _historicGeneration = null;
+        (_livePhotoSha, _historicPhotoSha) = (null, null);
         _boulderHoldIds = [];
         _renderHolds = [];
         _activeProposal = null;
         _isFavorite = false;
         _rating = new(null, 0, null);
         _publishError = null;
+        OpenStatsFeed();
+        _restoreChecked = true;
         StateHasChanged();
 
         await LoadForCurrentRouteAsync();
+        ReleaseStats();
+        _restoreChecked = false;
     }
 
     private async Task LoadForCurrentRouteAsync()
@@ -1148,8 +1189,19 @@ else
             try
             {
                 var user = await CurrentUserService.GetCurrentUserAsync();
-                _currentUserId = user.Id;
-                _isAnonymous = false;
+
+                // Ticks, comments and favorites are for the wall's members, and the services refuse anyone else.
+                // A signed-in NON-member on the share link therefore reads like a guest (as on WallDetail) and is
+                // offered the join link instead of buttons that could only fail.
+                if (await WallService.IsMemberAsync(WallId))
+                {
+                    _currentUserId = user.Id;
+                    _isAnonymous = false;
+                }
+                else
+                {
+                    _isShareGuest = true;
+                }
             }
             catch (UnauthorizedAccessException ex)
             {
@@ -1252,12 +1304,12 @@ else
     /// through the uncached share path) and while the name/grade form is open, so a background reload
     /// never discards an in-progress edit.
     /// </summary>
-    private void OnCacheChanged(DomainChange change)
+    private void OnCacheChanged(WallCacheChange change)
     {
         // Share viewers are skipped by TOKEN, not only by _isAnonymous: a signed-in viewer following
         // a share link has _isAnonymous == false even with no membership on this wall, and their
         // reads go through the uncached share path that this cache signal says nothing about.
-        if (change.Scope == DomainChangeScope.WallList || _isAnonymous || !string.IsNullOrEmpty(ShareToken) || _editMeta)
+        if (change.Scope == WallCacheChangeScope.WallList || _isAnonymous || !string.IsNullOrEmpty(ShareToken) || _editMeta)
         {
             return;
         }
@@ -1751,7 +1803,10 @@ else
         {
             _editLease?.Dispose();
             _editLease = null;
+            ReleaseStats();
         }
+
+        SyncDeployFlush();
     }
 
     private Task SaveMeta() => Guard(async () =>

@@ -1,3 +1,4 @@
+using Blocwerk.Contracts.Feed;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
@@ -88,10 +89,10 @@ public class BoulderReviewSignoffTests
         var holds = await h.SeedWallAsync(holdCount: 2);
 
         // A boulder carries no timestamp that a write would move, so "did this save?" is observed
-        // through the same seam production uses to evict caches: the DomainChangeInterceptor only
-        // publishes when SaveChanges actually ran.
-        var notifier = new RecordingDomainChangeNotifier();
-        var factory = new InterceptingDbContextFactory(h.DbContextFactory.ConnectionString, notifier);
+        // through the same seam production uses to evict caches: the feed's committed rows, which
+        // exist only when SaveChanges actually wrote something.
+        var commits = new RecordingFeedCommits();
+        var factory = Intercepted(h, commits);
         var service = new BoulderService(
             factory, h.CurrentUser, h.ActivityLog, NullLogger<BoulderService>.Instance);
 
@@ -99,12 +100,12 @@ public class BoulderReviewSignoffTests
             h.WallId, "Live", "6A", [new BoulderHoldInput(holds[0].Id, HoldType.Start)]);
         Assert.False(boulder.NeedsReview);
 
-        notifier.Changes.Clear();
+        commits.Clear();
 
         await service.ReviseBoulderAsync(
             boulder.Id, [new BoulderHoldInput(holds[0].Id, HoldType.Start)], name: "Live", grade: "6A");
 
-        Assert.Empty(notifier.Changes);
+        Assert.Empty(commits.Rows);
     }
 
     [Fact]
@@ -113,8 +114,8 @@ public class BoulderReviewSignoffTests
         using var h = new WallTestHarness();
         var holds = await h.SeedWallAsync(holdCount: 2);
 
-        var notifier = new RecordingDomainChangeNotifier();
-        var factory = new InterceptingDbContextFactory(h.DbContextFactory.ConnectionString, notifier);
+        var commits = new RecordingFeedCommits();
+        var factory = Intercepted(h, commits);
         var service = new BoulderService(
             factory, h.CurrentUser, h.ActivityLog, NullLogger<BoulderService>.Instance);
 
@@ -128,15 +129,15 @@ public class BoulderReviewSignoffTests
             await db.SaveChangesAsync();
         }
 
-        notifier.Changes.Clear();
+        commits.Clear();
 
         await service.ReviseBoulderAsync(
             boulder.Id, [new BoulderHoldInput(holds[0].Id, HoldType.Start)], name: "Live", grade: "6A");
 
         // Without a published change the review badge would linger until a manual reload.
         Assert.Contains(
-            notifier.Changes,
-            c => c.Scope == DomainChangeScope.Boulder && c.BoulderId == boulder.Id);
+            commits.Rows,
+            r => r.Kind == FeedKinds.BoulderChanged && r.EntityId == boulder.Id);
     }
 
     [Fact]
@@ -167,44 +168,7 @@ public class BoulderReviewSignoffTests
         await using var check = h.CreateContext();
         Assert.True((await check.Boulders.FirstAsync(b => b.Id == boulder.Id)).NeedsReview);
     }
-}
 
-/// <summary>Collects every change the interceptor publishes, so a test can assert on writes.</summary>
-public sealed class RecordingDomainChangeNotifier : IDomainChangeNotifier
-{
-    public event Action<DomainChange>? Changed;
-
-    public List<DomainChange> Changes { get; } = [];
-
-    public void Publish(DomainChange change)
-    {
-        Changes.Add(change);
-        Changed?.Invoke(change);
-    }
-}
-
-/// <summary>
-/// Like <see cref="TestDbContextFactory"/>, but with the production
-/// <see cref="DomainChangeInterceptor"/> wired in so its publishes can be observed.
-/// </summary>
-public sealed class InterceptingDbContextFactory : IDbContextFactory<BlocwerkDbContext>
-{
-    private readonly string connectionString;
-    private readonly DomainChangeInterceptor interceptor;
-
-    public InterceptingDbContextFactory(string connectionString, IDomainChangeNotifier notifier)
-    {
-        this.connectionString = connectionString;
-        interceptor = new DomainChangeInterceptor(notifier);
-    }
-
-    public BlocwerkDbContext CreateDbContext()
-    {
-        var options = new DbContextOptionsBuilder<BlocwerkDbContext>()
-            .UseSqlite(connectionString)
-            .AddInterceptors(interceptor)
-            .Options;
-
-        return new SqliteBlocwerkDbContext(options);
-    }
+    private static InterceptedDbContextFactory Intercepted(WallTestHarness h, RecordingFeedCommits commits) =>
+        new(h.DbContextFactory.ConnectionString, [FeedCommitsAfterCommitTests.Interceptor(commits)]);
 }

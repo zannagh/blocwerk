@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Assets;
 using Blocwerk.Core.Capture;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
@@ -119,6 +120,31 @@ public class WallGeometrySplatAccessTests
         Assert.StartsWith($"/api/walls/{h.WallId}/geometry/{modelId}/splat?token=tok%20en&v=", shared.SplatUrl);
     }
 
+    /// <summary>Hashed geometry rows: every texture, mask and splat url of the view is the content-addressed one.</summary>
+    [Fact]
+    public async Task View_OfHashedGeometry_CarriesContentAddressedUrls_WithTheShareToken()
+    {
+        using var h = new WallTestHarness();
+        using var s = new CaptureScenario(h);
+        await ComputeWithSplatAsync(h, s, hashed: true);
+        await SetShareTokenAsync(h, "tok en");
+        byte[] splatSha;
+        List<byte[]?> textureShas;
+        await using (var db = h.CreateContext())
+        {
+            splatSha = (await db.WallGeometrySplats.SingleAsync()).Sha256!;
+            textureShas = await db.WallGeometryTextures.OrderBy(t => t.FacetId).Select(t => t.Sha256).ToListAsync();
+        }
+
+        h.CurrentUser.GetCurrentUserAsync().Returns(_ => Task.FromException<User>(new UnauthorizedAccessException()));
+        var shared = (await ViewService(h).BuildAsync(h.WallId, null, "tok en")).View!;
+
+        Assert.Equal($"/api/walls/{h.WallId}/a/{ContentHash.ToHex(splatSha)}?token=tok%20en", shared.SplatUrl);
+        Assert.Equal(
+            textureShas.Select(sha => $"/api/walls/{h.WallId}/a/{ContentHash.ToHex(sha)}?token=tok%20en"),
+            shared.Textures.Select(t => t.Url));
+    }
+
     [Fact]
     public async Task BigScene_GetsALevelOfDetailLadder_InTheViewAndOnTheRoute()
     {
@@ -194,11 +220,17 @@ public class WallGeometrySplatAccessTests
     private static Wall3DViewService ViewService(WallTestHarness h) => new(
         h.WallService, h.CurrentUser, h.DbContextFactory, Wall3DViewAccessTests.Captures(h), NullLogger<Wall3DViewService>.Instance);
 
-    private static async Task<Guid> ComputeWithSplatAsync(WallTestHarness h, CaptureScenario s)
+    /// <summary>Computes a model with a splat; its geometry stays hashed only with <paramref name="hashed"/>.</summary>
+    private static async Task<Guid> ComputeWithSplatAsync(WallTestHarness h, CaptureScenario s, bool hashed = false)
     {
         s.SplatClient.IsConfigured = true;
         var captureId = await s.StartCaptureAsync();
         await s.Processor.ProcessAsync(captureId, CancellationToken.None);
+        if (!hashed)
+        {
+            await UnhashedGeometry.ClearAsync(h);
+        }
+
         await using var db = h.CreateContext();
         return (await db.WallGeometrySplats.SingleAsync()).GeometryModelId;
     }

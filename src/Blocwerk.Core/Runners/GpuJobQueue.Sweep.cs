@@ -97,6 +97,7 @@ public sealed partial class GpuJobQueue
                 continue;
             }
 
+            PulseJob(job.WallId, job.Id, null, ended: true);
             logger.LogInformation("GPU job {JobId} of capture {CaptureId} expired: {Reason}", job.Id, job.CaptureId, reason);
             await JobEndedAsync(db, job, reason, ct);
 
@@ -224,8 +225,11 @@ public sealed partial class GpuJobQueue
             if (stage != job.Stage)
             {
                 // Conditional: a runner may have claimed it meanwhile (its stage then says so).
-                await db.GpuJobs.Where(j => j.Id == job.Id && j.Status == GpuJobStatus.Queued)
-                    .ExecuteUpdateAsync(s => s.SetProperty(j => j.Stage, stage), ct);
+                if (await db.GpuJobs.Where(j => j.Id == job.Id && j.Status == GpuJobStatus.Queued)
+                        .ExecuteUpdateAsync(s => s.SetProperty(j => j.Stage, stage), ct) > 0)
+                {
+                    PulseJob(job.WallId, job.Id, null);
+                }
             }
         }
     }

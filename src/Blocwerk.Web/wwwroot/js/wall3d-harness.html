@@ -152,7 +152,7 @@
         if (q.get('levels')) view.splatLevels = q.get('levels').split(',').map(n => ({ url: `${q.get('splat')}?lod=${n}`, splats: +n, sizeBytes: 0 }));
         view.splatMatrix = [0, 1, 2, 3].flatMap(c => rows.map(r => r[c]));
     }
-    const handle = mount(stage, view,
+    const handle = await mount(stage, view,
         { initialPreset: q.get('preset') || 'front', initialMode: q.get('mode'), preserveDrawingBuffer: true });
     if (q.get('select')) {
         const h = q.get('select') === 'pocket' ? view.holds.find(x => x.shape && x.shape.holes.length)

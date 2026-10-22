@@ -40,6 +40,9 @@ public sealed class FileSystemImageVariantCache : IImageVariantCache
     private readonly string tempRoot;
     private readonly ILogger<FileSystemImageVariantCache> logger;
 
+    // The cache is a singleton, so these flights and their render limit are process-wide (requests and the warmer).
+    private readonly RenditionFlights flights = new();
+
     public FileSystemImageVariantCache(BlocwerkSettings settings, ILogger<FileSystemImageVariantCache> logger)
     {
         this.logger = logger;
@@ -53,7 +56,8 @@ public sealed class FileSystemImageVariantCache : IImageVariantCache
         ImageVariantKey key,
         int width,
         Func<Task<byte[]?>> loadOriginal,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool originalVerified = false)
     {
         // Belt and braces over the endpoint's own check: an unvalidated width reaching here would
         // be an unbounded render.
@@ -64,7 +68,28 @@ public sealed class FileSystemImageVariantCache : IImageVariantCache
 
         return key.Sha is null
             ? GetOrCreateLegacyAsync(key, width, loadOriginal, ct)
-            : GetOrCreateHashedAsync(key, width, loadOriginal, ct);
+            : GetOrCreateHashedAsync(key, width, loadOriginal, originalVerified, ct);
+    }
+
+    /// <inheritdoc/>
+    public (long Length, string ContentType)? PeekHashed(ImageVariantKey key, int width)
+    {
+        if (key.Sha is not { } sha || !ImageVariantFiles.IsSha(sha) || !ImageVariants.IsAllowed(width))
+        {
+            return null;
+        }
+
+        var stem = Path.Combine(root, ShaFolder, sha[..2], $"{sha}-{width}");
+        foreach (var extension in ImageRendition.Extensions)
+        {
+            var file = new FileInfo(stem + extension);
+            if (file.Exists)
+            {
+                return (file.Length, ImageVariantFiles.TypeOf(extension));
+            }
+        }
+
+        return null;
     }
 
     /// <summary>A source with no content hash yet: keyed by its ETag parts, one directory per image.</summary>
@@ -72,7 +97,7 @@ public sealed class FileSystemImageVariantCache : IImageVariantCache
         ImageVariantKey key, int width, Func<Task<byte[]?>> loadOriginal, CancellationToken ct)
     {
         // An identity that is not a plain hash would be a path.
-        if (!IsHash(key.Identity) || !IsHash(key.Version))
+        if (!ImageVariantFiles.IsHash(key.Identity) || !ImageVariantFiles.IsHash(key.Version))
         {
             return null;
         }
@@ -80,19 +105,20 @@ public sealed class FileSystemImageVariantCache : IImageVariantCache
         var directory = Path.Combine(root, key.Identity);
         var stem = Path.Combine(directory, $"{key.Version}-{width}");
 
-        var cached = await TryReadAsync(stem, ct);
-        if (cached is not null)
-        {
-            return cached;
-        }
+        return await ImageVariantFiles.TryReadAsync(stem, ct)
+            ?? await flights.RunAsync(stem, () => MissLegacyAsync(key, width, directory, stem, loadOriginal, ct), ct);
+    }
 
+    private async Task<ImageVariant?> MissLegacyAsync(
+        ImageVariantKey key, int width, string directory, string stem, Func<Task<byte[]?>> loadOriginal, CancellationToken ct)
+    {
         var original = await loadOriginal();
         if (original is not { Length: > 0 })
         {
             return null;
         }
 
-        var rendered = ImageRendition.Render(original, width);
+        var rendered = await flights.RenderAsync(() => ImageRendition.Render(original, width), ct);
         if (rendered is null)
         {
             // Already narrow enough, or not a decodable image. Either way the original IS the best
@@ -105,66 +131,82 @@ public sealed class FileSystemImageVariantCache : IImageVariantCache
     }
 
     /// <summary>
-    /// A hashed source, keyed by <c>(sha, width)</c> under <c>variants/sha/{sha[..2]}/</c>. On a miss the rendition
-    /// the legacy key names is moved over (dual-read), so a deploy does not re-render every cached variant. A fresh
-    /// rendition is cached only when the original really hashes to the key's sha: a photo rewritten between the
-    /// caller's metadata read and its byte read must never land under the old hash.
+    /// A hashed source, keyed by <c>(sha, width)</c> under <c>variants/sha/{sha[..2]}/</c>. On a miss the original is
+    /// loaded and checked against the sha first (not again when the loader is <paramref name="originalVerified"/>);
+    /// only then is a rendition one of the legacy keys names moved over (dual-read, no render), and only then is a fresh
+    /// rendition cached. A photo rewritten between the caller's metadata read and its byte read is served, but never
+    /// lands under the old hash, and neither does a legacy file of bytes that no longer hash to it.
     /// </summary>
     private async Task<ImageVariant?> GetOrCreateHashedAsync(
-        ImageVariantKey key, int width, Func<Task<byte[]?>> loadOriginal, CancellationToken ct)
+        ImageVariantKey key, int width, Func<Task<byte[]?>> loadOriginal, bool originalVerified, CancellationToken ct)
     {
         var sha = key.Sha!;
-        if (!IsSha(sha))
+        if (!ImageVariantFiles.IsSha(sha))
         {
             return null;
         }
 
         var directory = Path.Combine(root, ShaFolder, sha[..2]);
         var stem = Path.Combine(directory, $"{sha}-{width}");
+        return await ImageVariantFiles.TryReadAsync(stem, ct)
+            ?? await flights.RunAsync(stem, () => MissHashedAsync(key, width, directory, stem, loadOriginal, originalVerified, ct), ct);
+    }
 
-        var cached = await TryReadAsync(stem, ct) ?? await TryAdoptLegacyAsync(key, width, directory, stem, ct);
-        if (cached is not null)
-        {
-            return cached;
-        }
-
+    private async Task<ImageVariant?> MissHashedAsync(
+        ImageVariantKey key, int width, string directory, string stem, Func<Task<byte[]?>> loadOriginal, bool originalVerified, CancellationToken ct)
+    {
         var original = await loadOriginal();
         if (original is not { Length: > 0 })
         {
             return null;
         }
 
-        var rendered = ImageRendition.Render(original, width);
+        var verified = originalVerified || ContentHash.ToHex(ContentHash.Of(original)) == key.Sha;
+        if (verified && await TryAdoptLegacyAsync(key, width, directory, stem, ct) is { } adopted)
+        {
+            return adopted;
+        }
+
+        var rendered = await flights.RenderAsync(() => ImageRendition.Render(original, width), ct);
         if (rendered is null)
         {
             return new ImageVariant(original, string.Empty, IsOriginal: true);
         }
 
-        if (ContentHash.ToHex(ContentHash.Of(original)) == sha)
+        if (verified)
         {
             await WriteAsync(directory, stem + rendered.Extension, version: null, rendered.Bytes, ct);
         }
         else
         {
-            logger.LogWarning("Image bytes no longer hash to {Sha}; the rendition is served but not cached", sha);
+            logger.LogWarning("Image bytes no longer hash to {Sha}; the rendition is served but not cached", key.Sha);
         }
 
         return new ImageVariant(rendered.Bytes, rendered.ContentType, IsOriginal: false);
     }
 
     /// <summary>
-    /// Moves the rendition stored under the legacy ETag-parts key into the hashed slot and reads it from there. A
-    /// rename, not a copy; a lost race with another request doing the same just means the hashed slot is now full.
+    /// Moves the rendition stored under one of the legacy keys (the key's own, then its alternates) into the hashed slot
+    /// and reads it from there. A rename, not a copy; a lost race with another request doing the same just means the
+    /// hashed slot is now full. The caller has checked the original against the sha first.
     /// </summary>
     private async Task<ImageVariant?> TryAdoptLegacyAsync(
         ImageVariantKey key, int width, string directory, string stem, CancellationToken ct)
     {
-        if (!IsHash(key.Identity) || !IsHash(key.Version))
+        foreach (var (identity, version) in (IEnumerable<(string, string)>)[(key.Identity, key.Version), .. key.Alternates ?? []])
         {
-            return null;
+            if (ImageVariantFiles.IsHash(identity) && ImageVariantFiles.IsHash(version)
+                && await TryAdoptAsync(Path.Combine(root, identity, $"{version}-{width}"), directory, stem, ct) is { } adopted)
+            {
+                return adopted;
+            }
         }
 
-        var legacyStem = Path.Combine(root, key.Identity, $"{key.Version}-{width}");
+        return null;
+    }
+
+    private async Task<ImageVariant?> TryAdoptAsync(string legacyStem, string directory, string stem, CancellationToken ct)
+    {
         foreach (var extension in ImageRendition.Extensions)
         {
             var legacy = legacyStem + extension;
@@ -183,39 +225,7 @@ public sealed class FileSystemImageVariantCache : IImageVariantCache
                 logger.LogDebug(ex, "Could not move legacy image variant {Path}", legacy);
             }
 
-            return await TryReadAsync(stem, ct);
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Reads whichever encoding this rendition was written under. Two probes rather than one
-    /// because the format follows the SOURCE — a transparent original is kept as WebP, everything
-    /// else is JPEG — and which it was is not knowable without loading the original, which is the
-    /// very thing a cache hit exists to avoid.
-    /// </summary>
-    private static async Task<ImageVariant?> TryReadAsync(string stem, CancellationToken ct)
-    {
-        foreach (var extension in ImageRendition.Extensions)
-        {
-            var path = stem + extension;
-            try
-            {
-                if (!File.Exists(path))
-                {
-                    continue;
-                }
-
-                var bytes = await File.ReadAllBytesAsync(path, ct);
-                var type = extension == ".webp" ? "image/webp" : "image/jpeg";
-                return new ImageVariant(bytes, type, IsOriginal: false);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                // Treated as a miss: the rendition is regenerated rather than failing the request.
-                return null;
-            }
+            return await ImageVariantFiles.TryReadAsync(stem, ct);
         }
 
         return null;
@@ -245,7 +255,7 @@ public sealed class FileSystemImageVariantCache : IImageVariantCache
             // A cache that cannot be written is a performance problem, not a correctness one: the
             // rendition was already produced and is on its way to the caller.
             logger.LogWarning(ex, "Could not cache image variant at {Path}", path);
-            TryDelete(temp);
+            ImageVariantFiles.TryDelete(temp);
         }
     }
 
@@ -258,7 +268,7 @@ public sealed class FileSystemImageVariantCache : IImageVariantCache
             {
                 if (!Path.GetFileName(stale).StartsWith(version, StringComparison.Ordinal))
                 {
-                    TryDelete(stale);
+                    ImageVariantFiles.TryDelete(stale);
                 }
             }
         }
@@ -267,26 +277,4 @@ public sealed class FileSystemImageVariantCache : IImageVariantCache
             logger.LogDebug(ex, "Could not sweep stale image variants in {Directory}", directory);
         }
     }
-
-    private static void TryDelete(string path)
-    {
-        try
-        {
-            File.Delete(path);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // Nothing to do; a leftover file is swept on the next write.
-        }
-    }
-
-    /// <summary>
-    /// Lowercase hex only. Both key parts are hashes produced by the byte routes, so anything else
-    /// is either a bug or an attempt to escape the cache root.
-    /// </summary>
-    private static bool IsHash(string value) =>
-        value.Length is > 0 and <= 64 && value.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f');
-
-    /// <summary>A content hash: exactly 64 lowercase hex characters.</summary>
-    private static bool IsSha(string value) => value.Length == ContentHash.Length * 2 && IsHash(value);
 }

@@ -12,9 +12,11 @@ namespace Blocwerk.Core.Services;
 /// a fresh context, so at most one photo is held in memory and a long run never pins a big change tracker.
 /// </summary>
 /// <remarks>
-/// The rewrites go through <c>ExecuteUpdate</c> and so bypass the change journal and the domain-change
-/// broadcast on purpose: removing metadata is not a wall edit to replay or revert, and nothing cached per
-/// circuit holds photo bytes. The journal's own copies of the photos are cleaned in the same run instead.
+/// The rewrites go through <c>ExecuteUpdate</c> and so bypass the change journal on purpose: removing metadata is not a wall edit to replay or revert, and nothing cached per
+/// circuit holds photo bytes. The journal's own copies of the photos are cleaned in the same run instead. The
+/// live feed is told, though: each rewrite appends a <c>wall.manifest</c> (or, for a gallery upload,
+/// <c>gallery.changed</c>) in its own transaction, since the photo's hash and url moved; a wall or panel photo also
+/// appends a <c>wall.updated</c>, because circuits cache the wall aggregate with those hashes.
 /// Every image ETag and variant-cache key includes the stored length, which shrinks whenever something is
 /// removed. That alone makes browsers refetch only the routes served with revalidation (panel and wall
 /// photos, avatars): an ETag is never consulted for a copy held <c>immutable</c>. The gallery's uploads

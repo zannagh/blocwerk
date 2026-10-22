@@ -3,6 +3,10 @@
 @attribute [Authorize]
 @inject IWallService WallService
 @inject WallCacheState Cache
+@inject IAssetHashReader AssetHashes
+@inject ILogger<WallList> Logger
+@using Blocwerk.Contracts.Feed
+@using Blocwerk.Core.Feed
 @inject NavigationManager Navigation
 @implements IDisposable
 
@@ -41,7 +45,7 @@
                             @* Card thumbnail on the PWA start page: a modest rendition, lazily
                                loaded. Never the stored camera original, which a width-less request
                                would serve. *@
-                            <img src="@ResponsiveImage.AtWidth($"/api/walls/{wall.Id}/photo", 640)"
+                            <img src="@ResponsiveImage.AtWidth(AssetUrls.WallPhoto(wall.Id, _photoShas.GetValueOrDefault(wall.Id)), 640)"
                                  loading="lazy" decoding="async" alt="@wall.Name" />
                         }
                         else
@@ -69,30 +73,90 @@
     private string _shareToken = string.Empty;
     private string? _error;
 
+    // The card photos' hashes, read from the database: the cached walls can hold pre-backfill nulls, and a wall update
+    // or a privacy rewrite moves the centre photo's hash without changing the wall list.
+    private IReadOnlyDictionary<Guid, string> _photoShas = new Dictionary<Guid, string>();
+
+    // The listed walls' feed subscriptions, held so their wall.manifest / wall.updated events reach this page.
+    private readonly List<IDisposable> _watches = [];
+
     protected override async Task OnInitializedAsync()
     {
         Cache.Changed += OnCacheChanged;
-        _walls = await Cache.GetMyWallsAsync();
+        Cache.FeedDelivered += OnFeedDelivered;
+        await ReloadWallsAsync();
     }
 
     // Live-refresh when the set of walls changes (created/deleted/joined) on any circuit.
-    private void OnCacheChanged(DomainChange change)
+    private void OnCacheChanged(WallCacheChange change)
     {
-        if (change.Scope != DomainChangeScope.WallList)
+        if (change.Scope != WallCacheChangeScope.WallList)
         {
             return;
         }
 
         _ = InvokeAsync(async () =>
         {
-            _walls = await Cache.GetMyWallsAsync();
+            await ReloadWallsAsync();
             StateHasChanged();
         });
+    }
+
+    // Only what can move a card photo's hash re-reads them: a manifest change or a wall update of a listed wall (or a
+    // resync of one). Hold edits and ticks reach the feed too, and cost nothing here.
+    private void OnFeedDelivered(FeedDelivery delivery)
+    {
+        var listed = _walls?.Any(w => w.Id == delivery.WallId) == true;
+        if (!listed || !(delivery.Resync || delivery.Events.Any(e => e.Kind is FeedKinds.WallManifest or FeedKinds.WallUpdated)))
+        {
+            return;
+        }
+
+        _ = InvokeAsync(async () =>
+        {
+            await LoadPhotoShasAsync();
+            StateHasChanged();
+        });
+    }
+
+    private async Task ReloadWallsAsync()
+    {
+        _walls = await Cache.GetMyWallsAsync();
+        DisposeWatches();
+        foreach (var wall in _walls)
+        {
+            _watches.Add(Cache.Watch(wall.Id));
+            _ = Cache.EnsureFeedAsync(wall.Id);
+        }
+
+        await LoadPhotoShasAsync();
+    }
+
+    private async Task LoadPhotoShasAsync()
+    {
+        try
+        {
+            _photoShas = await AssetHashes.WallPhotosAsync(_walls?.Select(w => w.Id).ToList() ?? []);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The legacy /photo urls still work without them.
+            Logger.LogWarning(ex, "Could not read the card photo hashes of the wall list");
+            _photoShas = new Dictionary<Guid, string>();
+        }
+    }
+
+    private void DisposeWatches()
+    {
+        _watches.ForEach(w => w.Dispose());
+        _watches.Clear();
     }
 
     public void Dispose()
     {
         Cache.Changed -= OnCacheChanged;
+        Cache.FeedDelivered -= OnFeedDelivered;
+        DisposeWatches();
     }
 
     private async Task JoinWall()

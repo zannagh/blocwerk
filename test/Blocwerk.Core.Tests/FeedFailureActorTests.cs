@@ -72,7 +72,7 @@ public sealed class FeedFailureActorTests
     private static BlocwerkDbContext Throwing(WallTestHarness harness, Type entity) =>
         TestDb.Create(
             harness.DbContextFactory.ConnectionString,
-            (IInterceptor)new FeedInterceptor(new FeedMapperRegistry([new ThrowingMapper(entity)]), new RecordingFeedSignal(), NullLogger<FeedInterceptor>.Instance));
+            (IInterceptor)new FeedInterceptor(new FeedMapperRegistry([new ThrowingMapper(entity)]), new RecordingFeedSignal(), NullLogger<FeedInterceptor>.Instance, TestFeedCommits.Unobserved()));
 
     private static void AssertActorlessResync(List<WallChange> rows, WallTestHarness harness)
     {

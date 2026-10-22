@@ -130,11 +130,14 @@ public class WallService : IWallService
     /// <summary>
     /// Loads the wall's non-archived boulders with their creator and holds into the context, so EF fix-up
     /// fills <c>wall.Boulders</c> (and each boulder's <c>Wall</c>, <c>CreatedBy</c>, <c>BoulderHolds</c>).
+    /// Drafts only when <paramref name="includeDrafts"/>: they belong to the wall's members, never to a
+    /// share-token or anonymous-kiosk viewer, and every consumer of <c>wall.Boulders</c> (the 3D view's
+    /// highlighted boulder, the wall page's count) would otherwise hand them on.
     /// </summary>
-    private static async Task LoadActiveBouldersAsync(BlocwerkDbContext db, Guid wallId)
+    private static async Task LoadActiveBouldersAsync(BlocwerkDbContext db, Guid wallId, bool includeDrafts)
     {
         await db.Boulders
-            .Where(b => b.WallId == wallId && !b.IsArchived)
+            .Where(b => b.WallId == wallId && !b.IsArchived && (includeDrafts || !b.IsDraft))
             .Include(b => b.CreatedBy)
             .Include(b => b.BoulderHolds)
             .AsSplitQuery()
@@ -180,7 +183,9 @@ public class WallService : IWallService
                         || (h.WallPanelId == null && h.Generation == currentGeneration)
                         || h.Generation == currentGeneration + 1))
                 .ToListAsync();
-            await LoadActiveBouldersAsync(db, wallId);
+
+            // Guid.Empty is the anonymous kiosk: it reads like a share viewer, so it gets no drafts.
+            await LoadActiveBouldersAsync(db, wallId, includeDrafts: viewerId != Guid.Empty);
 
             return wall;
         }
@@ -210,7 +215,7 @@ public class WallService : IWallService
                 db.Attach(wall);
                 await db.WallMembers.Where(m => m.WallId == wall.Id).ToListAsync();
                 await db.Holds.Where(h => h.WallId == wall.Id).ToListAsync();
-                await LoadActiveBouldersAsync(db, wall.Id);
+                await LoadActiveBouldersAsync(db, wall.Id, includeDrafts: false);
 
                 // Live holds only for a share viewer — no in-flight staged rows. As in GetWallAsync the
                 // live set spans generations after a subset promote, so filter by the latest live panel
@@ -232,13 +237,26 @@ public class WallService : IWallService
         }
     }
 
-    public async Task<Dictionary<Guid, List<string>>> GetBoulderSetterNamesAsync(Guid wallId)
+    public async Task<Dictionary<Guid, List<string>>> GetBoulderSetterNamesAsync(Guid wallId, string? shareToken = null)
     {
         using var op = BlocwerkMetrics.TimeOperation("Wall.GetBoulderSetterNames", wallId);
         try
         {
+            // Same gate as the wall read the page made: the share token for its own wall, else the membership filter
+            // (or the anonymous kiosk on its wall, Guid.Empty). Drafts' setters only for a member, as drafts are.
+            var isShare = !string.IsNullOrEmpty(shareToken);
+            var viewerId = isShare ? Guid.Empty : await ResolveViewerIdAsync(wallId);
             await using var db = await _dbContextFactory.CreateDbContextAsync();
-            return await BoulderSetterNames.LoadForWallAsync(db, wallId);
+            db.CurrentUserId = viewerId;
+            var visible = isShare
+                ? await db.Walls.AnyAsync(w => w.Id == wallId && w.ShareToken == shareToken)
+                : await db.Walls.AnyAsync(w => w.Id == wallId);
+            if (!visible)
+            {
+                return [];
+            }
+
+            return await BoulderSetterNames.LoadForWallAsync(db, wallId, includeDrafts: viewerId != Guid.Empty);
         }
         catch (Exception ex)
         {
@@ -1719,6 +1737,11 @@ public class WallService : IWallService
 
     public async Task DeleteHoldAsync(Guid holdId)
     {
+        await DeleteHoldRetiringAsync(holdId);
+    }
+
+    public async Task<IReadOnlyList<RetiredBoulder>> DeleteHoldRetiringAsync(Guid holdId)
+    {
         using var op = BlocwerkMetrics.TimeOperation("Wall.DeleteHold");
         try
         {
@@ -1738,7 +1761,8 @@ public class WallService : IWallService
             // Everything that references the hold with a Restrict FK — boulder memberships (each
             // active boulder is flagged historic), panel links, and the cross-generation lineage
             // rows, which are tombstoned rather than destroyed.
-            var historicCount = await HoldDeletion.PrepareHoldForDeleteAsync(db, holdId);
+            var retired = new List<Boulder>();
+            var historicCount = await HoldDeletion.PrepareHoldForDeleteAsync(db, holdId, retired: retired);
 
             db.Holds.Remove(hold);
 
@@ -1752,6 +1776,7 @@ public class WallService : IWallService
             BlocwerkMetrics.RecordHoldDeleted(hold.WallId);
             await _activityLogService.LogAsync(hold.WallId, null, ActivityType.HoldDeleted);
             _logger.LogInformation("Hold {HoldId} on wall {WallId} deleted by {UserId}, {HistoricCount} boulder(s) made historic", holdId, hold.WallId, user.Id, historicCount);
+            return retired.Select(b => new RetiredBoulder(b.Id, b.Name)).ToList();
         }
         catch (Exception ex)
         {
@@ -1920,12 +1945,41 @@ public class WallService : IWallService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
+            // WallMember carries no query filter of its own, so the wall id alone used to hand ANY signed-in
+            // caller any wall's member list. Reaching through to db.Walls puts it under the membership filter (and the
+            // kiosk wall gate); anyone else gets an empty list.
             return await db.WallMembers
                 .AsNoTracking()
                 .Include(wm => wm.User)
-                .Where(wm => wm.WallId == wallId)
+                .Where(wm => wm.WallId == wallId && db.Walls.Any(w => w.Id == wallId))
                 .OrderBy(wm => wm.JoinedAt)
                 .ToListAsync();
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
+    }
+
+    public async Task<bool> IsMemberAsync(Guid wallId)
+    {
+        using var op = BlocwerkMetrics.TimeOperation("Wall.IsMember", wallId);
+        try
+        {
+            User user;
+            try
+            {
+                user = await _currentUserService.GetCurrentUserAsync();
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return false;
+            }
+
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
+            return await db.Walls.AnyAsync(w => w.Id == wallId);
         }
         catch (Exception ex)
         {

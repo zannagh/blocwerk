@@ -21,7 +21,13 @@ namespace Blocwerk.Core.Services;
 /// The live photo's in-place revision (<see cref="Entities.WallPanel.PhotoRevision"/>): moves on a crop or its undo, so a
 /// photo URL carrying it is a new URL for the browser's image cache.
 /// </param>
-public record WallPanelInfo(Guid Id, int Col, int Row, bool IsLive, bool HasStaged, int Generation, bool IsOutdated, int PhotoRevision = 0)
+/// <param name="PhotoSha">
+/// The live photo's content hash (lowercase hex), read from the database with the rest of this record; null until the
+/// row is hashed, or when the panel has no live photo. With it, <c>AssetUrls.Panel</c> hands out the
+/// content-addressed URL; without it, the legacy panel route.
+/// </param>
+public record WallPanelInfo(
+    Guid Id, int Col, int Row, bool IsLive, bool HasStaged, int Generation, bool IsOutdated, int PhotoRevision = 0, string? PhotoSha = null)
 {
     /// <summary>
     /// <paramref name="photoUrl"/> with <c>rev=N</c> appended, so the live photo URL changes after a crop or its undo;

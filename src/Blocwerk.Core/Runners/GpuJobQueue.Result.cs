@@ -192,7 +192,8 @@ public sealed partial class GpuJobQueue
         var now = Now;
         var retryAt = now + FinishRetryInterval;
         long? bytes = files.ResolvePhysicalPath(stored) is { } p ? new FileInfo(p).Length : null;
-        var kind = await db.GpuJobs.Where(j => j.Id == jobId).Select(j => j.Kind).FirstAsync(ct);
+        var owner = await db.GpuJobs.Where(j => j.Id == jobId).Select(j => new { j.Kind, j.WallId }).FirstAsync(ct);
+        var kind = owner.Kind;
         var updated = await db.GpuJobs
             .Where(j => j.Id == jobId && j.ClaimedByRunnerId == runner.Id
                         && (j.Status == GpuJobStatus.Claimed || j.Status == GpuJobStatus.Running))
@@ -215,6 +216,7 @@ public sealed partial class GpuJobQueue
             return RunnerJobOutcome.Gone;
         }
 
+        PulseJob(owner.WallId, jobId, 1, ended: true);
         var captureId = await db.GpuJobs.Where(j => j.Id == jobId).Select(j => j.CaptureId).FirstAsync(ct);
         logger.LogInformation(
             "Runner {RunnerId} ({Name}) delivered GPU job {JobId}: {Format}, {Bytes} bytes", runner.Id, runner.Name, jobId, format, bytes);

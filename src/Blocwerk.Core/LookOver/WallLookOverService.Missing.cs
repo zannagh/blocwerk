@@ -6,6 +6,7 @@ using Blocwerk.Core.Data;
 using Blocwerk.Core.Detection.Outlines;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Feed;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -105,10 +106,19 @@ public sealed partial class WallLookOverService
                 throw;
             }
 
-            // Placed by a tap: the outline is the old one at a new spot, so the hold asks for a look in the editor.
-            await db.Holds.Where(h => h.Id == hold.Id).ExecuteUpdateAsync(s => s.SetProperty(h => h.NeedsReview, true), ct);
+            // Placed by a tap: the outline is the old one at a new spot, so the hold asks for a look in the editor. The flag
+            // bypasses the feed interceptor, so its hold.changed is appended in the settle's transaction.
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+            await FeedBulkWrite.RunAsync(
+                db,
+                "lookover-needs-review",
+                () => db.Holds.Where(h => h.Id == hold.Id).ExecuteUpdateAsync(s => s.SetProperty(h => h.NeedsReview, true), ct),
+                flagged => flagged == 0 ? [] : [FeedBulkRows.Hold(hold.WallId, hold.Id, hold.Generation, hold.WallPanelId, FeedBulkWrite.Actor(db))],
+                logger,
+                ct);
             MarkSettled(finding, LookOverAnswer.Moved, access.UserId, view.Boulders.Count);
             await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
             logger.LogInformation("Look-over finding {FindingId} on wall {WallId}: hold moved by {UserId}", findingId, wallId, access.UserId);
         }
     }

@@ -647,7 +647,7 @@ else
                             <span class="stat-label">Holds</span>
                         </div>
                         <button type="button" class="stat clickable" @onclick="GoToBoulders">
-                            <span class="stat-value">@_wall.Boulders.Count</span>
+                            <span class="stat-value">@ActiveBoulderCount</span>
                             <span class="stat-label">Boulders</span>
                         </button>
                         <button type="button" class="stat clickable" @onclick="GoToMembers">
@@ -1041,7 +1041,11 @@ else
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         // Every render, not just the first: the lease toggles when edit mode is entered or left.
-        _editGuardActive = await EditGuardInterop.SyncAsync(JS, "wall-edit", _editLease is not null, _editGuardActive);
+        _editGuardActive = await EditGuardInterop.SyncAsync(JS, "wall-edit", _editLease is not null, _editGuardActive, EditActivity);
+        if (!_wallKeepChecked && _isEditing && _panelEditor is not null)
+        {
+            await RestoreKeptDecisionsAsync();
+        }
 
         // Not on firstRender: the boulder section only exists once the wall has loaded. watchFold is
         // a no-op on a page it already watches, and it needs no teardown (its listeners live on nodes
@@ -1195,6 +1199,10 @@ else
             .ToList();
         _archivedCache = ApplySort(ApplyFilters(_items.Where(i => i.Boulder.IsArchived))).ToList();
     }
+
+    // The overview's count is the boulder list's own rows (drafts only where the list shows them), never
+    // _wall.Boulders: the count must not tell a share or anonymous-kiosk viewer that drafts exist.
+    private int ActiveBoulderCount => _boulders.Count(b => !b.IsArchived);
 
     private List<BoulderListItem> ActiveBoulders
     {
@@ -1471,9 +1479,9 @@ else
     /// edit shows up without a reload. Skipped while this user is editing, so a background reload
     /// never clobbers in-progress hold edits; their own post-save <see cref="LoadWall"/> covers that.
     /// </summary>
-    private void OnCacheChanged(DomainChange change)
+    private void OnCacheChanged(WallCacheChange change)
     {
-        if (change.Scope == DomainChangeScope.WallList || change.WallId != WallId || _isEditing)
+        if (change.Scope == WallCacheChangeScope.WallList || change.WallId != WallId || _isEditing)
         {
             return;
         }
@@ -1489,6 +1497,7 @@ else
     {
         Cache.Changed -= OnCacheChanged;
         _editLease?.Dispose();
+        _flushRegistration?.Dispose();
 
         if (_editGuardActive)
         {
@@ -1598,7 +1607,7 @@ else
             {
                 // Anonymous share view: no per-user data, but the rows still name the setters, so
                 // pull every setter name for the wall in one query rather than per boulder.
-                var setterNames = await WallService.GetBoulderSetterNamesAsync(WallId);
+                var setterNames = await WallService.GetBoulderSetterNamesAsync(WallId, ShareToken);
                 _items = _wall.Boulders
                     .Where(b => !b.IsDraft && !b.IsArchived)
                     .Select(b => new BoulderListItem(
@@ -1649,7 +1658,7 @@ else
 
         foreach (var holdId in changes.Deleted)
         {
-            await WallService.DeleteHoldAsync(holdId);
+            _lastBatchRetired.AddRange(await WallService.DeleteHoldRetiringAsync(holdId));
             _holds.RemoveAll(h => h.Id == holdId);
         }
 
@@ -1871,7 +1880,7 @@ else
 
         foreach (var holdId in changes.Deleted)
         {
-            await WallService.DeleteHoldAsync(holdId);
+            _lastBatchRetired.AddRange(await WallService.DeleteHoldRetiringAsync(holdId));
         }
 
         await LoadEditingPanelHolds();
@@ -1930,6 +1939,8 @@ else
             _editLease?.Dispose();
             _editLease = null;
         }
+
+        SyncDeployFlush();
     }
 
     private Task GoToBoulders() => _carousel?.GoToPageAsync(3) ?? Task.CompletedTask;

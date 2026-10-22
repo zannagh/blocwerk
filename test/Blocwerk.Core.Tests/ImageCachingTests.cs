@@ -32,7 +32,7 @@ public class ImageCachingTests
         var loaded = false;
 
         var result = await ImageResponse.ConditionalAsync(
-            http, etag, "image/jpeg", 8_563_000, immutable: false, Load);
+            http, etag, "image/jpeg", 8_563_000, Load);
 
         await result.ExecuteAsync(http);
 
@@ -58,7 +58,7 @@ public class ImageCachingTests
         http.Response.Body = new MemoryStream();
 
         var result = await ImageResponse.ConditionalAsync(
-            http, etag, "image/jpeg", 3, immutable: false, () => Task.FromResult<byte[]?>([1, 2, 3]));
+            http, etag, "image/jpeg", 3, () => Task.FromResult<byte[]?>([1, 2, 3]));
 
         await result.ExecuteAsync(http);
 
@@ -77,7 +77,7 @@ public class ImageCachingTests
         var loaded = false;
 
         var result = await ImageResponse.ConditionalAsync(
-            http, etag, "image/jpeg", 4_090_000, immutable: false, Load);
+            http, etag, "image/jpeg", 4_090_000, Load);
 
         await result.ExecuteAsync(http);
 
@@ -93,97 +93,40 @@ public class ImageCachingTests
     }
 
     /// <summary>
-    /// A retired generation's photo is content-addressed by its generation number and can never be
-    /// rewritten, so it is the one image the browser may hold without revalidating.
+    /// Authenticated user content must never become cacheable in a shared proxy, nor be served by the browser's own
+    /// HTTP cache without asking: that cache is shared by every identity on the device (WebKit ignores
+    /// Clear-Site-Data), so every reuse revalidates through the route's gate.
     /// </summary>
     [Fact]
-    public async Task ArchivedGeneration_IsCachedWithoutRevalidation()
+    public void TheCachePolicy_IsPrivateAndRevalidating()
     {
-        var http = NewContext();
-        http.Request.Method = HttpMethods.Get;
-        http.Response.Body = new MemoryStream();
-
-        var result = await ImageResponse.ConditionalAsync(
-            http, ImageResponse.Etag(Guid.NewGuid(), 2), "image/jpeg", 3, immutable: true,
-            () => Task.FromResult<byte[]?>([1, 2, 3]));
-
-        await result.ExecuteAsync(http);
-
-        Assert.Equal(ImageResponse.ImmutableCacheControl, http.Response.Headers.CacheControl);
-        Assert.Contains("private", http.Response.Headers.CacheControl.ToString());
+        Assert.Equal("private, no-cache", ImageResponse.MutableCacheControl);
     }
 
     /// <summary>
-    /// Authenticated user content must never become cacheable in a shared proxy, whichever policy
-    /// a route picks.
+    /// An original, an archived generation and a width rendition all get the one revalidating policy: no
+    /// <c>max-age</c> and no <c>immutable</c>, whatever the image, so no copy outlives an identity.
     /// </summary>
     [Fact]
-    public void CachePolicies_AreAlwaysPrivate()
-    {
-        Assert.StartsWith("private", ImageResponse.MutableCacheControl, StringComparison.Ordinal);
-        Assert.StartsWith("private", ImageResponse.ImmutableCacheControl, StringComparison.Ordinal);
-        Assert.StartsWith("private", ImageResponse.VariantCacheControl, StringComparison.Ordinal);
-        Assert.DoesNotContain("public", ImageResponse.MutableCacheControl, StringComparison.Ordinal);
-        Assert.DoesNotContain("public", ImageResponse.ImmutableCacheControl, StringComparison.Ordinal);
-        Assert.DoesNotContain("public", ImageResponse.VariantCacheControl, StringComparison.Ordinal);
-    }
-
-    /// <summary>
-    /// A width variant of a mutable image (a live wall photo) is content-stable per photo version
-    /// and only ever a thumbnail, so it is served with a bounded <c>max-age</c> rather than the
-    /// width-less original's <c>no-cache</c> — the browser reuses a cached rendition for a few
-    /// minutes without a revalidation round-trip. The width-LESS original stays <c>no-cache</c> so a
-    /// re-composition under the same URL is never shown stale.
-    /// </summary>
-    [Fact]
-    public async Task MutableWidthVariant_IsCachedWithBoundedMaxAge_WhileTheOriginalStaysNoCache()
+    public async Task OriginalsAndRenditions_AllRevalidate()
     {
         var original = TestImages.Noise(3000, 2000, SKEncodedImageFormat.Jpeg, 90);
-        var wallId = Guid.NewGuid();
-        var tag = Tag(original);
         var cache = NewCache(out _);
+        foreach (var width in new int?[] { null, 640 })
+        {
+            foreach (var identity in new object[] { "live", 2 })
+            {
+                var http = NewContext();
+                http.Request.Method = HttpMethods.Get;
+                http.Response.Body = new MemoryStream();
+                var result = await ImageResponse.ServeAsync(
+                    http, cache, width, Tag(original), () => Task.FromResult<byte[]?>(original), Guid.NewGuid(), identity);
+                await result.ExecuteAsync(http);
 
-        var variantHttp = NewContext();
-        variantHttp.Request.Method = HttpMethods.Get;
-        variantHttp.Response.Body = new MemoryStream();
-        var variantResult = await ImageResponse.ServeAsync(
-            variantHttp, cache, width: 640, tag, immutable: false,
-            () => Task.FromResult<byte[]?>(original), wallId, "live");
-        await variantResult.ExecuteAsync(variantHttp);
-
-        Assert.Equal(ImageResponse.VariantCacheControl, variantHttp.Response.Headers.CacheControl);
-        Assert.Contains("max-age=300", variantHttp.Response.Headers.CacheControl.ToString());
-        Assert.DoesNotContain("no-cache", variantHttp.Response.Headers.CacheControl.ToString());
-
-        var originalHttp = NewContext();
-        originalHttp.Request.Method = HttpMethods.Get;
-        originalHttp.Response.Body = new MemoryStream();
-        var originalResult = await ImageResponse.ServeAsync(
-            originalHttp, cache, width: null, tag, immutable: false,
-            () => Task.FromResult<byte[]?>(original), wallId, "live");
-        await originalResult.ExecuteAsync(originalHttp);
-
-        Assert.Equal(ImageResponse.MutableCacheControl, originalHttp.Response.Headers.CacheControl);
-    }
-
-    /// <summary>
-    /// A width variant of an archived generation can never change again, so it keeps the year-long
-    /// immutable policy — the bounded variant policy is only for mutable images.
-    /// </summary>
-    [Fact]
-    public async Task ArchivedWidthVariant_StaysImmutable()
-    {
-        var original = TestImages.Noise(3000, 2000, SKEncodedImageFormat.Jpeg, 90);
-        var http = NewContext();
-        http.Request.Method = HttpMethods.Get;
-        http.Response.Body = new MemoryStream();
-
-        var result = await ImageResponse.ServeAsync(
-            http, NewCache(out _), width: 640, Tag(original), immutable: true,
-            () => Task.FromResult<byte[]?>(original), Guid.NewGuid(), 2);
-        await result.ExecuteAsync(http);
-
-        Assert.Equal(ImageResponse.ImmutableCacheControl, http.Response.Headers.CacheControl);
+                Assert.Equal(ImageResponse.MutableCacheControl, http.Response.Headers.CacheControl);
+                Assert.NotEmpty(http.Response.Headers.ETag.ToString());
+            }
+        }
     }
 
     [Fact]
@@ -212,7 +155,7 @@ public class ImageCachingTests
         http.Response.Body = new MemoryStream();
 
         var result = await ImageResponse.ServeAsync(
-            http, NewCache(out _), width: null, Tag(original), immutable: false,
+            http, NewCache(out _), width: null, Tag(original),
             () => Task.FromResult<byte[]?>(original), Guid.NewGuid(), "live");
 
         await result.ExecuteAsync(http);
@@ -240,7 +183,7 @@ public class ImageCachingTests
             http.Response.Body = new MemoryStream();
 
             var result = await ImageResponse.ServeAsync(
-                http, cache, width, tag, immutable: false,
+                http, cache, width, tag,
                 () => Task.FromResult<byte[]?>(original), wallId, "live");
             await result.ExecuteAsync(http);
 

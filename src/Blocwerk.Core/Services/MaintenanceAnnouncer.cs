@@ -9,7 +9,7 @@ namespace Blocwerk.Core.Services;
 /// <remarks>
 /// <b>Single instance, in memory, on purpose.</b> The announcement describes THIS process — it is
 /// raised seconds before the container is recreated and is meaningless to anyone else — so there
-/// is nothing to share and nothing to persist. The same assumption the domain-change notifier and
+/// is nothing to share and nothing to persist. The same assumption the feed's commit observers and
 /// <see cref="KioskAnonymousSettingThrottle"/> already make: a scaled-out deployment would need a
 /// backplane behind this interface, and a restart losing the notice is exactly what a restart
 /// means here.

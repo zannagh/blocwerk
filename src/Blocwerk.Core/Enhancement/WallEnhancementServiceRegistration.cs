@@ -5,6 +5,7 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Enhancement.Steps;
+using Blocwerk.Core.Pulse;
 using Blocwerk.Core.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -38,7 +39,8 @@ public static class WallEnhancementServiceRegistration
             sp.GetRequiredService<ILogger<WallEnhancementJob>>(),
             sp.GetService<IDeployBusyGate>(),
             sp.GetService<IWallEditPresence>(),
-            sp.GetService<IDeployBusyEta>()));
+            sp.GetService<IDeployBusyEta>(),
+            sp.GetService<IWallPulse>()));
         services.AddSingleton<WallEnhancementRunner>();
         services.AddHostedService(sp => new WallEnhancementResumer(
             sp.GetRequiredService<RootDbContextFactory>(),

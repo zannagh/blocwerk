@@ -1,7 +1,9 @@
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Assets;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Feed;
 using Blocwerk.Core.Telemetry;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -205,7 +207,9 @@ public class BetaVideoService : IBetaVideoService
                 video.SizeBytes,
                 thumbnail is { Length: > 0 },
                 video.HasHls,
-                video.EncodingStatus);
+                video.EncodingStatus,
+                boulder.WallId,
+                ContentHash.ToHex(video.ThumbnailSha256));
         }
         catch (Exception ex)
         {
@@ -395,10 +399,10 @@ public class BetaVideoService : IBetaVideoService
                 .FirstOrDefaultAsync();
 
             // ExecuteDelete rather than load-then-Remove: loading the entity would pull the whole
-            // clip into memory just to throw it away.
-            var deleted = await db.BetaVideos
-                .Where(v => v.Id == videoId && v.UploadedByUserId == user.Id)
-                .ExecuteDeleteAsync();
+            // clip into memory just to throw it away. It bypasses the feed interceptor, so the
+            // video.deleted row is appended in the same transaction.
+            var deleted = await FeedVideoBulk.DeleteAsync(
+                db, db.BetaVideos.Where(v => v.Id == videoId && v.UploadedByUserId == user.Id), logger, CancellationToken.None);
 
             if (deleted == 0)
             {
@@ -459,8 +463,15 @@ public class BetaVideoService : IBetaVideoService
                 : db.BetaVideos.Where(v => v.EncodingStatus != BetaVideoEncodingStatus.Ready
                                            && v.EncodingStatus != BetaVideoEncodingStatus.Processing);
 
-            var queued = await query.ExecuteUpdateAsync(s => s
-                .SetProperty(v => v.EncodingStatus, BetaVideoEncodingStatus.Pending));
+            var queued = await FeedVideoBulk.StatusAsync(
+                db,
+                "video-reencode",
+                query,
+                (IQueryable<BetaVideo> locked) => locked.ExecuteUpdateAsync(s => s.SetProperty(v => v.EncodingStatus, BetaVideoEncodingStatus.Pending)),
+                BetaVideoEncodingStatus.Pending,
+                hasHls: null,
+                logger,
+                CancellationToken.None);
 
             if (queued > 0)
             {
@@ -497,7 +508,9 @@ public class BetaVideoService : IBetaVideoService
                 v.SizeBytes,
                 v.Thumbnail != null && v.Thumbnail.Length > 0,
                 v.HasHls,
-                v.EncodingStatus))
+                v.EncodingStatus,
+                v.Boulder.WallId,
+                ContentHash.ToHex(v.ThumbnailSha256)))
             .ToListAsync();
 
     /// <summary>

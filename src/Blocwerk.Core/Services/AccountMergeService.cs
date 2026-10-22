@@ -1,6 +1,7 @@
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Feed;
 using Blocwerk.Core.Helpers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -60,7 +61,12 @@ public partial class AccountMergeService : IAccountMergeService
             .Select(i => i.ProviderUserId)
             .ToListAsync();
 
+        // The merge writes across walls, mostly in bulk: its saves (the membership, rating and favourite
+        // dedup, the source's removal) write no wall rows, and every wall of the source's footprint gets
+        // one resync in the transaction instead (FeedAccountRows).
+        using var feedScope = FeedScope.BeginAccount("account-merge");
         await using var transaction = await db.Database.BeginTransactionAsync();
+        var feedWalls = await FeedAccountRows.WallsAsync(db, sourceUserId, logger);
 
         await RepointSimpleForeignKeysAsync(db, sourceUserId, targetUserId);
         await RepointRestrictForeignKeysAsync(db, sourceUserId, targetUserId);
@@ -92,6 +98,7 @@ public partial class AccountMergeService : IAccountMergeService
 
         db.Users.Remove(source);
         await db.SaveChangesAsync();
+        await FeedAccountRows.MergeAsync(db, sourceUserId, targetUserId, feedWalls, logger);
 
         await transaction.CommitAsync();
 

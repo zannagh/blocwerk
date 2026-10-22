@@ -7,6 +7,7 @@ using Blocwerk.Authentication.Middleware;
 using Blocwerk.Authentication.Providers;
 using Blocwerk.Authentication.Services;
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Assets.Partition;
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services.TopLogger;
@@ -19,6 +20,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 
 namespace Blocwerk.Authentication;
@@ -77,6 +79,16 @@ public static class AuthenticationServices
         // TOTP second factor: stateless, so a singleton. Uses the persisted DataProtection key ring to
         // encrypt the shared secret at rest (see the "blocwerk.totp" protector inside TotpService).
         app.Services.AddSingleton<ITotpService, TotpService>();
+
+        // The asset-cache partition labels' HMAC key (design §6.6): its own secret, protected with the same key ring and
+        // kept beside it on the persisted volume. Development keeps it in memory (labels change with each restart).
+        var partitionKeyFile = app.Configuration["CachePartition:KeyFile"]
+            ?? (app.Environment.IsDevelopment() ? null : "/app/keys/blocwerk-cache-partition.key");
+        app.Services.AddSingleton<ICachePartitionKey>(sp => new DataProtectionCachePartitionKey(
+            sp.GetRequiredService<IDataProtectionProvider>(),
+            partitionKeyFile,
+            sp.GetRequiredService<ILogger<DataProtectionCachePartitionKey>>()));
+
         // Step-up re-authentication before an irreversible account action. The ticket store and the
         // failure throttle are SINGLETONS: a ticket is issued in the OAuth callback's request scope
         // and spent later from a Blazor circuit, and a failure counter that reset with the circuit

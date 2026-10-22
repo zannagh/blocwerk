@@ -26,7 +26,7 @@ public sealed class PostgresWallFeedHubTests
         var subscriber = new RecordingFeedSubscriber();
         using var subscription = await hub.SubscribeAsync(harness.WallId, FeedViewer.Anonymous(), subscriber);
 
-        var interceptor = new FeedInterceptor(new FeedMapperRegistry([new ProbeHoldMapper()]), signal, NullLogger<FeedInterceptor>.Instance);
+        var interceptor = new FeedInterceptor(new FeedMapperRegistry([new ProbeHoldMapper()]), signal, NullLogger<FeedInterceptor>.Instance, TestFeedCommits.Unobserved());
         await using (var db = TestDb.Create(harness.DbContextFactory.ConnectionString, interceptor))
         {
             var tracked = await db.Holds.SingleAsync(h => h.Id == hold.Id);

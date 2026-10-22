@@ -114,8 +114,7 @@ public class KioskPairingTests
         var seen = new List<Guid>();
         registry.Changed += seen.Add;
 
-        // A throwing subscriber must not stop the one that is actually waiting, exactly as
-        // DomainChangeNotifier does it.
+        // A throwing subscriber must not stop the one that is actually waiting.
         registry.Changed += _ => throw new InvalidOperationException("a stale circuit");
         registry.Changed += seen.Add;
 

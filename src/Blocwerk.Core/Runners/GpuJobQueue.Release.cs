@@ -87,6 +87,7 @@ public sealed partial class GpuJobQueue
             return false;
         }
 
+        PulseJob(job.WallId, job.Id, progress, ended: !retry);
         if (kind is ReleaseKind.Failure or ReleaseKind.Fatal && holder is { } failedOn)
         {
             await RecordFailureAsync(job, failedOn, error, CancellationToken.None);

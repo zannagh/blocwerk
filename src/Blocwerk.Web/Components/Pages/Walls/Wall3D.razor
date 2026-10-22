@@ -2,6 +2,7 @@
 @page "/walls/{WallId:guid}/shared/{ShareToken}/3d"
 @rendermode InteractiveServer
 @using Blocwerk.Core.Geometry.View3D
+@implements IDisposable
 
 <PageTitle>@(_result?.WallName ?? "Wall") in 3D - Blocwerk</PageTitle>
 
@@ -56,7 +57,7 @@ else
             <Wall3DCorrectionBar Facet="tappedFacet" Busy="correcting" Message="@correctionMessage" OnVertical="VerticalAsync" OnDrop="DropAsync" />
         }
         <div class="wall3d-stage">
-            <Wall3DStage View="view" InitialMode="@Mode" Highlight="Spot" OnFacetTap="FacetTap"
+            <Wall3DStage View="view" ShareToken="@ShareToken" InitialMode="@Mode" Highlight="Spot" OnFacetTap="FacetTap"
                          BoulderFocus="view.BoulderId is not null" />
         </div>
     </div>

@@ -3,6 +3,8 @@ using System.Text.Json;
 using Blocwerk.Core.Assets;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Enums;
+using Blocwerk.Core.Feed;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Services;
@@ -22,14 +24,17 @@ internal sealed record WallPhotoSlot(
 /// <summary>Where a wall keeps photos: the rows and files a <see cref="WallPhotoSlot"/> is built for.</summary>
 public sealed partial class WallPhotoPrivacyService
 {
+    private const string FeedSite = "photo-privacy";
+
     private static readonly string[] JournalledPhotoTypes = [nameof(Wall), nameof(WallPanel), nameof(WallReset)];
 
     private async Task<List<WallPhotoSlot>> CollectSlotsAsync(BlocwerkDbContext db, Guid wallId, CancellationToken ct)
     {
         var slots = new List<WallPhotoSlot>
         {
-            Column<Wall>(d => d.Walls.IgnoreQueryFilters().Where(w => w.Id == wallId), w => w.Photo, w => w.PhotoSha256),
-            Column<Wall>(d => d.Walls.IgnoreQueryFilters().Where(w => w.Id == wallId), w => w.StagedPhoto, w => w.StagedPhotoSha256),
+            Column<Wall>(wallId, d => d.Walls.IgnoreQueryFilters().Where(w => w.Id == wallId), w => w.Photo, w => w.PhotoSha256, LiveStructure),
+            Column<Wall>(
+                wallId, d => d.Walls.IgnoreQueryFilters().Where(w => w.Id == wallId), w => w.StagedPhoto, w => w.StagedPhotoSha256, StagedStructure),
         };
 
         // Every generation's panel rows: a superseded generation keeps its photo for the history views.
@@ -37,19 +42,21 @@ public sealed partial class WallPhotoPrivacyService
             .Where(p => p.WallId == wallId).OrderBy(p => p.Generation).Select(p => p.Id).ToListAsync(ct);
         foreach (var id in panelIds)
         {
-            slots.Add(Column<WallPanel>(d => d.WallPanels.IgnoreQueryFilters().Where(p => p.Id == id), p => p.Photo, p => p.PhotoSha256));
             slots.Add(Column<WallPanel>(
-                d => d.WallPanels.IgnoreQueryFilters().Where(p => p.Id == id), p => p.StagedPhoto, p => p.StagedPhotoSha256));
+                wallId, d => d.WallPanels.IgnoreQueryFilters().Where(p => p.Id == id), p => p.Photo, p => p.PhotoSha256, LiveStructure));
+            slots.Add(Column<WallPanel>(
+                wallId, d => d.WallPanels.IgnoreQueryFilters().Where(p => p.Id == id), p => p.StagedPhoto, p => p.StagedPhotoSha256, StagedStructure));
         }
 
         var resetIds = await db.WallResets.IgnoreQueryFilters().AsNoTracking()
             .Where(r => r.WallId == wallId).Select(r => r.Id).ToListAsync(ct);
         slots.AddRange(resetIds.Select(id =>
-            Column<WallReset>(d => d.WallResets.IgnoreQueryFilters().Where(r => r.Id == id), r => r.PreviousPhoto, r => r.PreviousPhotoSha256)));
+            Column<WallReset>(
+                wallId, d => d.WallResets.IgnoreQueryFilters().Where(r => r.Id == id), r => r.PreviousPhoto, r => r.PreviousPhotoSha256, Live)));
 
         var images = await db.WallImages.IgnoreQueryFilters().AsNoTracking()
             .Where(i => i.WallId == wallId).Select(i => new { i.Id, i.StoragePath }).ToListAsync(ct);
-        slots.AddRange(images.Select(i => GalleryFile(i.Id, i.StoragePath)));
+        slots.AddRange(images.Select(i => GalleryFile(wallId, i.Id, i.StoragePath)));
 
         var shas = await JournalShasAsync(db, wallId, [.. panelIds, .. resetIds], ct);
         slots.AddRange(shas.Order(StringComparer.Ordinal).Select(JournalCopy));
@@ -58,15 +65,37 @@ public sealed partial class WallPhotoPrivacyService
 
     /// <summary>
     /// A blob column on one row, replaced only while it still equals what was read; its content hash
-    /// (<paramref name="hash"/>) moves in the same statement, since <c>ExecuteUpdate</c> bypasses the save-time stamp.
+    /// (<paramref name="hash"/>) moves in the same statement, since <c>ExecuteUpdate</c> bypasses the save-time stamp. For
+    /// the same reason the rewrite appends its feed rows (<paramref name="feed"/>, given the wall and its generation)
+    /// itself, in one transaction with it.
     /// </summary>
-    private static WallPhotoSlot Column<T>(
-        Func<BlocwerkDbContext, IQueryable<T>> rows, Expression<Func<T, byte[]?>> column, Expression<Func<T, byte[]?>> hash)
+    private WallPhotoSlot Column<T>(
+        Guid wallId,
+        Func<BlocwerkDbContext, IQueryable<T>> rows,
+        Expression<Func<T, byte[]?>> column,
+        Expression<Func<T, byte[]?>> hash,
+        Func<Guid, int, IEnumerable<WallChange>> feed)
         where T : class => new(
             (db, ct) => rows(db).AsNoTracking().Select(column).FirstOrDefaultAsync(ct),
-            async (db, original, clean, ct) => await rows(db)
-                .Where(StillEquals(column, original))
-                .ExecuteUpdateAsync(s => s.SetProperty(column, clean).SetProperty(hash, ContentHash.Of(clean)), ct) == 1);
+            async (db, original, clean, ct) => await FeedBulkWrite.RunAsync(
+                db,
+                FeedSite,
+                () => db.Walls.IgnoreQueryFilters().Where(w => w.Id == wallId).Select(w => w.CurrentGeneration).FirstAsync(ct),
+                () => rows(db).Where(StillEquals(column, original))
+                    .ExecuteUpdateAsync(s => s.SetProperty(column, clean).SetProperty(hash, ContentHash.Of(clean)), ct),
+                (generation, written) => written == 1 ? feed(wallId, generation) : [],
+                logger,
+                ct) == 1);
+
+    // The live photos and the history views are everyone's; a staged photo is the editors'. A wall or panel photo is also
+    // in the circuits' cached wall aggregate (its hash), so those rewrites add a wall.updated for that audience.
+    private static IEnumerable<WallChange> Live(Guid wallId, int generation) => [FeedBulkRows.Manifest(wallId, FeedAudience.Wall, actor: null)];
+
+    private static IEnumerable<WallChange> LiveStructure(Guid wallId, int generation) =>
+        [FeedBulkRows.Manifest(wallId, FeedAudience.Wall, actor: null), FeedBulkRows.WallUpdated(wallId, generation, FeedAudience.Wall, actor: null)];
+
+    private static IEnumerable<WallChange> StagedStructure(Guid wallId, int generation) =>
+        [FeedBulkRows.Manifest(wallId, FeedAudience.Setters, actor: null), FeedBulkRows.WallUpdated(wallId, generation, FeedAudience.Setters, actor: null)];
 
     /// <summary><c>row => column == original</c>, with <paramref name="original"/> sent as a parameter, never inlined.</summary>
     private static Expression<Func<T, bool>> StillEquals<T>(Expression<Func<T, byte[]?>> column, byte[] original)
@@ -83,7 +112,7 @@ public sealed partial class WallPhotoPrivacyService
     /// <see cref="WallPhotoSlot.Repair"/> puts right on the next run (a rerun sees a clean file and would
     /// otherwise never touch the row again).
     /// </summary>
-    private WallPhotoSlot GalleryFile(Guid imageId, string storedName)
+    private WallPhotoSlot GalleryFile(Guid wallId, Guid imageId, string storedName)
     {
         var path = imageStorage.ResolvePhysicalPath(storedName);
         return new(
@@ -95,6 +124,7 @@ public sealed partial class WallPhotoPrivacyService
                 await using var tx = await db.Database.BeginTransactionAsync(ct);
                 await db.WallImages.IgnoreQueryFilters().Where(i => i.Id == imageId)
                     .ExecuteUpdateAsync(s => s.SetProperty(i => i.SizeBytes, clean.LongLength).SetProperty(i => i.Sha256, ContentHash.Of(clean)), ct);
+                await FeedBulkWrite.AppendAsync(db, FeedSite, [FeedBulkRows.Gallery(wallId, imageId, actor: null)], logger);
                 File.Move(temp, path!, overwrite: true);
                 await tx.CommitAsync(ct);
                 return true;
@@ -118,7 +148,13 @@ public sealed partial class WallPhotoPrivacyService
                 var drifted = db.WallImages.IgnoreQueryFilters()
                     .Where(i => i.Id == imageId && (i.SizeBytes != length || (i.Sha256 != null && i.Sha256 != sha)));
                 return apply
-                    ? await drifted.ExecuteUpdateAsync(s => s.SetProperty(i => i.SizeBytes, length).SetProperty(i => i.Sha256, sha), ct) > 0
+                    ? await FeedBulkWrite.RunAsync(
+                        db,
+                        FeedSite,
+                        () => drifted.ExecuteUpdateAsync(s => s.SetProperty(i => i.SizeBytes, length).SetProperty(i => i.Sha256, sha), ct),
+                        repaired => repaired > 0 ? [FeedBulkRows.Gallery(wallId, imageId, actor: null)] : [],
+                        logger,
+                        ct) > 0
                     : await drifted.AnyAsync(ct);
             });
     }

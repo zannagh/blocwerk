@@ -1,10 +1,19 @@
 @inject ICommentService CommentService
+@inject WallCacheState Cache
+@inject ILogger<BoulderComments> Logger
+@using Blocwerk.Web.State.Live
+@implements IDisposable
 
 @*
     The comment list plus its (circuit-independent) compose box. Owns its own paging and its own
     delete, so the boulder page keeps none of that state. Posting is NOT handled here: the submit
     button in BoulderCommentForm goes through the offline queue, and BoulderDetail calls
     ReloadAsync() through an @ref once the queue confirms the comment landed.
+
+    Live (design §5.5): other people's comments arrive through the feed and are patched in by id
+    (CommentList). The compose box is never touched by a patch: its draft is owned by the DOM (an
+    unbound input) and it sits outside the keyed rows, so a comment landing while someone types
+    neither re-creates the input nor moves it.
 *@
 
 <div class="comments-section">
@@ -14,17 +23,17 @@
         <BoulderCommentForm BoulderId="BoulderId" />
     }
 
-    @if (_comments != null)
+    @if (_loaded)
     {
-        @foreach (var comment in _comments)
+        @foreach (var comment in _list.Rows)
         {
-            <div class="comment-row">
+            <div class="comment-row" @key="comment.Id">
                 <div class="comment-header">
-                    <UserAvatar UserId="comment.User.Id" Name="@comment.User.Name"
-                                HasAvatar="comment.User.HasAvatar" CssClass="avatar-sm" />
-                    <span class="comment-author">@comment.User.Name</span>
+                    <UserAvatar UserId="comment.Author.Id" Name="@comment.Author.Name"
+                                HasAvatar="comment.Author.HasAvatar" CssClass="avatar-sm" />
+                    <span class="comment-author">@comment.Author.Name</span>
                     <span class="comment-time"><LocalTime Value="@comment.CreatedAt" Format="LocalTimeFormat.Relative" /></span>
-                    @if (comment.UserId == CurrentUserId)
+                    @if (CurrentUserId != Guid.Empty && comment.OwnerId == CurrentUserId)
                     {
                         <button class="delete-btn" @onclick="() => DeleteAsync(comment.Id)">x</button>
                     }
@@ -32,13 +41,13 @@
                 <p class="comment-text">@comment.Text</p>
             </div>
         }
-        @if (_comments.Count == 0)
+        @if (_list.Rows.Count == 0)
         {
             <p class="empty-msg">No comments yet.</p>
         }
-        @if (_total > (_page + 1) * 10)
+        @if (_list.HasMore)
         {
-            <button class="pager-btn" @onclick="() => LoadAsync(_page + 1)">Load more</button>
+            <button class="pager-btn" @onclick="LoadMoreAsync">Load more</button>
         }
     }
 
@@ -51,48 +60,94 @@
 @code {
     [Parameter] public Guid BoulderId { get; set; }
 
+    /// <summary>The boulder's wall, whose feed keeps the list live.</summary>
+    [Parameter] public Guid WallId { get; set; }
+
     [Parameter] public Guid CurrentUserId { get; set; }
 
     [Parameter] public bool IsAnonymous { get; set; }
 
-    private List<BoulderComment>? _comments;
-    private int _total;
-    private int _page;
+    /// <summary>Set on a share-link route. Share routes are not live, as everywhere else on the boulder page.</summary>
+    [Parameter] public string? ShareToken { get; set; }
+
+    private CommentList _list = new();
+    private LeafFeed? _feed;
+    private (Guid Wall, Guid Boulder, string? Token)? _key;
+    private bool _loaded;
     private string? _error;
 
-    protected override Task OnInitializedAsync() => LoadAsync(0);
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_key == (WallId, BoulderId, ShareToken))
+        {
+            return;
+        }
 
-    /// <summary>Re-reads from the first page, dropping any accumulated "load more" pages.</summary>
-    public Task ReloadAsync() => LoadAsync(0);
+        _key = (WallId, BoulderId, ShareToken);
+        _list = new CommentList();
+        _feed?.Dispose();
+        _feed = WallId == Guid.Empty || !string.IsNullOrEmpty(ShareToken)
+            ? null
+            : LeafFeed.Open(Cache, new LeafScope(WallId, BoulderId, CommentList.Kinds), InvokeAsync, ApplyAsync, logger: Logger);
+        await LoadAsync();
+    }
+
+    /// <summary>Re-reads the loaded window (every "load more" page so far).</summary>
+    public Task ReloadAsync() => LoadAsync();
+
+    public void Dispose() => _feed?.Dispose();
+
+    private Task LoadMoreAsync()
+    {
+        _list.Grow();
+        return LoadAsync();
+    }
+
+    // On the dispatcher. A patch that cannot be applied from the event alone re-reads.
+    private async Task ApplyAsync(LeafBatch batch)
+    {
+        if (_list.Apply(batch, signedIn: CurrentUserId != Guid.Empty))
+        {
+            await LoadAsync();
+            return;
+        }
+
+        StateHasChanged();
+    }
 
     // Renders itself at the end. ReloadAsync is called from outside this component's own event
     // dispatch (BoulderDetail's [JSInvokable] queue-flush callback), where nothing re-renders it
     // automatically; depending on the caller to do it meant a failure anywhere else in that
     // callback left a freshly loaded list sitting unrendered until the next navigation.
-    private async Task LoadAsync(int page)
+    private async Task LoadAsync()
     {
         try
         {
-            var (items, total) = await CommentService.GetCommentsAsync(BoulderId, page);
-            _page = page;
-            if (page == 0)
+            // The result goes into the list it was read for, and only if this is still the latest load of that list.
+            var list = _list;
+            var (boulderId, token) = (BoulderId, ShareToken);
+            var read = () => CommentService.GetCommentsAsync(boulderId, 0, list.Window, token);
+            void Commit((List<BoulderComment> Items, int Total) page)
             {
-                _comments = items;
+                list.Load(page.Items, page.Total, _feed?.Viewer);
+                _error = null; // here, not after LoadAsync: a nested reload may land before it returns
+            }
+
+            if (_feed is { } feed)
+            {
+                await feed.LoadAsync(read, Commit);
             }
             else
             {
-                _comments?.AddRange(items);
+                Commit(await read());
             }
-
-            _total = total;
-            _error = null;
         }
         catch (Exception ex)
         {
             _error = $"Comments could not be loaded: {ex.Message}";
-            _comments ??= [];
         }
 
+        _loaded = true;
         await InvokeAsync(StateHasChanged);
     }
 
@@ -101,8 +156,7 @@
         try
         {
             await CommentService.DeleteCommentAsync(commentId);
-            _comments?.RemoveAll(c => c.Id == commentId);
-            _total--;
+            _list.Drop(commentId);
             _error = null;
         }
         catch (Exception ex)

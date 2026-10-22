@@ -13,7 +13,7 @@ namespace Blocwerk.Core.Feed.Social;
 /// <summary>
 /// <c>activity.added</c> for the wall's members, credited to the entry's user (the Ghost user for an anonymous kiosk tick).
 /// The payload is the activity type only; the free-text details stay in the log. An entry about a boulder is placed
-/// through the boulder, so a draft's entries reach setters only. The log is append-only: updates and deletes (erasure)
+/// through the boulder, so a draft's entries reach members only. The log is append-only: updates and deletes (erasure)
 /// map to nothing.
 /// </summary>
 internal sealed class ActivityLogFeedMapper : IFeedMapper

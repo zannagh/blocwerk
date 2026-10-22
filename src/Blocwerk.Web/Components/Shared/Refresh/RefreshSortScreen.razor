@@ -47,7 +47,7 @@
                             <figure>
                                 @if (pick.PanelId is { } panelId)
                                 {
-                                    <img src="/api/walls/@View.WallId/panels/@panelId/photo" alt="Current photo of @PanelName(pick)" loading="lazy" />
+                                    <img src="@CurrentPhotoUrl(panelId)" alt="Current photo of @PanelName(pick)" loading="lazy" />
                                 }
                                 <figcaption>Now</figcaption>
                             </figure>

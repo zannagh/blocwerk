@@ -13,6 +13,7 @@ using Blocwerk.HoldDetection;
 using Blocwerk.Web.Components;
 using Blocwerk.Web.Controllers;
 using Blocwerk.Web.Endpoints;
+using Blocwerk.Web.Endpoints.Feed;
 using Blocwerk.Web.HealthChecks;
 using Blocwerk.Web.Maintenance;
 using Blocwerk.Web.State;
@@ -24,6 +25,7 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Options;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
@@ -183,8 +185,8 @@ public static class Program
         builder.Services.AddScoped<SessionState>();
 
         // Per-circuit cache of wall/boulder aggregate reads, so revisits are served from memory and edits
-        // live-refresh. Invalidated by the live feed (scoped per event, through the circuit's hub
-        // subscriptions) and, until PR 1.8, by the in-process domain-change notifier.
+        // live-refresh. Invalidated by the live feed: synchronously by this process's own commits
+        // (FeedCommits), and scoped per event through the circuit's hub subscriptions.
         builder.Services.AddScoped<ICircuitFeedViewer, CircuitFeedViewer>();
         builder.Services.AddScoped<WallFeedLink>();
         builder.Services.AddScoped<WallCacheState>();
@@ -231,6 +233,17 @@ public static class Program
         builder.Services.AddSingleton<EditActivityRegistry>();
         builder.Services.AddScoped<CircuitEditActivity>();
 
+        // When an open editor holds the deploy gate: recent real input, page not hidden for long, bounded hold.
+        builder.Services.AddOptions<EditPresenceOptions>()
+            .Bind(builder.Configuration.GetSection(EditPresenceOptions.SectionName))
+            .ValidateOnStart();
+        builder.Services.AddSingleton<IValidateOptions<EditPresenceOptions>, EditPresenceOptionsValidator>();
+
+        // The pre-deploy flush: open editors register how to persist their unsaved state (scoped), and the
+        // autodeploy hook's POST /api/v1/maintenance/flush-edits runs them all (singleton hub).
+        builder.Services.AddSingleton<EditFlushHub>();
+        builder.Services.AddScoped<CircuitEditFlush>();
+
         // Core's long-running work (capture video upload + frame extraction) holds the same gate.
         builder.Services.AddSingleton<IDeployBusyGate, EditActivityDeployBusyGate>();
 
@@ -258,6 +271,10 @@ public static class Program
         // The 3D runners' rate limit. Registered through RateLimitPolicies like the API-key login's, so the
         // app keeps ONE OnRejected that dispatches per policy (a second AddRateLimiter would overwrite it).
         builder.Services.AddRunnerRateLimit();
+
+        // The feed's catch-up and stream routes (PR 1.6): their open-stream caps and their per-address rate limit, also
+        // through RateLimitPolicies.
+        builder.Services.AddFeedStream();
 
         // Health checks: "busy" (Degraded while editing, not Unhealthy) gates deploys; "database"
         // probes PostgreSQL. Both are surfaced anonymously via MapHealthChecks below.
@@ -313,7 +330,10 @@ public static class Program
         app.MapStaticAssets();
         app.ConfigureCoreApplication();
         app.ConfigureAuthenticationMiddlewares();
-        app.MapControllers();
+
+        // WithStaticAssets: controller endpoints carry the fingerprinted asset map (ResourceAssetCollection), which the
+        // signed-out page (SiteDataClearing.SignedOutPage) uses for its scripts, as BlocwerkApp does through @Assets.
+        app.MapControllers().WithStaticAssets();
 
         // Personal-API-key browser login for automation. OFF by default: unmapped (a plain 404)
         // unless Blocwerk:Auth:ApiKeyLogin:Enabled is set. See ApiKeyLoginEndpoints.
@@ -357,9 +377,11 @@ public static class Program
             },
         });
 
-        // Seconds until long background work (a wall enhancement's hold search) expects to finish; 0 when none. Plain
-        // text next to ready-to-deploy, whose "idle"/"busy" body stays exactly as the deployed autodeploy hook reads it.
-        app.MapGet("/health/busy-eta", (DeployBusyEtaBoard board) => Results.Text(board.SecondsLeft().ToString(System.Globalization.CultureInfo.InvariantCulture)))
+        // Seconds until whatever holds the gate expects to let go (background work's ETA, or the cutoff of a present
+        // editor); 0 when none. Plain text next to ready-to-deploy, whose "idle"/"busy" body stays exactly as the
+        // deployed autodeploy hook reads it. See BusyEta.
+        app.MapGet("/health/busy-eta", (DeployBusyEtaBoard board, EditActivityRegistry registry, IOptions<EditPresenceOptions> presence) =>
+                Results.Text(BusyEta.SecondsLeft(board, registry, presence).ToString(System.Globalization.CultureInfo.InvariantCulture)))
             .AllowAnonymous();
 
         // Liveness beacon for the "server is updating" overlay: anonymous, no database, and it
@@ -388,8 +410,17 @@ public static class Program
         // The photo-real (Gaussian splat) scene of the same model; same posture as its textures.
         app.MapWallGeometrySplats();
 
-        // Content-addressed wall assets (/api/walls/{w}/a/{sha}), immutable; same posture as the wall media above.
+        // Content-addressed wall assets (/api/walls/{w}/a/{sha}), revalidated (no-cache); same posture as the wall media above.
         app.MapAssets();
+
+        // The working-data documents beside them (/api/walls/{w}/d/view3d/{sha}, design §6.5); same posture.
+        app.MapWallDocuments();
+
+        // Their manifest per wall and the device's cache partition (design §6.4, §6.6).
+        app.MapAssetManifest();
+
+        // The live feed over HTTP: a wall's catch-up pages and event stream, and the caller's own rows (/api/me/changes).
+        app.MapFeed();
 
         // Device reports of the photo-real view (start, level steps, lost contexts), logged only.
         app.MapPhotoRealDiagnostics();
@@ -528,6 +559,12 @@ public static class Program
                 var redirectToLogin = options.Events.OnRedirectToLogin;
                 options.Events.OnRedirectToLogin = context =>
                 {
+                    // The feed routes answer with their own refusal body, so an offline client reads one shape (PR 1.6).
+                    if (FeedEndpoints.IsFeedPath(context.Request.Path))
+                    {
+                        return FeedRequestAccess.WriteChallengeAsync(context.Response);
+                    }
+
                     if (IsApiRequest(context.Request))
                     {
                         context.Response.StatusCode = StatusCodes.Status401Unauthorized;

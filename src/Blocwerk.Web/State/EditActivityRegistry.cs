@@ -25,7 +25,10 @@ public sealed class EditActivityRegistry
 {
     private readonly ConcurrentDictionary<Guid, EditActivityEntry> entries = new();
 
-    /// <summary>True while any unexpired editing session is in flight.</summary>
+    /// <summary>
+    /// True while any unexpired editing session is in flight. The deploy gate is narrower: it also asks whether the
+    /// session's user is present (<see cref="EditDeployGatePolicy"/>).
+    /// </summary>
     public bool IsBusy(DateTimeOffset? nowOverride = null)
     {
         var now = nowOverride ?? DateTimeOffset.UtcNow;
@@ -97,20 +100,25 @@ public sealed class EditActivityRegistry
     public bool Touch(Guid leaseId, DateTimeOffset? nowOverride = null, bool userActivity = false)
     {
         var now = nowOverride ?? DateTimeOffset.UtcNow;
+        return Apply(leaseId, EditActivitySignals.For(userActivity ? EditSignal.Input : EditSignal.Heartbeat, now), now);
+    }
+
+    /// <summary>
+    /// Applies <paramref name="change"/> to a live entry. Returns false when there is no such entry, or it is
+    /// already past its TTL: like a late heartbeat, a late signal does NOT resurrect an expired entry (that is
+    /// <see cref="Restore"/>'s job, which re-checks the history).
+    /// </summary>
+    public bool Apply(Guid leaseId, Func<EditActivityEntry, EditActivityEntry> change, DateTimeOffset? nowOverride = null)
+    {
+        var now = nowOverride ?? DateTimeOffset.UtcNow;
         Prune(now);
 
-        // A touch does NOT resurrect an entry that is already past its TTL: if the heartbeat was
-        // that late, the circuit was not alive, and the deploy gate has already been told so.
         if (!entries.TryGetValue(leaseId, out var current) || EditActivityPolicy.IsExpired(current, now))
         {
             return false;
         }
 
-        var next = userActivity
-            ? current with { LastSeenUtc = now, LastActivityUtc = now }
-            : current with { LastSeenUtc = now };
-
-        return entries.TryUpdate(leaseId, next, current);
+        return entries.TryUpdate(leaseId, change(current), current);
     }
 
     /// <summary>A point-in-time copy of the current, unexpired editing sessions.</summary>

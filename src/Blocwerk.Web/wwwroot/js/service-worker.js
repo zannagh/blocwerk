@@ -15,6 +15,8 @@
  *
  * NEVER cached: anything under /api/* and /_blazor/* (SignalR), and any non-GET request. Those are
  * strictly network-only so auth, the circuit and the offline queue always talk to the live server.
+ * The one exception is the content-addressed wall assets (/api/walls/{w}/a/{sha}[/{width}]): immutable bytes,
+ * cache-first per identity partition, in sw-asset-cache.js.
  *
  * Page <-> worker messages carry `proto` (PROTO below). Both sides ignore a message whose proto or type they
  * do not know, and the worker never depends on the page talking to it: skipWaiting + clients.claim means a new
@@ -25,8 +27,10 @@
  * offline-queue.js / blazor-boot.js, which covers the tab-open case; Background Sync would only add
  * closed-tab flushing and needs its own IndexedDB replay in the SW, so it is deferred.
  */
-const CACHE = 'blocwerk-shell-v3';
+const CACHE = 'blocwerk-shell-v4';
 const PROTO = 1;
+
+importScripts('/js/sw-asset-cache.js');
 
 // Stable-path assets only. The app's own CSS/JS are referenced from BlocwerkApp.razor through
 // @Assets[...], so the page requests them under a build-specific fingerprinted name that this file
@@ -75,7 +79,17 @@ self.addEventListener('message', event => {
         return;
     }
     if (data.type === 'sw-info') {
-        reply(event, { proto: PROTO, type: 'sw-info', shell: CACHE });
+        // `partition`: the label the asset cache serves right now (sw-asset-cache.js), null before any lookup.
+        reply(event, { proto: PROTO, type: 'sw-info', shell: CACHE, partition: assetPartitions.current });
+    } else if (data.type === 'sw-refresh-partition') {
+        // Answers `partition-refreshed` with the label served once the lookup is done, so the page can fill at once.
+        const clientId = event.source && event.source.id;
+        const done = refreshPartition(clientId)
+            .then(() => reply(event, { proto: PROTO, type: 'partition-refreshed', partition: assetPartitions.current }))
+            .catch(() => undefined);
+        if (typeof event.waitUntil === 'function') {
+            event.waitUntil(done);
+        }
     }
 });
 
@@ -119,6 +133,16 @@ function fetchAndCache(request) {
 self.addEventListener('fetch', event => {
     const request = event.request;
     const url = new URL(request.url);
+
+    // Wall assets first: they live under /api/, which the bypass below would otherwise hand to the network.
+    // A Range request (splats) is never cache-backed, and the worker never stores a 206.
+    const asset = url.origin === self.location.origin && request.method === 'GET' ? assetRoute(url) : null;
+    if (asset) {
+        if (!request.headers.has('range')) {
+            event.respondWith(respondFromAssetCache(event, asset));
+        }
+        return;
+    }
 
     if (url.origin !== self.location.origin || isBypassed(url, request)) {
         return; // Let the network handle it untouched.

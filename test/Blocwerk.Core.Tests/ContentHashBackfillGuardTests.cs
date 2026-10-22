@@ -156,13 +156,13 @@ public class ContentHashBackfillGuardTests
         // Mappers for every hashed entity that would write a row (and throw) if they were ever handed one.
         var types = new[] { typeof(Wall), typeof(WallPanel), typeof(WallReset), typeof(User), typeof(BetaVideo), typeof(WallImage), typeof(WallGeometrySplat), typeof(WallGeometryTexture) };
         var signal = new RecordingFeedSignal();
-        var feed = new FeedInterceptor(new FeedMapperRegistry([new ThrowingMapper(types)]), signal, NullLogger<FeedInterceptor>.Instance);
-        var notifier = new RecordingDomainChangeNotifier();
-        var count = await kit.Backfill(new DomainChangeInterceptor(notifier), new ChangeJournalInterceptor(new ChangeJournal()), feed).RunPassAsync(default);
+        var commits = new RecordingFeedCommits();
+        var feed = new FeedInterceptor(new FeedMapperRegistry([new ThrowingMapper(types)]), signal, NullLogger<FeedInterceptor>.Instance, commits.Commits);
+        var count = await kit.Backfill(new ChangeJournalInterceptor(new ChangeJournal()), feed).RunPassAsync(default);
 
         Assert.True(count.Stamped >= 10);
         Assert.Equal((journalled, fed), await CountAsync(kit));
-        Assert.Empty(notifier.Changes);
+        Assert.Empty(commits.Rows);
         Assert.Empty(signal.Woken);
     }
 

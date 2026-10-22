@@ -14,9 +14,11 @@ public interface IWallService
 
     /// <summary>
     /// The display names of every boulder's setters on the wall, keyed by boulder id, in one query.
-    /// Boulders without a recorded setter are absent; callers fall back to the creator.
+    /// Boulders without a recorded setter are absent; callers fall back to the creator. Empty for a caller who
+    /// cannot see the wall; pass the share token on the share route. Drafts' setters are left out unless the
+    /// caller is a member. Throws for an anonymous caller that is neither a share viewer nor the wall's kiosk.
     /// </summary>
-    Task<Dictionary<Guid, List<string>>> GetBoulderSetterNamesAsync(Guid wallId);
+    Task<Dictionary<Guid, List<string>>> GetBoulderSetterNamesAsync(Guid wallId, string? shareToken = null);
 
     Task<List<Wall>> GetMyWallsAsync();
 
@@ -120,6 +122,12 @@ public interface IWallService
 
     Task DeleteHoldAsync(Guid holdId);
 
+    /// <summary>
+    /// <see cref="DeleteHoldAsync"/>, answering with the boulders the delete retired (made historic), so a caller can
+    /// name them to the user.
+    /// </summary>
+    Task<IReadOnlyList<RetiredBoulder>> DeleteHoldRetiringAsync(Guid holdId);
+
     Task ClearAutoDetectedHoldsAsync(Guid wallId);
 
     Task SetBorderPointsAsync(Guid wallId, List<ShapePoint> points);
@@ -127,6 +135,12 @@ public interface IWallService
     Task<int> CleanOutsideBorderAsync(Guid wallId);
 
     Task<List<WallMember>> GetMembersAsync(Guid wallId);
+
+    /// <summary>
+    /// Whether the signed-in caller may write social data (ticks, comments, favorites) on the wall: the same
+    /// membership filter the services gate those writes on. False for an anonymous caller.
+    /// </summary>
+    Task<bool> IsMemberAsync(Guid wallId);
 
     /// <summary>
     /// True when both users are members of at least one common wall. Used to gate whether a viewer

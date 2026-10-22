@@ -39,6 +39,10 @@ public class TopLoggerReconcileTests
         Assert.Equal(2, result.Skipped);
         Assert.Equal(10, await CountAscentsAsync(harness));
 
+        // The user's devices hear of the import in the same save: one coarse, user-only row.
+        var feed = Assert.Single(await FeedBulkKit.RowsAsync(harness));
+        Assert.Equal((Blocwerk.Contracts.Feed.FeedKinds.TicksResync, harness.Owner.Id, null), (feed.Kind, feed.AudienceUserId!.Value, feed.WallId));
+
         // Only the one session was pulled — never the full logbook.
         await apiClient.DidNotReceive()
             .GetTicksAsync(Arg.Any<Guid>(), Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>());
@@ -68,6 +72,7 @@ public class TopLoggerReconcileTests
         Assert.Equal(0, result.Imported);
         Assert.Equal(5, result.Skipped);
         Assert.Equal(5, await CountAscentsAsync(harness));
+        Assert.Empty(await FeedBulkKit.RowsAsync(harness));
 
         var connection = await LoadConnectionAsync(harness);
         Assert.Equal(TopLoggerSyncOutcome.Success, connection.LastSyncOutcome);

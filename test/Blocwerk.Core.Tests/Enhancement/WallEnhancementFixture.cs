@@ -140,7 +140,11 @@ public sealed class WallEnhancementFixture : IDisposable
         steps,
         journal,
         NullLogger<WallEnhancementJob>.Instance,
-        editPresence: Presence) { EditorPoll = TimeSpan.FromMilliseconds(20), StepTimeout = StepTimeout, HeartbeatInterval = HeartbeatInterval, StopGrace = StopGrace, ObserveLimit = ObserveLimit, Clock = Clock ?? TimeProvider.System };
+        editPresence: Presence,
+        pulse: Pulses) { EditorPoll = TimeSpan.FromMilliseconds(20), StepTimeout = StepTimeout, HeartbeatInterval = HeartbeatInterval, StopGrace = StopGrace, ObserveLimit = ObserveLimit, Clock = Clock ?? TimeProvider.System };
+
+    /// <summary>The job's pulses (the card's progress), unthrottled.</summary>
+    public Pulse.RecordingWallPulse Pulses { get; } = new();
 
     /// <summary>A hand-fired clock for the step watchdog, or null for the real one.</summary>
     public ManualTimeProvider? Clock { get; set; }

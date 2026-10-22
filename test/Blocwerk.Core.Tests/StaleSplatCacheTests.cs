@@ -17,13 +17,14 @@ namespace Blocwerk.Core.Tests;
 
 /// <summary>
 /// The splat and texture routes are keyed by model id, while a re-run swaps the rows under it and a LOD
-/// backfill adds levels to it. The 3D view therefore hands out urls naming the bytes (<c>?v=</c>): those
-/// change with the bytes and alone are immutable; an old or unversioned url revalidates.
+/// backfill adds levels to it. The 3D view therefore hands out urls naming the bytes (<c>?v=</c>), which change with
+/// the bytes. Every url, versioned or not, is <c>private, no-cache</c>: the browser's HTTP cache is shared by every
+/// identity on the device, so no copy may be reused without revalidating through the gate.
 /// </summary>
 public class StaleSplatCacheTests
 {
     [Fact]
-    public async Task ARetrain_GivesTheSplatANewUrl_AndTheOldOneIsNoLongerImmutable()
+    public async Task ARetrain_GivesTheSplatANewUrl_AndEveryUrlRevalidates()
     {
         using var h = new WallTestHarness();
         using var s = new CaptureScenario(h);
@@ -31,7 +32,7 @@ public class StaleSplatCacheTests
         var captureId = await s.StartCaptureAsync(photos: 3);
         await s.Processor.ProcessAsync(captureId, CancellationToken.None);
         var before = (await ViewAsync(h)).SplatUrl!;
-        Assert.Equal(ImageResponse.ImmutableCacheControl, await CacheControlAsync(h, s, before));
+        Assert.Equal(ImageResponse.MutableCacheControl, await CacheControlAsync(h, s, before));
 
         Assert.Empty(await s.Service.RetrainPhotoRealAsync(captureId, SplatQuality.Max));
         s.SplatClient.Spz = FakeComputeJobClient.Gzip(new byte[8192]);
@@ -41,11 +42,11 @@ public class StaleSplatCacheTests
         Assert.Equal(before.Split('?')[0], after.Split('?')[0]);    // same model, same route
         Assert.NotEqual(before, after);
         Assert.Equal(ImageResponse.MutableCacheControl, await CacheControlAsync(h, s, before));
-        Assert.Equal(ImageResponse.ImmutableCacheControl, await CacheControlAsync(h, s, after));
+        Assert.Equal(ImageResponse.MutableCacheControl, await CacheControlAsync(h, s, after));
     }
 
     [Fact]
-    public async Task ALodBackfill_GivesTheLevelUrlsNewVersions_AndAnEarlierLevelUrlIsNoLongerImmutable()
+    public async Task ALodBackfill_GivesTheLevelUrlsNewVersions_AndEveryLevelUrlRevalidates()
     {
         using var h = new WallTestHarness();
         using var s = new CaptureScenario(h);
@@ -61,10 +62,13 @@ public class StaleSplatCacheTests
             await db.SaveChangesAsync();
         }
 
+        // These are the legacy versioned urls: the row as it was before the hash backfill.
+        (row.Sha256, row.MobileSha256) = (null, null);
+
         // Before the backfill ?lod=120000 is the full scene (the row has no such level).
         var early = WallGeometrySplats.LevelUrl(h.WallId, row, 120_000);
         Assert.Single((await ViewAsync(h)).SplatLevels);
-        Assert.Equal(ImageResponse.ImmutableCacheControl, await CacheControlAsync(h, s, early));
+        Assert.Equal(ImageResponse.MutableCacheControl, await CacheControlAsync(h, s, early));
 
         var backfill = new SplatLodBackfill(h.RootContextFactory, s.Files, NullLogger<SplatLodBackfill>.Instance);
         Assert.Equal(1, await backfill.RunAsync(CancellationToken.None));
@@ -73,7 +77,7 @@ public class StaleSplatCacheTests
         Assert.Equal(early.Split("&v=")[0], level.Split("&v=")[0]);
         Assert.NotEqual(early, level);
         Assert.Equal(ImageResponse.MutableCacheControl, await CacheControlAsync(h, s, early));
-        Assert.Equal(ImageResponse.ImmutableCacheControl, await CacheControlAsync(h, s, level));
+        Assert.Equal(ImageResponse.MutableCacheControl, await CacheControlAsync(h, s, level));
     }
 
     [Fact]
@@ -94,13 +98,13 @@ public class StaleSplatCacheTests
     }
 
     [Fact]
-    public async Task AReTexture_GivesTheTextureANewUrl_AndTheOldOneIsNoLongerImmutable()
+    public async Task AReTexture_GivesTheTextureANewUrl_AndEveryUrlRevalidates()
     {
         using var h = new WallTestHarness();
         using var s = new CaptureScenario(h);
         await s.Processor.ProcessAsync(await s.StartCaptureAsync(), CancellationToken.None);
         var before = (await ViewAsync(h)).Textures[0].Url;
-        Assert.Equal(ImageResponse.ImmutableCacheControl, await TextureCacheControlAsync(h, s, before));
+        Assert.Equal(ImageResponse.MutableCacheControl, await TextureCacheControlAsync(h, s, before));
         Assert.Equal(ImageResponse.MutableCacheControl, await TextureCacheControlAsync(h, s, before.Split('?')[0]));
 
         // What a re-texture does: the model's rows are replaced, same model and facet.
@@ -120,7 +124,7 @@ public class StaleSplatCacheTests
         var after = (await ViewAsync(h)).Textures[0].Url;
         Assert.NotEqual(before, after);
         Assert.Equal(ImageResponse.MutableCacheControl, await TextureCacheControlAsync(h, s, before));
-        Assert.Equal(ImageResponse.ImmutableCacheControl, await TextureCacheControlAsync(h, s, after));
+        Assert.Equal(ImageResponse.MutableCacheControl, await TextureCacheControlAsync(h, s, after));
     }
 
     [Fact]
@@ -153,7 +157,14 @@ public class StaleSplatCacheTests
         Assert.NotEqual(WallCaptureService.MaskVersion(texture), WallCaptureService.MaskVersion(retextured));
     }
 
-    private static async Task<Wall3DView> ViewAsync(WallTestHarness h) =>
+    /// <summary>The view of the legacy routes: the rows unhashed first, as before the backfill.</summary>
+    private static async Task<Wall3DView> ViewAsync(WallTestHarness h)
+    {
+        await UnhashedGeometry.ClearAsync(h);
+        return await BuildViewAsync(h);
+    }
+
+    private static async Task<Wall3DView> BuildViewAsync(WallTestHarness h) =>
         (await new Wall3DViewService(
             h.WallService, h.CurrentUser, h.DbContextFactory, Wall3DViewAccessTests.Captures(h),
             NullLogger<Wall3DViewService>.Instance).BuildAsync(h.WallId, null)).View!;

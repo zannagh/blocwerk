@@ -18,8 +18,12 @@ public static class EditGuardInterop
     /// <c>exit</c> reports the intended (cleared) state so the transition is not retried while the
     /// browser guard stays set — the safe over-hold — whereas a failed <c>enter</c> reports the
     /// PRIOR state unchanged so the caller retries the (never-applied) increment on the next render.
+    /// <para>Passing <paramref name="presence"/> on enter also hands the browser this circuit's
+    /// <see cref="CircuitEditActivity.PresenceReference"/>, so <c>edit-presence.js</c> can report real user
+    /// input and the page being hidden while the editor is open. Without it the lease never sees its user.</para>
     /// </summary>
-    public static async ValueTask<bool> SyncAsync(IJSRuntime js, string key, bool editing, bool active)
+    public static async ValueTask<bool> SyncAsync(
+        IJSRuntime js, string key, bool editing, bool active, CircuitEditActivity? presence = null)
     {
         if (editing == active)
         {
@@ -28,7 +32,15 @@ public static class EditGuardInterop
 
         try
         {
-            await js.InvokeVoidAsync(editing ? "bwEditGuard.enter" : "bwEditGuard.exit", key);
+            if (editing)
+            {
+                await js.InvokeVoidAsync("bwEditGuard.enter", key, presence?.PresenceReference);
+            }
+            else
+            {
+                await js.InvokeVoidAsync("bwEditGuard.exit", key);
+            }
+
             return editing;
         }
         catch (Exception)

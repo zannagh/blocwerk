@@ -15,7 +15,8 @@ namespace Blocwerk.Core.Feed.Structure;
 /// kiosk consent and PIN columns never leave the row, and a change to them alone writes nothing). A subscription's audiences are fixed when it starts, so a member
 /// who loses some of them also gets <c>access.revoked</c>, addressed to that user alone: removed (payload null, their views
 /// leave the wall) or demoted (payload <c>{ role }</c>, the new role, so their views subscribe again with the audiences
-/// that role still has and stop receiving, say, a setter's draft rows).
+/// that role still has and stop receiving, say, a setter's draft rows). An added member (a join, or the owner of a wall
+/// just created) gets <c>walls.changed</c>, addressed to them alone: they had no subscription that could reach them.
 /// </summary>
 internal sealed class WallMemberFeedMapper : IFeedMapper
 {
@@ -38,6 +39,12 @@ internal sealed class WallMemberFeedMapper : IFeedMapper
         var role = FeedEntryValues.Value<WallRole>(entry, nameof(WallMember.Role));
         context.Add(StructureRows.Row(FeedKinds.MemberChanged, member.WallId, member.UserId, FeedAudience.Members, new MemberPayload(role.ToString())));
 
+        if (entry.State == EntityState.Added)
+        {
+            context.Add(AddressedTo(FeedKinds.WallsChanged, member, null));
+            return;
+        }
+
         var removed = entry.State == EntityState.Deleted;
         var demoted = entry.State == EntityState.Modified && Rank(role) < Rank(FeedEntryValues.Original<WallRole>(entry, nameof(WallMember.Role)));
         if (!removed && !demoted)
@@ -45,9 +52,14 @@ internal sealed class WallMemberFeedMapper : IFeedMapper
             return;
         }
 
-        var revoked = StructureRows.Row(FeedKinds.AccessRevoked, member.WallId, member.WallId, FeedAudience.User, removed ? null : new MemberPayload(role.ToString()));
-        revoked.AudienceUserId = member.UserId;
-        context.Add(revoked);
+        context.Add(AddressedTo(FeedKinds.AccessRevoked, member, removed ? null : new MemberPayload(role.ToString())));
+    }
+
+    private static WallChange AddressedTo(string kind, WallMember member, FeedPayload? payload)
+    {
+        var row = StructureRows.Row(kind, member.WallId, member.WallId, FeedAudience.User, payload);
+        row.AudienceUserId = member.UserId;
+        return row;
     }
 
     // Capability order (owner ⊇ admin ⊇ moderator ⊇ member, see WallRole): any step down may drop an audience.

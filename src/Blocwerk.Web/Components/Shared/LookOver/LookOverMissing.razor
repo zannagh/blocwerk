@@ -23,7 +23,7 @@
     {
         <p class="hint deck-tap-hint">@(Finding.CanReassign ? LookOverCopy.TapHint : LookOverCopy.ReassignNeedsAdmin)</p>
     }
-    @if (Finding.PanelId is { } panelId)
+    @if (Finding.PanelId is { } panelId && photoShasFor == WallId)
     {
         <div class="deck-wall">
             <PanelImageView WallId="WallId" Caption="The wall now" PhotoUrl="@PhotoUrl(panelId)" Holds="PanelHolds(panelId)"

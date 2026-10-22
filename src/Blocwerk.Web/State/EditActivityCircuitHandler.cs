@@ -11,10 +11,11 @@ namespace Blocwerk.Web.State;
 /// "this circuit is alive", not "the user clicked recently". Somebody staring at the alignment
 /// editor for six minutes without touching anything must not lose their protection, so the
 /// heartbeat is a <see cref="PeriodicTimer"/> on <see cref="EditActivityPolicy.HeartbeatInterval"/>.
-/// <see cref="CreateInboundActivityHandler"/> carries the OTHER signal: it is the only place a
-/// HUMAN can be observed, and <see cref="EditActivityPolicy.InactivityTimeToLive"/> is measured from
-/// it, so a tab abandoned on a gym tablet stops holding the deploy gate even though its socket never
-/// dies.</para>
+/// The OTHER signal, presence, deliberately does not come from this handler: inbound circuit
+/// activity (it used to be <c>CreateInboundActivityHandler</c>) includes render acknowledgements, JS
+/// replies and the traffic of every reconnect, all of which a MacBook asleep with the editor open
+/// produces on each dark wake. That kept a lease "active" all night on 2026-10-21. Presence is now
+/// reported by the browser from real input only (<see cref="EditPresenceInterop"/>).</para>
 /// <para><b>Why the timer cannot keep a dead client alive.</b> A server-side timer ticks whether or
 /// not the browser is reachable, so touching unconditionally would defeat the entire fix. The
 /// heartbeat is therefore gated on <see cref="connected"/>, which is driven by
@@ -80,19 +81,6 @@ public sealed class EditActivityCircuitHandler : CircuitHandler, IAsyncDisposabl
         return Task.CompletedTask;
     }
 
-    public override Func<CircuitInboundActivityContext, Task> CreateInboundActivityHandler(
-        Func<CircuitInboundActivityContext, Task> next)
-    {
-        return async context =>
-        {
-            // The user-activity clock. Unlike the heartbeat this is proof a person is there, so it
-            // is the only signal that restarts the inactivity TTL — and the only one allowed to
-            // resurrect a lease that ran out because nobody was.
-            activity.RecordActivity();
-            await next(context);
-        };
-    }
-
     public async ValueTask DisposeAsync()
     {
         await shutdown.CancelAsync();
@@ -112,6 +100,16 @@ public sealed class EditActivityCircuitHandler : CircuitHandler, IAsyncDisposabl
         shutdown.Dispose();
     }
 
+    private void WarnAboutSilentLeases()
+    {
+        foreach (var entry in activity.TakeSilentLeases(EditActivityPolicy.PresenceReportExpectedWithin))
+        {
+            logger.LogWarning(
+                "Edit lease {Kind} on wall {WallId} for user {UserId} has had no presence report from its page after {Minutes} min; the deploy gate treats it as idle",
+                entry.EditKind, entry.WallId, entry.UserId, (int)EditActivityPolicy.PresenceReportExpectedWithin.TotalMinutes);
+        }
+    }
+
     private async Task RunHeartbeatAsync(CancellationToken ct)
     {
         // Yield first so circuit startup is never blocked by this loop.
@@ -129,6 +127,7 @@ public sealed class EditActivityCircuitHandler : CircuitHandler, IAsyncDisposabl
                 }
 
                 activity.Touch();
+                WarnAboutSilentLeases();
             }
         }
         catch (OperationCanceledException)
