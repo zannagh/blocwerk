@@ -31,6 +31,12 @@ for (const width of [1280, 390]) {
 test('a wall member sees no Update wall', async ({ page, world }) => {
     const wall = world.walls.alpha;
     await signIn(page, world.users.carol, `/walls/${wall.id}`);
+    // Absence only means something on Carol's own, fully rendered interactive page: the page is hers, the carousel has
+    // landed, and her member list (read by the same load that decides the admin controls) is on it.
+    await expect(page.locator('body')).toHaveAttribute('data-bw-user', world.users.carol.id);
+    await expect(page.locator('.wall-carousel:not(.carousel-pending)')).toBeVisible();
     await expect(pages(page).nth(0).getByRole('heading', { name: 'Activity' })).toBeAttached();
+    await expect(pages(page).nth(1).getByText('Carol').first()).toBeAttached();
     await expect(page.locator(`a[href="/walls/${wall.id}/update"]`)).toHaveCount(0);
+    await expect(page.locator('a.wall-update-link')).toHaveCount(0);
 });
