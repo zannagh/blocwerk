@@ -25,12 +25,15 @@ internal static class FeedOutsideComments
     /// </summary>
     public static bool Allows(FeedViewer viewer, WallChange row, FeedHydrated hydrated)
     {
-        if (!IsComment(row.Kind) || row.BoulderId is not { } boulderId || !hydrated.CommentBoulders.TryGetValue(boulderId, out var state))
+        if (!IsComment(row.Kind)
+            || row.BoulderId is not { } boulderId
+            || !hydrated.CommentBoulders.TryGetValue(boulderId, out var state))
         {
             return true;
         }
 
         var audience = DocumentAudiences.Of(viewer);
-        return (!state.IsDraft || DocumentAudiences.SeesDrafts(audience)) && (!state.IsArchived || DocumentAudiences.SeesArchived(audience));
+        return (!state.IsDraft || DocumentAudiences.SeesDrafts(audience))
+            && (!state.IsArchived || DocumentAudiences.SeesArchived(audience));
     }
 }
