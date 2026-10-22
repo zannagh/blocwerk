@@ -21,13 +21,15 @@ namespace Blocwerk.Core.Assets.DataDocs;
 /// </para>
 /// <para>
 /// A sha is served only when the store holds it under the caller's own class; a miss rebuilds the caller's current
-/// document of the kind (no more than a stale index would) and serves it only if it is the sha asked for.
+/// document of the kind (no more than a stale index would) and serves it only if it is the sha asked for. Concurrent
+/// callers that find a document stale share one build (<see cref="DataDocumentFlights"/>).
 /// </para>
 /// </remarks>
 public sealed class DataDocumentService(
     RootDbContextFactory dbContextFactory,
     DataDocumentBuilder builder,
     DataDocumentStore store,
+    DataDocumentFlights flights,
     IWallFeed feed)
 {
     /// <summary>The caller's class on <paramref name="wallId"/>, or why it has none.</summary>
@@ -75,22 +77,34 @@ public sealed class DataDocumentService(
 
     private async Task<StoredDataDocument?> EnsureAsync(Guid wallId, DocumentAudience audience, string kind, CancellationToken ct)
     {
-        await using var db = dbContextFactory.CreateDbContext();
-        if (store.Current(wallId, audience, kind) is { } held && await DataDocumentFreshness.IsFreshAsync(db, held, ct))
+        await using (var db = dbContextFactory.CreateDbContext())
         {
-            return held;
+            if (store.Current(wallId, audience, kind) is { } held && await DataDocumentFreshness.IsFreshAsync(db, held, ct))
+            {
+                return held;
+            }
         }
 
-        var mark = await feed.CurrentAsync(ct);
-        if (await builder.BuildAsync(wallId, audience, kind, ct) is not { } json)
+        return await flights.RunAsync(wallId, audience, kind, () => BuildAsync(wallId, audience, kind), ct);
+    }
+
+    // Shared by every caller in flight, so it runs on no caller's token.
+    private async Task<StoredDataDocument?> BuildAsync(Guid wallId, DocumentAudience audience, string kind)
+    {
+        var mark = await feed.CurrentAsync();
+        if (await builder.BuildAsync(wallId, audience, kind, CancellationToken.None) is not { } built)
         {
             return null;
         }
 
+        await using var db = dbContextFactory.CreateDbContext();
         var cursor = DocumentAudiences.IsOutside(audience)
-            ? await FeedScopedMark.OfAsync(db, FeedFilter.ForWall(wallId, [FeedAudience.Wall], null), mark, ct)
+            ? await FeedScopedMark.OfAsync(db, FeedFilter.ForWall(wallId, [FeedAudience.Wall], null), mark, CancellationToken.None)
             : mark;
+        var epoch = (await FeedEpochStore.ReadAsync(db, CancellationToken.None))?.Id ?? mark.Epoch;
+        var json = built.Json;
         var sha = ContentHash.ToHex(ContentHash.Of(json))!;
-        return store.Publish(new StoredDataDocument(wallId, audience, kind, sha, json, DocumentBrotli.Compress(json), mark, cursor));
+        var document = new StoredDataDocument(wallId, audience, kind, sha, json, DocumentBrotli.Compress(json), mark, cursor, built.People);
+        return store.Publish(document, epoch);
     }
 }

@@ -4,6 +4,7 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using Blocwerk.Contracts.Documents;
+using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Assets.DataDocs;
 using Blocwerk.Web.Endpoints.Feed;
 using Microsoft.AspNetCore.Mvc;
@@ -20,7 +21,8 @@ namespace Blocwerk.Web.Endpoints;
 /// The index is per caller and per moment: <c>private, no-cache</c>, a strong ETag over its body, and
 /// <c>Vary: Cookie</c>. Its refusals are the feed's (401 <c>unauthenticated</c>, 403 <c>no-access</c> for a non-member
 /// with no or a stale share token, 410 <c>account-gone</c>, each <c>no-store</c>), and an unknown wall is a 404. A
-/// document refusal is the route's bare 404, like every other <c>/d/</c> refusal.
+/// document refusal is the route's bare 404, like every other <c>/d/</c> refusal, and a kiosk session that may not cache
+/// its wall gets the document <c>no-store</c> (<see cref="DocumentCaching.NoStore"/>), as on the view3d and <c>/a/</c> routes.
 /// </remarks>
 internal static class DataDocumentEndpoints
 {
@@ -67,7 +69,8 @@ internal static class DataDocumentEndpoints
             return Results.NotFound();
         }
 
-        return DocumentResponse.Write(http, document.Sha, document.Json, document.Brotli, noStore: false);
+        var noStore = DocumentCaching.NoStore(http.RequestServices.GetService<IKioskContext>(), wallId);
+        return DocumentResponse.Write(http, document.Sha, document.Json, document.Brotli, noStore);
     }
 
     private static IResult Refused(HttpContext http, DocumentAccess access)

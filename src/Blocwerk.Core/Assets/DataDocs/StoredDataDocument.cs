@@ -20,6 +20,7 @@ namespace Blocwerk.Core.Assets.DataDocs;
 /// The cursor served with it: <paramref name="BuildMark"/> for the wall's members, the wall's own mark at or below it for
 /// share and kiosk viewers (no row they may see lies between the two).
 /// </param>
+/// <param name="People">The users the document names by byline (<see cref="BuiltDataDocument.People"/>).</param>
 public sealed record StoredDataDocument(
     Guid WallId,
     DocumentAudience Audience,
@@ -28,12 +29,24 @@ public sealed record StoredDataDocument(
     byte[] Json,
     byte[] Brotli,
     FeedCursor BuildMark,
-    FeedCursor Cursor)
+    FeedCursor Cursor,
+    IReadOnlyCollection<Guid> People)
 {
     /// <summary>What the entry costs the store.</summary>
     public long Size => Json.LongLength + Brotli.LongLength;
 
-    /// <summary>True when this was built at or after <paramref name="other"/> (or in a newer epoch: a restore).</summary>
-    public bool IsAtLeastAsNewAs(StoredDataDocument other) =>
-        BuildMark.Epoch != other.BuildMark.Epoch || BuildMark.Position >= other.BuildMark.Position;
+    /// <summary>
+    /// True when this may replace <paramref name="other"/> as current, given the feed's <paramref name="currentEpoch"/>:
+    /// a document of another epoch never does (a build that started before a restore and finished after it), one of the
+    /// current epoch always replaces one of another, and within the epoch the later build mark wins.
+    /// </summary>
+    public bool IsAtLeastAsNewAs(StoredDataDocument other, Guid currentEpoch)
+    {
+        if (BuildMark.Epoch != currentEpoch)
+        {
+            return false;
+        }
+
+        return other.BuildMark.Epoch != currentEpoch || BuildMark.Position >= other.BuildMark.Position;
+    }
 }

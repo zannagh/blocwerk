@@ -53,10 +53,11 @@ public sealed class DataDocumentStore
 
     /// <summary>
     /// Stores <paramref name="document"/> and makes it current unless a document built later is current already (two
-    /// concurrent rebuilds: the later mark wins). A known sha keeps one entry, carrying the later of the two marks.
+    /// concurrent rebuilds: the later mark wins), or it was built in an epoch other than <paramref name="currentEpoch"/>
+    /// (<see cref="StoredDataDocument.IsAtLeastAsNewAs"/>). A known sha keeps one entry, carrying the later mark.
     /// </summary>
-    /// <returns>The class's current document after the publish.</returns>
-    public StoredDataDocument Publish(StoredDataDocument document)
+    /// <returns>The class's current document after the publish; the published one when nothing is current.</returns>
+    public StoredDataDocument Publish(StoredDataDocument document, Guid currentEpoch)
     {
         var key = (document.WallId, document.Audience, document.Kind, document.Sha);
         lock (gate)
@@ -65,7 +66,7 @@ public sealed class DataDocumentStore
             {
                 order.Remove(known);
                 order.AddFirst(known);
-                if (document.IsAtLeastAsNewAs(known.Value))
+                if (document.IsAtLeastAsNewAs(known.Value, currentEpoch))
                 {
                     bytes += document.Size - known.Value.Size;
                     known.Value = document;
@@ -78,7 +79,8 @@ public sealed class DataDocumentStore
             }
 
             var slot = (document.WallId, document.Audience, document.Kind);
-            if (!current.TryGetValue(slot, out var held) || document.IsAtLeastAsNewAs(held))
+            var held = current.GetValueOrDefault(slot);
+            if (document.BuildMark.Epoch == currentEpoch && (held is null || document.IsAtLeastAsNewAs(held, currentEpoch)))
             {
                 current[slot] = entries[key].Value;
             }

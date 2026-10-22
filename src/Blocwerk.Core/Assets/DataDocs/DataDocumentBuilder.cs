@@ -16,19 +16,28 @@ namespace Blocwerk.Core.Assets.DataDocs;
 /// </summary>
 public sealed class DataDocumentBuilder(RootDbContextFactory dbContextFactory, IWallImageStorage imageStorage)
 {
-    /// <summary>The document's bytes, or null when the wall is gone.</summary>
+    /// <summary>The document's bytes and the people it names, or null when the wall is gone.</summary>
     /// <exception cref="ArgumentOutOfRangeException">Not a data document kind.</exception>
-    public async Task<byte[]?> BuildAsync(Guid wallId, DocumentAudience audience, string kind, CancellationToken ct)
+    public async Task<BuiltDataDocument?> BuildAsync(Guid wallId, DocumentAudience audience, string kind, CancellationToken ct)
     {
         await using var db = dbContextFactory.CreateDbContext();
+        if (kind == DataDocumentKinds.Boulders)
+        {
+            return await BouldersDocumentBuilder.BuildAsync(db, wallId, audience, ct) is var (boulders, people)
+                ? new BuiltDataDocument(Serialize(boulders), people)
+                : null;
+        }
+
         object? document = kind switch
         {
             DataDocumentKinds.Wall => await WallDocumentBuilder.BuildAsync(db, wallId, ct),
             DataDocumentKinds.Holds => await HoldsDocumentBuilder.BuildAsync(db, wallId, ct),
-            DataDocumentKinds.Boulders => await BouldersDocumentBuilder.BuildAsync(db, wallId, audience, ct),
             DataDocumentKinds.Gallery => await GalleryDocumentBuilder.BuildAsync(db, imageStorage, wallId, ct),
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Not a data document kind."),
         };
-        return document is null ? null : JsonSerializer.SerializeToUtf8Bytes(document, document.GetType(), DataDocumentSchema.Options);
+        return document is null ? null : new BuiltDataDocument(Serialize(document), []);
     }
+
+    private static byte[] Serialize(object document) =>
+        JsonSerializer.SerializeToUtf8Bytes(document, document.GetType(), DataDocumentSchema.Options);
 }

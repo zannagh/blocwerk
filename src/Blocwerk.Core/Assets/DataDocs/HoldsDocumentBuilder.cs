@@ -9,7 +9,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Blocwerk.Core.Assets.DataDocs;
 
 /// <summary>
-/// Builds the <c>holds</c> document: the wall's live holds (<see cref="LiveWallHolds.QueryAsync"/>), the same for every
+/// Builds the <c>holds</c> document: the wall's live holds (<see cref="LiveWallHolds.Query"/>), the same for every
 /// class. Holds are wall geometry, not boulders, so no class's set differs; what the update procedure keeps on a hold
 /// (detection, review, staged generations) is left out.
 /// </summary>
@@ -26,13 +26,22 @@ internal static class HoldsDocumentBuilder
             return null;
         }
 
-        var holds = await (await LiveWallHolds.QueryAsync(db, wallId, ct)).AsNoTracking()
+        // The generation is read once, above: a wall deleted from here on gives an empty read and the check below, not
+        // QueryAsync's "Wall not found" (a 500 on a route a share link reaches).
+        var panels = await LiveWallHolds.LoadPanelIdsAsync(db, wallId, ct);
+        var holds = await LiveWallHolds.Query(db, wallId, generation.Value, panels).AsNoTracking()
             .Select(h => new
             {
                 h.Id, h.WallPanelId, h.Generation, h.X, h.Y, h.Radius, h.Color, h.Category, h.HandType, h.IsOnKickboard,
-                h.IsVirtual, Kept = h.KeptUnconfirmedGeneration != null, h.StackedOnHoldId, h.ShapePoints, h.ShapeControlPoints, h.ShapeHoles,
+                h.IsVirtual, Kept = h.KeptUnconfirmedGeneration != null, h.StackedOnHoldId, h.ShapePoints,
+                h.ShapeControlPoints, h.ShapeHoles,
             })
             .ToListAsync(ct);
+
+        if (!await db.Walls.IgnoreQueryFilters().AnyAsync(w => w.Id == wallId, ct))
+        {
+            return null;
+        }
 
         var documented = holds.OrderBy(h => h.Id).Select(h => new HoldsDocumentHold(
             h.Id,

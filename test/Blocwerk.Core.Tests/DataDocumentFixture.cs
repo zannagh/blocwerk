@@ -54,6 +54,8 @@ internal sealed class DataDocumentFixture : IDisposable
 
     public DataDocumentStore Store { get; } = new();
 
+    public DataDocumentFlights Flights { get; } = new();
+
     public IKioskContext Kiosk { get; }
 
     public IKioskKeyValidator KioskKeys { get; }
@@ -74,6 +76,13 @@ internal sealed class DataDocumentFixture : IDisposable
 
     public Guid DraftId { get; private set; }
 
+    public Guid HistoricId { get; private set; }
+
+    public Guid ArchivedId { get; private set; }
+
+    /// <summary>Gets the boulders every class sees, by id: the published one and the historic one.</summary>
+    public IReadOnlyList<Guid> EveryonesBoulders => new[] { PublishedId, HistoricId }.Order().ToList();
+
     /// <summary>Gets or sets who the session resolves to; null when nobody.</summary>
     public User? Caller { get; set; }
 
@@ -90,7 +99,11 @@ internal sealed class DataDocumentFixture : IDisposable
         wall!.ShareToken = ShareToken;
         var published = Boulder("Published", false, holds[0].Id, holds[1].Id);
         var draft = Boulder("Secret draft", true, holds[2].Id);
-        db.Boulders.AddRange(published, draft);
+        var historic = Boulder("Old problem", false, holds[0].Id);
+        historic.IsHistoric = true;
+        var archived = Boulder("Archived secret", false, holds[1].Id);
+        archived.IsArchived = true;
+        db.Boulders.AddRange(published, draft, historic, archived);
         db.BoulderSetters.Add(new BoulderSetter { BoulderId = published.Id, UserId = Setter.Id });
         db.BoulderSetters.Add(new BoulderSetter { BoulderId = draft.Id, UserId = Setter.Id });
         db.Attempts.Add(new Attempt { BoulderId = published.Id, UserId = Member.Id, Type = AttemptType.Send });
@@ -101,6 +114,7 @@ internal sealed class DataDocumentFixture : IDisposable
         db.WallMembers.Add(new WallMember { WallId = other.Id, UserId = Harness.Owner.Id, Role = WallRole.Admin });
         await db.SaveChangesAsync();
         (PublishedId, DraftId, OtherWallId) = (published.Id, draft.Id, other.Id);
+        (HistoricId, ArchivedId) = (historic.Id, archived.Id);
         Caller = Harness.Owner;
     }
 
@@ -108,6 +122,7 @@ internal sealed class DataDocumentFixture : IDisposable
         Harness.RootContextFactory,
         new DataDocumentBuilder(Harness.RootContextFactory, Harness.WallImageStorage),
         store ?? Store,
+        Flights,
         Feed);
 
     public FeedSession Session() => new(

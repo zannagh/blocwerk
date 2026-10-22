@@ -17,6 +17,12 @@ public static class DocumentAudiences
     public static bool SeesDrafts(DocumentAudience audience) => audience is DocumentAudience.Setters or DocumentAudience.Members;
 
     /// <summary>
+    /// True for the same classes as <see cref="SeesDrafts"/>: the wall page lists archived boulders ("Archive") to every
+    /// signed-in member, and its share-link branch leaves them out with the drafts.
+    /// </summary>
+    public static bool SeesArchived(DocumentAudience audience) => SeesDrafts(audience);
+
+    /// <summary>
     /// True for the classes outside the wall (share link, kiosk): they are handed the wall's own feed mark
     /// (<see cref="FeedScopedMark"/>), never the global one, as the catch-up route hands them.
     /// </summary>

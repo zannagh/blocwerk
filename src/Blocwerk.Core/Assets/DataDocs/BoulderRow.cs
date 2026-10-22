@@ -12,6 +12,8 @@ internal sealed record BoulderRow(
     string? Grade,
     int Generation,
     bool IsDraft,
+    bool IsHistoric,
+    bool IsArchived,
     DateTimeOffset CreatedAt,
     DateTimeOffset? PublishedAt,
     bool NoMatch,

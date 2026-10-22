@@ -14,6 +14,10 @@ namespace Blocwerk.Core.Tests;
 internal sealed class WriteAfterMarkFeed(IWallFeed inner) : IWallFeed
 {
     private Func<Task>? armed;
+    private int marks;
+
+    /// <summary>Gets how many marks were handed out: one per document build.</summary>
+    public int Marks => Volatile.Read(ref marks);
 
     /// <summary>Runs <paramref name="write"/> once, after the next <see cref="CurrentAsync"/>.</summary>
     public void Arm(Func<Task> write) => armed = write;
@@ -23,6 +27,7 @@ internal sealed class WriteAfterMarkFeed(IWallFeed inner) : IWallFeed
     public async Task<FeedCursor> CurrentAsync(CancellationToken cancellationToken = default)
     {
         var mark = await inner.CurrentAsync(cancellationToken);
+        Interlocked.Increment(ref marks);
         if (Interlocked.Exchange(ref armed, null) is { } write)
         {
             await write();

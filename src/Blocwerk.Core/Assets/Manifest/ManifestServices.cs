@@ -13,7 +13,7 @@ public static class ManifestServices
 {
     /// <summary>
     /// Registers the manifest (builder, cache, service), the view3d documents (store, service), the data documents (builder,
-    /// store, service) and the cache-partition resolver. The partition key
+    /// store, flights, service) and the cache-partition resolver. The partition key
     /// (<see cref="ICachePartitionKey"/>) comes from the authentication layer, where the DataProtection key ring is.
     /// </summary>
     public static IServiceCollection AddWallManifest(this IServiceCollection services)
@@ -27,6 +27,7 @@ public static class ManifestServices
         services.AddScoped<View3DDocumentService>();
         services.AddSingleton<DataDocumentBuilder>();
         services.AddSingleton<DataDocumentStore>();
+        services.AddSingleton<DataDocumentFlights>();
         services.AddScoped<DataDocumentService>();
         services.AddScoped<ICachePartitionResolver, CachePartitionResolver>();
         return services;

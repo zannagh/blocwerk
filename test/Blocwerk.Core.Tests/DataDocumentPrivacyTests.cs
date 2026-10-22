@@ -69,6 +69,7 @@ public sealed partial class DataDocumentPrivacyTests
         };
         Assert.All(members, t => Assert.Contains(f.DraftId.ToString(), t, StringComparison.Ordinal));
         Assert.All(members, t => Assert.Contains("Secret draft", t, StringComparison.Ordinal));
+        Assert.All(members, t => Assert.Contains("Archived secret", t, StringComparison.Ordinal));
 
         var others = new[]
         {
@@ -81,6 +82,8 @@ public sealed partial class DataDocumentPrivacyTests
         {
             Assert.DoesNotContain(f.DraftId.ToString(), text, StringComparison.Ordinal);
             Assert.DoesNotContain("Secret draft", text, StringComparison.Ordinal);
+            Assert.DoesNotContain(f.ArchivedId.ToString(), text, StringComparison.Ordinal);
+            Assert.Contains(f.HistoricId.ToString(), text, StringComparison.Ordinal);
         }
 
         Assert.All(others.Concat(members), t => Assert.DoesNotContain(DataDocumentFixture.ShareToken, t, StringComparison.Ordinal));

@@ -104,7 +104,9 @@ public sealed class DataDocumentAccessTests
         Assert.Equal(DocumentAudience.Outsider, (await f.AccessAsync(DataDocumentFixture.ShareToken)).Audience);
         var index = await f.IndexAsync(DataDocumentFixture.ShareToken);
         var sha = DataDocumentFixture.Sha(index, DataDocumentKinds.Boulders);
-        Assert.Equal([f.PublishedId], (await f.DocumentAsync<BouldersDocument>(DataDocumentKinds.Boulders, DataDocumentFixture.ShareToken)).Boulders.Select(b => b.Id));
+        Assert.Equal(
+            f.EveryonesBoulders,
+            (await f.DocumentAsync<BouldersDocument>(DataDocumentKinds.Boulders, DataDocumentFixture.ShareToken)).Boulders.Select(b => b.Id));
 
         FeedRouteFixture.AssertRefused(await f.IndexHttpAsync("stale-token"), 403, FeedRefusals.NoAccess);
         FeedRouteFixture.AssertRefused(await f.IndexHttpAsync(), 401, FeedRefusals.Unauthenticated);
@@ -159,7 +161,7 @@ public sealed class DataDocumentAccessTests
 
         Assert.Equal(DocumentAudience.Kiosk, (await f.AccessAsync()).Audience);
         var kiosk = await f.DocumentAsync<BouldersDocument>(DataDocumentKinds.Boulders);
-        Assert.Equal([f.PublishedId], kiosk.Boulders.Select(b => b.Id));
+        Assert.Equal(f.EveryonesBoulders, kiosk.Boulders.Select(b => b.Id));
         Assert.All(kiosk.Boulders, b => Assert.Null(b.Draft));
         Assert.Equal(StatusCodes.Status404NotFound, (await f.DocumentHttpAsync(DataDocumentKinds.Boulders, settersSha)).Response.StatusCode);
     }

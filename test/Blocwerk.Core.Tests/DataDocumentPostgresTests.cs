@@ -28,9 +28,10 @@ public sealed class DataDocumentPostgresTests
         f.BindKiosk(f.WallId);
         Assert.Equal(DocumentAudience.Kiosk, (await f.AccessAsync()).Audience);
         var kiosk = await f.DocumentAsync<BouldersDocument>(DataDocumentKinds.Boulders);
-        Assert.Equal([f.PublishedId], kiosk.Boulders.Select(b => b.Id));
-        Assert.Equal(1, kiosk.Boulders[0].Stats.Ascents);
-        Assert.Equal(4, kiosk.Boulders[0].Stats.RatingAverage);
+        Assert.Equal(f.EveryonesBoulders, kiosk.Boulders.Select(b => b.Id));
+        var published = kiosk.Boulders.Single(b => b.Id == f.PublishedId);
+        Assert.Equal(1, published.Stats.Ascents);
+        Assert.Equal(4, published.Stats.RatingAverage);
         Assert.Equal(404, (await f.DocumentHttpAsync(DataDocumentKinds.Boulders, settersSha)).Response.StatusCode);
     }
 

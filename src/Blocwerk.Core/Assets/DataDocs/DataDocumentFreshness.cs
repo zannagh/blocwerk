@@ -1,6 +1,7 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using Blocwerk.Contracts.Feed;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Feed;
@@ -11,7 +12,9 @@ namespace Blocwerk.Core.Assets.DataDocs;
 /// <summary>
 /// Whether a stored document still reflects its wall: the epoch is the one it was built in, its cursor is not below the
 /// retention floor (a client would resync on it forever), and the wall has no row of the document's input kinds after
-/// its build mark. The last is one query on the <c>(WallId, TxId, Seq)</c> index.
+/// its build mark (one query on the <c>(WallId, TxId, Seq)</c> index), nor a <c>user.profile</c> row of a person it names
+/// by byline, on any wall (one query on the <c>(EntityId, Kind)</c> index): the wall-wide rename row reaches only the walls
+/// a user belongs to, and a setter who left the wall is still credited on it.
 /// </summary>
 /// <remarks>
 /// The rows are read to the end of the feed, not up to the horizon: a committed row above the horizon already says the
@@ -33,8 +36,22 @@ internal static class DataDocumentFreshness
 
         var wallId = document.WallId;
         var kinds = DataDocumentInputs.Of(document.Kind).ToArray();
+        var horizon = FeedHorizons.For(db);
         var rows = db.WallChanges.AsNoTracking().Where(c => c.WallId == wallId && kinds.Contains(c.Kind));
-        return !await FeedHorizons.For(db).Between(rows, document.BuildMark.Position, End).AnyAsync(ct);
+        if (await horizon.Between(rows, document.BuildMark.Position, End).AnyAsync(ct))
+        {
+            return false;
+        }
+
+        if (document.People.Count == 0)
+        {
+            return true;
+        }
+
+        var people = document.People.ToArray();
+        var renames = db.WallChanges.AsNoTracking()
+            .Where(c => c.EntityId != null && people.Contains(c.EntityId.Value) && c.Kind == FeedKinds.UserProfile);
+        return !await horizon.Between(renames, document.BuildMark.Position, End).AnyAsync(ct);
     }
 
     // As the feed reads it: a cursor exactly at the floor lost nothing, one below it may have.

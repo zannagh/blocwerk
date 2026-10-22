@@ -9,15 +9,19 @@ using Microsoft.EntityFrameworkCore;
 namespace Blocwerk.Core.Assets.DataDocs;
 
 /// <summary>
-/// Builds the <c>boulders</c> document for one class: the wall's active boulders (not archived, not historic), drafts
-/// only for the wall's members and setters (<see cref="DocumentAudiences.SeesDrafts"/>), and drafts' setters only
-/// where drafts are. The byline is the one <see cref="BoulderSetterNames.Describe"/> renders on the pages, so an erased
-/// or Ghost creator reads as the placeholder; no user id is written. Stats are wall-wide counts
-/// (<see cref="BoulderStatsCounts"/>), never the reader's own marks.
+/// Builds the <c>boulders</c> document for one class: the wall's boulders as the wall page lists them, historic ones
+/// included; drafts and archived boulders, and drafts' setters, only for the wall's members and setters
+/// (<see cref="DocumentAudiences.SeesDrafts"/>, <see cref="DocumentAudiences.SeesArchived"/>). The byline is the one
+/// <see cref="BoulderSetterNames.Describe"/> renders on the pages, so an erased or Ghost creator reads as the placeholder;
+/// no user id is written. The people the bylines name are returned beside the document (never in it), so a rename of a
+/// setter who left the wall still rebuilds it. Stats are wall-wide counts (<see cref="BoulderStatsCounts"/>), never the
+/// reader's own marks.
 /// </summary>
 internal static class BouldersDocumentBuilder
 {
-    public static async Task<BouldersDocument?> BuildAsync(BlocwerkDbContext db, Guid wallId, DocumentAudience audience, CancellationToken ct)
+    /// <summary>The document, and the people its bylines name (creators and setters), or null when the wall is gone.</summary>
+    public static async Task<(BouldersDocument Document, IReadOnlyCollection<Guid> People)?> BuildAsync(
+        BlocwerkDbContext db, Guid wallId, DocumentAudience audience, CancellationToken ct)
     {
         if (!await db.Walls.IgnoreQueryFilters().AnyAsync(w => w.Id == wallId, ct))
         {
@@ -25,11 +29,13 @@ internal static class BouldersDocumentBuilder
         }
 
         var drafts = DocumentAudiences.SeesDrafts(audience);
+        var archived = DocumentAudiences.SeesArchived(audience);
         var boulders = await db.Boulders.AsNoTracking()
-            .Where(b => b.WallId == wallId && !b.IsArchived && !b.IsHistoric && (drafts || !b.IsDraft))
+            .Where(b => b.WallId == wallId && (archived || !b.IsArchived) && (drafts || !b.IsDraft))
             .Select(b => new BoulderRow(
-                b.Id, b.Name, b.Grade, b.Generation, b.IsDraft, b.CreatedAt, b.PublishedAt, b.NoMatch, b.KickboardFootholdsOn,
-                b.HandsFollowFeet, b.FootColorOnly, b.CreatedByUserId, b.CreatedBy.DisplayName, b.CreatedBy.CustomDisplayName))
+                b.Id, b.Name, b.Grade, b.Generation, b.IsDraft, b.IsHistoric, b.IsArchived, b.CreatedAt, b.PublishedAt,
+                b.NoMatch, b.KickboardFootholdsOn, b.HandsFollowFeet, b.FootColorOnly, b.CreatedByUserId,
+                b.CreatedBy.DisplayName, b.CreatedBy.CustomDisplayName))
             .ToListAsync(ct);
         var ids = boulders.Select(b => b.Id).ToList();
         var holds = (await db.BoulderHolds.AsNoTracking()
@@ -38,23 +44,32 @@ internal static class BouldersDocumentBuilder
                 .ToListAsync(ct))
             .ToLookup(h => h.BoulderId, h => new BouldersDocumentHold(h.HoldId, h.Type.ToString(), h.Usage.ToString()));
         var setters = await BoulderSetterNames.LoadForWallAsync(db, wallId, includeDrafts: drafts);
+        var setterIds = await db.BoulderSetters.AsNoTracking().Where(s => ids.Contains(s.BoulderId)).Select(s => s.UserId).ToListAsync(ct);
         var stats = await BoulderStatsCounts.LoadAsync(db, ids, ct);
 
-        var documented = boulders.OrderBy(b => b.Id).Select(b => new BouldersDocumentBoulder(
-            b.Id,
-            b.Name,
-            b.Grade,
-            b.Generation,
-            b.IsDraft ? true : null,
-            b.CreatedAt,
-            b.PublishedAt,
-            BoulderSetterNames.Describe(setters.GetValueOrDefault(b.Id), b.Creator()),
-            b.NoMatch,
-            b.KickboardFootholdsOn,
-            b.HandsFollowFeet,
-            b.FootColorOnly,
-            stats.GetValueOrDefault(b.Id) ?? BoulderStatsCounts.None,
-            holds[b.Id].OrderBy(h => h.HoldId).ToList())).ToList();
-        return new BouldersDocument(DataDocumentSchema.Version, wallId, documented);
+        var documented = boulders.OrderBy(b => b.Id)
+            .Select(b => Map(b, setters.GetValueOrDefault(b.Id), stats.GetValueOrDefault(b.Id), holds[b.Id]))
+            .ToList();
+        var people = boulders.Select(b => b.CreatorId).Concat(setterIds).ToHashSet();
+        return (new BouldersDocument(DataDocumentSchema.Version, wallId, documented), people);
     }
+
+    private static BouldersDocumentBoulder Map(
+        BoulderRow b, List<string>? setterNames, BouldersDocumentStats? stats, IEnumerable<BouldersDocumentHold> holds) => new(
+        b.Id,
+        b.Name,
+        b.Grade,
+        b.Generation,
+        b.IsDraft ? true : null,
+        b.IsHistoric,
+        b.IsArchived,
+        b.CreatedAt,
+        b.PublishedAt,
+        BoulderSetterNames.Describe(setterNames, b.Creator()),
+        b.NoMatch,
+        b.KickboardFootholdsOn,
+        b.HandsFollowFeet,
+        b.FootColorOnly,
+        stats ?? BoulderStatsCounts.None,
+        holds.OrderBy(h => h.HoldId).ToList());
 }
