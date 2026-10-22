@@ -21,7 +21,7 @@ public sealed partial class DataDocumentPrivacyTests
     private static readonly string[] BuilderFiles =
     [
         "WallDocumentBuilder.cs", "HoldsDocumentBuilder.cs", "BouldersDocumentBuilder.cs", "GalleryDocumentBuilder.cs",
-        "BoulderStatsCounts.cs", "BoulderRow.cs", "DocumentPoints.cs", "DataDocumentBuilder.cs",
+        "BoulderStatsCounts.cs", "BoulderRow.cs", "DocumentPoints.cs", "DataDocumentBuilder.cs", "CommentsDocumentBuilder.cs",
     ];
 
     [Fact]
