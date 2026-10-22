@@ -69,7 +69,8 @@ public class HomeNavigationTests
         string script = ReadSource("src/Blocwerk.Web/wwwroot/js/nav.js");
 
         Assert.Contains("goHomeWall: function (event, href)", script);
-        Assert.Contains("target.pathname !== window.location.pathname || target.search !== window.location.search", script);
+        // The carousel keeps ?view= in step with its page, so the bare wall URL matches on any of the wall's pages.
+        Assert.Contains("target.pathname !== window.location.pathname || (target.search && target.search !== window.location.search)", script);
         Assert.Contains("window.wallCarousel.scrollToPage(el, WALL_OVERVIEW_PAGE, true)", script);
         Assert.Contains("const WALL_OVERVIEW_PAGE = 2;", script);
     }

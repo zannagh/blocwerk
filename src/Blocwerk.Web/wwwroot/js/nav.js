@@ -45,6 +45,20 @@
         document.body.classList.toggle(CLASS, isCollapsed());
     }
 
+    // Everything that runs after an enhanced navigation, behind ONE wait for the Blazor API (bwNav.onEnhancedLoad
+    // adds to it, e.g. wall-carousel-nav.js). Each listener runs on its own: one that throws never stops the others.
+    const enhancedLoadListeners = [apply];
+
+    function onEnhancedLoad() {
+        enhancedLoadListeners.forEach(function (listener) {
+            try {
+                listener();
+            } catch (e) {
+                /* a failed re-apply must not break the next one */
+            }
+        });
+    }
+
     function install() {
         apply();
 
@@ -55,7 +69,7 @@
             const timer = setInterval(function () {
                 tries++;
                 if (window.Blazor && window.Blazor.addEventListener) {
-                    window.Blazor.addEventListener('enhancedload', apply);
+                    window.Blazor.addEventListener('enhancedload', onEnhancedLoad);
                     clearInterval(timer);
                 } else if (tries > 100) {
                     clearInterval(timer);
@@ -72,11 +86,36 @@
         install();
     }
 
+    // Where the previous history step came from, for backTo(). Moves on every navigation (enhanced load, back/forward)
+    // and follows a URL the wall carousel rewrote in place (replaced()).
+    let current = here();
+    let previous = null;
+
+    function here() {
+        return location.pathname + location.search;
+    }
+
+    function moved() {
+        const now = here();
+        if (now !== current) {
+            previous = current;
+            current = now;
+        }
+    }
+
+    window.addEventListener('popstate', moved);
+    enhancedLoadListeners.push(moved);
+
     // Wall overview is page index 2 in WallDetail's carousel (0 Settings, 1 Members, 2 Overview,
     // 3 Boulders, 4 Details).
     const WALL_OVERVIEW_PAGE = 2;
 
     window.bwNav = {
+        // Runs `listener` after every enhanced navigation (see enhancedLoadListeners).
+        onEnhancedLoad: function (listener) {
+            enhancedLoadListeners.push(listener);
+        },
+
         toggleTabbar: function () {
             const next = !isCollapsed();
             persist(next);
@@ -92,6 +131,37 @@
         // here instead. Every other case (a boulder, another wall, a ?view= variant) is a real
         // navigation that repositions the carousel by itself, so it falls through untouched, and so
         // does anything unexpected: a dead tap is worse than a redundant navigation.
+        // The wall carousel replaced the current entry's URL (its ?view= follows the page); that is still this entry.
+        replaced: function () {
+            current = here();
+        },
+
+        // A "back to X" link: when X is exactly the page this one was opened from, step back to it instead of pushing
+        // a second copy, so the browser's back button and the link agree and the list comes back as it was left.
+        // Anything else (a fresh load, another page in between, a modified click) is an ordinary link.
+        backTo: function (event, href) {
+            try {
+                if (event && (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)) {
+                    return true;
+                }
+
+                const target = new URL(href, window.location.origin);
+                if (target.origin !== window.location.origin || previous !== target.pathname + target.search
+                    || window.history.length < 2) {
+                    return true;
+                }
+
+                if (event) {
+                    event.preventDefault();
+                }
+
+                window.history.back();
+                return false;
+            } catch (e) {
+                return true;
+            }
+        },
+
         goHomeWall: function (event, href) {
             try {
                 if (event && (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)) {
@@ -99,7 +169,9 @@
                 }
 
                 const target = new URL(href, window.location.origin);
-                if (target.pathname !== window.location.pathname || target.search !== window.location.search) {
+                // The carousel keeps ?view= in step with its page, so "this exact URL" is the bare wall URL on any of
+                // its pages: the settle that follows the move puts the URL back to the overview's.
+                if (target.pathname !== window.location.pathname || (target.search && target.search !== window.location.search)) {
                     return true;
                 }
 

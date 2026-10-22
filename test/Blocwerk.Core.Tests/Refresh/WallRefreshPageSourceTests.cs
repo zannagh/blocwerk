@@ -19,7 +19,7 @@ public class WallRefreshPageSourceTests
     {
         var markup = Read("src/Blocwerk.Web/Components/Pages/Walls/WallDetail.razor");
 
-        // Two links to the one update page: the wall rail's "Update wall" and the settings card's; both admin-only,
+        // Two links to the one update page: the settings page's "Update wall" and the Wall Settings card's; both admin-only,
         // both inside the kiosk/share-link guard.
         var links = AllIndexesOf(markup, "href=\"/walls/@WallId/update\"");
         Assert.Equal(2, links.Count);
@@ -31,14 +31,22 @@ public class WallRefreshPageSourceTests
         }
 
         var rail = markup.IndexOf("class=\"btn-secondary wall-update-link\" href=\"/walls/@WallId/update\">Update wall</a>", StringComparison.Ordinal);
-        Assert.True(rail > 0, "the wall page offers \"Update wall\" beside the photo");
+        Assert.True(rail > 0, "the wall page offers \"Update wall\"");
+
+        // On the settings page, right below the Activity card, not on the overview under "View in 3D" (a stray tap there
+        // started an update).
+        var activity = markup.IndexOf("<h2>Activity</h2>", StringComparison.Ordinal);
+        var activityEnd = markup.IndexOf("</details>", activity, StringComparison.Ordinal);
+        var wallSettings = markup.IndexOf("<LazySettingsCard Title=\"Wall Settings\"", StringComparison.Ordinal);
+        Assert.True(activityEnd > 0 && rail > activityEnd && rail < wallSettings, "\"Update wall\" sits between the Activity and Wall Settings cards");
+        Assert.True(rail < markup.IndexOf("<Wall3DLink", StringComparison.Ordinal), "\"Update wall\" is not on the overview");
 
         // The manual wizard is an advanced route, and deleting the wall is far from every update control.
         var advanced = markup.IndexOf("<summary>Advanced: step by step</summary>", StringComparison.Ordinal);
         Assert.True(advanced > 0 && markup.IndexOf("\"Update step by step\"", advanced, StringComparison.Ordinal) > advanced);
         var delete = markup.IndexOf("Label=\"Delete Wall\"", StringComparison.Ordinal);
-        var deleteCard = markup.IndexOf("<h2>Delete this wall</h2>", StringComparison.Ordinal);
-        var lastCard = markup.IndexOf("<h2>Kiosk Registration</h2>", StringComparison.Ordinal);
+        var deleteCard = markup.IndexOf("<LazySettingsCard Title=\"Delete this wall\"", StringComparison.Ordinal);
+        var lastCard = markup.IndexOf("<LazySettingsCard Title=\"Kiosk Registration\"", StringComparison.Ordinal);
         Assert.True(deleteCard > lastCard && delete > deleteCard, "Delete Wall lives in its own card after every other settings card");
     }
 

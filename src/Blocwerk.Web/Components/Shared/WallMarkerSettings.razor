@@ -67,7 +67,7 @@
                     <label for="glyph-import-notes">Import wall-geometry.json</label>
                     <input id="glyph-import-notes" class="form-input" placeholder="Notes (optional), e.g. capture date"
                            maxlength="2048" @bind="importNotes" disabled="@busy" />
-                    <InputFile OnChange="ImportAsync" accept=".json,application/json" class="form-input" disabled="@busy" />
+                    <SafeInputFile OnChange="ImportAsync" accept=".json,application/json" class="form-input" disabled="@busy" />
                     @if (importErrors.Count > 0)
                     {
                         <ul class="field-error glyph-errors" role="alert">

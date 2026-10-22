@@ -46,7 +46,7 @@ else
        own — full-bleed slide, sticky list head, fold marker. See the .boulders-page block in
        pages.css. *@
     <WallCarousel @ref="_carousel" InitialPage="@InitialCarouselPage" Locked="_isEditing"
-                  PageClasses="|||boulders-page|">
+                  PageClasses="|||boulders-page|" PageViews="@CarouselPageViews">
         <Page1>
             @* Activity is visible to all wall members; settings/shape/API keys stay admin-only. *@
             <details open class="settings-panel settings-card">
@@ -88,11 +88,16 @@ else
                 </div>
             </details>
 
+            @* The one way into a wall update: upload, one review, apply (wall admins, own device only). Here on the
+               settings page rather than under "View in 3D" on the overview, where a stray tap started an update. *@
+            @if (_isAdmin && !KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))
+            {
+                <a class="btn-secondary wall-update-link" href="/walls/@WallId/update">Update wall</a>
+            }
+
             @if (_isAdmin)
             {
-                <details class="settings-panel settings-card">
-                    <summary class="settings-card-summary"><h2>Wall Settings</h2></summary>
-                    <div class="settings-card-body">
+                <LazySettingsCard Title="Wall Settings" Reveals="wall-panels" Eager="@(_showBigUpdate || _resumePanelId is not null)">
 
                     <div class="form-group">
                         <label class="filter-check">
@@ -179,8 +184,7 @@ else
                         }
 
                     }
-                    </div>
-                </details>
+                </LazySettingsCard>
 
                 @* Hidden alongside the controls above while the big-wall update wizard is open;
                    restored when it closes. See the note on the guard inside the Wall Settings card. *@
@@ -191,9 +195,7 @@ else
                    hide themselves there and their services refuse. *@
                 @if (!KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))
                 {
-                <details class="settings-panel settings-card" id="wall-enhance">
-                    <summary class="settings-card-summary"><h2>Enhance this wall</h2></summary>
-                    <div class="settings-card-body">
+                <LazySettingsCard Title="Enhance this wall" Id="wall-enhance">
                         <WallEnhancementCard WallId="_wall.Id" ShareToken="@ShareToken" />
                         <details class="segment-settings" id="wall-enhance-advanced">
                             <summary>Advanced: run one step on its own</summary>
@@ -203,13 +205,10 @@ else
                             <WallLinkedHoldSync WallId="_wall.Id" ShareToken="@ShareToken" />
                             <WallHoldColorSuggestions WallId="_wall.Id" ShareToken="@ShareToken" />
                         </details>
-                    </div>
-                </details>
+                </LazySettingsCard>
                 }
 
-                <details class="settings-panel settings-card">
-                    <summary class="settings-card-summary"><h2>Wall Shape</h2></summary>
-                    <div class="settings-card-body">
+                <LazySettingsCard Title="Wall Shape">
                     <div class="form-group">
                         <label>Fallback angle: @_wall.Angle&deg; <span class="segment-angle-word">@WallAngleRange.Label(_wall.Angle)</span></label>
                         <input type="range" min="@WallAngleRange.Min" max="@WallAngleRange.Max" value="@_wall.Angle"
@@ -267,8 +266,7 @@ else
                     }
                     <Wall3DHoldStats WallId="_wall.Id" ShareToken="@ShareToken" />
                     <WallPhotoPrivacy WallId="_wall.Id" ShareToken="@ShareToken" />
-                    </div>
-                </details>
+                </LazySettingsCard>
 
                 @if (_currentUserId != Guid.Empty)
                 {
@@ -281,12 +279,9 @@ else
                     }
                     else
                     {
-                        <details class="settings-panel settings-card">
-                            <summary class="settings-card-summary"><h2>API key</h2></summary>
-                            <div class="settings-card-body">
+                        <LazySettingsCard Title="API key">
                                 <WallApiKeyPanel WallId="WallId" CurrentUserId="_currentUserId" />
-                            </div>
-                        </details>
+                        </LazySettingsCard>
                     }
 
                     @* Pairing a tablet by code, so nobody has to type a bwk_ key on an on-screen
@@ -301,12 +296,9 @@ else
                         }
                         else
                         {
-                            <details class="settings-panel settings-card">
-                                <summary class="settings-card-summary"><h2>Kiosk Registration</h2></summary>
-                                <div class="settings-card-body">
+                            <LazySettingsCard Title="Kiosk Registration">
                                     <WallKioskPairingPanel WallId="WallId" CurrentUserId="_currentUserId" />
-                                </div>
-                            </details>
+                            </LazySettingsCard>
                         }
                     }
                 }
@@ -315,9 +307,7 @@ else
                 @* Deleting the wall is a card of its own at the very bottom, collapsed, far from every update control. *@
                 @if (_isAdmin && !_showBigUpdate && !KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))
                 {
-                    <details class="settings-panel settings-card danger-card">
-                        <summary class="settings-card-summary"><h2>Delete this wall</h2></summary>
-                        <div class="settings-card-body">
+                    <LazySettingsCard Title="Delete this wall" Class="settings-panel settings-card danger-card">
                             <section class="danger-zone" aria-labelledby="danger-zone-title">
                                 <h3 id="danger-zone-title">Danger zone</h3>
                                 <p class="hint">Deleting a wall removes its boulders, ascents, photos and members for good. This cannot be undone.</p>
@@ -326,8 +316,7 @@ else
                                                Question="@($"Delete \"{_wall.Name}\" with all its boulders, ascents and photos?")"
                                                OnConfirm="DeleteWall" />
                             </section>
-                        </div>
-                    </details>
+                    </LazySettingsCard>
                 }
             }
         </Page1>
@@ -616,7 +605,7 @@ else
                         {
                             <div class="upload-prompt">
                                 <p>Upload a frontal photo of your wall to get started.</p>
-                                <InputFile OnChange="OnPhotoSelected" accept="image/*" class="form-input" />
+                                <SafeInputFile OnChange="OnPhotoSelected" accept="image/*" class="form-input" />
                             </div>
                         }
                     </div>
@@ -686,12 +675,6 @@ else
                         View in 3D
                     </Wall3DLink>
 
-                    @* The one way into a wall update: upload, one review, apply (wall admins, own device only). *@
-                    @if (_isAdmin && !KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))
-                    {
-                        <a class="btn-secondary wall-update-link" href="/walls/@WallId/update">Update wall</a>
-                    }
-
                     @if (_canEditHolds && KeptHoldCount > 0 && string.IsNullOrEmpty(ShareToken))
                     {
                         <label class="filter-check kept-holds-toggle">
@@ -750,7 +733,7 @@ else
                        with an in-place review. Wall admins only; renders nothing without suggestions or a 3D model. *@
                     @if (_isAdmin && !KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))
                     {
-                        <HoldLinkSuggestionsHint WallId="WallId" ShareToken="@ShareToken" OnLinked="LoadHoldLinkCount" />
+                        <HoldLinkSuggestionsHint WallId="WallId" ShareToken="@ShareToken" OnLinked="RefreshHoldLinksAsync" />
                     }
                     </div>
                 }
@@ -960,13 +943,10 @@ else
     [Parameter] public string? ShareToken { get; set; }
 
     /// <summary>Deep-link target for the carousel: <c>?view=boulders</c> opens on the boulder list
-    /// (used by the live-session tab), otherwise the wall opens on its main view.</summary>
+    /// (used by the live-session tab), otherwise the wall opens on its main view. The carousel keeps
+    /// it in step with the page it is on, so back from a boulder returns to the list.</summary>
     [SupplyParameterFromQuery(Name = "view")]
     public string? View { get; set; }
-
-    @* Carousel pages (0-based): 0 Settings, 1 Members, 2 Overview (centre), 3 Boulders, 4 Details. *@
-    private int InitialCarouselPage =>
-        string.Equals(View, "boulders", StringComparison.OrdinalIgnoreCase) ? 3 : 2;
 
     private WallCarousel? _carousel;
     private Wall? _wall;
@@ -1311,8 +1291,18 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        // The prerender pass loads nothing and shows "Loading...": the interactive render replaces its output anyway,
+        // so loading the wall there doubled every visit's server work and held the navigation's response for it.
+        if (!RendererInfo.IsInteractive)
+        {
+            await RedirectSignedOutOnPrerenderAsync();
+            return;
+        }
+
         Cache.Changed += OnCacheChanged;
-        await LoadCurrentWall();
+
+        // Back from a boulder: the page as it was left renders at once, and the load below refreshes it.
+        await RefreshRestoredPageAsync(RestoreFromPageMemory(), LoadCurrentWall);
     }
 
     // Navigating from one wall to another keeps this component alive — same route template, new
@@ -1321,10 +1311,12 @@ else
     // the parameter change.
     protected override async Task OnParametersSetAsync()
     {
-        if (_loadedWallId == WallId && _loadedShareToken == ShareToken)
+        if (!RendererInfo.IsInteractive || (_loadedWallId == WallId && _loadedShareToken == ShareToken))
         {
             return;
         }
+
+        RememberPage();
 
         // Drop the old wall first: it puts the page back on its "Loading..." state, which also
         // recreates the carousel so it opens on the new wall's initial page rather than wherever the
@@ -1339,16 +1331,12 @@ else
     {
         _loadedWallId = WallId;
         _loadedShareToken = ShareToken;
-        await LoadWall();
-        if (_wall != null && !_isAnonymous)
-        {
-            await LoadActivity(0);
-            if (_isMember)
-            {
-                _members = await WallService.GetMembersAsync(WallId);
-                await LoadKioskConsent();
-            }
-        }
+        await LoadWall(withMemberData: true);
+    }
+
+    private async Task LoadMembersAsync()
+    {
+        _members = await WallService.GetMembersAsync(WallId);
     }
 
     private async Task LoadKioskConsent()
@@ -1496,6 +1484,7 @@ else
 
     public void Dispose()
     {
+        _disposed = true;
         Cache.Changed -= OnCacheChanged;
         _editLease?.Dispose();
         _flushRegistration?.Dispose();
@@ -1505,15 +1494,24 @@ else
             // Best-effort clear on navigate-away; a torn-down circuit no-ops (the safe failure).
             _ = EditGuardInterop.SyncAsync(JS, "wall-edit", editing: false, active: _editGuardActive);
         }
+
+        // Last, after every release above, and never allowed to throw out of Dispose.
+        RememberPageSafely();
     }
 
-    private async Task LoadWall()
+    // withMemberData: the activity, members and kiosk consent too (the first load of a wall), read alongside the rest.
+    private async Task LoadWall(bool withMemberData = false)
     {
-        // Cleared before ANY branch that can return, so no path out of this method can leave last
-        // wall's answer standing while _wall already points at the next one. The early return on the
-        // login redirect is such a path: a render still happens before the navigation completes, and
-        // a stale true would offer "+ New" for a wall this tablet may not even write to.
-        _canCreateAnonymously = false;
+        // Cleared before ANY branch that can return when the wall changes, so no path out of this method
+        // can leave last wall's answer standing while _wall already points at the next one. The early
+        // return on the login redirect clears it itself: a render still happens before the navigation
+        // completes, and a stale true would offer "+ New" for a wall this tablet may not even write to.
+        // A reload of the SAME wall keeps the answer until the gate below re-asks, so a tablet coming
+        // back to its list does not see "+ New" blink off and on.
+        if (_wall?.Id != WallId)
+        {
+            _canCreateAnonymously = false;
+        }
 
         if (!string.IsNullOrEmpty(ShareToken))
         {
@@ -1569,6 +1567,7 @@ else
                 // wall, still goes to sign in exactly as before.
                 if (!KioskViewing.AllowsAnonymousViewOf(KioskContext, WallId))
                 {
+                    _canCreateAnonymously = false;
                     Navigation.NavigateTo("/account/login", replace: true);
                     return;
                 }
@@ -1589,40 +1588,42 @@ else
             && _wall != null
             && await BoulderService.CanCreateAnonymouslyAsync(WallId);
 
-        await LoadOpenUpdateAsync();
-        OpenReviewFromDeepLink();
-
-        if (_wall != null)
+        if (_wall == null)
         {
-            // Clone the holds/border points: _wall now comes from the shared per-circuit cache and
-            // the photo editor mutates these in place while dragging. Editing the cached instances
-            // directly would leak uncommitted edits back into the cache on discard/navigate-away.
-            _holds = _wall.Holds.Select(h => h.Clone()).ToList();
-            _borderPoints = _wall.BorderPoints?.Select(p => new ShapePoint { Dx = p.Dx, Dy = p.Dy }).ToList() ?? [];
-            await LoadPanels();
-            if (!_isAnonymous)
-            {
-                _items = await FeedbackService.GetBoulderListAsync(WallId);
-            }
-            else
-            {
-                // Anonymous share view: no per-user data, but the rows still name the setters, so
-                // pull every setter name for the wall in one query rather than per boulder.
-                var setterNames = await WallService.GetBoulderSetterNamesAsync(WallId, ShareToken);
-                _items = _wall.Boulders
-                    .Where(b => !b.IsDraft && !b.IsArchived)
-                    .Select(b => new BoulderListItem(
-                        b, 0, false, false, false, null, 0, null, setterNames.GetValueOrDefault(b.Id)))
-                    .ToList();
-            }
+            await LoadOpenUpdateAsync();
+            OpenReviewFromDeepLink();
+            return;
+        }
 
-            _boulders = _items.Select(i => i.Boulder).ToList();
-            await LoadReconciledHoldCounts();
+        // Clone the holds/border points: _wall now comes from the shared per-circuit cache and
+        // the photo editor mutates these in place while dragging. Editing the cached instances
+        // directly would leak uncommitted edits back into the cache on discard/navigate-away.
+        var wall = _wall;
+        _holds = wall.Holds.Select(h => h.Clone()).ToList();
+        _borderPoints = wall.BorderPoints?.Select(p => new ShapePoint { Dx = p.Dx, Dy = p.Dy }).ToList() ?? [];
 
-            if (!string.IsNullOrEmpty(_wall.ShareToken))
+        // Independent reads, side by side instead of one after another: each opens its own context, and their
+        // continuations still run one at a time on this circuit. Each writes only its own fields.
+        var loads = new List<Task> { LoadOpenUpdateAsync(), LoadPanels(), LoadHoldLinksAsync(), LoadBoulderItemsAsync(wall) };
+        if (withMemberData && !_isAnonymous)
+        {
+            loads.Add(LoadActivity(0));
+            if (_isMember)
             {
-                _shareLink = $"{Navigation.BaseUri}join/{_wall.ShareToken}";
+                loads.Add(LoadMembersAsync());
+                loads.Add(LoadKioskConsent());
             }
+        }
+
+        await Task.WhenAll(loads);
+        OpenReviewFromDeepLink();
+        ComputeHoldLinkCount();
+        _boulders = _items.Select(i => i.Boulder).ToList();
+        ComputeReconciledHoldCounts();
+
+        if (!string.IsNullOrEmpty(wall.ShareToken))
+        {
+            _shareLink = $"{Navigation.BaseUri}join/{wall.ShareToken}";
         }
     }
 
@@ -1690,58 +1691,12 @@ else
             _livePanels = [];
         }
 
-        await LoadHoldLinkCount();
-
         // Keep the edited-panel selection pointing at a panel that still exists after a reload.
         if (_editingPanel is not null && _livePanels.All(p => p.Id != _editingPanel.Id))
         {
             _editingPanel = _livePanels.Count > 0 ? _livePanels[0] : null;
         }
     }
-
-    /// <summary>
-    /// Counts the wall's cross-panel hold links that are actually in force right now, for the card
-    /// that tells an editor the linking tool exists. Only worth asking for on a multi-panel wall an
-    /// editor is looking at; a failure (or a viewer who cannot enumerate links) simply leaves the
-    /// card reporting none.
-    /// </summary>
-    /// <remarks>
-    /// <c>HoldLink</c> rows are wall-level facts between two hold rows and carry no generation, so
-    /// the wall-wide row count keeps counting links whose endpoints belong to holds of a superseded
-    /// generation. <see cref="PanelLinkTool"/> counts only links whose endpoints are holds of the
-    /// panels' CURRENT generation, which is why the two disagreed after a wall update. Count what the
-    /// tool counts: intersect the link rows with the live panels' live hold ids.
-    /// </remarks>
-    private async Task LoadHoldLinkCount()
-    {
-        _holdLinkCount = 0;
-        if (_livePanels.Count < 2 || !_canEditHolds)
-        {
-            return;
-        }
-
-        try
-        {
-            var liveHoldIds = new HashSet<Guid>();
-            foreach (var panel in _livePanels)
-            {
-                foreach (var hold in await LoadPanelHolds(panel.Id))
-                {
-                    liveHoldIds.Add(hold.Id);
-                }
-            }
-
-            var links = await WallPanelService.GetHoldLinksAsync(WallId);
-            _holdLinkCount = links.Count(l => liveHoldIds.Contains(l.HoldAId) && liveHoldIds.Contains(l.HoldBId));
-        }
-        catch (Exception)
-        {
-            _holdLinkCount = 0;
-        }
-    }
-
-    private async Task<IReadOnlyList<PanelHold>> LoadPanelHolds(Guid panelId) =>
-        await WallPanelService.GetPanelHoldsAsync(WallId, panelId, includeStaged: false);
 
     /// <summary>
     /// Loads the editable working set of full holds for the panel currently being edited on a big
@@ -1914,6 +1869,13 @@ else
 
     private async Task ToggleEditing()
     {
+        // A restored page is on screen while its refresh runs, and that refresh replaces the holds the editor works
+        // on: entering edit mode waits for it (see RefreshRestoredPageAsync).
+        if (!_isEditing && DeferEditUntilRefreshed())
+        {
+            return;
+        }
+
         _isEditing = !_isEditing;
         SyncEditLease();
 
@@ -1931,7 +1893,8 @@ else
     // every _isEditing change and from Dispose.
     private void SyncEditLease()
     {
-        if (_isEditing)
+        // Never for a disposed page: nothing would ever release it, and it holds every deploy.
+        if (_isEditing && !_disposed)
         {
             _editLease ??= EditActivity.BeginWallEdit(WallId, _currentUserId == Guid.Empty ? null : _currentUserId);
         }
@@ -1995,6 +1958,7 @@ else
     private async Task DeleteWall()
     {
         await WallService.DeleteWallAsync(WallId);
+        ForgetPage();
         Navigation.NavigateTo("/walls");
     }
 
@@ -2025,47 +1989,6 @@ else
 
     private Task<Dictionary<Guid, List<HoldUsageRef>>> LoadHoldUsage() =>
         BoulderService.GetHoldUsageAsync(WallId);
-
-    /// <summary>
-    /// Loads the wall's twin links once and reconciles every boulder's holds to a per-physical-hold
-    /// count, so a boulder that saved both twins of a hold is not double-counted on its card. A wall
-    /// with no links (single-panel) yields an empty map and the cards fall back to the raw count.
-    /// </summary>
-    private async Task LoadReconciledHoldCounts()
-    {
-        _reconciledHoldCounts = [];
-        _usageCounts = null;
-        try
-        {
-            var links = await WallPanelService.GetHoldLinksAsync(WallId);
-            var linkPairs = links.ToList();
-
-            // The usage heat map counts the same boulders for every viewer (see WallUsageHeat), so a
-            // share link shows what a member sees. Kickboard holds count for boulders with kickboard on.
-            var kickboardHoldIds = _holds
-                .Where(h => h.IsOnKickboard && h.Generation <= (_wall?.CurrentGeneration ?? 0))
-                .Select(h => h.Id)
-                .ToList();
-            _usageCounts = WallUsageHeat.CountByHold(_boulders, linkPairs, kickboardHoldIds);
-            if (links.Count == 0)
-            {
-                return;
-            }
-
-            foreach (var boulder in _boulders)
-            {
-                var reconciled = BoulderHoldReconciler.Reconcile(
-                    boulder.BoulderHolds.Select(bh => new ReconcilableHold(bh.HoldId, bh.Type, bh.Usage)),
-                    linkPairs);
-                _reconciledHoldCounts[boulder.Id] = reconciled.Count;
-            }
-        }
-        catch (Exception)
-        {
-            // A failed link read just leaves cards on their raw count — never blocks the wall page.
-            _reconciledHoldCounts = [];
-        }
-    }
 
     private int? ReconciledHoldCount(Boulder boulder) =>
         _reconciledHoldCounts.TryGetValue(boulder.Id, out var count) ? count : null;
@@ -2214,8 +2137,8 @@ else
     {
         _showLinkTool = false;
 
-        // The tool is where links are made and broken, so the card's count is re-read on the way out.
-        await LoadHoldLinkCount();
+        // The tool is where links are made and broken, so the links are re-read on the way out.
+        await RefreshHoldLinksAsync();
     }
 
     private async Task OnBigUpdatePromoted()

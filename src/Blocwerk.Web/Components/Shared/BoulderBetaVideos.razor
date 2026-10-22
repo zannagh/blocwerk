@@ -37,7 +37,7 @@
                    looks the element up to read the selected file for the poster frame. *@
                 <label class="beta-tile beta-add @(_uploading ? "busy" : string.Empty)">
                     <span class="beta-add-mark">@(_uploading ? "…" : "+")</span>
-                    <InputFile id="@_inputId" OnChange="OnVideoSelected" accept="video/*"
+                    <SafeInputFile id="@_inputId" OnChange="OnVideoSelected" accept="video/*"
                                disabled="@_uploading" class="beta-file-input" />
                     <span class="beta-uploader">@UploadLabel</span>
                 </label>
