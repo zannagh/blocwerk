@@ -1,9 +1,10 @@
 /*
  * The on-device wall-asset cache (design 2026-10-21 §6.6, §6.7), loaded into service-worker.js by importScripts.
  *
- * GET /api/walls/{w}/a/{sha}, /a/{sha}/{width} and the view3d document /d/view3d/{sha} (PR 2.8) are content-addressed
- * (their bytes never change), so they are served
- * cache-first from `bw-a1-{partition}-img` (images) or `-3d` (everything else), keyed `/__bw/{sha}[/{width}]`: the
+ * GET /api/walls/{w}/a/{sha}, /a/{sha}/{width}, the view3d document /d/view3d/{sha} (PR 2.8) and the Phase 3 data
+ * documents /d/{wall|holds|boulders|gallery|comments}/{sha} (PR 3.1) are content-addressed (their bytes never change),
+ * so they are served cache-first from `bw-a1-{partition}-img` (images) or `-3d` (everything else, the JSON documents
+ * included), keyed `/__bw/{sha}[/{width}]`: the
  * key drops the wall, `token`, `rev` and `bwretry`, because the bytes are fully named by the sha. A miss goes to the
  * network and only a plain 200 whose ETag names the sha is stored (a proxy's 200 error page carries none). 404s, 206s, Range requests and anything uncacheable stay network-only.
  *
@@ -35,7 +36,7 @@
  *
  * `unknown` (the server could not resolve the partition) is an answer like `none`: network-only, never the last label.
  */
-const ASSET_ROUTE = /^\/api\/walls\/[^/]+\/(?:a\/([0-9a-f]{64})(?:\/(\d{1,5}))?|d\/view3d\/([0-9a-f]{64}))$/;
+const ASSET_ROUTE = /^\/api\/walls\/[^/]+\/(?:a\/([0-9a-f]{64})(?:\/(\d{1,5}))?|d\/(?:view3d|wall|holds|boulders|gallery|comments)\/([0-9a-f]{64}))$/;
 const ASSET_PARTITION_URL = '/api/me/cache-partition';
 const ASSET_LABEL = /^(anon|[uk]-[a-z2-7]{20})$/;
 const ASSET_STATE_CACHE = 'bw-sw-state';

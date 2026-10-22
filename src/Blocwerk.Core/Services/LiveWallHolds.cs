@@ -46,9 +46,17 @@ internal static class LiveWallHolds
     {
         var generation = await db.Walls.Where(w => w.Id == wallId).Select(w => (int?)w.CurrentGeneration).FirstOrDefaultAsync(ct)
                          ?? throw new InvalidOperationException("Wall not found");
-        var panels = await LoadPanelIdsAsync(db, wallId, ct);
-        return db.Holds.Where(h => h.WallId == wallId
+        return Query(db, wallId, generation, await LoadPanelIdsAsync(db, wallId, ct));
+    }
+
+    /// <summary>The live holds for a generation and live panel set the caller has already read (no wall lookup, no throw).</summary>
+    /// <param name="db">The context.</param>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="generation">The wall's current generation.</param>
+    /// <param name="panels">The wall's live panel ids (<see cref="LoadPanelIdsAsync"/>).</param>
+    /// <returns>The query.</returns>
+    public static IQueryable<Hold> Query(BlocwerkDbContext db, Guid wallId, int generation, List<Guid> panels) =>
+        db.Holds.Where(h => h.WallId == wallId
             && ((h.WallPanelId != null && panels.Contains(h.WallPanelId.Value) && h.Generation <= generation)
                 || (h.WallPanelId == null && h.Generation == generation)));
-    }
 }
