@@ -81,6 +81,13 @@
     protected override void OnParametersSet()
     {
         _fragCount = Pages().Count();
+        // Before the first positioning (and on the prerender) the dots already show the target page,
+        // so a deep link never flashes "page 1" as active.
+        if (!_initialized && _fragCount > 0)
+        {
+            _currentPage = Math.Clamp(InitialPage, 0, _fragCount - 1);
+        }
+
         if (_currentPage >= _fragCount) _currentPage = Math.Max(0, _fragCount - 1);
 
         // A navigation that only changes the query (?view=boulders) reuses this component instead of

@@ -25,6 +25,9 @@ window.wallCarousel = {
             el.style.scrollBehavior = 'auto';
             const done = () => {
                 el.style.scrollBehavior = prevBehavior;
+                // Reveal here, the moment the offset holds, instead of waiting for .NET's re-render
+                // after three more interop round-trips: that wait was the visible blank page.
+                el.classList.remove('carousel-pending');
                 resolve();
             };
             // ~4s at 60fps. Only a container that never gets laid out reaches this, and then the
