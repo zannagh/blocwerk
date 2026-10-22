@@ -21,6 +21,7 @@ namespace Blocwerk.Core.Assets.DataDocs;
 /// share and kiosk viewers (no row they may see lies between the two).
 /// </param>
 /// <param name="People">The users the document names by byline (<see cref="BuiltDataDocument.People"/>).</param>
+/// <param name="Consented">Those of them it named by their kiosk consent (<see cref="BuiltDataDocument.Consented"/>).</param>
 public sealed record StoredDataDocument(
     Guid WallId,
     DocumentAudience Audience,
@@ -30,7 +31,8 @@ public sealed record StoredDataDocument(
     byte[] Brotli,
     FeedCursor BuildMark,
     FeedCursor Cursor,
-    IReadOnlyCollection<Guid> People)
+    IReadOnlyCollection<Guid> People,
+    IReadOnlyCollection<Guid>? Consented = null)
 {
     /// <summary>What the entry costs the store.</summary>
     public long Size => Json.LongLength + Brotli.LongLength;

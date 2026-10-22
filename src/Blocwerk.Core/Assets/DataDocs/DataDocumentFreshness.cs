@@ -14,7 +14,8 @@ namespace Blocwerk.Core.Assets.DataDocs;
 /// retention floor (a client would resync on it forever), and the wall has no row of the document's input kinds after
 /// its build mark (one query on the <c>(WallId, TxId, Seq)</c> index), nor a <c>user.profile</c> row of a person it names
 /// by byline, on any wall (one query on the <c>(EntityId, Kind)</c> index): the wall-wide rename row reaches only the walls
-/// a user belongs to, and a setter who left the wall is still credited on it.
+/// a user belongs to, and a setter who left the wall is still credited on it. A document that names members by their kiosk
+/// consent is stale too once the consent of one of its people changed: consent writes no feed row.
 /// </summary>
 /// <remarks>
 /// The rows are read to the end of the feed, not up to the horizon: a committed row above the horizon already says the
@@ -51,7 +52,19 @@ internal static class DataDocumentFreshness
         var people = document.People.ToArray();
         var renames = db.WallChanges.AsNoTracking()
             .Where(c => c.EntityId != null && people.Contains(c.EntityId.Value) && c.Kind == FeedKinds.UserProfile);
-        return !await horizon.Between(renames, document.BuildMark.Position, End).AnyAsync(ct);
+        return !await horizon.Between(renames, document.BuildMark.Position, End).AnyAsync(ct)
+            && await ConsentUnchangedAsync(db, document, ct);
+    }
+
+    private static async Task<bool> ConsentUnchangedAsync(BlocwerkDbContext db, StoredDataDocument document, CancellationToken ct)
+    {
+        if (document.Consented is not { } named)
+        {
+            return true;
+        }
+
+        var now = await CommentsDocumentBuilder.ConsentedAsync(db, document.WallId, document.People, ct);
+        return now.SetEquals(named);
     }
 
     // As the feed reads it: a cursor exactly at the floor lost nothing, one below it may have.
