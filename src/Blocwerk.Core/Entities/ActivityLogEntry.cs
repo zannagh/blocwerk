@@ -19,6 +19,15 @@ public class ActivityLogEntry
     [ForeignKey(nameof(BoulderId))]
     public Boulder? Boulder { get; set; }
 
+    /// <summary>
+    /// The attempt an <see cref="ActivityType.AttemptLogged"/> entry records; the entry goes with it when the attempt is
+    /// deleted. Null for every other type, and for an older entry that could not be matched to its attempt.
+    /// </summary>
+    public Guid? AttemptId { get; set; }
+
+    [ForeignKey(nameof(AttemptId))]
+    public Attempt? Attempt { get; set; }
+
     public Guid UserId { get; set; }
 
     [ForeignKey(nameof(UserId))]

@@ -83,6 +83,36 @@ test('the resting kiosk gets new comments and activity live, still without the n
     }
 });
 
+test('a deleted attempt leaves the activity of the tablet and of the member, live and on reload', async ({ page, browser, baseURL, world }) => {
+    await registerKiosk(page, world.social.kioskToken);
+    await page.goto(boulderUrl(world, world.social.live));
+    const tablet = page.locator('.activity-feed');
+    await expect(tablet.locator('.activity-row').first()).toBeAttached();
+
+    const phone = await browser.newContext({ baseURL });
+    try {
+        const cora = await phone.newPage();
+        await signIn(cora, world.users.cora, boulderUrl(world, world.social.live));
+        await cora.locator('.attempt-buttons .attempt-btn.send').first().click();
+        await expect(tablet).toContainText('Cora sent this');
+        const own = cora.locator('.activity-feed');
+        await expect(own).toContainText('Cora sent this');
+
+        await cora.locator('.history-section .attempt-row', { hasText: 'Send' }).locator('.delete-btn').first().click();
+        await expect(tablet).not.toContainText('Cora sent this');
+        await expect(own).not.toContainText('Cora sent this');
+
+        await page.reload();
+        await expect(tablet.locator('.activity-row').first()).toBeAttached();
+        await expect(tablet).not.toContainText('Cora sent this');
+        await cora.reload();
+        await expect(own.locator('.activity-row').first()).toBeAttached();
+        await expect(own).not.toContainText('Cora sent this');
+    } finally {
+        await phone.close();
+    }
+});
+
 test('acting as a member, the tablet shows the names that member sees', async ({ page, world }) => {
     await registerKiosk(page, world.social.kioskToken);
     await actAs(page, world.users.cora);

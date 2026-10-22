@@ -52,6 +52,9 @@ internal static class FeedBulkSites
         Rows("LookOver/WallLookOverService.Missing.cs", typeof(Hold), 1, "Hold.NeedsReview after a tap-move: hold.changed, in one transaction with the settle"),
         Excluded("Services/HoldTexturePlacementService.EditedWrite.cs", typeof(Hold), 1, "a no-op row lock (FacetId = FacetId) that guards the edited write"),
         Excluded("Data/LinkedHoldSyncStartup.cs", typeof(Wall), 1, "Wall.LinkedHoldSyncVersion only (an unseen column); the hold writes before it are SaveChanges and mapped"),
+        Excluded(
+            "Data/AttemptActivityBackfill.cs", typeof(ActivityLogEntry), 2,
+            "startup cleanup of old attempt entries: AttemptId (an unseen column), and orphans of deleted attempts, which lists drop on their next load"),
         Excluded("Feed/WallChangeRetention.cs", null, 1, "the feed's own retention of WallChange rows"),
         Resync("Services/TopLogger/TopLoggerImportService.cs", typeof(ExternalAscent), 2, "grade mapping and disconnect: ticks.resync to the user"),
         .. Quarantine(),

@@ -71,7 +71,7 @@ public sealed class WallTestHarness : IDisposable
 
         WallService = new WallService(DbContextFactory, CurrentUser, HoldDetection, ActivityLog, NullLogger<WallService>.Instance);
         BoulderService = new BoulderService(DbContextFactory, CurrentUser, ActivityLog, NullLogger<BoulderService>.Instance);
-        AttemptService = new AttemptService(DbContextFactory, CurrentUser, ActivityLog, NullLogger<AttemptService>.Instance);
+        AttemptService = new AttemptService(DbContextFactory, CurrentUser, NullLogger<AttemptService>.Instance);
         FeedbackService = new BoulderFeedbackService(DbContextFactory, CurrentUser, NullLogger<BoulderFeedbackService>.Instance);
         SegmentService = new WallSegmentService(DbContextFactory, CurrentUser, NullLogger<WallSegmentService>.Instance);
         SessionService = new Blocwerk.Core.Services.SessionService(DbContextFactory, CurrentUser, NullLogger<Blocwerk.Core.Services.SessionService>.Instance);

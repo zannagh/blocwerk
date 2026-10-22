@@ -124,7 +124,7 @@ public sealed class KioskActivityFeedTests : IAsyncLifetime
     [Fact]
     public void TheKioskViewer_ReadsActivityAsAMemberKind_AndIsNotTheShareViewer()
     {
-        Assert.Equal([FeedKinds.ActivityAdded], FeedViewer.Kiosk().MemberKinds);
+        Assert.Equal([FeedKinds.ActivityAdded, FeedKinds.ActivityRemoved], FeedViewer.Kiosk().MemberKinds);
         Assert.Empty(FeedViewer.Anonymous().MemberKinds);
         Assert.Empty(new FeedViewer([FeedAudience.Wall, FeedAudience.Members], null, [FeedKinds.ActivityAdded]).MemberKinds);
         Assert.False(FeedViewer.Kiosk().SameAs(FeedViewer.Anonymous()));

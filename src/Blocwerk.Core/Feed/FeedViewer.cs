@@ -16,6 +16,9 @@ namespace Blocwerk.Core.Feed;
 /// </summary>
 public sealed class FeedViewer
 {
+    // The members rows a kiosk tablet reads, narrowed at delivery (FeedKioskActivity).
+    private static readonly string[] KioskKinds = [FeedKinds.ActivityAdded, FeedKinds.ActivityRemoved];
+
     public FeedViewer(
         IEnumerable<FeedAudience> audiences, Guid? userId, IEnumerable<string>? memberKinds = null, bool isRestingKiosk = false)
     {
@@ -46,18 +49,18 @@ public sealed class FeedViewer
     public static FeedViewer Anonymous() => new([FeedAudience.Wall], null);
 
     /// <summary>
-    /// A kiosk tablet bound to the wall with nobody picked. It reads the wall's activity (<c>activity.added</c>, a members
-    /// row) as far as <see cref="FeedKioskActivity"/> lets it, which a share link does not, and names consenting members
-    /// only (<see cref="IsRestingKiosk"/>).
+    /// A kiosk tablet bound to the wall with nobody picked. It reads the wall's activity (<c>activity.added</c> and
+    /// <c>activity.removed</c>, members rows) as far as <see cref="FeedKioskActivity"/> lets it, which a share link does
+    /// not, and names consenting members only (<see cref="IsRestingKiosk"/>).
     /// </summary>
-    public static FeedViewer Kiosk() => new([FeedAudience.Wall], null, [FeedKinds.ActivityAdded], isRestingKiosk: true);
+    public static FeedViewer Kiosk() => new([FeedAudience.Wall], null, KioskKinds, isRestingKiosk: true);
 
     /// <summary>
     /// A kiosk tablet acting as a member: <see cref="Kiosk"/>'s rows, with the bylines that member reads elsewhere. It never
     /// carries the acting member's id: the tablet is shared, so a member's own rows (<c>tick.mine</c>, <c>rating.mine</c>,
     /// <c>favorite.changed</c>) must not reach it.
     /// </summary>
-    public static FeedViewer KioskActing() => new([FeedAudience.Wall], null, [FeedKinds.ActivityAdded]);
+    public static FeedViewer KioskActing() => new([FeedAudience.Wall], null, KioskKinds);
 
     /// <summary>A member of the wall.</summary>
     public static FeedViewer Member(Guid userId) => new([FeedAudience.Wall, FeedAudience.Members], userId);

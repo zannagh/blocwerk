@@ -33,20 +33,29 @@ internal static class SeedSocial
         db.BoulderComments.Add(new BoulderComment { BoulderId = published.Id, UserId = climberId, Text = Comment });
         db.BoulderComments.Add(new BoulderComment { BoulderId = published.Id, UserId = unconsentedId, Text = UnconsentedComment });
         db.BoulderComments.Add(new BoulderComment { BoulderId = archived.Id, UserId = climberId, Text = "Old beta" });
-        void Log(Guid? boulderId, ActivityType type, Guid userId, int minute, string? details = null) =>
+        void Log(Guid? boulderId, ActivityType type, Guid userId, int minute, Guid? attemptId = null, string? details = null) =>
             db.ActivityLog.Add(new ActivityLogEntry
             {
-                WallId = wallId, BoulderId = boulderId, UserId = userId, Type = type, Details = details, Timestamp = start.AddMinutes(minute),
+                WallId = wallId, BoulderId = boulderId, UserId = userId, Type = type, Details = details, AttemptId = attemptId,
+                Timestamp = start.AddMinutes(minute),
             });
+
+        // An attempt's entry carries its attempt, as every entry written since does; the startup cleanup deletes one without.
+        Guid Ascent(Guid userId, AttemptType type, int minute)
+        {
+            var attempt = new Attempt { BoulderId = published.Id, UserId = userId, Type = type, Timestamp = start.AddMinutes(minute) };
+            db.Attempts.Add(attempt);
+            return attempt.Id;
+        }
 
         Log(null, ActivityType.MemberJoined, climberId, 0);
         Log(published.Id, ActivityType.BoulderCreated, setterId, 1);
         Log(draft.Id, ActivityType.BoulderCreated, setterId, 2);
         Log(archived.Id, ActivityType.CommentAdded, climberId, 3);
         Log(published.Id, ActivityType.CommentAdded, climberId, 4);
-        Log(published.Id, ActivityType.AttemptLogged, climberId, 5, "Send");
+        Log(published.Id, ActivityType.AttemptLogged, climberId, 5, Ascent(climberId, AttemptType.Send, 5), "Send");
         Log(published.Id, ActivityType.CommentAdded, unconsentedId, 6);
-        Log(published.Id, ActivityType.AttemptLogged, unconsentedId, 7, "Flash");
+        Log(published.Id, ActivityType.AttemptLogged, unconsentedId, 7, Ascent(unconsentedId, AttemptType.Flash, 7), "Flash");
         Log(live.Id, ActivityType.BoulderCreated, setterId, 8);
         return new SeededSocial(wallId, kioskToken, published.Id, live.Id, draft.Id, archived.Id, Comment, UnconsentedComment);
     }

@@ -132,7 +132,7 @@ internal sealed class DraftExposureScenario
     public IAttemptService Attempts(DraftViewer viewer)
     {
         var (factory, users, _) = Parts(viewer);
-        return new AttemptService(factory, users, Harness.ActivityLog, NullLogger<AttemptService>.Instance);
+        return new AttemptService(factory, users, NullLogger<AttemptService>.Instance);
     }
 
     public IBoulderFeedbackService Feedback(DraftViewer viewer)
