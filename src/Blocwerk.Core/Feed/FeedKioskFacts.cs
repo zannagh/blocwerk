@@ -50,10 +50,19 @@ public sealed class FeedKioskFacts
         (row.ActorUserId is { } actor && row.WallId is { } wall && Consented.Contains((wall, actor)))
         || (row.Kind == FeedKinds.ActivityAdded && row.EntityId is { } entry && SetterEntries.Contains(entry));
 
-    /// <summary>Three queries at most, one per kind of fact, and none for a read that needs none.</summary>
-    public static async Task<FeedKioskFacts> LoadAsync(BlocwerkDbContext db, IReadOnlyList<WallChange> rows, CancellationToken cancellationToken)
+    /// <summary>
+    /// Three queries at most, one per kind of fact, each only when <paramref name="needs"/> asks for it and the rows have
+    /// something to look up: none at all for a read no kiosk listens to.
+    /// </summary>
+    public static async Task<FeedKioskFacts> LoadAsync(
+        BlocwerkDbContext db, IReadOnlyList<WallChange> rows, FeedKioskNeeds needs, CancellationToken cancellationToken)
     {
-        var entryIds = rows.Where(r => r.Kind == FeedKinds.ActivityAdded && r.EntityId is not null)
+        if (needs == FeedKioskNeeds.None)
+        {
+            return None;
+        }
+
+        var entryIds = !needs.Rows ? [] : rows.Where(r => r.Kind == FeedKinds.ActivityAdded && r.EntityId is not null)
             .Select(r => r.EntityId!.Value).Distinct().ToList();
         var entries = entryIds.Count == 0 ? [] : await db.ActivityLog.AsNoTracking()
             .Where(a => entryIds.Contains(a.Id))
@@ -61,7 +70,7 @@ public sealed class FeedKioskFacts
             .Select(a => new { a.Id, a.Type })
             .ToListAsync(cancellationToken);
 
-        var wallIds = rows.Where(r => r.WallId is not null).Select(r => r.WallId!.Value).Distinct().ToList();
+        var wallIds = !needs.Bylines ? [] : rows.Where(r => r.WallId is not null).Select(r => r.WallId!.Value).Distinct().ToList();
         var actorIds = rows.Where(r => r.ActorUserId is not null).Select(r => r.ActorUserId!.Value).Distinct().ToList();
         var consented = wallIds.Count == 0 || actorIds.Count == 0 ? [] : await db.WallMembers.IgnoreQueryFilters().AsNoTracking()
             .Where(m => wallIds.Contains(m.WallId) && actorIds.Contains(m.UserId) && m.KioskConsentedAt != null)
@@ -72,7 +81,7 @@ public sealed class FeedKioskFacts
             entries.Select(e => e.Id).ToHashSet(),
             entries.Where(e => KioskBylines.KeepsName(e.Type)).Select(e => e.Id).ToHashSet(),
             consented.Select(m => (m.WallId, m.UserId)).ToHashSet(),
-            await OpenBouldersAsync(db, rows, cancellationToken));
+            needs.Rows ? await OpenBouldersAsync(db, rows, cancellationToken) : new HashSet<Guid>());
     }
 
     private static async Task<IReadOnlySet<Guid>> OpenBouldersAsync(

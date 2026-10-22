@@ -55,7 +55,7 @@ public sealed class FeedCatchUp(IWallFeed feed, Func<BlocwerkDbContext> createCo
         }
 
         await using var db = createContext();
-        var hydrated = await FeedHydration.LoadAsync(db, page.Changes, cancellationToken);
+        var hydrated = await FeedHydration.LoadAsync(db, page.Changes, cancellationToken, FeedKioskNeeds.Of([viewer]));
         var visibility = AuthorVisibility.For(viewer);
         return page.Changes.Where(r => FeedKioskActivity.Allows(viewer, r, hydrated))
             .Select(r => FeedEnvelopes.Build(r, page.Next.Epoch, hydrated, visibility))
