@@ -45,6 +45,20 @@
         document.body.classList.toggle(CLASS, isCollapsed());
     }
 
+    // Everything that runs after an enhanced navigation, behind ONE wait for the Blazor API (bwNav.onEnhancedLoad
+    // adds to it, e.g. wall-carousel-nav.js). Each listener runs on its own: one that throws never stops the others.
+    const enhancedLoadListeners = [apply];
+
+    function onEnhancedLoad() {
+        enhancedLoadListeners.forEach(function (listener) {
+            try {
+                listener();
+            } catch (e) {
+                /* a failed re-apply must not break the next one */
+            }
+        });
+    }
+
     function install() {
         apply();
 
@@ -55,7 +69,7 @@
             const timer = setInterval(function () {
                 tries++;
                 if (window.Blazor && window.Blazor.addEventListener) {
-                    window.Blazor.addEventListener('enhancedload', apply);
+                    window.Blazor.addEventListener('enhancedload', onEnhancedLoad);
                     clearInterval(timer);
                 } else if (tries > 100) {
                     clearInterval(timer);
@@ -90,24 +104,18 @@
     }
 
     window.addEventListener('popstate', moved);
-    (function hookEnhancedLoad() {
-        let tries = 0;
-        const timer = setInterval(function () {
-            tries++;
-            if (window.Blazor && window.Blazor.addEventListener) {
-                window.Blazor.addEventListener('enhancedload', moved);
-                clearInterval(timer);
-            } else if (tries > 100) {
-                clearInterval(timer);
-            }
-        }, 100);
-    })();
+    enhancedLoadListeners.push(moved);
 
     // Wall overview is page index 2 in WallDetail's carousel (0 Settings, 1 Members, 2 Overview,
     // 3 Boulders, 4 Details).
     const WALL_OVERVIEW_PAGE = 2;
 
     window.bwNav = {
+        // Runs `listener` after every enhanced navigation (see enhancedLoadListeners).
+        onEnhancedLoad: function (listener) {
+            enhancedLoadListeners.push(listener);
+        },
+
         toggleTabbar: function () {
             const next = !isCollapsed();
             persist(next);

@@ -259,17 +259,10 @@
                 restoreUntil = Date.now() + RESTORE_WINDOW_MS;
             });
 
-            // Blazor.start() runs later (blazor-boot.js): attach the enhancedload hook once the API exists.
-            let tries = 0;
-            const timer = setInterval(() => {
-                tries++;
-                if (window.Blazor && window.Blazor.addEventListener) {
-                    window.Blazor.addEventListener('enhancedload', followLocation);
-                    clearInterval(timer);
-                } else if (tries > 100) {
-                    clearInterval(timer);
-                }
-            }, 100);
+            // nav.js (in <head>, so always defined by now) waits for the Blazor API once for every listener.
+            if (window.bwNav && window.bwNav.onEnhancedLoad) {
+                window.bwNav.onEnhancedLoad(followLocation);
+            }
         } catch (e) {
             /* the carousel still works without any of this */
         }
