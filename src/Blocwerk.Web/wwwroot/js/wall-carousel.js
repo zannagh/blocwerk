@@ -28,6 +28,9 @@ window.wallCarousel = {
                 // Reveal here, the moment the offset holds, instead of waiting for .NET's re-render
                 // after three more interop round-trips: that wait was the visible blank page.
                 el.classList.remove('carousel-pending');
+                if (window.bwCarouselNav) {
+                    window.bwCarouselNav.landed(el);
+                }
                 resolve();
             };
             // ~4s at 60fps. Only a container that never gets laid out reaches this, and then the
@@ -148,6 +151,7 @@ window.wallCarousel = {
         // that the idle timer — not scrollend — has to decide on its own.
         const idleMs = 450;
         const state = {
+            el: el,
             dotNet: dotNet,
             locked: false,
             timer: 0,
@@ -338,6 +342,10 @@ window.wallCarousel = {
         el._bwCarousel = state;
     },
     report(state, page) {
+        // The URL follows the page the user settled on, so a history entry comes back to it.
+        if (window.bwCarouselNav && state.el) {
+            window.bwCarouselNav.pageChanged(state.el, page);
+        }
         if (!state.dotNet) {
             return;
         }
@@ -374,6 +382,9 @@ window.wallCarousel = {
         }
         el._bwCarousel.reported = idx;
         el._bwCarousel.page = idx;
+        if (window.bwCarouselNav) {
+            window.bwCarouselNav.pageChanged(el, idx);
+        }
         // The scroll it is about to cause is its own, not a swipe: any correction that follows must
         // not animate on top of it (see `swiped`).
         el._bwCarousel.swiped = false;

@@ -4,7 +4,10 @@
 @implements IAsyncDisposable
 
 <div class="wall-carousel-root @(Locked ? "editing" : string.Empty)">
-    <div class="wall-carousel @(_initialized ? string.Empty : "carousel-pending")" @ref="_ref">
+    @* data-initial-page lets wall-carousel-nav.js land the track before the first paint; data-views lets it keep
+       ?view= in step with the page (see that file). *@
+    <div class="wall-carousel @(_initialized ? string.Empty : "carousel-pending")" @ref="_ref"
+         data-initial-page="@_currentPage" data-views="@PageViews">
         @foreach (var (frag, idx) in Pages())
         {
             <div class="wall-page @(PageClass(idx))">
@@ -34,6 +37,12 @@
     [Parameter] public int InitialPage { get; set; } = 2;
     [Parameter] public bool Locked { get; set; }
     [Parameter] public string? PageClasses { get; set; }
+
+    /// <summary>
+    /// Pipe-separated <c>?view=</c> value per page, empty for the page a bare URL opens on. When set, the URL follows
+    /// the page the carousel is on, so a history entry returns to it. Null leaves the URL alone.
+    /// </summary>
+    [Parameter] public string? PageViews { get; set; }
 
     private ElementReference _ref;
     private int _currentPage;

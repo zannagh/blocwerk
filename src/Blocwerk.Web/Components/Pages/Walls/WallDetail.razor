@@ -46,7 +46,7 @@ else
        own — full-bleed slide, sticky list head, fold marker. See the .boulders-page block in
        pages.css. *@
     <WallCarousel @ref="_carousel" InitialPage="@InitialCarouselPage" Locked="_isEditing"
-                  PageClasses="|||boulders-page|">
+                  PageClasses="|||boulders-page|" PageViews="@CarouselPageViews">
         <Page1>
             @* Activity is visible to all wall members; settings/shape/API keys stay admin-only. *@
             <details open class="settings-panel settings-card">
@@ -961,13 +961,24 @@ else
     [Parameter] public string? ShareToken { get; set; }
 
     /// <summary>Deep-link target for the carousel: <c>?view=boulders</c> opens on the boulder list
-    /// (used by the live-session tab), otherwise the wall opens on its main view.</summary>
+    /// (used by the live-session tab), otherwise the wall opens on its main view. The carousel keeps
+    /// it in step with the page it is on, so back from a boulder returns to the list.</summary>
     [SupplyParameterFromQuery(Name = "view")]
     public string? View { get; set; }
 
-    @* Carousel pages (0-based): 0 Settings, 1 Members, 2 Overview (centre), 3 Boulders, 4 Details. *@
-    private int InitialCarouselPage =>
-        string.Equals(View, "boulders", StringComparison.OrdinalIgnoreCase) ? 3 : 2;
+    @* Carousel pages (0-based): 0 Settings, 1 Members, 2 Overview (centre), 3 Boulders, 4 Details. The overview is
+       the bare URL. *@
+    private static readonly string[] CarouselViews = ["settings", "members", "", "boulders", "details"];
+    private static readonly string CarouselPageViews = string.Join('|', CarouselViews);
+
+    private int InitialCarouselPage
+    {
+        get
+        {
+            var page = Array.FindIndex(CarouselViews, v => v.Length > 0 && string.Equals(v, View, StringComparison.OrdinalIgnoreCase));
+            return page >= 0 ? page : 2;
+        }
+    }
 
     private WallCarousel? _carousel;
     private Wall? _wall;
