@@ -5,15 +5,22 @@ using Blocwerk.Contracts.Feed;
 
 namespace Blocwerk.Core.Feed;
 
-/// <summary>What one hub read loaded from the source tables for its rows: authors and comment content, by id.</summary>
+/// <summary>
+/// What one hub read loaded from the source tables for its rows: authors and comment content, by id, and which of its
+/// activity entries a kiosk tablet may read now.
+/// </summary>
 public sealed class FeedHydrated
 {
     public static readonly FeedHydrated Empty = new(new Dictionary<Guid, FeedAuthor>(), new Dictionary<Guid, FeedContent>());
 
-    public FeedHydrated(IReadOnlyDictionary<Guid, FeedAuthor> authors, IReadOnlyDictionary<Guid, FeedContent> content)
+    public FeedHydrated(
+        IReadOnlyDictionary<Guid, FeedAuthor> authors,
+        IReadOnlyDictionary<Guid, FeedContent> content,
+        IReadOnlySet<Guid>? kioskActivity = null)
     {
         Authors = authors;
         Content = content;
+        KioskActivity = kioskActivity ?? new HashSet<Guid>();
     }
 
     /// <summary>Gets the user rows by id; an id missing here has no row any more.</summary>
@@ -21,4 +28,11 @@ public sealed class FeedHydrated
 
     /// <summary>Gets the content by entity id; an id missing here is a tombstone.</summary>
     public IReadOnlyDictionary<Guid, FeedContent> Content { get; }
+
+    /// <summary>
+    /// Gets the activity entries (by entity id) of the read's <c>activity.added</c> rows that a kiosk may read now
+    /// (<c>KioskActivityVisibility</c>). Read at delivery, so an entry whose boulder went back to draft or was archived
+    /// since is left out; an id missing here is not for the kiosk.
+    /// </summary>
+    public IReadOnlySet<Guid> KioskActivity { get; }
 }

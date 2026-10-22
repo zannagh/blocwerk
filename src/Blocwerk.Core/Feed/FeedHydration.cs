@@ -4,6 +4,7 @@
 using Blocwerk.Contracts.Feed;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Feed;
@@ -27,7 +28,8 @@ public static class FeedHydration
 
         var authors = await AuthorsAsync(db, rows, cancellationToken);
         var content = await CommentsAsync(db, rows, cancellationToken);
-        return new FeedHydrated(authors, content);
+        var kioskActivity = await KioskActivityAsync(db, rows, cancellationToken);
+        return new FeedHydrated(authors, content, kioskActivity);
     }
 
     private static async Task<IReadOnlyDictionary<Guid, FeedAuthor>> AuthorsAsync(
@@ -46,6 +48,25 @@ public static class FeedHydration
         return users.ToDictionary(
             u => u.Id,
             u => new FeedAuthor(u.Id, string.IsNullOrWhiteSpace(u.CustomDisplayName) ? u.DisplayName : u.CustomDisplayName, u.HasAvatar, u.DeletedAt != null));
+    }
+
+    // The activity rows' entries a kiosk may read now, for FeedKioskActivity: one query, the same rule the log read applies.
+    private static async Task<IReadOnlySet<Guid>> KioskActivityAsync(
+        BlocwerkDbContext db, IReadOnlyList<WallChange> rows, CancellationToken cancellationToken)
+    {
+        var ids = rows.Where(r => r.Kind == FeedKinds.ActivityAdded && r.EntityId is not null)
+            .Select(r => r.EntityId!.Value).Distinct().ToList();
+        if (ids.Count == 0)
+        {
+            return new HashSet<Guid>();
+        }
+
+        var readable = await db.ActivityLog.AsNoTracking()
+            .Where(a => ids.Contains(a.Id))
+            .Where(KioskActivityVisibility.Readable)
+            .Select(a => a.Id)
+            .ToListAsync(cancellationToken);
+        return readable.ToHashSet();
     }
 
     private static async Task<IReadOnlyDictionary<Guid, FeedContent>> CommentsAsync(
