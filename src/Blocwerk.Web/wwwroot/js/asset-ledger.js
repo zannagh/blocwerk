@@ -3,7 +3,7 @@
  *
  * IndexedDB `blocwerk-assets` v2, four stores:
  *   walls  [partition, wallId] → { partition, wallId, etag, cursor, entries, pending, member,
- *                                  lastOpened, fetchedAt, keepOffline, save3d, docs, data, dataEtag }
+ *                                  lastOpened, fetchedAt, keepOffline, save3d, docs, data, dataEtag, dataPrev }
  *          `entries` is the manifest's asset list, compacted to what the fill and eviction read:
  *          [{ sha, kind, tier, bytes, widths?, splats?, at? }] (`at`: a gallery image's upload time).
  *          `docs` the view3d documents (asset-3d.js); `data` the data documents of the docs index (asset-data.js),
@@ -26,6 +26,9 @@
  *
  * Storage refused: if IndexedDB cannot open or a write throws (QuotaExceededError, a private window, a full device),
  * the ledger moves to an in-memory copy for the rest of the page's life. Nothing here ever rejects into the caller.
+ * Such a ledger is `degraded` (a pending upgrade too): it knows nothing of what the device holds, so asset-cache.js
+ * runs only the privacy wipes on it, never a reconcile, eviction or fill (they would delete real caches from an empty
+ * record). `memory()` is the plain one, not degraded (the node tests run the whole cache on it).
  */
 window.bwAssetLedger = (function () {
     'use strict';
@@ -175,11 +178,13 @@ window.bwAssetLedger = (function () {
     }
 
     // Wraps a backend so that any failure switches to memory for good: a refused write never breaks the page.
-    function resilient(primary) {
+    function resilient(primary, fallen) {
         let backend = primary;
+        let degraded = !!fallen;
         const fallback = () => {
             if (backend.kind !== 'memory') {
                 backend = memoryBackend();
+                degraded = true;
             }
         };
         const call = name => async (...args) => {
@@ -192,15 +197,17 @@ window.bwAssetLedger = (function () {
         };
         return {
             get kind() { return backend.kind; },
+            get degraded() { return degraded; },
             get: call('get'), put: call('put'), delete: call('delete'), all: call('all'), clear: call('clear'), update: call('update')
         };
     }
 
-    function create(backend) {
-        const b = resilient(backend);
+    function create(backend, fallen) {
+        const b = resilient(backend, fallen);
         const byPartition = (rows, partition) => rows.filter(r => r.partition === partition);
         return {
             get kind() { return b.kind; },
+            get degraded() { return b.degraded; },
             getMeta: async () => (await b.get('meta', META_KEY)) || { id: META_KEY, activePartition: null, schema: SCHEMA },
             setMeta: async patch => {
                 const meta = Object.assign((await b.get('meta', META_KEY)) || { id: META_KEY, schema: SCHEMA }, patch);
@@ -221,6 +228,10 @@ window.bwAssetLedger = (function () {
             getAsset: (partition, key) => b.get('assets', [partition, key]),
             putAsset: row => b.put('assets', row),
             deleteAsset: (partition, key) => b.delete('assets', [partition, key]),
+            // The viewer's own ticks and favourites per wall (PR 3.4 writes them; `u-` partitions only).
+            mineOf: async partition => byPartition(await b.all('mine'), partition),
+            putMine: row => b.put('mine', row),
+            deleteMine: (partition, wallId) => b.delete('mine', [partition, wallId]),
             // Every wall, asset and mine row outside `keep` (null keeps nothing). Meta stays: it records the active label.
             deleteAllExcept: async keep => {
                 for (const store of PARTITIONED) {
@@ -239,13 +250,17 @@ window.bwAssetLedger = (function () {
     }
 
     /**
-     * Every sha a wall row holds on to: its manifest entries, its view3d documents (`docs`) and its data documents
-     * (`data`, as entries of tier `data`). Eviction (classify) and dropWall read this, so none of them is an orphan.
+     * Every sha a wall row holds on to: its manifest entries, its view3d documents (`docs`), its data documents
+     * (`data`) and the replaced ones still served until their successor is cached (`dataPrev`, { kind → sha }), the
+     * last two as entries of tier `data`. Eviction (classify) and dropWall read this, so none of them is an orphan.
      */
     function listed(wall) {
         const data = Object.entries((wall && wall.data) || {})
             .filter(([, doc]) => doc && typeof doc.sha === 'string')
             .map(([kind, doc]) => ({ sha: doc.sha, kind, tier: 'data', bytes: doc.bytes || 0 }));
+        const prev = Object.entries((wall && wall.dataPrev) || {})
+            .filter(([, sha]) => typeof sha === 'string')
+            .map(([kind, sha]) => ({ sha, kind, tier: 'data', bytes: 0 }));
         return ((wall && wall.entries) || []).concat((wall && wall.docs) || [], data);
     }
 
@@ -262,12 +277,12 @@ window.bwAssetLedger = (function () {
                 opened = (async () => {
                     try {
                         if (!window.indexedDB) {
-                            return create(memoryBackend());
+                            return create(memoryBackend(), true);
                         }
                         return create(idbBackend(await openIdb(window.indexedDB)));
                     } catch (e) {
                         pending = !!e && e.name === PENDING;
-                        return create(memoryBackend());
+                        return create(memoryBackend(), true);
                     }
                 })();
             }

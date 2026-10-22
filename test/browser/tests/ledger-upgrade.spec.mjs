@@ -1,7 +1,8 @@
 // The ledger's IndexedDB v1 → v2 upgrade (Phase 3 PR 3.3) on the real engines: a Release 1/2 ledger upgrades in place
 // on the first new page and keeps its rows, the new page fills the data documents, a Release 1/2 tab holding the
-// database open makes the new page run on memory as a pending upgrade until it closes, and a new tab never blocks a
-// later upgrade. Skipped on a build without the page modules.
+// database open makes the new page run on memory as a pending upgrade until it closes (and such a page deletes no
+// cached asset, a saved wall's 3D under the opt-out included), and a new tab never blocks a later upgrade. Skipped on a
+// build without the page modules.
 import { test, expect, signIn, installWorker, partitionOf, assetKeys, hasPageModules, settled, ledger } from '../harness/fixtures.mjs';
 
 const DB = 'blocwerk-assets';
@@ -115,4 +116,71 @@ test('an open new tab closes on versionchange: a later version upgrades without 
         return l.kind;
     });
     expect(after).toBe('memory');
+});
+
+// Rewrites the ledger as a v1 database holding `book`'s rows, and leaves that v1 connection open in `window.__v1`.
+function rewriteAsV1(page, book) {
+    return page.evaluate(async ({ db, book }) => {
+        await new Promise(resolve => { const del = indexedDB.deleteDatabase(db); del.onsuccess = del.onerror = del.onblocked = resolve; });
+        const conn = await new Promise((resolve, reject) => {
+            const req = indexedDB.open(db, 1);
+            req.onupgradeneeded = () => {
+                req.result.createObjectStore('walls', { keyPath: ['partition', 'wallId'] });
+                req.result.createObjectStore('assets', { keyPath: ['partition', 'key'] });
+                req.result.createObjectStore('meta', { keyPath: 'id' });
+            };
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+        await new Promise((resolve, reject) => {
+            const tx = conn.transaction(['walls', 'assets', 'meta'], 'readwrite');
+            tx.objectStore('meta').put(Object.assign({}, book.meta, { schema: 1 }));
+            book.walls.forEach(w => tx.objectStore('walls').put(w));
+            book.assets.forEach(a => tx.objectStore('assets').put(a));
+            tx.oncomplete = resolve;
+            tx.onerror = () => reject(tx.error);
+        });
+        window.__v1 = conn;
+    }, { db: DB, book });
+}
+
+test('a pending page deletes no cached asset: a saved wall\'s 3D survives the opt-out, and the next v2 load resumes', async ({ page, context, world, baseURL }) => {
+    await signIn(page, world.users.alice);
+    await installWorker(page);
+    test.skip(!(await hasPageModules(page)), 'needs the page modules');
+    await settled(page);
+    const partition = await partitionOf(page);
+    const alpha = world.walls.alpha.id;
+    expect(await page.evaluate(id => window.bwAsset3d.save(id), alpha)).toEqual({ saved: true });
+    const before = await assetKeys(page);
+    expect(before[`bw-a1-${partition}-3d`]).toContain(world.walls.alpha.splat);
+    const book = await ledger(page, partition);
+
+    await page.goto('/__pw/blank');
+    await rewriteAsV1(page, book); // a Release 1/2 tab, still open, holding these rows
+    await context.addCookies([{ name: 'blocwerk-cache-3d', value: 'off', url: baseURL }]);
+    const pending = await context.newPage();
+    await pending.goto(`/walls/${alpha}`);
+    expect(await ledgerState(pending)).toEqual({ kind: 'memory', pending: true });
+    await pending.evaluate(async () => {
+        await window.bwAssetCache.setKeep3d(false);
+        await window.bwAssetCache.evict();
+        await window.bwAssetCache.filled();
+    });
+    // Nothing deleted (the worker may still add what the wall page shows, on use).
+    const after = await assetKeys(pending);
+    for (const [name, list] of Object.entries(before)) {
+        expect(after[name] || []).toEqual(expect.arrayContaining(list));
+    }
+
+    await page.evaluate(() => window.__v1.close());
+    await expect.poll(() => versionOf(pending)).toBe(2);
+    await pending.reload();
+    await settled(pending);
+    expect(await ledgerState(pending)).toEqual({ kind: 'idb', pending: false });
+    const resumed = await ledger(pending, partition);
+    const row = resumed.walls.find(w => w.wallId === alpha);
+    expect(row.keepOffline && row.save3d).toBe(true);
+    expect((await assetKeys(pending))[`bw-a1-${partition}-3d`]).toContain(world.walls.alpha.splat);
+    expect(Object.keys(row.data || {})).toEqual(expect.arrayContaining(['wall', 'holds', 'boulders']));
 });

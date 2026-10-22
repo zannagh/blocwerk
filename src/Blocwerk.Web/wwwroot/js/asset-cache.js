@@ -44,7 +44,10 @@ window.bwAssetCache = (function (win) {
     const now = () => Date.now();
     const keep3d = () => !(win.bwPrefs && typeof win.bwPrefs.getCache3d === 'function' && win.bwPrefs.getCache3d() === false);
     const mobile = () => Plan().isMobile(win.navigator, win.matchMedia ? query => win.matchMedia(query) : null);
-    const caching = () => typeof state.active === 'string' && REAL_LABEL.test(state.active);
+    // A degraded ledger (storage refused, or a pending v2 upgrade) knows nothing of the device: such a page decides
+    // and wipes (asset-session.js) but never reconciles, evicts or fills, so it cannot delete what it does not know of.
+    // The worker keeps serving and storing the partition's caches.
+    const caching = () => typeof state.active === 'string' && REAL_LABEL.test(state.active) && !(state.env && state.env.ledger.degraded);
     const snapshot = async () => ({ walls: await state.env.ledger.wallsOf(state.active), assets: await state.env.ledger.assetsOf(state.active) });
 
     function wallOfPage() {
@@ -86,8 +89,8 @@ window.bwAssetCache = (function (win) {
         await Promise.all(Array.from({ length: Math.min(MANIFEST_PARALLEL, queue.length) }, worker));
     }
 
-    async function evict(snap) {
-        const { walls, assets } = snap || await snapshot();
+    async function evict() {
+        const { walls, assets } = await snapshot();
         // An orphan is only an orphan when every manifest it could be in was read on this page.
         const orphans = !!state.summary && walls.every(w => state.fresh.has(w.wallId));
         const keys = Budget().planEviction({ walls, assets, budget: state.budget, openWallId: state.openWallId, keep3d: keep3d(), orphans, now: now() });

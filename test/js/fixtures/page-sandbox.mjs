@@ -53,7 +53,9 @@ export function manifest(wallId, assets, extra = {}) {
  *         swReply ('v4' | 'none' | 'v3' | null = no controller), maxTouchPoints, coarse (a coarse pointer), refuse (worker posts asset-refused), silent (worker
  *         neither stores nor answers: a slow write), prefs3d, ua, quota, ledger, user, connection, persisted (persisted()'s answer),
  *         marks (the elements querySelectorAll answers: offline-ready marks), gate (awaited before an asset fetch),
- *         bus (a shared Set: BroadcastChannel between pages given the same one) }
+ *         bus (a shared Set: BroadcastChannel between pages given the same one), degraded (the ledger's refused-storage
+ *         fallback instead of the plain memory ledger), storage (a Map shared as localStorage between pages),
+ *         storageBlocked (localStorage throws) }
  */
 export function loadPage(opts = {}) {
     const timers = [];
@@ -62,7 +64,7 @@ export function loadPage(opts = {}) {
     const swListeners = [];
     const fetches = [];
     const posted = [];
-    const storage = new Map();
+    const storage = opts.storage || new Map();
     const assigned = [];
     const events = [];
     const persisted = [];
@@ -191,7 +193,9 @@ export function loadPage(opts = {}) {
             storage: { estimate: async () => ({ quota: opts.quota ?? 50e9, usage: 41e9 }), persisted: async () => !!opts.persisted, persist: async () => { persisted.push(Date.now()); return true; } },
         },
         matchMedia: q => ({ matches: q === '(pointer: coarse)' ? !!opts.coarse : !!opts.standalone }),
-        localStorage: { getItem: k => (storage.has(k) ? storage.get(k) : null), setItem: (k, v) => storage.set(k, String(v)), removeItem: k => storage.delete(k) },
+        localStorage: opts.storageBlocked
+            ? { getItem: () => { throw new Error('SecurityError'); }, setItem: () => { throw new Error('SecurityError'); }, removeItem: () => undefined }
+            : { getItem: k => (storage.has(k) ? storage.get(k) : null), setItem: (k, v) => storage.set(k, String(v)), removeItem: k => storage.delete(k) },
         document: {
             readyState: 'complete',
             visibilityState: 'visible',
@@ -219,6 +223,10 @@ export function loadPage(opts = {}) {
     }
     if (opts.ledger) {
         vm.runInContext('window.bwAssetLedger.open = () => Promise.resolve(window.__ledger);', context);
+    } else if (!opts.degraded) {
+        // The plain memory ledger, standing in for IndexedDB. `degraded` keeps the real open(), which (no IndexedDB
+        // here) gives the degraded fallback a refused storage or a pending upgrade gets.
+        vm.runInContext('(() => { const l = window.bwAssetLedger.memory(); window.bwAssetLedger.open = () => Promise.resolve(l); })();', context);
     }
 
     const settle = async () => {

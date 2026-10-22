@@ -131,13 +131,14 @@ window.bwAssetWipe = (function () {
     }
 
     /**
-     * Rules 4 and 5: the wall's row goes, and its assets that no other wall of the partition lists (bwAssetLedger.listed:
-     * manifest entries, view3d and data documents).
+     * Rules 4 and 5: the wall's row and its `mine` row go, and its assets that no other wall of the partition lists
+     * (bwAssetLedger.listed: manifest entries, view3d and data documents).
      */
     async function dropWall(env, partition, wallId) {
         const walls = await env.ledger.wallsOf(partition);
         const dropped = walls.find(w => w.wallId === wallId);
         await env.ledger.deleteWall(partition, wallId);
+        await env.ledger.deleteMine(partition, wallId);
         if (!dropped) {
             return;
         }

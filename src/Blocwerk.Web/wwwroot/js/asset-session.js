@@ -7,6 +7,11 @@
  * it applies. Under a real label it also deletes every bw-a1-* cache and ledger row of any other partition, every
  * start, so nothing a stale tab or worker wrote under an older identity survives.
  *
+ * IDENTITY MIRROR. The label and user tag are also kept in localStorage (MIRROR_KEY). A degraded ledger (a pending
+ * upgrade, refused storage) starts empty, so it reads the previous identity from there: a sign-out or another user
+ * is still announced (bw:identity-changed, the deploy drafts cleared). When localStorage cannot be read either, the
+ * previous user counts as unknown and changed, so it fails towards announcing (the drafts go), never towards keeping.
+ *
  * guard(): a ledger whose writes (putAsset, updateWall) go through only while the ledger's `activePartition` is the
  * row's partition. A tab still showing an old identity (another tab signed out or in since) can then never rewrite
  * rows for the partition it no longer owns.
@@ -16,6 +21,40 @@ window.bwAssetSession = (function () {
 
     const PROTO = 1;
     const REAL_LABEL = /^(anon|[uk]-[a-z2-7]{20})$/;
+    const MIRROR_KEY = 'blocwerk-asset-identity';
+    // Equal to no user tag, so an unreadable mirror counts as a changed user.
+    const UNKNOWN_TAG = '\u0000unknown';
+
+    // { activePartition, userTag } of the last start, or null when localStorage cannot be read.
+    function readMirror(win) {
+        try {
+            const value = win.localStorage.getItem(MIRROR_KEY);
+            const parsed = value ? JSON.parse(value) : {};
+            return parsed && typeof parsed === 'object' ? parsed : {};
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function writeMirror(win, activePartition, userTag) {
+        try {
+            win.localStorage.setItem(MIRROR_KEY, JSON.stringify({ activePartition, userTag }));
+        } catch (e) {
+            /* no mirror: a degraded start then announces, which is the safe side */
+        }
+    }
+
+    // What the last start recorded: the ledger's meta, or on a degraded ledger the mirror.
+    function previousOf(win, ledger, stored) {
+        if (!ledger.degraded) {
+            return stored;
+        }
+        const mirror = readMirror(win);
+        if (!mirror) {
+            return { activePartition: stored.activePartition, userTag: UNKNOWN_TAG };
+        }
+        return { activePartition: mirror.activePartition ?? null, userTag: mirror.userTag };
+    }
 
     function pageLabel(doc) {
         const meta = doc.querySelector('meta[name="bw-partition"]');
@@ -26,7 +65,8 @@ window.bwAssetSession = (function () {
     async function begin(win, ledger) {
         const Wipe = win.bwAssetWipe;
         const env = { caches: win.caches, ledger, origin: win.location.origin };
-        const meta = await ledger.getMeta();
+        const stored = await ledger.getMeta();
+        const meta = previousOf(win, ledger, stored);
         const label = pageLabel(win.document);
         // offline.html knows no user: it decides nothing here either.
         const offline = label === 'offline';
@@ -40,9 +80,10 @@ window.bwAssetSession = (function () {
             // (a stale tab, the window before a switch was seen) leaves nothing behind.
             await Wipe.wipe(env, decision.page);
         }
-        if (decision.active !== meta.activePartition || userTag !== meta.userTag) {
+        if (decision.active !== stored.activePartition || userTag !== stored.userTag) {
             await ledger.setMeta({ activePartition: decision.active, userTag, proto: PROTO });
         }
+        writeMirror(win, decision.active, userTag);
         if (decision.identityChanged) {
             Wipe.announceIdentityChange(win);
         }
