@@ -1295,6 +1295,7 @@ else
         // so loading the wall there doubled every visit's server work and held the navigation's response for it.
         if (!RendererInfo.IsInteractive)
         {
+            await RedirectSignedOutOnPrerenderAsync();
             return;
         }
 

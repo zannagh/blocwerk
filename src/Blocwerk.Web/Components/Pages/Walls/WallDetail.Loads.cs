@@ -1,6 +1,7 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Helpers;
 using Blocwerk.Core.Services;
@@ -24,6 +25,29 @@ public partial class WallDetail
         {
             var page = Array.FindIndex(CarouselViews, v => v.Length > 0 && string.Equals(v, View, StringComparison.OrdinalIgnoreCase));
             return page >= 0 ? page : 2;
+        }
+    }
+
+    // The prerender pass reads no wall data, but a signed-out visitor still gets the server's redirect to sign in (a
+    // 302 on a full load) instead of a page that connects first and then leaves. The same rule LoadWall applies: a
+    // share link and a kiosk resting on its own wall view without a user.
+    private async Task RedirectSignedOutOnPrerenderAsync()
+    {
+        if (!string.IsNullOrEmpty(ShareToken))
+        {
+            return;
+        }
+
+        try
+        {
+            await CurrentUserService.GetCurrentUserAsync();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            if (!KioskViewing.AllowsAnonymousViewOf(KioskContext, WallId))
+            {
+                Navigation.NavigateTo("/account/login", replace: true);
+            }
         }
     }
 
