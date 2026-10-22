@@ -110,6 +110,12 @@ window.bwAssetPlan = (function () {
         return [...new Set(widths)].filter(w => w === null || entry.widths.includes(w));
     }
 
+    /** The cache keys of a core entry the fill plans on this device: the fit rendition and 640, as planFill plans them
+     * (the offline-ready mark, asset-report.js). */
+    function coreKeys(entry, width) {
+        return photoWidths(entry, [width, THUMB]).map(w => keyOf(entry.sha, w));
+    }
+
     // Textures and masks whole; of the splat levels only the smallest, unless the wall already has one cached.
     function view3dEntries(wall, cachedShas) {
         const entries = (wall.entries || []).filter(e => e.tier === 'view3d' && e.sha);
@@ -190,5 +196,5 @@ window.bwAssetPlan = (function () {
         return tasks;
     }
 
-    return { WIDTHS, THUMB, MAX_ENTRY_BYTES, fitWidth, isMetered, isMobile, bytesOf, keyOf, urlOf, planFill };
+    return { WIDTHS, THUMB, MAX_ENTRY_BYTES, fitWidth, isMetered, isMobile, bytesOf, keyOf, urlOf, coreKeys, planFill };
 })();

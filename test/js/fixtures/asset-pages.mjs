@@ -28,3 +28,25 @@ export function memberPage(more = {}) {
     }, more.routes || {});
     return loadPage(Object.assign({ label: USER_A, summary: { wallsWith3d: 1, walls: [W1, W2] }, path: `/walls/${W2}` }, more, { routes }));
 }
+
+// asset-report / asset-clear tests (PR 2.9):
+export const GALLERY = sha('5');
+// W1 with a core photo, a gallery image (640 + original), a lazy panel and a 3D texture.
+export const w1Routes = () => ({
+    [`/api/walls/${W1}/manifest`]: () => json(manifest(W1, [
+        [sha('1'), 'core'],
+        [sha('2'), 'lazy'],
+        [GALLERY, 'lazy', { kind: 'gallery', widths: [640], at: '2026-10-20T10:00:00Z' }],
+        [sha('3'), 'view3d', { kind: 'texture' }],
+    ]), 200, { etag: 'W/"m1"' }),
+});
+
+export function mark(wallId) {
+    const attrs = new Map([['data-bw-offline-ready', wallId]]);
+    return {
+        getAttribute: name => (attrs.has(name) ? attrs.get(name) : null),
+        setAttribute: (name, value) => attrs.set(name, value),
+        removeAttribute: name => attrs.delete(name),
+        get ready() { return attrs.has('data-ready'); },
+    };
+}

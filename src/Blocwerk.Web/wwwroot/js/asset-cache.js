@@ -176,7 +176,7 @@ window.bwAssetCache = (function (win) {
         return Fill().createRunner({
             fetch: (url, init) => win.fetch(url, init),
             verify: task => Store().verify(win, state.seen, state.waiters, state.active, task),
-            partition: () => state.active, hidden: () => win.document.visibilityState === 'hidden',
+            partition: () => state.active, hidden: () => !!state.stopped || win.document.visibilityState === 'hidden',
             online: () => win.navigator.onLine !== false, forget: task => state.seen.delete(task.key),
             concurrency: () => Fill().concurrencyOf(win.navigator), freeOneWall, lock: fn => Fill().lock(win.navigator, fn)
         });
