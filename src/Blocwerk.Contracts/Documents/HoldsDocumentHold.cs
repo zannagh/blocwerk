@@ -15,6 +15,10 @@ namespace Blocwerk.Contracts.Documents;
 /// <param name="HandType">Its hand type, by name, if set.</param>
 /// <param name="OnKickboard">True when it sits on the kickboard.</param>
 /// <param name="Virtual">True for a virtual hold (no photo of its own).</param>
+/// <param name="Kept">
+/// True for a hold kept unconfirmed from an earlier generation (<c>KeptUnconfirmedGeneration</c> set, the Server's
+/// <c>PanelHold.Kept</c>): the wall view hides it, and a boulder that uses one draws it faded and dashed.
+/// </param>
 /// <param name="StackedOn">The hold it is stacked on, if any.</param>
 /// <param name="Shape">The outer outline as offsets from the centre, if any.</param>
 /// <param name="Control">The outline's spline control points, if any.</param>
@@ -31,6 +35,7 @@ public sealed record HoldsDocumentHold(
     string? HandType,
     bool OnKickboard,
     bool Virtual,
+    bool Kept,
     Guid? StackedOn,
     IReadOnlyList<DocumentPoint>? Shape,
     IReadOnlyList<DocumentPoint>? Control,
