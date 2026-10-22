@@ -256,7 +256,7 @@ test('a view3d document is stored in the 3D cache under its bare sha, whatever i
     assert.deepEqual(worker.posted.map(({ message: m }) => [m.type, m.sha, m.width]), [['asset-cached', OTHER_SHA, null]]);
 });
 
-test('requests other than a same-origin GET of an /a/ sha URL or a view3d document are left as they were', () => {
+test('requests other than a same-origin GET of an /a/ sha URL or a document are left as they were', () => {
     const worker = workerFor(ALICE);
     const untouched = [
         ['/api/walls/w1/photo'],
@@ -265,7 +265,10 @@ test('requests other than a same-origin GET of an /a/ sha URL or a view3d docume
         [`/api/walls/w1/a/${SHA.toUpperCase()}`],
         [`/api/walls/w1/a/${SHA.slice(1)}`],
         [`/api/walls/w1/a/${SHA}/wide`],
-        [`/api/walls/w1/d/holds/${SHA}`],
+        [`/api/walls/w1/d/holds2/${SHA}`],
+        [`/api/walls/w1/d/mine/${SHA}`],
+        [`/api/walls/w1/docs`],
+        [`/api/walls/w1/d/holds/${SHA}/640`],
         [`/api/walls/w1/d/view3d/${SHA}/640`],
         [`/api/walls/w1/d/view3d/${SHA.toUpperCase()}`],
         [`/api/users/u1/avatar`],

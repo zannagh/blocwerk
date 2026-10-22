@@ -110,6 +110,7 @@ public class ApiSurfaceAuthorizationTests
         Assert.Contains("/api/walls/{wallId:guid}/a/{sha}/{width:int}", routes);
         Assert.Contains("/api/walls/{wallId:guid}/manifest", routes);
         Assert.Contains("/api/walls/{wallId:guid}/d/{kind}/{sha}", routes);
+        Assert.Contains(DocumentEndpoints.IndexRoute, routes);
 
         Assert.Contains(FeedEndpoints.WallChangesRoute, routes);
         Assert.Contains(FeedEndpoints.StreamRoute, routes);
@@ -166,7 +167,9 @@ public class ApiSurfaceAuthorizationTests
                 || (e.RoutePattern.RawText ?? string.Empty)
                     .Contains("/d/{kind}/{sha}", StringComparison.Ordinal)
                 || (e.RoutePattern.RawText ?? string.Empty)
-                    .EndsWith("/manifest", StringComparison.Ordinal))
+                    .EndsWith("/manifest", StringComparison.Ordinal)
+                || (e.RoutePattern.RawText ?? string.Empty)
+                    .EndsWith("/docs", StringComparison.Ordinal))
             .ToList();
 
         Assert.NotEmpty(mediaRoutes);
@@ -213,6 +216,23 @@ public class ApiSurfaceAuthorizationTests
         // The stream holds its request open on purpose; the slow-request log must leave it out.
         Assert.NotNull(Assert.Single(endpoints.Where(e => e.RoutePattern.RawText == FeedEndpoints.StreamRoute))
             .Metadata.GetMetadata<Blocwerk.Web.LongPollEndpoint>());
+    }
+
+    /// <summary>
+    /// The data documents' index (Phase 3, PR 3.1) lists every document of a wall for the caller's class, so it takes the
+    /// documents' own posture: under the API-key surface, the gallery-image policy, and the API-key rejection.
+    /// </summary>
+    [Fact]
+    public void TheDataDocumentIndex_IsGuardedLikeTheDocuments()
+    {
+        var endpoints = AllEndpoints();
+        foreach (var route in new[] { DocumentEndpoints.IndexRoute, DocumentEndpoints.Route })
+        {
+            var endpoint = Assert.Single(endpoints.Where(e => e.RoutePattern.RawText == route));
+            Assert.True(ApiKeySurface.Covers(ToPath(route)));
+            Assert.Equal(BlocwerkPolicies.WallGalleryImage, endpoint.Metadata.GetMetadata<IAuthorizeData>()?.Policy);
+            Assert.NotNull(endpoint.Metadata.GetMetadata<DeniesApiKeyPrincipals>());
+        }
     }
 
     /// <summary>
@@ -319,7 +339,7 @@ public class ApiSurfaceAuthorizationTests
         // The content-addressed asset routes (hashed) sit under /api/walls as well.
         app.MapAssets();
 
-        // The view3d working-data documents beside them (/d/{kind}/{sha}).
+        // The working-data documents beside them (/d/{kind}/{sha}) and the data documents' index (/docs).
         app.MapWallDocuments();
 
         // Their manifest sits under /api/walls too; the partition route under /api/me, outside the prefixes.

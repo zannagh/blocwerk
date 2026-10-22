@@ -2,7 +2,9 @@
 // See License in the project root for license information.
 
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Assets.DataDocs;
 using Blocwerk.Core.Assets.Documents;
+using Blocwerk.Core.Feed;
 using Blocwerk.Core.Geometry.View3D;
 using Blocwerk.Web.Endpoints;
 using Microsoft.AspNetCore.Builder;
@@ -93,6 +95,15 @@ public sealed class View3DDocumentFixture : IDisposable
         builder.Services.AddSingleton(_ => new View3DDocumentService(
             Assets.Harness.DbContextFactory, Assets.CurrentUser, Views, Store, TimeProvider.System,
             NullLogger<View3DDocumentService>.Instance, Assets.Kiosk, Assets.KioskKeys));
+
+        // The data kinds share the route: a view3d sha asked for as one of them goes through their service and is a 404.
+        var root = Assets.Harness.RootContextFactory;
+        builder.Services.AddSingleton(Assets.CurrentUser);
+        builder.Services.AddSingleton(Assets.Kiosk);
+        builder.Services.AddSingleton(Assets.KioskKeys);
+        builder.Services.AddSingleton(new DataDocumentService(
+            root, new DataDocumentBuilder(root, Assets.ImageStorage), new DataDocumentStore(),
+            new WallFeed(() => root.CreateDbContext(), NullLogger<WallFeed>.Instance)));
         var built = builder.Build();
         built.MapWallDocuments();
         return built;
