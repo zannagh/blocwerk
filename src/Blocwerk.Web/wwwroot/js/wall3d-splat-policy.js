@@ -88,21 +88,29 @@ export function createLadderPolicy(light) {
     };
 }
 
+/** Drawn frames the armed level needs on top of STEADY_MS: a view that shows but hardly draws proves nothing. */
+export const STEADY_FRAMES = 30;
+
 /**
- * The cap level is never probed (there is nothing above it to step up to), so its success is recorded here instead:
- * `arm(index, now)` when a level shows, `spoil()` on a step down, a sustained-load step or a lost context, and
- * `due(index, now)` is true once, when the armed level is still the one showing STEADY_MS later. Then the next visit
- * steps straight up to it (wall3d-splat-ladder.js stepTarget) instead of re-downloading every level below it.
+ * The cap level is never probed (there is nothing above it to step up to), so its success is recorded here instead.
+ * Only active, visible time counts: `arm(index, now)` when the level shows in an active, visible view; `spoil()` when
+ * it stops being that (the mode left, the page hidden, a lost context) or on a step down or a sustained-load step.
+ * `due(index, now)` is called once per drawn frame and is true once, when the armed level is still the one showing
+ * STEADY_MS later and has drawn at least `frames` frames. Then the next visit steps straight up to it
+ * (wall3d-splat-ladder.js stepTarget) instead of re-downloading every level below it.
  */
-export function createSteadyWatch(ms = STEADY_MS) {
+export function createSteadyWatch(ms = STEADY_MS, frames = STEADY_FRAMES) {
     let armed = -1;
     let since = 0;
+    let drawn = 0;
     return {
         get delay() { return ms; },
-        arm(index, now) { armed = index; since = now; },
+        arm(index, now) { armed = index; since = now; drawn = 0; },
         spoil() { armed = -1; },
         due(index, now) {
-            if (armed < 0 || index !== armed || now - since < ms) return false;
+            if (armed < 0 || index !== armed) return false;
+            drawn++;
+            if (now - since < ms || drawn < frames) return false;
             armed = -1;
             return true;
         },

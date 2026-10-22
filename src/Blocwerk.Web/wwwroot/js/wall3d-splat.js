@@ -181,16 +181,29 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
         policy.shown(index < cap && detailMode !== 'ultra');
     }
 
-    /** Watches the level just shown when it is the cap; a timer asks for the frame that finds it steady. */
+    /**
+     * Watches the level showing when it is the cap, in an active and visible view (only that time counts); a timer
+     * asks for the frame that finds it steady.
+     */
     function armSteady() {
         clearTimeout(steadyTimer);
-        if (loader.index !== cap || loader.index <= 0 || detailMode === 'ultra') {
+        if (!active || document.visibilityState === 'hidden' || loader.index !== cap || loader.index <= 0 || detailMode === 'ultra') {
             steady.spoil();
             return;
         }
         steady.arm(loader.index, performance.now());
         steadyTimer = setTimeout(() => { if (!disposed) request(); }, steady.delay + 50);
     }
+
+    function onVisibility() {
+        if (document.visibilityState === 'hidden') {
+            clearTimeout(steadyTimer);
+            steady.spoil();
+        } else {
+            armSteady();
+        }
+    }
+    document.addEventListener('visibilitychange', onVisibility);
 
     async function start() {
         if (broken) throw new PhotoRealUnsupportedError('The photo-real view failed on this device.');
@@ -256,6 +269,7 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
             }
             active = on;
             apply();
+            armSteady();                          // re-arms when shown again, spoils when left
         },
 
         /**
@@ -329,7 +343,10 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
         },
 
         /** A lost WebGL context: true when photo-real handles it (it had started), else false. */
-        contextLost: event => !disposed && !broken && firstLoad.started && recovery.lost(event),
+        contextLost: event => {
+            steady.spoil();
+            return !disposed && !broken && firstLoad.started && recovery.lost(event);
+        },
         contextRestored: () => recovery.restored(),
 
         /** Gives up after a render failure: every later `setActive(true)` throws (a restore still runs). */
@@ -361,6 +378,7 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
             clearTimeout(steadyTimer);
             clearTimeout(noteTimer);
             unwatchPage();
+            document.removeEventListener('visibilitychange', onVisibility);
             firstLoad.cancel(true);
             recovery.cancel();
             apply();
