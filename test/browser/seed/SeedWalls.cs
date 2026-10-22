@@ -16,6 +16,7 @@ namespace Blocwerk.Browser.Seed;
 /// <list type="bullet">
 /// <item><b>alpha</b>: Alice's wall with two panels, an active 3D model (texture, mask, splat), a boulder with a beta
 /// video thumbnail, a kiosk key, and Carol as a member who consented to the kiosk (no PIN).</item>
+/// <item>alpha also has a share link (<see cref="SeededWorld.ShareToken"/>).</item>
 /// <item><b>beta</b>: Alice's second wall, one panel, and a boulder list long enough to scroll.</item>
 /// <item><b>bobs</b>: Bob's wall, one panel. Bob is a member of nothing of Alice's.</item>
 /// </list>
@@ -42,6 +43,7 @@ internal sealed class SeedWalls
         var geometry = await AddGeometryAsync(alpha.Wall.Id);
         var thumbnail = AddVideoThumbnail(alpha.Wall.Id, alice.Id);
         var kioskToken = AddKioskKey(alpha.Wall.Id, alice.Id);
+        alpha.Wall.ShareToken = "browser-harness-share-token";
 
         var beta = AddWall("Beta", alice, panels: 1, seed: 10);
         AddListBoulders(beta.Wall.Id, alice.Id, 40);
@@ -61,7 +63,8 @@ internal sealed class SeedWalls
                 ["beta"] = new(beta.Wall.Id, beta.Shas, null, null, null, null),
                 ["bobs"] = new(bobs.Wall.Id, bobs.Shas, null, null, null, null),
             },
-            kioskToken);
+            kioskToken,
+            alpha.Wall.ShareToken);
     }
 
     private static string Hex(byte[] bytes) => ContentHash.ToHex(ContentHash.Of(bytes))!;
@@ -143,7 +146,7 @@ internal sealed class SeedWalls
     }
 }
 
-internal sealed record SeededWorld(Dictionary<string, SeededUser> Users, Dictionary<string, SeededWall> Walls, string KioskToken);
+internal sealed record SeededWorld(Dictionary<string, SeededUser> Users, Dictionary<string, SeededWall> Walls, string KioskToken, string ShareToken);
 
 internal sealed record SeededUser(Guid Id, string Name);
 

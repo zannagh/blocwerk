@@ -163,8 +163,43 @@ test('the settings cards render their panels only once opened', async ({ page, w
     await expect(settings.locator('details:has(> summary h2:text-is("Activity")) + a.wall-update-link')).toHaveCount(1);
 });
 
-test('a signed-out visitor to a wall page is redirected to sign in by the server', async ({ page, world }) => {
-    const response = await page.request.get(`/walls/${world.walls.alpha.id}`, { maxRedirects: 0 });
+test('a signed-out visitor to a wall page is redirected to sign in by the server, a share link and a resting kiosk are not', async ({ page, world }) => {
+    const alpha = world.walls.alpha;
+    const response = await page.request.get(`/walls/${alpha.id}`, { maxRedirects: 0 });
     expect(response.status()).toBe(302);
     expect(response.headers().location).toMatch(/\/account\/login/);
+
+    // Signed out, through the wall's share link.
+    expect((await page.request.get(`/walls/${alpha.id}/shared/${world.shareToken}`, { maxRedirects: 0 })).status()).toBe(200);
+
+    // A paired tablet with nobody picked yet views its own wall.
+    await page.goto('/oauth-select');
+    await page.getByText('Register this device as a wall kiosk').click();
+    await page.getByLabel('Kiosk key').fill(world.kioskToken);
+    await page.getByRole('button', { name: 'Register kiosk' }).click();
+    await page.waitForURL(/\/walls\/[0-9a-f-]{36}/);
+    expect((await page.request.get(`/walls/${alpha.id}`, { maxRedirects: 0 })).status()).toBe(200);
+});
+
+// The deferred edit tap of a restored page (edit waits for the refresh) must never take a lease on a page that is
+// already gone: such a lease is never released and holds every deploy (/health/ready-to-deploy at 503). A smoke test of
+// the whole path: locally the refresh lands before the page is gone, so the race itself is pinned by the source test
+// (WallPageMemoryTests), not here.
+test('tapping Edit on a restored wall and leaving at once leaves no edit lease behind', async ({ page, world }) => {
+    const wall = world.walls.alpha;
+    await openList(page, world, wall);
+    await listPage(page).locator('.boulder-card').first().dispatchEvent('click');
+    await expect(page.locator('.boulder-detail h1')).toBeVisible();
+
+    await page.goBack();
+    const fab = page.locator('.wall-edit-fab');
+    await expect(fab).toBeAttached();
+    await fab.dispatchEvent('click');
+    await page.evaluate(() => window.Blazor.navigateTo('/walls'));
+    await expect(page).toHaveURL(/\/walls$/);
+
+    await expect.poll(async () => {
+        const ready = await page.request.get('/health/ready-to-deploy');
+        return `${ready.status()} ${(await ready.text()).trim()}`;
+    }, { timeout: 15000 }).toBe('200 idle');
 });
