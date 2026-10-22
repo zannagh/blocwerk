@@ -13,7 +13,7 @@ namespace Blocwerk.Web.Components.Shared;
 /// Hands the circuit's live feed to the page's device cache (Phase 3 PR 3.3): every delivery of a wall the circuit
 /// follows that changes a data document or the manifest calls <c>bwAssetData.changed(wallId, manifest)</c>
 /// (wwwroot/js/asset-data.js), which debounces 10 s and refetches the docs index (and the manifest first); one that
-/// changes the viewer's own marks calls <c>bwAssetMine.changed(wallId)</c> (asset-mine.js, 2 s, <c>u-</c> pages only). Renders
+/// changes the viewer's own marks (or the boulders they are on) calls <c>bwAssetMine.changed(wallId)</c> (asset-mine.js, 2 s, <c>u-</c> pages only). Renders
 /// nothing; mounted once in the layout. The call returns at once and every interop failure is absorbed: the device
 /// cache only follows, the next page start catches up.
 /// </summary>

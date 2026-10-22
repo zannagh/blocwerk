@@ -13,14 +13,20 @@ namespace Blocwerk.Web.State.Feed;
 /// <c>wall.manifest</c> or any resync, the docs index on an input kind of any data document
 /// (<see cref="DataDocumentInputs"/>, so a kind added there is followed here without a change), and the viewer's own
 /// marks on a <c>tick.mine</c> or <c>favorite.changed</c> (PR 3.4; User-audience rows, so only the ticker's own circuits
-/// ever see them, never a kiosk's).
+/// ever see them, never a kiosk's) and on a <c>boulder.changed</c> / <c>boulder.deleted</c> (a mark on a boulder that left
+/// the reader's set).
 /// </summary>
 public static class AssetCacheSignals
 {
     private static readonly HashSet<string> DataKinds =
         DataDocumentKinds.All.SelectMany(DataDocumentInputs.Of).ToHashSet(StringComparer.Ordinal);
 
-    private static readonly HashSet<string> MineKinds = new(StringComparer.Ordinal) { FeedKinds.TickMine, FeedKinds.FavoriteChanged };
+    // The own marks, and the boulders they are on: a deleted, archived or drafted boulder takes its marks out of the
+    // reader's set (its row cannot tell which flag flipped, so every boulder.changed counts; the refetch is debounced).
+    private static readonly HashSet<string> MineKinds = new(StringComparer.Ordinal)
+    {
+        FeedKinds.TickMine, FeedKinds.FavoriteChanged, FeedKinds.BoulderChanged, FeedKinds.BoulderDeleted,
+    };
 
     /// <summary>The strongest signal of the delivery's events.</summary>
     public static AssetCacheSignal Of(FeedDelivery delivery)

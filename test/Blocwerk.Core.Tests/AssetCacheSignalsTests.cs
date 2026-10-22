@@ -62,11 +62,21 @@ public sealed class AssetCacheSignalsTests
         Assert.Equal(AssetCacheSignal.None, AssetCacheSignals.Of(Delivery(kind)));
     }
 
-    /// <summary>Own ratings are not offline in v1 (plan §2), and no wall-wide kind is the viewer's own mark.</summary>
+    /// <summary>A deleted, drafted or archived boulder takes its marks out of the reader's set: mine and the docs both.</summary>
+    [Theory]
+    [InlineData(FeedKinds.BoulderChanged)]
+    [InlineData(FeedKinds.BoulderDeleted)]
+    public void ABoulderChange_RefetchesMine_AndTheDocs(string kind)
+    {
+        Assert.True(AssetCacheSignals.ChangesMine(Delivery(kind)));
+        Assert.Equal(AssetCacheSignal.Data, AssetCacheSignals.Of(Delivery(kind)));
+    }
+
+    /// <summary>Own ratings are not offline in v1 (plan §2), and no other wall-wide kind moves the viewer's own marks.</summary>
     [Theory]
     [InlineData(FeedKinds.RatingMine)]
     [InlineData(FeedKinds.BoulderStats)]
-    [InlineData(FeedKinds.BoulderChanged)]
+    [InlineData(FeedKinds.HoldChanged)]
     [InlineData(FeedKinds.TicksResync)]
     public void AnythingElse_LeavesMineAlone(string kind) =>
         Assert.False(AssetCacheSignals.ChangesMine(Delivery(kind)));
