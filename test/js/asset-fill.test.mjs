@@ -169,3 +169,13 @@ test('a flaky run retries on a backoff timer and never stops the page for good',
     assert.deepEqual(waits, [30000, 60000, 120000, 240000, 480000, 900000, 900000]);
     assert.notEqual(holder.stopped, true);
 });
+
+test('a 404/403 asset counts against its failure budget and is not fetched again after 3 passes', async () => {
+    const fetched = [];
+    const r = runner({ fetch: async url => { fetched.push(url); return url === '/gone' ? { ok: false, status: 404 } : ok(); } });
+    for (let i = 0; i < 5; i++) {
+        assert.equal(await r.run(tasks('/gone', '/fine')), 'done');
+    }
+    assert.equal(fetched.filter(u => u === '/gone').length, Fill.FAILURE_LIMIT);
+    assert.equal(fetched.filter(u => u === '/fine').length, 5);
+});

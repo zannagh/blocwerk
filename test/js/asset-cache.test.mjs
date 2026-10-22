@@ -264,3 +264,15 @@ test('a kiosk tablet whose meta is unknown (a resolver fault) does not wipe on l
     await tablet.settle();
     assert.deepEqual(keys(caches, `bw-a1-${KIOSK}-img`), [sha('k')]);
 });
+
+test('every start under a real label deletes the caches of any other partition, not only their ledger rows', async () => {
+    const caches = standardCaches();
+    const first = loadPage({ label: USER_A, caches, swReply: 'none', summary: { wallsWith3d: 0, walls: [W1] }, routes: listing(W1, sha('a')) });
+    await first.boot();
+    // A worker stored under B meanwhile (a stale tab): the next start under A, with no switch to see, removes it.
+    await (await caches.open(`bw-a1-${USER_B}-img`)).put(`${ORIGIN}/__bw/${sha('b')}`, new Response('x'));
+    const next = loadPage({ label: USER_A, caches, swReply: 'none', ledger: await first.ledger(), summary: { wallsWith3d: 0, walls: [W1] }, routes: listing(W1, sha('a')) });
+    await next.boot();
+    assert.ok(!names(caches).includes(`bw-a1-${USER_B}-img`));
+    assert.deepEqual(keys(caches, `bw-a1-${USER_A}-img`), [sha('a')]);
+});

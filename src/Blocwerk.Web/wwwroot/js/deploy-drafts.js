@@ -37,6 +37,11 @@
     const NOTICES = 'bw-deploy-notices';
     const IDENTITY = 'bw-kept-identity';
     const MAX_AGE_MS = 7 * 24 * 3600 * 1000;
+    // An anonymous kiosk identity ("k<key>-anon") is shared by everyone who walks up to the tablet, so its copies are
+    // only for the deploy reload itself: kept by the pre-deploy flush, taken back at most once and only within this
+    // long of the keep. A copy made when the page was hidden is never kept for it.
+    const ANON_KIOSK_RESTORE_MS = 2 * 60 * 1000;
+    const ANON_KIOSK = /^k.+-anon$/;
     const RESTORED = 'Your unsaved changes from before were restored.';
 
     function read(storage, key) {
@@ -82,6 +87,17 @@
         const restored = new Set();
         const who = identity || function () { return 'anon'; };
         const owned = function (key) { return String(key).split('|')[0] === who(); };
+        const anonKiosk = function () { return ANON_KIOSK.test(who()); };
+        // A stale tab: another page has recorded a different identity at this browser since this one loaded, so this
+        // page's person is no longer the one at it, and nothing may be written for them.
+        const superseded = function () {
+            let recorded = null;
+            try {
+                recorded = storage.getItem(IDENTITY);
+            } catch (e) { /* storage blocked: nothing is written anyway */ }
+            return recorded !== null && recorded !== who();
+        };
+        const writable = function (key) { return owned(key) && !superseded(); };
 
         // links: optional [{ text, href }] listed under the notice (e.g. the boulders a saved wall batch retired).
         function notice(text, href, key, links) {
@@ -101,7 +117,7 @@
         }
 
         function keep(key, payload, text, href) {
-            if (!owned(key)) {
+            if (!writable(key)) {
                 return false;
             }
 
@@ -111,7 +127,7 @@
         }
 
         function keepHidden(key, payload) {
-            if (!owned(key)) {
+            if (!writable(key) || anonKiosk()) {
                 return;
             }
 
@@ -129,6 +145,9 @@
             const entry = read(storage, PREFIX + key);
             remove(storage, PREFIX + key);
             if (!entry || now() - entry.at > MAX_AGE_MS) {
+                return null;
+            }
+            if (anonKiosk() && (entry.reason !== 'deploy' || now() - entry.at > ANON_KIOSK_RESTORE_MS)) {
                 return null;
             }
 
@@ -168,6 +187,21 @@
             remove(storage, NOTICES);
         }
 
+        // Kept copies older than MAX_AGE_MS go, and an anonymous kiosk's past their one deploy reload, whoever they were for.
+        function sweep() {
+            keysOf(storage).forEach(function (k) {
+                if (!k || k.indexOf(PREFIX) !== 0) {
+                    return;
+                }
+                const entry = read(storage, k);
+                const anon = ANON_KIOSK.test(k.slice(PREFIX.length).split('|')[0]);
+                const age = entry ? now() - entry.at : Infinity;
+                if (age > MAX_AGE_MS || (anon && age > ANON_KIOSK_RESTORE_MS)) {
+                    remove(storage, k);
+                }
+            });
+        }
+
         // Called on every page load: a different identity than last time means the switch happened elsewhere.
         function checkIdentity() {
             let last = null;
@@ -178,6 +212,7 @@
             if (last !== null && last !== who()) {
                 clearAll();
             }
+            sweep();
 
             try {
                 storage.setItem(IDENTITY, who());
@@ -310,5 +345,5 @@
         };
     }
 
-    return { createStore: createStore, install: install, MAX_AGE_MS: MAX_AGE_MS, RESTORED: RESTORED };
+    return { createStore: createStore, install: install, MAX_AGE_MS: MAX_AGE_MS, ANON_KIOSK_RESTORE_MS: ANON_KIOSK_RESTORE_MS, RESTORED: RESTORED };
 });

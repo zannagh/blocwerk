@@ -328,24 +328,39 @@ test('a lookup the server cannot answer keeps the last label, persists nothing a
     }
 });
 
-test('a lookup that hangs is abandoned at the timeout: that request goes to the network and nothing is remembered', async () => {
+test('a slow lookup: after the timeout hits are served read-only from the last label at once, misses stream unstored, one lookup per page', async () => {
     const timers = [];
     const worker = loadWorker({ setTimeout: (fn, ms) => { timers.push({ fn, ms }); return timers.length; } });
     Object.assign(worker.routes, workerFor(ALICE).routes);
     await dispatchFetch(worker, asset(), { clientId: 'first' }).settle();
-    worker.routes[PARTITION] = () => new Promise(() => {});
+    let release;
+    worker.routes[PARTITION] = () => new Promise(resolve => { release = () => resolve(response(200, JSON.stringify({ partition: ALICE }))); });
+    const lookups = () => worker.fetches.filter(f => f.path === PARTITION).length;
+    const before = lookups();
+    const waits = () => timers.slice(seen).filter(t => t.ms === 2500);
+    const seen = timers.length;
 
-    const hung = dispatchFetch(worker, asset(), { clientId: 'stuck' });
+    const slow = dispatchFetch(worker, asset(), { clientId: 'slow' });
     await new Promise(r => setTimeout(r, 0));
-    assert.equal(timers.at(-1).ms, 2500);
-    timers.at(-1).fn();
-    assert.equal(await (await hung.settle()).text(), 'jpeg-bytes');
-    assert.equal(assetFetches(worker), 2, 'network-only, not served from the cache');
-    assert.equal(worker.stored.get(`bw-a1-${ALICE}-img`).size, 1);
+    const wait = waits();
+    assert.equal(wait.length, 1);
+    wait[0].fn();
+    assert.equal(await (await slow.settle()).text(), 'jpeg-bytes');
+    assert.equal(assetFetches(worker), 1, 'the stored asset is served from the cache, not refetched');
 
-    worker.routes[PARTITION] = () => response(200, JSON.stringify({ partition: ALICE }));
-    await dispatchFetch(worker, asset(), { clientId: 'stuck' }).settle();
-    assert.equal(assetFetches(worker), 2, 'the page asks again and, answered, reads its cache');
+    const late = new Promise((_, reject) => setTimeout(() => reject(new Error('the second request waited for the lookup')), 100));
+    const again = await Promise.race([dispatchFetch(worker, asset(), { clientId: 'slow' }).settle(), late]);
+    assert.equal(await again.text(), 'jpeg-bytes');
+    assert.equal(waits().length, 1, 'later requests do not wait again');
+    await dispatchFetch(worker, asset(OTHER_SHA), { clientId: 'slow' }).settle();
+    assert.equal(assetFetches(worker), 2, 'a miss goes to the network');
+    assert.equal(worker.stored.get(`bw-a1-${ALICE}-img`).size, 1, 'and is not stored while read-only');
+    assert.equal(lookups() - before, 1, 'one lookup in flight for the page');
+
+    release();
+    await new Promise(r => setTimeout(r, 0));
+    await dispatchFetch(worker, asset(OTHER_SHA), { clientId: 'slow' }).settle();
+    assert.equal(worker.stored.get(`bw-a1-${ALICE}-img`).size, 2, 'once answered, the page caches again');
 });
 
 test('sw-refresh-partition makes the worker ask the server again, so sw-info follows the cookie without an /a/ request', async () => {

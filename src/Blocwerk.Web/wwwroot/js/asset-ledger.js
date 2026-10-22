@@ -35,7 +35,7 @@ window.bwAssetLedger = (function () {
         return Array.isArray(key) ? key.join('\u0000') : key;
     }
 
-    // The fallback, and what the node tests run on: the same five calls over Maps.
+    // The fallback, and what the node tests run on: the same six calls over Maps.
     function memoryBackend() {
         const stores = { walls: new Map(), assets: new Map(), meta: new Map() };
         return {
@@ -44,7 +44,14 @@ window.bwAssetLedger = (function () {
             put: async (store, row) => { stores[store].set(keyOf(store, row), clone(row)); },
             delete: async (store, key) => { stores[store].delete(idKey(store, key)); },
             all: async store => [...stores[store].values()].map(clone),
-            clear: async store => { stores[store].clear(); }
+            clear: async store => { stores[store].clear(); },
+            update: async (store, key, change) => {
+                const next = change(clone(stores[store].get(idKey(store, key))));
+                if (next) {
+                    stores[store].set(keyOf(store, next), clone(next));
+                }
+                return clone(next);
+            }
         };
     }
 
@@ -76,7 +83,23 @@ window.bwAssetLedger = (function () {
             put: (store, row) => run(store, 'readwrite', s => s.put(row)).then(() => undefined),
             delete: (store, key) => run(store, 'readwrite', s => s.delete(key)).then(() => undefined),
             all: store => run(store, 'readonly', s => s.getAll()),
-            clear: store => run(store, 'readwrite', s => s.clear()).then(() => undefined)
+            clear: store => run(store, 'readwrite', s => s.clear()).then(() => undefined),
+            // Read and write in ONE transaction, so no other write lands between them.
+            update: (store, key, change) => new Promise((resolve, reject) => {
+                const tx = db.transaction(store, 'readwrite');
+                const target = tx.objectStore(store);
+                let next;
+                const read = target.get(key);
+                read.onsuccess = () => {
+                    next = change(read.result);
+                    if (next) {
+                        target.put(next);
+                    }
+                };
+                tx.oncomplete = () => resolve(next);
+                tx.onerror = () => reject(tx.error);
+                tx.onabort = () => reject(tx.error);
+            })
         };
     }
 
@@ -115,7 +138,7 @@ window.bwAssetLedger = (function () {
         };
         return {
             get kind() { return backend.kind; },
-            get: call('get'), put: call('put'), delete: call('delete'), all: call('all'), clear: call('clear')
+            get: call('get'), put: call('put'), delete: call('delete'), all: call('all'), clear: call('clear'), update: call('update')
         };
     }
 
@@ -132,7 +155,13 @@ window.bwAssetLedger = (function () {
             },
             wallsOf: async partition => byPartition(await b.all('walls'), partition),
             getWall: (partition, wallId) => b.get('walls', [partition, wallId]),
-            putWall: row => b.put('walls', row),
+            /**
+             * THE way to write a wall row: `change(current)` gets the stored row (or undefined) and returns the row to
+             * store (or nothing to skip), read and written in one transaction. Each writer changes only its own fields:
+             * the manifest round its MANIFEST_FIELDS (asset-manifest.js), "Save 3D offline" keepOffline/save3d/docs
+             * (asset-3d.js), so neither can write back a stale copy of the other's.
+             */
+            updateWall: (partition, wallId, change) => b.update('walls', [partition, wallId], change),
             deleteWall: (partition, wallId) => b.delete('walls', [partition, wallId]),
             assetsOf: async partition => byPartition(await b.all('assets'), partition),
             getAsset: (partition, key) => b.get('assets', [partition, key]),

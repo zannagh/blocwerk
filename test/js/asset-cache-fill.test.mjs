@@ -100,7 +100,7 @@ test('retention: a manifest copy older than 30 days is fetched whole, without If
     const ledger = await first.ledger();
     const row = await ledger.getWall(USER_A, W1);
     row.fetchedAt = Date.now() - 31 * 24 * 3600 * 1000;
-    await ledger.putWall(row);
+    await ledger.updateWall(USER_A, W1, () => row);
 
     const page = memberPage({ swReply: 'none', ledger });
     await page.boot();
@@ -222,4 +222,15 @@ test('a phone gets no 3D background fill, and the hook for 2.8 says so', async (
     assert.ok(phone.assetFetches().some(f => f.path.endsWith(sha('1'))));
     assert.equal(phone.cache.fills3dInBackground(), false);
     assert.equal(memberPage().cache.fills3dInBackground(), true);
+});
+
+test('a manifest that stays pending backs off its refetch instead of asking every minute', async () => {
+    const page = memberPage({ summary: { wallsWith3d: 0, walls: [W1] }, path: '/', routes: { [`/api/walls/${W1}/manifest`]: () => json(manifest(W1, [[sha('1'), 'core']], { pending: 2 })) } });
+    await page.boot();
+    const waits = [];
+    for (let i = 0; i < 4; i++) {
+        waits.push(page.timers.filter(t => !t.done && t.ms >= 60000).map(t => t.ms)[0]);
+        await page.fireLong();
+    }
+    assert.deepEqual(waits, [60000, 120000, 300000, 900000]);
 });
