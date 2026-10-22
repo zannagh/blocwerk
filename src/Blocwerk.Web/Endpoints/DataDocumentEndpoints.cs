@@ -12,10 +12,10 @@ using Microsoft.AspNetCore.Mvc;
 namespace Blocwerk.Web.Endpoints;
 
 /// <summary>
-/// The data documents (Phase 3 plan §1): the <c>wall</c>, <c>holds</c>, <c>boulders</c> and <c>gallery</c> kinds of
-/// <see cref="DocumentEndpoints.Route"/>, and their index <see cref="DocumentEndpoints.IndexRoute"/>. Both decide the
-/// caller's class with <see cref="DocumentAudienceGate"/> (the feed's grant, kiosk first); a document is served only from
-/// the caller's own class.
+/// The data documents (Phase 3 plan §1): the <c>wall</c>, <c>holds</c>, <c>boulders</c>, <c>gallery</c> and
+/// <c>comments</c> kinds of <see cref="DocumentEndpoints.Route"/>, and their index <see cref="DocumentEndpoints.IndexRoute"/>.
+/// Both decide the caller's class with <see cref="DocumentAudienceGate"/> (the feed's grant, kiosk first); a document is
+/// served only from the caller's own class.
 /// </summary>
 /// <remarks>
 /// The index is per caller and per moment: <c>private, no-cache</c>, a strong ETag over its body, and

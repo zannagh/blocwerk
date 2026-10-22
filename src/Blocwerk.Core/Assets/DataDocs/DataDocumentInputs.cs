@@ -37,6 +37,15 @@ public static class DataDocumentInputs
         FeedKinds.GalleryChanged, FeedKinds.GalleryDeleted, FeedKinds.WallManifest, FeedKinds.WallResync,
     ];
 
+    // comment.deleted outlives the compaction of its comment.added; boulder.deleted stands for its comments (they cascade
+    // without rows of their own); boulder.changed: a draft published or taken back opens or closes its comments to share
+    // links and kiosks; user.profile: an author renamed or given an avatar (the byline and the id rule).
+    private static readonly string[] Comments =
+    [
+        FeedKinds.CommentAdded, FeedKinds.CommentDeleted, FeedKinds.BoulderChanged, FeedKinds.BoulderDeleted, FeedKinds.UserProfile,
+        FeedKinds.WallResync,
+    ];
+
     /// <summary>The input kinds of <paramref name="kind"/>.</summary>
     /// <exception cref="ArgumentOutOfRangeException">Not a data document kind.</exception>
     public static IReadOnlyList<string> Of(string kind) => kind switch
@@ -45,6 +54,7 @@ public static class DataDocumentInputs
         DataDocumentKinds.Holds => Holds,
         DataDocumentKinds.Boulders => Boulders,
         DataDocumentKinds.Gallery => Gallery,
+        DataDocumentKinds.Comments => Comments,
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Not a data document kind."),
     };
 }

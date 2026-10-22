@@ -36,6 +36,23 @@ public static class DocumentAudiences
     /// </summary>
     public static bool IsOutside(DocumentAudience audience) => audience is DocumentAudience.Outsider or DocumentAudience.Kiosk;
 
+    /// <summary>
+    /// True for the classes that read a draft's comments: the same as <see cref="SeesDrafts"/>, because
+    /// <c>CommentService</c>'s read gate (#180) opens a draft to the wall's members only, and keeps share links and the
+    /// kiosk to published boulders. Archived and historic boulders keep their comments for every class, as that gate does.
+    /// </summary>
+    public static bool ReadsDraftComments(DocumentAudience audience) => SeesDrafts(audience);
+
+    /// <summary>
+    /// The feed's byline rule (<see cref="AuthorVisibility"/>) for the class, as the viewer the class stands for: members
+    /// and setters see author ids; share links and the kiosk see one only for an author with an avatar.
+    /// </summary>
+    /// <remarks>The viewer carries no user id: the document is the class's, never one reader's.</remarks>
+    public static AuthorVisibility Authors(DocumentAudience audience) => AuthorVisibility.For(
+        audience is DocumentAudience.Setters or DocumentAudience.Members
+            ? new FeedViewer([FeedAudience.Wall, FeedAudience.Members], userId: null)
+            : FeedViewer.Anonymous());
+
     /// <summary>The class of a granted feed viewer that is not a kiosk tablet.</summary>
     public static DocumentAudience Of(FeedViewer viewer) =>
         viewer.Audiences.Contains(FeedAudience.Setters) ? DocumentAudience.Setters

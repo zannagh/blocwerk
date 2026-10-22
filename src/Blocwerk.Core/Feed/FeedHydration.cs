@@ -34,6 +34,13 @@ public static class FeedHydration
         BlocwerkDbContext db, IReadOnlyList<WallChange> rows, CancellationToken cancellationToken)
     {
         var ids = rows.Where(r => r.ActorUserId is not null).Select(r => r.ActorUserId!.Value).Distinct().ToList();
+        return await AuthorsAsync(db, ids, cancellationToken);
+    }
+
+    /// <summary>The users <paramref name="ids"/> as bylines read them; a user row that is gone is simply missing.</summary>
+    internal static async Task<IReadOnlyDictionary<Guid, FeedAuthor>> AuthorsAsync(
+        BlocwerkDbContext db, IReadOnlyCollection<Guid> ids, CancellationToken cancellationToken)
+    {
         if (ids.Count == 0)
         {
             return new Dictionary<Guid, FeedAuthor>();
