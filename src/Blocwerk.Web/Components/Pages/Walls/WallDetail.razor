@@ -88,6 +88,13 @@ else
                 </div>
             </details>
 
+            @* The one way into a wall update: upload, one review, apply (wall admins, own device only). Here on the
+               settings page rather than under "View in 3D" on the overview, where a stray tap started an update. *@
+            @if (_isAdmin && !KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))
+            {
+                <a class="btn-secondary wall-update-link" href="/walls/@WallId/update">Update wall</a>
+            }
+
             @if (_isAdmin)
             {
                 <details class="settings-panel settings-card">
@@ -685,12 +692,6 @@ else
                         </svg>
                         View in 3D
                     </Wall3DLink>
-
-                    @* The one way into a wall update: upload, one review, apply (wall admins, own device only). *@
-                    @if (_isAdmin && !KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))
-                    {
-                        <a class="btn-secondary wall-update-link" href="/walls/@WallId/update">Update wall</a>
-                    }
 
                     @if (_canEditHolds && KeptHoldCount > 0 && string.IsNullOrEmpty(ShareToken))
                     {
