@@ -43,7 +43,10 @@ public sealed class FeedCatchUp(IWallFeed feed, Func<BlocwerkDbContext> createCo
     /// <summary>The parsed cursor, or one that resyncs.</summary>
     public static FeedCursor Parse(string? after) => FeedCursor.TryParse(after, out var cursor) ? cursor : Unknown;
 
-    /// <summary>Hydrates a page's rows as <paramref name="viewer"/> sees them, in one batch per kind of content.</summary>
+    /// <summary>
+    /// Hydrates a page's rows as <paramref name="viewer"/> sees them, in one batch per kind of content, without the kiosk's
+    /// activity rows it may not read now (<see cref="FeedKioskActivity"/>).
+    /// </summary>
     public async Task<IReadOnlyList<FeedEnvelope>> HydrateAsync(FeedPage page, FeedViewer viewer, CancellationToken cancellationToken)
     {
         if (page.Changes.Count == 0)
@@ -52,9 +55,11 @@ public sealed class FeedCatchUp(IWallFeed feed, Func<BlocwerkDbContext> createCo
         }
 
         await using var db = createContext();
-        var hydrated = await FeedHydration.LoadAsync(db, page.Changes, cancellationToken);
+        var hydrated = await FeedHydration.LoadAsync(db, page.Changes, cancellationToken, FeedKioskNeeds.Of([viewer]));
         var visibility = AuthorVisibility.For(viewer);
-        return page.Changes.Select(r => FeedEnvelopes.Build(r, page.Next.Epoch, hydrated, visibility)).ToArray();
+        return page.Changes.Where(r => FeedKioskActivity.Allows(viewer, r, hydrated))
+            .Select(r => FeedEnvelopes.Build(r, page.Next.Epoch, hydrated, visibility))
+            .ToArray();
     }
 
     private async Task<FeedChanges> ReadAsync(
@@ -71,7 +76,7 @@ public sealed class FeedCatchUp(IWallFeed feed, Func<BlocwerkDbContext> createCo
     }
 
     private static FeedFilter WallFilter(Guid wallId, FeedViewer viewer) =>
-        FeedFilter.ForWall(wallId, viewer.Audiences.ToArray(), viewer.UserId);
+        FeedFilter.ForViewer(wallId, viewer);
 
     // Members see the wall's member list and every author id anyway; the global mark tells them nothing they may not know.
     private async Task<FeedCursor> ScopeAsync(FeedFilter filter, FeedViewer viewer, FeedCursor global, CancellationToken cancellationToken)

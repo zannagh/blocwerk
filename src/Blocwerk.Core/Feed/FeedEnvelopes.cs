@@ -23,7 +23,9 @@ public static class FeedEnvelopes
             Kind = row.Kind,
             EntityId = row.EntityId,
             At = row.CreatedAt,
-            Actor = row.ActorUserId is { } actor ? visibility.Describe(hydrated.Authors.GetValueOrDefault(actor)) : null,
+            Actor = row.ActorUserId is { } actor
+                ? visibility.Describe(hydrated.Authors.GetValueOrDefault(actor), !visibility.MasksUnnamed || hydrated.Kiosk.Names(row))
+                : null,
             Data = Parse(row.DataJson),
             Hydrated = content,
             Tombstone = tombstone,

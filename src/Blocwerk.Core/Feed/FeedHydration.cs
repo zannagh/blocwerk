@@ -18,7 +18,12 @@ public static class FeedHydration
     /// <summary>True for kinds whose envelope carries content, and so becomes a tombstone when the source row is gone.</summary>
     public static bool HasContent(string kind) => kind == FeedKinds.CommentAdded;
 
-    public static async Task<FeedHydrated> LoadAsync(BlocwerkDbContext db, IReadOnlyList<WallChange> rows, CancellationToken cancellationToken)
+    /// <summary>
+    /// Hydrates <paramref name="rows"/>; the kiosk facts only as far as <paramref name="kiosk"/> says a viewer needs them
+    /// (none by default: a kiosk viewer then reads no activity row and names nobody, fail-closed).
+    /// </summary>
+    public static async Task<FeedHydrated> LoadAsync(
+        BlocwerkDbContext db, IReadOnlyList<WallChange> rows, CancellationToken cancellationToken, FeedKioskNeeds kiosk = default)
     {
         if (rows.Count == 0)
         {
@@ -27,7 +32,8 @@ public static class FeedHydration
 
         var authors = await AuthorsAsync(db, rows, cancellationToken);
         var content = await CommentsAsync(db, rows, cancellationToken);
-        return new FeedHydrated(authors, content);
+        var facts = await FeedKioskFacts.LoadAsync(db, rows, kiosk, cancellationToken);
+        return new FeedHydrated(authors, content, facts);
     }
 
     private static async Task<IReadOnlyDictionary<Guid, FeedAuthor>> AuthorsAsync(

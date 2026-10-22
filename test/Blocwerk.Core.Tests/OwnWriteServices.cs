@@ -18,7 +18,7 @@ internal sealed class OwnWriteServices(IDbContextFactory<BlocwerkDbContext> fact
         new BoulderService(factory, harness.CurrentUser, harness.ActivityLog, NullLogger<BoulderService>.Instance);
 
     public IAttemptService Attempts { get; } =
-        new AttemptService(factory, harness.CurrentUser, harness.ActivityLog, NullLogger<AttemptService>.Instance);
+        new AttemptService(factory, harness.CurrentUser, NullLogger<AttemptService>.Instance);
 
     public ICommentService Comments { get; } =
         new CommentService(factory, harness.CurrentUser, harness.ActivityLog, NullLogger<CommentService>.Instance);

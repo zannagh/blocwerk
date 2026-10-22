@@ -10,7 +10,7 @@
     carry three more fields for it. BoulderDetail calls ReloadAsync() through an @ref after the
     offline queue flushes, since a replayed attempt or comment shows up here.
 
-    Live (design §5.5): an activity.added of this boulder re-reads the newest page (the envelope
+    Live (design §5.5): an activity.added or activity.removed (a deleted attempt) of this boulder re-reads the newest page (the envelope
     carries the entry's type but not its details, so it cannot be drawn from the event alone).
     While an older page is open the list is held, so it never shifts under the reader; going
     back to the newest page reads fresh anyway.
@@ -60,7 +60,7 @@
     /// <summary>The boulder's wall, whose feed keeps the list live.</summary>
     [Parameter] public Guid WallId { get; set; }
 
-    private static readonly IReadOnlySet<string> Kinds = new HashSet<string> { FeedKinds.ActivityAdded, FeedKinds.UserProfile };
+    private static readonly IReadOnlySet<string> Kinds = new HashSet<string> { FeedKinds.ActivityAdded, FeedKinds.ActivityRemoved, FeedKinds.UserProfile };
     private static readonly IReadOnlySet<string> None = new HashSet<string>();
 
     private List<ActivityLogEntry>? _items;

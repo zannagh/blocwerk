@@ -675,7 +675,7 @@ public class KioskEscalationTests
 
         var factory = KioskFactory(h, h.WallId);
         var boulders = new BoulderService(factory, h.CurrentUser, h.ActivityLog, NullLogger<BoulderService>.Instance);
-        var attempts = new AttemptService(factory, h.CurrentUser, h.ActivityLog, NullLogger<AttemptService>.Instance);
+        var attempts = new AttemptService(factory, h.CurrentUser, NullLogger<AttemptService>.Instance);
 
         // Set a boulder from the tablet.
         var boulder = await boulders.CreateBoulderAsync(
