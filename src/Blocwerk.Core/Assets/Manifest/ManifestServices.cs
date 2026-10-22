@@ -3,6 +3,7 @@
 
 using Blocwerk.Core.Assets.DataDocs;
 using Blocwerk.Core.Assets.Documents;
+using Blocwerk.Core.Assets.Mine;
 using Blocwerk.Core.Assets.Partition;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -13,7 +14,7 @@ public static class ManifestServices
 {
     /// <summary>
     /// Registers the manifest (builder, cache, service), the view3d documents (store, service), the data documents (builder,
-    /// store, flights, service) and the cache-partition resolver. The partition key
+    /// store, flights, service), the reader's own marks (<see cref="MineDocumentService"/>) and the cache-partition resolver. The partition key
     /// (<see cref="ICachePartitionKey"/>) comes from the authentication layer, where the DataProtection key ring is.
     /// </summary>
     public static IServiceCollection AddWallManifest(this IServiceCollection services)
@@ -29,6 +30,7 @@ public static class ManifestServices
         services.AddSingleton<DataDocumentStore>();
         services.AddSingleton<DataDocumentFlights>();
         services.AddScoped<DataDocumentService>();
+        services.AddScoped<MineDocumentService>();
         services.AddScoped<ICachePartitionResolver, CachePartitionResolver>();
         return services;
     }

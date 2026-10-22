@@ -31,6 +31,13 @@ public static class DocumentAudiences
     public static bool SeesStats(DocumentAudience audience) => audience is DocumentAudience.Setters or DocumentAudience.Members;
 
     /// <summary>
+    /// True for the same classes as <see cref="SeesStats"/>: the reader's own ticks and favourites
+    /// (<c>/api/me/walls/{w}/mine</c>), which the wall page shows only on its member branch. A share link and a kiosk
+    /// tablet never get them, signed in or acting as a member.
+    /// </summary>
+    public static bool SeesMine(DocumentAudience audience) => audience is DocumentAudience.Setters or DocumentAudience.Members;
+
+    /// <summary>
     /// True for the classes outside the wall (share link, kiosk): they are handed the wall's own feed mark
     /// (<see cref="FeedScopedMark"/>), never the global one, as the catch-up route hands them.
     /// </summary>
