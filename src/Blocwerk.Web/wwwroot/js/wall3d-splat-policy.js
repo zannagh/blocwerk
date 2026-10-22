@@ -17,6 +17,8 @@ const REST_MS = 1500;
 const RETRY_MS = +(new URLSearchParams(location.search).get('splatRetryMs') || 15_000);
 /** Re-probes per view session; after these the level on show stays. */
 const MAX_RETRIES = 4;
+/** The cap level showing this long without a step down counts as running fine (it is never probed). */
+export const STEADY_MS = +(new URLSearchParams(location.search).get('splatSteadyMs') || 10_000);
 
 /**
  * Re-arms the step-up probe: a step that failed, was aborted, or a probe that read 'stay' would
@@ -82,6 +84,27 @@ export function createLadderPolicy(light) {
                 return 'sustained';
             }
             return null;
+        },
+    };
+}
+
+/**
+ * The cap level is never probed (there is nothing above it to step up to), so its success is recorded here instead:
+ * `arm(index, now)` when a level shows, `spoil()` on a step down, a sustained-load step or a lost context, and
+ * `due(index, now)` is true once, when the armed level is still the one showing STEADY_MS later. Then the next visit
+ * steps straight up to it (wall3d-splat-ladder.js stepTarget) instead of re-downloading every level below it.
+ */
+export function createSteadyWatch(ms = STEADY_MS) {
+    let armed = -1;
+    let since = 0;
+    return {
+        get delay() { return ms; },
+        arm(index, now) { armed = index; since = now; },
+        spoil() { armed = -1; },
+        due(index, now) {
+            if (armed < 0 || index !== armed || now - since < ms) return false;
+            armed = -1;
+            return true;
         },
     };
 }
