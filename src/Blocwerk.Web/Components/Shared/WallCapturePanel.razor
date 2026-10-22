@@ -40,7 +40,7 @@
     {
         <div class="form-group capture-upload">
             <label for="capture-photos">Photos</label>
-            <InputFile id="capture-photos" OnChange="UploadAsync" multiple accept="image/jpeg,image/png,image/heic,image/heif,.heic,.heif"
+            <SafeInputFile id="capture-photos" OnChange="UploadAsync" multiple accept="image/jpeg,image/png,image/heic,image/heif,.heic,.heif"
                        class="form-input" disabled="@busy" />
             @if (uploadStatus is not null)
             {
@@ -52,7 +52,7 @@
         {
             <div class="form-group capture-upload">
                 <label for="capture-plan">Marker plan (JSON, optional)</label>
-                <InputFile id="capture-plan" OnChange="UploadPlanAsync" accept=".json,application/json" class="form-input" disabled="@busy" />
+                <SafeInputFile id="capture-plan" OnChange="UploadPlanAsync" accept=".json,application/json" class="form-input" disabled="@busy" />
                 <p class="hint">
                     The marker-plan.json from the marker planner. With it the server knows which marker sits on which
                     surface, how big each one is and how steep each surface is — and tells you afterwards if a marker

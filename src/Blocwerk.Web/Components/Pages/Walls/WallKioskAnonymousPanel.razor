@@ -7,6 +7,7 @@
    and re-checks wall admin against the database. *@
 @using Blocwerk.Core.Helpers
 @inject IWallService WallService
+@inject Blocwerk.Web.State.WallCacheState Cache
 
 <div class="settings-panel wall-kiosk-anon-panel">
     <p class="apikey-blurb">
@@ -49,7 +50,8 @@
         // cannot read) leaves it unticked, which is the safe way to be wrong.
         try
         {
-            var wall = await WallService.GetWallAsync(WallId);
+            // The circuit's cached wall: a full wall read (every live hold) for one flag was most of this page's cost.
+            var wall = await Cache.GetWallAsync(WallId);
             _allowed = wall?.AllowAnonymousKioskSetting ?? false;
         }
         catch (Exception)

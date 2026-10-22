@@ -5,6 +5,7 @@
    device. That hiding is cosmetic; WallService.SetKioskKeyboardShortcutsAsync refuses a kiosk caller
    and re-checks wall admin against the database, so a tablet cannot grant itself the capability. *@
 @inject IWallService WallService
+@inject Blocwerk.Web.State.WallCacheState Cache
 @inject ILogger<WallKioskShortcutPanel> Logger
 
 <div class="settings-panel wall-kiosk-shortcut-panel">
@@ -69,7 +70,8 @@
         // cannot read) leaves it unticked, which is the safe way to be wrong.
         try
         {
-            var wall = await WallService.GetWallAsync(WallId);
+            // The circuit's cached wall: a full wall read (every live hold) for one flag was most of this page's cost.
+            var wall = await Cache.GetWallAsync(WallId);
             _allowed = wall?.AllowKioskKeyboardShortcuts ?? false;
         }
         catch (Exception)

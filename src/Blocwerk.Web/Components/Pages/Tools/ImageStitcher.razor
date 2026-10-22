@@ -13,7 +13,7 @@
     <div class="stitcher-toolbar">
         <label class="btn-secondary stitcher-upload">
             + Add images
-            <InputFile OnChange="OnUpload" accept="image/*" multiple hidden />
+            <SafeInputFile OnChange="OnUpload" accept="image/*" multiple hidden />
         </label>
         <span class="option-hint">@_layers.Count image@(_layers.Count == 1 ? "" : "s")</span>
         <div class="stitcher-spacer"></div>

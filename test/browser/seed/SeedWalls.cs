@@ -17,7 +17,8 @@ namespace Blocwerk.Browser.Seed;
 /// <item><b>alpha</b>: Alice's wall with two panels, an active 3D model (texture, mask, splat), a boulder with a beta
 /// video thumbnail (ticked and favourited by Alice and by Carol), a kiosk key, and Carol as a member who consented to the
 /// kiosk (no PIN).</item>
-/// <item><b>beta</b>: Alice's second wall, one panel.</item>
+/// <item>alpha also has a share link (<see cref="SeededWorld.ShareToken"/>).</item>
+/// <item><b>beta</b>: Alice's second wall, one panel, and a boulder list long enough to scroll.</item>
 /// <item><b>bobs</b>: Bob's wall, one panel. Bob is a member of nothing of Alice's.</item>
 /// </list>
 /// </summary>
@@ -45,8 +46,10 @@ internal sealed class SeedWalls
         AddMarks(boulderId, alice.Id, AttemptType.Send);
         AddMarks(boulderId, carol.Id, AttemptType.Flash);
         var kioskToken = AddKioskKey(alpha.Wall.Id, alice.Id);
+        alpha.Wall.ShareToken = "browser-harness-share-token";
 
         var beta = AddWall("Beta", alice, panels: 1, seed: 10);
+        AddListBoulders(beta.Wall.Id, alice.Id, 40);
         var bobs = AddWall("Bobs", bob, panels: 1, seed: 20);
         await db.SaveChangesAsync();
 
@@ -63,7 +66,8 @@ internal sealed class SeedWalls
                 ["beta"] = new(beta.Wall.Id, beta.Shas, null, null, null, null),
                 ["bobs"] = new(bobs.Wall.Id, bobs.Shas, null, null, null, null),
             },
-            kioskToken);
+            kioskToken,
+            alpha.Wall.ShareToken);
     }
 
     private static string Hex(byte[] bytes) => ContentHash.ToHex(ContentHash.Of(bytes))!;
@@ -114,6 +118,16 @@ internal sealed class SeedWalls
         return (Hex(texture), Hex(mask), Hex(splat));
     }
 
+    // Plain boulders (no photo, no holds) one minute apart, so the newest-first list has a fixed order.
+    private void AddListBoulders(Guid wallId, Guid setterId, int count)
+    {
+        var start = DateTimeOffset.UtcNow.AddHours(-1);
+        for (var i = 1; i <= count; i++)
+        {
+            db.Boulders.Add(new Boulder { WallId = wallId, Name = $"List boulder {i:00}", CreatedByUserId = setterId, CreatedAt = start.AddMinutes(i) });
+        }
+    }
+
     private (string Thumbnail, Guid BoulderId) AddVideoThumbnail(Guid wallId, Guid uploaderId)
     {
         var thumbnail = SeedImages.Jpeg(320, 180, 42);
@@ -142,7 +156,7 @@ internal sealed class SeedWalls
     }
 }
 
-internal sealed record SeededWorld(Dictionary<string, SeededUser> Users, Dictionary<string, SeededWall> Walls, string KioskToken);
+internal sealed record SeededWorld(Dictionary<string, SeededUser> Users, Dictionary<string, SeededWall> Walls, string KioskToken, string ShareToken);
 
 internal sealed record SeededUser(Guid Id, string Name);
 

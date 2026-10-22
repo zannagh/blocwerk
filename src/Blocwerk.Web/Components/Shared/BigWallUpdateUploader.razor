@@ -37,7 +37,7 @@
                 {
                     <label class="bigupdate-slot-pick">
                         <span class="panel-add-plus">+</span>
-                        <InputFile id="@slot.InputId" OnChange="e => OnSlotFile(e, slot)" accept="image/*"
+                        <SafeInputFile id="@slot.InputId" OnChange="e => OnSlotFile(e, slot)" accept="image/*"
                                    class="panel-add-input" disabled="@(_busy || slot.Working)" />
                     </label>
                     @if (slot.Working)

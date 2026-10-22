@@ -190,6 +190,7 @@ public static class Program
         builder.Services.AddScoped<ICircuitFeedViewer, CircuitFeedViewer>();
         builder.Services.AddScoped<WallFeedLink>();
         builder.Services.AddScoped<WallCacheState>();
+        builder.Services.AddScoped<WallPageMemory>();
 
         // Per-circuit answer to "may this session drive the global keyboard shortcuts?". Scoped so
         // the kiosk wall's opt-in flag is read once per circuit, whichever component asks first.

@@ -137,6 +137,9 @@
     <script src="@Assets["js/wall-shape-commit.js"]"></script>
     <script src="@Assets["js/wall-shape-drag.js"]"></script>
     <script src="@Assets["js/wall-carousel.js"]"></script>
+    @* Lands a carousel before its first paint, keeps ?view= in step with its page and restores each page's scroll
+       on back/forward. After wall-carousel.js, which it calls lazily. *@
+    <script src="@Assets["js/wall-carousel-nav.js"]"></script>
     @* After both of the modules it drives: it binds its listeners at parse and calls into
        bwViewport / wallCarousel lazily, so this order is what keeps it from ever seeing a
        half-defined global. One coordinator for orientationchange/resize for the whole app. *@
@@ -184,6 +187,8 @@
     @* Before blazor-boot.js, which calls it around a resume; maintenance.js calls it before a reload. *@
     <script src="@Assets["js/scroll-keeper.js"]"></script>
     <script src="@Assets["js/blazor-boot.js"]"></script>
+    @* After blazor-boot.js: reads blocwerkConnection to tell a dead circuit from a reconnect blip. *@
+    <script src="@Assets["js/circuit-failed.js"]"></script>
     @* Defines bwEditGuard before any editor component (which loads with the circuit, later) can call
        it, and before maintenance.js reads it in safeToReload(). Order is otherwise not load-bearing:
        both sides read window.bwEditGuard lazily, inside functions. *@

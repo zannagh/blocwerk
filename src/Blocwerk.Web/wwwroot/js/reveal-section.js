@@ -5,6 +5,7 @@
 export function reveal(id) {
     const target = document.getElementById(id);
     if (!target) {
+        revealLazy(id);
         return;
     }
 
@@ -15,6 +16,29 @@ export function reveal(id) {
     }
 
     requestAnimationFrame(() => target.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+}
+
+/*
+ * A lazily built card (LazySettingsCard) names the anchors its body will hold in data-reveal. Opening it builds the
+ * body on the server; reveal once the anchor has arrived, or give up after a few seconds.
+ */
+function revealLazy(id) {
+    const card = [...document.querySelectorAll('details[data-reveal]')]
+        .find(d => d.dataset.reveal.split(/\s+/).includes(id));
+    if (!card) {
+        return;
+    }
+
+    card.open = true;
+    const until = performance.now() + 4000;
+    const wait = () => {
+        if (document.getElementById(id)) {
+            reveal(id);
+        } else if (performance.now() < until) {
+            requestAnimationFrame(wait);
+        }
+    };
+    requestAnimationFrame(wait);
 }
 
 /*

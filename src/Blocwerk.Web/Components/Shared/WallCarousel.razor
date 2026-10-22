@@ -4,7 +4,10 @@
 @implements IAsyncDisposable
 
 <div class="wall-carousel-root @(Locked ? "editing" : string.Empty)">
-    <div class="wall-carousel @(_initialized ? string.Empty : "carousel-pending")" @ref="_ref">
+    @* data-initial-page lets wall-carousel-nav.js land the track before the first paint; data-views lets it keep
+       ?view= in step with the page (see that file). *@
+    <div class="wall-carousel @(_initialized ? string.Empty : "carousel-pending")" @ref="_ref"
+         data-initial-page="@_currentPage" data-views="@PageViews">
         @foreach (var (frag, idx) in Pages())
         {
             <div class="wall-page @(PageClass(idx))">
@@ -34,6 +37,12 @@
     [Parameter] public int InitialPage { get; set; } = 2;
     [Parameter] public bool Locked { get; set; }
     [Parameter] public string? PageClasses { get; set; }
+
+    /// <summary>
+    /// Pipe-separated <c>?view=</c> value per page, empty for the page a bare URL opens on. When set, the URL follows
+    /// the page the carousel is on, so a history entry returns to it. Null leaves the URL alone.
+    /// </summary>
+    [Parameter] public string? PageViews { get; set; }
 
     private ElementReference _ref;
     private int _currentPage;
@@ -81,6 +90,13 @@
     protected override void OnParametersSet()
     {
         _fragCount = Pages().Count();
+        // Before the first positioning (and on the prerender) the dots already show the target page,
+        // so a deep link never flashes "page 1" as active.
+        if (!_initialized && _fragCount > 0)
+        {
+            _currentPage = Math.Clamp(InitialPage, 0, _fragCount - 1);
+        }
+
         if (_currentPage >= _fragCount) _currentPage = Math.Max(0, _fragCount - 1);
 
         // A navigation that only changes the query (?view=boulders) reuses this component instead of
@@ -101,7 +117,7 @@
             // Position the scroll offset instantly while the carousel is still hidden
             // (.carousel-pending), so the first painted frame is already the target page — no
             // visible swipe from page 1. Revealing happens on the StateHasChanged re-render below.
-            await JS.InvokeVoidAsync("wallCarousel.initPage", _ref, _currentPage);
+            await SafeInvokeAsync("wallCarousel.initPage", _ref, _currentPage);
             _initialized = true;
             // JS owns settling from here: it waits until the scroller is actually still, corrects the
             // offset once and reports the page back through CarouselSettled. Nothing re-renders the
