@@ -11,12 +11,14 @@ namespace Blocwerk.Core.Assets.DataDocs;
 /// <summary>
 /// Builds the <c>comments</c> document for one class: the full text of every comment on every boulder the class's
 /// <c>boulders</c> document lists: historic ones for every class; drafts' and archived boulders' comments only for the
-/// wall's members and setters (<see cref="DocumentAudiences.SeesDrafts"/>, <see cref="DocumentAudiences.SeesArchived"/>),
-/// within <c>CommentService</c>'s read gate (#180), which keeps share links and the kiosk off drafts. Authors are described by the feed's rule for the class
-/// (<see cref="DocumentAudiences.Authors"/>), so an erased, deleted or Ghost author reads as the placeholder, exactly as the
-/// <c>comment.added</c> envelope replayed after the document shows them. A deleted comment or boulder is gone from the
-/// rows, so it is gone from the next sha. The authors are returned beside the document (never in it), so a rename or a
-/// new avatar of one of them rebuilds it, whichever wall the <c>user.profile</c> row was written for.
+/// wall's members and setters (<see cref="DocumentAudiences.SeesDrafts"/>, <see cref="DocumentAudiences.SeesArchived"/>).
+/// For share links and the kiosk that is stricter than <c>CommentService</c>'s read gate (#180), which keeps them off
+/// drafts only and still shows an archived boulder's comments to a share link that opens it by id. Authors are described
+/// by the feed's rule for the class (<see cref="DocumentAudiences.Authors"/>), so an erased, deleted or Ghost author reads
+/// as the placeholder, exactly as the <c>comment.added</c> envelope replayed after the document shows them. A deleted
+/// comment or boulder is gone from the rows, so it is gone from the next sha. The authors are returned beside the document
+/// (never in it), so a rename or a new avatar of one of them rebuilds it, whichever wall the <c>user.profile</c> row was
+/// written for.
 /// </summary>
 internal static class CommentsDocumentBuilder
 {
