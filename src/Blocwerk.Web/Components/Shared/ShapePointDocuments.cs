@@ -12,7 +12,8 @@ namespace Blocwerk.Web.Components.Shared;
 /// A stored outline (<see cref="ShapePoint"/>s) as the shared hold renderer takes it (<see cref="DocumentPoint"/>s).
 /// Converted once per list and kept with it, so an editor rendering hundreds of holds allocates nothing per render;
 /// the editors move points in place, so a kept copy is checked against the list's current values and rebuilt when one
-/// moved.
+/// moved. A kept copy lives exactly as long as its list: the weak table holds the list weakly, so the copy goes with
+/// the list (a hold reloaded or discarded) and never keeps a list alive.
 /// </summary>
 public static class ShapePointDocuments
 {
@@ -49,7 +50,7 @@ public static class ShapePointDocuments
             return null;
         }
 
-        if (Holes.TryGetValue(rings, out var kept) && kept.Count == rings.Count && kept.Select((k, i) => Same(k, rings[i])).All(same => same))
+        if (Holes.TryGetValue(rings, out var kept) && SameRings(kept, rings))
         {
             return kept;
         }
@@ -60,6 +61,24 @@ public static class ShapePointDocuments
     }
 
     private static List<DocumentPoint> Convert(IReadOnlyList<ShapePoint> ring) => [.. ring.Select(p => new DocumentPoint(p.Dx, p.Dy))];
+
+    private static bool SameRings(IReadOnlyList<IReadOnlyList<DocumentPoint>> kept, IReadOnlyList<IReadOnlyList<ShapePoint>> rings)
+    {
+        if (kept.Count != rings.Count)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < rings.Count; i++)
+        {
+            if (!Same(kept[i], rings[i]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     private static bool Same(IReadOnlyList<DocumentPoint> kept, IReadOnlyList<ShapePoint> ring)
     {
