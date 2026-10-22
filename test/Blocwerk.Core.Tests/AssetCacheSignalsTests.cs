@@ -37,6 +37,8 @@ public sealed class AssetCacheSignalsTests
     [InlineData(FeedKinds.UserProfile)]
     [InlineData(FeedKinds.GalleryChanged)]
     [InlineData(FeedKinds.GalleryDeleted)]
+    [InlineData(FeedKinds.CommentAdded)]
+    [InlineData(FeedKinds.CommentDeleted)]
     public void ADocumentInput_RefreshesTheDocsIndex(string kind) =>
         Assert.Equal(AssetCacheSignal.Data, AssetCacheSignals.Of(Delivery(kind)));
 

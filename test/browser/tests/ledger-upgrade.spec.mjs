@@ -70,9 +70,10 @@ test('a Release 1/2 ledger upgrades in place on the first new page, and the data
     expect(book.assets.map(a => a.key)).toContain(KEPT);
     const alpha = book.walls.find(w => w.wallId === world.walls.alpha.id);
     expect(alpha.keepOffline).toBe(true);
-    expect(Object.keys(alpha.data)).toEqual(expect.arrayContaining(['wall', 'holds', 'boulders']));
+    expect(Object.keys(alpha.data)).toEqual(expect.arrayContaining(['wall', 'holds', 'boulders', 'comments']));
     const docs = (await assetKeys(page))[`bw-a1-${partition}-3d`] || [];
     expect(docs).toEqual(expect.arrayContaining(Object.values(alpha.data).map(d => d.sha)));
+    expect(docs).toContain(alpha.data.comments.sha); // 3.2's comments document fills like the others
 });
 
 test('an open Release 1/2 tab blocks the upgrade: the new page is pending on memory, and the next load opens v2', async ({ page, context, world }) => {
