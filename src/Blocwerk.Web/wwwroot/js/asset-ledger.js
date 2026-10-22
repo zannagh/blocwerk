@@ -1,14 +1,24 @@
 /*
  * bwAssetLedger — the page's own record of what the on-device wall-asset cache holds (design 2026-10-21 §6.8).
  *
- * IndexedDB `blocwerk-assets` v1, three stores:
+ * IndexedDB `blocwerk-assets` v2, four stores:
  *   walls  [partition, wallId] → { partition, wallId, etag, cursor, entries, pending, member,
- *                                  lastOpened, fetchedAt, keepOffline }
+ *                                  lastOpened, fetchedAt, keepOffline, save3d, docs, data, dataEtag }
  *          `entries` is the manifest's asset list, compacted to what the fill and eviction read:
  *          [{ sha, kind, tier, bytes, widths?, splats?, at? }] (`at`: a gallery image's upload time).
+ *          `docs` the view3d documents (asset-3d.js); `data` the data documents of the docs index (asset-data.js),
+ *          { kind → { sha, bytes, cursor } }. listed() is every sha a row holds on to.
  *   assets [partition, key]    → { partition, key, sha, width, cache, bytes, cachedAt, verifiedAt }
  *          `key` is the service worker's cache key path without the origin: `{sha}` or `{sha}/{width}`.
  *   meta   'meta'              → { id: 'meta', activePartition, userTag, schema, proto }
+ *   mine   [partition, wallId] → { partition, wallId, cursor, ticks, favourites, fetchedAt } (v2; `u-` only, PR 3.4)
+ *
+ * UPGRADE v1 → v2 (Phase 3 PR 3.3) is in place: it only adds the `mine` store and stamps meta.schema, so every v1 row
+ * stays as it was (a v1 wall row simply has no `data` yet). Every connection closes on `versionchange`, so an open tab
+ * of this version never holds a later upgrade back; it carries on, on memory. A Release 1/2 tab has no such handler and
+ * blocks the upgrade while it stays open: then this page runs on memory with `upgradePending()` true (not "storage
+ * refused"), and the open, left running, finishes the upgrade once that tab goes; the next page start opens v2. A
+ * Release 1/2 page meeting a v2 database gets a VersionError and runs on memory, which it already did on any refusal.
  *
  * The budgets count bytes from here, never from navigator.storage.estimate(): on iOS estimate() reported 41 GB in use
  * during a 400 MB write. The ledger is a record, not the truth: asset-cache.js reconciles it against cache.keys() on
@@ -21,10 +31,15 @@ window.bwAssetLedger = (function () {
     'use strict';
 
     const DB_NAME = 'blocwerk-assets';
-    const DB_VERSION = 1;
-    const SCHEMA = 1;
+    const DB_VERSION = 2;
+    const SCHEMA = 2;
     const META_KEY = 'meta';
-    const KEYS = { walls: ['partition', 'wallId'], assets: ['partition', 'key'], meta: 'id' };
+    const KEYS = { walls: ['partition', 'wallId'], assets: ['partition', 'key'], meta: 'id', mine: ['partition', 'wallId'] };
+    // The stores a partition wipe empties (meta records the active label and stays).
+    const PARTITIONED = ['walls', 'assets', 'mine'];
+    // An open still unsettled after this (queued behind another tab's blocked upgrade) is a pending upgrade too.
+    const OPEN_WAIT_MS = 5000;
+    const PENDING = 'BlocwerkUpgradePending';
 
     function keyOf(store, row) {
         const path = KEYS[store];
@@ -37,7 +52,7 @@ window.bwAssetLedger = (function () {
 
     // The fallback, and what the node tests run on: the same six calls over Maps.
     function memoryBackend() {
-        const stores = { walls: new Map(), assets: new Map(), meta: new Map() };
+        const stores = { walls: new Map(), assets: new Map(), meta: new Map(), mine: new Map() };
         return {
             kind: 'memory',
             get: async (store, key) => clone(stores[store].get(idKey(store, key))),
@@ -103,20 +118,59 @@ window.bwAssetLedger = (function () {
         };
     }
 
-    function openIdb() {
-        return new Promise((resolve, reject) => {
-            const req = window.indexedDB.open(DB_NAME, DB_VERSION);
-            req.onupgradeneeded = () => {
-                const db = req.result;
-                for (const [name, keyPath] of Object.entries(KEYS)) {
-                    if (!db.objectStoreNames.contains(name)) {
-                        db.createObjectStore(name, { keyPath });
-                    }
+    // Only adds: the stores this version lacks, and the schema stamp on a v1 meta row. No row is rewritten or dropped.
+    function upgrade(db, tx, oldVersion) {
+        for (const [name, keyPath] of Object.entries(KEYS)) {
+            if (!db.objectStoreNames.contains(name)) {
+                db.createObjectStore(name, { keyPath });
+            }
+        }
+        if (oldVersion > 0) {
+            const meta = tx.objectStore('meta');
+            const read = meta.get(META_KEY);
+            read.onsuccess = () => {
+                if (read.result) {
+                    meta.put(Object.assign(read.result, { schema: SCHEMA }));
                 }
             };
-            req.onsuccess = () => resolve(req.result);
-            req.onerror = () => reject(req.error);
-            req.onblocked = () => reject(new Error('blocwerk-assets upgrade blocked'));
+        }
+    }
+
+    function pendingError() {
+        const error = new Error('blocwerk-assets upgrade pending');
+        error.name = PENDING;
+        return error;
+    }
+
+    /**
+     * Opens v2. `blocked` (an older tab holds the database open) and an open that hangs past OPEN_WAIT_MS reject as
+     * PENDING; the request itself runs on, so the upgrade completes once the other tab closes, and that late
+     * connection is closed at once (this page already went to memory).
+     */
+    function openIdb(idb) {
+        return new Promise((resolve, reject) => {
+            let settled = false;
+            const give = (fn, value) => {
+                if (!settled) {
+                    settled = true;
+                    window.clearTimeout(timer);
+                    fn(value);
+                }
+            };
+            const timer = window.setTimeout(() => give(reject, pendingError()), OPEN_WAIT_MS);
+            const req = idb.open(DB_NAME, DB_VERSION);
+            req.onupgradeneeded = event => upgrade(req.result, req.transaction, event.oldVersion || 0);
+            req.onsuccess = () => {
+                const db = req.result;
+                db.onversionchange = () => db.close();
+                if (settled) {
+                    db.close();
+                    return;
+                }
+                give(resolve, db);
+            };
+            req.onerror = () => give(reject, req.error);
+            req.onblocked = () => give(reject, pendingError());
         });
     }
 
@@ -167,9 +221,9 @@ window.bwAssetLedger = (function () {
             getAsset: (partition, key) => b.get('assets', [partition, key]),
             putAsset: row => b.put('assets', row),
             deleteAsset: (partition, key) => b.delete('assets', [partition, key]),
-            // Every wall and asset row outside `keep` (null keeps nothing). Meta stays: it records the active label.
+            // Every wall, asset and mine row outside `keep` (null keeps nothing). Meta stays: it records the active label.
             deleteAllExcept: async keep => {
-                for (const store of ['walls', 'assets']) {
+                for (const store of PARTITIONED) {
                     if (keep === null) {
                         await b.clear(store);
                         continue;
@@ -184,10 +238,24 @@ window.bwAssetLedger = (function () {
         };
     }
 
+    /**
+     * Every sha a wall row holds on to: its manifest entries, its view3d documents (`docs`) and its data documents
+     * (`data`, as entries of tier `data`). Eviction (classify) and dropWall read this, so none of them is an orphan.
+     */
+    function listed(wall) {
+        const data = Object.entries((wall && wall.data) || {})
+            .filter(([, doc]) => doc && typeof doc.sha === 'string')
+            .map(([kind, doc]) => ({ sha: doc.sha, kind, tier: 'data', bytes: doc.bytes || 0 }));
+        return ((wall && wall.entries) || []).concat((wall && wall.docs) || [], data);
+    }
+
     let opened = null;
+    let pending = false;
 
     return {
         SCHEMA,
+        DB_NAME,
+        DB_VERSION,
         // The page's ledger: IndexedDB when it opens, else memory.
         open: function () {
             if (!opened) {
@@ -196,14 +264,19 @@ window.bwAssetLedger = (function () {
                         if (!window.indexedDB) {
                             return create(memoryBackend());
                         }
-                        return create(idbBackend(await openIdb()));
+                        return create(idbBackend(await openIdb(window.indexedDB)));
                     } catch (e) {
+                        pending = !!e && e.name === PENDING;
                         return create(memoryBackend());
                     }
                 })();
             }
             return opened;
         },
+        // True when this page runs on memory because the v2 upgrade waits for another tab: "Updating offline data…",
+        // never "storage refused". The next page start tries again.
+        upgradePending: () => pending,
+        listed,
         memory: () => create(memoryBackend()),
         create
     };
