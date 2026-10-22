@@ -16,13 +16,13 @@ namespace Blocwerk.Authentication.Services;
 /// <para>
 /// The request that ends a session names the reason: a validator rejection is <c>forced</c>
 /// (<see cref="RejectAsync"/>), a session whose claims resolve to nobody who may sign in is <c>gone</c>
-/// (<c>CurrentUserService</c>). Any other request without a session is <c>expired</c>: an expired ticket, or no cookie
+/// (<c>CurrentUserService</c>), the signed-out page of a logout or kiosk unregister is <c>signed-out</c>. Any other request without a session is <c>expired</c>: an expired ticket, or no cookie
 /// at all, which is what a browser sends once it dropped an expired one.
 /// </para>
 /// <para>
 /// STICKY. That request may be one the page never reads (a worker's <c>/a/</c> fetch, a circuit start), and the cookie it
 /// drops is gone from every later request, which would then read as <c>expired</c> and lock instead of wipe. So a
-/// <c>forced</c> or <c>gone</c> also sets the <see cref="MarkerCookie"/> (HttpOnly, <see cref="MarkerLifetime"/>, the
+/// <c>forced</c>, <c>gone</c> or <c>signed-out</c> also sets the <see cref="MarkerCookie"/> (HttpOnly, <see cref="MarkerLifetime"/>, the
 /// lock's own window), and a later request without a session reports the marker's reason. Signing in deletes it.
 /// </para>
 /// </remarks>
@@ -93,10 +93,25 @@ public static class SignOutReason
         Mark(context.HttpContext, SignOutReasons.Forced);
     }
 
+    // The marker goes: one the request carried, and one this very response set (a rejected session cookie, then a
+    // sign-in in the same request), whose pending Set-Cookie is withdrawn.
     private static void Forget(HttpContext http)
     {
+        var setHere = http.Items[ItemKey] is string reason && SignOutReasons.IsSticky(reason);
         http.Items.Remove(ItemKey);
-        if (http.Request.Cookies.ContainsKey(MarkerCookie) && !http.Response.HasStarted)
+        if (http.Response.HasStarted)
+        {
+            return;
+        }
+
+        var prefix = MarkerCookie + "=";
+        var cookies = http.Response.Headers.SetCookie;
+        if (cookies.Any(c => c?.StartsWith(prefix, StringComparison.Ordinal) == true))
+        {
+            http.Response.Headers.SetCookie = cookies.Where(c => c?.StartsWith(prefix, StringComparison.Ordinal) != true).ToArray();
+        }
+
+        if (setHere || http.Request.Cookies.ContainsKey(MarkerCookie))
         {
             http.Response.Cookies.Delete(MarkerCookie, new CookieOptions { Path = "/", Secure = http.Request.IsHttps, SameSite = SameSiteMode.Lax });
         }

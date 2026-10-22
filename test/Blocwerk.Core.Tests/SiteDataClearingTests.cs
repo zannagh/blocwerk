@@ -83,6 +83,22 @@ public class SiteDataClearingTests
 
         Assert.IsType<LocalRedirectResult>(await controller.Logout());
         Assert.False(http.Response.Headers.ContainsKey(SiteDataClearing.HeaderName));
+        Assert.DoesNotContain(SignOutReason.MarkerCookie, http.Response.Headers.SetCookie.ToString());
+    }
+
+    /// <summary>
+    /// An account logout sets the sticky <c>signed-out</c> marker (PR 3.5): if the page's own wipe never lands, the next
+    /// anonymous page still says why, and the device wipes the partition instead of locking it for this account's return.
+    /// </summary>
+    [Fact]
+    public async Task AnAccountLogout_SetsTheSignedOutMarker()
+    {
+        var (controller, http, _) = Controller(isKiosk: false);
+
+        await controller.Logout();
+
+        Assert.Contains($"{SignOutReason.MarkerCookie}=signed-out", http.Response.Headers.SetCookie.ToString());
+        Assert.Equal(Blocwerk.Contracts.Assets.SignOutReasons.SignedOut, SignOutReason.Of(http));
     }
 
     /// <summary>The scripts load by their fingerprinted URLs (the endpoint's asset map), as BlocwerkApp's do through @Assets.</summary>

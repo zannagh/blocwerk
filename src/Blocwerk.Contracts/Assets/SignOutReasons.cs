@@ -29,6 +29,12 @@ public static class SignOutReasons
     /// <summary>The session names an account that is gone: erased, disabled, merged away, or a system row.</summary>
     public const string Gone = "gone";
 
+    /// <summary>
+    /// An explicit sign-out (logout, a kiosk unregister: the signed-out page). The page wipes on it itself; the reason
+    /// makes a wipe that did not land (a blocked upgrade, a capped wait, a direct load) still a wipe on the next page.
+    /// </summary>
+    public const string SignedOut = "signed-out";
+
     /// <summary>True for the reasons a device may carry over a request (the server's sticky marker).</summary>
-    public static bool IsSticky(string? reason) => reason is Forced or Gone;
+    public static bool IsSticky(string? reason) => reason is Forced or Gone or SignedOut;
 }

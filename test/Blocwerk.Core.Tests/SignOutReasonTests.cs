@@ -58,6 +58,7 @@ public sealed class SignOutReasonTests
     [Theory]
     [InlineData("forced", SignOutReasons.Forced)]
     [InlineData("gone", SignOutReasons.Gone)]
+    [InlineData("signed-out", SignOutReasons.SignedOut)]
     [InlineData("expired", SignOutReasons.Expired)]
     [InlineData("anything", SignOutReasons.Expired)]
     public void ALaterRequest_ReadsTheMarker_AndOnlyItsStickyValues(string marker, string expected)
@@ -93,6 +94,24 @@ public sealed class SignOutReasonTests
         var cookie = http.Response.Headers.SetCookie.ToString();
         Assert.Contains($"{SignOutReason.MarkerCookie}=;", cookie);
         Assert.Contains("expires=Thu, 01 Jan 1970", cookie, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>A marker set and then cleared within one request (a rejected session, then a sign-in) is not sent.</summary>
+    [Fact]
+    public async Task AMarkerSetAndClearedInOneRequest_IsWithdrawnAndDeleted()
+    {
+        var options = new CookieAuthenticationOptions();
+        SignOutReason.Configure(options);
+        var http = new DefaultHttpContext();
+        SignOutReason.Mark(http, SignOutReasons.Forced);
+        var scheme = new AuthenticationScheme(CookieAuthenticationDefaults.AuthenticationScheme, null, typeof(CookieAuthenticationHandler));
+
+        await options.Events.SignedIn(new CookieSignedInContext(http, scheme, new ClaimsPrincipal(new ClaimsIdentity("Cookies")), new AuthenticationProperties(), options));
+
+        var cookies = http.Response.Headers.SetCookie.ToArray();
+        Assert.DoesNotContain(cookies, c => c!.StartsWith($"{SignOutReason.MarkerCookie}=forced", StringComparison.Ordinal));
+        Assert.Contains(cookies, c => c!.StartsWith($"{SignOutReason.MarkerCookie}=;", StringComparison.Ordinal));
+        Assert.Equal(SignOutReasons.Expired, SignOutReason.Of(http));
     }
 
     /// <summary>A kiosk session the validator rejects (here a malformed claim set) is a <c>forced</c> sign-out.</summary>
