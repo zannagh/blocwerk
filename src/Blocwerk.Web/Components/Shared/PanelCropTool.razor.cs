@@ -69,6 +69,9 @@ public partial class PanelCropTool : IAsyncDisposable
     [Inject]
     private IJSRuntime JS { get; set; } = null!;
 
+    [Inject]
+    private ILogger<PanelCropTool> Logger { get; set; } = null!;
+
     /// <summary>Called by panel-crop.js with the box as it is now (throttled while dragging).</summary>
     /// <param name="left">Left edge (0..1).</param>
     /// <param name="top">Top edge (0..1).</param>
@@ -122,9 +125,26 @@ public partial class PanelCropTool : IAsyncDisposable
             return;
         }
 
-        self = DotNetObjectReference.Create(this);
-        module = await JS.InvokeAsync<IJSObjectReference>("import", "/js/panel-crop.js");
-        handle = await module.InvokeAsync<IJSObjectReference>("attach", stage, box, self, JsRect(rect));
+        // The stage can already be out of the document (an enhanced navigation away while the panel loaded);
+        // panel-crop.js then throws on the null element, and that must not take the circuit down with it.
+        try
+        {
+            self = DotNetObjectReference.Create(this);
+            module = await JS.InvokeAsync<IJSObjectReference>("import", "/js/panel-crop.js");
+            handle = await module.InvokeAsync<IJSObjectReference>("attach", stage, box, self, JsRect(rect));
+        }
+        catch (JSDisconnectedException)
+        {
+            // The circuit is gone; so is the page the box lived on.
+        }
+        catch (TaskCanceledException)
+        {
+            // The interop call was cancelled with the circuit.
+        }
+        catch (JSException ex)
+        {
+            Logger.LogWarning(ex, "Panel crop box could not attach its pointer handling");
+        }
     }
 
     private bool Confirming => confirm is not null || confirmUndo;

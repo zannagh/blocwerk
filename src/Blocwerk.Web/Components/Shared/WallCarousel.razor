@@ -101,7 +101,7 @@
             // Position the scroll offset instantly while the carousel is still hidden
             // (.carousel-pending), so the first painted frame is already the target page — no
             // visible swipe from page 1. Revealing happens on the StateHasChanged re-render below.
-            await JS.InvokeVoidAsync("wallCarousel.initPage", _ref, _currentPage);
+            await SafeInvokeAsync("wallCarousel.initPage", _ref, _currentPage);
             _initialized = true;
             // JS owns settling from here: it waits until the scroller is actually still, corrects the
             // offset once and reports the page back through CarouselSettled. Nothing re-renders the

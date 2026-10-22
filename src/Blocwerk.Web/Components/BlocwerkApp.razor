@@ -184,6 +184,8 @@
     @* Before blazor-boot.js, which calls it around a resume; maintenance.js calls it before a reload. *@
     <script src="@Assets["js/scroll-keeper.js"]"></script>
     <script src="@Assets["js/blazor-boot.js"]"></script>
+    @* After blazor-boot.js: reads blocwerkConnection to tell a dead circuit from a reconnect blip. *@
+    <script src="@Assets["js/circuit-failed.js"]"></script>
     @* Defines bwEditGuard before any editor component (which loads with the circuit, later) can call
        it, and before maintenance.js reads it in safeToReload(). Order is otherwise not load-bearing:
        both sides read window.bwEditGuard lazily, inside functions. *@

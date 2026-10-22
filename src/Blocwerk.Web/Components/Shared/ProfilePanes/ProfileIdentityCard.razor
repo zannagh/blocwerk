@@ -9,7 +9,7 @@
             <UserAvatar UserId="Target.Id" Name="@Target.Name" HasAvatar="Target.HasAvatar" />
 
             @* Hidden file input triggered by the pencil label below, overlaying the header avatar. *@
-            <InputFile id="avatar-file" class="avatar-file-input" OnChange="OnAvatarSelectedAsync"
+            <SafeInputFile id="avatar-file" class="avatar-file-input" OnChange="OnAvatarSelectedAsync"
                        accept="image/*" disabled="@savingAvatar" />
             <label class="avatar-icon-btn avatar-edit-btn @(savingAvatar ? "is-disabled" : null)"
                    for="avatar-file" title="Change photo" aria-label="Change photo">
