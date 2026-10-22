@@ -1301,8 +1301,7 @@ else
         Cache.Changed += OnCacheChanged;
 
         // Back from a boulder: the page as it was left renders at once, and the load below refreshes it.
-        RestoreFromPageMemory();
-        await LoadCurrentWall();
+        await RefreshRestoredPageAsync(RestoreFromPageMemory(), LoadCurrentWall);
     }
 
     // Navigating from one wall to another keeps this component alive — same route template, new
@@ -1484,7 +1483,6 @@ else
 
     public void Dispose()
     {
-        RememberPage();
         Cache.Changed -= OnCacheChanged;
         _editLease?.Dispose();
         _flushRegistration?.Dispose();
@@ -1494,6 +1492,9 @@ else
             // Best-effort clear on navigate-away; a torn-down circuit no-ops (the safe failure).
             _ = EditGuardInterop.SyncAsync(JS, "wall-edit", editing: false, active: _editGuardActive);
         }
+
+        // Last, after every release above, and never allowed to throw out of Dispose.
+        RememberPageSafely();
     }
 
     // withMemberData: the activity, members and kiosk consent too (the first load of a wall), read alongside the rest.
@@ -1866,6 +1867,13 @@ else
 
     private async Task ToggleEditing()
     {
+        // A restored page is on screen while its refresh runs, and that refresh replaces the holds the editor works
+        // on: entering edit mode waits for it (see RefreshRestoredPageAsync).
+        if (!_isEditing && DeferEditUntilRefreshed())
+        {
+            return;
+        }
+
         _isEditing = !_isEditing;
         SyncEditLease();
 
@@ -1947,6 +1955,7 @@ else
     private async Task DeleteWall()
     {
         await WallService.DeleteWallAsync(WallId);
+        ForgetPage();
         Navigation.NavigateTo("/walls");
     }
 

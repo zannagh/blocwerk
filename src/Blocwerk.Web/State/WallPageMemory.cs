@@ -46,6 +46,7 @@ public sealed class WallPageMemory : IDisposable
     }
 
     /// <summary>The page remembered for the wall, or null when there is none young enough.</summary>
+    /// <typeparam name="T">The page's snapshot type, as the page remembered it.</typeparam>
     public T? Recall<T>(Guid wallId, string? shareToken)
         where T : class
     {

@@ -18,11 +18,69 @@ public partial class WallDetail
     [Inject]
     private WallPageMemory PageMemory { get; set; } = default!;
 
+    // A restored page whose refresh has not landed yet, and an edit tap that arrived meanwhile.
+    private bool _refreshing;
+    private bool _editAfterRefresh;
+
+    // The wall is gone (deleted from here): nothing of it may be remembered on the way out.
+    private bool _pageGone;
+
+    // Runs the load that follows a restore. Until it lands, entering edit mode is deferred: LoadWall replaces _holds
+    // (and the wall) the editor would be dragging. A tap in that window is honoured once the fresh holds are in.
+    private async Task RefreshRestoredPageAsync(bool restored, Func<Task> load)
+    {
+        _refreshing = restored;
+        try
+        {
+            await load();
+        }
+        finally
+        {
+            _refreshing = false;
+        }
+
+        if (_editAfterRefresh)
+        {
+            _editAfterRefresh = false;
+            await ToggleEditing();
+        }
+    }
+
+    private bool DeferEditUntilRefreshed()
+    {
+        if (!_refreshing)
+        {
+            return false;
+        }
+
+        _editAfterRefresh = true;
+        return true;
+    }
+
+    private void ForgetPage()
+    {
+        _pageGone = true;
+        PageMemory.Forget(WallId);
+    }
+
+    private void RememberPageSafely()
+    {
+        try
+        {
+            RememberPage();
+        }
+        catch (Exception ex)
+        {
+            // A head start for the next visit, never worth failing a dispose over.
+            Logger.LogDebug(ex, "Could not remember the page of wall {WallId}", _loadedWallId);
+        }
+    }
+
     // Leaving: remember what is on screen. Never mid-edit (the cloned holds may carry unsaved edits) and never a page
     // that has not loaded.
     private void RememberPage()
     {
-        if (!RendererInfo.IsInteractive || _wall is null || _isEditing || _loadedWallId == Guid.Empty)
+        if (!RendererInfo.IsInteractive || _wall is null || _isEditing || _pageGone || _loadedWallId == Guid.Empty)
         {
             return;
         }
@@ -57,11 +115,12 @@ public partial class WallDetail
         });
     }
 
-    private void RestoreFromPageMemory()
+    // True when a remembered page was put on screen.
+    private bool RestoreFromPageMemory()
     {
         if (PageMemory.Recall<WallPageSnapshot>(WallId, ShareToken) is not { } page)
         {
-            return;
+            return false;
         }
 
         _wall = page.Wall;
@@ -100,5 +159,6 @@ public partial class WallDetail
         _fBeta = filter.Beta;
         _fNeedsReview = filter.NeedsReview;
         _sort = (SortMode)filter.Sort;
+        return true;
     }
 }
