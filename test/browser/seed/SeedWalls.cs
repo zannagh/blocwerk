@@ -16,7 +16,7 @@ namespace Blocwerk.Browser.Seed;
 /// <list type="bullet">
 /// <item><b>alpha</b>: Alice's wall with two panels, an active 3D model (texture, mask, splat), a boulder with a beta
 /// video thumbnail, a kiosk key, and Carol as a member who consented to the kiosk (no PIN).</item>
-/// <item><b>beta</b>: Alice's second wall, one panel.</item>
+/// <item><b>beta</b>: Alice's second wall, one panel, and a boulder list long enough to scroll.</item>
 /// <item><b>bobs</b>: Bob's wall, one panel. Bob is a member of nothing of Alice's.</item>
 /// </list>
 /// </summary>
@@ -44,6 +44,7 @@ internal sealed class SeedWalls
         var kioskToken = AddKioskKey(alpha.Wall.Id, alice.Id);
 
         var beta = AddWall("Beta", alice, panels: 1, seed: 10);
+        AddListBoulders(beta.Wall.Id, alice.Id, 40);
         var bobs = AddWall("Bobs", bob, panels: 1, seed: 20);
         await db.SaveChangesAsync();
 
@@ -109,6 +110,16 @@ internal sealed class SeedWalls
             SizeBytes = splat.Length, Sha256 = ContentHash.Of(splat), SplatCount = 1000, FrameJson = "{}",
         });
         return (Hex(texture), Hex(mask), Hex(splat));
+    }
+
+    // Plain boulders (no photo, no holds) one minute apart, so the newest-first list has a fixed order.
+    private void AddListBoulders(Guid wallId, Guid setterId, int count)
+    {
+        var start = DateTimeOffset.UtcNow.AddHours(-1);
+        for (var i = 1; i <= count; i++)
+        {
+            db.Boulders.Add(new Boulder { WallId = wallId, Name = $"List boulder {i:00}", CreatedByUserId = setterId, CreatedAt = start.AddMinutes(i) });
+        }
     }
 
     private string AddVideoThumbnail(Guid wallId, Guid uploaderId)
