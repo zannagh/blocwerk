@@ -12,7 +12,8 @@ namespace Blocwerk.Web.Components.Shared;
 /// <summary>
 /// Hands the circuit's live feed to the page's device cache (Phase 3 PR 3.3): every delivery of a wall the circuit
 /// follows that changes a data document or the manifest calls <c>bwAssetData.changed(wallId, manifest)</c>
-/// (wwwroot/js/asset-data.js), which debounces 10 s and refetches the docs index (and the manifest first). Renders
+/// (wwwroot/js/asset-data.js), which debounces 10 s and refetches the docs index (and the manifest first); one that
+/// changes the viewer's own marks calls <c>bwAssetMine.changed(wallId)</c> (asset-mine.js, 2 s, <c>u-</c> pages only). Renders
 /// nothing; mounted once in the layout. The call returns at once and every interop failure is absorbed: the device
 /// cache only follows, the next page start catches up.
 /// </summary>
@@ -60,23 +61,26 @@ public sealed class AssetCacheFeedRelay : ComponentBase, IDisposable
         }
 
         var signal = AssetCacheSignals.Of(delivery);
-        if (signal == AssetCacheSignal.None)
+        if (signal != AssetCacheSignal.None)
         {
-            return;
+            _ = InvokeAsync(() => NotifyAsync("bwAssetData.changed", delivery.WallId, signal == AssetCacheSignal.Manifest));
         }
 
-        _ = InvokeAsync(() => NotifyAsync(delivery.WallId, signal == AssetCacheSignal.Manifest));
+        if (AssetCacheSignals.ChangesMine(delivery))
+        {
+            _ = InvokeAsync(() => NotifyAsync("bwAssetMine.changed", delivery.WallId));
+        }
     }
 
-    private async Task NotifyAsync(Guid wallId, bool manifest)
+    private async Task NotifyAsync(string identifier, params object[] args)
     {
         try
         {
-            await JS.InvokeVoidAsync("bwAssetData.changed", wallId, manifest);
+            await JS.InvokeVoidAsync(identifier, args);
         }
         catch (Exception ex) when (ex is JSException or JSDisconnectedException or TaskCanceledException or InvalidOperationException)
         {
-            // An old cached script without bwAssetData, a closing circuit: the next start refreshes anyway.
+            // An old cached script without bwAssetData or bwAssetMine, a closing circuit: the next start refreshes anyway.
         }
     }
 }

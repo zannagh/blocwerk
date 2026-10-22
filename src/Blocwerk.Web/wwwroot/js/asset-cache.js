@@ -5,8 +5,8 @@
  * what the device should hold and when to let go of it:
  *   start: the page's partition decision and wipes (asset-session.js) → ledger reconcile against the caches → the
  *          viewer's walls from /api/me/cache-summary → each wall's manifest, 3 at a time (asset-manifest.js), and
- *          after a current one its docs index (asset-data.js) → eviction (asset-budget.js) → the background fill
- *          (asset-plan.js, asset-fill.js).
+ *          after a current one its docs index (asset-data.js) and the viewer's own marks (asset-mine.js) → eviction
+ *          (asset-budget.js) → the background fill (asset-plan.js, asset-fill.js).
  *   on a wall page: that wall's manifest is fetched (with the page's share token), it goes first in the fill, and
  *          leaving it runs eviction again.
  *   on `asset-cached` / `asset-refused` from the worker: the ledger records the asset / the fill learns of a refusal.
@@ -32,6 +32,7 @@ window.bwAssetCache = (function (win) {
     const Manifest = () => win.bwAssetManifest;
     const Store = () => win.bwAssetStore;
     const Data = () => win.bwAssetData;
+    const Mine = () => win.bwAssetMine;
 
     const state = {
         env: null, active: null, capable: false, summary: null, budget: null, context: null,
@@ -58,6 +59,7 @@ window.bwAssetCache = (function (win) {
     const onWorkerMessage = event => (caching() ? Store().record(win, state, event.data, now()) : undefined);
     const dropWall = wallId => Wipe().dropWall(state.env, state.active, wallId);
     const refreshData = wallId => Data().refresh(state.env, state.active, wallId, { token: state.tokens.get(wallId) || null, dropWall });
+    const refreshMine = wallId => Mine().refresh(state.env, state.active, wallId);
 
     async function refreshWall(wallId, opened) {
         const member = !!(state.summary && state.summary.walls.includes(wallId));
@@ -65,7 +67,7 @@ window.bwAssetCache = (function (win) {
         const result = await Manifest().refresh(state.env, state.active, wallId, { token, member, opened, dropWall });
         if (result.outcome === 'updated' || result.outcome === 'unchanged') {
             state.fresh.add(wallId);
-            await refreshData(wallId);
+            await Promise.all([refreshData(wallId), refreshMine(wallId)]);
         }
         win.clearTimeout(state.pendingTimers.get(wallId));
         const runs = result.pending > 0 && result.outcome !== 'dropped' ? (state.pendingRuns.get(wallId) || 0) + 1 : 0;
@@ -266,6 +268,8 @@ window.bwAssetCache = (function (win) {
         manifestChanged: wallId => whenStarted(() => refreshWall(String(wallId).toLowerCase(), false).then(() => scheduleFill())),
         // A data document of the wall may have changed (bwAssetData.changed, debounced): its docs index, then the fill.
         dataChanged: wallId => whenStarted(() => refreshData(String(wallId).toLowerCase()).then(() => scheduleFill())),
+        // A tick.mine / favorite.changed of the wall (bwAssetMine.changed, debounced): the viewer's own marks, `u-` only.
+        mineChanged: wallId => whenStarted(() => refreshMine(String(wallId).toLowerCase())),
         // The 3D opt-out (2.9's settings and the high-storage notice).
         setKeep3d: function (on) {
             if (win.bwPrefs && typeof win.bwPrefs.setCache3d === 'function') {
