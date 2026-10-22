@@ -751,7 +751,7 @@ else
                        with an in-place review. Wall admins only; renders nothing without suggestions or a 3D model. *@
                     @if (_isAdmin && !KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))
                     {
-                        <HoldLinkSuggestionsHint WallId="WallId" ShareToken="@ShareToken" OnLinked="LoadHoldLinkCount" />
+                        <HoldLinkSuggestionsHint WallId="WallId" ShareToken="@ShareToken" OnLinked="RefreshHoldLinksAsync" />
                     }
                     </div>
                 }
@@ -1323,7 +1323,17 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        // The prerender pass loads nothing and shows "Loading...": the interactive render replaces its output anyway,
+        // so loading the wall there doubled every visit's server work and held the navigation's response for it.
+        if (!RendererInfo.IsInteractive)
+        {
+            return;
+        }
+
         Cache.Changed += OnCacheChanged;
+
+        // Back from a boulder: the page as it was left renders at once, and the load below refreshes it.
+        RestoreFromPageMemory();
         await LoadCurrentWall();
     }
 
@@ -1333,10 +1343,12 @@ else
     // the parameter change.
     protected override async Task OnParametersSetAsync()
     {
-        if (_loadedWallId == WallId && _loadedShareToken == ShareToken)
+        if (!RendererInfo.IsInteractive || (_loadedWallId == WallId && _loadedShareToken == ShareToken))
         {
             return;
         }
+
+        RememberPage();
 
         // Drop the old wall first: it puts the page back on its "Loading..." state, which also
         // recreates the carousel so it opens on the new wall's initial page rather than wherever the
@@ -1351,16 +1363,12 @@ else
     {
         _loadedWallId = WallId;
         _loadedShareToken = ShareToken;
-        await LoadWall();
-        if (_wall != null && !_isAnonymous)
-        {
-            await LoadActivity(0);
-            if (_isMember)
-            {
-                _members = await WallService.GetMembersAsync(WallId);
-                await LoadKioskConsent();
-            }
-        }
+        await LoadWall(withMemberData: true);
+    }
+
+    private async Task LoadMembersAsync()
+    {
+        _members = await WallService.GetMembersAsync(WallId);
     }
 
     private async Task LoadKioskConsent()
@@ -1508,6 +1516,7 @@ else
 
     public void Dispose()
     {
+        RememberPage();
         Cache.Changed -= OnCacheChanged;
         _editLease?.Dispose();
         _flushRegistration?.Dispose();
@@ -1519,13 +1528,19 @@ else
         }
     }
 
-    private async Task LoadWall()
+    // withMemberData: the activity, members and kiosk consent too (the first load of a wall), read alongside the rest.
+    private async Task LoadWall(bool withMemberData = false)
     {
-        // Cleared before ANY branch that can return, so no path out of this method can leave last
-        // wall's answer standing while _wall already points at the next one. The early return on the
-        // login redirect is such a path: a render still happens before the navigation completes, and
-        // a stale true would offer "+ New" for a wall this tablet may not even write to.
-        _canCreateAnonymously = false;
+        // Cleared before ANY branch that can return when the wall changes, so no path out of this method
+        // can leave last wall's answer standing while _wall already points at the next one. The early
+        // return on the login redirect clears it itself: a render still happens before the navigation
+        // completes, and a stale true would offer "+ New" for a wall this tablet may not even write to.
+        // A reload of the SAME wall keeps the answer until the gate below re-asks, so a tablet coming
+        // back to its list does not see "+ New" blink off and on.
+        if (_wall?.Id != WallId)
+        {
+            _canCreateAnonymously = false;
+        }
 
         if (!string.IsNullOrEmpty(ShareToken))
         {
@@ -1581,6 +1596,7 @@ else
                 // wall, still goes to sign in exactly as before.
                 if (!KioskViewing.AllowsAnonymousViewOf(KioskContext, WallId))
                 {
+                    _canCreateAnonymously = false;
                     Navigation.NavigateTo("/account/login", replace: true);
                     return;
                 }
@@ -1601,41 +1617,61 @@ else
             && _wall != null
             && await BoulderService.CanCreateAnonymouslyAsync(WallId);
 
-        await LoadOpenUpdateAsync();
-        OpenReviewFromDeepLink();
-
-        if (_wall != null)
+        if (_wall == null)
         {
-            // Clone the holds/border points: _wall now comes from the shared per-circuit cache and
-            // the photo editor mutates these in place while dragging. Editing the cached instances
-            // directly would leak uncommitted edits back into the cache on discard/navigate-away.
-            _holds = _wall.Holds.Select(h => h.Clone()).ToList();
-            _borderPoints = _wall.BorderPoints?.Select(p => new ShapePoint { Dx = p.Dx, Dy = p.Dy }).ToList() ?? [];
-            await LoadPanels();
-            if (!_isAnonymous)
-            {
-                _items = await FeedbackService.GetBoulderListAsync(WallId);
-            }
-            else
-            {
-                // Anonymous share view: no per-user data, but the rows still name the setters, so
-                // pull every setter name for the wall in one query rather than per boulder.
-                var setterNames = await WallService.GetBoulderSetterNamesAsync(WallId, ShareToken);
-                _items = _wall.Boulders
-                    .Where(b => !b.IsDraft && !b.IsArchived)
-                    .Select(b => new BoulderListItem(
-                        b, 0, false, false, false, null, 0, null, setterNames.GetValueOrDefault(b.Id)))
-                    .ToList();
-            }
+            await LoadOpenUpdateAsync();
+            OpenReviewFromDeepLink();
+            return;
+        }
 
-            _boulders = _items.Select(i => i.Boulder).ToList();
-            await LoadReconciledHoldCounts();
+        // Clone the holds/border points: _wall now comes from the shared per-circuit cache and
+        // the photo editor mutates these in place while dragging. Editing the cached instances
+        // directly would leak uncommitted edits back into the cache on discard/navigate-away.
+        var wall = _wall;
+        _holds = wall.Holds.Select(h => h.Clone()).ToList();
+        _borderPoints = wall.BorderPoints?.Select(p => new ShapePoint { Dx = p.Dx, Dy = p.Dy }).ToList() ?? [];
 
-            if (!string.IsNullOrEmpty(_wall.ShareToken))
+        // Independent reads, side by side instead of one after another: each opens its own context, and their
+        // continuations still run one at a time on this circuit. Each writes only its own fields.
+        var loads = new List<Task> { LoadOpenUpdateAsync(), LoadPanels(), LoadHoldLinksAsync(), LoadBoulderItemsAsync(wall) };
+        if (withMemberData && !_isAnonymous)
+        {
+            loads.Add(LoadActivity(0));
+            if (_isMember)
             {
-                _shareLink = $"{Navigation.BaseUri}join/{_wall.ShareToken}";
+                loads.Add(LoadMembersAsync());
+                loads.Add(LoadKioskConsent());
             }
         }
+
+        await Task.WhenAll(loads);
+        OpenReviewFromDeepLink();
+        ComputeHoldLinkCount();
+        _boulders = _items.Select(i => i.Boulder).ToList();
+        ComputeReconciledHoldCounts();
+
+        if (!string.IsNullOrEmpty(wall.ShareToken))
+        {
+            _shareLink = $"{Navigation.BaseUri}join/{wall.ShareToken}";
+        }
+    }
+
+    private async Task LoadBoulderItemsAsync(Wall wall)
+    {
+        if (!_isAnonymous)
+        {
+            _items = await FeedbackService.GetBoulderListAsync(WallId);
+            return;
+        }
+
+        // Anonymous share view: no per-user data, but the rows still name the setters, so
+        // pull every setter name for the wall in one query rather than per boulder.
+        var setterNames = await WallService.GetBoulderSetterNamesAsync(WallId, ShareToken);
+        _items = wall.Boulders
+            .Where(b => !b.IsDraft && !b.IsArchived)
+            .Select(b => new BoulderListItem(
+                b, 0, false, false, false, null, 0, null, setterNames.GetValueOrDefault(b.Id)))
+            .ToList();
     }
 
     private async Task OnBatchSave(WallPhotoEditor.BatchChanges changes)
@@ -1702,8 +1738,6 @@ else
             _livePanels = [];
         }
 
-        await LoadHoldLinkCount();
-
         // Keep the edited-panel selection pointing at a panel that still exists after a reload.
         if (_editingPanel is not null && _livePanels.All(p => p.Id != _editingPanel.Id))
         {
@@ -1723,8 +1757,14 @@ else
     /// generation. <see cref="PanelLinkTool"/> counts only links whose endpoints are holds of the
     /// panels' CURRENT generation, which is why the two disagreed after a wall update. Count what the
     /// tool counts: intersect the link rows with the live panels' live hold ids.
+    /// <para>
+    /// Both come from what the page already holds: the links read once per load (<see cref="LoadHoldLinksAsync"/>,
+    /// shared with the reconciled hold counts) and the wall's holds, which carry every live panel's holds. A live
+    /// panel's holds are those at the panel's own generation (as <c>GetPanelHoldsAsync</c> reads them), so no
+    /// per-panel query is needed.
+    /// </para>
     /// </remarks>
-    private async Task LoadHoldLinkCount()
+    private void ComputeHoldLinkCount()
     {
         _holdLinkCount = 0;
         if (_livePanels.Count < 2 || !_canEditHolds)
@@ -1732,28 +1772,40 @@ else
             return;
         }
 
-        try
-        {
-            var liveHoldIds = new HashSet<Guid>();
-            foreach (var panel in _livePanels)
-            {
-                foreach (var hold in await LoadPanelHolds(panel.Id))
-                {
-                    liveHoldIds.Add(hold.Id);
-                }
-            }
+        var panelGeneration = _livePanels.ToDictionary(p => p.Id, p => p.Generation);
+        var liveHoldIds = _holds
+            .Where(h => h.WallPanelId is { } panelId && panelGeneration.TryGetValue(panelId, out var generation) && h.Generation == generation)
+            .Select(h => h.Id)
+            .ToHashSet();
+        _holdLinkCount = _holdLinks.Count(l => liveHoldIds.Contains(l.HoldAId) && liveHoldIds.Contains(l.HoldBId));
+    }
 
-            var links = await WallPanelService.GetHoldLinksAsync(WallId);
-            _holdLinkCount = links.Count(l => liveHoldIds.Contains(l.HoldAId) && liveHoldIds.Contains(l.HoldBId));
-        }
-        catch (Exception)
-        {
-            _holdLinkCount = 0;
-        }
+    // The wall's cross-panel hold links, read once per load for both the link-count card and the reconciled hold
+    // counts. A failed read (or a viewer who cannot enumerate links) leaves none: cards fall back to raw counts.
+    private IReadOnlyList<HoldLinkPair> _holdLinks = [];
+
+    // Links were made or broken: the card's count and the cards' reconciled hold counts follow.
+    private async Task RefreshHoldLinksAsync()
+    {
+        await LoadHoldLinksAsync();
+        ComputeHoldLinkCount();
+        ComputeReconciledHoldCounts();
     }
 
     private async Task<IReadOnlyList<PanelHold>> LoadPanelHolds(Guid panelId) =>
         await WallPanelService.GetPanelHoldsAsync(WallId, panelId, includeStaged: false);
+
+    private async Task LoadHoldLinksAsync()
+    {
+        try
+        {
+            _holdLinks = await WallPanelService.GetHoldLinksAsync(WallId);
+        }
+        catch (Exception)
+        {
+            _holdLinks = [];
+        }
+    }
 
     /// <summary>
     /// Loads the editable working set of full holds for the panel currently being edited on a big
@@ -2039,17 +2091,17 @@ else
         BoulderService.GetHoldUsageAsync(WallId);
 
     /// <summary>
-    /// Loads the wall's twin links once and reconciles every boulder's holds to a per-physical-hold
+    /// Reconciles every boulder's holds over the wall's twin links (read once by the load) to a per-physical-hold
     /// count, so a boulder that saved both twins of a hold is not double-counted on its card. A wall
     /// with no links (single-panel) yields an empty map and the cards fall back to the raw count.
     /// </summary>
-    private async Task LoadReconciledHoldCounts()
+    private void ComputeReconciledHoldCounts()
     {
         _reconciledHoldCounts = [];
         _usageCounts = null;
         try
         {
-            var links = await WallPanelService.GetHoldLinksAsync(WallId);
+            var links = _holdLinks;
             var linkPairs = links.ToList();
 
             // The usage heat map counts the same boulders for every viewer (see WallUsageHeat), so a
@@ -2074,7 +2126,7 @@ else
         }
         catch (Exception)
         {
-            // A failed link read just leaves cards on their raw count — never blocks the wall page.
+            // A failed reconcile just leaves cards on their raw count — never blocks the wall page.
             _reconciledHoldCounts = [];
         }
     }
@@ -2226,8 +2278,8 @@ else
     {
         _showLinkTool = false;
 
-        // The tool is where links are made and broken, so the card's count is re-read on the way out.
-        await LoadHoldLinkCount();
+        // The tool is where links are made and broken, so the links are re-read on the way out.
+        await RefreshHoldLinksAsync();
     }
 
     private async Task OnBigUpdatePromoted()
