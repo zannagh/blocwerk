@@ -23,6 +23,14 @@ public static class DocumentAudiences
     public static bool SeesArchived(DocumentAudience audience) => SeesDrafts(audience);
 
     /// <summary>
+    /// True for the wall's members and setters only: the wall page's list rows carry the rating (and the detail page the
+    /// ascent history) only for a member (<c>BoulderFeedbackService.GetBoulderListAsync</c>); its anonymous branch, which
+    /// a share-link viewer takes signed in or not and a resting kiosk takes too, shows no rating and no sends. The kiosk
+    /// class is every identity on the tablet, so it gets none even acting as a member, as with drafts.
+    /// </summary>
+    public static bool SeesStats(DocumentAudience audience) => audience is DocumentAudience.Setters or DocumentAudience.Members;
+
+    /// <summary>
     /// True for the classes outside the wall (share link, kiosk): they are handed the wall's own feed mark
     /// (<see cref="FeedScopedMark"/>), never the global one, as the catch-up route hands them.
     /// </summary>

@@ -22,16 +22,16 @@ public sealed class DataDocumentPostgresTests
     {
         using var f = await SeededAsync();
         f.Caller = f.Setter;
-        Assert.Contains((await f.DocumentAsync<BouldersDocument>(DataDocumentKinds.Boulders)).Boulders, b => b.Id == f.DraftId);
+        var setters = await f.DocumentAsync<BouldersDocument>(DataDocumentKinds.Boulders);
+        Assert.Contains(setters.Boulders, b => b.Id == f.DraftId);
+        Assert.Equal(new BouldersDocumentStats(1, 1, 4), setters.Boulders.Single(b => b.Id == f.PublishedId).Stats);
         var settersSha = DataDocumentFixture.Sha(await f.IndexAsync(), DataDocumentKinds.Boulders);
 
         f.BindKiosk(f.WallId);
         Assert.Equal(DocumentAudience.Kiosk, (await f.AccessAsync()).Audience);
         var kiosk = await f.DocumentAsync<BouldersDocument>(DataDocumentKinds.Boulders);
         Assert.Equal(f.EveryonesBoulders, kiosk.Boulders.Select(b => b.Id));
-        var published = kiosk.Boulders.Single(b => b.Id == f.PublishedId);
-        Assert.Equal(1, published.Stats.Ascents);
-        Assert.Equal(4, published.Stats.RatingAverage);
+        Assert.All(kiosk.Boulders, b => Assert.Equal(new BouldersDocumentStats(0, 0, null), b.Stats));
         Assert.Equal(404, (await f.DocumentHttpAsync(DataDocumentKinds.Boulders, settersSha)).Response.StatusCode);
     }
 

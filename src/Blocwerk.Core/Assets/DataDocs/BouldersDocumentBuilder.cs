@@ -15,7 +15,8 @@ namespace Blocwerk.Core.Assets.DataDocs;
 /// <see cref="BoulderSetterNames.Describe"/> renders on the pages, so an erased or Ghost creator reads as the placeholder;
 /// no user id is written. The people the bylines name are returned beside the document (never in it), so a rename of a
 /// setter who left the wall still rebuilds it. Stats are wall-wide counts (<see cref="BoulderStatsCounts"/>), never the
-/// reader's own marks.
+/// reader's own marks, and only for the classes that see them online (<see cref="DocumentAudiences.SeesStats"/>); the
+/// others get <see cref="BoulderStatsCounts.None"/>.
 /// </summary>
 internal static class BouldersDocumentBuilder
 {
@@ -45,7 +46,7 @@ internal static class BouldersDocumentBuilder
             .ToLookup(h => h.BoulderId, h => new BouldersDocumentHold(h.HoldId, h.Type.ToString(), h.Usage.ToString()));
         var setters = await BoulderSetterNames.LoadForWallAsync(db, wallId, includeDrafts: drafts);
         var setterIds = await db.BoulderSetters.AsNoTracking().Where(s => ids.Contains(s.BoulderId)).Select(s => s.UserId).ToListAsync(ct);
-        var stats = await BoulderStatsCounts.LoadAsync(db, ids, ct);
+        var stats = DocumentAudiences.SeesStats(audience) ? await BoulderStatsCounts.LoadAsync(db, ids, ct) : [];
 
         var documented = boulders.OrderBy(b => b.Id)
             .Select(b => Map(b, setters.GetValueOrDefault(b.Id), stats.GetValueOrDefault(b.Id), holds[b.Id]))
