@@ -218,6 +218,8 @@ jobs:
     name: Browser Tests (non-blocking)
     runs-on: ubuntu-latest
     continue-on-error: true
+    permissions:
+      contents: read
     services:
       postgres:
         image: postgres:17
@@ -275,6 +277,12 @@ jobs:
           CI: "true"
           BW_BROWSER_PG: postgres://postgres:blocwerk@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/bw_browser_ci
         run: npm test
+
+      # Retries hide a flaky test from the result (playwright.config.mjs: one retry in CI); name each one here instead.
+      - name: Annotate flaky tests
+        if: always()
+        working-directory: test/browser
+        run: node harness/flaky-report.mjs playwright-report/results.json
 
       - name: Upload the report
         if: failure()

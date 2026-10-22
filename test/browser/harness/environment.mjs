@@ -27,6 +27,7 @@ export const stateFile = path.join(outDir, 'state.json');
 const repoRoot = path.resolve(harnessRoot, '..', '..');
 const webProject = path.join(repoRoot, 'src', 'Blocwerk.Web');
 const seedProject = path.join(harnessRoot, 'seed');
+const STOP_GRACE_MS = 5000;
 
 function run(cmd, args, opts = {}) {
     try {
@@ -68,13 +69,35 @@ async function until(what, probe, timeoutMs) {
     throw new Error(`timed out waiting for ${what}${last ? `: ${last.message}` : ''}`);
 }
 
+// BW_BROWSER_PG: a server you provide (CI's service). Only a local one, and only a `bw_browser_*` database, which is
+// dropped and created again so every run starts from the same seed.
+async function providedPostgres(value) {
+    const url = new URL(value);
+    const pg = {
+        host: url.hostname, port: Number(url.port || 5432), user: decodeURIComponent(url.username),
+        password: decodeURIComponent(url.password), database: url.pathname.slice(1), stop: () => undefined
+    };
+    if (!['localhost', '127.0.0.1', '[::1]'].includes(pg.host)) {
+        throw new Error(`BW_BROWSER_PG must point at localhost or 127.0.0.1, not ${pg.host}: the harness drops its database`);
+    }
+    if (!/^bw_browser_[a-z0-9_]+$/.test(pg.database)) {
+        throw new Error(`BW_BROWSER_PG's database must be named bw_browser_*, not '${pg.database}'`);
+    }
+    const admin = new URL(value);
+    admin.pathname = '/postgres';
+    await resetDatabase(pg, admin);
+    return pg;
+}
+
+// Through the seeder's own Npgsql, so the harness needs no Postgres client of its own.
+async function resetDatabase(pg, admin) {
+    const connection = `Host=${pg.host};Port=${pg.port};Database=${admin.pathname.slice(1)};Username=${pg.user};Password=${pg.password}`;
+    run('dotnet', ['run', '--project', seedProject, '-c', 'Debug', '--', '--reset', connection, pg.database], { cwd: repoRoot });
+}
+
 async function startPostgres() {
     if (process.env.BW_BROWSER_PG) {
-        const url = new URL(process.env.BW_BROWSER_PG);
-        return {
-            host: url.hostname, port: Number(url.port || 5432), user: decodeURIComponent(url.username),
-            password: decodeURIComponent(url.password), database: url.pathname.slice(1), stop: () => undefined
-        };
+        return providedPostgres(process.env.BW_BROWSER_PG);
     }
     const id = randomBytes(4).toString('hex');
     const name = `bw-browser-pg-${id}`;
@@ -135,7 +158,8 @@ function appEnvironment(pg, port, runDir, storage) {
     };
 }
 
-async function startApp(webOut, pg, runDir, storage) {
+// Registers its stop in `stops` before it waits, so an app that never answers is still killed.
+async function startApp(webOut, pg, runDir, storage, stops) {
     const port = await freePort();
     fs.mkdirSync(path.join(runDir, 'home'), { recursive: true });
     const log = fs.openSync(path.join(outDir, 'app.log'), 'w');
@@ -143,7 +167,21 @@ async function startApp(webOut, pg, runDir, storage) {
         cwd: webOut, env: appEnvironment(pg, port, runDir, storage), stdio: ['ignore', log, log]
     });
     let exited = null;
-    child.on('exit', code => { exited = code; });
+    const gone = new Promise(resolve => child.on('exit', code => {
+        exited = code ?? 'signal';
+        resolve();
+    }));
+    // SIGTERM, then SIGKILL after STOP_GRACE_MS; resolves once the process is gone, so its files can be removed.
+    const stop = async () => {
+        if (exited !== null) {
+            return;
+        }
+        child.kill('SIGTERM');
+        const killer = setTimeout(() => child.kill('SIGKILL'), STOP_GRACE_MS);
+        await gone;
+        clearTimeout(killer);
+    };
+    stops.push(stop);
     await until('the app on /alive', async () => {
         if (exited !== null) {
             throw new Error(`app exited with ${exited}; see ${path.join(outDir, 'app.log')}`);
@@ -151,7 +189,7 @@ async function startApp(webOut, pg, runDir, storage) {
         const response = await fetch(`http://127.0.0.1:${port}/alive`);
         return response.ok;
     }, 120000);
-    return { port, stop: () => child.kill('SIGTERM') };
+    return { port };
 }
 
 export async function startEnvironment() {
@@ -170,8 +208,7 @@ export async function startEnvironment() {
         stops.push(pg.stop);
         const webOut = publishApp();
         const world = seed(pg, storage);
-        const app = await startApp(webOut, pg, runDir, storage);
-        stops.push(app.stop);
+        const app = await startApp(webOut, pg, runDir, storage, stops);
         const proxy = await startProxy(app.port);
         stops.push(proxy.close);
         const state = { baseURL: `http://127.0.0.1:${proxy.port}`, appPort: app.port, world };

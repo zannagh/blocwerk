@@ -13,7 +13,10 @@ export default defineConfig({
     retries: process.env.CI ? 1 : 0,
     timeout: 60000,
     expect: { timeout: 15000 },
-    reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
+    // CI also writes JSON, which harness/flaky-report.mjs reads to annotate the tests that passed only on a retry.
+    reporter: process.env.CI
+        ? [['list'], ['html', { open: 'never' }], ['json', { outputFile: 'playwright-report/results.json' }]]
+        : 'list',
     use: {
         // Traces are recorded by the context fixture (harness/fixtures.mjs), which builds the contexts itself.
         trace: 'off',

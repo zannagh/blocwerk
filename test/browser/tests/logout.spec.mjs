@@ -37,7 +37,7 @@ test('the signed-out page fires bw:identity-changed and moves on signed out', as
     expect(await partitionOf(page)).toBe('anon');
 });
 
-test('the Logout link wipes the signed-in partition first, and the navigation still happens', async ({ page, world }) => {
+test('the Logout link wipes the signed-in partition first, and the navigation still happens (every later wipe live)', async ({ page, world }) => {
     await recordIdentityEvents(page);
     await signIn(page, world.users.alice);
     await installWorker(page);
@@ -60,3 +60,65 @@ test('the Logout link wipes the signed-in partition first, and the navigation st
     expect(after.assets).toEqual([]);
     expect(after.meta.activePartition).toBe('anon');
 });
+
+// The documents after the click (the signed-out page, the anonymous landing page) with their wipes made inert: the asset
+// modules never boot and never get their globals, so rule 1, rule 6 and the signed-out page's own wipe cannot run.
+// Armed by a sessionStorage flag the test sets just before the click, so the page that is left keeps its modules.
+async function inertAfterClick(page) {
+    await page.addInitScript(() => {
+        if (sessionStorage.getItem('bw-test-inert') !== '1') {
+            return;
+        }
+        window.__bwAssetCacheManual = true;
+        for (const name of ['bwAssetWipe', 'bwAssetLedger', 'bwAssetCache']) {
+            Object.defineProperty(window, name, { configurable: false, get: () => undefined, set: () => undefined });
+        }
+    });
+}
+
+// The ledger read straight from IndexedDB, since the inert pages have no bwAssetLedger.
+function rawLedger(page) {
+    return page.evaluate(() => new Promise((resolve, reject) => {
+        const open = indexedDB.open('blocwerk-assets');
+        open.onerror = () => reject(open.error);
+        open.onsuccess = () => {
+            const db = open.result;
+            const all = store => new Promise((res, rej) => {
+                const req = db.transaction(store, 'readonly').objectStore(store).getAll();
+                req.onsuccess = () => res(req.result);
+                req.onerror = () => rej(req.error);
+            });
+            Promise.all([all('walls'), all('assets'), all('meta')]).then(([walls, assets, meta]) => {
+                db.close();
+                resolve({ walls, assets, meta });
+            }, reject);
+        };
+    }));
+}
+
+test('the Logout link itself wipes before it leaves, with every later wipe made inert', async ({ page, world }) => {
+    await inertAfterClick(page);
+    await signIn(page, world.users.alice);
+    await installWorker(page);
+    test.skip(!(await hasPageModules(page)), 'needs the 2.7 page modules');
+    await settled(page);
+    const alice = await partitionOf(page);
+    expect((await assetKeys(page))[`bw-a1-${alice}-img`] || []).not.toHaveLength(0);
+    expect((await rawLedger(page)).walls.length).toBeGreaterThan(0);
+
+    await page.evaluate(() => sessionStorage.setItem('bw-test-inert', '1'));
+    const signedOut = page.waitForResponse(r => new URL(r.url()).pathname === '/account/logout');
+    await page.getByRole('link', { name: 'Logout' }).click();
+    expect((await signedOut).status()).toBe(200);
+    await expect(page.locator('meta[name="bw-partition"]')).toHaveAttribute('content', 'anon');
+    await page.waitForLoadState('load');
+    expect(await page.evaluate(() => window.bwAssetWipe)).toBeUndefined();
+
+    // Only the click's wipe could have done this, and it ran before the browser left the page.
+    expect((await cacheNames(page)).filter(n => n.startsWith('bw-a1-'))).toEqual([]);
+    const after = await rawLedger(page);
+    expect(after.walls).toEqual([]);
+    expect(after.assets).toEqual([]);
+    expect(after.meta.find(m => m.id === 'meta')?.activePartition ?? null).toBeNull();
+});
+

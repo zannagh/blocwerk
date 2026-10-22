@@ -9,6 +9,26 @@ test.use({ workerOnly: true });
 const LOOKUP_DELAY_MS = 4000;
 const LOOKUP_TIMEOUT_MS = 2500;
 
+const QUIET_MS = 500;
+
+// Waits until the proxy's request log has stayed the same for QUIET_MS (at most 10 s).
+async function untilQuiet(server, since) {
+    let count = (await server.log(since)).length;
+    let quietSince = Date.now();
+    const deadline = Date.now() + 10000;
+    while (Date.now() - quietSince < QUIET_MS) {
+        if (Date.now() > deadline) {
+            throw new Error('the request log never went quiet');
+        }
+        await new Promise(resolve => setTimeout(resolve, 100));
+        const now = (await server.log(since)).length;
+        if (now !== count) {
+            count = now;
+            quietSince = Date.now();
+        }
+    }
+}
+
 async function timed(fn) {
     const start = Date.now();
     const result = await fn();
@@ -41,11 +61,23 @@ test('with a slow lookup, a stored asset comes from the cache with no server hit
     expect(second.ms).toBeLessThan(800);
     expect(await server.hits(mark, stored)).toBe(0);
 
-    // Read-only: a miss is fetched (and answers at once, without waiting for the lookup) but never stored.
+    // Read-only: a miss is fetched (and answers at once, without waiting for the lookup) but never stored. The worker
+    // would store it in event.waitUntil after the response, so the check waits until the worker is idle first: the
+    // proxy saw nothing new for QUIET_MS, and no `asset-cached` came for it meanwhile.
+    await page.evaluate(() => {
+        window.__bwCached = [];
+        navigator.serviceWorker.addEventListener('message', e => {
+            if (e.data && e.data.type === 'asset-cached') {
+                window.__bwCached.push(`${e.data.sha}/${e.data.width}`);
+            }
+        });
+    });
     const miss = await timed(() => pageFetch(page, missed, { cache: 'no-store' }));
     expect(miss.result.status).toBe(200);
     expect(miss.ms).toBeLessThan(LOOKUP_TIMEOUT_MS);
+    await untilQuiet(server, mark);
     expect(await server.hits(mark, missed)).toBe(1);
+    expect(await page.evaluate(() => window.__bwCached)).not.toContain(`${wall.panels[1]}/640`);
     expect(allKeys(await assetKeys(page))).not.toContain(`${wall.panels[1]}/640`);
 
     // Once the slow lookup has answered, the next page caches again.
