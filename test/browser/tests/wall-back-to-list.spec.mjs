@@ -162,3 +162,9 @@ test('the settings cards render their panels only once opened', async ({ page, w
     // Still under Activity: the Update wall link is outside every lazy card.
     await expect(settings.locator('details:has(> summary h2:text-is("Activity")) + a.wall-update-link')).toHaveCount(1);
 });
+
+test('a signed-out visitor to a wall page is redirected to sign in by the server', async ({ page, world }) => {
+    const response = await page.request.get(`/walls/${world.walls.alpha.id}`, { maxRedirects: 0 });
+    expect(response.status()).toBe(302);
+    expect(response.headers().location).toMatch(/\/account\/login/);
+});
