@@ -11,7 +11,7 @@ namespace Blocwerk.Core.Tests;
 
 /// <summary>
 /// What may never be in a data document: anything about the reader (a source scan of the contracts and the builders, so
-/// a field added later is caught before it ships), and a draft in any class but the setters'.
+/// a field added later is caught before it ships), and a draft in any class outside the wall's members (share links, kiosks).
 /// </summary>
 public sealed partial class DataDocumentPrivacyTests
 {
@@ -58,16 +58,20 @@ public sealed partial class DataDocumentPrivacyTests
     }
 
     [Fact]
-    public async Task NoClassButTheSetters_EverSeesTheDraft_InAnyDocument_AndNoDocumentNamesTheShareToken()
+    public async Task OnlyMembersAndSetters_SeeTheDraft_InAnyDocument_AndNoDocumentNamesTheShareToken()
     {
         using var f = new DataDocumentFixture();
         await f.SeedAsync();
-        var setters = await AllBytesAsync(f, () => f.Caller = f.Setter);
-        Assert.Contains(f.DraftId.ToString(), setters, StringComparison.Ordinal);
+        var members = new[]
+        {
+            await AllBytesAsync(f, () => f.Caller = f.Setter),
+            await AllBytesAsync(f, () => f.Caller = f.Member),
+        };
+        Assert.All(members, t => Assert.Contains(f.DraftId.ToString(), t, StringComparison.Ordinal));
+        Assert.All(members, t => Assert.Contains("Secret draft", t, StringComparison.Ordinal));
 
         var others = new[]
         {
-            await AllBytesAsync(f, () => f.Caller = f.Member),
             await AllBytesAsync(f, () => f.Caller = null, DataDocumentFixture.ShareToken),
             await AllBytesAsync(f, () => f.Caller = new Entities.User { Identifier = "stranger@test" }, DataDocumentFixture.ShareToken),
             await AllBytesAsync(f, () => Kiosk(f, actingAs: null)),
@@ -79,10 +83,10 @@ public sealed partial class DataDocumentPrivacyTests
             Assert.DoesNotContain("Secret draft", text, StringComparison.Ordinal);
         }
 
-        Assert.All(others.Append(setters), t => Assert.DoesNotContain(DataDocumentFixture.ShareToken, t, StringComparison.Ordinal));
+        Assert.All(others.Concat(members), t => Assert.DoesNotContain(DataDocumentFixture.ShareToken, t, StringComparison.Ordinal));
         foreach (var userId in new[] { f.Member.Id, f.Setter.Id, f.Harness.Owner.Id })
         {
-            Assert.All(others.Append(setters), t => Assert.DoesNotContain(userId.ToString(), t, StringComparison.Ordinal));
+            Assert.All(others.Concat(members), t => Assert.DoesNotContain(userId.ToString(), t, StringComparison.Ordinal));
         }
     }
 

@@ -10,7 +10,7 @@ namespace Blocwerk.Core.Assets.DataDocs;
 
 /// <summary>
 /// Builds the <c>boulders</c> document for one class: the wall's active boulders (not archived, not historic), drafts
-/// only for <see cref="DocumentAudience.Setters"/> (<see cref="DocumentAudiences.SeesDrafts"/>), and drafts' setters only
+/// only for the wall's members and setters (<see cref="DocumentAudiences.SeesDrafts"/>), and drafts' setters only
 /// where drafts are. The byline is the one <see cref="BoulderSetterNames.Describe"/> renders on the pages, so an erased
 /// or Ghost creator reads as the placeholder; no user id is written. Stats are wall-wide counts
 /// (<see cref="BoulderStatsCounts"/>), never the reader's own marks.

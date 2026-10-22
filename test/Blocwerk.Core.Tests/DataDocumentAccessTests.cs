@@ -18,36 +18,48 @@ namespace Blocwerk.Core.Tests;
 /// </summary>
 public sealed class DataDocumentAccessTests
 {
+    /// <summary>Offline shows what online shows: every member sees drafts (#180/#186), a share viewer does not.</summary>
     [Fact]
-    public async Task TheSettersClass_CarriesTheDraft_TheMembersClass_DoesNot()
+    public async Task SettersAndMembers_CarryTheDraft_AnOutsider_DoesNot_AndCannotFetchTheirSha()
     {
         using var f = await SeededAsync();
         f.Caller = f.Setter;
         var setters = await f.DocumentAsync<BouldersDocument>(DataDocumentKinds.Boulders);
+        var settersSha = DataDocumentFixture.Sha(await f.IndexAsync(), DataDocumentKinds.Boulders);
         f.Caller = f.Member;
         var members = await f.DocumentAsync<BouldersDocument>(DataDocumentKinds.Boulders);
-
         Assert.Equal(DocumentAudience.Members, (await f.AccessAsync()).Audience);
+        f.Caller = null;
+        var outsiderSha = DataDocumentFixture.Sha(await f.IndexAsync(DataDocumentFixture.ShareToken), DataDocumentKinds.Boulders);
+
         Assert.Contains(setters.Boulders, b => b.Id == f.DraftId && b.Draft == true);
-        Assert.Equal([f.PublishedId], members.Boulders.Select(b => b.Id));
-        Assert.All(members.Boulders, b => Assert.Null(b.Draft));
+        Assert.Contains(members.Boulders, b => b.Id == f.DraftId && b.Draft == true);
+        Assert.NotEqual(settersSha, outsiderSha);
+        Assert.Equal(StatusCodes.Status404NotFound,
+            (await f.DocumentHttpAsync(DataDocumentKinds.Boulders, settersSha, DataDocumentFixture.ShareToken)).Response.StatusCode);
+        Assert.Equal(StatusCodes.Status200OK,
+            (await f.DocumentHttpAsync(DataDocumentKinds.Boulders, outsiderSha, DataDocumentFixture.ShareToken)).Response.StatusCode);
     }
 
+    /// <summary>The members' and setters' bytes may match today; they are still two classes in the store.</summary>
     [Fact]
-    public async Task AMember_CannotFetchTheSettersSha_ButFetchesTheirOwn()
+    public async Task TheMembersAndSettersDocuments_AreStoredUnderTheirOwnClass()
     {
         using var f = await SeededAsync();
         f.Caller = f.Setter;
-        var settersSha = DataDocumentFixture.Sha(await f.IndexAsync(), DataDocumentKinds.Boulders);
-        f.Caller = f.Member;
-        var membersSha = DataDocumentFixture.Sha(await f.IndexAsync(), DataDocumentKinds.Boulders);
+        var sha = DataDocumentFixture.Sha(await f.IndexAsync(), DataDocumentKinds.Boulders);
 
-        Assert.NotEqual(settersSha, membersSha);
-        Assert.Equal(StatusCodes.Status404NotFound, (await f.DocumentHttpAsync(DataDocumentKinds.Boulders, settersSha)).Response.StatusCode);
-        Assert.Equal(StatusCodes.Status200OK, (await f.DocumentHttpAsync(DataDocumentKinds.Boulders, membersSha)).Response.StatusCode);
+        Assert.NotNull(f.Store.Find(f.WallId, DocumentAudience.Setters, DataDocumentKinds.Boulders, sha));
+        Assert.Null(f.Store.Find(f.WallId, DocumentAudience.Members, DataDocumentKinds.Boulders, sha));
+        f.Caller = f.Member;
+        await f.IndexAsync();
+        Assert.NotNull(f.Store.Find(f.WallId, DocumentAudience.Members, DataDocumentKinds.Boulders, sha));
     }
 
-    /// <summary>The sha a setter was served stays in the store, but under the setters class, which they no longer are.</summary>
+    /// <summary>
+    /// The sha a setter was served stays in the store, but under the setters class: a setter who lost the wall and now
+    /// reads it through the share link cannot fetch it (a demotion to member keeps drafts, as online).
+    /// </summary>
     [Fact]
     public async Task ADemotedSetter_CannotFetchTheSettersShaTheyWereServed()
     {
@@ -57,13 +69,31 @@ public sealed class DataDocumentAccessTests
         Assert.Equal(StatusCodes.Status200OK, (await f.DocumentHttpAsync(DataDocumentKinds.Boulders, old)).Response.StatusCode);
         await using (var db = f.Harness.CreateContext())
         {
+            await db.WallMembers.Where(m => m.UserId == f.Setter.Id && m.WallId == f.WallId).ExecuteDeleteAsync();
+        }
+
+        Assert.Equal(DocumentAudience.Outsider, (await f.AccessAsync(DataDocumentFixture.ShareToken)).Audience);
+        Assert.Equal(StatusCodes.Status404NotFound,
+            (await f.DocumentHttpAsync(DataDocumentKinds.Boulders, old, DataDocumentFixture.ShareToken)).Response.StatusCode);
+        Assert.DoesNotContain(
+            (await f.DocumentAsync<BouldersDocument>(DataDocumentKinds.Boulders, DataDocumentFixture.ShareToken)).Boulders, b => b.Id == f.DraftId);
+    }
+
+    /// <summary>A setter demoted to member keeps seeing drafts, as on the Server pages.</summary>
+    [Fact]
+    public async Task ASetterDemotedToMember_ReadsTheMembersClass_DraftsIncluded()
+    {
+        using var f = await SeededAsync();
+        f.Caller = f.Setter;
+        await f.IndexAsync();
+        await using (var db = f.Harness.CreateContext())
+        {
             await db.WallMembers.Where(m => m.UserId == f.Setter.Id && m.WallId == f.WallId)
                 .ExecuteUpdateAsync(u => u.SetProperty(m => m.Role, WallRole.Member));
         }
 
         Assert.Equal(DocumentAudience.Members, (await f.AccessAsync()).Audience);
-        Assert.Equal(StatusCodes.Status404NotFound, (await f.DocumentHttpAsync(DataDocumentKinds.Boulders, old)).Response.StatusCode);
-        Assert.DoesNotContain((await f.DocumentAsync<BouldersDocument>(DataDocumentKinds.Boulders)).Boulders, b => b.Id == f.DraftId);
+        Assert.Contains((await f.DocumentAsync<BouldersDocument>(DataDocumentKinds.Boulders)).Boulders, b => b.Id == f.DraftId);
     }
 
     [Fact]

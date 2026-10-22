@@ -16,7 +16,7 @@ public static class DataDocumentKinds
     /// <summary>The wall's live holds (<see cref="HoldsDocument"/>).</summary>
     public const string Holds = "holds";
 
-    /// <summary>The wall's active boulders (<see cref="BouldersDocument"/>); drafts only in the setters class.</summary>
+    /// <summary>The wall's active boulders (<see cref="BouldersDocument"/>); drafts only for members and setters.</summary>
     public const string Boulders = "boulders";
 
     /// <summary>The wall's gallery images (<see cref="GalleryDocument"/>).</summary>

@@ -55,7 +55,16 @@ public sealed class DataDocumentPostgresTests
         Assert.True(Position(Entry(raced, DataDocumentKinds.Boulders).Cursor) < FeedPosition.Of(write.Row));
         Assert.True(Position(raced.Cursor) < FeedPosition.Of(write.Row));
 
+        // The horizon is cluster-wide: another test database's open transaction can hold the mark below the write for a
+        // while, and until it passes, every index rightly rebuilds the document again (same bytes, a cursor still before).
         var next = await f.IndexAsync();
+        var deadline = DateTime.UtcNow.AddSeconds(60);
+        while (Position(Entry(next, DataDocumentKinds.Boulders).Cursor) < FeedPosition.Of(write.Row) && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(100);
+            next = await f.IndexAsync();
+        }
+
         Assert.Equal(DataDocumentFixture.Sha(raced, DataDocumentKinds.Boulders), DataDocumentFixture.Sha(next, DataDocumentKinds.Boulders));
         Assert.True(Position(Entry(next, DataDocumentKinds.Boulders).Cursor) >= FeedPosition.Of(write.Row));
     }

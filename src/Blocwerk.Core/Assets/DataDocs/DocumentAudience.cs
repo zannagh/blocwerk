@@ -4,15 +4,16 @@
 namespace Blocwerk.Core.Assets.DataDocs;
 
 /// <summary>
-/// The audience classes the data documents are built, stored and served for (Phase 3 plan §1). A sha is served only
+/// The audience classes the data documents are built, stored and served for (Phase 3 plan §1). The members' and setters'
+/// documents may be the same bytes today; they stay separate classes, so a later difference cannot leak across. A sha is served only
 /// under the caller's own class, so a document never reaches a class it was not built for, even by a known sha.
 /// </summary>
 public enum DocumentAudience
 {
-    /// <summary>The wall's owner, admins and moderators (the feed's Setters audience): the only class with drafts.</summary>
+    /// <summary>The wall's owner, admins and moderators (the feed's Setters audience): drafts.</summary>
     Setters,
 
-    /// <summary>A plain member of the wall: no drafts.</summary>
+    /// <summary>A plain member of the wall: drafts, as the Server pages show them to every member.</summary>
     Members,
 
     /// <summary>A share-link viewer who is not a member, signed in or not: no drafts.</summary>

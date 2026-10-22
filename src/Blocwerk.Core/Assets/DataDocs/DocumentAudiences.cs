@@ -9,8 +9,12 @@ namespace Blocwerk.Core.Assets.DataDocs;
 /// <summary>What each <see cref="DocumentAudience"/> may see in a document, in one place.</summary>
 public static class DocumentAudiences
 {
-    /// <summary>True only for the setters class: drafts stay out of every other class's documents.</summary>
-    public static bool SeesDrafts(DocumentAudience audience) => audience == DocumentAudience.Setters;
+    /// <summary>
+    /// True for the wall's members, setters included: the Server pages' rule (<c>WallService</c> loads drafts for every
+    /// signed-in member, and only share-link and anonymous-kiosk reads leave them out, #180/#186), so offline shows what
+    /// online shows. Share links and kiosk tablets, acting or not, never get a draft.
+    /// </summary>
+    public static bool SeesDrafts(DocumentAudience audience) => audience is DocumentAudience.Setters or DocumentAudience.Members;
 
     /// <summary>
     /// True for the classes outside the wall (share link, kiosk): they are handed the wall's own feed mark
