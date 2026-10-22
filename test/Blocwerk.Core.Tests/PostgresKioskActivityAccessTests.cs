@@ -51,4 +51,15 @@ public class PostgresKioskActivityAccessTests
         using var h = new WallTestHarness(PostgresTestDatabase.Create());
         await KioskBylineChecks.BylinesAsync(h, viewer);
     }
+
+    [PostgresTheory]
+    [InlineData(DraftViewer.KioskAnonymous)]
+    [InlineData(DraftViewer.KioskActAsMember)]
+    [InlineData(DraftViewer.Member)]
+    [InlineData(DraftViewer.ShareAnonymous)]
+    public async Task ProposalBylines_TheRestingKioskNamesConsentingMembersAndTheCreator_ElseAMember(DraftViewer viewer)
+    {
+        using var h = new WallTestHarness(PostgresTestDatabase.Create());
+        await KioskBylineChecks.ProposalBylinesAsync(h, viewer);
+    }
 }

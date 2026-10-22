@@ -46,6 +46,41 @@ internal static class KioskBylineChecks
         Assert.Equal(masks, activity[log.Member].UserId == Guid.Empty && activity[log.Member].User.Id == Guid.Empty);
     }
 
+    /// <summary>
+    /// "Proposed by …" of an open grade proposal: the resting tablet names a consenting member and the boulder's own
+    /// creator, and shows anyone else as "A member" with no id; every other viewer sees the name.
+    /// </summary>
+    public static async Task ProposalBylinesAsync(WallTestHarness h, DraftViewer viewer)
+    {
+        var s = await DraftExposureScenario.SeedAsync(h);
+        var cora = await ConsentingMemberAsync(h, "cora@test");
+        Guid byCora, byCreator;
+        await using (var db = h.CreateContext())
+        {
+            Guid Boulder(string name)
+            {
+                var boulder = new Boulder { WallId = s.WallId, Name = name, CreatedByUserId = h.Owner.Id };
+                db.Boulders.Add(boulder);
+                return boulder.Id;
+            }
+
+            (byCora, byCreator) = (Boulder("Cora's pick"), Boulder("Owner's own"));
+            db.GradeProposals.Add(new GradeProposal { BoulderId = s.LiveId, ProposedByUserId = s.Member.Id, ProposedGrade = "6B" });
+            db.GradeProposals.Add(new GradeProposal { BoulderId = byCora, ProposedByUserId = cora.Id, ProposedGrade = "6C" });
+            db.GradeProposals.Add(new GradeProposal { BoulderId = byCreator, ProposedByUserId = h.Owner.Id, ProposedGrade = "7A" });
+            await db.SaveChangesAsync();
+        }
+
+        var boulders = s.Boulders(viewer);
+        var masks = viewer == DraftViewer.KioskAnonymous;
+        var member = (await boulders.GetActiveProposalAsync(s.LiveId))!;
+        Assert.Equal(masks ? KioskBylines.PlaceholderName : s.Member.Name, member.ProposedBy.Name);
+        Assert.Equal(masks ? Guid.Empty : s.Member.Id, member.ProposedByUserId);
+        Assert.Equal(masks ? Guid.Empty : s.Member.Id, member.ProposedBy.Id);
+        Assert.Equal(cora.Name, (await boulders.GetActiveProposalAsync(byCora))!.ProposedBy.Name);
+        Assert.Equal(h.Owner.Name, (await boulders.GetActiveProposalAsync(byCreator))!.ProposedBy.Name);
+    }
+
     private static async Task<(Guid Cora, Guid Member, Guid Created, Guid Erased)> SeedAsync(
         WallTestHarness h, DraftExposureScenario s, User cora, Guid erased)
     {

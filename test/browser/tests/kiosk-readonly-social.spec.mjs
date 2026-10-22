@@ -52,6 +52,7 @@ test('the resting kiosk reads a boulder read-only, naming consenting members and
     await expect(dave.locator('.comment-author')).toHaveText(PLACEHOLDER);
     await expect(dave.locator('.avatar')).toHaveText('');
     await expect(dave.locator('img')).toHaveCount(0);
+    await expect(page.locator('.bw-grade-proposal-notice')).toContainText(`has been proposed by ${PLACEHOLDER}`);
     await expect(page.locator('body')).not.toContainText('Dave');
 
     const activity = page.locator('.activity-feed');
@@ -120,6 +121,7 @@ test('acting as a member, the tablet shows the names that member sees', async ({
 
     await expect(commentRow(page, world.social.unconsentedComment).locator('.comment-author')).toHaveText('Dave');
     await expect(page.locator('.activity-feed')).toContainText('Dave flashed this');
+    await expect(page.locator('.bw-grade-proposal-notice')).toContainText('has been proposed by Dave');
 });
 
 test('the resting kiosk reads nothing of an archived boulder', async ({ page, world }) => {

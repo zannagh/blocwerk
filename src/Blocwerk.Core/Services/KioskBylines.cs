@@ -1,6 +1,7 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
@@ -33,6 +34,42 @@ public static class KioskBylines
             .Select(m => m.UserId)
             .ToListAsync();
         return ids.ToHashSet();
+    }
+
+    /// <summary>True for a kiosk tablet bound to a wall with nobody picked: the one viewer these bylines are for.</summary>
+    public static async Task<bool> IsRestingKioskAsync(ICurrentUserService users, IKioskContext? kiosk)
+    {
+        if (KioskViewing.ViewableWallId(kiosk) is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            await users.GetCurrentUserAsync();
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// The proposer of <paramref name="proposal"/> as the tablet may show them: named when they consented to the kiosk,
+    /// or when they are credited on the boulder (its setters and its creator are named on the same page anyway).
+    /// </summary>
+    public static async Task MaskProposerAsync(BlocwerkDbContext db, GradeProposal proposal)
+    {
+        var boulder = await db.Boulders.AsNoTracking()
+            .Where(b => b.Id == proposal.BoulderId)
+            .Select(b => new { b.WallId, b.CreatedByUserId, Setters = b.Setters.Select(s => s.UserId).ToList() })
+            .FirstOrDefaultAsync();
+        var proposer = proposal.ProposedByUserId;
+        var named = boulder is not null
+            && (boulder.CreatedByUserId == proposer || boulder.Setters.Contains(proposer) || (await ConsentedAsync(db, boulder.WallId)).Contains(proposer));
+        proposal.ProposedBy = Mask(proposal.ProposedBy, named);
+        proposal.ProposedByUserId = proposal.ProposedBy.Id == Guid.Empty ? Guid.Empty : proposer;
     }
 
     /// <summary>

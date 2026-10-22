@@ -9,7 +9,7 @@ namespace Blocwerk.Browser.Seed;
 
 /// <summary>
 /// The social wall (Erin's), for the kiosk's read-only view: Cora is a member who consented to the kiosk, Dave one who did
-/// not. A published boulder Erin set, which Cora commented on and sent and Dave commented on and flashed; a second published boulder the live test comments on, so the first keeps its
+/// not. A published boulder Erin set, which Cora commented on and sent and Dave commented on, flashed and proposed a grade for; a second published boulder the live test comments on, so the first keeps its
 /// five entries (one activity page); a draft and an archived boulder with entries of their own (the tablet shows
 /// neither); and Cora joining the wall, a wall-wide entry.
 /// </summary>
@@ -33,6 +33,7 @@ internal static class SeedSocial
         db.BoulderComments.Add(new BoulderComment { BoulderId = published.Id, UserId = climberId, Text = Comment });
         db.BoulderComments.Add(new BoulderComment { BoulderId = published.Id, UserId = unconsentedId, Text = UnconsentedComment });
         db.BoulderComments.Add(new BoulderComment { BoulderId = archived.Id, UserId = climberId, Text = "Old beta" });
+        db.GradeProposals.Add(new GradeProposal { BoulderId = published.Id, ProposedByUserId = unconsentedId, ProposedGrade = "6C+" });
         void Log(Guid? boulderId, ActivityType type, Guid userId, int minute, Guid? attemptId = null, string? details = null) =>
             db.ActivityLog.Add(new ActivityLogEntry
             {

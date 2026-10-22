@@ -52,4 +52,15 @@ public class KioskActivityAccessTests
         using var h = new WallTestHarness();
         await KioskBylineChecks.BylinesAsync(h, viewer);
     }
+
+    [Theory]
+    [InlineData(DraftViewer.KioskAnonymous)]
+    [InlineData(DraftViewer.KioskActAsMember)]
+    [InlineData(DraftViewer.Member)]
+    [InlineData(DraftViewer.ShareAnonymous)]
+    public async Task ProposalBylines_TheRestingKioskNamesConsentingMembersAndTheCreator_ElseAMember(DraftViewer viewer)
+    {
+        using var h = new WallTestHarness();
+        await KioskBylineChecks.ProposalBylinesAsync(h, viewer);
+    }
 }
