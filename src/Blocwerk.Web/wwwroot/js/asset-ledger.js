@@ -261,7 +261,7 @@ window.bwAssetLedger = (function () {
         const prev = Object.entries((wall && wall.dataPrev) || {})
             .filter(([, sha]) => typeof sha === 'string')
             .map(([kind, sha]) => ({ sha, kind, tier: 'data', bytes: 0 }));
-        return ((wall && wall.entries) || []).concat((wall && wall.docs) || [], data);
+        return ((wall && wall.entries) || []).concat((wall && wall.docs) || [], data, prev);
     }
 
     let opened = null;

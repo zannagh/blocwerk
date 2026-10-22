@@ -1,8 +1,8 @@
 // The data documents in the page cache (Phase 3 PR 3.3, asset-data.js) against the real page modules: the docs index
 // after each manifest round, the row's `data` field beside the manifest's and the view3d fields, the fill downloading
 // each document like core, eviction never taking one as an orphan, dropWall and a 403 removing them, a rebuilt
-// document's old sha going at once, the kiosk's bound wall only, the share token, and the 10 s debounce of
-// bwAssetData.changed. Run by `node --test test/js/`.
+// document's old sha going (comments at once, the rest once the successor is cached), the kiosk's bound wall only,
+// the share token, and the 10 s debounce of bwAssetData.changed. Run by `node --test test/js/`.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { json, sha, USER_A, KIOSK } from './fixtures/page-sandbox.mjs';
@@ -90,6 +90,40 @@ test('a rebuilt document replaces its sha, and the old one leaves the device at 
     assert.ok(!(await (await page.ledger()).assetsOf(USER_A)).some(a => a.sha === docSha('comments', 0)));
 });
 
+test('a rebuilt holds document whose new copy fails to download keeps serving the old one until the new one is cached', async () => {
+    let n = 0;
+    const routes = docsRoute(W1, () => index(docsOf(n), `"i${n}"`)());
+    const page = memberPage({ routes });
+    await page.boot();
+    const cache = `bw-a1-${USER_A}-3d`;
+    assert.ok(keys(page.caches, cache).includes(docSha('holds', 0)));
+
+    // The 200 index names new shas, but their downloads fail (the server, or the network, between index and fill).
+    n = 1;
+    for (const kind of ['holds', 'comments']) {
+        page.win.routes[`/api/walls/${W1}/d/${kind}/${docSha(kind, 1)}`] = () => new Response('', { status: 503 });
+    }
+    await page.cache.dataChanged(W1);
+    await page.cache.filled();
+    await page.settle();
+    const ledger = await page.ledger();
+    let cached = keys(page.caches, cache);
+    assert.ok(cached.includes(docSha('holds', 0)), 'the old holds document still serves');
+    assert.equal((await ledger.getWall(USER_A, W1)).dataPrev.holds, docSha('holds', 0));
+    assert.ok(!cached.includes(docSha('comments', 0)), 'comments never wait: the old copy goes at once');
+    assert.ok(cached.includes(docSha('boulders', 1)) && !cached.includes(docSha('boulders', 0)), 'a kind whose new copy arrived lets the old go');
+    await page.cache.evict();
+    assert.ok(keys(page.caches, cache).includes(docSha('holds', 0)), 'eviction keeps a kept predecessor (listed, no orphan)');
+
+    // The next start downloads the new copy; the eviction after the fill lets the old one go.
+    const next = memberPage({ routes: docsRoute(W1, () => index(docsOf(n), `"i${n}"`)()), ledger, caches: page.caches });
+    await next.boot();
+    cached = keys(page.caches, cache);
+    assert.ok(cached.includes(docSha('holds', 1)));
+    assert.ok(!cached.includes(docSha('holds', 0)), 'replaced once its successor is on the device');
+    assert.deepEqual(plain((await ledger.getWall(USER_A, W1)).dataPrev), {});
+});
+
 test('dropWall removes the wall\'s documents; a 403 index drops the wall like a 403 manifest', async () => {
     const page = memberPage({ routes: docsRoute(W1, index(docsOf())) });
     await page.boot();
@@ -132,7 +166,7 @@ test('a kiosk refreshes its bound wall only; changed() for any other wall fetche
     assert.equal(await rowOf(tablet, W2, KIOSK), undefined);
 });
 
-test('changed() refreshes once per 10 s burst, at its end', async () => {
+test('changed() refreshes once per burst, 10 s after its first call', async () => {
     const page = memberPage({ routes: docsRoute(W1, index(docsOf())) });
     await page.boot();
     const count = () => page.fetches.filter(f => f.path === `/api/walls/${W1}/docs`).length;

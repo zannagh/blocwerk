@@ -90,6 +90,7 @@ window.bwAssetCache = (function (win) {
     }
 
     async function evict() {
+        await Data().settle(state.env, state.active);
         const { walls, assets } = await snapshot();
         // An orphan is only an orphan when every manifest it could be in was read on this page.
         const orphans = !!state.summary && walls.every(w => state.fresh.has(w.wallId));

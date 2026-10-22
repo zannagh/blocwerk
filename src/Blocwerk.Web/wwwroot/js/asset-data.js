@@ -5,17 +5,22 @@
  * GET /api/walls/{w}/docs[?token=] with If-None-Match on the stored ETag, after every manifest round that left the
  * wall current (asset-cache.js), and on bwAssetData.changed(wallId, manifest): the circuit saw a feed event of a
  * document's input kinds (AssetCacheFeedRelay.cs), or with `manifest` a wall.manifest / wall.resync, which refetches the
- * manifest first (bwAssetCache.manifestChanged). Those come in bursts while someone sets, so a wall refreshes at most
- * once per DEBOUNCE_MS, at its end, and the call returns at once (the circuit never waits on a fill).
+ * manifest first (bwAssetCache.manifestChanged). Those come in bursts while someone sets, so a burst refreshes the
+ * wall once, DEBOUNCE_MS after its first call, and the call returns at once (the circuit never waits on a fill).
  *   200      → the row's `data` becomes { kind → { sha, bytes, cursor } } and `dataEtag` the ETag. The fill downloads
- *              each document like core (asset-plan.js; the worker caches it in `-3d`). A sha that left `data` (a
- *              rebuilt document: a comment deleted, an author erased) is deleted from the device at once, not after
- *              the orphan grace, unless another wall lists it.
+ *              each document like core (asset-plan.js; the worker caches it in `-3d`). A replaced sha (a rebuilt
+ *              document) goes from the device, unless another wall lists it:
+ *                `comments` at once, not after the orphan grace: a deleted comment, an erased author;
+ *                every other kind once its successor is cached, so the device never holds neither: until then the
+ *                cached predecessor stays in `dataPrev` { kind → sha } (listed, so no orphan), and settle() (run
+ *                by each eviction pass) lets it go.
  *   304      → unchanged.
  *   403/404  → the wall is dropped (wipe rule 4), as for the manifest.
- *   anything else, or no network → the stored documents stand (401/410 are the session's: asset-session.js).
+ *   anything else, 401 and 410 included, or no network → the stored documents stand. Wiping on 410 and on a forced or
+ *              gone sign-out, for the manifest and this index alike, is PR 3.5's.
  * Only a wall that already has a row in the active partition is refreshed (the manifest round made it): a kiosk keeps
- * its bound wall only, and a share link the wall it opened. This writes only DATA_FIELDS, through the ledger's one merge.
+ * its bound wall only, and a share link the wall it opened. This writes only its fields (data, dataEtag, dataPrev), through
+ * the ledger's one merge.
  * Nothing here throws into the page.
  */
 window.bwAssetData = (function (win) {
@@ -24,6 +29,8 @@ window.bwAssetData = (function (win) {
     const DEBOUNCE_MS = 10 * 1000;
     const KIND = /^[a-z][a-z0-9]{0,31}$/;
     const SHA = /^[0-9a-f]{64}$/;
+    // Replaced at once: its old copy may hold a deleted comment or an erased author's name.
+    const PRIVATE_KINDS = new Set(['comments']);
     const timers = new Map();
 
     const Cache = () => win.bwAssetCache;
@@ -44,23 +51,62 @@ window.bwAssetData = (function (win) {
         return data;
     }
 
-    const shasOf = data => new Set(Object.values(data || {}).map(doc => doc.sha));
+    // Every sha a row held on to through its documents: `data` and `dataPrev`.
+    const heldOf = row => new Set(Object.values((row && row.data) || {}).map(doc => doc.sha).concat(Object.values((row && row.dataPrev) || {})));
 
-    // Writes `data` and `dataEtag` onto the row as stored NOW; a row that went meanwhile (dropWall) stays gone.
-    function write(env, partition, wallId, data, etag) {
-        return env.ledger.updateWall(partition, wallId, current => (current ? Object.assign(current, { data, dataEtag: etag }) : undefined));
+    // Writes `fields` (of data, dataEtag, dataPrev) onto the row as stored NOW; a row that went meanwhile (dropWall) stays gone.
+    function write(env, partition, wallId, fields) {
+        return env.ledger.updateWall(partition, wallId, current => (current ? Object.assign(current, fields) : undefined));
     }
 
-    // The documents the new index replaced, unless another wall of the partition still lists them.
-    async function dropReplaced(env, partition, before, after) {
-        const gone = [...shasOf(before)].filter(sha => !shasOf(after).has(sha));
-        if (gone.length === 0) {
+    /**
+     * Per kind, the cached sha to keep serving until `data`'s new one is cached: the replaced sha when it is cached,
+     * else the one kept already. None once the new one is cached, and never for a private kind.
+     */
+    function keptOf(row, data, cached) {
+        const kept = {};
+        for (const [kind, doc] of Object.entries(data)) {
+            const old = row.data && row.data[kind] ? row.data[kind].sha : null;
+            const prior = row.dataPrev ? row.dataPrev[kind] : null;
+            if (PRIVATE_KINDS.has(kind) || cached.has(doc.sha)) {
+                continue;
+            }
+            const keep = [old, prior].find(sha => sha && sha !== doc.sha && cached.has(sha));
+            if (keep) {
+                kept[kind] = keep;
+            }
+        }
+        return kept;
+    }
+
+    // Deletes `candidates` from the device, except those a wall of the partition still lists.
+    async function dropUnlisted(env, partition, candidates) {
+        if (candidates.length === 0) {
             return;
         }
         const listed = new Set();
         (await env.ledger.wallsOf(partition)).forEach(w => win.bwAssetLedger.listed(w).forEach(e => listed.add(e.sha)));
-        const keys = (await env.ledger.assetsOf(partition)).filter(a => gone.includes(a.sha) && !listed.has(a.sha)).map(a => a.key);
+        const keys = (await env.ledger.assetsOf(partition)).filter(a => candidates.includes(a.sha) && !listed.has(a.sha)).map(a => a.key);
         await win.bwAssetWipe.deleteKeys(env, partition, keys);
+    }
+
+    const cachedShas = async (env, partition) => new Set((await env.ledger.assetsOf(partition)).map(a => a.sha));
+
+    /** Each wall's kept predecessors whose successor is cached now go (asset-cache.js runs this before evicting). */
+    async function settle(env, partition) {
+        const cached = await cachedShas(env, partition);
+        for (const row of await env.ledger.wallsOf(partition)) {
+            if (!row.dataPrev || Object.keys(row.dataPrev).length === 0) {
+                continue;
+            }
+            const before = heldOf(row);
+            const dataPrev = keptOf(row, row.data || {}, cached);
+            if (JSON.stringify(dataPrev) === JSON.stringify(row.dataPrev)) {
+                continue;
+            }
+            await write(env, partition, row.wallId, { dataPrev });
+            await dropUnlisted(env, partition, [...before]);
+        }
     }
 
     /**
@@ -98,8 +144,9 @@ window.bwAssetData = (function (win) {
         if (!data) {
             return 'offline';
         }
-        await write(env, partition, wallId, data, response.headers.get('etag'));
-        await dropReplaced(env, partition, row.data, data);
+        const dataPrev = keptOf(row, data, await cachedShas(env, partition));
+        await write(env, partition, wallId, { data, dataEtag: response.headers.get('etag'), dataPrev });
+        await dropUnlisted(env, partition, [...heldOf(row)]);
         return 'updated';
     }
 
@@ -129,5 +176,5 @@ window.bwAssetData = (function (win) {
         }, DEBOUNCE_MS);
     }
 
-    return { DEBOUNCE_MS, indexUrl, compact, refresh, changed };
+    return { DEBOUNCE_MS, indexUrl, compact, refresh, settle, changed };
 })(window);
