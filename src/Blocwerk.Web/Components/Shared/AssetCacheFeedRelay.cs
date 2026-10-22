@@ -19,6 +19,7 @@ namespace Blocwerk.Web.Components.Shared;
 public sealed class AssetCacheFeedRelay : ComponentBase, IDisposable
 {
     private bool subscribed;
+    private int disposed;
 
     [Inject]
     private WallCacheState WallCache { get; set; } = default!;
@@ -28,6 +29,11 @@ public sealed class AssetCacheFeedRelay : ComponentBase, IDisposable
 
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref disposed, 1) == 1)
+        {
+            return;
+        }
+
         if (subscribed)
         {
             WallCache.FeedDelivered -= OnDelivered;
@@ -37,7 +43,7 @@ public sealed class AssetCacheFeedRelay : ComponentBase, IDisposable
     // Interactive only: a prerender has no JS to call.
     protected override void OnAfterRender(bool firstRender)
     {
-        if (firstRender && !subscribed)
+        if (firstRender && !subscribed && Volatile.Read(ref disposed) == 0)
         {
             subscribed = true;
             WallCache.FeedDelivered += OnDelivered;
@@ -45,8 +51,14 @@ public sealed class AssetCacheFeedRelay : ComponentBase, IDisposable
     }
 
     // On the hub's loop: classify, hand off, return. Never await here.
+    // A delivery already in flight when the circuit went may still arrive: it is dropped.
     private void OnDelivered(FeedDelivery delivery)
     {
+        if (Volatile.Read(ref disposed) == 1)
+        {
+            return;
+        }
+
         var signal = AssetCacheSignals.Of(delivery);
         if (signal == AssetCacheSignal.None)
         {
