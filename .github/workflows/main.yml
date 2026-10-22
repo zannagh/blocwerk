@@ -218,6 +218,8 @@ jobs:
     name: Browser Tests (non-blocking)
     runs-on: ubuntu-latest
     continue-on-error: true
+    # A hang (a stalled apt mirror once held the install for 50 min) must never stall the run.
+    timeout-minutes: 25
     permissions:
       contents: read
     services:
@@ -250,29 +252,29 @@ jobs:
           cache: npm
           cache-dependency-path: test/browser/package-lock.json
 
-      # The browser builds follow the pinned @playwright/test version, so the lock file keys them. Their system
-      # libraries are not cached and are installed every run (install-deps).
-      - name: Cache the Playwright browsers
-        id: browsers
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('test/browser/package-lock.json') }}
-
+      # Playwright's documented GitHub Actions setup: `install --with-deps`, no browser cache (restoring it takes about as
+      # long as the download, and the system packages cannot be cached). The packages come from apt, whose stalled
+      # connections never time out by default, so apt gets timeouts and retries and each attempt is bounded.
       - name: Install the harness and its browsers
         working-directory: test/browser
+        timeout-minutes: 8
         env:
-          BROWSERS_CACHED: ${{ steps.browsers.outputs.cache-hit }}
+          DEBIAN_FRONTEND: noninteractive
         run: |
           npm ci
-          if [ "$BROWSERS_CACHED" = "true" ]; then
-            npx playwright install-deps chromium webkit
-          else
-            npx playwright install --with-deps chromium webkit
-          fi
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' \
+            | sudo tee /etc/apt/apt.conf.d/80-ci-timeouts > /dev/null
+          for attempt in 1 2; do
+            if timeout --kill-after=15s 180s npx playwright install --with-deps chromium webkit; then
+              exit 0
+            fi
+            echo "::warning::playwright install attempt $attempt failed or timed out"
+          done
+          exit 1
 
       - name: Browser tests
         working-directory: test/browser
+        timeout-minutes: 12
         env:
           CI: "true"
           BW_BROWSER_PG: postgres://postgres:blocwerk@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/bw_browser_ci
