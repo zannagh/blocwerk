@@ -9,6 +9,8 @@ namespace Blocwerk.Contracts.Documents;
 /// <param name="Grade">Its grade, if set.</param>
 /// <param name="Generation">The generation it was set on.</param>
 /// <param name="Draft">True for a draft (members and setters only); left out otherwise.</param>
+/// <param name="IsHistoric">True for a boulder of an earlier generation, listed with a "historic" badge.</param>
+/// <param name="IsArchived">True for an archived boulder (members and setters only), listed under "Archive".</param>
 /// <param name="CreatedAt">When it was created.</param>
 /// <param name="PublishedAt">When it was published, if it was.</param>
 /// <param name="SetBy">The byline: the setters, else the creator, else the placeholder name. Never a user id.</param>
@@ -24,6 +26,8 @@ public sealed record BouldersDocumentBoulder(
     string? Grade,
     int Generation,
     bool? Draft,
+    bool IsHistoric,
+    bool IsArchived,
     DateTimeOffset CreatedAt,
     DateTimeOffset? PublishedAt,
     string SetBy,

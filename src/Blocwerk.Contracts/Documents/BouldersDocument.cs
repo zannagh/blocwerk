@@ -4,8 +4,8 @@
 namespace Blocwerk.Contracts.Documents;
 
 /// <summary>
-/// The <c>boulders</c> document: the wall's active boulders (not archived, not historic) with their holds, byline and
-/// wall-wide stats. Drafts are in the members' and setters' classes only; nothing in it is about the reader.
+/// The <c>boulders</c> document: the wall's boulders as the wall page lists them, historic ones included. Drafts and
+/// archived boulders are in the members' and setters' classes only; nothing in it is about the reader.
 /// </summary>
 /// <param name="V">The schema version (<see cref="DataDocumentSchema.Version"/>).</param>
 /// <param name="WallId">The wall.</param>
