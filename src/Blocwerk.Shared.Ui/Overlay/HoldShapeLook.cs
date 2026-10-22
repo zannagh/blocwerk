@@ -2,11 +2,11 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
-using Blocwerk.Core.Entities;
+using Blocwerk.Contracts.Documents;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 
-namespace Blocwerk.Web.Components.Shared;
+namespace Blocwerk.Shared.Ui.Overlay;
 
 /// <summary>Every scalar <see cref="HoldShape"/> parameter, compared by value to decide whether it must re-render.</summary>
 internal readonly record struct HoldShapeLook(
@@ -35,7 +35,7 @@ internal readonly record struct HoldShapeLook(
     /// <param name="outline">The outer ring, or null.</param>
     /// <param name="holes">The hole rings, or null.</param>
     /// <returns>The flat list.</returns>
-    public static double[] Geometry(IReadOnlyList<ShapePoint>? outline, IReadOnlyList<IReadOnlyList<ShapePoint>>? holes)
+    public static double[] Geometry(IReadOnlyList<DocumentPoint>? outline, IReadOnlyList<IReadOnlyList<DocumentPoint>>? holes)
     {
         var values = new List<double>();
         Append(values, outline);
@@ -53,7 +53,7 @@ internal readonly record struct HoldShapeLook(
     /// <param name="outline">The outer ring now.</param>
     /// <param name="holes">The hole rings now.</param>
     /// <returns>True when nothing changed.</returns>
-    public static bool SameGeometry(double[] geometry, IReadOnlyList<ShapePoint>? outline, IReadOnlyList<IReadOnlyList<ShapePoint>>? holes)
+    public static bool SameGeometry(double[] geometry, IReadOnlyList<DocumentPoint>? outline, IReadOnlyList<IReadOnlyList<DocumentPoint>>? holes)
     {
         int at = 0;
         if (!Matches(geometry, ref at, outline) || at >= geometry.Length || !SameCount(geometry[at++], holes?.Count))
@@ -72,7 +72,7 @@ internal readonly record struct HoldShapeLook(
         return at == geometry.Length;
     }
 
-    private static void Append(List<double> values, IReadOnlyList<ShapePoint>? ring)
+    private static void Append(List<double> values, IReadOnlyList<DocumentPoint>? ring)
     {
         values.Add(ring?.Count ?? NoList);
         foreach (var p in ring ?? [])
@@ -82,7 +82,7 @@ internal readonly record struct HoldShapeLook(
         }
     }
 
-    private static bool Matches(double[] geometry, ref int at, IReadOnlyList<ShapePoint>? ring)
+    private static bool Matches(double[] geometry, ref int at, IReadOnlyList<DocumentPoint>? ring)
     {
         if (at >= geometry.Length || !SameCount(geometry[at++], ring?.Count))
         {

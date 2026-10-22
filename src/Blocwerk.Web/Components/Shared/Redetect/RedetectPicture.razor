@@ -8,10 +8,10 @@
         <image href="@PhotoUrl" x="0" y="0" width="100" height="100" preserveAspectRatio="none" />
         @foreach (var outline in Outlines)
         {
-            <HoldShape X="outline.Hold.X" Y="outline.Hold.Y" Radius="outline.Hold.Radius" ShapePoints="outline.Hold.ShapePoints"
-                       ShapeHoles="outline.Hold.ShapeHoles" FootScale="HoldShape.FullFoot" Fill="none" Stroke="#000" StrokeWidth="@Width(0.022)" />
-            <HoldShape X="outline.Hold.X" Y="outline.Hold.Y" Radius="outline.Hold.Radius" ShapePoints="outline.Hold.ShapePoints"
-                       ShapeHoles="outline.Hold.ShapeHoles" FootScale="HoldShape.FullFoot" Fill="none" Stroke="@Stroke(outline)"
+            <HoldShape X="outline.Hold.X" Y="outline.Hold.Y" Radius="outline.Hold.Radius" ShapePoints="outline.Hold.ShapePoints.AsDocumentRing()"
+                       ShapeHoles="outline.Hold.ShapeHoles.AsDocumentRings()" FootScale="HoldShape.FullFoot" Fill="none" Stroke="#000" StrokeWidth="@Width(0.022)" />
+            <HoldShape X="outline.Hold.X" Y="outline.Hold.Y" Radius="outline.Hold.Radius" ShapePoints="outline.Hold.ShapePoints.AsDocumentRing()"
+                       ShapeHoles="outline.Hold.ShapeHoles.AsDocumentRings()" FootScale="HoldShape.FullFoot" Fill="none" Stroke="@Stroke(outline)"
                        StrokeWidth="@Width(0.012)" Dash="@(outline.Role == RedetectOutlineRole.Going ? Width(0.03) : null)" />
         }
     </svg>

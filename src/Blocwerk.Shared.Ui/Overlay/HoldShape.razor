@@ -1,5 +1,3 @@
-@using Blocwerk.Core.Entities
-
 @* THE renderer for a hold inside a `svg.hold-overlay` (viewBox 0 0 100 100). Every hold overlay in the
    app goes through this one component, so a hold looks the same on the wall view, the wall editor, the
    panel viewer, the panel stepper and the boulder pickers.
@@ -96,13 +94,13 @@ else
     /// The hold's custom outline as offsets from its centre, or null for the plain shape. Three points
     /// or more make a polygon; anything less falls back to the rect/circle below.
     /// </summary>
-    [Parameter] public IReadOnlyList<ShapePoint>? ShapePoints { get; set; }
+    [Parameter] public IReadOnlyList<DocumentPoint>? ShapePoints { get; set; }
 
     /// <summary>
     /// Interior holes of a pocket/donut hold, each ring in the <see cref="ShapePoints"/> convention. Only
     /// drawn with a real <see cref="ShapePoints"/> outline; null/empty renders a solid hold unchanged.
     /// </summary>
-    [Parameter] public IReadOnlyList<IReadOnlyList<ShapePoint>>? ShapeHoles { get; set; }
+    [Parameter] public IReadOnlyList<IReadOnlyList<DocumentPoint>>? ShapeHoles { get; set; }
 
     /// <summary>
     /// Draw this hold as a foothold: a rounded square instead of a circle, scaled by

@@ -4,6 +4,7 @@
 
 using Blocwerk.Core.Detection.Outlines;
 using Blocwerk.Core.Entities;
+using Blocwerk.Shared.Ui.Overlay;
 using Blocwerk.Web.Components.Shared;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
@@ -53,17 +54,20 @@ public class EditorRenderCacheTests
     [Fact]
     public void HoldShapeGeometry_IsComparedByValue()
     {
+        // The stored points go through the Server's conversion, as every editor's do.
         var outline = Square(0.01);
         var holes = new List<IReadOnlyList<ShapePoint>> { Square(0.002) };
-        var geometry = HoldShapeLook.Geometry(outline, holes);
+        var geometry = HoldShapeLook.Geometry(outline.AsDocumentRing(), holes.AsDocumentRings());
 
-        Assert.True(HoldShapeLook.SameGeometry(geometry, outline, holes));
-        Assert.True(HoldShapeLook.SameGeometry(geometry, Square(0.01), [Square(0.002)]));
-        Assert.False(HoldShapeLook.SameGeometry(geometry, outline, null));
-        Assert.False(HoldShapeLook.SameGeometry(geometry, null, holes));
+        Assert.True(HoldShapeLook.SameGeometry(geometry, outline.AsDocumentRing(), holes.AsDocumentRings()));
+        Assert.Same(outline.AsDocumentRing(), outline.AsDocumentRing());
+        Assert.True(HoldShapeLook.SameGeometry(geometry, Square(0.01).AsDocumentRing(), new List<IReadOnlyList<ShapePoint>> { Square(0.002) }.AsDocumentRings()));
+        Assert.False(HoldShapeLook.SameGeometry(geometry, outline.AsDocumentRing(), null));
+        Assert.False(HoldShapeLook.SameGeometry(geometry, null, holes.AsDocumentRings()));
 
+        // Edited in place, as the editors do: the kept conversion must notice.
         outline[2].Dy += 1e-7;
-        Assert.False(HoldShapeLook.SameGeometry(geometry, outline, holes));
+        Assert.False(HoldShapeLook.SameGeometry(geometry, outline.AsDocumentRing(), holes.AsDocumentRings()));
         Assert.True(HoldShapeLook.SameGeometry(HoldShapeLook.Geometry(null, null), null, null));
     }
 

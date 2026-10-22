@@ -378,3 +378,18 @@ test('sw-refresh-partition makes the worker ask the server again, so sw-info fol
     assert.equal(send(worker, { proto: 1, type: 'sw-info' }, true)[0].partition, BOB);
     assert.equal(worker.fetches.filter(f => f.path === PARTITION).length, 2);
 });
+
+test("the shared UI library's assets (/_content/) are shell assets: network-first, cached, and served from the shell offline", async () => {
+    const path = '/_content/Blocwerk.Shared.Ui/css/hold-tap.abc123.css';
+    const worker = loadWorker({ routes: { [path]: () => response(200, 'shine', { 'content-type': 'text/css' }) } });
+
+    const online = dispatchFetch(worker, path);
+    assert.equal(online.handled, true);
+    assert.equal(await (await online.settle()).text(), 'shine');
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(worker.stored.get('blocwerk-shell-v4')?.size, 1, 'the copy lands in the shell cache');
+
+    delete worker.routes[path];
+    const offline = dispatchFetch(worker, path);
+    assert.equal(await (await offline.settle()).text(), 'shine', 'offline, the shell copy answers');
+});

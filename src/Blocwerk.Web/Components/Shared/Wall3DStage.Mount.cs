@@ -5,6 +5,7 @@ using System.Text.Json;
 using Blocwerk.Core.Assets;
 using Blocwerk.Core.Assets.Documents;
 using Blocwerk.Core.Geometry.View3D;
+using Blocwerk.Shared.Ui.Overlay;
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
 

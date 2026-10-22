@@ -1,0 +1,63 @@
+@* The hold overlay of one panel photo (svg.hold-overlay, viewBox 0 0 100 100) for the read-only views: the wall view
+   and the boulder view. Its input is the holds document's own hold (HoldsDocumentHold), so the Server's
+   MultiPanelViewer and the offline client draw a panel through this one component. Holds are drawn in the panel
+   image's own normalized space, exactly as they are stored. *@
+
+<svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
+    @foreach (var h in Holds)
+    {
+        var isHi = HighlightedHoldIds?.Contains(h.Id) == true;
+        @* A hold the last update did not find is not on the wall's overlay; a boulder that uses
+           it still shows it (faded), so the boulder never draws with a hold missing, and an
+           editor can ask to see them all. *@
+        if (h.Kept && !isHi && !ShowKeptHolds)
+        {
+            continue;
+        }
+
+        @* The wall view draws no hold until it is tapped (OutlinesOnDemand; the tapped one is
+           outlined in the browser, on the viewer's hold-tap layer) unless "Show all holds" is on. A boulder's
+           own holds, and the not-found holds an editor asked to see, are drawn either way. The
+           heat map's count badges do not depend on it. *@
+        var drawn = isHi || h.Kept || DrawsEveryHold;
+        var fill = FillOf(h, isHi);
+        var stroke = StrokeOf(h, isHi);
+        var sw = isHi ? "0.5" : "0.25";
+        @* A virtual hold isn't on the photo at all — dash its outline (the same
+           convention the pickers and the wall editor use) so it never reads as a
+           real hold. The boulder-type fill/stroke above is kept either way. *@
+        var dash = h.Virtual ? "0.6 0.4" : null;
+        @* No handlers and no style on purpose: this overlay is read-only, so the shapes
+           stay out of the pan engine's way entirely. *@
+        @* Feet draw as a rounded square instead of a circle, but — unlike the wall
+           editor and the hold picker — at FULL radius: on a viewing surface the shrink
+           only made feet hard to see, and the shape alone tells them from hands. *@
+        var isFoot = h.Category == nameof(HoldCategory.Foot);
+        @if (drawn && isHi)
+        {
+            @* A boulder's own hold: the wall view's tapped-hold outline in the boulder colour,
+               glowing, no fill, corners lightly rounded. Dashed when not quite on the photo. *@
+            <HoldShine @key="h.Id" X="h.X" Y="h.Y" Radius="h.Radius" ShapePoints="h.Shape" ShapeHoles="h.Holes"
+                       Foot="isFoot" FootScale="HoldShape.FullFoot" Color="@stroke" Smooth="true"
+                       Look="@(h.Virtual || h.Kept ? "base" : null)" />
+        }
+        else if (drawn)
+        {
+            <HoldShape @key="h.Id" X="h.X" Y="h.Y" Radius="h.Radius" ShapePoints="h.Shape" ShapeHoles="h.Holes"
+                       Foot="isFoot" FootScale="HoldShape.FullFoot"
+                       Fill="@fill" Stroke="@stroke" StrokeWidth="@sw" Dash="@dash" Kept="h.Kept" />
+        }
+
+        @if (UsageCount(h.Id) is > 0 and var usageCount)
+        {
+            var r = h.Radius * 100;
+            @* The whitespace between the circle and the text is rendered: the text line keeps the indentation it had
+               in MultiPanelViewer, so the markup stays byte for byte what the Server drew before (the overlay snapshots). *@
+            <g class="heat-badge" pointer-events="none">
+                <circle cx="@HoldShapeMarkup.F(h.X * 100 + r * 0.85)" cy="@HoldShapeMarkup.F(h.Y * 100 - r * 0.85)" r="1.4" />
+                                    <text x="@HoldShapeMarkup.F(h.X * 100 + r * 0.85)" y="@HoldShapeMarkup.F(h.Y * 100 - r * 0.85)"
+                                          text-anchor="middle" dominant-baseline="central">@usageCount</text>
+            </g>
+        }
+    }
+</svg>

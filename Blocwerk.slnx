@@ -16,5 +16,6 @@
   <Project Path="src/Blocwerk.Contracts/Blocwerk.Contracts.csproj" />
   <Project Path="src/Blocwerk.Core/Blocwerk.Core.csproj" />
   <Project Path="src/Blocwerk.HoldDetection/Blocwerk.HoldDetection.csproj" />
+  <Project Path="src/Blocwerk.Shared.Ui/Blocwerk.Shared.Ui.csproj" />
   <Project Path="src/Blocwerk.Web/Blocwerk.Web.csproj" />
 </Solution>

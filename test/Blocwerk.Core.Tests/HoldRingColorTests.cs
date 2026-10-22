@@ -3,7 +3,7 @@
 // </copyright>
 
 using Blocwerk.Core.Holds;
-using Blocwerk.Web.Components.Shared;
+using Blocwerk.Shared.Ui.Overlay;
 
 namespace Blocwerk.Core.Tests;
 

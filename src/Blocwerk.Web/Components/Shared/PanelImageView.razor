@@ -66,7 +66,7 @@
                                carries the distinction and the square then fully contains the circle this
                                used to be, so no tap target shrinks. Purely visual: Style below still owns
                                cursor and pointer-events, so viewport-gestures.js hit-tests as before. *@
-                            <HoldShape @key="h.Id" X="g.X" Y="g.Y" Radius="g.Radius" ShapePoints="h.ShapePoints" ShapeHoles="h.ShapeHoles"
+                            <HoldShape @key="h.Id" X="g.X" Y="g.Y" Radius="g.Radius" ShapePoints="h.ShapePoints.AsDocumentRing()" ShapeHoles="h.ShapeHoles.AsDocumentRings()"
                                        Foot="isFoot" FootScale="HoldShape.FullFoot"
                                        Fill="@fill" Stroke="@stroke" StrokeWidth="@sw"
                                        Style="@($"cursor: {(interact ? "pointer" : "inherit")}; pointer-events: {(interact ? "auto" : "none")};")"
@@ -93,13 +93,13 @@
                         {
                             @* The look-over's "where it was": the old hold's own outline, dashed, at its old spot;
                                and once more, solid green, where the user says it is now. Never a pick target. *@
-                            <HoldShape X="ghost.X" Y="ghost.Y" Radius="ghost.Radius" ShapePoints="ghost.ShapePoints" ShapeHoles="ghost.ShapeHoles"
+                            <HoldShape X="ghost.X" Y="ghost.Y" Radius="ghost.Radius" ShapePoints="ghost.ShapePoints.AsDocumentRing()" ShapeHoles="ghost.ShapeHoles.AsDocumentRings()"
                                        Foot="ghost.Category == HoldCategory.Foot" FootScale="HoldShape.FullFoot"
                                        Fill="transparent" Stroke="var(--status-warning)" StrokeWidth="@F3(0.8 * StrokeScale)"
                                        Dash="@($"{F3(1.2 * StrokeScale)} {F3(0.9 * StrokeScale)}")" PointerEvents="none" />
                             @if (GhostMovedTo is { } to)
                             {
-                                <HoldShape X="to.X" Y="to.Y" Radius="ghost.Radius" ShapePoints="ghost.ShapePoints" ShapeHoles="ghost.ShapeHoles"
+                                <HoldShape X="to.X" Y="to.Y" Radius="ghost.Radius" ShapePoints="ghost.ShapePoints.AsDocumentRing()" ShapeHoles="ghost.ShapeHoles.AsDocumentRings()"
                                            Foot="ghost.Category == HoldCategory.Foot" FootScale="HoldShape.FullFoot"
                                            Fill="rgba(51,221,102,0.25)" Stroke="var(--status-success)" StrokeWidth="@F3(0.9 * StrokeScale)"
                                            PointerEvents="none" />
@@ -129,7 +129,7 @@
                                    passed unconditionally — it only ever reaches the circle. *@
                                 <HoldShape @key="@($"drag-{h.Id}")" X="g.X" Y="g.Y"
                                            Radius="@(ExactHitTargets ? g.Radius : Math.Max(g.Radius, HitFloor))"
-                                           ShapePoints="h.ShapePoints" ShapeHoles="h.ShapeHoles"
+                                           ShapePoints="h.ShapePoints.AsDocumentRing()" ShapeHoles="h.ShapeHoles.AsDocumentRings()"
                                            Fill="transparent" Stroke="transparent" StrokeWidth="@HitStroke"
                                            Style="cursor: move; pointer-events: auto;"
                                            OnPointerDown="() => StartMove(h)"

@@ -2,7 +2,7 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
-namespace Blocwerk.Web.Components.Shared;
+namespace Blocwerk.Shared.Ui.Overlay;
 
 /// <summary>
 /// A hold re-renders only when something it draws changed. Its list parameters (and, on most surfaces, fresh

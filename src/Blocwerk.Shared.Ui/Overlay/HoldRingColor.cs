@@ -5,11 +5,11 @@
 using System.Text.RegularExpressions;
 using Blocwerk.Core.Holds;
 
-namespace Blocwerk.Web.Components.Shared;
+namespace Blocwerk.Shared.Ui.Overlay;
 
 /// <summary>
 /// The <c>--ring</c> custom property a hold thumbnail is outlined in, so a pair reads at a glance.
-/// <see cref="Core.Entities.Hold.Color"/> is free text on the way in, and this value lands inside an
+/// <c>Hold.Color</c> is free text on the way in, and this value lands inside an
 /// inline <c>style</c>: only a palette key (mapped through <see cref="HoldPalette"/>) or a strict hex
 /// colour is ever emitted — anything else keeps the default ring.
 /// </summary>

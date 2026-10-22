@@ -108,14 +108,16 @@ function isBypassed(url, request) {
     return url.pathname.startsWith('/api/') || url.pathname.startsWith('/_blazor');
 }
 
-// Our own CSS/JS/icons. The fingerprinted ones are immutable under a given name, and the ones that
-// keep a stable path (icons, the manifest) change on every deploy, so network-first is right for
-// both: it can never let a stale cache mask a fresh deploy — the exact trap that made a re-composed
-// image still serve the old front-end — and for a fingerprinted URL the `immutable` response is
-// already in the browser's HTTP cache, so the "network" leg costs no round trip.
+// Our own CSS/JS/icons, and the shared UI library's (/_content/Blocwerk.Shared.Ui/). The fingerprinted
+// ones are immutable under a given name, and the ones that keep a stable path (icons, the manifest)
+// change on every deploy, so network-first is right for both: it can never let a stale cache mask a
+// fresh deploy — the exact trap that made a re-composed image still serve the old front-end — and for
+// a fingerprinted URL the `immutable` response is already in the browser's HTTP cache, so the
+// "network" leg costs no round trip.
 function isOwnAsset(url) {
     return url.pathname.startsWith('/css/')
         || url.pathname.startsWith('/js/')
+        || url.pathname.startsWith('/_content/')
         || url.pathname.startsWith('/icons/')
         || url.pathname === '/manifest.webmanifest';
 }

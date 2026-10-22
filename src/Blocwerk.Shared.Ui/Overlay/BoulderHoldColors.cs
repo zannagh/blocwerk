@@ -1,7 +1,11 @@
+// <copyright file="BoulderHoldColors.cs" company="Blocwerk">
+// Copyright (c) Blocwerk. All rights reserved.
+// </copyright>
+
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Holds;
 
-namespace Blocwerk.Web.Components.Shared;
+namespace Blocwerk.Shared.Ui.Overlay;
 
 /// <summary>
 /// The single source of truth for the colors a boulder's holds are drawn in.
@@ -24,12 +28,12 @@ public static class BoulderHoldColors
     /// Dedicated footholds. A warm orange, deliberately far from the light lavender
     /// <c>#c86dff</c> the wall editor uses for *virtual* holds (which is also only ever
     /// drawn as a dashed outline, never as a fill). Keep in sync with the
-    /// <c>--foot-hold</c> custom property in <c>wwwroot/css/components.css</c>.
+    /// <c>--foot-hold</c> custom property in the Server's <c>wwwroot/css/components.css</c>.
     /// </summary>
     public const string Foot = "#FF9800";
 
     /// <summary>
-    /// The role colours of the 3D view (wwwroot/js/wall3d.js), keyed by its hold roles: the colours
+    /// The role colours of the 3D view (the Server's wwwroot/js/wall3d.js), keyed by its hold roles: the colours
     /// <see cref="Outline"/> gives the boulder view's outlines.
     /// </summary>
     public static IReadOnlyDictionary<string, string> Wall3DRoles { get; } = new Dictionary<string, string>

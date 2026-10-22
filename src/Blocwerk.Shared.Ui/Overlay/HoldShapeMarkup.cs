@@ -4,9 +4,9 @@
 
 using System.Globalization;
 using System.Text;
-using Blocwerk.Core.Entities;
+using Blocwerk.Contracts.Documents;
 
-namespace Blocwerk.Web.Components.Shared;
+namespace Blocwerk.Shared.Ui.Overlay;
 
 /// <summary>
 /// The pure geometry-to-SVG-attribute strings behind <see cref="HoldShape"/>: normalized 0..1 hold
@@ -21,7 +21,7 @@ public static class HoldShapeMarkup
     /// <param name="y">The hold's normalized centre Y.</param>
     /// <param name="outer">The outer ring as offsets from the centre.</param>
     /// <returns>The <c>points</c> attribute value.</returns>
-    public static string PolygonPoints(double x, double y, IReadOnlyList<ShapePoint> outer) =>
+    public static string PolygonPoints(double x, double y, IReadOnlyList<DocumentPoint> outer) =>
         string.Join(" ", outer.Select(sp => F((x + sp.Dx) * 100) + "," + F((y + sp.Dy) * 100)));
 
     /// <summary>
@@ -31,7 +31,7 @@ public static class HoldShapeMarkup
     /// <param name="outer">The outer ring, or null.</param>
     /// <param name="holes">The hole rings, or null.</param>
     /// <returns>Whether the pocket markup applies.</returns>
-    public static bool HasPocket(IReadOnlyList<ShapePoint>? outer, IReadOnlyList<IReadOnlyList<ShapePoint>>? holes) =>
+    public static bool HasPocket(IReadOnlyList<DocumentPoint>? outer, IReadOnlyList<IReadOnlyList<DocumentPoint>>? holes) =>
         outer is { Count: >= 3 } && holes is not null && holes.Any(h => h is { Count: >= 3 });
 
     /// <summary>
@@ -44,7 +44,7 @@ public static class HoldShapeMarkup
     /// <param name="outer">The outer ring as offsets from the centre.</param>
     /// <param name="holes">The hole rings as offsets from the same centre.</param>
     /// <returns>The path data.</returns>
-    public static string PocketPath(double x, double y, IReadOnlyList<ShapePoint> outer, IReadOnlyList<IReadOnlyList<ShapePoint>> holes)
+    public static string PocketPath(double x, double y, IReadOnlyList<DocumentPoint> outer, IReadOnlyList<IReadOnlyList<DocumentPoint>> holes)
     {
         var d = new StringBuilder();
         AppendRing(d, x, y, outer);
@@ -62,7 +62,7 @@ public static class HoldShapeMarkup
     /// <returns>The formatted value.</returns>
     public static string F(double v) => v.ToString("F2", CultureInfo.InvariantCulture);
 
-    private static void AppendRing(StringBuilder d, double x, double y, IReadOnlyList<ShapePoint> ring)
+    private static void AppendRing(StringBuilder d, double x, double y, IReadOnlyList<DocumentPoint> ring)
     {
         for (int i = 0; i < ring.Count; i++)
         {

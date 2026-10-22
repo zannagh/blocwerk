@@ -1,10 +1,13 @@
+// Copyright (c) 2026, zannagh. All rights reserved.
+// See License in the project root for license information.
+
 using Blocwerk.Core.Enums;
 
 namespace Blocwerk.Core.Holds;
 
 /// <summary>
 /// The single source of truth for hold colors: the vocabulary stored in
-/// <see cref="Entities.Hold.Color"/>, its display names, and the hex values every
+/// <c>Hold.Color</c>, its display names, and the hex values every
 /// renderer derives fills and strokes from.
 /// </summary>
 public static class HoldPalette
