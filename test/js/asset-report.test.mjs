@@ -1,31 +1,10 @@
 // Settings → "Offline storage" and the offline-ready mark (asset-report.js, PR 2.9) against the real page modules:
-// the report's sizes come from the ledger, the readiness rule, the per-wall pin, "Clear offline data" and the 3D
-// opt-out's eviction. Run by `node --test test/js/`.
+// the report's sizes come from the ledger, the readiness rule, the per-wall pin and the 3D opt-out's eviction
+// ("Clear offline data": asset-clear.test.mjs). Run by `node --test test/js/`.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { json, manifest, sha, USER_A, fakeCaches } from './fixtures/page-sandbox.mjs';
-import { W1, W2, keys, names, plain, standardCaches, memberPage } from './fixtures/asset-pages.mjs';
-
-const GALLERY = sha('5');
-// W1 with a core photo, a gallery image (640 + original), a lazy panel and a 3D texture.
-const w1Routes = () => ({
-    [`/api/walls/${W1}/manifest`]: () => json(manifest(W1, [
-        [sha('1'), 'core'],
-        [sha('2'), 'lazy'],
-        [GALLERY, 'lazy', { kind: 'gallery', widths: [640], at: '2026-10-20T10:00:00Z' }],
-        [sha('3'), 'view3d', { kind: 'texture' }],
-    ]), 200, { etag: 'W/"m1"' }),
-});
-
-function mark(wallId) {
-    const attrs = new Map([['data-bw-offline-ready', wallId]]);
-    return {
-        getAttribute: name => (attrs.has(name) ? attrs.get(name) : null),
-        setAttribute: (name, value) => attrs.set(name, value),
-        removeAttribute: name => attrs.delete(name),
-        get ready() { return attrs.has('data-ready'); },
-    };
-}
+import { json, manifest, sha, USER_A } from './fixtures/page-sandbox.mjs';
+import { W1, W2, keys, plain, memberPage, w1Routes, mark } from './fixtures/asset-pages.mjs';
 
 const reportOf = page => page.win.bwAssetReport.report().then(plain);
 const wallOf = (report, wallId) => report.walls.find(w => w.wallId === wallId);
@@ -102,54 +81,10 @@ test('a wall whose core is not cached yet carries no mark', async () => {
     assert.equal(wallOf(await reportOf(page), W2).ready, false);
 });
 
-test('clear wipes this partition only: the offline queue, the worker state and the shell stay, and no refill follows', async () => {
-    const caches = standardCaches();
-    caches.stores.set(`bw-a1-${USER_A}-3d`, new Map());
-    const page = memberPage({ caches, routes: w1Routes() });
-    await page.boot();
-    assert.ok(keys(caches, `bw-a1-${USER_A}-img`).length > 0);
-
-    assert.equal(await page.win.bwAssetReport.clear(), true);
-    assert.deepEqual(names(caches), ['blocwerk-offline', 'blocwerk-shell-v4', 'bw-sw-state']);
-    const ledger = await page.ledger();
-    assert.deepEqual(plain(await ledger.wallsOf(USER_A)), []);
-    assert.deepEqual(plain(await ledger.assetsOf(USER_A)), []);
-    assert.equal((await ledger.getMeta()).activePartition, USER_A, 'the label stays active: no wipe or identity change next load');
-
-    const before = page.assetFetches().length;
-    await page.cache.manifestChanged(W1);
-    await page.settle();
-    assert.equal(page.assetFetches().length, before, 'this page fills nothing more');
-    const after = await reportOf(page);
-    assert.equal(after.total, 0);
-    assert.equal(after.paused, false, 'a clear is not a refusal');
-});
-
 test('a browser that refused storage reports the page as paused (streaming)', async () => {
     const page = memberPage({ refuse: true, connection: { saveData: true } });
     await page.boot();
     assert.equal((await reportOf(page)).paused, true);
-});
-
-test('clear stops a running fill at its next task, and what was in flight does not land after the wipe', async () => {
-    const caches = fakeCaches();
-    let release;
-    const held = new Promise(resolve => { release = resolve; });
-    let started;
-    const inFlight = new Promise(resolve => { started = resolve; });
-    // One request at a time (Save-Data); the first asset fetch waits until the clear is under way.
-    const page = memberPage({ caches, routes: w1Routes(), connection: { saveData: true }, gate: () => { started(); return held; } });
-    await page.cache.boot();
-    await inFlight;
-    const clearing = page.win.bwAssetReport.clear();
-    await page.settle();
-    release();
-    await clearing;
-    await page.settle();
-
-    assert.equal(page.assetFetches().length, 1, 'the fill stopped after the request in flight');
-    assert.deepEqual(keys(caches, `bw-a1-${USER_A}-img`), []);
-    assert.deepEqual(plain(await (await page.ledger()).assetsOf(USER_A)), []);
 });
 
 test('keep offline pins the wall in the ledger and asks for persistent storage; an unknown wall is refused', async () => {

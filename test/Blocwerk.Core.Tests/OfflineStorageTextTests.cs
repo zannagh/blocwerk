@@ -57,7 +57,9 @@ public class OfflineStorageTextTests
         Assert.Contains("only when you open", mobile, StringComparison.Ordinal);
         Assert.Contains("mobile data", mobile, StringComparison.Ordinal);
         Assert.Contains("in the background", OfflineStorageText.ThreeDNote(Desktop), StringComparison.Ordinal);
-        Assert.Contains("isn't kept", OfflineStorageText.ThreeDNote(Desktop with { Keep3d = false, Mobile = true }), StringComparison.Ordinal);
+        var off = OfflineStorageText.ThreeDNote(Desktop with { Keep3d = false, Mobile = true });
+        Assert.Contains("isn't kept", off, StringComparison.Ordinal);
+        Assert.Contains("except for walls you saved 3D for", off, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -30,8 +30,12 @@ public partial class OfflineStorageCard
     // flipped by a failed write is not patched back by a plain diff).
     private int rev;
 
+    private OfflineStorageInterop? interop;
+
     [Inject]
     private IJSRuntime JS { get; set; } = default!;
+
+    private OfflineStorageInterop Interop => interop ??= new OfflineStorageInterop(JS);
 
     [Inject]
     private IKioskContext KioskContext { get; set; } = default!;
@@ -63,15 +67,7 @@ public partial class OfflineStorageCard
 
     private async Task ReloadAsync()
     {
-        try
-        {
-            facts = await JS.InvokeAsync<OfflineStorageFacts?>("bwAssetReport.report");
-        }
-        catch (JSException)
-        {
-            facts = facts ?? new OfflineStorageFacts(false, false, false, true, false, false, false, null, false, 0, []);
-        }
-
+        facts = await Interop.ReportAsync() ?? facts ?? OfflineStorageInterop.Unavailable;
         rev++;
     }
 
@@ -91,11 +87,7 @@ public partial class OfflineStorageCard
     {
         busy = true;
         error = null;
-        try
-        {
-            await JS.InvokeVoidAsync(identifier, args);
-        }
-        catch (JSException)
+        if (!await Interop.RunAsync(identifier, args))
         {
             error = "This device didn't accept the change. Try again.";
         }

@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 const js = new URL('../../../src/Blocwerk.Web/wwwroot/js/', import.meta.url);
-const MODULES = ['asset-ledger.js', 'asset-budget.js', 'asset-wipe.js', 'asset-manifest.js', 'asset-store.js', 'asset-session.js', 'asset-plan.js', 'asset-fill.js', 'asset-cache.js', 'asset-notice.js', 'asset-3d.js', 'asset-report.js'];
+const MODULES = ['asset-ledger.js', 'asset-budget.js', 'asset-wipe.js', 'asset-manifest.js', 'asset-store.js', 'asset-session.js', 'asset-plan.js', 'asset-fill.js', 'asset-cache.js', 'asset-notice.js', 'asset-3d.js', 'asset-clear.js', 'asset-report.js'];
 export const ORIGIN = 'https://blocwerk.test';
 export const USER_A = 'u-aaaaaaaaaaaaaaaaaaaa';
 export const USER_B = 'u-bbbbbbbbbbbbbbbbbbbb';
@@ -52,7 +52,8 @@ export function manifest(wallId, assets, extra = {}) {
  * opts: { label (meta content, null = no meta), path, search, caches, routes: { path → fn(init, url) }, partitionOfWorker,
  *         swReply ('v4' | 'none' | 'v3' | null = no controller), maxTouchPoints, coarse (a coarse pointer), refuse (worker posts asset-refused), silent (worker
  *         neither stores nor answers: a slow write), prefs3d, ua, quota, ledger, user, connection, persisted (persisted()'s answer),
- *         marks (the elements querySelectorAll answers: offline-ready marks), gate (awaited before an asset fetch) }
+ *         marks (the elements querySelectorAll answers: offline-ready marks), gate (awaited before an asset fetch),
+ *         bus (a shared Set: BroadcastChannel between pages given the same one) }
  */
 export function loadPage(opts = {}) {
     const timers = [];
@@ -165,6 +166,10 @@ export function loadPage(opts = {}) {
         clearTimeout: t => { if (t) { t.done = true; } },
         setInterval: () => 0,
         MessageChannel: FakeChannel,
+        BroadcastChannel: opts.bus ? class {
+            constructor(name) { this.name = name; this.onmessage = null; opts.bus.add(this); }
+            postMessage(data) { opts.bus.forEach(c => { if (c !== this && c.name === this.name) { setImmediate(() => c.onmessage && c.onmessage({ data: JSON.parse(JSON.stringify(data)) })); } }); }
+        } : undefined,
         CustomEvent: class { constructor(type) { this.type = type; } },
         caches,
         fetch: routedFetch,

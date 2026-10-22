@@ -7,9 +7,8 @@
  *               and how this device fills it, and the iOS-tab install nudge.
  *   setKeepOffline(wallId, on): the per-wall pin. Pinning asks persist(), as §6.8 says ("on Keep offline"); unpinning
  *               also clears 2.8's "Save 3D offline" (save3d), which is a pin plus 3D.
- *   clear():    "Clear offline data": stops this page's fill and deletes this partition's `bw-a1-{p}-*` caches and
- *               ledger rows. Never `blocwerk-offline` (unsent ticks), `bw-sw-state` or the shell. Wall data is always
- *               cached, so the walls download again on the next page load.
+ *   clear():    "Clear offline data" (asset-clear.js): frees this partition's caches and ledger rows now, then
+ *               rebuilds them in the background, and tells the other tabs.
  *
  * OFFLINE READY (the mark): the wall's manifest is in the ledger with nothing pending (every hash known), it lists at
  * least one core asset, and every core key the fill plans on this device (bwAssetPlan.coreKeys: the fit rendition
@@ -25,7 +24,6 @@ window.bwAssetReport = (function (win) {
 
     const REAL_LABEL = /^(anon|[uk]-[a-z2-7]{20})$/;
     const MARK_ATTR = 'data-bw-offline-ready';
-    const PREFIX = 'bw-a1-';
     const RECHECK_MS = 1000;
 
     const Cache = () => win.bwAssetCache;
@@ -149,41 +147,22 @@ window.bwAssetReport = (function (win) {
         }
         // Through the ledger's one merge (updateWall), so a manifest round in flight cannot drop the pin. Unpinning also
         // clears 2.8's save3d: a saved-3D wall is keepOffline + save3d, and a pin coming back must not revive it.
-        await state.env.ledger.updateWall(state.active, id, current => (current
-            ? Object.assign(current, on ? { keepOffline: true } : { keepOffline: false, save3d: false })
-            : undefined));
+        let saved3d = false;
+        await state.env.ledger.updateWall(state.active, id, current => {
+            saved3d = !!(current && current.save3d);
+            return current ? Object.assign(current, on ? { keepOffline: true } : { keepOffline: false, save3d: false }) : undefined;
+        });
         if (on && win.navigator.storage && win.navigator.storage.persist) {
             await win.navigator.storage.persist().catch(() => false);
+        }
+        if (!on && saved3d) {
+            // As bwAsset3d.unsave: the budget and the opt-out apply to the wall's 3D again.
+            await Cache().evict();
         }
         return true;
     }
 
-    async function clear() {
-        const state = await active();
-        if (!state) {
-            return false;
-        }
-        const partition = state.active;
-        state.stopped = true;
-        // The running fill ends at its next task; its last announcements are in by then, so nothing lands after the wipe.
-        await Cache().filled().catch(() => undefined);
-        for (const suffix of ['img', '3d']) {
-            try {
-                await state.env.caches.delete(`${PREFIX}${partition}-${suffix}`);
-            } catch (e) {
-                /* storage unavailable: the reconcile on the next start catches up */
-            }
-        }
-        const { walls, assets } = await snapshot(state);
-        for (const wall of walls) {
-            await state.env.ledger.deleteWall(partition, wall.wallId);
-        }
-        for (const asset of assets) {
-            await state.env.ledger.deleteAsset(partition, asset.key);
-        }
-        await marks.refresh();
-        return true;
-    }
+    const clear = () => (win.bwAssetClear ? win.bwAssetClear.clear() : Promise.resolve(false));
 
     const marks = createMarks();
 
@@ -250,6 +229,9 @@ window.bwAssetReport = (function (win) {
         // A wall opened by enhanced navigation refreshes its manifest; read the ledger again a little later.
         if (win.Blazor && win.Blazor.addEventListener) {
             win.Blazor.addEventListener('enhancedload', () => marks.invalidate());
+        }
+        if (win.bwAssetClear) {
+            win.bwAssetClear.listen();
         }
         const cache = Cache();
         const started = cache && (cache.ready || cache.boot());
