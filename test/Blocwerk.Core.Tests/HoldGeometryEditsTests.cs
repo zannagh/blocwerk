@@ -127,11 +127,11 @@ public class HoldGeometryEditsTests
         Assert.DoesNotContain("data-hold", HoldShapeRenderer.Render(parameters));
 
         parameters["HoldId"] = (Guid?)id;
-        parameters["ShapePoints"] = ShapePoint.DefaultOctagon(0.02);
+        parameters["ShapePoints"] = ShapePoint.DefaultOctagon(0.02).AsDocumentRing();
         parameters["ShapeHoles"] = new List<List<ShapePoint>>
         {
             new() { new() { Dx = -0.002, Dy = 0 }, new() { Dx = 0.002, Dy = 0 }, new() { Dx = 0, Dy = 0.002 } },
-        };
+        }.AsDocumentRings();
         var markup = HoldShapeRenderer.Render(parameters);
 
         // A pocket hold is two elements (the look and the hit); a drag has to move both.

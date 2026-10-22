@@ -31,5 +31,6 @@
     <ProjectReference Include="..\Blocwerk.Core\Blocwerk.Core.csproj" />
     <ProjectReference Include="..\Blocwerk.Authentication\Blocwerk.Authentication.csproj" />
     <ProjectReference Include="..\Blocwerk.HoldDetection\Blocwerk.HoldDetection.csproj" />
+    <ProjectReference Include="..\Blocwerk.Shared.Ui\Blocwerk.Shared.Ui.csproj" />
   </ItemGroup>
 </Project>

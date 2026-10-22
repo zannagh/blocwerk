@@ -2,9 +2,9 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
-using Blocwerk.Core.Entities;
+using Blocwerk.Contracts.Documents;
 
-namespace Blocwerk.Web.Components.Shared;
+namespace Blocwerk.Shared.Ui.Overlay;
 
 /// <summary>
 /// Display-only rounding of a hold outline: Chaikin corner cutting over the closed ring, so a traced
@@ -20,7 +20,7 @@ public static class HoldOutlineSmoothing
     /// <param name="ring">The closed outline, as offsets from the hold's centre.</param>
     /// <param name="passes">How many corner-cutting passes to run.</param>
     /// <returns>The rounded ring (a new list), or <paramref name="ring"/> unchanged.</returns>
-    public static IReadOnlyList<ShapePoint>? Smooth(IReadOnlyList<ShapePoint>? ring, int passes = Passes)
+    public static IReadOnlyList<DocumentPoint>? Smooth(IReadOnlyList<DocumentPoint>? ring, int passes = Passes)
     {
         if (ring is not { Count: >= 3 } || passes <= 0)
         {
@@ -39,20 +39,20 @@ public static class HoldOutlineSmoothing
     /// <summary>Rounds every ring of a pocket hold's holes, see <see cref="Smooth"/>.</summary>
     /// <param name="holes">The holes, or null.</param>
     /// <returns>The rounded holes, or null.</returns>
-    public static IReadOnlyList<IReadOnlyList<ShapePoint>>? SmoothRings(IReadOnlyList<IReadOnlyList<ShapePoint>>? holes) =>
+    public static IReadOnlyList<IReadOnlyList<DocumentPoint>>? SmoothRings(IReadOnlyList<IReadOnlyList<DocumentPoint>>? holes) =>
         holes?.Select(hole => Smooth(hole) ?? hole).ToList();
 
     // One Chaikin pass over a closed ring: each edge is replaced by the points a quarter and three
     // quarters along it, which cuts every corner and doubles the point count.
-    private static List<ShapePoint> CutCorners(IReadOnlyList<ShapePoint> ring)
+    private static List<DocumentPoint> CutCorners(IReadOnlyList<DocumentPoint> ring)
     {
-        var result = new List<ShapePoint>(ring.Count * 2);
+        var result = new List<DocumentPoint>(ring.Count * 2);
         for (var i = 0; i < ring.Count; i++)
         {
             var a = ring[i];
             var b = ring[(i + 1) % ring.Count];
-            result.Add(new ShapePoint { Dx = (0.75 * a.Dx) + (0.25 * b.Dx), Dy = (0.75 * a.Dy) + (0.25 * b.Dy) });
-            result.Add(new ShapePoint { Dx = (0.25 * a.Dx) + (0.75 * b.Dx), Dy = (0.25 * a.Dy) + (0.75 * b.Dy) });
+            result.Add(new DocumentPoint((0.75 * a.Dx) + (0.25 * b.Dx), (0.75 * a.Dy) + (0.25 * b.Dy)));
+            result.Add(new DocumentPoint((0.25 * a.Dx) + (0.75 * b.Dx), (0.25 * a.Dy) + (0.75 * b.Dy)));
         }
 
         return result;

@@ -1,5 +1,3 @@
-@using Blocwerk.Core.Entities
-
 @* The "tapped hold" outline, for a `svg.hold-tap-layer` (viewBox 0 0 100 100): the hold's own outline in
    its colour, slightly shiny — a soft glow, a dark casing, the colour and a thin light line (hold-tap.css).
    The server-rendered twin of what hold-tap.js draws on the wall view, so both look the same. Display only:
@@ -35,10 +33,10 @@
     [Parameter] public double Radius { get; set; }
 
     /// <summary>The hold's outline as offsets from its centre, or null for the plain shape.</summary>
-    [Parameter] public IReadOnlyList<ShapePoint>? ShapePoints { get; set; }
+    [Parameter] public IReadOnlyList<DocumentPoint>? ShapePoints { get; set; }
 
     /// <summary>The outline's holes (a pocket hold), or null.</summary>
-    [Parameter] public IReadOnlyList<IReadOnlyList<ShapePoint>>? ShapeHoles { get; set; }
+    [Parameter] public IReadOnlyList<IReadOnlyList<DocumentPoint>>? ShapeHoles { get; set; }
 
     /// <summary>Draw as a foothold (a rounded square), like <see cref="HoldShape.Foot"/>.</summary>
     [Parameter] public bool Foot { get; set; }
@@ -55,8 +53,8 @@
     /// </summary>
     [Parameter] public bool Smooth { get; set; }
 
-    private IReadOnlyList<ShapePoint>? drawnPoints;
-    private IReadOnlyList<IReadOnlyList<ShapePoint>>? drawnHoles;
+    private IReadOnlyList<DocumentPoint>? drawnPoints;
+    private IReadOnlyList<IReadOnlyList<DocumentPoint>>? drawnHoles;
 
     protected override void OnParametersSet()
     {

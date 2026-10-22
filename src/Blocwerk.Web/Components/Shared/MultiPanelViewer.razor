@@ -1,3 +1,4 @@
+@using Blocwerk.Contracts.Documents
 @inject IJSRuntime JS
 @inject Blocwerk.Core.Services.HybridZoom.HybridZoomOptions HybridZoom
 @implements IAsyncDisposable
@@ -145,62 +146,10 @@ else
                     {
                         <canvas class="usage-heat" aria-hidden="true"></canvas>
                     }
-                    <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
-                        @foreach (var h in _holds)
-                        {
-                            var isHi = HighlightedHoldIds?.Contains(h.Id) == true;
-                            @* A hold the last update did not find is not on the wall's overlay; a boulder that uses
-                               it still shows it (faded), so the boulder never draws with a hold missing, and an
-                               editor can ask to see them all. *@
-                            if (h.Kept && !isHi && !ShowKeptHolds)
-                            {
-                                continue;
-                            }
-
-                            @* The wall view draws no hold until it is tapped (OutlinesOnDemand; the tapped one is
-                               outlined in the browser, see the layer below) unless "Show all holds" is on. A boulder's
-                               own holds, and the not-found holds an editor asked to see, are drawn either way. The
-                               heat map's count badges do not depend on it. *@
-                            var drawn = isHi || h.Kept || DrawsEveryHold;
-                            var fill = FillOf(h, isHi);
-                            var stroke = StrokeOf(h, isHi);
-                            var sw = isHi ? "0.5" : "0.25";
-                            @* A virtual hold isn't on the photo at all — dash its outline (the same
-                               convention the pickers and the wall editor use) so it never reads as a
-                               real hold. The boulder-type fill/stroke above is kept either way. *@
-                            var dash = h.IsVirtual ? "0.6 0.4" : null;
-                            @* No handlers and no style on purpose: this overlay is read-only, so the shapes
-                               stay out of the pan engine's way entirely. *@
-                            @* Feet draw as a rounded square instead of a circle, but — unlike the wall
-                               editor and the hold picker — at FULL radius: on a viewing surface the shrink
-                               only made feet hard to see, and the shape alone tells them from hands. *@
-                            var isFoot = h.Category == HoldCategory.Foot;
-                            @if (drawn && isHi)
-                            {
-                                @* A boulder's own hold: the wall view's tapped-hold outline in the boulder colour,
-                                   glowing, no fill, corners lightly rounded. Dashed when not quite on the photo. *@
-                                <HoldShine @key="h.Id" X="h.X" Y="h.Y" Radius="h.Radius" ShapePoints="h.ShapePoints" ShapeHoles="h.ShapeHoles"
-                                           Foot="isFoot" FootScale="HoldShape.FullFoot" Color="@stroke" Smooth="true"
-                                           Look="@(h.IsVirtual || h.Kept ? "base" : null)" />
-                            }
-                            else if (drawn)
-                            {
-                                <HoldShape @key="h.Id" X="h.X" Y="h.Y" Radius="h.Radius" ShapePoints="h.ShapePoints" ShapeHoles="h.ShapeHoles"
-                                           Foot="isFoot" FootScale="HoldShape.FullFoot"
-                                           Fill="@fill" Stroke="@stroke" StrokeWidth="@sw" Dash="@dash" Kept="h.Kept" />
-                            }
-
-                            @if (_heatOn && UsageCount(h.Id) is > 0 and var usageCount)
-                            {
-                                var r = h.Radius * 100;
-                                <g class="heat-badge" pointer-events="none">
-                                    <circle cx="@F(h.X * 100 + r * 0.85)" cy="@F(h.Y * 100 - r * 0.85)" r="1.4" />
-                                    <text x="@F(h.X * 100 + r * 0.85)" y="@F(h.Y * 100 - r * 0.85)"
-                                          text-anchor="middle" dominant-baseline="central">@usageCount</text>
-                                </g>
-                            }
-                        }
-                    </svg>
+                    @* The hold overlay itself is shared with the offline client (Blocwerk.Shared.Ui). *@
+                    <PanelHoldOverlay Holds="_overlayHolds" HighlightedHoldIds="HighlightedHoldIds" FootHoldIds="FootHoldIds"
+                                      HoldColor="HoldColor" ShowKeptHolds="ShowKeptHolds" DrawsEveryHold="DrawsEveryHold"
+                                      HeatCounts="@(_heatOn ? UsageCounts : null)" />
                     @if (OutlinesOnDemand)
                     {
                         @* Filled by hold-tap.js with the tapped hold's outline and its label; both stay
@@ -318,6 +267,9 @@ else
     private DotNetObjectReference<MultiPanelViewer>? _selfRef;
     private WallPanelInfo? _panel;
     private List<PanelHold> _holds = [];
+
+    // _holds as the shared overlay draws them, converted once per panel load, not per render.
+    private List<HoldsDocumentHold> _overlayHolds = [];
     private Guid? _fitBoxForPanelId;
     private Guid? _prefetchedForPanelId;
     private bool _recenterPending;
@@ -343,7 +295,7 @@ else
         var live = LivePanels;
         _panel = live.FirstOrDefault(p => p.Col == StartCol && p.Row == StartRow)
                  ?? live.FirstOrDefault();
-        _holds = _panel is null ? [] : await FetchHoldsAsync(_panel);
+        UseHolds(_panel, _panel is null ? [] : await FetchHoldsAsync(_panel));
     }
 
     private WallPanelInfo? Neighbour(int dCol, int dRow)
@@ -386,7 +338,7 @@ else
             var holds = await FetchHoldsAsync(target);
             await PreloadPhotoAsync(target);
             _panel = target;
-            _holds = holds;
+            UseHolds(target, holds);
         }
         finally
         {
@@ -395,6 +347,12 @@ else
 
         _recenterPending = true;
         StateHasChanged();
+    }
+
+    private void UseHolds(WallPanelInfo? panel, List<PanelHold> holds)
+    {
+        _holds = holds;
+        _overlayHolds = panel is null ? [] : PanelHoldDocuments.ToDocument(holds, panel.Id);
     }
 
     private async Task<List<PanelHold>> FetchHoldsAsync(WallPanelInfo panel)
@@ -580,29 +538,6 @@ else
         }
     }
 
-    private string FillOf(PanelHold h, bool highlighted)
-    {
-        if (highlighted)
-        {
-            return HoldColor?.Invoke(h.Id).Fill
-                   ?? HoldPalette.Rgba(FootHoldIds?.Contains(h.Id) == true ? BoulderHoldColors.Foot : BoulderHoldColors.Normal, 0.55);
-        }
-
-        // Context holds: faintly tinted by their own paint colour, dim when a boulder is highlighted.
-        return HoldPalette.Fill(h.Color, HighlightedHoldIds is { Count: > 0 } ? 0.12 : 0.35);
-    }
-
-    private string StrokeOf(PanelHold h, bool highlighted)
-    {
-        if (highlighted)
-        {
-            return HoldColor?.Invoke(h.Id).Stroke
-                   ?? (FootHoldIds?.Contains(h.Id) == true ? BoulderHoldColors.Foot : BoulderHoldColors.Normal);
-        }
-
-        return HighlightedHoldIds is { Count: > 0 } ? "rgba(255,255,255,0.35)" : HoldPalette.StrokeHex(h.Color);
-    }
-
     private static MarkupString Chevron(string dir)
     {
         var d = dir switch
@@ -616,6 +551,4 @@ else
             $"<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" " +
             $"stroke-linecap=\"round\" stroke-linejoin=\"round\" width=\"24\" height=\"24\"><path d=\"{d}\"/></svg>");
     }
-
-    private static string F(double v) => v.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
 }

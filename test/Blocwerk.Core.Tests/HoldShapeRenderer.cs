@@ -2,7 +2,7 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
-using Blocwerk.Web.Components.Shared;
+using Blocwerk.Shared.Ui.Overlay;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.Extensions.DependencyInjection;

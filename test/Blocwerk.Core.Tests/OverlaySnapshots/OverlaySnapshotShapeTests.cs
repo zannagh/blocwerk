@@ -6,6 +6,7 @@ using System.Text;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
+using Blocwerk.Shared.Ui.Overlay;
 using Blocwerk.Web.Components.Shared;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
@@ -79,8 +80,8 @@ public class OverlaySnapshotShapeTests
 
     private static IEnumerable<Dictionary<string, object?>> ShapeLooks()
     {
-        var outline = Ring(0.031, 7);
-        var holes = new List<IReadOnlyList<ShapePoint>> { Ring(0.01, 5), Ring(0.001, 2) };
+        var outline = Ring(0.031, 7).AsDocumentRing();
+        var holes = new List<IReadOnlyList<ShapePoint>> { Ring(0.01, 5), Ring(0.001, 2) }.AsDocumentRings();
         EventCallback<MouseEventArgs> click = EventCallback.Factory.Create<MouseEventArgs>(new object(), () => { });
         EventCallback<PointerEventArgs> down = EventCallback.Factory.Create<PointerEventArgs>(new object(), () => { });
         yield return Look(("Radius", 0.02), ("Fill", "rgba(1,2,3,0.4)"), ("Stroke", "#fff"), ("StrokeWidth", "0.25"));
@@ -90,14 +91,14 @@ public class OverlaySnapshotShapeTests
         yield return Look(("ShapePoints", outline), ("ShapeHoles", holes), ("Stroke", "blue"), ("StrokeWidth", "0.333"),
             ("PointerEvents", "visiblePainted"), ("Style", "cursor: move;"), ("OnClick", click), ("OnPointerDown", down));
         yield return Look(("ShapePoints", outline), ("HoldId", Hold), ("StackKeys", "a b"), ("Style", "cursor: inherit; pointer-events: none;"));
-        yield return Look(("ShapePoints", Ring(0.02, 2)), ("Radius", 0.015), ("OnClick", click));
+        yield return Look(("ShapePoints", Ring(0.02, 2).AsDocumentRing()), ("Radius", 0.015), ("OnClick", click));
         yield return Look(("Radius", 0.0), ("Fill", null), ("Stroke", null));
     }
 
     private static IEnumerable<Dictionary<string, object?>> OutlineLooks()
     {
-        var outline = Ring(0.03, 8);
-        var holes = new List<IReadOnlyList<ShapePoint>> { Ring(0.01, 6) };
+        var outline = Ring(0.03, 8).AsDocumentRing();
+        var holes = new List<IReadOnlyList<ShapePoint>> { Ring(0.01, 6) }.AsDocumentRings();
         yield return Look(("Radius", 0.02), ("Color", BoulderHoldColors.Outline(HoldType.Start, HoldUsage.HandAndFoot)));
         yield return Look(("Radius", 0.02), ("Foot", true), ("FootScale", HoldShape.FullFoot), ("Look", "base"), ("Smooth", true));
         yield return Look(("ShapePoints", outline), ("Smooth", true), ("Color", BoulderHoldColors.Outline(HoldType.Normal, HoldUsage.FootOnly)));

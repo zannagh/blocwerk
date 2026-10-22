@@ -6,6 +6,7 @@ using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.HoldStacks;
 using Blocwerk.Core.Services;
+using Blocwerk.Shared.Ui.Overlay;
 using Blocwerk.Web.Components.Shared;
 
 namespace Blocwerk.Core.Tests.OverlaySnapshots;
