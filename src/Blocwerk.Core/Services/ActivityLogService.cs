@@ -27,9 +27,9 @@ public interface IActivityLogService
     Task LogAsGhostAsync(Guid wallId, Guid? boulderId, ActivityType type, string? details = null);
 
     /// <summary>
-    /// A wall's activity, newest first. The caller must be a member of the wall, or be the wall's
-    /// own kiosk tablet with nobody picked, which reads it under <see cref="KioskActivityVisibility"/>.
-    /// The <paramref name="shareToken"/> opens it for the anonymous share-link view.
+    /// A wall's activity, newest first. The caller must be a member of the wall, or pass the
+    /// wall's <paramref name="shareToken"/> for the anonymous share-link view. A kiosk tablet with
+    /// nobody picked reads activity per boulder only, never this wall-wide log.
     /// </summary>
     /// <exception cref="UnauthorizedAccessException">The caller may not read this wall.</exception>
     Task<(List<ActivityLogEntry> Items, int TotalCount)> GetWallActivityAsync(
@@ -41,7 +41,7 @@ public interface IActivityLogService
     /// <summary>
     /// One boulder's activity, newest first. The caller must be a member of the boulder's wall, be
     /// that wall's kiosk tablet with nobody picked (a published, unarchived boulder only, under
-    /// <see cref="KioskActivityVisibility"/>), or pass that wall's <paramref name="shareToken"/> for
+    /// <see cref="KioskActivityVisibility"/>, bylined per <see cref="KioskBylines"/>), or pass that wall's <paramref name="shareToken"/> for
     /// the anonymous share-link view.
     /// </summary>
     /// <exception cref="UnauthorizedAccessException">The caller may not read this boulder.</exception>
@@ -108,12 +108,12 @@ public class ActivityLogService : IActivityLogService
         var reader = await OpenReadableAsync(shareToken);
         await using var db = reader.Db;
 
-        if (!await CanReadWallAsync(reader, wallId, shareToken))
+        if (reader.RestingKiosk || !await CanReadWallAsync(reader, wallId, shareToken))
         {
             throw new UnauthorizedAccessException($"Wall {wallId} is not readable by this caller.");
         }
 
-        return await PageAsync(db, a => a.WallId == wallId, reader.RestingKiosk, page, pageSize);
+        return await PageAsync(db, a => a.WallId == wallId, restingKioskWall: null, page, pageSize);
     }
 
     public async Task<(List<ActivityLogEntry> Items, int TotalCount)> GetBoulderActivityAsync(
@@ -144,7 +144,7 @@ public class ActivityLogService : IActivityLogService
             throw new UnauthorizedAccessException($"Boulder {boulderId} is not readable by this caller.");
         }
 
-        return await PageAsync(db, a => a.BoulderId == boulderId, reader.RestingKiosk, page, pageSize);
+        return await PageAsync(db, a => a.BoulderId == boulderId, reader.RestingKiosk ? boulder.WallId : null, page, pageSize);
     }
 
     /// <summary>
@@ -195,23 +195,36 @@ public class ActivityLogService : IActivityLogService
     private static async Task<(List<ActivityLogEntry> Items, int TotalCount)> PageAsync(
         BlocwerkDbContext db,
         Expression<Func<ActivityLogEntry, bool>> predicate,
-        bool restingKiosk,
+        Guid? restingKioskWall,
         int page,
         int pageSize)
     {
-        var entries = db.ActivityLog.AsNoTracking().Where(predicate);
-        if (restingKiosk)
-        {
-            entries = entries.Where(KioskActivityVisibility.Readable);
-        }
-
-        var query = entries
+        // The resting kiosk reads one published, unarchived boulder's log here (checked by the caller), which is all of
+        // KioskActivityVisibility a boulder's entries are subject to; only the bylines differ.
+        var query = db.ActivityLog
+            .AsNoTracking()
+            .Where(predicate)
             .Include(a => a.User)
             .OrderByDescending(a => a.Timestamp);
 
         var total = await query.CountAsync();
         var items = await query.Skip(page * pageSize).Take(pageSize).ToListAsync();
+        if (restingKioskWall is { } wallId)
+        {
+            await MaskForKioskAsync(db, wallId, items);
+        }
 
         return (items, total);
+    }
+
+    // The resting tablet names consenting members and the setters of setting entries only (KioskBylines).
+    private static async Task MaskForKioskAsync(BlocwerkDbContext db, Guid wallId, List<ActivityLogEntry> items)
+    {
+        var consented = await KioskBylines.ConsentedAsync(db, wallId);
+        foreach (var item in items)
+        {
+            item.User = KioskBylines.Mask(item.User, consented.Contains(item.UserId) || KioskBylines.KeepsName(item.Type));
+            item.UserId = item.User.Id == Guid.Empty ? Guid.Empty : item.UserId;
+        }
     }
 }

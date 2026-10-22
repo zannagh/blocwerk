@@ -51,7 +51,8 @@ public static class FeedViewers
             ? ForRole(parsed, userId)
             : null;
 
-    /// <summary>True when both viewers see the same shared audiences (and member kinds) as the same user.</summary>
+    /// <summary>True when both viewers see the same shared audiences (and member kinds and byline rule) as the same user.</summary>
     public static bool SameAs(this FeedViewer viewer, FeedViewer other) =>
-        viewer.UserId == other.UserId && viewer.Audiences.SetEquals(other.Audiences) && viewer.MemberKinds.SetEquals(other.MemberKinds);
+        viewer.UserId == other.UserId && viewer.Audiences.SetEquals(other.Audiences) && viewer.MemberKinds.SetEquals(other.MemberKinds)
+        && viewer.IsRestingKiosk == other.IsRestingKiosk;
 }

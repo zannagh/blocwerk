@@ -16,9 +16,11 @@ namespace Blocwerk.Browser.Seed;
 /// <list type="bullet">
 /// <item><b>alpha</b>: Alice's wall with two panels, an active 3D model (texture, mask, splat), a boulder with a beta
 /// video thumbnail, a kiosk key, and Carol as a member who consented to the kiosk (no PIN).</item>
-/// <item>alpha also has a share link (<see cref="SeededWorld.ShareToken"/>), and comments and activity (<see cref="SeedSocial"/>).</item>
+/// <item>alpha also has a share link (<see cref="SeededWorld.ShareToken"/>).</item>
 /// <item><b>beta</b>: Alice's second wall, one panel, and a boulder list long enough to scroll.</item>
 /// <item><b>bobs</b>: Bob's wall, one panel. Bob is a member of nothing of Alice's.</item>
+/// <item><b>social</b>: Erin's wall of comments and activity, with a kiosk key of its own and users of its own (Erin, Cora,
+/// Dave), so no other test's walls or pages change with it (<see cref="SeedSocial"/>).</item>
 /// </list>
 /// </summary>
 internal sealed class SeedWalls
@@ -37,6 +39,9 @@ internal sealed class SeedWalls
         var alice = AddUser("alice@browser.test", "Alice");
         var bob = AddUser("bob@browser.test", "Bob");
         var carol = AddUser("carol@browser.test", "Carol");
+        var erin = AddUser("erin@browser.test", "Erin");
+        var cora = AddUser("cora@browser.test", "Cora");
+        var dave = AddUser("dave@browser.test", "Dave");
 
         var alpha = AddWall("Alpha", alice, panels: 2, seed: 1);
         db.WallMembers.Add(new WallMember { WallId = alpha.Wall.Id, UserId = carol.Id, Role = WallRole.Member, KioskConsentedAt = DateTimeOffset.UtcNow });
@@ -44,11 +49,12 @@ internal sealed class SeedWalls
         var thumbnail = AddVideoThumbnail(alpha.Wall.Id, alice.Id);
         var kioskToken = AddKioskKey(alpha.Wall.Id, alice.Id);
         alpha.Wall.ShareToken = "browser-harness-share-token";
-        var social = SeedSocial.Add(db, alpha.Wall.Id, alice.Id, carol.Id);
 
         var beta = AddWall("Beta", alice, panels: 1, seed: 10);
         AddListBoulders(beta.Wall.Id, alice.Id, 40);
         var bobs = AddWall("Bobs", bob, panels: 1, seed: 20);
+        var socialWall = AddWall("Social", erin, panels: 1, seed: 30);
+        var social = SeedSocial.Add(db, socialWall.Wall.Id, AddKioskKey(socialWall.Wall.Id, erin.Id), erin.Id, cora.Id, dave.Id);
         await db.SaveChangesAsync();
 
         return new SeededWorld(
@@ -57,12 +63,16 @@ internal sealed class SeedWalls
                 ["alice"] = new(alice.Id, alice.DisplayName),
                 ["bob"] = new(bob.Id, bob.DisplayName),
                 ["carol"] = new(carol.Id, carol.DisplayName),
+                ["erin"] = new(erin.Id, erin.DisplayName),
+                ["cora"] = new(cora.Id, cora.DisplayName),
+                ["dave"] = new(dave.Id, dave.DisplayName),
             },
             new Dictionary<string, SeededWall>
             {
                 ["alpha"] = new(alpha.Wall.Id, alpha.Shas, geometry.Texture, geometry.Mask, geometry.Splat, thumbnail),
                 ["beta"] = new(beta.Wall.Id, beta.Shas, null, null, null, null),
                 ["bobs"] = new(bobs.Wall.Id, bobs.Shas, null, null, null, null),
+                ["social"] = new(socialWall.Wall.Id, socialWall.Shas, null, null, null, null),
             },
             kioskToken,
             alpha.Wall.ShareToken,
@@ -150,8 +160,6 @@ internal sealed class SeedWalls
 
 internal sealed record SeededWorld(
     Dictionary<string, SeededUser> Users, Dictionary<string, SeededWall> Walls, string KioskToken, string ShareToken, SeededSocial Social);
-
-internal sealed record SeededSocial(Guid Boulder, Guid Draft, Guid Archived, string Comment);
 
 internal sealed record SeededUser(Guid Id, string Name);
 

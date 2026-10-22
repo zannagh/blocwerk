@@ -11,9 +11,9 @@ namespace Blocwerk.Core.Tests;
 
 /// <summary>
 /// The activity log and the comments as the wall's kiosk tablet reads them, shared by the SQLite and the PostgreSQL runs.
-/// The tablet with nobody picked reads its own wall's activity under <see cref="KioskActivityVisibility"/> (no draft's or
-/// archived boulder's entries, no membership or photo-staging entries) and no archived boulder's comments; acting as a
-/// member it reads what that member reads; it never reads another wall; a share link's reads are unchanged.
+/// The tablet with nobody picked reads a published, unarchived boulder's activity and comments, never the wall-wide log;
+/// acting as a member it reads what that member reads; it never reads another wall; a share link's reads are unchanged.
+/// Whose names it shows is <see cref="KioskBylineChecks"/>.
 /// </summary>
 internal static class KioskActivityAccessChecks
 {
@@ -23,7 +23,8 @@ internal static class KioskActivityAccessChecks
         var log = await SeedLogAsync(h, s);
         var activity = s.Activity(viewer);
 
-        if (DraftExposureScenario.UsesShareLink(viewer))
+        // The resting tablet reads activity per boulder only; the wall-wide log is for members.
+        if (DraftExposureScenario.UsesShareLink(viewer) || viewer == DraftViewer.KioskAnonymous)
         {
             await Assert.ThrowsAsync<UnauthorizedAccessException>(() => activity.GetWallActivityAsync(s.WallId));
             return;
@@ -31,9 +32,8 @@ internal static class KioskActivityAccessChecks
 
         var (items, total) = await activity.GetWallActivityAsync(s.WallId);
 
-        var expected = viewer == DraftViewer.KioskAnonymous ? [log.Live, log.HoldAdded] : log.All;
-        Assert.Equal(expected.Order(), items.Select(a => a.Id).Order());
-        Assert.Equal(expected.Length, total);
+        Assert.Equal(log.All.Order(), items.Select(a => a.Id).Order());
+        Assert.Equal(log.All.Length, total);
     }
 
     public static async Task BoulderActivityAsync(WallTestHarness h, DraftViewer viewer)
@@ -67,7 +67,7 @@ internal static class KioskActivityAccessChecks
     }
 
     /// <summary>
-    /// The resting tablet asks for another wall it can name: refused, through the stamped context and through one that
+    /// The resting tablet asks for another wall's boulder it can name: refused, through the stamped context and through one that
     /// carries no kiosk stamp (the service's own wall check), and an anonymous visitor without a kiosk is refused too.
     /// </summary>
     public static async Task KioskStaysOnItsWallAsync(WallTestHarness h)
@@ -94,7 +94,7 @@ internal static class KioskActivityAccessChecks
             await Assert.ThrowsAsync<UnauthorizedAccessException>(() => activity.GetBoulderActivityAsync(otherBoulder));
         }
 
-        Assert.Equal(0, (await unstamped.GetWallActivityAsync(s.WallId)).TotalCount);
+        Assert.Equal(0, (await unstamped.GetBoulderActivityAsync(s.LiveId)).TotalCount);
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => noKiosk.GetWallActivityAsync(s.WallId));
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => noKiosk.GetBoulderActivityAsync(s.LiveId));
     }
@@ -118,7 +118,7 @@ internal static class KioskActivityAccessChecks
         Assert.Equal(1, (await s.Comments(DraftViewer.ShareAnonymous).GetCommentsAsync(archived, shareToken: DraftExposureScenario.Token)).TotalCount);
     }
 
-    private static async Task<(Guid ArchivedBoulder, Guid Live, Guid HoldAdded, Guid[] All)> SeedLogAsync(WallTestHarness h, DraftExposureScenario s)
+    private static async Task<(Guid ArchivedBoulder, Guid Live, Guid[] All)> SeedLogAsync(WallTestHarness h, DraftExposureScenario s)
     {
         var archived = await ArchivedBoulderAsync(h, s);
         await using var db = h.CreateContext();
@@ -136,7 +136,7 @@ internal static class KioskActivityAccessChecks
         var staged = Entry(null, ActivityType.WallPhotoStaged);
         var hold = Entry(null, ActivityType.HoldAdded);
         await db.SaveChangesAsync();
-        return (archived, live.Id, hold.Id, [live.Id, draft.Id, old.Id, joined.Id, staged.Id, hold.Id]);
+        return (archived, live.Id, [live.Id, draft.Id, old.Id, joined.Id, staged.Id, hold.Id]);
     }
 
     private static async Task<Guid> ArchivedBoulderAsync(WallTestHarness h, DraftExposureScenario s)

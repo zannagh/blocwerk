@@ -4,7 +4,8 @@
 namespace Blocwerk.Core.Tests;
 
 /// <summary>
-/// The kiosk tablet's read-only view of its wall's activity and comments (<see cref="KioskActivityAccessChecks"/>). SQLite;
+/// The kiosk tablet's read-only view of its boulders' activity and comments (<see cref="KioskActivityAccessChecks"/>,
+/// <see cref="KioskBylineChecks"/>). SQLite;
 /// see <see cref="PostgresKioskActivityAccessTests"/>.
 /// </summary>
 public class KioskActivityAccessTests
@@ -13,7 +14,7 @@ public class KioskActivityAccessTests
 
     [Theory]
     [MemberData(nameof(Viewers))]
-    public async Task WallActivity_TheRestingKioskReadsThePublicPart_MembersAll_ShareLinksNone(DraftViewer viewer)
+    public async Task WallActivity_IsForMembersOnly_NeverTheRestingKioskOrAShareLink(DraftViewer viewer)
     {
         using var h = new WallTestHarness();
         await KioskActivityAccessChecks.WallActivityAsync(h, viewer);
@@ -39,5 +40,16 @@ public class KioskActivityAccessTests
     {
         using var h = new WallTestHarness();
         await KioskActivityAccessChecks.ArchivedCommentsAsync(h);
+    }
+
+    [Theory]
+    [InlineData(DraftViewer.KioskAnonymous)]
+    [InlineData(DraftViewer.KioskActAsMember)]
+    [InlineData(DraftViewer.Member)]
+    [InlineData(DraftViewer.ShareAnonymous)]
+    public async Task Bylines_TheRestingKioskNamesConsentingMembersAndSetters_ElseAMember(DraftViewer viewer)
+    {
+        using var h = new WallTestHarness();
+        await KioskBylineChecks.BylinesAsync(h, viewer);
     }
 }

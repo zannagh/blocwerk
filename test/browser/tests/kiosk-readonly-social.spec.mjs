@@ -1,7 +1,11 @@
-// A kiosk tablet resting on its wall (nobody picked) reads the wall's comments and activity, read-only: no comment box,
-// no delete, and only the public part of the log (no draft's or archived boulder's entries, no membership entries).
-// New comments and activity reach it live. Seeded by seed/SeedSocial.cs.
+// A kiosk tablet resting on its wall (nobody picked) reads a boulder's comments and activity, read-only: no comment box,
+// no delete, and only the public part of the log (nothing of a draft or an archived boulder). It names members who
+// consented to the kiosk (Cora) and setters on their setting entries (Erin); everyone else (Dave) is "A member", with
+// an empty avatar circle. The wall-wide activity card stays members-only. New comments and activity reach it live.
+// Acting as a member, the tablet shows names. Seeded by seed/SeedSocial.cs, on the social wall and its own kiosk key.
 import { test, expect, signIn } from '../harness/fixtures.mjs';
+
+const PLACEHOLDER = 'A member';
 
 async function registerKiosk(page, token) {
     await page.goto('/oauth-select');
@@ -11,54 +15,85 @@ async function registerKiosk(page, token) {
     await page.waitForURL(/\/walls\/[0-9a-f-]{36}/);
 }
 
-const boulderUrl = (world, id) => `/walls/${world.walls.alpha.id}/boulders/${id}`;
+// The act-as form POST, as in sw-kiosk.spec.mjs (a member without a PIN gets a confirm form).
+async function actAs(page, user) {
+    await page.goto(`/kiosk/users/${user.id}`);
+    const form = page.locator('form[action="/kiosk/act-as"]').first();
+    await expect(form).toBeAttached();
+    const antiforgery = await form.locator('input[name="__RequestVerificationToken"]').inputValue();
+    const response = await page.request.post('/kiosk/act-as', {
+        form: { userId: user.id, pin: '', __RequestVerificationToken: antiforgery }
+    });
+    expect(response.ok()).toBe(true);
+}
 
-test('the resting kiosk reads the wall activity card, without the private part', async ({ page, world }) => {
-    await registerKiosk(page, world.kioskToken);
-    await page.goto(`/walls/${world.walls.alpha.id}`);
+const boulderUrl = (world, id) => `/walls/${world.social.wallId}/boulders/${id}`;
+const commentRow = (page, text) => page.locator('.comments-section .comment-row', { hasText: text });
+
+test('the resting kiosk gets no wall-wide activity card', async ({ page, world }) => {
+    await registerKiosk(page, world.social.kioskToken);
+    await page.goto(`/walls/${world.social.wallId}`);
 
     const card = page.locator('.settings-card').filter({ has: page.locator('h2', { hasText: 'Activity' }) });
-    await expect(card.locator('.activity-row').first()).toBeAttached();
-    await expect(card).not.toContainText("Log in to see this wall's activity");
-    await expect(card).toContainText('Carol logged an attempt');
-    await expect(card).toContainText('Carol commented on a boulder');
-    await expect(card.locator('.activity-row', { hasText: 'created a boulder' })).toHaveCount(1); // not the draft's
-    await expect(card).not.toContainText('joined the wall');
+    await expect(card).toContainText("Log in to see this wall's activity.");
+    await expect(card.locator('.activity-row')).toHaveCount(0);
 });
 
-test('the resting kiosk reads a boulder\'s comments and activity read-only, and gets new ones live', async ({ page, browser, baseURL, world }) => {
-    await registerKiosk(page, world.kioskToken);
+test('the resting kiosk reads a boulder read-only, naming consenting members and the setter only', async ({ page, world }) => {
+    await registerKiosk(page, world.social.kioskToken);
     await page.goto(boulderUrl(world, world.social.boulder));
 
     const comments = page.locator('.comments-section');
-    await expect(comments).toContainText(world.social.comment);
     await expect(comments.locator('.comment-input')).toHaveCount(0);
     await expect(comments.locator('.comment-submit')).toHaveCount(0);
     await expect(comments.locator('.delete-btn')).toHaveCount(0);
-    const activity = page.locator('.activity-feed');
-    await expect(activity).toContainText('Carol sent this');
-    await expect(activity).toContainText('Alice created this');
-    await expect(activity).not.toContainText('No activity yet');
+    await expect(commentRow(page, world.social.comment).locator('.comment-author')).toHaveText('Cora');
+    const dave = commentRow(page, world.social.unconsentedComment);
+    await expect(dave.locator('.comment-author')).toHaveText(PLACEHOLDER);
+    await expect(dave.locator('.avatar')).toHaveText('');
+    await expect(dave.locator('img')).toHaveCount(0);
+    await expect(page.locator('body')).not.toContainText('Dave');
 
-    // Carol comments from her own phone; the tablet's circuit gets the comment and the activity entry from the feed.
+    const activity = page.locator('.activity-feed');
+    await expect(activity).toContainText('Cora sent this');
+    await expect(activity).toContainText(`${PLACEHOLDER} flashed this`);
+    await expect(activity).toContainText('Erin created this');
+});
+
+test('the resting kiosk gets new comments and activity live, still without the name', async ({ page, browser, baseURL, world }) => {
+    await registerKiosk(page, world.social.kioskToken);
+    await page.goto(boulderUrl(world, world.social.live));
+    await expect(page.locator('.activity-feed .activity-row').first()).toBeAttached();
+
+    // Dave comments from his own phone; the tablet's circuit gets the comment and the activity entry from the feed.
     const phone = await browser.newContext({ baseURL });
     try {
-        const carol = await phone.newPage();
-        await signIn(carol, world.users.carol, boulderUrl(world, world.social.boulder));
-        const text = `Live from Carol ${Date.now()}`;
-        await carol.locator('.comment-input').fill(text);
-        await carol.locator('.comment-submit').click();
-        await expect(carol.locator('.comments-section')).toContainText(text);
+        const dave = await phone.newPage();
+        await signIn(dave, world.users.dave, boulderUrl(world, world.social.live));
+        const text = `Live comment ${Date.now()}`;
+        await dave.locator('.comment-input').fill(text);
+        await dave.locator('.comment-submit').click();
+        await expect(dave.locator('.comments-section')).toContainText(text);
 
-        await expect(comments).toContainText(text);
-        await expect(activity.locator('.activity-row').first()).toContainText('Carol commented');
+        await expect(commentRow(page, text).locator('.comment-author')).toHaveText(PLACEHOLDER);
+        await expect(page.locator('.activity-feed .activity-row').first()).toContainText(`${PLACEHOLDER} commented`);
+        await expect(page.locator('body')).not.toContainText('Dave');
     } finally {
         await phone.close();
     }
 });
 
+test('acting as a member, the tablet shows the names that member sees', async ({ page, world }) => {
+    await registerKiosk(page, world.social.kioskToken);
+    await actAs(page, world.users.cora);
+    await page.goto(boulderUrl(world, world.social.boulder));
+
+    await expect(commentRow(page, world.social.unconsentedComment).locator('.comment-author')).toHaveText('Dave');
+    await expect(page.locator('.activity-feed')).toContainText('Dave flashed this');
+});
+
 test('the resting kiosk reads nothing of an archived boulder', async ({ page, world }) => {
-    await registerKiosk(page, world.kioskToken);
+    await registerKiosk(page, world.social.kioskToken);
     await page.goto(boulderUrl(world, world.social.archived));
 
     await expect(page.locator('.comments-section')).toContainText('No comments yet.');

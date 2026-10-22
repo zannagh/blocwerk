@@ -6,6 +6,7 @@ using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Feed;
 using Blocwerk.Core.Helpers;
+using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -13,8 +14,9 @@ namespace Blocwerk.Core.Tests;
 
 /// <summary>
 /// The kiosk tablet reads its wall's activity live (<see cref="FeedKioskActivity"/>) although <c>activity.added</c> is a
-/// members row: only what <c>KioskActivityVisibility</c> lets it read, decided at delivery, with the outsiders' byline rule.
-/// A share link gets none of it, live or on catch-up.
+/// members row: only what <c>KioskActivityVisibility</c> lets it read, decided at delivery. Resting, it names consenting
+/// members and setters only (<see cref="KioskBylines"/>); acting as a member it sees names. A share link gets no activity,
+/// live or on catch-up.
 /// </summary>
 public sealed class KioskActivityFeedTests : IAsyncLifetime
 {
@@ -43,7 +45,7 @@ public sealed class KioskActivityFeedTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task TheKiosk_GetsPublishedActivityLive_NeverADraftsOrArchivedOnesOrTheMembershipRows_AndAShareLinkNone()
+    public async Task TheKiosk_GetsAPublishedBouldersActivityLive_NeverADraftsAnArchivedOnesOrTheWallWideRows_AndAShareLinkNone()
     {
         var published = await fixture.SeedAsync();
         var draft = await fixture.AddBoulderAsync(isDraft: true);
@@ -61,7 +63,7 @@ public sealed class KioskActivityFeedTests : IAsyncLifetime
         var wallLevel = await LogAsync(null, ActivityType.HoldAdded);
         var sentinel = await SentinelAsync(kiosk, share, member);
 
-        Assert.Equal([shown, wallLevel], ActivityIds(kiosk, sentinel));
+        Assert.Equal([shown], ActivityIds(kiosk, sentinel)); // per boulder only: no wall-wide entry, not even a hold's
         Assert.Empty(ActivityIds(share, sentinel));
         Assert.Equal(7, ActivityIds(member, sentinel).Count);
     }
@@ -88,21 +90,35 @@ public sealed class KioskActivityFeedTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task TheKiosk_SeesTheOutsidersByline_GhostForAnErasedAuthor_AndNoIdWithoutAnAvatar()
+    public async Task TheRestingKiosk_NamesConsentingMembersAndSetters_ElseAMember_ActingAndShareLinksSeeTheName()
     {
         var boulder = await fixture.SeedAsync();
         var climber = await fixture.Harness.AddMemberAsync("climber@test", WallRole.Member);
-        var erased = await ErasedUserAsync();
-        var kiosk = await SubscribeAsync(FeedViewer.Kiosk());
-        var member = await SubscribeAsync(FeedViewer.Member(fixture.OwnerId));
+        await fixture.ChangeAsync<User>(u => u.Id == climber.Id, (u, _) => (u.AvatarImage, u.AvatarContentType) = ([1, 2], "image/png"));
+        var cora = await KioskBylineChecks.ConsentingMemberAsync(fixture.Harness, "cora@test");
+        var erased = await KioskBylineChecks.ErasedUserAsync(fixture.Harness);
+        var resting = await SubscribeAsync(FeedViewer.Kiosk());
+        var acting = await SubscribeAsync(FeedViewer.KioskActing());
+        var share = await SubscribeAsync(FeedViewer.Anonymous());
 
         await LogAsync(boulder, ActivityType.AttemptLogged, climber.Id);
+        await LogAsync(boulder, ActivityType.AttemptLogged, cora.Id);
         await LogAsync(boulder, ActivityType.AttemptLogged, erased);
-        var sentinel = await SentinelAsync(kiosk, member);
+        await LogAsync(boulder, ActivityType.BoulderCreated, climber.Id);
+        await fixture.AddAsync(new BoulderComment { BoulderId = boulder, UserId = climber.Id, Text = "beta" }, climber.Id);
+        var sentinel = await SentinelAsync(resting, acting, share);
 
-        var seen = Activity(kiosk, sentinel);
-        Assert.Equal([(null, climber.Name), (null, PlaceholderIdentity.DisplayName)], seen.Select(e => (e.Actor!.Id, e.Actor.Name)));
-        Assert.Equal([(Guid?)climber.Id, GhostUser.Id], Activity(member, sentinel).Select(e => e.Actor!.Id));
+        (Guid?, string, bool)[] masked = [(null, KioskBylines.PlaceholderName, false)];
+        Assert.Equal(
+            [.. masked, (null, cora.Name, false), (null, PlaceholderIdentity.DisplayName, false), (climber.Id, climber.Name, true), .. masked],
+            Bylines(resting, sentinel));
+        (Guid?, string, bool)[] named =
+        [
+            (climber.Id, climber.Name, true), (null, cora.Name, false), (null, PlaceholderIdentity.DisplayName, false),
+            (climber.Id, climber.Name, true), (climber.Id, climber.Name, true),
+        ];
+        Assert.Equal(named, Bylines(acting, sentinel));
+        Assert.Equal(named.Where((_, i) => i == 4), Bylines(share, sentinel)); // the comment; a share link gets no activity
     }
 
     [Fact]
@@ -113,6 +129,10 @@ public sealed class KioskActivityFeedTests : IAsyncLifetime
         Assert.Empty(new FeedViewer([FeedAudience.Wall, FeedAudience.Members], null, [FeedKinds.ActivityAdded]).MemberKinds);
         Assert.False(FeedViewer.Kiosk().SameAs(FeedViewer.Anonymous()));
         Assert.True(FeedViewer.Kiosk().SameAs(FeedViewer.Kiosk()));
+        Assert.False(FeedViewer.Kiosk().SameAs(FeedViewer.KioskActing()));
+        Assert.True(FeedViewer.Kiosk().IsRestingKiosk);
+        Assert.False(FeedViewer.KioskActing().IsRestingKiosk);
+        Assert.Equal(FeedViewer.Kiosk().MemberKinds, FeedViewer.KioskActing().MemberKinds);
 
         // The audience check alone never hands a members row to the tablet: the delivery rule has to say yes.
         Assert.False(FeedViewer.Kiosk().Allows(new WallChange { Kind = FeedKinds.ActivityAdded, Audience = FeedAudience.Members }));
@@ -120,6 +140,12 @@ public sealed class KioskActivityFeedTests : IAsyncLifetime
 
     private static List<FeedEnvelope> Activity(RecordingFeedSubscriber viewer, Guid sentinel) =>
         viewer.Events.TakeWhile(e => e.EntityId != sentinel).Where(e => e.Kind == FeedKinds.ActivityAdded).ToList();
+
+    // Each activity and comment row's byline, in delivery order: (id, name, has avatar).
+    private static List<(Guid?, string, bool)> Bylines(RecordingFeedSubscriber viewer, Guid sentinel) =>
+        viewer.Events.TakeWhile(e => e.EntityId != sentinel)
+            .Where(e => e.Kind is FeedKinds.ActivityAdded or FeedKinds.CommentAdded)
+            .Select(e => (e.Actor!.Id, e.Actor.Name, e.Actor.HasAvatar)).ToList();
 
     private static List<Guid?> ActivityIds(RecordingFeedSubscriber viewer, Guid sentinel) =>
         Activity(viewer, sentinel).Select(e => e.EntityId).ToList();
@@ -141,15 +167,6 @@ public sealed class KioskActivityFeedTests : IAsyncLifetime
         await using var db = fixture.Harness.CreateContext();
         await db.Boulders.Where(b => b.Id == id).ExecuteUpdateAsync(u => u.SetProperty(b => b.IsArchived, true));
         return id;
-    }
-
-    private async Task<Guid> ErasedUserAsync()
-    {
-        await using var db = fixture.Harness.CreateContext();
-        var user = new User { Identifier = "deleted__" + Guid.NewGuid().ToString("N"), DisplayName = "Ghost", DeletedAt = DateTimeOffset.UtcNow };
-        db.Users.Add(user);
-        await db.SaveChangesAsync();
-        return user.Id;
     }
 
     // A row every viewer receives: once each has it, everything before it was delivered, so a missing event is withheld.

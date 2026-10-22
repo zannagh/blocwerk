@@ -13,7 +13,7 @@ public class PostgresKioskActivityAccessTests
 
     [PostgresTheory]
     [MemberData(nameof(Viewers))]
-    public async Task WallActivity_TheRestingKioskReadsThePublicPart_MembersAll_ShareLinksNone(DraftViewer viewer)
+    public async Task WallActivity_IsForMembersOnly_NeverTheRestingKioskOrAShareLink(DraftViewer viewer)
     {
         using var h = new WallTestHarness(PostgresTestDatabase.Create());
         await KioskActivityAccessChecks.WallActivityAsync(h, viewer);
@@ -39,5 +39,16 @@ public class PostgresKioskActivityAccessTests
     {
         using var h = new WallTestHarness(PostgresTestDatabase.Create());
         await KioskActivityAccessChecks.ArchivedCommentsAsync(h);
+    }
+
+    [PostgresTheory]
+    [InlineData(DraftViewer.KioskAnonymous)]
+    [InlineData(DraftViewer.KioskActAsMember)]
+    [InlineData(DraftViewer.Member)]
+    [InlineData(DraftViewer.ShareAnonymous)]
+    public async Task Bylines_TheRestingKioskNamesConsentingMembersAndSetters_ElseAMember(DraftViewer viewer)
+    {
+        using var h = new WallTestHarness(PostgresTestDatabase.Create());
+        await KioskBylineChecks.BylinesAsync(h, viewer);
     }
 }

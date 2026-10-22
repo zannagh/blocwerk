@@ -8,22 +8,30 @@ using Blocwerk.Core.Enums;
 namespace Blocwerk.Browser.Seed;
 
 /// <summary>
-/// Comments and activity on alpha, for the kiosk's read-only view: a published boulder Carol commented on and sent, a draft
-/// and an archived boulder with entries of their own (the tablet must show neither), and Carol joining the wall (a
-/// membership entry the tablet leaves out).
+/// The social wall (Erin's), for the kiosk's read-only view: Cora is a member who consented to the kiosk, Dave one who did
+/// not. A published boulder Erin set, which Cora commented on and sent and Dave commented on and flashed; a second published boulder the live test comments on, so the first keeps its
+/// five entries (one activity page); a draft and an archived boulder with entries of their own (the tablet shows
+/// neither); and Cora joining the wall, a wall-wide entry.
 /// </summary>
 internal static class SeedSocial
 {
     public const string Comment = "Heel hook the arete";
 
-    public static SeededSocial Add(BlocwerkDbContext db, Guid wallId, Guid setterId, Guid climberId)
+    public const string UnconsentedComment = "Crimp the sloper";
+
+    public static SeededSocial Add(BlocwerkDbContext db, Guid wallId, string kioskToken, Guid setterId, Guid climberId, Guid unconsentedId)
     {
+        db.WallMembers.Add(new WallMember { WallId = wallId, UserId = climberId, Role = WallRole.Member, KioskConsentedAt = DateTimeOffset.UtcNow });
+        db.WallMembers.Add(new WallMember { WallId = wallId, UserId = unconsentedId, Role = WallRole.Member });
+
         var start = DateTimeOffset.UtcNow.AddMinutes(-30);
         var published = Boulder(db, wallId, setterId, "Social boulder", isDraft: false, isArchived: false);
+        var live = Boulder(db, wallId, setterId, "Live boulder", isDraft: false, isArchived: false);
         var draft = Boulder(db, wallId, setterId, "Secret draft", isDraft: true, isArchived: false);
         var archived = Boulder(db, wallId, setterId, "Old archived", isDraft: false, isArchived: true);
 
         db.BoulderComments.Add(new BoulderComment { BoulderId = published.Id, UserId = climberId, Text = Comment });
+        db.BoulderComments.Add(new BoulderComment { BoulderId = published.Id, UserId = unconsentedId, Text = UnconsentedComment });
         db.BoulderComments.Add(new BoulderComment { BoulderId = archived.Id, UserId = climberId, Text = "Old beta" });
         void Log(Guid? boulderId, ActivityType type, Guid userId, int minute, string? details = null) =>
             db.ActivityLog.Add(new ActivityLogEntry
@@ -37,7 +45,10 @@ internal static class SeedSocial
         Log(archived.Id, ActivityType.CommentAdded, climberId, 3);
         Log(published.Id, ActivityType.CommentAdded, climberId, 4);
         Log(published.Id, ActivityType.AttemptLogged, climberId, 5, "Send");
-        return new SeededSocial(published.Id, draft.Id, archived.Id, Comment);
+        Log(published.Id, ActivityType.CommentAdded, unconsentedId, 6);
+        Log(published.Id, ActivityType.AttemptLogged, unconsentedId, 7, "Flash");
+        Log(live.Id, ActivityType.BoulderCreated, setterId, 8);
+        return new SeededSocial(wallId, kioskToken, published.Id, live.Id, draft.Id, archived.Id, Comment, UnconsentedComment);
     }
 
     private static Boulder Boulder(BlocwerkDbContext db, Guid wallId, Guid setterId, string name, bool isDraft, bool isArchived)
@@ -47,3 +58,6 @@ internal static class SeedSocial
         return boulder;
     }
 }
+
+internal sealed record SeededSocial(
+    Guid WallId, string KioskToken, Guid Boulder, Guid Live, Guid Draft, Guid Archived, string Comment, string UnconsentedComment);

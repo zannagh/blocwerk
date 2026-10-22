@@ -41,9 +41,26 @@ public sealed class CircuitFeedViewerTests : IAsyncLifetime
         Assert.NotNull(viewer);
         Assert.Null(viewer.UserId);
         Assert.Equal([FeedAudience.Wall], viewer.Audiences);
+        Assert.False(viewer.IsRestingKiosk); // acting as the member, the tablet reads that member's bylines
         Assert.False(viewer.Allows(new WallChange { Kind = FeedKinds.TickMine, Audience = FeedAudience.User, AudienceUserId = member.Id }));
         Assert.Null(await Viewers().ResolveAsync(Guid.NewGuid())); // another wall
         await kiosk.Received().InitializeAsync(); // primed before IsKiosk is read
+    }
+
+    [Fact]
+    public async Task ARestingKiosk_SubscribesAsTheRestingKiosk_OnlyOnItsWall()
+    {
+        var nobody = Substitute.For<ICurrentUserService>();
+        nobody.GetCurrentUserAsync().Returns(_ => Task.FromException<User>(new UnauthorizedAccessException()));
+        kiosk.IsKiosk.Returns(true);
+        kiosk.KioskWallId.Returns(harness.WallId);
+        var viewers = new CircuitFeedViewer(kiosk, nobody, harness.RootContextFactory);
+
+        var viewer = await viewers.ResolveAsync(harness.WallId);
+
+        Assert.True(viewer!.IsRestingKiosk);
+        Assert.True(viewer.SameAs(FeedViewer.Kiosk()));
+        Assert.Null(await viewers.ResolveAsync(Guid.NewGuid()));
     }
 
     [Fact]

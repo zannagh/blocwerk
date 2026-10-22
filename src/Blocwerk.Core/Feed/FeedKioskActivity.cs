@@ -11,7 +11,7 @@ namespace Blocwerk.Core.Feed;
 /// The delivery-time rule that lets a kiosk tablet read its wall's activity live without widening the rows' stored audience:
 /// <c>activity.added</c> is a <see cref="FeedAudience.Members"/> row, and a share link must never get it. A viewer receives
 /// such a row only for a kind it names in <see cref="FeedViewer.MemberKinds"/> (the kiosk's) and only when the entry passes
-/// <see cref="KioskActivityVisibility"/> now (<see cref="FeedHydrated.KioskActivity"/>), so the live list carries exactly
+/// <see cref="KioskActivityVisibility"/> now (<see cref="FeedKioskFacts.Readable"/>), so the live list carries exactly
 /// what the log read shows the tablet. Every other row goes by its audience alone (<see cref="FeedViewer.Allows"/>).
 /// </summary>
 internal static class FeedKioskActivity
@@ -22,5 +22,5 @@ internal static class FeedKioskActivity
         || (row.Audience == FeedAudience.Members
             && viewer.MemberKinds.Contains(row.Kind)
             && row.EntityId is { } entryId
-            && hydrated.KioskActivity.Contains(entryId));
+            && hydrated.Kiosk.Readable.Contains(entryId));
 }

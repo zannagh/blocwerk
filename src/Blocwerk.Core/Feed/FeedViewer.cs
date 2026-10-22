@@ -16,11 +16,13 @@ namespace Blocwerk.Core.Feed;
 /// </summary>
 public sealed class FeedViewer
 {
-    public FeedViewer(IEnumerable<FeedAudience> audiences, Guid? userId, IEnumerable<string>? memberKinds = null)
+    public FeedViewer(
+        IEnumerable<FeedAudience> audiences, Guid? userId, IEnumerable<string>? memberKinds = null, bool isRestingKiosk = false)
     {
         Audiences = audiences.Where(a => a != FeedAudience.User).ToHashSet();
         UserId = userId;
         MemberKinds = Audiences.Contains(FeedAudience.Members) ? new HashSet<string>() : (memberKinds ?? []).ToHashSet();
+        IsRestingKiosk = isRestingKiosk && !Audiences.Contains(FeedAudience.Members);
     }
 
     /// <summary>Gets the shared audiences (<see cref="FeedAudience.User"/> is decided by <see cref="UserId"/>).</summary>
@@ -34,16 +36,28 @@ public sealed class FeedViewer
     /// </summary>
     public IReadOnlySet<string> MemberKinds { get; }
 
+    /// <summary>
+    /// Gets a value indicating whether this is a kiosk tablet with nobody picked, whose bylines name consenting members
+    /// only (<c>KioskBylines</c>, applied by <see cref="AuthorVisibility"/>).
+    /// </summary>
+    public bool IsRestingKiosk { get; }
+
     /// <summary>A share-link or anonymous kiosk viewer.</summary>
     public static FeedViewer Anonymous() => new([FeedAudience.Wall], null);
 
     /// <summary>
-    /// A kiosk tablet bound to the wall, whoever it is acting as. It never carries the acting member's id: the tablet is
-    /// shared, so a member's own rows (<c>tick.mine</c>, <c>rating.mine</c>, <c>favorite.changed</c>) must not reach it.
-    /// It reads the wall's activity (<c>activity.added</c>, a members row) as far as <see cref="FeedKioskActivity"/> lets
-    /// it; a share link does not.
+    /// A kiosk tablet bound to the wall with nobody picked. It reads the wall's activity (<c>activity.added</c>, a members
+    /// row) as far as <see cref="FeedKioskActivity"/> lets it, which a share link does not, and names consenting members
+    /// only (<see cref="IsRestingKiosk"/>).
     /// </summary>
-    public static FeedViewer Kiosk() => new([FeedAudience.Wall], null, [FeedKinds.ActivityAdded]);
+    public static FeedViewer Kiosk() => new([FeedAudience.Wall], null, [FeedKinds.ActivityAdded], isRestingKiosk: true);
+
+    /// <summary>
+    /// A kiosk tablet acting as a member: <see cref="Kiosk"/>'s rows, with the bylines that member reads elsewhere. It never
+    /// carries the acting member's id: the tablet is shared, so a member's own rows (<c>tick.mine</c>, <c>rating.mine</c>,
+    /// <c>favorite.changed</c>) must not reach it.
+    /// </summary>
+    public static FeedViewer KioskActing() => new([FeedAudience.Wall], null, [FeedKinds.ActivityAdded]);
 
     /// <summary>A member of the wall.</summary>
     public static FeedViewer Member(Guid userId) => new([FeedAudience.Wall, FeedAudience.Members], userId);

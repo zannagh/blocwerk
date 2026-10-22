@@ -128,7 +128,8 @@ public class CommentService : ICommentService
         try
         {
             await using var db = await _dbContextFactory.CreateDbContextAsync();
-            if (!await CanReadBoulderAsync(db, boulderId, shareToken))
+            var access = await CanReadBoulderAsync(db, boulderId, shareToken);
+            if (access is null)
             {
                 return ([], 0);
             }
@@ -141,6 +142,15 @@ public class CommentService : ICommentService
 
             var total = await query.CountAsync();
             var items = await query.Skip(page * pageSize).Take(pageSize).ToListAsync();
+            if (access is { } kioskWall && kioskWall != Guid.Empty)
+            {
+                var consented = await KioskBylines.ConsentedAsync(db, kioskWall);
+                foreach (var comment in items.Where(c => !consented.Contains(c.UserId)))
+                {
+                    comment.User = KioskBylines.Mask(comment.User, named: false);
+                    comment.UserId = comment.User.Id == Guid.Empty ? Guid.Empty : comment.UserId;
+                }
+            }
 
             return (items, total);
         }
@@ -184,17 +194,21 @@ public class CommentService : ICommentService
     }
 
     /// <summary>
-    /// Whether this caller may read the boulder, with the context's filter set for that answer. Mirrors
+    /// Whether this caller may read the boulder, with the context's filter set for that answer: null when not, the
+    /// boulder's wall for the resting kiosk (whose bylines <see cref="KioskBylines"/> masks), and
+    /// <see cref="Guid.Empty"/> for everyone else who may. Mirrors
     /// <see cref="BoulderService.GetBoulderAsync"/> and <see cref="BoulderService.GetBoulderByShareTokenAsync"/>:
     /// the share token opens a published boulder of its own wall; otherwise the wall filter decides, with the
     /// anonymous kiosk (<see cref="Guid.Empty"/>) kept to published, unarchived boulders; any other anonymous caller may not.
     /// </summary>
-    private async Task<bool> CanReadBoulderAsync(BlocwerkDbContext db, Guid boulderId, string? shareToken)
+    private async Task<Guid?> CanReadBoulderAsync(BlocwerkDbContext db, Guid boulderId, string? shareToken)
     {
         if (!string.IsNullOrEmpty(shareToken))
         {
             db.CurrentUserId = Guid.Empty;
-            return await db.Boulders.AnyAsync(b => b.Id == boulderId && b.Wall.ShareToken == shareToken && !b.IsDraft);
+            return await db.Boulders.AnyAsync(b => b.Id == boulderId && b.Wall.ShareToken == shareToken && !b.IsDraft)
+                ? Guid.Empty
+                : null;
         }
 
         Guid viewerId;
@@ -208,14 +222,18 @@ public class CommentService : ICommentService
         }
         catch (UnauthorizedAccessException)
         {
-            return false;
+            return null;
         }
 
         // The resting kiosk reads a boulder's comments the way it reads its activity
         // (KioskActivityVisibility): not a draft's, and not an archived one's.
         db.CurrentUserId = viewerId;
-        return await db.Boulders.AnyAsync(b => b.Id == boulderId
-            && db.Walls.Any(w => w.Id == b.WallId)
-            && (viewerId != Guid.Empty || (!b.IsDraft && !b.IsArchived)));
+        var wallId = await db.Boulders
+            .Where(b => b.Id == boulderId
+                && db.Walls.Any(w => w.Id == b.WallId)
+                && (viewerId != Guid.Empty || (!b.IsDraft && !b.IsArchived)))
+            .Select(b => (Guid?)b.WallId)
+            .FirstOrDefaultAsync();
+        return wallId is null ? null : viewerId == Guid.Empty ? wallId : Guid.Empty;
     }
 }

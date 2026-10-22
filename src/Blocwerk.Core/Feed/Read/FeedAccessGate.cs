@@ -13,8 +13,9 @@ namespace Blocwerk.Core.Feed;
 /// subscribe with (<c>CircuitFeedViewer</c>), so a catch-up page never carries a row the hub would not have delivered.
 /// <list type="bullet">
 /// <item><description>An API key never reads the feed: it is a device secret, and the feed spans every kind of the wall.</description></item>
-/// <item><description>A kiosk tablet reads its own wall only, always as <see cref="FeedViewer.Kiosk"/> whoever it is acting
-/// as, so a member's own rows never reach the shared tablet, and only while its key is live; it never reads
+/// <item><description>A kiosk tablet reads its own wall only, as <see cref="FeedViewer.Kiosk"/> with nobody picked and as
+/// <see cref="FeedViewer.KioskActing"/> acting as a member (the bylines differ, the rows do not), so a member's own rows
+/// never reach the shared tablet, and only while its key is live; it never reads
 /// <c>/api/me</c>.</description></item>
 /// <item><description>A signed-in user reads as their role (<see cref="FeedViewers.ForUserAsync"/>, read from the database).</description></item>
 /// <item><description>Anyone else, a signed-in non-member included, needs the wall's current share token and reads as
@@ -36,14 +37,15 @@ public static class FeedAccessGate
             return FeedAccess.Refuse(FeedAccessRefusal.NoAccess);
         }
 
-        if (await IsKioskAsync(session.Kiosk))
+        var kiosk = await IsKioskAsync(session.Kiosk);
+        var (user, gone) = await ResolveAsync(session.CurrentUser, session.Caller);
+        if (kiosk)
         {
             return await KioskMayReadAsync(session, wallId, cancellationToken)
-                ? FeedAccess.Grant(FeedViewer.Kiosk(), null)
+                ? FeedAccess.Grant(user is null ? FeedViewer.Kiosk() : FeedViewer.KioskActing(), null)
                 : FeedAccess.Refuse(FeedAccessRefusal.NoAccess);
         }
 
-        var (user, gone) = await ResolveAsync(session.CurrentUser, session.Caller);
         if (gone)
         {
             return FeedAccess.Refuse(FeedAccessRefusal.AccountGone);

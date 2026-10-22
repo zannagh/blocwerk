@@ -12,8 +12,7 @@ namespace Blocwerk.Core.Tests;
 /// <summary>
 /// The social rows end to end, from a save through the interceptor and the hub to each kind of viewer: "mine" rows reach
 /// only their own user (never another member, a setter, a share viewer or a kiosk), stats name nobody, a draft's rows
-/// reach every member but never a share or kiosk viewer, and members-only rows skip those viewers too (but for the
-/// wall's activity, which the kiosk reads; see <see cref="KioskActivityFeedTests"/>).
+/// reach every member but never a share or kiosk viewer, and members-only rows skip those viewers too.
 /// </summary>
 public sealed class SocialFeedAudienceTests : IAsyncLifetime
 {
@@ -75,8 +74,7 @@ public sealed class SocialFeedAudienceTests : IAsyncLifetime
              FeedKinds.CommentAdded, FeedKinds.ActivityAdded, FeedKinds.UserProfile],
             Before(asMe, sentinel.Id));
         Assert.Equal(stats, Before(anonymous, sentinel.Id));
-        // The tablet reads the wall's activity (a wall-level hold entry here), never the rest of the members rows.
-        Assert.Equal([.. stats, FeedKinds.ActivityAdded], Before(kiosk, sentinel.Id));
+        Assert.Equal(stats, Before(kiosk, sentinel.Id));
         Assert.Equal([.. stats, FeedKinds.CommentAdded, FeedKinds.ActivityAdded, FeedKinds.UserProfile], Before(asOther, sentinel.Id));
         Assert.Equal([.. stats, FeedKinds.CommentAdded, FeedKinds.ActivityAdded, FeedKinds.UserProfile], Before(asSetter, sentinel.Id));
         Assert.All(anonymous.Events, e => Assert.Null(e.Actor));

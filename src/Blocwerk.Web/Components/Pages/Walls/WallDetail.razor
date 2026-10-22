@@ -48,12 +48,12 @@ else
     <WallCarousel @ref="_carousel" InitialPage="@InitialCarouselPage" Locked="_isEditing"
                   PageClasses="|||boulders-page|" PageViews="@CarouselPageViews">
         <Page1>
-            @* Activity is visible to all wall members, and read-only to the wall's own kiosk tablet (what it may read is
-               KioskActivityVisibility's); settings/shape/API keys stay admin-only. *@
+            @* Activity is visible to all wall members; settings/shape/API keys stay admin-only. A kiosk tablet reads
+               activity per boulder only (BoulderActivityFeed), never this wall-wide log. *@
             <details open class="settings-panel settings-card">
                 <summary class="settings-card-summary"><h2>Activity</h2></summary>
                 <div class="settings-card-body">
-                    @if (_isAnonymous && !ReadsKioskActivity)
+                    @if (_isAnonymous)
                     {
                         <p class="empty-activity">Log in to see this wall's activity.</p>
                     }
@@ -1606,7 +1606,7 @@ else
         // Independent reads, side by side instead of one after another: each opens its own context, and their
         // continuations still run one at a time on this circuit. Each writes only its own fields.
         var loads = new List<Task> { LoadOpenUpdateAsync(), LoadPanels(), LoadHoldLinksAsync(), LoadBoulderItemsAsync(wall) };
-        if (withMemberData && (!_isAnonymous || ReadsKioskActivity))
+        if (withMemberData && !_isAnonymous)
         {
             loads.Add(LoadActivity(0));
             if (_isMember)
