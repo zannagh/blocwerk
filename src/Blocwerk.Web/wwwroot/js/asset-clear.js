@@ -4,7 +4,7 @@
  *
  *   clear():  stops this page's fill (`state.stopped`, which the runner reads as "hidden" at its next task) and waits for
  *             the running one, at most STOP_WAIT_MS (a large splat download must not hold the button). Then it deletes
- *             this partition's `bw-a1-{p}-img` / `-3d` caches and ledger rows: never `blocwerk-offline` (unsent ticks),
+ *             this partition's `bw-a1-{p}-img` / `-3d` caches and ledger rows (walls, assets, mine): never `blocwerk-offline` (unsent ticks),
  *             `bw-sw-state` or the shell, and `meta.activePartition` stays. Then it rebuilds: `stopped` and the fresh
  *             set are reset and every wall of the viewer (and the open wall) is refetched and filled, core first.
  *   Other tabs of the same partition hear `clearing` (they stop their fill) and `cleared` (they rebuild) over a
@@ -74,6 +74,9 @@ window.bwAssetClear = (function (win) {
         }
         for (const asset of await state.env.ledger.assetsOf(partition)) {
             await state.env.ledger.deleteAsset(partition, asset.key);
+        }
+        for (const mine of await state.env.ledger.mineOf(partition)) {
+            await state.env.ledger.deleteMine(partition, mine.wallId);
         }
     }
 

@@ -1,11 +1,11 @@
 // A vm sandbox that runs the real asset-cache page modules (asset-*.js) against a fake page: `caches`, `fetch`, a
-// service worker that stores `/a/` responses and posts `asset-cached` as sw-asset-cache.js does, `localStorage`, timers
+// service worker that stores `/a/` and `/d/` responses and posts `asset-cached` as sw-asset-cache.js does, `localStorage`, timers
 // the test fires by hand, and no IndexedDB (so the ledger runs on its memory backend). For asset-cache.test.mjs.
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 const js = new URL('../../../src/Blocwerk.Web/wwwroot/js/', import.meta.url);
-const MODULES = ['asset-ledger.js', 'asset-budget.js', 'asset-wipe.js', 'asset-manifest.js', 'asset-store.js', 'asset-session.js', 'asset-plan.js', 'asset-fill.js', 'asset-cache.js', 'asset-notice.js', 'asset-3d.js', 'asset-clear.js', 'asset-report.js'];
+const MODULES = ['asset-ledger.js', 'asset-budget.js', 'asset-wipe.js', 'asset-manifest.js', 'asset-data.js', 'asset-store.js', 'asset-session.js', 'asset-plan.js', 'asset-fill.js', 'asset-cache.js', 'asset-notice.js', 'asset-3d.js', 'asset-clear.js', 'asset-report.js'];
 export const ORIGIN = 'https://blocwerk.test';
 export const USER_A = 'u-aaaaaaaaaaaaaaaaaaaa';
 export const USER_B = 'u-bbbbbbbbbbbbbbbbbbbb';
@@ -53,7 +53,9 @@ export function manifest(wallId, assets, extra = {}) {
  *         swReply ('v4' | 'none' | 'v3' | null = no controller), maxTouchPoints, coarse (a coarse pointer), refuse (worker posts asset-refused), silent (worker
  *         neither stores nor answers: a slow write), prefs3d, ua, quota, ledger, user, connection, persisted (persisted()'s answer),
  *         marks (the elements querySelectorAll answers: offline-ready marks), gate (awaited before an asset fetch),
- *         bus (a shared Set: BroadcastChannel between pages given the same one) }
+ *         bus (a shared Set: BroadcastChannel between pages given the same one), degraded (the ledger's refused-storage
+ *         fallback instead of the plain memory ledger), storage (a Map shared as localStorage between pages),
+ *         storageBlocked (localStorage throws) }
  */
 export function loadPage(opts = {}) {
     const timers = [];
@@ -62,7 +64,7 @@ export function loadPage(opts = {}) {
     const swListeners = [];
     const fetches = [];
     const posted = [];
-    const storage = new Map();
+    const storage = opts.storage || new Map();
     const assigned = [];
     const events = [];
     const persisted = [];
@@ -104,7 +106,7 @@ export function loadPage(opts = {}) {
     async function routedFetch(input, init = {}) {
         const url = new URL(String(input), ORIGIN);
         fetches.push({ path: url.pathname, search: url.search, init });
-        const asset = /^\/api\/walls\/[^/]+\/a\/([0-9a-f]{64})(?:\/(\d+))?$/.exec(url.pathname);
+        const asset = /^\/api\/walls\/[^/]+\/(?:a|d\/([a-z0-9]+))\/([0-9a-f]{64})(?:\/(\d+))?$/.exec(url.pathname);
         const route = sandbox.routes[url.pathname + url.search] || sandbox.routes[url.pathname];
         if (route) {
             return route(init, url);
@@ -113,17 +115,21 @@ export function loadPage(opts = {}) {
             if (opts.gate) {
                 await opts.gate(url.pathname);
             }
-            // The worker's part: store in the partition's cache, then announce.
-            const key = `${ORIGIN}/__bw/${asset[1]}` + (asset[2] ? `/${asset[2]}` : '');
-            const announced = { proto: 1, sha: asset[1], width: asset[2] ? Number(asset[2]) : null, bytes: 5000 };
+            // The worker's part: store in the partition's cache (a /d/ document in -3d), then announce.
+            const [, docKind, assetSha, assetWidth] = asset;
+            const key = `${ORIGIN}/__bw/${assetSha}` + (assetWidth ? `/${assetWidth}` : '');
+            const announced = { proto: 1, sha: assetSha, width: assetWidth ? Number(assetWidth) : null, bytes: 5000 };
             if (worker.refuse) {
                 postFromWorker(Object.assign({ type: 'asset-refused' }, announced));
             } else if (!worker.silent) {
-                const cache = await caches.open(`bw-a1-${worker.label}-img`);
+                const cache = await caches.open(`bw-a1-${worker.label}-${docKind ? '3d' : 'img'}`);
                 await cache.put(key, new Response('x', { headers: { 'content-length': '5000' } }));
                 postFromWorker(Object.assign({ type: 'asset-cached' }, announced));
             }
             return new Response('bytes', { status: 200 });
+        }
+        if (/^\/api\/walls\/[^/]+\/docs$/.test(url.pathname)) {
+            return json({ cursor: null, docs: [] }); // a wall with no data documents (asset-data tests route their own)
         }
         if (url.pathname === '/api/me/cache-summary') {
             return json(opts.summary || { wallsWith3d: 0, walls: [] });
@@ -187,7 +193,9 @@ export function loadPage(opts = {}) {
             storage: { estimate: async () => ({ quota: opts.quota ?? 50e9, usage: 41e9 }), persisted: async () => !!opts.persisted, persist: async () => { persisted.push(Date.now()); return true; } },
         },
         matchMedia: q => ({ matches: q === '(pointer: coarse)' ? !!opts.coarse : !!opts.standalone }),
-        localStorage: { getItem: k => (storage.has(k) ? storage.get(k) : null), setItem: (k, v) => storage.set(k, String(v)), removeItem: k => storage.delete(k) },
+        localStorage: opts.storageBlocked
+            ? { getItem: () => { throw new Error('SecurityError'); }, setItem: () => { throw new Error('SecurityError'); }, removeItem: () => undefined }
+            : { getItem: k => (storage.has(k) ? storage.get(k) : null), setItem: (k, v) => storage.set(k, String(v)), removeItem: k => storage.delete(k) },
         document: {
             readyState: 'complete',
             visibilityState: 'visible',
@@ -215,6 +223,10 @@ export function loadPage(opts = {}) {
     }
     if (opts.ledger) {
         vm.runInContext('window.bwAssetLedger.open = () => Promise.resolve(window.__ledger);', context);
+    } else if (!opts.degraded) {
+        // The plain memory ledger, standing in for IndexedDB. `degraded` keeps the real open(), which (no IndexedDB
+        // here) gives the degraded fallback a refused storage or a pending upgrade gets.
+        vm.runInContext('(() => { const l = window.bwAssetLedger.memory(); window.bwAssetLedger.open = () => Promise.resolve(l); })();', context);
     }
 
     const settle = async () => {
@@ -237,5 +249,6 @@ export function loadPage(opts = {}) {
         docEvent: (type, event) => (docListeners[type] || []).forEach(fn => fn(event)),
         winEvent: (type, event) => (listeners[type] || []).forEach(fn => fn(event || {})),
         assetFetches: () => fetches.filter(f => /\/a\/[0-9a-f]{64}/.test(f.path)),
+        dataFetches: () => fetches.filter(f => /\/d\/[a-z0-9]+\/[0-9a-f]{64}$|\/docs$/.test(f.path)),
     };
 }

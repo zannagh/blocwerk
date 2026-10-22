@@ -50,6 +50,9 @@
         @Body
     </main>
 
+    @* The live feed's data-document and manifest changes, handed to the device cache (asset-data.js). *@
+    <AssetCacheFeedRelay />
+
     @* Every item in the non-kiosk bar is behind AuthorizeView, so an anonymous visitor would get an
        empty bar and a chevron that collapses nothing — Tools used to be the one tab they saw, and it
        now lives on Profile. A kiosk keeps its bar while anonymous: the user picker is on it. *@
