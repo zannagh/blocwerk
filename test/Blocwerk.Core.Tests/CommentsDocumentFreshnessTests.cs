@@ -10,8 +10,8 @@ namespace Blocwerk.Core.Tests;
 
 /// <summary>
 /// How a cached <c>comments</c> document learns of a change, through the real feed interceptor: a deleted comment, a
-/// deleted boulder (its comments cascade with no rows of their own), a published draft, an author renamed after leaving
-/// the wall, and an erasure (its <c>wall.resync</c>) each give the next index a new sha, built without what is gone.
+/// deleted boulder (its comments cascade with no rows of their own), a published draft, an archived boulder, an author
+/// renamed after leaving the wall, and an erasure (its <c>wall.resync</c>) each give the next index a new sha, built without what is gone.
 /// </summary>
 public sealed class CommentsDocumentFreshnessTests
 {
@@ -65,6 +65,26 @@ public sealed class CommentsDocumentFreshnessTests
         }
 
         Assert.Contains(seed.OnDraft, (await CommentsDocumentSeed.DocumentAsync(f, DataDocumentFixture.ShareToken)).Comments.Select(c => c.Id));
+    }
+
+    [Fact]
+    public async Task AnArchivedBoulder_TakesItsComments_OffShareLinks_ButNotOffMembers()
+    {
+        using var f = new DataDocumentFixture();
+        await f.SeedAsync();
+        var seed = await CommentsDocumentSeed.AddAsync(f);
+        f.Caller = null;
+        Assert.Contains(seed.ByMember, (await CommentsDocumentSeed.DocumentAsync(f, DataDocumentFixture.ShareToken)).Comments.Select(c => c.Id));
+
+        await using (var db = StructureFeedKit.Context(f.Harness))
+        {
+            (await db.Boulders.SingleAsync(b => b.Id == f.PublishedId)).IsArchived = true;
+            await db.SaveChangesAsync();
+        }
+
+        Assert.DoesNotContain(seed.ByMember, (await CommentsDocumentSeed.DocumentAsync(f, DataDocumentFixture.ShareToken)).Comments.Select(c => c.Id));
+        f.Caller = f.Member;
+        Assert.Contains(seed.ByMember, (await CommentsDocumentSeed.DocumentAsync(f)).Comments.Select(c => c.Id));
     }
 
     /// <summary>An author who left the wall is still its byline; their rename writes only their own row, on no wall.</summary>

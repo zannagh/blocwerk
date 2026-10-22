@@ -9,9 +9,10 @@ using Microsoft.EntityFrameworkCore;
 namespace Blocwerk.Core.Assets.DataDocs;
 
 /// <summary>
-/// Builds the <c>comments</c> document for one class: the full text of every comment on every boulder of the wall the
-/// class may read by <c>CommentService</c>'s gate (#180), drafts' comments only for the wall's members and setters
-/// (<see cref="DocumentAudiences.ReadsDraftComments"/>). Authors are described by the feed's rule for the class
+/// Builds the <c>comments</c> document for one class: the full text of every comment on every boulder the class's
+/// <c>boulders</c> document lists: historic ones for every class; drafts' and archived boulders' comments only for the
+/// wall's members and setters (<see cref="DocumentAudiences.SeesDrafts"/>, <see cref="DocumentAudiences.SeesArchived"/>),
+/// within <c>CommentService</c>'s read gate (#180), which keeps share links and the kiosk off drafts. Authors are described by the feed's rule for the class
 /// (<see cref="DocumentAudiences.Authors"/>), so an erased, deleted or Ghost author reads as the placeholder, exactly as the
 /// <c>comment.added</c> envelope replayed after the document shows them. A deleted comment or boulder is gone from the
 /// rows, so it is gone from the next sha. The authors are returned beside the document (never in it), so a rename or a
@@ -28,9 +29,10 @@ internal static class CommentsDocumentBuilder
             return null;
         }
 
-        var drafts = DocumentAudiences.ReadsDraftComments(audience);
+        var drafts = DocumentAudiences.SeesDrafts(audience);
+        var archived = DocumentAudiences.SeesArchived(audience);
         var rows = await db.BoulderComments.AsNoTracking()
-            .Where(c => c.Boulder.WallId == wallId && (drafts || !c.Boulder.IsDraft))
+            .Where(c => c.Boulder.WallId == wallId && (drafts || !c.Boulder.IsDraft) && (archived || !c.Boulder.IsArchived))
             .Select(c => new { c.Id, c.BoulderId, AuthorId = c.UserId, c.Text, c.CreatedAt })
             .ToListAsync(ct);
         var people = rows.Select(c => c.AuthorId).ToHashSet();

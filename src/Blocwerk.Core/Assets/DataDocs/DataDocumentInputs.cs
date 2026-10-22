@@ -38,8 +38,8 @@ public static class DataDocumentInputs
     ];
 
     // comment.deleted outlives the compaction of its comment.added; boulder.deleted stands for its comments (they cascade
-    // without rows of their own); boulder.changed: a draft published or taken back opens or closes its comments to share
-    // links and kiosks; user.profile: an author renamed or given an avatar (the byline and the id rule).
+    // without rows of their own); boulder.changed: a draft published or taken back, or a boulder archived or restored,
+    // opens or closes its comments to share links and kiosks; user.profile: an author renamed or given an avatar (the byline and the id rule).
     private static readonly string[] Comments =
     [
         FeedKinds.CommentAdded, FeedKinds.CommentDeleted, FeedKinds.BoulderChanged, FeedKinds.BoulderDeleted, FeedKinds.UserProfile,

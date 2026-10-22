@@ -10,7 +10,8 @@ namespace Blocwerk.Core.Tests;
 
 /// <summary>
 /// Who reads which comments, and as whom their authors appear: the #180 read gate per class (drafts' comments for the
-/// wall's members and setters only, archived and historic ones for every class), and the feed's byline rule (erased and
+/// wall's members and setters only, as the class's <c>boulders</c> document lists them: drafts' and archived boulders'
+/// comments for members and setters only, historic ones for every class), and the feed's byline rule (erased and
 /// Ghost authors as the placeholder; author ids for members, otherwise only where an avatar shows one).
 /// </summary>
 public sealed class CommentsDocumentAccessTests
@@ -27,15 +28,16 @@ public sealed class CommentsDocumentAccessTests
             f.Caller = reader;
             var document = await CommentsDocumentSeed.DocumentAsync(f);
 
-            Assert.Equal(seed.Everyones.Append(seed.OnDraft).Order(), document.Comments.Select(c => c.Id).Order());
+            Assert.Equal(seed.Everyones.Append(seed.OnDraft).Append(seed.OnArchived).Order(), document.Comments.Select(c => c.Id).Order());
             Assert.Equal("draft secret: the start is wrong", document.Comments.Single(c => c.Id == seed.OnDraft).Text);
+            Assert.Equal("archived but remembered", document.Comments.Single(c => c.Id == seed.OnArchived).Text);
             Assert.Equal(f.Member.Id, document.Comments.Single(c => c.Id == seed.ByMember).Author.Id);
             Assert.DoesNotContain(document.Comments, c => c.Id == seed.OnOtherWall);
         }
     }
 
     [Fact]
-    public async Task ShareLinksAndKiosks_ReadNoDraftsComment_ButArchivedAndHistoricOnes_AsTheCommentGateDoes()
+    public async Task ShareLinksAndKiosks_ReadNoDraftsOrArchivedComment_ButHistoricOnes_AsTheirBouldersDocumentLists()
     {
         using var f = new DataDocumentFixture();
         await f.SeedAsync();
@@ -50,6 +52,9 @@ public sealed class CommentsDocumentAccessTests
             Assert.Equal(seed.Everyones.Order(), document.Comments.Select(c => c.Id).Order());
             Assert.DoesNotContain(seed.OnDraft.ToString(), text, StringComparison.Ordinal);
             Assert.DoesNotContain("draft secret", text, StringComparison.Ordinal);
+            Assert.DoesNotContain(seed.OnArchived.ToString(), text, StringComparison.Ordinal);
+            Assert.DoesNotContain("archived but remembered", text, StringComparison.Ordinal);
+            Assert.Contains(seed.ByErased, document.Comments.Select(c => c.Id));
             Assert.DoesNotContain(seed.OnOtherWall.ToString(), text, StringComparison.Ordinal);
         }
     }
@@ -113,13 +118,14 @@ public sealed class CommentsDocumentAccessTests
     }
 
     [Fact]
-    public void TheClassRules_DraftCommentsAndAuthorIds_AreTheMembersAndSettersOnly()
+    public void TheClassRules_DraftAndArchivedCommentsAndAuthorIds_AreTheMembersAndSettersOnly()
     {
         var author = new Feed.FeedAuthor(Guid.NewGuid(), "A", HasAvatar: false, IsDeleted: false);
         foreach (var audience in Enum.GetValues<DocumentAudience>())
         {
             var inside = audience is DocumentAudience.Setters or DocumentAudience.Members;
-            Assert.Equal(inside, DocumentAudiences.ReadsDraftComments(audience));
+            Assert.Equal(inside, DocumentAudiences.SeesDrafts(audience));
+            Assert.Equal(inside, DocumentAudiences.SeesArchived(audience));
             Assert.Equal(inside, DocumentAudiences.Authors(audience).Describe(author).Id is not null);
         }
     }

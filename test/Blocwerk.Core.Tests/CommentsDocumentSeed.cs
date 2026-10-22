@@ -33,8 +33,8 @@ internal sealed class CommentsDocumentSeed
 
     public Guid ErasedId { get; private init; }
 
-    /// <summary>Gets the comments every class reads: all of the wall's but the draft's.</summary>
-    public IReadOnlyList<Guid> Everyones => [ByMember, OnArchived, ByErased, ByGhost, ByOwner];
+    /// <summary>Gets the comments every class reads: all of the wall's but the draft's and the archived boulder's.</summary>
+    public IReadOnlyList<Guid> Everyones => [ByMember, ByErased, ByGhost, ByOwner];
 
     public static async Task<CommentsDocumentSeed> AddAsync(DataDocumentFixture f)
     {
