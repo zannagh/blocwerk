@@ -18,10 +18,11 @@
 // Rendered on demand (wall3d-loop.js): Spark re-sorts only after a camera move and its `onDirty`
 // asks for the frame showing the finished sort; phones space sorts LIGHT_SORT_MS apart.
 import {
-    createDetailBadge, fileKeyOf, firstLevelWarning, ladderOf, levelCap, pinnedLevel, remembered, rememberRendered, rememberSuccess, sizeOf,
+    createDetailBadge, fileKeyOf, firstLevelWarning, ladderOf, levelCap, pinnedLevel, remembered, rememberRendered, rememberSuccess, shaOf,
+    stepTarget,
 } from './wall3d-splat-ladder.js';
 import { storeDetail, storedDetail } from './wall3d-splat-detail.js';
-import { createLadderPolicy, createReprobe } from './wall3d-splat-policy.js';
+import { createLadderPolicy, createReprobe, createSteadyWatch } from './wall3d-splat-policy.js';
 import { deviceFacts, report, watchPage } from './wall3d-splat-diag.js';
 import { PHOTO_REAL_FAILED } from './wall3d-modes.js';
 import { createRecovery, createRenderScale, prefersLightSplat, supportsPhotoReal as supported } from './wall3d-splat-recover.js';
@@ -34,6 +35,9 @@ import { createLevelLoader } from './wall3d-splat-levels.js';
 import { createSplatCull, cullMode } from './wall3d-splat-cull.js';
 
 export { prefersLightSplat, PhotoRealUnsupportedError };
+
+/** How long a step up waits for the asset cache to say which levels are on the device. */
+const HELD_WAIT_MS = 300;
 
 /**
  * @param ctx.renderer      the view's THREE.WebGLRenderer
@@ -68,6 +72,10 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
     let disposed = false;
     let broken = false;
     let startedAt = 0;
+    let cached = null;              // shas of the levels on the device (asset-3d.js), once looked up
+    let heldUntil = 0;              // steps wait for that lookup until then (it is never on the first show's path)
+    const steady = createSteadyWatch();   // records the cap level as fine once it has shown steadily
+    let steadyTimer = 0;
 
     const state = extra => ({
         level: loader.index, levels: levels.length, splats: loader.index >= 0 ? levels[loader.index].splats : null,
@@ -83,6 +91,7 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
         culprit: () => levels[Math.max(loader.index, loader.loadingIndex, 0)],
         culpritIndex: () => Math.max(loader.index, loader.loadingIndex, 0),
         drop() {
+            steady.spoil();
             loader.drop();
             detail.show('Restoring detail…');
         },
@@ -103,6 +112,7 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
         visible: () => active,
         closed: () => disposed,
         onShown: () => {
+            armSteady();
             policy.shown(loader.index < cap && detailMode !== 'ultra');
             onLevel?.();
         },
@@ -171,6 +181,30 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
         policy.shown(index < cap && detailMode !== 'ultra');
     }
 
+    /**
+     * Watches the level showing when it is the cap, in an active and visible view (only that time counts); a timer
+     * asks for the frame that finds it steady.
+     */
+    function armSteady() {
+        clearTimeout(steadyTimer);
+        if (!active || document.visibilityState === 'hidden' || loader.index !== cap || loader.index <= 0 || detailMode === 'ultra') {
+            steady.spoil();
+            return;
+        }
+        steady.arm(loader.index, performance.now());
+        steadyTimer = setTimeout(() => { if (!disposed) request(); }, steady.delay + 50);
+    }
+
+    function onVisibility() {
+        if (document.visibilityState === 'hidden') {
+            clearTimeout(steadyTimer);
+            steady.spoil();
+        } else {
+            armSteady();
+        }
+    }
+    document.addEventListener('visibilitychange', onVisibility);
+
     async function start() {
         if (broken) throw new PhotoRealUnsupportedError('The photo-real view failed on this device.');
         if (!supported(renderer)) throw new PhotoRealUnsupportedError('WebGL 2 with large texture arrays is required.');
@@ -182,6 +216,12 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
             throw new PhotoRealTooLargeError(warning);
         }
         startedAt = performance.now();
+        // Which levels are on the device, looked up while the first one loads; a step up waits for it at most until
+        // HELD_WAIT_MS after the start (then it walks one level, and jumps once the answer is in).
+        heldUntil = startedAt + HELD_WAIT_MS;
+        Promise.resolve(window.bwAsset3d?.held?.(levels.map(shaOf)))
+            .then(held => { cached = held || new Set(); }, () => { cached = new Set(); })
+            .finally(() => { if (!disposed) request(); });
         const myEpoch = loader.epoch;
         say('start', { level: first, detail: `cap ${cap}, levels ${levels.map(l => l.splats).join('/')}` });
         let shown;
@@ -229,6 +269,7 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
             }
             active = on;
             apply();
+            armSteady();                          // re-arms when shown again, spoils when left
         },
 
         /**
@@ -246,11 +287,14 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
             const index = loader.index;
             if (!active || !loader.mesh || stepping !== null || recovery.recovering || broken) return;
             rearm(now, index);
-            const next = index + 1;
             const ultra = detailMode === 'ultra';
-            if (next <= cap && (ultra || sizeOf(levels[next]) <= (remembered(fileKey).okSplats ?? 0))) {
+            if (!ultra && steady.due(index, now)) rememberSuccess(fileKey, levels[index]);
+            if (cached === null && now < heldUntil) return;    // the on-device lookup is about to answer
+            const next = index + 1;
+            const jump = stepTarget(levels, index, cap, cached, remembered(fileKey).okSplats, ultra);
+            if (jump !== null) {
                 policy.stop();
-                stepTo(next);                     // Ultra, or ran fine here before: no need to measure
+                stepTo(jump);                     // Ultra, or ran fine here before: no need to measure
                 return;
             }
             if (ultra) return;                    // Ultra keeps the full level: no step-down for load
@@ -262,6 +306,7 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
                 say('probe-stay', { detail: `median ${policy.monitor.median.toFixed(1)} ms` });
                 scheduleReprobe();
             } else if ((decision === 'down' || decision === 'sustained') && index > 0) {
+                steady.spoil();
                 cap = index - 1;
                 retryCap = -1;
                 reprobe.cancel();             // too slow or too hot: no retry of what was just given up
@@ -290,12 +335,18 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
             cap = levelCap(levels, light, detailMode);
             if (!loader.mesh || broken) return;
             if (loader.index > cap) stepTo(cap);
-            else policy.shown(loader.index < cap && mode !== 'ultra');
+            else {
+                policy.shown(loader.index < cap && mode !== 'ultra');
+                armSteady();
+            }
             request();
         },
 
         /** A lost WebGL context: true when photo-real handles it (it had started), else false. */
-        contextLost: event => !disposed && !broken && firstLoad.started && recovery.lost(event),
+        contextLost: event => {
+            steady.spoil();
+            return !disposed && !broken && firstLoad.started && recovery.lost(event);
+        },
         contextRestored: () => recovery.restored(),
 
         /** Gives up after a render failure: every later `setActive(true)` throws (a restore still runs). */
@@ -324,8 +375,10 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
             disposed = true;
             active = false;
             clearTimeout(reprobeTimer);
+            clearTimeout(steadyTimer);
             clearTimeout(noteTimer);
             unwatchPage();
+            document.removeEventListener('visibilitychange', onVisibility);
             firstLoad.cancel(true);
             recovery.cancel();
             apply();

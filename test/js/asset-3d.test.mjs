@@ -183,3 +183,14 @@ test('a document already in the ledger is listed at the ledger\'s size, so the t
     assert.equal((await ledger.getWall(USER_A, W1)).docs[0].bytes, 4321);
     assert.equal((await ledger.getWall(USER_A, W2)).docs[0].bytes, 777, 'not cached yet: the page\'s count, the same wire size');
 });
+
+test('held names the splat levels the ledger holds in this partition, and nothing when the page does not cache', async () => {
+    const page = page3d({ ua: DESKTOP });
+    await page.boot();
+    const held = await page.win.bwAsset3d.held([sha('6'), sha('7'), sha('9'), null]);
+    assert.deepEqual([...held], [sha('6')], 'the desktop fill cached the smallest splat level only');
+
+    const none = page3d({ label: 'none' });
+    await none.boot();
+    assert.deepEqual([...await none.win.bwAsset3d.held([sha('6')])], []);
+});
