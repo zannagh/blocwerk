@@ -123,6 +123,12 @@ internal sealed class DraftExposureScenario
         return new CommentService(factory, users, Harness.ActivityLog, NullLogger<CommentService>.Instance, kioskContext: kiosk);
     }
 
+    public IActivityLogService Activity(DraftViewer viewer)
+    {
+        var (factory, users, kiosk) = Parts(viewer);
+        return new ActivityLogService(factory, users, kiosk);
+    }
+
     public IAttemptService Attempts(DraftViewer viewer)
     {
         var (factory, users, _) = Parts(viewer);

@@ -21,7 +21,7 @@ public interface ICommentService
     /// <summary>
     /// A page of the boulder's comments, under the same visibility as the boulder itself: a member (or a kiosk
     /// acting as one), the wall's <paramref name="shareToken"/> for a published boulder, or the anonymous kiosk on
-    /// its own wall for a published boulder. Anyone else gets an empty page, as for a boulder without comments.
+    /// its own wall for a published, unarchived boulder. Anyone else gets an empty page, as for a boulder without comments.
     /// </summary>
     Task<(List<BoulderComment> Items, int TotalCount)> GetCommentsAsync(Guid boulderId, int page = 0, int pageSize = 10, string? shareToken = null);
 
@@ -187,7 +187,7 @@ public class CommentService : ICommentService
     /// Whether this caller may read the boulder, with the context's filter set for that answer. Mirrors
     /// <see cref="BoulderService.GetBoulderAsync"/> and <see cref="BoulderService.GetBoulderByShareTokenAsync"/>:
     /// the share token opens a published boulder of its own wall; otherwise the wall filter decides, with the
-    /// anonymous kiosk (<see cref="Guid.Empty"/>) kept to published boulders; any other anonymous caller may not.
+    /// anonymous kiosk (<see cref="Guid.Empty"/>) kept to published, unarchived boulders; any other anonymous caller may not.
     /// </summary>
     private async Task<bool> CanReadBoulderAsync(BlocwerkDbContext db, Guid boulderId, string? shareToken)
     {
@@ -211,9 +211,11 @@ public class CommentService : ICommentService
             return false;
         }
 
+        // The resting kiosk reads a boulder's comments the way it reads its activity
+        // (KioskActivityVisibility): not a draft's, and not an archived one's.
         db.CurrentUserId = viewerId;
         return await db.Boulders.AnyAsync(b => b.Id == boulderId
             && db.Walls.Any(w => w.Id == b.WallId)
-            && (viewerId != Guid.Empty || !b.IsDraft));
+            && (viewerId != Guid.Empty || (!b.IsDraft && !b.IsArchived)));
     }
 }

@@ -27,8 +27,9 @@ public interface IActivityLogService
     Task LogAsGhostAsync(Guid wallId, Guid? boulderId, ActivityType type, string? details = null);
 
     /// <summary>
-    /// A wall's activity, newest first. The caller must be a member of the wall, or pass the
-    /// wall's <paramref name="shareToken"/> for the anonymous share-link view.
+    /// A wall's activity, newest first. The caller must be a member of the wall, or be the wall's
+    /// own kiosk tablet with nobody picked, which reads it under <see cref="KioskActivityVisibility"/>.
+    /// The <paramref name="shareToken"/> opens it for the anonymous share-link view.
     /// </summary>
     /// <exception cref="UnauthorizedAccessException">The caller may not read this wall.</exception>
     Task<(List<ActivityLogEntry> Items, int TotalCount)> GetWallActivityAsync(
@@ -38,8 +39,10 @@ public interface IActivityLogService
         string? shareToken = null);
 
     /// <summary>
-    /// One boulder's activity, newest first. The caller must be a member of the boulder's wall, or
-    /// pass that wall's <paramref name="shareToken"/> for the anonymous share-link view.
+    /// One boulder's activity, newest first. The caller must be a member of the boulder's wall, be
+    /// that wall's kiosk tablet with nobody picked (a published, unarchived boulder only, under
+    /// <see cref="KioskActivityVisibility"/>), or pass that wall's <paramref name="shareToken"/> for
+    /// the anonymous share-link view.
     /// </summary>
     /// <exception cref="UnauthorizedAccessException">The caller may not read this boulder.</exception>
     Task<(List<ActivityLogEntry> Items, int TotalCount)> GetBoulderActivityAsync(
@@ -53,11 +56,16 @@ public class ActivityLogService : IActivityLogService
 {
     private readonly IDbContextFactory<BlocwerkDbContext> _dbContextFactory;
     private readonly ICurrentUserService _currentUserService;
+    private readonly IKioskContext? _kioskContext;
 
-    public ActivityLogService(IDbContextFactory<BlocwerkDbContext> dbContextFactory, ICurrentUserService currentUserService)
+    public ActivityLogService(
+        IDbContextFactory<BlocwerkDbContext> dbContextFactory,
+        ICurrentUserService currentUserService,
+        IKioskContext? kioskContext = null)
     {
         _dbContextFactory = dbContextFactory;
         _currentUserService = currentUserService;
+        _kioskContext = kioskContext;
     }
 
     public async Task LogAsync(Guid wallId, Guid? boulderId, ActivityType type, string? details = null)
@@ -97,14 +105,15 @@ public class ActivityLogService : IActivityLogService
         int pageSize = 20,
         string? shareToken = null)
     {
-        await using var db = await OpenReadableAsync(shareToken);
+        var reader = await OpenReadableAsync(shareToken);
+        await using var db = reader.Db;
 
-        if (!await CanReadWallAsync(db, wallId, shareToken))
+        if (!await CanReadWallAsync(reader, wallId, shareToken))
         {
             throw new UnauthorizedAccessException($"Wall {wallId} is not readable by this caller.");
         }
 
-        return await PageAsync(db, a => a.WallId == wallId, page, pageSize);
+        return await PageAsync(db, a => a.WallId == wallId, reader.RestingKiosk, page, pageSize);
     }
 
     public async Task<(List<ActivityLogEntry> Items, int TotalCount)> GetBoulderActivityAsync(
@@ -113,7 +122,8 @@ public class ActivityLogService : IActivityLogService
         int pageSize = 5,
         string? shareToken = null)
     {
-        await using var db = await OpenReadableAsync(shareToken);
+        var reader = await OpenReadableAsync(shareToken);
+        await using var db = reader.Db;
 
         // The log carries usernames, so it must not be readable for a boulder the caller cannot
         // see. Resolve the boulder's wall under the same gate the boulder itself uses, rather than
@@ -121,58 +131,82 @@ public class ActivityLogService : IActivityLogService
         var boulder = await db.Boulders
             .AsNoTracking()
             .Where(b => b.Id == boulderId)
-            .Select(b => new { b.WallId, b.IsDraft })
+            .Select(b => new { b.WallId, b.IsDraft, b.IsArchived })
             .FirstOrDefaultAsync();
 
-        // A share viewer never sees a draft boulder, so it must not see a draft's log either.
+        // A share viewer never sees a draft boulder, so it must not see a draft's log either; the
+        // resting kiosk sees neither a draft nor an archived boulder's.
         if (boulder is null
             || (!string.IsNullOrEmpty(shareToken) && boulder.IsDraft)
-            || !await CanReadWallAsync(db, boulder.WallId, shareToken))
+            || (reader.RestingKiosk && (boulder.IsDraft || boulder.IsArchived))
+            || !await CanReadWallAsync(reader, boulder.WallId, shareToken))
         {
             throw new UnauthorizedAccessException($"Boulder {boulderId} is not readable by this caller.");
         }
 
-        return await PageAsync(db, a => a.BoulderId == boulderId, page, pageSize);
+        return await PageAsync(db, a => a.BoulderId == boulderId, reader.RestingKiosk, page, pageSize);
     }
 
     /// <summary>
     /// A share token takes the anonymous path (the wall filter must stay open for it to resolve
     /// the wall at all); without one the caller has to be signed in, and the context carries their
-    /// id so the wall query filter becomes the membership check.
+    /// id so the wall query filter becomes the membership check. The one exception is a kiosk
+    /// tablet with nobody picked: it reads its own wall like a share viewer, never another.
     /// </summary>
-    private async Task<BlocwerkDbContext> OpenReadableAsync(string? shareToken)
+    private async Task<(BlocwerkDbContext Db, bool RestingKiosk)> OpenReadableAsync(string? shareToken)
     {
         var currentUserId = Guid.Empty;
+        var restingKiosk = false;
         if (string.IsNullOrEmpty(shareToken))
         {
-            var user = await _currentUserService.GetCurrentUserAsync();
-            currentUserId = user.Id;
+            try
+            {
+                currentUserId = (await _currentUserService.GetCurrentUserAsync()).Id;
+            }
+            catch (UnauthorizedAccessException) when (KioskViewing.ViewableWallId(_kioskContext) is not null)
+            {
+                restingKiosk = true;
+            }
         }
 
         var db = await _dbContextFactory.CreateDbContextAsync();
         db.CurrentUserId = currentUserId;
-        return db;
+        return (db, restingKiosk);
     }
 
-    private static async Task<bool> CanReadWallAsync(BlocwerkDbContext db, Guid wallId, string? shareToken)
+    private async Task<bool> CanReadWallAsync((BlocwerkDbContext Db, bool RestingKiosk) reader, Guid wallId, string? shareToken)
     {
-        return string.IsNullOrEmpty(shareToken)
+        if (!string.IsNullOrEmpty(shareToken))
+        {
+            return await reader.Db.Walls.AnyAsync(w => w.Id == wallId && w.ShareToken == shareToken);
+        }
 
-            // CurrentUserId is the signed-in caller here, so the wall query filter is the check.
-            ? await db.Walls.AnyAsync(w => w.Id == wallId)
-            : await db.Walls.AnyAsync(w => w.Id == wallId && w.ShareToken == shareToken);
+        // Guid.Empty opens the membership half of the filter, so the kiosk's own wall is checked
+        // here and not left to the context's kiosk stamp alone.
+        if (reader.RestingKiosk && !KioskViewing.AllowsAnonymousViewOf(_kioskContext, wallId))
+        {
+            return false;
+        }
+
+        // CurrentUserId is the signed-in caller (or the resting kiosk) here, so the wall query filter is the check.
+        return await reader.Db.Walls.AnyAsync(w => w.Id == wallId);
     }
 
     private static async Task<(List<ActivityLogEntry> Items, int TotalCount)> PageAsync(
         BlocwerkDbContext db,
         Expression<Func<ActivityLogEntry, bool>> predicate,
+        bool restingKiosk,
         int page,
         int pageSize)
     {
-        var query = db.ActivityLog
-            .AsNoTracking()
+        var entries = db.ActivityLog.AsNoTracking().Where(predicate);
+        if (restingKiosk)
+        {
+            entries = entries.Where(KioskActivityVisibility.Readable);
+        }
+
+        var query = entries
             .Include(a => a.User)
-            .Where(predicate)
             .OrderByDescending(a => a.Timestamp);
 
         var total = await query.CountAsync();
