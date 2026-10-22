@@ -1372,9 +1372,18 @@ public partial class BoulderService : IBoulderService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = Guid.Empty;
 
-            return await db.GradeProposals
+            var proposal = await db.GradeProposals
+                .AsNoTracking()
                 .Include(gp => gp.ProposedBy)
                 .FirstOrDefaultAsync(gp => gp.BoulderId == boulderId && !gp.IsResolved);
+
+            // "Proposed by …" on the resting kiosk names only whom the tablet may name (KioskBylines).
+            if (proposal is not null && await KioskBylines.IsRestingKioskAsync(_currentUserService, _kioskContext))
+            {
+                await KioskBylines.MaskProposerAsync(db, proposal);
+            }
+
+            return proposal;
         }
         catch (Exception ex)
         {

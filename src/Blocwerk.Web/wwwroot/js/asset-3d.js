@@ -18,6 +18,8 @@
  *                      leaves the page streaming (asset-fill.js), silently: `saved` is simply false.
  *   unsave(wallId)   → { saved: false }: the undo. Clears save3d and keepOffline and runs eviction, so the budget and
  *                      the opt-out apply to the wall's 3D again.
+ *   held(shas)       → Set of those shas the ledger holds in this page's partition (the photo-real ladder skips the
+ *                      splat levels between the ones on the device); empty when nothing caches here.
  *   noteDoc(wallId, sha, bytes)  wall3d-doc.js loaded a view3d document; the wall's row lists it (the newest
  *                      MAX_DOCS), so eviction counts it as that wall's 3D instead of an orphan. Its size is the ledger's
  *                      count of the cached copy when there is one (the worker's Content-Length), else the page's.
@@ -219,6 +221,19 @@ window.bwAsset3d = (function (win) {
         }
     }
 
+    async function held(shas) {
+        try {
+            const s = await settled();
+            if (!caching(s)) {
+                return new Set();
+            }
+            const keys = new Set((await s.env.ledger.assetsOf(s.active)).map(a => a.key));
+            return new Set((shas || []).filter(sha => typeof sha === 'string' && keys.has(sha)));
+        } catch (e) {
+            return new Set();
+        }
+    }
+
     async function noteDoc(wallId, sha, bytes) {
         try {
             const s = Cache() ? Cache().state() : null;
@@ -237,5 +252,5 @@ window.bwAsset3d = (function (win) {
         }
     }
 
-    return { NOTICE_KIND, MAX_DOCS, gate, accept, status, save, unsave, noteDoc };
+    return { NOTICE_KIND, MAX_DOCS, gate, accept, status, save, unsave, held, noteDoc };
 })(window);

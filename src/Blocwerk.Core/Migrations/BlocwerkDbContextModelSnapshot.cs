@@ -64,6 +64,9 @@ namespace Blocwerk.Core.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("AttemptId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid?>("BoulderId")
                         .HasColumnType("uuid");
 
@@ -84,6 +87,8 @@ namespace Blocwerk.Core.Migrations
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("AttemptId");
 
                     b.HasIndex("UserId");
 
@@ -3938,6 +3943,11 @@ namespace Blocwerk.Core.Migrations
 
             modelBuilder.Entity("Blocwerk.Core.Entities.ActivityLogEntry", b =>
                 {
+                    b.HasOne("Blocwerk.Core.Entities.Attempt", "Attempt")
+                        .WithMany()
+                        .HasForeignKey("AttemptId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
                     b.HasOne("Blocwerk.Core.Entities.Boulder", "Boulder")
                         .WithMany()
                         .HasForeignKey("BoulderId")
@@ -3954,6 +3964,8 @@ namespace Blocwerk.Core.Migrations
                         .HasForeignKey("WallId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("Attempt");
 
                     b.Navigation("Boulder");
 

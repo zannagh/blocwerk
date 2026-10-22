@@ -150,7 +150,8 @@ public sealed class WallFeedHub : BackgroundService, IWallFeedHub
             if (page.Changes.Count > 0)
             {
                 await using var db = createContext();
-                var hydrated = await FeedHydration.LoadAsync(db, page.Changes, cancellationToken);
+                var kiosk = FeedKioskNeeds.Of(wall.Subscribers.Select(s => s.Viewer)); // a tablet subscribing now reads fail-closed
+                var hydrated = await FeedHydration.LoadAsync(db, page.Changes, cancellationToken, kiosk);
                 FeedFanOut.Deliver(wall, page.Changes, hydrated, page.Next, logger);
             }
 

@@ -95,6 +95,23 @@ public sealed class FeedRouteAccessTests
             await f.WallChangesAsync($"?after={await f.BeginningAsync()}&token=other-token", f.OtherWallId), 403, FeedRefusals.NoAccess);
     }
 
+    /// <summary>The tablet's byline rule follows who is picked: none, the resting kiosk's; a member, that member's.</summary>
+    [Fact]
+    public async Task AKiosk_ReadsAsTheRestingKiosk_WithNobodyPicked_AndAsTheActingKiosk_Otherwise()
+    {
+        await using var f = await SeededAsync();
+        f.BindKiosk(f.WallId);
+        await using var db = f.Harness.CreateContext();
+        var session = new FeedSession(new FeedCaller(true, IsApiKey: false), f.CurrentUser, f.Kiosk, f.KioskKeys);
+
+        f.Caller = null;
+        Assert.True((await FeedAccessGate.ForWallAsync(db, f.WallId, null, session, default)).Viewer!.IsRestingKiosk);
+        f.Caller = f.Member;
+        var acting = (await FeedAccessGate.ForWallAsync(db, f.WallId, null, session, default)).Viewer!;
+        Assert.False(acting.IsRestingKiosk);
+        Assert.Null(acting.UserId);
+    }
+
     /// <summary>A revoked or re-bound kiosk key stops reading at once, not at cookie expiry.</summary>
     [Fact]
     public async Task AKioskWhoseKeyIsNoLongerLive_Is403()

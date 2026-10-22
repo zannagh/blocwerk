@@ -55,20 +55,17 @@ public class AttemptService : IAttemptService
 
     private readonly IDbContextFactory<BlocwerkDbContext> _dbContextFactory;
     private readonly ICurrentUserService _currentUserService;
-    private readonly IActivityLogService _activityLogService;
     private readonly ILogger<AttemptService> _logger;
     private readonly IPushNotificationService? _pushNotificationService;
 
     public AttemptService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
         ICurrentUserService currentUserService,
-        IActivityLogService activityLogService,
         ILogger<AttemptService> logger,
         IPushNotificationService? pushNotificationService = null)
     {
         _dbContextFactory = dbContextFactory;
         _currentUserService = currentUserService;
-        _activityLogService = activityLogService;
         _logger = logger;
         _pushNotificationService = pushNotificationService;
     }
@@ -162,13 +159,12 @@ public class AttemptService : IAttemptService
             attempt.ActivityId = await ActivityGrouping.ResolveActivityIdAsync(db, user.Id, attempt.Timestamp, boulder.WallId);
 
             db.Attempts.Add(attempt);
+            db.ActivityLog.Add(AttemptActivityEntries.For(attempt, boulder.WallId)); // the entry commits with the attempt
             await db.SaveChangesAsync();
 
             BlocwerkMetrics.RecordAttemptLogged(boulder.WallId);
 
             _logger.LogInformation("Attempt logged on boulder {BoulderId} of type {AttemptType} by {UserId}", boulder.Id, type, user.Id);
-
-            await _activityLogService.LogAsync(boulder.WallId, boulderId, ActivityType.AttemptLogged, type.ToString());
 
             // Notify the boulder's setters + creator ONLY for a genuinely new send or flash — never a
             // plain attempt, and only here, past the draft/replay/debounce early-returns, so a replayed
@@ -258,6 +254,7 @@ public class AttemptService : IAttemptService
                 throw new InvalidOperationException("Attempt not found");
             }
 
+            await AttemptActivityEntries.RemoveForAsync(db, attempt.Id); // its "sent this" goes in the same save
             db.Attempts.Remove(attempt);
             await db.SaveChangesAsync();
 
