@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 const js = new URL('../../../src/Blocwerk.Web/wwwroot/js/', import.meta.url);
-const MODULES = ['asset-ledger.js', 'asset-budget.js', 'asset-wipe.js', 'asset-manifest.js', 'asset-data.js', 'asset-mine.js', 'asset-store.js', 'asset-session.js', 'asset-plan.js', 'asset-fill.js', 'asset-cache.js', 'asset-notice.js', 'asset-3d.js', 'asset-clear.js', 'asset-report.js'];
+const MODULES = ['asset-ledger-idb.js', 'asset-ledger.js', 'asset-budget.js', 'asset-wipe.js', 'asset-lock.js', 'asset-manifest.js', 'asset-data.js', 'asset-mine.js', 'asset-store.js', 'asset-session.js', 'asset-plan.js', 'asset-fill.js', 'asset-cache.js', 'asset-notice.js', 'asset-3d.js', 'asset-clear.js', 'asset-report.js'];
 export const ORIGIN = 'https://blocwerk.test';
 export const USER_A = 'u-aaaaaaaaaaaaaaaaaaaa';
 export const USER_B = 'u-bbbbbbbbbbbbbbbbbbbb';
@@ -55,7 +55,7 @@ export function manifest(wallId, assets, extra = {}) {
  *         marks (the elements querySelectorAll answers: offline-ready marks), gate (awaited before an asset fetch),
  *         bus (a shared Set: BroadcastChannel between pages given the same one), degraded (the ledger's refused-storage
  *         fallback instead of the plain memory ledger), storage (a Map shared as localStorage between pages),
- *         storageBlocked (localStorage throws) }
+ *         storageBlocked (localStorage throws), signOut (the meta's data-signout), banner (an #bw-offline-lock element) }
  */
 export function loadPage(opts = {}) {
     const timers = [];
@@ -70,7 +70,7 @@ export function loadPage(opts = {}) {
     const persisted = [];
     const caches = opts.caches || fakeCaches();
     const label = opts.label === undefined ? USER_A : opts.label;
-    const meta = label === null ? null : { getAttribute: () => label };
+    const meta = label === null ? null : { getAttribute: name => (name === 'content' ? label : name === 'data-signout' ? (opts.signOut ?? null) : null) };
     const worker = { label: opts.workerLabel || label, refuse: !!opts.refuse, silent: !!opts.silent };
 
     const timer = (fn, ms) => {
@@ -201,6 +201,7 @@ export function loadPage(opts = {}) {
             visibilityState: 'visible',
             querySelector: selector => (selector === 'meta[name="bw-partition"]' ? meta : null),
             querySelectorAll: () => opts.marks || [],
+            getElementById: id => (id === 'bw-offline-lock' ? opts.banner || null : null),
             body: { getAttribute: name => (name === 'data-bw-user' ? (opts.user ?? '') : null), dataset: opts.kioskKey ? { bwKiosk: opts.kioskKey } : {} },
             addEventListener: (type, fn) => { (docListeners[type] = docListeners[type] || []).push(fn); },
             removeEventListener: () => {},

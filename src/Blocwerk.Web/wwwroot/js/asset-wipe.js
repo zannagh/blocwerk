@@ -23,6 +23,9 @@
  *      list is dropped on the next start.
  *   6. `anon` hygiene: a page in the `anon` partition without a share token in its URL wipes `anon` too; it
  *      announces only when the device was not anonymous before.
+ * KEEP SETS (PR 3.5). A wipe spares a SET of labels: the active one, plus a `u-` partition locked after its session
+ * expired (asset-lock.js), which the session adds to `decide`'s keep. A locked partition thus survives every `anon` wipe
+ * for up to 7 days, and goes with the lock (dropPartition).
  */
 window.bwAssetWipe = (function () {
     'use strict';
@@ -49,20 +52,21 @@ window.bwAssetWipe = (function () {
     /**
      * What a page load means. `previous`: the ledger's activePartition (null on a first run). `label`: the page's
      * meta content, null when the meta is missing. `userChanged`: the acting user differs from the last page's.
-     * Returns { wipe, keep, active, page, identityChanged }: `keep` is the one partition a wipe spares (null spares
-     * none), `active` what the ledger records, `page` the label this page caches under (only a real label caches).
+     * Returns { wipe, keep, active, page, identityChanged }: `keep` the labels a wipe spares (an array; [] spares none;
+     * the session adds a locked label), `active` what the ledger records, `page` the label this page caches under (only
+     * a real label caches).
      *   offline  offline.html: decides nothing.
      *   unknown  the server could not resolve the partition: trust nothing, cache nothing on this page, keep the
      *            ledger's label; but a changed acting user still wipes everything.
      */
     function decide(previous, label, hasToken, userChanged) {
         if (label === 'offline') {
-            return { wipe: false, keep: previous, active: previous, page: 'offline', identityChanged: false };
+            return { wipe: false, keep: listOf(previous), active: previous, page: 'offline', identityChanged: false };
         }
         if (label === 'unknown') {
             return userChanged
-                ? { wipe: true, keep: null, active: 'none', page: 'unknown', identityChanged: true }
-                : { wipe: false, keep: previous, active: previous, page: 'unknown', identityChanged: false };
+                ? { wipe: true, keep: [], active: 'none', page: 'unknown', identityChanged: true }
+                : { wipe: false, keep: listOf(previous), active: previous, page: 'unknown', identityChanged: false };
         }
         const real = typeof label === 'string' && REAL_LABEL.test(label);
         const active = real ? label : 'none';
@@ -73,14 +77,16 @@ window.bwAssetWipe = (function () {
         // is an identity change; anon→anon (rule 6 on every tokenless load) is not.
         const known = previous !== null && previous !== undefined;
         const identityChanged = !!userChanged || (known && classOf(active) !== classOf(previous));
-        if (!real) {
-            return { wipe: true, keep: null, active, page: active, identityChanged };
+        if (!real || (active === 'anon' && !hasToken)) {
+            return { wipe: true, keep: [], active, page: active, identityChanged };
         }
-        if (active === 'anon' && !hasToken) {
-            return { wipe: true, keep: null, active, page: active, identityChanged };
-        }
-        return { wipe: changed, keep: active, active, page: active, identityChanged };
+        return { wipe: changed, keep: [active], active, page: active, identityChanged };
     }
+
+    const listOf = label => (typeof label === 'string' ? [label] : []);
+
+    // A keep argument as a Set of labels: an array, one label, or null (none).
+    const keepSetOf = keep => new Set((Array.isArray(keep) ? keep : [keep]).filter(label => typeof label === 'string'));
 
     function classOf(label) {
         const value = String(label);
@@ -91,20 +97,41 @@ window.bwAssetWipe = (function () {
         return `${origin}/__bw/${key}`;
     }
 
-    /** Deletes every bw-a1-* cache outside `keep`, then the ledger rows outside it. */
+    /** Deletes every bw-a1-* cache outside the keep set (labels: an array, one label, or null for none), then the ledger rows outside it. */
     async function wipe(env, keep) {
+        const kept = keepSetOf(keep);
         try {
             const names = await env.caches.keys();
             for (const name of names) {
                 const match = CACHE_NAME.exec(name);
-                if (name.startsWith(PREFIX) && (!match || match[1] !== keep)) {
+                if (name.startsWith(PREFIX) && (!match || !kept.has(match[1]))) {
                     await env.caches.delete(name);
                 }
             }
         } catch (e) {
             /* storage unavailable: nothing to wipe there */
         }
-        await env.ledger.deleteAllExcept(keep);
+        await env.ledger.deleteAllExcept([...kept]);
+    }
+
+    /** Deletes one partition: its two caches, then its wall, asset and mine rows (a dropped lock, Clear offline data). */
+    async function dropPartition(env, partition) {
+        for (const suffix of ['img', '3d']) {
+            try {
+                await env.caches.delete(`${PREFIX}${partition}-${suffix}`);
+            } catch (e) {
+                /* storage unavailable: the reconcile on the next start catches up */
+            }
+        }
+        for (const wall of await env.ledger.wallsOf(partition)) {
+            await env.ledger.deleteWall(partition, wall.wallId);
+        }
+        for (const asset of await env.ledger.assetsOf(partition)) {
+            await env.ledger.deleteAsset(partition, asset.key);
+        }
+        for (const mine of await env.ledger.mineOf(partition)) {
+            await env.ledger.deleteMine(partition, mine.wallId);
+        }
     }
 
     /** Deletes `keys` (`{sha}[/{width}]`) from a partition's caches and its ledger. */
@@ -188,9 +215,13 @@ window.bwAssetWipe = (function () {
         }
     }
 
+    // Logout and the signed-out page: everything goes, a locked partition and its lock included.
     async function wipeAll(win, ledger) {
-        await ledger.setMeta({ activePartition: null });
+        await ledger.setMeta({ activePartition: null, locked: null });
         await wipe({ caches: win.caches, ledger, origin: win.location.origin }, null);
+        if (win.bwAssetLock && typeof win.bwAssetLock.forget === 'function') {
+            await win.bwAssetLock.forget(ledger);
+        }
     }
 
     /**
@@ -251,5 +282,5 @@ window.bwAssetWipe = (function () {
         }, true);
     }
 
-    return { tokenOf, decide, wipe, deleteKeys, dropWall, userTagOf, announceIdentityChange, installLogout, cacheUrl, signedOut: () => signedOut(window) };
+    return { tokenOf, decide, wipe, dropPartition, deleteKeys, dropWall, userTagOf, announceIdentityChange, installLogout, cacheUrl, signedOut: () => signedOut(window) };
 })();

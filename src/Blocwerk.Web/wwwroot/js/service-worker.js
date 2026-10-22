@@ -30,7 +30,7 @@
 const CACHE = 'blocwerk-shell-v4';
 const PROTO = 1;
 
-importScripts('/js/sw-asset-cache.js');
+importScripts('/js/sw-asset-cache.js', '/js/sw-asset-lock.js');
 
 // Stable-path assets only. The app's own CSS/JS are referenced from BlocwerkApp.razor through
 // @Assets[...], so the page requests them under a build-specific fingerprinted name that this file
