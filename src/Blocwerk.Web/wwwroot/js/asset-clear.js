@@ -84,9 +84,9 @@ window.bwAssetClear = (function (win) {
         state.fresh.clear();
         const summary = await Cache().summary();
         const walls = [...new Set([state.openWallId, ...(summary ? summary.walls : [])].filter(Boolean))];
-        for (const wallId of walls) {
-            await Cache().manifestChanged(wallId);
-        }
+        // All at once: manifestChanged resolves with the whole fill, so awaiting each in turn would hold the next wall's
+        // core behind this wall's 3D. The fills coalesce (scheduleFill's refill), and the plan puts every wall's core first.
+        await Promise.all(walls.map(wallId => Cache().manifestChanged(wallId)));
     }
 
     const refreshMarks = () => (win.bwAssetReport ? win.bwAssetReport.marks.refresh() : Promise.resolve());

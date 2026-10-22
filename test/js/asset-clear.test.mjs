@@ -162,3 +162,24 @@ test('without BroadcastChannel the clear goes over localStorage, and a storage e
     await tab.settle();
     assert.equal(tab.cache.state().stopped, true);
 });
+
+test('the rebuild refetches every wall at once: wall 2\'s core is not held behind wall 1\'s 3D', async () => {
+    let holding = false;
+    let release = () => undefined;
+    const held = new Promise(resolve => { release = resolve; });
+    // After the clear, wall 1's 3D texture download hangs until released.
+    const gate = path => (holding && path.endsWith(sha('3')) ? held : undefined);
+    // No wall open, so the rebuild takes the summary's order: wall 1 first.
+    const page = memberPage({ routes: w1Routes(), gate, path: '/' });
+    await page.boot();
+    holding = true;
+    const before = page.assetFetches().length;
+
+    await page.win.bwAssetReport.clear();
+    await page.settle();
+    const after = page.assetFetches().slice(before).map(f => f.path.split('/a/')[1]);
+    assert.ok(after.includes(sha('3')), 'wall 1\'s 3D is in flight');
+    assert.ok(after.includes(`${sha('4')}/1280`) && after.includes(`${sha('4')}/640`), 'wall 2\'s core came while it was held');
+    release();
+    await settled(page);
+});
