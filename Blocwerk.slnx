@@ -7,6 +7,7 @@
   <Folder Name="/test/">
     <Project Path="test/Blocwerk.Core.Tests/Blocwerk.Core.Tests.csproj" />
     <Project Path="test/Blocwerk.HoldDetection.Tests/Blocwerk.HoldDetection.Tests.csproj" />
+    <Project Path="test/browser/seed/Blocwerk.Browser.Seed.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/hold-eval/HoldEval/HoldEval.csproj" />

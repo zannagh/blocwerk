@@ -212,6 +212,91 @@ jobs:
           BLOCWERK_TEST_PG: Host=localhost;Port=${{ job.services.postgres.ports['5432'] }};Username=blocwerk;Password=blocwerk
         run: dotnet test test/Blocwerk.Core.Tests --filter "Db=Postgres"
 
+  # Real-browser tests of the service worker and the page-side asset cache (test/browser). Non-blocking: it reports, it
+  # never fails the workflow. GitHub-hosted, because the browsers' system dependencies need sudo to install.
+  browser-tests:
+    name: Browser Tests (non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    # A hang (a stalled apt mirror once held the install for 50 min) must never stall the run.
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: blocwerk
+          POSTGRES_DB: bw_browser_ci
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: "global.json"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: test/browser/package-lock.json
+
+      # Playwright's documented GitHub Actions setup: `install --with-deps`, no browser cache (restoring it takes about as
+      # long as the download, and the system packages cannot be cached). The packages come from apt, whose stalled
+      # connections never time out by default, so apt gets timeouts and retries and each attempt is bounded.
+      - name: Install the harness and its browsers
+        working-directory: test/browser
+        timeout-minutes: 8
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          npm ci
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' \
+            | sudo tee /etc/apt/apt.conf.d/80-ci-timeouts > /dev/null
+          for attempt in 1 2; do
+            if timeout --kill-after=15s 180s npx playwright install --with-deps chromium webkit; then
+              exit 0
+            fi
+            echo "::warning::playwright install attempt $attempt failed or timed out"
+          done
+          exit 1
+
+      - name: Browser tests
+        working-directory: test/browser
+        timeout-minutes: 12
+        env:
+          CI: "true"
+          BW_BROWSER_PG: postgres://postgres:blocwerk@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/bw_browser_ci
+        run: npm test
+
+      # Retries hide a flaky test from the result (playwright.config.mjs: one retry in CI); name each one here instead.
+      - name: Annotate flaky tests
+        if: always()
+        working-directory: test/browser
+        run: node harness/flaky-report.mjs playwright-report/results.json
+
+      - name: Upload the report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-tests-report
+          path: |
+            test/browser/playwright-report
+            test/browser/test-results
+            test/browser/.out/app.log
+          retention-days: 7
+
   upload-to-release:
     name: Upload to GitHub Release
     needs: [determine-runner, build, determine-jobs]

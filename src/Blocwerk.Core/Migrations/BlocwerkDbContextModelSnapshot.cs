@@ -2518,6 +2518,9 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("CreatedAt");
 
+                    b.HasIndex("EntityId", "Kind")
+                        .HasFilter("\"EntityId\" IS NOT NULL");
+
                     b.HasIndex("TxId", "Seq");
 
                     b.HasIndex("AudienceUserId", "TxId", "Seq")
