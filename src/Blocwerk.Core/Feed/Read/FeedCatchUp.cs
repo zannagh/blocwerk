@@ -43,7 +43,10 @@ public sealed class FeedCatchUp(IWallFeed feed, Func<BlocwerkDbContext> createCo
     /// <summary>The parsed cursor, or one that resyncs.</summary>
     public static FeedCursor Parse(string? after) => FeedCursor.TryParse(after, out var cursor) ? cursor : Unknown;
 
-    /// <summary>Hydrates a page's rows as <paramref name="viewer"/> sees them, in one batch per kind of content.</summary>
+    /// <summary>
+    /// Hydrates a page's rows as <paramref name="viewer"/> sees them, in one batch per kind of content, without the comment
+    /// rows of boulders an outside viewer may not see now (<see cref="FeedOutsideComments"/>).
+    /// </summary>
     public async Task<IReadOnlyList<FeedEnvelope>> HydrateAsync(FeedPage page, FeedViewer viewer, CancellationToken cancellationToken)
     {
         if (page.Changes.Count == 0)
@@ -54,7 +57,9 @@ public sealed class FeedCatchUp(IWallFeed feed, Func<BlocwerkDbContext> createCo
         await using var db = createContext();
         var hydrated = await FeedHydration.LoadAsync(db, page.Changes, cancellationToken);
         var visibility = AuthorVisibility.For(viewer);
-        return page.Changes.Select(r => FeedEnvelopes.Build(r, page.Next.Epoch, hydrated, visibility)).ToArray();
+        return page.Changes.Where(r => FeedOutsideComments.Allows(viewer, r, hydrated))
+            .Select(r => FeedEnvelopes.Build(r, page.Next.Epoch, hydrated, visibility))
+            .ToArray();
     }
 
     private async Task<FeedChanges> ReadAsync(
