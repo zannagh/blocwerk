@@ -130,7 +130,10 @@ window.bwAssetWipe = (function () {
         }
     }
 
-    /** Rules 4 and 5: the wall's row goes, and its assets that no other wall of the partition lists. */
+    /**
+     * Rules 4 and 5: the wall's row goes, and its assets that no other wall of the partition lists (bwAssetLedger.listed:
+     * manifest entries, view3d and data documents).
+     */
     async function dropWall(env, partition, wallId) {
         const walls = await env.ledger.wallsOf(partition);
         const dropped = walls.find(w => w.wallId === wallId);
@@ -139,7 +142,7 @@ window.bwAssetWipe = (function () {
             return;
         }
         const others = new Set();
-        const listed = w => (w.entries || []).concat(w.docs || []);
+        const listed = w => window.bwAssetLedger.listed(w);
         walls.filter(w => w.wallId !== wallId).forEach(w => listed(w).forEach(e => others.add(e.sha)));
         const mine = new Set(listed(dropped).map(e => e.sha).filter(sha => sha && !others.has(sha)));
         const assets = await env.ledger.assetsOf(partition);
