@@ -110,7 +110,7 @@ public sealed class MineDocumentAccessTests
     {
         using var f = await SeededAsync();
 
-        var asOutsider = await f.Service().BuildAsync(f.WallId, f.Member.Id, DocumentAudience.Outsider, default);
+        var asOutsider = await f.Service().BuildAsync(f.WallId, f.Member.Id, DocumentAudience.Outsider, "u-test", default);
 
         Assert.Equal(new[] { f.Docs.PublishedId, f.Docs.HistoricId }.Order(), asOutsider.Ticks.Select(t => t.BoulderId));
         Assert.Equal([f.Docs.PublishedId], asOutsider.Favourites);

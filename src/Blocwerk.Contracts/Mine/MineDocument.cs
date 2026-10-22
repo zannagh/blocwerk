@@ -13,8 +13,12 @@ namespace Blocwerk.Contracts.Mine;
 /// </summary>
 /// <param name="V">The schema version (<see cref="DataDocumentSchema.Version"/>).</param>
 /// <param name="WallId">The wall.</param>
+/// <param name="Partition">
+/// The caller's cache partition label, as <c>/api/me/cache-partition</c> answers it. A tab stores the marks only under this
+/// label: a stale tab of user A, fetching with the cookie B signed in with since, gets B's label and stores nothing.
+/// </param>
 /// <param name="Cursor">The feed mark read before the marks were: the caller's own rows after it are replayed.</param>
 /// <param name="Ticks">One entry per boulder the reader logged an attempt on, by boulder id.</param>
 /// <param name="Favourites">The reader's favourite boulders of the wall, by id.</param>
 public sealed record MineDocument(
-    int V, Guid WallId, string Cursor, IReadOnlyList<MineDocumentTick> Ticks, IReadOnlyList<Guid> Favourites);
+    int V, Guid WallId, string Partition, string Cursor, IReadOnlyList<MineDocumentTick> Ticks, IReadOnlyList<Guid> Favourites);

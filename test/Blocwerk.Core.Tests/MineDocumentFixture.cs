@@ -6,6 +6,7 @@ using System.Text.Json;
 using Blocwerk.Contracts.Documents;
 using Blocwerk.Contracts.Mine;
 using Blocwerk.Core.Assets.Mine;
+using Blocwerk.Core.Assets.Partition;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Web.Endpoints;
@@ -72,6 +73,9 @@ internal sealed class MineDocumentFixture : IDisposable
         Docs.Caller = Member;
     }
 
+    /// <summary>The partition resolver the route and <c>/api/me/cache-partition</c> share, over the fixture's caller.</summary>
+    public CachePartitionResolver Partitions() => new(new FixedPartitionKey(1), Docs.CurrentUser, Docs.Kiosk, Docs.KioskKeys);
+
     public MineDocumentService Service() => new(Docs.Harness.RootContextFactory, Docs.Feed);
 
     public Task<MineAccess> AccessAsync(Guid? wallId = null) => Service().AccessAsync(wallId ?? WallId, Docs.Session(), default);
@@ -80,7 +84,7 @@ internal sealed class MineDocumentFixture : IDisposable
     public async Task<MineDocument> MineAsync()
     {
         var access = await AccessAsync();
-        return await Service().BuildAsync(WallId, access.UserId!.Value, access.Audience!.Value, default);
+        return await Service().BuildAsync(WallId, access.UserId!.Value, access.Audience!.Value, await Partitions().ResolveAsync(), default);
     }
 
     /// <summary>Calls the registered route as the fixture's caller.</summary>
@@ -117,6 +121,7 @@ internal sealed class MineDocumentFixture : IDisposable
         builder.Services.AddSingleton(Docs.Kiosk);
         builder.Services.AddSingleton(Docs.KioskKeys);
         builder.Services.AddSingleton(_ => Service());
+        builder.Services.AddSingleton<ICachePartitionResolver>(_ => Partitions());
         var built = builder.Build();
         built.MapMine();
         return built;

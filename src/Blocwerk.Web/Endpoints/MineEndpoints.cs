@@ -2,9 +2,11 @@
 // See License in the project root for license information.
 
 using Blocwerk.Authentication.Authorization;
+using Blocwerk.Contracts.Assets;
 using Blocwerk.Contracts.Documents;
 using Blocwerk.Contracts.Mine;
 using Blocwerk.Core.Assets.Mine;
+using Blocwerk.Core.Assets.Partition;
 using Blocwerk.Web.Endpoints.Feed;
 using Microsoft.AspNetCore.Mvc;
 
@@ -42,6 +44,7 @@ public static class MineEndpoints
         Guid wallId,
         HttpContext http,
         [FromServices] MineDocumentService mine,
+        [FromServices] ICachePartitionResolver partitions,
         CancellationToken ct)
     {
         var access = await mine.AccessAsync(wallId, FeedRequestAccess.SessionOf(http), ct);
@@ -56,8 +59,21 @@ public static class MineEndpoints
             return FeedRequestAccess.Refused(http, access.Refusal);
         }
 
-        var document = await mine.BuildAsync(wallId, userId, audience, ct);
+        var document = await mine.BuildAsync(wallId, userId, audience, await PartitionOfAsync(partitions), ct);
         FeedRequestAccess.NoStore(http);
         return Results.Json(document, DataDocumentSchema.Options);
+    }
+
+    // The label the device keys the marks by. A fault answers "unknown", which no tab caches under, so it stores nothing.
+    private static async Task<string> PartitionOfAsync(ICachePartitionResolver partitions)
+    {
+        try
+        {
+            return await partitions.ResolveAsync();
+        }
+        catch (Exception)
+        {
+            return CachePartitions.Unknown;
+        }
     }
 }

@@ -26,7 +26,7 @@ public sealed class MineDocumentPostgresTests
         Assert.Equal(2, member.Ticks.Single(t => t.BoulderId == f.Docs.PublishedId).Attempts);
         Assert.Equal(new[] { f.Docs.PublishedId, f.Docs.DraftId }.Order(), member.Favourites);
 
-        var outsider = await f.Service().BuildAsync(f.WallId, f.Member.Id, DocumentAudience.Outsider, default);
+        var outsider = await f.Service().BuildAsync(f.WallId, f.Member.Id, DocumentAudience.Outsider, "u-test", default);
         Assert.Equal(new[] { f.Docs.PublishedId, f.Docs.HistoricId }.Order(), outsider.Ticks.Select(t => t.BoulderId));
 
         f.Docs.BindKiosk(f.WallId);

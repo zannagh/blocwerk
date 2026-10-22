@@ -1,8 +1,12 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using System.Text.Json;
+using Blocwerk.Contracts.Assets;
 using Blocwerk.Contracts.Feed;
+using Blocwerk.Web.Endpoints;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Blocwerk.Core.Tests;
 
@@ -26,6 +30,27 @@ public sealed class MineDocumentRouteTests
         Assert.Equal(4, mine.Ticks.Count);
         Assert.DoesNotContain(f.Setter.Id.ToString(), body, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(f.Member.Id.ToString(), body, StringComparison.OrdinalIgnoreCase); // whose marks: implied, never written
+    }
+
+    /// <summary>
+    /// The body names the caller's partition exactly as <c>/api/me/cache-partition</c> does, so a stale tab of another user
+    /// can tell the marks are not its own (asset-mine.js stores nothing then).
+    /// </summary>
+    [Fact]
+    public async Task TheBody_NamesTheCallersPartition_AsCachePartitionAnswersIt()
+    {
+        using var f = await SeededAsync();
+
+        var member = MineDocumentFixture.Parse(await f.HttpAsync()).Partition;
+        var probe = new DefaultHttpContext { RequestServices = new ServiceCollection().AddLogging().BuildServiceProvider() };
+        probe.Response.Body = new MemoryStream();
+        await (await ManifestEndpoints.HandlePartitionAsync(probe, f.Partitions())).ExecuteAsync(probe);
+        var answered = JsonSerializer.Deserialize<CachePartitionResponse>(MineDocumentFixture.Body(probe), new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+
+        Assert.Matches("^u-[a-z2-7]{20}$", member);
+        Assert.Equal(answered.Partition, member);
+        f.Docs.Caller = f.Setter;
+        Assert.NotEqual(member, MineDocumentFixture.Parse(await f.HttpAsync()).Partition);
     }
 
     [Fact]

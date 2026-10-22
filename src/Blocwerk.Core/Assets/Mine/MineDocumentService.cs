@@ -29,8 +29,8 @@ public sealed class MineDocumentService(RootDbContextFactory dbContextFactory, I
         return await MineAccessGate.DecideAsync(db, wallId, session, ct);
     }
 
-    /// <summary>The granted reader's marks on the wall.</summary>
-    public async Task<MineDocument> BuildAsync(Guid wallId, Guid userId, DocumentAudience audience, CancellationToken ct)
+    /// <summary>The granted reader's marks on the wall, labelled with the caller's cache <paramref name="partition"/>.</summary>
+    public async Task<MineDocument> BuildAsync(Guid wallId, Guid userId, DocumentAudience audience, string partition, CancellationToken ct)
     {
         var mark = await feed.CurrentAsync(ct);
         await using var db = dbContextFactory.CreateDbContext();
@@ -58,6 +58,6 @@ public sealed class MineDocumentService(RootDbContextFactory dbContextFactory, I
                 g.Any(a => a.Type == AttemptType.Flash),
                 g.Max(a => a.Timestamp)))
             .ToList();
-        return new MineDocument(DataDocumentSchema.Version, wallId, mark.ToString(), ticks, favourites.Order().ToList());
+        return new MineDocument(DataDocumentSchema.Version, wallId, partition, mark.ToString(), ticks, favourites.Order().ToList());
     }
 }

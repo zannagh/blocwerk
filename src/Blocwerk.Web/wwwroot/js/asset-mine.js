@@ -3,9 +3,13 @@
  * the ledger's `mine` store for the offline client's boulder list and detail ("my tick and favourite marks").
  *
  * GET /api/me/walls/{w}/mine (no-store, never in any HTTP cache) after every manifest round that left the wall current,
- * beside its docs index (asset-cache.js), and on bwAssetMine.changed(wallId): the circuit saw a `tick.mine` or
- * `favorite.changed` row of the wall (AssetCacheFeedRelay.cs), one refetch DEBOUNCE_MS after the first of a burst.
- *   200          → the wall's row { partition, wallId, cursor, ticks, favourites, fetchedAt } replaces the stored one.
+ * beside its docs index (asset-cache.js), and on bwAssetMine.changed(wallId): the circuit saw a `tick.mine`,
+ * `favorite.changed`, `boulder.changed` or `boulder.deleted` row of the wall (AssetCacheFeedRelay.cs; the last two
+ * because a mark on a deleted, drafted or archived boulder leaves the set), one refetch DEBOUNCE_MS after a burst began.
+ *   200          → the wall's row { partition, wallId, cursor, ticks, favourites, fetchedAt } replaces the stored one,
+ *                  when the body's `partition` is this tab's label and the wall still has its row (a dropWall racing
+ *                  the fetch wins). Another label means the cookie is another user's now (they signed in in another
+ *                  tab): nothing is stored, and this partition's row for the wall goes too.
  *   403/404/410  → the stored row goes, the wall's other data stays (a kiosk session, a class that sees no marks, a wall
  *                  that left, an account that is gone; the manifest and the docs index decide about the wall itself).
  *   401, 5xx, no network → the stored row stands (whether a 401 locks or wipes is PR 3.5's).
@@ -40,21 +44,22 @@ window.bwAssetMine = (function (win) {
         };
     }
 
-    /** The body as the stored fields, or null when it is not the marks of `wallId`. */
+    /** The body as { partition, fields }, or null when it is not the marks of `wallId`. */
     function compact(body, wallId) {
-        if (!body || idOf(body.wallId) !== idOf(wallId) || !Array.isArray(body.ticks) || !Array.isArray(body.favourites)) {
+        if (!body || idOf(body.wallId) !== idOf(wallId) || typeof body.partition !== 'string'
+            || !Array.isArray(body.ticks) || !Array.isArray(body.favourites)) {
             return null;
         }
-        return {
+        return { partition: body.partition, fields: {
             cursor: typeof body.cursor === 'string' ? body.cursor : null,
             ticks: body.ticks.map(tickOf).filter(Boolean),
             favourites: body.favourites.map(idOf).filter(id => UUID.test(id))
-        };
+        } };
     }
 
     /**
      * Refreshes one wall's marks. env: asset-cache.js's { fetch, ledger, partition(), now }.
-     * Returns 'updated' | 'dropped' | 'offline' | 'switched' | 'skipped'.
+     * Returns 'updated' | 'dropped' | 'foreign' | 'offline' | 'switched' | 'skipped'.
      */
     async function refresh(env, partition, wallId) {
         if (!USER_LABEL.test(partition || '') || !(await env.ledger.getWall(partition, wallId))) {
@@ -73,16 +78,23 @@ window.bwAssetMine = (function (win) {
             await env.ledger.deleteMine(partition, wallId);
             return 'dropped';
         }
-        let fields = null;
+        let marks = null;
         try {
-            fields = response.ok ? compact(await response.json(), wallId) : null;
+            marks = response.ok ? compact(await response.json(), wallId) : null;
         } catch (e) {
-            fields = null;
+            marks = null;
         }
-        if (!fields) {
+        if (!marks) {
             return 'offline';
         }
-        await env.ledger.putMine(Object.assign({ partition, wallId }, fields, { fetchedAt: env.now() }));
+        if (marks.partition !== partition) {
+            await env.ledger.deleteMine(partition, wallId);
+            return 'foreign';
+        }
+        if (!(await env.ledger.getWall(partition, wallId))) {
+            return 'dropped';
+        }
+        await env.ledger.putMine(Object.assign({ partition, wallId }, marks.fields, { fetchedAt: env.now() }));
         return 'updated';
     }
 

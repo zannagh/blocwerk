@@ -11,7 +11,7 @@ import { W1, W2, plain, listing, memberPage } from './fixtures/asset-pages.mjs';
 const B1 = 'b1b1b1b1-0000-4000-8000-000000000001';
 const B2 = 'b2b2b2b2-0000-4000-8000-000000000002';
 const body = (wallId, more = {}) => Object.assign({
-    v: 1, wallId, cursor: '1.2.3',
+    v: 1, wallId, partition: USER_A, cursor: '1.2.3',
     ticks: [{ boulderId: B1, attempts: 3, sent: true, flashed: false, lastAt: '2026-10-22T10:00:00Z' }],
     favourites: [B2]
 }, more);
@@ -103,6 +103,36 @@ test('the guard refuses marks for a partition that is not the active one (a stal
     await page.settle();
     assert.equal(mineFetches(page).length, 3, 'it asked');
     assert.equal((await ledger.mineOf(USER_A)).find(r => r.wallId === W1).cursor, '1.2.3', 'and wrote nothing');
+});
+
+test('marks under another partition label (B signed in in another tab) are not stored, and this partition\'s row goes', async () => {
+    let partition = USER_A;
+    const page = await signedInWithMarks({ routes: mineRoute(W1, () => json(body(W1, { partition }))) });
+    partition = USER_B; // the shared cookie is B's now; this tab still runs as A
+    await page.cache.mineChanged(W1);
+    await page.settle();
+    const ledger = await page.ledger();
+    assert.equal((await ledger.mineOf(USER_A)).find(r => r.wallId === W1), undefined, 'A\'s stale row went');
+    assert.deepEqual(plain(await ledger.mineOf(USER_B)), [], 'and B\'s marks were stored nowhere');
+    assert.ok((await ledger.mineOf(USER_A)).find(r => r.wallId === W2), 'the other wall\'s row is untouched');
+
+    const unlabelled = memberPage({ swReply: 'none', routes: mineRoute(W1, () => json(body(W1, { partition: undefined }))) });
+    await unlabelled.boot();
+    assert.equal((await (await unlabelled.ledger()).mineOf(USER_A)).find(r => r.wallId === W1), undefined, 'no label, no row');
+});
+
+test('a docs-index 403 that drops the wall while its marks are in flight leaves no mine row', async () => {
+    let release = null;
+    const gate = new Promise(resolve => { release = resolve; });
+    const page = memberPage({ swReply: 'none', routes: Object.assign(
+        mineRoute(W1, async () => { await gate; return json(body(W1)); }),
+        mineRoute(W2),
+        { [`/api/walls/${W1}/docs`]: () => { setTimeout(() => release(), 50); return new Response('', { status: 403 }); } }) });
+    await page.boot();
+    await page.settle();
+    const ledger = await page.ledger();
+    assert.equal(await ledger.getWall(USER_A, W1), undefined, 'the 403 dropped the wall');
+    assert.equal((await ledger.mineOf(USER_A)).find(r => r.wallId === W1), undefined, 'and no orphan mine row came after it');
 });
 
 test('bwAssetMine.changed refetches one wall once per burst, after the debounce', async () => {
