@@ -275,7 +275,7 @@ function fetchAndStoreAsset(event, route, key, partition) {
 // The fetch handler's entry point. Never rejects on a cache problem: only a failing network fetch reaches the page.
 function respondFromAssetCache(event, route) {
     return partitionFor(event.clientId).then(({ label, readOnly, fallback }) => isLockedPartition(label, readOnly || fallback).then(locked => {
-        // A locked partition (sw-asset-lock.js) is never served nor stored: network-only, like `none`.
+        // A locked partition (service-worker.js, the 401 lock) is never served nor stored: network-only, like `none`.
         if (locked || !isCachingPartition(label) || label !== assetPartitions.current) {
             return fetch(event.request);
         }

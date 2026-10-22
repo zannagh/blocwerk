@@ -4,7 +4,14 @@
 // another user signing in wipes it at once.
 import { test, expect, signIn, installWorker, partitionOf, hasPageModules, settled, ledger, assetKeys, assetPath } from '../harness/fixtures.mjs';
 
-async function signedInAndSettled(page, user, wallId) {
+// Consent answered up front, as a returning user's is: the consent banner (which the lock banner yields to) never shows,
+// so no test races its late, interactive render.
+async function consented(page, baseURL) {
+    await page.context().addCookies([{ name: 'cookie_consent', value: 'accepted', url: baseURL }]);
+}
+
+async function signedInAndSettled(page, user, wallId, baseURL) {
+    await consented(page, baseURL);
     await signIn(page, user);
     await installWorker(page, `/walls/${wallId}`);
     test.skip(!(await hasPageModules(page)), 'needs the page modules');
@@ -12,9 +19,10 @@ async function signedInAndSettled(page, user, wallId) {
     return partitionOf(page);
 }
 
-// The session expires: the browser drops the cookie, as it does an expired one.
+// The session expires: the browser drops the session cookie, as it does an expired one (consent stays).
 async function expire(page, context) {
-    await context.clearCookies();
+    await context.clearCookies({ name: '.AspNetCore.Cookies' });
+    expect((await context.cookies()).map(c => c.name)).not.toContain('.AspNetCore.Cookies');
     await page.goto('/');
     await expect(page.locator('meta[name="bw-partition"]')).toHaveAttribute('content', 'anon');
     await expect(page.locator('meta[name="bw-partition"]')).toHaveAttribute('data-signout', 'expired');
@@ -36,9 +44,9 @@ async function reachedServer(page, server, path) {
     return (await server.hits(mark, path)) > 0;
 }
 
-test('an expired session locks the data: kept, never served, the banner shown; the same user gets it back', async ({ page, context, world, server }) => {
+test('an expired session locks the data: kept, never served, the banner shown; the same user gets it back', async ({ page, context, world, server, baseURL }) => {
     const alpha = world.walls.alpha;
-    const alice = await signedInAndSettled(page, world.users.alice, alpha.id);
+    const alice = await signedInAndSettled(page, world.users.alice, alpha.id, baseURL);
     const before = await ledger(page, alice);
     expect(before.walls.length).toBeGreaterThan(0);
     const panel = await cachedPanel(page, alice, alpha.id);
@@ -52,8 +60,7 @@ test('an expired session locks the data: kept, never served, the banner shown; t
     expect(locked.walls.length).toBe(before.walls.length);
     expect(locked.assets.length).toBe(before.assets.length);
     expect((await assetKeys(page))[`bw-a1-${alice}-img`]).toContain(panel.split('/a/')[1]);
-    // Unhidden (on screen once the consent banner, which comes first, is answered).
-    await expect(page.locator('#bw-offline-lock')).not.toHaveAttribute('hidden', /.*/);
+    await expect(page.locator('#bw-offline-lock')).toBeVisible();
     await expect(page.locator('#bw-offline-lock')).toContainText('Sign in to keep your offline data');
     expect(await reachedServer(page, server, panel), 'locked, the worker never serves it').toBe(true);
 
@@ -72,9 +79,9 @@ test('an expired session locks the data: kept, never served, the banner shown; t
     await expect.poll(() => reachedServer(page, server, panel), { timeout: 15000 }).toBe(false);
 });
 
-test('another user signing in on a locked device wipes the locked data at once', async ({ page, context, world }) => {
+test('another user signing in on a locked device wipes the locked data at once', async ({ page, context, world, baseURL }) => {
     const alpha = world.walls.alpha;
-    const alice = await signedInAndSettled(page, world.users.alice, alpha.id);
+    const alice = await signedInAndSettled(page, world.users.alice, alpha.id, baseURL);
     await expire(page, context);
     expect((await ledger(page, alice)).meta.locked).toEqual(expect.objectContaining({ label: alice }));
 
@@ -88,23 +95,18 @@ test('another user signing in on a locked device wipes the locked data at once',
     await expect(page.locator('#bw-offline-lock')).toBeHidden();
 });
 
-test('"Clear offline data" on the lock banner wipes the locked data', async ({ page, context, world }) => {
+test('"Clear offline data" on the lock banner wipes the locked data', async ({ page, context, world, baseURL }) => {
     const alpha = world.walls.alpha;
-    const alice = await signedInAndSettled(page, world.users.alice, alpha.id);
+    const alice = await signedInAndSettled(page, world.users.alice, alpha.id, baseURL);
     await expire(page, context);
-    // The consent banner comes first (one bottom banner at a time); the lock banner shows once it is answered.
-    const consent = page.locator('.bw-consent-accept');
-    if (await consent.isVisible()) {
-        await expect(page.locator('#bw-offline-lock')).toBeHidden();
-        await page.waitForFunction(() => !!window.Blazor);
-        await expect(async () => {
-            await consent.click({ timeout: 2000 });
-            await expect(page.locator('.bw-consent')).toHaveCount(0, { timeout: 2000 });
-        }).toPass({ timeout: 20000 });
-    }
-    await page.locator('#bw-offline-lock').getByRole('button', { name: 'Clear offline data' }).click();
-    await expect(page.locator('#bw-offline-lock')).toBeHidden();
-    await expect.poll(async () => (await ledger(page, alice)).walls.length).toBe(0);
-    expect((await ledger(page, alice)).meta.locked ?? null).toBeNull();
+    const banner = page.locator('#bw-offline-lock');
+    await expect(banner).toBeVisible();
+    await banner.getByRole('button', { name: 'Clear offline data' }).click();
+    // The clear is done once the lock is gone from the ledger (it goes last, after the partition's rows).
+    await expect.poll(async () => {
+        const state = await ledger(page, alice);
+        return { walls: state.walls.length, locked: state.meta.locked ?? null };
+    }).toEqual({ walls: 0, locked: null });
+    await expect(banner).toBeHidden();
     expect(Object.keys(await assetKeys(page)).filter(n => n.startsWith(`bw-a1-${alice}-`))).toEqual([]);
 });

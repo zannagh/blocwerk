@@ -1,4 +1,4 @@
-// The worker's half of the 401 lock (Phase 3 PR 3.5, sw-asset-lock.js): a partition the page locked (its label in
+// The worker's half of the 401 lock (Phase 3 PR 3.5, service-worker.js): a partition the page locked (its label in
 // `bw-sw-state` at /__bw/locked) is never served and never stored, online or offline, and serving resumes once the page
 // removes the marker and posts sw-refresh-partition. Run by `node --test test/js/`.
 import { test } from 'node:test';

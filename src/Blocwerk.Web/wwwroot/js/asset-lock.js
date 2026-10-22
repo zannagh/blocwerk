@@ -3,7 +3,7 @@
  *
  * When a signed-in device's session EXPIRES, its `u-` partition is not wiped: it is LOCKED, `meta.locked = { label,
  * since }`, and the active label becomes `anon`. Locked data is kept but never served (the worker refuses the label:
- * sw-asset-lock.js reads the marker this file writes to `bw-sw-state`) and never rendered (every reader goes through the
+ * service-worker.js reads the marker this file writes to `bw-sw-state`) and never rendered (every reader goes through the
  * active label; the page shows only "Sign in to keep your offline data" and "Clear offline data", the banner below).
  *
  *   lock     a page `anon` whose meta says `data-signout="expired"` while the active label is `u-…` (asset-session.js),
@@ -34,7 +34,7 @@ window.bwAssetLock = (function (win) {
 
     /** A stored lock as { label, since }, or null when it is none or malformed. */
     function valid(lock) {
-        return lock && USER_LABEL.test(String(lock.label)) && Number.isFinite(lock.since) ? { label: lock.label, since: lock.since } : null;
+        return !!lock && USER_LABEL.test(String(lock.label)) && Number.isFinite(lock.since) ? { label: lock.label, since: lock.since } : null;
     }
 
     /** The `data-signout` of the page's `bw-partition` meta, or null. */
@@ -76,7 +76,7 @@ window.bwAssetLock = (function (win) {
         return dropped();
     }
 
-    // The worker's copy of the lock: a label it never serves or stores under (sw-asset-lock.js).
+    // The worker's copy of the lock: a label it never serves or stores under (service-worker.js, the 401 lock).
     async function mark(lock) {
         try {
             const cache = await win.caches.open(STATE_CACHE);
