@@ -52,8 +52,9 @@ test('a body for another wall, or a malformed one, is not stored; bad ticks and 
     assert.deepEqual(rows[0].favourites, [B2]);
 });
 
-test('403, 404 and 410 drop the stored marks but not the wall; 401, a 5xx and no network keep them', async () => {
-    for (const [status, kept] of [[403, false], [404, false], [410, false], [401, true], [503, true], ['throw', true]]) {
+// A 401 or 410 ends the session (a lock or a wipe of the whole partition): asset-lock.test.mjs (PR 3.5).
+test('403 and 404 drop the stored marks but not the wall; a 5xx and no network keep them', async () => {
+    for (const [status, kept] of [[403, false], [404, false], [503, true], ['throw', true]]) {
         let answer = null;
         const page = await signedInWithMarks({ routes: mineRoute(W1, () => {
             if (answer === 'throw') {

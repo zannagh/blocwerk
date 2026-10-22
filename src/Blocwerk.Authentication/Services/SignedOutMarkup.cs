@@ -9,8 +9,9 @@ namespace Blocwerk.Authentication.Services;
 /// <summary>
 /// The markup of <see cref="SiteDataClearing.SignedOutPage"/>: a bare page that tells the page-side caches the identity
 /// changed and moves on at once. It loads <c>deploy-drafts.js</c>, whose <c>bw:identity-changed</c> listener drops
-/// the editor copies kept on the device for the identity that left, and <c>asset-ledger.js</c> + <c>asset-wipe.js</c>,
-/// whose <c>bwAssetWipe.signedOut()</c> wipes the on-device asset cache before it moves on (capped at 1.5 s, inside the
+/// the editor copies kept on the device for the identity that left, and <c>asset-ledger.js</c> (with its IndexedDB half
+/// <c>asset-ledger-idb.js</c>) + <c>asset-wipe.js</c>, whose <c>bwAssetWipe.signedOut()</c> wipes the on-device asset
+/// cache, a partition locked by the 401 lock included (<c>asset-lock.js</c> forgets the lock), before it moves on (capped at 1.5 s, inside the
 /// 2 s meta refresh; the next page's partition check wipes anyway). Its target is always a local path; anything else becomes "/".
 /// </summary>
 internal static class SignedOutMarkup
@@ -19,7 +20,7 @@ internal static class SignedOutMarkup
     public const string IdentityChangedEvent = "bw:identity-changed";
 
     /// <summary>The scripts the page loads, by their static-asset labels (the paths under wwwroot).</summary>
-    public static readonly string[] Scripts = ["js/deploy-drafts.js", "js/asset-ledger.js", "js/asset-wipe.js"];
+    public static readonly string[] Scripts = ["js/deploy-drafts.js", "js/asset-ledger-idb.js", "js/asset-ledger.js", "js/asset-wipe.js", "js/asset-lock.js"];
 
     /// <summary>The page for <paramref name="next"/>; <paramref name="assetUrl"/> maps a script label to its served URL.</summary>
     public static string Render(string next, Func<string, string>? assetUrl = null)

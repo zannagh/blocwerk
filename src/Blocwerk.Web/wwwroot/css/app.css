@@ -856,6 +856,20 @@ body.bw-tabbar-collapsed .tabbar-restore { display: flex; }
 }
 .bw-install-dismiss:hover { color: var(--text-heading); }
 
+/* The 401 lock's banner (BlocwerkApp.razor #bw-offline-lock, js/asset-lock.js): hidden until the device holds a locked
+   partition. `hidden` must win over .bw-install's display:flex. */
+.bw-offline-lock[hidden] { display: none; }
+/* One bottom banner at a time, consent first (as for the install prompts): the lock banner shows once it is answered. */
+body:has(.bw-consent) .bw-offline-lock { display: none; }
+.bw-offline-lock .bw-install-actions { display: flex; align-items: center; gap: 4px; }
+.bw-offline-lock .bw-install-accept { display: inline-flex; align-items: center; text-decoration: none; }
+.bw-offline-lock-clear {
+    min-height: 44px; padding: 8px 10px;
+    background: none; border: none; cursor: pointer;
+    color: var(--text-secondary); font-weight: 600; white-space: nowrap;
+}
+.bw-offline-lock-clear:hover { color: var(--text-heading); }
+
 /* Task pages (the update flow and its look-over, the 3D view, the hold editor, the marker planner, the crop dialog)
    need every pixel and every button: no install prompt there. It is display:none, so
    bottom-banners.js stops reserving its height too. The cookie banner stays (it has to be answered). */

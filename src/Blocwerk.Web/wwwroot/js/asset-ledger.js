@@ -10,7 +10,8 @@
  *          { kind → { sha, bytes, cursor } }. listed() is every sha a row holds on to.
  *   assets [partition, key]    → { partition, key, sha, width, cache, bytes, cachedAt, verifiedAt }
  *          `key` is the service worker's cache key path without the origin: `{sha}` or `{sha}/{width}`.
- *   meta   'meta'              → { id: 'meta', activePartition, userTag, schema, proto }
+ *   meta   'meta'              → { id: 'meta', activePartition, userTag, schema, proto, locked }
+ *          `locked` { label, since }: a `u-` partition kept hidden after its session expired (asset-lock.js, PR 3.5).
  *   mine   [partition, wallId] → { partition, wallId, cursor, ticks, favourites, fetchedAt } (v2; `u-` only, PR 3.4)
  *
  * UPGRADE v1 → v2 (Phase 3 PR 3.3) is in place: it only adds the `mine` store and stamps meta.schema, so every v1 row
@@ -19,6 +20,7 @@
  * blocks the upgrade while it stays open: then this page runs on memory with `upgradePending()` true (not "storage
  * refused"), and the open, left running, finishes the upgrade once that tab goes; the next page start opens v2. A
  * Release 1/2 page meeting a v2 database gets a VersionError and runs on memory, which it already did on any refusal.
+ * The IndexedDB backend and that open live in asset-ledger-idb.js (bwAssetLedgerIdb), read lazily from here.
  *
  * The budgets count bytes from here, never from navigator.storage.estimate(): on iOS estimate() reported 41 GB in use
  * during a 400 MB write. The ledger is a record, not the truth: asset-cache.js reconciles it against cache.keys() on
@@ -40,9 +42,7 @@ window.bwAssetLedger = (function () {
     const KEYS = { walls: ['partition', 'wallId'], assets: ['partition', 'key'], meta: 'id', mine: ['partition', 'wallId'] };
     // The stores a partition wipe empties (meta records the active label and stays).
     const PARTITIONED = ['walls', 'assets', 'mine'];
-    // An open still unsettled after this (queued behind another tab's blocked upgrade) is a pending upgrade too.
-    const OPEN_WAIT_MS = 5000;
-    const PENDING = 'BlocwerkUpgradePending';
+    const Idb = () => window.bwAssetLedgerIdb;
 
     function keyOf(store, row) {
         const path = KEYS[store];
@@ -75,106 +75,6 @@ window.bwAssetLedger = (function () {
 
     function clone(value) {
         return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
-    }
-
-    function request(req) {
-        return new Promise((resolve, reject) => {
-            req.onsuccess = () => resolve(req.result);
-            req.onerror = () => reject(req.error);
-        });
-    }
-
-    function idbBackend(db) {
-        function run(store, mode, work) {
-            return new Promise((resolve, reject) => {
-                const tx = db.transaction(store, mode);
-                let result;
-                request(work(tx.objectStore(store))).then(r => { result = r; }, reject);
-                tx.oncomplete = () => resolve(result);
-                tx.onerror = () => reject(tx.error);
-                tx.onabort = () => reject(tx.error);
-            });
-        }
-        return {
-            kind: 'idb',
-            get: (store, key) => run(store, 'readonly', s => s.get(key)),
-            put: (store, row) => run(store, 'readwrite', s => s.put(row)).then(() => undefined),
-            delete: (store, key) => run(store, 'readwrite', s => s.delete(key)).then(() => undefined),
-            all: store => run(store, 'readonly', s => s.getAll()),
-            clear: store => run(store, 'readwrite', s => s.clear()).then(() => undefined),
-            // Read and write in ONE transaction, so no other write lands between them.
-            update: (store, key, change) => new Promise((resolve, reject) => {
-                const tx = db.transaction(store, 'readwrite');
-                const target = tx.objectStore(store);
-                let next;
-                const read = target.get(key);
-                read.onsuccess = () => {
-                    next = change(read.result);
-                    if (next) {
-                        target.put(next);
-                    }
-                };
-                tx.oncomplete = () => resolve(next);
-                tx.onerror = () => reject(tx.error);
-                tx.onabort = () => reject(tx.error);
-            })
-        };
-    }
-
-    // Only adds: the stores this version lacks, and the schema stamp on a v1 meta row. No row is rewritten or dropped.
-    function upgrade(db, tx, oldVersion) {
-        for (const [name, keyPath] of Object.entries(KEYS)) {
-            if (!db.objectStoreNames.contains(name)) {
-                db.createObjectStore(name, { keyPath });
-            }
-        }
-        if (oldVersion > 0) {
-            const meta = tx.objectStore('meta');
-            const read = meta.get(META_KEY);
-            read.onsuccess = () => {
-                if (read.result) {
-                    meta.put(Object.assign(read.result, { schema: SCHEMA }));
-                }
-            };
-        }
-    }
-
-    function pendingError() {
-        const error = new Error('blocwerk-assets upgrade pending');
-        error.name = PENDING;
-        return error;
-    }
-
-    /**
-     * Opens v2. `blocked` (an older tab holds the database open) and an open that hangs past OPEN_WAIT_MS reject as
-     * PENDING; the request itself runs on, so the upgrade completes once the other tab closes, and that late
-     * connection is closed at once (this page already went to memory).
-     */
-    function openIdb(idb) {
-        return new Promise((resolve, reject) => {
-            let settled = false;
-            const give = (fn, value) => {
-                if (!settled) {
-                    settled = true;
-                    window.clearTimeout(timer);
-                    fn(value);
-                }
-            };
-            const timer = window.setTimeout(() => give(reject, pendingError()), OPEN_WAIT_MS);
-            const req = idb.open(DB_NAME, DB_VERSION);
-            req.onupgradeneeded = event => upgrade(req.result, req.transaction, event.oldVersion || 0);
-            req.onsuccess = () => {
-                const db = req.result;
-                db.onversionchange = () => db.close();
-                if (settled) {
-                    db.close();
-                    return;
-                }
-                give(resolve, db);
-            };
-            req.onerror = () => give(reject, req.error);
-            req.onblocked = () => give(reject, pendingError());
-        });
     }
 
     // Wraps a backend so that any failure switches to memory for good: a refused write never breaks the page.
@@ -232,15 +132,17 @@ window.bwAssetLedger = (function () {
             mineOf: async partition => byPartition(await b.all('mine'), partition),
             putMine: row => b.put('mine', row),
             deleteMine: (partition, wallId) => b.delete('mine', [partition, wallId]),
-            // Every wall, asset and mine row outside `keep` (null keeps nothing). Meta stays: it records the active label.
+            // Every wall, asset and mine row outside the keep set: the labels in `keep` (an array, or one label; null or []
+            // keeps nothing). The set is the active label plus a locked one (asset-lock.js). Meta stays: it records both.
             deleteAllExcept: async keep => {
+                const kept = new Set((Array.isArray(keep) ? keep : [keep]).filter(label => typeof label === 'string'));
                 for (const store of PARTITIONED) {
-                    if (keep === null) {
+                    if (kept.size === 0) {
                         await b.clear(store);
                         continue;
                     }
                     for (const row of await b.all(store)) {
-                        if (row.partition !== keep) {
+                        if (!kept.has(row.partition)) {
                             await b.delete(store, KEYS[store].map(p => row[p]));
                         }
                     }
@@ -279,9 +181,10 @@ window.bwAssetLedger = (function () {
                         if (!window.indexedDB) {
                             return create(memoryBackend(), true);
                         }
-                        return create(idbBackend(await openIdb(window.indexedDB)));
+                        const spec = { name: DB_NAME, version: DB_VERSION, keys: KEYS, schema: SCHEMA, metaKey: META_KEY };
+                        return create(Idb().backend(await Idb().open(window.indexedDB, spec)));
                     } catch (e) {
-                        pending = !!e && e.name === PENDING;
+                        pending = !!e && !!Idb() && e.name === Idb().PENDING;
                         return create(memoryBackend(), true);
                     }
                 })();

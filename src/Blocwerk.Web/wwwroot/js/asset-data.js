@@ -16,8 +16,9 @@
  *                by each eviction pass) lets it go.
  *   304      → unchanged.
  *   403/404  → the wall is dropped (wipe rule 4), as for the manifest.
- *   anything else, 401 and 410 included, or no network → the stored documents stand. Wiping on 410 and on a forced or
- *              gone sign-out, for the manifest and this index alike, is PR 3.5's.
+ *   401/410  → the session ended, as for the manifest (bwAssetManifest.signedOut): a `u-` partition locks on a 401
+ *              `expired`, anything else (`forced`, `gone`, any 410) wipes it.
+ *   anything else, or no network → the stored documents stand.
  * Only a wall that already has a row in the active partition is refreshed (the manifest round made it): a kiosk keeps
  * its bound wall only, and a share link the wall it opened. This writes only its fields (data, dataEtag, dataPrev), through
  * the ledger's one merge.
@@ -111,7 +112,7 @@ window.bwAssetData = (function (win) {
 
     /**
      * Refreshes one wall's documents. env: asset-cache.js's { fetch, ledger, partition(), caches, origin }. opts:
-     * { token, dropWall }. Returns 'updated' | 'unchanged' | 'dropped' | 'offline' | 'switched' | 'skipped'.
+     * { token, dropWall }. Returns 'updated' | 'unchanged' | 'dropped' | 'signed-out' | 'offline' | 'switched' | 'skipped'.
      */
     async function refresh(env, partition, wallId, opts) {
         const row = await env.ledger.getWall(partition, wallId);
@@ -131,6 +132,9 @@ window.bwAssetData = (function (win) {
         if (response.status === 403 || response.status === 404) {
             await opts.dropWall(wallId);
             return 'dropped';
+        }
+        if (await win.bwAssetManifest.signedOut(env, response)) {
+            return 'signed-out';
         }
         if (response.status === 304) {
             return 'unchanged';

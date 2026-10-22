@@ -151,6 +151,9 @@ public static class AuthenticationServices
                 // claim leaves the validator untouched on its first line, so the 8h sliding window,
                 // the claims and the cookie of an ordinary login are exactly as they were.
                 KioskSessionValidator.Configure(options);
+
+                // A sign-in drops the sticky `forced`/`gone` marker of an earlier sign-out (the device's 401 lock).
+                SignOutReason.Configure(options);
             })
             .AddScheme<ApiKeyAuthenticationOptions, ApiKeyAuthenticationHandler>(
                 ApiKeyAuthenticationHandler.SchemeName,

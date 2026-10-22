@@ -67,6 +67,12 @@ public class SiteDataClearingTests
             < page.Content.IndexOf("window.bwAssetWipe.signedOut()", StringComparison.Ordinal));
         Assert.True(page.Content.IndexOf("<script src=\"/js/asset-ledger.js\"></script>", StringComparison.Ordinal)
             < page.Content.IndexOf("<script src=\"/js/asset-wipe.js\"></script>", StringComparison.Ordinal));
+
+        // The ledger's IndexedDB half, and the 401 lock, whose lock the sign-out forgets too (PR 3.5).
+        Assert.True(page.Content.IndexOf("<script src=\"/js/asset-ledger-idb.js\"></script>", StringComparison.Ordinal)
+            is var idb && idb >= 0 && idb < page.Content.IndexOf("<script src=\"/js/asset-ledger.js\"></script>", StringComparison.Ordinal));
+        Assert.True(page.Content.IndexOf("<script src=\"/js/asset-lock.js\"></script>", StringComparison.Ordinal)
+            is var lockScript && lockScript >= 0 && lockScript < page.Content.IndexOf("window.bwAssetWipe.signedOut()", StringComparison.Ordinal));
     }
 
     /// <summary>A kiosk session ending (release, idle) keeps the tablet's shared, wall-pinned cache.</summary>
@@ -77,13 +83,29 @@ public class SiteDataClearingTests
 
         Assert.IsType<LocalRedirectResult>(await controller.Logout());
         Assert.False(http.Response.Headers.ContainsKey(SiteDataClearing.HeaderName));
+        Assert.DoesNotContain(SignOutReason.MarkerCookie, http.Response.Headers.SetCookie.ToString());
+    }
+
+    /// <summary>
+    /// An account logout sets the sticky <c>signed-out</c> marker (PR 3.5): if the page's own wipe never lands, the next
+    /// anonymous page still says why, and the device wipes the partition instead of locking it for this account's return.
+    /// </summary>
+    [Fact]
+    public async Task AnAccountLogout_SetsTheSignedOutMarker()
+    {
+        var (controller, http, _) = Controller(isKiosk: false);
+
+        await controller.Logout();
+
+        Assert.Contains($"{SignOutReason.MarkerCookie}=signed-out", http.Response.Headers.SetCookie.ToString());
+        Assert.Equal(Blocwerk.Contracts.Assets.SignOutReasons.SignedOut, SignOutReason.Of(http));
     }
 
     /// <summary>The scripts load by their fingerprinted URLs (the endpoint's asset map), as BlocwerkApp's do through @Assets.</summary>
     [Fact]
     public void TheSignedOutPage_LoadsItsScriptsByTheirFingerprintedUrls()
     {
-        string[] scripts = ["js/deploy-drafts.js", "js/asset-ledger.js", "js/asset-wipe.js"];
+        string[] scripts = ["js/deploy-drafts.js", "js/asset-ledger-idb.js", "js/asset-ledger.js", "js/asset-wipe.js", "js/asset-lock.js"];
         var assets = new ResourceAssetCollection(scripts
             .Select(label => new ResourceAsset(label.Replace(".js", ".abc123.js", StringComparison.Ordinal), [new ResourceAssetProperty("label", label)]))
             .ToList());
@@ -95,6 +117,8 @@ public class SiteDataClearingTests
         Assert.Contains("<script src=\"/js/asset-wipe.abc123.js\"></script>", page.Content);
         Assert.Contains("<script src=\"/js/asset-ledger.abc123.js\"></script>", page.Content);
         Assert.Contains("<script src=\"/js/deploy-drafts.abc123.js\"></script>", page.Content);
+        Assert.Contains("<script src=\"/js/asset-ledger-idb.abc123.js\"></script>", page.Content);
+        Assert.Contains("<script src=\"/js/asset-lock.abc123.js\"></script>", page.Content);
         Assert.DoesNotContain("src=\"/js/asset-wipe.js\"", page.Content);
     }
 

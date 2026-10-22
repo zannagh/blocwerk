@@ -8,6 +8,7 @@ using Blocwerk.Web.Components.Shared;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -25,7 +26,6 @@ public sealed partial class CachePartitionMetaTests : IDisposable
 
     [Theory]
     [InlineData("u-abcdefghijklmnopqrst")]
-    [InlineData("anon")]
     [InlineData("k-abcdefghijklmnopqrst")]
     [InlineData("none")]
     public async Task TheMeta_CarriesThePartition(string partition)
@@ -34,6 +34,30 @@ public sealed partial class CachePartitionMetaTests : IDisposable
         resolver.ResolveAsync().Returns(partition);
 
         Assert.Equal($"<meta name=\"bw-partition\" content=\"{partition}\" />", (await RenderAsync(resolver)).Trim());
+    }
+
+    /// <summary>
+    /// An <c>anon</c> page also says why nobody is signed in (PR 3.5): <c>expired</c> by default, the sticky marker's
+    /// <c>forced</c> or <c>gone</c>. Only <c>expired</c> lets the device lock its <c>u-</c> partition instead of wiping it.
+    /// </summary>
+    [Theory]
+    [InlineData(null, "expired")]
+    [InlineData("forced", "forced")]
+    [InlineData("gone", "gone")]
+    public async Task AnAnonymousMeta_CarriesTheSignOutReason(string? marker, string expected)
+    {
+        var resolver = Substitute.For<ICachePartitionResolver>();
+        resolver.ResolveAsync().Returns("anon");
+        var http = new DefaultHttpContext();
+        if (marker is not null)
+        {
+            http.Request.Headers.Cookie = $"{SignOutReason.MarkerCookie}={marker}";
+        }
+
+        var accessor = Substitute.For<IHttpContextAccessor>();
+        accessor.HttpContext.Returns(http);
+
+        Assert.Equal($"<meta name=\"bw-partition\" content=\"anon\" data-signout=\"{expected}\" />", (await RenderAsync(resolver, accessor)).Trim());
     }
 
     /// <summary>
@@ -123,9 +147,15 @@ public sealed partial class CachePartitionMetaTests : IDisposable
         file,
         NullLogger<DataProtectionCachePartitionKey>.Instance);
 
-    private static async Task<string> RenderAsync(ICachePartitionResolver resolver)
+    private static async Task<string> RenderAsync(ICachePartitionResolver resolver, IHttpContextAccessor? accessor = null)
     {
-        await using var services = new ServiceCollection().AddSingleton(resolver).BuildServiceProvider();
+        var collection = new ServiceCollection().AddSingleton(resolver);
+        if (accessor is not null)
+        {
+            collection.AddSingleton(accessor);
+        }
+
+        await using var services = collection.BuildServiceProvider();
         await using var renderer = new HtmlRenderer(services, NullLoggerFactory.Instance);
         return await renderer.Dispatcher.InvokeAsync(async () =>
             (await renderer.RenderComponentAsync<CachePartitionMeta>(ParameterView.Empty)).ToHtmlString());

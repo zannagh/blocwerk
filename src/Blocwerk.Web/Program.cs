@@ -4,6 +4,7 @@ using System.Reflection;
 using Blocwerk.Authentication;
 using Blocwerk.Authentication.Controllers;
 using Blocwerk.Authentication.Endpoints;
+using Blocwerk.Authentication.Services;
 using Blocwerk.Core;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Enums;
@@ -283,7 +284,7 @@ public static class Program
             .AddCheck<BusyHealthCheck>("busy", tags: new[] { "busy" })
             .AddCheck<DatabaseHealthCheck>("database", tags: new[] { "db" });
 
-        ConfigureApiCookieBehaviour(builder);
+        ConfigureApiCookieBehaviour(builder.Services);
 
         var app = builder.Build();
 
@@ -552,9 +553,9 @@ public static class Program
     /// and drop it.</item>
     /// </list>
     /// </summary>
-    private static void ConfigureApiCookieBehaviour(WebApplicationBuilder builder)
+    internal static void ConfigureApiCookieBehaviour(IServiceCollection services)
     {
-        builder.Services.PostConfigure<CookieAuthenticationOptions>(
+        services.PostConfigure<CookieAuthenticationOptions>(
             CookieAuthenticationDefaults.AuthenticationScheme,
             options =>
             {
@@ -571,7 +572,9 @@ public static class Program
 
                     if (IsApiRequest(context.Request))
                     {
+                        // With the reason (SignOutReasons): a u- device locks its data on `expired` and wipes it otherwise.
                         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                        SignOutReason.Stamp(context.HttpContext);
                         return Task.CompletedTask;
                     }
 

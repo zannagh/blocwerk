@@ -231,7 +231,8 @@ window.bwAssetCache = (function (win) {
 
     async function start() {
         const ledger = await win.bwAssetLedger.open();
-        state.env = { caches: win.caches, ledger: win.bwAssetSession.guard(ledger), origin: win.location.origin, fetch: (u, i) => win.fetch(u, i), now, partition: () => state.active };
+        state.env = { caches: win.caches, ledger: win.bwAssetSession.guard(ledger), origin: win.location.origin, fetch: (u, i) => win.fetch(u, i), now, partition: () => state.active,
+            signedOut: response => win.bwAssetLock.refused(state, response) }; // a 401/410 of the manifest, docs or marks
         if (win.navigator.serviceWorker && win.navigator.serviceWorker.addEventListener) {
             win.navigator.serviceWorker.addEventListener('message', onWorkerMessage);
         }

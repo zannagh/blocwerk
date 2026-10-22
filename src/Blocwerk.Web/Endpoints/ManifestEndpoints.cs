@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using System.Text.Json;
 using Blocwerk.Authentication.Authorization;
+using Blocwerk.Authentication.Services;
 using Blocwerk.Contracts.Assets;
 using Blocwerk.Core.Assets.Manifest;
 using Blocwerk.Core.Assets.Partition;
@@ -89,7 +90,9 @@ public static class ManifestEndpoints
             partition = CachePartitions.Unknown;
         }
 
-        return Results.Json(new CachePartitionResponse(partition));
+        // Why nobody is signed in, for an `anon` caller only: the worker and the page lock or wipe a `u-` partition by it.
+        var signOut = partition == CachePartitions.Anonymous ? SignOutReason.Of(http) : null;
+        return Results.Json(new CachePartitionResponse(partition, signOut));
     }
 
     internal static async Task<IResult> HandleSummaryAsync(HttpContext http, [FromServices] CacheSummaryService summaries, CancellationToken ct)

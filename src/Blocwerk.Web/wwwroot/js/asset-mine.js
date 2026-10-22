@@ -10,9 +10,11 @@
  *                  when the body's `partition` is this tab's label and the wall still has its row (a dropWall racing
  *                  the fetch wins). Another label means the cookie is another user's now (they signed in in another
  *                  tab): nothing is stored, and this partition's row for the wall goes too.
- *   403/404/410  → the stored row goes, the wall's other data stays (a kiosk session, a class that sees no marks, a wall
- *                  that left, an account that is gone; the manifest and the docs index decide about the wall itself).
- *   401, 5xx, no network → the stored row stands (whether a 401 locks or wipes is PR 3.5's).
+ *   403/404      → the stored row goes, the wall's other data stays (a kiosk session, a class that sees no marks, a wall
+ *                  that left; the manifest and the docs index decide about the wall itself).
+ *   401/410      → the session ended (bwAssetManifest.signedOut, PR 3.5): a 401 `expired` locks the `u-` partition, a
+ *                  `forced` or `gone` 401 and any 410 (an account that is gone) wipe it, this row included.
+ *   5xx, no network → the stored row stands.
  * ONLY under a `u-` partition, for a wall that has a row in it. `k-` and `anon` never fetch one and never write one
  * (the session's guard refuses such a write as well, asset-session.js). Every wipe of a partition drops its mine rows
  * with it: rules 1, 2 and 6 and the every-start sweep (ledger deleteAllExcept), rules 4/5 (dropWall), Clear offline data.
@@ -24,6 +26,7 @@ window.bwAssetMine = (function (win) {
     const DEBOUNCE_MS = 2000;
     const USER_LABEL = /^u-[a-z2-7]{20}$/;
     const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+    // 410 only reaches this when no env.signedOut is wired; with it, a 410 wipes the whole partition.
     const DROP = new Set([403, 404, 410]);
     const timers = new Map();
 
@@ -59,7 +62,7 @@ window.bwAssetMine = (function (win) {
 
     /**
      * Refreshes one wall's marks. env: asset-cache.js's { fetch, ledger, partition(), now }.
-     * Returns 'updated' | 'dropped' | 'foreign' | 'offline' | 'switched' | 'skipped'.
+     * Returns 'updated' | 'dropped' | 'signed-out' | 'foreign' | 'offline' | 'switched' | 'skipped'.
      */
     async function refresh(env, partition, wallId) {
         if (!USER_LABEL.test(partition || '') || !(await env.ledger.getWall(partition, wallId))) {
@@ -73,6 +76,9 @@ window.bwAssetMine = (function (win) {
         }
         if (env.partition() !== partition) {
             return 'switched';
+        }
+        if (await win.bwAssetManifest.signedOut(env, response)) {
+            return 'signed-out';
         }
         if (DROP.has(response.status)) {
             await env.ledger.deleteMine(partition, wallId);

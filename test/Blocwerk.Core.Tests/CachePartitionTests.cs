@@ -99,6 +99,32 @@ public class CachePartitionTests
         Assert.Equal(await Resolver().ResolveAsync(), body.RootElement.GetProperty("partition").GetString());
     }
 
+    /// <summary>
+    /// The route says why nobody is signed in, for an <c>anon</c> caller only (PR 3.5): the sticky marker's reason, else
+    /// <c>expired</c>; a signed-in caller gets null.
+    /// </summary>
+    [Theory]
+    [InlineData("anon", null, "expired")]
+    [InlineData("anon", "gone", "gone")]
+    [InlineData("u-abcdefghijklmnopqrst", "forced", null)]
+    public async Task ThePartitionRoute_CarriesTheSignOutReason_ForAnAnonymousCaller(string partition, string? marker, string? expected)
+    {
+        var resolver = Substitute.For<ICachePartitionResolver>();
+        resolver.ResolveAsync().Returns(partition);
+        var http = new DefaultHttpContext { RequestServices = new ServiceCollection().AddLogging().BuildServiceProvider() };
+        http.Response.Body = new MemoryStream();
+        if (marker is not null)
+        {
+            http.Request.Headers.Cookie = $"{Blocwerk.Authentication.Services.SignOutReason.MarkerCookie}={marker}";
+        }
+
+        await (await ManifestEndpoints.HandlePartitionAsync(http, resolver)).ExecuteAsync(http);
+
+        using var body = JsonDocument.Parse(((MemoryStream)http.Response.Body).ToArray());
+        var signOut = body.RootElement.GetProperty("signOut");
+        Assert.Equal(expected, signOut.ValueKind == JsonValueKind.Null ? null : signOut.GetString());
+    }
+
     /// <summary>A resolver fault answers <c>unknown</c> with a 200: a 5xx would send the worker back to its last label.</summary>
     [Fact]
     public async Task ThePartitionRoute_AnswersUnknown_WhenTheResolverFails()

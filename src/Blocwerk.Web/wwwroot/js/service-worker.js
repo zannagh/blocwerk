@@ -32,6 +32,43 @@ const PROTO = 1;
 
 importScripts('/js/sw-asset-cache.js');
 
+// The worker's half of the 401 lock (Phase 3 PR 3.5): a `u-` partition the page locked after its session expired
+// (asset-lock.js) is kept for the same user's return but never served. The page writes the locked label to
+// `bw-sw-state` (ASSET_LOCK_KEY) and removes it on unlock or wipe; respondFromAssetCache and storeAsset
+// (sw-asset-cache.js) never serve from, nor store into, a partition of that label. Online the served label is the
+// cookie's, never the locked one, so this is a second guard there; on the OFFLINE path (the last known label) it is the
+// only one, so that path reads the marker fresh, while the online path uses the copy read once per worker start and
+// again on every `sw-refresh-partition`. Here, not in an imported file of its own: a worker that WebKit restarts with
+// the network down must never lack it.
+const ASSET_LOCK_KEY = '/__bw/locked';
+
+const assetLock = { label: null, read: null };
+
+// The locked label, or null. `fresh` reads the marker again instead of the copy.
+function lockedPartition(fresh) {
+    if (fresh || !assetLock.read) {
+        assetLock.read = caches.match(ASSET_LOCK_KEY, { cacheName: ASSET_STATE_CACHE })
+            .then(stored => (stored ? stored.text() : null))
+            .then(label => {
+                assetLock.label = typeof label === 'string' && label ? label : null;
+                return assetLock.label;
+            })
+            .catch(() => assetLock.label);
+    }
+    return assetLock.read;
+}
+
+// The next request reads the marker again (a page changed the lock).
+function forgetLockedPartition() {
+    assetLock.read = null;
+}
+
+// True when `label` must not be served or stored: it is the locked partition.
+function isLockedPartition(label, fresh) {
+    return lockedPartition(fresh).then(locked => locked !== null && locked === label);
+}
+
+
 // Stable-path assets only. The app's own CSS/JS are referenced from BlocwerkApp.razor through
 // @Assets[...], so the page requests them under a build-specific fingerprinted name that this file
 // cannot know. They are picked up by the runtime cache below on the first online load instead, and
