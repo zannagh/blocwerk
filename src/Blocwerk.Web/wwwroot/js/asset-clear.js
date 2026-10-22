@@ -4,18 +4,19 @@
  *
  *   clear():  stops this page's fill (`state.stopped`, which the runner reads as "hidden" at its next task) and waits for
  *             the running one, at most STOP_WAIT_MS (a large splat download must not hold the button). Then it deletes
- *             this partition's `bw-a1-{p}-img` / `-3d` caches and ledger rows (walls, assets, mine): never `blocwerk-offline` (unsent ticks),
+ *             this partition's `bw-a1-{p}-img` / `-3d` caches and ledger rows (walls, assets, mine), and a locked partition
+ *             with its lock (PR 3.5): never `blocwerk-offline` (unsent ticks),
  *             `bw-sw-state` or the shell, and `meta.activePartition` stays. Then it rebuilds: `stopped` and the fresh
  *             set are reset and every wall of the viewer (and the open wall) is refetched and filled, core first.
  *   Other tabs of the same partition hear `clearing` (they stop their fill) and `cleared` (they rebuild) over a
- *   BroadcastChannel, or a localStorage event where there is none. A tab that never hears `cleared` (the clearing tab
+ *   BroadcastChannel, and `locked` (PR 3.5: the 401 lock locked or wiped it; they stop for good) over the same
+ *   channel, or a localStorage event where there is none. A tab that never hears `cleared` (the clearing tab
  *   closed) rebuilds after RESUME_MS anyway.
  */
 window.bwAssetClear = (function (win) {
     'use strict';
 
     const CHANNEL = 'bw-asset-clear';
-    const PREFIX = 'bw-a1-';
     const STOP_WAIT_MS = 10000;
     const RESUME_MS = 30000;
     const REAL_LABEL = /^(anon|[uk]-[a-z2-7]{20})$/;
@@ -60,23 +61,11 @@ window.bwAssetClear = (function (win) {
         return drained();
     }
 
+    // This partition's caches and rows (walls, assets, mine), and a locked one with its lock (asset-lock.js).
     async function wipe(state) {
-        const partition = state.active;
-        for (const suffix of ['img', '3d']) {
-            try {
-                await state.env.caches.delete(`${PREFIX}${partition}-${suffix}`);
-            } catch (e) {
-                /* storage unavailable: the reconcile on the next start catches up */
-            }
-        }
-        for (const wall of await state.env.ledger.wallsOf(partition)) {
-            await state.env.ledger.deleteWall(partition, wall.wallId);
-        }
-        for (const asset of await state.env.ledger.assetsOf(partition)) {
-            await state.env.ledger.deleteAsset(partition, asset.key);
-        }
-        for (const mine of await state.env.ledger.mineOf(partition)) {
-            await state.env.ledger.deleteMine(partition, mine.wallId);
+        await win.bwAssetWipe.dropPartition(state.env, state.active);
+        if (win.bwAssetLock && typeof win.bwAssetLock.clear === 'function') {
+            await win.bwAssetLock.clear();
         }
     }
 
@@ -117,6 +106,12 @@ window.bwAssetClear = (function (win) {
         }
         win.clearTimeout(resumeTimer);
         resumeTimer = null;
+        if (message.type === 'locked') {
+            // Another tab locked or wiped this partition (asset-lock.js): this tab stops and shows none of it either.
+            win.bwAssetLock.stopTab(state);
+            await refreshMarks();
+            return;
+        }
         if (message.type === 'clearing') {
             state.stopped = true;
             resumeTimer = win.setTimeout(() => { resumeTimer = null; rebuild(state).then(refreshMarks).catch(() => undefined); }, RESUME_MS);
@@ -150,5 +145,6 @@ window.bwAssetClear = (function (win) {
         });
     }
 
-    return { STOP_WAIT_MS, RESUME_MS, clear, listen };
+    // `announce`: asset-lock.js tells the other tabs of a partition it locked or wiped ({ type: 'locked', partition }).
+    return { STOP_WAIT_MS, RESUME_MS, clear, listen, announce: post };
 })(window);

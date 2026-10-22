@@ -177,7 +177,7 @@ function partitionFor(clientId) {
     }
     let timer;
     const waited = new Promise(resolve => { timer = setTimeout(() => resolve(null), ASSET_LOOKUP_TIMEOUT_MS); });
-    return Promise.race([entry.lookup.then(result => ({ label: result.label, readOnly: false })), waited])
+    return Promise.race([entry.lookup.then(result => ({ label: result.label, readOnly: false, fallback: !result.settled })), waited])
         .then(answer => {
             clearTimeout(timer);
             if (answer !== null) {
@@ -192,6 +192,7 @@ function partitionFor(clientId) {
 // forget what that page was told and ask the server again, so `current` follows the cookie even on a page that loads
 // no /a/ image (which is otherwise the only thing that makes the worker look). Resolves with the fresh label.
 function refreshPartition(clientId) {
+    forgetLockedPartition();
     if (!clientId) {
         return lookupPartition().then(result => result.label);
     }
@@ -222,7 +223,7 @@ function isStorableAsset(response, route) {
 }
 
 function storeAsset(clientId, copy, route, key, partition) {
-    if (assetPartitions.current !== partition) {
+    if (assetPartitions.current !== partition || assetLock.label === partition) {
         return Promise.resolve();
     }
     const type = copy.headers.get('content-type') || '';
@@ -273,13 +274,14 @@ function fetchAndStoreAsset(event, route, key, partition) {
 
 // The fetch handler's entry point. Never rejects on a cache problem: only a failing network fetch reaches the page.
 function respondFromAssetCache(event, route) {
-    return partitionFor(event.clientId).then(({ label, readOnly }) => {
-        if (!isCachingPartition(label) || label !== assetPartitions.current) {
+    return partitionFor(event.clientId).then(({ label, readOnly, fallback }) => isLockedPartition(label, readOnly || fallback).then(locked => {
+        // A locked partition (service-worker.js, the 401 lock) is never served nor stored: network-only, like `none`.
+        if (locked || !isCachingPartition(label) || label !== assetPartitions.current) {
             return fetch(event.request);
         }
         const key = assetKey(route);
         // Read-only (a slow lookup): a hit is served, a miss streams from the network and is not stored.
         const miss = readOnly ? () => fetch(event.request, { cache: 'no-store' }) : () => fetchAndStoreAsset(event, route, key, label);
         return matchAsset(label, key).then(cached => cached || miss());
-    });
+    }));
 }

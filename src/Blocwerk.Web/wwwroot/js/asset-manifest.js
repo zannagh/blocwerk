@@ -7,6 +7,7 @@
  *   304      → unchanged; the fetch time moves.
  *   403/404  → the wall is dropped (wipe rule 4): no access any more, a rotated share token, a kiosk that may not
  *              cache it.
+ *   401/410  → the session ended (signedOut, PR 3.5): a `u-` partition locks on a 401 `expired`, anything else wipes.
  *   anything else, or no network → the stored copy stands (offline: render from cache).
  * `pending > 0` means some assets have no hash yet (listed with `sha: null`, used network-only); the caller asks again
  * after pendingDelayMs (60 s, 2 min, 5 min, then every 15 min while it stays pending), when the server's backfill
@@ -66,6 +67,18 @@ window.bwAssetManifest = (function () {
         });
     }
 
+    /**
+     * A 401 or 410: the session ended. env.signedOut (asset-lock.js refused) locks a `u-` partition on a 401 `expired` and
+     * wipes otherwise; the stored copy is not written either way. Without it (a caller that never wired it) it stands.
+     */
+    async function signedOut(env, response) {
+        if ((response.status !== 401 && response.status !== 410) || typeof env.signedOut !== 'function') {
+            return false;
+        }
+        await env.signedOut(response);
+        return true;
+    }
+
     async function refresh(env, partition, wallId, opts) {
         const now = env.now();
         const stored = await env.ledger.getWall(partition, wallId);
@@ -98,6 +111,9 @@ window.bwAssetManifest = (function () {
             await opts.dropWall(wallId);
             return { outcome: 'dropped', pending: 0 };
         }
+        if (await signedOut(env, response)) {
+            return { outcome: 'signed-out', pending: 0 };
+        }
         if (response.status === 304) {
             row.fetchedAt = now;
             await write(env, row);
@@ -124,5 +140,5 @@ window.bwAssetManifest = (function () {
         return { outcome: 'updated', pending: row.pending };
     }
 
-    return { PENDING_RETRY_MS, PENDING_CAP_MS, RETENTION_MS, pendingDelayMs, compact, manifestUrl, refresh };
+    return { PENDING_RETRY_MS, PENDING_CAP_MS, RETENTION_MS, pendingDelayMs, compact, manifestUrl, signedOut, refresh };
 })();

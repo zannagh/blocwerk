@@ -141,8 +141,9 @@ test('dropWall removes the wall\'s documents; a 403 index drops the wall like a 
     assert.ok(!(await (await again.ledger()).assetsOf(USER_A)).some(a => a.sha === docSha('holds')));
 });
 
-test('a 401, a 5xx or no network keep the stored documents', async () => {
-    for (const failing of [() => new Response('', { status: 401 }), () => new Response('', { status: 503 }), () => { throw new TypeError('offline'); }]) {
+// A 401 or 410 ends the session: asset-lock.test.mjs (the 401 lock, PR 3.5).
+test('a 5xx or no network keep the stored documents', async () => {
+    for (const failing of [() => new Response('', { status: 503 }), () => { throw new TypeError('offline'); }]) {
         const page = memberPage({ routes: docsRoute(W1, index(docsOf())) });
         await page.boot();
         page.win.routes[`/api/walls/${W1}/docs`] = failing;

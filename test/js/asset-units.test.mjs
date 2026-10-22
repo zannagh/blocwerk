@@ -26,6 +26,23 @@ test('the ledger keeps walls and assets per partition and wipes all but one', as
     assert.equal((await ledger.wallsOf('a')).length, 0);
 });
 
+test('the ledger wipes all but a keep set: the active label and a locked one', async () => {
+    const ledger = Ledger.memory();
+    for (const p of ['a', 'b', 'c']) {
+        await ledger.updateWall(p, 'w1', () => ({ partition: p, wallId: 'w1', entries: [] }));
+        await ledger.putAsset({ partition: p, key: 'k1', sha: 'k1' });
+        await ledger.putMine({ partition: p, wallId: 'w1', ticks: [], favourites: [] });
+    }
+    await ledger.deleteAllExcept(['a', 'c']);
+    for (const [p, n] of [['a', 1], ['b', 0], ['c', 1]]) {
+        assert.equal((await ledger.wallsOf(p)).length, n, `walls of ${p}`);
+        assert.equal((await ledger.assetsOf(p)).length, n, `assets of ${p}`);
+        assert.equal((await ledger.mineOf(p)).length, n, `mine of ${p}`);
+    }
+    await ledger.deleteAllExcept([]);
+    assert.equal((await ledger.wallsOf('a')).length + (await ledger.wallsOf('c')).length, 0, '[] keeps nothing');
+});
+
 test('a ledger whose storage refuses a write moves to memory and keeps working', async () => {
     const broken = { kind: 'idb', get: async () => { throw new Error('x'); }, put: async () => { throw new Error('QuotaExceededError'); }, delete: async () => { throw new Error('x'); }, all: async () => { throw new Error('x'); }, clear: async () => { throw new Error('x'); } };
     const ledger = Ledger.create(broken);
@@ -224,23 +241,23 @@ test('the wipe decision: rules 1 and 6, offline and unknown', () => {
         const r = plain(Wipe.decide(prev, label, token, userChanged));
         return [r.wipe, r.keep, r.active, r.page, r.identityChanged];
     };
-    assert.deepEqual(d(USER_A, USER_A), [false, USER_A, USER_A, USER_A, false]);
-    assert.deepEqual(d(USER_A, KIOSK), [true, KIOSK, KIOSK, KIOSK, true]);
-    assert.deepEqual(d(null, USER_A), [true, USER_A, USER_A, USER_A, false]);
-    assert.deepEqual(d(USER_B, USER_A), [true, USER_A, USER_A, USER_A, false], 'a new label alone (key rotation) is no identity change');
-    assert.deepEqual(d(USER_B, USER_A, false, true), [true, USER_A, USER_A, USER_A, true]);
-    assert.deepEqual(d(USER_A, 'anon'), [true, null, 'anon', 'anon', true]);
-    assert.deepEqual(d(USER_A, null), [true, null, 'none', 'none', true]);
-    assert.deepEqual(d(USER_A, 'none'), [true, null, 'none', 'none', true]);
-    assert.deepEqual(d(USER_A, 'garbage'), [true, null, 'none', 'none', true]);
-    assert.deepEqual(d(USER_A, 'offline'), [false, USER_A, USER_A, 'offline', false]);
-    assert.deepEqual(d(USER_A, 'offline', false, true), [false, USER_A, USER_A, 'offline', false]);
-    assert.deepEqual(d(USER_A, 'unknown'), [false, USER_A, USER_A, 'unknown', false]);
-    assert.deepEqual(d(USER_A, 'unknown', false, true), [true, null, 'none', 'unknown', true]);
-    assert.deepEqual(d(KIOSK, KIOSK, false, true), [false, KIOSK, KIOSK, KIOSK, true]);
-    assert.deepEqual(d('anon', 'anon'), [true, null, 'anon', 'anon', false], 'rule 6 announces only when the device was not anonymous');
-    assert.deepEqual(d(null, 'anon'), [true, null, 'anon', 'anon', false]);
-    assert.deepEqual(d('anon', 'anon', true), [false, 'anon', 'anon', 'anon', false]);
+    assert.deepEqual(d(USER_A, USER_A), [false, [USER_A], USER_A, USER_A, false]);
+    assert.deepEqual(d(USER_A, KIOSK), [true, [KIOSK], KIOSK, KIOSK, true]);
+    assert.deepEqual(d(null, USER_A), [true, [USER_A], USER_A, USER_A, false]);
+    assert.deepEqual(d(USER_B, USER_A), [true, [USER_A], USER_A, USER_A, false], 'a new label alone (key rotation) is no identity change');
+    assert.deepEqual(d(USER_B, USER_A, false, true), [true, [USER_A], USER_A, USER_A, true]);
+    assert.deepEqual(d(USER_A, 'anon'), [true, [], 'anon', 'anon', true]);
+    assert.deepEqual(d(USER_A, null), [true, [], 'none', 'none', true]);
+    assert.deepEqual(d(USER_A, 'none'), [true, [], 'none', 'none', true]);
+    assert.deepEqual(d(USER_A, 'garbage'), [true, [], 'none', 'none', true]);
+    assert.deepEqual(d(USER_A, 'offline'), [false, [USER_A], USER_A, 'offline', false]);
+    assert.deepEqual(d(USER_A, 'offline', false, true), [false, [USER_A], USER_A, 'offline', false]);
+    assert.deepEqual(d(USER_A, 'unknown'), [false, [USER_A], USER_A, 'unknown', false]);
+    assert.deepEqual(d(USER_A, 'unknown', false, true), [true, [], 'none', 'unknown', true]);
+    assert.deepEqual(d(KIOSK, KIOSK, false, true), [false, [KIOSK], KIOSK, KIOSK, true]);
+    assert.deepEqual(d('anon', 'anon'), [true, [], 'anon', 'anon', false], 'rule 6 announces only when the device was not anonymous');
+    assert.deepEqual(d(null, 'anon'), [true, [], 'anon', 'anon', false]);
+    assert.deepEqual(d('anon', 'anon', true), [false, ['anon'], 'anon', 'anon', false]);
 });
 
 test('the share token comes from the /shared/ segment or ?token=', () => {

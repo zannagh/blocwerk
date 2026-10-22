@@ -12,6 +12,11 @@
  * is still announced (bw:identity-changed, the deploy drafts cleared). When localStorage cannot be read either, the
  * previous user counts as unknown and changed, so it fails towards announcing (the drafts go), never towards keeping.
  *
+ * THE 401 LOCK (PR 3.5, asset-lock.js): before the wipes, the lock is resolved: an `anon` page saying `expired` after
+ * a `u-` label locks it, the same label unlocks it, and anything else drops it. A kept lock's label joins every wipe's
+ * keep set here, the every-start sweep's included, so a normal start never wipes it early and another identity always
+ * does. The mirror carries the lock too, so a degraded page keeps it as well.
+ *
  * guard(): a ledger whose writes (putAsset, updateWall, putMine) go through only while the ledger's `activePartition` is the
  * row's partition. A tab still showing an old identity (another tab signed out or in since) can then never rewrite
  * rows for the partition it no longer owns. putMine also needs a `u-` row: a kiosk or share page never stores marks.
@@ -26,7 +31,7 @@ window.bwAssetSession = (function () {
     // Equal to no user tag, so an unreadable mirror counts as a changed user.
     const UNKNOWN_TAG = '\u0000unknown';
 
-    // { activePartition, userTag } of the last start, or null when localStorage cannot be read.
+    // { activePartition, userTag, locked } of the last start, or null when localStorage cannot be read.
     function readMirror(win) {
         try {
             const value = win.localStorage.getItem(MIRROR_KEY);
@@ -37,24 +42,40 @@ window.bwAssetSession = (function () {
         }
     }
 
-    function writeMirror(win, activePartition, userTag) {
+    function writeMirror(win, value) {
         try {
-            win.localStorage.setItem(MIRROR_KEY, JSON.stringify({ activePartition, userTag }));
+            win.localStorage.setItem(MIRROR_KEY, JSON.stringify(value));
         } catch (e) {
             /* no mirror: a degraded start then announces, which is the safe side */
         }
     }
 
-    // What the last start recorded: the ledger's meta, or on a degraded ledger the mirror.
+    /** The identity mirror; with `patch`, merged into it (asset-lock.js keeps its `locked` current). */
+    function mirror(win, patch) {
+        const current = readMirror(win);
+        if (patch && current) {
+            writeMirror(win, Object.assign(current, patch));
+        }
+        return current;
+    }
+
+    // What the last start recorded: the ledger's meta, or on a degraded ledger the mirror. A durable ledger that holds no
+    // lock takes the mirror's for the same label (a degraded page locked it), so its 7 days run from the first lock.
     function previousOf(win, ledger, stored) {
+        const saved = readMirror(win);
         if (!ledger.degraded) {
-            return stored;
+            // A mirror that says `locked: null` beside a stored lock: a degraded page dropped it (Clear, logout, another
+            // identity), which its memory ledger could not record. The mirror wins, and the stored lock is wiped.
+            if (stored.locked && saved && 'locked' in saved && saved.locked === null) {
+                return Object.assign({}, stored, { locked: null, dropLocked: stored.locked.label });
+            }
+            const locked = stored.locked || (saved && saved.locked && saved.locked.label === stored.activePartition ? saved.locked : null);
+            return Object.assign({}, stored, { locked });
         }
-        const mirror = readMirror(win);
-        if (!mirror) {
-            return { activePartition: stored.activePartition, userTag: UNKNOWN_TAG };
+        if (!saved) {
+            return { activePartition: stored.activePartition, userTag: UNKNOWN_TAG, locked: null };
         }
-        return { activePartition: mirror.activePartition ?? null, userTag: mirror.userTag };
+        return { activePartition: saved.activePartition ?? null, userTag: saved.userTag, locked: saved.locked || null };
     }
 
     function pageLabel(doc) {
@@ -62,9 +83,26 @@ window.bwAssetSession = (function () {
         return meta ? meta.getAttribute('content') : null;
     }
 
+    // The wipes of a start: a dropped lock first, then the decision's, or the every-start sweep of a real label. A kept
+    // lock's label joins the keep set of both (asset-lock.js).
+    async function applyWipes(Wipe, env, decision, lockPlan, dropLocked) {
+        for (const label of new Set([lockPlan.drop, dropLocked].filter(Boolean))) {
+            await Wipe.dropPartition(env, label);
+        }
+        const keep = decision.keep.concat(lockPlan.lock ? [lockPlan.lock.label] : []);
+        if (decision.wipe) {
+            await Wipe.wipe(env, keep);
+        } else if (REAL_LABEL.test(decision.page)) {
+            // Every other partition's caches and rows, every start: a worker that stored under an old label meanwhile
+            // (a stale tab, the window before a switch was seen) leaves nothing behind.
+            await Wipe.wipe(env, [decision.page].concat(keep));
+        }
+    }
+
     /** Returns the label this page caches under: a real label, or 'none' / 'offline' / 'unknown' (caches nothing). */
     async function begin(win, ledger) {
         const Wipe = win.bwAssetWipe;
+        const Lock = win.bwAssetLock;
         const env = { caches: win.caches, ledger, origin: win.location.origin };
         const stored = await ledger.getMeta();
         const meta = previousOf(win, ledger, stored);
@@ -74,18 +112,16 @@ window.bwAssetSession = (function () {
         const userTag = offline ? meta.userTag : Wipe.userTagOf(win.document);
         const userChanged = !offline && typeof meta.userTag === 'string' && meta.userTag !== userTag;
         const decision = Wipe.decide(meta.activePartition, label, !!Wipe.tokenOf(win.location), userChanged);
-        if (decision.wipe) {
-            await Wipe.wipe(env, decision.keep);
-        } else if (REAL_LABEL.test(decision.page)) {
-            // Every other partition's caches and rows, every start: a worker that stored under an old label meanwhile
-            // (a stale tab, the window before a switch was seen) leaves nothing behind.
-            await Wipe.wipe(env, decision.page);
+        const lockPlan = Lock.plan(meta.activePartition, meta.locked, { label, reason: Lock.signOutOf(win.document), userChanged }, Date.now());
+        await applyWipes(Wipe, env, decision, lockPlan, meta.dropLocked);
+        const locked = lockPlan.lock;
+        if (decision.active !== stored.activePartition || userTag !== stored.userTag || JSON.stringify(locked) !== JSON.stringify(Lock.valid(stored.locked))) {
+            await ledger.setMeta({ activePartition: decision.active, userTag, proto: PROTO, locked });
         }
-        if (decision.active !== stored.activePartition || userTag !== stored.userTag) {
-            await ledger.setMeta({ activePartition: decision.active, userTag, proto: PROTO });
-        }
-        writeMirror(win, decision.active, userTag);
-        if (decision.identityChanged) {
+        writeMirror(win, { activePartition: decision.active, userTag, locked });
+        await Lock.sync(locked, JSON.stringify(locked) !== JSON.stringify(Lock.valid(meta.locked)) || !!lockPlan.drop || !!meta.dropLocked);
+        // Unlocking is the same user coming back (the label is an HMAC of the id): only a changed acting user announces.
+        if (lockPlan.unlocked ? userChanged : decision.identityChanged) {
             Wipe.announceIdentityChange(win);
         }
         return decision.page;
@@ -101,5 +137,5 @@ window.bwAssetSession = (function () {
         });
     }
 
-    return { begin, guard, pageLabel };
+    return { begin, guard, pageLabel, mirror };
 })();
