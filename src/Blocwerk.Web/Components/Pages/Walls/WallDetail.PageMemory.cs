@@ -25,26 +25,37 @@ public partial class WallDetail
     // The wall is gone (deleted from here): nothing of it may be remembered on the way out.
     private bool _pageGone;
 
+    // Set first thing in Dispose: nothing that finishes after it may take a lease or enter edit mode.
+    private bool _disposed;
+
     // Runs the load that follows a restore. Until it lands, entering edit mode is deferred: LoadWall replaces _holds
     // (and the wall) the editor would be dragging. A tap in that window is honoured once the fresh holds are in.
     private async Task RefreshRestoredPageAsync(bool restored, Func<Task> load)
     {
         _refreshing = restored;
+        bool wanted;
         try
         {
             await load();
         }
         finally
         {
+            // Consumed whatever happened: a failed refresh must not leave a tap to be replayed later.
             _refreshing = false;
+            wanted = _editAfterRefresh;
+            _editAfterRefresh = false;
         }
 
-        if (_editAfterRefresh)
+        if (wanted && MayEnterEditNow())
         {
-            _editAfterRefresh = false;
             await ToggleEditing();
         }
     }
+
+    // The deferred tap is replayed only while the tap would still be possible: the page is alive (a lease taken on a
+    // disposed page is never released, and it holds every deploy) and shows the edit button to this user — the same
+    // gate as the button itself (_canEditHolds, not in the 3D view).
+    private bool MayEnterEditNow() => !_disposed && _wall is not null && _canEditHolds && !_isEditing && !_show3D;
 
     private bool DeferEditUntilRefreshed()
     {

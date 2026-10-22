@@ -1484,6 +1484,7 @@ else
 
     public void Dispose()
     {
+        _disposed = true;
         Cache.Changed -= OnCacheChanged;
         _editLease?.Dispose();
         _flushRegistration?.Dispose();
@@ -1892,7 +1893,8 @@ else
     // every _isEditing change and from Dispose.
     private void SyncEditLease()
     {
-        if (_isEditing)
+        // Never for a disposed page: nothing would ever release it, and it holds every deploy.
+        if (_isEditing && !_disposed)
         {
             _editLease ??= EditActivity.BeginWallEdit(WallId, _currentUserId == Guid.Empty ? null : _currentUserId);
         }

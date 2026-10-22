@@ -79,7 +79,15 @@ public class WallPageMemoryTests
         Assert.True(toggle > 0 && defer > toggle && defer < markup.IndexOf("_isEditing = !_isEditing;", toggle, StringComparison.Ordinal));
         Assert.Contains("await RefreshRestoredPageAsync(RestoreFromPageMemory(), LoadCurrentWall);", markup);
         Assert.Contains("_refreshing = restored;", memory);
-        Assert.Contains("finally\n        {\n            _refreshing = false;\n        }", memory.Replace("\r\n", "\n"));
+
+        // The deferred tap: always consumed, replayed only on a live page that shows this user the edit button.
+        Assert.Contains("private bool MayEnterEditNow() => !_disposed && _wall is not null && _canEditHolds && !_isEditing && !_show3D;", memory);
+        Assert.Contains("if (wanted && MayEnterEditNow())", memory);
+        var replay = memory.IndexOf("private async Task RefreshRestoredPageAsync", StringComparison.Ordinal);
+        var consumed = memory.IndexOf("_editAfterRefresh = false;", replay, StringComparison.Ordinal);
+        Assert.True(consumed > memory.IndexOf("finally", replay, StringComparison.Ordinal) && consumed < memory.IndexOf("if (wanted", replay, StringComparison.Ordinal));
+        Assert.Contains("if (_isEditing && !_disposed)", markup);
+        Assert.Contains("finally\n        {\n            // Consumed whatever happened: a failed refresh must not leave a tap to be replayed later.\n            _refreshing = false;", memory.Replace("\r\n", "\n"));
 
         var delete = markup.IndexOf("private async Task DeleteWall()", StringComparison.Ordinal);
         var forget = markup.IndexOf("ForgetPage();", delete, StringComparison.Ordinal);
@@ -88,6 +96,7 @@ public class WallPageMemoryTests
 
         var dispose = markup.IndexOf("public void Dispose()", StringComparison.Ordinal);
         var end = markup.IndexOf("\n    }\n", dispose, StringComparison.Ordinal);
+        Assert.True(markup.IndexOf("_disposed = true;", dispose, StringComparison.Ordinal) < markup.IndexOf("Cache.Changed -= OnCacheChanged;", dispose, StringComparison.Ordinal), "the flag is set first");
         var remember = markup.IndexOf("RememberPageSafely();", dispose, StringComparison.Ordinal);
         Assert.True(remember > markup.IndexOf("_editLease?.Dispose();", dispose, StringComparison.Ordinal) && remember < end);
         Assert.Contains("catch (Exception ex)", memory);
