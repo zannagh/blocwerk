@@ -108,6 +108,23 @@ public sealed class CommentsDocumentFreshnessTests
         Assert.Equal("Renamed Member", document.Comments.Single(c => c.Id == seed.ByMember).Author.Name);
     }
 
+    /// <summary>Outside the wall the author id rides on the avatar, so adding or removing one flips it in the next document.</summary>
+    [Fact]
+    public async Task AddingOrRemovingAnAvatar_FlipsTheAuthorIdOutsideTheWall()
+    {
+        using var f = new DataDocumentFixture();
+        await f.SeedAsync();
+        var seed = await CommentsDocumentSeed.AddAsync(f);
+        f.Caller = null;
+        Assert.Null(await OutsideAuthorIdAsync(f, seed.ByMember));
+
+        await SetAvatarAsync(f, [7, 7, 7]);
+        Assert.Equal(f.Member.Id, await OutsideAuthorIdAsync(f, seed.ByMember));
+
+        await SetAvatarAsync(f, null);
+        Assert.Null(await OutsideAuthorIdAsync(f, seed.ByMember));
+    }
+
     [Fact]
     public async Task AnErasure_ResyncsTheWall_AndTheRebuiltDocumentShowsThePlaceholder()
     {
@@ -149,6 +166,18 @@ public sealed class CommentsDocumentFreshnessTests
         Assert.DoesNotContain("the crimp is sharp", text, StringComparison.Ordinal);
         await using var check = f.Harness.CreateContext();
         Assert.True(await check.WallChanges.AnyAsync(c => c.Kind == FeedKinds.CommentDeleted && c.EntityId == seed.ByMember));
+    }
+
+    private static async Task<Guid?> OutsideAuthorIdAsync(DataDocumentFixture f, Guid commentId) =>
+        (await CommentsDocumentSeed.DocumentAsync(f, DataDocumentFixture.ShareToken)).Comments.Single(c => c.Id == commentId).Author.Id;
+
+    private static async Task SetAvatarAsync(DataDocumentFixture f, byte[]? avatar)
+    {
+        await using var db = StructureFeedKit.Context(f.Harness);
+        var member = await db.Users.SingleAsync(u => u.Id == f.Member.Id);
+        member.AvatarImage = avatar;
+        member.AvatarContentType = avatar is null ? null : "image/png";
+        await db.SaveChangesAsync();
     }
 
     private static async Task<string> ShaAsync(DataDocumentFixture f, string? token = null, bool signedIn = true)
