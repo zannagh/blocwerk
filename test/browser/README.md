@@ -18,7 +18,8 @@ removes it again. The first run takes about a minute longer, for the publish and
 - `BW_BROWSERS=chromium npm test` runs one browser (default `chromium,webkit`).
 - `npx playwright test tests/sw-partition.spec.mjs` runs one file.
 - `BW_BROWSER_PG=postgres://user:pw@127.0.0.1:port/bw_browser_x` uses a Postgres server you provide instead of a
-  container (CI does this). The host must be `localhost` or `127.0.0.1` and the database name must start with
+  container (CI does this). The host must be `localhost` or `127.0.0.1` (or the one host named in
+  `BW_BROWSER_PG_SERVICE`, which CI sets to its Postgres service's name) and the database name must start with
   `bw_browser_`: the harness drops and recreates that database at every start, so re-runs begin from the same seed.
 - In CI a test gets one retry. `harness/flaky-report.mjs` reads the JSON report and annotates every test that passed
   only on its retry with a `::warning::`.

@@ -70,14 +70,16 @@ async function until(what, probe, timeoutMs) {
 }
 
 // BW_BROWSER_PG: a server you provide (CI's service). Only a local one, and only a `bw_browser_*` database, which is
-// dropped and created again so every run starts from the same seed.
+// dropped and created again so every run starts from the same seed. BW_BROWSER_PG_SERVICE names one more host to
+// accept: CI runs in a container, where the Postgres service is reached by its service name, not localhost.
 async function providedPostgres(value) {
     const url = new URL(value);
     const pg = {
         host: url.hostname, port: Number(url.port || 5432), user: decodeURIComponent(url.username),
         password: decodeURIComponent(url.password), database: url.pathname.slice(1), stop: () => undefined
     };
-    if (!['localhost', '127.0.0.1', '[::1]'].includes(pg.host)) {
+    const allowed = ['localhost', '127.0.0.1', '[::1]', process.env.BW_BROWSER_PG_SERVICE].filter(Boolean);
+    if (!allowed.includes(pg.host)) {
         throw new Error(`BW_BROWSER_PG must point at localhost or 127.0.0.1, not ${pg.host}: the harness drops its database`);
     }
     if (!/^bw_browser_[a-z0-9_]+$/.test(pg.database)) {
