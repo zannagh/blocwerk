@@ -64,6 +64,11 @@ window.bwAssetSession = (function () {
     function previousOf(win, ledger, stored) {
         const saved = readMirror(win);
         if (!ledger.degraded) {
+            // A mirror that says `locked: null` beside a stored lock: a degraded page dropped it (Clear, logout, another
+            // identity), which its memory ledger could not record. The mirror wins, and the stored lock is wiped.
+            if (stored.locked && saved && 'locked' in saved && saved.locked === null) {
+                return Object.assign({}, stored, { locked: null, dropLocked: stored.locked.label });
+            }
             const locked = stored.locked || (saved && saved.locked && saved.locked.label === stored.activePartition ? saved.locked : null);
             return Object.assign({}, stored, { locked });
         }
@@ -80,9 +85,9 @@ window.bwAssetSession = (function () {
 
     // The wipes of a start: a dropped lock first, then the decision's, or the every-start sweep of a real label. A kept
     // lock's label joins the keep set of both (asset-lock.js).
-    async function applyWipes(Wipe, env, decision, lockPlan) {
-        if (lockPlan.drop) {
-            await Wipe.dropPartition(env, lockPlan.drop);
+    async function applyWipes(Wipe, env, decision, lockPlan, dropLocked) {
+        for (const label of new Set([lockPlan.drop, dropLocked].filter(Boolean))) {
+            await Wipe.dropPartition(env, label);
         }
         const keep = decision.keep.concat(lockPlan.lock ? [lockPlan.lock.label] : []);
         if (decision.wipe) {
@@ -108,13 +113,13 @@ window.bwAssetSession = (function () {
         const userChanged = !offline && typeof meta.userTag === 'string' && meta.userTag !== userTag;
         const decision = Wipe.decide(meta.activePartition, label, !!Wipe.tokenOf(win.location), userChanged);
         const lockPlan = Lock.plan(meta.activePartition, meta.locked, { label, reason: Lock.signOutOf(win.document), userChanged }, Date.now());
-        await applyWipes(Wipe, env, decision, lockPlan);
+        await applyWipes(Wipe, env, decision, lockPlan, meta.dropLocked);
         const locked = lockPlan.lock;
         if (decision.active !== stored.activePartition || userTag !== stored.userTag || JSON.stringify(locked) !== JSON.stringify(Lock.valid(stored.locked))) {
             await ledger.setMeta({ activePartition: decision.active, userTag, proto: PROTO, locked });
         }
         writeMirror(win, { activePartition: decision.active, userTag, locked });
-        await Lock.sync(locked, JSON.stringify(locked) !== JSON.stringify(Lock.valid(meta.locked)) || !!lockPlan.drop);
+        await Lock.sync(locked, JSON.stringify(locked) !== JSON.stringify(Lock.valid(meta.locked)) || !!lockPlan.drop || !!meta.dropLocked);
         // Unlocking is the same user coming back (the label is an HMAC of the id): only a changed acting user announces.
         if (lockPlan.unlocked ? userChanged : decision.identityChanged) {
             Wipe.announceIdentityChange(win);

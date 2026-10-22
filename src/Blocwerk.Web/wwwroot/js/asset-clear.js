@@ -9,7 +9,8 @@
  *             `bw-sw-state` or the shell, and `meta.activePartition` stays. Then it rebuilds: `stopped` and the fresh
  *             set are reset and every wall of the viewer (and the open wall) is refetched and filled, core first.
  *   Other tabs of the same partition hear `clearing` (they stop their fill) and `cleared` (they rebuild) over a
- *   BroadcastChannel, or a localStorage event where there is none. A tab that never hears `cleared` (the clearing tab
+ *   BroadcastChannel, and `locked` (PR 3.5: the 401 lock locked or wiped it; they stop for good) over the same
+ *   channel, or a localStorage event where there is none. A tab that never hears `cleared` (the clearing tab
  *   closed) rebuilds after RESUME_MS anyway.
  */
 window.bwAssetClear = (function (win) {
@@ -105,6 +106,12 @@ window.bwAssetClear = (function (win) {
         }
         win.clearTimeout(resumeTimer);
         resumeTimer = null;
+        if (message.type === 'locked') {
+            // Another tab locked or wiped this partition (asset-lock.js): this tab stops and shows none of it either.
+            win.bwAssetLock.stopTab(state);
+            await refreshMarks();
+            return;
+        }
         if (message.type === 'clearing') {
             state.stopped = true;
             resumeTimer = win.setTimeout(() => { resumeTimer = null; rebuild(state).then(refreshMarks).catch(() => undefined); }, RESUME_MS);
@@ -138,5 +145,6 @@ window.bwAssetClear = (function (win) {
         });
     }
 
-    return { STOP_WAIT_MS, RESUME_MS, clear, listen };
+    // `announce`: asset-lock.js tells the other tabs of a partition it locked or wiped ({ type: 'locked', partition }).
+    return { STOP_WAIT_MS, RESUME_MS, clear, listen, announce: post };
 })(window);

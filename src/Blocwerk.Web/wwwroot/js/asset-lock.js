@@ -11,7 +11,8 @@
  *   kept     across `anon` pages that say `expired` (the login page, a share link, rule 6 on a tokenless page): their
  *            wipes and the every-start sweep keep { active, locked } (asset-wipe.js keep sets).
  *   unlock   the same `u-` label returns (it is an HMAC of the user id): the lock clears, the label is active again.
- *   wipe     another `u-` or `k-` label, `none`, an `anon` page with any other reason (`forced`, `gone`, none at all),
+ *   wipe     another `u-` or `k-` label, `none`, an `anon` page with any other reason (`forced`, `gone`, `signed-out`,
+ *            none at all),
  *            an `unknown` page whose acting user changed, logout and the signed-out page, "Clear offline data", a 401
  *            `forced`/`gone` or any 410 of a running page, and `since + LOCK_MS`, checked on every start.
  * Kiosk and anonymous partitions never lock: there is no identity to return to. A 401 or 410 there wipes them.
@@ -21,6 +22,7 @@ window.bwAssetLock = (function (win) {
     'use strict';
 
     const LOCK_MS = 7 * 24 * 60 * 60 * 1000;
+    const SKEW_MS = 60 * 60 * 1000;
     const EXPIRED = 'expired';
     const HEADER = 'x-blocwerk-signout';
     const USER_LABEL = /^u-[a-z2-7]{20}$/;
@@ -49,7 +51,8 @@ window.bwAssetLock = (function (win) {
     function plan(previous, lock, page, now) {
         let current = valid(lock);
         let drop = null;
-        if (current && (now - current.since >= LOCK_MS || current.since > now + LOCK_MS)) {
+        // Past LOCK_MS, or stamped in the future beyond SKEW_MS (a clock that jumped): the lock goes.
+        if (current && (now - current.since >= LOCK_MS || current.since > now + SKEW_MS)) {
             drop = current.label;
             current = null;
         }
@@ -123,6 +126,9 @@ window.bwAssetLock = (function (win) {
         if (changed) {
             await mark(lock);
             tellWorker();
+            if (lock) {
+                tellTabs(lock.label);
+            }
         }
         render(lock);
     }
@@ -178,6 +184,23 @@ window.bwAssetLock = (function (win) {
         state.active = 'none';
     }
 
+    // The other tabs of `label` stop too (asset-clear.js's channel), so none keeps showing or writing it.
+    function tellTabs(label) {
+        try {
+            if (win.bwAssetClear && typeof win.bwAssetClear.announce === 'function') {
+                win.bwAssetClear.announce({ type: 'locked', partition: label });
+            }
+        } catch (e) {
+            /* no channel: the other tabs find out on their next page or request */
+        }
+    }
+
+    /** Another tab locked or wiped this tab's partition: stop, and show the banner when it is a lock. */
+    function stopTab(state) {
+        stop(state);
+        current().then(render).catch(() => undefined);
+    }
+
     /**
      * A 401 or 410 of a running page (the manifest, the docs index, the marks): a `u-` label locks on a 401 `expired`
      * and is wiped otherwise; `anon` and `k-` are wiped. Only while the ledger still names this page's label: a tab
@@ -204,6 +227,7 @@ window.bwAssetLock = (function (win) {
             await sync(lock, true);
             return;
         }
+        tellTabs(label);
         if (!USER_LABEL.test(label)) {
             await Wipe().dropPartition(env, label);
             tellWorker();
@@ -220,5 +244,5 @@ window.bwAssetLock = (function (win) {
         win.Blazor.addEventListener('enhancedload', () => { current().then(render).catch(() => undefined); });
     }
 
-    return { LOCK_MS, EXPIRED, HEADER, MARKER_KEY, valid, signOutOf, plan, sync, render, current, clear, forget, refused };
+    return { LOCK_MS, SKEW_MS, EXPIRED, HEADER, MARKER_KEY, valid, signOutOf, plan, sync, render, current, clear, forget, refused, stopTab };
 })(window);

@@ -35,6 +35,7 @@ window.bwAssetWipe = (function () {
     const LOGOUT_PATH = '/account/logout';
     const LOGOUT_WAIT_MS = 1500;
     const REAL_LABEL = /^(anon|[uk]-[a-z2-7]{20})$/;
+    const MIRROR_KEY = 'blocwerk-asset-identity';
 
     /** The share token in a page URL: `/…/shared/{token}[/…]` or `?token=`. */
     function tokenOf(location) {
@@ -215,9 +216,20 @@ window.bwAssetWipe = (function () {
         }
     }
 
+    // The identity mirror (asset-session.js) says nothing is active and nothing locked, so a degraded next start agrees.
+    function forgetMirror(win) {
+        try {
+            const value = JSON.parse(win.localStorage.getItem(MIRROR_KEY) || '{}') || {};
+            win.localStorage.setItem(MIRROR_KEY, JSON.stringify(Object.assign(value, { activePartition: null, locked: null })));
+        } catch (e) {
+            /* no mirror to correct */
+        }
+    }
+
     // Logout and the signed-out page: everything goes, a locked partition and its lock included.
     async function wipeAll(win, ledger) {
         await ledger.setMeta({ activePartition: null, locked: null });
+        forgetMirror(win);
         await wipe({ caches: win.caches, ledger, origin: win.location.origin }, null);
         if (win.bwAssetLock && typeof win.bwAssetLock.forget === 'function') {
             await win.bwAssetLock.forget(ledger);

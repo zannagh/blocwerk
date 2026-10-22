@@ -76,6 +76,8 @@ test('plan(): the lock after a page load, event by event', () => {
     assert.deepEqual(p(KIOSK, null, 'anon', 'expired'), { lock: null, drop: null, unlocked: false }, 'a kiosk never locks');
     assert.deepEqual(p('anon', null, 'anon', 'expired'), { lock: null, drop: null, unlocked: false }, 'anon never locks');
     assert.deepEqual(p(USER_A, { label: USER_B, since: now }, 'anon', 'expired').drop, USER_B, 'one lock at most');
+    assert.equal(p('anon', { label: USER_A, since: now + 30 * 60 * 1000 }, 'anon', 'expired').drop, null, 'a little clock skew is tolerated');
+    assert.equal(p('anon', { label: USER_A, since: now + 2 * 60 * 60 * 1000 }, 'anon', 'expired').drop, USER_A, 'a lock from far in the future goes');
 });
 
 test('an expired session locks the partition: kept on the login page, hidden, the worker told, the banner shown', async () => {
@@ -125,6 +127,7 @@ test('another user, a kiosk, logout, the signed-out page and Clear offline data 
         'a kiosk': device => next(device, { label: KIOSK, path: '/' }),
         'none': device => next(device, { label: 'none', path: '/' }),
         'forced': device => anonPage(device, { signOut: 'forced' }),
+        'signed-out': device => anonPage(device, { signOut: 'signed-out' }),
         'gone': device => anonPage(device, { signOut: 'gone' }),
         'no reason': device => anonPage(device, { signOut: null }),
         'the signed-out page': async device => { const p = await anonPage(device); await p.win.bwAssetWipe.signedOut(); },
@@ -142,7 +145,7 @@ test('another user, a kiosk, logout, the signed-out page and Clear offline data 
 });
 
 test('a forced or gone sign-out after a signed-in page wipes at once and never locks', async () => {
-    for (const reason of ['forced', 'gone']) {
+    for (const reason of ['forced', 'gone', 'signed-out']) {
         const device = await signedIn();
         await anonPage(device, { signOut: reason });
         assert.equal(await holds(device, USER_A), null, reason);
@@ -253,4 +256,64 @@ test('a degraded page locks too: the mirror and the worker marker carry it, and 
     const stored = await meta(device);
     assert.deepEqual([stored.locked.label, stored.locked.since], [USER_A, since], 'the durable ledger adopts the first lock time');
     assert.ok(await holds(device, USER_A));
+});
+
+test('a logout whose page wipe never ran still wipes: the next anon page says signed-out, and the mirror is cleared', async () => {
+    const device = await signedIn();
+    await anonPage(device, { signOut: 'signed-out' });
+    assert.equal(await holds(device, USER_A), null);
+    assert.equal((await meta(device)).locked ?? null, null, 'never a lock');
+
+    const other = await signedIn();
+    await anonPage(other);
+    const page = await anonPage(other);
+    await page.win.bwAssetWipe.signedOut();
+    assert.deepEqual([mirror(other).activePartition, mirror(other).locked], [null, null], 'wipeAll writes the mirror');
+});
+
+test('Clear or logout on a degraded page is not undone by the durable lock on the next start', async () => {
+    for (const act of [page => page.win.bwAssetLock.clear(), page => page.win.bwAssetWipe.signedOut()]) {
+        const device = await signedIn();
+        await anonPage(device);
+        const degraded = loadPage({ swReply: 'none', degraded: true, caches: device.caches, storage: device.storage, label: 'anon', path: '/', signOut: 'expired' });
+        await degraded.boot();
+        await act(degraded);
+        assert.equal(mirror(device).locked, null);
+        assert.equal((await meta(device)).locked.label, USER_A, 'the durable meta still names the lock');
+        await anonPage(device);
+        assert.equal(await holds(device, USER_A), null, 'the mirror wins: the locked rows go');
+        assert.equal((await device.ledger.wallsOf(USER_A)).length, 0);
+        assert.equal((await meta(device)).locked ?? null, null);
+    }
+});
+
+test('after a degraded Clear, the same user signing in again does not get the cleared data back', async () => {
+    const device = await signedIn();
+    await anonPage(device);
+    const degraded = loadPage({ swReply: 'none', degraded: true, caches: device.caches, storage: device.storage, label: 'anon', path: '/', signOut: 'expired' });
+    await degraded.boot();
+    await degraded.win.bwAssetLock.clear();
+    // Back as alice, with the manifests unreachable so nothing is refetched: only the explicit drop can remove the rows.
+    const down = () => new Response('', { status: 503 });
+    await next(device, { label: USER_A, user: 'alice', path: '/', summary: { wallsWith3d: 0, walls: [W1, W2] },
+        routes: { [`/api/walls/${W1}/manifest`]: down, [`/api/walls/${W2}/manifest`]: down } });
+    assert.equal((await device.ledger.mineOf(USER_A)).length, 0, 'the cleared marks stay gone');
+});
+
+test('a tab that locks tells the other tabs of the partition, which stop at once', async () => {
+    const bus = new Set();
+    const device = await signedIn({ bus });
+    const other = memberPage({ user: 'alice', bus, ledger: device.ledger, caches: device.caches, storage: device.storage, routes: mineRoutes });
+    await other.boot();
+    // Both tabs listen, as every page does (bwAssetReport.observe).
+    device.page.win.bwAssetClear.listen();
+    other.win.bwAssetClear.listen();
+    assert.equal(other.cache.state().active, USER_A);
+    device.page.win.routes[`/api/walls/${W1}/manifest`] = refusal(401, 'expired');
+    await device.page.cache.manifestChanged(W1);
+    await device.page.settle();
+    await other.settle();
+    assert.equal(other.cache.state().active, 'none', 'the other tab stopped');
+    assert.equal(other.cache.state().stopped, true);
+    assert.ok(await holds(device, USER_A), 'the lock kept the data');
 });
