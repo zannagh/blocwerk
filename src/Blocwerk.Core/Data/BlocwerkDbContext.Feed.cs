@@ -37,6 +37,7 @@ public partial class BlocwerkDbContext
             entity.HasIndex(c => new { c.AudienceUserId, c.TxId, c.Seq }).HasFilter("\"AudienceUserId\" IS NOT NULL");
             entity.HasIndex(c => c.ActorUserId).HasFilter("\"ActorUserId\" IS NOT NULL");
             entity.HasIndex(c => c.CreatedAt);
+            entity.HasIndex(c => new { c.EntityId, c.Kind }).HasFilter("\"EntityId\" IS NOT NULL"); // the account scrub's about-the-user rows
         });
     }
 }
