@@ -68,7 +68,7 @@ else
         {
             <label class="panel-cell panel-add-card" style="@CellStyle(pos.Col, pos.Row)" title="Add an image here">
                 <span class="panel-add-plus">+</span>
-                <InputFile OnChange="e => OnFrontierFile(e, pos.Col, pos.Row)" accept="image/*" class="panel-add-input" disabled="@_uploading" />
+                <SafeInputFile OnChange="e => OnFrontierFile(e, pos.Col, pos.Row)" accept="image/*" class="panel-add-input" disabled="@_uploading" />
             </label>
         }
     </div>

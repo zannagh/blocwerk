@@ -3089,10 +3089,10 @@ html.bw-fullscreen .panel-link-dialog .panel-step-viewport {
 /* The manual wizard, one disclosure below the one way in. */
 .update-advanced { margin-top: 4px; }
 .update-advanced > summary { cursor: pointer; padding: 8px 0; font-size: 0.9rem; color: var(--text-secondary); }
-/* "Update wall" under "View in 3D": the wall page's one way into an update (wall admins). */
+/* "Update wall" between the Activity and Wall Settings cards: the wall's one way into an update (wall admins). */
 a.wall-update-link {
     display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none;
-    margin: -12px 0 20px;
+    margin-top: 12px;
 }
 /* Deleting the wall: its own collapsed card at the very bottom of the settings. */
 .danger-card > .settings-card-summary h2 { color: var(--danger-text); }

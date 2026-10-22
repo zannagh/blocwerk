@@ -39,7 +39,10 @@ else
         <div class="boulder-photo-col">
         <div class="page-header">
             @{ var backUrl = !string.IsNullOrEmpty(ShareToken) ? $"/walls/{WallId}/shared/{ShareToken}?view=boulders" : $"/walls/{WallId}?view=boulders"; }
-            <a href="@backUrl" class="back-link" aria-label="Back to boulder list"><span aria-hidden="true">&larr;</span><span class="back-link-text"> Back to boulder list</span></a>
+            @* A step back in history when the list is the page this boulder was opened from (bwNav.backTo), so the
+               list returns as it was left and the browser's back button agrees; a plain link otherwise. *@
+            <a href="@backUrl" class="back-link" aria-label="Back to boulder list"
+               onclick="return bwNav.backTo(event, this.href)"><span aria-hidden="true">&larr;</span><span class="back-link-text"> Back to boulder list</span></a>
             <div class="title-row">
                 <h1 title="@_boulder.Name">@_boulder.Name</h1>
                 @if (!string.IsNullOrEmpty(_boulder.Grade))

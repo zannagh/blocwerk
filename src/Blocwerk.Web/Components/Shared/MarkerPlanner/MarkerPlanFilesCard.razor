@@ -23,7 +23,7 @@
 
     <div class="form-group glyph-import">
         <label for="mplan-import">Import a marker-plan.json</label>
-        <InputFile id="mplan-import" OnChange="OnImport" accept=".json,application/json" class="form-input" disabled="@Busy" />
+        <SafeInputFile id="mplan-import" OnChange="OnImport" accept=".json,application/json" class="form-input" disabled="@Busy" />
         <p class="hint">Replaces the plan in the editor (not saved until you press Save).</p>
         @if (ImportErrors.Count > 0)
         {
