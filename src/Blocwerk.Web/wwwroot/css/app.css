@@ -856,7 +856,7 @@ body.bw-tabbar-collapsed .tabbar-restore { display: flex; }
 }
 .bw-install-dismiss:hover { color: var(--text-heading); }
 
-/* The 401 lock's banner (BlocwerkApp.razor #bw-offline-lock, js/asset-lock.js): hidden until the device holds a locked
+/* The 401 lock's banner (BlocwerkApp.razor #bw-offline-lock, Blocwerk.Shared.Ui js/asset-lock.js): hidden until the device holds a locked
    partition. `hidden` must win over .bw-install's display:flex. */
 .bw-offline-lock[hidden] { display: none; }
 /* One bottom banner at a time, consent first (as for the install prompts): the lock banner shows once it is answered. */

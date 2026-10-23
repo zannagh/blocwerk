@@ -63,15 +63,15 @@ public class SiteDataClearingTests
         Assert.Contains("window.bwDeployDrafts.clearAll()", page.Content);
         Assert.True(page.Content!.IndexOf("<script src=\"/js/deploy-drafts.js\"></script>", StringComparison.Ordinal)
             < page.Content.IndexOf("new Event('bw:identity-changed')", StringComparison.Ordinal));
-        Assert.True(page.Content.IndexOf("<script src=\"/js/asset-wipe.js\"></script>", StringComparison.Ordinal)
+        Assert.True(page.Content.IndexOf("<script src=\"/_content/Blocwerk.Shared.Ui/js/asset-wipe.js\"></script>", StringComparison.Ordinal)
             < page.Content.IndexOf("window.bwAssetWipe.signedOut()", StringComparison.Ordinal));
-        Assert.True(page.Content.IndexOf("<script src=\"/js/asset-ledger.js\"></script>", StringComparison.Ordinal)
-            < page.Content.IndexOf("<script src=\"/js/asset-wipe.js\"></script>", StringComparison.Ordinal));
+        Assert.True(page.Content.IndexOf("<script src=\"/_content/Blocwerk.Shared.Ui/js/asset-ledger.js\"></script>", StringComparison.Ordinal)
+            < page.Content.IndexOf("<script src=\"/_content/Blocwerk.Shared.Ui/js/asset-wipe.js\"></script>", StringComparison.Ordinal));
 
         // The ledger's IndexedDB half, and the 401 lock, whose lock the sign-out forgets too (PR 3.5).
-        Assert.True(page.Content.IndexOf("<script src=\"/js/asset-ledger-idb.js\"></script>", StringComparison.Ordinal)
-            is var idb && idb >= 0 && idb < page.Content.IndexOf("<script src=\"/js/asset-ledger.js\"></script>", StringComparison.Ordinal));
-        Assert.True(page.Content.IndexOf("<script src=\"/js/asset-lock.js\"></script>", StringComparison.Ordinal)
+        Assert.True(page.Content.IndexOf("<script src=\"/_content/Blocwerk.Shared.Ui/js/asset-ledger-idb.js\"></script>", StringComparison.Ordinal)
+            is var idb && idb >= 0 && idb < page.Content.IndexOf("<script src=\"/_content/Blocwerk.Shared.Ui/js/asset-ledger.js\"></script>", StringComparison.Ordinal));
+        Assert.True(page.Content.IndexOf("<script src=\"/_content/Blocwerk.Shared.Ui/js/asset-lock.js\"></script>", StringComparison.Ordinal)
             is var lockScript && lockScript >= 0 && lockScript < page.Content.IndexOf("window.bwAssetWipe.signedOut()", StringComparison.Ordinal));
     }
 
@@ -105,7 +105,8 @@ public class SiteDataClearingTests
     [Fact]
     public void TheSignedOutPage_LoadsItsScriptsByTheirFingerprintedUrls()
     {
-        string[] scripts = ["js/deploy-drafts.js", "js/asset-ledger-idb.js", "js/asset-ledger.js", "js/asset-wipe.js", "js/asset-lock.js"];
+        string[] scripts = ["js/deploy-drafts.js", "_content/Blocwerk.Shared.Ui/js/asset-ledger-idb.js", "_content/Blocwerk.Shared.Ui/js/asset-ledger.js",
+            "_content/Blocwerk.Shared.Ui/js/asset-wipe.js", "_content/Blocwerk.Shared.Ui/js/asset-lock.js"];
         var assets = new ResourceAssetCollection(scripts
             .Select(label => new ResourceAsset(label.Replace(".js", ".abc123.js", StringComparison.Ordinal), [new ResourceAssetProperty("label", label)]))
             .ToList());
@@ -114,12 +115,12 @@ public class SiteDataClearingTests
 
         var page = SiteDataClearing.SignedOutPage(http.Response, "/");
 
-        Assert.Contains("<script src=\"/js/asset-wipe.abc123.js\"></script>", page.Content);
-        Assert.Contains("<script src=\"/js/asset-ledger.abc123.js\"></script>", page.Content);
+        Assert.Contains("<script src=\"/_content/Blocwerk.Shared.Ui/js/asset-wipe.abc123.js\"></script>", page.Content);
+        Assert.Contains("<script src=\"/_content/Blocwerk.Shared.Ui/js/asset-ledger.abc123.js\"></script>", page.Content);
         Assert.Contains("<script src=\"/js/deploy-drafts.abc123.js\"></script>", page.Content);
-        Assert.Contains("<script src=\"/js/asset-ledger-idb.abc123.js\"></script>", page.Content);
-        Assert.Contains("<script src=\"/js/asset-lock.abc123.js\"></script>", page.Content);
-        Assert.DoesNotContain("src=\"/js/asset-wipe.js\"", page.Content);
+        Assert.Contains("<script src=\"/_content/Blocwerk.Shared.Ui/js/asset-ledger-idb.abc123.js\"></script>", page.Content);
+        Assert.Contains("<script src=\"/_content/Blocwerk.Shared.Ui/js/asset-lock.abc123.js\"></script>", page.Content);
+        Assert.DoesNotContain("src=\"/_content/Blocwerk.Shared.Ui/js/asset-wipe.js\"", page.Content);
     }
 
     [Theory]

@@ -3,8 +3,8 @@
 // the test fires by hand, and no IndexedDB (so the ledger runs on its memory backend). For asset-cache.test.mjs.
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { moduleUrl } from './page-modules.mjs';
 
-const js = new URL('../../../src/Blocwerk.Web/wwwroot/js/', import.meta.url);
 const MODULES = ['asset-ledger-idb.js', 'asset-ledger.js', 'asset-budget.js', 'asset-wipe.js', 'asset-lock.js', 'asset-manifest.js', 'asset-data.js', 'asset-mine.js', 'asset-store.js', 'asset-session.js', 'asset-plan.js', 'asset-fill.js', 'asset-cache.js', 'asset-notice.js', 'asset-3d.js', 'asset-clear.js', 'asset-report.js'];
 export const ORIGIN = 'https://blocwerk.test';
 export const USER_A = 'u-aaaaaaaaaaaaaaaaaaaa';
@@ -220,7 +220,7 @@ export function loadPage(opts = {}) {
         context.__ledger = opts.ledger;
     }
     for (const name of MODULES) {
-        vm.runInContext(readFileSync(new URL(name, js), 'utf8'), context, { filename: name });
+        vm.runInContext(readFileSync(moduleUrl(name), 'utf8'), context, { filename: name });
     }
     if (opts.ledger) {
         vm.runInContext('window.bwAssetLedger.open = () => Promise.resolve(window.__ledger);', context);

@@ -3,7 +3,8 @@
   <!--
     The UI the server and the later Blocwerk.Client (standalone Blazor WebAssembly) render through the same code: the
     hold overlay (HoldShape, HoldShine, PanelHoldOverlay, the boulder colours) over the Contracts document types, and its
-    CSS. No EF, no Core reference. Its static assets are served at _content/Blocwerk.Shared.Ui/..., fingerprinted like
+    CSS; and the device cache's page modules both load (wwwroot/js: the asset ledger and its IndexedDB half, the wipe
+    rules, the 401 lock, the partition session and "Clear offline data"). No EF, no Core reference. Its static assets are served at _content/Blocwerk.Shared.Ui/..., fingerprinted like
     the app's own.
   -->
   <PropertyGroup>
