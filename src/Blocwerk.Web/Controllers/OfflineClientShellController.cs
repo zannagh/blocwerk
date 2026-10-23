@@ -24,6 +24,7 @@ namespace Blocwerk.Web.Controllers;
 public sealed class OfflineClientShellController : Controller
 {
     [HttpGet("/v/{**path:nonfile}")]
+    [HttpHead("/v/{**path:nonfile}")]
     public RazorComponentResult<OfflineClientShell> Shell()
     {
         Response.Headers[HeaderNames.CacheControl] = "no-cache";

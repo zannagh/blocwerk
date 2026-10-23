@@ -92,10 +92,21 @@ test('a runtime file that fails to load shows the error, Retry and Open online, 
 });
 
 test('a start that never renders shows the error after the watchdog', async ({ page, server }) => {
-    test.setTimeout(90000);
-    await server.faults([{ path: '^/v/_framework/System\\.Private\\.CoreLib\\.[a-z0-9]+\\.wasm$', delay: 60000 }]);
+    test.setTimeout(120000);
+    await server.faults([{ path: '^/v/_framework/System\\.Private\\.CoreLib\\.[a-z0-9]+\\.wasm$', delay: 90000 }]);
     await page.goto('/v/');
 
     await expect(page.locator('h1')).toHaveText("Couldn't open the offline view", { timeout: 40000 });
     await expect(page.getByRole('link', { name: 'Open online' })).toHaveAttribute('href', '/');
+});
+
+test('a slow first boot that lands after the error replaces the error with the client', async ({ page, server }) => {
+    test.setTimeout(120000);
+    await server.faults([{ path: '^/v/_framework/System\\.Private\\.CoreLib\\.[a-z0-9]+\\.wasm$', delay: 38000 }]);
+    await page.goto('/v/');
+
+    await expect(page.locator('h1')).toHaveText("Couldn't open the offline view", { timeout: 40000 });
+    await expect(page.locator('h1')).toHaveText('Not available offline', { timeout: 40000 });
+    await expect(page.getByRole('button', { name: 'Retry' })).toHaveCount(0);
+    expect(await page.evaluate(m => performance.getEntriesByName(m).length, READY)).toBe(1);
 });

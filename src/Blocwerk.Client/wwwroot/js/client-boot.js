@@ -3,14 +3,15 @@
  * started here, so a failed start never leaves the shell on "Opening the offline view…". A rejected Blazor.start(), an
  * unhandled error or rejection before the first render (the layout's `bw-client-ready` mark), or no first render within
  * WATCHDOG_MS replaces #app with "Couldn't open the offline view", a Retry button (a reload) and an "Open online" link
- * to the same path outside /v. A failed runtime download does not reject Blazor.start(): its promise never settles,
+ * to the same path outside /v. A slow start that renders after all (a cold boot on a slow phone) still replaces the
+ * box: Blazor renders into #app over it. A failed runtime download does not reject Blazor.start(): its promise never settles,
  * and the runtime reports the failure only as unhandled rejections, hence the listeners.
  */
 (function (win, doc) {
     'use strict';
 
     const READY_MARK = 'bw-client-ready';
-    const WATCHDOG_MS = 20000;
+    const WATCHDOG_MS = 30000;
     const BASE = '/v/';
     let failed = false;
 

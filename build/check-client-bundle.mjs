@@ -31,7 +31,8 @@ if (loader.length !== 1 || dotnet.length !== 1) {
     process.exit(2);
 }
 
-// The boot manifest dotnet.js carries between /*json-start*/ and /*json-end*/.
+// The boot manifest dotnet.js carries between /*json-start*/ and /*json-end*/. An SDK bump may change the dotnet.js
+// boot-manifest layout parsed here.
 const source = fs.readFileSync(dotnet[0], 'utf8');
 const json = source.slice(source.indexOf('/*json-start*/') + 14, source.indexOf('/*json-end*/'));
 const resources = JSON.parse(json).resources;
