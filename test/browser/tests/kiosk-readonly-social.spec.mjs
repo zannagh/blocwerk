@@ -27,6 +27,30 @@ async function actAs(page, user) {
     expect(response.ok()).toBe(true);
 }
 
+// The boulder page's first interactive render calls blocwerkOfflineActions.registerRefresh (BoulderDetail's
+// OnAfterRenderAsync). Until then the circuit may still replace the prerendered DOM, which throws away whatever was typed
+// into the comment box, and the Post click then enqueues nothing (an empty input is rejected): CI saw exactly that. The
+// init script marks the call, so a test types only into the interactive page.
+async function trackInteractive(context) {
+    await context.addInitScript(() => {
+        let actions;
+        Object.defineProperty(window, 'blocwerkOfflineActions', {
+            configurable: true,
+            get: () => actions,
+            set: value => {
+                const register = value.registerRefresh;
+                value.registerRefresh = function (...args) {
+                    window.__bwBoulderInteractive = true;
+                    return register.apply(this, args);
+                };
+                actions = value;
+            },
+        });
+    });
+}
+
+const whenInteractive = page => page.waitForFunction(() => window.__bwBoulderInteractive === true);
+
 const boulderUrl = (world, id) => `/walls/${world.social.wallId}/boulders/${id}`;
 const commentRow = (page, text) => page.locator('.comments-section .comment-row', { hasText: text });
 
@@ -62,15 +86,18 @@ test('the resting kiosk reads a boulder read-only, naming consenting members and
 });
 
 test('the resting kiosk gets new comments and activity live, still without the name', async ({ page, browser, baseURL, world }) => {
+    await trackInteractive(page.context());
     await registerKiosk(page, world.social.kioskToken);
     await page.goto(boulderUrl(world, world.social.live));
-    await expect(page.locator('.activity-feed .activity-row').first()).toBeAttached();
+    await whenInteractive(page); // subscribed to the feed before Dave writes
 
     // Dave comments from his own phone; the tablet's circuit gets the comment and the activity entry from the feed.
     const phone = await browser.newContext({ baseURL });
     try {
+        await trackInteractive(phone);
         const dave = await phone.newPage();
         await signIn(dave, world.users.dave, boulderUrl(world, world.social.live));
+        await whenInteractive(dave);
         const text = `Live comment ${Date.now()}`;
         await dave.locator('.comment-input').fill(text);
         await dave.locator('.comment-submit').click();
@@ -85,15 +112,18 @@ test('the resting kiosk gets new comments and activity live, still without the n
 });
 
 test('a deleted attempt leaves the activity of the tablet and of the member, live and on reload', async ({ page, browser, baseURL, world }) => {
+    await trackInteractive(page.context());
     await registerKiosk(page, world.social.kioskToken);
     await page.goto(boulderUrl(world, world.social.live));
     const tablet = page.locator('.activity-feed');
-    await expect(tablet.locator('.activity-row').first()).toBeAttached();
+    await whenInteractive(page);
 
     const phone = await browser.newContext({ baseURL });
     try {
+        await trackInteractive(phone);
         const cora = await phone.newPage();
         await signIn(cora, world.users.cora, boulderUrl(world, world.social.live));
+        await whenInteractive(cora);
         await cora.locator('.attempt-buttons .attempt-btn.send').first().click();
         await expect(tablet).toContainText('Cora sent this');
         const own = cora.locator('.activity-feed');
