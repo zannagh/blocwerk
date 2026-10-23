@@ -9,8 +9,8 @@
  *
  * It expects the page to render the release form (Phase 3):
  *   <form id="bw-kiosk-release" method="post" action="/kiosk/release">antiforgery token</form>
- * Submitting that form is how the timer fires, which keeps the antiforgery token server-rendered
- * and means this file never has to know anything about it.
+ * Submitting that form is how the timer fires. The server does not require its antiforgery token:
+ * by then the session has usually expired and the token, bound to the member, no longer matches.
  *
  * Enhanced navigation morphs the DOM without a full load, so the timer is re-armed on
  * `enhancedload` as well as on first paint (mirroring nav.js / theme.js).

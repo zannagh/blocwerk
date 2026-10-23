@@ -291,6 +291,10 @@ public static class Program
         app.UseForwardedHeaders();
         app.UseSlowRequestLogging();
 
+        // Outside the exception handler, so its bodiless 500 is covered too: a kiosk tablet never sits on a dead
+        // error page. Kiosk navigations only — see the class docs.
+        app.UseKioskErrorRecovery();
+
         // A cookie that no longer names anybody who may sign in must land on a sign-in prompt, not a
         // 500 the user cannot read their way out of. Narrow by design — see the class docs.
         app.UseUnresolvableSessionRedirect();
