@@ -346,7 +346,7 @@
     }
 
     // PR 3.9: an announced deploy holds the worker's hand-off to the offline client, so a restart's 502s keep today's
-    // answers; the new instance ends the hold (the worker also ends it by itself, sw-client-cache.js).
+    // answers; the new instance ends the hold (the worker also ends it by itself, service-worker.js).
     function tellWorker(pending) {
         try {
             if (window.bwSwGuard && typeof window.bwSwGuard.deploy === 'function') {

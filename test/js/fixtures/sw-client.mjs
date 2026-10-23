@@ -1,4 +1,4 @@
-// The offline client's worker fixtures (sw-client-cache.js, sw-client-fill.js; PR 3.9): a deploy's shell and files,
+// The offline client's worker fixtures (service-worker.js's offline client section; PR 3.9): a deploy's shell and files,
 // a worker with a given partition, lock or record, and the messages the page sends. For sw-client-*.test.mjs.
 import assert from 'node:assert/strict';
 import { loadWorker, dispatchFetch, response, ORIGIN } from './sw-sandbox.mjs';
