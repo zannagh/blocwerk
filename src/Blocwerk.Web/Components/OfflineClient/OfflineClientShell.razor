@@ -3,13 +3,16 @@
    every file-less path under /v/. Every URL is fingerprinted through @Assets and the import map, as in BlocwerkApp;
    the response is no-cache, so a deploy's next load gets the new set. The `offline` partition meta tells the shared
    cache modules this page is no server identity. It loads no blazor.web.js and no edit-presence.js, so it holds no
-   circuit and no edit lease. *@
+   circuit and no edit lease. The version and routes metas are what the service worker precaches it under and hands
+   failed navigations over for (PR 3.9, service-worker.js). *@
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="bw-partition" content="offline" />
+    <meta name="bw-client-version" content="@OfflineClientShellAssets.Version(Assets)" />
+    <meta name="bw-client-routes" content="@OfflineClientShellAssets.Routes" />
     <meta name="color-scheme" content="light dark" />
     <title>Blocwerk · offline</title>
     <base href="/v/" />
@@ -25,6 +28,7 @@
     {
         <script src="@OfflineClientShellAssets.Url(Assets, module)"></script>
     }
+    <script src="@OfflineClientShellAssets.Url(Assets, OfflineClientShellAssets.Guard)"></script>
     <script src="@OfflineClientShellAssets.Url(Assets, OfflineClientShellAssets.Loader)" autostart="false"></script>
     <script src="@OfflineClientShellAssets.Url(Assets, OfflineClientShellAssets.Boot)"></script>
 </body>

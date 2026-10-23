@@ -38,14 +38,14 @@ async function expectModulesFromTheLibrary(page) {
     }
 }
 
-// The shell cache's keys under the library path.
+// The shell caches' keys under the library path (the released worker's shell-v4, this build's later one).
 function shellLibraryKeys(page) {
     return page.evaluate(async library => {
-        if (!(await caches.has('blocwerk-shell-v4'))) {
-            return [];
+        const paths = [];
+        for (const name of (await caches.keys()).filter(n => n.startsWith('blocwerk-shell-'))) {
+            paths.push(...(await (await caches.open(name)).keys()).map(r => new URL(r.url).pathname));
         }
-        const keys = await (await caches.open('blocwerk-shell-v4')).keys();
-        return keys.map(r => new URL(r.url).pathname).filter(p => p.startsWith(library)).sort();
+        return paths.filter(p => p.startsWith(library)).sort();
     }, LIBRARY);
 }
 
@@ -88,9 +88,10 @@ test('under the released worker the moved modules load from the library; after i
     }
     await expect.poll(async () => (await shellLibraryKeys(page)).filter(p => MOVED.some(m => p.includes(`/${m}.`))).length).toBe(MOVED.length);
 
-    // With the library's path unreachable, the worker answers each moved script from its shell (no-store skips the
-    // HTTP cache, so the answer cannot come from there).
-    await server.faults([{ path: `^${LIBRARY.replace(/\./g, '\\.')}`, drop: true }]);
+    // With the server unreachable, the worker answers each moved script from its shell (no-store skips the HTTP cache,
+    // so the answer cannot come from there). Not a `drop` rule for the library's path: Linux WebKit's network process
+    // crashes when requests die on open connections (harness/proxy.mjs), and the page then loses its worker.
+    await server.unreachable();
     for (const src of srcs) {
         const answer = await pageFetch(page, src, { cache: 'no-store' });
         expect(answer.status, src).toBe(200);

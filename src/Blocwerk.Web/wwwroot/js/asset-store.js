@@ -13,6 +13,7 @@
  *                Clear-Site-Data) can empty a cache behind our back, so on start rows without an entry go and entries
  *                without a row are added, sized from their Content-Length.
  *   loadSummary: /api/me/cache-summary → { wallsWith3d, walls }, or null when the server cannot say.
+ *   askWorker:   one message and its reply, or null (client-precache.js asks `client-precache` through it).
  * Nothing here throws into the page.
  */
 window.bwAssetStore = (function () {
@@ -186,5 +187,5 @@ window.bwAssetStore = (function () {
         }
     }
 
-    return { PROTO, SW_INFO_TIMEOUT_MS, VERIFY_WAIT_MS, probeWorker, workerPartition, refreshWorkerPartition, record, verify, reconcile, loadSummary };
+    return { PROTO, SW_INFO_TIMEOUT_MS, VERIFY_WAIT_MS, askWorker, probeWorker, workerPartition, refreshWorkerPartition, record, verify, reconcile, loadSummary };
 })();
