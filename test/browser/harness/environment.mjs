@@ -127,7 +127,9 @@ function publishApp() {
     }
     const webOut = path.join(outDir, 'web');
     fs.rmSync(webOut, { recursive: true, force: true });
-    run('dotnet', ['publish', webProject, '-c', 'Debug', '-o', webOut, '--nologo', '-v', 'q'], { cwd: repoRoot });
+    // BW_CONFIGURATION=Release for the client budget gate (gate/), which measures the bundle a release ships.
+    const configuration = process.env.BW_CONFIGURATION || 'Debug';
+    run('dotnet', ['publish', webProject, '-c', configuration, '-o', webOut, '--nologo', '-v', 'q'], { cwd: repoRoot });
     return webOut;
 }
 

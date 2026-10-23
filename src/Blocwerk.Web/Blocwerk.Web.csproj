@@ -32,5 +32,7 @@
     <ProjectReference Include="..\Blocwerk.Authentication\Blocwerk.Authentication.csproj" />
     <ProjectReference Include="..\Blocwerk.HoldDetection\Blocwerk.HoldDetection.csproj" />
     <ProjectReference Include="..\Blocwerk.Shared.Ui\Blocwerk.Shared.Ui.csproj" />
+    <!-- The offline gym client (standalone WASM, Phase 3): its static web assets are served under /v/ (Program.cs). -->
+    <ProjectReference Include="..\Blocwerk.Client\Blocwerk.Client.csproj" />
   </ItemGroup>
 </Project>

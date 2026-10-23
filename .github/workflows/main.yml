@@ -124,6 +124,18 @@ jobs:
       - name: Test
         run: dotnet test -c Release --no-build
 
+      # The offline client's bundle budget (Phase 3, PR 3.8): the Brotli bytes a cold /v/ boot loads, from a Release
+      # publish of the client alone, must stay within the gate's 2560 KiB. Deterministic, so it blocks.
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Offline client bundle budget
+        run: |
+          dotnet publish src/Blocwerk.Client -c Release -o "$RUNNER_TEMP/blocwerk-client" --nologo
+          node build/check-client-bundle.mjs "$RUNNER_TEMP/blocwerk-client/wwwroot" 2560
+
       - name: Set up QEMU
         if: needs.determine-jobs.outputs.should_push_image == 'true'
         uses: docker/setup-qemu-action@v3

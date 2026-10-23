@@ -24,6 +24,19 @@ removes it again. The first run takes about a minute longer, for the publish and
 - In CI a test gets one retry. `harness/flaky-report.mjs` reads the JSON report and annotates every test that passed
   only on its retry with a `::warning::`.
 
+## The offline client's budget gate (`npm run gate`)
+
+`playwright.gate.config.mjs` runs `gate/` (plan 2026-10-22, PR 3.8): it measures, so it is not part of `npm test` or
+CI. It publishes Release (`BW_CONFIGURATION`, default Debug for `npm test`) and prints a table of each measure by
+phone profile against its threshold (`gate/profiles.mjs`), then GO or NO-GO (`gate/report.mjs`, exit 1 on NO-GO).
+
+- `client-start.spec.mjs`: the Brotli bytes a cold `/v/` boot fetches, and the time to the client's first render
+  (`bw-client-ready`), cold and warm, three runs each, under CDP CPU and network throttling.
+- `client-memory.spec.mjs`: the app's own `wall3d.js` shows a 250 000-splat level (and an 800 000 one) in the booted
+  client and in a blank page; the difference in resident memory of the page and GPU processes is the client's cost.
+  The splat is synthetic (`gate/spz.mjs`) unless `BW_GATE_SPLAT=<path of a .spz>` names a real one.
+- `BW_GATE_PROFILES=android-mid` narrows the profiles. Results: `.out/gate/results.json`.
+
 ## What it starts (`harness/environment.mjs`)
 
 1. A throwaway `postgres:17` container on a random local port, with a random password.
@@ -39,9 +52,10 @@ removes it again. The first run takes about a minute longer, for the publish and
    except `PATH`, `DOTNET_ROOT`, `TMPDIR` and `LANG`. `HOME` points at a temp directory, so the data-protection keys
    are throwaway too.
 5. `harness/proxy.mjs`, a same-origin proxy in front of the app. The browser talks only to it. It adds a request log
-   (to prove a request never reached the server), fault rules (404/503/delay/dropped connection/body rewrite per
-   path), the server unreachable as a whole (its port closed, connects refused), and fixed Clear-Site-Data probe pages
-   under `/__pw/`. Its control API also listens on a port of its own (`controlURL` in `.out/state.json`).
+   (to prove a request never reached the server), fault rules (404/503/delay/dropped connection/body rewrite/fixed
+   body/file per path), the server unreachable as a whole (its port closed, connects refused), and fixed
+   Clear-Site-Data probe pages under `/__pw/`. Its control API also listens on a port of its own (`controlURL` in
+   `.out/state.json`).
 
 ## Layout
 

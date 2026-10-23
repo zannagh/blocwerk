@@ -17,8 +17,9 @@ namespace Blocwerk.Core.Tests;
 
 /// <summary>
 /// The <c>bw-partition</c> meta (design §6.6) and the key behind the labels. Every <c>@page</c> is rendered inside the
-/// one root document, <c>BlocwerkApp</c>, so the meta in its <c>&lt;head&gt;</c> is on every server-rendered page; the
-/// structural test pins that, and the render tests pin what the meta says.
+/// one root document, <c>BlocwerkApp</c>, so the meta in its <c>&lt;head&gt;</c> is on every server-rendered page. The
+/// only other document is the offline client's shell (<c>OfflineClientShell</c>, PR 3.8), which says <c>offline</c>;
+/// the structural test pins both, and the render tests pin what the meta says.
 /// </summary>
 public sealed partial class CachePartitionMetaTests : IDisposable
 {
@@ -74,19 +75,30 @@ public sealed partial class CachePartitionMetaTests : IDisposable
     }
 
     [Fact]
-    public void EveryServerRenderedPage_GoesThroughTheRootDocument_WhoseHeadCarriesTheMeta()
+    public void EveryServerRenderedPage_GoesThroughARootDocument_WhoseHeadCarriesTheMeta()
     {
         var web = Path.Combine(RepoRoot(), "src", "Blocwerk.Web");
         var app = File.ReadAllText(Path.Combine(web, "Components", "BlocwerkApp.razor"));
         var head = app[app.IndexOf("<head>", StringComparison.Ordinal)..app.IndexOf("</head>", StringComparison.Ordinal)];
         Assert.Contains("<CachePartitionMeta />", head);
 
-        // No other component writes a document of its own, and the app maps exactly one root.
+        // The offline client's shell is the one other document. It must say `offline` and never resolve the identity:
+        // the service worker precaches it (PR 3.9) and serves the same bytes to whoever opens /v/ offline, so a resolved
+        // label would freeze one identity into a shared copy and claim it after a sign-out. `offline` decides nothing
+        // (asset-wipe.js); the client takes the partition from the ledger's active label (PR 3.10).
+        var shell = File.ReadAllText(Path.Combine(web, "Components", "OfflineClient", "OfflineClientShell.razor"));
+        var shellHead = shell[shell.IndexOf("<head>", StringComparison.Ordinal)..shell.IndexOf("</head>", StringComparison.Ordinal)];
+        Assert.Contains("<meta name=\"bw-partition\" content=\"offline\" />", shellHead);
+        Assert.DoesNotContain("CachePartitionMeta", shell);
+
+        // No other component writes a document of its own, and the app maps exactly one Razor Components root (the shell
+        // is a controller's RazorComponentResult, not a second root).
         var documents = Directory.EnumerateFiles(Path.Combine(web, "Components"), "*.razor", SearchOption.AllDirectories)
             .Where(f => HeadTag().IsMatch(File.ReadAllText(f)))
             .Select(Path.GetFileName)
+            .Order(StringComparer.Ordinal)
             .ToList();
-        Assert.Equal(["BlocwerkApp.razor"], documents);
+        Assert.Equal(["BlocwerkApp.razor", "OfflineClientShell.razor"], documents);
         var program = File.ReadAllText(Path.Combine(web, "Program.cs"));
         Assert.Single(Regex.Matches(program, @"MapRazorComponents<"));
         Assert.Contains("MapRazorComponents<BlocwerkApp>", program);

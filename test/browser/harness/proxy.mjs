@@ -6,7 +6,8 @@
  *   - a request log (GET /__pw/log), so a test can prove a request never reached the server;
  *   - fault rules (POST /__pw/faults), so a test can make one path answer 404 or 503, or drop the connection (`drop`,
  *     that path unreachable), delay it (`delay` ms), rewrite a page's body (`rewrite`), or answer a fixed 200 body
- *     (`body`, with `headers`: an older build's file), without touching the app or the database;
+ *     (`body`, with `headers`: an older build's file) or a file's bytes (`file`), without touching the app or the
+ *     database;
  *   - fixed pages for the Clear-Site-Data probes (GET /__pw/csd?status=200|302, /__pw/cacheable, /__pw/blank);
  *   - the server unreachable as a whole (POST /__pw/unreachable): every open connection is closed and the port stops
  *     listening, so a connect is refused, as with a server that is down. Cleared by the next POST /__pw/faults.
@@ -21,6 +22,7 @@
  * Control paths are under /__pw/ and never forwarded. The proxy holds no state the app relies on.
  */
 import { createHash } from 'node:crypto';
+import fs from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
 
@@ -53,6 +55,14 @@ export async function startProxy(appPort) {
         }
         if (fault && fault.rewrite) {
             forwardRewritten(appPort, req, res, entry, fault.rewrite);
+            return;
+        }
+        if (fault && typeof fault.file === 'string') {
+            // A fixed answer read from a file (binary, e.g. the budget gate's splat), streamed as it is.
+            entry.status = 200;
+            entry.fault = true;
+            res.writeHead(200, { 'cache-control': 'no-store', 'content-length': fs.statSync(fault.file).size, ...(fault.headers || {}) });
+            fs.createReadStream(fault.file).pipe(res);
             return;
         }
         if (fault && typeof fault.body === 'string') {
