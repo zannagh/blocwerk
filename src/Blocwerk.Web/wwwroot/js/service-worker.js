@@ -11,7 +11,8 @@
  *      the SignalR circuit — though those requests are ALWAYS network-only here; the queue owns
  *      their retry/idempotency, and a cached POST would be meaningless.
  *   3. Navigations that fail offline fall back to a tidy /offline.html instead of the browser's
- *      dinosaur.
+ *      dinosaur, or (PR 3.9) go to the offline gym client under /v/ when it is precached and covers the
+ *      route: sw-client-cache.js.
  *
  * NEVER cached: anything under /api/* and /_blazor/* (SignalR), and any non-GET request. Those are
  * strictly network-only so auth, the circuit and the offline queue always talk to the live server.
@@ -27,10 +28,10 @@
  * offline-queue.js / blazor-boot.js, which covers the tab-open case; Background Sync would only add
  * closed-tab flushing and needs its own IndexedDB replay in the SW, so it is deferred.
  */
-const CACHE = 'blocwerk-shell-v4';
+const CACHE = 'blocwerk-shell-v5';
 const PROTO = 1;
 
-importScripts('/js/sw-asset-cache.js');
+importScripts('/js/sw-asset-cache.js', '/js/sw-client-cache.js', '/js/sw-push.js');
 
 // The worker's half of the 401 lock (Phase 3 PR 3.5): a `u-` partition the page locked after its session expired
 // (asset-lock.js) is kept for the same user's return but never served. The page writes the locked label to
@@ -96,8 +97,10 @@ self.addEventListener('activate', event => {
             // probe's size-ladder scratch (up to 1.5 GB a crashed run can leave behind). Every other cache on
             // the origin (the probe's markers in 'bw-storage-probe', on-device wall data in 'bw-a1-*') is not
             // the shell's to delete. Keeping 'bw-a1-*' here, before anything writes it, is what makes rolling
-            // back to this worker or any later one safe once the asset cache ships.
-            .then(keys => Promise.all(keys.filter(isDisposableCache).map(k => caches.delete(k))))
+            // back to this worker or any later one safe once the asset cache ships. The offline client's older
+            // versions go too, but only once a version is complete (sw-client-cache.js).
+            .then(keys => staleClientCaches(keys).then(stale => keys.filter(k => isDisposableCache(k) || stale.includes(k))))
+            .then(keys => Promise.all(keys.map(k => caches.delete(k))))
             .then(() => self.clients.claim())
     );
 });
@@ -108,8 +111,9 @@ function isDisposableCache(name) {
         || name === 'bw-storage-probe-ladder';
 }
 
-// The one message this protocol version answers: a page asking which worker it is talking to. The reply goes
-// to the sender's MessagePort when it passed one, otherwise back to the sending client.
+// The messages this protocol version answers: a page asking which worker it is talking to, asking it to look the
+// partition up again, or (PR 3.9) to precache the offline client. The reply goes to the sender's MessagePort when it
+// passed one, otherwise back to the sending client.
 self.addEventListener('message', event => {
     const data = event.data;
     if (!data || typeof data !== 'object' || data.proto !== PROTO) {
@@ -117,18 +121,26 @@ self.addEventListener('message', event => {
     }
     if (data.type === 'sw-info') {
         // `partition`: the label the asset cache serves right now (sw-asset-cache.js), null before any lookup.
-        reply(event, { proto: PROTO, type: 'sw-info', shell: CACHE, partition: assetPartitions.current });
+        // `client`: the offline client's complete version, null when none is (or before the worker has read it).
+        const client = clientState.record ? clientState.record.version : null;
+        reply(event, { proto: PROTO, type: 'sw-info', shell: CACHE, partition: assetPartitions.current, client });
+    } else if (data.type === 'client-precache') {
+        lifetime(event, precacheClient().then(result => reply(event, { proto: PROTO, type: 'client-precached', ...result })));
     } else if (data.type === 'sw-refresh-partition') {
         // Answers `partition-refreshed` with the label served once the lookup is done, so the page can fill at once.
         const clientId = event.source && event.source.id;
         const done = refreshPartition(clientId)
             .then(() => reply(event, { proto: PROTO, type: 'partition-refreshed', partition: assetPartitions.current }))
             .catch(() => undefined);
-        if (typeof event.waitUntil === 'function') {
-            event.waitUntil(done);
-        }
+        lifetime(event, done);
     }
 });
+
+function lifetime(event, promise) {
+    if (typeof event.waitUntil === 'function') {
+        event.waitUntil(promise);
+    }
+}
 
 function reply(event, message) {
     const target = (event.ports && event.ports[0]) || event.source;
@@ -187,11 +199,19 @@ self.addEventListener('fetch', event => {
         return; // Let the network handle it untouched.
     }
 
-    // Navigations (server-rendered): try the network, fall back to the offline page when it fails.
+    // Navigations (server-rendered): the network, falling back to the offline client or the offline page when it
+    // fails (sw-client-cache.js); a /v/ navigation is the client's shell.
     if (request.mode === 'navigate') {
-        event.respondWith(
-            fetch(request).catch(() => caches.match('/offline.html'))
-        );
+        const offlinePage = () => caches.match('/offline.html');
+        event.respondWith(url.pathname.startsWith(CLIENT_SHELL_PATH)
+            ? respondWithClientShell(request, offlinePage)
+            : navigateWithHandoff(request, offlinePage));
+        return;
+    }
+
+    // The offline client's files, and what its pages load: cache-first from the client caches, then the network.
+    if (isClientFile(url, request)) {
+        event.respondWith(respondWithClientFile(request));
         return;
     }
 
@@ -212,66 +232,4 @@ self.addEventListener('fetch', event => {
             fetchAndCache(request).catch(() => caches.match(request))
         );
     }
-});
-
-// Web Push (RFC 8291 / VAPID). The server sends a small JSON payload with lowercase fields
-// (title, body, url, tag, icon); anything missing falls back to a sensible default so a payload the
-// server trims can still surface a usable notification. showNotification must run inside
-// waitUntil — the SW may be a one-shot wake with no page attached, and the browser terminates it the
-// moment this handler's returned promise settles.
-self.addEventListener('push', event => {
-    let payload = {};
-    if (event.data) {
-        try {
-            payload = event.data.json() || {};
-        } catch (e) {
-            // Empty or non-JSON push: fall back to a generic notice rather than dropping it.
-            payload = {};
-        }
-    }
-
-    const title = payload.title || 'Blocwerk';
-    const options = {
-        body: payload.body || '',
-        icon: payload.icon || '/icons/icon-192.png',
-        badge: '/icons/icon-192.png',
-        tag: payload.tag,
-        data: { url: payload.url || '/' }
-    };
-
-    event.waitUntil(self.registration.showNotification(title, options));
-});
-
-// Tapping a notification should land the user on its deep link, reusing an already-open Blocwerk
-// window rather than stacking another one. An installed PWA is usually already open somewhere on
-// some other URL, so matching on an exact URL would miss it and spawn a second window; instead we
-// reuse the first window we find, steer it to the deep link, and only open a fresh one when nothing
-// is open at all. Same waitUntil rule as above.
-self.addEventListener('notificationclick', event => {
-    event.notification.close();
-
-    const targetUrl = (event.notification.data && event.notification.data.url) || '/';
-    const targetHref = new URL(targetUrl, self.location.origin).href;
-
-    event.waitUntil(
-        self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
-            if (clientList.length > 0) {
-                const client = clientList[0];
-                // navigate() may be undefined (older engines); fall back to a plain focus so the tap
-                // still surfaces an existing window instead of opening a duplicate.
-                if (typeof client.navigate === 'function') {
-                    return client.navigate(targetHref)
-                        .then(navigated => (navigated || client).focus())
-                        .catch(() => client.focus());
-                }
-                if ('focus' in client) {
-                    return client.focus();
-                }
-            }
-            if (self.clients.openWindow) {
-                return self.clients.openWindow(targetUrl);
-            }
-            return undefined;
-        })
-    );
 });

@@ -109,10 +109,10 @@ export function loadWorker({ cacheNames = [], caches: initial = {}, routes = {},
 
 // Dispatches a fetch event. `handled` is false when the worker left the request to the network; `settle()` waits for
 // the response and every waitUntil the worker registered while producing it.
-export function dispatchFetch(worker, path, { clientId = 'tab-1', method = 'GET', headers = {}, mode = 'no-cors' } = {}) {
+export function dispatchFetch(worker, path, { clientId = 'tab-1', method = 'GET', headers = {}, mode = 'no-cors', referrer = '' } = {}) {
     const lifetime = [];
     const event = {
-        request: { url: new URL(path, ORIGIN).href, method, mode, headers: new Headers(headers) },
+        request: { url: new URL(path, ORIGIN).href, method, mode, referrer, headers: new Headers(headers) },
         clientId,
         handled: false,
         respondWith(p) { event.handled = true; event.response = Promise.resolve(p); },

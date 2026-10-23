@@ -44,13 +44,13 @@ const assetFetches = worker => worker.fetches.filter(f => f.path.includes('/a/')
 
 test('activate keeps the asset caches and the worker state, deleting only old shells, the retired schema and probe scratch', async () => {
     const worker = loadWorker({ cacheNames: [
-        'blocwerk-shell-v3', 'blocwerk-shell-v4',
+        'blocwerk-shell-v3', 'blocwerk-shell-v4', 'blocwerk-shell-v5',
         'bw-a0-user1-img', 'bw-a1-user1-img', 'bw-a1-user1-3d', 'bw-a1-anon-img', 'bw-sw-state',
         'bw-storage-probe', 'bw-storage-probe-ladder', 'something-else',
     ] });
     await activate(worker);
     assert.deepEqual([...worker.stored.keys()].sort(), [
-        'blocwerk-shell-v4', 'bw-a1-anon-img', 'bw-a1-user1-3d', 'bw-a1-user1-img', 'bw-storage-probe', 'bw-sw-state',
+        'blocwerk-shell-v5', 'bw-a1-anon-img', 'bw-a1-user1-3d', 'bw-a1-user1-img', 'bw-storage-probe', 'bw-sw-state',
         'something-else',
     ]);
     assert.equal(worker.self.claimed, true);
@@ -58,7 +58,7 @@ test('activate keeps the asset caches and the worker state, deleting only old sh
 
 test('sw-info under proto 1 is answered on the passed port, or else to the sending client', () => {
     const worker = loadWorker();
-    const expected = { proto: 1, type: 'sw-info', shell: 'blocwerk-shell-v4', partition: null };
+    const expected = { proto: 1, type: 'sw-info', shell: 'blocwerk-shell-v5', partition: null, client: null };
     assert.deepEqual(send(worker, { proto: 1, type: 'sw-info' }, true).map(m => ({ ...m })), [expected]);
     assert.deepEqual(send(worker, { proto: 1, type: 'sw-info' }, false).map(m => ({ ...m })), [expected]);
 });
@@ -387,7 +387,7 @@ test("the shared UI library's assets (/_content/) are shell assets: network-firs
     assert.equal(online.handled, true);
     assert.equal(await (await online.settle()).text(), 'shine');
     await new Promise(resolve => setTimeout(resolve, 0));
-    assert.equal(worker.stored.get('blocwerk-shell-v4')?.size, 1, 'the copy lands in the shell cache');
+    assert.equal(worker.stored.get('blocwerk-shell-v5')?.size, 1, 'the copy lands in the shell cache');
 
     delete worker.routes[path];
     const offline = dispatchFetch(worker, path);
