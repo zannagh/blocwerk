@@ -51,6 +51,8 @@ removes it again. The first run takes about a minute longer, for the publish and
   cache for the next identity.
 - `tests/logout.spec.mjs`, `tests/page-fill.spec.mjs`, the last test of `sw-partition`, and the second test of `quota`:
   the 2.7 page modules. They skip themselves on a build without `asset-cache.js`.
+- `tests/cache-js-move.spec.mjs`: the PR 3.7 move of the cache modules to `/_content/Blocwerk.Shared.Ui/js/`, under the
+  released worker (`released/`, frozen from main) and its update, and an old document's enhanced navigation.
 - `tests/quota.spec.mjs`: refused writes, forced with Chromium's `Storage.overrideQuotaForOrigin` (Chromium only).
 
 ## Engine notes
