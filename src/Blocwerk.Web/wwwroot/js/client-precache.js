@@ -1,7 +1,7 @@
 /*
  * bwClientPrecache — the page's half of the offline client's precache (plan 2026-10-22 §1, PR 3.9).
  *
- * The page triggers it, the worker does it (sw-client-cache.js). Once this page's asset-cache start and its first fill
+ * The page triggers it, the worker does it (service-worker.js, the offline client section). Once this page's asset-cache start and its first fill
  * are done, and only when:
  *   - the page names a client version (its `bw-client-version` meta) and Save-Data is off (any connection type counts);
  *   - the page caches for a person (`u-…`) or a share viewer (`anon`) with a durable ledger, and the device holds at

@@ -1,4 +1,4 @@
-// The worker's hand-off of a failed Server-page navigation to the offline client (sw-client-cache.js, Phase 3 PR 3.9):
+// The worker's hand-off of a failed Server-page navigation to the offline client (service-worker.js, Phase 3 PR 3.9):
 // a network error, a 502/503/504 or the 4 s timer redirect to /v/ only for a complete, cached, covered version on a
 // u-/anon partition with no lock and no announced deploy; everything else keeps today's answer.
 import { test } from 'node:test';

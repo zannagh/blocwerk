@@ -396,3 +396,10 @@ test("the shared UI library's assets (/_content/) are shell assets: network-firs
     const offline = dispatchFetch(worker, path);
     assert.equal(await (await offline.settle()).text(), 'shine', 'offline, the shell copy answers');
 });
+
+test('the worker imports exactly one script (Linux WebKit hangs its first install now and then on more)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../../src/Blocwerk.Web/wwwroot/js/service-worker.js', import.meta.url), 'utf8');
+    const calls = [...source.matchAll(/^importScripts\(([^)]*)\);/gm)].map(m => m[1]);
+    assert.deepEqual(calls, ["'/js/sw-asset-cache.js'"]);
+});

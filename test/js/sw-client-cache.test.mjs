@@ -1,4 +1,4 @@
-// The worker's offline client precache (sw-client-fill.js, Phase 3 PR 3.9): one client version per cache with its
+// The worker's offline client precache (service-worker.js, Phase 3 PR 3.9): one client version per cache with its
 // completeness record, resumable fills, and old versions deleted only by a completed fill, never by activate. The real
 // worker runs in the vm sandbox (fixtures/sw-sandbox.mjs, fixtures/sw-client.mjs).
 import { test } from 'node:test';

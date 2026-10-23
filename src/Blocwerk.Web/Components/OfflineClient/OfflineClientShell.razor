@@ -4,7 +4,7 @@
    the response is no-cache, so a deploy's next load gets the new set. The `offline` partition meta tells the shared
    cache modules this page is no server identity. It loads no blazor.web.js and no edit-presence.js, so it holds no
    circuit and no edit lease. The version and routes metas are what the service worker precaches it under and hands
-   failed navigations over for (PR 3.9, sw-client-cache.js). *@
+   failed navigations over for (PR 3.9, service-worker.js). *@
 <!DOCTYPE html>
 <html lang="en">
 <head>
