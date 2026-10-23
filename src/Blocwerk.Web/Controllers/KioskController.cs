@@ -294,17 +294,34 @@ public sealed class KioskController : Controller
     /// Ends the acting-as session. The DEVICE registration is deliberately left in place, so the
     /// tablet drops back to anonymous kiosk browsing rather than to a stranger's browser.
     /// </summary>
+    /// <remarks>
+    /// <b>No antiforgery token, on purpose.</b> The token in the release form is bound to the member it was rendered
+    /// for, and the idle timer posts it long after the page rendered — by which time the acting session has usually
+    /// expired (the cookie only slides on HTTP requests, and a circuit makes none), so the request arrives anonymous
+    /// and the token no longer matches. Validating it answered a bare 400 that left a keyboardless tablet stranded on
+    /// a dead page. Release only ever REMOVES privilege — it signs out and redirects, reads nothing from the form and
+    /// writes nothing else — so the worst a forged post could do is log a member out of a tablet. A cross-site post is
+    /// still refused by <see cref="SameOriginPost"/> (and degrades to the same redirect, not an error).
+    /// </remarks>
     [HttpPost("/kiosk/release")]
     [AllowAnonymous]
-    [ValidateAntiForgeryToken]
+    [IgnoreAntiforgeryToken]
     public async Task<IActionResult> Release()
     {
+        var registration = deviceCookie.Read(HttpContext);
+        var restingPage = registration is null ? "/" : $"/walls/{registration.WallId}";
+
+        if (!SameOriginPost.IsSameOrigin(Request))
+        {
+            logger.LogWarning("Refused a cross-site kiosk release");
+            return LocalRedirect(restingPage);
+        }
+
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
 
         // No Clear-Site-Data: the tablet's cache is the bound wall's, shared by every identity on it, and a kiosk
         // session is pinned to that wall and gets member-only kinds as no-store (see SiteDataClearing).
-        var registration = deviceCookie.Read(HttpContext);
-        return LocalRedirect(registration is null ? "/" : $"/walls/{registration.WallId}");
+        return LocalRedirect(restingPage);
     }
 
     /// <summary>

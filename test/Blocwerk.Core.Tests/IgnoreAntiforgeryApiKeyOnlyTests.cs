@@ -17,10 +17,19 @@ namespace Blocwerk.Core.Tests;
 /// </summary>
 public class IgnoreAntiforgeryApiKeyOnlyTests
 {
+    /// <summary>
+    /// Writes that skip antiforgery while a cookie reaches them, because all they do is take privilege AWAY: the kiosk
+    /// release signs the acting member out and redirects, nothing else (its token went stale under the idle timer and
+    /// stranded a tablet on a 400 — see <c>KioskReleaseAntiforgeryTests</c>, which also pins its same-origin check).
+    /// Anything added here needs the same argument.
+    /// </summary>
+    private static readonly string[] PrivilegeDroppingWrites = [$"{nameof(KioskController)}.{nameof(KioskController.Release)}"];
+
     public static TheoryData<string> SkippingWrites()
     {
         var data = new TheoryData<string>();
-        foreach (var (controller, action) in Writes().Where(w => Skips(w.Controller, w.Action)))
+        foreach (var (controller, action) in Writes()
+            .Where(w => Skips(w.Controller, w.Action) && !PrivilegeDroppingWrites.Contains($"{w.Controller.Name}.{w.Action.Name}")))
         {
             data.Add($"{controller.Name}.{action.Name}");
         }
@@ -35,6 +44,17 @@ public class IgnoreAntiforgeryApiKeyOnlyTests
 
         Assert.Contains($"{nameof(WallRefreshApiController)}.{nameof(WallRefreshApiController.AnswerReview)}", names);
         Assert.Contains($"{nameof(WallRefreshApiController)}.{nameof(WallRefreshApiController.AcceptReviewGroup)}", names);
+    }
+
+    [Fact]
+    public void ThePrivilegeDroppingExemptions_AreExactlyTheKioskRelease()
+    {
+        var exempt = Writes()
+            .Where(w => Skips(w.Controller, w.Action))
+            .Select(w => $"{w.Controller.Name}.{w.Action.Name}")
+            .Intersect(PrivilegeDroppingWrites);
+
+        Assert.Equal(PrivilegeDroppingWrites, exempt);
     }
 
     [Theory]
