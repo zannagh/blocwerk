@@ -214,8 +214,8 @@
 
     @* The idle timer in wwwroot/js/kiosk-idle.js submits THIS form after 29 idle minutes and is inert
        whenever it is absent — which is every non-kiosk page and every anonymous kiosk page, since
-       there is no session to release then. Keeping the antiforgery token server-rendered here is why
-       the script never has to know anything about tokens. *@
+       there is no session to release then. The release endpoint does not validate the token (it is
+       bound to the member and is usually stale by the time the timer fires; see KioskController.Release). *@
     @if (KioskContext.IsKiosk)
     {
         <AuthorizeView>
