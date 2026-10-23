@@ -11,7 +11,7 @@ test.use({ serviceWorkers: 'block', workerOnly: true });
 const PROBE = '/__pw/cacheable?n=1';
 
 async function servedWithoutServer(page, server, path) {
-    await server.faults([{ path: '.*', drop: true }]);
+    await server.unreachable();
     try {
         return (await pageFetch(page, path)).status === 200;
     } finally {
