@@ -40,6 +40,12 @@ public static class OfflineClientShellAssets
         "_content/Blocwerk.Shared.Ui/js/asset-clear.js",
     ];
 
+    /// <summary>
+    /// The client store's reader of the device cache (PR 3.10, <c>window.bwClientStore</c>): loaded after the cache
+    /// modules it reads through, before the runtime that calls it.
+    /// </summary>
+    public const string Store = "v/js/client-store.js";
+
     /// <summary>The Blazor WebAssembly loader, started by <see cref="Boot"/> (autostart off).</summary>
     public const string Loader = "v/_framework/blazor.webassembly.js";
 
@@ -55,7 +61,7 @@ public static class OfflineClientShellAssets
     private static readonly ConditionalWeakTable<ResourceAssetCollection, string> Versions = new();
 
     /// <summary>Every label the shell names, for the tests that pin each one to a served file.</summary>
-    public static IEnumerable<string> All => Styles.Concat(CacheModules).Append(Guard).Append(Loader).Append(Boot);
+    public static IEnumerable<string> All => Styles.Concat(CacheModules).Append(Store).Append(Guard).Append(Loader).Append(Boot);
 
     /// <summary>
     /// The client's declared routes as the shell's <c>bw-client-routes</c> meta carries them: space-separated

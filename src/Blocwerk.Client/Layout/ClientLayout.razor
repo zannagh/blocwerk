@@ -1,14 +1,15 @@
 @inherits LayoutComponentBase
 @inject IJSRuntime JS
-@* The offline shell's frame: the read-only notice and the page. Links out of it are plain anchors outside the
-   /v/ base, so the browser makes a full navigation to the Server page. *@
+@* The offline shell's frame: the read-only notice, and the page behind the store's gate (StoreGate: a locked, updating
+   or empty device shows only its notice and "Clear offline data", never the page). Links out of it are plain anchors
+   outside the /v/ base, so the browser makes a full navigation to the Server page. *@
 <div class="bw-client">
     <header class="bw-client-bar">
         <a class="bw-client-brand" href="/">Blocwerk</a>
         <span class="bw-client-pill">Offline · read-only</span>
     </header>
     <main class="bw-client-main">
-        @Body
+        <StoreGate>@Body</StoreGate>
     </main>
 </div>
 
