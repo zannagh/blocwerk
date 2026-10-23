@@ -41,6 +41,7 @@ function fakeCaches(initial) {
                     store.set(keyOf(key), value);
                 },
                 match: async key => store.get(keyOf(key))?.clone(),
+                delete: async key => store.delete(keyOf(key)),
                 add: async () => {},
             };
         },

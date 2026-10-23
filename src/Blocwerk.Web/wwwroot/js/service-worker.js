@@ -31,7 +31,7 @@
 const CACHE = 'blocwerk-shell-v5';
 const PROTO = 1;
 
-importScripts('/js/sw-asset-cache.js', '/js/sw-client-cache.js', '/js/sw-push.js');
+importScripts('/js/sw-asset-cache.js', '/js/sw-client-cache.js', '/js/sw-client-fill.js', '/js/sw-push.js');
 
 // The worker's half of the 401 lock (Phase 3 PR 3.5): a `u-` partition the page locked after its session expired
 // (asset-lock.js) is kept for the same user's return but never served. The page writes the locked label to
@@ -111,8 +111,8 @@ function isDisposableCache(name) {
 }
 
 // The messages this protocol version answers: a page asking which worker it is talking to, asking it to look the
-// partition up again, or (PR 3.9) to precache the offline client. The reply goes to the sender's MessagePort when it
-// passed one, otherwise back to the sending client.
+// partition up again, or (PR 3.9) to precache the offline client or hold its hand-off for a deploy. The reply goes to
+// the sender's MessagePort when it passed one, otherwise back to the sending client.
 self.addEventListener('message', event => {
     const data = event.data;
     if (!data || typeof data !== 'object' || data.proto !== PROTO) {
@@ -124,6 +124,9 @@ self.addEventListener('message', event => {
         // so a worker that just started never reports null for a version it has.
         lifetime(event, presentClient().then(record => reply(event,
             { proto: PROTO, type: 'sw-info', shell: CACHE, partition: assetPartitions.current, client: record ? record.version : null })));
+    } else if (data.type === 'deploy-pending' || data.type === 'deploy-done') {
+        // An announced deploy holds the offline client's hand-off until the new instance is seen (sw-client-cache.js).
+        lifetime(event, data.type === 'deploy-pending' ? holdForDeploy() : endDeployHold());
     } else if (data.type === 'client-precache') {
         lifetime(event, precacheClient().then(result => reply(event, { proto: PROTO, type: 'client-precached', ...result })));
     } else if (data.type === 'sw-refresh-partition') {
