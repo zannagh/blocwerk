@@ -69,6 +69,9 @@ phone profile against its threshold (`gate/profiles.mjs`), then GO or NO-GO (`ga
   the 2.7 page modules. They skip themselves on a build without `asset-cache.js`.
 - `tests/cache-js-move.spec.mjs`: the PR 3.7 move of the cache modules to `/_content/Blocwerk.Shared.Ui/js/`, under the
   released worker (`released/`, frozen from main) and its update, and an old document's enhanced navigation.
+- `tests/client-handoff.spec.mjs`, `tests/client-precache.spec.mjs` (helpers in `harness/client.mjs`): the PR 3.9
+  offline client precache and the worker's hand-off of a failed navigation to `/v/`. The skeleton declares no route, so
+  the specs rewrite the shell's `bw-client-routes` meta (a `rewrite` rule takes a list of pairs too).
 - `tests/quota.spec.mjs`: refused writes, forced with Chromium's `Storage.overrideQuotaForOrigin` (Chromium only).
 
 ## Engine notes

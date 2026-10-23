@@ -3,7 +3,7 @@ import { test, expect, controlled, cacheNames } from '../harness/fixtures.mjs';
 
 test.use({ workerOnly: true });
 
-test('the worker installs, activates, claims the page and reports shell v4', async ({ page }) => {
+test('the worker installs, activates, claims the page and reports shell v5', async ({ page }) => {
     await page.goto('/');
     await controlled(page);
 
@@ -21,9 +21,9 @@ test('the worker installs, activates, claims the page and reports shell v4', asy
         navigator.serviceWorker.controller.postMessage({ proto: 1, type: 'sw-info' }, [channel.port2]);
         setTimeout(() => reject(new Error('no sw-info reply')), 5000);
     }));
-    expect(info).toMatchObject({ proto: 1, type: 'sw-info', shell: 'blocwerk-shell-v4' });
+    expect(info).toMatchObject({ proto: 1, type: 'sw-info', shell: 'blocwerk-shell-v5' });
 
-    await expect.poll(() => cacheNames(page)).toContain('blocwerk-shell-v4');
+    await expect.poll(() => cacheNames(page)).toContain('blocwerk-shell-v5');
 });
 
 test('an unknown proto or type gets no reply and breaks nothing', async ({ page }) => {
@@ -53,7 +53,7 @@ test('activate keeps bw-a1-* and bw-sw-state, and deletes old shells, bw-a0-* an
     await page.goto('/');
     await controlled(page);
 
-    await expect.poll(() => cacheNames(page)).toContain('blocwerk-shell-v4');
+    await expect.poll(() => cacheNames(page)).toContain('blocwerk-shell-v5');
     const names = await cacheNames(page);
     expect(names).toEqual(expect.arrayContaining(['bw-a1-u-aaaaaaaaaaaaaaaaaaaa-img', 'bw-a1-anon-3d', 'bw-sw-state', 'bw-storage-probe']));
     expect(names).not.toContain('blocwerk-shell-v3');

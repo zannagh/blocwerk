@@ -38,14 +38,14 @@ async function expectModulesFromTheLibrary(page) {
     }
 }
 
-// The shell cache's keys under the library path.
+// The shell caches' keys under the library path (the released worker's shell-v4, this build's later one).
 function shellLibraryKeys(page) {
     return page.evaluate(async library => {
-        if (!(await caches.has('blocwerk-shell-v4'))) {
-            return [];
+        const paths = [];
+        for (const name of (await caches.keys()).filter(n => n.startsWith('blocwerk-shell-'))) {
+            paths.push(...(await (await caches.open(name)).keys()).map(r => new URL(r.url).pathname));
         }
-        const keys = await (await caches.open('blocwerk-shell-v4')).keys();
-        return keys.map(r => new URL(r.url).pathname).filter(p => p.startsWith(library)).sort();
+        return paths.filter(p => p.startsWith(library)).sort();
     }, LIBRARY);
 }
 

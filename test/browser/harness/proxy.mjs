@@ -151,15 +151,18 @@ function forward(appPort, req, res, entry) {
     req.pipe(upstream);
 }
 
-// A `rewrite: [from, to]` rule: the app's answer with every `from` in its body replaced (uncompressed, so it can be read).
-function forwardRewritten(appPort, req, res, entry, [from, to]) {
+// A `rewrite: [from, to]` rule (or a list of such pairs): the app's answer with every `from` in its body replaced
+// (uncompressed, so it can be read).
+function forwardRewritten(appPort, req, res, entry, rewrite) {
+    const pairs = Array.isArray(rewrite[0]) ? rewrite : [rewrite];
     const { 'accept-encoding': _, ...headers } = req.headers;
     entry.fault = true;
     const upstream = http.request({ host: '127.0.0.1', port: appPort, method: req.method, path: req.url, headers }, answer => {
         const chunks = [];
         answer.on('data', c => chunks.push(c));
         answer.on('end', () => {
-            const body = Buffer.from(Buffer.concat(chunks).toString('utf8').split(from).join(to), 'utf8');
+            const text = pairs.reduce((t, [from, to]) => t.split(from).join(to), Buffer.concat(chunks).toString('utf8'));
+            const body = Buffer.from(text, 'utf8');
             const { 'content-length': __, 'transfer-encoding': ___, ...rest } = answer.headers;
             entry.status = answer.statusCode;
             res.writeHead(answer.statusCode, { ...rest, 'content-length': body.length });
