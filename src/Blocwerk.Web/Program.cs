@@ -392,6 +392,9 @@ public static class Program
         // are — see AliveEndpoints.
         app.MapAlive();
 
+        // The offline gym client's shell under /v/ (Blocwerk.Client, Phase 3); its files are static assets above.
+        app.MapOfflineClient();
+
         app.MapRazorComponents<BlocwerkApp>()
             .AddInteractiveServerRenderMode();
 

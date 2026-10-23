@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+
+  <!--
+    The offline gym client (Phase 3, plan 2026-10-22 §1): a standalone Blazor WebAssembly app that Blocwerk.Web serves
+    under /v/ from a static index.html shell, so it can open with no server. It takes over only when a gym navigation
+    fails (the service worker's redirect, PR 3.9) and shows local data read-only. It renders the hold overlay through
+    Blocwerk.Shared.Ui and reads the Blocwerk.Contracts documents, never Core.
+
+    StaticWebAssetBasePath puts its own files (index.html, _framework, css) under /v/; Blocwerk.Shared.Ui's stay at
+    /_content/ (Web serves one copy for both apps).
+
+    OverrideHtmlAssetPlaceholders stays OFF, against plan rev 2. With it on, the .NET 10.0.401 SDK drops the processed
+    index.html from a REFERENCING project's publish (Blocwerk.Web gets no v/index.html endpoint) and copies the
+    unprocessed one to the Web root as wwwroot/index.html. Off, the framework's assemblies and runtime are still
+    fingerprinted through the boot manifest in dotnet.js; only blazor.webassembly.js, dotnet.js, the shell's CSS and
+    the shared library's scripts keep stable URLs, which MapStaticAssets serves no-cache with an ETag.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <StaticWebAssetBasePath>v</StaticWebAssetBasePath>
+    <OverrideHtmlAssetPlaceholders>false</OverrideHtmlAssetPlaceholders>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <PublishTrimmed>true</PublishTrimmed>
+    <BlazorEnableTimeZoneSupport>false</BlazorEnableTimeZoneSupport>
+  </PropertyGroup>
+
+  <!-- Server-side telemetry and logging packages from Directory.Build.props have no place in the browser. -->
+  <ItemGroup>
+    <PackageReference Remove="Serilog" />
+    <PackageReference Remove="Serilog.Sinks.Console" />
+    <PackageReference Remove="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <PackageReference Remove="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Remove="OpenTelemetry.Instrumentation.AspNetCore" />
+    <PackageReference Remove="OpenTelemetry.Instrumentation.Http" />
+    <PackageReference Remove="OpenTelemetry.Instrumentation.Runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Blocwerk.Core.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Blocwerk.Contracts\Blocwerk.Contracts.csproj" />
+    <ProjectReference Include="..\Blocwerk.Shared.Ui\Blocwerk.Shared.Ui.csproj" />
+  </ItemGroup>
+
+</Project>

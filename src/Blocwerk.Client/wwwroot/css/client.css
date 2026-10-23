@@ -1,0 +1,71 @@
+/* The offline client's frame (Blocwerk.Client). The views (PR 3.11) bring their own rules; the overlay's come from
+   Blocwerk.Shared.Ui's hold-tap.css. */
+:root {
+    --bw-c-bg: #f6f6f8;
+    --bw-c-surface: #ffffff;
+    --bw-c-text: #1b1b28;
+    --bw-c-muted: #5c5c70;
+    --bw-c-accent: #3366dd;
+    --bw-c-border: #dcdce6;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bw-c-bg: #0f0f18;
+        --bw-c-surface: #1b1b28;
+        --bw-c-text: #e6e6ee;
+        --bw-c-muted: #a0a0b4;
+        --bw-c-accent: #7aa2ff;
+        --bw-c-border: #2c2c3c;
+    }
+}
+
+html, body {
+    margin: 0;
+    background: var(--bw-c-bg);
+    color: var(--bw-c-text);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.bw-client-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+    padding-top: max(12px, env(safe-area-inset-top));
+    background: var(--bw-c-surface);
+    border-bottom: 1px solid var(--bw-c-border);
+}
+
+.bw-client-brand {
+    color: inherit;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.bw-client-pill {
+    padding: 2px 10px;
+    border: 1px solid var(--bw-c-border);
+    border-radius: 999px;
+    color: var(--bw-c-muted);
+    font-size: 13px;
+}
+
+.bw-client-main, .bw-client-loading {
+    padding: 24px 16px;
+}
+
+.bw-client-empty h1 {
+    margin: 0 0 8px;
+    font-size: 20px;
+}
+
+.bw-client-empty p {
+    margin: 0 0 16px;
+    color: var(--bw-c-muted);
+}
+
+.bw-client-online {
+    color: var(--bw-c-accent);
+}

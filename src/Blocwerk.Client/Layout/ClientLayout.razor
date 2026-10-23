@@ -1,0 +1,27 @@
+@inherits LayoutComponentBase
+@inject IJSRuntime JS
+@* The offline shell's frame: the read-only notice and the page. Links out of it are plain anchors outside the
+   /v/ base, so the browser makes a full navigation to the Server page. *@
+<div class="bw-client">
+    <header class="bw-client-bar">
+        <a class="bw-client-brand" href="/">Blocwerk</a>
+        <span class="bw-client-pill">Offline · read-only</span>
+    </header>
+    <main class="bw-client-main">
+        @Body
+    </main>
+</div>
+
+@code {
+    /// <summary>The performance mark of the client's first render; the budget gate measures start time to it.</summary>
+    public const string ReadyMark = "bw-client-ready";
+
+    /// <inheritdoc />
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JS.InvokeVoidAsync("performance.mark", ReadyMark);
+        }
+    }
+}
