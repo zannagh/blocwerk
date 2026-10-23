@@ -99,8 +99,8 @@
     <div id="components-reconnect-modal" class="bw-reconnect-sentinel" aria-hidden="true"></div>
 
     @* The 401 lock (Phase 3 PR 3.5): this device holds offline data of a session that expired, kept hidden for that
-       user's return (Blocwerk.Shared.Ui's js/asset-lock.js unhides it). Outside <Routes /> like the sentinel above; the sign-in link
-       is a full page load, as every identity transition is. *@
+       user's return (Blocwerk.Shared.Ui's js/asset-lock.js unhides it). Outside <Routes /> like the sentinel above;
+       the sign-in link is a full page load, as every identity transition is. *@
     <div id="bw-offline-lock" class="bw-install bw-offline-lock" role="region" aria-label="Offline data on this device" hidden>
         <div class="bw-install-body">
             <p class="bw-install-title">Sign in to keep your offline data.</p>
@@ -217,8 +217,9 @@
        readability; it works with any worker, or none. asset-notice.js feeds StorageNotice.razor; asset-3d.js the 3D
        view's mobile-data notice and "Save 3D offline" (Wall3DStage); asset-report.js (with asset-clear.js)
        OfflineStorageCard.razor and the offline-ready marks. asset-lock.js is the 401 lock (PR 3.5) and drives
-       #bw-offline-lock below; asset-ledger-idb.js is the ledger's IndexedDB half. The ledger, wipe, lock, session and
-       clear modules live in Blocwerk.Shared.Ui (PR 3.7), so the offline client loads the same files; the order is unchanged. *@
+       #bw-offline-lock below; asset-ledger-idb.js is the ledger's IndexedDB half. The ledger, wipe, lock, session
+       and clear modules live in Blocwerk.Shared.Ui (PR 3.7), so the offline client loads the same files; the order
+       is unchanged. *@
     <script src="@Assets["_content/Blocwerk.Shared.Ui/js/asset-ledger-idb.js"]"></script>
     <script src="@Assets["_content/Blocwerk.Shared.Ui/js/asset-ledger.js"]"></script>
     <script src="@Assets["js/asset-budget.js"]"></script>

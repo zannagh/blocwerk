@@ -71,7 +71,7 @@ public sealed partial class SharedUiScriptTests
         var web = Path.Combine(Root, "src", "Blocwerk.Web", "wwwroot", "js");
         var worker = File.ReadAllText(Path.Combine(web, "service-worker.js"));
         Assert.Contains("navigator.serviceWorker.register('/js/service-worker.js'", File.ReadAllText(Path.Combine(web, "pwa.js")));
-        Assert.Contains("|| url.pathname.startsWith('/_content/')", worker);
+        Assert.Matches(ContentRoute(), worker);
         foreach (var imported in ImportScripts().Matches(worker).Select(m => m.Groups[1].Value))
         {
             Assert.True(File.Exists(Path.Combine(Root, "src", "Blocwerk.Web", "wwwroot", imported.TrimStart('/'))), imported);
@@ -91,6 +91,10 @@ public sealed partial class SharedUiScriptTests
 
     [GeneratedRegex("<script src=\"@Assets\\[\"([^\"]+)\"\\]\"")]
     private static partial Regex AssetScript();
+
+    // isOwnAsset routes the library's files (/_content/) into the shell, however the condition is spelled.
+    [GeneratedRegex(@"function isOwnAsset\(url\)\s*\{[^}]*pathname\.startsWith\(\s*['""]/_content/['""]\s*\)")]
+    private static partial Regex ContentRoute();
 
     [GeneratedRegex("importScripts\\('([^']+)'\\)")]
     private static partial Regex ImportScripts();
