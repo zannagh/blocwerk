@@ -19,10 +19,13 @@ async function activate(worker) {
     await pending;
 }
 
-function send(worker, data, port) {
+// Resolves with the replies once the worker's work for the message (its waitUntil) is done.
+async function send(worker, data, port) {
     const sent = [];
     const target = { postMessage: m => sent.push(m) };
-    worker.listeners.message({ data, ports: port ? [target] : [], source: port ? undefined : target });
+    let pending;
+    worker.listeners.message({ data, ports: port ? [target] : [], source: port ? undefined : target, waitUntil: p => { pending = p; } });
+    await pending;
     return sent;
 }
 
@@ -56,25 +59,25 @@ test('activate keeps the asset caches and the worker state, deleting only old sh
     assert.equal(worker.self.claimed, true);
 });
 
-test('sw-info under proto 1 is answered on the passed port, or else to the sending client', () => {
+test('sw-info under proto 1 is answered on the passed port, or else to the sending client', async () => {
     const worker = loadWorker();
     const expected = { proto: 1, type: 'sw-info', shell: 'blocwerk-shell-v5', partition: null, client: null };
-    assert.deepEqual(send(worker, { proto: 1, type: 'sw-info' }, true).map(m => ({ ...m })), [expected]);
-    assert.deepEqual(send(worker, { proto: 1, type: 'sw-info' }, false).map(m => ({ ...m })), [expected]);
+    assert.deepEqual((await send(worker, { proto: 1, type: 'sw-info' }, true)).map(m => ({ ...m })), [expected]);
+    assert.deepEqual((await send(worker, { proto: 1, type: 'sw-info' }, false)).map(m => ({ ...m })), [expected]);
 });
 
 test('sw-info reports the label the asset cache serves, once a lookup answered', async () => {
     const worker = workerFor(ALICE);
     await dispatchFetch(worker, asset()).settle();
-    assert.equal(send(worker, { proto: 1, type: 'sw-info' }, true)[0].partition, ALICE);
+    assert.equal((await send(worker, { proto: 1, type: 'sw-info' }, true))[0].partition, ALICE);
 });
 
-test('messages with an unknown proto or type, or no object at all, are ignored without throwing', () => {
+test('messages with an unknown proto or type, or no object at all, are ignored without throwing', async () => {
     const worker = loadWorker();
     for (const data of [{ proto: 2, type: 'sw-info' }, { type: 'sw-info' }, { proto: 1, type: 'asset-cached' },
         { proto: 1, type: 'partition', partition: ALICE }, { proto: '1', type: 'sw-info' }, null, undefined,
         'sw-info', 42]) {
-        assert.deepEqual(send(worker, data, true), [], JSON.stringify(data));
+        assert.deepEqual((await send(worker, data, true)), [], JSON.stringify(data));
     }
 });
 
@@ -370,12 +373,12 @@ test('sw-refresh-partition makes the worker ask the server again, so sw-info fol
     const worker = workerFor(ALICE);
     await dispatchFetch(worker, asset()).settle();
     worker.routes[PARTITION] = () => response(200, JSON.stringify({ partition: BOB }), { 'content-type': 'application/json' });
-    assert.equal(send(worker, { proto: 1, type: 'sw-info' }, true)[0].partition, ALICE);
+    assert.equal((await send(worker, { proto: 1, type: 'sw-info' }, true))[0].partition, ALICE);
 
     let pending;
     worker.listeners.message({ data: { proto: 1, type: 'sw-refresh-partition' }, ports: [], source: { id: 'tab-1' }, waitUntil: p => { pending = p; } });
     await pending;
-    assert.equal(send(worker, { proto: 1, type: 'sw-info' }, true)[0].partition, BOB);
+    assert.equal((await send(worker, { proto: 1, type: 'sw-info' }, true))[0].partition, BOB);
     assert.equal(worker.fetches.filter(f => f.path === PARTITION).length, 2);
 });
 

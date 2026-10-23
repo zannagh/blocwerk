@@ -75,9 +75,11 @@ function precache(worker) {
     return pending.then(() => sent[0]);
 }
 
-const info = worker => {
+const info = async worker => {
     const sent = [];
-    worker.listeners.message({ data: { proto: 1, type: 'sw-info' }, ports: [{ postMessage: m => sent.push(m) }] });
+    let pending;
+    worker.listeners.message({ data: { proto: 1, type: 'sw-info' }, ports: [{ postMessage: m => sent.push(m) }], waitUntil: p => { pending = p; } });
+    await pending;
     return sent[0];
 };
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
@@ -102,7 +104,7 @@ test('a precache fills one versioned cache with the shell, every file it names a
         '/v/css/client.c11.css'].map(abs).sort(), 'the shared library stays at /_content/, never under /v/; no lazy assembly');
     const record = JSON.parse(await worker.stored.get(STATE).get('/__bw/client').clone().text());
     assert.deepEqual(record, { version: V1, routes: ROUTES.split(' ') });
-    assert.equal(info(worker).client, V1);
+    assert.equal((await info(worker)).client, V1);
     assert.equal(fetched(worker, '/v/'), 1);
     assert.equal(worker.fetches.find(f => f.path === '/v/').init.redirect, 'error', 'a redirected shell (a kiosk sent away) fails');
 });
@@ -121,7 +123,7 @@ test('a failed file leaves no record; the next precache resumes and fetches only
     assert.equal((await precache(worker)).complete, false);
     assert.equal(worker.stored.get(STATE).has('/__bw/client'), false);
     assert.equal(worker.stored.get(`blocwerk-client-${V1}`).has(abs('/v/')), false, 'no shell before every file is in');
-    assert.equal(info(worker).client, null);
+    assert.equal((await info(worker)).client, null);
 
     deploy(worker.routes, V1);
     const before = worker.fetches.length;
@@ -151,7 +153,7 @@ test('a broken shell or boot manifest never completes, and the worker keeps work
         deploy(worker.routes, V1);
         worker.routes[name === 'no boot manifest' ? `/v/_framework/dotnet.${V1.slice(0, 4)}.js` : '/v/'] = answer;
         assert.equal((await precache(worker)).complete, false, name);
-        assert.equal(info(worker).client, null, name);
+        assert.equal((await info(worker)).client, null, name);
     }
 });
 
@@ -168,24 +170,64 @@ test('a new version replaces the old one only once it is complete', async () => 
     worker.routes['/v/_framework/dotnet.native.w1.wasm'] = () => { throw new TypeError('Failed to fetch'); };
     assert.deepEqual({ ...(await precache(worker)) }, { proto: 1, type: 'client-precached', version: V1, complete: false });
     assert.ok(worker.stored.has(`blocwerk-client-${V1}`) && worker.stored.has(`blocwerk-client-${V2}`));
-    assert.equal(info(worker).client, V1, 'the old version stays the complete one');
+    assert.equal((await info(worker)).client, V1, 'the old version stays the complete one');
 
     deploy(worker.routes, V2);
     assert.equal((await precache(worker)).version, V2);
     assert.deepEqual([...worker.stored.keys()].filter(n => n.startsWith('blocwerk-client-')), [`blocwerk-client-${V2}`]);
-    assert.equal(info(worker).client, V2);
+    assert.equal((await info(worker)).client, V2);
 });
 
-test('activate deletes other client versions only when one is complete', async () => {
-    const run = async worker => {
-        let pending;
-        worker.listeners.activate({ waitUntil: p => { pending = p; } });
-        await pending;
-        return [...worker.stored.keys()].filter(n => n.startsWith('blocwerk-client-')).sort();
-    };
+async function activate(worker) {
+    let pending;
+    worker.listeners.activate({ waitUntil: p => { pending = p; } });
+    await pending;
+    return [...worker.stored.keys()].filter(n => n.startsWith('blocwerk-client-')).sort();
+}
+
+test('activate never deletes a client version: a newer worker cannot drop a fill another worker is running', async () => {
     const caches = { [`blocwerk-client-${V1}`]: {}, [`blocwerk-client-${V2}`]: {} };
-    assert.deepEqual(await run(workerWith({ caches })), [`blocwerk-client-${V1}`, `blocwerk-client-${V2}`]);
-    assert.deepEqual(await run(workerWith({ caches, record: { version: V2, routes: [] } })), [`blocwerk-client-${V2}`]);
+    assert.deepEqual(await activate(workerWith({ caches, record: { version: V1, routes: [] } })), [`blocwerk-client-${V1}`, `blocwerk-client-${V2}`]);
+});
+
+test('a worker update during a fill: the fill still completes, and a record whose cache is gone is never served', async () => {
+    const worker = workerWith();
+    deploy(worker.routes, V1);
+    let release;
+    const wasm = worker.routes['/v/_framework/dotnet.native.w1.wasm'];
+    worker.routes['/v/_framework/dotnet.native.w1.wasm'] = () => new Promise(resolve => { release = () => resolve(wasm()); });
+    const filling = precache(worker);
+    while (!release) {
+        await tick();
+    }
+    // The next worker activates on the same caches while this one is still filling.
+    const next = loadWorker({ caches: Object.fromEntries([...worker.stored].map(([name, entries]) => [name, Object.fromEntries(entries)])) });
+    next.caches.stores = worker.caches.stores;
+    await activate(next);
+    release();
+    worker.routes['/v/_framework/dotnet.native.w1.wasm'] = wasm;
+    assert.equal((await filling).complete, true);
+    assert.equal(await (await navigate(worker, '/walls/W1')).status, 302);
+
+    // The record survives but its cache does not (the browser evicted it, or an older worker's activate deleted it).
+    await worker.caches.delete(`blocwerk-client-${V1}`);
+    assert.equal((await info(worker)).client, null, 'the page is told to precache again');
+    assert.equal(await (await navigate(worker, '/walls/W1')).text(), 'offline page', 'nothing is handed to a missing cache');
+    assert.equal((await precache(worker)).complete, true, 'the next precache fills it again');
+    assert.equal((await info(worker)).client, V1);
+});
+
+test('auth, kiosk, dev, admin and client paths are never handed over, even under a catch-all route', async () => {
+    const worker = workerWith();
+    deploy(worker.routes, V1, { shell: shellHtml(V1, '{*all}') });
+    assert.equal((await precache(worker)).complete, true);
+    for (const path of ['/account/login', '/Account/callback', '/signin-oidc', '/signout-callback', '/signing-in', '/signed-out',
+        '/signup', '/oauth-select', '/oauth-callback', '/forgot-password', '/reset-password', '/join/t', '/kiosk/pair', '/dev/login',
+        '/settings/api-keys', '/administration', '/access-denied', '/v', '/V/walls/x']) {
+        assert.equal(await (await navigate(worker, path)).text(), 'offline page', path);
+    }
+    assert.equal((await navigate(worker, '/walls/W1')).status, 302);
+    assert.equal((await navigate(worker, '/vertical')).status, 302, 'a segment that only starts with v is no client path');
 });
 
 test('a failed navigation goes to the client route when the version is complete and covers the path', async () => {
@@ -207,7 +249,7 @@ test('a locked partition, a kiosk, no partition or no complete version gets offl
     };
     for (const [name, change] of Object.entries(cases)) {
         const fresh = restart(await completeWorker(), change);
-        assert.equal(info(fresh).client, null, `${name}: before the worker read its record`);
+        assert.equal((await info(fresh)).client, V1, `${name}: a cold worker reads its record before it answers`);
         assert.equal(await (await navigate(fresh, '/walls/W1')).text(), 'offline page', name);
         assert.equal(fetched(fresh, '/v/'), 0, name);
     }
@@ -281,6 +323,9 @@ test("the client's files are cache-first, and a /v/ page's /_content/ and /js/ f
     assert.equal(worker.fetches.length, before, 'no network');
     await dispatchFetch(worker, '/js/sw-guard.g1.js', { referrer: `${ORIGIN}/walls/W1` }).settle();
     assert.equal(worker.fetches.length, before + 1, "a Server page's own asset stays network-first");
+    // A /v/ page's shell-cached file (not precached) still answers when the network fails.
+    worker.stored.get('blocwerk-shell-v5').set(abs('/js/theme.t1.js'), response(200, 'theme'));
+    assert.equal(await (await dispatchFetch(worker, '/js/theme.t1.js', client).settle()).text(), 'theme');
     worker.routes['/v/_framework/missing.wasm'] = () => response(404, 'no');
     assert.equal((await dispatchFetch(worker, '/v/_framework/missing.wasm').settle()).status, 404, 'a miss goes to the network');
 });

@@ -13,6 +13,9 @@ export function response(status, body = '', headers = {}, type = 'basic') {
     return r;
 }
 
+// A Request (or the plain request objects dispatchFetch makes) is keyed by its URL, as the Cache API does.
+const keyOf = key => String((key && key.url) || key);
+
 function fakeCaches(initial) {
     const stores = new Map();
     for (const [name, entries] of Object.entries(initial)) {
@@ -35,9 +38,9 @@ function fakeCaches(initial) {
                     if (caches.failPut) {
                         throw caches.failPut;
                     }
-                    store.set(String(key), value);
+                    store.set(keyOf(key), value);
                 },
-                match: async key => store.get(String(key))?.clone(),
+                match: async key => store.get(keyOf(key))?.clone(),
                 add: async () => {},
             };
         },
@@ -47,7 +50,7 @@ function fakeCaches(initial) {
             }
             const names = options.cacheName ? [options.cacheName] : [...stores.keys()];
             for (const name of names) {
-                const hit = stores.get(name)?.get(String(key));
+                const hit = stores.get(name)?.get(keyOf(key));
                 if (hit) {
                     return hit.clone();
                 }

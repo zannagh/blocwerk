@@ -16,9 +16,14 @@
  * network's, or offline.html when there is none). A slow server that answers is never cut off unless the client can
  * take over: the timer only ever adds the redirect, it never ends the wait on its own.
  *
- * WHO MAY BE HANDED OVER (clientServable): a complete version, no locked partition on the device (the 401 lock: a
- * locked partition is never shown), and a last known partition that is a person's (`u-…`) or `anon`. A kiosk (`k-…`)
- * is refused until PR 3.15, and `none` or no label has nothing offline to show.
+ * WHO MAY BE HANDED OVER (clientServable): a complete version whose shell is really in its cache (a record alone is not
+ * enough: the browser, or a fill racing a deletion, can leave a record without its cache), no locked partition on the
+ * device (the 401 lock: a locked partition is never shown), and a last known partition that is a person's (`u-…`) or
+ * `anon`. A kiosk (`k-…`) is refused until PR 3.15, and `none` or no label has nothing offline to show. Paths that are
+ * auth, kiosk, dev, admin or the client itself (CLIENT_NEVER) are never handed over, whatever a route says.
+ *
+ * Old versions are deleted only by a fill that completes a newer one (commitClient), never by activate: an activate
+ * could otherwise delete a version another worker is still filling.
  *
  * The client's files are answered cache-first from the client caches, for a /v/ page also its /_content/ and /js/ files:
  * the server may be down or hanging, and those files are immutable under their names.
@@ -29,6 +34,9 @@ const CLIENT_SHELL_PATH = '/v/';
 const CLIENT_HANDOFF_MS = 4000;
 const CLIENT_VERSION = /^[0-9a-f]{16}$/;
 const CLIENT_FILL_PARALLEL = 4;
+// First segments never handed to the client: sign-in, sign-out and OAuth flows, account and settings, kiosk pairing,
+// the dev and admin tools, and /v itself.
+const CLIENT_NEVER = /^\/(?:account|signin[^/]*|signout[^/]*|signing-in|signed-out|signup|login|logout|oauth[^/]*|forgot-password|reset-password|access-denied|join|kiosk|dev|settings|administration|v)(?:\/|$)/i;
 // The boot manifest's eager resources (dotnet.js, between /*json-start*/ and /*json-end*/); build/check-client-bundle.mjs
 // reads the same kinds. Lazy assemblies, satellites and symbols are loaded on demand only, so they are left out.
 const CLIENT_BOOT_KINDS = ['jsModuleNative', 'jsModuleRuntime', 'jsModuleWorker', 'wasmNative', 'icu', 'coreAssembly', 'assembly'];
@@ -72,15 +80,24 @@ function clientServable(record, partition, locked) {
 }
 
 // What may serve the client right now: the complete record when the device's state allows it, else null.
+// The complete record when its version's shell is in its cache, else null.
+function presentClient() {
+    return completeClient(false)
+        .then(record => (record
+            ? caches.match(clientUrl(CLIENT_SHELL_PATH), { cacheName: clientCacheName(record.version) }).then(hit => (hit ? record : null))
+            : null))
+        .catch(() => null);
+}
+
 function servableClient() {
-    return Promise.all([completeClient(false), lastKnownPartition(), lockedPartition(true)])
+    return Promise.all([presentClient(), lastKnownPartition(), lockedPartition(true)])
         .then(([record, partition, locked]) => (clientServable(record, partition, locked) ? record : null))
         .catch(() => null);
 }
 
 // The client URL that takes over a failed navigation to `url`, or null.
 function clientHandoff(url) {
-    if (url.pathname.startsWith(CLIENT_SHELL_PATH)) {
+    if (CLIENT_NEVER.test(url.pathname)) {
         return Promise.resolve(null);
     }
     return servableClient().then(record => {
@@ -136,14 +153,8 @@ function respondWithClientFile(request) {
         .then(names => names.reduce((found, cacheName) => found.then(hit => hit
             || caches.match(request.url, { cacheName, ignoreVary: true })), Promise.resolve(undefined)))
         .catch(() => undefined)
-        .then(hit => hit || fetch(request));
-}
-
-// The client caches an activate may delete: every version but the complete one, and only once one is complete.
-function staleClientCaches(names) {
-    return completeClient(true).then(record => (record
-        ? names.filter(name => name.startsWith(CLIENT_CACHE_PREFIX) && name !== clientCacheName(record.version))
-        : []));
+        // A failed network leg still finds a copy the shell cache keeps (/js/, /_content/), as the own-asset rule does.
+        .then(hit => hit || fetch(request).catch(error => caches.match(request).then(copy => copy || Promise.reject(error))));
 }
 
 // --- The precache (see PRECACHE above). ---
