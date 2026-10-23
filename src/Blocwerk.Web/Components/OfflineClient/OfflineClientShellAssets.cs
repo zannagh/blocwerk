@@ -1,6 +1,10 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
+using System.Text;
+using Blocwerk.Client;
 using Microsoft.AspNetCore.Components;
 
 namespace Blocwerk.Web.Components.OfflineClient;
@@ -42,8 +46,32 @@ public static class OfflineClientShellAssets
     /// <summary>Starts the loader and shows the boot-failure UI when the start fails or never renders.</summary>
     public const string Boot = "v/js/client-boot.js";
 
+    /// <summary>
+    /// The worker-loss guard (Web's <c>js/sw-guard.js</c>, PR 3.9), which the Server pages load too: a page whose
+    /// controller no longer answers reloads once the server is reachable.
+    /// </summary>
+    public const string Guard = "js/sw-guard.js";
+
+    private static readonly ConditionalWeakTable<ResourceAssetCollection, string> Versions = new();
+
     /// <summary>Every label the shell names, for the tests that pin each one to a served file.</summary>
-    public static IEnumerable<string> All => Styles.Concat(CacheModules).Append(Loader).Append(Boot);
+    public static IEnumerable<string> All => Styles.Concat(CacheModules).Append(Guard).Append(Loader).Append(Boot);
+
+    /// <summary>
+    /// The client's declared routes as the shell's <c>bw-client-routes</c> meta carries them: space-separated
+    /// templates relative to /v/. The worker hands a failed navigation over only for a path one of them covers.
+    /// </summary>
+    public static string Routes => string.Join(' ', ClientRoutes.Declared);
+
+    /// <summary>
+    /// The client version this deploy serves (PR 3.9): a hash of every URL the shell names, the import map's modules
+    /// and the declared routes. The URLs are fingerprinted, so any change to a file the shell loads, to dotnet.js's
+    /// boot manifest (it names the assemblies) or to the routes is a new version. The Server pages and the shell carry
+    /// it in a <c>bw-client-version</c> meta; the worker precaches one version at a time under it.
+    /// </summary>
+    /// <param name="assets">The endpoint's asset collection.</param>
+    /// <returns>16 lowercase hex digits.</returns>
+    public static string Version(ResourceAssetCollection assets) => Versions.GetValue(assets, ComputeVersion);
 
     /// <summary>A label's served URL, root-relative: the shell's base is /v/, so a relative URL would resolve under it.</summary>
     /// <param name="assets">The endpoint's asset collection.</param>
@@ -79,6 +107,16 @@ public static class OfflineClientShellAssets
         }
 
         return new ImportMapDefinition(imports, null, integrity);
+    }
+
+    private static string ComputeVersion(ResourceAssetCollection assets)
+    {
+        var imports = ImportMap(assets).Imports ?? new Dictionary<string, string>();
+        var named = All.Select(label => Url(assets, label))
+            .Concat(imports.OrderBy(i => i.Key, StringComparer.Ordinal).Select(i => i.Key + "=" + i.Value))
+            .Append("routes:" + Routes);
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('\n', named)));
+        return Convert.ToHexStringLower(hash)[..16];
     }
 
     private static string? Property(ResourceAsset asset, string name) =>

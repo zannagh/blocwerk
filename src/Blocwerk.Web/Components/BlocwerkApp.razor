@@ -1,6 +1,7 @@
 @using Microsoft.AspNetCore.Components.Web
 @using Blocwerk.Web.Components
 @using Blocwerk.Web.Components.Layout
+@using Blocwerk.Web.Components.OfflineClient
 @using Blocwerk.Core.Abstractions
 @inject ICurrentUserService CurrentUserService
 @inject IKioskContext KioskContext
@@ -25,6 +26,8 @@
     <link rel="manifest" href="manifest.webmanifest" />
     <meta name="theme-color" content="#16162a" />
     <CachePartitionMeta />
+    @* The offline client version this deploy serves (PR 3.9): client-precache.js asks the worker to precache it. *@
+    <meta name="bw-client-version" content="@OfflineClientShellAssets.Version(Assets)" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Blocwerk" />
@@ -211,6 +214,9 @@
     <script src="@Assets["js/maintenance.js"]"></script>
     <script src="@Assets["js/offline-status.js"]"></script>
     <script src="@Assets["js/pwa.js"]"></script>
+    @* The worker-loss guard (PR 3.9): a controller that no longer answers sw-info reloads the page once the server is
+       reachable, so the next offline navigation has a worker to catch it. The offline client's shell loads it too. *@
+    <script src="@Assets["js/sw-guard.js"]"></script>
     @* The page side of the on-device wall-asset cache: the ledger, budgets, wipe rules, manifests, data documents and
        the viewer's own marks (asset-mine.js, u- pages only), the page's partition session, the fill plan and its runner, then
        the coordinator, which reads the others lazily off window and boots on DOM-ready. After pwa.js only for
@@ -233,6 +239,8 @@
     <script src="@Assets["js/asset-plan.js"]"></script>
     <script src="@Assets["js/asset-fill.js"]"></script>
     <script src="@Assets["js/asset-cache.js"]"></script>
+    @* After the coordinator: once its first fill is done, the worker precaches the offline client (PR 3.9). *@
+    <script src="@Assets["js/client-precache.js"]"></script>
     <script src="@Assets["js/asset-notice.js"]"></script>
     <script src="@Assets["js/asset-3d.js"]"></script>
     <script src="@Assets["_content/Blocwerk.Shared.Ui/js/asset-clear.js"]"></script>
