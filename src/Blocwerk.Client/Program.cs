@@ -1,6 +1,5 @@
-// <copyright file="Program.cs" company="Blocwerk">
-// Copyright (c) Blocwerk. All rights reserved.
-// </copyright>
+// Copyright (c) 2026, zannagh. All rights reserved.
+// See License in the project root for license information.
 
 using Blocwerk.Client;
 using Microsoft.AspNetCore.Components.Web;

@@ -1,6 +1,5 @@
-// <copyright file="ClientRoutes.cs" company="Blocwerk">
-// Copyright (c) Blocwerk. All rights reserved.
-// </copyright>
+// Copyright (c) 2026, zannagh. All rights reserved.
+// See License in the project root for license information.
 
 namespace Blocwerk.Client;
 
@@ -11,7 +10,7 @@ namespace Blocwerk.Client;
 /// </summary>
 public static class ClientRoutes
 {
-    /// <summary>The base path the client is served under, as its index.html's base element names it.</summary>
+    /// <summary>The base path the client is served under, as the shell's base element names it (Blocwerk.Web's OfflineClientShell).</summary>
     public const string BasePath = "/v/";
 
     /// <summary>The router's not-found page. It is no gym route, so the worker never redirects to it.</summary>
