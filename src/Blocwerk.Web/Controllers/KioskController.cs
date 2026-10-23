@@ -313,8 +313,18 @@ public sealed class KioskController : Controller
 
         if (!SameOriginPost.IsSameOrigin(Request))
         {
-            logger.LogWarning("Refused a cross-site kiosk release");
+            logger.LogWarning(
+                "Refused a cross-site kiosk release (Sec-Fetch-Site {SecFetchSite}, Origin {Origin})",
+                Request.Headers["Sec-Fetch-Site"].ToString(),
+                Request.Headers.Origin.ToString());
             return LocalRedirect(restingPage);
+        }
+
+        // Only a tablet, or a kiosk acting session, has anything to release: an ordinary signed-in browser that
+        // posts here keeps its own login.
+        if (registration is null && !User.IsKioskPrincipal())
+        {
+            return LocalRedirect("/");
         }
 
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);

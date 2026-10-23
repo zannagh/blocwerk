@@ -19,16 +19,17 @@ namespace Blocwerk.Web;
 /// <c>/api</c>, fetches, enhanced navigation or the circuit), and only when nothing has written a body already.
 /// </para>
 /// <para>
-/// <b>Loop guard.</b> When the failing page IS the wall page, the retry waits a minute instead of a few seconds,
-/// so a wall that keeps failing is retried slowly until the server recovers rather than hammered.
+/// <b>Loop guard.</b> A server error (5xx), or any error on the wall page itself, waits a minute instead of a few
+/// seconds, so a struggling server is retried slowly until it recovers rather than hammered. A 4xx elsewhere goes
+/// back after a few seconds: the wall page is a fresh request that will not repeat it.
 /// </para>
 /// </remarks>
 public static class KioskErrorRecovery
 {
-    /// <summary>Seconds before the tablet goes back to its wall from an error elsewhere.</summary>
+    /// <summary>Seconds before the tablet goes back to its wall from a 4xx elsewhere.</summary>
     public const int RetrySeconds = 5;
 
-    /// <summary>Seconds before the tablet retries when the wall page itself failed.</summary>
+    /// <summary>Seconds before the tablet retries after a 5xx, or any error on the wall page itself.</summary>
     public const int WallRetrySeconds = 60;
 
     public static void UseKioskErrorRecovery(this WebApplication app)
@@ -51,7 +52,10 @@ public static class KioskErrorRecovery
         }
 
         var wall = $"/walls/{registration.WallId}";
-        var delay = http.Request.Path.Equals(wall, StringComparison.OrdinalIgnoreCase) ? WallRetrySeconds : RetrySeconds;
+        var delay = http.Response.StatusCode >= StatusCodes.Status500InternalServerError
+            || http.Request.Path.Equals(wall, StringComparison.OrdinalIgnoreCase)
+            ? WallRetrySeconds
+            : RetrySeconds;
 
         http.Response.Headers.CacheControl = "no-store";
         http.Response.ContentType = "text/html; charset=utf-8";

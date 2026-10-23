@@ -64,6 +64,32 @@ public class KioskReleaseAntiforgeryTests
         Assert.True(host.Has(AuthCookie));
     }
 
+    [Fact]
+    public async Task Release_FromAnOrdinarySignedInBrowser_KeepsItsLogin()
+    {
+        await using var host = await KioskReleaseTestHost.StartAsync();
+        await host.GetAsync("/in");
+
+        var response = await host.PostFormAsync("/kiosk/release", new Dictionary<string, string>());
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Equal("/", response.Headers.Location?.OriginalString);
+        Assert.True(host.Has(AuthCookie));
+    }
+
+    [Fact]
+    public async Task Release_OfAKioskSession_WhoseDeviceCookieIsGone_StillSignsOut()
+    {
+        await using var host = await KioskReleaseTestHost.StartAsync();
+        await host.GetAsync("/in-kiosk");
+
+        var response = await host.PostFormAsync("/kiosk/release", new Dictionary<string, string>());
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Equal("/", response.Headers.Location?.OriginalString);
+        Assert.False(host.Has(AuthCookie));
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -85,16 +111,18 @@ public class KioskReleaseAntiforgeryTests
         Assert.Contains($"location.replace(\"{Wall}\")", body);
     }
 
-    [Fact]
-    public async Task TheWallPageItselfFailing_RetriesSlowly()
+    [Theory]
+    [InlineData("wall", HttpStatusCode.InternalServerError)]
+    [InlineData("/boom", HttpStatusCode.ServiceUnavailable)]
+    public async Task AServerError_RetriesSlowly(string path, HttpStatusCode status)
     {
         await using var host = await StartActingAsync();
-        var request = new HttpRequestMessage(HttpMethod.Get, Wall);
+        var request = new HttpRequestMessage(HttpMethod.Get, path == "wall" ? Wall : path);
         request.Headers.Add("Sec-Fetch-Dest", "document");
 
         var response = await host.SendAsync(request);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(status, response.StatusCode);
         Assert.Contains($"content=\"{KioskErrorRecovery.WallRetrySeconds};url={Wall}\"", await response.Content.ReadAsStringAsync());
     }
 

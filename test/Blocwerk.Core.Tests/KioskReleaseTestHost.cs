@@ -29,8 +29,8 @@ namespace Blocwerk.Core.Tests;
 /// <summary>
 /// An in-memory production host for the kiosk form posts with the REAL antiforgery filter and middleware order
 /// (<c>ConfigureAuthenticationMiddlewares</c>) and the kiosk error recovery, plus three probes: <c>/in</c> signs a
-/// member in, <c>/device</c> registers the browser as a tablet, <c>/form</c> issues a form token for whoever the
-/// request is. A tiny cookie jar stands in for the browser.
+/// member in (<c>/in-kiosk</c> as a kiosk acting session), <c>/device</c> registers the browser as a tablet, <c>/form</c> issues a form token for whoever the
+/// request is, and the wall page and <c>/boom</c> fail with a 5xx. A tiny cookie jar stands in for the browser.
 /// </summary>
 internal sealed class KioskReleaseTestHost : IAsyncDisposable
 {
@@ -157,6 +157,14 @@ internal sealed class KioskReleaseTestHost : IAsyncDisposable
             new ClaimsPrincipal(new ClaimsIdentity(
                 [new Claim(ClaimTypes.NameIdentifier, "member"), new Claim("uid", Guid.NewGuid().ToString())],
                 CookieAuthenticationDefaults.AuthenticationScheme))));
+        app.MapGet("/in-kiosk", (HttpContext http) => http.SignInAsync(
+            new ClaimsPrincipal(new ClaimsIdentity(
+                [
+                    new Claim(ClaimTypes.NameIdentifier, "member"),
+                    new Claim("uid", Guid.NewGuid().ToString()),
+                    new Claim(KioskClaims.KeyId, Guid.NewGuid().ToString()),
+                ],
+                CookieAuthenticationDefaults.AuthenticationScheme))));
         app.MapGet("/device", (HttpContext http, KioskDeviceCookie cookie) =>
         {
             cookie.Write(http, Guid.NewGuid(), WallId);
@@ -165,5 +173,6 @@ internal sealed class KioskReleaseTestHost : IAsyncDisposable
         app.MapGet("/form", (HttpContext http, IAntiforgery antiforgery) =>
             antiforgery.GetAndStoreTokens(http).RequestToken);
         app.MapGet($"/walls/{WallId}", () => Results.StatusCode(StatusCodes.Status500InternalServerError));
+        app.MapGet("/boom", () => Results.StatusCode(StatusCodes.Status503ServiceUnavailable));
     }
 }
