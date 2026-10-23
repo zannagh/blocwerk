@@ -2,6 +2,7 @@
 // See License in the project root for license information.
 
 using Blocwerk.Client;
+using Blocwerk.Web.Endpoints;
 
 namespace Blocwerk.Core.Tests;
 
@@ -42,4 +43,20 @@ public sealed class OfflineClientRoutesTests
         Assert.StartsWith("/", path, StringComparison.Ordinal);
         Assert.False(path.StartsWith("//", StringComparison.Ordinal) || path.StartsWith("/\\", StringComparison.Ordinal), path);
     }
+
+    [Theory]
+    [InlineData("/v", "/v/")]
+    [InlineData("/V", "/v/")]
+    [InlineData("/V/", "/v/")]
+    [InlineData("/V/walls/3f2a", "/v/walls/3f2a")]
+    [InlineData("/v/Walls/3f2a", null)]
+    [InlineData("/v/", null)]
+    [InlineData("/v/walls", null)]
+    [InlineData("/vx", null)]
+    [InlineData("/walls/v", null)]
+    public void Canonical_RedirectsOnlyTheBaseInAnotherCase(string path, string? expected)
+    {
+        Assert.Equal(expected, OfflineClientEndpoints.Canonical(path));
+    }
 }
+
