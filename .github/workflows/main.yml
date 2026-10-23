@@ -248,6 +248,11 @@ jobs:
         with:
           global-json-file: "global.json"
 
+      # build/Versioning.targets installs and runs the dotnet-gitversion global tool; the hosted runner puts the global
+      # tools folder on PATH, a container does not.
+      - name: Put .NET global tools on PATH
+        run: echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
       # Only the harness's npm packages: the image's Node runs it, and its browsers sit in PLAYWRIGHT_BROWSERS_PATH.
       - name: Install the harness
         working-directory: test/browser
