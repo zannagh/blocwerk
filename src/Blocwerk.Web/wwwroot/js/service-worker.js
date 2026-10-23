@@ -97,10 +97,9 @@ self.addEventListener('activate', event => {
             // probe's size-ladder scratch (up to 1.5 GB a crashed run can leave behind). Every other cache on
             // the origin (the probe's markers in 'bw-storage-probe', on-device wall data in 'bw-a1-*') is not
             // the shell's to delete. Keeping 'bw-a1-*' here, before anything writes it, is what makes rolling
-            // back to this worker or any later one safe once the asset cache ships. The offline client's older
-            // versions go too, but only once a version is complete (sw-client-cache.js).
-            .then(keys => staleClientCaches(keys).then(stale => keys.filter(k => isDisposableCache(k) || stale.includes(k))))
-            .then(keys => Promise.all(keys.map(k => caches.delete(k))))
+            // back to this worker or any later one safe once the asset cache ships. The offline client's
+            // 'blocwerk-client-*' are not this handler's either: only a completed fill deletes old versions.
+            .then(keys => Promise.all(keys.filter(isDisposableCache).map(k => caches.delete(k))))
             .then(() => self.clients.claim())
     );
 });
@@ -121,9 +120,10 @@ self.addEventListener('message', event => {
     }
     if (data.type === 'sw-info') {
         // `partition`: the label the asset cache serves right now (sw-asset-cache.js), null before any lookup.
-        // `client`: the offline client's complete version, null when none is (or before the worker has read it).
-        const client = clientState.record ? clientState.record.version : null;
-        reply(event, { proto: PROTO, type: 'sw-info', shell: CACHE, partition: assetPartitions.current, client });
+        // `client`: the offline client's complete version whose shell is in its cache, else null. Read before answering,
+        // so a worker that just started never reports null for a version it has.
+        lifetime(event, presentClient().then(record => reply(event,
+            { proto: PROTO, type: 'sw-info', shell: CACHE, partition: assetPartitions.current, client: record ? record.version : null })));
     } else if (data.type === 'client-precache') {
         lifetime(event, precacheClient().then(result => reply(event, { proto: PROTO, type: 'client-precached', ...result })));
     } else if (data.type === 'sw-refresh-partition') {

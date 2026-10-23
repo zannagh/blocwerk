@@ -43,6 +43,22 @@ public sealed class OfflineClientVersionTests
     }
 
     [Fact]
+    public void EveryDeclaredRoute_StartsWithALiteralSegment_NeverACatchAllOrARootParameter()
+    {
+        Assert.All(ClientRoutes.Declared, route => Assert.True(StartsWithLiteral(route), $"{route} must start with a literal segment"));
+
+        // The rule itself: the worker hands over whatever a template covers, so a leading parameter or catch-all would
+        // cover every Server path (its deny list only names the auth, kiosk, dev and admin roots).
+        Assert.True(StartsWithLiteral("walls/{w}/boulders/{b}"));
+        Assert.True(StartsWithLiteral("shared/{t}/{*rest}"));
+        Assert.False(StartsWithLiteral("{w}"));
+        Assert.False(StartsWithLiteral("{*rest}"));
+        Assert.False(StartsWithLiteral("{**rest}"));
+        Assert.False(StartsWithLiteral(string.Empty));
+        Assert.False(StartsWithLiteral("v/walls"));
+    }
+
+    [Fact]
     public void TheShellAndTheServerPages_CarryTheVersion_AndTheShellTheRoutesAndTheGuard()
     {
         var shell = Read("OfflineClient", "OfflineClientShell.razor");
@@ -56,6 +72,13 @@ public sealed class OfflineClientVersionTests
         Assert.Contains("@Assets[\"js/sw-guard.js\"]", app, StringComparison.Ordinal);
         Assert.Contains("@Assets[\"js/client-precache.js\"]", app, StringComparison.Ordinal);
         Assert.True(app.IndexOf("js/asset-cache.js", StringComparison.Ordinal) < app.IndexOf("js/client-precache.js", StringComparison.Ordinal));
+    }
+
+    // A first segment that is a literal (no braces) and not the client's own base.
+    private static bool StartsWithLiteral(string template)
+    {
+        var first = template.TrimStart('/').Split('/')[0];
+        return first.Length > 0 && !first.Contains('{', StringComparison.Ordinal) && !first.Equals("v", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string Read(params string[] parts) =>

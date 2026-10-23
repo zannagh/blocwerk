@@ -10,7 +10,8 @@
  * worker `sw-info`. Every worker since blocwerk-shell-v4 answers it. Only when two asks in a row go unanswered
  * (PING_MS each: a cold worker start can be slow) is the worker taken as lost, and then:
  *   - reload, when the server answers /alive (so the reload lands on a real page), no editor holds unsaved work
- *     (bwEditGuard), and this tab has not reloaded for this within RELOAD_EVERY_MS (sessionStorage);
+ *     (bwEditGuard), no focused field holds typed text, and this tab has not reloaded for this within RELOAD_EVERY_MS
+ *     (sessionStorage);
  *   - otherwise fall back: `data-bw-worker="lost"` on <html> and a `bw-worker-lost` event, for the page to show.
  * A page with no controller has nothing to lose and is left alone. Nothing here throws into the page.
  */
@@ -65,9 +66,22 @@ window.bwSwGuard = (function (win) {
         }
     }
 
+    // A focused text field (input, textarea, contenteditable) with something typed in it.
+    function typing() {
+        const el = win.document.activeElement;
+        if (!el) {
+            return false;
+        }
+        const tag = String(el.tagName || '').toLowerCase();
+        if (tag === 'textarea' || tag === 'input') {
+            return typeof el.value === 'string' && el.value.length > 0;
+        }
+        return !!el.isContentEditable && !!(el.textContent || '').trim();
+    }
+
     function mayReload() {
         const editing = !!(win.bwEditGuard && typeof win.bwEditGuard.isEditing === 'function' && win.bwEditGuard.isEditing());
-        return !editing && Date.now() - lastReload() >= RELOAD_EVERY_MS;
+        return !editing && !typing() && Date.now() - lastReload() >= RELOAD_EVERY_MS;
     }
 
     async function lost() {

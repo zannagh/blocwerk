@@ -79,7 +79,7 @@ test('a failed attempt is not retried for 10 minutes, then is', async () => {
 });
 
 // sw-guard.js: `answers` is how the controller answers each sw-info in turn (true answers, false stays silent).
-function guardPage({ controller = true, answers = [true], alive = true, editing = false, lastReload = null } = {}) {
+function guardPage({ controller = true, answers = [true], alive = true, editing = false, lastReload = null, active = null } = {}) {
     const timers = [];
     const session = new Map(lastReload === null ? [] : [['bw-sw-guard-reload', String(lastReload)]]);
     const page = { reloads: 0, events: [], attr: null, pings: 0 };
@@ -106,7 +106,7 @@ function guardPage({ controller = true, answers = [true], alive = true, editing 
         fetch: async url => { page.fetched = url; if (!alive) { throw new TypeError('down'); } return { ok: true }; },
         sessionStorage: { getItem: k => session.get(k) ?? null, setItem: (k, v) => session.set(k, v) },
         location: { reload: () => { page.reloads++; } },
-        document: { visibilityState: 'visible', addEventListener: () => undefined, documentElement: { setAttribute: (k, v) => { page.attr = v; } } },
+        document: { visibilityState: 'visible', activeElement: active, addEventListener: () => undefined, documentElement: { setAttribute: (k, v) => { page.attr = v; } } },
         dispatchEvent: e => page.events.push(e.type),
         CustomEvent: class { constructor(type) { this.type = type; } },
         bwEditGuard: { isEditing: () => editing },
@@ -132,7 +132,12 @@ test('a controller that answers nothing twice reloads the page once the server i
 });
 
 test('a lost worker falls back instead of reloading: server down, an editor open, or a reload within 5 minutes', async () => {
-    const cases = { 'server down': { alive: false }, editing: { editing: true }, 'reloaded just now': { lastReload: Date.now() - 1000 } };
+    const cases = {
+        'server down': { alive: false }, editing: { editing: true }, 'reloaded just now': { lastReload: Date.now() - 1000 },
+        'text typed in an input': { active: { tagName: 'INPUT', value: 'a comment' } },
+        'text typed in a textarea': { active: { tagName: 'TEXTAREA', value: 'beta notes' } },
+        'text in a contenteditable': { active: { tagName: 'DIV', isContentEditable: true, textContent: ' draft ' } },
+    };
     for (const [name, options] of Object.entries(cases)) {
         const guard = guardPage({ answers: [false], ...options });
         assert.equal(await guard.check(), 'lost', name);
@@ -141,4 +146,5 @@ test('a lost worker falls back instead of reloading: server down, an editor open
         assert.deepEqual(guard.page.events, ['bw-worker-lost'], name);
     }
     assert.equal(await guardPage({ answers: [false], lastReload: Date.now() - 6 * 60 * 1000 }).check(), 'reloading');
+    assert.equal(await guardPage({ answers: [false], active: { tagName: 'INPUT', value: '' } }).check(), 'reloading', 'an empty focused field');
 });
