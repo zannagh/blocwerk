@@ -106,3 +106,23 @@ test('under the released worker nothing is precached; after its update the next 
     await server.unreachable();
     await expectClient(page, wallPath(world));
 });
+
+test('a record whose cache is gone hands nothing off, and the next page precaches again', async ({ page, world, server }) => {
+    expect(await precacheAsAlice(page, world, server)).toBe('complete');
+    const version = await pageVersion(page);
+    // What a worker update racing a fill, or the browser's eviction, leaves: the record without its cache.
+    await page.evaluate(v => caches.delete(`blocwerk-client-${v}`), version);
+    expect((await clientRecord(page)).version).toBe(version);
+
+    await server.unreachable();
+    await expectOfflinePage(page, wallPath(world));
+
+    await server.faults([declareRoutes()]);
+    await page.goto(wallPath(world));
+    await controlled(page);
+    await settled(page);
+    expect(await precacheOutcome(page)).toBe('complete');
+    expect(await clientCaches(page)).toEqual([`blocwerk-client-${version}`]);
+    await server.unreachable();
+    await expectClient(page, wallPath(world));
+});
