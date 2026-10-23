@@ -26,7 +26,8 @@ function brotliBytes(urls) {
     let total = 0;
     const missing = [];
     for (const url of new Set(urls)) {
-        const file = path.join(webRoot, url.endsWith('/') ? `${url}index.html` : url);
+        // The shell is rendered (no file), about 2 KiB; everything else is a published file.
+        const file = path.join(webRoot, url);
         const br = fs.existsSync(`${file}.br`) ? `${file}.br` : null;
         if (br) {
             total += fs.statSync(br).size;

@@ -2,23 +2,25 @@
 
   <!--
     The offline gym client (Phase 3, plan 2026-10-22 §1): a standalone Blazor WebAssembly app that Blocwerk.Web serves
-    under /v/ from a static index.html shell, so it can open with no server. It takes over only when a gym navigation
-    fails (the service worker's redirect, PR 3.9) and shows local data read-only. It renders the hold overlay through
-    Blocwerk.Shared.Ui and reads the Blocwerk.Contracts documents, never Core.
+    under /v/. It takes over only when a gym navigation fails (the service worker's redirect, PR 3.9) and shows local
+    data read-only. It renders the hold overlay through Blocwerk.Shared.Ui and reads the Blocwerk.Contracts documents,
+    never Core.
 
-    StaticWebAssetBasePath puts its own files (index.html, _framework, css) under /v/; Blocwerk.Shared.Ui's stay at
-    /_content/ (Web serves one copy for both apps).
+    The shell is no file here: Web renders it (OfflineClientShell, through @Assets and an import map), so every URL it
+    names is fingerprinted from Web's static-asset manifest. StaticWebAssetBasePath puts the client's own files
+    (_framework, css, js) under /v/; Blocwerk.Shared.Ui's stay at /_content/ (Web serves one copy for both apps).
 
-    OverrideHtmlAssetPlaceholders stays OFF, against plan rev 2. With it on, the .NET 10.0.401 SDK drops the processed
-    index.html from a REFERENCING project's publish (Blocwerk.Web gets no v/index.html endpoint) and copies the
-    unprocessed one to the Web root as wwwroot/index.html. Off, the framework's assemblies and runtime are still
-    fingerprinted through the boot manifest in dotnet.js; only blazor.webassembly.js, dotnet.js, the shell's CSS and
-    the shared library's scripts keep stable URLs, which MapStaticAssets serves no-cache with an ETag.
+    OverrideHtmlAssetPlaceholders stays OFF: with it on, the .NET 10.0.401 SDK drops the processed index.html from a
+    REFERENCING project's publish and copies the raw one to the Web root as wwwroot/index.html. BlazorFingerprintBlazorJs
+    and WasmFingerprintDotnetJs give blazor.webassembly.js and dotnet.js the fingerprints that setting would have; the
+    shell's import map maps blazor.webassembly.js's `import("./dotnet.js")` to the fingerprinted file.
   -->
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <StaticWebAssetBasePath>v</StaticWebAssetBasePath>
     <OverrideHtmlAssetPlaceholders>false</OverrideHtmlAssetPlaceholders>
+    <BlazorFingerprintBlazorJs>true</BlazorFingerprintBlazorJs>
+    <WasmFingerprintDotnetJs>true</WasmFingerprintDotnetJs>
     <InvariantGlobalization>true</InvariantGlobalization>
     <PublishTrimmed>true</PublishTrimmed>
     <BlazorEnableTimeZoneSupport>false</BlazorEnableTimeZoneSupport>

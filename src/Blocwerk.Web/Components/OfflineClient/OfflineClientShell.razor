@@ -1,0 +1,31 @@
+@using Microsoft.AspNetCore.Components
+@* The offline gym client's shell (Blocwerk.Client, plan 2026-10-22 §1), rendered by OfflineClientShellController for
+   every file-less path under /v/. Every URL is fingerprinted through @Assets and the import map, as in BlocwerkApp;
+   the response is no-cache, so a deploy's next load gets the new set. The `offline` partition meta tells the shared
+   cache modules this page is no server identity. It loads no blazor.web.js and no edit-presence.js, so it holds no
+   circuit and no edit lease. *@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="bw-partition" content="offline" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Blocwerk · offline</title>
+    <base href="/v/" />
+    <ImportMap ImportMapDefinition="OfflineClientShellAssets.ImportMap(Assets)" />
+    @foreach (var style in OfflineClientShellAssets.Styles)
+    {
+        <link rel="stylesheet" href="@OfflineClientShellAssets.Url(Assets, style)" />
+    }
+</head>
+<body>
+    <div id="app"><p class="bw-client-loading">Opening the offline view…</p></div>
+    @foreach (var module in OfflineClientShellAssets.CacheModules)
+    {
+        <script src="@OfflineClientShellAssets.Url(Assets, module)"></script>
+    }
+    <script src="@OfflineClientShellAssets.Url(Assets, OfflineClientShellAssets.Loader)" autostart="false"></script>
+    <script src="@OfflineClientShellAssets.Url(Assets, OfflineClientShellAssets.Boot)"></script>
+</body>
+</html>
