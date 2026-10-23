@@ -104,7 +104,7 @@ public sealed class DataDocumentService(
         var epoch = (await FeedEpochStore.ReadAsync(db, CancellationToken.None))?.Id ?? mark.Epoch;
         var json = built.Json;
         var sha = ContentHash.ToHex(ContentHash.Of(json))!;
-        var document = new StoredDataDocument(wallId, audience, kind, sha, json, DocumentBrotli.Compress(json), mark, cursor, built.People);
+        var document = new StoredDataDocument(wallId, audience, kind, sha, json, DocumentBrotli.Compress(json), mark, cursor, built.People, built.Consented);
         return store.Publish(document, epoch);
     }
 }

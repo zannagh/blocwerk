@@ -545,7 +545,6 @@ public class KioskEndpointTests
             fixture.ResolvedAttempts = new AttemptService(
                 fixture.Harness.DbContextFactory,
                 realCurrentUser,
-                fixture.Harness.ActivityLog,
                 NullLogger<AttemptService>.Instance);
 
             var resolvedBoulders = new BoulderService(

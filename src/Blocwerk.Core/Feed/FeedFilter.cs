@@ -30,6 +30,22 @@ public sealed class FeedFilter
     }
 
     /// <summary>
+    /// One wall's rows for <paramref name="viewer"/>: <see cref="ForWall"/>, plus the <see cref="FeedAudience.Members"/> rows
+    /// of the kinds it reads without being a member (<see cref="FeedViewer.MemberKinds"/>). Those still have to pass
+    /// <see cref="FeedKioskActivity"/> before they leave the server.
+    /// </summary>
+    public static FeedFilter ForViewer(Guid wallId, FeedViewer viewer)
+    {
+        var shared = viewer.Audiences.ToArray();
+        var kinds = viewer.MemberKinds.ToArray();
+        var userId = viewer.UserId;
+        return new FeedFilter(c => c.WallId == wallId
+            && (shared.Contains(c.Audience)
+                || (c.Audience == FeedAudience.User && userId != null && c.AudienceUserId == userId)
+                || (c.Audience == FeedAudience.Members && kinds.Contains(c.Kind))));
+    }
+
+    /// <summary>
     /// Every row of one wall, whatever its audience: the hub's own read, which narrows the rows per subscriber
     /// (<see cref="FeedViewer.Allows"/>) before anything leaves the server. Never hand its rows to a client unfiltered.
     /// </summary>

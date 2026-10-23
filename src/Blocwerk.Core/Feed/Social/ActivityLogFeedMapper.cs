@@ -13,8 +13,9 @@ namespace Blocwerk.Core.Feed.Social;
 /// <summary>
 /// <c>activity.added</c> for the wall's members, credited to the entry's user (the Ghost user for an anonymous kiosk tick).
 /// The payload is the activity type only; the free-text details stay in the log. An entry about a boulder is placed
-/// through the boulder, so a draft's entries reach members only. The log is append-only: updates and deletes (erasure)
-/// map to nothing.
+/// through the boulder, so a draft's entries reach members only. An entry is only ever deleted with its attempt
+/// (<c>AttemptActivityEntries</c>): <c>activity.removed</c>, to the same members, so the lists showing it re-read. Updates
+/// (erasure blanks the details) map to nothing.
 /// </summary>
 internal sealed class ActivityLogFeedMapper : IFeedMapper
 {
@@ -22,17 +23,18 @@ internal sealed class ActivityLogFeedMapper : IFeedMapper
 
     public void Map(EntityEntry entry, FeedMapContext context)
     {
-        if (entry.State != EntityState.Added)
+        if (entry.State is not (EntityState.Added or EntityState.Deleted))
         {
             return;
         }
 
         var log = (ActivityLogEntry)entry.Entity;
+        var added = entry.State == EntityState.Added;
         context.Add(new WallChange
         {
             WallId = log.BoulderId is null ? log.WallId : null,
             BoulderId = log.BoulderId,
-            Kind = FeedKinds.ActivityAdded,
+            Kind = added ? FeedKinds.ActivityAdded : FeedKinds.ActivityRemoved,
             EntityId = log.Id,
             Audience = FeedAudience.Members,
             ActorUserId = log.UserId,

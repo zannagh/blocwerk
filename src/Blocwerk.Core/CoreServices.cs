@@ -386,12 +386,13 @@ public static class CoreServices
             logger.LogError(ex, "Feed epoch check failed; the feed retries it on its first read.");
         }
 
-        // Reconstruct Activity rows for any events that predate the activity model. Idempotent, so it
-        // is safe to run on every start; it no-ops once all events are grouped.
+        // Reconstruct Activity rows for any events that predate the activity model, and link (or, for a deleted attempt,
+        // delete) the attempt entries written before they carried the attempt. Idempotent: no-ops once all are done.
         try
         {
             var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<BlocwerkDbContext>>();
             ActivityBackfill.RunIfNeededAsync(factory, logger).GetAwaiter().GetResult();
+            AttemptActivityBackfill.RunIfNeededAsync(factory, logger).GetAwaiter().GetResult();
         }
         catch (Exception ex)
         {

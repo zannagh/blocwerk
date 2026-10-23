@@ -64,6 +64,24 @@ export function levelCap(levels, light, detail = 'auto') {
     return cap;
 }
 
+/** The content sha of a level's /a/ URL (the asset cache's key for it), or null. */
+export const shaOf = level => /\/a\/([0-9a-f]{64})(?:[?#]|$)/.exec(String(level?.url ?? ''))?.[1] ?? null;
+
+/**
+ * The level a step up from `index` loads without measuring, or null when the step needs a probe: the highest level up
+ * to `cap` that is on the device (`cached`, a Set of shas), else the next one, each only when `ultra` or not bigger
+ * than the size that ran fine here (`okSplats`). The asset cache keeps only a wall's smallest and largest splat level
+ * (asset-budget.js, "one LOD"), so walking every rung would download the levels between them again on every visit.
+ */
+export function stepTarget(levels, index, cap, cached, okSplats, ultra) {
+    const unmeasured = j => ultra || sizeOf(levels[j]) <= (okSplats ?? 0);
+    for (let j = cap; j > index; j--) {
+        const onDevice = j === index + 1 || cached?.has(shaOf(levels[j]));
+        if (onDevice && unmeasured(j)) return j;
+    }
+    return null;
+}
+
 /**
  * The phone cap for the first level: the cap only limits stepping up, so a scene without a ladder (only
  * the full scene, e.g. not backfilled yet) would start a phone on all of it. Null when `level` may load

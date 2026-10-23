@@ -45,13 +45,17 @@ public static class DocumentAudiences
 
     /// <summary>
     /// The feed's byline rule (<see cref="AuthorVisibility"/>) for the class, as the viewer the class stands for: members
-    /// and setters see author ids; share links and the kiosk see one only for an author with an avatar.
+    /// and setters see author ids; share links and the kiosk see one only for an author with an avatar; and the kiosk
+    /// names consenting members only (<see cref="AuthorVisibility.MasksUnnamed"/>), as the resting tablet does. The class
+    /// is every identity on the tablet, so a tablet acting as a member reads the resting bylines too, as with drafts.
     /// </summary>
     /// <remarks>The viewer carries no user id: the document is the class's, never one reader's.</remarks>
-    public static AuthorVisibility Authors(DocumentAudience audience) => AuthorVisibility.For(
-        audience is DocumentAudience.Setters or DocumentAudience.Members
-            ? new FeedViewer([FeedAudience.Wall, FeedAudience.Members], userId: null)
-            : FeedViewer.Anonymous());
+    public static AuthorVisibility Authors(DocumentAudience audience) => AuthorVisibility.For(audience switch
+    {
+        DocumentAudience.Setters or DocumentAudience.Members => new FeedViewer([FeedAudience.Wall, FeedAudience.Members], userId: null),
+        DocumentAudience.Kiosk => FeedViewer.Kiosk(),
+        _ => FeedViewer.Anonymous(),
+    });
 
     /// <summary>The class of a granted feed viewer that is not a kiosk tablet.</summary>
     public static DocumentAudience Of(FeedViewer viewer) =>

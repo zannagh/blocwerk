@@ -30,8 +30,8 @@ public sealed class DataDocumentBuilder(RootDbContextFactory dbContextFactory, I
 
         if (kind == DataDocumentKinds.Comments)
         {
-            return await CommentsDocumentBuilder.BuildAsync(db, wallId, audience, ct) is var (comments, authors)
-                ? new BuiltDataDocument(Serialize(comments), authors)
+            return await CommentsDocumentBuilder.BuildAsync(db, wallId, audience, ct) is var (comments, authors, consented)
+                ? new BuiltDataDocument(Serialize(comments), authors, consented)
                 : null;
         }
 

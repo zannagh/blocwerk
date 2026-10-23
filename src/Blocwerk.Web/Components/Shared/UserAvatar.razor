@@ -1,9 +1,15 @@
 @* Renders a user's avatar: their uploaded image when they have one, else the initial-circle
-   fallback used across the app. Reuses the shared .avatar styling. *@
+   fallback used across the app, or an empty circle for a kiosk-masked author (KioskBylines). Reuses the shared
+   .avatar styling. *@
 
 @if (HasAvatar && UserId is { } id)
 {
     <img class="avatar @CssClass" src="/api/users/@id/avatar" alt="@Name" />
+}
+else if (UserId is null && Name == KioskBylines.PlaceholderName)
+{
+    @* A member the kiosk tablet may not name: the plain circle, without even an initial. *@
+    <div class="avatar @CssClass" aria-hidden="true"></div>
 }
 else
 {

@@ -821,8 +821,15 @@ public partial class BlocwerkDbContext : DbContext
                 .HasForeignKey(a => a.UserId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            // An attempt's entry goes with the attempt, whichever way it is deleted (a boulder's attempts cascade too).
+            entity.HasOne(a => a.Attempt)
+                .WithMany()
+                .HasForeignKey(a => a.AttemptId)
+                .OnDelete(DeleteBehavior.Cascade);
+
             entity.HasIndex(a => new { a.WallId, a.Timestamp });
             entity.HasIndex(a => new { a.BoulderId, a.Timestamp });
+            entity.HasIndex(a => a.AttemptId);
         });
     }
 

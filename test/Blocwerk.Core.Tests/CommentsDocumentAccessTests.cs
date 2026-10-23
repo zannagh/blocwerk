@@ -59,7 +59,7 @@ public sealed class CommentsDocumentAccessTests
         }
     }
 
-    /// <summary>The author id goes to members; outside the wall only for the owner, whose avatar URL shows it anyway.</summary>
+    /// <summary>The author id goes to members; to a share link only for the owner, whose avatar URL shows it anyway.</summary>
     [Fact]
     public async Task OutsideTheWall_AnAuthorsIdIsShownOnlyWithAnAvatar_InsideAlways()
     {
@@ -67,7 +67,7 @@ public sealed class CommentsDocumentAccessTests
         await f.SeedAsync();
         var seed = await CommentsDocumentSeed.AddAsync(f);
 
-        foreach (var (who, token) in Outsiders(f))
+        foreach (var (who, token) in ShareLinks(f))
         {
             who();
             var document = await CommentsDocumentSeed.DocumentAsync(f, token);
@@ -131,10 +131,16 @@ public sealed class CommentsDocumentAccessTests
     }
 
     // A share link (signed out, and signed in as a non-member) and a kiosk tablet (resting, and acting as a setter).
-    private static IEnumerable<(Action Who, string? Token)> Outsiders(DataDocumentFixture f) =>
+    private static IEnumerable<(Action Who, string? Token)> Outsiders(DataDocumentFixture f) => ShareLinks(f).Concat(Kiosks(f));
+
+    private static IEnumerable<(Action Who, string? Token)> ShareLinks(DataDocumentFixture f) =>
     [
         (() => f.Caller = null, DataDocumentFixture.ShareToken),
         (() => f.Caller = new User { Identifier = "stranger@test" }, DataDocumentFixture.ShareToken),
+    ];
+
+    internal static IEnumerable<(Action Who, string? Token)> Kiosks(DataDocumentFixture f) =>
+    [
         (() => Kiosk(f, actingAs: null), null),
         (() => Kiosk(f, actingAs: f.Setter), null),
     ];
