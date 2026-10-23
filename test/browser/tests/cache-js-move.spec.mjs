@@ -88,9 +88,10 @@ test('under the released worker the moved modules load from the library; after i
     }
     await expect.poll(async () => (await shellLibraryKeys(page)).filter(p => MOVED.some(m => p.includes(`/${m}.`))).length).toBe(MOVED.length);
 
-    // With the library's path unreachable, the worker answers each moved script from its shell (no-store skips the
-    // HTTP cache, so the answer cannot come from there).
-    await server.faults([{ path: `^${LIBRARY.replace(/\./g, '\\.')}`, drop: true }]);
+    // With the server unreachable, the worker answers each moved script from its shell (no-store skips the HTTP cache,
+    // so the answer cannot come from there). Not a `drop` rule for the library's path: Linux WebKit's network process
+    // crashes when requests die on open connections (harness/proxy.mjs), and the page then loses its worker.
+    await server.unreachable();
     for (const src of srcs) {
         const answer = await pageFetch(page, src, { cache: 'no-store' });
         expect(answer.status, src).toBe(200);

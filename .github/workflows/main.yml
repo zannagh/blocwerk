@@ -233,7 +233,7 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     # A hang must never stall the run.
-    timeout-minutes: 25
+    timeout-minutes: 35
     permissions:
       contents: read
     container:
@@ -274,9 +274,10 @@ jobs:
         timeout-minutes: 5
         run: npm ci
 
+      # About 10 min for both engines on a quiet run (171 tests), plus CI's retries: 12 cut the WebKit half off.
       - name: Browser tests
         working-directory: test/browser
-        timeout-minutes: 12
+        timeout-minutes: 22
         env:
           CI: "true"
           BW_BROWSER_PG: postgres://postgres:blocwerk@postgres:5432/bw_browser_ci
