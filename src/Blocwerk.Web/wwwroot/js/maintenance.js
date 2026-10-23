@@ -345,6 +345,18 @@
         return true;
     }
 
+    // PR 3.9: an announced deploy holds the worker's hand-off to the offline client, so a restart's 502s keep today's
+    // answers; the new instance ends the hold (the worker also ends it by itself, sw-client-cache.js).
+    function tellWorker(pending) {
+        try {
+            if (window.bwSwGuard && typeof window.bwSwGuard.deploy === 'function') {
+                window.bwSwGuard.deploy(pending);
+            }
+        } catch (e) {
+            // The hold is a refinement; the deploy goes on without it.
+        }
+    }
+
     function doReload(spreadMs) {
         if (reloaded) {
             return;
@@ -434,6 +446,7 @@
         // The original reload condition, for EVERY client: a process that is not the one we loaded
         // from answered a real request — a genuinely new build. The server is definitely serving, so
         // the reload cannot land on offline.html.
+        tellWorker(false);
         if (safeToReload()) {
             doReload();
             return 'reloaded';
@@ -615,6 +628,9 @@
 
         message = text;
         reason = (announcement && announcement.reason) || 'announced';
+        if (reason === 'announced') {
+            tellWorker(true);
+        }
         phase = 'watching';
         watchStartedAt = Date.now();
         readyStartedAt = 0;

@@ -148,3 +148,17 @@ test('a lost worker falls back instead of reloading: server down, an editor open
     assert.equal(await guardPage({ answers: [false], lastReload: Date.now() - 6 * 60 * 1000 }).check(), 'reloading');
     assert.equal(await guardPage({ answers: [false], active: { tagName: 'INPUT', value: '' } }).check(), 'reloading', 'an empty focused field');
 });
+
+test('deploy() posts deploy-pending or deploy-done to the controller, and does nothing without one', async () => {
+    const posted = [];
+    const win = {
+        __bwSwGuardManual: true,
+        navigator: { serviceWorker: { controller: { postMessage: m => posted.push(m) } } },
+    };
+    vm.runInNewContext(js('sw-guard.js'), { window: win, Date, Number, String, Promise });
+    assert.equal(win.bwSwGuard.deploy(true), true);
+    assert.equal(win.bwSwGuard.deploy(false), true);
+    assert.deepEqual(posted.map(m => ({ ...m })), [{ proto: 1, type: 'deploy-pending' }, { proto: 1, type: 'deploy-done' }]);
+    win.navigator.serviceWorker.controller = null;
+    assert.equal(win.bwSwGuard.deploy(true), false);
+});

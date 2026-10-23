@@ -1,5 +1,5 @@
 // The worker hands a failed Server-page navigation to the precached offline client (Phase 3 PR 3.9): with the server
-// down, answering a 5xx, or silent for 4 s, a route the client declares opens at its /v/ twin, from the device alone.
+// down, answering a 502/503/504, or silent for 4 s, a route the client declares opens at its /v/ twin, from the device alone.
 // A healthy or merely slow-but-answering server is never cut off for a route the client cannot take, and the client is
 // never shown for a locked partition, a kiosk, an undeclared route or an incomplete version: those get offline.html.
 import { test, expect } from '../harness/fixtures.mjs';
@@ -92,4 +92,30 @@ test('a kiosk is never handed to the client, even with a complete version on the
 
     await server.unreachable();
     await expectOfflinePage(page, wallPath(world));
+});
+
+test("a 500 is the server's own answer, never the client", async ({ page, world, server }) => {
+    expect(await precacheAsAlice(page, world, server)).toBe('complete');
+    await server.faults([{ path: '^/walls/', status: 500 }]);
+    const response = await page.goto(wallPath(world));
+    expect(response.status()).toBe(500);
+    await expect(page).toHaveURL(new RegExp(`${wallPath(world)}$`));
+});
+
+test('an announced deploy keeps offline.html while the server is down; the hold is the page telling the worker', async ({ page, world, server }) => {
+    expect(await precacheAsAlice(page, world, server)).toBe('complete');
+    // What MaintenanceWatcher does when the deploy hook announces (about 5 s before the restart).
+    await page.evaluate(() => window.bwMaintenance.begin({ message: 'Updating Blocwerk' }));
+    const hold = () => page.evaluate(async () => {
+        const hit = await caches.match('/__bw/deploy', { cacheName: 'bw-sw-state' });
+        return hit ? Number(await hit.text()) - Date.now() : null;
+    });
+    await expect.poll(hold).toBeGreaterThan(170 * 1000);
+    expect(await hold()).toBeLessThanOrEqual(180 * 1000);
+
+    await server.unreachable();
+    await expectOfflinePage(page, wallPath(world));
+    await server.faults([{ path: '^/walls/', status: 502 }]);
+    const response = await page.goto(wallPath(world));
+    expect(response.status()).toBe(502);
 });

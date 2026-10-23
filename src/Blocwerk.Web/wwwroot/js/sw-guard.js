@@ -14,6 +14,9 @@
  *     (sessionStorage);
  *   - otherwise fall back: `data-bw-worker="lost"` on <html> and a `bw-worker-lost` event, for the page to show.
  * A page with no controller has nothing to lose and is left alone. Nothing here throws into the page.
+ *
+ * deploy(pending) is maintenance.js's line to the worker: an announced deploy holds the offline client's hand-off
+ * (`deploy-pending`) until the page sees the new instance (`deploy-done`); the worker ends it by itself after 3 min.
  */
 window.bwSwGuard = (function (win) {
     'use strict';
@@ -140,7 +143,23 @@ window.bwSwGuard = (function (win) {
         return state.first;
     }
 
-    return { boot, check, get first() { return state.first; } };
+    // Posts `deploy-pending` (true) or `deploy-done` (false) to the controlling worker; no reply. An older worker
+    // ignores both, and a page with no controller has no hand-off to hold.
+    function deploy(pending) {
+        const sw = win.navigator.serviceWorker;
+        const controller = sw && sw.controller;
+        if (!controller) {
+            return false;
+        }
+        try {
+            controller.postMessage({ proto: PROTO, type: pending ? 'deploy-pending' : 'deploy-done' });
+            return true;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    return { boot, check, deploy, get first() { return state.first; } };
 })(window);
 
 if (!window.__bwSwGuardManual) {
