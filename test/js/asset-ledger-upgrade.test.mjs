@@ -7,10 +7,11 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { fakeIndexedDB } from './fixtures/fake-idb.mjs';
+import { moduleUrl } from './fixtures/page-modules.mjs';
 
 // The ledger and its IndexedDB half (asset-ledger-idb.js, split out in PR 3.5), as a page loads them.
 const CURRENT = ['asset-ledger-idb.js', 'asset-ledger.js']
-    .map(name => readFileSync(new URL(`../../src/Blocwerk.Web/wwwroot/js/${name}`, import.meta.url), 'utf8')).join('\n');
+    .map(name => readFileSync(moduleUrl(name), 'utf8')).join('\n');
 const RELEASED_V1 = readFileSync(new URL('./fixtures/asset-ledger-v1.js', import.meta.url), 'utf8');
 const DB = 'blocwerk-assets';
 const USER = 'u-aaaaaaaaaaaaaaaaaaaa';

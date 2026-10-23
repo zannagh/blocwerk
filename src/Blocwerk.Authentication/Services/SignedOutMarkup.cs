@@ -19,8 +19,21 @@ internal static class SignedOutMarkup
     /// <summary>The event the page-side caches listen for (the asset ledger, the deploy drafts).</summary>
     public const string IdentityChangedEvent = "bw:identity-changed";
 
-    /// <summary>The scripts the page loads, by their static-asset labels (the paths under wwwroot).</summary>
-    public static readonly string[] Scripts = ["js/deploy-drafts.js", "js/asset-ledger-idb.js", "js/asset-ledger.js", "js/asset-wipe.js", "js/asset-lock.js"];
+    /// <summary>
+    /// The scripts the page loads, by their static-asset labels (the paths under wwwroot; the cache modules are
+    /// Blocwerk.Shared.Ui's, under <c>_content/</c>, since PR 3.7). Same order as BlocwerkApp: the ledger's IndexedDB
+    /// half before the ledger, the lock after the wipe.
+    /// </summary>
+    public static readonly string[] Scripts =
+    [
+        "js/deploy-drafts.js",
+        $"{SharedUi}js/asset-ledger-idb.js",
+        $"{SharedUi}js/asset-ledger.js",
+        $"{SharedUi}js/asset-wipe.js",
+        $"{SharedUi}js/asset-lock.js",
+    ];
+
+    private const string SharedUi = "_content/Blocwerk.Shared.Ui/";
 
     /// <summary>The page for <paramref name="next"/>; <paramref name="assetUrl"/> maps a script label to its served URL.</summary>
     public static string Render(string next, Func<string, string>? assetUrl = null)

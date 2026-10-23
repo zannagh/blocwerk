@@ -5,8 +5,8 @@
  *
  *   - a request log (GET /__pw/log), so a test can prove a request never reached the server;
  *   - fault rules (POST /__pw/faults), so a test can make one path answer 404 or 503, or drop the connection (`drop`,
- *     the server unreachable), delay it (`delay` ms), or rewrite a page's body (`rewrite`), without touching the app or
- *     the database;
+ *     the server unreachable), delay it (`delay` ms), rewrite a page's body (`rewrite`), or answer a fixed 200 body
+ *     (`body`, with `headers`: an older build's file), without touching the app or the database;
  *   - fixed pages for the Clear-Site-Data probes (GET /__pw/csd?status=200|302, /__pw/cacheable, /__pw/blank).
  *
  * Control paths are under /__pw/ and never forwarded. The proxy holds no state the app relies on.
@@ -44,6 +44,14 @@ export function startProxy(appPort) {
         }
         if (fault && fault.rewrite) {
             forwardRewritten(appPort, req, res, entry, fault.rewrite);
+            return;
+        }
+        if (fault && typeof fault.body === 'string') {
+            // A fixed answer in place of the app's, e.g. the released service worker of an older build.
+            entry.status = 200;
+            entry.fault = true;
+            res.writeHead(200, { 'cache-control': 'no-store', ...(fault.headers || {}) });
+            res.end(fault.body);
             return;
         }
         if (fault) {
