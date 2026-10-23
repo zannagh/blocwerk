@@ -39,7 +39,8 @@ removes it again. The first run takes about a minute longer, for the publish and
    are throwaway too.
 5. `harness/proxy.mjs`, a same-origin proxy in front of the app. The browser talks only to it. It adds a request log
    (to prove a request never reached the server), fault rules (404/503/delay/dropped connection/body rewrite per
-   path), and fixed Clear-Site-Data probe pages under `/__pw/`.
+   path), the server unreachable as a whole (its port closed, connects refused), and fixed Clear-Site-Data probe pages
+   under `/__pw/`. Its control API also listens on a port of its own (`controlURL` in `.out/state.json`).
 
 ## Layout
 
@@ -61,7 +62,14 @@ removes it again. The first run takes about a minute longer, for the publish and
   WebKit contexts, Cache Storage entries written while the origin has no service worker registration are dropped on
   the next navigation. A real profile does not do that.
 - **WebKit's `context.setOffline(true)` fails requests before the worker sees them**, cached ones included, so the
-  offline test uses a dropped connection at the proxy on WebKit instead. Chromium runs both.
+  offline test closes the proxy's port on WebKit instead (`server.unreachable()`). Chromium runs both.
+- **Linux WebKit (WPE, libsoup) crashes its network process now and then when requests die on open connections**
+  (a `drop` rule): libsoup logs `soup_session_feature_request_queued: assertion 'SOUP_IS_SESSION_FEATURE (feature)'
+  failed`, then `NetworkProcessProxy::didClose (Network Process crash)`. That process holds the service worker
+  registry, so the page keeps `navigator.serviceWorker.controller` but its requests go straight to the network and
+  the worker answers no message. A refused connect never does this, so "no network" is `server.unreachable()`, and a
+  `drop` rule is only for one path. The macOS port (CFNetwork, as on iOS) does not crash. `WEBKIT_DEBUG=Process
+  DEBUG=pw:browser` shows it.
 - **Chromium hides `Clear-Site-Data` from Playwright's response headers.** The header test reads it from the test
   process.
 - Requests with `Range` are checked in both browsers. The quota override exists only in Chromium.
