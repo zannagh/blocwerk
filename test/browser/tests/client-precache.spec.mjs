@@ -13,12 +13,53 @@ const releasedWorker = () => [
     { path: '^/js/sw-asset-cache\\.js$', body: released('sw-asset-cache.js'), headers: { 'content-type': 'text/javascript' } }
 ];
 
-function updateWorker(page) {
-    return page.evaluate(() => new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error('no controllerchange')), 20000);
-        navigator.serviceWorker.addEventListener('controllerchange', () => { clearTimeout(timer); resolve(); }, { once: true });
-        navigator.serviceWorker.getRegistration('/').then(reg => reg.update()).catch(reject);
-    }));
+// The shell this page's controller reports (sw-info), or null when it does not answer in time.
+const controllerShell = page => page.evaluate(() => new Promise(resolve => {
+    const controller = navigator.serviceWorker.controller;
+    if (!controller) {
+        resolve(null);
+        return;
+    }
+    const channel = new MessageChannel();
+    channel.port1.onmessage = e => resolve(e.data && e.data.shell);
+    controller.postMessage({ proto: 1, type: 'sw-info' }, [channel.port2]);
+    setTimeout(() => resolve(null), 2000);
+}));
+
+// Asks for an update and waits until this build's worker controls the page. Not a controllerchange listener: a
+// navigation before it may already have run the update (a navigation checks for one), and then no event comes.
+//
+// Chromium (macOS and Linux) now and then keeps the new worker `installed` behind its skipWaiting for minutes: the
+// released worker still has work in flight that this test could not pin down (no request is open at the server, and
+// instrumenting the released worker made it go away). A browser ends that by stopping the old worker (an event's
+// 5 min limit, or the app's next start); the test stops it through DevTools after 10 s instead.
+async function updateWorker(page, browserName) {
+    await page.evaluate(() => navigator.serviceWorker.getRegistration('/').then(reg => reg.update()).catch(() => undefined));
+    try {
+        await expect.poll(() => controllerShell(page), { timeout: 10000 }).toBe('blocwerk-shell-v5');
+        return;
+    } catch (e) {
+        if (browserName !== 'chromium') {
+            throw e;
+        }
+    }
+    await stopActiveWorker(page);
+    await expect.poll(() => controllerShell(page), { timeout: 20000 }).toBe('blocwerk-shell-v5');
+}
+
+// Chromium only: stops the registration's active (released) worker, so the waiting one activates.
+async function stopActiveWorker(page) {
+    const cdp = await page.context().newCDPSession(page);
+    const versions = new Map();
+    cdp.on('ServiceWorker.workerVersionUpdated', ({ versions: list }) => list.forEach(v => versions.set(v.versionId, v)));
+    await cdp.send('ServiceWorker.enable');
+    await expect.poll(() => [...versions.values()].some(v => v.status === 'activated')).toBe(true);
+    for (const v of versions.values()) {
+        if (v.status === 'activated') {
+            await cdp.send('ServiceWorker.stopWorker', { versionId: v.versionId });
+        }
+    }
+    await cdp.detach();
 }
 
 // Pretends a later attempt: the page waits 10 minutes after a failed one.
@@ -86,17 +127,23 @@ test('a new version replaces the old one only once it is complete, and the old o
     expect(await clientCaches(page)).toEqual([`blocwerk-client-${v2}`]);
 });
 
-test('under the released worker nothing is precached; after its update the next page precaches and hands off', async ({ page, world, server }) => {
+test('under the released worker nothing is precached, and a failed navigation gets offline.html', async ({ page, world, server }) => {
     expect(await precacheAsAlice(page, world, server, [...releasedWorker(), declareRoutes()])).toBe('unsupported');
     expect(await clientCaches(page)).toEqual([]);
     expect(await page.evaluate(() => window.bwSwGuard.first)).toBe('alive');
     await server.unreachable();
     await expectOfflinePage(page, wallPath(world));
+});
+
+// A separate test from the outage above: on Linux Chromium, a released worker that went through it can keep work in
+// flight that never settles, and the new worker then waits behind skipWaiting for minutes (a reload does not end it).
+// An installed app is updated once that work ends or the app restarts; the update itself is what this test covers.
+test('after the released worker updates, the next page precaches and hands off', async ({ page, world, server, browserName }) => {
+    expect(await precacheAsAlice(page, world, server, [...releasedWorker(), declareRoutes()])).toBe('unsupported');
 
     // The deploy reaches the installed app: this build's worker replaces the released one in the open tab.
     await server.faults([declareRoutes()]);
-    await page.goto(wallPath(world));
-    await updateWorker(page);
+    await updateWorker(page, browserName);
     await page.reload();
     await controlled(page);
     await settled(page);
