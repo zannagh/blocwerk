@@ -168,6 +168,7 @@ export function loadPage(opts = {}) {
         routes: opts.routes || {},
         __bwAssetCacheManual: true,
         console, URL, URLSearchParams, Response, Promise, Map, Set, JSON, Math, Date, Number, String, Object, Array, Error,
+        crypto: globalThis.crypto, TextEncoder,
         setTimeout: timer,
         clearTimeout: t => { if (t) { t.done = true; } },
         setInterval: () => 0,

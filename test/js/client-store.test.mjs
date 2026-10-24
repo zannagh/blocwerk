@@ -6,40 +6,11 @@
 // offline data works without bwAssetCache; the refusal matrix of §3; the change listeners. Run by `node --test test/js/`.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { loadClient, bodyCaches } from './fixtures/client-sandbox.mjs';
+import { loadClient } from './fixtures/client-sandbox.mjs';
 import { USER_A, USER_B, KIOSK, ORIGIN } from './fixtures/page-sandbox.mjs';
 import { W1, W2 } from './fixtures/asset-pages.mjs';
+import { DAY, TOKEN, plain, same, sha, doc, cacheNames, device } from './fixtures/client-device.mjs';
 
-const DAY = 24 * 60 * 60 * 1000;
-const plain = value => JSON.parse(JSON.stringify(value));
-// The sandbox's arrays are of another realm: compare them as plain JSON.
-const same = (actual, expected, message) => assert.deepEqual(plain(actual), plain(expected), message ?? "");
-const TOKEN = 'tok3n';
-// A 64-digit sha from a short hex pattern.
-const sha = pattern => pattern.repeat(64).slice(0, 64);
-const doc = (kind, wallId, extra = {}) => JSON.stringify(Object.assign({ v: 1, wallId, kind }, extra));
-const tick = id => ({ boulderId: id, attempts: 2, sent: false, flashed: true, lastAt: null });
-
-// A device whose ledger holds `label`'s walls W1 and W2 (each with a wall and a comments document cached in -3d),
-// their mine rows, and the same for `others` (other partitions a sweep should take).
-async function device(label, more = {}) {
-    const caches = more.caches || bodyCaches();
-    const client = loadClient(Object.assign({ caches }, more));
-    const ledger = await client.ledger();
-    for (const p of [label].concat(more.others || [])) {
-        for (const [wallId, c] of [[W1, '1'], [W2, '2']]) {
-            const shas = { wall: sha(c + 'a'), comments: sha(c + 'c') };
-            await ledger.updateWall(p, wallId, () => ({ partition: p, wallId, data: { wall: { sha: shas.wall, bytes: 1, cursor: '1.2.3' }, comments: { sha: shas.comments, bytes: 1, cursor: '1.2.3' } } }));
-            await caches.putText(`bw-a1-${p}-3d`, `${ORIGIN}/__bw/${shas.wall}`, doc('wall', wallId));
-            await caches.putText(`bw-a1-${p}-3d`, `${ORIGIN}/__bw/${shas.comments}`, doc('comments', wallId));
-            await ledger.putMine({ partition: p, wallId, cursor: '1.2.3', ticks: [tick(W1)], favourites: [], fetchedAt: 1 });
-        }
-    }
-    await ledger.setMeta(Object.assign({ activePartition: label }, more.meta || {}));
-    return { client, ledger, caches };
-}
-
-const cacheNames = caches => [...caches.stores.keys()].sort();
 
 test('the partition is the ledger\'s active label, never the shell\'s offline meta', async () => {
     const { client } = await device(USER_A);

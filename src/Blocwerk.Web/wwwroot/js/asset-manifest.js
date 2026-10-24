@@ -13,6 +13,9 @@
  * after pendingDelayMs (60 s, 2 min, 5 min, then every 15 min while it stays pending), when the server's backfill
  * will have stamped them.
  *
+ * An `anon` row (a share link's) keeps `share`, the SHA-256 of the link's token (bwAssetLedger.shareHash), never the
+ * token: the offline client reads the row only on a /v/ page whose token hashes to it.
+ *
  * Retention: a stored copy older than RETENTION_MS is not revalidated but fetched whole, and its feed cursor is
  * dropped. The feed keeps 30 days, so an older cursor is past its horizon and means a full resync.
  */
@@ -55,7 +58,13 @@ window.bwAssetManifest = (function () {
      * Returns { outcome: 'updated'|'unchanged'|'dropped'|'offline'|'switched', pending }.
      */
     // The fields the manifest round owns; every other field of the row (keepOffline, save3d, docs) is kept as stored.
-    const MANIFEST_FIELDS = ['partition', 'wallId', 'entries', 'etag', 'cursor', 'pending', 'member', 'fetchedAt'];
+    const MANIFEST_FIELDS = ['partition', 'wallId', 'entries', 'etag', 'cursor', 'pending', 'member', 'share', 'fetchedAt'];
+
+    // The share link's token as an `anon` row keeps it: its hash only, and none on any other partition.
+    async function shareOf(partition, token) {
+        const ledger = window.bwAssetLedger;
+        return partition === 'anon' && token && ledger && typeof ledger.shareHash === 'function' ? ledger.shareHash(token) : null;
+    }
 
     // Writes this round's fields onto the row as it is stored NOW (not as it was read before the fetch).
     function write(env, row) {
@@ -88,6 +97,7 @@ window.bwAssetManifest = (function () {
             row.cursor = null;
         }
         row.member = !!opts.member;
+        row.share = await shareOf(partition, opts.token);
         if (opts.opened) {
             row.lastOpened = now;
         }

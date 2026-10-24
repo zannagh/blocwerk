@@ -3,11 +3,13 @@
  *
  * IndexedDB `blocwerk-assets` v2, four stores:
  *   walls  [partition, wallId] → { partition, wallId, etag, cursor, entries, pending, member,
- *                                  lastOpened, fetchedAt, keepOffline, save3d, docs, data, dataEtag, dataPrev }
+ *                                  lastOpened, fetchedAt, keepOffline, save3d, docs, data, dataEtag, dataPrev, share }
  *          `entries` is the manifest's asset list, compacted to what the fill and eviction read:
  *          [{ sha, kind, tier, bytes, widths?, splats?, at? }] (`at`: a gallery image's upload time).
  *          `docs` the view3d documents (asset-3d.js); `data` the data documents of the docs index (asset-data.js),
- *          { kind → { sha, bytes, cursor } }. listed() is every sha a row holds on to.
+ *          { kind → { sha, bytes, cursor } }. listed() is every sha a row holds on to. `member`: the wall was in the
+ *          viewer's own list when its manifest was read (its documents are the members' class). `share`: on an `anon`
+ *          row, the SHA-256 of the share link's token (shareHash), never the token itself.
  *   assets [partition, key]    → { partition, key, sha, width, cache, bytes, cachedAt, verifiedAt }
  *          `key` is the service worker's cache key path without the origin: `{sha}` or `{sha}/{width}`.
  *   meta   'meta'              → { id: 'meta', activePartition, userTag, schema, proto, locked }
@@ -166,6 +168,20 @@ window.bwAssetLedger = (function () {
         return ((wall && wall.entries) || []).concat((wall && wall.docs) || [], data, prev);
     }
 
+    /** The SHA-256 (lower-case hex) of a share token, as an `anon` wall row keeps it; null without WebCrypto. */
+    async function shareHash(token) {
+        try {
+            const subtle = window.crypto && window.crypto.subtle;
+            if (!token || !subtle) {
+                return null;
+            }
+            const digest = await subtle.digest('SHA-256', new TextEncoder().encode(String(token)));
+            return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
+        } catch (e) {
+            return null;
+        }
+    }
+
     let opened = null;
     let pending = false;
 
@@ -195,6 +211,7 @@ window.bwAssetLedger = (function () {
         // never "storage refused". The next page start tries again.
         upgradePending: () => pending,
         listed,
+        shareHash,
         memory: () => create(memoryBackend()),
         create
     };

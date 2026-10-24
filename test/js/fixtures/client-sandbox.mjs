@@ -8,7 +8,7 @@ import { moduleUrl } from './page-modules.mjs';
 import { fakeCaches, ORIGIN } from './page-sandbox.mjs';
 
 const SHELL_MODULES = ['asset-ledger-idb.js', 'asset-ledger.js', 'asset-wipe.js', 'asset-lock.js', 'asset-session.js', 'asset-clear.js'];
-const STORE = new URL('../../../src/Blocwerk.Client/wwwroot/js/client-store.js', import.meta.url);
+const STORE = ['client-store-rows.js', 'client-store.js'].map(name => new URL(`../../../src/Blocwerk.Client/wwwroot/js/${name}`, import.meta.url));
 
 /** Fake caches whose entries carry real bodies, with the top-level match the store uses. */
 export function bodyCaches() {
@@ -24,7 +24,8 @@ export function bodyCaches() {
 
 /**
  * opts: { path, caches, storage (Map: localStorage), ledger (carried over), degraded, pending (upgradePending), bus (a
- * shared Set: BroadcastChannel), modules (the shared modules to load; default all six), worker (a controller) }
+ * shared Set: BroadcastChannel), modules (the shared modules to load; default all six), worker (a controller),
+ * noCrypto (no WebCrypto: no share hash) }
  */
 export function loadClient(opts = {}) {
     const listeners = {};
@@ -36,6 +37,7 @@ export function loadClient(opts = {}) {
     const meta = { getAttribute: name => (name === 'content' ? 'offline' : null) };
     const sandbox = {
         console, URL, URLSearchParams, Response, Promise, Map, Set, JSON, Math, Date, Number, String, Object, Array, Error,
+        crypto: opts.noCrypto ? undefined : globalThis.crypto, TextEncoder,
         setTimeout: (fn, ms) => setTimeout(fn, Math.min(ms, 5)),
         clearTimeout,
         BroadcastChannel: opts.bus ? class {
@@ -62,7 +64,9 @@ export function loadClient(opts = {}) {
     for (const name of opts.modules || SHELL_MODULES) {
         vm.runInContext(readFileSync(moduleUrl(name), 'utf8'), context, { filename: name });
     }
-    vm.runInContext(readFileSync(STORE, 'utf8'), context, { filename: 'client-store.js' });
+    for (const url of STORE) {
+        vm.runInContext(readFileSync(url, 'utf8'), context, { filename: url.pathname.split('/').pop() });
+    }
     if (sandbox.bwAssetLedger) {
         if (opts.ledger) {
             context.__ledger = opts.ledger;
