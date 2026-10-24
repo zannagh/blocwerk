@@ -60,7 +60,7 @@ public sealed class ClientStoreFeedTests
     [InlineData(UserA, true)]
     public async Task ABoulderGoneToDraft_PurgesItsCommentsAtOnce_ForTheOutsiderClasses(string label, bool shared)
     {
-        var (store, _) = await LoadedAsync(Device(label, shareWall: shared ? Wall : null));
+        var (store, _) = await LoadedAsync(Device(label, shareWall: shared ? Wall : null, member: false));
 
         var followUp = store.Apply(label, Envelope(FeedKinds.BoulderChanged, Boulder1, Boulder1, new BoulderPayload(2, true)));
 

@@ -1,6 +1,7 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using System.Text.Json;
 using Blocwerk.Contracts.Documents;
 using Blocwerk.Contracts.Feed;
 using Blocwerk.Contracts.Mine;
@@ -14,19 +15,27 @@ namespace Blocwerk.Client.Store;
 /// <item>Only a <see cref="StoreState.Ready"/> store has walls; locked, updating, unavailable, kiosk and empty hold none,
 /// and every state change drops the walls read so far.</item>
 /// <item>A wall's documents are read on first use (<see cref="GetWallAsync"/>) in one pass under the snapshot's label;
-/// a label that changed meanwhile discards the read and refreshes.</item>
+/// a refresh that landed meanwhile discards the read, which is retried against the new snapshot.</item>
+/// <item>Refreshes never overlap, and only the newest read lands (<see cref="RefreshAsync"/>); a read that changes
+/// nothing changes nothing, not even <see cref="Changed"/>.</item>
 /// <item>A wall changes only by swapping its immutable <see cref="CachedWall"/>: a replaced document
 /// (<see cref="ReplaceDocument"/>) or a feed event (<see cref="Apply"/>), both for the sync loop (PR 3.12).</item>
-/// <item>The viewer's marks exist only on a <c>u-</c> partition.</item>
+/// <item>The viewer's marks exist only on a <c>u-</c> partition. A wall's class is what was cached (the row's
+/// <see cref="StoreWallRow.Member"/>), never the page's URL.</item>
 /// </list>
 /// </summary>
 public sealed class ClientStore
 {
+    // A first read is retried this often while refreshes keep landing during it.
+    private const int ReadAttempts = 3;
+
     private readonly IClientStoreSource source;
     private StoreSnapshot snapshot = StoreSnapshot.Nothing("loading");
     private Dictionary<Guid, CachedWall> walls = [];
     private int generation;
     private Task? started;
+    private Task? refreshing;
+    private bool refreshAgain;
 
     /// <summary>Initializes a new instance of the <see cref="ClientStore"/> class.</summary>
     /// <param name="source">The device cache.</param>
@@ -51,25 +60,27 @@ public sealed class ClientStore
     /// <returns>A task that completes after the first read.</returns>
     public Task StartAsync() => started ??= StartOnceAsync();
 
-    /// <summary>Reads what the client may show again; the walls read so far go unless their label and shas stand.</summary>
-    /// <returns>A task that completes after the read.</returns>
-    public async Task RefreshAsync()
+    /// <summary>
+    /// Reads what the client may show again; the walls read so far go unless their label and ledger row stand. A refresh
+    /// asked for while one runs joins it: that one reads once more, and only its newest read lands, so an older snapshot
+    /// (one read just before another tab locked) can never land last.
+    /// </summary>
+    /// <returns>A task that completes once a read begun after this call has landed.</returns>
+    public Task RefreshAsync()
     {
-        var next = await source.SnapshotAsync();
-        var state = StateOf(next.State);
-        var kept = state == StoreState.Ready && next.Partition == snapshot.Partition
-            ? walls.Where(w => Unchanged(w.Value, next)).ToDictionary(w => w.Key, w => WithMine(w.Value, MineOf(next, w.Key)))
-            : [];
-        generation++;
-        snapshot = next;
-        walls = kept;
-        State = state;
-        Changed?.Invoke();
+        if (refreshing is { IsCompleted: false })
+        {
+            refreshAgain = true;
+            return refreshing;
+        }
+
+        refreshing = RefreshLoopAsync();
+        return refreshing;
     }
 
     /// <summary>The class a wall's cached documents were built for.</summary>
     /// <param name="wallId">The wall.</param>
-    /// <returns>Kiosk on a <c>k-</c> label, outsider on <c>anon</c> or the share link's wall, else member.</returns>
+    /// <returns>Kiosk on a <c>k-</c> label, outsider on <c>anon</c>, else what the row was cached as.</returns>
     public StoreAudience AudienceOf(Guid wallId) => AudienceOf(snapshot, wallId);
 
     /// <summary>A wall's cached data, read on first use.</summary>
@@ -77,33 +88,38 @@ public sealed class ClientStore
     /// <returns>The wall, or null when the store is not ready, holds no such wall, or its label changed meanwhile.</returns>
     public async Task<CachedWall?> GetWallAsync(Guid wallId)
     {
-        if (State != StoreState.Ready || snapshot.Walls.All(w => w.WallId != wallId))
+        for (var attempt = 0; attempt < ReadAttempts; attempt++)
         {
-            return null;
+            if (State != StoreState.Ready || snapshot.Walls.All(w => w.WallId != wallId))
+            {
+                return null;
+            }
+
+            if (walls.TryGetValue(wallId, out var cached))
+            {
+                return cached;
+            }
+
+            var asked = generation;
+            var partition = snapshot.Partition!;
+            var docs = await source.DocsAsync(partition, wallId);
+            if (asked != generation)
+            {
+                continue;
+            }
+
+            if (docs is null || docs.Partition != partition || docs.WallId != wallId)
+            {
+                await RefreshAsync();
+                return null;
+            }
+
+            var wall = Read(docs, AudienceOf(snapshot, wallId), MineOf(snapshot, wallId));
+            walls = new Dictionary<Guid, CachedWall>(walls) { [wallId] = wall };
+            return wall;
         }
 
-        if (walls.TryGetValue(wallId, out var cached))
-        {
-            return cached;
-        }
-
-        var asked = generation;
-        var partition = snapshot.Partition!;
-        var docs = await source.DocsAsync(partition, wallId);
-        if (asked != generation)
-        {
-            return null;
-        }
-
-        if (docs is null || docs.Partition != partition || docs.WallId != wallId)
-        {
-            await RefreshAsync();
-            return null;
-        }
-
-        var wall = Read(docs, AudienceOf(snapshot, wallId), MineOf(snapshot, wallId));
-        walls = new Dictionary<Guid, CachedWall>(walls) { [wallId] = wall };
-        return wall;
+        return null;
     }
 
     /// <summary>"Clear offline data": the device's partition (and a locked one) go; the store then shows nothing.</summary>
@@ -142,14 +158,21 @@ public sealed class ClientStore
     /// <returns>The follow-up; a resync when the store is not ready for that label.</returns>
     public FeedFollowUp Apply(string partition, FeedEnvelope envelope)
     {
-        if (Partition != partition || envelope.WallId is not { } wallId || !walls.TryGetValue(wallId, out var wall))
+        if (Partition != partition || envelope.WallId is not { } wallId || snapshot.Walls.All(w => w.WallId != wallId))
         {
             return FeedFollowUp.Resync;
         }
 
+        if (!walls.TryGetValue(wallId, out var wall))
+        {
+            // Cached but not opened yet: nothing to change here, only what the event asks of the sync loop.
+            var unopened = new CachedWall { WallId = wallId, Audience = AudienceOf(snapshot, wallId) };
+            return Masked(partition, StoreFeedApplier.Apply(unopened, envelope).FollowUp);
+        }
+
         var (next, followUp) = StoreFeedApplier.Apply(wall, envelope);
         Swap(partition, wallId, _ => next);
-        return IsUser(partition) ? followUp : followUp & ~FeedFollowUp.RefetchMine;
+        return Masked(partition, followUp);
     }
 
     internal static StoreState StateOf(string? state) => state switch
@@ -165,13 +188,21 @@ public sealed class ClientStore
 
     private static bool IsUser(string? partition) => partition is not null && partition.StartsWith("u-", StringComparison.Ordinal);
 
+    // A signed-in device's wall is the members' class only when the row says it was cached as one: a share link opened
+    // signed in caches the outsider class, and a later visit without the token must still purge drafts.
     private static StoreAudience AudienceOf(StoreSnapshot snapshot, Guid wallId) => snapshot.Partition switch
     {
         { } p when p.StartsWith("k-", StringComparison.Ordinal) => StoreAudience.Kiosk,
         "anon" => StoreAudience.Outsider,
-        _ when snapshot.ShareWall == wallId => StoreAudience.Outsider,
-        _ => StoreAudience.Member,
+        _ when snapshot.Walls.FirstOrDefault(w => w.WallId == wallId) is { Member: true } => StoreAudience.Member,
+        _ => StoreAudience.Outsider,
     };
+
+    private static FeedFollowUp Masked(string partition, FeedFollowUp followUp) =>
+        IsUser(partition) ? followUp : followUp & ~FeedFollowUp.RefetchMine;
+
+    private static bool SameSnapshot(StoreSnapshot a, StoreSnapshot b) =>
+        JsonSerializer.Serialize(a, ClientJsonContext.Default.StoreSnapshot) == JsonSerializer.Serialize(b, ClientJsonContext.Default.StoreSnapshot);
 
     private static MineMarks MineOf(StoreSnapshot snapshot, Guid wallId) =>
         IsUser(snapshot.Partition) && snapshot.Mine.FirstOrDefault(m => m.WallId == wallId) is { } row ? MineMarks.From(row) : MineMarks.None;
@@ -180,15 +211,16 @@ public sealed class ClientStore
     private static CachedWall WithMine(CachedWall wall, MineMarks mine) =>
         mine.Cursor == wall.Mine.Cursor && mine.Count == wall.Mine.Count ? wall : wall with { Mine = mine };
 
-    // A loaded wall stands while its row names the same shas it was read with.
+    // A loaded wall stands while its ledger row is the one it was read from (the same key: the same document shas, a
+    // predecessor standing in or a kind not cached included) and its class is the same.
     private static bool Unchanged(CachedWall wall, StoreSnapshot next) =>
-        next.Walls.FirstOrDefault(r => r.WallId == wall.WallId) is { } row
-        && row.Data.Count == wall.Shas.Count
-        && row.Data.All(d => wall.Shas.TryGetValue(d.Key, out var sha) && sha == d.Value.Sha);
+        next.Walls.FirstOrDefault(r => r.WallId == wall.WallId) is { Key: { } key }
+        && key == wall.Source
+        && AudienceOf(next, wall.WallId) == wall.Audience;
 
     private static CachedWall Read(StoreDocs docs, StoreAudience audience, MineMarks mine)
     {
-        var wall = new CachedWall { WallId = docs.WallId, Audience = audience, Mine = mine };
+        var wall = new CachedWall { WallId = docs.WallId, Audience = audience, Mine = mine, Source = docs.Key };
         foreach (var kind in DataDocumentKinds.All)
         {
             if (docs.Docs.TryGetValue(kind, out var doc))
@@ -198,6 +230,43 @@ public sealed class ClientStore
         }
 
         return wall;
+    }
+
+    private async Task RefreshLoopAsync()
+    {
+        while (true)
+        {
+            refreshAgain = false;
+            var next = await source.SnapshotAsync();
+            if (refreshAgain)
+            {
+                continue;
+            }
+
+            Land(next);
+            if (!refreshAgain)
+            {
+                return;
+            }
+        }
+    }
+
+    private void Land(StoreSnapshot next)
+    {
+        var state = StateOf(next.State);
+        if (state == State && SameSnapshot(next, snapshot))
+        {
+            return;
+        }
+
+        var kept = state == StoreState.Ready && next.Partition == snapshot.Partition
+            ? walls.Where(w => Unchanged(w.Value, next)).ToDictionary(w => w.Key, w => WithMine(w.Value, MineOf(next, w.Key)))
+            : [];
+        generation++;
+        snapshot = next;
+        walls = kept;
+        State = state;
+        Changed?.Invoke();
     }
 
     private async Task StartOnceAsync()

@@ -9,10 +9,16 @@ namespace Blocwerk.Client.Store;
 /// </summary>
 public enum StoreAudience
 {
-    /// <summary>A signed-in device on the wall's own route: the members' or setters' class (drafts possible).</summary>
+    /// <summary>
+    /// A signed-in device whose row says the wall was in the viewer's own list when cached: the members' or setters'
+    /// class (drafts possible).
+    /// </summary>
     Member,
 
-    /// <summary>A share link: an anonymous device, or a signed-in one on the wall's share route. Never sees drafts.</summary>
+    /// <summary>
+    /// A share link's class: an anonymous device, or a signed-in one that cached a wall it is no member of, whatever URL
+    /// the client is on now. Never sees drafts.
+    /// </summary>
     Outsider,
 
     /// <summary>A kiosk tablet: the kiosk class, built like the outsider one.</summary>

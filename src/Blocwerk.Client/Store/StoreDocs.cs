@@ -7,4 +7,5 @@ namespace Blocwerk.Client.Store;
 /// <param name="Partition">The label they were read under; still the active one when the read ended.</param>
 /// <param name="WallId">The wall.</param>
 /// <param name="Docs">The documents by kind; a kind not cached is absent.</param>
-public sealed record StoreDocs(string Partition, Guid WallId, IReadOnlyDictionary<string, StoreDocText> Docs);
+/// <param name="Key">The key of the ledger row they were read from (<see cref="StoreWallRow.Key"/>).</param>
+public sealed record StoreDocs(string Partition, Guid WallId, IReadOnlyDictionary<string, StoreDocText> Docs, string? Key = null);

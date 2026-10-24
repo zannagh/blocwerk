@@ -44,7 +44,7 @@ internal static class StoreWorld
     public static string CommentsJson(params CommentsDocumentComment[] comments) => Json(new CommentsDocument(1, Wall, comments));
 
     /// <summary>A ready device under <paramref name="partition"/> holding the wall with two boulders and two comments.</summary>
-    public static FakeStoreSource Device(string partition, Guid? shareWall = null, IReadOnlyList<StoreMineRow>? mine = null)
+    public static FakeStoreSource Device(string partition, Guid? shareWall = null, IReadOnlyList<StoreMineRow>? mine = null, bool? member = null)
     {
         var source = new FakeStoreSource();
         Put(source, partition, new()
@@ -52,16 +52,29 @@ internal static class StoreWorld
             [DataDocumentKinds.Wall] = new(Sha('a'), WallJson()),
             [DataDocumentKinds.Boulders] = new(Sha('b'), BouldersJson(Boulder(Boulder1, "One"), Boulder(Boulder2, "Two"))),
             [DataDocumentKinds.Comments] = new(Sha('c'), CommentsJson(Comment(CommentA, Boulder1, "nice"), Comment(CommentB, Boulder2, "hard"))),
-        }, shareWall, mine);
+        }, shareWall, mine, member);
         return source;
     }
 
-    public static void Put(FakeStoreSource source, string partition, Dictionary<string, StoreDocText> docs, Guid? shareWall = null, IReadOnlyList<StoreMineRow>? mine = null)
+    /// <summary>The device's row and documents of the wall; a <c>u-</c> row is a member's unless <paramref name="member"/> says not.</summary>
+    public static void Put(
+        FakeStoreSource source,
+        string partition,
+        Dictionary<string, StoreDocText> docs,
+        Guid? shareWall = null,
+        IReadOnlyList<StoreMineRow>? mine = null,
+        bool? member = null)
     {
         var refs = docs.ToDictionary(d => d.Key, d => new StoreDocRef(d.Value.Sha, "1.2.3"));
-        source.Snapshot = new StoreSnapshot("ready", partition, shareWall, [new StoreWallRow(Wall, refs)], mine ?? []);
-        source.Docs[(partition, Wall)] = new StoreDocs(partition, Wall, docs);
+        var key = KeyOf(refs);
+        var row = new StoreWallRow(Wall, refs, member ?? partition.StartsWith("u-", StringComparison.Ordinal), key);
+        source.Snapshot = new StoreSnapshot("ready", partition, shareWall, [row], mine ?? []);
+        source.Docs[(partition, Wall)] = new StoreDocs(partition, Wall, docs, key);
     }
+
+    /// <summary>A row key as client-store-rows.js builds it: what the ledger names, in a fixed order.</summary>
+    public static string KeyOf(IReadOnlyDictionary<string, StoreDocRef> refs) =>
+        string.Join(';', refs.OrderBy(r => r.Key, StringComparer.Ordinal).Select(r => $"{r.Key}={r.Value.Sha}"));
 
     public static StoreMineRow Mine(params MineDocumentTick[] ticks) => new(Wall, "1.2.3", ticks, [Boulder2]);
 

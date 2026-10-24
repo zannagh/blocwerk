@@ -36,6 +36,9 @@ public sealed record CachedWall
     /// <summary>Gets the sha of each document kind the instance holds.</summary>
     public IReadOnlyDictionary<string, string> Shas { get; init; } = new Dictionary<string, string>();
 
+    /// <summary>Gets the key of the ledger row the documents were read from (<see cref="StoreWallRow.Key"/>).</summary>
+    public string? Source { get; init; }
+
     /// <summary>Gets the viewer's own marks (none unless the device is signed in).</summary>
     public MineMarks Mine { get; init; } = MineMarks.None;
 

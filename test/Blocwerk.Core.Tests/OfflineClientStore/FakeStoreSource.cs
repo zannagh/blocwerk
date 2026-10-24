@@ -21,7 +21,23 @@ internal sealed class FakeStoreSource : IClientStoreSource
 
     public Func<Task>? Listener { get; private set; }
 
-    public Task<StoreSnapshot> SnapshotAsync() => Task.FromResult(Snapshot);
+    /// <summary>Held by the next SnapshotAsync after it read <see cref="Snapshot"/>, until completed (a slow read).</summary>
+    public TaskCompletionSource? SnapshotGate { get; set; }
+
+    public int SnapshotReads { get; private set; }
+
+    public async Task<StoreSnapshot> SnapshotAsync()
+    {
+        SnapshotReads++;
+        var taken = Snapshot;
+        if (SnapshotGate is { } gate)
+        {
+            SnapshotGate = null;
+            await gate.Task;
+        }
+
+        return taken;
+    }
 
     public async Task<StoreDocs?> DocsAsync(string partition, Guid wallId)
     {
@@ -35,9 +51,18 @@ internal sealed class FakeStoreSource : IClientStoreSource
         return Docs.GetValueOrDefault((partition, wallId));
     }
 
+    /// <summary>Runs inside the next ClearAsync, before it clears (this tab's own channel post, say).</summary>
+    public Action? DuringClear { get; set; }
+
     public Task<bool> ClearAsync()
     {
         Clears++;
+        if (DuringClear is { } during)
+        {
+            DuringClear = null;
+            during();
+        }
+
         Snapshot = StoreSnapshot.Nothing("empty");
         return Task.FromResult(true);
     }

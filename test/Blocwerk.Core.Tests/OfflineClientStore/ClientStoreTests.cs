@@ -198,13 +198,15 @@ public sealed class ClientStoreTests
     }
 
     [Theory]
-    [InlineData(UserA, false, StoreAudience.Member)]
-    [InlineData(UserA, true, StoreAudience.Outsider)]
-    [InlineData(Anon, true, StoreAudience.Outsider)]
-    [InlineData(Kiosk, false, StoreAudience.Kiosk)]
-    public async Task TheAudience_FollowsTheLabelAndTheShareLink(string label, bool shared, StoreAudience expected)
+    [InlineData(UserA, true, false, StoreAudience.Member)]
+    [InlineData(UserA, true, true, StoreAudience.Member)]
+    [InlineData(UserA, false, false, StoreAudience.Outsider)]
+    [InlineData(UserA, false, true, StoreAudience.Outsider)]
+    [InlineData(Anon, false, true, StoreAudience.Outsider)]
+    [InlineData(Kiosk, false, false, StoreAudience.Kiosk)]
+    public async Task TheAudience_FollowsTheLabelAndWhatWasCached_NeverTheUrl(string label, bool member, bool shared, StoreAudience expected)
     {
-        var (store, wall) = await LoadedAsync(Device(label, shareWall: shared ? Wall : null));
+        var (store, wall) = await LoadedAsync(Device(label, shareWall: shared ? Wall : null, member: member));
 
         Assert.Equal(expected, store.AudienceOf(Wall));
         Assert.Equal(expected, wall.Audience);
