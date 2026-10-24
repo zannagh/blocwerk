@@ -204,6 +204,16 @@ window.wallCarousel = {
             if (state.locked || !el.isConnected || el.clientWidth === 0) {
                 return;
             }
+            // The width changed and nothing has re-snapped for it yet. A rotation makes the browser
+            // re-snap the mandatory track against the NEW page width — 3 x 390px is 1.95 pages of 600px,
+            // so it lands on page 2 — and that snap ends in a `scrollend` (WebKit has one since Safari
+            // 26) which arrives BEFORE the ResizeObserver or the window resize. Measured here, it reported
+            // the wrong page to .NET, which moved ?view= and the dots there for good. Hand it to the
+            // width-change path, which restores the remembered page instead.
+            if (!resnapping && el.clientWidth !== state.width) {
+                state.onWidthChange();
+                return;
+            }
             // A settle raised while the finger is still down (a stray scrollend during a gesture)
             // must not move anything either; the release re-arms it.
             if (state.pointers > 0) {
@@ -240,6 +250,10 @@ window.wallCarousel = {
             // new width. See onWidthChange().
             if (el.clientWidth > 0 && el.clientWidth === state.width) {
                 state.frac = el.scrollLeft / el.clientWidth;
+            } else if (el.clientWidth > 0) {
+                // The first scroll of a resize can beat every resize signal: re-snap from here.
+                state.onWidthChange();
+                return;
             }
             state.arm();
         };

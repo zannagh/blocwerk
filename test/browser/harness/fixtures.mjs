@@ -43,17 +43,23 @@ export const test = base.extend({
         await use(proxy);
         await proxy.faults([]);
     },
-    context: async ({ browser, browserName, playwright, baseURL, serviceWorkers }, use, testInfo) => {
+    // A device descriptor name (`devices['iPhone 15']`) for the phone layout tests; null is the desktop browser.
+    phone: [null, { option: true }],
+    context: async ({ browser, browserName, playwright, baseURL, serviceWorkers, phone }, use, testInfo) => {
         const options = { baseURL, serviceWorkers };
+        const device = name => {
+            const { defaultBrowserType, ...descriptor } = devices[phone || name];
+            return descriptor;
+        };
         let context;
         let profile = null;
         if (browserName === 'webkit') {
-            const { defaultBrowserType, ...safari } = devices['Desktop Safari'];
+            const safari = device('Desktop Safari');
             fs.mkdirSync(path.join(outDir, 'profiles'), { recursive: true });
             profile = fs.mkdtempSync(path.join(outDir, 'profiles', 'webkit-'));
             context = await playwright.webkit.launchPersistentContext(profile, { ...safari, ...options });
         } else {
-            const { defaultBrowserType, ...chrome } = devices['Desktop Chrome'];
+            const chrome = device('Desktop Chrome');
             context = await browser.newContext({ ...chrome, ...options });
         }
         await context.tracing.start({ screenshots: true, snapshots: true });
