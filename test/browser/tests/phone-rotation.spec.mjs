@@ -18,7 +18,8 @@ function track(page) {
             offPage: Math.abs(el.scrollLeft - Math.round(el.scrollLeft / el.clientWidth) * el.clientWidth),
             dot: dots.findIndex(d => d.classList.contains('active')),
             url: location.pathname + location.search,
-            stage: !!document.querySelector('.bw-stage-overlay')
+            stage: !!document.querySelector('.bw-stage-overlay'),
+            inert: [...el.children].map(p => p.inert)
         };
     });
 }
@@ -31,6 +32,8 @@ async function expectOn(page, index, url) {
     const t = await track(page);
     expect(t.dot).toBe(index);
     expect(t.url).toBe(url);
+    // Only the page on screen is live (#214's inert pages): a rotation must not leave the wrong one tappable.
+    await expect.poll(async () => (await track(page)).inert.map((x, i) => x === (i !== index)).every(Boolean)).toBe(true);
     // A rotation never brings up the landscape takeover on a carousel page: that is only ever opened by its button.
     expect(t.stage).toBe(false);
 }

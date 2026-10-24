@@ -79,9 +79,12 @@ test('the tab bar steps aside only while the keyboard is up, and a page left zoo
     const html = page.locator('html');
     const name = page.locator('.boulder-create input.form-input').first();
 
-    await name.focus();
-    await fakeViewport(page, { height: 300 });
-    await expect(html).toHaveClass(/\bbw-vv-away\b/);
+    // Retried: the circuit coming up re-renders the form and can take the focus away from a field focused before it.
+    await expect(async () => {
+        await name.focus();
+        await fakeViewport(page, { height: 300 });
+        await expect(html).toHaveClass(/\bbw-vv-away\b/, { timeout: 1000 });
+    }).toPass();
     expect((await tabbar(page)).visible).toBe(false);
 
     await name.blur();
