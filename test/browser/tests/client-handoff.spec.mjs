@@ -1,10 +1,11 @@
 // The worker hands a failed Server-page navigation to the precached offline client (Phase 3 PR 3.9): with the server
 // down, answering a 502/503/504, or silent for 4 s, a route the client declares opens at its /v/ twin, from the device alone.
 // A healthy or merely slow-but-answering server is never cut off for a route the client cannot take, and the client is
-// never shown for a locked partition, a kiosk, an undeclared route or an incomplete version: those get offline.html.
-import { test, expect } from '../harness/fixtures.mjs';
+// never shown for a locked partition, an undeclared route or an incomplete version: those get offline.html. A kiosk
+// tablet is handed over since PR 3.15 (client-kiosk.spec.mjs has the rest of its offline mode).
+import { test, expect, partitionOf, settled, ledger } from '../harness/fixtures.mjs';
 import { registerKiosk } from '../harness/kiosk.mjs';
-import { declareRoutes, precacheAsAlice, clientRecord, clientCaches, pageVersion, expectClient, expectOfflinePage } from '../harness/client.mjs';
+import { declareRoutes, precacheAsAlice, clientRecord, clientCaches, pageVersion, expectClient, expectOfflinePage, missingDocs } from '../harness/client.mjs';
 
 const wallPath = world => `/walls/${world.walls.alpha.id}`;
 
@@ -76,10 +77,14 @@ test('a locked partition is never handed to the client', async ({ page, world, s
     await expectOfflinePage(page, wallPath(world));
 });
 
-test('a kiosk is never handed to the client, even with a complete version on the device', async ({ page, world, server }) => {
+test('a device turned kiosk is handed to the client, which shows the tablet\'s wall and nothing of the earlier user', async ({ page, world, server }) => {
     expect(await precacheAsAlice(page, world, server)).toBe('complete');
+    const alice = await partitionOf(page);
     await registerKiosk(page, world.kioskToken);
     await expect(page.locator('meta[name="bw-partition"]')).toHaveAttribute('content', /^k-/);
+    await settled(page);
+    const kiosk = await partitionOf(page);
+    await expect.poll(() => missingDocs(page, kiosk, world.walls.alpha.id), { timeout: 20000 }).toEqual([]);
     // The worker learns the tablet's label from the page's asset start (sw-refresh-partition) or its first asset.
     const served = () => page.evaluate(() => new Promise(resolve => {
         const channel = new MessageChannel();
@@ -87,11 +92,17 @@ test('a kiosk is never handed to the client, even with a complete version on the
         navigator.serviceWorker.controller.postMessage({ proto: 1, type: 'sw-refresh-partition' }, [channel.port2]);
         setTimeout(() => resolve(null), 5000);
     }));
-    await expect.poll(served).toMatch(/^k-/);
+    await expect.poll(served).toBe(kiosk);
     expect((await clientCaches(page)).length).toBe(1);
+    expect((await ledger(page, alice)).walls, 'the new identity wiped Alice\'s partition').toEqual([]);
 
     await server.unreachable();
-    await expectOfflinePage(page, wallPath(world));
+    await expectClient(page, wallPath(world));
+    await expect(page.locator('.bw-client-store')).toHaveAttribute('data-bw-store', 'ready', { timeout: 15000 });
+    const snap = await page.evaluate(() => window.bwClientStore.snapshot());
+    expect(snap.partition).toBe(kiosk);
+    expect(snap.walls.map(w => w.wallId)).toEqual([world.walls.alpha.id]);
+    expect(snap.mine).toEqual([]);
 });
 
 test("a 500 is the server's own answer, never the client", async ({ page, world, server }) => {

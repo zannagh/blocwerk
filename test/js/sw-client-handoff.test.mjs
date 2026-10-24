@@ -1,6 +1,6 @@
 // The worker's hand-off of a failed Server-page navigation to the offline client (service-worker.js, Phase 3 PR 3.9):
 // a network error, a 502/503/504 or the 4 s timer redirect to /v/ only for a complete, cached, covered version on a
-// u-/anon partition with no lock and no announced deploy; everything else keeps today's answer.
+// u-/anon/k- partition with no lock and no announced deploy; everything else keeps today's answer.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadWorker, dispatchFetch, response, ORIGIN } from './fixtures/sw-sandbox.mjs';
@@ -17,10 +17,9 @@ test('a failed navigation goes to the client route when the version is complete 
     }
 });
 
-test('a locked partition, a kiosk, no partition or no complete version gets offline.html, never the client', async () => {
+test('a locked partition, no partition (a kiosk that may keep nothing too) or no complete version gets offline.html, never the client', async () => {
     const cases = {
         locked: state => state.set('/__bw/locked', response(200, ALICE)),
-        kiosk: state => state.set('/__bw/partition', response(200, KIOSK)),
         none: state => state.set('/__bw/partition', response(200, 'none')),
     };
     for (const [name, change] of Object.entries(cases)) {
@@ -32,6 +31,44 @@ test('a locked partition, a kiosk, no partition or no complete version gets offl
     assert.equal(await (await navigate(workerWith(), '/walls/W1')).text(), 'offline page', 'incomplete');
     const anon = await completeWorker({ partition: 'anon' });
     assert.equal((await navigate(anon, '/shared/t/x')).status, 302, 'a share viewer is handed over');
+});
+
+const fresh = (label, at) => response(200, JSON.stringify({ label, at }));
+
+test('a kiosk tablet is handed over within 7 days of its last online fill (PR 3.15), never past a lock marker', async () => {
+    const kiosk = restart(await completeWorker(), state => {
+        state.set('/__bw/partition', response(200, KIOSK));
+        state.set('/__bw/kiosk-fresh', fresh(KIOSK, Date.now() - 7 * 24 * 3600 * 1000 + 60000));
+    });
+    const served = await navigate(kiosk, '/walls/W1');
+    assert.equal(served.status, 302);
+    assert.equal(served.headers.get('location'), `${ORIGIN}/v/walls/W1`);
+
+    const locked = restart(await completeWorker(), state => {
+        state.set('/__bw/partition', response(200, KIOSK));
+        state.set('/__bw/kiosk-fresh', fresh(KIOSK, Date.now()));
+        state.set('/__bw/locked', response(200, ALICE));
+    });
+    assert.equal(await (await navigate(locked, '/walls/W1')).text(), 'offline page', 'any lock marker refuses');
+});
+
+test('a kiosk copy past 7 days, stamped for another label, from the future, or never stamped gets offline.html, like none', async () => {
+    const cases = {
+        stale: fresh(KIOSK, Date.now() - 7 * 24 * 3600 * 1000 - 60000),
+        'another label': fresh('k-' + 'z'.repeat(20), Date.now()),
+        future: fresh(KIOSK, Date.now() + 3600 * 1000),
+        unreadable: response(200, 'not json'),
+        none: null,
+    };
+    for (const [name, stamp] of Object.entries(cases)) {
+        const worker = restart(await completeWorker(), state => {
+            state.set('/__bw/partition', response(200, KIOSK));
+            if (stamp) {
+                state.set('/__bw/kiosk-fresh', stamp);
+            }
+        });
+        assert.equal(await (await navigate(worker, '/walls/W1')).text(), 'offline page', name);
+    }
 });
 
 test('only a 502, 503 or 504 is handed over; a 500 or any other status is the server answer', async () => {

@@ -248,7 +248,7 @@ self.addEventListener('fetch', event => {
  * and state cache.
  *
  * PRECACHE (the fill is the section after this one). A Server page posts `client-precache` once its core fill is
- * done (client-precache.js: not with Save-Data, not on a kiosk, once per client version). The worker then fetches the rendered shell `/v/` of the deploy it reaches,
+ * done (client-precache.js: not with Save-Data, once per client version). The worker then fetches the rendered shell `/v/` of the deploy it reaches,
  * reads the version and the declared routes from the shell's metas, and fills `blocwerk-client-{version}` with every
  * file the shell names (its scripts and stylesheets, the import map's runtime modules) and every eagerly loaded file of
  * dotnet.js's boot manifest, then the shell itself. Every one of those URLs is fingerprinted, so a URL names one set of
@@ -263,8 +263,10 @@ self.addEventListener('fetch', event => {
  *
  * WHO MAY BE HANDED OVER (clientServable): a complete version whose shell is really in its cache (a record alone is not
  * enough: the browser, or a fill racing a deletion, can leave a record without its cache), no locked partition on the
- * device (the 401 lock: a locked partition is never shown), and a last known partition that is a person's (`u-…`) or
- * `anon`. A kiosk (`k-…`) is refused until PR 3.15, and `none` or no label has nothing offline to show. Paths that are
+ * device (the 401 lock: a locked partition is never shown), and a last known partition that is a person's (`u-…`),
+ * `anon`, or a kiosk tablet's (`k-…`, PR 3.15: the client then shows only the bound wall's kiosk-class data, whoever
+ * the tablet acts as, and only within 7 days of its last online fill: CLIENT_KIOSK_MAX_AGE_MS). `none` or no label has
+ * nothing offline to show (a kiosk that may keep nothing is `none`). Paths that are
  * auth, kiosk, dev, admin or the client itself (CLIENT_NEVER) are never handed over, whatever a route says.
  *
  * DEPLOYS. A deploy is announced to the pages about 5 s before the restart; the page posts `deploy-pending` and the
@@ -332,8 +334,32 @@ function clientRouteCovers(template, pathname) {
     return want.length === have.length;
 }
 
-function clientServable(record, partition, locked) {
-    return !!record && locked === null && (partition === 'anon' || /^u-[a-z2-7]{20}$/.test(partition || ''));
+// A kiosk tablet's copy is handed over only within this long of its last successful online fill (client-precache.js
+// writes the stamp), as long as a `u-` lock is kept; past it, or with no stamp of its own label, it is treated like `none`.
+const CLIENT_KIOSK_FRESH_KEY = '/__bw/kiosk-fresh';
+const CLIENT_KIOSK_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+// A stamp this far ahead of the clock still counts (clock skew between page and worker is none, so this is small).
+const CLIENT_KIOSK_SKEW_MS = 5 * 60 * 1000;
+
+function clientServable(record, partition, locked, kioskFresh) {
+    if (!record || locked !== null) {
+        return false;
+    }
+    if (/^k-[a-z2-7]{20}$/.test(partition || '')) {
+        return kioskFreshFor(kioskFresh, partition, Date.now());
+    }
+    return partition === 'anon' || /^u-[a-z2-7]{20}$/.test(partition || '');
+}
+
+function kioskFreshFor(stamp, partition, now) {
+    return !!stamp && stamp.label === partition && Number.isFinite(stamp.at)
+        && now - stamp.at <= CLIENT_KIOSK_MAX_AGE_MS && stamp.at - now <= CLIENT_KIOSK_SKEW_MS;
+}
+
+function kioskStamp() {
+    return caches.match(CLIENT_KIOSK_FRESH_KEY, { cacheName: ASSET_STATE_CACHE })
+        .then(stored => (stored ? stored.json() : null))
+        .catch(() => null);
 }
 
 // What may serve the client right now: the complete record when the device's state allows it, else null.
@@ -377,8 +403,8 @@ function endDeployHold() {
 }
 
 function servableClient() {
-    return Promise.all([presentClient(), lastKnownPartition(), lockedPartition(true)])
-        .then(([record, partition, locked]) => (clientServable(record, partition, locked) ? record : null))
+    return Promise.all([presentClient(), lastKnownPartition(), lockedPartition(true), kioskStamp()])
+        .then(([record, partition, locked, fresh]) => (clientServable(record, partition, locked, fresh) ? record : null))
         .catch(() => null);
 }
 
@@ -552,14 +578,7 @@ function fillClient() {
     if (connection && connection.saveData) {
         return Promise.reject(new Error('client precache: Save-Data'));
     }
-    return lastKnownPartition()
-        .then(partition => {
-            // A kiosk gets no offline client until PR 3.15 (the server refuses it /v as well).
-            if (/^k-/.test(partition || '')) {
-                throw new Error('client precache: kiosk');
-            }
-            return Promise.all([readClientShell(), completeClient(true)]);
-        })
+    return Promise.all([readClientShell(), completeClient(true)])
         .then(([shell, record]) => caches.open(clientCacheName(shell.version)).then(cache => cache.match(clientUrl(CLIENT_SHELL_PATH))
             .then(present => (record && record.version === shell.version && present
                 ? shell.version

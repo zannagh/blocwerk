@@ -9,9 +9,13 @@
  *                whatever the active label. The page shows only "Sign in to keep your offline data" and Clear.
  *   updating     the ledger's v2 upgrade waits for another tab (upgradePending): "Updating offline data…".
  *   unavailable  storage refused (a degraded ledger) or the shared modules missing.
- *   kiosk        a `k-` label: no offline kiosk before PR 3.15.
+ *   kiosk        a kiosk tablet with nothing it may show (PR 3.15): a `k-` label without its bound wall's row and
+ *                cached wall document (client-store-rows.js), or a tablet whose last Server page said it was one (the
+ *                identity mirror's `kiosk`) under no real label: a `none` tablet, whose answers are all `no-store`.
+ *                The page shows "Not available offline".
  *   empty        no real label, or no wall row under it.
  *   ready        the label's wall rows (`data`: kind → { sha, cursor }, `member`, `key`) and, for `u-` only, its marks.
+ *                A kiosk's is its bound wall's one row, never marks, whoever the tablet acts as.
  * `anon` is a share link's class: only the wall whose stored token hash the /v/ path's token matches is read
  * (client-store-rows.js); a tokenless /v/ wipes `anon`.
  * THE START (once per page): a lock past 7 days goes with its partition, rule 6 above, and on a durable ledger a
@@ -110,22 +114,26 @@ window.bwClientStore = (function (win) {
                 return nothing('unavailable');
             }
             const active = await activeOf(ledger);
-            if (String(active).startsWith('k-')) {
-                return nothing('kiosk', active);
-            }
             if (!REAL_LABEL.test(String(active))) {
-                return nothing('empty');
+                return nothing(kioskDevice() ? 'kiosk' : 'empty');
             }
             const { share, walls, mine } = await Rows().rows(ledger, active);
-            return { state: walls.length > 0 ? 'ready' : 'empty', partition: active, shareWall: share ? share.wallId : null, walls, mine };
+            const none = String(active).startsWith('k-') ? 'kiosk' : 'empty';
+            return { state: walls.length > 0 ? 'ready' : none, partition: active, shareWall: share ? share.wallId : null, walls, mine };
         } catch (e) {
             return nothing('unavailable');
         }
     }
 
-    // Still the label to read: active, not locked, no kiosk (no offline kiosk before PR 3.15), and the ledger durable.
+    // A tablet by its last Server page (asset-session.js keeps `kiosk` in the identity mirror).
+    function kioskDevice() {
+        const saved = Session().mirror(win);
+        return !!(saved && saved.kiosk === true);
+    }
+
+    // Still the label to read: active, not locked, and the ledger durable.
     async function readable(ledger, partition) {
-        return REAL_LABEL.test(String(partition)) && !String(partition).startsWith('k-') && !ledger.degraded && !Ledger().upgradePending()
+        return REAL_LABEL.test(String(partition)) && !ledger.degraded && !Ledger().upgradePending()
             && (await activeOf(ledger)) === partition && !(await Lock().current());
     }
 

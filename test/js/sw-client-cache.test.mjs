@@ -70,11 +70,11 @@ test('a broken shell or boot manifest never completes, and the worker keeps work
     }
 });
 
-test('a kiosk partition is never precached', async () => {
+test('a kiosk tablet is precached like any device (PR 3.15); a shell the server refuses still fails the fill', async () => {
     const worker = workerWith({ partition: KIOSK });
     deploy(worker.routes, V1);
-    assert.equal((await precache(worker)).complete, false);
-    assert.equal(fetched(worker, '/v/'), 0);
+    assert.equal((await precache(worker)).complete, true);
+    assert.equal(fetched(worker, '/v/'), 1);
 });
 
 test('a new version replaces the old one only once it is complete', async () => {

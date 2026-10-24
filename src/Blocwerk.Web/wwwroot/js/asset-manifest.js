@@ -88,6 +88,11 @@ window.bwAssetManifest = (function () {
         return true;
     }
 
+    // A failed round still records an opened wall it never stored (its lastOpened), except on a kiosk tablet: its `k-`
+    // partition holds the bound wall alone, and the offline client reads nothing beside a second row (PR 3.15), so an
+    // empty row for another wall opened during a blip would hide the bound wall offline.
+    const keepsOpened = (partition, opts) => !!opts.opened && !String(partition).startsWith('k-');
+
     async function refresh(env, partition, wallId, opts) {
         const now = env.now();
         const stored = await env.ledger.getWall(partition, wallId);
@@ -109,7 +114,7 @@ window.bwAssetManifest = (function () {
         try {
             response = await env.fetch(manifestUrl(wallId, opts.token), { credentials: 'same-origin', cache: 'no-store', headers });
         } catch (e) {
-            if (stored || opts.opened) {
+            if (stored || keepsOpened(partition, opts)) {
                 await write(env, row);
             }
             return { outcome: 'offline', pending: row.pending || 0 };
@@ -130,7 +135,7 @@ window.bwAssetManifest = (function () {
             return { outcome: 'unchanged', pending: row.pending || 0 };
         }
         if (!response.ok) {
-            if (stored || opts.opened) {
+            if (stored || keepsOpened(partition, opts)) {
                 await write(env, row);
             }
             return { outcome: 'offline', pending: row.pending || 0 };

@@ -153,6 +153,22 @@ test('a manifest round in flight keeps the "Save 3D offline" marks and docs writ
     assert.deepEqual(plain([row.keepOffline, row.save3d, row.docs.length, row.entries.length, row.etag]), [true, true, 1, 1, 'W/"x"']);
 });
 
+test('a failed round records an opened wall it never stored, except on a kiosk tablet (its k- partition is the bound wall alone)', async () => {
+    for (const [partition, failure] of [[KIOSK, 'network'], [KIOSK, 'status'], [USER_A, 'network'], [USER_A, 'status']]) {
+        const ledger = Ledger.memory();
+        const fetch = failure === 'network' ? () => Promise.reject(new TypeError('Failed to fetch')) : () => Promise.resolve(new Response('', { status: 503 }));
+        const env = { ledger, now: () => 1000, partition: () => partition, fetch };
+        const round = await win.bwAssetManifest.refresh(env, partition, 'other', { token: null, member: false, opened: true, dropWall: async () => {} });
+        assert.equal(round.outcome, 'offline');
+        assert.equal((await ledger.wallsOf(partition)).length, partition === KIOSK ? 0 : 1, `${partition} ${failure}`);
+    }
+    const ledger = Ledger.memory();
+    await ledger.updateWall(KIOSK, 'bound', () => ({ partition: KIOSK, wallId: 'bound', entries: [], fetchedAt: 500 }));
+    const env = { ledger, now: () => 1000, partition: () => KIOSK, fetch: () => Promise.reject(new TypeError('Failed to fetch')) };
+    await win.bwAssetManifest.refresh(env, KIOSK, 'bound', { token: null, member: true, opened: true, dropWall: async () => {} });
+    assert.equal((await ledger.getWall(KIOSK, 'bound')).fetchedAt, 500, 'a stored row stands, its last success unchanged');
+});
+
 test('a manifest that stays pending is asked again after 60 s, 2 min, 5 min, then every 15 min', () => {
     assert.deepEqual([1, 2, 3, 4, 9].map(n => win.bwAssetManifest.pendingDelayMs(n)), [60000, 120000, 300000, 900000, 900000]);
 });

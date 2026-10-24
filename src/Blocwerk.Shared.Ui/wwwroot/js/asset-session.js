@@ -17,6 +17,11 @@
  * keep set here, the every-start sweep's included, so a normal start never wipes it early and another identity always
  * does. The mirror carries the lock too, so a degraded page keeps it as well.
  *
+ * THE KIOSK MARK (PR 3.15). The mirror's `kiosk` says whether the last Server page was a kiosk tablet's (its body's
+ * data-bw-kiosk, set for every identity on it, or a `k-` label). The offline client reads it to tell a tablet that may
+ * keep nothing (`none`: every answer `no-store`) from a device with nothing saved: the tablet shows "Not available
+ * offline". It is a display hint only: it grants no read, and a `none` label holds nothing to read.
+ *
  * A DEGRADED CLEAR (the offline client's Clear on a memory ledger) deletes the caches but cannot reach the durable rows:
  * it leaves `cleared: label` in the mirror, kept by every degraded start, and the next durable start drops that
  * partition's rows before anything reads them (the client's start honours it too, through clearedOf()).
@@ -87,6 +92,16 @@ window.bwAssetSession = (function () {
         return saved && REAL_LABEL.test(String(saved.cleared)) ? saved.cleared : null;
     }
 
+    // The page is a kiosk tablet's: offline.html (which knows nobody) keeps the last page's mark.
+    function kioskOf(win, label, offline) {
+        if (offline) {
+            const saved = readMirror(win);
+            return !!(saved && saved.kiosk === true);
+        }
+        const body = win.document.body;
+        return !!(body && body.dataset && body.dataset.bwKiosk) || String(label).startsWith('k-');
+    }
+
     function pageLabel(doc) {
         const meta = doc.querySelector('meta[name="bw-partition"]');
         return meta ? meta.getAttribute('content') : null;
@@ -128,7 +143,7 @@ window.bwAssetSession = (function () {
             await ledger.setMeta({ activePartition: decision.active, userTag, proto: PROTO, locked });
         }
         // A durable start has dropped a degraded Clear's label; a degraded one passes it on.
-        writeMirror(win, { activePartition: decision.active, userTag, locked, cleared: ledger.degraded ? meta.cleared : null });
+        writeMirror(win, { activePartition: decision.active, userTag, locked, cleared: ledger.degraded ? meta.cleared : null, kiosk: kioskOf(win, label, offline) });
         await Lock.sync(locked, JSON.stringify(locked) !== JSON.stringify(Lock.valid(meta.locked)) || !!lockPlan.drop || !!meta.dropLocked);
         // Unlocking is the same user coming back (the label is an HMAC of the id): only a changed acting user announces.
         if (lockPlan.unlocked ? userChanged : decision.identityChanged) {

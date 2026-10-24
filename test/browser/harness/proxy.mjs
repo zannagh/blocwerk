@@ -5,7 +5,8 @@
  *
  *   - a request log (GET /__pw/log), so a test can prove a request never reached the server;
  *   - fault rules (POST /__pw/faults), so a test can make one path answer 404 or 503, or drop the connection (`drop`,
- *     that path unreachable), delay it (`delay` ms), rewrite a page's body (`rewrite`), or answer a fixed 200 body
+ *     that path unreachable), delay it (`delay` ms), rewrite a page's body (`rewrite`, with `headers` overriding the
+ *     app's: a `no-store` answer the app would give a kiosk that may keep nothing), or answer a fixed 200 body
  *     (`body`, with `headers`: an older build's file) or a file's bytes (`file`), without touching the app or the
  *     database;
  *   - fixed pages for the Clear-Site-Data probes (GET /__pw/csd?status=200|302, /__pw/cacheable, /__pw/blank);
@@ -54,7 +55,7 @@ export async function startProxy(appPort) {
             return;
         }
         if (fault && fault.rewrite) {
-            forwardRewritten(appPort, req, res, entry, fault.rewrite);
+            forwardRewritten(appPort, req, res, entry, fault.rewrite, fault.headers);
             return;
         }
         if (fault && typeof fault.file === 'string') {
@@ -152,8 +153,8 @@ function forward(appPort, req, res, entry) {
 }
 
 // A `rewrite: [from, to]` rule (or a list of such pairs): the app's answer with every `from` in its body replaced
-// (uncompressed, so it can be read).
-function forwardRewritten(appPort, req, res, entry, rewrite) {
+// (uncompressed, so it can be read), and `override` (headers, lower-case names) over the app's own.
+function forwardRewritten(appPort, req, res, entry, rewrite, override) {
     const pairs = Array.isArray(rewrite[0]) ? rewrite : [rewrite];
     const { 'accept-encoding': _, ...headers } = req.headers;
     entry.fault = true;
@@ -165,7 +166,7 @@ function forwardRewritten(appPort, req, res, entry, rewrite) {
             const body = Buffer.from(text, 'utf8');
             const { 'content-length': __, 'transfer-encoding': ___, ...rest } = answer.headers;
             entry.status = answer.statusCode;
-            res.writeHead(answer.statusCode, { ...rest, 'content-length': body.length });
+            res.writeHead(answer.statusCode, { ...rest, ...(override || {}), 'content-length': body.length });
             res.end(body);
         });
     });

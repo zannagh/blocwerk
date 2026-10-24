@@ -6,6 +6,14 @@
  * A SHARE LINK (`anon`): a row is the page's only when the /v/ path names its wall AND its token hashes to the row's
  * `share` (bwAssetLedger.shareHash; asset-manifest.js stores the hash, never the token). A row without one, or a token
  * that does not match, is not read: offline, a guessed /v/…/shared/{anything} opens nothing.
+ * A KIOSK (`k-`, PR 3.15): the label is bound to one tablet key and one wall (an HMAC of both), and the server lists,
+ * manifests and documents nothing else for it, so the partition holds that one wall's row. The client reads it only
+ * while that is so: a `k-` partition with more than one row is not the bound wall's alone and reads nothing at all. The
+ * row also needs its `wall` document in the cache: a kiosk whose answers were `no-store` (its wall may not be kept)
+ * has a row from the index but no document, and the tablet then shows "Not available offline", never a half view.
+ * And the row's last manifest success (`fetchedAt`) must be within KIOSK_MAX_AGE_MS (7 days, as long as a `u-` lock is
+ * kept; the worker's hand-off uses the same window): a tablet revoked, re-paired or changed while offline stops
+ * showing its copy then, and the next online page wipes or refreshes it.
  * A ROW'S KEY is the identity of what the ledger names for it: its documents' shas and the predecessors still standing
  * in (`dataPrev`). The client keeps a loaded wall while the key stands, whatever of it was cached or parsed.
  */
@@ -13,6 +21,9 @@ window.bwClientStoreRows = (function (win) {
     'use strict';
 
     const USER_LABEL = /^u-[a-z2-7]{20}$/;
+    const KIOSK_LABEL = /^k-[a-z2-7]{20}$/;
+    const KIOSK_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+    const KIOSK_SKEW_MS = 5 * 60 * 1000;
     const KINDS = ['wall', 'holds', 'boulders', 'gallery', 'comments'];
     // A replaced document of these kinds is never read in its successor's place (asset-data.js deletes it at once).
     const PRIVATE_KINDS = new Set(['comments']);
@@ -28,8 +39,14 @@ window.bwClientStoreRows = (function (win) {
         return token && wall ? { token, wallId: idOf(wall[1]) } : null;
     }
 
-    /** True when `row` may be read under `partition` on this page: any row of a user label, the share link's for `anon`. */
-    async function mayRead(partition, row) {
+    /**
+     * True when `row` may be read under `partition` on this page: any row of a user label, the share link's for `anon`,
+     * and for a kiosk the partition's one row with its wall document cached.
+     */
+    async function mayRead(ledger, partition, row) {
+        if (KIOSK_LABEL.test(partition)) {
+            return kioskReadable(ledger, partition, row);
+        }
         if (partition !== 'anon') {
             return true;
         }
@@ -38,6 +55,24 @@ window.bwClientStoreRows = (function (win) {
             return false;
         }
         return (await win.bwAssetLedger.shareHash(share.token)) === row.share;
+    }
+
+    // A kiosk row's last manifest success, within the window (a stamp a little ahead of the clock still counts).
+    const fresh = (at, now) => Number.isFinite(at) && now - at <= KIOSK_MAX_AGE_MS && at - now <= KIOSK_SKEW_MS;
+
+    // The bound wall's row: the only one of the partition, with its `wall` document (or the predecessor) in the cache.
+    async function kioskReadable(ledger, partition, row) {
+        const all = await ledger.wallsOf(partition);
+        if (all.length !== 1 || idOf(all[0].wallId) !== idOf(row.wallId) || !fresh(row.fetchedAt, Date.now())) {
+            return false;
+        }
+        const shas = [refsOf(row.data).wall, { sha: (row.dataPrev || {}).wall }].map(ref => ref && ref.sha).filter(s => SHA.test(String(s)));
+        for (const sha of shas) {
+            if ((await cachedText(partition, sha)) !== null) {
+                return true;
+            }
+        }
+        return false;
     }
 
     function refsOf(data) {
@@ -61,12 +96,12 @@ window.bwClientStoreRows = (function (win) {
     // A stored tick as the client's MineDocumentTick reads it: a missing time is the epoch, never a null.
     const tickOf = t => Object.assign({}, t, { lastAt: typeof t.lastAt === 'string' ? t.lastAt : new Date(0).toISOString() });
 
-    /** The partition's rows this page may read: { share, walls, mine } (marks for a `u-` label only). */
+    /** The partition's rows this page may read: { share, walls, mine } (marks for a `u-` label only, never a kiosk's). */
     async function rows(ledger, partition) {
         const share = shareOf();
         const walls = [];
         for (const row of await ledger.wallsOf(partition)) {
-            if (await mayRead(partition, row)) {
+            if (await mayRead(ledger, partition, row)) {
                 walls.push({ wallId: idOf(row.wallId), data: refsOf(row.data), member: row.member === true, key: keyOf(row) });
             }
         }
@@ -95,7 +130,7 @@ window.bwClientStoreRows = (function (win) {
      */
     async function docsOf(ledger, partition, wallId) {
         const row = (await ledger.wallsOf(partition)).find(r => idOf(r.wallId) === idOf(wallId));
-        if (!row || !(await mayRead(partition, row))) {
+        if (!row || !(await mayRead(ledger, partition, row))) {
             return null;
         }
         const out = {};
