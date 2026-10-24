@@ -1,0 +1,27 @@
+@using Blocwerk.Contracts.Feed
+@* An author's avatar circle, as the Server's UserAvatar draws it without the image (the uploaded avatar is never on
+   the device): the name's initial, or the plain circle for a member the kiosk tablet may not name (the kiosk class's
+   documents already read "A member", with no id and no avatar). *@
+@if (IsUnnamedMember(Author))
+{
+    <div class="avatar avatar-sm" aria-hidden="true"></div>
+}
+else
+{
+    <div class="avatar avatar-sm">@(Author.Name.FirstOrDefault())</div>
+}
+
+@code {
+    /// <summary>The kiosk's byline of a member who has not consented to the tablet (the Server's KioskBylines).</summary>
+    public const string UnnamedMember = "A member";
+
+    /// <summary>Gets or sets the author as the document describes them.</summary>
+    [Parameter]
+    [EditorRequired]
+    public FeedActor Author { get; set; } = null!;
+
+    /// <summary>True for the kiosk's placeholder byline.</summary>
+    /// <param name="author">The author.</param>
+    /// <returns>Whether the tablet may not name them.</returns>
+    public static bool IsUnnamedMember(FeedActor author) => author.Id is null && author.Name == UnnamedMember;
+}

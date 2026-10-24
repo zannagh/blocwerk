@@ -1,14 +1,15 @@
-// The offline client steps the PR 3.9 specs share: declaring routes the skeleton does not have yet, precaching the
-// client from a Server page, and reading what the worker recorded.
+// The offline client steps the PR 3.9 specs share: rewriting the routes the shell declares, precaching the client from a
+// Server page, and reading what the worker recorded.
 import { expect, signIn, installWorker, settled } from './fixtures.mjs';
 
-export const ROUTES = 'walls/{w} walls/{w}/boulders/{b}';
+// The routes the client declares (ClientRoutes.Declared, PR 3.11), as its shell's meta carries them.
+export const ROUTES = 'walls walls/{WallId:guid} walls/{WallId:guid}/shared/{ShareToken} walls/{WallId:guid}/boulders/{BoulderId:guid} walls/{WallId:guid}/boulders/{BoulderId:guid}/shared/{ShareToken}';
 
-// The skeleton (PR 3.8) declares no route, so the shell's routes meta is rewritten: the worker reads the routes from
+// The shell's routes meta rewritten to `routes` (the default keeps the declared ones): the worker reads the routes from
 // the shell it precaches. `pairs` adds further rewrites of the shell.
 export const declareRoutes = (routes = ROUTES, pairs = []) => ({
     path: '^/v/$',
-    rewrite: [['name="bw-client-routes" content=""', `name="bw-client-routes" content="${routes}"`], ...pairs]
+    rewrite: [[`name="bw-client-routes" content="${ROUTES}"`, `name="bw-client-routes" content="${routes}"`], ...pairs]
 });
 
 /** The page's precache outcome (bwClientPrecache.done): complete, skipped, unsupported, waiting, failed or other. */
@@ -17,10 +18,15 @@ export function precacheOutcome(page) {
 }
 
 /** Signs Alice in on Alpha's wall page under the installed worker, and waits for the page's precache. */
-export async function precacheAsAlice(page, world, server, faults = [declareRoutes()]) {
+export function precacheAsAlice(page, world, server, faults = [declareRoutes()]) {
+    return precacheAs(page, server, world.users.alice, `/walls/${world.walls.alpha.id}`, faults);
+}
+
+/** Signs `user` in on `path` under the installed worker, and waits for the page's fill and precache. */
+export async function precacheAs(page, server, user, path, faults = [declareRoutes()]) {
     await server.faults(faults);
-    await signIn(page, world.users.alice);
-    await installWorker(page, `/walls/${world.walls.alpha.id}`);
+    await signIn(page, user);
+    await installWorker(page, path);
     await settled(page);
     return precacheOutcome(page);
 }

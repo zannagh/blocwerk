@@ -1,0 +1,40 @@
+@* A cached photo: the rendition the device holds for this screen, then the thumbnail, then the original (online
+   only). Each failed load steps to the next; with none left (or no sha at all) it says so instead of a broken image. *@
+@if (step < Urls.Count)
+{
+    <img src="@Urls[step]" alt="@Alt" class="@Class" decoding="async" @onerror="Next" />
+}
+else
+{
+    <div class="no-photo bw-client-no-photo">Photo not saved on this device</div>
+}
+
+@code {
+    private IReadOnlyList<string>? shown;
+    private int step;
+
+    /// <summary>Gets or sets the renditions to try (<see cref="PhotoUrls.Renditions"/>).</summary>
+    [Parameter]
+    [EditorRequired]
+    public IReadOnlyList<string> Urls { get; set; } = [];
+
+    /// <summary>Gets or sets the image's text alternative.</summary>
+    [Parameter]
+    public string Alt { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the image's class.</summary>
+    [Parameter]
+    public string? Class { get; set; }
+
+    /// <inheritdoc />
+    protected override void OnParametersSet()
+    {
+        if (shown is null || !shown.SequenceEqual(Urls))
+        {
+            shown = Urls;
+            step = 0;
+        }
+    }
+
+    private void Next() => step++;
+}

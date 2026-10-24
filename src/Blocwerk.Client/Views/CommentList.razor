@@ -1,0 +1,37 @@
+@using Blocwerk.Contracts.Documents
+@* A boulder's comments from the cached comments document, read-only: the Server's BoulderComments rows (its markup
+   and classes) with no compose box, no delete and no paging. Authors are what the document names: an erased, deleted
+   or Ghost author already reads "Ghost", and the kiosk class's unnamed members "A member". *@
+<div class="comments-section">
+    <h2>Comments</h2>
+    @foreach (var comment in Comments)
+    {
+        <div class="comment-row" @key="comment.Id" data-bw-comment="@comment.Id">
+            <div class="comment-header">
+                <AuthorAvatar Author="comment.Author" />
+                <span class="comment-author">@comment.Author.Name</span>
+                <span class="comment-time"><time datetime="@comment.CreatedAt.UtcDateTime.ToString("o")">@ClientTime.Relative(comment.CreatedAt, Now, Offset)</time></span>
+            </div>
+            <p class="comment-text">@comment.Text</p>
+        </div>
+    }
+    @if (Comments.Count == 0)
+    {
+        <p class="empty-msg">No comments yet.</p>
+    }
+</div>
+
+@code {
+    /// <summary>Gets or sets the comments, oldest first (<c>CachedWall.CommentsFor</c>).</summary>
+    [Parameter]
+    [EditorRequired]
+    public IReadOnlyList<CommentsDocumentComment> Comments { get; set; } = [];
+
+    /// <summary>Gets or sets local time minus UTC.</summary>
+    [Parameter]
+    public TimeSpan Offset { get; set; }
+
+    /// <summary>Gets or sets now (the tests fix it).</summary>
+    [Parameter]
+    public DateTimeOffset Now { get; set; } = DateTimeOffset.UtcNow;
+}

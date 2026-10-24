@@ -1,0 +1,23 @@
+@* The read-only stars of the Server's StarRating (its readonly markup and classes). *@
+<span class="star-rating readonly @(Small ? "small" : string.Empty)" title="@Title">
+    <span class="star-track">
+        <span class="star-back">★★★★★</span>
+        <span class="star-fill" style="width: @(FillPercent)%">★★★★★</span>
+    </span>
+</span>
+
+@code {
+    /// <summary>Gets or sets the average, 0 to 5.</summary>
+    [Parameter]
+    public double Value { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether the small size is drawn.</summary>
+    [Parameter]
+    public bool Small { get; set; }
+
+    /// <summary>Gets or sets the tooltip.</summary>
+    [Parameter]
+    public string? Title { get; set; }
+
+    private string FillPercent => (Math.Clamp(Value, 0, 5) / 5 * 100).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
+}

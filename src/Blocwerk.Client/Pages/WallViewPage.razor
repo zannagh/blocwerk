@@ -1,0 +1,143 @@
+@page "/walls/{WallId:guid}"
+@page "/walls/{WallId:guid}/shared/{ShareToken}"
+@inherits CachedWallPage
+@* A wall's view from the device (the Server's WallDetail, read-only): its photos with the hold overlay, the counts,
+   and the boulder list with search, sort, grade range and (signed in) the viewer's own filters and marks. No edit
+   mode, no settings, no members, no "+ New". Slots for PR 3.13: WallActions, WallStage (wraps the panel viewer) and
+   WallBelow. *@
+<PageTitle>@(Wall?.Wall?.Name ?? "Wall") - Blocwerk</PageTitle>
+
+@if (!Loaded)
+{
+    <p class="loading">Loading...</p>
+}
+else if (Wall?.Wall is not { } doc || grid is null)
+{
+    <NotSaved Title="This wall is not available offline" />
+}
+else
+{
+    var slot = new ViewSlotContext(Wall, null, ShareToken);
+    <div class="wall-detail bw-client-wall" data-bw-wall="@WallId">
+        <div class="page-header">
+            @if (string.IsNullOrEmpty(ShareToken))
+            {
+                <a href="@ClientRoutes.WallList" class="back-link"><span aria-hidden="true">&larr;</span><span class="back-link-text"> My Walls</span></a>
+            }
+            <div class="title-row">
+                <h1 title="@doc.Name">@doc.Name</h1>
+                <div class="title-actions"><ViewSlot Name="ViewSlotName.WallActions" Context="slot" /></div>
+            </div>
+        </div>
+
+        <div class="wall-main">
+            <div class="wall-detail-card">
+                @if (!string.IsNullOrEmpty(doc.Description))
+                {
+                    <p class="description">@doc.Description</p>
+                }
+                <div class="wall-photo-container">
+                    <ViewSlot Name="ViewSlotName.WallStage" Context="slot">
+                        <DefaultContent>
+                            <PanelViewer WallId="WallId" ShareToken="@ShareToken" Grid="grid" FitWidth="Facts.FitWidth" OutlinesOnDemand="true" />
+                        </DefaultContent>
+                    </ViewSlot>
+                </div>
+            </div>
+            <div class="wall-side">
+                <div class="stats-bar">
+                    <div class="stat">
+                        <span class="stat-value">@holdCount</span>
+                        <span class="stat-label">Holds</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-value">@Wall.VisibleBoulders.Count(b => !b.IsArchived)</span>
+                        <span class="stat-label">Boulders</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @* .boulders-page: the Server's list page (one sticky head: title, count and the filter chip). *@
+        <div class="boulders-page">
+        <div class="boulder-section">
+            <div class="boulder-list-head">
+                <div class="section-header">
+                    <h2>Boulders<span class="list-count">@active.Count</span></h2>
+                </div>
+                @if (Wall.VisibleBoulders.Count > 0)
+                {
+                    <BoulderFilters Filter="filter" FilterChanged="OnFilterChanged" ShowMine="ShowsMine" />
+                }
+            </div>
+
+            @if (Wall.VisibleBoulders.Count == 0)
+            {
+                <div class="empty-boulders"><p>No boulders yet.</p></div>
+            }
+            else if (active.Count == 0 && archived.Count == 0)
+            {
+                <div class="empty-boulders"><p>No boulders match your filters.</p></div>
+            }
+            else
+            {
+                @foreach (var boulder in active)
+                {
+                    <BoulderRow @key="boulder.Id" Boulder="boulder" WallId="WallId" ShareToken="@ShareToken" Mine="Wall.Mine" />
+                }
+                @if (archived.Count > 0)
+                {
+                    <details class="archive-section">
+                        <summary class="archive-summary">Archive (@archived.Count)</summary>
+                        @foreach (var boulder in archived)
+                        {
+                            <BoulderRow @key="boulder.Id" Boulder="boulder" WallId="WallId" ShareToken="@ShareToken" Mine="Wall.Mine" />
+                        }
+                    </details>
+                }
+            }
+        </div>
+        </div>
+
+        <ViewSlot Name="ViewSlotName.WallBelow" Context="slot" />
+    </div>
+}
+
+@code {
+    private WallPanelGrid? grid;
+    private BoulderFilter filter = new();
+    private IReadOnlyList<Blocwerk.Contracts.Documents.BouldersDocumentBoulder> active = [];
+    private IReadOnlyList<Blocwerk.Contracts.Documents.BouldersDocumentBoulder> archived = [];
+    private int holdCount;
+    private CachedWall? derivedFrom;
+
+    // The viewer's own filters need marks: a signed-in device's (a share link and a kiosk hold none).
+    private bool ShowsMine => Store.Partition?.StartsWith("u-", StringComparison.Ordinal) == true;
+
+    /// <inheritdoc />
+    protected override void OnWallRead()
+    {
+        if (Wall is null)
+        {
+            grid = null;
+            derivedFrom = null;
+            return;
+        }
+
+        if (!ReferenceEquals(derivedFrom, Wall))
+        {
+            // A new instance is a new read (a replaced document, a feed event): a new grid, so the viewer re-reads it.
+            derivedFrom = Wall;
+            grid = new WallPanelGrid(Wall.Wall!, Wall.Holds);
+            holdCount = Wall.Holds?.Holds.Count(h => !h.Kept) ?? 0;
+        }
+
+        (active, archived) = BoulderList.Apply(Wall.VisibleBoulders, Wall.Mine, filter);
+    }
+
+    private void OnFilterChanged(BoulderFilter next)
+    {
+        filter = next;
+        OnWallRead();
+    }
+}

@@ -5,14 +5,14 @@
 // tablet is handed over since PR 3.15 (client-kiosk.spec.mjs has the rest of its offline mode).
 import { test, expect, partitionOf, settled, ledger } from '../harness/fixtures.mjs';
 import { registerKiosk } from '../harness/kiosk.mjs';
-import { declareRoutes, precacheAsAlice, clientRecord, clientCaches, pageVersion, expectClient, expectOfflinePage, missingDocs } from '../harness/client.mjs';
+import { ROUTES, declareRoutes, precacheAsAlice, clientRecord, clientCaches, pageVersion, expectClient, expectOfflinePage, missingDocs } from '../harness/client.mjs';
 
 const wallPath = world => `/walls/${world.walls.alpha.id}`;
 
 test('a Server page precaches the client once its fill is done, and online navigations stay on the Server', async ({ page, world, server }) => {
     expect(await precacheAsAlice(page, world, server)).toBe('complete');
     const version = await pageVersion(page);
-    expect(await clientRecord(page)).toEqual({ version, routes: ['walls/{w}', 'walls/{w}/boulders/{b}'] });
+    expect(await clientRecord(page)).toEqual({ version, routes: ROUTES.split(' ') });
     expect(await clientCaches(page)).toEqual([`blocwerk-client-${version}`]);
 
     // Online, and slow but under 4 s: the Server page, never the client.
@@ -32,7 +32,7 @@ test('with the server down, a declared route opens in the client, its shell and 
 
     await expectClient(page, `${wallPath(world)}?view=boulders`);
     await expect(page.locator('meta[name="bw-partition"]')).toHaveAttribute('content', 'offline');
-    await expect(page.locator('h1')).toHaveText('Not available offline');
+    await expect(page.locator('h1')).toHaveText('Alpha');
 });
 
 test('a 502 hands over without asking the server for the shell, and a hanging server hands over after 4 s', async ({ page, world, server }) => {
@@ -53,7 +53,7 @@ test('a 502 hands over without asking the server for the shell, and a hanging se
 });
 
 test('an undeclared route, and a client that declares none, get offline.html', async ({ page, world, server }) => {
-    expect(await precacheAsAlice(page, world, server, [])).toBe('complete');
+    expect(await precacheAsAlice(page, world, server, [declareRoutes('')])).toBe('complete');
     expect((await clientRecord(page)).routes).toEqual([]);
     await server.unreachable();
     await expectOfflinePage(page, wallPath(world));

@@ -23,8 +23,22 @@ public static class OfflineClientShellAssets
     /// <summary>The client's runtime modules, which <c>blazor.webassembly.js</c> imports by their plain names.</summary>
     public const string FrameworkPrefix = "v/_framework/";
 
-    /// <summary>The stylesheets: the client's frame, then the shared overlay's.</summary>
-    public static readonly string[] Styles = ["v/css/client.css", "_content/Blocwerk.Shared.Ui/css/hold-tap.css"];
+    /// <summary>
+    /// The stylesheets: the Server pages' own (Web's app, pages and components CSS, in BlocwerkApp's order around the
+    /// shared overlay's), so the views (PR 3.11), which render the Server's markup and classes, look like the pages they
+    /// stand in for; then the client's frame and its views. None of them loads a <c>url()</c> (a Core test): the worker
+    /// precaches only what the shell names.
+    /// </summary>
+    public static readonly string[] Styles =
+    [
+        "css/app.css",
+        "css/pages.css",
+        "css/usage-heat.css",
+        "_content/Blocwerk.Shared.Ui/css/hold-tap.css",
+        "css/components.css",
+        "v/css/client.css",
+        "v/css/client-views.css",
+    ];
 
     /// <summary>
     /// The device cache's shared modules (Blocwerk.Shared.Ui, PR 3.7), in the Server pages' order. Loading them only
@@ -47,6 +61,12 @@ public static class OfflineClientShellAssets
     /// </summary>
     public static readonly string[] StoreModules = ["v/js/client-store-rows.js", "v/js/client-store.js"];
 
+    /// <summary>
+    /// The views' browser facts (PR 3.11: <c>window.bwClientView</c>: the cached photo width, the time offset, the stored
+    /// theme), before the runtime that calls them.
+    /// </summary>
+    public static readonly string[] ViewModules = ["v/js/client-view.js"];
+
     /// <summary>The Blazor WebAssembly loader, started by <see cref="Boot"/> (autostart off).</summary>
     public const string Loader = "v/_framework/blazor.webassembly.js";
 
@@ -62,7 +82,7 @@ public static class OfflineClientShellAssets
     private static readonly ConditionalWeakTable<ResourceAssetCollection, string> Versions = new();
 
     /// <summary>Every label the shell names, for the tests that pin each one to a served file.</summary>
-    public static IEnumerable<string> All => Styles.Concat(CacheModules).Concat(StoreModules).Append(Guard).Append(Loader).Append(Boot);
+    public static IEnumerable<string> All => Styles.Concat(CacheModules).Concat(StoreModules).Concat(ViewModules).Append(Guard).Append(Loader).Append(Boot);
 
     /// <summary>
     /// The client's declared routes as the shell's <c>bw-client-routes</c> meta carries them: space-separated

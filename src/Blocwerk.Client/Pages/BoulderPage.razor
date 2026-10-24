@@ -1,0 +1,171 @@
+@page "/walls/{WallId:guid}/boulders/{BoulderId:guid}"
+@page "/walls/{WallId:guid}/boulders/{BoulderId:guid}/shared/{ShareToken}"
+@inherits CachedWallPage
+@using Blocwerk.Core.Holds
+@* A boulder's detail from the device (the Server's BoulderDetail, read-only): name, grade, badges and setter; the
+   rule banners; the photo with the boulder's holds; the hold breakdown; rating and ascents; the viewer's own log
+   (sent, flashed, attempts) and favourite; and every comment, newest first. No ascent buttons, no rating, no favourite
+   toggle, no comment box, no revise or edit. Slots for PR 3.13: BoulderActions and BoulderStage (wraps the photo). *@
+<PageTitle>@(boulder?.Name ?? "Boulder") - Blocwerk</PageTitle>
+
+@if (!Loaded)
+{
+    <p class="loading">Loading...</p>
+}
+else if (Wall is null || boulder is null || holds is null || grid is null)
+{
+    <NotSaved Title="This boulder is not available offline" />
+}
+else
+{
+    var slot = new ViewSlotContext(Wall, boulder, ShareToken);
+    <div class="boulder-detail" data-bw-boulder="@BoulderId">
+        <div class="boulder-main-row">
+            <div class="boulder-photo-col">
+                <div class="page-header">
+                    <a href="@BackLink" class="back-link" aria-label="Back to boulder list"><span aria-hidden="true">&larr;</span><span class="back-link-text"> Back to boulder list</span></a>
+                    <div class="title-row">
+                        <h1 title="@boulder.Name">@boulder.Name</h1>
+                        @if (!string.IsNullOrEmpty(boulder.Grade))
+                        {
+                            <span class="grade-badge">@boulder.Grade</span>
+                        }
+                        @if (boulder.Draft == true)
+                        {
+                            <span class="draft-badge">draft</span>
+                        }
+                        @if (boulder.IsHistoric)
+                        {
+                            <span class="historic-badge">historic</span>
+                        }
+                        @if (boulder.IsArchived)
+                        {
+                            <span class="archived-badge">archived</span>
+                        }
+                        <div class="title-actions">
+                            @if (Wall.Mine.IsFavourite(boulder.Id))
+                            {
+                                <span class="status-icon fav-icon" title="One of your favourites">&#9733;</span>
+                            }
+                            <ViewSlot Name="ViewSlotName.BoulderActions" Context="slot" />
+                        </div>
+                    </div>
+                    <p class="meta">@Byline</p>
+                </div>
+
+                @* Phone tier: the Server's CSS moves the setter line below the fold, into this twin of it. *@
+                <div class="boulder-below-meta">
+                    <p class="boulder-full-name">@boulder.Name@(string.IsNullOrEmpty(boulder.Grade) ? string.Empty : " · " + boulder.Grade)</p>
+                    <p class="meta">@Byline</p>
+                </div>
+
+                @if (boulder.Draft == true)
+                {
+                    <div class="bw-draft-notice"><p>This is a draft — it can't be climbed until it is published.</p></div>
+                }
+
+                @if (!string.IsNullOrEmpty(boulder.FootColorOnly) || boulder.NoMatch)
+                {
+                    <div class="boulder-info-banners">
+                        @if (!string.IsNullOrEmpty(boulder.FootColorOnly))
+                        {
+                            <div class="boulder-info-banner">
+                                All @HoldPalette.DisplayName(boulder.FootColorOnly).ToLowerInvariant() holds may be used as footholds.
+                                @if (!holds.ColorRuleMatches)
+                                {
+                                    <span class="rule-warn">— no such holds on this wall</span>
+                                }
+                            </div>
+                        }
+                        @if (boulder.NoMatch)
+                        {
+                            <div class="boulder-info-banner">No matching — you may not use two hands, or a hand and a foot, on the same hold.</div>
+                        }
+                    </div>
+                }
+
+                @if (holds.Missing > 0)
+                {
+                    <p class="boulder-outdated-note" role="status">
+                        @holds.Missing of this boulder's @holds.Ids.Count holds are not on the wall as it is now, so they are not drawn.
+                    </p>
+                }
+
+                <div class="boulder-view-slot">
+                    <ViewSlot Name="ViewSlotName.BoulderStage" Context="slot">
+                        <DefaultContent>
+                            <PanelViewer @key="BoulderId" WallId="WallId" ShareToken="@ShareToken" Grid="grid" Start="start"
+                                         FitWidth="Facts.FitWidth" Highlighted="holds.Ids" FootHoldIds="holds.FootOnly"
+                                         HoldColor="holds.ColorOf" StepsTo="holds.Panels" />
+                        </DefaultContent>
+                    </ViewSlot>
+                </div>
+            </div>
+
+            <div class="boulder-side-col">
+                <RulesSummary Boulder="boulder" Holds="holds" />
+                <MineLog BoulderId="boulder.Id" Mine="Wall.Mine" />
+                <div class="rating-section">
+                    <div class="rating-summary">
+                        @if (boulder.Stats.RatingCount > 0)
+                        {
+                            <StarRating Value="@(boulder.Stats.RatingAverage ?? 0)" />
+                            <span class="rating-avg">@boulder.Stats.RatingAverage?.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)</span>
+                            <span class="rating-count">(@boulder.Stats.RatingCount rating@(boulder.Stats.RatingCount != 1 ? "s" : string.Empty))</span>
+                        }
+                        else
+                        {
+                            <span class="rating-empty">No ratings yet</span>
+                        }
+                    </div>
+                    <p class="meta bw-client-ascents">@boulder.Stats.Ascents ascent@(boulder.Stats.Ascents != 1 ? "s" : string.Empty)</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="boulder-wide-col">
+            <CommentList Comments="comments" Offset="Facts.UtcOffset" />
+        </div>
+    </div>
+}
+
+@code {
+    private Blocwerk.Contracts.Documents.BouldersDocumentBoulder? boulder;
+    private BoulderHolds? holds;
+    private WallPanelGrid? grid;
+    private PanelView? start;
+    private IReadOnlyList<Blocwerk.Contracts.Documents.CommentsDocumentComment> comments = [];
+    private CachedWall? derivedFrom;
+    private Guid derivedFor;
+
+    /// <summary>Gets or sets the boulder.</summary>
+    [Parameter]
+    public Guid BoulderId { get; set; }
+
+    private string BackLink => ClientRoutes.WallLink(WallId, ShareToken);
+
+    private RenderFragment Byline => @<text>by @boulder!.SetBy &middot; <time datetime="@boulder.CreatedAt.UtcDateTime.ToString("o")">@ClientTime.Date(boulder.CreatedAt, Facts.UtcOffset)</time></text>;
+
+    /// <inheritdoc />
+    protected override void OnWallRead()
+    {
+        if (ReferenceEquals(derivedFrom, Wall) && derivedFor == BoulderId)
+        {
+            return;
+        }
+
+        derivedFrom = Wall;
+        derivedFor = BoulderId;
+        boulder = Wall?.VisibleBoulders.FirstOrDefault(b => b.Id == BoulderId);
+        if (Wall is null || boulder is null)
+        {
+            (holds, grid, start, comments) = (null, null, null, []);
+            return;
+        }
+
+        holds = new BoulderHolds(boulder, Wall.Holds);
+        grid = new WallPanelGrid(Wall.Wall!, Wall.Holds);
+        start = grid.StartFor(holds.Ids);
+        comments = Wall.CommentsFor(BoulderId).Reverse().ToList();
+    }
+}
