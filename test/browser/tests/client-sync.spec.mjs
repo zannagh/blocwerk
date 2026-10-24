@@ -73,7 +73,7 @@ test('the client keeps its wall live, and a comment from another device reaches 
 });
 
 test('the server going away closes the stream; the client probes, backs off, and is live again once it is back', async ({ page, world, server }) => {
-    test.setTimeout(90000);
+    test.setTimeout(120000);
     expect(await precacheAsAlice(page, world, server)).toBe('complete');
     await openClient(page, world);
     await expect(syncState(page)).toHaveAttribute('data-bw-sync', 'live', { timeout: 20000 });
@@ -83,8 +83,9 @@ test('the server going away closes the stream; the client probes, backs off, and
     // Still the client, still showing the device's data.
     await expect(page.locator('.bw-client-store')).toHaveAttribute('data-bw-store', 'ready');
 
+    // Back up: the next network retry lands within the backoff (5 s, then 30 s, each ±50 %), then the stream reopens.
     await server.faults([]);
-    await expect(syncState(page)).toHaveAttribute('data-bw-sync', 'live', { timeout: 30000 });
+    await expect(syncState(page)).toHaveAttribute('data-bw-sync', 'live', { timeout: 60000 });
 });
 
 test('a wall the device holds nothing of opens no stream', async ({ page, world, server }) => {
