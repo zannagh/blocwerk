@@ -301,3 +301,21 @@ test('a page that loads with kept conflicts tells them once', () => {
     assert.equal(shownKind(page), null);
     assert.equal(page.pill().textContent, '1 change could not be uploaded');
 });
+
+test('focus never falls on an element that cannot hold it: a pill without a panel takes focus with tabindex=-1', () => {
+    const page = statusPage();
+    page.queue({ count: 1, rejected: [{ kind: 'attempt', message: 'x', at: 1 }] });
+    page.advance(6000);
+    page.pill().click();
+    page.panel().querySelector('[data-bw-key="dismiss"]').focus();
+    page.panel().querySelector('[data-bw-key="dismiss"]').click();
+    // Dismissed: the panel lost its Dismiss button; focus returns to the pill, a button here.
+    assert.equal(page.document.activeElement, page.pill());
+    assert.equal(page.pill().tagName, 'BUTTON');
+
+    page.win.bwStatus.show('online');
+    page.queue({ count: 0 });
+    assert.equal(page.pill().tagName, 'DIV', 'nothing lasting behind the bubble any more');
+    assert.equal(page.pill().getAttribute('tabindex'), '-1');
+    assert.equal(page.document.activeElement, page.pill(), 'the focused pill was replaced: focus moves to the new one');
+});

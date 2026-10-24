@@ -29,7 +29,10 @@
  *   status()          -> 'connected' | 'reconnecting' | 'failed' | 'rejected'
  *   started()         -> bool: Blazor.start resolved, so the circuit is running. Before that, 'connected' only
  *                        means "nothing went wrong yet": a connection lost while the circuit is still starting
- *                        is not one the framework reconnects (and so not one this status reports).
+ *                        is not one the framework reconnects; circuit-watchdog.js reports it (markDown).
+ *   markDown()        -> circuit-watchdog.js: the connection is gone and the framework raised nothing. Reported
+ *                        as 'failed', so the probe below gets the circuit back once the server answers.
+ *   lastChangeAt()    -> when the framework last raised a reconnect state (ms since epoch, 0 = never)
  *   subscribe(cb)     -> unsubscribe fn, cb(status)
  *   reconnect()       -> manual retry (used by the status pill)
  *   reload()          -> full page reload, for the 'rejected' case
@@ -116,6 +119,13 @@
             publish('rejected');
             return true;
         } catch (err) {
+            if (markedDown) {
+                // A circuit the framework never reported (circuit-watchdog.js): with the server answering, its
+                // reconnect and resume fail for good ("circuit host not initialized"), so retrying would leave the
+                // pill on Reconnecting forever. Offer the reload instead.
+                publish('rejected');
+                return true;
+            }
             // The websocket did not open; the next probe tries again.
             return false;
         } finally {
@@ -156,10 +166,21 @@
     }
 
     let started = false;
+    let markedDown = false;
+    let lastChangeAt = 0;
 
     window.blocwerkConnection = {
         started: function () {
             return started;
+        },
+        lastChangeAt: function () {
+            return lastChangeAt;
+        },
+        markDown: function () {
+            if (status === 'connected') {
+                markedDown = true;
+                publish('failed');
+            }
         },
         isUp: function () {
             return status === 'connected';
@@ -189,6 +210,8 @@
 
     function onStateChanged(event) {
         const next = event && event.detail ? event.detail.state : null;
+        lastChangeAt = Date.now();
+        markedDown = false;
 
         if (next === 'hide') {
             publish('connected');
@@ -303,6 +326,11 @@
         }
     }).then(function () {
         started = true;
+        // The watchdog called it down while the start was still running, and the start got through after all.
+        if (markedDown) {
+            markedDown = false;
+            publish('connected');
+        }
     }).catch(function (err) {
         console.error('[blocwerk-connection] Blazor failed to start', err);
         publish('failed');

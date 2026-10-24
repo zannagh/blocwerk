@@ -23,6 +23,10 @@ window.blocwerkOfflineRejected = (function (win) {
     const KEY = 'blocwerk-offline-rejected';
     const MAX = 20;
     let memory = [];
+    // A write that failed (quota) while reads still work: storage holds an older list than this page, so the page's
+    // own copy is the truth until a write succeeds again. Without it the item just rejected would vanish unseen, and
+    // the queue has already deleted its entry.
+    let writeFailed = false;
 
     function identity() {
         const data = win.document.body && win.document.body.dataset ? win.document.body.dataset : {};
@@ -30,6 +34,9 @@ window.blocwerkOfflineRejected = (function (win) {
     }
 
     function read() {
+        if (writeFailed) {
+            return memory;
+        }
         try {
             const items = JSON.parse(win.localStorage.getItem(KEY) || '[]');
             return Array.isArray(items) ? items : [];
@@ -46,8 +53,9 @@ window.blocwerkOfflineRejected = (function (win) {
             } else {
                 win.localStorage.setItem(KEY, JSON.stringify(items));
             }
+            writeFailed = false;
         } catch (e) {
-            /* no storage: kept in memory for this page */
+            writeFailed = true;
         }
     }
 

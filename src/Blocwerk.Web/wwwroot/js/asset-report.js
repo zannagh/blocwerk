@@ -33,6 +33,7 @@ window.bwAssetReport = (function (win) {
     const RECHECK_MS = 2000;
     const READY_QUIET_MS = 10 * 60 * 1000;
     const READY_WIDTH = 640;
+    const READY_RETRY_MS = 6000;
 
     const Cache = () => win.bwAssetCache;
     const Plan = () => win.bwAssetPlan;
@@ -180,6 +181,7 @@ window.bwAssetReport = (function (win) {
 
     function createReadiness() {
         let timer = null;
+        let retryTimer = null;
         let running = Promise.resolve();
 
         async function readySet() {
@@ -227,15 +229,25 @@ window.bwAssetReport = (function (win) {
                 const fresh = [...ready].filter(id => !before.walls.has(id));
                 const gone = [...before.walls].filter(id => !known.has(id));
                 const tell = fresh.length > 0 && Date.now() - before.toldAt >= READY_QUIET_MS;
-                if (fresh.length > 0 || gone.length > 0) {
-                    const walls = new Set([...before.walls, ...fresh].filter(id => known.has(id)));
-                    store(partition, walls, tell ? Date.now() : before.toldAt);
+                // Told only if the bubble actually showed: another bubble up leaves the walls new and the quiet window
+                // unstarted, and asks again shortly. A page without bwStatus has nobody to tell, and leaves them new.
+                const told = tell && !!win.bwStatus && win.bwStatus.show('offline-ready');
+                if (tell && !told && win.bwStatus) {
+                    retryLater();
                 }
-                if (tell && win.bwStatus) {
-                    win.bwStatus.show('offline-ready');
+                const absorbed = told || !tell ? fresh : [];
+                if (absorbed.length > 0 || gone.length > 0) {
+                    const walls = new Set([...before.walls, ...absorbed].filter(id => known.has(id)));
+                    store(partition, walls, told ? Date.now() : before.toldAt);
                 }
             }).catch(() => undefined);
             return running;
+        }
+
+        function retryLater() {
+            if (!retryTimer) {
+                retryTimer = win.setTimeout(() => { retryTimer = null; check(); }, READY_RETRY_MS);
+            }
         }
 
         // Many announcements come in a burst while a fill runs: one recheck per RECHECK_MS at most, once that fill is

@@ -109,6 +109,26 @@ test('a wall that is not ready for a while (a new panel photo pending) stays tol
     assert.deepEqual(JSON.parse(storage.get(key)).walls, [W1, W2].sort());
 });
 
+test('a fill that finishes while another bubble is up tells "Offline mode available" once the pill is free', async () => {
+    const storage = new Map();
+    const page = memberPage({ routes: w1Routes(), storage });
+    const shown = [];
+    let busy = true;
+    page.win.bwStatus = { show: kind => { if (busy) { return false; } shown.push(kind); return true; } };
+    page.win.bwAssetReport.observe();
+    await page.boot();
+    await page.settle();
+    assert.deepEqual(shown, []);
+    assert.equal(storage.get(`blocwerk-offline-ready:${USER_A}`), undefined, 'not marked told, no quiet window started');
+
+    busy = false;
+    const retry = page.timers.find(t => !t.done && t.ms === 6000);
+    assert.ok(retry, 'a retry is scheduled');
+    await page.win.bwAssetReport.readiness.check();
+    assert.deepEqual(shown, ['offline-ready']);
+    assert.ok(JSON.parse(storage.get(`blocwerk-offline-ready:${USER_A}`)).toldAt > 0);
+});
+
 test('walls that finish one after the other are told once: another wall ready within 10 minutes of the last bubble says nothing', async () => {
     const key = `blocwerk-offline-ready:${USER_A}`;
     const recent = new Map([[key, JSON.stringify({ walls: [W2], toldAt: Date.now() - 60000 })]]);

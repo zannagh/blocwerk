@@ -189,6 +189,8 @@
     <script src="@Assets["js/offline-boulder.js"]"></script>
     @* Before blazor-boot.js, which calls it around a resume; maintenance.js calls it before a reload. *@
     <script src="@Assets["js/scroll-keeper.js"]"></script>
+    @* Before blazor-boot.js starts Blazor: it watches the circuit's socket for a drop the framework says nothing about. *@
+    <script src="@Assets["js/circuit-watchdog.js"]"></script>
     <script src="@Assets["js/blazor-boot.js"]"></script>
     @* After blazor-boot.js: reads blocwerkConnection to tell a dead circuit from a reconnect blip. *@
     <script src="@Assets["js/circuit-failed.js"]"></script>

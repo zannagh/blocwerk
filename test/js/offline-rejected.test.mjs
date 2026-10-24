@@ -14,7 +14,11 @@ function page(storage, who, opts = {}) {
         document: { body: { dataset: { bwUser: who.user || undefined, bwKiosk: who.kiosk || undefined } } },
         localStorage: opts.blocked
             ? { getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); }, removeItem() { throw new Error('blocked'); } }
-            : { getItem: k => (storage.has(k) ? storage.get(k) : null), setItem: (k, v) => storage.set(k, String(v)), removeItem: k => storage.delete(k) },
+            : {
+                getItem: k => (storage.has(k) ? storage.get(k) : null),
+                setItem: (k, v) => { if (opts.quota) { throw new Error('QuotaExceededError'); } storage.set(k, String(v)); },
+                removeItem: k => { if (opts.quota) { throw new Error('QuotaExceededError'); } storage.delete(k); }
+            },
         addEventListener: (t, fn) => { (listeners[t] = listeners[t] || []).push(fn); },
     };
     win.window = win;
@@ -62,4 +66,14 @@ test('without storage the items live as long as the page', () => {
     assert.equal(p.store.current().length, 1);
     p.store.clearCurrent();
     assert.equal(p.store.current().length, 0);
+});
+
+test('a write that fails (quota) while reads work loses nothing: the page keeps its own list until a write succeeds', () => {
+    const storage = new Map();
+    page(storage, { user: 'alice' }).store.add({ kind: 'attempt' }, 'kept from before');
+    const p = page(storage, { user: 'alice' }, { quota: true });
+    p.store.add({ kind: 'comment' }, 'just rejected');
+    assert.deepEqual(p.store.current().map(i => i.message), ['kept from before', 'just rejected']);
+    p.store.clearCurrent();
+    assert.deepEqual(p.store.current(), []);
 });

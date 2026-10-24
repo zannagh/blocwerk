@@ -79,6 +79,40 @@ test('an outage: switched to offline mode, then to online mode when the server i
     await expect.poll(() => shownBubbles(page), { timeout: 30000 }).toEqual(['Switched to offline mode', 'Switched to online mode']);
 });
 
+// The framework raises no reconnect state for a connection lost in the circuit's first moments (seen in cold WebKit);
+// circuit-watchdog.js reports it. The server goes away the moment the circuit has started, on a fresh page load.
+test('a connection lost right after the page load is still told as offline, and leaves offline once the server is back', async ({ page, world, server }) => {
+    await recordBubbles(page);
+    await page.addInitScript(() => sessionStorage.setItem('pw-loads', String(Number(sessionStorage.getItem('pw-loads') || 0) + 1)));
+    await signIn(page, world.users.alice, '/');
+    await page.goto('/walls', { waitUntil: 'commit' });
+    await page.waitForFunction(() => window.blocwerkConnection && window.blocwerkConnection.started(), null, { polling: 10, timeout: 30000 });
+    const loads = await page.evaluate(() => Number(sessionStorage.getItem('pw-loads')));
+    await server.unreachable();
+    const sinceLoad = await page.evaluate(() => performance.now()).catch(() => null);
+    test.info().annotations.push({ type: 'drop', description: `server gone ${Math.round(sinceLoad)} ms after the navigation` });
+
+    // The fill may finish from the device's cache meanwhile, so "Offline mode available" may follow: only "offline" counts.
+    await expect.poll(() => shownBubbles(page), { timeout: 30000 }).toContain('Switched to offline mode');
+    await server.faults([]);
+    // Back: the circuit reconnects ("Switched to online mode"); or the server no longer holds a circuit that never
+    // fully started, and the page offers the reload ("Session ended"), which maintenance.js takes by itself. Either
+    // way it does not stay offline.
+    await expect.poll(async () => {
+        const state = await page.evaluate(() => ({
+            status: window.blocwerkConnection.status(), loads: Number(sessionStorage.getItem('pw-loads')),
+            shown: JSON.parse(sessionStorage.getItem('pw-bubbles') || '[]')
+        })).catch(() => null);
+        if (!state) {
+            return 'navigating';
+        }
+        if (state.loads > loads || state.status === 'rejected') {
+            return 'reloads';
+        }
+        return state.status === 'connected' && state.shown.includes('Switched to online mode') ? 'online' : state.status;
+    }, { timeout: 30000 }).toMatch(/^(online|reloads)$/);
+});
+
 // The cookie banner is left up: the pill sits above it, so the conflict is visible and tappable on a fresh device.
 test('what was queued during an outage: "Uploading 2 changes", then the refused one as a conflict that survives a reload', async ({ page, world, server }) => {
     await signedInWithCircuit(page, world.users.erin, `/walls/${world.social.wallId}`);

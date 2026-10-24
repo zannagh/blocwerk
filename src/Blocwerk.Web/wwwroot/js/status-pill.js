@@ -3,7 +3,9 @@
  *
  * Updated in place: the pill and the panel are kept and only their text, colour and attributes change, so a bubble
  * coming or going every few seconds does not take keyboard focus away from a panel button. The panel is built again
- * only when what it lists changes, and then focus goes back to the button of the same name (or to the pill).
+ * only when what it lists changes, and then focus goes back to the button of the same name (or to the pill). A pill
+ * that is not a button (nothing to open) still takes focus programmatically (tabindex=-1), so focus that falls back on
+ * it never ends on an element that cannot hold it.
  *
  * draw(container, view): view is null (nothing to show) or
  *   { tone, label, bubble (a bwStatus kind, or null), openable, expanded, onToggle, badge (rejected count),
@@ -26,6 +28,8 @@ window.bwStatusPill = (function (doc) {
         if (openable) {
             pill.type = 'button';
             pill.addEventListener('click', () => pill.bwToggle && pill.bwToggle());
+        } else {
+            pill.setAttribute('tabindex', '-1');
         }
         pill.appendChild(part('span', 'bw-conn-dot'));
         pill.appendChild(part('span', 'bw-conn-label'));
@@ -49,12 +53,17 @@ window.bwStatusPill = (function (doc) {
 
     function drawPill(container, view) {
         let pill = container.querySelector('.bw-conn-pill');
+        let hadFocus = false;
         if (pill && (pill.tagName === 'BUTTON') !== !!view.openable) {
+            hadFocus = doc.activeElement === pill;
             pill.remove();
             pill = null;
         }
         if (!pill) {
             pill = container.appendChild(newPill(view.openable));
+            if (hadFocus) {
+                pill.focus();
+            }
         }
         pill.className = 'bw-conn-pill bw-conn-' + view.tone + (view.bubble ? ' bw-status-bubble' : '') + (view.flash ? ' bw-conn-flash' : '');
         if (view.bubble) {
