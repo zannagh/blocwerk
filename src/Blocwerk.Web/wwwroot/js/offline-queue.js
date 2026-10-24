@@ -74,6 +74,10 @@
         online: navigator.onLine !== false,
         paused: false,
         flushing: false,
+        // A flush asked for while one is running. That run read the queue before the new entry was added, so without
+        // a second pass the entry waits for the next trigger (the retry tick, a reconnect): a comment posted right
+        // after page load, while the load's own flush was still running, sat unsent and never appeared.
+        flushAgain: false,
         count: 0,
         held: 0,
         deferred: 0,
@@ -281,7 +285,11 @@
     }
 
     function flush() {
-        if (state.flushing || state.paused || !db || !db.available()) {
+        if (state.flushing) {
+            state.flushAgain = true;
+            return Promise.resolve({ sent: 0, dropped: 0, held: state.held, remaining: state.count });
+        }
+        if (state.paused || !db || !db.available()) {
             return Promise.resolve({ sent: 0, dropped: 0, held: state.held, remaining: state.count });
         }
 
@@ -346,6 +354,10 @@
             notify();
             if (summary.sent > 0) {
                 document.dispatchEvent(new CustomEvent('bw:offline-flushed', { detail: summary }));
+            }
+            if (state.flushAgain) {
+                state.flushAgain = false;
+                flush();
             }
             return summary;
         });

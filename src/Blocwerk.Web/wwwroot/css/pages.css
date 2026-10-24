@@ -338,6 +338,9 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
     box-sizing: border-box;
 }
 .wall-page.no-pad { padding: 0; }
+/* wall-carousel.js hands focus to the page on screen when the one holding it is swiped away; the page is a container,
+   not a control, so it draws no ring. */
+.wall-page:focus { outline: none; }
 /* A slide scrolls ITSELF; reaching its top or bottom must not hand the gesture to the document (the
    "whole page scrolls instead of the list" report), nor a sideways overshoot to the browser's
    back-swipe. */
@@ -845,6 +848,52 @@ a.wall3d-link {
     transform: rotate(180deg);
 }
 .boulders-page .boulder-list-head .btn-add-boulder { order: 2; }
+/* Search: a square chip in the filter chip's chrome, just before it, and a field that takes a row of
+   its own under the bar while open. In the sticky head, so it is reachable wherever the list is
+   scrolled; the open filter panel still hangs off the (now taller) head. */
+.boulders-page .boulder-list-head .list-search-chip {
+    order: 1;
+    flex: 0 0 auto;
+    align-self: stretch;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    padding: 0;
+    border: 1px solid var(--border-light);
+    border-radius: var(--r-lg);
+    background: var(--bg-surface);
+    box-shadow: 0 1px 2px var(--shadow-sm);
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+.boulders-page .boulder-list-head .list-search-chip.active { color: var(--accent); border-color: var(--accent); }
+.boulders-page .boulder-list-head .list-search-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.boulders-page .boulder-list-head .list-search-row {
+    order: 3;
+    flex: 1 1 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.boulders-page .boulder-list-head .list-search-row[hidden] { display: none; }
+/* 16px: anything smaller makes iOS zoom the page in when the field takes focus. */
+.boulders-page .boulder-list-head .list-search-input { min-width: 0; font-size: 16px; }
+/* One way to clear: the close button, which also closes. The native clear "x" would be a second one. */
+.boulders-page .boulder-list-head .list-search-input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+.boulders-page .boulder-list-head .list-search-close {
+    flex: 0 0 auto;
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 50%;
+    background: none;
+    color: var(--text-secondary);
+    font-size: 1.4rem;
+    line-height: 1;
+    cursor: pointer;
+}
+.boulders-page .boulder-list-head .list-search-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* Open, it is a panel rather than a chip: it hangs OFF the bar (out of flow, anchored under it)
    instead of growing it. That is what keeps "+ New" and the Filters chip on screen while the card
    is open — the earlier version un-stuck the whole head, which took "+ New" off-screen with it, and
