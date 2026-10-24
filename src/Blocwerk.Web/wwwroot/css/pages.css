@@ -1,7 +1,7 @@
 /* ========== Home / Landing ========== */
 
 .landing {
-    min-height: 100dvh;
+    min-height: var(--bw-app-h, 100dvh);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -16,7 +16,7 @@
 
 /* Momentary /home redirect placeholder — theme-aware so a light-mode user never sees a dark flash. */
 .home-redirect {
-    min-height: 100dvh;
+    min-height: var(--bw-app-h, 100dvh);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -184,7 +184,7 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
     display: flex;
     flex-direction: column;
     gap: 12px;
-    height: calc(100dvh - var(--topbar-h) - var(--bottomnav-h));
+    height: calc(var(--bw-app-h, 100dvh) - var(--topbar-h) - var(--bottomnav-h));
     min-height: 500px;
 }
 .stitcher-toolbar {
@@ -309,7 +309,7 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
     margin: 0 auto;
     display: flex;
     flex-direction: column;
-    height: calc(100dvh - var(--topbar-h) - var(--bottomnav-h));
+    height: calc(var(--bw-app-h, 100dvh) - var(--topbar-h) - var(--bottomnav-h));
     min-height: 360px;
 }
 .wall-carousel {
@@ -355,11 +355,11 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
 @media (min-height: 520px) {
     html:has(.wall-carousel-root:not(.editing)),
     body:has(.wall-carousel-root:not(.editing)) {
-        height: 100dvh;
+        height: var(--bw-app-h, 100dvh);
         overflow: hidden;
         overscroll-behavior: none;
     }
-    .app-shell:has(.wall-carousel-root:not(.editing)) { height: 100dvh; min-height: 0; }
+    .app-shell:has(.wall-carousel-root:not(.editing)) { height: var(--bw-app-h, 100dvh); min-height: 0; }
     /* The root may sit directly in .content (wall) or inside a page wrapper (.activity-page, guides):
        every link of that chain is a column flex box that hands its leftover height down, so the
        root fills its parent whichever wrapper it has. */
@@ -522,7 +522,7 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
     flex: 0 1 auto;
     height: auto;
     min-height: 0;
-    max-height: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - var(--wall-photo-chrome));
+    max-height: calc(var(--bw-app-h, 100dvh) - var(--topbar-h) - var(--bottomnav-h) - var(--wall-photo-chrome));
     border-radius: 12px;
 }
 
@@ -572,7 +572,7 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
     flex: 0 1 auto;
     aspect-ratio: var(--fit-aspect, 1.4);
     height: auto;
-    max-height: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - var(--wall-photo-chrome));
+    max-height: calc(var(--bw-app-h, 100dvh) - var(--topbar-h) - var(--bottomnav-h) - var(--wall-photo-chrome));
     margin-inline: auto;
 }
 
@@ -862,7 +862,7 @@ a.wall3d-link {
     right: 0;
     margin: 0;
     padding: 16px;
-    max-height: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - 120px);
+    max-height: calc(var(--bw-app-h, 100dvh) - var(--topbar-h) - var(--bottomnav-h) - 120px);
     overflow-y: auto;
     box-shadow: 0 10px 24px -12px var(--shadow-md);
 }
@@ -1612,7 +1612,7 @@ a.wall3d-link {
    never grows past it. A tall dialog scrolls inside itself; the title sticks to the top and the action row to the
    bottom, so the buttons are always reachable (phone landscape, Safari toolbars, notches). */
 .bw-modal-backdrop {
-    z-index: 950; height: 100vh; height: 100dvh; box-sizing: border-box;
+    z-index: 950; height: 100vh; height: var(--bw-app-h, 100dvh); box-sizing: border-box;
     padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
              max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
 }
@@ -1644,7 +1644,7 @@ a.wall3d-link {
 body:has(.panel-crop-modal) .bw-toolbar { display: none; }
 .bw-modal-backdrop:has(.panel-crop-modal) {
     z-index: 950;
-    height: 100vh; height: 100dvh;
+    height: 100vh; height: var(--bw-app-h, 100dvh);
     padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
              max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
 }
@@ -2119,7 +2119,7 @@ html.bw-fullscreen { --tier: desktop; }
             --wall-main-display: grid;
             --wall-main-align: start;
             --wall-side-display: flex;
-            --wall-side-max-h: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - 48px);
+            --wall-side-max-h: calc(var(--bw-app-h, 100dvh) - var(--topbar-h) - var(--bottomnav-h) - 48px);
             --stats-wrap: wrap;
             --stat-basis: 130px;
 
@@ -2181,7 +2181,7 @@ html.bw-compact {
  * --photo-fit-floor to 0 so the box is free to use the whole height budget. That floor is the
  * ONLY thing the two tiers disagree on here, which is why this is one block and not two. */
 .boulder-detail .photo-viewport.photo-section {
-    --avail-h: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - var(--boulder-photo-chrome));
+    --avail-h: calc(var(--bw-app-h, 100dvh) - var(--topbar-h) - var(--bottomnav-h) - var(--boulder-photo-chrome));
     --fit-h: max(var(--photo-fit-floor, 180px), var(--avail-h));
     width: auto;
     height: auto;
@@ -2198,7 +2198,7 @@ html.bw-compact {
  * aspect-ratio/max-height for the framed read-only view in BOTH tiers — with the same values —
  * while the desktop-only width cap below still applies to it. */
 .wall-main .photo-viewport {
-    --avail-h: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - var(--wall-photo-chrome));
+    --avail-h: calc(var(--bw-app-h, 100dvh) - var(--topbar-h) - var(--bottomnav-h) - var(--wall-photo-chrome));
     flex: 0 1 auto;                        /* size to the contained photo, don't stretch the column */
     aspect-ratio: var(--wall-photo-aspect, var(--fit-aspect, 1.4));
     height: auto;
@@ -3992,7 +3992,7 @@ a.wall-update-link {
         /* padding 8 + header 44 + toggles 44 + attempt 52 + three 8px gaps = 172, plus slack for borders.
            Without the Then/Now row (nothing older to show) its 44px and a gap go to the view. */
         --boulder-first-screen-chrome: calc(144px + var(--boulder-toggles-h, 52px));
-        --boulder-view-h: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - var(--boulder-first-screen-chrome));
+        --boulder-view-h: calc(var(--bw-app-h, 100dvh) - var(--topbar-h) - var(--bottomnav-h) - var(--boulder-first-screen-chrome));
         --boulder-photo-chrome: var(--boulder-first-screen-chrome);
         --photo-fit-floor: 120px;
     }

@@ -189,15 +189,26 @@
     padding: 0;
 }
 
+/* The app's one window height. Every full-screen budget in the stylesheets reads this token rather than
+   a unit of its own, so the shell and what sizes inside it can never disagree.
+   In a browser tab it is the DYNAMIC height, which follows the URL bar. An installed app has no URL bar,
+   and there `dvh` is the unit iOS gets wrong: on a cold start of the home-screen app it reports a height
+   short of the screen until the first rotation, so the shell ended above the bottom edge and the tab bar
+   floated with a dead strip under it. `vh` is the full window there from the first frame. */
+:root { --bw-app-h: 100dvh; }
+@media (display-mode: standalone), (display-mode: fullscreen) {
+    :root { --bw-app-h: 100vh; }
+}
+
 html, body {
     font-family: var(--font-body);
     font-feature-settings: 'ss01', 'cv11'; /* Manrope stylistic set + alt digits */
     background: var(--bg);
     color: var(--text);
-    /* dvh, not vh: everything INSIDE the shell already sizes off 100dvh, and mixing the two
-       units meant the outer box claimed the tall (URL-bar-hidden) height while its contents
-       claimed the short one. On a landscape phone that mismatch is a visible dead strip. */
-    min-height: 100dvh;
+    /* The same token as everything INSIDE the shell: mixing two units meant the outer box claimed
+       the tall (URL-bar-hidden) height while its contents claimed the short one. On a landscape
+       phone that mismatch is a visible dead strip. */
+    min-height: var(--bw-app-h, 100dvh);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
@@ -233,7 +244,7 @@ h2 { font-size: 1.15rem; }
 .app-shell {
     display: flex;
     flex-direction: column;
-    min-height: 100dvh;
+    min-height: var(--bw-app-h, 100dvh);
     /* Landscape on a notched phone puts the notch on one SIDE. With viewport-fit=cover the page
        now extends under it, so the shell keeps its content clear; the fixed bars below do the
        same for themselves, since they are positioned against the viewport, not this box. */
@@ -424,6 +435,19 @@ h2 { font-size: 1.15rem; }
     z-index: 50;
     /* Faint upward glow so the tab bar reads like it's floating above content */
     box-shadow: 0 -1px 0 var(--nav-border), 0 -12px 24px -14px var(--shadow-md);
+}
+/* The bar's ground continues below its bottom edge. Normally that is off screen and costs nothing; when
+   iOS reports the window a few points short (an installed app's cold start, the keyboard just closed) the
+   bar sits that far above the edge, and this fills the gap instead of showing the page through it. */
+.bw-tabbar::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 100%;
+    height: 120px;
+    background: var(--nav-bg);
+    pointer-events: none;
 }
 
 .nav-item {
