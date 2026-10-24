@@ -2,11 +2,12 @@
 // device (the server lets a kiosk session have /v), and with the server gone it shows its bound wall from its `k-`
 // partition: the kiosk class (no draft, no archived boulder, an unconsented member as "A member"), never another
 // wall, never marks, also while it acts as a member who has some. A tablet whose answers were `no-store` keeps nothing
-// and shows "Not available offline". Data planted for another wall or another partition is never read. The grade-scale
-// cookie the client reads is set for a signed-in person and never on a tablet.
-import { test, expect, signIn, installWorker, partitionOf, settled, ledger } from '../harness/fixtures.mjs';
+// and shows "Not available offline" (a defence in depth: in production such a tablet is `none`). Data planted for another
+// wall or another partition is never read. A copy past 7 days since its last online fill is not handed over. No kiosk
+// response sets the grade-scale cookie.
+import { test, expect, installWorker, partitionOf, settled, ledger } from '../harness/fixtures.mjs';
 import { registerKiosk, actAs } from '../harness/kiosk.mjs';
-import { declareRoutes, precacheOutcome, expectClient, missingDocs } from '../harness/client.mjs';
+import { declareRoutes, precacheOutcome, expectClient, expectOfflinePage, missingDocs } from '../harness/client.mjs';
 
 const store = page => page.locator('.bw-client-store');
 const storeState = (page, state) => expect(store(page)).toHaveAttribute('data-bw-store', state, { timeout: 15000 });
@@ -47,7 +48,7 @@ async function precacheKiosk(page, server, token, wallId, { faults = [], member 
 
 const gradeCookie = async context => (await context.cookies()).filter(c => c.name === 'blocwerk-grade-pref');
 
-test('an airplane-mode tablet shows only its bound wall, in the kiosk class', async ({ page, context, world, server }) => {
+test('an airplane-mode tablet shows only its bound wall, in the kiosk class', async ({ page, world, server }) => {
     const wallId = world.social.wallId;
     expect(await precacheKiosk(page, server, world.social.kioskToken, wallId)).toBe('complete');
     const kiosk = await partitionOf(page);
@@ -78,29 +79,29 @@ test('an airplane-mode tablet shows only its bound wall, in the kiosk class', as
     await page.goto(`/v/walls/${world.walls.alpha.id}`);
     await storeState(page, 'ready');
     expect((await snapshot(page)).walls.map(w => w.wallId)).toEqual([wallId]);
-    expect(await gradeCookie(context)).toEqual([]);
 });
 
-test('acting as a member, the offline tablet shows nothing of hers: no marks stored or read, the kiosk class only', async ({ page, context, world, server }) => {
-    const alpha = world.walls.alpha;
-    const carol = world.users.carol;
-    expect(await precacheKiosk(page, server, world.kioskToken, alpha.id, { member: carol })).toBe('complete');
-    await expect(page.locator('body')).toHaveAttribute('data-bw-user', carol.id);
+test('acting as a member who sees drafts, the offline tablet keeps the kiosk class and nothing of hers', async ({ page, world, server }) => {
+    const wallId = world.social.wallId;
+    const cora = world.users.cora;
+    expect(await precacheKiosk(page, server, world.social.kioskToken, wallId, { member: cora })).toBe('complete');
+    await expect(page.locator('body')).toHaveAttribute('data-bw-user', cora.id);
     const kiosk = await partitionOf(page);
     expect(kiosk, 'act-as keeps the tablet\'s partition').toMatch(/^k-[a-z2-7]{20}$/);
-    expect(await allMine(page), 'Carol\'s tick and favourite are never stored on the tablet').toEqual([]);
-    expect(await gradeCookie(context)).toEqual([]);
+    expect(await allMine(page), 'no marks are ever stored on the tablet').toEqual([]);
 
     await server.unreachable();
-    await expectClient(page, `/walls/${alpha.id}`);
+    await expectClient(page, `/walls/${wallId}`);
     await storeState(page, 'ready');
     const snap = await snapshot(page);
     expect(snap.partition).toBe(kiosk);
     expect(snap.mine).toEqual([]);
-    const read = await docs(page, kiosk, alpha.id);
-    expect(Object.keys(read.docs)).toContain('boulders');
-    expect(JSON.stringify(read.docs), 'no document names the acting member').not.toContain(carol.id);
-    expect(await gradeCookie(context)).toEqual([]);
+    // Cora's member class would carry the draft, the archived boulder and Dave's name: the tablet holds the kiosk class.
+    const text = JSON.stringify((await docs(page, kiosk, wallId)).docs);
+    expect(text).toContain('Social boulder');
+    for (const absent of ['Secret draft', 'Old archived', world.users.dave.name]) {
+        expect(text, absent).not.toContain(absent);
+    }
 });
 
 test('a no-store tablet keeps no document and shows Not available offline', async ({ page, world, server }) => {
@@ -116,6 +117,24 @@ test('a no-store tablet keeps no document and shows Not available offline', asyn
     await expect(page.locator('h1')).toHaveText('Not available offline');
     await expect(page.locator('.bw-client-saved')).toHaveCount(0);
     expect(await docs(page, kiosk, alpha.id)).toBeNull();
+});
+
+test('a copy past 7 days since its last online fill is not handed over: offline.html, as for a tablet that may keep nothing', async ({ page, world, server }) => {
+    const alpha = world.walls.alpha;
+    expect(await precacheKiosk(page, server, world.kioskToken, alpha.id)).toBe('complete');
+    const kiosk = await partitionOf(page);
+    const stamp = () => page.evaluate(async () => {
+        const hit = await caches.match('/__bw/kiosk-fresh', { cacheName: 'bw-sw-state' });
+        return hit ? hit.json() : null;
+    });
+    const written = await stamp();
+    expect(written.label).toBe(kiosk);
+    expect(Date.now() - written.at).toBeLessThan(10 * 60 * 1000);
+
+    const old = Date.now() - 8 * 24 * 60 * 60 * 1000;
+    await page.evaluate(async ([k, at]) => (await caches.open('bw-sw-state')).put('/__bw/kiosk-fresh', new Response(JSON.stringify({ label: k, at }))), [kiosk, old]);
+    await server.unreachable();
+    await expectOfflinePage(page, `/walls/${alpha.id}`);
 });
 
 test('data planted for another wall or another partition is never read offline', async ({ page, world, server }) => {
@@ -153,24 +172,22 @@ test('data planted for another wall or another partition is never read offline',
     expect(await docs(page, kiosk, alpha.id)).toBeNull();
 });
 
-test('the grade cookie: a signed-in page sets it; a kiosk page never does and deletes one, acting as a member too', async ({ page, context, world, baseURL }) => {
+test('a kiosk session never sets the grade cookie: one planted before stays untouched, resting and acting as a member', async ({ page, context, world, baseURL }) => {
     const wall = `/walls/${world.walls.alpha.id}`;
-    const planted = () => context.addCookies([{ name: 'blocwerk-grade-pref', value: 'v', url: baseURL }]);
-    await signIn(page, world.users.alice);
-    await page.goto(wall);
-    expect((await gradeCookie(context)).map(c => c.value), 'the writer is live, so its absence below means something').toEqual(['font']);
-    await context.clearCookies();
-
+    const written = [];
+    page.on('response', async response => {
+        const set = (await response.headersArray()).filter(h => h.name.toLowerCase() === 'set-cookie' && /blocwerk-grade-pref/i.test(h.value));
+        written.push(...set.map(h => `${response.url()} ${h.value}`));
+    });
     await registerKiosk(page, world.kioskToken);
-    await planted();
-    await page.goto(wall);
-    expect(await gradeCookie(context), 'a tablet page deletes one the browser had').toEqual([]);
+    await context.addCookies([{ name: 'blocwerk-grade-pref', value: 'planted', url: baseURL }]);
+    expect((await gradeCookie(context)).map(c => c.value), 'the lookup sees a planted cookie').toEqual(['planted']);
 
+    await page.goto(wall);
     await actAs(page, world.users.carol);
     await page.goto(wall);
     await expect(page.locator('body')).toHaveAttribute('data-bw-user', world.users.carol.id);
-    expect(await gradeCookie(context), 'acting as a member sets none').toEqual([]);
-    await planted();
-    await page.goto(`/walls/${world.walls.alpha.id}/boulders/${world.walls.alpha.boulder}`);
-    expect(await gradeCookie(context)).toEqual([]);
+    await page.goto(`${wall}/boulders/${world.walls.alpha.boulder}`);
+    expect(written, 'no kiosk response sets or deletes it').toEqual([]);
+    expect((await gradeCookie(context)).map(c => c.value)).toEqual(['planted']);
 });

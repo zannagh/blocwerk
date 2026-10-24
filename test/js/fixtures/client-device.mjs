@@ -21,7 +21,8 @@ const tick = id => ({ boulderId: id, attempts: 2, sent: false, flashed: true, la
 
 /**
  * more: loadClient's options, plus others (more labels to fill), meta (merged into the ledger's), share (anon's token),
- * walls (the label's own walls, default W1 and W2; the others always get both).
+ * walls (the label's own walls, default W1 and W2; the others always get both), fetchedAt (every row's last manifest
+ * success, default now).
  */
 export async function device(label, more = {}) {
     const caches = more.caches || bodyCaches();
@@ -32,7 +33,7 @@ export async function device(label, more = {}) {
         for (const [wallId, c] of [[W1, '1'], [W2, '2']].filter(([w]) => walls.includes(w))) {
             const shas = { wall: sha(c + 'a'), comments: sha(c + 'c') };
             const share = p === 'anon' ? shareHash(more.share ?? TOKEN) : undefined;
-            await ledger.updateWall(p, wallId, () => ({ partition: p, wallId, member: p.startsWith('u-'), share, data: { wall: { sha: shas.wall, bytes: 1, cursor: '1.2.3' }, comments: { sha: shas.comments, bytes: 1, cursor: '1.2.3' } } }));
+            await ledger.updateWall(p, wallId, () => ({ partition: p, wallId, member: p.startsWith('u-'), share, fetchedAt: more.fetchedAt ?? Date.now(), data: { wall: { sha: shas.wall, bytes: 1, cursor: '1.2.3' }, comments: { sha: shas.comments, bytes: 1, cursor: '1.2.3' } } }));
             await caches.putText(`bw-a1-${p}-3d`, `${ORIGIN}/__bw/${shas.wall}`, doc('wall', wallId));
             await caches.putText(`bw-a1-${p}-3d`, `${ORIGIN}/__bw/${shas.comments}`, doc('comments', wallId));
             await ledger.putMine({ partition: p, wallId, cursor: '1.2.3', ticks: [tick(W1)], favourites: [], fetchedAt: 1 });

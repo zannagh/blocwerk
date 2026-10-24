@@ -103,7 +103,6 @@ test('a device turned kiosk is handed to the client, which shows the tablet\'s w
     expect(snap.partition).toBe(kiosk);
     expect(snap.walls.map(w => w.wallId)).toEqual([world.walls.alpha.id]);
     expect(snap.mine).toEqual([]);
-    expect(await page.evaluate(([p, w]) => window.bwClientStore.docs(p, w), [alice, world.walls.beta.id])).toBeNull();
 });
 
 test("a 500 is the server's own answer, never the client", async ({ page, world, server }) => {

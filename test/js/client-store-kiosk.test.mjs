@@ -1,14 +1,15 @@
 // The offline client's kiosk mode (Phase 3 PR 3.15, client-store.js + client-store-rows.js): a tablet's `k-` partition
 // shows its one bound wall and never marks, whoever the tablet acts as; another wall (a second row under `k-`, or any
 // other partition's data on the device) is never read; a tablet whose wall document is not cached (its answers were
-// `no-store`) and a `none` tablet show "Not available offline" (the `kiosk` state); a Server page records the kiosk
-// mark the client reads (asset-session.js). Run by `node --test test/js/`.
+// `no-store`), a copy whose last online fill is over 7 days old, and a `none` tablet show "Not available offline" (the
+// `kiosk` state); the wall document's predecessor stands in while its successor is not cached; a Server page records the
+// kiosk mark the client reads (asset-session.js). Run by `node --test test/js/`.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadClient } from './fixtures/client-sandbox.mjs';
 import { loadPage, USER_A, KIOSK, ORIGIN } from './fixtures/page-sandbox.mjs';
 import { W1, W2 } from './fixtures/asset-pages.mjs';
-import { plain, same, sha, cacheNames, device } from './fixtures/client-device.mjs';
+import { DAY, plain, same, sha, doc, cacheNames, device } from './fixtures/client-device.mjs';
 
 const nothing = (state, partition = null) => ({ state, partition, shareWall: null, walls: [], mine: [] });
 
@@ -52,6 +53,35 @@ test('a no-store tablet (a row from the index, no cached wall document) is not a
 
     same(await client.store.snapshot(), nothing('kiosk', KIOSK));
     assert.equal(await client.store.docs(KIOSK, W1), null);
+});
+
+test('a kiosk copy is read for 7 days after its last online fill, then not available offline', async () => {
+    const recent = await device(KIOSK, { walls: [W1], fetchedAt: Date.now() - 7 * DAY + 60 * 1000 });
+    assert.equal((await recent.client.store.snapshot()).state, 'ready');
+
+    for (const fetchedAt of [Date.now() - 7 * DAY - 60 * 1000, Date.now() + DAY, undefined]) {
+        const { client, ledger } = await device(KIOSK, { walls: [W1], fetchedAt });
+        if (fetchedAt === undefined) {
+            await ledger.updateWall(KIOSK, W1, row => Object.assign(row, { fetchedAt: undefined }));
+        }
+        same(await client.store.snapshot(), nothing('kiosk', KIOSK), String(fetchedAt));
+        assert.equal(await client.store.docs(KIOSK, W1), null, String(fetchedAt));
+    }
+});
+
+test('the wall document\'s cached predecessor stands in for a successor not cached yet; neither cached is nothing', async () => {
+    const { client, ledger, caches } = await device(KIOSK, { walls: [W1] });
+    await ledger.updateWall(KIOSK, W1, row => Object.assign(row, {
+        data: Object.assign(row.data, { wall: { sha: sha('f'), bytes: 1 } }),
+        dataPrev: { wall: sha('1a') }
+    }));
+    assert.equal((await client.store.snapshot()).state, 'ready');
+    assert.equal((await client.store.docs(KIOSK, W1)).docs.wall.sha, sha('1a'));
+
+    await ledger.updateWall(KIOSK, W1, row => Object.assign(row, { dataPrev: { wall: sha('e') } }));
+    same(await client.store.snapshot(), nothing('kiosk', KIOSK));
+    await caches.putText(`bw-a1-${KIOSK}-3d`, `${ORIGIN}/__bw/${sha('f')}`, doc('wall', W1));
+    assert.equal((await client.store.snapshot()).state, 'ready');
 });
 
 test('a kiosk with no row yet, and a `none` tablet by the mirror\'s mark, are not available offline; any other device is empty', async () => {

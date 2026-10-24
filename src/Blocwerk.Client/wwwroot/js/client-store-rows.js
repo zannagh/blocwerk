@@ -11,6 +11,9 @@
  * while that is so: a `k-` partition with more than one row is not the bound wall's alone and reads nothing at all. The
  * row also needs its `wall` document in the cache: a kiosk whose answers were `no-store` (its wall may not be kept)
  * has a row from the index but no document, and the tablet then shows "Not available offline", never a half view.
+ * And the row's last manifest success (`fetchedAt`) must be within KIOSK_MAX_AGE_MS (7 days, as long as a `u-` lock is
+ * kept; the worker's hand-off uses the same window): a tablet revoked, re-paired or changed while offline stops
+ * showing its copy then, and the next online page wipes or refreshes it.
  * A ROW'S KEY is the identity of what the ledger names for it: its documents' shas and the predecessors still standing
  * in (`dataPrev`). The client keeps a loaded wall while the key stands, whatever of it was cached or parsed.
  */
@@ -19,6 +22,8 @@ window.bwClientStoreRows = (function (win) {
 
     const USER_LABEL = /^u-[a-z2-7]{20}$/;
     const KIOSK_LABEL = /^k-[a-z2-7]{20}$/;
+    const KIOSK_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+    const KIOSK_SKEW_MS = 5 * 60 * 1000;
     const KINDS = ['wall', 'holds', 'boulders', 'gallery', 'comments'];
     // A replaced document of these kinds is never read in its successor's place (asset-data.js deletes it at once).
     const PRIVATE_KINDS = new Set(['comments']);
@@ -52,10 +57,13 @@ window.bwClientStoreRows = (function (win) {
         return (await win.bwAssetLedger.shareHash(share.token)) === row.share;
     }
 
+    // A kiosk row's last manifest success, within the window (a stamp a little ahead of the clock still counts).
+    const fresh = (at, now) => Number.isFinite(at) && now - at <= KIOSK_MAX_AGE_MS && at - now <= KIOSK_SKEW_MS;
+
     // The bound wall's row: the only one of the partition, with its `wall` document (or the predecessor) in the cache.
     async function kioskReadable(ledger, partition, row) {
         const all = await ledger.wallsOf(partition);
-        if (all.length !== 1 || idOf(all[0].wallId) !== idOf(row.wallId)) {
+        if (all.length !== 1 || idOf(all[0].wallId) !== idOf(row.wallId) || !fresh(row.fetchedAt, Date.now())) {
             return false;
         }
         const shas = [refsOf(row.data).wall, { sha: (row.dataPrev || {}).wall }].map(ref => ref && ref.sha).filter(s => SHA.test(String(s)));

@@ -11,8 +11,10 @@ const js = name => readFileSync(new URL(`../../src/Blocwerk.Web/wwwroot/js/${nam
 const VERSION = 'abcdef0123456789';
 const ALICE = 'u-' + 'a'.repeat(20);
 
-function precachePage({ version = VERSION, saveData = false, active = ALICE, walls = 1, degraded = false, worker = { client: null }, answer, storage = new Map() } = {}) {
+function precachePage({ version = VERSION, saveData = false, active = ALICE, walls = 1, degraded = false, worker = { client: null }, answer, storage = new Map(), fetchedAt = [] } = {}) {
     const asked = [];
+    const state = new Map();
+    const caches = { open: async name => ({ put: async (key, response) => state.set(`${name} ${key}`, await response.text()) }) };
     const win = {
         __bwAssetCacheManual: true,
         document: { querySelector: () => (version === null ? null : { getAttribute: () => version }) },
@@ -21,7 +23,7 @@ function precachePage({ version = VERSION, saveData = false, active = ALICE, wal
         bwAssetCache: {
             ready: Promise.resolve(),
             filled: () => Promise.resolve(),
-            state: () => ({ active, env: { ledger: { degraded, wallsOf: async () => Array.from({ length: walls }, (_, i) => ({ wallId: 'w' + i })) } } }),
+            state: () => ({ active, env: { ledger: { degraded, wallsOf: async () => Array.from({ length: walls }, (_, i) => ({ wallId: 'w' + i, fetchedAt: fetchedAt[i] })) } } }),
         },
         bwAssetStore: {
             askWorker: async (w, type = 'sw-info') => {
@@ -33,8 +35,9 @@ function precachePage({ version = VERSION, saveData = false, active = ALICE, wal
             },
         },
     };
-    vm.runInNewContext(js('client-precache.js'), { window: win, document: win.document, Date, JSON, Number });
-    return { win, asked, storage, run: () => win.bwClientPrecache.boot() };
+    win.caches = caches;
+    vm.runInNewContext(js('client-precache.js'), { window: win, document: win.document, Date, JSON, Number, Response });
+    return { win, asked, storage, state, run: () => win.bwClientPrecache.boot() };
 }
 
 test('the page asks for the precache once its fill is done, and records the complete version', async () => {
@@ -163,4 +166,19 @@ test('deploy() posts deploy-pending or deploy-done to the controller, and does n
     assert.deepEqual(posted.map(m => ({ ...m })), [{ proto: 1, type: 'deploy-pending' }, { proto: 1, type: 'deploy-done' }]);
     win.navigator.serviceWorker.controller = null;
     assert.equal(win.bwSwGuard.deploy(true), false);
+});
+
+test('a kiosk page stamps its last online fill for the worker; no other label, and no successful round, stamps', async () => {
+    const KIOSK = 'k-' + 'k'.repeat(20);
+    const tablet = precachePage({ active: KIOSK, walls: 1, fetchedAt: [1234] });
+    await tablet.run();
+    assert.deepEqual(JSON.parse(JSON.stringify(await tablet.win.bwClientPrecache.stamped)), { label: KIOSK, at: 1234 });
+    assert.equal(tablet.state.get('bw-sw-state /__bw/kiosk-fresh'), JSON.stringify({ label: KIOSK, at: 1234 }));
+
+    for (const options of [{ active: ALICE, fetchedAt: [1234] }, { active: KIOSK, fetchedAt: [undefined] }, { active: KIOSK, degraded: true, fetchedAt: [1] }]) {
+        const page = precachePage(options);
+        await page.run();
+        assert.equal(await page.win.bwClientPrecache.stamped, null, JSON.stringify(options));
+        assert.equal(page.state.size, 0, JSON.stringify(options));
+    }
 });

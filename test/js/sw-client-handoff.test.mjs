@@ -33,17 +33,42 @@ test('a locked partition, no partition (a kiosk that may keep nothing too) or no
     assert.equal((await navigate(anon, '/shared/t/x')).status, 302, 'a share viewer is handed over');
 });
 
-test('a kiosk tablet is handed over (PR 3.15), but never past a lock marker', async () => {
-    const kiosk = restart(await completeWorker(), state => state.set('/__bw/partition', response(200, KIOSK)));
+const fresh = (label, at) => response(200, JSON.stringify({ label, at }));
+
+test('a kiosk tablet is handed over within 7 days of its last online fill (PR 3.15), never past a lock marker', async () => {
+    const kiosk = restart(await completeWorker(), state => {
+        state.set('/__bw/partition', response(200, KIOSK));
+        state.set('/__bw/kiosk-fresh', fresh(KIOSK, Date.now() - 7 * 24 * 3600 * 1000 + 60000));
+    });
     const served = await navigate(kiosk, '/walls/W1');
     assert.equal(served.status, 302);
     assert.equal(served.headers.get('location'), `${ORIGIN}/v/walls/W1`);
 
     const locked = restart(await completeWorker(), state => {
         state.set('/__bw/partition', response(200, KIOSK));
+        state.set('/__bw/kiosk-fresh', fresh(KIOSK, Date.now()));
         state.set('/__bw/locked', response(200, ALICE));
     });
     assert.equal(await (await navigate(locked, '/walls/W1')).text(), 'offline page', 'any lock marker refuses');
+});
+
+test('a kiosk copy past 7 days, stamped for another label, from the future, or never stamped gets offline.html, like none', async () => {
+    const cases = {
+        stale: fresh(KIOSK, Date.now() - 7 * 24 * 3600 * 1000 - 60000),
+        'another label': fresh('k-' + 'z'.repeat(20), Date.now()),
+        future: fresh(KIOSK, Date.now() + 3600 * 1000),
+        unreadable: response(200, 'not json'),
+        none: null,
+    };
+    for (const [name, stamp] of Object.entries(cases)) {
+        const worker = restart(await completeWorker(), state => {
+            state.set('/__bw/partition', response(200, KIOSK));
+            if (stamp) {
+                state.set('/__bw/kiosk-fresh', stamp);
+            }
+        });
+        assert.equal(await (await navigate(worker, '/walls/W1')).text(), 'offline page', name);
+    }
 });
 
 test('only a 502, 503 or 504 is handed over; a 500 or any other status is the server answer', async () => {

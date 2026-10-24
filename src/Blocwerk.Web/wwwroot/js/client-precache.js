@@ -12,6 +12,10 @@
  *   - no failed attempt for this version started within RETRY_MS (a failing fill is not retried on every page);
  * it posts `client-precache` and records the outcome in localStorage (MARKER_KEY: `{ version, at, complete }`), the
  * page's completeness marker. The worker's own record decides the hand-off; the marker only spares the repeat.
+ * THE KIOSK STAMP (PR 3.15). On a kiosk tablet (`k-…`) every page, once its fill is done, also writes
+ * `{ label, at }` to the worker's state cache (KIOSK_FRESH_KEY): `at` is the newest manifest success (`fetchedAt`) of the
+ * partition's rows. The worker hands a `k-` tablet to the client only within KIOSK_MAX_AGE of it, as the client reads the
+ * row itself, so a tablet revoked, re-paired or changed while offline stops showing its copy after 7 days, as a `u-` lock does.
  * Nothing here throws into the page.
  */
 window.bwClientPrecache = (function (win) {
@@ -24,7 +28,11 @@ window.bwClientPrecache = (function (win) {
     const VERSION = /^[0-9a-f]{16}$/;
     const LABEL = /^(anon|[uk]-[a-z2-7]{20})$/;
 
-    const state = { done: null };
+    const KIOSK_LABEL = /^k-[a-z2-7]{20}$/;
+    const KIOSK_FRESH_KEY = '/__bw/kiosk-fresh';
+    const STATE_CACHE = 'bw-sw-state';
+
+    const state = { done: null, stamped: null };
 
     function pageVersion() {
         const meta = win.document.querySelector('meta[name="bw-client-version"]');
@@ -92,8 +100,29 @@ window.bwClientPrecache = (function (win) {
         return answer.version === version ? 'complete' : 'other';
     }
 
+    // The kiosk stamp (see the header): written only after a fill on a durable `k-` ledger with a successful manifest.
+    async function stamp(cache) {
+        if (!cache) {
+            return null;
+        }
+        await cache.ready;
+        await cache.filled();
+        const s = cache.state();
+        if (!KIOSK_LABEL.test(s.active || '') || !s.env || s.env.ledger.degraded) {
+            return null;
+        }
+        const at = Math.max(0, ...(await s.env.ledger.wallsOf(s.active)).map(row => Number(row.fetchedAt) || 0));
+        if (at <= 0) {
+            return null;
+        }
+        const value = { label: s.active, at };
+        await (await win.caches.open(STATE_CACHE)).put(KIOSK_FRESH_KEY, new Response(JSON.stringify(value)));
+        return value;
+    }
+
     function boot() {
         if (!state.done) {
+            state.stamped = stamp(win.bwAssetCache).catch(() => null);
             state.done = run(win.bwAssetCache, win.bwAssetStore).catch(() => 'failed');
         }
         return state.done;
@@ -103,6 +132,8 @@ window.bwClientPrecache = (function (win) {
         boot,
         // The outcome of this page's attempt, for tests: skipped, unsupported, complete, waiting, failed or other.
         get done() { return state.done; },
+        // The kiosk stamp this page wrote ({ label, at }), or null; for tests.
+        get stamped() { return state.stamped; },
         MARKER_KEY
     };
 })(window);
