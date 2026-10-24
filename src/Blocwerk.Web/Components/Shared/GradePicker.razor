@@ -19,9 +19,9 @@
     [Parameter] public EventCallback<string?> ValueChanged { get; set; }
 
     /// <summary>
-    /// The scale the picker opens on: true seeds the Fontainebleau scale, false the V-Scale. Only the
-    /// initial seed — once the user taps the V/Font toggle their choice sticks. When null (the default)
-    /// the picker keeps its built-in default, so callers that don't pass it are unaffected.
+    /// The scale the picker opens on when the value has none of its own (empty, or not a known grade): true
+    /// seeds the Fontainebleau scale, false the V-Scale. Only the initial seed — once the user taps the V/Font
+    /// toggle their choice sticks. When null (the default) the picker keeps its built-in default.
     /// </summary>
     [Parameter] public bool? DefaultUseFont { get; set; }
 
@@ -29,9 +29,12 @@
 
     protected override void OnInitialized()
     {
-        // Seed once from the caller's preferred scale (e.g. the user's saved setting). Runs only on
-        // first init, so a later SetScale interaction is never overwritten by a parent re-render.
-        _useFont = DefaultUseFont ?? _useFont;
+        // Seed once: the scale the current grade is written in, so an existing "6B" opens on Font with 6B
+        // selected rather than on the V-Scale with nothing selected (the boulder page's inline editor passed
+        // no DefaultUseFont and showed exactly that). Only an empty or unknown grade falls back to the
+        // caller's preferred scale. Runs only on first init, so a later SetScale interaction is never
+        // overwritten by a parent re-render.
+        _useFont = GradeScale.IsFont(Value) ?? DefaultUseFont ?? _useFont;
     }
 
     private void SetScale(bool font)
