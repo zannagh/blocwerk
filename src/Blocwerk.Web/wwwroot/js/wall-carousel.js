@@ -25,6 +25,7 @@ window.wallCarousel = {
             el.style.scrollBehavior = 'auto';
             const done = () => {
                 el.style.scrollBehavior = prevBehavior;
+                this.markActive(el, idx);
                 // Reveal here, the moment the offset holds, instead of waiting for .NET's re-render
                 // after three more interop round-trips: that wait was the visible blank page.
                 el.classList.remove('carousel-pending');
@@ -78,6 +79,20 @@ window.wallCarousel = {
         }
         return idx * el.clientWidth;
     },
+    // Every page but the current one is `inert`, which takes it out of the browser's find-in-page (Ctrl+F used to
+    // match boulders on the list while the wall page was showing, and scroll there) and out of Tab order and the
+    // accessibility tree. Inert changes nothing that is painted, so the neighbour a swipe reveals still shows; it only
+    // stops a tap landing on a page that is not settled yet, and the track still scrolls under such a tap.
+    // Re-applied on every settle, so a page Blazor (re)creates is picked up the next time the track comes to rest.
+    markActive(el, page) {
+        const pages = el && el.children ? el.children : [];
+        for (let i = 0; i < pages.length; i++) {
+            const inert = i !== page;
+            if (pages[i].inert !== inert) {
+                pages[i].inert = inert;
+            }
+        }
+    },
     scrollToPage(el, idx, smooth) {
         if (!el) return;
         // `behavior: 'auto'` would resolve to the element's CSS scroll-behavior, so a non-smooth
@@ -95,6 +110,7 @@ window.wallCarousel = {
         const target = Math.min(count - 1, Math.max(0, this.currentPage(el) + dir));
         state.page = target;
         state.swiped = true;
+        this.markActive(el, target);
         this.scrollToPage(el, target, true);
         if (target !== state.reported) {
             state.reported = target;
@@ -214,6 +230,7 @@ window.wallCarousel = {
             const page = resnapping ? Math.min(Math.max(0, state.page), Math.max(0, (el.children ? el.children.length : 1) - 1))
                 : this.currentPage(el);
             state.page = page;
+            this.markActive(el, page);
             const smooth = state.swiped && !resnapping;
             state.swiped = false;
             // Correct only when there is something to correct. Re-aiming at an offset we are already
@@ -382,6 +399,7 @@ window.wallCarousel = {
         }
         el._bwCarousel.reported = idx;
         el._bwCarousel.page = idx;
+        this.markActive(el, idx);
         if (window.bwCarouselNav) {
             window.bwCarouselNav.pageChanged(el, idx);
         }

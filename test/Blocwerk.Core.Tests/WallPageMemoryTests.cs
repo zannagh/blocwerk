@@ -77,7 +77,8 @@ public class WallPageMemoryTests
         var toggle = markup.IndexOf("private async Task ToggleEditing()", StringComparison.Ordinal);
         var defer = markup.IndexOf("if (!_isEditing && DeferEditUntilRefreshed())", toggle, StringComparison.Ordinal);
         Assert.True(toggle > 0 && defer > toggle && defer < markup.IndexOf("_isEditing = !_isEditing;", toggle, StringComparison.Ordinal));
-        Assert.Contains("await RefreshRestoredPageAsync(RestoreFromPageMemory(), LoadCurrentWall);", markup);
+        Assert.Contains("var restored = RestoreFromPageMemory();", markup);
+        Assert.Contains("await RefreshRestoredPageAsync(restored, LoadCurrentWall);", markup);
         Assert.Contains("_refreshing = restored;", memory);
 
         // The deferred tap: always consumed, replayed only on a live page that shows this user the edit button.

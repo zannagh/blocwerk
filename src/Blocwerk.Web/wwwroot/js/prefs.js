@@ -18,6 +18,7 @@ window.bwPrefs = (function () {
     const TOOLBAR_PLACEMENT_TOPBAR = 'topbar';
     const WALL_VIEW_KEY = 'blocwerk-wall-view';
     const CACHE_3D_KEY = 'blocwerk-cache-3d';
+    const BOULDER_FILTERS_KEY = 'blocwerk-boulder-filters';
     const ONE_YEAR = 60 * 60 * 24 * 365;
 
     function readCookie(name) {
@@ -177,6 +178,20 @@ window.bwPrefs = (function () {
         setCache3d: function (on) {
             writeCookie(CACHE_3D_KEY, on ? 'on' : 'off');
             return !!on;
+        },
+        // The boulder list's filters, per wall. Opaque here like the wall view: BoulderListFilterCookie owns the format
+        // (and keeps it small). An empty value deletes the cookie instead of storing nothing for a year.
+        getBoulderFilters: function () {
+            return readCookie(BOULDER_FILTERS_KEY) || '';
+        },
+        setBoulderFilters: function (value) {
+            const v = typeof value === 'string' ? value : '';
+            if (v) {
+                writeCookie(BOULDER_FILTERS_KEY, v);
+            } else {
+                document.cookie = BOULDER_FILTERS_KEY + '=;path=/;max-age=0;SameSite=Lax';
+            }
+            return v;
         },
         recordLastPage: recordLastPage
     };

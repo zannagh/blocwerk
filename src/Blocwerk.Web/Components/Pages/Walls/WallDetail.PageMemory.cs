@@ -121,8 +121,7 @@ public partial class WallDetail
             ActivityItems = _activityItems,
             ActivityTotal = _activityTotal,
             ActivityPage = _activityPage,
-            Filter = new WallListFilter(
-                _searchText, _gradeMin, _gradeMax, _fAttempted, _fDone, _fNotDone, _fFavorites, _fCreated, _fBeta, _fNeedsReview, (int)_sort),
+            Filter = CurrentListFilter(),
         });
     }
 
@@ -158,18 +157,7 @@ public partial class WallDetail
         _activityTotal = page.ActivityTotal;
         _activityPage = page.ActivityPage;
 
-        var filter = page.Filter;
-        _searchText = filter.SearchText;
-        _gradeMin = filter.GradeMin;
-        _gradeMax = filter.GradeMax;
-        _fAttempted = filter.Attempted;
-        _fDone = filter.Done;
-        _fNotDone = filter.NotDone;
-        _fFavorites = filter.Favorites;
-        _fCreated = filter.Created;
-        _fBeta = filter.Beta;
-        _fNeedsReview = filter.NeedsReview;
-        _sort = (SortMode)filter.Sort;
+        ApplyListFilter(page.Filter);
         return true;
     }
 }
