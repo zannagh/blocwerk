@@ -196,6 +196,10 @@
     <script src="@Assets["js/edit-presence.js"]"></script>
     <script src="@Assets["js/deploy-drafts.js"]"></script>
     <script src="@Assets["js/maintenance.js"]"></script>
+    @* status-bubble.js: the short status bubbles (bwStatus), told by status-sources.js and asset-report.js and drawn in
+       the pill by offline-status.js. *@
+    <script src="@Assets["js/status-bubble.js"]"></script>
+    <script src="@Assets["js/status-sources.js"]"></script>
     <script src="@Assets["js/offline-status.js"]"></script>
     <script src="@Assets["js/pwa.js"]"></script>
     @* The page side of the on-device wall-asset cache: the ledger, budgets, wipe rules, manifests, the page's
@@ -203,7 +207,7 @@
        the coordinator, which reads the others lazily off window and boots on DOM-ready. After pwa.js only for
        readability; it works with any worker, or none. asset-notice.js feeds StorageNotice.razor; asset-3d.js the 3D
        view's mobile-data notice and "Save 3D offline" (Wall3DStage); asset-report.js (with asset-clear.js)
-       OfflineStorageCard.razor and the offline-ready marks. *@
+       OfflineStorageCard.razor and the "Offline mode available" bubble. *@
     <script src="@Assets["js/asset-ledger.js"]"></script>
     <script src="@Assets["js/asset-budget.js"]"></script>
     <script src="@Assets["js/asset-wipe.js"]"></script>

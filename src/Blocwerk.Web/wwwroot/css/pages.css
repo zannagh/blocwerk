@@ -1927,11 +1927,6 @@ img.avatar { object-fit: cover; }
 .offline-storage-wall .member-since { margin-top: 2px; }
 .offline-storage-wall .checkbox-label { margin-top: 6px; }
 
-/* The offline-ready mark (OfflineReadyMark.razor): hidden until asset-report.js finds the wall's core cached. */
-.bw-offline-ready { display: inline-flex; vertical-align: -0.1em; color: var(--success-text); }
-.bw-offline-ready:not([data-ready]) { display: none; }
-.bw-topbar-title .bw-offline-ready { color: var(--status-success); margin-right: 2px; }
-
 /* ---- Staged profile shell -------------------------------------------------
    /profile is content the app authors end to end, so it is a fixed composition sized to the viewport
    instead of a 3.4-viewport scroll: a persistent identity/links side column plus four tabbed screens.

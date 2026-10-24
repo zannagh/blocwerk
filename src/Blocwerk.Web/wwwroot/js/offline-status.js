@@ -70,11 +70,12 @@
 
         const state = api.state();
         if (state.phase === 'ready') {
-            return { tone: 'info', label: MAINTENANCE_READY_LABEL, detail: MAINTENANCE_READY_DETAIL };
+            return { tone: 'info', urgent: true, label: MAINTENANCE_READY_LABEL, detail: MAINTENANCE_READY_DETAIL };
         }
 
         return {
             tone: 'warn',
+            urgent: true,
             label: state.message || MAINTENANCE_LABEL,
             detail: state.message ? state.message + ' ' + MAINTENANCE_DETAIL : MAINTENANCE_DETAIL
         };
@@ -101,10 +102,10 @@
         }
 
         if (queueState.paused) {
-            return { tone: 'warn', label: 'Sign in to sync', detail: 'Your session expired. ' + count + ' action(s) are saved on this device.' };
+            return { tone: 'warn', urgent: true, label: 'Sign in to sync', detail: 'Your session expired. ' + count + ' action(s) are saved on this device.' };
         }
         if (connection === 'rejected') {
-            return { tone: 'warn', label: 'Session ended', detail: 'The server lost this session. Reload to continue; nothing queued is lost.' };
+            return { tone: 'warn', urgent: true, label: 'Session ended', detail: 'The server lost this session. Reload to continue; nothing queued is lost.' };
         }
         if (!queueState.online) {
             return { tone: 'warn', label: count > 0 ? 'Offline · ' + count : 'Offline', detail: count > 0 ? count + ' action(s) saved on this device, waiting for a connection.' : 'No connection. Ascents, ratings and comments still work and sync later.' };
@@ -113,9 +114,22 @@
             return { tone: 'warn', label: count > 0 ? 'Reconnecting · ' + count : 'Reconnecting', detail: 'Reconnecting to the server. Queued actions sync automatically.' };
         }
         if (count > 0) {
-            return { tone: 'info', label: 'Syncing · ' + count, detail: count + ' action(s) still to send.' };
+            return { tone: 'info', label: 'Uploading · ' + count, detail: count + ' action(s) still to send.' };
         }
         return null;
+    }
+
+    /**
+     * A status bubble (status-bubble.js) up takes the pill's label and colour for its few seconds, over everything
+     * except an urgent lasting state (a deploy, a session to sign in to or reload). A conflict outranks those too.
+     */
+    function withBubble(summary) {
+        const bubble = window.bwStatus ? window.bwStatus.current() : null;
+        if (!bubble || (summary && summary.urgent && bubble.kind !== 'conflict')) {
+            return summary;
+        }
+        const detail = bubble.kind === 'conflict' || !summary ? bubble.detail : summary.detail;
+        return { tone: bubble.tone, label: bubble.label, detail: detail, bubble: bubble.kind };
     }
 
     function buildDetail(queueState, summary) {
@@ -175,6 +189,19 @@
         return el;
     }
 
+    function plainPill(tone, text, extraClass) {
+        const el = document.createElement('div');
+        el.className = 'bw-conn-pill bw-conn-' + tone + ' ' + extraClass;
+        const dot = document.createElement('span');
+        dot.className = 'bw-conn-dot';
+        el.appendChild(dot);
+        const label = document.createElement('span');
+        label.className = 'bw-conn-label';
+        label.textContent = text;
+        el.appendChild(label);
+        return el;
+    }
+
     function render() {
         const queueState = window.blocwerkOfflineQueue
             ? window.blocwerkOfflineQueue.state()
@@ -186,21 +213,22 @@
         const container = ensureHost();
         container.textContent = '';
 
-        const summary = summarise(queueState, connection);
+        const lasting = summarise(queueState, connection);
+        const summary = withBubble(lasting);
+        if (summary && summary.bubble && !lasting && queueState.rejected.length === 0) {
+            // An event with nothing lasting behind it: shown, not opened.
+            expanded = false;
+            container.classList.add('bw-conn-active');
+            const bubble = plainPill(summary.tone, summary.label, 'bw-status-bubble');
+            bubble.setAttribute('data-bw-status', summary.bubble);
+            container.appendChild(bubble);
+            return;
+        }
         if (!summary && queueState.rejected.length === 0) {
             // Nothing to report from the connection/queue — but a transient flash may be showing.
             if (flashState) {
                 container.classList.add('bw-conn-active');
-                const flashPill = document.createElement('div');
-                flashPill.className = 'bw-conn-pill bw-conn-' + flashState.tone + ' bw-conn-flash';
-                const flashDot = document.createElement('span');
-                flashDot.className = 'bw-conn-dot';
-                flashPill.appendChild(flashDot);
-                const flashLabel = document.createElement('span');
-                flashLabel.className = 'bw-conn-label';
-                flashLabel.textContent = flashState.label;
-                flashPill.appendChild(flashLabel);
-                container.appendChild(flashPill);
+                container.appendChild(plainPill(flashState.tone, flashState.label, 'bw-conn-flash'));
                 return;
             }
             expanded = false;
@@ -208,17 +236,28 @@
             return;
         }
 
+        // Rejected actions without their bubble (bwStatus missing, or the bubble hidden while they stay).
         const effective = summary || {
-            tone: 'warn',
-            label: 'Not saved',
+            tone: 'error',
+            label: window.bwStatus ? window.bwStatus.label('conflict', { count: queueState.rejected.length }) : 'Not saved',
             detail: 'Some actions could not be saved.'
         };
 
         container.classList.add('bw-conn-active');
+        container.appendChild(openablePill(effective));
 
+        if (expanded) {
+            container.appendChild(buildDetail(queueState, effective));
+        }
+    }
+
+    function openablePill(effective) {
         const pill = document.createElement('button');
         pill.type = 'button';
-        pill.className = 'bw-conn-pill bw-conn-' + effective.tone;
+        pill.className = 'bw-conn-pill bw-conn-' + effective.tone + (effective.bubble ? ' bw-status-bubble' : '');
+        if (effective.bubble) {
+            pill.setAttribute('data-bw-status', effective.bubble);
+        }
         pill.setAttribute('aria-expanded', expanded ? 'true' : 'false');
 
         const dot = document.createElement('span');
@@ -234,12 +273,7 @@
             expanded = !expanded;
             render();
         });
-
-        container.appendChild(pill);
-
-        if (expanded) {
-            container.appendChild(buildDetail(queueState, effective));
-        }
+        return pill;
     }
 
     if (window.blocwerkOfflineQueue) {
@@ -247,6 +281,10 @@
     }
     if (window.blocwerkConnection) {
         window.blocwerkConnection.subscribe(render);
+    }
+
+    if (window.bwStatus) {
+        window.bwStatus.subscribe(render);
     }
 
     window.addEventListener('bw:offline-error', render);

@@ -52,7 +52,7 @@ export function manifest(wallId, assets, extra = {}) {
  * opts: { label (meta content, null = no meta), path, search, caches, routes: { path → fn(init, url) }, partitionOfWorker,
  *         swReply ('v4' | 'none' | 'v3' | null = no controller), maxTouchPoints, coarse (a coarse pointer), refuse (worker posts asset-refused), silent (worker
  *         neither stores nor answers: a slow write), prefs3d, ua, quota, ledger, user, connection, persisted (persisted()'s answer),
- *         marks (the elements querySelectorAll answers: offline-ready marks), gate (awaited before an asset fetch),
+ *         storage (a Map: localStorage, shared between pages given the same one), gate (awaited before an asset fetch),
  *         bus (a shared Set: BroadcastChannel between pages given the same one) }
  */
 export function loadPage(opts = {}) {
@@ -62,7 +62,7 @@ export function loadPage(opts = {}) {
     const swListeners = [];
     const fetches = [];
     const posted = [];
-    const storage = new Map();
+    const storage = opts.storage || new Map();
     const assigned = [];
     const events = [];
     const persisted = [];
@@ -192,7 +192,7 @@ export function loadPage(opts = {}) {
             readyState: 'complete',
             visibilityState: 'visible',
             querySelector: selector => (selector === 'meta[name="bw-partition"]' ? meta : null),
-            querySelectorAll: () => opts.marks || [],
+            querySelectorAll: () => [],
             body: { getAttribute: name => (name === 'data-bw-user' ? (opts.user ?? '') : null), dataset: opts.kioskKey ? { bwKiosk: opts.kioskKey } : {} },
             addEventListener: (type, fn) => { (docListeners[type] = docListeners[type] || []).push(fn); },
             removeEventListener: () => {},

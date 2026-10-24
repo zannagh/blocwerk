@@ -1,10 +1,10 @@
-// Settings → "Offline storage" and the offline-ready mark (asset-report.js, PR 2.9) against the real page modules:
+// Settings → "Offline storage" and the "Offline mode available" bubble (asset-report.js, PR 2.9) against the real page modules:
 // the report's sizes come from the ledger, the readiness rule, the per-wall pin and the 3D opt-out's eviction
 // ("Clear offline data": asset-clear.test.mjs). Run by `node --test test/js/`.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { json, manifest, sha, USER_A } from './fixtures/page-sandbox.mjs';
-import { W1, W2, keys, plain, memberPage, w1Routes, mark } from './fixtures/asset-pages.mjs';
+import { json, manifest, sha, USER_A, KIOSK } from './fixtures/page-sandbox.mjs';
+import { W1, W2, keys, plain, memberPage, w1Routes } from './fixtures/asset-pages.mjs';
 
 const reportOf = page => page.win.bwAssetReport.report().then(plain);
 const wallOf = (report, wallId) => report.walls.find(w => w.wallId === wallId);
@@ -56,29 +56,74 @@ test('summarize: an asset two walls list counts in both walls and once in the to
     assert.deepEqual(out.walls.map(w => [w.wallId, w.core, w.other]), [['b', 0, 300], ['a', 300, 0]]);
 });
 
-test('the offline-ready mark: set on the ready wall, left off the others, and removed by a clear', async () => {
-    const ready = mark(W2);
-    const stranger = mark('33333333-3333-3333-3333-333333333333');
-    const page = memberPage({ routes: w1Routes(), marks: [ready, stranger] });
+// The bubbles the page asked for: bwStatus.show(kind, opts) recorded instead of drawn.
+function bubbles(page) {
+    const shown = [];
+    page.win.bwStatus = { show: kind => { shown.push(kind); return true; } };
+    return shown;
+}
+
+test('"Offline mode available" once the walls are ready, not again on the next load, and again after a clear refills', async () => {
+    const storage = new Map();
+    const page = memberPage({ routes: w1Routes(), storage });
+    const shown = bubbles(page);
     page.win.bwAssetReport.observe();
     await page.boot();
     await page.settle();
+    assert.deepEqual(shown, ['offline-ready'], 'both walls became ready on this device');
 
-    assert.equal(ready.ready, true);
-    assert.equal(stranger.ready, false);
-    await page.win.bwAssetReport.clear();
-    assert.equal(ready.ready, false);
+    const again = memberPage({ routes: w1Routes(), storage, ledger: await page.ledger(), caches: page.caches });
+    const shownAgain = bubbles(again);
+    again.win.bwAssetReport.observe();
+    await again.boot();
+    await again.settle();
+    assert.deepEqual(shownAgain, [], 'the same walls ready on the next load say nothing');
+
+    await again.win.bwAssetReport.clear();
+    await again.settle();
+    await again.cache.filled();
+    await again.win.bwAssetReport.readiness.check();
+    assert.deepEqual(shownAgain, ['offline-ready'], 'cleared and filled again: told again');
 });
 
-test('a wall whose core is not cached yet carries no mark', async () => {
-    const pending = mark(W2);
-    const page = memberPage({ marks: [pending], swReply: 'none' });
+test('walls that finish one after the other are told once: another wall ready within 10 minutes of the last bubble says nothing', async () => {
+    const key = `blocwerk-offline-ready:${USER_A}`;
+    const recent = new Map([[key, JSON.stringify({ walls: [W2], toldAt: Date.now() - 60000 })]]);
+    const page = memberPage({ routes: w1Routes(), storage: recent });
+    const shown = bubbles(page);
     page.win.bwAssetReport.observe();
     await page.boot();
     await page.settle();
-    assert.equal(page.assetFetches().length, 0, 'an old worker: no fill');
-    assert.equal(pending.ready, false);
-    assert.equal(wallOf(await reportOf(page), W2).ready, false);
+    assert.deepEqual(shown, []);
+    assert.deepEqual(JSON.parse(recent.get(key)).walls, [W1, W2].sort(), 'the new wall is remembered all the same');
+
+    const old = new Map([[key, JSON.stringify({ walls: [W2], toldAt: Date.now() - 11 * 60000 })]]);
+    const later = memberPage({ routes: w1Routes(), storage: old });
+    const told = bubbles(later);
+    later.win.bwAssetReport.observe();
+    await later.boot();
+    await later.settle();
+    assert.deepEqual(told, ['offline-ready']);
+});
+
+test('a wall whose core is not cached yet is not offline ready, and a kiosk is never told', async () => {
+    const pending = memberPage({ swReply: 'none' });
+    const shown = bubbles(pending);
+    pending.win.bwAssetReport.observe();
+    await pending.boot();
+    await pending.settle();
+    assert.equal(pending.assetFetches().length, 0, 'an old worker: no fill');
+    assert.deepEqual(shown, []);
+    assert.equal(wallOf(await reportOf(pending), W2).ready, false);
+
+    const tablet = memberPage({ label: KIOSK, routes: w1Routes() });
+    const told = bubbles(tablet);
+    tablet.win.bwAssetReport.observe();
+    await tablet.boot();
+    await tablet.settle();
+    await tablet.win.bwAssetReport.readiness.check();
+    assert.ok((await tablet.win.bwAssetReport.readiness.readySet()).ready.size > 0, 'the kiosk\'s walls are ready all the same');
+    assert.deepEqual(told, []);
 });
 
 test('a browser that refused storage reports the page as paused (streaming)', async () => {
@@ -153,7 +198,7 @@ test('the 3D toggle off evicts the 3D tier and the report says so; on again refi
     assert.equal(report.background3d, false);
     assert.equal(wallOf(report, W1).view3d, 0);
     assert.ok(!keys(page.caches, `bw-a1-${USER_A}-img`).includes(sha('3')));
-    assert.equal(wallOf(report, W1).ready, true, 'core and the mark are untouched');
+    assert.equal(wallOf(report, W1).ready, true, 'core and its readiness are untouched');
 
     await page.cache.setKeep3d(true);
     await page.settle();
