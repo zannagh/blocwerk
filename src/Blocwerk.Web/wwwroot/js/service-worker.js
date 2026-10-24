@@ -276,10 +276,13 @@ self.addEventListener('fetch', event => {
  * Old versions are deleted only by a fill that completes a newer one (commitClient), never by activate: an activate
  * could otherwise delete a version another worker is still filling.
  *
- * The client's files are answered cache-first from the client caches, for a /v/ page also its /_content/ and /js/ files:
- * the server may be down or hanging, and those files are immutable under their names.
+ * The client's files are answered cache-first from the client caches, for a /v/ page also its /_content/, /js/ and /lib/
+ * files and the imports of the fingerprinted modules it loads (the 3D view, PR 3.13): the server may be down or
+ * hanging, and those files are immutable under their names.
  */
 const CLIENT_CACHE_PREFIX = 'blocwerk-client-';
+// A fingerprinted /js/ or /lib/ module: one the client's import map resolved (isClientFile).
+const CLIENT_MODULE_REFERRER = /^\/(?:js|lib)\/[\w./-]*\.[a-z0-9]{10}\.js$/;
 const CLIENT_STATE_KEY = '/__bw/client';
 const CLIENT_SHELL_PATH = '/v/';
 const CLIENT_HANDOFF_MS = 4000;
@@ -458,13 +461,17 @@ function respondWithClientShell(request, offlinePage) {
         .then(cached => cached || fetch(request).catch(() => offlinePage()));
 }
 
-// True for a request the client caches answer first: the client's own files, and the shared files a /v/ page loads.
+// True for a request the client caches answer first: the client's own files, and the shared files a /v/ page loads,
+// including the 3D view's modules (PR 3.13): a module's imports carry the importing module as their referrer, and only
+// the client's import map resolves /js/ and /lib/ modules to fingerprinted URLs (the Server pages import plain paths).
 function isClientFile(url, request) {
     if (url.pathname.startsWith(CLIENT_SHELL_PATH)) {
         return true;
     }
-    const fromClient = typeof request.referrer === 'string' && request.referrer.startsWith(self.location.origin + CLIENT_SHELL_PATH);
-    return fromClient && (url.pathname.startsWith('/_content/') || url.pathname.startsWith('/js/'));
+    const origin = self.location.origin;
+    const referrer = typeof request.referrer === 'string' && request.referrer.startsWith(origin + '/') ? request.referrer.slice(origin.length) : '';
+    const fromClient = referrer.startsWith(CLIENT_SHELL_PATH) || CLIENT_MODULE_REFERRER.test(referrer.split(/[?#]/)[0]);
+    return fromClient && /^\/(?:_content|js|lib)\//.test(url.pathname);
 }
 
 function respondWithClientFile(request) {

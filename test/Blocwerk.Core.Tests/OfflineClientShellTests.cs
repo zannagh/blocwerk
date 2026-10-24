@@ -99,6 +99,34 @@ public sealed partial class OfflineClientShellTests
     }
 
     [Fact]
+    public void TheImportMap_Maps3DModules_ByAbsolutePath_SoTheirRelativeImportsResolveFingerprinted()
+    {
+        var assets = new ResourceAssetCollection(
+        [
+            Asset("js/wall3d.ab12cd34ef.js", "js/wall3d.js", "sha256-w"),
+            Asset("js/wall3d-stage.0123456789.js", "js/wall3d-stage.js", null),
+            Asset("lib/spark/spark.module.min.qq12ww34ee.js", "lib/spark/spark.module.min.js", "sha256-s"),
+            Asset("js/wall3d-bridge.zz98yy76xx.js", "js/wall3d-bridge.js", null),
+            Asset("js/app.js", "js/app.js", null),
+        ]);
+
+        var map = OfflineClientShellAssets.ImportMap(assets);
+
+        Assert.Equal(
+            new Dictionary<string, string>
+            {
+                ["/js/wall3d.js"] = "/js/wall3d.ab12cd34ef.js",
+                ["/js/wall3d-stage.js"] = "/js/wall3d-stage.0123456789.js",
+                ["/lib/spark/spark.module.min.js"] = "/lib/spark/spark.module.min.qq12ww34ee.js",
+            },
+            map.Imports);
+        Assert.Equal("sha256-s", map.Integrity!["/lib/spark/spark.module.min.qq12ww34ee.js"]);
+        Assert.Contains(OfflineClient3DAssets.Stylesheet, OfflineClientShellAssets.Styles);
+        Assert.Contains("v/js/client-3d.js", OfflineClientShellAssets.ViewModules);
+        Assert.Contains("v/js/client-3d-stage.js", OfflineClientShellAssets.ViewModules);
+    }
+
+    [Fact]
     public void Url_IsRootRelative_SoTheBaseDoesNotMoveIt()
     {
         var assets = new ResourceAssetCollection([Asset("v/css/client.x1.css", "v/css/client.css", null)]);

@@ -18,11 +18,11 @@ public sealed class OfflineClientRoutesTests
     private static readonly string[] Undeclared = [string.Empty, ClientRoutes.NotOffline];
 
     [Fact]
-    public void TheViews_DeclareTheWallList_TheWallView_AndTheBoulderDetail_WithTheirShareTwins()
+    public void TheViews_DeclareTheWallList_TheWallView_TheBoulderDetail_AndThe3DView_WithTheirShareTwins()
     {
         Assert.Equal(
             ["walls", "walls/{WallId:guid}", "walls/{WallId:guid}/shared/{ShareToken}", "walls/{WallId:guid}/boulders/{BoulderId:guid}",
-                "walls/{WallId:guid}/boulders/{BoulderId:guid}/shared/{ShareToken}"],
+                "walls/{WallId:guid}/boulders/{BoulderId:guid}/shared/{ShareToken}", "walls/{WallId:guid}/3d", "walls/{WallId:guid}/shared/{ShareToken}/3d"],
             ClientRoutes.Declared);
         Assert.Equal("/v/", ClientRoutes.BasePath);
     }
@@ -57,6 +57,9 @@ public sealed class OfflineClientRoutesTests
         Assert.Equal($"walls/{wall}/shared/t%2Fk", ClientRoutes.WallLink(wall, "t/k"));
         Assert.Equal($"walls/{wall}/boulders/{boulder}", ClientRoutes.BoulderLink(wall, boulder, string.Empty));
         Assert.Equal($"walls/{wall}/boulders/{boulder}/shared/tok", ClientRoutes.BoulderLink(wall, boulder, "tok"));
+        Assert.Equal($"walls/{wall}/3d", ClientRoutes.Wall3DLink(wall, null, null));
+        Assert.Equal($"walls/{wall}/shared/t%2Fk/3d?boulder={boulder}", ClientRoutes.Wall3DLink(wall, "t/k", boulder));
+        Assert.Equal($"/walls/{wall}/shared/tok/3d?boulder={boulder}", ClientRoutes.ServerPath(ClientRoutes.Wall3DLink(wall, "tok", boulder)));
     }
 
     private static List<string> ClientPageTemplates() => typeof(ClientRoutes).Assembly.GetTypes()

@@ -31,12 +31,19 @@ public static class ClientRoutes
     /// <summary>A boulder's detail through a share link.</summary>
     public const string SharedBoulder = "walls/{WallId:guid}/boulders/{BoulderId:guid}/shared/{ShareToken}";
 
+    /// <summary>A wall's 3D view (<c>?boulder=</c> highlights one boulder, <c>?mode=</c> picks the start mode).</summary>
+    public const string Wall3D = "walls/{WallId:guid}/3d";
+
+    /// <summary>A wall's 3D view through a share link.</summary>
+    public const string SharedWall3D = "walls/{WallId:guid}/shared/{ShareToken}/3d";
+
     /// <summary>
     /// Gets the route templates (relative to <see cref="BasePath"/>) the client renders from local data: the Server's
     /// templates of the same views, so the worker hands over exactly those (PR 3.11: wall list, wall view, boulder
-    /// detail; 3.13 adds gallery and 3D). Each is a page's <c>@page</c> template too (a Core test pins both ways).
+    /// detail; PR 3.13: the 3D view; the gallery has no route of its own, it is the wall view's card as on the Server).
+    /// Each is a page's <c>@page</c> template too (a Core test pins both ways).
     /// </summary>
-    public static IReadOnlyList<string> Declared { get; } = [WallList, Wall, SharedWall, Boulder, SharedBoulder];
+    public static IReadOnlyList<string> Declared { get; } = [WallList, Wall, SharedWall, Boulder, SharedBoulder, Wall3D, SharedWall3D];
 
     /// <summary>The client link of a wall's view, relative to <see cref="BasePath"/> (the router navigates in place).</summary>
     /// <param name="wallId">The wall.</param>
@@ -54,6 +61,14 @@ public static class ClientRoutes
     public static string BoulderLink(Guid wallId, Guid boulderId, string? shareToken) => string.IsNullOrEmpty(shareToken)
         ? $"walls/{wallId}/boulders/{boulderId}"
         : $"walls/{wallId}/boulders/{boulderId}/shared/{Uri.EscapeDataString(shareToken)}";
+
+    /// <summary>The client link of a wall's 3D view, relative to <see cref="BasePath"/>.</summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="shareToken">The share link's token, or null.</param>
+    /// <param name="boulderId">The boulder to highlight, or null.</param>
+    /// <returns>The relative link.</returns>
+    public static string Wall3DLink(Guid wallId, string? shareToken, Guid? boulderId) =>
+        WallLink(wallId, shareToken) + "/3d" + (boulderId is { } b ? $"?boulder={b}" : string.Empty);
 
     /// <summary>
     /// The Server page for a client path given relative to <see cref="BasePath"/>, keeping its query. The not-found page
