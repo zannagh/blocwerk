@@ -41,4 +41,11 @@ public static class ClientRoutes
 
         return "/" + path;
     }
+
+    /// <summary>The sign-in page, sending the viewer back to <paramref name="serverPath"/> afterwards.</summary>
+    /// <param name="serverPath">A root-relative Server path (<see cref="ServerPath"/>).</param>
+    /// <returns>/account/login with its <c>returnUrl</c> (the login controller accepts local URLs only).</returns>
+    public static string LoginPath(string serverPath) => serverPath == "/"
+        ? "/account/login"
+        : $"/account/login?returnUrl={Uri.EscapeDataString(serverPath)}";
 }

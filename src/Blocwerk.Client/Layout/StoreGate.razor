@@ -1,5 +1,6 @@
 @implements IDisposable
 @inject ClientStore Store
+@inject NavigationManager Navigation
 @* What the device cache lets the client show (ClientStore, PR 3.10). Only a ready or empty store renders the page (an
    empty one has nothing to show but the page's own way online); every other state renders its notice alone, so a
    locked partition's data never reaches the page. "Clear offline data" is
@@ -18,18 +19,18 @@
             <section class="bw-client-empty bw-client-locked" role="region" aria-label="Offline data on this device">
                 <h1>Sign in to keep your offline data</h1>
                 <p>This device keeps the offline data of a session that ended, hidden until you sign in again.</p>
-                <a class="bw-client-online" href="/account/login">Sign in</a>
+                <a class="bw-client-online" href="@ClientRoutes.LoginPath(Online)">Sign in</a>
                 <ClearOfflineData />
             </section>
             break;
         case StoreState.Updating:
-            <StoreNotice Title="Updating offline data…" Text="Another Blocwerk tab still uses the older offline data. Close it, then open this page again." />
+            <StoreNotice Title="Updating offline data…" Text="Another Blocwerk tab still uses the older offline data. Close it, then open this page again." Online="@Online" />
             break;
         case StoreState.Kiosk:
-            <StoreNotice Title="Not available offline" Text="The kiosk has no offline view." />
+            <StoreNotice Title="Not available offline" Text="The kiosk has no offline view." Online="@Online" />
             break;
         case StoreState.Unavailable:
-            <StoreNotice Title="Nothing saved offline" Text="This browser does not let Blocwerk read its offline data." />
+            <StoreNotice Title="Nothing saved offline" Text="This browser does not let Blocwerk read its offline data." Online="@Online" />
             break;
         case StoreState.Empty:
             @ChildContent
@@ -48,6 +49,9 @@
     /// <summary>Gets or sets the page, rendered only while the store is ready.</summary>
     [Parameter]
     public RenderFragment? ChildContent { get; set; }
+
+    // The Server twin of the path the client is on, so every way online opens the same page.
+    private string Online => ClientRoutes.ServerPath(Navigation.ToBaseRelativePath(Navigation.Uri));
 
     private string SavedText => Store.Walls.Count == 1 ? "1 wall saved on this device" : $"{Store.Walls.Count} walls saved on this device";
 

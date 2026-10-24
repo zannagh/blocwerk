@@ -2,7 +2,8 @@
 // ledger's active partition and fetches nothing for it; "Clear offline data" inside the client itself (with the server
 // down, so none of Web's page modules is around) wipes the partition and the client then shows nothing; an expired
 // session's locked partition renders only the sign-in prompt and Clear; a ledger upgrade held by an old tab shows
-// "Updating offline data…"; a share link's /v/ reads only its wall, and a tokenless /v/ wipes `anon` (rule 6).
+// "Updating offline data…" with this path's way online; a share link's /v/ reads only its wall and only for its own
+// token, and a tokenless /v/ wipes `anon` (rule 6).
 import { test, expect, signIn, installWorker, partitionOf, settled, ledger, assetKeys } from '../harness/fixtures.mjs';
 import { precacheAsAlice, expectClient } from '../harness/client.mjs';
 
@@ -85,7 +86,7 @@ test('a locked partition renders only the sign-in prompt and Clear, and Clear re
     await page.goto(`/v/walls/${world.walls.alpha.id}`);
     await storeState(page, 'locked');
     await expect(page.locator('h1')).toHaveText('Sign in to keep your offline data');
-    await expect(page.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/account/login');
+    await expect(page.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', `/account/login?returnUrl=${encodeURIComponent(`/walls/${world.walls.alpha.id}`)}`);
     await expect(page.getByText('Not available offline')).toHaveCount(0);
     await expect(page.locator('.bw-client-saved')).toHaveCount(0);
     await expect(store(page)).toHaveAttribute('data-bw-store-walls', '0');
@@ -117,9 +118,10 @@ test('a ledger upgrade an old tab holds back shows Updating offline data…', as
     }));
 
     const client = await context.newPage();
-    await client.goto('/v/');
+    await client.goto('/v/walls/some-wall?tab=list');
     await storeState(client, 'updating');
     await expect(client.locator('h1')).toHaveText('Updating offline data…');
+    await expect(client.getByRole('link', { name: 'Open it online' }), 'the way online is this path\'s Server page').toHaveAttribute('href', '/walls/some-wall?tab=list');
     await expect(client.getByRole('button', { name: 'Clear offline data' })).toBeVisible();
     await client.close();
 });
@@ -131,9 +133,15 @@ test('a share link\'s /v/ reads only its wall, and a tokenless /v/ wipes the ano
     const before = await ledger(page, 'anon');
     expect(before.walls.map(w => w.wallId)).toEqual([alpha.id]);
 
+    expect(JSON.stringify(before.walls), 'the row keeps a hash of the token, never the token').not.toContain(world.shareToken);
+
     await page.goto(`/v/walls/${alpha.id}/shared/${world.shareToken}`);
     await storeState(page, 'ready');
     await expect(store(page)).toHaveAttribute('data-bw-store-walls', '1');
+
+    await page.goto(`/v/walls/${alpha.id}/shared/guessed-${world.shareToken}`);
+    await storeState(page, 'empty');
+    expect((await ledger(page, 'anon')).walls.length, 'another token reads nothing and wipes nothing').toBe(1);
 
     await page.goto(`/v/walls/${alpha.id}`);
     await storeState(page, 'empty');
