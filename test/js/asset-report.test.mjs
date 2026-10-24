@@ -109,24 +109,41 @@ test('a wall that is not ready for a while (a new panel photo pending) stays tol
     assert.deepEqual(JSON.parse(storage.get(key)).walls, [W1, W2].sort());
 });
 
-test('a fill that finishes while another bubble is up tells "Offline mode available" once the pill is free', async () => {
+test('a fill that finishes while another bubble is up asks again, at most 10 times, and tells once the pill is free', async () => {
     const storage = new Map();
     const page = memberPage({ routes: w1Routes(), storage });
     const shown = [];
     let busy = true;
-    page.win.bwStatus = { show: kind => { if (busy) { return false; } shown.push(kind); return true; } };
+    let asked = 0;
+    page.win.bwStatus = { show: kind => { asked++; if (busy) { return false; } shown.push(kind); return true; } };
     page.win.bwAssetReport.observe();
     await page.boot();
     await page.settle();
+    await page.settle();
     assert.deepEqual(shown, []);
     assert.equal(storage.get(`blocwerk-offline-ready:${USER_A}`), undefined, 'not marked told, no quiet window started');
+    // The load's check and the fill's announcements ask too; the retries add at most 10.
+    assert.ok(asked > 2 && asked <= 13, `asked again, but not forever (${asked})`);
+    const settled = asked;
+    await page.settle();
+    assert.equal(asked, settled, 'and then stops');
 
     busy = false;
-    const retry = page.timers.find(t => !t.done && t.ms === 6000);
-    assert.ok(retry, 'a retry is scheduled');
     await page.win.bwAssetReport.readiness.check();
     assert.deepEqual(shown, ['offline-ready']);
     assert.ok(JSON.parse(storage.get(`blocwerk-offline-ready:${USER_A}`)).toldAt > 0);
+});
+
+test('a kiosk page never asks again, whatever its partition', async () => {
+    const page = memberPage({ routes: w1Routes(), kioskKey: 'kiosk-1' });
+    let asked = 0;
+    page.win.bwStatus = { show: () => { asked++; return false; } };
+    page.win.bwAssetReport.observe();
+    await page.boot();
+    await page.settle();
+    await page.settle();
+    // Only the checks the page itself runs (its load, the fill's announcements), no retry after them.
+    assert.ok(asked <= 2, `asked ${asked} times`);
 });
 
 test('walls that finish one after the other are told once: another wall ready within 10 minutes of the last bubble says nothing', async () => {

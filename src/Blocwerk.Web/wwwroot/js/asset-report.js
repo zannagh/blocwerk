@@ -34,6 +34,7 @@ window.bwAssetReport = (function (win) {
     const READY_QUIET_MS = 10 * 60 * 1000;
     const READY_WIDTH = 640;
     const READY_RETRY_MS = 6000;
+    const READY_RETRIES = 10;
 
     const Cache = () => win.bwAssetCache;
     const Plan = () => win.bwAssetPlan;
@@ -182,6 +183,7 @@ window.bwAssetReport = (function (win) {
     function createReadiness() {
         let timer = null;
         let retryTimer = null;
+        let retries = 0;
         let running = Promise.resolve();
 
         async function readySet() {
@@ -244,10 +246,22 @@ window.bwAssetReport = (function (win) {
             return running;
         }
 
+        // At most READY_RETRIES times a page, never on a kiosk (bwStatus never shows it there, whatever the partition
+        // says), and not past the page's end.
         function retryLater() {
-            if (!retryTimer) {
-                retryTimer = win.setTimeout(() => { retryTimer = null; check(); }, READY_RETRY_MS);
+            const body = win.document.body;
+            const kiosk = !!(body && body.dataset && body.dataset.bwKiosk);
+            if (retryTimer || kiosk || retries >= READY_RETRIES) {
+                return;
             }
+            retries++;
+            retryTimer = win.setTimeout(() => { retryTimer = null; check(); }, READY_RETRY_MS);
+        }
+
+        function stop() {
+            win.clearTimeout(retryTimer);
+            retryTimer = null;
+            retries = READY_RETRIES;
         }
 
         // Many announcements come in a burst while a fill runs: one recheck per RECHECK_MS at most, once that fill is
@@ -261,7 +275,7 @@ window.bwAssetReport = (function (win) {
             }
         }
 
-        return { check, invalidate, readySet };
+        return { check, invalidate, readySet, stop };
     }
 
     function observe() {
@@ -269,6 +283,8 @@ window.bwAssetReport = (function (win) {
         if (sw && sw.addEventListener) {
             sw.addEventListener('message', event => { if (event.data && event.data.type === 'asset-cached') { readiness.invalidate(); } });
         }
+        // The page is going: no retry outlives it.
+        win.addEventListener('pagehide', () => readiness.stop());
         // A wall opened by enhanced navigation refreshes its manifest; read the ledger again a little later.
         if (win.Blazor && win.Blazor.addEventListener) {
             win.Blazor.addEventListener('enhancedload', () => readiness.invalidate());

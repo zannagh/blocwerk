@@ -33,9 +33,9 @@ async function recordBubbles(page) {
 async function signedInWithCircuit(page, user, url) {
     await recordBubbles(page);
     await signIn(page, user, url);
-    // Until Blazor.start resolves, a lost connection is not one the framework reconnects, so not one the app can
-    // notice: the server goes away only once the circuit runs.
-    await expect.poll(() => page.evaluate(() => window.blocwerkConnection.started() && window.blocwerkConnection.status() === 'connected'),
+    // Until the circuit has opened, a lost connection is not one the framework reconnects: the server goes away only
+    // once the circuit runs.
+    await expect.poll(() => page.evaluate(() => window.blocwerkConnection.circuitOpened() && window.blocwerkConnection.status() === 'connected'),
         { timeout: 30000 }).toBe(true);
     // And settled: in a cold WebKit, a connection lost within the first moments after the start raises no reconnect
     // state at all (the framework's, not this app's), so the outage would go unnoticed for a reason the test is not about.
@@ -71,6 +71,9 @@ test('no checkmark on the wall list or the wall; "Offline mode available" once t
 
 test('an outage: switched to offline mode, then to online mode when the server is back', async ({ page, world, server }) => {
     await signedInWithCircuit(page, world.users.alice, '/walls');
+    // The page carries the server component markers circuit-watchdog.js reads to know a circuit is coming.
+    const html = await page.evaluate(async () => (await fetch(location.pathname, { cache: 'no-store' })).text());
+    expect(html).toMatch(/<!--Blazor:\{"type":"(server|auto)"/);
 
     await server.unreachable();
     await expect.poll(() => shownBubbles(page), { timeout: 30000 }).toEqual(['Switched to offline mode']);
@@ -86,7 +89,7 @@ test('a connection lost right after the page load is still told as offline, and 
     await page.addInitScript(() => sessionStorage.setItem('pw-loads', String(Number(sessionStorage.getItem('pw-loads') || 0) + 1)));
     await signIn(page, world.users.alice, '/');
     await page.goto('/walls', { waitUntil: 'commit' });
-    await page.waitForFunction(() => window.blocwerkConnection && window.blocwerkConnection.started(), null, { polling: 10, timeout: 30000 });
+    await page.waitForFunction(() => window.blocwerkConnection && window.blocwerkConnection.circuitOpened(), null, { polling: 10, timeout: 30000 });
     const loads = await page.evaluate(() => Number(sessionStorage.getItem('pw-loads')));
     await server.unreachable();
     const sinceLoad = await page.evaluate(() => performance.now()).catch(() => null);

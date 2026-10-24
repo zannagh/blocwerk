@@ -16,8 +16,16 @@ function page(opts = {}) {
         addEventListener(t, fn) { (this.listeners[t] = this.listeners[t] || []).push(fn); }
         close() { (this.listeners.close || []).forEach(fn => fn({})); }
     }
-    const conn = { status: 'connected', started: false, lastChangeAt: 0, marked: 0 };
+    const conn = { status: 'connected', opened: false, lastChangeAt: 0, marked: 0 };
+    const comments = opts.markers ? ['Blazor:{"type":"server","prerenderId":"1","key":{}}', 'Blazor:{"prerenderId":"1"}'] : [' a comment '];
     const win = {
+        document: {
+            documentElement: {},
+            createTreeWalker: () => {
+                let i = 0;
+                return { nextNode: () => (i < comments.length ? { nodeValue: comments[i++] } : null) };
+            },
+        },
         navigator: { onLine: opts.onLine ?? true },
         WebSocket: FakeSocket,
         Date: { now: () => now },
@@ -25,7 +33,7 @@ function page(opts = {}) {
         clearTimeout: () => {},
         fetch: () => (opts.serverUp ? Promise.resolve({ ok: true }) : Promise.reject(new Error('refused'))),
         blocwerkConnection: {
-            status: () => conn.status, started: () => conn.started, lastChangeAt: () => conn.lastChangeAt,
+            status: () => conn.status, circuitOpened: () => conn.opened, lastChangeAt: () => conn.lastChangeAt,
             markDown: () => { conn.marked++; conn.status = 'failed'; }
         },
     };
@@ -49,7 +57,7 @@ function page(opts = {}) {
 
 test('a circuit socket that drops with no reconnect state, the server gone: reported down after 2 s', async () => {
     const p = page();
-    p.conn.started = true;
+    p.conn.opened = true;
     p.open('ws://x/_blazor?id=1').close();
     await p.advance(1900);
     assert.equal(p.conn.marked, 0);
@@ -76,15 +84,26 @@ test('nothing is reported when the framework handles it, the server still answer
     assert.equal(other.conn.marked, 0);
 });
 
-test('a start that has not finished after 10 s is reported down when the device is offline; not once it started', async () => {
-    const offline = page({ onLine: false, serverUp: true });
+test('a page with server components whose circuit has not opened after 10 s, offline: reported down', async () => {
+    const offline = page({ onLine: false, serverUp: true, markers: true });
+    offline.open('ws://x/_blazor?id=1'); // a socket that never opens, and never closes either
     await offline.advance(9000);
     assert.equal(offline.conn.marked, 0);
     await offline.advance(1100);
     assert.equal(offline.conn.marked, 1, 'navigator.onLine false: no need to ask the server');
+});
 
-    const started = page({ onLine: false });
-    started.conn.started = true;
-    await started.advance(11000);
-    assert.equal(started.conn.marked, 0);
+test('the start check stays quiet when the circuit opened, the server answers, or the page wants no circuit', async () => {
+    const opened = page({ onLine: false, markers: true });
+    opened.conn.opened = true;
+    await opened.advance(11000);
+    assert.equal(opened.conn.marked, 0);
+
+    const slow = page({ serverUp: true, markers: true });
+    await slow.advance(11000);
+    assert.equal(slow.conn.marked, 0, 'a slow start with the server answering is not offline');
+
+    const staticPage = page({ onLine: false });
+    await staticPage.advance(11000);
+    assert.equal(staticPage.conn.marked, 0, 'no server component markers: no circuit to wait for');
 });
