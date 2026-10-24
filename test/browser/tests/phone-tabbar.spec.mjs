@@ -141,8 +141,13 @@ test('no text field on the boulder edit flow or the settings pages is small enou
     await page.locator('.panel-selector button').nth(1).click();
     expect(await smallFields(page)).toEqual([]);
 
+    // Every move below is an in-app navigation, never page.goto: a full page load only DISCONNECTS the revise
+    // page's circuit, and a disconnected circuit keeps its edit lease (and so the deploy gate busy) for its whole
+    // reconnect window (EditActivityPolicy.DisconnectedCircuitRetention, 12 min), by design. Leaving in-app disposes
+    // the editor and releases the lease at once.
     const mp = world.multiPanel;
-    await page.goto(`/walls/${mp.wallId}/boulders/${mp.boulder}`);
+    const go = url => page.evaluate(u => window.Blazor.navigateTo(u), url);
+    await go(`/walls/${mp.wallId}/boulders/${mp.boulder}`);
     await page.locator('.boulder-edit-btn').click();
     const editor = page.locator('.boulder-meta-edit');
     await expect(editor).toBeVisible();
@@ -151,16 +156,27 @@ test('no text field on the boulder edit flow or the settings pages is small enou
     await expect(editor).toHaveCount(0);
 
     // The settings surfaces: the wall's settings slide (every card opened) and the profile page.
-    await page.goto(`/walls/${mp.wallId}`);
+    await go(`/walls/${mp.wallId}`);
     await expect(page.locator('.wall-carousel:not(.carousel-pending)')).toBeVisible();
-    await page.getByRole('button', { name: 'Page 1', exact: true }).click();
-    const cards = page.locator('.wall-carousel > .wall-page').nth(0).locator('details.settings-card > summary');
-    for (let i = 0; i < await cards.count(); i++) {
-        await cards.nth(i).click();
+    // The cookie banner sits over the dots and cards on a phone: accept it, as a visitor would.
+    const consent = page.locator('.bw-consent');
+    if (await consent.isVisible()) {
+        await consent.getByRole('button', { name: 'OK' }).click();
+        await expect(consent).toBeHidden();
     }
+    await page.getByRole('button', { name: 'Page 1', exact: true }).click();
+    // Open every card that is still closed (some start open, and a click on those would close them).
+    const closed = page.locator('.wall-carousel > .wall-page').nth(0).locator('details.settings-card:not([open]) > summary');
+    for (let guard = 0; guard < 20 && await closed.count() > 0; guard++) {
+        const before = await closed.count();
+        await closed.first().click();
+        await expect(closed).toHaveCount(before - 1);
+    }
+    await expect(closed).toHaveCount(0);
     await page.waitForTimeout(500);
     expect(await smallFields(page)).toEqual([]);
-    await page.goto('/profile');
+    await go('/profile');
+    await expect(page).toHaveURL(/\/profile$/);
     await expect(page.locator('main')).toBeVisible();
     await page.waitForTimeout(500);
     expect(await smallFields(page)).toEqual([]);
