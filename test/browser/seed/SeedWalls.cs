@@ -21,6 +21,7 @@ namespace Blocwerk.Browser.Seed;
 /// <item><b>bobs</b>: Bob's wall, one panel. Bob is a member of nothing of Alice's.</item>
 /// <item><b>social</b>: Erin's wall of comments and activity, with a kiosk key of its own and users of its own (Erin, Cora,
 /// Dave), so no other test's walls or pages change with it (<see cref="SeedSocial"/>).</item>
+/// <item><b>wide</b>: Pia's wall of two panels and a boulder with holds on both (<see cref="SeedMultiPanel"/>).</item>
 /// </list>
 /// </summary>
 internal sealed class SeedWalls
@@ -55,6 +56,10 @@ internal sealed class SeedWalls
         var bobs = AddWall("Bobs", bob, panels: 1, seed: 20);
         var socialWall = AddWall("Social", erin, panels: 1, seed: 30);
         var social = SeedSocial.Add(db, socialWall.Wall.Id, AddKioskKey(socialWall.Wall.Id, erin.Id), erin.Id, cora.Id, dave.Id);
+        var pia = AddUser("pia@browser.test", "Pia");
+        var wide = AddWall("Wide", pia, panels: 2, seed: 40);
+        var widePanels = db.WallPanels.Local.Where(p => p.WallId == wide.Wall.Id).OrderBy(p => p.Col).Select(p => p.Id).ToList();
+        var multiPanel = SeedMultiPanel.Add(db, wide.Wall.Id, widePanels, pia.Id);
         await db.SaveChangesAsync();
 
         return new SeededWorld(
@@ -66,6 +71,7 @@ internal sealed class SeedWalls
                 ["erin"] = new(erin.Id, erin.DisplayName),
                 ["cora"] = new(cora.Id, cora.DisplayName),
                 ["dave"] = new(dave.Id, dave.DisplayName),
+                ["pia"] = new(pia.Id, pia.DisplayName),
             },
             new Dictionary<string, SeededWall>
             {
@@ -73,10 +79,12 @@ internal sealed class SeedWalls
                 ["beta"] = new(beta.Wall.Id, beta.Shas, null, null, null, null),
                 ["bobs"] = new(bobs.Wall.Id, bobs.Shas, null, null, null, null),
                 ["social"] = new(socialWall.Wall.Id, socialWall.Shas, null, null, null, null),
+                ["wide"] = new(wide.Wall.Id, wide.Shas, null, null, null, null),
             },
             kioskToken,
             alpha.Wall.ShareToken,
-            social);
+            social,
+            multiPanel);
     }
 
     private static string Hex(byte[] bytes) => ContentHash.ToHex(ContentHash.Of(bytes))!;
@@ -159,7 +167,8 @@ internal sealed class SeedWalls
 }
 
 internal sealed record SeededWorld(
-    Dictionary<string, SeededUser> Users, Dictionary<string, SeededWall> Walls, string KioskToken, string ShareToken, SeededSocial Social);
+    Dictionary<string, SeededUser> Users, Dictionary<string, SeededWall> Walls, string KioskToken, string ShareToken, SeededSocial Social,
+    SeededMultiPanel MultiPanel);
 
 internal sealed record SeededUser(Guid Id, string Name);
 
