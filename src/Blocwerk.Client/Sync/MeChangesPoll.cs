@@ -17,7 +17,8 @@ namespace Blocwerk.Client.Sync;
 /// stream carries them); <c>tick.mine</c> and <c>favorite.changed</c> refetch that wall's;</item>
 /// <item>own ratings are not offline: <c>rating.mine</c> is ignored, as is every other kind.</item>
 /// </list>
-/// It starts from the oldest cursor of the stored marks, so a revocation while the device was away still arrives.
+/// It starts from its own stored cursor, else the oldest cursor of the stored marks, so a revocation while the device
+/// was away still arrives; it checks that each answer is for this partition's user, and it ends on <see cref="Cancel"/>.
 /// </summary>
 internal sealed class MeChangesPoll
 {
@@ -31,6 +32,7 @@ internal sealed class MeChangesPoll
     private string? cursor;
     private string? cursorPartition;
     private Task? running;
+    private CancellationTokenSource? cancel;
 
     public MeChangesPoll(ClientStore store, ISyncTransport transport, ISyncClock clock, ISyncRefusals refusals)
     {
@@ -49,11 +51,19 @@ internal sealed class MeChangesPoll
             return running;
         }
 
-        running = RunAsync();
+        cancel = new CancellationTokenSource();
+        running = RunAsync(cancel.Token);
         return running;
     }
 
-    private async Task RunAsync()
+    /// <summary>Ends a running poll (the tab hid, the label changed): its wait ends, and nothing more is asked or applied.</summary>
+    public void Cancel()
+    {
+        cancel?.Cancel();
+        running = null;
+    }
+
+    private async Task RunAsync(CancellationToken stop)
     {
         var partition = store.Partition;
         if (!SyncLabels.IsUser(partition))
@@ -64,16 +74,29 @@ internal sealed class MeChangesPoll
         if (cursorPartition != partition)
         {
             cursorPartition = partition;
-            cursor = SyncCursor.Earliest(store.Walls.Count == 0 ? [] : MineCursors());
+            cursor = await transport.SavedMeCursorAsync(partition!) ?? SyncCursor.Earliest(MineCursors());
         }
 
-        for (var page = 0; page < MaxPages; page++)
+        for (var page = 0; page < MaxPages && !stop.IsCancellationRequested; page++)
         {
             var answer = await transport.MyChangesAsync(cursor);
             if (answer.Status == 429 && page == 0)
             {
-                await clock.Delay(SyncDelays.RetryAfter(answer.RetryAfter, clock.NextJitter()), CancellationToken.None);
+                try
+                {
+                    await clock.Delay(SyncDelays.RetryAfter(answer.RetryAfter, clock.NextJitter()), stop);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+
                 continue;
+            }
+
+            if (stop.IsCancellationRequested || store.Partition != partition)
+            {
+                return;
             }
 
             if (SyncLabels.EndsSession(answer.Status))
@@ -82,13 +105,20 @@ internal sealed class MeChangesPoll
                 return;
             }
 
-            if (answer.Status != 200 || SyncJson.Read(answer.Body, SyncJsonContext.Default.FeedChanges) is not { } changes
-                || store.Partition != partition)
+            // Rows of whoever the cookie names now: another user signing in elsewhere is never this partition's.
+            if (answer.Status != 200 || answer.Partition != partition
+                || SyncJson.Read(answer.Body, SyncJsonContext.Default.FeedChanges) is not { } changes)
             {
                 return;
             }
 
-            if (!await PageAsync(partition!, changes))
+            var more = await PageAsync(partition!, changes);
+            if (!stop.IsCancellationRequested && cursor is not null)
+            {
+                await transport.SaveMeCursorAsync(partition!, cursor);
+            }
+
+            if (!more)
             {
                 return;
             }
@@ -157,7 +187,9 @@ internal sealed class MeChangesPoll
         await store.RefreshAsync();
     }
 
-    // Every cached wall's stored marks; a wall without any has no cursor, so the poll starts with a resync.
+    // The cursors of the stored marks. A wall without a marks row (a share link's wall under u-, which /mine refuses)
+    // has nothing to resume and does not hold the poll back; with no marks at all the first poll resyncs once, and its
+    // cursor is stored for the next start.
     private IEnumerable<string?> MineCursors() =>
-        store.Walls.Select(w => store.MineRows.FirstOrDefault(m => m.WallId == w.WallId)?.Cursor);
+        store.MineRows.Where(m => store.Walls.Any(w => w.WallId == m.WallId)).Select(m => m.Cursor);
 }

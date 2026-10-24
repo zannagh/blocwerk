@@ -45,6 +45,18 @@ public sealed class JsSyncTransport : ISyncTransport
         Response(await CallAsync("bwClientSync.meChangesJson", after));
 
     /// <inheritdoc />
+    public Task<string?> SavedCursorAsync(string partition, Guid wallId) => CallAsync("bwClientSync.savedCursor", partition, Id(wallId));
+
+    /// <inheritdoc />
+    public Task SaveCursorAsync(string partition, Guid wallId, string cursor) => CallAsync("bwClientSync.saveCursor", partition, Id(wallId), cursor);
+
+    /// <inheritdoc />
+    public Task<string?> SavedMeCursorAsync(string partition) => CallAsync("bwClientSync.savedMeCursor", partition);
+
+    /// <inheritdoc />
+    public Task SaveMeCursorAsync(string partition, string cursor) => CallAsync("bwClientSync.saveMeCursor", partition, cursor);
+
+    /// <inheritdoc />
     public IDisposable OpenStream(Guid wallId, string? after, string? token, ISyncStreamSink sink)
     {
         var stream = new JsSyncStream(js, sink);
@@ -57,12 +69,12 @@ public sealed class JsSyncTransport : ISyncTransport
         await CallAsync("bwClientSync.refused", partition, Id(wallId), status, reason, mine) ?? "kept";
 
     /// <inheritdoc />
-    public async Task<bool> WatchAsync(ISyncSignals signals)
+    public async Task<bool> WatchAsync(ISyncSignals listener)
     {
-        this.signals ??= DotNetObjectReference.Create(new JsSyncSignals(signals));
+        signals ??= DotNetObjectReference.Create(new JsSyncSignals(listener));
         try
         {
-            return await js.InvokeAsync<bool>("bwClientSync.watch", this.signals);
+            return await js.InvokeAsync<bool>("bwClientSync.watch", signals);
         }
         catch (JSException)
         {

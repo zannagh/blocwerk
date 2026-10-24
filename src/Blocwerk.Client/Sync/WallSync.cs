@@ -9,32 +9,42 @@ namespace Blocwerk.Client.Sync;
 /// <summary>
 /// One open wall's sync loop while the tab is visible (plan §1, sync loop; PR 3.12):
 /// <list type="number">
-/// <item>reload (<see cref="WallRefresh"/>) and hold the documents' oldest cursor;</item>
-/// <item>open the stream after it and apply each event once, through <see cref="ClientStore.Apply"/>: the comment
-/// kinds at once, structural kinds refetch the index 10 s after a burst began, the mine kinds refetch the marks, the
-/// resync kinds reload everything;</item>
-/// <item>a closed stream (a bye, an error, a refused reconnect) probes <c>/changes</c> from the cursor: pages while
-/// <c>more</c>, then reopens; a 429 waits <c>Retry-After</c> plus 0–20 %; a refusal goes to the identity matrix; no
-/// network backs off 5/30/120 s ±20 %, cut short by <c>online</c> to a random 0–10 s;</item>
-/// <item><see cref="Stop"/> (the tab hid, the wall closed) closes the stream and ends every wait.</item>
+/// <item>reload (<see cref="WallRefresh"/>), then resume after the stored cursor (<see cref="WallCursorKeeper"/>), or
+/// the documents' oldest build cursor when there is none;</item>
+/// <item>open the stream and apply each event once, through <see cref="ClientStore.Apply"/>, unless the document it
+/// changes was built after it: the comment kinds at once, structural kinds refetch the index 10 s after a burst began,
+/// the mine kinds refetch the marks 2 s after, the resync kinds reload everything;</item>
+/// <item>a closed stream probes <c>/changes</c> (WallSync.CatchUp.cs); a stream that failed before it delivered anything
+/// is opened again only after 30 s or more;</item>
+/// <item><see cref="Stop"/> (the tab hid, the wall closed, a refusal) closes the stream and ends every wait.</item>
 /// </list>
 /// </summary>
-internal sealed class WallSync : ISyncStreamSink
+internal sealed partial class WallSync : ISyncStreamSink
 {
     private readonly ClientStore store;
     private readonly ISyncTransport transport;
     private readonly ISyncClock clock;
     private readonly WallRefresh refresh;
+    private readonly WallCursorKeeper keeper;
     private readonly SyncQueue queue = new();
     private readonly SyncWait wait;
     private readonly SyncBackoff backoff;
-    private readonly SyncIndexDebounce debounce;
-    private readonly Action? liveChanged;
+    private readonly SyncDebounce indexDebounce;
+    private readonly SyncDebounce mineDebounce;
+    private readonly Action<WallSync>? changed;
     private IDisposable? stream;
     private string? cursor;
     private int run;
+    private bool opened;
+    private bool heard;
+    private int refusedRun;
+    private int silentRun;
+    private long indexWanted;
+    private long indexDone;
+    private long mineWanted;
+    private long mineDone;
 
-    public WallSync(ClientStore store, ISyncTransport transport, ISyncClock clock, ISyncRefusals refusals, string partition, Guid wallId, string? token, Action? liveChanged = null)
+    public WallSync(ClientStore store, ISyncTransport transport, ISyncClock clock, ISyncRefusals refusals, string partition, Guid wallId, string? token, Action<WallSync>? changed = null)
     {
         this.store = store;
         this.transport = transport;
@@ -42,11 +52,13 @@ internal sealed class WallSync : ISyncStreamSink
         Partition = partition;
         WallId = wallId;
         Token = token;
-        this.liveChanged = liveChanged;
+        this.changed = changed;
         refresh = new WallRefresh(store, transport, refusals, partition, wallId, token);
+        keeper = new WallCursorKeeper(transport, partition, wallId);
         wait = new SyncWait(clock);
         backoff = new SyncBackoff(clock, transport, wait);
-        debounce = new SyncIndexDebounce(clock, () => queue.Enqueue(() => IndexAsync(run)));
+        indexDebounce = new SyncDebounce(clock, SyncDebounce.IndexDelay);
+        mineDebounce = new SyncDebounce(clock, SyncDebounce.MineDelay);
     }
 
     public string Partition { get; }
@@ -58,6 +70,9 @@ internal sealed class WallSync : ISyncStreamSink
     /// <summary>Gets the cursor applied so far.</summary>
     public string? Cursor => cursor;
 
+    /// <summary>Gets the newest cursor the device's documents and marks reflect (the one stored for the next start).</summary>
+    public string? Persisted => keeper.Persisted;
+
     /// <summary>Gets a value indicating whether the loop stopped (the tab hid, a refusal, the wall left the device).</summary>
     public bool Stopped { get; private set; }
 
@@ -67,7 +82,7 @@ internal sealed class WallSync : ISyncStreamSink
     /// <summary>Gets the work queued so far (tests): completes when the loop is idle.</summary>
     public Task Idle => queue.Idle;
 
-    /// <summary>Starts (or, after <see cref="Stop"/>, restarts) the loop: a reload, then the stream.</summary>
+    /// <summary>Starts the loop: a reload, then the stream after the resume cursor.</summary>
     /// <returns>A task that completes once the stream was opened or the wall stopped.</returns>
     public Task StartAsync()
     {
@@ -81,10 +96,26 @@ internal sealed class WallSync : ISyncStreamSink
                 return;
             }
 
-            var (keep, replay) = await refresh.RunAsync();
-            if (keep && mine == run)
+            var saved = await keeper.LoadAsync();
+            var (keep, _, marks, replay) = await refresh.RunAsync();
+            if (!keep)
             {
-                cursor = replay;
+                StopIf(mine);
+                return;
+            }
+
+            if (mine == run)
+            {
+                cursor = ResumeAt(saved, replay);
+                if (marks)
+                {
+                    keeper.Advance(cursor);
+                }
+                else
+                {
+                    mineWanted++;
+                }
+
                 Open();
             }
         });
@@ -93,11 +124,18 @@ internal sealed class WallSync : ISyncStreamSink
     /// <summary>Closes the stream and ends every wait; queued work of this run does nothing.</summary>
     public void Stop()
     {
+        if (Stopped)
+        {
+            return;
+        }
+
         run++;
         Stopped = true;
         CloseStream();
         wait.Cancel();
-        debounce.Cancel();
+        indexDebounce.Cancel();
+        mineDebounce.Cancel();
+        changed?.Invoke(this);
     }
 
     /// <summary>The browser came back online: a network backoff ends, for a retry after a random 0–10 s.</summary>
@@ -122,150 +160,79 @@ internal sealed class WallSync : ISyncStreamSink
         return Task.CompletedTask;
     }
 
+    // The stored cursor when the documents are at least that old (null replay: a document did not arrive, resync).
+    private static string? ResumeAt(string? saved, string? replay) =>
+        replay is not null && saved is not null && SyncCursor.IsAfter(saved, replay) ? saved : replay;
+
     private async Task HandleAsync(int mine, string type, string? data)
     {
         switch (type)
         {
             case "message" when SyncJson.Read(data, SyncJsonContext.Default.FeedEnvelope) is { } envelope:
+                Heard();
                 await ApplyAsync(mine, envelope);
                 break;
             case FeedStreamEvents.Resync when SyncJson.Read(data, SyncJsonContext.Default.FeedChanges) is { } changes:
-                await ResyncAsync(mine, changes.Next);
+                Heard();
+                await StreamResyncAsync(mine, changes.Next);
                 break;
             case FeedStreamEvents.Bye:
+                Heard();
+                CloseStream();
+                await wait.WaitAsync(SyncDelays.Bye(clock.NextJitter()), isNetwork: false);
+                await CatchUpAsync(mine);
+                break;
+            case "open":
+                opened = true;
+                break;
             case "error":
+                Failed();
                 CloseStream();
                 await CatchUpAsync(mine);
                 break;
         }
     }
 
-    // Each event once: the replay after a reconnect and a hub that already tracked the wall can both deliver a row.
-    private async Task ApplyAsync(int mine, FeedEnvelope envelope)
+    private void Heard()
     {
-        if (cursor is not null && !SyncCursor.IsAfter(envelope.Cursor, cursor))
-        {
-            return;
-        }
+        heard = true;
+        refusedRun = 0;
+        silentRun = 0;
+    }
 
-        var followUp = SyncPayload.IsUnknown(envelope) ? FeedFollowUp.Resync : store.Apply(Partition, envelope);
-        cursor = envelope.Cursor;
-        if (followUp.HasFlag(FeedFollowUp.Resync))
+    // A stream that never opened was refused (a cap's 429, which an EventSource hides); one that opened and closed
+    // without a word, twice in a row, is blocked on the way (a proxy that does not pass SSE). A quiet stream that drops
+    // once is neither.
+    private void Failed()
+    {
+        if (!opened)
         {
-            await ReloadAsync(mine);
-            return;
+            refusedRun++;
         }
-
-        if (followUp.HasFlag(FeedFollowUp.RefetchIndex))
+        else if (!heard)
         {
-            debounce.Schedule();
-        }
-
-        if (followUp.HasFlag(FeedFollowUp.RefetchMine))
-        {
-            await refresh.MineAsync();
+            silentRun++;
         }
     }
 
-    // A resync (the stream's or a catch-up page's): reload, then continue after the server's mark.
-    private async Task ResyncAsync(int mine, string next)
+    /// <summary>Gets the stream failures in a row that make the next open wait (<see cref="SyncDelays.StreamRefused"/>).</summary>
+    private int QuickFailures => refusedRun + Math.Max(0, silentRun - 1);
+
+    private void StopIf(int mine)
     {
-        await ReloadAsync(mine);
         if (mine == run)
         {
-            cursor = next;
-        }
-    }
-
-    private async Task ReloadAsync(int mine)
-    {
-        var (keep, _) = await refresh.RunAsync();
-        if (!keep && mine == run)
-        {
             Stop();
         }
-    }
-
-    private async Task IndexAsync(int mine)
-    {
-        if (mine == run && !await refresh.IndexAsync() && mine == run)
-        {
-            Stop();
-        }
-    }
-
-    // The stream closed: page /changes from the cursor until the gap is closed, then reopen.
-    private async Task CatchUpAsync(int mine)
-    {
-        while (mine == run)
-        {
-            var page = await transport.ChangesAsync(WallId, cursor, Token);
-            if (mine != run)
-            {
-                return;
-            }
-
-            if (page.Status == 429)
-            {
-                await wait.WaitAsync(SyncDelays.RetryAfter(page.RetryAfter, clock.NextJitter()), isNetwork: false);
-                continue;
-            }
-
-            if (SyncLabels.IsRefusal(page.Status))
-            {
-                Stop();
-                await refresh.RefusedAsync(page.Status, page.Reason);
-                return;
-            }
-
-            var changes = page.Status == 200 ? SyncJson.Read(page.Body, SyncJsonContext.Default.FeedChanges) : null;
-            if (changes is null)
-            {
-                await backoff.FailedAsync();
-                continue;
-            }
-
-            backoff.Reached();
-            if (await PageAsync(mine, changes) && mine == run)
-            {
-                Open();
-                return;
-            }
-        }
-    }
-
-    // One catch-up page; true when it was the last one.
-    private async Task<bool> PageAsync(int mine, FeedChanges changes)
-    {
-        if (changes.Resync)
-        {
-            await ResyncAsync(mine, changes.Next);
-            return true;
-        }
-
-        foreach (var envelope in changes.Events)
-        {
-            if (mine != run)
-            {
-                return true;
-            }
-
-            await ApplyAsync(mine, envelope);
-        }
-
-        if (mine == run && SyncCursor.IsAfter(changes.Next, cursor))
-        {
-            cursor = changes.Next;
-        }
-
-        return !changes.More;
     }
 
     private void Open()
     {
         stream?.Dispose();
+        opened = false;
+        heard = false;
         stream = transport.OpenStream(WallId, cursor, Token, this);
-        liveChanged?.Invoke();
+        changed?.Invoke(this);
     }
 
     private void CloseStream()
@@ -277,6 +244,6 @@ internal sealed class WallSync : ISyncStreamSink
 
         stream.Dispose();
         stream = null;
-        liveChanged?.Invoke();
+        changed?.Invoke(this);
     }
 }

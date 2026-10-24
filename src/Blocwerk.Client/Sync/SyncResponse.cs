@@ -10,4 +10,8 @@ namespace Blocwerk.Client.Sync;
 /// </param>
 /// <param name="RetryAfter">On a 429: the <c>Retry-After</c> seconds, or null.</param>
 /// <param name="Body">The body of a 200, or null.</param>
-public sealed record SyncResponse(int Status, string? Reason = null, double? RetryAfter = null, string? Body = null);
+/// <param name="Partition">
+/// For <c>/api/me/changes</c>: the cache label the cookie names right after the answer (<c>/api/me/cache-partition</c>),
+/// so rows of another user who signed in meanwhile are never applied to this partition. Null elsewhere.
+/// </param>
+public sealed record SyncResponse(int Status, string? Reason = null, double? RetryAfter = null, string? Body = null, string? Partition = null);

@@ -75,12 +75,13 @@ public sealed class ClientSync : ISyncSignals, ISyncRefusals
     }
 
     /// <inheritdoc />
-    public async Task OnVisibilityAsync(bool visible)
+    public async Task OnVisibilityAsync(bool shown)
     {
-        this.visible = visible;
-        if (!visible)
+        visible = shown;
+        if (!shown)
         {
             StopWall();
+            me.Cancel();
             return;
         }
 
@@ -141,7 +142,7 @@ public sealed class ClientSync : ISyncSignals, ISyncRefusals
         }
 
         StopWall();
-        wall = new WallSync(store, transport, clock, this, partition!, wallId, target.Token, () => Changed?.Invoke());
+        wall = new WallSync(store, transport, clock, this, partition!, wallId, target.Token, OnWallChanged);
         var start = wall.StartAsync();
         Changed?.Invoke();
         return start;
@@ -149,27 +150,50 @@ public sealed class ClientSync : ISyncSignals, ISyncRefusals
 
     private void StopWall()
     {
-        if (wall is null)
+        if (wall is not { } running)
         {
             return;
         }
 
-        wall.Stop();
         wall = null;
+        running.Stop();
+        Changed?.Invoke();
+    }
+
+    // The stream opened or closed, or the loop stopped itself (a refusal, the row gone): a stopped loop is no wall.
+    private void OnWallChanged(WallSync changed)
+    {
+        if (ReferenceEquals(wall, changed) && changed.Stopped)
+        {
+            wall = null;
+        }
+
         Changed?.Invoke();
     }
 
     // A lock, a wipe, a Clear or another identity (this tab or another): nothing keeps running under the old label,
-    // and a label the store reads now (ready after a start, a sign-in in another tab) syncs the URL's wall.
+    // and a label the store reads now (ready after a start, a sign-in in another tab) syncs the URL's wall and polls.
     private void OnStoreChanged()
     {
-        if (!started || store.Partition == partitionSeen)
+        if (!started)
         {
+            return;
+        }
+
+        if (store.Partition == partitionSeen)
+        {
+            // Another tab dropped the wall (a 403, an eviction): its stream would hold a server slot for nothing.
+            if (wall is { } running && store.Walls.All(w => w.WallId != running.WallId))
+            {
+                StopWall();
+            }
+
             return;
         }
 
         partitionSeen = store.Partition;
         StopWall();
-        _ = SyncWallAsync();
+        me.Cancel();
+        _ = ResumeAsync();
     }
 }

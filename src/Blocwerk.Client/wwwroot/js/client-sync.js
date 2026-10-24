@@ -9,12 +9,14 @@
  *               its `asset-cached` gives the ledger its asset row here, as asset-store.js does on a Server page).
  *   mineJson    GET /api/me/walls/{w}/mine through Web's asset-mine.js refresh (the ledger's `mine` row, `u-` only);
  *               answers { status, reason, body }.
- *   changesJson / meChangesJson   one catch-up page: { status, reason, retryAfter, body }.
- *   open / close                  the wall's EventSource. A `bye` or an error closes it here, so the browser never
- *               reconnects by itself (a refused reconnect would stop it for good anyway, PR 1.6 W3): the loop probes
- *               /changes and opens a new one.
+ *   changesJson / meChangesJson   one catch-up page: { status, reason, retryAfter, body }; the own-rows page also
+ *               carries `partition`, the label the cookie names right after it (another user may have signed in).
+ *   savedCursor / saveCursor      the wall's resume cursor, on its ledger row (`feedCursor`, guarded writes).
+ *   savedMeCursor / saveMeCursor  the own-rows poll's cursor, one localStorage entry for the last `u-` label.
+ *   open / close                  the wall's EventSource (`open` on its 200; a cap's 429 never opens). A `bye` or an
+ *               error closes it here, so the browser never reconnects by itself (PR 1.6 W3): the loop probes and reopens.
  *   refused     a refusal, by the identity matrix: client-store.js's refused (asset-lock.js tells the Server tabs).
- *   watch       visibilitychange and online, for the loop.
+ *   watch       visibilitychange and online, for the loop (listeners added once per page).
  *   status      a connection bubble (window.bwStatus?.show), when the hotfix batch's bubbles are on the page.
  * The refresh modules never act on a refusal here (their dropWall and signedOut are no-ops): the C# loop hands each
  * one to `refused`, so one place applies the matrix. Nothing here throws into the page.
@@ -28,7 +30,10 @@ window.bwClientSync = (function (win) {
     const SYNCED_LABEL = /^(anon|u-[a-z2-7]{20})$/;
     const streams = new Map();
     let nextStream = 1;
+    const PARTITION_URL = '/api/me/cache-partition';
+    const ME_CURSOR_KEY = 'bw-me-cursor';
     let recording = false;
+    let watching = false;
 
     const Ledger = () => win.bwAssetLedger;
     const Session = () => win.bwAssetSession;
@@ -142,7 +147,60 @@ window.bwClientSync = (function (win) {
     }
 
     const changes = (wallId, after, token) => page(withQuery(`/api/walls/${idOf(wallId)}/changes`, { after, token }));
-    const meChanges = after => page(withQuery('/api/me/changes', { after }));
+
+    // The label the cookie names now: /api/me/changes answers for the cookie's user, whoever signed in meanwhile.
+    async function cookiePartition() {
+        try {
+            const response = await win.fetch(PARTITION_URL, { credentials: 'same-origin', cache: 'no-store' });
+            const body = response.ok ? await response.json() : null;
+            return body && typeof body.partition === 'string' ? body.partition : null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    async function meChanges(after) {
+        const answer = await page(withQuery('/api/me/changes', { after }));
+        return Object.assign(answer, { partition: answer.status === 200 ? await cookiePartition() : null });
+    }
+
+    /** The wall's stored resume cursor (the ledger row's feedCursor), or null. */
+    async function savedCursor(partition, wallId) {
+        try {
+            const row = await (await Ledger().open()).getWall(partition, idOf(wallId));
+            return row && typeof row.feedCursor === 'string' ? row.feedCursor : null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    /** Stores the wall's resume cursor on its row, only under the active label and only while the row stands. */
+    async function saveCursor(partition, wallId, cursor) {
+        try {
+            const ledger = Session().guard(await Ledger().open());
+            await ledger.updateWall(partition, idOf(wallId), row => (row ? Object.assign(row, { feedCursor: String(cursor) }) : undefined));
+        } catch (e) {
+            /* the next start replays from the documents instead */
+        }
+    }
+
+    // The own-rows poll's cursor: one entry, for the last signed-in label (a cursor names no person).
+    function savedMeCursor(partition) {
+        try {
+            const stored = JSON.parse(win.localStorage.getItem(ME_CURSOR_KEY) || 'null');
+            return stored && stored.partition === partition && typeof stored.cursor === 'string' ? stored.cursor : null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function saveMeCursor(partition, cursor) {
+        try {
+            win.localStorage.setItem(ME_CURSOR_KEY, JSON.stringify({ partition, cursor: String(cursor) }));
+        } catch (e) {
+            /* storage blocked: the next poll starts from the marks' cursors */
+        }
+    }
 
     /** Opens the wall's stream after `after`; its messages go to ref.OnMessage(type, data). Returns its id. */
     function open(wallId, after, token, ref) {
@@ -162,6 +220,7 @@ window.bwClientSync = (function (win) {
                 send(type, data);
             }
         };
+        source.onopen = () => { if (streams.get(id) === source) { send('open', null); } };
         source.onmessage = event => { if (streams.get(id) === source) { send('message', event.data); } };
         source.addEventListener('resync', event => { if (streams.get(id) === source) { send('resync', event.data); } });
         source.addEventListener('bye', event => ended('bye', event.data));
@@ -205,8 +264,11 @@ window.bwClientSync = (function (win) {
     /** Hands visibilitychange and online to ref (OnVisibility, OnOnline); answers whether the tab is visible now. */
     function watch(ref) {
         const call = (name, ...args) => ref.invokeMethodAsync(name, ...args).catch(() => undefined);
-        win.document.addEventListener('visibilitychange', () => call('OnVisibility', win.document.visibilityState !== 'hidden'));
-        win.addEventListener('online', () => call('OnOnline'));
+        if (!watching) {
+            watching = true;
+            win.document.addEventListener('visibilitychange', () => call('OnVisibility', win.document.visibilityState !== 'hidden'));
+            win.addEventListener('online', () => call('OnOnline'));
+        }
         const sw = win.navigator.serviceWorker;
         if (!recording && sw && typeof sw.addEventListener === 'function') {
             recording = true;
@@ -227,6 +289,7 @@ window.bwClientSync = (function (win) {
 
     return {
         index, doc, mine, changes, meChanges, open, close, refused, watch, status, onWorkerMessage,
+        savedCursor, saveCursor, savedMeCursor, saveMeCursor,
         indexJson: (p, w, t) => index(p, w, t).then(json),
         mineJson: (p, w) => mine(p, w).then(json),
         changesJson: (w, a, t) => changes(w, a, t).then(json),

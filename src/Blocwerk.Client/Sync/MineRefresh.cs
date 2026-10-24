@@ -11,23 +11,27 @@ namespace Blocwerk.Client.Sync;
 /// </summary>
 internal static class MineRefresh
 {
-    public static async Task RunAsync(ClientStore store, ISyncTransport transport, ISyncRefusals refusals, string partition, Guid wallId)
+    /// <summary>Refetches; true when the marks are current (or the label holds none), false when they did not arrive.</summary>
+    public static async Task<bool> RunAsync(ClientStore store, ISyncTransport transport, ISyncRefusals refusals, string partition, Guid wallId)
     {
         if (!SyncLabels.IsUser(partition))
         {
-            return;
+            return true;
         }
 
         var answer = await transport.RefreshMineAsync(partition, wallId);
         if (SyncLabels.IsRefusal(answer.Status))
         {
             await refusals.RefusedAsync(partition, wallId, answer.Status, answer.Reason, mine: !SyncLabels.EndsSession(answer.Status));
-            return;
+            return !SyncLabels.EndsSession(answer.Status);
         }
 
         if (answer.Status == 200 && SyncJson.Read(answer.Body, ClientJsonContext.Default.MineDocument) is { } document)
         {
             store.ReplaceMine(partition, document);
+            return true;
         }
+
+        return false;
     }
 }

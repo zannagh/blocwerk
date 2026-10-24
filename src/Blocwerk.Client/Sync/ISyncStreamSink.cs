@@ -7,7 +7,8 @@ namespace Blocwerk.Client.Sync;
 public interface ISyncStreamSink
 {
     /// <summary>
-    /// One stream message: <c>message</c> (a feed envelope), <c>resync</c> (a <c>FeedChanges</c>), <c>bye</c>
+    /// One stream message: <c>open</c> (the stream's 200 arrived), <c>message</c> (a feed envelope), <c>resync</c> (a
+    /// <c>FeedChanges</c>), <c>bye</c>
     /// (a <c>FeedStreamBye</c>; the stream is closed), or <c>error</c> (the stream failed or was refused, and is closed:
     /// an <c>EventSource</c> hides the status, so the loop probes <c>/changes</c> to find out).
     /// </summary>

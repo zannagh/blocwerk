@@ -82,9 +82,9 @@ public sealed class WallSyncStreamTests
         await world.Settled();
         Assert.Equal(["send it"], await world.CommentTextsAsync(Boulder1));
 
-        Assert.Equal([SyncIndexDebounce.Delay], world.Clock.Running);
+        Assert.Equal([SyncDebounce.IndexDelay], world.Clock.Running);
         Assert.Empty(world.Transport.Of("index"));
-        world.Clock.Fire(SyncIndexDebounce.Delay);
+        world.Clock.Fire(SyncDebounce.IndexDelay);
         await world.Settled();
         Assert.Single(world.Transport.Of("index"));
         Assert.Equal("1.2.5", world.Sync.Cursor);
@@ -148,6 +148,9 @@ public sealed class WallSyncStreamTests
         await world.Transport.Stream.SendAsync(At("1.2.4", FeedKinds.FavoriteChanged, Boulder1, Boulder1));
         await world.Transport.Stream.SendAsync(At("1.2.5", FeedKinds.RatingMine, Boulder1, Boulder1));
         await world.Settled();
+        Assert.Empty(world.Transport.Calls);
+        world.Clock.Fire(SyncDebounce.MineDelay);
+        await world.Settled();
 
         Assert.Equal([$"mine {Wall}"], world.Transport.Calls);
         Assert.True((await world.WallAsync()).Mine.IsFavourite(Boulder1));
@@ -179,6 +182,9 @@ public sealed class WallSyncStreamTests
         world.Transport.Changes.Enqueue(FakeSyncTransport.Page("1.3.0"));
 
         await first.ByeAsync(reason);
+        Assert.Equal([SyncDelays.Bye(0.5)], world.Clock.Running);
+        Assert.Empty(world.Transport.Of("changes"));
+        world.Clock.Fire();
         await world.Settled();
 
         Assert.True(first.Disposed);

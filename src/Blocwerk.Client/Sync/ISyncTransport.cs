@@ -38,10 +38,37 @@ public interface ISyncTransport
     /// <returns>The answer.</returns>
     Task<SyncResponse> ChangesAsync(Guid wallId, string? after, string? token);
 
-    /// <summary>One page of the viewer's own rows across walls, <c>GET /api/me/changes?after=</c>.</summary>
+    /// <summary>
+    /// One page of the viewer's own rows across walls, <c>GET /api/me/changes?after=</c>; a 200 carries the label the
+    /// cookie names after it (<see cref="SyncResponse.Partition"/>).
+    /// </summary>
     /// <param name="after">The cursor, or null.</param>
     /// <returns>The answer.</returns>
     Task<SyncResponse> MyChangesAsync(string? after);
+
+    /// <summary>The wall's stored resume cursor (the ledger row's <c>feedCursor</c>), or null.</summary>
+    /// <param name="partition">The label.</param>
+    /// <param name="wallId">The wall.</param>
+    /// <returns>The cursor, or null.</returns>
+    Task<string?> SavedCursorAsync(string partition, Guid wallId);
+
+    /// <summary>Stores the wall's resume cursor: everything at or before it is in the device's documents and marks.</summary>
+    /// <param name="partition">The label.</param>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="cursor">The cursor.</param>
+    /// <returns>A task that completes once written (or refused: another label, no row).</returns>
+    Task SaveCursorAsync(string partition, Guid wallId, string cursor);
+
+    /// <summary>The own-rows poll's stored cursor for <paramref name="partition"/>, or null.</summary>
+    /// <param name="partition">The <c>u-</c> label.</param>
+    /// <returns>The cursor, or null.</returns>
+    Task<string?> SavedMeCursorAsync(string partition);
+
+    /// <summary>Stores the own-rows poll's cursor for <paramref name="partition"/>.</summary>
+    /// <param name="partition">The <c>u-</c> label.</param>
+    /// <param name="cursor">The cursor.</param>
+    /// <returns>A task that completes once written.</returns>
+    Task SaveMeCursorAsync(string partition, string cursor);
 
     /// <summary>Opens the wall's stream after <paramref name="after"/>; disposing it closes the stream.</summary>
     /// <param name="wallId">The wall.</param>
@@ -65,9 +92,9 @@ public interface ISyncTransport
     Task<string> RefusedAsync(string partition, Guid wallId, int status, string? reason, bool mine);
 
     /// <summary>Listens for the page's signals.</summary>
-    /// <param name="signals">Hears them.</param>
+    /// <param name="listener">Hears them.</param>
     /// <returns>True when the tab is visible now.</returns>
-    Task<bool> WatchAsync(ISyncSignals signals);
+    Task<bool> WatchAsync(ISyncSignals listener);
 
     /// <summary>A connection-state bubble (<c>window.bwStatus?.show</c>): <c>offline</c> or <c>online</c>.</summary>
     /// <param name="kind">The bubble.</param>

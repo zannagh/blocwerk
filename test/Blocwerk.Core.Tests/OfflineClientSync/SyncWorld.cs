@@ -20,10 +20,12 @@ internal sealed class SyncWorld
 {
     public const string Built = "1.2.3";
 
-    private SyncWorld(FakeStoreSource source, ClientStore store)
+    private SyncWorld(FakeStoreSource source, ClientStore store, FakeSyncTransport? transport = null)
     {
         Source = source;
         Store = store;
+        Transport = transport ?? new FakeSyncTransport();
+        Transport.MePartition = source.Snapshot.Partition;
         Transport.IndexDocs = source.Snapshot.Walls.Single().Data.ToDictionary(d => d.Key, d => d.Value);
         Sync = new ClientSync(store, Transport, Clock);
     }
@@ -34,25 +36,25 @@ internal sealed class SyncWorld
 
     public ClientStore Store { get; }
 
-    public FakeSyncTransport Transport { get; } = new();
+    public FakeSyncTransport Transport { get; }
 
     public FakeSyncClock Clock { get; } = new();
 
     public ClientSync Sync { get; }
 
     /// <summary>A device of <paramref name="partition"/>, the store started, the sync not yet.</summary>
-    public static async Task<SyncWorld> DeviceAsync(string partition, IReadOnlyList<StoreMineRow>? mine = null)
+    public static async Task<SyncWorld> DeviceAsync(string partition, IReadOnlyList<StoreMineRow>? mine = null, FakeSyncTransport? transport = null)
     {
         var source = Device(partition, shareWall: partition == Anon ? Wall : null, mine: mine);
         var store = new ClientStore(source);
         await store.StartAsync();
-        return new SyncWorld(source, store);
+        return new SyncWorld(source, store, transport);
     }
 
     /// <summary>A device of <paramref name="partition"/> syncing the wall's page.</summary>
-    public static async Task<SyncWorld> SyncingAsync(string partition = UserA, string? page = null, IReadOnlyList<StoreMineRow>? mine = null)
+    public static async Task<SyncWorld> SyncingAsync(string partition = UserA, string? page = null, IReadOnlyList<StoreMineRow>? mine = null, FakeSyncTransport? transport = null)
     {
-        var world = await DeviceAsync(partition, mine);
+        var world = await DeviceAsync(partition, mine, transport);
         await world.Sync.StartAsync(page ?? WallPage);
         await world.Sync.Idle;
         return world;

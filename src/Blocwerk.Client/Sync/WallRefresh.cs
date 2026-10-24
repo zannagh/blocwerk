@@ -7,8 +7,9 @@ namespace Blocwerk.Client.Sync;
 
 /// <summary>
 /// One wall's reload (plan §1, sync loop step 1): the docs index into the ledger, the documents whose sha changed into
-/// the store (each replaces its kind whole), and for a signed-in device the marks. It answers the cursor to replay the
-/// feed from: the oldest build cursor of the documents the store now holds.
+/// the store (each replaces its kind whole), and for a signed-in device the marks. It keeps the build cursor of each
+/// document the store holds (<see cref="DocCursors"/>): the replay starts at the oldest, and an event at or before a
+/// document's own cursor is already in that document.
 /// </summary>
 internal sealed class WallRefresh
 {
@@ -29,53 +30,48 @@ internal sealed class WallRefresh
         this.token = token;
     }
 
+    /// <summary>Gets the build cursor of each document kind the store holds (unknown kinds are absent).</summary>
+    public IReadOnlyDictionary<string, string> DocCursors { get; private set; } = new Dictionary<string, string>();
+
     /// <summary>The index, the changed documents and the marks.</summary>
-    /// <returns>Whether the wall is still this device's to sync, and the replay cursor (null: open with a resync).</returns>
-    public async Task<(bool Keep, string? Cursor)> RunAsync()
+    /// <returns>
+    /// Whether the wall is still this device's to sync; whether the documents arrived (the index answered and every
+    /// changed document came); whether the marks did; and the replay cursor (null: open with a resync).
+    /// </returns>
+    public async Task<(bool Keep, bool Reached, bool Marks, string? Cursor)> RunAsync()
     {
         var index = await transport.RefreshIndexAsync(partition, wallId, token);
-        if (SyncLabels.IsRefusal(index.Status))
+        if (!await KeepAsync(index))
         {
-            await refusals.RefusedAsync(partition, wallId, index.Status, index.Reason, mine: false);
-            return (false, null);
-        }
-
-        if (index.Gone)
-        {
-            await store.RefreshAsync();
-            return (false, null);
+            return (false, false, false, null);
         }
 
         // Unreachable or a server error: the documents the ledger names stand, and so do their cursors.
         var docs = index.Docs ?? store.Walls.FirstOrDefault(w => w.WallId == wallId)?.Data ?? new Dictionary<string, StoreDocRef>();
-        await ReplaceChangedAsync(docs);
-        await MineAsync();
-        return (true, await ReplayCursorAsync(docs));
+        var fetched = await ReplaceChangedAsync(docs);
+        var marks = await MineAsync();
+        var cursor = await ReplayCursorAsync(docs);
+        return (true, index.Docs is not null && fetched, marks, cursor);
     }
 
     /// <summary>The docs index and the changed documents only (a structural kind's debounced refetch).</summary>
-    /// <returns>Whether the wall is still this device's to sync.</returns>
-    public async Task<bool> IndexAsync()
+    /// <returns>Whether the wall is still this device's to sync, and whether everything arrived.</returns>
+    public async Task<(bool Keep, bool Reached)> IndexAsync()
     {
         var index = await transport.RefreshIndexAsync(partition, wallId, token);
-        if (SyncLabels.IsRefusal(index.Status))
+        if (!await KeepAsync(index))
         {
-            await refusals.RefusedAsync(partition, wallId, index.Status, index.Reason, mine: false);
-            return false;
+            return (false, false);
         }
 
-        if (index.Gone)
+        if (index.Docs is not { } docs)
         {
-            await store.RefreshAsync();
-            return false;
+            return (true, false);
         }
 
-        if (index.Docs is { } docs)
-        {
-            await ReplaceChangedAsync(docs);
-        }
-
-        return true;
+        var fetched = await ReplaceChangedAsync(docs);
+        await ReplayCursorAsync(docs);
+        return (true, fetched);
     }
 
     /// <summary>A refusal of the wall's feed: the identity matrix decides (drop, lock or wipe).</summary>
@@ -85,17 +81,36 @@ internal sealed class WallRefresh
     public Task RefusedAsync(int status, string? reason) => refusals.RefusedAsync(partition, wallId, status, reason, mine: false);
 
     /// <summary>The viewer's marks (signed-in only).</summary>
-    /// <returns>A task that completes once refetched.</returns>
-    public Task MineAsync() => MineRefresh.RunAsync(store, transport, refusals, partition, wallId);
+    /// <returns>True when the marks are current (or the device holds none).</returns>
+    public Task<bool> MineAsync() => MineRefresh.RunAsync(store, transport, refusals, partition, wallId);
 
-    private async Task ReplaceChangedAsync(IReadOnlyDictionary<string, StoreDocRef> docs)
+    private async Task<bool> KeepAsync(SyncIndex index)
     {
+        if (SyncLabels.IsRefusal(index.Status))
+        {
+            await refusals.RefusedAsync(partition, wallId, index.Status, index.Reason, mine: false);
+            return false;
+        }
+
+        if (index.Gone)
+        {
+            await store.RefreshAsync();
+            return false;
+        }
+
+        return true;
+    }
+
+    // True when every changed document arrived.
+    private async Task<bool> ReplaceChangedAsync(IReadOnlyDictionary<string, StoreDocRef> docs)
+    {
+        var all = true;
         foreach (var (kind, doc) in docs)
         {
             var wall = await store.GetWallAsync(wallId);
             if (wall is null)
             {
-                return;
+                return false;
             }
 
             if (wall.Shas.TryGetValue(kind, out var held) && held == doc.Sha)
@@ -107,7 +122,13 @@ internal sealed class WallRefresh
             {
                 store.ReplaceDocument(partition, wallId, kind, doc.Sha, json);
             }
+            else
+            {
+                all = false;
+            }
         }
+
+        return all;
     }
 
     // A kind whose new document did not arrive is still the older one, whose cursor is unknown: no cursor then, and the
@@ -117,15 +138,23 @@ internal sealed class WallRefresh
         var wall = await store.GetWallAsync(wallId);
         if (wall is null)
         {
+            DocCursors = new Dictionary<string, string>();
             return null;
         }
 
+        var known = new Dictionary<string, string>();
         var cursors = new List<string?>();
         foreach (var (kind, held) in wall.Shas)
         {
-            cursors.Add(docs.TryGetValue(kind, out var doc) && doc.Sha == held ? doc.Cursor : null);
+            var cursor = docs.TryGetValue(kind, out var doc) && doc.Sha == held ? doc.Cursor : null;
+            cursors.Add(cursor);
+            if (cursor is not null)
+            {
+                known[kind] = cursor;
+            }
         }
 
+        DocCursors = known;
         return SyncCursor.Earliest(cursors);
     }
 }

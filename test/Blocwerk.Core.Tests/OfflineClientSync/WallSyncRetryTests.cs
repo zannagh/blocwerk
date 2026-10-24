@@ -11,7 +11,7 @@ namespace Blocwerk.Core.Tests.OfflineClientSync;
 
 /// <summary>
 /// A closed stream's probe against a fake server (PR 3.12): a 429 waits its <c>Retry-After</c> plus 0–20 %, no network
-/// backs off 5/30/120 s ±20 % and <c>online</c> cuts that to a random 0–10 s, the connection bubbles, and the refusals
+/// backs off 5/30/120 s ±50 % and <c>online</c> cuts that to a random 0–10 s, the connection bubbles, and the refusals
 /// of the identity matrix (403/404 drop the wall, a 401 hands its reason on so <c>expired</c> locks and any other
 /// reason wipes, 410 wipes), each of which stops the loop.
 /// </summary>
@@ -48,7 +48,7 @@ public sealed class WallSyncRetryTests
     }
 
     [Fact]
-    public async Task NoNetwork_BacksOffFiveThirtyAndAHundredTwentySeconds_WithJitter_AndShowsOfflineOnce()
+    public async Task NoNetwork_BacksOffFiveThirtyAndAHundredTwentySeconds_SpreadByHalf_AndShowsOfflineOnce()
     {
         var world = await SyncingAsync();
         world.Clock.Jitter = 1;
@@ -63,7 +63,7 @@ public sealed class WallSyncRetryTests
             world.Clock.Fire();
         }
 
-        Assert.Equal([5 * 1.2, 30 * 1.2, 120 * 1.2, 120 * 1.2], world.Clock.Asked.Select(d => Math.Round(d.TotalSeconds, 6)));
+        Assert.Equal([5 * 1.5, 30 * 1.5, 120 * 1.5, 120 * 1.5], world.Clock.Asked.Select(d => Math.Round(d.TotalSeconds, 6)));
         Assert.Equal(["offline"], world.Transport.Bubbles);
 
         world.Clock.Fire();
@@ -81,7 +81,7 @@ public sealed class WallSyncRetryTests
         world.Transport.Changes.Enqueue(new SyncResponse(0));
         await world.Transport.Stream.ErrorAsync();
         world.Clock.Fire();
-        Assert.Equal([TimeSpan.FromSeconds(30 * 0.9)], world.Clock.Running);
+        Assert.Equal([TimeSpan.FromSeconds(30 * 0.75)], world.Clock.Running);
         world.Transport.Calls.Clear();
 
         await world.Transport.Signals!.OnOnlineAsync();

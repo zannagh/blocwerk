@@ -37,6 +37,7 @@ function eventSources() {
         addEventListener(type, fn) { this.listeners[type] = fn; }
         close() { this.closed = true; }
         emit(type, data) { (type === 'message' ? this.onmessage : this.listeners[type])({ data }); }
+        opened() { this.onopen({}); }
         fail() { this.onerror({}); }
     }
     return { FakeSource, opened };
@@ -131,7 +132,7 @@ test('changes() / meChanges(): the cursor and token in the query, Retry-After on
     const { client } = await device(USER_A, { sync: true, fetch });
 
     same(await client.sync.changes(W1, '1.2.3', TOKEN), { status: 429, reason: null, retryAfter: 30, body: null });
-    same(await client.sync.meChanges(null), { status: 401, reason: 'expired', retryAfter: null, body: null });
+    same(await client.sync.meChanges(null), { status: 401, reason: 'expired', retryAfter: null, body: null, partition: null });
     assert.deepEqual(calls, [`/api/walls/${W1}/changes?after=1.2.3&token=${TOKEN}`, '/api/me/changes']);
     const offline = (await device(USER_A, { sync: true, fetch: server({}).fetch })).client;
     same(await offline.sync.changes(W1, null, null), { status: 0, reason: null, retryAfter: null, body: null });
@@ -145,6 +146,7 @@ test('open(): forwards messages and resyncs; a bye or an error closes the source
     client.sync.open(W1, '1.2.3', null, ref);
     const first = opened[0];
     assert.equal(first.url, `/api/walls/${W1}/feed/stream?after=1.2.3`);
+    first.opened();
     first.emit('message', '{"kind":"comment.added"}');
     first.emit('resync', '{"next":"1.9.0"}');
     first.emit('bye', '{"reason":"lifetime"}');
@@ -152,7 +154,7 @@ test('open(): forwards messages and resyncs; a bye or an error closes the source
     first.fail();
 
     assert.equal(first.closed, true);
-    same(calls, [['OnMessage', 'message', '{"kind":"comment.added"}'], ['OnMessage', 'resync', '{"next":"1.9.0"}'], ['OnMessage', 'bye', '{"reason":"lifetime"}']]);
+    same(calls, [['OnMessage', 'open', null], ['OnMessage', 'message', '{"kind":"comment.added"}'], ['OnMessage', 'resync', '{"next":"1.9.0"}'], ['OnMessage', 'bye', '{"reason":"lifetime"}']]);
 
     const id = client.sync.open(W1, null, TOKEN, ref);
     assert.equal(opened[1].url, `/api/walls/${W1}/feed/stream?token=${TOKEN}`);
@@ -225,4 +227,45 @@ test('status(): shows a bubble when the page has them, and is silent when it doe
     assert.doesNotThrow(() => without.client.sync.status('online'));
     const throwing = await device(USER_A, { sync: true, bwStatus: { show: () => { throw new Error('x'); } } });
     assert.doesNotThrow(() => throwing.client.sync.status('online'));
+});
+
+test('meChanges(): a 200 carries the label the cookie names right after it, so another user\'s rows can be told apart', async () => {
+    const { fetch, calls } = server({
+        '/api/me/changes': () => json({ events: [], next: '1.5.0', resync: false, more: false }),
+        '/api/me/cache-partition': () => json({ partition: 'u-bbbbbbbbbbbbbbbbbbbb' }),
+    });
+    const { client } = await device(USER_A, { sync: true, fetch });
+
+    const answer = plain(await client.sync.meChanges('1.4.0'));
+
+    assert.equal(answer.status, 200);
+    assert.equal(answer.partition, 'u-bbbbbbbbbbbbbbbbbbbb');
+    assert.deepEqual(calls, ['/api/me/changes?after=1.4.0', '/api/me/cache-partition']);
+});
+
+test('the resume cursors: a wall\'s on its ledger row under the active label only; the poll\'s for its own label only', async () => {
+    const { client, ledger } = await device(USER_A, { sync: true });
+
+    await client.sync.saveCursor(USER_A, W1, '1.7.0');
+    assert.equal(await client.sync.savedCursor(USER_A, W1), '1.7.0');
+    assert.equal((await ledger.getWall(USER_A, W1)).data.wall.sha, sha('1a'), 'the row keeps its documents');
+    await client.sync.saveCursor('anon', W1, '1.8.0');
+    assert.equal(await client.sync.savedCursor('anon', W1), null, 'never written under another label');
+    await client.sync.saveCursor(USER_A, '33333333-3333-3333-3333-333333333333', '1.9.0');
+    assert.equal(await client.sync.savedCursor(USER_A, '33333333-3333-3333-3333-333333333333'), null, 'no row, no cursor');
+
+    client.sync.saveMeCursor(USER_A, '1.6.0');
+    assert.equal(client.sync.savedMeCursor(USER_A), '1.6.0');
+    assert.equal(client.sync.savedMeCursor('u-bbbbbbbbbbbbbbbbbbbb'), null);
+});
+
+test('watch(): a second watch adds no second pair of listeners', async () => {
+    const { client } = await device(USER_A, { sync: true });
+    const { calls, ref } = dotnet();
+
+    client.sync.watch(ref);
+    client.sync.watch(ref);
+    client.winEvent('online');
+
+    same(calls, [['OnOnline']]);
 });

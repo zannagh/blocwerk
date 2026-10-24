@@ -54,9 +54,13 @@ public sealed class SyncPartsTests
     [Fact]
     public void Delays_SpreadEveryWait()
     {
-        Assert.Equal(TimeSpan.FromSeconds(4), SyncDelays.Network(1, 0));
-        Assert.Equal(TimeSpan.FromSeconds(36), SyncDelays.Network(2, 1));
+        Assert.Equal(TimeSpan.FromSeconds(2.5), SyncDelays.Network(1, 0));
+        Assert.Equal(TimeSpan.FromSeconds(45), SyncDelays.Network(2, 1));
         Assert.Equal(TimeSpan.FromSeconds(120), SyncDelays.Network(9, 0.5));
+        Assert.Equal(TimeSpan.FromSeconds(30), SyncDelays.StreamRefused(1, 0));
+        Assert.Equal(TimeSpan.FromSeconds(72), SyncDelays.StreamRefused(2, 1));
+        Assert.Equal(TimeSpan.FromSeconds(300), SyncDelays.StreamRefused(9, 0));
+        Assert.Equal(TimeSpan.FromSeconds(1.5), SyncDelays.Bye(0.5));
         Assert.Equal(TimeSpan.FromSeconds(36), SyncDelays.RetryAfter(30, 1));
         Assert.Equal(TimeSpan.FromSeconds(5), SyncDelays.RetryAfter(null, 0));
         Assert.Equal(TimeSpan.FromSeconds(9.9), SyncDelays.Online(0.99));
