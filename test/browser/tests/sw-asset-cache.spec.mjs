@@ -70,9 +70,11 @@ async function expectServedOffline(page, { stored, unstored }) {
     expect((await pageFetch(page, unstored, { cache: 'no-store' })).status).toBe(0);
 }
 
+// The proxy's port closed, not a `drop` rule: Playwright's Linux WebKit crashes its network process now and then when
+// requests die on open connections, and with it goes the worker registry (proxy.mjs).
 test('with the server unreachable, a stored asset is served from Cache Storage and an unstored one fails', async ({ page, world, server }) => {
     const urls = await storeOne(page, world);
-    await server.faults([{ path: '.*', drop: true }]);
+    await server.unreachable();
     await expectServedOffline(page, urls);
 });
 

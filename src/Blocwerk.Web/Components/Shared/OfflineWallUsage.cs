@@ -11,7 +11,7 @@ namespace Blocwerk.Web.Components.Shared;
 /// <param name="Other">Everything cached on use: superseded panels, resets, larger renditions, video thumbnails.</param>
 /// <param name="Total">The sum of the four.</param>
 /// <param name="KeepOffline">Pinned: never evicted to make room for another wall.</param>
-/// <param name="Ready">Every core asset of the wall is on the device (the offline-ready mark).</param>
+/// <param name="Ready">Every core asset of the wall is on the device (Settings shows "Offline ready").</param>
 /// <param name="LastOpened">When the wall was last opened here, in Unix milliseconds (0 = never).</param>
 /// <param name="Saved3d">"Save 3D offline" (PR 2.8): pinned, and its 3D filled on every device and connection.</param>
 public sealed record OfflineWallUsage(

@@ -40,7 +40,7 @@ else if (_wall.UnderMaintenance && _currentUserId != _wall.MaintenanceByUserId)
 else
 {
     @* The mark goes first: a long wall name ellipsizes in the top bar and would cut a trailing mark off. *@
-    <SectionContent SectionName="TopBarTitle"><OfflineReadyMark WallId="_wall.Id" /> @_wall.Name</SectionContent>
+    <SectionContent SectionName="TopBarTitle">@_wall.Name</SectionContent>
 
     @* PageClasses is pipe-separated per page: only page 4 (the boulder list) gets a surface of its
        own — full-bleed slide, sticky list head, fold marker. See the .boulders-page block in

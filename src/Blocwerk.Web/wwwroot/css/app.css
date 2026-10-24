@@ -927,8 +927,9 @@ body.bw-tabbar-collapsed .tabbar-restore { display: flex; }
     position: fixed;
     left: 50%;
     transform: translateX(-50%);
-    /* Clears the bottom tab bar (and its safe-area padding) so it never covers navigation. */
-    bottom: calc(74px + env(safe-area-inset-bottom));
+    /* Clears the bottom tab bar (and its safe-area padding) so it never covers navigation, and sits above a bottom
+       banner (cookie consent, install; --bw-banner-h, bottom-banners.js) so a conflict stays visible and tappable. */
+    bottom: calc(74px + env(safe-area-inset-bottom) + var(--bw-banner-h, 0px));
     z-index: 90;
     display: inline-flex;
     align-items: center;
@@ -959,6 +960,46 @@ body.bw-tabbar-collapsed .tabbar-restore { display: flex; }
     border-color: color-mix(in srgb, var(--info-text) 30%, transparent);
 }
 
+/* Status bubbles (status-bubble.js): "Offline mode available", "Switched to online mode", "… uploaded" and
+   "… could not be uploaded". */
+.bw-conn-pill.bw-conn-ok {
+    background: var(--success-bg);
+    color: var(--success-text);
+    border-color: color-mix(in srgb, var(--success-text) 30%, transparent);
+}
+
+.bw-conn-pill.bw-conn-error {
+    background: var(--danger-bg);
+    color: var(--danger-text);
+    border-color: color-mix(in srgb, var(--danger-text) 30%, transparent);
+}
+
+/* Actions that could not be uploaded, while the pill says something else: their count, until dismissed. */
+.bw-conn-badge {
+    min-width: 18px;
+    padding: 1px 6px;
+    border-radius: var(--r-pill);
+    background: var(--danger-text);
+    color: var(--bg-surface);
+    font-size: 0.72rem;
+    text-align: center;
+}
+
+/* A bubble that is not a button (nothing to open) is not a tap target either. */
+div.bw-conn-pill { cursor: default; }
+
+/* The bubbles' screen-reader regions (spoken, never seen), and the host of a page without the pill's slot. */
+.bw-status-live {
+    position: absolute;
+    width: 1px; height: 1px;
+    margin: -1px; padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+}
+.bw-status-host { display: contents; }
+
 .bw-conn-dot {
     width: 7px; height: 7px;
     border-radius: 50%;
@@ -982,7 +1023,7 @@ body.bw-tabbar-collapsed .tabbar-restore { display: flex; }
     position: fixed;
     left: 50%;
     transform: translateX(-50%);
-    bottom: calc(112px + env(safe-area-inset-bottom));
+    bottom: calc(112px + env(safe-area-inset-bottom) + var(--bw-banner-h, 0px));
     z-index: 91;
     width: min(92vw, 420px);
     max-height: 45vh;
@@ -1169,8 +1210,8 @@ body.bw-tabbar-collapsed .content { padding-bottom: 0; }
 
 /* Drop the connection pill/panel down to where the (now-hidden) tab bar used to sit
    so they don't float in a dead gap. Their +74/112px offsets cleared the tab bar. */
-body.bw-tabbar-collapsed .bw-conn-pill { bottom: calc(16px + env(safe-area-inset-bottom)); }
-body.bw-tabbar-collapsed .bw-conn-panel { bottom: calc(54px + env(safe-area-inset-bottom)); }
+body.bw-tabbar-collapsed .bw-conn-pill { bottom: calc(16px + env(safe-area-inset-bottom) + var(--bw-banner-h, 0px)); }
+body.bw-tabbar-collapsed .bw-conn-panel { bottom: calc(54px + env(safe-area-inset-bottom) + var(--bw-banner-h, 0px)); }
 
 /* Admin maintenance panel: long-running, admin-triggered jobs and their live log. */
 .maintenance { margin-top: 32px; }

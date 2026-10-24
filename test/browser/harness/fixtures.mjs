@@ -18,16 +18,18 @@ function readState() {
     return JSON.parse(fs.readFileSync(stateFile, 'utf8'));
 }
 
-/** The test proxy's control API (proxy.mjs), called from the test process. */
-function proxyClient(baseURL) {
+/** The test proxy's control API (proxy.mjs) on its own port, called from the test process. */
+function proxyClient(controlURL) {
     const call = async (path, init) => {
-        const response = await fetch(baseURL + path, init);
+        const response = await fetch(controlURL + path, init);
         return response.status === 204 ? null : response.json();
     };
     return {
         mark: async () => (await call('/__pw/mark')).seq,
         log: since => call(`/__pw/log?since=${since || 0}`),
         faults: rules => call('/__pw/faults', { method: 'POST', body: JSON.stringify(rules || []) }),
+        /** The server down: open connections closed, connects refused, until the next `faults`. */
+        unreachable: () => call('/__pw/unreachable', { method: 'POST' }),
         /** How many requests for `path` (no query) reached the app since `since`. */
         hits: async (since, path) => (await call(`/__pw/log?since=${since || 0}`))
             .filter(e => !e.fault && e.url.split('?')[0] === path).length
@@ -37,8 +39,8 @@ function proxyClient(baseURL) {
 export const test = base.extend({
     world: async ({}, use) => { await use(readState().world); },
     baseURL: async ({}, use) => { await use(readState().baseURL); },
-    server: async ({ baseURL }, use) => {
-        const proxy = proxyClient(baseURL);
+    server: async ({}, use) => {
+        const proxy = proxyClient(readState().controlURL);
         await proxy.faults([]);
         await use(proxy);
         await proxy.faults([]);

@@ -13,7 +13,10 @@
  *   flush()                -> Promise<summary> send everything that is due
  *   pending()              -> Promise<entry[]> everything still queued, oldest first
  *   subscribe(cb)          -> unsubscribe fn   cb(state) on every state change
- *   state()                -> { online, paused, flushing, count, held, rejected, lastError }
+ *   state()                -> { online, paused, flushing, count, held, deferred, rejected, lastError }
+ *                             held: entries of another account; deferred: entries a 400 parked (see processOne);
+ *                             dueAt: when the first of this person's entries may be sent;
+ *                             rejected: this identity's given-up actions (offline-rejected.js), kept over reloads
  *   retryNow()             -> Promise          clear backoff/pause and flush (user gesture)
  *   dismissRejected()      -> void             acknowledge permanently-failed actions
  *
@@ -77,7 +80,8 @@
         flushAgain: false,
         count: 0,
         held: 0,
-        rejected: [],
+        deferred: 0,
+        dueAt: 0,
         lastError: null,
         nextAttemptAt: 0
     };
@@ -103,11 +107,31 @@
         return !entry.queuedForUserId || entry.queuedForUserId === currentUserId();
     }
 
+    const rejectedStore = window.blocwerkOfflineRejected;
+
+    function snapshot() {
+        return Object.assign({}, state, { rejected: rejectedStore ? rejectedStore.current() : [] });
+    }
+
+    // What is queued, how much of it is somebody else's, and how much a 400 parked: the uploads the status bubbles
+    // speak of are the rest (status-sources.js).
+    function tally(entries) {
+        state.count = entries.length;
+        state.held = entries.filter(e => !belongsToCurrentUser(e)).length;
+        state.deferred = entries.filter(e => e.deferred && belongsToCurrentUser(e)).length;
+        state.nextAttemptAt = entries.reduce(
+            (min, e) => (e.nextAttemptAt && (!min || e.nextAttemptAt < min)) ? e.nextAttemptAt : min,
+            0);
+        // When the first of this person's entries is due (0: one is due now).
+        const mine = entries.filter(belongsToCurrentUser).map(e => e.nextAttemptAt || 0);
+        state.dueAt = mine.length ? Math.min.apply(null, mine) : 0;
+    }
+
     function notify() {
-        const snapshot = Object.assign({}, state, { rejected: state.rejected.slice() });
+        const current = snapshot();
         subscribers.forEach(cb => {
             try {
-                cb(snapshot);
+                cb(current);
             } catch (err) {
                 console.error('[blocwerk-offline] subscriber failed', err);
             }
@@ -115,17 +139,16 @@
     }
 
     function refreshCount() {
-        return db.count().then(n => {
-            state.count = n;
+        return db.all().then(entries => {
+            tally(entries);
             notify();
-            return n;
+            return entries.length;
         }).catch(() => state.count);
     }
 
     function reject(entry, message) {
-        state.rejected.push({ kind: entry.kind, message: message, at: Date.now() });
-        if (state.rejected.length > 20) {
-            state.rejected.splice(0, state.rejected.length - 20);
+        if (rejectedStore) {
+            rejectedStore.add(entry, message);
         }
     }
 
@@ -248,6 +271,7 @@
                 // header. Guessing "permanent" there deletes real data, so it waits for the 7-day
                 // expiry instead; a reload fixes the stale-JavaScript case outright.
                 entry.lastError = message;
+                entry.deferred = verdict === 'defer';
                 entry.nextAttemptAt = Date.now() + transport.backoffFor(entry.attempts);
                 state.lastError = message;
                 return db.put(entry).then(() => verdict);
@@ -313,11 +337,7 @@
             }), Promise.resolve(false));
         }).then(() => db.all()).then(remaining => {
             summary.remaining = remaining.length;
-            state.count = remaining.length;
-            state.held = remaining.filter(e => !belongsToCurrentUser(e)).length;
-            state.nextAttemptAt = remaining.reduce(
-                (min, e) => (e.nextAttemptAt && (!min || e.nextAttemptAt < min)) ? e.nextAttemptAt : min,
-                0);
+            tally(remaining);
             if (remaining.length === 0) {
                 state.lastError = null;
             } else if (state.held === remaining.length) {
@@ -362,7 +382,11 @@
                     e.nextAttemptAt = 0;
                     return db.put(e);
                 })))
-                .then(() => flush());
+                .then(() => {
+                    state.nextAttemptAt = 0;
+                    state.dueAt = 0;
+                    return flush();
+                });
         });
     }
 
@@ -373,9 +397,7 @@
         pending: function () {
             return db && db.available() ? db.all() : Promise.resolve([]);
         },
-        state: function () {
-            return Object.assign({}, state, { rejected: state.rejected.slice() });
-        },
+        state: snapshot,
         subscribe: function (cb) {
             subscribers.push(cb);
             cb(this.state());
@@ -387,7 +409,9 @@
             };
         },
         dismissRejected: function () {
-            state.rejected = [];
+            if (rejectedStore) {
+                rejectedStore.clearCurrent();
+            }
             notify();
         },
 
