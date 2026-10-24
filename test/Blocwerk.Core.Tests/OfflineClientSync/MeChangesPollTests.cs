@@ -32,6 +32,32 @@ public sealed class MeChangesPollTests
     }
 
     [Fact]
+    public async Task ACancelledRunThatFinishesLate_NeverMovesTheNextLabelsCursor()
+    {
+        var world = await SyncingAsync();
+        world.Transport.MyChanges.Enqueue(FakeSyncTransport.Page("9.9.9", resync: true));
+        var gate = new TaskCompletionSource();
+        world.Transport.MineGate = gate;
+        var slow = world.Transport.Signals!.OnOnlineAsync();
+
+        // B signs in while A's poll still refetches marks after its resync.
+        world.Transport.MePartition = UserB;
+        world.Source.Docs[(UserB, Wall)] = world.Source.Docs[(UserA, Wall)] with { Partition = UserB };
+        world.Source.Snapshot = world.Source.Snapshot with { Partition = UserB, Mine = [] };
+        await world.Store.RefreshAsync();
+        await world.Settled();
+        gate.SetResult();
+        await slow;
+
+        world.Transport.Calls.Clear();
+        await world.Transport.Signals.OnOnlineAsync();
+
+        Assert.Equal(["me 1.0.0"], world.Transport.Of("me"));
+        Assert.Equal("1.0.0", world.Transport.MeCursors[UserB]);
+        Assert.NotEqual("9.9.9", world.Transport.MeCursors.GetValueOrDefault(UserA));
+    }
+
+    [Fact]
     public async Task HidingTheTab_EndsThePollsRetryAfterWait()
     {
         var world = await SyncingAsync();

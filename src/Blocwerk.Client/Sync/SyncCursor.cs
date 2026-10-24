@@ -26,6 +26,12 @@ public static class SyncCursor
         return Compare(a, b) > 0;
     }
 
+    /// <summary>True when both cursors parse and belong to the same feed epoch.</summary>
+    /// <param name="a">One cursor.</param>
+    /// <param name="b">The other.</param>
+    /// <returns>Whether they can be ordered.</returns>
+    public static bool SameEpoch(string? a, string? b) => TryParse(a, out var x) && TryParse(b, out var y) && x.Epoch == y.Epoch;
+
     /// <summary>
     /// The earliest of several cursors (the documents' build cursors: replay from the oldest), or null when there is
     /// none, one does not parse, or they span epochs: the stream then opens without a cursor, which the server answers

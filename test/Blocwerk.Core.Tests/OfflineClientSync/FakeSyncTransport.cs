@@ -38,6 +38,9 @@ internal sealed class FakeSyncTransport : ISyncTransport
 
     public List<string> Bubbles { get; } = [];
 
+    /// <summary>Gets or sets a gate the next marks fetch waits on (a slow /mine).</summary>
+    public TaskCompletionSource? MineGate { get; set; }
+
     /// <summary>Gets or sets a value indicating whether each stream's 200 arrives (false: a cap's hidden 429).</summary>
     public bool StreamsOpen { get; set; } = true;
 
@@ -71,10 +74,16 @@ internal sealed class FakeSyncTransport : ISyncTransport
         return Task.FromResult(Documents.GetValueOrDefault(sha));
     }
 
-    public Task<SyncResponse> RefreshMineAsync(string partition, Guid wallId)
+    public async Task<SyncResponse> RefreshMineAsync(string partition, Guid wallId)
     {
         Calls.Add($"mine {wallId}");
-        return Task.FromResult(Mines.TryDequeue(out var mine) ? mine : SyncWorld.Mine(partition));
+        if (MineGate is { } gate)
+        {
+            MineGate = null;
+            await gate.Task;
+        }
+
+        return Mines.TryDequeue(out var mine) ? mine : SyncWorld.Mine(partition);
     }
 
     public Task<SyncResponse> ChangesAsync(Guid wallId, string? after, string? token)

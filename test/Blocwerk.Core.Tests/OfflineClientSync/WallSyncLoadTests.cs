@@ -139,6 +139,36 @@ public sealed class WallSyncLoadTests
     }
 
     [Fact]
+    public async Task AStoredCursorOfAnotherEpoch_IsNotUsed()
+    {
+        var transport = new FakeSyncTransport();
+        transport.WallCursors[(UserA, Wall)] = "0.9.9";
+        var world = await DeviceAsync(UserA, transport: transport);
+
+        await world.Sync.StartAsync(WallPage);
+        await world.Settled();
+
+        Assert.Equal(Built, world.Transport.Stream.After);
+    }
+
+    [Fact]
+    public async Task MarksThatFailedAtStart_AreRetried_SoTheResumeCursorIsStored()
+    {
+        var world = await DeviceAsync(UserA);
+        world.Transport.Mines.Enqueue(new SyncResponse(503));
+
+        await world.Sync.StartAsync(WallPage);
+        await world.Settled();
+        Assert.False(world.Transport.WallCursors.ContainsKey((UserA, Wall)));
+        Assert.Equal([SyncDebounce.MineDelay], world.Clock.Running);
+
+        world.Clock.Fire();
+        await world.Settled();
+
+        Assert.Equal(Built, world.Transport.WallCursors[(UserA, Wall)]);
+    }
+
+    [Fact]
     public async Task ABacklogPastTheStreamsReplayWindow_OpensWithoutACursor_SoTheServerResyncs()
     {
         var world = await SyncingAsync();

@@ -77,9 +77,12 @@ internal sealed class MeChangesPoll
             cursor = await transport.SavedMeCursorAsync(partition!) ?? SyncCursor.Earliest(MineCursors());
         }
 
+        // The run reads and moves its own copy: a run cancelled mid-page (the label changed meanwhile) never writes the
+        // shared cursor, so another label's poll can never resume from this one's position.
+        var at = cursor;
         for (var page = 0; page < MaxPages && !stop.IsCancellationRequested; page++)
         {
-            var answer = await transport.MyChangesAsync(cursor);
+            var answer = await transport.MyChangesAsync(at);
             if (answer.Status == 429 && page == 0)
             {
                 try
@@ -94,7 +97,7 @@ internal sealed class MeChangesPoll
                 continue;
             }
 
-            if (stop.IsCancellationRequested || store.Partition != partition)
+            if (!Current(stop, partition))
             {
                 return;
             }
@@ -113,11 +116,14 @@ internal sealed class MeChangesPoll
             }
 
             var more = await PageAsync(partition!, changes);
-            if (!stop.IsCancellationRequested && cursor is not null)
+            if (!Current(stop, partition))
             {
-                await transport.SaveMeCursorAsync(partition!, cursor);
+                return;
             }
 
+            at = changes.Next;
+            cursor = at;
+            await transport.SaveMeCursorAsync(partition!, at);
             if (!more)
             {
                 return;
@@ -125,13 +131,16 @@ internal sealed class MeChangesPoll
         }
     }
 
+    // Still this run's to write: not cancelled, and the store and the cursor still name its label.
+    private bool Current(CancellationToken stop, string? partition) =>
+        !stop.IsCancellationRequested && store.Partition == partition && cursorPartition == partition;
+
     // One page; true when another follows.
     private async Task<bool> PageAsync(string partition, FeedChanges changes)
     {
         if (changes.Resync)
         {
             await AllMarksAsync(partition);
-            cursor = changes.Next;
             return false;
         }
 
@@ -173,7 +182,6 @@ internal sealed class MeChangesPoll
             }
         }
 
-        cursor = changes.Next;
         return changes.More;
     }
 

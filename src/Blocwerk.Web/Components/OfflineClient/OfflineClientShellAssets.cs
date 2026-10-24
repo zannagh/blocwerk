@@ -47,13 +47,6 @@ public static class OfflineClientShellAssets
     /// </summary>
     public static readonly string[] StoreModules = ["v/js/client-store-rows.js", "v/js/client-store.js"];
 
-    /// <summary>
-    /// The sync loop's network side (PR 3.12): Web's docs-index and marks refreshers (with asset-manifest.js, whose
-    /// <c>signedOut</c> they call), so the client writes the ledger exactly as the Server pages do, then
-    /// <c>window.bwClientSync</c>. Loading them only defines their globals.
-    /// </summary>
-    public static readonly string[] SyncModules = ["js/asset-manifest.js", "js/asset-data.js", "js/asset-mine.js", "v/js/client-sync.js"];
-
     /// <summary>The Blazor WebAssembly loader, started by <see cref="Boot"/> (autostart off).</summary>
     public const string Loader = "v/_framework/blazor.webassembly.js";
 
@@ -65,6 +58,13 @@ public static class OfflineClientShellAssets
     /// controller no longer answers reloads once the server is reachable.
     /// </summary>
     public const string Guard = "js/sw-guard.js";
+
+    /// <summary>
+    /// The sync loop's network side (PR 3.12): Web's docs-index and marks refreshers (with asset-manifest.js, whose
+    /// <c>signedOut</c> they call), so the client writes the ledger exactly as the Server pages do, then
+    /// <c>window.bwClientSync</c>. Loading them only defines their globals.
+    /// </summary>
+    public static readonly string[] SyncModules = ["js/asset-manifest.js", "js/asset-data.js", "js/asset-mine.js", "v/js/client-sync.js"];
 
     private static readonly ConditionalWeakTable<ResourceAssetCollection, string> Versions = new();
 

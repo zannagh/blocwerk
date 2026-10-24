@@ -269,3 +269,24 @@ test('watch(): a second watch adds no second pair of listeners', async () => {
 
     same(calls, [['OnOnline']]);
 });
+
+test('the own-rows cursor goes with its label: a wipe, a lock, Clear and a sweep that keeps another label each remove it', async () => {
+    const cases = [
+        ['wiped', d => d.client.store.refused(USER_A, W1, 401, 'forced')],
+        ['locked', d => d.client.store.refused(USER_A, W1, 401, 'expired')],
+        ['cleared', d => d.client.store.clear()],
+        ['swept', d => d.client.win.bwAssetWipe.wipe({ caches: d.caches, ledger: d.ledger, origin: ORIGIN }, ['u-bbbbbbbbbbbbbbbbbbbb'])],
+    ];
+    for (const [name, act] of cases) {
+        const d = await device(USER_A, { sync: true });
+        d.client.sync.saveMeCursor(USER_A, '1.6.0');
+        await act(d);
+        assert.equal(d.client.sync.savedMeCursor(USER_A), null, name);
+        assert.equal(d.client.storage.has('bw-me-cursor'), false, name);
+    }
+
+    const kept = await device(USER_A, { sync: true });
+    kept.client.sync.saveMeCursor(USER_A, '1.6.0');
+    await kept.client.win.bwAssetWipe.wipe({ caches: kept.caches, ledger: kept.ledger, origin: ORIGIN }, [USER_A]);
+    assert.equal(kept.client.sync.savedMeCursor(USER_A), '1.6.0', 'a sweep that keeps the label keeps its cursor');
+});

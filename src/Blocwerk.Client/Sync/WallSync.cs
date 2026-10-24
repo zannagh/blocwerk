@@ -113,7 +113,9 @@ internal sealed partial class WallSync : ISyncStreamSink
                 }
                 else
                 {
+                    // The marks did not arrive: they stay owed, and a retry lets the resume cursor move once they land.
                     mineWanted++;
+                    mineDebounce.Schedule(() => queue.Enqueue(() => MineAsync(mine)));
                 }
 
                 Open();
@@ -160,9 +162,10 @@ internal sealed partial class WallSync : ISyncStreamSink
         return Task.CompletedTask;
     }
 
-    // The stored cursor when the documents are at least that old (null replay: a document did not arrive, resync).
+    // The stored cursor when it is of the documents' epoch and not older than them (null replay: a document did not
+    // arrive, resync). A cursor of an earlier epoch would only cost the server a resync.
     private static string? ResumeAt(string? saved, string? replay) =>
-        replay is not null && saved is not null && SyncCursor.IsAfter(saved, replay) ? saved : replay;
+        replay is not null && saved is not null && SyncCursor.SameEpoch(saved, replay) && SyncCursor.IsAfter(saved, replay) ? saved : replay;
 
     private async Task HandleAsync(int mine, string type, string? data)
     {
