@@ -144,6 +144,8 @@
        bwViewport / wallCarousel lazily, so this order is what keeps it from ever seeing a
        half-defined global. One coordinator for orientationchange/resize for the whole app. *@
     <script src="@Assets["js/orientation.js"]"></script>
+    @* Steps the fixed tab bar aside while the keyboard is up or the page is zoomed. Reads no other module. *@
+    <script src="@Assets["js/tabbar-guard.js"]"></script>
     @* The full-screen takeover. After viewport-gestures.js (it binds the shared recogniser) and
        after its own model; the lock last, because it reads bwStage in its watchdog — lazily, inside
        a function, so the order is for readability rather than load-bearing. Registered here like

@@ -518,6 +518,9 @@ h2 { font-size: 1.15rem; }
    static, so a Blazor field can't drive this. Mirror the edit-mode approach (display:none) so the
    bar leaves no reserved space; its down-chevron sits inside the bar and disappears with it. */
 body.bw-tabbar-collapsed .bw-tabbar { display: none; }
+/* The keyboard is up or the page is pinch-zoomed (wwwroot/js/tabbar-guard.js): the fixed bar would be drawn
+   mid-screen over the form. Hidden, not removed, so nothing reflows under the field being typed in. */
+html.bw-vv-away :is(.bw-tabbar, .tabbar-restore) { visibility: hidden; pointer-events: none; }
 
 /* Floating '^' handle that brings the bar back — shown only while collapsed. */
 .tabbar-restore { display: none; }
