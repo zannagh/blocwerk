@@ -83,7 +83,17 @@ test('the list\'s filters and sort survive a reload, through a year-long Lax coo
     expect(cookie.sameSite).toBe('Lax');
     expect(cookie.path).toBe('/');
     expect(cookie.expires - Date.now() / 1000).toBeGreaterThan(300 * 24 * 3600);
-    expect(decodeURIComponent(cookie.value)).not.toContain('07');
+    // Every entry is exactly user,wall,flags,sort,gradeMin,gradeMax: there is no field the search could ride in. This
+    // wall's entry is "Not done by me" (4) sorted Oldest (1), with no grades.
+    const entries = decodeURIComponent(cookie.value).split('|').map(e => e.split(','));
+    for (const entry of entries) {
+        expect(entry).toHaveLength(6);
+        expect(entry[0]).toMatch(/^[0-9a-f]{8}$/);
+        expect(entry[1]).toMatch(/^[0-9a-f]{32}$/);
+    }
+    const mine = entries.find(e => e[1] === wall.id.replace(/-/g, ''));
+    expect(mine.slice(2)).toEqual(['4', '1', '', '']);
+    expect(decodeURIComponent(cookie.value)).not.toContain('boulder');
 
     // Every painted frame after the reload: the first card the list shows, whenever it shows one.
     await page.addInitScript(() => {
