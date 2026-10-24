@@ -219,6 +219,18 @@ html, body {
     touch-action: manipulation;
 }
 
+/* iOS zooms the page in when a text field under 16px takes focus, and it stays zoomed after the keyboard is
+   gone. Since page zoom is allowed (BlocwerkApp.razor, WCAG 1.4.4) that is what broke editing a boulder on an
+   iPhone: the revise page's name field is 15.2px, one tap on it left the page zoomed, and iOS then draws the
+   fixed tab bar wherever the zoomed window ends, mid-screen over the form. 16px on touch screens keeps the zoom
+   from ever starting. !important because the many field classes (.form-input, .grade-range-picker .grade-select,
+   ...) all set their own size, and none of them may win here. */
+@media (pointer: coarse) {
+    :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="button"], [type="submit"], [type="reset"], [type="image"], [type="hidden"]), select, textarea) {
+        font-size: 16px !important;
+    }
+}
+
 h1, h2, h3, h4 {
     font-family: var(--font-display);
     font-weight: 600;

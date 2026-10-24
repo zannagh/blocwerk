@@ -4,9 +4,9 @@
  * The tab bar is `position: fixed; bottom: 0`, which iOS anchors to the LAYOUT viewport. With the on-screen keyboard
  * up, or the page pinch-zoomed, the visible part of the page (the visual viewport) is a smaller window that moves
  * inside it, so the bar is drawn wherever the layout viewport's bottom edge happens to fall: the middle of the screen,
- * on top of the fields being edited. Long edit forms (revising a boulder over several panels: name, grade, panel
- * switcher, picker, rules) are where the page scrolls under the keyboard, which is where it was reported. While either
- * is the case the bar steps aside (`html.bw-vv-away`, see app.css); nothing on an edit form needs it until the
+ * on top of the fields being edited. The reported case (editing a boulder) was a page left zoomed by iOS's focus zoom
+ * on a field under 16px, which app.css now prevents on touch screens; this is the second line of defence for any zoom
+ * or keyboard that still displaces the window. While either is the case the bar steps aside (`html.bw-vv-away`, see app.css); nothing on an edit form needs it until the
  * keyboard is gone. Coming back, iOS 26 can leave fixed elements where the keyboard pushed them until the page
  * scrolls, so one no-op scroll re-places them.
  *
