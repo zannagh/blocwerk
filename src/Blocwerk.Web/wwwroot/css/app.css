@@ -189,15 +189,26 @@
     padding: 0;
 }
 
+/* The app's one window height. Every full-screen budget in the stylesheets reads this token rather than
+   a unit of its own, so the shell and what sizes inside it can never disagree.
+   In a browser tab it is the DYNAMIC height, which follows the URL bar. An installed app has no URL bar,
+   and there `dvh` is the unit iOS gets wrong: on a cold start of the home-screen app it reports a height
+   short of the screen until the first rotation, so the shell ended above the bottom edge and the tab bar
+   floated with a dead strip under it. `vh` is the full window there from the first frame. */
+:root { --bw-app-h: 100dvh; }
+@media (display-mode: standalone), (display-mode: fullscreen) {
+    :root { --bw-app-h: 100vh; }
+}
+
 html, body {
     font-family: var(--font-body);
     font-feature-settings: 'ss01', 'cv11'; /* Manrope stylistic set + alt digits */
     background: var(--bg);
     color: var(--text);
-    /* dvh, not vh: everything INSIDE the shell already sizes off 100dvh, and mixing the two
-       units meant the outer box claimed the tall (URL-bar-hidden) height while its contents
-       claimed the short one. On a landscape phone that mismatch is a visible dead strip. */
-    min-height: 100dvh;
+    /* The same token as everything INSIDE the shell: mixing two units meant the outer box claimed
+       the tall (URL-bar-hidden) height while its contents claimed the short one. On a landscape
+       phone that mismatch is a visible dead strip. */
+    min-height: var(--bw-app-h, 100dvh);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
@@ -206,6 +217,18 @@ html, body {
        Panning + pinch-zoom remain permitted; the wall photo viewport uses
        touch-action: none locally to run its own gesture code. */
     touch-action: manipulation;
+}
+
+/* iOS zooms the page in when a text field under 16px takes focus, and it stays zoomed after the keyboard is
+   gone. Since page zoom is allowed (BlocwerkApp.razor, WCAG 1.4.4) that is what broke editing a boulder on an
+   iPhone: the revise page's name field is 15.2px, one tap on it left the page zoomed, and iOS then draws the
+   fixed tab bar wherever the zoomed window ends, mid-screen over the form. 16px on touch screens keeps the zoom
+   from ever starting. !important because the many field classes (.form-input, .grade-range-picker .grade-select,
+   ...) all set their own size, and none of them may win here. */
+@media (pointer: coarse) {
+    :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="button"], [type="submit"], [type="reset"], [type="image"], [type="hidden"]), select, textarea) {
+        font-size: 16px !important;
+    }
 }
 
 h1, h2, h3, h4 {
@@ -233,7 +256,7 @@ h2 { font-size: 1.15rem; }
 .app-shell {
     display: flex;
     flex-direction: column;
-    min-height: 100dvh;
+    min-height: var(--bw-app-h, 100dvh);
     /* Landscape on a notched phone puts the notch on one SIDE. With viewport-fit=cover the page
        now extends under it, so the shell keeps its content clear; the fixed bars below do the
        same for themselves, since they are positioned against the viewport, not this box. */
@@ -425,6 +448,20 @@ h2 { font-size: 1.15rem; }
     /* Faint upward glow so the tab bar reads like it's floating above content */
     box-shadow: 0 -1px 0 var(--nav-border), 0 -12px 24px -14px var(--shadow-md);
 }
+/* The bar's ground continues a little below its bottom edge (the home-indicator inset plus a few px). Normally
+   that is off screen; when iOS reports the window a few points short (an installed app's cold start) it fills
+   the sliver instead of showing the page through it. Kept that small on purpose: a bar displaced further up
+   must not drag a tall slab of ground over the form below it. */
+.bw-tabbar::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 100%;
+    height: calc(env(safe-area-inset-bottom, 0px) + 8px);
+    background: var(--nav-bg);
+    pointer-events: none;
+}
 
 .nav-item {
     flex: 1;
@@ -518,6 +555,8 @@ h2 { font-size: 1.15rem; }
    static, so a Blazor field can't drive this. Mirror the edit-mode approach (display:none) so the
    bar leaves no reserved space; its down-chevron sits inside the bar and disappears with it. */
 body.bw-tabbar-collapsed .bw-tabbar { display: none; }
+/* The keyboard is up (wwwroot/js/tabbar-guard.js): the fixed bar would be drawn mid-screen over the form. Hidden, not removed, so nothing reflows under the field being typed in. */
+html.bw-vv-away :is(.bw-tabbar, .tabbar-restore) { visibility: hidden; pointer-events: none; }
 
 /* Floating '^' handle that brings the bar back — shown only while collapsed. */
 .tabbar-restore { display: none; }
@@ -888,8 +927,9 @@ body.bw-tabbar-collapsed .tabbar-restore { display: flex; }
     position: fixed;
     left: 50%;
     transform: translateX(-50%);
-    /* Clears the bottom tab bar (and its safe-area padding) so it never covers navigation. */
-    bottom: calc(74px + env(safe-area-inset-bottom));
+    /* Clears the bottom tab bar (and its safe-area padding) so it never covers navigation, and sits above a bottom
+       banner (cookie consent, install; --bw-banner-h, bottom-banners.js) so a conflict stays visible and tappable. */
+    bottom: calc(74px + env(safe-area-inset-bottom) + var(--bw-banner-h, 0px));
     z-index: 90;
     display: inline-flex;
     align-items: center;
@@ -920,6 +960,46 @@ body.bw-tabbar-collapsed .tabbar-restore { display: flex; }
     border-color: color-mix(in srgb, var(--info-text) 30%, transparent);
 }
 
+/* Status bubbles (status-bubble.js): "Offline mode available", "Switched to online mode", "… uploaded" and
+   "… could not be uploaded". */
+.bw-conn-pill.bw-conn-ok {
+    background: var(--success-bg);
+    color: var(--success-text);
+    border-color: color-mix(in srgb, var(--success-text) 30%, transparent);
+}
+
+.bw-conn-pill.bw-conn-error {
+    background: var(--danger-bg);
+    color: var(--danger-text);
+    border-color: color-mix(in srgb, var(--danger-text) 30%, transparent);
+}
+
+/* Actions that could not be uploaded, while the pill says something else: their count, until dismissed. */
+.bw-conn-badge {
+    min-width: 18px;
+    padding: 1px 6px;
+    border-radius: var(--r-pill);
+    background: var(--danger-text);
+    color: var(--bg-surface);
+    font-size: 0.72rem;
+    text-align: center;
+}
+
+/* A bubble that is not a button (nothing to open) is not a tap target either. */
+div.bw-conn-pill { cursor: default; }
+
+/* The bubbles' screen-reader regions (spoken, never seen), and the host of a page without the pill's slot. */
+.bw-status-live {
+    position: absolute;
+    width: 1px; height: 1px;
+    margin: -1px; padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+}
+.bw-status-host { display: contents; }
+
 .bw-conn-dot {
     width: 7px; height: 7px;
     border-radius: 50%;
@@ -943,7 +1023,7 @@ body.bw-tabbar-collapsed .tabbar-restore { display: flex; }
     position: fixed;
     left: 50%;
     transform: translateX(-50%);
-    bottom: calc(112px + env(safe-area-inset-bottom));
+    bottom: calc(112px + env(safe-area-inset-bottom) + var(--bw-banner-h, 0px));
     z-index: 91;
     width: min(92vw, 420px);
     max-height: 45vh;
@@ -1130,8 +1210,8 @@ body.bw-tabbar-collapsed .content { padding-bottom: 0; }
 
 /* Drop the connection pill/panel down to where the (now-hidden) tab bar used to sit
    so they don't float in a dead gap. Their +74/112px offsets cleared the tab bar. */
-body.bw-tabbar-collapsed .bw-conn-pill { bottom: calc(16px + env(safe-area-inset-bottom)); }
-body.bw-tabbar-collapsed .bw-conn-panel { bottom: calc(54px + env(safe-area-inset-bottom)); }
+body.bw-tabbar-collapsed .bw-conn-pill { bottom: calc(16px + env(safe-area-inset-bottom) + var(--bw-banner-h, 0px)); }
+body.bw-tabbar-collapsed .bw-conn-panel { bottom: calc(54px + env(safe-area-inset-bottom) + var(--bw-banner-h, 0px)); }
 
 /* Admin maintenance panel: long-running, admin-triggered jobs and their live log. */
 .maintenance { margin-top: 32px; }

@@ -419,7 +419,8 @@ else
                 @if (_showGradeForm)
                 {
                     <div class="grade-propose-form">
-                        <GradePicker @bind-Value="_proposedGrade" />
+                        @* A proposal starts empty: open on the scale the boulder's own grade is written in. *@
+                        <GradePicker @bind-Value="_proposedGrade" DefaultUseFont="@GradeScale.IsFont(_boulder.Grade)" />
                         <div class="grade-propose-actions">
                             <button class="proposal-btn accept" @onclick="SubmitGradeProposal"
                                     disabled="@(string.IsNullOrEmpty(_proposedGrade))">Propose</button>

@@ -211,7 +211,9 @@ export async function startEnvironment() {
         const app = await startApp(webOut, pg, runDir, storage, stops);
         const proxy = await startProxy(app.port);
         stops.push(proxy.close);
-        const state = { baseURL: `http://127.0.0.1:${proxy.port}`, appPort: app.port, world };
+        const state = {
+            baseURL: `http://127.0.0.1:${proxy.port}`, controlURL: `http://127.0.0.1:${proxy.controlPort}`, appPort: app.port, world
+        };
         fs.writeFileSync(stateFile, JSON.stringify(state, null, 2));
         return { state, stop };
     } catch (e) {

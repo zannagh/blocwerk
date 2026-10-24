@@ -5,9 +5,18 @@
  *
  *   - a request log (GET /__pw/log), so a test can prove a request never reached the server;
  *   - fault rules (POST /__pw/faults), so a test can make one path answer 404 or 503, or drop the connection (`drop`,
- *     the server unreachable), delay it (`delay` ms), or rewrite a page's body (`rewrite`), without touching the app or
+ *     that path unreachable), delay it (`delay` ms), or rewrite a page's body (`rewrite`), without touching the app or
  *     the database;
- *   - fixed pages for the Clear-Site-Data probes (GET /__pw/csd?status=200|302, /__pw/cacheable, /__pw/blank).
+ *   - fixed pages for the Clear-Site-Data probes (GET /__pw/csd?status=200|302, /__pw/cacheable, /__pw/blank);
+ *   - the server unreachable as a whole (POST /__pw/unreachable): every open connection is closed and the port stops
+ *     listening, so a connect is refused, as with a server that is down. Cleared by the next POST /__pw/faults.
+ *
+ * Prefer `unreachable` over a `drop` rule for '.*' wherever a test means "no network": Playwright's Linux WebKit
+ * (WPE, libsoup) crashes its network process now and then when requests die on open connections, and that process
+ * holds the service worker registry, so the page silently loses its worker. A refused connect never does that.
+ *
+ * The control API (log, mark, faults) is also served on a port of its own, which stays up while the proxy's port is
+ * closed; `unreachable` is served only there.
  *
  * Control paths are under /__pw/ and never forwarded. The proxy holds no state the app relies on.
  */
@@ -17,8 +26,8 @@ import net from 'node:net';
 
 const CONTROL = '/__pw/';
 
-export function startProxy(appPort) {
-    const state = { log: [], faults: [] };
+export async function startProxy(appPort) {
+    const state = { log: [], faults: [], setUnreachable: null };
 
     const server = http.createServer((req, res) => {
         // The control API is always answered; the probe pages under /__pw/ are subject to the fault rules like the app.
@@ -32,7 +41,7 @@ export function startProxy(appPort) {
         state.log.push(entry);
         const fault = state.faults.find(f => (!f.method || f.method === req.method) && new RegExp(f.path).test(req.url.split('?')[0]));
         if (fault && fault.drop) {
-            // The server unreachable: the connection dies without an answer, as with no network.
+            // The connection dies without an answer. For the whole server down, see `unreachable` above.
             entry.fault = true;
             req.socket.destroy();
             return;
@@ -62,8 +71,43 @@ export function startProxy(appPort) {
 
     server.on('upgrade', (req, socket, head) => tunnel(appPort, req, socket, head));
 
-    return new Promise(resolve => {
-        server.listen(0, '127.0.0.1', () => resolve({ port: server.address().port, close: () => closeServer(server) }));
+    const sockets = new Set();
+    server.on('connection', socket => {
+        sockets.add(socket);
+        socket.on('close', () => sockets.delete(socket));
+    });
+    const port = await listen(server, 0);
+    state.setUnreachable = async on => {
+        if (on && server.listening) {
+            const closed = new Promise(resolve => server.close(() => resolve()));
+            for (const socket of sockets) {
+                socket.destroy();
+            }
+            await closed;
+        } else if (!on && !server.listening) {
+            await listen(server, port);
+        }
+    };
+
+    const controlServer = http.createServer((req, res) => control(state, req, res, true));
+    const controlPort = await listen(controlServer, 0);
+    return {
+        port,
+        controlPort,
+        close: async () => {
+            await state.setUnreachable(false);
+            await Promise.all([closeServer(server), closeServer(controlServer)]);
+        }
+    };
+}
+
+function listen(server, port) {
+    return new Promise((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(port, '127.0.0.1', () => {
+            server.off('error', reject);
+            resolve(server.address().port);
+        });
     });
 }
 
@@ -126,7 +170,7 @@ function tunnel(appPort, req, socket, head) {
     socket.on('error', close);
 }
 
-function control(state, req, res) {
+function control(state, req, res, ownPort = false) {
     const url = new URL(req.url, 'http://proxy');
     const send = (status, body, headers = {}) => {
         res.writeHead(status, { 'cache-control': 'no-store', ...headers });
@@ -142,10 +186,16 @@ function control(state, req, res) {
         return;
     }
     if (url.pathname === '/__pw/faults' && req.method === 'POST') {
-        readJson(req).then(body => {
+        readJson(req).then(async body => {
             state.faults = Array.isArray(body) ? body : [];
+            await state.setUnreachable(false);
             send(204, '');
         }, () => send(400, 'bad json'));
+        return;
+    }
+    // Only on the control port: on the proxy's own port the answer would die with the connections it closes.
+    if (ownPort && url.pathname === '/__pw/unreachable' && req.method === 'POST') {
+        state.setUnreachable(true).then(() => send(204, ''), () => send(500, 'could not close'));
         return;
     }
     if (url.pathname === '/__pw/csd') {

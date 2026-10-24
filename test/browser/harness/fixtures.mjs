@@ -18,16 +18,18 @@ function readState() {
     return JSON.parse(fs.readFileSync(stateFile, 'utf8'));
 }
 
-/** The test proxy's control API (proxy.mjs), called from the test process. */
-function proxyClient(baseURL) {
+/** The test proxy's control API (proxy.mjs) on its own port, called from the test process. */
+function proxyClient(controlURL) {
     const call = async (path, init) => {
-        const response = await fetch(baseURL + path, init);
+        const response = await fetch(controlURL + path, init);
         return response.status === 204 ? null : response.json();
     };
     return {
         mark: async () => (await call('/__pw/mark')).seq,
         log: since => call(`/__pw/log?since=${since || 0}`),
         faults: rules => call('/__pw/faults', { method: 'POST', body: JSON.stringify(rules || []) }),
+        /** The server down: open connections closed, connects refused, until the next `faults`. */
+        unreachable: () => call('/__pw/unreachable', { method: 'POST' }),
         /** How many requests for `path` (no query) reached the app since `since`. */
         hits: async (since, path) => (await call(`/__pw/log?since=${since || 0}`))
             .filter(e => !e.fault && e.url.split('?')[0] === path).length
@@ -37,23 +39,29 @@ function proxyClient(baseURL) {
 export const test = base.extend({
     world: async ({}, use) => { await use(readState().world); },
     baseURL: async ({}, use) => { await use(readState().baseURL); },
-    server: async ({ baseURL }, use) => {
-        const proxy = proxyClient(baseURL);
+    server: async ({}, use) => {
+        const proxy = proxyClient(readState().controlURL);
         await proxy.faults([]);
         await use(proxy);
         await proxy.faults([]);
     },
-    context: async ({ browser, browserName, playwright, baseURL, serviceWorkers }, use, testInfo) => {
+    // A device descriptor name (`devices['iPhone 15']`) for the phone layout tests; null is the desktop browser.
+    phone: [null, { option: true }],
+    context: async ({ browser, browserName, playwright, baseURL, serviceWorkers, phone }, use, testInfo) => {
         const options = { baseURL, serviceWorkers };
+        const device = name => {
+            const { defaultBrowserType, ...descriptor } = devices[phone || name];
+            return descriptor;
+        };
         let context;
         let profile = null;
         if (browserName === 'webkit') {
-            const { defaultBrowserType, ...safari } = devices['Desktop Safari'];
+            const safari = device('Desktop Safari');
             fs.mkdirSync(path.join(outDir, 'profiles'), { recursive: true });
             profile = fs.mkdtempSync(path.join(outDir, 'profiles', 'webkit-'));
             context = await playwright.webkit.launchPersistentContext(profile, { ...safari, ...options });
         } else {
-            const { defaultBrowserType, ...chrome } = devices['Desktop Chrome'];
+            const chrome = device('Desktop Chrome');
             context = await browser.newContext({ ...chrome, ...options });
         }
         await context.tracing.start({ screenshots: true, snapshots: true });

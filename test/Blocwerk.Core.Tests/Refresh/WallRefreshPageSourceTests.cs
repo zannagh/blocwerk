@@ -160,7 +160,7 @@ public class WallRefreshPageSourceTests
         Assert.True(details > 0 && timeline > details && discard > timeline && headerEnd > discard, "the timeline and Discard belong inside the Details panel");
         Assert.Equal(timeline, page.LastIndexOf("<RefreshTimelineView", StringComparison.Ordinal));
         Assert.Contains("<UpdateSteps WallId=\"WallId\" Current=\"RefreshFlow.StepOf(view?.Status)\"", page);
-        Assert.Contains(".refresh-page.is-one-screen { height: calc(100dvh - var(--topbar-h, 0px) - var(--bottomnav-h, 0px));", css);
+        Assert.Contains(".refresh-page.is-one-screen { height: calc(var(--bw-app-h, 100dvh) - var(--topbar-h, 0px) - var(--bottomnav-h, 0px));", css);
     }
 
     [Fact]

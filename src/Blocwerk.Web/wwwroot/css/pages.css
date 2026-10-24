@@ -1,7 +1,7 @@
 /* ========== Home / Landing ========== */
 
 .landing {
-    min-height: 100dvh;
+    min-height: var(--bw-app-h, 100dvh);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -16,7 +16,7 @@
 
 /* Momentary /home redirect placeholder — theme-aware so a light-mode user never sees a dark flash. */
 .home-redirect {
-    min-height: 100dvh;
+    min-height: var(--bw-app-h, 100dvh);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -184,7 +184,7 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
     display: flex;
     flex-direction: column;
     gap: 12px;
-    height: calc(100dvh - var(--topbar-h) - var(--bottomnav-h));
+    height: calc(var(--bw-app-h, 100dvh) - var(--topbar-h) - var(--bottomnav-h));
     min-height: 500px;
 }
 .stitcher-toolbar {
@@ -309,7 +309,7 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
     margin: 0 auto;
     display: flex;
     flex-direction: column;
-    height: calc(100dvh - var(--topbar-h) - var(--bottomnav-h));
+    height: calc(var(--bw-app-h, 100dvh) - var(--topbar-h) - var(--bottomnav-h));
     min-height: 360px;
 }
 .wall-carousel {
@@ -338,6 +338,9 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
     box-sizing: border-box;
 }
 .wall-page.no-pad { padding: 0; }
+/* wall-carousel.js hands focus to the page on screen when the one holding it is swiped away; the page is a container,
+   not a control, so it draws no ring. */
+.wall-page:focus { outline: none; }
 /* A slide scrolls ITSELF; reaching its top or bottom must not hand the gesture to the document (the
    "whole page scrolls instead of the list" report), nor a sideways overshoot to the browser's
    back-swipe. */
@@ -355,11 +358,11 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
 @media (min-height: 520px) {
     html:has(.wall-carousel-root:not(.editing)),
     body:has(.wall-carousel-root:not(.editing)) {
-        height: 100dvh;
+        height: var(--bw-app-h, 100dvh);
         overflow: hidden;
         overscroll-behavior: none;
     }
-    .app-shell:has(.wall-carousel-root:not(.editing)) { height: 100dvh; min-height: 0; }
+    .app-shell:has(.wall-carousel-root:not(.editing)) { height: var(--bw-app-h, 100dvh); min-height: 0; }
     /* The root may sit directly in .content (wall) or inside a page wrapper (.activity-page, guides):
        every link of that chain is a column flex box that hands its leftover height down, so the
        root fills its parent whichever wrapper it has. */
@@ -522,7 +525,7 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
     flex: 0 1 auto;
     height: auto;
     min-height: 0;
-    max-height: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - var(--wall-photo-chrome));
+    max-height: calc(var(--bw-app-h, 100dvh) - var(--topbar-h) - var(--bottomnav-h) - var(--wall-photo-chrome));
     border-radius: 12px;
 }
 
@@ -572,7 +575,7 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
     flex: 0 1 auto;
     aspect-ratio: var(--fit-aspect, 1.4);
     height: auto;
-    max-height: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - var(--wall-photo-chrome));
+    max-height: calc(var(--bw-app-h, 100dvh) - var(--topbar-h) - var(--bottomnav-h) - var(--wall-photo-chrome));
     margin-inline: auto;
 }
 
@@ -845,6 +848,52 @@ a.wall3d-link {
     transform: rotate(180deg);
 }
 .boulders-page .boulder-list-head .btn-add-boulder { order: 2; }
+/* Search: a square chip in the filter chip's chrome, just before it, and a field that takes a row of
+   its own under the bar while open. In the sticky head, so it is reachable wherever the list is
+   scrolled; the open filter panel still hangs off the (now taller) head. */
+.boulders-page .boulder-list-head .list-search-chip {
+    order: 1;
+    flex: 0 0 auto;
+    align-self: stretch;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    padding: 0;
+    border: 1px solid var(--border-light);
+    border-radius: var(--r-lg);
+    background: var(--bg-surface);
+    box-shadow: 0 1px 2px var(--shadow-sm);
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+.boulders-page .boulder-list-head .list-search-chip.active { color: var(--accent); border-color: var(--accent); }
+.boulders-page .boulder-list-head .list-search-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.boulders-page .boulder-list-head .list-search-row {
+    order: 3;
+    flex: 1 1 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.boulders-page .boulder-list-head .list-search-row[hidden] { display: none; }
+/* 16px: anything smaller makes iOS zoom the page in when the field takes focus. */
+.boulders-page .boulder-list-head .list-search-input { min-width: 0; font-size: 16px; }
+/* One way to clear: the close button, which also closes. The native clear "x" would be a second one. */
+.boulders-page .boulder-list-head .list-search-input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+.boulders-page .boulder-list-head .list-search-close {
+    flex: 0 0 auto;
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 50%;
+    background: none;
+    color: var(--text-secondary);
+    font-size: 1.4rem;
+    line-height: 1;
+    cursor: pointer;
+}
+.boulders-page .boulder-list-head .list-search-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* Open, it is a panel rather than a chip: it hangs OFF the bar (out of flow, anchored under it)
    instead of growing it. That is what keeps "+ New" and the Filters chip on screen while the card
    is open — the earlier version un-stuck the whole head, which took "+ New" off-screen with it, and
@@ -862,7 +911,7 @@ a.wall3d-link {
     right: 0;
     margin: 0;
     padding: 16px;
-    max-height: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - 120px);
+    max-height: calc(var(--bw-app-h, 100dvh) - var(--topbar-h) - var(--bottomnav-h) - 120px);
     overflow-y: auto;
     box-shadow: 0 10px 24px -12px var(--shadow-md);
 }
@@ -1612,7 +1661,7 @@ a.wall3d-link {
    never grows past it. A tall dialog scrolls inside itself; the title sticks to the top and the action row to the
    bottom, so the buttons are always reachable (phone landscape, Safari toolbars, notches). */
 .bw-modal-backdrop {
-    z-index: 950; height: 100vh; height: 100dvh; box-sizing: border-box;
+    z-index: 950; height: 100vh; height: var(--bw-app-h, 100dvh); box-sizing: border-box;
     padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
              max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
 }
@@ -1644,7 +1693,7 @@ a.wall3d-link {
 body:has(.panel-crop-modal) .bw-toolbar { display: none; }
 .bw-modal-backdrop:has(.panel-crop-modal) {
     z-index: 950;
-    height: 100vh; height: 100dvh;
+    height: 100vh; height: var(--bw-app-h, 100dvh);
     padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
              max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
 }
@@ -1927,11 +1976,6 @@ img.avatar { object-fit: cover; }
 .offline-storage-wall .member-since { margin-top: 2px; }
 .offline-storage-wall .checkbox-label { margin-top: 6px; }
 
-/* The offline-ready mark (OfflineReadyMark.razor): hidden until asset-report.js finds the wall's core cached. */
-.bw-offline-ready { display: inline-flex; vertical-align: -0.1em; color: var(--success-text); }
-.bw-offline-ready:not([data-ready]) { display: none; }
-.bw-topbar-title .bw-offline-ready { color: var(--status-success); margin-right: 2px; }
-
 /* ---- Staged profile shell -------------------------------------------------
    /profile is content the app authors end to end, so it is a fixed composition sized to the viewport
    instead of a 3.4-viewport scroll: a persistent identity/links side column plus four tabbed screens.
@@ -2119,7 +2163,7 @@ html.bw-fullscreen { --tier: desktop; }
             --wall-main-display: grid;
             --wall-main-align: start;
             --wall-side-display: flex;
-            --wall-side-max-h: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - 48px);
+            --wall-side-max-h: calc(var(--bw-app-h, 100dvh) - var(--topbar-h) - var(--bottomnav-h) - 48px);
             --stats-wrap: wrap;
             --stat-basis: 130px;
 
@@ -2181,7 +2225,7 @@ html.bw-compact {
  * --photo-fit-floor to 0 so the box is free to use the whole height budget. That floor is the
  * ONLY thing the two tiers disagree on here, which is why this is one block and not two. */
 .boulder-detail .photo-viewport.photo-section {
-    --avail-h: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - var(--boulder-photo-chrome));
+    --avail-h: calc(var(--bw-app-h, 100dvh) - var(--topbar-h) - var(--bottomnav-h) - var(--boulder-photo-chrome));
     --fit-h: max(var(--photo-fit-floor, 180px), var(--avail-h));
     width: auto;
     height: auto;
@@ -2198,7 +2242,7 @@ html.bw-compact {
  * aspect-ratio/max-height for the framed read-only view in BOTH tiers — with the same values —
  * while the desktop-only width cap below still applies to it. */
 .wall-main .photo-viewport {
-    --avail-h: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - var(--wall-photo-chrome));
+    --avail-h: calc(var(--bw-app-h, 100dvh) - var(--topbar-h) - var(--bottomnav-h) - var(--wall-photo-chrome));
     flex: 0 1 auto;                        /* size to the contained photo, don't stretch the column */
     aspect-ratio: var(--wall-photo-aspect, var(--fit-aspect, 1.4));
     height: auto;
@@ -3992,7 +4036,7 @@ a.wall-update-link {
         /* padding 8 + header 44 + toggles 44 + attempt 52 + three 8px gaps = 172, plus slack for borders.
            Without the Then/Now row (nothing older to show) its 44px and a gap go to the view. */
         --boulder-first-screen-chrome: calc(144px + var(--boulder-toggles-h, 52px));
-        --boulder-view-h: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - var(--boulder-first-screen-chrome));
+        --boulder-view-h: calc(var(--bw-app-h, 100dvh) - var(--topbar-h) - var(--bottomnav-h) - var(--boulder-first-screen-chrome));
         --boulder-photo-chrome: var(--boulder-first-screen-chrome);
         --photo-fit-floor: 120px;
     }
@@ -4009,6 +4053,10 @@ a.wall-update-link {
 
     /* One-line header: arrow, title, grade, favourite, edit. */
     .boulder-detail .page-header { display: flex; align-items: center; gap: 4px; min-height: 44px; }
+    /* The rename/grade editor is a form, not a header item: its own full-width row under the arrow,
+       instead of a name field and a grade picker squeezed in beside the grade badge. */
+    .boulder-detail .page-header:has(> .boulder-meta-edit) { flex-wrap: wrap; }
+    .boulder-detail .page-header > .boulder-meta-edit { flex: 1 0 100%; margin: 0; }
     .boulder-detail .back-link { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; margin-left: -8px; font-size: 1.3rem; }
     .boulder-detail .back-link-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     .boulder-detail .title-row { margin: 0; flex: 1 1 auto; min-width: 0; flex-wrap: nowrap; gap: 8px; }

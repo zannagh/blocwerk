@@ -132,7 +132,7 @@
     --wall-photo-chrome: 168px;     /* carousel padding + toggle row + dim bar + dots + gaps */
 }
 .wall-fold {
-    height: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - var(--fold-peek));
+    height: calc(var(--bw-app-h, 100dvh) - var(--topbar-h) - var(--bottomnav-h) - var(--fold-peek));
     min-height: 360px;      /* don't collapse to nothing on short windows */
     display: flex;
     flex-direction: column;
@@ -641,7 +641,7 @@
        short window still gives the list every pixel it has; the max() keeps it usable if the
        window is shorter than the chrome. */
     .bw-toolbar.placement-sidebar .bw-toolbar-bar {
-        max-height: max(220px, calc(100dvh - 280px));
+        max-height: max(220px, calc(var(--bw-app-h, 100dvh) - 280px));
         min-height: 0;
         /* grow AND shrink: on the height-locked wall layout the rail is stretched to the fold, and
            whatever does not fit has to come out of the BUTTON LIST — never out of the contextual
@@ -871,7 +871,7 @@
     .wall-carousel-root.editing .editor-stage { flex: 0 0 auto; }
     .wall-carousel-root.editing .editor-stage { container-type: normal; }
     .wall-carousel-root.editing .wall-main .photo-viewport {
-        --avail-h: calc(100dvh - var(--topbar-h) - 96px);
+        --avail-h: calc(var(--bw-app-h, 100dvh) - var(--topbar-h) - 96px);
         /* The phone tier switches the width cap off (the photo is width-bound upright); on its side
            it is height-bound, so without the cap the box would crop the photo instead of fitting it. */
         max-width: min(100%, calc(var(--avail-h) * var(--fit-aspect, 1.4)));
