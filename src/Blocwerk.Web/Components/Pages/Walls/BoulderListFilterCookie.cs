@@ -2,6 +2,7 @@
 // See License in the project root for license information.
 
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace Blocwerk.Web.Components.Pages.Walls;
@@ -9,13 +10,15 @@ namespace Blocwerk.Web.Components.Pages.Walls;
 /// <summary>
 /// The boulder list's filters and sort, remembered per wall in one cookie (written by <c>bwPrefs.setBoulderFilters</c> in
 /// <c>wwwroot/js/prefs.js</c>), so they survive a reload and an app restart. Per wall because that is the scope the list
-/// already had: a wall's filters were never carried to another wall's list.
+/// already had: a wall's filters were never carried to another wall's list. Per user too, since most of them are about
+/// the user ("done by me", "my favourites"): the next person signing in on the same device does not inherit them. The
+/// user is a short hash of the id, not the id itself, and sign-out deletes the cookie anyway.
 /// <para>
 /// The free-text search is deliberately not part of it: it is a transient lookup, not a setting.
 /// </para>
 /// <para>
-/// Format: entries separated by <c>|</c>, most recently used first, each <c>wallId,flags,sort,gradeMin,gradeMax</c>, with
-/// the wall id as 32 hex digits and the grades URI-escaped (so neither separator can appear inside one). At most
+/// Format: entries separated by <c>|</c>, most recently used first, each <c>user,wallId,flags,sort,gradeMin,gradeMax</c>,
+/// with the user as <see cref="UserKey"/>, the wall id as 32 hex digits and the grades URI-escaped (so neither separator can appear inside one). At most
 /// <see cref="MaxWalls"/> entries, and a wall whose filters are all at their defaults is dropped instead of stored, so the
 /// cookie stays a few hundred bytes. Anything malformed is skipped, never thrown on.
 /// </para>
@@ -32,12 +35,13 @@ internal static class BoulderListFilterCookie
 
     private const int MaxSort = 31;
 
-    /// <summary>The filters stored for <paramref name="wallId"/>, or null when there are none.</summary>
-    public static WallListFilter? Read(string? stored, Guid wallId)
+    /// <summary>The filters <paramref name="userId"/> stored for <paramref name="wallId"/>, or null when there are none.</summary>
+    public static WallListFilter? Read(string? stored, Guid userId, Guid wallId)
     {
-        foreach (var (id, filter) in Parse(stored))
+        var user = UserKey(userId);
+        foreach (var (owner, id, filter) in Parse(stored))
         {
-            if (id == wallId)
+            if (owner == user && id == wallId)
             {
                 return filter;
             }
@@ -47,27 +51,28 @@ internal static class BoulderListFilterCookie
     }
 
     /// <summary>
-    /// The cookie value with <paramref name="wallId"/>'s filters stored (search text ignored) and moved to the front, or
-    /// removed when they are all defaults.
+    /// The cookie value with <paramref name="userId"/>'s filters for <paramref name="wallId"/> stored (search text
+    /// ignored) and moved to the front, or removed when they are all defaults. Everyone else's entries are kept.
     /// </summary>
-    public static string Write(string? stored, Guid wallId, WallListFilter filter)
+    public static string Write(string? stored, Guid userId, Guid wallId, WallListFilter filter)
     {
-        var entries = Parse(stored).Where(e => e.WallId != wallId).ToList();
+        var user = UserKey(userId);
+        var entries = Parse(stored).Where(e => e.User != user || e.WallId != wallId).ToList();
         var normalized = Normalize(filter);
         if (!IsDefault(normalized))
         {
-            entries.Insert(0, (wallId, normalized));
+            entries.Insert(0, (user, wallId, normalized));
         }
 
         var builder = new StringBuilder();
-        foreach (var (id, f) in entries.Take(MaxWalls))
+        foreach (var (owner, id, f) in entries.Take(MaxWalls))
         {
             if (builder.Length > 0)
             {
                 builder.Append('|');
             }
 
-            builder.Append(CultureInfo.InvariantCulture, $"{id:N},{Flags(f)},{f.Sort},{Escape(f.GradeMin)},{Escape(f.GradeMax)}");
+            builder.Append(CultureInfo.InvariantCulture, $"{owner},{id:N},{Flags(f)},{f.Sort},{Escape(f.GradeMin)},{Escape(f.GradeMax)}");
         }
 
         return builder.ToString();
@@ -81,6 +86,13 @@ internal static class BoulderListFilterCookie
         GradeMax = string.IsNullOrEmpty(filter.GradeMax) ? null : filter.GradeMax,
     };
 
+    /// <summary>
+    /// Eight hex digits of the user id's SHA-256: enough to tell the people who share one device apart, without writing
+    /// the account id into a cookie.
+    /// </summary>
+    public static string UserKey(Guid userId) =>
+        Convert.ToHexStringLower(SHA256.HashData(userId.ToByteArray()), 0, 4);
+
     private static bool IsDefault(WallListFilter f) =>
         f.GradeMin is null && f.GradeMax is null && Flags(f) == 0 && f.Sort == 0;
 
@@ -90,7 +102,7 @@ internal static class BoulderListFilterCookie
 
     private static string Escape(string? grade) => grade is null ? string.Empty : Uri.EscapeDataString(grade);
 
-    private static IEnumerable<(Guid WallId, WallListFilter Filter)> Parse(string? stored)
+    private static IEnumerable<(string User, Guid WallId, WallListFilter Filter)> Parse(string? stored)
     {
         if (string.IsNullOrWhiteSpace(stored))
         {
@@ -99,24 +111,26 @@ internal static class BoulderListFilterCookie
 
         foreach (var entry in stored.Split('|', StringSplitOptions.RemoveEmptyEntries).Take(MaxWalls))
         {
-            if (TryParseEntry(entry, out var wallId, out var filter))
+            if (TryParseEntry(entry, out var user, out var wallId, out var filter))
             {
-                yield return (wallId, filter);
+                yield return (user, wallId, filter);
             }
         }
     }
 
-    private static bool TryParseEntry(string entry, out Guid wallId, out WallListFilter filter)
+    private static bool TryParseEntry(string entry, out string user, out Guid wallId, out WallListFilter filter)
     {
         filter = null!;
         var parts = entry.Split(',');
-        if (parts.Length != 5
-            || !Guid.TryParseExact(parts[0], "N", out wallId)
-            || !int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var flags)
-            || !int.TryParse(parts[2], NumberStyles.None, CultureInfo.InvariantCulture, out var sort)
+        user = parts[0];
+        if (parts.Length != 6
+            || user.Length != 8
+            || !Guid.TryParseExact(parts[1], "N", out wallId)
+            || !int.TryParse(parts[2], NumberStyles.None, CultureInfo.InvariantCulture, out var flags)
+            || !int.TryParse(parts[3], NumberStyles.None, CultureInfo.InvariantCulture, out var sort)
             || sort > MaxSort
-            || !TryUnescape(parts[3], out var min)
-            || !TryUnescape(parts[4], out var max))
+            || !TryUnescape(parts[4], out var min)
+            || !TryUnescape(parts[5], out var max))
         {
             wallId = Guid.Empty;
             return false;

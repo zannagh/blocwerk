@@ -763,19 +763,19 @@ else
                 {
                     @* Search: a lens chip beside Filters opens a field in the sticky head. list-search.js shows
                        and focuses it inside the tap, so a phone raises its keyboard. See WallDetail.ListFilters.cs. *@
-                    <button type="button" class="list-search-chip@(_searchOpen || !string.IsNullOrEmpty(_searchText) ? " active" : string.Empty)"
-                            @ref="_searchToggle" @onclick="ToggleSearch" data-bw-search-toggle
+                    <button type="button" class="list-search-chip@(searchOpen || !string.IsNullOrEmpty(_searchText) ? " active" : string.Empty)"
+                            @ref="searchToggle" @onclick="ToggleSearch" data-bw-search-toggle
                             aria-label="Search boulders" title="Search boulders"
-                            aria-expanded="@(_searchOpen ? "true" : "false")" aria-controls="@SearchRowId">
+                            aria-expanded="@(searchOpen ? "true" : "false")" aria-controls="@SearchRowId">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                              stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true">
                             <circle cx="11" cy="11" r="7"></circle>
                             <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
                         </svg>
                     </button>
-                    <div class="list-search-row" id="@SearchRowId" hidden="@(!_searchOpen)" role="search"
+                    <div class="list-search-row" id="@SearchRowId" hidden="@(!searchOpen)" role="search"
                          @onkeydown="OnSearchKeyDownAsync">
-                        <input type="search" class="filter-input list-search-input" @ref="_searchInput"
+                        <input type="search" class="filter-input list-search-input" @ref="searchInput"
                                @bind="_searchText" @bind:event="oninput"
                                placeholder="Search name, grade, setter" aria-label="Search boulders"
                                inputmode="search" enterkeyhint="search" autocomplete="off"
@@ -1327,8 +1327,7 @@ else
 
         // Back from a boulder: the page as it was left renders at once, and the load below refreshes it.
         var restored = RestoreFromPageMemory();
-        await LoadListFiltersAsync(restored);
-        await RefreshRestoredPageAsync(restored, LoadCurrentWall);
+        await RefreshRestoredPageAsync(restored, () => LoadWallAndListFiltersAsync(restored));
     }
 
     // Navigating from one wall to another keeps this component alive — same route template, new
@@ -1347,11 +1346,13 @@ else
         // Drop the old wall first: it puts the page back on its "Loading..." state, which also
         // recreates the carousel so it opens on the new wall's initial page rather than wherever the
         // user had swiped the previous one.
+        // The search is a lookup on the wall it was typed on: whatever this wall's filters turn out to be, it starts
+        // without one.
         _wall = null;
         _show3D = false;
+        CloseSearch();
         StateHasChanged();
-        await LoadListFiltersAsync(restored: false);
-        await LoadCurrentWall();
+        await LoadWallAndListFiltersAsync(restored: false);
     }
 
     private async Task LoadCurrentWall()

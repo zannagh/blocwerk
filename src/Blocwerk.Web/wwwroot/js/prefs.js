@@ -27,7 +27,13 @@ window.bwPrefs = (function () {
         for (let i = 0; i < parts.length; i++) {
             const c = parts[i].trim();
             if (c.indexOf(prefix) === 0) {
-                return decodeURIComponent(c.substring(prefix.length));
+                // A malformed (tampered, truncated) value reads as unset rather than throwing at every caller,
+                // so the next write simply replaces it.
+                try {
+                    return decodeURIComponent(c.substring(prefix.length));
+                } catch (e) {
+                    return null;
+                }
             }
         }
         return null;

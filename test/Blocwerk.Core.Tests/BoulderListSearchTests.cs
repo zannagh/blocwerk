@@ -33,6 +33,13 @@ public class BoulderListSearchTests
     [InlineData("eclair", "Éclair")]
     [InlineData("ÉCLAIR", "eclair")]
     [InlineData("muller", "Müller's traverse")]
+    [InlineData("gross", "Großer Riss")]
+    [InlineData("GROSSER", "GROẞER RISS")]
+    [InlineData("lodz", "Łódź")]
+    [InlineData("oresund", "Øresund")]
+    [InlineData("aero", "Æro")]
+    [InlineData("dakovo", "Đakovo")]
+    [InlineData("oeuvre", "Œuvre")]
     public void IgnoresAccents(string query, string name)
     {
         Assert.True(Finds(query, Item(name)));

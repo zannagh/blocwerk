@@ -84,13 +84,44 @@ window.wallCarousel = {
     // accessibility tree. Inert changes nothing that is painted, so the neighbour a swipe reveals still shows; it only
     // stops a tap landing on a page that is not settled yet, and the track still scrolls under such a tap.
     // Re-applied on every settle, so a page Blazor (re)creates is picked up the next time the track comes to rest.
+    //
+    // Focus inside a page that goes inert is moved on purpose, the same way in every engine: Chromium would drop it to
+    // <body> and WebKit would leave it on the inert element (an iOS keyboard stays up, typing a search into a list that
+    // is off screen). It is blurred, and the page now on screen takes it, so a keyboard user carries on from there.
     markActive(el, page) {
         const pages = el && el.children ? el.children : [];
+        const focused = document.activeElement;
+        let moveFocus = false;
         for (let i = 0; i < pages.length; i++) {
             const inert = i !== page;
-            if (pages[i].inert !== inert) {
-                pages[i].inert = inert;
+            if (pages[i].inert === inert) {
+                continue;
             }
+            if (inert && focused && focused !== document.body && pages[i].contains(focused)) {
+                focused.blur();
+                moveFocus = true;
+            }
+            pages[i].inert = inert;
+        }
+        const target = pages[page];
+        if (moveFocus && target) {
+            if (!target.hasAttribute('tabindex')) {
+                target.setAttribute('tabindex', '-1');
+            }
+            target.focus({ preventScroll: true });
+        }
+    },
+    // The page under the track right now is usable at once, without waiting for the settle: on iOS (no scrollend) the
+    // settle is an idle timer that every touch restarts, so a page that stayed inert until then could not be scrolled
+    // or tapped for as long as the user kept trying. Only ever lifts inert; the settle re-marks the rest.
+    releaseNearest(el) {
+        const count = el && el.children ? el.children.length : 0;
+        if (count === 0 || el.clientWidth === 0) {
+            return;
+        }
+        const nearest = el.children[Math.min(count - 1, Math.max(0, Math.round(el.scrollLeft / el.clientWidth)))];
+        if (nearest.inert) {
+            nearest.inert = false;
         }
     },
     scrollToPage(el, idx, smooth) {
@@ -258,6 +289,7 @@ window.wallCarousel = {
             if (el.clientWidth > 0 && el.clientWidth === state.width) {
                 state.frac = el.scrollLeft / el.clientWidth;
             }
+            this.releaseNearest(el);
             state.arm();
         };
         state.width = el.clientWidth;
@@ -325,6 +357,7 @@ window.wallCarousel = {
         state.onWheel = (e) => state.pager.onWheel(e);
         state.onPointerDown = () => {
             state.pointers++;
+            this.releaseNearest(el);
             clearTimeout(state.confirmTimer);
             state.swiped = true;
             // A finger beats a pending re-snap: from here the user decides the page again.
@@ -336,6 +369,7 @@ window.wallCarousel = {
         };
         state.onPointerUp = () => {
             state.pointers = Math.max(0, state.pointers - 1);
+            this.releaseNearest(el);
             state.arm();
         };
         el.addEventListener('scroll', state.onScroll, { passive: true });

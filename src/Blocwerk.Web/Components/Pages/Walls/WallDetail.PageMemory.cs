@@ -158,6 +158,7 @@ public partial class WallDetail
         _activityPage = page.ActivityPage;
 
         ApplyListFilter(page.Filter);
+        searchOpen = !string.IsNullOrEmpty(_searchText);
         return true;
     }
 }

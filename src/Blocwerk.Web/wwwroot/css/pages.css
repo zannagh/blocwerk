@@ -338,6 +338,9 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
     box-sizing: border-box;
 }
 .wall-page.no-pad { padding: 0; }
+/* wall-carousel.js hands focus to the page on screen when the one holding it is swiped away; the page is a container,
+   not a control, so it draws no ring. */
+.wall-page:focus { outline: none; }
 /* A slide scrolls ITSELF; reaching its top or bottom must not hand the gesture to the document (the
    "whole page scrolls instead of the list" report), nor a sideways overshoot to the browser's
    back-swipe. */

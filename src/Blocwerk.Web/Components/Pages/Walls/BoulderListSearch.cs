@@ -40,17 +40,32 @@ internal static class BoulderListSearch
         return true;
     }
 
-    /// <summary>Lower case with diacritics stripped: "Éclair" and "ECLAIR" both become "eclair".</summary>
+    /// <summary>
+    /// Lower case with diacritics stripped: "Éclair" and "ECLAIR" both become "eclair". Letters that are not a base
+    /// letter plus a mark are spelled out the way a keyboard without them would type them: "Großer" is "grosser",
+    /// "Łódź" is "lodz".
+    /// </summary>
     public static string Fold(string text)
     {
-        var decomposed = text.Normalize(NormalizationForm.FormD);
+        var decomposed = text.ToLowerInvariant().Normalize(NormalizationForm.FormD);
         var builder = new StringBuilder(decomposed.Length);
         foreach (var c in decomposed)
         {
-            if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark)
+            if (CharUnicodeInfo.GetUnicodeCategory(c) == UnicodeCategory.NonSpacingMark)
             {
-                builder.Append(char.ToLowerInvariant(c));
+                continue;
             }
+
+            builder.Append(c switch
+            {
+                'ß' => "ss",
+                'ł' => "l",
+                'ø' => "o",
+                'æ' => "ae",
+                'đ' => "d",
+                'œ' => "oe",
+                _ => c.ToString(),
+            });
         }
 
         return builder.ToString().Normalize(NormalizationForm.FormC);

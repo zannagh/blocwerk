@@ -128,3 +128,68 @@ test('only the page on screen is searchable: every other carousel page is inert'
     await expect(listPage(page)).toBeAttached();
     await expect(cards(page).first()).not.toBeInViewport();
 });
+
+// iOS has no scrollend, so the settle that re-marks the pages is an idle timer every touch restarts. The page a swipe
+// lands on has to be usable before it: here the settle is switched off altogether, as if the user kept touching.
+test('the page a swipe lands on scrolls and takes taps before the carousel settles', async ({ page, world }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const wall = world.walls.beta;
+    await signIn(page, world.users.alice, `/walls/${wall.id}`);
+    await page.goto(`/walls/${wall.id}`);
+    await expect(page.locator('.wall-carousel:not(.carousel-pending)')).toBeVisible();
+    await expect.poll(() => listPage(page).evaluate(p => p.inert)).toBe(true);
+    await expect(cards(page)).toHaveCount(40);
+
+    await page.locator('.wall-carousel').evaluate(el => {
+        const state = el._bwCarousel;
+        el.removeEventListener('scrollend', state.onScrollEnd);
+        state.settle = () => { };
+        el.scrollTo({ left: el.children[3].offsetLeft, behavior: 'instant' });
+    });
+    await expect.poll(() => listPage(page).evaluate(p => p.inert)).toBe(false);
+
+    const box = await listPage(page).boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, 600);
+    await expect.poll(() => listPage(page).evaluate(p => p.scrollTop)).toBeGreaterThan(100);
+    await cards(page).filter({ visible: true }).nth(1).click();
+    await expect(page.locator('.boulder-detail h1')).toBeVisible();
+});
+
+test('focus on a page that is swiped away moves to the page on screen, in every engine', async ({ page, world }) => {
+    await openList(page, world);
+    await listPage(page).getByRole('button', { name: 'Search boulders' }).click();
+    const field = listPage(page).getByRole('searchbox');
+    await expect(field).toBeFocused();
+
+    await page.locator('.wall-carousel').evaluate(el => el.scrollTo({ left: el.children[2].offsetLeft, behavior: 'instant' }));
+    await expect.poll(() => page.evaluate(() => {
+        const pages = [...document.querySelectorAll('.wall-carousel > .wall-page')];
+        return pages.indexOf(document.activeElement);
+    })).toBe(2);
+    await expect(field).not.toBeFocused();
+});
+
+test('the filters cookie keeps what another tab stored, replaces a malformed value, and leaves with sign-out', async ({ page, world, context, baseURL }) => {
+    const host = new URL(baseURL).hostname;
+    const read = async () => (await context.cookies()).find(c => c.name === 'blocwerk-boulder-filters')?.value;
+    const decoded = async () => { try { return decodeURIComponent((await read()) || ''); } catch { return ''; } };
+    const foreign = '0badc0de,' + '9'.repeat(32) + ',2,0,,';
+
+    // Malformed: the list opens unfiltered, and the first change overwrites it.
+    await context.addCookies([{ name: 'blocwerk-boulder-filters', value: '%E0%A4%A', domain: host, path: '/', sameSite: 'Lax' }]);
+    await openList(page, world);
+    await listPage(page).getByRole('button', { name: /Filters/ }).click();
+    await listPage(page).getByLabel('Not done by me').check();
+    await expect.poll(decoded).toContain(world.walls.beta.id.replace(/-/g, ''));
+    expect(await read()).not.toContain('%E0%A4%A');
+
+    // Another tab stored a wall since this page loaded: the next save merges into it.
+    await context.addCookies([{ name: 'blocwerk-boulder-filters', value: encodeURIComponent(foreign), domain: host, path: '/', sameSite: 'Lax' }]);
+    await listPage(page).locator('.filter-select').selectOption({ label: 'Oldest' });
+    await expect.poll(decoded).toContain(',4,1,');
+    expect(decodeURIComponent(await read())).toContain(foreign);
+
+    await page.goto('/account/logout');
+    await expect.poll(read).toBeUndefined();
+});
