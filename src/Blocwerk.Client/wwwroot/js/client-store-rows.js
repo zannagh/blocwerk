@@ -102,7 +102,8 @@ window.bwClientStoreRows = (function (win) {
         const walls = [];
         for (const row of await ledger.wallsOf(partition)) {
             if (await mayRead(ledger, partition, row)) {
-                walls.push({ wallId: idOf(row.wallId), data: refsOf(row.data), member: row.member === true, key: keyOf(row) });
+                // savedAt: when the Server page last saved the wall's manifest here (the pill's "saved {time}", PR 3.14).
+                walls.push({ wallId: idOf(row.wallId), data: refsOf(row.data), member: row.member === true, key: keyOf(row), savedAt: typeof row.fetchedAt === 'number' ? row.fetchedAt : null });
             }
         }
         const shown = new Set(walls.map(w => w.wallId));

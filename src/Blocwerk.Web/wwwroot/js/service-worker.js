@@ -131,6 +131,10 @@ self.addEventListener('message', event => {
     } else if (data.type === 'deploy-pending' || data.type === 'deploy-done') {
         // An announced deploy holds the offline client's hand-off until the new instance is seen (the offline client section).
         lifetime(event, data.type === 'deploy-pending' ? holdForDeploy() : endDeployHold());
+    } else if (data.type === 'client-target') {
+        // PR 3.14: where "Continue offline" goes for the page's path, the hand-off rules without the deploy hold (the user
+        // asked), `target` null when the client cannot take it.
+        lifetime(event, clientTarget(data.path).then(target => reply(event, { proto: PROTO, type: 'client-target', target })));
     } else if (data.type === 'client-precache') {
         lifetime(event, precacheClient().then(result => reply(event, { proto: PROTO, type: 'client-precached', ...result })));
     } else if (data.type === 'sw-refresh-partition') {
@@ -408,6 +412,22 @@ function servableClient() {
         .catch(() => null);
 }
 
+// The client URL for a Server path the client covers on this device, or null (the deploy hold aside).
+function clientTarget(path) {
+    let url;
+    try {
+        url = new URL(typeof path === 'string' && path.startsWith('/') && !path.startsWith('//') ? path : '/', self.location.origin);
+    } catch (e) {
+        return Promise.resolve(null);
+    }
+    if (CLIENT_NEVER.test(url.pathname)) {
+        return Promise.resolve(null);
+    }
+    return servableClient()
+        .then(record => (record && record.routes.some(route => clientRouteCovers(route, url.pathname)) ? `/v${url.pathname}${url.search}` : null))
+        .catch(() => null);
+}
+
 // The client URL that takes over a failed navigation to `url`, or null.
 function clientHandoff(url) {
     if (CLIENT_NEVER.test(url.pathname)) {
@@ -421,13 +441,16 @@ function clientHandoff(url) {
 
 const clientRedirect = path => Response.redirect(new URL(path, self.location.origin).href, 302);
 
-// A Server-page navigation: the network's answer, unless it fails and the client can take over (see HAND-OFF).
+// A Server-page navigation: the network's answer, unless it fails and the client can take over (see HAND-OFF). A
+// navigation from a /v/ page (the client's hand-back, PR 3.14) gets no 4 s timer: the client saw the server answer, so a
+// slow page is waited for, and a tap can never bounce straight back into the client.
 function navigateWithHandoff(request, offlinePage) {
     const url = new URL(request.url);
     let target = null;
     const handoff = () => target || (target = clientHandoff(url).catch(() => null));
+    const fromClient = typeof request.referrer === 'string' && request.referrer.startsWith(self.location.origin + CLIENT_SHELL_PATH);
     return new Promise(resolve => {
-        const timer = setTimeout(() => handoff().then(path => {
+        const timer = fromClient ? null : setTimeout(() => handoff().then(path => {
             if (path) {
                 resolve(clientRedirect(path));
             }

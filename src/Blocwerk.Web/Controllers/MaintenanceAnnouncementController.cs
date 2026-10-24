@@ -1,5 +1,6 @@
 using Blocwerk.Authentication.Authorization;
 using Blocwerk.Authentication.Handlers;
+using Blocwerk.Client;
 using Blocwerk.Core.Services;
 using Blocwerk.Web.Endpoints;
 using Blocwerk.Web.State;
@@ -73,6 +74,7 @@ public sealed class MaintenanceAnnouncementController : ControllerBase
             ProcessInstance.StartedAt,
             true,
             announcement.Message,
-            announcement.ExpiresAt));
+            announcement.ExpiresAt,
+            ClientSchema.Minimum));
     }
 }

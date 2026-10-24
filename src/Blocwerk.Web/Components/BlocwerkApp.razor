@@ -213,6 +213,9 @@
     <script src="@Assets["js/deploy-drafts.js"]"></script>
     <script src="@Assets["js/maintenance.js"]"></script>
     <script src="@Assets["js/offline-status.js"]"></script>
+    @* "Continue offline" in the pill's panel while the circuit is down (PR 3.14): asks the worker for the offline
+       client's twin of this page; after offline-status.js, whose render it calls once the worker answers. *@
+    <script src="@Assets["js/client-continue.js"]"></script>
     <script src="@Assets["js/pwa.js"]"></script>
     @* The worker-loss guard (PR 3.9): a controller that no longer answers sw-info reloads the page once the server is
        reachable, so the next offline navigation has a worker to catch it. The offline client's shell loads it too. *@

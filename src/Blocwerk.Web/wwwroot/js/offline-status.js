@@ -145,6 +145,12 @@
             actions.appendChild(login);
         }
 
+        // The offline client, when this device has it for this page (PR 3.14, client-continue.js).
+        const offlineView = window.bwClientContinue ? window.bwClientContinue.target() : null;
+        if (offlineView) {
+            actions.appendChild(button('Continue offline', () => window.bwClientContinue.go()));
+        }
+
         // A held-back maintenance reload is offered explicitly; the automatic one waits for the
         // text field to be empty, and the user may well want it sooner.
         if (window.bwMaintenance && window.bwMaintenance.active() && window.bwMaintenance.state().phase === 'ready') {
