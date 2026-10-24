@@ -19,13 +19,17 @@ export const shareHash = token => createHash('sha256').update(token).digest('hex
 export const cacheNames = caches => [...caches.stores.keys()].sort();
 const tick = id => ({ boulderId: id, attempts: 2, sent: false, flashed: true, lastAt: null });
 
-/** more: loadClient's options, plus others (more labels to fill), meta (merged into the ledger's), share (anon's token). */
+/**
+ * more: loadClient's options, plus others (more labels to fill), meta (merged into the ledger's), share (anon's token),
+ * walls (the label's own walls, default W1 and W2; the others always get both).
+ */
 export async function device(label, more = {}) {
     const caches = more.caches || bodyCaches();
     const client = loadClient(Object.assign({ caches }, more));
     const ledger = await client.ledger();
     for (const p of [label].concat(more.others || [])) {
-        for (const [wallId, c] of [[W1, '1'], [W2, '2']]) {
+        const walls = p === label && more.walls ? more.walls : [W1, W2];
+        for (const [wallId, c] of [[W1, '1'], [W2, '2']].filter(([w]) => walls.includes(w))) {
             const shas = { wall: sha(c + 'a'), comments: sha(c + 'c') };
             const share = p === 'anon' ? shareHash(more.share ?? TOKEN) : undefined;
             await ledger.updateWall(p, wallId, () => ({ partition: p, wallId, member: p.startsWith('u-'), share, data: { wall: { sha: shas.wall, bytes: 1, cursor: '1.2.3' }, comments: { sha: shas.comments, bytes: 1, cursor: '1.2.3' } } }));

@@ -27,7 +27,9 @@
             <StoreNotice Title="Updating offline data…" Text="Another Blocwerk tab still uses the older offline data. Close it, then open this page again." Online="@Online" />
             break;
         case StoreState.Kiosk:
-            <StoreNotice Title="Not available offline" Text="The kiosk has no offline view." Online="@Online" />
+            @* A kiosk tablet with nothing it may show: its wall's data is not on this tablet (never cached, or its answers
+               were no-store). It never falls through to an empty page, and it never names another partition's data. *@
+            <StoreNotice Title="Not available offline" Text="This kiosk has no offline copy of its wall." Online="@Online" />
             break;
         case StoreState.Unavailable:
             <StoreNotice Title="Nothing saved offline" Text="This browser does not let Blocwerk read its offline data." Online="@Online" />

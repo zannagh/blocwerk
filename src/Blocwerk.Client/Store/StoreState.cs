@@ -24,6 +24,9 @@ public enum StoreState
     /// <summary>The device cache cannot be read (storage refused, or the shared modules missing).</summary>
     Unavailable,
 
-    /// <summary>A kiosk partition: the kiosk has no offline mode before PR 3.15.</summary>
+    /// <summary>
+    /// A kiosk tablet with nothing it may show (PR 3.15): its bound wall's kiosk-class data is not on the device (never
+    /// cached, or a <c>no-store</c> tablet). A tablet that holds it is <see cref="Ready"/>, with that one wall.
+    /// </summary>
     Kiosk,
 }

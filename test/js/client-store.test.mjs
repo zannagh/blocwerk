@@ -1,6 +1,6 @@
 // The offline client's store reader (Phase 3 PR 3.10, client-store.js) over the real shared cache modules and none of
 // Web's globals: the partition comes from the ledger, never the shell's `offline` meta; a lock, a pending upgrade,
-// refused storage and a kiosk read nothing; `anon` reads only its share link's wall and a tokenless /v/ wipes it
+// refused storage and a kiosk of two walls read nothing (client-store-kiosk.test.mjs has the kiosk); `anon` reads only its share link's wall and a tokenless /v/ wipes it
 // (rule 6); marks only under `u-`; documents only under the active label, re-checked after the read, the predecessor
 // never for comments; the start drops a lock past 7 days and sweeps other partitions (their mine rows too); Clear
 // offline data works without bwAssetCache; the refusal matrix of §3; the change listeners. Run by `node --test test/js/`.
@@ -39,7 +39,7 @@ test('a lock the degraded ledger only knows from the mirror still reads nothing'
     assert.equal((await client.store.snapshot()).state, 'locked');
 });
 
-test('a pending upgrade is updating, refused storage unavailable, a kiosk kiosk: none reads a wall', async () => {
+test('a pending upgrade is updating, refused storage unavailable, a kiosk holding two walls kiosk: none reads a wall', async () => {
     const pending = loadClient({ degraded: true, pending: true });
     assert.equal((await pending.store.snapshot()).state, 'updating');
     const refused = loadClient({ degraded: true, storage: new Map([['blocwerk-asset-identity', JSON.stringify({ activePartition: USER_A })]]) });
@@ -48,7 +48,7 @@ test('a pending upgrade is updating, refused storage unavailable, a kiosk kiosk:
 
     const { client } = await device(KIOSK);
     same(await client.store.snapshot(), { state: 'kiosk', partition: KIOSK, shareWall: null, walls: [], mine: [] });
-    assert.equal(await client.store.docs(KIOSK, W1), null, 'no kiosk documents before PR 3.15');
+    assert.equal(await client.store.docs(KIOSK, W1), null, 'a kiosk partition of two walls is not one bound wall (PR 3.15)');
 });
 
 test('no label, or a label with no wall, is empty', async () => {

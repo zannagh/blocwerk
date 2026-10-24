@@ -192,7 +192,7 @@ public sealed class ClientStore
     // signed in caches the outsider class, and a later visit without the token must still purge drafts.
     private static StoreAudience AudienceOf(StoreSnapshot snapshot, Guid wallId) => snapshot.Partition switch
     {
-        { } p when p.StartsWith("k-", StringComparison.Ordinal) => StoreAudience.Kiosk,
+        { } p when KioskStoreGate.IsKiosk(p) => StoreAudience.Kiosk,
         "anon" => StoreAudience.Outsider,
         _ when snapshot.Walls.FirstOrDefault(w => w.WallId == wallId) is { Member: true } => StoreAudience.Member,
         _ => StoreAudience.Outsider,
@@ -253,7 +253,7 @@ public sealed class ClientStore
 
     private void Land(StoreSnapshot next)
     {
-        var state = StateOf(next.State);
+        var state = KioskStoreGate.Check(StateOf(next.State), next);
         if (state == State && SameSnapshot(next, snapshot))
         {
             return;

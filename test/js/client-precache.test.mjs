@@ -44,10 +44,11 @@ test('the page asks for the precache once its fill is done, and records the comp
     assert.equal(JSON.parse(page.storage.get('bw-client-precache')).complete, true);
 });
 
-test('Save-Data, no version, a kiosk, no partition, a degraded ledger or no offline wall: no precache', async () => {
+test('Save-Data, no version, no partition, a degraded ledger or no offline wall: no precache', async () => {
     const cases = {
-        'Save-Data': { saveData: true }, 'no version meta': { version: null }, kiosk: { active: 'k-' + 'k'.repeat(20) },
+        'Save-Data': { saveData: true }, 'no version meta': { version: null },
         none: { active: 'none' }, degraded: { degraded: true }, 'no offline wall': { walls: 0 },
+        'a kiosk with no wall': { active: 'k-' + 'k'.repeat(20), walls: 0 },
     };
     for (const [name, options] of Object.entries(cases)) {
         const page = precachePage(options);
@@ -55,6 +56,7 @@ test('Save-Data, no version, a kiosk, no partition, a degraded ledger or no offl
         assert.deepEqual(page.asked.filter(t => t === 'client-precache'), [], name);
     }
     assert.equal(await precachePage({ active: 'anon' }).run(), 'complete', 'a share viewer with a wall precaches');
+    assert.equal(await precachePage({ active: 'k-' + 'k'.repeat(20) }).run(), 'complete', 'a kiosk tablet with its wall precaches (PR 3.15)');
 });
 
 test('an old worker (no client field) or none is left alone; a complete one is not asked again', async () => {

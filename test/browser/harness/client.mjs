@@ -55,3 +55,12 @@ export async function expectOfflinePage(page, path) {
     await expect(page.locator('h1')).toHaveText("You're offline");
     await expect(page).toHaveURL(new RegExp(`${path.replace(/[?]/g, '\\?')}$`));
 }
+
+/** The wall's data documents the ledger names that are missing from the partition's -3d cache (the worker stores them as fetched). */
+export const missingDocs = (page, partition, wallId) => page.evaluate(async ([p, w]) => {
+    const l = await window.bwAssetLedger.open();
+    const row = (await l.wallsOf(p)).find(r => r.wallId === w);
+    const shas = Object.values((row && row.data) || {}).map(d => d.sha);
+    const hits = await Promise.all(shas.map(s => caches.match(`${location.origin}/__bw/${s}`, { cacheName: `bw-a1-${p}-3d` })));
+    return shas.length === 0 ? ['no documents named'] : shas.filter((s, i) => !hits[i]);
+}, [partition, wallId]);

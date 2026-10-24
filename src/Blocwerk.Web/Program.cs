@@ -15,6 +15,7 @@ using Blocwerk.Web.Components;
 using Blocwerk.Web.Controllers;
 using Blocwerk.Web.Endpoints;
 using Blocwerk.Web.Endpoints.Feed;
+using Blocwerk.Web.Grades;
 using Blocwerk.Web.HealthChecks;
 using Blocwerk.Web.Maintenance;
 using Blocwerk.Web.State;
@@ -336,6 +337,10 @@ public static class Program
         app.MapStaticAssets();
         app.ConfigureCoreApplication();
         app.ConfigureAuthenticationMiddlewares();
+
+        // The grade-scale cookie the offline client reads (Phase 3 §2): set on Server pages for a signed-in person, never
+        // for a kiosk session (PR 3.15). After the kiosk middleware, which primes the kiosk context.
+        app.UseGradePreferenceCookie();
 
         // WithStaticAssets: controller endpoints carry the fingerprinted asset map (ResourceAssetCollection), which the
         // signed-out page (SiteDataClearing.SignedOutPage) uses for its scripts, as BlocwerkApp does through @Assets.

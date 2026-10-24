@@ -4,8 +4,9 @@
  * The page triggers it, the worker does it (service-worker.js, the offline client section). Once this page's asset-cache start and its first fill
  * are done, and only when:
  *   - the page names a client version (its `bw-client-version` meta) and Save-Data is off (any connection type counts);
- *   - the page caches for a person (`u-…`) or a share viewer (`anon`) with a durable ledger, and the device holds at
- *     least one wall of that partition, so there is something to open offline (a kiosk waits for PR 3.15);
+ *   - the page caches for a person (`u-…`), a share viewer (`anon`) or a kiosk tablet (`k-…`, PR 3.15) with a durable
+ *     ledger, and the device holds at least one wall of that partition, so there is something to open offline (a kiosk
+ *     that may keep nothing is `none`, and is never precached);
  *   - the worker answers `sw-info` with a `client` field (blocwerk-shell-v5 or later; an older one is left alone);
  *   - the worker's complete version is not already this page's;
  *   - no failed attempt for this version started within RETRY_MS (a failing fill is not retried on every page);
@@ -21,7 +22,7 @@ window.bwClientPrecache = (function (win) {
     // A cold 2–3 MB fill on a slow connection; the worker keeps going after the page stops waiting.
     const ANSWER_MS = 5 * 60 * 1000;
     const VERSION = /^[0-9a-f]{16}$/;
-    const LABEL = /^(anon|u-[a-z2-7]{20})$/;
+    const LABEL = /^(anon|[uk]-[a-z2-7]{20})$/;
 
     const state = { done: null };
 
