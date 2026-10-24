@@ -27,6 +27,9 @@
  * Exposes `window.blocwerkConnection`:
  *   isUp()            -> bool
  *   status()          -> 'connected' | 'reconnecting' | 'failed' | 'rejected'
+ *   started()         -> bool: Blazor.start resolved, so the circuit is running. Before that, 'connected' only
+ *                        means "nothing went wrong yet": a connection lost while the circuit is still starting
+ *                        is not one the framework reconnects (and so not one this status reports).
  *   subscribe(cb)     -> unsubscribe fn, cb(status)
  *   reconnect()       -> manual retry (used by the status pill)
  *   reload()          -> full page reload, for the 'rejected' case
@@ -152,7 +155,12 @@
         }
     }
 
+    let started = false;
+
     window.blocwerkConnection = {
+        started: function () {
+            return started;
+        },
         isUp: function () {
             return status === 'connected';
         },
@@ -293,6 +301,8 @@
                 }
             }
         }
+    }).then(function () {
+        started = true;
     }).catch(function (err) {
         console.error('[blocwerk-connection] Blazor failed to start', err);
         publish('failed');

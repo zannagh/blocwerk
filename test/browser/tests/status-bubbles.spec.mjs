@@ -2,7 +2,8 @@
 // wall list and the wall's title bar used to carry: "Offline mode available" once the walls are on the device (once,
 // not on every load), "Switched to offline/online mode" around an outage, and "Uploading …" then a conflict for what
 // was queued meanwhile. Every bubble bwStatus agrees to show is recorded in sessionStorage by an init script, so a test
-// can count them across reloads however short they stay up.
+// can count them across reloads however short they stay up: the tests assert on that history, never on a bubble still
+// being on screen, and drive the queue with retryNow() instead of waiting out its backoff.
 import { test, expect, signIn, installWorker, hasPageModules, settled } from '../harness/fixtures.mjs';
 
 // Wraps bwStatus.show as soon as the page defines it, recording each bubble shown (not the dropped repeats).
@@ -27,6 +28,19 @@ async function recordBubbles(page) {
             }
         });
     });
+}
+
+async function signedInWithCircuit(page, user, url) {
+    await recordBubbles(page);
+    await signIn(page, user, url);
+    // Until Blazor.start resolves, a lost connection is not one the framework reconnects, so not one the app can
+    // notice: the server goes away only once the circuit runs.
+    await expect.poll(() => page.evaluate(() => window.blocwerkConnection.started() && window.blocwerkConnection.status() === 'connected'),
+        { timeout: 30000 }).toBe(true);
+    // And settled: in a cold WebKit, a connection lost within the first moments after the start raises no reconnect
+    // state at all (the framework's, not this app's), so the outage would go unnoticed for a reason the test is not about.
+    await page.waitForLoadState('networkidle');
+    await page.waitForFunction(() => performance.now() > 3000);
 }
 
 const shownBubbles = page => page.evaluate(() => JSON.parse(sessionStorage.getItem('pw-bubbles') || '[]'));
@@ -56,13 +70,10 @@ test('no checkmark on the wall list or the wall; "Offline mode available" once t
 });
 
 test('an outage: switched to offline mode, then to online mode when the server is back', async ({ page, world, server }) => {
-    await recordBubbles(page);
-    await signIn(page, world.users.alice, '/walls');
-    await expect(page.locator('#bw-conn-slot')).toBeAttached();
+    await signedInWithCircuit(page, world.users.alice, '/walls');
 
     await server.unreachable();
-    await expect(pill(page)).toHaveText('Switched to offline mode', { timeout: 20000 });
-    await expect(pill(page)).toHaveAttribute('data-bw-status', 'offline');
+    await expect.poll(() => shownBubbles(page), { timeout: 30000 }).toEqual(['Switched to offline mode']);
 
     await server.faults([]);
     await expect.poll(() => shownBubbles(page), { timeout: 30000 }).toEqual(['Switched to offline mode', 'Switched to online mode']);
@@ -70,12 +81,10 @@ test('an outage: switched to offline mode, then to online mode when the server i
 
 // The cookie banner is left up: the pill sits above it, so the conflict is visible and tappable on a fresh device.
 test('what was queued during an outage: "Uploading 2 changes", then the refused one as a conflict that survives a reload', async ({ page, world, server }) => {
-    await recordBubbles(page);
-    await signIn(page, world.users.erin, `/walls/${world.social.wallId}`);
-    await expect(page.locator('#bw-conn-slot')).toBeAttached();
+    await signedInWithCircuit(page, world.users.erin, `/walls/${world.social.wallId}`);
 
     await server.unreachable();
-    await expect.poll(() => shownBubbles(page), { timeout: 20000 }).toEqual(['Switched to offline mode']);
+    await expect.poll(() => shownBubbles(page), { timeout: 30000 }).toEqual(['Switched to offline mode']);
     // A favourite the server takes, and an ascent on a boulder that does not exist (404: given up for good).
     await page.evaluate(([boulder, missing]) => Promise.all([
         window.blocwerkOfflineQueue.enqueue('favorite', { boulderId: boulder, favorite: true }),
@@ -85,6 +94,9 @@ test('what was queued during an outage: "Uploading 2 changes", then the refused 
     // Back, but the offline API still answers 503 (kept, retried later), so nothing is sent before the circuit is up,
     // whichever of the queue's tick and the reconnect comes first.
     await server.faults([{ path: '^/api/offline/', status: 503 }]);
+    await expect.poll(() => shownBubbles(page), { timeout: 30000 }).toContain('Switched to online mode');
+    // The entries are still backing off from the outage: "Retry now" makes them due, and they meet the 503.
+    await page.evaluate(() => window.blocwerkOfflineQueue.retryNow());
     await expect.poll(() => shownBubbles(page), { timeout: 30000 })
         .toEqual(['Switched to offline mode', 'Switched to online mode', 'Uploading 2 changes']);
     await server.faults([]);
