@@ -68,9 +68,8 @@ test('an outage: switched to offline mode, then to online mode when the server i
     await expect.poll(() => shownBubbles(page), { timeout: 30000 }).toEqual(['Switched to offline mode', 'Switched to online mode']);
 });
 
-test('what was queued during an outage: "Uploading 2 changes", then the refused one as a conflict that lists it', async ({ page, context, world, server, baseURL }) => {
-    // The cookie banner sits over the pill until answered.
-    await context.addCookies([{ name: 'cookie_consent', value: 'accepted', url: baseURL }]);
+// The cookie banner is left up: the pill sits above it, so the conflict is visible and tappable on a fresh device.
+test('what was queued during an outage: "Uploading 2 changes", then the refused one as a conflict that survives a reload', async ({ page, world, server }) => {
     await recordBubbles(page);
     await signIn(page, world.users.erin, `/walls/${world.social.wallId}`);
     await expect(page.locator('#bw-conn-slot')).toBeAttached();
@@ -98,6 +97,10 @@ test('what was queued during an outage: "Uploading 2 changes", then the refused 
     ]);
     await expect(page.locator('#bw-status-alert')).toHaveText('1 change could not be uploaded');
 
+    // Kept over a reload (the post-deploy one included) until dismissed, and told again there.
+    await page.reload();
+    await expect(pill(page)).toHaveText('1 change could not be uploaded');
+    await expect(page.locator('.bw-consent')).toBeVisible();
     await pill(page).click();
     const panel = page.locator('.bw-conn-panel');
     await expect(panel.locator('.bw-conn-panel-error')).toHaveCount(1);

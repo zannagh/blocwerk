@@ -181,6 +181,7 @@
        each other lazily off window, inside functions, so neither order can break the other. *@
     <script src="@Assets["js/offline-db.js"]"></script>
     <script src="@Assets["js/offline-transport.js"]"></script>
+    <script src="@Assets["js/offline-rejected.js"]"></script>
     <script src="@Assets["js/offline-queue.js"]"></script>
     <script src="@Assets["js/offline-actions.js"]"></script>
     <script src="@Assets["js/offline-boulder.js"]"></script>
@@ -196,10 +197,11 @@
     <script src="@Assets["js/edit-presence.js"]"></script>
     <script src="@Assets["js/deploy-drafts.js"]"></script>
     <script src="@Assets["js/maintenance.js"]"></script>
-    @* status-bubble.js: the short status bubbles (bwStatus), told by status-sources.js and asset-report.js and drawn in
-       the pill by offline-status.js. *@
+    @* status-bubble.js: the short status bubbles (bwStatus), told by status-sources.js and asset-report.js; the pill
+       (status-pill.js draws what offline-status.js decides) shows them. *@
     <script src="@Assets["js/status-bubble.js"]"></script>
     <script src="@Assets["js/status-sources.js"]"></script>
+    <script src="@Assets["js/status-pill.js"]"></script>
     <script src="@Assets["js/offline-status.js"]"></script>
     <script src="@Assets["js/pwa.js"]"></script>
     @* The page side of the on-device wall-asset cache: the ledger, budgets, wipe rules, manifests, the page's

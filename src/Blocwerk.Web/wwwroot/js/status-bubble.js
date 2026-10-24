@@ -2,60 +2,61 @@
  * bwStatus — the short status bubbles of the connection / sync pill: offline mode available, switched to offline or
  * online mode, uploading changes, changes uploaded, and changes that could not be uploaded.
  *
- * A bubble is an EVENT ("this just happened"), told once. The pill's lasting states (Offline, Reconnecting, Sign in
- * to sync, Blocwerk is updating…) stay in offline-status.js; while a bubble is up it takes the pill's label, and when
- * it times out the pill falls back to the lasting state, or goes away.
+ * A bubble is an EVENT ("this just happened"), told once, for a few seconds. The pill's lasting states (Offline,
+ * Reconnecting, Sign in to sync, Blocwerk is updating…, and the badge of actions that could not be uploaded) stay in
+ * offline-status.js; while a bubble is up it takes the pill's label, except over an urgent lasting state, and when it
+ * times out the pill falls back to the lasting state, or goes away.
  *
  * API (window.bwStatus), for this app and for the offline client:
  *   show(kind, opts) -> bool   Shows the bubble of `kind` (one of KINDS). opts: { count, detail, onOpen }.
  *                              `count` goes into the label ("Uploading 3 changes"); `onOpen` makes a bubble the
  *                              offline-status pill does not render tappable (the conflict list of another client).
- *                              False when it was not shown: a repeat or a less important kind (see DEDUPE), a kind
- *                              this page does not show (offline-ready on a kiosk), or an unknown kind.
+ *                              False when it was not shown: a repeat, a bubble that may not replace the one up (see
+ *                              REPLACING), a kind this page does not show (offline-ready on a kiosk), or an unknown kind.
  *   hide(kind)                 Takes the bubble down if `kind` is showing (any bubble when omitted).
- *   current()                  The bubble showing: { kind, label, tone, sticky, live, detail, onOpen }, or null.
+ *   current()                  The bubble showing: { kind, label, tone, live, detail, onOpen }, or null.
  *   subscribe(cb) -> unsub     cb() on every change. A page with a subscriber renders the bubble itself (offline-status.js
  *                              does); a page without one gets a pill of the same look from this file.
  *   label(kind, opts)          The wording, without showing anything.
  *
- * DEDUPE: the same kind with the same count is not shown again while it is up, nor within DEDUPE_MS of it being
- * shown. A bubble up is not replaced by a less important one (KINDS' rank: offline-ready < online < offline, uploading,
- * uploaded < conflict); that one is dropped, not queued. A conflict stays until hidden (the user dismissed it, or the
- * queue has nothing rejected any more).
+ * REPLACING: the newest bubble wins, so offline, online, offline always ends on the true state. Only the same kind with
+ * the same count is dropped, while it is on screen. Two exceptions: "Offline mode available" shows only when no other
+ * bubble is up, and a conflict, for its few seconds, gives way only to a change of connection or a newer conflict (an
+ * "uploaded" from the same flush must not paint over it). The conflict itself stays in the pill as a badge until
+ * dismissed (offline-status.js).
  *
- * Every bubble is also spoken: politely through a role=status region, a conflict assertively through a role=alert one.
+ * Every bubble is also spoken: politely through a role=status region, if it is still the one up when spoken; a
+ * conflict assertively through a role=alert one, always.
  */
 window.bwStatus = (function (win) {
     'use strict';
 
-    const DEDUPE_MS = 30000;
     const plural = (n, one, many) => (n === 1 ? one : many);
     const changes = n => (typeof n === 'number' && n > 0 ? n + ' ' + plural(n, 'change', 'changes') : 'changes');
     const changesTitle = n => changes(n).replace(/^c/, 'C');
 
-    // rank: a bubble up is not replaced by one of a lower rank. tone: the pill's colour (bw-conn-<tone>). ms: how long
-    // it stays; 0 = until hidden. detail: the pill panel's sentence, unless show() is given one. replaces: the one kind
-    // of a higher rank this one takes down all the same (back online within seconds of going offline).
+    // tone: the pill's colour (bw-conn-<tone>). ms: how long it stays. detail: the pill panel's sentence, unless show() is
+    // given one. yieldsTo: the only kinds that may replace this one while it is up (any kind when absent).
     const KINDS = Object.freeze({
         'offline-ready': {
-            rank: 0, tone: 'ok', ms: 5000, text: () => 'Offline mode available',
+            tone: 'ok', ms: 5000, text: () => 'Offline mode available',
             detail: 'Your walls are saved on this device, so they open without a connection.'
         },
-        online: { rank: 1, replaces: 'offline', tone: 'ok', ms: 3000, text: () => 'Switched to online mode', detail: 'Connected again.' },
+        online: { tone: 'ok', ms: 3000, text: () => 'Switched to online mode', detail: 'Connected again.' },
         offline: {
-            rank: 2, tone: 'warn', ms: 4000, text: () => 'Switched to offline mode',
+            tone: 'warn', ms: 4000, text: () => 'Switched to offline mode',
             detail: 'No connection. Ascents, ratings and comments still work and sync later.'
         },
-        uploading: { rank: 2, tone: 'info', ms: 4000, text: o => 'Uploading ' + changes(o.count), detail: 'Sending what you did while offline.' },
-        uploaded: { rank: 2, tone: 'ok', ms: 3000, text: o => changesTitle(o.count) + ' uploaded', detail: 'Everything you did while offline is saved.' },
+        uploading: { tone: 'info', ms: 4000, text: o => 'Uploading ' + changes(o.count), detail: 'Sending what you did while offline.' },
+        uploaded: { tone: 'ok', ms: 3000, text: o => changesTitle(o.count) + ' uploaded', detail: 'Everything you did while offline is saved.' },
         conflict: {
-            rank: 3, tone: 'error', ms: 0, live: 'assertive', text: o => changesTitle(o.count) + ' could not be uploaded',
+            tone: 'error', ms: 6000, live: 'assertive', yieldsTo: ['offline', 'online', 'conflict'],
+            text: o => changesTitle(o.count) + ' could not be uploaded',
             detail: 'Some actions could not be saved. They are listed below.'
         }
     });
 
     const subscribers = [];
-    const lastShown = new Map();
     let showing = null;
     let timer = null;
 
@@ -75,33 +76,29 @@ window.bwStatus = (function (win) {
         if (!spec || (kind === 'offline-ready' && isKiosk())) {
             return false;
         }
-        if (showing && spec.rank < KINDS[showing.kind].rank && spec.replaces !== showing.kind) {
-            return false;
-        }
         const key = kind + ':' + (typeof o.count === 'number' ? o.count : '');
-        const now = Date.now();
-        if ((showing && showing.key === key) || (lastShown.has(key) && now - lastShown.get(key) < DEDUPE_MS)) {
+        if (showing && (showing.key === key || !mayReplace(showing.kind, kind))) {
             return false;
         }
-        lastShown.set(key, now);
         showing = {
-            kind, key, tone: spec.tone, sticky: spec.ms === 0, live: spec.live || 'polite',
+            kind, key, tone: spec.tone, live: spec.live || 'polite',
             label: spec.text(o), detail: o.detail || spec.detail, onOpen: typeof o.onOpen === 'function' ? o.onOpen : null
         };
         win.clearTimeout(timer);
-        timer = spec.ms ? win.setTimeout(() => hide(kind), spec.ms) : null;
+        timer = win.setTimeout(() => hide(kind), spec.ms);
         announce(showing);
         publish();
         return true;
     }
 
+    function mayReplace(up, next) {
+        const yieldsTo = KINDS[up].yieldsTo;
+        return next !== 'offline-ready' && (!yieldsTo || yieldsTo.includes(next));
+    }
+
     function hide(kind) {
         if (!showing || (kind && showing.kind !== kind)) {
             return;
-        }
-        // A conflict taken down (dismissed, or resolved) may come back for the next one at once.
-        if (showing.sticky) {
-            lastShown.delete(showing.key);
         }
         showing = null;
         win.clearTimeout(timer);
@@ -115,6 +112,11 @@ window.bwStatus = (function (win) {
 
     function subscribe(cb) {
         subscribers.push(cb);
+        // A renderer took over: the pill this file drew before it came goes.
+        const own = win.document && win.document.querySelector('.bw-status-host');
+        if (own) {
+            own.textContent = '';
+        }
         return () => {
             const i = subscribers.indexOf(cb);
             if (i >= 0) {
@@ -158,7 +160,11 @@ window.bwStatus = (function (win) {
             return;
         }
         el.textContent = '';
-        win.setTimeout(() => { el.textContent = bubble.label; }, 50);
+        win.setTimeout(() => {
+            if (bubble.live === 'assertive' || showing === bubble) {
+                el.textContent = bubble.label;
+            }
+        }, 50);
     }
 
     // The bubble of a page without offline-status.js: the pill's look, in a host of its own on <body>.

@@ -15,12 +15,15 @@
  * and 640) has a ledger row. Ledger rows come only from the worker's `asset-cached` (after its put succeeded) and from
  * the start's reconcile against cache.keys(), so a row is a confirmed cache entry.
  *
- * THE BUBBLE (readiness): when a wall becomes offline ready that was not before, bwStatus shows "Offline mode
- * available" once. "Before" is the set of ready walls last seen on this device, kept per partition in localStorage
- * (READY_KEY), so a page load that finds the same walls ready says nothing; a wall that stops being ready leaves the
- * set quietly. Told at most once per READY_QUIET_MS, so walls that finish one after the other (across a reload, too)
- * say so once; a device with nothing ready any more (cleared) is told again at once when its walls are back. Not for a
- * kiosk partition: a kiosk keeps nothing (no-store).
+ * THE BUBBLE (readiness): when a wall becomes offline ready for the first time on this device, bwStatus shows
+ * "Offline mode available". The walls already told are kept per partition in localStorage (READY_KEY) with the time
+ * of the last bubble. A wall stays "told" while it is not ready for a while (a new panel photo pending, a viewport
+ * that wants a rendition not cached yet), and leaves only when it leaves the ledger (the viewer left it, or "Clear
+ * offline data"). Told at most once per READY_QUIET_MS, whatever the set holds, so walls that finish one after the
+ * other (across a reload, too) and a clear followed by its refill say so once. The bubble's readiness does not
+ * depend on the viewport: a core photo counts at its 640 rendition (READY_WIDTH), which the fill plans on every
+ * device; Settings' "Offline ready" keeps the device's own rule (isReady with the fit width). Not for a kiosk
+ * partition: a kiosk keeps nothing (no-store).
  */
 window.bwAssetReport = (function (win) {
     'use strict';
@@ -29,6 +32,7 @@ window.bwAssetReport = (function (win) {
     const READY_KEY = 'blocwerk-offline-ready';
     const RECHECK_MS = 2000;
     const READY_QUIET_MS = 10 * 60 * 1000;
+    const READY_WIDTH = 640;
 
     const Cache = () => win.bwAssetCache;
     const Plan = () => win.bwAssetPlan;
@@ -55,7 +59,11 @@ window.bwAssetReport = (function (win) {
         if (core.length === 0 || core.some(e => !e.sha)) {
             return false;
         }
-        return core.every(entry => Plan().coreKeys(entry, width).every(key => keys.has(key)));
+        return core.every(entry => {
+            const wanted = Plan().coreKeys(entry, width);
+            // A photo offered at neither width: any rendition of it on the device will do.
+            return wanted.length > 0 ? wanted.every(key => keys.has(key)) : [...keys].some(key => key.startsWith(entry.sha));
+        });
     }
 
     /**
@@ -177,11 +185,14 @@ window.bwAssetReport = (function (win) {
         async function readySet() {
             const state = await active();
             if (!state) {
-                return { partition: null, ready: new Set() };
+                return { partition: null, known: new Set(), ready: new Set() };
             }
             const { walls, assets } = await snapshot(state);
             const keys = new Set(assets.map(a => a.key));
-            return { partition: state.active, ready: new Set(walls.filter(w => isReady(w, keys, fitWidth())).map(w => w.wallId)) };
+            return {
+                partition: state.active, known: new Set(walls.map(w => w.wallId)),
+                ready: new Set(walls.filter(w => isReady(w, keys, READY_WIDTH)).map(w => w.wallId))
+            };
         }
 
         // { walls: Set, toldAt }, or null when localStorage cannot be read.
@@ -205,7 +216,7 @@ window.bwAssetReport = (function (win) {
         // One check at a time, so two cannot both find the same wall new.
         function check() {
             running = running.then(async () => {
-                const { partition, ready } = await readySet();
+                const { partition, known, ready } = await readySet();
                 if (!partition || partition.startsWith('k-')) {
                     return;
                 }
@@ -214,9 +225,11 @@ window.bwAssetReport = (function (win) {
                     return;
                 }
                 const fresh = [...ready].filter(id => !before.walls.has(id));
-                const tell = fresh.length > 0 && !(before.walls.size > 0 && Date.now() - before.toldAt < READY_QUIET_MS);
-                if (fresh.length > 0 || [...before.walls].some(id => !ready.has(id))) {
-                    store(partition, ready, tell ? Date.now() : before.toldAt);
+                const gone = [...before.walls].filter(id => !known.has(id));
+                const tell = fresh.length > 0 && Date.now() - before.toldAt >= READY_QUIET_MS;
+                if (fresh.length > 0 || gone.length > 0) {
+                    const walls = new Set([...before.walls, ...fresh].filter(id => known.has(id)));
+                    store(partition, walls, tell ? Date.now() : before.toldAt);
                 }
                 if (tell && win.bwStatus) {
                     win.bwStatus.show('offline-ready');

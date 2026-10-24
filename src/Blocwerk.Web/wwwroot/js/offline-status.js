@@ -121,85 +121,65 @@
 
     /**
      * A status bubble (status-bubble.js) up takes the pill's label and colour for its few seconds, over everything
-     * except an urgent lasting state (a deploy, a session to sign in to or reload). A conflict outranks those too.
+     * except an urgent lasting state (a deploy, a session to sign in to or reload), which always shows.
      */
     function withBubble(summary) {
         const bubble = window.bwStatus ? window.bwStatus.current() : null;
-        if (!bubble || (summary && summary.urgent && bubble.kind !== 'conflict')) {
+        if (!bubble || (summary && summary.urgent)) {
             return summary;
         }
         const detail = bubble.kind === 'conflict' || !summary ? bubble.detail : summary.detail;
         return { tone: bubble.tone, label: bubble.label, detail: detail, bubble: bubble.kind };
     }
 
-    function buildDetail(queueState, summary) {
-        const panel = document.createElement('div');
-        panel.className = 'bw-conn-panel';
-
-        const text = document.createElement('p');
-        text.className = 'bw-conn-panel-text';
-        text.textContent = summary.detail;
-        panel.appendChild(text);
-
-        queueState.rejected.forEach(item => {
-            const failed = document.createElement('p');
-            failed.className = 'bw-conn-panel-error';
-            failed.textContent = item.kind + ': ' + item.message;
-            panel.appendChild(failed);
-        });
-
-        const actions = document.createElement('div');
-        actions.className = 'bw-conn-panel-actions';
-
+    function panelOf(queueState, summary) {
+        const actions = [];
         if (queueState.paused) {
-            const login = document.createElement('a');
-            login.className = 'bw-conn-btn';
-            login.href = '/account/login';
-            login.textContent = 'Sign in';
-            actions.appendChild(login);
+            actions.push({ key: 'sign-in', label: 'Sign in', href: '/account/login' });
         }
-
         // A held-back maintenance reload is offered explicitly; the automatic one waits for the
         // text field to be empty, and the user may well want it sooner.
         if (window.bwMaintenance && window.bwMaintenance.active() && window.bwMaintenance.state().phase === 'ready') {
-            actions.appendChild(button('Reload now', () => window.bwMaintenance.reloadNow()));
+            actions.push({ key: 'reload-now', label: 'Reload now', run: () => window.bwMaintenance.reloadNow() });
         } else if (window.blocwerkConnection && window.blocwerkConnection.status() === 'rejected') {
-            actions.appendChild(button('Reload', () => window.blocwerkConnection.reload()));
+            actions.push({ key: 'reload', label: 'Reload', run: () => window.blocwerkConnection.reload() });
         }
-
-        actions.appendChild(button('Retry now', () => window.blocwerkOfflineQueue.retryNow()));
-
+        actions.push({ key: 'retry', label: 'Retry now', run: () => window.blocwerkOfflineQueue.retryNow() });
         if (queueState.rejected.length > 0) {
-            actions.appendChild(button('Dismiss', () => window.blocwerkOfflineQueue.dismissRejected()));
+            actions.push({ key: 'dismiss', label: 'Dismiss', run: () => window.blocwerkOfflineQueue.dismissRejected() });
         }
-
-        panel.appendChild(actions);
-        return panel;
+        return {
+            detail: summary.detail,
+            errors: queueState.rejected.map(item => item.kind + ': ' + item.message),
+            actions: actions
+        };
     }
 
-    function button(label, onClick) {
-        const el = document.createElement('button');
-        el.type = 'button';
-        el.className = 'bw-conn-btn';
-        el.textContent = label;
-        el.addEventListener('click', event => {
-            event.stopPropagation();
-            onClick();
-        });
-        return el;
-    }
-
-    function plainPill(tone, text, extraClass) {
-        const el = document.createElement('div');
-        el.className = 'bw-conn-pill bw-conn-' + tone + ' ' + extraClass;
-        const dot = document.createElement('span');
-        dot.className = 'bw-conn-dot';
-        el.appendChild(dot);
-        const label = document.createElement('span');
-        label.className = 'bw-conn-label';
-        label.textContent = text;
-        el.appendChild(label);
-        return el;
+    /**
+     * What the pill shows. Actions that could not be uploaded never take the label from a lasting state or a bubble:
+     * they are a badge on the pill (and listed in its panel) until dismissed, and the label only when nothing else is.
+     */
+    function viewOf(queueState, connection) {
+        const lasting = summarise(queueState, connection);
+        const summary = withBubble(lasting);
+        const rejected = queueState.rejected.length;
+        if (summary && summary.bubble && !lasting && rejected === 0) {
+            // An event with nothing lasting behind it: shown, not opened.
+            expanded = false;
+            return { tone: summary.tone, label: summary.label, bubble: summary.bubble, openable: false };
+        }
+        if (!summary && rejected === 0) {
+            expanded = false;
+            // Nothing to report from the connection/queue — but a transient flash may be showing.
+            return flashState ? { tone: flashState.tone, label: flashState.label, openable: false, flash: true } : null;
+        }
+        const conflict = window.bwStatus ? window.bwStatus.label('conflict', { count: rejected }) : 'Not saved';
+        const effective = summary || { tone: 'error', label: conflict, detail: 'Some actions could not be saved. They are listed below.' };
+        return {
+            tone: effective.tone, label: effective.label, bubble: effective.bubble || null, openable: true,
+            badge: summary && summary.bubble !== 'conflict' ? rejected : 0, expanded: expanded,
+            onToggle: () => { expanded = !expanded; render(); }, panel: panelOf(queueState, effective)
+        };
     }
 
     function render() {
@@ -209,71 +189,7 @@
         const connection = window.blocwerkConnection
             ? window.blocwerkConnection.status()
             : 'connected';
-
-        const container = ensureHost();
-        container.textContent = '';
-
-        const lasting = summarise(queueState, connection);
-        const summary = withBubble(lasting);
-        if (summary && summary.bubble && !lasting && queueState.rejected.length === 0) {
-            // An event with nothing lasting behind it: shown, not opened.
-            expanded = false;
-            container.classList.add('bw-conn-active');
-            const bubble = plainPill(summary.tone, summary.label, 'bw-status-bubble');
-            bubble.setAttribute('data-bw-status', summary.bubble);
-            container.appendChild(bubble);
-            return;
-        }
-        if (!summary && queueState.rejected.length === 0) {
-            // Nothing to report from the connection/queue — but a transient flash may be showing.
-            if (flashState) {
-                container.classList.add('bw-conn-active');
-                container.appendChild(plainPill(flashState.tone, flashState.label, 'bw-conn-flash'));
-                return;
-            }
-            expanded = false;
-            container.classList.remove('bw-conn-active');
-            return;
-        }
-
-        // Rejected actions without their bubble (bwStatus missing, or the bubble hidden while they stay).
-        const effective = summary || {
-            tone: 'error',
-            label: window.bwStatus ? window.bwStatus.label('conflict', { count: queueState.rejected.length }) : 'Not saved',
-            detail: 'Some actions could not be saved.'
-        };
-
-        container.classList.add('bw-conn-active');
-        container.appendChild(openablePill(effective));
-
-        if (expanded) {
-            container.appendChild(buildDetail(queueState, effective));
-        }
-    }
-
-    function openablePill(effective) {
-        const pill = document.createElement('button');
-        pill.type = 'button';
-        pill.className = 'bw-conn-pill bw-conn-' + effective.tone + (effective.bubble ? ' bw-status-bubble' : '');
-        if (effective.bubble) {
-            pill.setAttribute('data-bw-status', effective.bubble);
-        }
-        pill.setAttribute('aria-expanded', expanded ? 'true' : 'false');
-
-        const dot = document.createElement('span');
-        dot.className = 'bw-conn-dot';
-        pill.appendChild(dot);
-
-        const label = document.createElement('span');
-        label.className = 'bw-conn-label';
-        label.textContent = effective.label;
-        pill.appendChild(label);
-
-        pill.addEventListener('click', () => {
-            expanded = !expanded;
-            render();
-        });
-        return pill;
+        window.bwStatusPill.draw(ensureHost(), viewOf(queueState, connection));
     }
 
     if (window.blocwerkOfflineQueue) {

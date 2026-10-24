@@ -14,6 +14,7 @@ class FakeElement {
         this.className = '';
         this.text = '';
         this.isConnected = true;
+        this.parent = null;
         this.dataset = {};
         const owner = this;
         this.classList = {
@@ -28,16 +29,31 @@ class FakeElement {
     set textContent(v) { this.text = String(v); this.children = []; }
     setAttribute(n, v) { this.attrs.set(n, String(v)); }
     getAttribute(n) { return this.attrs.has(n) ? this.attrs.get(n) : null; }
-    appendChild(c) { this.children.push(c); return c; }
+    removeAttribute(n) { this.attrs.delete(n); }
+    appendChild(c) { this.children.push(c); c.parent = this; return c; }
+    remove() { if (this.parent) { this.parent.children = this.parent.children.filter(c => c !== this); this.parent = null; } }
     addEventListener(t, fn) { (this.listeners[t] = this.listeners[t] || []).push(fn); }
     click() { (this.listeners.click || []).forEach(fn => fn({ stopPropagation() {} })); }
+    focus() { this.owner.activeElement = this; }
+    contains(e) { return e === this || this.all().includes(e); }
     all() { return this.children.flatMap(c => [c, ...c.all()]); }
+    querySelector(sel) { return this.all().find(e => matches(e, sel)) || null; }
+}
+
+function matches(e, sel) {
+    const attr = /^\[([\w-]+)="([^"]*)"\]$/.exec(sel);
+    if (attr) {
+        return e.getAttribute(attr[1]) === attr[2];
+    }
+    return sel.startsWith('.') && e.classList.contains(sel.slice(1));
 }
 
 /** opts: { kiosk, online, modules } */
 export function statusPage(opts = {}) {
     const timers = [];
     let now = 1_000_000;
+    const document = {};
+    FakeElement.prototype.owner = document;
     const body = new FakeElement('body');
     body.dataset = opts.kiosk ? { bwKiosk: 'key' } : {};
     const slot = new FakeElement('div');
@@ -45,18 +61,19 @@ export function statusPage(opts = {}) {
     body.appendChild(slot);
     const docListeners = {};
     const find = pred => body.all().find(pred) || null;
-    const document = {
+    Object.assign(document, {
         body,
+        activeElement: body,
         createElement: tag => new FakeElement(tag),
         getElementById: id => find(e => e.id === id),
-        querySelector: sel => find(e => sel.startsWith('.') && e.classList.contains(sel.slice(1))),
+        querySelector: sel => find(e => matches(e, sel)),
         addEventListener: (t, fn) => { (docListeners[t] = docListeners[t] || []).push(fn); },
         dispatchEvent: e => (docListeners[e.type] || []).forEach(fn => fn(e)),
-    };
+    });
 
     const queueSubs = [];
     const connSubs = [];
-    const queueState = { online: opts.online ?? true, paused: false, flushing: false, count: 0, held: 0, rejected: [], lastError: null };
+    const queueState = { online: opts.online ?? true, paused: false, flushing: false, count: 0, held: 0, deferred: 0, dueAt: 0, rejected: [], lastError: null };
     let conn = 'connected';
     const win = {
         document,
@@ -74,7 +91,7 @@ export function statusPage(opts = {}) {
     };
     win.window = win;
     const context = vm.createContext(Object.assign(win, { console, Object, Array, Set, Map, JSON, Math, String, Promise }));
-    for (const name of opts.modules || ['status-bubble.js', 'status-sources.js', 'offline-status.js']) {
+    for (const name of opts.modules || ['status-bubble.js', 'status-sources.js', 'status-pill.js', 'offline-status.js']) {
         vm.runInContext(readFileSync(new URL(name, js), 'utf8'), context, { filename: name });
     }
 
@@ -98,6 +115,8 @@ export function statusPage(opts = {}) {
         connection: status => { conn = status; connSubs.forEach(cb => cb(status)); },
         flushed: detail => document.dispatchEvent({ type: 'bw:offline-flushed', detail }),
         pill: () => find(e => e.classList.contains('bw-conn-pill')),
+        panel: () => find(e => e.classList.contains('bw-conn-panel')),
+        document,
         live: id => document.getElementById(id),
     };
     return page;

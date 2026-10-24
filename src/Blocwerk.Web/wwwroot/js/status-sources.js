@@ -4,12 +4,15 @@
  *
  *   offline    the device lost the network, or the circuit stayed down for OFFLINE_GRACE_MS (a blip that heals on
  *              its own says nothing). Not while a deploy notice is up: the pill says "Blocwerk is updating…" then.
- *   online     back after an `offline` was told, and only then.
+ *   online     back after an `offline` was told, and only then. A circuit the server dropped ('rejected': Session
+ *              ended) is not back: it says neither, and the pill offers the reload.
  *   uploading  the queue starts sending a backlog: actions saved while offline, or left over from an earlier page.
- *              An action sent straight away while online is not a backlog and says nothing.
+ *              An action sent straight away while online is not a backlog and says nothing. Only what this person
+ *              can send now counts: not another account's held entries, nor entries a 400 parked (offline-queue.js).
  *   uploaded   that backlog is all sent.
- *   conflict   the queue gave up on an action for good (offline-queue.js `rejected`). It stays until the user
- *              dismisses it in the pill's panel, which lists what failed.
+ *   conflict   the queue gave up on an action for good (offline-queue.js `rejected`, kept over reloads until the
+ *              user dismisses it in the pill's panel, which lists what failed). Told when there are more than
+ *              before, and once on a page that loads with some.
  *
  * `offline-ready` comes from asset-report.js, which knows when the walls are on the device.
  */
@@ -62,7 +65,16 @@
         }
     }
 
+    // What this person's queue can upload now.
+    const uploadable = q => Math.max(0, (q.count || 0) - (q.held || 0) - (q.deferred || 0));
+
     function trackConnection(q, c) {
+        if (c === 'rejected') {
+            // Neither down nor back: the session is gone, and the pill says "Session ended".
+            win.clearTimeout(graceTimer);
+            graceTimer = null;
+            return;
+        }
         if (isDown(q, c)) {
             if (!offlineTold && !graceTimer) {
                 // The device itself says it has no network: no reason to wait.
@@ -80,19 +92,22 @@
 
     function trackUploads(q, c) {
         // A backlog: what is queued while down, and what the page found queued when it loaded (before its first flush).
-        if (q.count > 0 && (isDown(q, c) || firstFlush)) {
+        const mine = uploadable(q);
+        if (mine > 0 && (isDown(q, c) || firstFlush)) {
             if (backlog === 0) {
                 sent = 0;
             }
-            backlog = Math.max(backlog, q.count);
+            backlog = Math.max(backlog, mine);
         }
-        if (q.flushing && !wasFlushing && backlog > 0 && !uploadingTold && !isDown(q, c)) {
+        // Nothing due (every entry still backing off) sends nothing, so says nothing yet.
+        const due = !q.dueAt || q.dueAt <= Date.now();
+        if (q.flushing && !wasFlushing && backlog > 0 && mine > 0 && due && !uploadingTold && !isDown(q, c)) {
             uploadingTold = true;
-            show('uploading', { count: q.count });
+            show('uploading', { count: mine });
         }
         if (!q.flushing && wasFlushing) {
             firstFlush = false;
-            if (q.count === 0) {
+            if (mine === 0) {
                 // Told by the queue's bw:offline-flushed right after this, which says whether anything was sent.
                 finished = backlog;
                 backlog = 0;
@@ -108,7 +123,7 @@
     function onFlushed(event) {
         const summary = event && event.detail;
         sent += summary && summary.sent > 0 ? summary.sent : 0;
-        if (finished > 0 && summary && summary.remaining === 0) {
+        if (finished > 0 && summary) {
             show('uploaded', { count: sent });
         }
         finished = 0;

@@ -63,7 +63,7 @@ function bubbles(page) {
     return shown;
 }
 
-test('"Offline mode available" once the walls are ready, not again on the next load, and again after a clear refills', async () => {
+test('"Offline mode available" once the walls are ready, not again on the next load, a rotation, or a clear and its refill', async () => {
     const storage = new Map();
     const page = memberPage({ routes: w1Routes(), storage });
     const shown = bubbles(page);
@@ -79,11 +79,34 @@ test('"Offline mode available" once the walls are ready, not again on the next l
     await again.settle();
     assert.deepEqual(shownAgain, [], 'the same walls ready on the next load say nothing');
 
+    again.win.innerWidth = 900;
+    await again.win.bwAssetReport.readiness.check();
+    assert.deepEqual(shownAgain, [], 'a landscape viewport wanting a wider rendition does not make a wall "new"');
+
     await again.win.bwAssetReport.clear();
     await again.settle();
     await again.cache.filled();
     await again.win.bwAssetReport.readiness.check();
-    assert.deepEqual(shownAgain, ['offline-ready'], 'cleared and filled again: told again');
+    assert.deepEqual(shownAgain, [], 'cleared and filled again within 10 minutes: quiet');
+});
+
+test('a wall that is not ready for a while (a new panel photo pending) stays told', async () => {
+    const storage = new Map();
+    const page = memberPage({ routes: w1Routes(), storage });
+    const shown = bubbles(page);
+    page.win.bwAssetReport.observe();
+    await page.boot();
+    await page.settle();
+    const key = `blocwerk-offline-ready:${USER_A}`;
+    // Long after the bubble, both walls still remembered though one is pending now.
+    storage.set(key, JSON.stringify({ walls: [W1, W2], toldAt: Date.now() - 11 * 60000 }));
+    const ledger = await page.ledger();
+    await ledger.updateWall(USER_A, W2, w => Object.assign(w, { pending: 1 }));
+    await page.win.bwAssetReport.readiness.check();
+    await ledger.updateWall(USER_A, W2, w => Object.assign(w, { pending: 0 }));
+    await page.win.bwAssetReport.readiness.check();
+    assert.deepEqual(shown, ['offline-ready'], 'only the first time');
+    assert.deepEqual(JSON.parse(storage.get(key)).walls, [W1, W2].sort());
 });
 
 test('walls that finish one after the other are told once: another wall ready within 10 minutes of the last bubble says nothing', async () => {
