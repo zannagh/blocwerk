@@ -1,0 +1,70 @@
+@implements IDisposable
+@inject ClientStore Store
+@* What the device cache lets the client show (ClientStore, PR 3.10). Only a ready or empty store renders the page (an
+   empty one has nothing to show but the page's own way online); every other state renders its notice alone, so a
+   locked partition's data never reaches the page. "Clear offline data" is
+   offered in every state once the device is read, locked or not (plan §3: a device handed over while offline). *@
+<div class="bw-client-store" data-bw-store="@Store.State.ToString().ToLowerInvariant()" data-bw-store-walls="@Store.Walls.Count">
+    @switch (Store.State)
+    {
+        case StoreState.Ready:
+            @ChildContent
+            <footer class="bw-client-saved">
+                <span>@SavedText</span>
+                <ClearOfflineData />
+            </footer>
+            break;
+        case StoreState.Locked:
+            <section class="bw-client-empty bw-client-locked" role="region" aria-label="Offline data on this device">
+                <h1>Sign in to keep your offline data</h1>
+                <p>This device keeps the offline data of a session that ended, hidden until you sign in again.</p>
+                <a class="bw-client-online" href="/account/login">Sign in</a>
+                <ClearOfflineData />
+            </section>
+            break;
+        case StoreState.Updating:
+            <StoreNotice Title="Updating offline data…" Text="Another Blocwerk tab still uses the older offline data. Close it, then open this page again." />
+            break;
+        case StoreState.Kiosk:
+            <StoreNotice Title="Not available offline" Text="The kiosk has no offline view." />
+            break;
+        case StoreState.Unavailable:
+            <StoreNotice Title="Nothing saved offline" Text="This browser does not let Blocwerk read its offline data." />
+            break;
+        case StoreState.Empty:
+            @ChildContent
+            <footer class="bw-client-saved">
+                <span>Nothing saved on this device</span>
+                <ClearOfflineData />
+            </footer>
+            break;
+        default:
+            <p class="bw-client-loading">Opening the offline view…</p>
+            break;
+    }
+</div>
+
+@code {
+    /// <summary>Gets or sets the page, rendered only while the store is ready.</summary>
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+
+    private string SavedText => Store.Walls.Count == 1 ? "1 wall saved on this device" : $"{Store.Walls.Count} walls saved on this device";
+
+    /// <inheritdoc />
+    public void Dispose() => Store.Changed -= OnChanged;
+
+    /// <inheritdoc />
+    protected override void OnInitialized() => Store.Changed += OnChanged;
+
+    /// <inheritdoc />
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Store.StartAsync();
+        }
+    }
+
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+}
