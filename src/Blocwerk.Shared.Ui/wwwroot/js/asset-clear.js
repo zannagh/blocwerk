@@ -12,6 +12,9 @@
  *   BroadcastChannel, and `locked` (PR 3.5: the 401 lock locked or wiped it; they stop for good) over the same
  *   channel, or a localStorage event where there is none. A tab that never hears `cleared` (the clearing tab
  *   closed) rebuilds after RESUME_MS anyway.
+ * ONE TRANSPORT per page (channel()): every post goes over the page's one BroadcastChannel, whether or not it listens,
+ *   so a page that only announces (the offline client) still reaches the Server tabs; a channel never hears its own
+ *   posts, so subscribe() (the client's store) hears only the other tabs. localStorage only where there is no channel.
  */
 window.bwAssetClear = (function (win) {
     'use strict';
@@ -23,7 +26,10 @@ window.bwAssetClear = (function (win) {
 
     const Cache = () => win.bwAssetCache;
     const wait = ms => new Promise(resolve => win.setTimeout(resolve, ms));
-    let bus = null;
+    const handlers = new Set();
+    const remote = message => { onRemote(message); };
+    let bus;
+    let storageHooked = false;
     let resumeTimer = null;
 
     function caching(state) {
@@ -40,10 +46,36 @@ window.bwAssetClear = (function (win) {
         return caching(state) ? state : null;
     }
 
+    // The page's one channel, opened on first use; null without BroadcastChannel (localStorage stands in).
+    function channel() {
+        if (bus === undefined) {
+            try {
+                bus = typeof win.BroadcastChannel === 'function' ? new win.BroadcastChannel(CHANNEL) : null;
+            } catch (e) {
+                bus = null;
+            }
+            if (bus) {
+                bus.onmessage = event => deliver(event.data);
+            }
+        }
+        return bus;
+    }
+
+    function deliver(message) {
+        handlers.forEach(fn => {
+            try {
+                fn(message);
+            } catch (e) {
+                /* one subscriber's failure is not the others' */
+            }
+        });
+    }
+
     function post(message) {
         try {
-            if (bus) {
-                bus.postMessage(message);
+            const open = channel();
+            if (open) {
+                open.postMessage(message);
             } else if (win.localStorage) {
                 win.localStorage.setItem(CHANNEL, JSON.stringify(Object.assign({ at: Date.now(), nonce: Math.random() }, message)));
                 win.localStorage.removeItem(CHANNEL);
@@ -51,6 +83,24 @@ window.bwAssetClear = (function (win) {
         } catch (e) {
             /* no channel: other tabs refill on their next load */
         }
+    }
+
+    /** Calls `fn(message)` for every message another tab posts on the channel (or, without one, through localStorage). */
+    function subscribe(fn) {
+        handlers.add(fn);
+        if (channel() || storageHooked) {
+            return;
+        }
+        storageHooked = true;
+        win.addEventListener('storage', event => {
+            if (event.key === CHANNEL && event.newValue) {
+                try {
+                    deliver(JSON.parse(event.newValue));
+                } catch (e) {
+                    /* not ours */
+                }
+            }
+        });
     }
 
     // The running fill ends at its next task once `stopped` is set; a stuck download is not waited for past STOP_WAIT_MS.
@@ -124,27 +174,12 @@ window.bwAssetClear = (function (win) {
         }
     }
 
+    // The Server page's own reaction to the other tabs (asset-report.js calls it once; a second call adds nothing).
     function listen() {
-        try {
-            if (typeof win.BroadcastChannel === 'function') {
-                bus = new win.BroadcastChannel(CHANNEL);
-                bus.onmessage = event => { onRemote(event.data); };
-                return;
-            }
-        } catch (e) {
-            bus = null;
-        }
-        win.addEventListener('storage', event => {
-            if (event.key === CHANNEL && event.newValue) {
-                try {
-                    onRemote(JSON.parse(event.newValue));
-                } catch (e) {
-                    /* not ours */
-                }
-            }
-        });
+        subscribe(remote);
     }
 
-    // `announce`: asset-lock.js tells the other tabs of a partition it locked or wiped ({ type: 'locked', partition }).
-    return { STOP_WAIT_MS, RESUME_MS, clear, listen, announce: post };
+    // `announce`: asset-lock.js tells the other tabs of a partition it locked or wiped ({ type: 'locked', partition }),
+    // and the offline client its own Clear (`clearing` / `cleared`).
+    return { STOP_WAIT_MS, RESUME_MS, clear, listen, subscribe, announce: post };
 })(window);

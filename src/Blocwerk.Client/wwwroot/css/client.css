@@ -79,3 +79,23 @@ html, body {
     color: inherit;
     font: inherit;
 }
+
+.bw-client-clear {
+    margin-left: 16px;
+    padding: 6px 14px;
+    border: 1px solid var(--bw-c-border);
+    border-radius: 8px;
+    background: var(--bw-c-surface);
+    color: inherit;
+    font: inherit;
+}
+
+.bw-client-saved {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-top: 24px;
+    color: var(--bw-c-muted);
+    font-size: 14px;
+}

@@ -17,6 +17,10 @@
  * keep set here, the every-start sweep's included, so a normal start never wipes it early and another identity always
  * does. The mirror carries the lock too, so a degraded page keeps it as well.
  *
+ * A DEGRADED CLEAR (the offline client's Clear on a memory ledger) deletes the caches but cannot reach the durable rows:
+ * it leaves `cleared: label` in the mirror, kept by every degraded start, and the next durable start drops that
+ * partition's rows before anything reads them (the client's start honours it too, through clearedOf()).
+ *
  * guard(): a ledger whose writes (putAsset, updateWall, putMine) go through only while the ledger's `activePartition` is the
  * row's partition. A tab still showing an old identity (another tab signed out or in since) can then never rewrite
  * rows for the partition it no longer owns. putMine also needs a `u-` row: a kiosk or share page never stores marks.
@@ -70,12 +74,17 @@ window.bwAssetSession = (function () {
                 return Object.assign({}, stored, { locked: null, dropLocked: stored.locked.label });
             }
             const locked = stored.locked || (saved && saved.locked && saved.locked.label === stored.activePartition ? saved.locked : null);
-            return Object.assign({}, stored, { locked });
+            return Object.assign({}, stored, { locked, dropCleared: clearedOf(saved) });
         }
         if (!saved) {
-            return { activePartition: stored.activePartition, userTag: UNKNOWN_TAG, locked: null };
+            return { activePartition: stored.activePartition, userTag: UNKNOWN_TAG, locked: null, cleared: null };
         }
-        return { activePartition: saved.activePartition ?? null, userTag: saved.userTag, locked: saved.locked || null };
+        return { activePartition: saved.activePartition ?? null, userTag: saved.userTag, locked: saved.locked || null, cleared: clearedOf(saved) };
+    }
+
+    /** The label a degraded Clear left for the next durable start to drop (the mirror's `cleared`), or null. */
+    function clearedOf(saved) {
+        return saved && REAL_LABEL.test(String(saved.cleared)) ? saved.cleared : null;
     }
 
     function pageLabel(doc) {
@@ -85,8 +94,8 @@ window.bwAssetSession = (function () {
 
     // The wipes of a start: a dropped lock first, then the decision's, or the every-start sweep of a real label. A kept
     // lock's label joins the keep set of both (asset-lock.js).
-    async function applyWipes(Wipe, env, decision, lockPlan, dropLocked) {
-        for (const label of new Set([lockPlan.drop, dropLocked].filter(Boolean))) {
+    async function applyWipes(Wipe, env, decision, lockPlan, drops) {
+        for (const label of new Set([lockPlan.drop].concat(drops).filter(Boolean))) {
             await Wipe.dropPartition(env, label);
         }
         const keep = decision.keep.concat(lockPlan.lock ? [lockPlan.lock.label] : []);
@@ -113,12 +122,13 @@ window.bwAssetSession = (function () {
         const userChanged = !offline && typeof meta.userTag === 'string' && meta.userTag !== userTag;
         const decision = Wipe.decide(meta.activePartition, label, !!Wipe.tokenOf(win.location), userChanged);
         const lockPlan = Lock.plan(meta.activePartition, meta.locked, { label, reason: Lock.signOutOf(win.document), userChanged }, Date.now());
-        await applyWipes(Wipe, env, decision, lockPlan, meta.dropLocked);
+        await applyWipes(Wipe, env, decision, lockPlan, [meta.dropLocked, meta.dropCleared]);
         const locked = lockPlan.lock;
         if (decision.active !== stored.activePartition || userTag !== stored.userTag || JSON.stringify(locked) !== JSON.stringify(Lock.valid(stored.locked))) {
             await ledger.setMeta({ activePartition: decision.active, userTag, proto: PROTO, locked });
         }
-        writeMirror(win, { activePartition: decision.active, userTag, locked });
+        // A durable start has dropped a degraded Clear's label; a degraded one passes it on.
+        writeMirror(win, { activePartition: decision.active, userTag, locked, cleared: ledger.degraded ? meta.cleared : null });
         await Lock.sync(locked, JSON.stringify(locked) !== JSON.stringify(Lock.valid(meta.locked)) || !!lockPlan.drop || !!meta.dropLocked);
         // Unlocking is the same user coming back (the label is an HMAC of the id): only a changed acting user announces.
         if (lockPlan.unlocked ? userChanged : decision.identityChanged) {
@@ -137,5 +147,5 @@ window.bwAssetSession = (function () {
         });
     }
 
-    return { begin, guard, pageLabel, mirror };
+    return { begin, guard, pageLabel, mirror, clearedOf };
 })();

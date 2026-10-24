@@ -42,6 +42,17 @@ public sealed partial class OfflineClientShellTests
     }
 
     [Fact]
+    public void TheClientStore_LoadsAfterTheCacheModules_AndBeforeTheRuntime()
+    {
+        var modules = Shell.IndexOf("OfflineClientShellAssets.CacheModules", StringComparison.Ordinal);
+        var store = Shell.IndexOf("OfflineClientShellAssets.StoreModules", StringComparison.Ordinal);
+        var loader = Shell.IndexOf("OfflineClientShellAssets.Loader)", StringComparison.Ordinal);
+
+        Assert.True(modules >= 0 && modules < store && store < loader, "client-store.js reads the cache modules and is called by the runtime");
+        Assert.Equal(new[] { "v/js/client-store-rows.js", "v/js/client-store.js" }, OfflineClientShellAssets.StoreModules);
+    }
+
+    [Fact]
     public void TheShell_HasTheClientBase_TheOfflinePartition_AndNoCircuit()
     {
         Assert.Contains("<base href=\"/v/\" />", Shell, StringComparison.Ordinal);
