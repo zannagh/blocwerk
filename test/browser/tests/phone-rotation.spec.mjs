@@ -61,7 +61,9 @@ for (const index of [1, 2, 3]) {
     });
 }
 
-test('a track left between pages by a resize is put back on its page', async ({ page, world }) => {
+// Regression guard, not a reproduction: this passes without the fix too. It pins the recovery path (a resize re-snaps
+// to the remembered page whatever the pixels say) so a later change to the settle cannot lose it.
+test('guard: a track left between pages by a resize is put back on its page', async ({ page, world }) => {
     const wall = world.walls.beta;
     await page.setViewportSize(PORTRAIT);
     await signIn(page, world.users.alice, `/walls/${wall.id}?view=boulders`);

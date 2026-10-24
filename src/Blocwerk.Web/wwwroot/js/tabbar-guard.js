@@ -1,23 +1,24 @@
 /*
- * bwTabbarGuard — steps the fixed bottom tab bar aside while iOS shows a window that is not the one it is pinned to.
+ * bwTabbarGuard — steps the fixed bottom tab bar aside while the on-screen keyboard is up.
  *
- * The tab bar is `position: fixed; bottom: 0`, which iOS anchors to the LAYOUT viewport. With the on-screen keyboard
- * up, or the page pinch-zoomed, the visible part of the page (the visual viewport) is a smaller window that moves
- * inside it, so the bar is drawn wherever the layout viewport's bottom edge happens to fall: the middle of the screen,
- * on top of the fields being edited. The reported case (editing a boulder) was a page left zoomed by iOS's focus zoom
- * on a field under 16px, which app.css now prevents on touch screens; this is the second line of defence for any zoom
- * or keyboard that still displaces the window. While either is the case the bar steps aside (`html.bw-vv-away`, see app.css); nothing on an edit form needs it until the
- * keyboard is gone. Coming back, iOS 26 can leave fixed elements where the keyboard pushed them until the page
- * scrolls, so one no-op scroll re-places them.
+ * The tab bar is `position: fixed; bottom: 0`, which iOS anchors to the LAYOUT viewport. With the keyboard up the
+ * visible part of the page (the visual viewport) is a smaller window that moves inside it, so the bar is drawn
+ * wherever the layout viewport's bottom edge happens to fall: the middle of the screen, on top of the field being
+ * typed in. While a text field has focus and the window is shrunk by a keyboard, the bar steps aside
+ * (`html.bw-vv-away`, see app.css). Coming back, iOS 26 can leave fixed elements where the keyboard pushed them until
+ * the page scrolls, so one no-op scroll re-places them.
  *
- * Touch devices only: a desktop trackpad pinch must not hide anything.
+ * Deliberately NOT for zoom alone: a page that stays zoomed (a pinch) must keep its navigation reachable, and the
+ * reported mid-screen bar came from iOS's focus zoom on fields under 16px, which app.css now prevents on touch screens.
+ * The guard only ever hides the bar while focus is in a text field, so blurring it always brings the bar back.
+ *
+ * Touch devices only.
  */
 window.bwTabbarGuard = (function () {
     'use strict';
 
     // A keyboard takes far more than this; URL-bar and toolbar changes take less.
     const KEYBOARD_PX = 120;
-    const ZOOM_SCALE = 1.05;
     const NOT_TYPED = /^(button|checkbox|radio|range|color|file|submit|reset|image|hidden)$/i;
 
     let away = false;
@@ -38,16 +39,12 @@ window.bwTabbarGuard = (function () {
         return el.tagName === 'INPUT' && !NOT_TYPED.test(el.type || '');
     }
 
-    /** True while the visible window is not the layout viewport the fixed bar is pinned to. */
+    /** True while a text field has focus and a keyboard has shrunk the visible window. */
     function displaced() {
         const vv = window.visualViewport;
         if (!vv || !coarse()) {
             return false;
         }
-        if (vv.scale > ZOOM_SCALE) {
-            return true;
-        }
-
         return typing(document.activeElement) && document.documentElement.clientHeight - vv.height > KEYBOARD_PX;
     }
 

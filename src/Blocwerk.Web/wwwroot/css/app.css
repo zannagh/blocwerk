@@ -448,16 +448,17 @@ h2 { font-size: 1.15rem; }
     /* Faint upward glow so the tab bar reads like it's floating above content */
     box-shadow: 0 -1px 0 var(--nav-border), 0 -12px 24px -14px var(--shadow-md);
 }
-/* The bar's ground continues below its bottom edge. Normally that is off screen and costs nothing; when
-   iOS reports the window a few points short (an installed app's cold start, the keyboard just closed) the
-   bar sits that far above the edge, and this fills the gap instead of showing the page through it. */
+/* The bar's ground continues a little below its bottom edge (the home-indicator inset plus a few px). Normally
+   that is off screen; when iOS reports the window a few points short (an installed app's cold start) it fills
+   the sliver instead of showing the page through it. Kept that small on purpose: a bar displaced further up
+   must not drag a tall slab of ground over the form below it. */
 .bw-tabbar::after {
     content: "";
     position: absolute;
     left: 0;
     right: 0;
     top: 100%;
-    height: 120px;
+    height: calc(env(safe-area-inset-bottom, 0px) + 8px);
     background: var(--nav-bg);
     pointer-events: none;
 }
@@ -554,8 +555,7 @@ h2 { font-size: 1.15rem; }
    static, so a Blazor field can't drive this. Mirror the edit-mode approach (display:none) so the
    bar leaves no reserved space; its down-chevron sits inside the bar and disappears with it. */
 body.bw-tabbar-collapsed .bw-tabbar { display: none; }
-/* The keyboard is up or the page is pinch-zoomed (wwwroot/js/tabbar-guard.js): the fixed bar would be drawn
-   mid-screen over the form. Hidden, not removed, so nothing reflows under the field being typed in. */
+/* The keyboard is up (wwwroot/js/tabbar-guard.js): the fixed bar would be drawn mid-screen over the form. Hidden, not removed, so nothing reflows under the field being typed in. */
 html.bw-vv-away :is(.bw-tabbar, .tabbar-restore) { visibility: hidden; pointer-events: none; }
 
 /* Floating '^' handle that brings the bar back — shown only while collapsed. */

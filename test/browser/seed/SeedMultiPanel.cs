@@ -32,5 +32,3 @@ internal static class SeedMultiPanel
         return new SeededMultiPanel(wallId, boulder.Id);
     }
 }
-
-internal sealed record SeededMultiPanel(Guid WallId, Guid Boulder);

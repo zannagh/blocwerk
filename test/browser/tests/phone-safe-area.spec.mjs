@@ -75,30 +75,54 @@ test('the shell carries the iOS safe-area setup', async ({ page, world, request 
     });
     expect(padding).toBe(47);
 
-    // Flush with the bottom edge, full width, and its ground continues below it.
+    // Flush with the bottom edge, full width, and its ground continues just below it: the inset plus a few px, never
+    // a slab that would cover a form if the bar were displaced.
     await expectPinned(page);
-    const under = await page.evaluate(() => getComputedStyle(document.querySelector('.bw-tabbar'), '::after').backgroundColor);
-    expect(under).toBe(await page.evaluate(() => getComputedStyle(document.querySelector('.bw-tabbar')).backgroundColor));
+    const under = await page.evaluate(() => {
+        const after = getComputedStyle(document.querySelector('.bw-tabbar'), '::after');
+        return { bg: after.backgroundColor, h: parseFloat(after.height) };
+    });
+    expect(under.bg).toBe(await page.evaluate(() => getComputedStyle(document.querySelector('.bw-tabbar')).backgroundColor));
+    expect(under.h).toBeLessThanOrEqual(8 + 34);
 });
 
-test('an installed app that starts with empty insets re-applies viewport-fit=cover, a browser tab is left alone', async ({ page, world }) => {
+test('an installed app re-applies viewport-fit=cover at start and again at 100, 500 and 1000 ms', async ({ page, world }) => {
     await signIn(page, world.users.alice, '/walls');
-    const fits = standalone => page.evaluate(async s => {
-        Object.defineProperty(navigator, 'standalone', { configurable: true, get: () => s });
-        const meta = document.querySelector('meta[name="viewport"]');
-        const seen = [];
-        const observer = new MutationObserver(() => seen.push(/viewport-fit=(\w+)/.exec(meta.content)[1]));
-        observer.observe(meta, { attributes: true });
-        window.bwSafeArea.recompute();
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-        observer.disconnect();
-        return { seen, now: meta.content };
-    }, standalone);
+    const flips = async standalone => {
+        await page.addInitScript(s => {
+            Object.defineProperty(navigator, 'standalone', { configurable: true, get: () => s });
+            window.__fits = [];
+            new MutationObserver(() => {
+                const meta = document.querySelector('meta[name="viewport"]');
+                window.__fits.push(/viewport-fit=(\w+)/.exec(meta.content)[1]);
+            }).observe(document, { subtree: true, attributes: true, attributeFilter: ['content'] });
+        }, standalone);
+        await page.reload();
+        await page.waitForTimeout(1600);
+        return page.evaluate(() => ({ fits: window.__fits, now: document.querySelector('meta[name="viewport"]').content }));
+    };
 
-    // Playwright reports no insets, which is exactly the broken cold start of an installed app.
-    expect(await page.evaluate(() => [window.bwSafeArea.inset('top'), window.bwSafeArea.inset('bottom')])).toEqual([0, 0]);
-    const installed = await fits(true);
-    expect(installed.seen).toEqual(['auto', 'cover']);
+    const installed = await flips(true);
+    // At least the start and the three re-checks, each an auto -> cover pair, ending on cover.
+    expect(installed.fits.filter(f => f === 'auto').length).toBeGreaterThanOrEqual(4);
+    expect(installed.fits.filter(f => f === 'auto').length).toBe(installed.fits.filter(f => f === 'cover').length);
     expect(installed.now).toContain('viewport-fit=cover');
-    expect((await fits(false)).seen).toEqual([]);
+
+    // A rotation re-applies it too.
+    const before = await page.evaluate(() => window.__fits.length);
+    await page.evaluate(() => window.dispatchEvent(new Event('orientationchange')));
+    await page.waitForTimeout(1300);
+    expect(await page.evaluate(() => window.__fits.length)).toBeGreaterThan(before);
+});
+
+test('a browser tab never touches viewport-fit', async ({ page, world }) => {
+    await page.addInitScript(() => {
+        window.__fits = [];
+        new MutationObserver(() => window.__fits.push(1))
+            .observe(document, { subtree: true, attributes: true, attributeFilter: ['content'] });
+    });
+    await signIn(page, world.users.alice, '/walls');
+    await page.waitForTimeout(1300);
+    expect(await page.evaluate(() => window.__fits.length)).toBe(0);
+    expect(await page.evaluate(() => navigator.standalone)).not.toBe(true);
 });

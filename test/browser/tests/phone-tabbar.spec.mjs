@@ -54,7 +54,9 @@ async function openRevise(page, world) {
     await expect(page.locator('.picker-viewport img')).toBeVisible();
 }
 
-test('revising a multi-panel boulder keeps the tab bar on the bottom edge through every panel', async ({ page, world }) => {
+// Regression guard, not a reproduction: the emulator cannot zoom on focus, so this passed before the fix as well. It
+// pins that nothing in the multi-panel revise flow itself moves the bar (overflow, a trapping ancestor, a scroll jump).
+test('guard: revising a multi-panel boulder keeps the tab bar on the bottom edge through every panel', async ({ page, world }) => {
     await openRevise(page, world);
     await expectPinned(page);
     for (const label of ['Panel 2/2', 'Panel 1/2']) {
@@ -72,7 +74,7 @@ test('revising a multi-panel boulder keeps the tab bar on the bottom edge throug
     }
 });
 
-test('the tab bar steps aside while the keyboard is up or the page is zoomed, and comes back pinned', async ({ page, world }) => {
+test('the tab bar steps aside only while the keyboard is up, and a page left zoomed keeps it reachable', async ({ page, world }) => {
     await openRevise(page, world);
     const html = page.locator('html');
     const name = page.locator('.boulder-create input.form-input').first();
@@ -92,11 +94,18 @@ test('the tab bar steps aside while the keyboard is up or the page is zoomed, an
     await page.evaluate(() => window.bwTabbarGuard.refresh());
     await expect(html).not.toHaveClass(/\bbw-vv-away\b/);
 
-    await fakeViewport(page, { scale: 2 });
-    await expect(html).toHaveClass(/\bbw-vv-away\b/);
-    await fakeViewport(page, {});
+    // Focus zoom that outlives the keyboard: the field is blurred, the page stays zoomed (scale 2, a visual viewport
+    // half the size). The bar must stay visible and tappable, never hidden until the user happens to pinch out.
+    await name.focus();
+    await fakeViewport(page, { height: 332, scale: 2 });
+    await name.blur();
+    await fakeViewport(page, { height: 332, scale: 2 });
+    await page.evaluate(() => window.bwTabbarGuard.refresh());
     await expect(html).not.toHaveClass(/\bbw-vv-away\b/);
-    await expectPinned(page);
+    const bar = await tabbar(page);
+    expect(bar.visible).toBe(true);
+    expect(await page.evaluate(() => getComputedStyle(document.querySelector('.bw-tabbar')).pointerEvents)).not.toBe('none');
+    await fakeViewport(page, {});
 });
 
 test('the inline rename editor on a multi-panel boulder gets its own row on a phone', async ({ page, world }) => {
@@ -123,7 +132,7 @@ const smallFields = page => page.evaluate(() => [...document.querySelectorAll('i
     .filter(e => e.getClientRects().length > 0 && parseFloat(getComputedStyle(e).fontSize) < 16)
     .map(e => `${e.tagName.toLowerCase()}.${e.className} ${getComputedStyle(e).fontSize}`));
 
-test('no text field on the boulder edit flow is small enough for iOS to zoom the page on focus', async ({ page, world }) => {
+test('no text field on the boulder edit flow or the settings pages is small enough for iOS to zoom the page on focus', async ({ page, world }) => {
     await openRevise(page, world);
     expect(await smallFields(page)).toEqual([]);
     await page.locator('.panel-selector button').nth(1).click();
@@ -137,4 +146,19 @@ test('no text field on the boulder edit flow is small enough for iOS to zoom the
     expect(await smallFields(page)).toEqual([]);
     await editor.getByRole('button', { name: 'Cancel' }).click();
     await expect(editor).toHaveCount(0);
+
+    // The settings surfaces: the wall's settings slide (every card opened) and the profile page.
+    await page.goto(`/walls/${mp.wallId}`);
+    await expect(page.locator('.wall-carousel:not(.carousel-pending)')).toBeVisible();
+    await page.getByRole('button', { name: 'Page 1', exact: true }).click();
+    const cards = page.locator('.wall-carousel > .wall-page').nth(0).locator('details.settings-card > summary');
+    for (let i = 0; i < await cards.count(); i++) {
+        await cards.nth(i).click();
+    }
+    await page.waitForTimeout(500);
+    expect(await smallFields(page)).toEqual([]);
+    await page.goto('/profile');
+    await expect(page.locator('main')).toBeVisible();
+    await page.waitForTimeout(500);
+    expect(await smallFields(page)).toEqual([]);
 });
