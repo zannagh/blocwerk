@@ -4,6 +4,7 @@
 using System.Text.Json;
 using Blocwerk.Contracts.Documents;
 using Blocwerk.Contracts.Feed;
+using Blocwerk.Contracts.Feed.Payloads;
 
 namespace Blocwerk.Client.Store;
 
@@ -74,14 +75,33 @@ public static class StoreFeedApplier
         return wall.WithCommentAdded(new CommentsDocumentComment(id, boulderId, author, text, envelope.Hydrated.CreatedAt ?? envelope.At));
     }
 
+    // A boulder restamped onto another generation writes a second row with the OLD generation and its old draft flag
+    // (BoulderFeedMapper): only a row of the cached boulder's generation or a newer one says what the boulder is now.
     private static CachedWall Changed(CachedWall wall, FeedEnvelope envelope)
     {
-        var boulderId = envelope.EntityId ?? envelope.BoulderId;
-        return boulderId is { } id && IsDraft(envelope.Data) ? wall.WithBoulderDrafted(id) : wall;
+        if ((envelope.EntityId ?? envelope.BoulderId) is not { } id || PayloadOf(envelope.Data) is not { IsDraft: true } payload)
+        {
+            return wall;
+        }
+
+        var cached = wall.VisibleBoulders.FirstOrDefault(b => b.Id == id);
+        return cached is not null && payload.Generation >= cached.Generation ? wall.WithBoulderDrafted(id) : wall;
     }
 
-    private static bool IsDraft(JsonElement? data) =>
-        data is { ValueKind: JsonValueKind.Object } payload
-        && payload.TryGetProperty("isDraft", out var draft)
-        && draft.ValueKind == JsonValueKind.True;
+    private static BoulderPayload? PayloadOf(JsonElement? data)
+    {
+        if (data is not { ValueKind: JsonValueKind.Object } payload)
+        {
+            return null;
+        }
+
+        try
+        {
+            return payload.Deserialize(ClientJsonContext.Default.BoulderPayload);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 }

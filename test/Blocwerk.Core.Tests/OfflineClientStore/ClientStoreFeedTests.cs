@@ -83,6 +83,22 @@ public sealed class ClientStoreFeedTests
         Assert.Same(outsiderWall, await outsider.GetWallAsync(Wall));
     }
 
+    [Fact]
+    public async Task ARestampedBoulder_CountsOnlyTheRowOfItsCachedGenerationOrANewerOne()
+    {
+        var (store, wall) = await LoadedAsync(Device(Anon, shareWall: Wall));
+
+        // BoulderFeedMapper's second row of a restamp: the OLD generation with the old draft flag (a draft just published).
+        store.Apply(Anon, Envelope(FeedKinds.BoulderChanged, Boulder1, Boulder1, new BoulderPayload(0, true)));
+        Assert.Same(wall, await store.GetWallAsync(Wall));
+
+        store.Apply(Anon, Envelope(FeedKinds.BoulderChanged, Boulder1, Boulder1, new { generation = "x", isDraft = true }));
+        Assert.Same(wall, await store.GetWallAsync(Wall));
+
+        store.Apply(Anon, Envelope(FeedKinds.BoulderChanged, Boulder1, Boulder1, new BoulderPayload(1, true)));
+        Assert.False((await store.GetWallAsync(Wall))!.HasBoulder(Boulder1));
+    }
+
     [Theory]
     [InlineData(FeedKinds.TickMine, FeedFollowUp.RefetchMine)]
     [InlineData(FeedKinds.FavoriteChanged, FeedFollowUp.RefetchMine)]

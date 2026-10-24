@@ -4,13 +4,15 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Blocwerk.Contracts.Documents;
+using Blocwerk.Contracts.Feed.Payloads;
 using Blocwerk.Contracts.Mine;
 
 namespace Blocwerk.Client.Store;
 
 /// <summary>
 /// The client's JSON (source-generated, so trimming keeps every member): the data documents as the server writes them
-/// (<see cref="DataDocumentSchema.Options"/>: web defaults, nulls left out) and client-store.js's answers.
+/// (<see cref="DataDocumentSchema.Options"/>: web defaults, nulls left out), client-store.js's answers, and the feed's
+/// boulder payload (<c>FeedJson</c>: web defaults too).
 /// </summary>
 [JsonSourceGenerationOptions(JsonSerializerDefaults.Web)]
 [JsonSerializable(typeof(WallDocument))]
@@ -21,4 +23,5 @@ namespace Blocwerk.Client.Store;
 [JsonSerializable(typeof(MineDocument))]
 [JsonSerializable(typeof(StoreSnapshot))]
 [JsonSerializable(typeof(StoreDocs))]
+[JsonSerializable(typeof(BoulderPayload))]
 internal sealed partial class ClientJsonContext : JsonSerializerContext;
