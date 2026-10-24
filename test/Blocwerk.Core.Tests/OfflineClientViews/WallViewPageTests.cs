@@ -111,7 +111,7 @@ public sealed class WallViewPageTests
         Assert.Contains("data-bw-panel=\"photo\"", html, StringComparison.Ordinal);
         Assert.Contains($"/a/{PanelSha('9')}/1920", html, StringComparison.Ordinal);
         Assert.DoesNotContain("panel-arrow", html, StringComparison.Ordinal);
-        Assert.Contains("No boulders yet.", html, StringComparison.Ordinal);
+        Assert.Contains("Boulders are not saved on this device.", html, StringComparison.Ordinal);
     }
 
     // The markup of one boulder's row.

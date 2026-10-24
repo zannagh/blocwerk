@@ -319,7 +319,10 @@ const clientCacheName = version => CLIENT_CACHE_PREFIX + version;
 const clientUrl = path => new URL(path, self.location.origin).href;
 const clientFileOk = response => !!response && response.status === 200 && response.type === 'basic' && !response.redirected;
 
-// True when a template (relative to /v/, `{name}` one segment, `{*name}` the rest) covers the path.
+// True when a template (relative to /v/, `{name}` one segment, `{name:guid}` one GUID segment, `{*name}` the rest)
+// covers the path. The `:guid` constraint is honoured as the client's router honours it, so `walls/{WallId:guid}` never
+// covers /walls/create (an edit page the client has no view of).
+const CLIENT_GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function clientRouteCovers(template, pathname) {
     const want = template.split('/').filter(Boolean);
     const have = pathname.split('/').filter(Boolean);
@@ -327,7 +330,11 @@ function clientRouteCovers(template, pathname) {
         if (/^\{\*{1,2}[^}]+\}$/.test(want[i])) {
             return true;
         }
-        if (i >= have.length || !(/^\{[^}]+\}$/.test(want[i]) || want[i].toLowerCase() === have[i].toLowerCase())) {
+        const parameter = /^\{[^}]+\}$/.test(want[i]);
+        if (i >= have.length || !(parameter || want[i].toLowerCase() === have[i].toLowerCase())) {
+            return false;
+        }
+        if (parameter && /:guid\}$/i.test(want[i]) && !CLIENT_GUID.test(have[i])) {
             return false;
         }
     }

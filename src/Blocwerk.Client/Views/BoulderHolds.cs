@@ -20,16 +20,17 @@ public sealed class BoulderHolds
     /// <summary>Initializes a new instance of the <see cref="BoulderHolds"/> class.</summary>
     /// <param name="boulder">The boulder.</param>
     /// <param name="holds">The wall's live holds, or null when not cached.</param>
-    public BoulderHolds(BouldersDocumentBoulder boulder, HoldsDocument? holds)
+    /// <param name="grid">The wall's photos, which place its holds.</param>
+    public BoulderHolds(BouldersDocumentBoulder boulder, HoldsDocument? holds, WallPanelGrid grid)
     {
         roles = boulder.Holds
             .GroupBy(h => h.HoldId)
             .ToDictionary(g => g.Key, g => (Parse(g.First().Type, HoldType.Normal), Parse(g.First().Usage, HoldUsage.HandAndFoot)));
         Ids = roles.Keys.ToHashSet();
         FootOnly = roles.Where(r => r.Value.Usage == HoldUsage.FootOnly).Select(r => r.Key).ToHashSet();
-        var live = holds?.Holds.Where(h => Ids.Contains(h.Id)).ToList() ?? [];
-        Panels = live.Where(h => h.PanelId is not null).Select(h => h.PanelId!.Value).ToHashSet();
-        Missing = Ids.Count - live.Count;
+        Saved = holds is not null;
+        Panels = grid.PanelsOf(Ids);
+        Missing = holds is null ? 0 : Ids.Count - holds.Holds.Count(h => Ids.Contains(h.Id));
         Starts = roles.Values.Count(r => r.Type == HoldType.Start);
         Tops = roles.Values.Count(r => r.Type == HoldType.Top);
         HandOnly = roles.Values.Count(r => r.Usage == HoldUsage.HandOnly);
@@ -43,10 +44,13 @@ public sealed class BoulderHolds
     /// <summary>Gets its foot-only holds.</summary>
     public IReadOnlySet<Guid> FootOnly { get; }
 
-    /// <summary>Gets the panels carrying at least one of its live holds.</summary>
+    /// <summary>Gets a value indicating whether the wall's holds are on the device (else nothing is known of them).</summary>
+    public bool Saved { get; }
+
+    /// <summary>Gets the panels its live holds are drawn on.</summary>
     public IReadOnlySet<Guid> Panels { get; }
 
-    /// <summary>Gets how many of its holds the live holds document does not have.</summary>
+    /// <summary>Gets how many of its holds the cached live holds document does not have (0 when none is cached).</summary>
     public int Missing { get; }
 
     /// <summary>Gets the start holds.</summary>

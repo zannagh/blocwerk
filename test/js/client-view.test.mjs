@@ -51,3 +51,12 @@ test('the Server pages\' stored theme is applied at load, and no storage leaves 
     assert.equal(load('client-view.js', 'Blocwerk.Client/wwwroot/js/client-view.js', windowOf({ theme: 'sepia' })).attributes.size, 0);
     assert.equal(load('client-view.js', 'Blocwerk.Client/wwwroot/js/client-view.js', windowOf({ storage: false })).attributes.size, 0);
 });
+
+test('tzOffsets answers each moment\'s own offset, in order, and nothing for nothing', () => {
+    const view = load('client-view.js', 'Blocwerk.Client/wwwroot/js/client-view.js', windowOf()).bwClientView;
+    const winter = Date.UTC(2026, 0, 15);
+    const summer = Date.UTC(2026, 6, 15);
+
+    assert.equal(view.tzOffsets(`${winter},${summer}`), [winter, summer].map(ms => -new Date(ms).getTimezoneOffset()).join(','));
+    assert.equal(view.tzOffsets(''), '');
+});

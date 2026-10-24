@@ -32,7 +32,7 @@ public static class BoulderList
     {
         if (!string.IsNullOrWhiteSpace(filter.Search))
         {
-            src = src.Where(b => b.Name.Contains(filter.Search, StringComparison.OrdinalIgnoreCase));
+            src = src.Where(b => b.Name?.Contains(filter.Search, StringComparison.OrdinalIgnoreCase) == true);
         }
 
         if (filter.Attempted)

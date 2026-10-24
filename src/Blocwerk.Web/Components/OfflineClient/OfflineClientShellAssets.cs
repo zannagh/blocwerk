@@ -24,18 +24,17 @@ public static class OfflineClientShellAssets
     public const string FrameworkPrefix = "v/_framework/";
 
     /// <summary>
-    /// The stylesheets: the Server pages' own (Web's app, pages and components CSS, in BlocwerkApp's order around the
-    /// shared overlay's), so the views (PR 3.11), which render the Server's markup and classes, look like the pages they
-    /// stand in for; then the client's frame and its views. None of them loads a <c>url()</c> (a Core test): the worker
-    /// precaches only what the shell names.
+    /// The stylesheets, all the client's own: the Server pages' rules its views use (client-base and client-components,
+    /// generated from Web's CSS by build/subset-client-css.mjs, in the Server pages' cascade around the shared overlay's
+    /// hold-tap.css), then the client's frame and its views. No Web stylesheet: a Server CSS edit would otherwise be a new
+    /// client version (<see cref="Version"/>) and every device would download the client again. None loads a <c>url()</c>
+    /// (a Core test): the worker precaches only what the shell names.
     /// </summary>
     public static readonly string[] Styles =
     [
-        "css/app.css",
-        "css/pages.css",
-        "css/usage-heat.css",
+        "v/css/client-base.css",
         "_content/Blocwerk.Shared.Ui/css/hold-tap.css",
-        "css/components.css",
+        "v/css/client-components.css",
         "v/css/client.css",
         "v/css/client-views.css",
     ];

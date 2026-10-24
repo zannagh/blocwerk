@@ -84,7 +84,7 @@ public sealed class BoulderPageTests
 
         Assert.True(html.IndexOf("The top is spicy", StringComparison.Ordinal) < html.IndexOf("Lovely crimps", StringComparison.Ordinal));
         Assert.Contains("<span class=\"comment-author\">Bob</span>", html, StringComparison.Ordinal);
-        Assert.Contains("<div class=\"avatar avatar-sm\">B</div>", html, StringComparison.Ordinal);
+        Assert.Contains("<div class=\"avatar avatar-sm\" aria-hidden=\"true\">B</div>", html, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/users/", html, StringComparison.Ordinal);
     }
 
@@ -145,7 +145,7 @@ public sealed class BoulderPageTests
 
         Assert.Contains("<span class=\"comment-author\">A member</span>", html, StringComparison.Ordinal);
         Assert.Contains("<div class=\"avatar avatar-sm\" aria-hidden=\"true\"></div>", html, StringComparison.Ordinal);
-        Assert.Contains("<div class=\"avatar avatar-sm\">A</div>", html, StringComparison.Ordinal);
+        Assert.Contains("<div class=\"avatar avatar-sm\" aria-hidden=\"true\">A</div>", html, StringComparison.Ordinal);
         Assert.Equal(1, Count(html, "aria-hidden=\"true\"></div>"));
         Assert.DoesNotContain("Bob", html, StringComparison.Ordinal);
         Assert.DoesNotContain("My stats", html, StringComparison.Ordinal);

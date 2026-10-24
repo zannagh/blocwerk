@@ -21,6 +21,10 @@ internal static class ViewWorld
     public static readonly Guid HoldStart = Guid.Parse("d0000000-0000-0000-0000-000000000001");
     public static readonly Guid HoldTop = Guid.Parse("d0000000-0000-0000-0000-000000000002");
     public static readonly Guid HoldRight = Guid.Parse("d0000000-0000-0000-0000-000000000003");
+    public static readonly Guid HoldVirtual = Guid.Parse("d0000000-0000-0000-0000-000000000004");
+    public static readonly Guid HoldVirtual2 = Guid.Parse("d0000000-0000-0000-0000-000000000005");
+    public static readonly Guid VirtualTop = Guid.Parse("b4444444-4444-4444-4444-444444444444");
+    public static readonly Guid AllVirtual = Guid.Parse("b5555555-5555-5555-5555-555555555555");
     public static readonly Guid Crimp = Boulder1;
     public static readonly Guid Slab = Boulder2;
     public static readonly Guid Draft = Guid.Parse("b3333333-3333-3333-3333-333333333333");
@@ -84,7 +88,42 @@ internal static class ViewWorld
         return source;
     }
 
+    /// <summary>
+    /// The wall with two never-stamped virtual holds (no panel, as the holds document keeps them): a boulder whose top
+    /// is virtual (its start on the right panel), and one made of virtual holds only.
+    /// </summary>
+    public static FakeStoreSource VirtualDevice(string partition)
+    {
+        var source = new FakeStoreSource();
+        var holds = HoldsDoc() with { Holds = [.. HoldsDoc().Holds, Virtual(HoldVirtual, 0.7, 0.3), Virtual(HoldVirtual2, 0.6, 0.6)] };
+        BouldersDocumentBoulder[] boulders =
+        [
+            CrimpLine() with { Id = VirtualTop, Name = "Virtual Top", Holds = [new(HoldRight, "Start", "HandAndFoot"), new(HoldVirtual, "Top", "HandAndFoot")] },
+            CrimpLine() with { Id = AllVirtual, Name = "All Virtual", Holds = [new(HoldVirtual, "Start", "HandAndFoot"), new(HoldVirtual2, "Top", "HandAndFoot")] },
+        ];
+        Put(source, partition, new()
+        {
+            [DataDocumentKinds.Wall] = new(Sha('a'), Json(WallDoc())),
+            [DataDocumentKinds.Holds] = new(Sha('h'), Json(holds)),
+            [DataDocumentKinds.Boulders] = new(Sha('b'), Json(new BouldersDocument(1, Wall, boulders))),
+            [DataDocumentKinds.Comments] = new(Sha('c'), Json(new CommentsDocument(1, Wall, []))),
+        });
+        return source;
+    }
+
+    /// <summary>A ready device holding only the given kinds of the wall's documents (the others never cached).</summary>
+    public static FakeStoreSource PartialDevice(string partition, params string[] kinds)
+    {
+        var full = CachedDevice(partition).Docs[(partition, Wall)].Docs;
+        var source = new FakeStoreSource();
+        Put(source, partition, kinds.ToDictionary(k => k, k => full[k]), mine: partition.StartsWith("u-", StringComparison.Ordinal) ? [Marks()] : null);
+        return source;
+    }
+
     public static string CommentsJson(IReadOnlyList<CommentsDocumentComment> comments) => Json(new CommentsDocument(1, Wall, comments));
+
+    private static HoldsDocumentHold Virtual(Guid id, double x, double y) =>
+        new(id, null, 2, x, y, 0.03, null, "Hand", null, false, true, false, null, null, null, null);
 
     private static HoldsDocumentHold Hold(Guid id, Guid panel, double x, double y) =>
         new(id, panel, 2, x, y, 0.03, "red", "Hand", null, false, false, false, null, null, null, null);

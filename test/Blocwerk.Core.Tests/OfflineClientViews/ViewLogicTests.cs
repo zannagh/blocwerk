@@ -61,19 +61,18 @@ public sealed class ViewLogicTests
     }
 
     [Fact]
-    public void PhotoRenditions_TheDevicesRung_ThenTheThumbnail_ThenTheOriginal()
+    public void PhotoRenditions_TheDevicesRung_ThenTheThumbnail_ThenTheCap_NeverTheOriginal()
     {
         var sha = PanelSha('1');
+        var path = $"/api/walls/{Wall}/a/{sha}";
 
-        Assert.Equal(
-            [$"/api/walls/{Wall}/a/{sha}/1920", $"/api/walls/{Wall}/a/{sha}/640", $"/api/walls/{Wall}/a/{sha}"],
-            PhotoUrls.Renditions(Wall, sha, null, 1920));
-        Assert.Equal(
-            [$"/api/walls/{Wall}/a/{sha}/640?token=a%2Fb", $"/api/walls/{Wall}/a/{sha}?token=a%2Fb"],
-            PhotoUrls.Renditions(Wall, sha, "a/b", 640));
+        Assert.Equal([$"{path}/1920", $"{path}/640"], PhotoUrls.Renditions(Wall, sha, null, 1920));
+        Assert.Equal([$"{path}/1920", $"{path}/640"], PhotoUrls.Renditions(Wall, sha, null, 2560));
+        Assert.Equal([$"{path}/1280", $"{path}/640", $"{path}/1920"], PhotoUrls.Renditions(Wall, sha, null, 1280));
+        Assert.Equal([$"{path}/640?token=a%2Fb", $"{path}/1920?token=a%2Fb"], PhotoUrls.Renditions(Wall, sha, "a/b", 640));
         Assert.Empty(PhotoUrls.Renditions(Wall, null, null, 1920));
         Assert.Empty(PhotoUrls.Renditions(Wall, "ABC", null, 1920));
-        Assert.Equal($"/api/walls/{Wall}/a/{sha}/640", PhotoUrls.Thumbnail(Wall, sha, null));
+        Assert.Equal($"{path}/640", PhotoUrls.Thumbnail(Wall, sha, null));
     }
 
     [Fact]

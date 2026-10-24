@@ -22,7 +22,10 @@ public sealed class ViewSlotRegistry
 
     private readonly Dictionary<ViewSlotName, List<Func<ViewSlotContext, RenderFragment?, RenderFragment>>> slots = [];
 
-    /// <summary>Mounts <typeparamref name="TComponent"/> into <paramref name="slot"/>, after any mounted before it.</summary>
+    /// <summary>
+    /// Mounts <typeparamref name="TComponent"/> into <paramref name="slot"/>, after any mounted before it; a stage slot
+    /// takes one component only.
+    /// </summary>
     /// <typeparam name="TComponent">The component (kept by the trimmer through this generic).</typeparam>
     /// <param name="slot">The slot.</param>
     /// <returns>This registry.</returns>
@@ -32,6 +35,12 @@ public sealed class ViewSlotRegistry
         if (!slots.TryGetValue(slot, out var list))
         {
             slots[slot] = list = [];
+        }
+
+        // A stage hands its panel viewer to what mounts on it: two components would each show it.
+        if (slot is ViewSlotName.WallStage or ViewSlotName.BoulderStage && list.Count > 0)
+        {
+            throw new InvalidOperationException($"{slot} takes one component; {list.Count} is mounted already.");
         }
 
         list.Add((context, fallback) => builder =>

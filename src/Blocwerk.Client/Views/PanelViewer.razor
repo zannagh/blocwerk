@@ -1,8 +1,9 @@
 @using Blocwerk.Shared.Ui.Overlay
 @* The wall's photos one at a time, as the Server's MultiPanelViewer shows them (its markup and classes, without the
    zoom engine, the lens and the full-screen stage, which are Server interop): the cached photo, the shared hold
-   overlay, the outdated chip, and a chevron to each neighbouring panel (only those carrying the boulder's holds on a
-   boulder page). Nothing here edits; the overlay is the read-only one. *@
+   overlay, the outdated chip, and a chevron to each neighbouring panel. On a boulder page it draws the boulder's holds
+   alone (its holds of no panel on the centre panel) and steps only to the panels carrying them. Nothing here edits;
+   the overlay is the read-only one. *@
 @if (panel is null)
 {
     <p class="empty-msg">No panels to show.</p>
@@ -14,7 +15,7 @@ else
             <div class="photo-editor">
                 <PanelPhoto Urls="PhotoUrls.Renditions(WallId, panel.Sha, ShareToken, FitWidth)"
                             Alt="@($"Wall panel {panel.Col},{panel.Row}")" Class="@(Highlighted is null ? "wall-photo" : "wall-photo boulder-photo")" />
-                <PanelHoldOverlay Holds="Grid.HoldsOn(panel)" HighlightedHoldIds="Highlighted" FootHoldIds="FootHoldIds"
+                <PanelHoldOverlay Holds="@(Highlighted is null ? Grid.HoldsOn(panel) : Grid.BoulderHoldsOn(panel, Highlighted))" HighlightedHoldIds="Highlighted" FootHoldIds="FootHoldIds"
                                   HoldColor="HoldColor" DrawsEveryHold="!OutlinesOnDemand || showAllHolds" />
             </div>
         </div>
@@ -91,7 +92,7 @@ else
     [Parameter]
     public int FitWidth { get; set; } = ClientViewFacts.Default.FitWidth;
 
-    /// <summary>Gets or sets a boulder's holds, drawn prominently; null on the wall view.</summary>
+    /// <summary>Gets or sets a boulder's holds, the only ones drawn; null on the wall view.</summary>
     [Parameter]
     public IReadOnlySet<Guid>? Highlighted { get; set; }
 

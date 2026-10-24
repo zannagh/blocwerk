@@ -1,14 +1,14 @@
 @using Blocwerk.Contracts.Feed
 @* An author's avatar circle, as the Server's UserAvatar draws it without the image (the uploaded avatar is never on
    the device): the name's initial, or the plain circle for a member the kiosk tablet may not name (the kiosk class's
-   documents already read "A member", with no id and no avatar). *@
-@if (IsUnnamedMember(Author))
+   documents already read "A member", with no id and no avatar) and for a name the document left empty. *@
+@if (IsUnnamedMember(Author) || string.IsNullOrWhiteSpace(Author.Name))
 {
     <div class="avatar avatar-sm" aria-hidden="true"></div>
 }
 else
 {
-    <div class="avatar avatar-sm">@(Author.Name.FirstOrDefault())</div>
+    <div class="avatar avatar-sm" aria-hidden="true">@Author.Name.Trim()[0]</div>
 }
 
 @code {

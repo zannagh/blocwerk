@@ -12,9 +12,13 @@ namespace Blocwerk.Client.Views;
 /// </summary>
 public static class PhotoUrls
 {
+    /// <summary>The largest rendition the client ever asks for: the Server's fit cap (image-res.js FIT_CAP).</summary>
+    public const int FitCap = 1920;
+
     /// <summary>
     /// The renditions to try, in order: the one the Server pages cached for this screen, the thumbnail they cache for
-    /// every core photo, then the original (online only). None for a photo without a usable sha.
+    /// every core photo, then the capped rendition (online only). Never the uncapped original: a phone would download
+    /// the camera's many-megabyte file. None for a photo without a usable sha.
     /// </summary>
     /// <param name="wallId">The wall.</param>
     /// <param name="sha">The photo's sha.</param>
@@ -29,7 +33,7 @@ public static class PhotoUrls
         }
 
         var path = $"/api/walls/{wallId}/a/{sha}";
-        return new[] { At(path, fitWidth), At(path, ClientViewFacts.ThumbnailWidth), path }
+        return new[] { At(path, Math.Min(fitWidth, FitCap)), At(path, ClientViewFacts.ThumbnailWidth), At(path, FitCap) }
             .Distinct(StringComparer.Ordinal)
             .Select(url => WithToken(url, shareToken))
             .ToList();

@@ -7,6 +7,7 @@
  *               The Server pages cache exactly that rung and the 640 thumbnail, so the client asks for that URL and
  *               the worker answers it from the device. The node test pins it to asset-plan.js's own function.
  *   tzOffset()  minutes to add to UTC for local time now (the client runs without time zone data).
+ *   tzOffsets('ms,ms')  the same at each of the given moments (a summer date across a DST change), as 'm,m'.
  * The theme: the Server pages' stored choice (theme.js, `blocwerk-theme`) is applied at load, so the client looks
  * like the page it stands in for.
  */
@@ -39,6 +40,8 @@ window.bwClientView = (function (win) {
     return {
         fitWidthOf,
         fitWidth: () => fitWidthOf(win.innerWidth, win.devicePixelRatio),
-        tzOffset: () => -new Date().getTimezoneOffset()
+        tzOffset: () => -new Date().getTimezoneOffset(),
+        tzOffsets: list => String(list || '').split(',').filter(Boolean)
+            .map(ms => -new Date(Number(ms)).getTimezoneOffset()).join(',')
     };
 })(window);

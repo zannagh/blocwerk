@@ -2,9 +2,11 @@
 @page "/walls"
 @implements IDisposable
 @inject ClientStore Store
-@* The wall list (the Server's /walls, "My Walls"): every wall the device holds for its partition, read-only — no
-   "New Wall" and no join box. A card opens the wall's view in the client. /v/ itself shows it too, though the worker
-   never hands "/" over (a declared route starts with a literal segment). *@
+@inject WallSummaries Summaries
+@* The wall list (the Server's /walls, "My Walls"): the viewer's own walls the device holds, read-only — no "New Wall"
+   and no join box. Each card reads only its wall's summary (WallSummaries), never its holds or comments. A card opens
+   the wall's view in the client. /v/ itself shows it too, though the worker never hands "/" over (a declared route
+   starts with a literal segment). *@
 <PageTitle>My Walls - Blocwerk</PageTitle>
 
 <div class="wall-list">
@@ -29,9 +31,10 @@
             {
                 <a href="@ClientRoutes.WallLink(wall.WallId, null)" class="wall-card" data-bw-wall="@wall.WallId">
                     <div class="wall-card-photo">
-                        @if (PhotoUrls.Thumbnail(wall.WallId, CardSha(wall.Wall!), null) is { } url)
+                        @if (PhotoUrls.Thumbnail(wall.WallId, wall.PhotoSha, null) is { } url)
                         {
-                            <PanelPhoto Urls="[url]" Alt="@wall.Wall!.Name" />
+                            @* The name is the card's heading: the photo is decoration (alt="" keeps it from being read twice). *@
+                            <PanelPhoto Urls="[url]" Alt="" />
                         }
                         else
                         {
@@ -39,8 +42,11 @@
                         }
                     </div>
                     <div class="wall-card-info">
-                        <h3>@wall.Wall!.Name</h3>
-                        <span class="member-count">@BoulderCount(wall) boulder@(BoulderCount(wall) != 1 ? "s" : string.Empty)</span>
+                        <h3>@wall.Name</h3>
+                        @if (wall.BoulderCount is { } count)
+                        {
+                            <span class="member-count">@count boulder@(count != 1 ? "s" : string.Empty)</span>
+                        }
                     </div>
                 </a>
             }
@@ -49,7 +55,7 @@
 </div>
 
 @code {
-    private List<CachedWall>? cards;
+    private IReadOnlyList<WallSummary>? cards;
 
     /// <inheritdoc />
     public void Dispose() => Store.Changed -= OnChanged;
@@ -58,32 +64,12 @@
     protected override async Task OnInitializedAsync()
     {
         Store.Changed += OnChanged;
-        await LoadAsync();
-    }
-
-    // The card's photo: the wall's own, else its origin panel's, as the Server's card shows the centre photo.
-    private static string? CardSha(Blocwerk.Contracts.Documents.WallDocument wall) =>
-        wall.PhotoSha ?? wall.Panels.OrderBy(p => p.Row).ThenBy(p => p.Col).FirstOrDefault(p => p.Sha is not null)?.Sha;
-
-    private static int BoulderCount(CachedWall wall) => wall.VisibleBoulders.Count(b => !b.IsArchived);
-
-    private async Task LoadAsync()
-    {
-        var read = new List<CachedWall>();
-        foreach (var row in Store.Walls)
-        {
-            if (await Store.GetWallAsync(row.WallId) is { Wall: not null } wall)
-            {
-                read.Add(wall);
-            }
-        }
-
-        cards = read.OrderBy(w => w.Wall!.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        cards = await Summaries.ListAsync();
     }
 
     private void OnChanged() => _ = InvokeAsync(async () =>
     {
-        await LoadAsync();
+        cards = await Summaries.ListAsync();
         StateHasChanged();
     });
 }

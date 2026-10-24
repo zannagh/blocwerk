@@ -13,6 +13,7 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 builder.Services.AddSingleton<IClientStoreSource, JsClientStoreSource>();
 builder.Services.AddSingleton<ClientStore>();
 builder.Services.AddSingleton<IClientViewEnv, JsClientViewEnv>();
+builder.Services.AddSingleton<WallSummaries>();
 
 // The views' extension points (PR 3.11); PR 3.13 mounts gallery and 3D here.
 builder.Services.AddSingleton(new ViewSlotRegistry());

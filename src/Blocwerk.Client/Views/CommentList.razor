@@ -1,37 +1,50 @@
 @using Blocwerk.Contracts.Documents
 @* A boulder's comments from the cached comments document, read-only: the Server's BoulderComments rows (its markup
    and classes) with no compose box, no delete and no paging. Authors are what the document names: an erased, deleted
-   or Ghost author already reads "Ghost", and the kiosk class's unnamed members "A member". *@
+   or Ghost author already reads "Ghost", and the kiosk class's unnamed members "A member". Without a cached comments
+   document it says the comments are not saved, never that there are none. *@
 <div class="comments-section">
     <h2>Comments</h2>
-    @foreach (var comment in Comments)
+    @if (!Saved)
     {
-        <div class="comment-row" @key="comment.Id" data-bw-comment="@comment.Id">
-            <div class="comment-header">
-                <AuthorAvatar Author="comment.Author" />
-                <span class="comment-author">@comment.Author.Name</span>
-                <span class="comment-time"><time datetime="@comment.CreatedAt.UtcDateTime.ToString("o")">@ClientTime.Relative(comment.CreatedAt, Now, Offset)</time></span>
-            </div>
-            <p class="comment-text">@comment.Text</p>
-        </div>
+        <NotSavedNote Text="Comments are not saved on this device." />
     }
-    @if (Comments.Count == 0)
+    else
     {
-        <p class="empty-msg">No comments yet.</p>
+        var now = Now ?? DateTimeOffset.UtcNow;
+        @foreach (var comment in Comments)
+        {
+            <div class="comment-row" @key="comment.Id" data-bw-comment="@comment.Id">
+                <div class="comment-header">
+                    <AuthorAvatar Author="comment.Author" />
+                    <span class="comment-author">@comment.Author.Name</span>
+                    <span class="comment-time"><time datetime="@comment.CreatedAt.UtcDateTime.ToString("o")">@ClientTime.Relative(comment.CreatedAt, now, OffsetOf(comment.CreatedAt))</time></span>
+                </div>
+                <p class="comment-text">@comment.Text</p>
+            </div>
+        }
+        @if (Comments.Count == 0)
+        {
+            <p class="empty-msg">No comments yet.</p>
+        }
     }
 </div>
 
 @code {
-    /// <summary>Gets or sets the comments, oldest first (<c>CachedWall.CommentsFor</c>).</summary>
+    /// <summary>Gets or sets the comments, newest first.</summary>
     [Parameter]
     [EditorRequired]
     public IReadOnlyList<CommentsDocumentComment> Comments { get; set; } = [];
 
-    /// <summary>Gets or sets local time minus UTC.</summary>
+    /// <summary>Gets or sets a value indicating whether the wall's comments document is on the device.</summary>
     [Parameter]
-    public TimeSpan Offset { get; set; }
+    public bool Saved { get; set; } = true;
 
-    /// <summary>Gets or sets now (the tests fix it).</summary>
+    /// <summary>Gets or sets the local time offset at a moment.</summary>
     [Parameter]
-    public DateTimeOffset Now { get; set; } = DateTimeOffset.UtcNow;
+    public Func<DateTimeOffset, TimeSpan> OffsetOf { get; set; } = _ => TimeSpan.Zero;
+
+    /// <summary>Gets or sets now, or null for the time of each render (the tests fix it).</summary>
+    [Parameter]
+    public DateTimeOffset? Now { get; set; }
 }

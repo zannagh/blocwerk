@@ -1,6 +1,6 @@
 /* The offline client's frame (Blocwerk.Client). The views (PR 3.11) bring their own rules; the overlay's come from
    Blocwerk.Shared.Ui's hold-tap.css. */
-/* The frame's colours are the Server pages' tokens (Web's css/app.css, which the shell loads first), so the client
+/* The frame's colours are the Server pages' tokens (client-base.css, their subset the shell loads first), so the client
    looks like the page it stands in for; the fallbacks keep the frame readable without it. */
 :root {
     --bw-c-bg: var(--bg, #f5f4f1);
