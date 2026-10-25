@@ -16,6 +16,7 @@ using Blocwerk.Core.MarkerPlanning;
 using Blocwerk.Core.Pulse;
 using Blocwerk.Core.Redetect;
 using Blocwerk.Core.Refresh;
+using Blocwerk.Core.WhatsNew;
 using Blocwerk.Core.Services;
 using Blocwerk.Core.Services.HybridZoom;
 using Blocwerk.Core.Services.PanelCrop;
@@ -262,6 +263,7 @@ public static class CoreServices
 
         builder.Services.AddScoped<IWallService, WallService>();
         builder.Services.AddWall3DView();
+        builder.Services.AddReleaseNotes();
         builder.Services.AddMarkerPlanning();
         builder.Services.AddScoped<IWallPanelService, WallPanelService>();
         builder.Services.AddScoped<IPanelCropService, PanelCropService>();

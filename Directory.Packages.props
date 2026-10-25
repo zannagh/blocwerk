@@ -28,6 +28,9 @@
     <!-- Email (SMTP): MailKit is the send-side client used by EmailSender. -->
     <PackageVersion Include="MailKit" Version="4.16.0" />
 
+    <!-- Markdown: renders the GitHub release notes on /whats-new, with raw HTML disabled. -->
+    <PackageVersion Include="Markdig" Version="1.3.2" />
+
     <!-- Web Push (RFC 8291 / VAPID): the send-side library used by PushNotificationService. -->
     <PackageVersion Include="WebPush" Version="1.0.13" />
 

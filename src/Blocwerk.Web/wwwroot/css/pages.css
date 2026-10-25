@@ -4105,3 +4105,85 @@ a.wall-update-link {
     .boulder-detail .attempt-section { grid-column: 2; grid-row: 3; }
     .boulder-detail :is(.boulder-main-row, .boulder-photo-col, .boulder-side-col, .boulder-wide-col) > :not(.page-header, .boulder-toggle-row, .boulder-view-slot, .attempt-section) { grid-column: 1 / -1; grid-row: auto; }
 }
+
+/* What's new (/whats-new): Blocwerk's GitHub release notes, linked from the version in the Info popover. */
+.whatsnew-page {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 0 16px 32px;
+}
+
+.whatsnew-page .description { color: var(--text-secondary); line-height: 1.5; }
+.whatsnew-status { color: var(--text-secondary); margin: 16px 0; }
+
+.whatsnew-notice {
+    margin: 16px 0;
+    padding: 12px 14px;
+    border-radius: var(--r-md);
+    background: var(--warning-bg);
+    color: var(--warning-text);
+    line-height: 1.5;
+}
+
+.whatsnew-notice a { color: inherit; font-weight: 600; }
+.whatsnew-preview { background: var(--info-bg); color: var(--info-text); }
+
+.whatsnew-toolbar { display: flex; justify-content: flex-end; margin: 12px 0; min-height: 1px; }
+
+.whatsnew-toggle {
+    display: inline-flex;
+    align-items: center;
+    min-height: 36px;
+    padding: 6px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-pill);
+    background: var(--bg-surface);
+    color: var(--text);
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.whatsnew-toggle:hover { background: var(--bg-surface-alt); }
+
+.whatsnew-release {
+    margin: 0 0 16px;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    background: var(--bg-surface);
+    overflow-wrap: anywhere;
+}
+
+.whatsnew-release.is-current { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+
+.whatsnew-release-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 8px; }
+.whatsnew-release-head h2 { margin: 0; font-size: 1.1rem; color: var(--text-heading); }
+.whatsnew-release-head h2 a { color: inherit; text-decoration: none; }
+.whatsnew-release-head h2 a:hover { text-decoration: underline; }
+
+.whatsnew-badge {
+    padding: 2px 8px;
+    border-radius: var(--r-pill);
+    background: var(--bg-surface-alt);
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+
+.whatsnew-badge-current { background: var(--accent-soft); color: var(--accent); }
+.whatsnew-date { margin-left: auto; color: var(--text-secondary); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+
+.whatsnew-notes { color: var(--text); font-size: 0.92rem; line-height: 1.55; }
+.whatsnew-notes h1, .whatsnew-notes h2, .whatsnew-notes h3 { font-size: 1rem; margin: 12px 0 6px; color: var(--text-heading); }
+.whatsnew-notes p, .whatsnew-notes ul, .whatsnew-notes ol { margin: 0 0 8px; }
+.whatsnew-notes ul, .whatsnew-notes ol { padding-left: 20px; }
+.whatsnew-notes a { color: var(--accent); }
+.whatsnew-notes code { font-size: 0.85em; padding: 1px 4px; border-radius: 4px; background: var(--bg-surface-alt); }
+.whatsnew-notes pre { overflow-x: auto; padding: 8px; border-radius: var(--r-sm); background: var(--bg-surface-alt); }
+.whatsnew-notes img { max-width: 100%; height: auto; }
+.whatsnew-notes table { display: block; overflow-x: auto; border-collapse: collapse; }
+.whatsnew-notes th, .whatsnew-notes td { padding: 4px 8px; border: 1px solid var(--border); }
+.whatsnew-empty { color: var(--text-secondary); font-size: 0.9rem; margin: 0; }
+.whatsnew-footer { margin-top: 20px; }
+.whatsnew-footer a { color: var(--accent); font-weight: 600; }

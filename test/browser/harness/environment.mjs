@@ -7,7 +7,8 @@
  *   3. the seeder (test/browser/seed), which migrates the database and writes the fixed world to .out/seed.json;
  *   4. the published app in Development (for /dev/login), with a scrubbed environment and its own HOME, so it never sees
  *      the developer's secrets, data-protection keys or appsettings;
- *   5. the test proxy (proxy.mjs) in front of it. Tests talk to the proxy only.
+ *   5. the test proxy (proxy.mjs) in front of it. Tests talk to the proxy only;
+ *   6. a stub of GitHub's releases API (github-stub.mjs) for /whats-new, so the app never calls the real GitHub.
  *
  * Nothing here reads configuration from anywhere but this file. The publish refuses to run when the source tree has
  * an appsettings.json, because the publish would copy it into the app's content root.
@@ -18,6 +19,7 @@ import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { startGitHubStub } from './github-stub.mjs';
 import { startProxy } from './proxy.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -137,7 +139,7 @@ function seed(pg, storage) {
 }
 
 // Only what the runtime needs: no Blocwerk/SMTP/VAPID/OTEL/BLOCWERK_DEV_USER variable of the developer's shell leaks in.
-function appEnvironment(pg, port, runDir, storage) {
+function appEnvironment(pg, port, runDir, storage, githubUrl) {
     const keep = ['PATH', 'DOTNET_ROOT', 'TMPDIR', 'LANG'];
     const env = Object.fromEntries(keep.filter(k => process.env[k]).map(k => [k, process.env[k]]));
     return {
@@ -154,17 +156,18 @@ function appEnvironment(pg, port, runDir, storage) {
         Blocwerk__WallImage__StoragePath: storage,
         Blocwerk__BetaVideo__StoragePath: path.join(runDir, 'videos'),
         Blocwerk__GitHubOAuth__Enabled: 'false',
-        Blocwerk__Server__Url: `http://127.0.0.1:${port}`
+        Blocwerk__Server__Url: `http://127.0.0.1:${port}`,
+        Blocwerk__Releases__ApiBaseUrl: githubUrl
     };
 }
 
 // Registers its stop in `stops` before it waits, so an app that never answers is still killed.
-async function startApp(webOut, pg, runDir, storage, stops) {
+async function startApp(webOut, pg, runDir, storage, githubUrl, stops) {
     const port = await freePort();
     fs.mkdirSync(path.join(runDir, 'home'), { recursive: true });
     const log = fs.openSync(path.join(outDir, 'app.log'), 'w');
     const child = spawn('dotnet', [path.join(webOut, 'Blocwerk.Web.dll')], {
-        cwd: webOut, env: appEnvironment(pg, port, runDir, storage), stdio: ['ignore', log, log]
+        cwd: webOut, env: appEnvironment(pg, port, runDir, storage, githubUrl), stdio: ['ignore', log, log]
     });
     let exited = null;
     const gone = new Promise(resolve => child.on('exit', code => {
@@ -208,7 +211,9 @@ export async function startEnvironment() {
         stops.push(pg.stop);
         const webOut = publishApp();
         const world = seed(pg, storage);
-        const app = await startApp(webOut, pg, runDir, storage, stops);
+        const github = await startGitHubStub();
+        stops.push(github.close);
+        const app = await startApp(webOut, pg, runDir, storage, github.url, stops);
         const proxy = await startProxy(app.port);
         stops.push(proxy.close);
         const state = {
