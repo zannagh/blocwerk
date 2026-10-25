@@ -35,26 +35,28 @@ public sealed partial class GitHubReleaseNotesService : IReleaseNotesService, ID
     private readonly ILogger<GitHubReleaseNotesService> logger;
     private readonly SemaphoreSlim gate = new(1, 1);
     private readonly string repository;
+    private readonly string htmlBaseUrl;
     private IReadOnlyList<ReleaseNote>? cached;
     private string? etag;
     private DateTimeOffset nextRefreshAt = DateTimeOffset.MinValue;
 
     public GitHubReleaseNotesService(
-        IHttpClientFactory httpClientFactory,
-        IOptions<ReleaseNotesOptions> options,
-        ILogger<GitHubReleaseNotesService> logger,
-        TimeProvider? time = null)
+        IHttpClientFactory clientFactory,
+        IOptions<ReleaseNotesOptions> releaseOptions,
+        ILogger<GitHubReleaseNotesService> serviceLogger,
+        TimeProvider? timeProvider = null)
     {
-        this.httpClientFactory = httpClientFactory;
-        this.options = options.Value;
-        this.logger = logger;
-        this.time = time ?? TimeProvider.System;
-        repository = RepositoryPattern().IsMatch(this.options.Repository ?? string.Empty)
-            ? this.options.Repository!
+        httpClientFactory = clientFactory;
+        options = releaseOptions.Value;
+        logger = serviceLogger;
+        time = timeProvider ?? TimeProvider.System;
+        repository = RepositoryPattern().IsMatch(options.Repository ?? string.Empty)
+            ? options.Repository!
             : ReleaseNotesOptions.DefaultRepository;
+        htmlBaseUrl = string.IsNullOrWhiteSpace(options.HtmlBaseUrl) ? "https://github.com" : options.HtmlBaseUrl.TrimEnd('/');
     }
 
-    private string RepositoryHtmlUrl => $"{options.HtmlBaseUrl.TrimEnd('/')}/{repository}";
+    private string RepositoryHtmlUrl => $"{htmlBaseUrl}/{repository}";
 
     /// <inheritdoc />
     public async Task<ReleaseFeed> GetAsync(CancellationToken cancellationToken = default)
@@ -97,9 +99,9 @@ public sealed partial class GitHubReleaseNotesService : IReleaseNotesService, ID
     private async Task RefreshAsync(CancellationToken cancellationToken)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(options.Timeout);
         try
         {
+            timeout.CancelAfter(options.Timeout);
             var fetched = await FetchAsync(timeout.Token);
             if (fetched is not null)
             {
@@ -108,14 +110,16 @@ public sealed partial class GitHubReleaseNotesService : IReleaseNotesService, ID
 
             nextRefreshAt = time.GetUtcNow() + options.CacheDuration;
         }
-        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or JsonException or NotSupportedException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             // The caller going away is not GitHub failing: leave the next view free to try again.
-            if (!cancellationToken.IsCancellationRequested)
-            {
-                nextRefreshAt = time.GetUtcNow() + options.FailureBackoff;
-                logger.LogWarning(ex, "Could not read the release notes of {Repository} from GitHub", repository);
-            }
+        }
+        catch (Exception ex)
+        {
+            // Anything at all (GitHub down or rate-limited, a timeout, bad JSON, a malformed ApiBaseUrl) is the
+            // fallback, never an error page: back off and keep serving what there is.
+            nextRefreshAt = time.GetUtcNow() + options.FailureBackoff;
+            logger.LogWarning(ex, "Could not read the release notes of {Repository} from GitHub", repository);
         }
     }
 

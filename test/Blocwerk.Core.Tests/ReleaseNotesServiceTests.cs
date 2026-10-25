@@ -146,4 +146,44 @@ public class ReleaseNotesServiceTests
         Assert.Equal("v0.1.0", Assert.Single(feed.Releases).Tag);
         Assert.Contains("/repos/zannagh/blocwerk/releases", github.Requests[0].RequestUri!.ToString(), StringComparison.Ordinal);
     }
+
+    [Theory]
+    [InlineData("not a url at all")]
+    [InlineData("::bad::")]
+    public async Task A_malformed_api_base_url_is_the_fallback_not_an_exception(string apiBaseUrl)
+    {
+        var clock = new MutableTestClock(Start);
+        using var github = new FakeGitHubReleases(_ => FakeGitHubReleases.Json(Array.Empty<object>()));
+        using var service = github.CreateService(clock, o => o.ApiBaseUrl = apiBaseUrl);
+
+        var feed = await service.GetAsync();
+
+        Assert.False(feed.Available);
+        Assert.Equal("https://github.com/zannagh/blocwerk/releases", feed.ReleasesPageUrl);
+        Assert.Empty(github.Requests);
+    }
+
+    [Fact]
+    public async Task Any_unexpected_exception_is_the_fallback_and_backs_off()
+    {
+        var clock = new MutableTestClock(Start);
+        var calls = 0;
+        using var github = new FakeGitHubReleases(_ =>
+        {
+            calls++;
+            throw new InvalidOperationException("something nobody expected");
+        });
+        using var service = github.CreateService(clock, o => o.HtmlBaseUrl = null!);
+
+        var feed = await service.GetAsync();
+        await service.GetAsync();
+        Assert.Equal(1, calls);
+
+        clock.Advance(TimeSpan.FromMinutes(6));
+        await service.GetAsync();
+
+        Assert.False(feed.Available);
+        Assert.Equal("https://github.com/zannagh/blocwerk/releases", feed.ReleasesPageUrl);
+        Assert.Equal(2, calls);
+    }
 }
