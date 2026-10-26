@@ -23,6 +23,12 @@ public static class HoldPlacementTrigger
     /// those holds, registered again from their panel photo. Never shown as the wall's latest run.
     /// </summary>
     public const string Edit = "edit";
+
+    /// <summary>
+    /// A capture package's computed 3D fields taken over for the holds whose panel geometry matches the source's
+    /// (<see cref="Blocwerk.Core.Capture.Replay.CapturePackageResultsImport"/>), not registered again here.
+    /// </summary>
+    public const string Import = "import";
 }
 
 /// <summary>Whether the action can run on a wall, and its latest run.</summary>

@@ -81,6 +81,32 @@ internal static class CapturePackageRowCopies
     }
 
     /// <summary>
+    /// The capture as the source finished it (status, stage, texture note), with the source's settled follow-up record, so
+    /// no step runs again here; completed now (the photo retention counts from here). The source's worker job ids are dropped.
+    /// </summary>
+    public static WallCapture FinishedCapture(WallCapture capture, string followUpJson, DateTimeOffset now)
+    {
+        capture.Progress = 1;
+        capture.Attempts = 0;
+        capture.CompletedAt = now;
+        capture.FollowUpJson = followUpJson;
+        capture.SolveJobId = null;
+        capture.SfmJobId = null;
+        capture.TexturesJobId = null;
+        capture.SplatJobId = null;
+        return capture;
+    }
+
+    /// <summary>The trained view, delivered and installed: the package carries the finished view, so nothing finishes it here.</summary>
+    public static GpuJob InstalledJob(GpuJob job, Guid modelId, DateTimeOffset now)
+    {
+        DeliveredJob(job, modelId, now);
+        job.InstalledAt = now;
+        job.Stage = "trained and finished (imported)";
+        return job;
+    }
+
+    /// <summary>
     /// The textures' content hashes, from the package's file list (every file was checked against its hash when it
     /// arrived or was found in the store), not from the rows, which only the source vouches for.
     /// </summary>
@@ -92,5 +118,13 @@ internal static class CapturePackageRowCopies
             texture.Sha256 = ContentHash.FromHex(shas.GetValueOrDefault(texture.StoredPath));
             texture.MaskSha256 = texture.MaskStoredPath is { } mask ? ContentHash.FromHex(shas.GetValueOrDefault(mask)) : null;
         }
+    }
+
+    /// <summary>The photo-real view's content hashes, likewise from the package's file list.</summary>
+    public static void StampHashes(WallGeometrySplat splat, IEnumerable<CapturePackageFile> files)
+    {
+        var shas = files.GroupBy(f => f.Name, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First().Sha256, StringComparer.Ordinal);
+        splat.Sha256 = ContentHash.FromHex(shas.GetValueOrDefault(splat.StoredPath));
+        splat.MobileSha256 = splat.MobileStoredPath is { } mobile ? ContentHash.FromHex(shas.GetValueOrDefault(mobile)) : null;
     }
 }

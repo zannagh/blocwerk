@@ -41,9 +41,9 @@ public sealed partial class CapturePackageService
     /// <summary>What is wrong with the package itself, whatever the target (empty when it is consistent).</summary>
     internal static List<string> ShapeProblems(CapturePackageManifest m)
     {
-        if (m.FormatVersion != CapturePackageManifest.CurrentFormat)
+        if (m.FormatVersion is < CapturePackageManifest.OldestFormat or > CapturePackageManifest.CurrentFormat)
         {
-            return [$"Package format {m.FormatVersion} is not supported here (this server reads format {CapturePackageManifest.CurrentFormat})."];
+            return [$"Package format {m.FormatVersion} is not supported here (this server reads formats {CapturePackageManifest.OldestFormat} to {CapturePackageManifest.CurrentFormat})."];
         }
 
         if (m.Rows?.Capture is null || m.Rows.Model is null || m.Rows.GpuJob is null || m.Rows.Photos is null || m.Rows.Textures is null || m.Files is null)
@@ -82,6 +82,13 @@ public sealed partial class CapturePackageService
         }
 
         problems.AddRange(WallGlyphService.ParseAndValidate(model.Json).Errors.Select(e => $"The model does not validate: {e}"));
+        if (m.Rows.Results is { } r && (m.FormatVersion < 2 || r.Splat is null || r.Volumes is null || r.Proposals is null || r.Holds is null
+            || r.Splat.GeometryModelId != model.Id || r.Volumes.Any(v => v.GeometryModelId != model.Id || v.WallId != m.WallId)
+            || r.Proposals.Any(p => p.GeometryModelId != model.Id || p.WallId != m.WallId)))
+        {
+            problems.Add("The computed results do not belong to the capture's model and wall.");
+        }
+
         return problems;
     }
 

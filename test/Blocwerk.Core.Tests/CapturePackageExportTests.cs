@@ -39,10 +39,13 @@ public class CapturePackageExportTests
             Assert.Equal(Convert.ToHexStringLower(SHA256.HashData(bytes[file.Name])), file.Sha256);
         }
 
+        // The finished view is carried with the computed results, so the target need not finish it again.
         await using var db = h.CreateContext();
         var views = await db.WallGeometrySplats.Select(s => s.StoredPath).ToListAsync();
         Assert.NotEmpty(views);
-        Assert.DoesNotContain(manifest.Files, x => views.Contains(x.Name));
+        Assert.All(views, v => Assert.Contains(manifest.Files, x => x.Name == v && x.Role == "photo-real-view"));
+        Assert.Equal(Capture.Replay.CapturePackageManifest.CurrentFormat, manifest.FormatVersion);
+        Assert.NotNull(manifest.Rows.Results);
     }
 
     [Fact]
@@ -50,10 +53,9 @@ public class CapturePackageExportTests
     {
         using var h = new WallTestHarness();
         using var f = await CapturePackageFlow.FinishedAsync(h);
-        await using var db = h.CreateContext();
-        var view = await db.WallGeometrySplats.Select(s => s.StoredPath).FirstAsync();
+        var other = await f.Runner.Scenario.Files.SaveAsync([1, 2, 3], ".bin", CancellationToken.None);
 
-        Assert.Null(await f.Service.ExportFilePathAsync(f.CaptureId, view, CancellationToken.None));
+        Assert.Null(await f.Service.ExportFilePathAsync(f.CaptureId, other, CancellationToken.None));
         Assert.Null(await f.Service.ExportFilePathAsync(f.CaptureId, "../appsettings.json", CancellationToken.None));
     }
 

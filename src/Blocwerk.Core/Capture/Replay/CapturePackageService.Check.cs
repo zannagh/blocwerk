@@ -38,7 +38,8 @@ public sealed partial class CapturePackageService
             }
         }
 
-        if (!already)
+        // A package with the finished view needs no splat worker here.
+        if (!already && m.Rows.Results is null)
         {
             await WorkerProblemsAsync(blockers, warnings, ct);
         }
