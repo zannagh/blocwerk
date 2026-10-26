@@ -31,6 +31,7 @@ MIN_REJECTED = 3
 REJECTED_SHARE = 0.25
 DOMINANT_X = 2.0
 POOR_PX = 4.0
+POOR_TRIALS = 3  # markers tried, worst first, on a solve too poor to use
 MIN_RMS_PX = 10.0  # a dominant marker must also be far off in absolute terms (a clean capture is ~1-3 px)
 MAX_ROUNDS = 2
 REASON = "inconsistent-marker"
@@ -70,22 +71,29 @@ def _split(sol):
 
 
 def _dominant(sol, doc):
-    """The worst marker of the first free solve, when it dominates the damage or the solve is too poor; else None."""
+    """The worst markers of the first free solve to try without: the worst one when it dominates the damage; the
+    POOR_TRIALS worst when the solve is too poor to use (a wrecked start can rank an innocent marker first)."""
     ranked = sorted(sol.get("marker_rms_first", {}).items(), key=lambda kv: -kv[1])
     if len(ranked) < 2 or ranked[0][1] < MIN_RMS_PX:
-        return None
-    (m, worst), (_, second) = ranked[0], ranked[1]
-    why = f"it misses its photos by {worst:.0f} px where the next-worst marker misses by {second:.0f} px"
-    if len(affected(sol)) >= MIN_AFFECTED and worst >= DOMINANT_X * second:
-        return int(m), why
-    if doc["quality"]["reprojRmsPx"] > POOR_PX:
-        return int(m), why
-    return None
+        return []
+    if len(affected(sol)) >= MIN_AFFECTED and ranked[0][1] >= DOMINANT_X * ranked[1][1]:
+        picked = ranked[:1]
+    elif doc["quality"]["reprojRmsPx"] > POOR_PX:
+        picked = [kv for kv in ranked[:POOR_TRIALS] if kv[1] >= MIN_RMS_PX]
+    else:
+        return []
+    return [(int(m), _why(m, r, ranked)) for m, r in picked]
 
 
-def suspect(sol, doc):
-    """(marker id, why) of the one marker to try the solve without, or None."""
-    return _split(sol) or _dominant(sol, doc)
+def _why(m, rms, ranked):
+    other = next(v for k, v in ranked if k != m)
+    return f"it misses its photos by {rms:.0f} px where the worst other marker misses by {other:.0f} px"
+
+
+def suspects(sol, doc):
+    """[(marker id, why)] of the markers to try the solve without, most suspect first; empty when none is."""
+    split = _split(sol)
+    return [split] if split else _dominant(sol, doc)
 
 
 def better(new_sol, new_doc, old_sol, old_doc):
@@ -127,19 +135,25 @@ def run(doc, sol, request_doc, solve_once, progress):
     if not request_doc.get("options", {}).get("isolateMarkers", True):
         return doc, sol, records
     for _ in range(MAX_ROUNDS):
-        found = suspect(sol, doc)
-        if found is None:
+        kept = None
+        for mid, why in suspects(sol, doc):
+            kept = _trial(doc, sol, request_doc, solve_once, progress, mid)
+            if kept is not None:
+                records.append(record(request_doc, mid, why, doc, kept[0]))
+                doc, sol, request_doc = kept
+                break
+        if kept is None:
             break
-        mid, why = found
-        progress(0.05, f"marker {mid} does not fit its photos; solving again without it")
-        trial = without(request_doc, mid)
-        try:
-            new_doc, new_sol = solve_once(trial)
-        except TRIAL_ERRORS as e:
-            progress(0.05, f"solving without marker {mid} failed ({type(e).__name__}); keeping the solve with it")
-            break
-        if not better(new_sol, new_doc, sol, doc):
-            break
-        records.append(record(request_doc, mid, why, doc, new_doc))
-        doc, sol, request_doc = new_doc, new_sol, trial
     return doc, sol, records
+
+
+def _trial(doc, sol, request_doc, solve_once, progress, mid):
+    """(doc, sol, request) of the solve without marker `mid` when it is better, else None."""
+    progress(0.05, f"marker {mid} does not fit its photos; solving again without it")
+    trial = without(request_doc, mid)
+    try:
+        new_doc, new_sol = solve_once(trial)
+    except TRIAL_ERRORS as e:
+        progress(0.05, f"solving without marker {mid} failed ({type(e).__name__}); keeping the solve with it")
+        return None
+    return (new_doc, new_sol, trial) if better(new_sol, new_doc, sol, doc) else None
