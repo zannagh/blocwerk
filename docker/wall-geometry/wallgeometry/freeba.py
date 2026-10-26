@@ -102,15 +102,22 @@ def _pose_start(obs, cams, intr, prior, obj, root):
     prob = Problem(obs, cams, groups, root, mids, obj, prior=prior)
     x = pack_free(prob, {g: intr[g] for g in groups}, cam_pose, mk_pose)
     best = None
-    # alternate: poses-only BA, then re-choose every marker's IPPE branch against ALL cameras
+    # alternate: poses-only BA, then re-choose every marker's IPPE branch against ALL cameras. A start that diverges
+    # (a hold read as a marker in several photos can do that) leaves non-finite poses: stop and keep the best one so far.
     for _ in range(3):
         x, _ = prob.solve(x, free_mask(prob), loss="linear", max_nfev=300)
         cost = float(np.sum(prob.residuals(x) ** 2))
+        if not (np.isfinite(cost) and np.isfinite(x).all()):
+            break
         if best is None or cost < best[0]:
             best = (cost, x.copy())
         i2, cp2, _ = unpack_free(prob, x)
         _, mp3 = chain_fixed(obs, cams, i2, cp2)
+        if not all(np.isfinite(R).all() and np.isfinite(t).all() for R, t in mp3.values()):
+            break
         x = pack_free(prob, i2, cp2, mp3)
+    if best is None:
+        return np.inf, prob, x, obs, unreached
     x = best[1]
     # Starts can reach different photos: compare a robust per-observation cost, plus a penalty per lost photo.
     e = per_obs_err(prob, x)
