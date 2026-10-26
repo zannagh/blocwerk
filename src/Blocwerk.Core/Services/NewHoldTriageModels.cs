@@ -87,7 +87,7 @@ internal sealed record RemovalInputs(
 /// <summary>A staged panel the triage walks.</summary>
 internal sealed record StagedPanelRef(Guid Id, int Col, int Row);
 
-/// <summary>What every panel's triage shares.</summary>
+/// <summary>What every panel's triage shares; <c>ModelMarkers</c> are the active model's printed markers (empty without one).</summary>
 internal sealed record TriageContext(
     Wall Wall,
     int StagedGen,
@@ -97,7 +97,8 @@ internal sealed record TriageContext(
     byte[]? OldCentrePhoto,
     IReadOnlyList<NeighbourOverlap> Neighbours,
     Evidence3DModel? Model3D,
-    RemovalInputs Removals);
+    RemovalInputs Removals,
+    IReadOnlyList<ModelMarker> ModelMarkers);
 
 /// <summary>One staged panel as the removal check sees it.</summary>
 /// <param name="PanelId">The staged panel.</param>
@@ -118,12 +119,14 @@ internal sealed record RemovalScope(
 /// <param name="Twins">Its matched old/staged pairs.</param>
 /// <param name="OldPhoto">The old photo of the panel, or null.</param>
 /// <param name="OldPanelId">The old panel the photo belongs to (whose marker observations are read), or null.</param>
+/// <param name="ModelMarkers">The active model's printed markers.</param>
 internal sealed record TriagedPanel(
     Guid PanelId,
     IReadOnlyList<Hold> Staged,
     IReadOnlyList<(Hold Old, Hold New)> Twins,
     byte[]? OldPhoto,
-    Guid? OldPanelId);
+    Guid? OldPanelId,
+    IReadOnlyList<ModelMarker> ModelMarkers);
 
 /// <summary>An old hold no detection carries, where the matcher's warp puts it on the staged photo (normalized).</summary>
 /// <param name="At">Its warped centre.</param>

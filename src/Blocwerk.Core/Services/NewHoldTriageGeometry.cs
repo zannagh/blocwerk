@@ -48,8 +48,9 @@ internal enum InsideVerdict
 
 /// <summary>
 /// The footprints and markers one panel's triage compares its detections with: the carried holds' footprints on the
-/// staged photo, and the markers the OLD photo showed, mapped onto the staged photo through the matched pairs (a marker
-/// the staged photo did not decode — too oblique, too dark — is still a marker, not a new hold).
+/// staged photo, the markers the OLD photo showed, mapped onto the staged photo through the matched pairs, and the ones the
+/// active model places there (a marker the staged photo did not decode — too oblique, too dark — is still a marker, not a
+/// new hold); and the wall the carried holds outline (<see cref="NewHoldWallRegion"/>).
 /// </summary>
 internal sealed class NewHoldTriageGeometry
 {
@@ -69,13 +70,21 @@ internal sealed class NewHoldTriageGeometry
     private readonly List<(HoldArea Area, TriageOutline Outline)> carried;
     private readonly List<IReadOnlyList<(double X, double Y)>> oldMarkers;
     private readonly TriageLab? colourShift;
+    private readonly IReadOnlyList<IReadOnlyList<(double X, double Y)>> modelMarkers;
+    private readonly NewHoldWallRegion? wall;
 
     private NewHoldTriageGeometry(
-        List<(HoldArea Area, TriageOutline Outline)> carriedAreas, List<IReadOnlyList<(double X, double Y)>> oldMarkerQuads, TriageLab? shift)
+        List<(HoldArea Area, TriageOutline Outline)> carriedAreas,
+        List<IReadOnlyList<(double X, double Y)>> oldMarkerQuads,
+        NewHoldTriageInput input)
     {
         carried = carriedAreas;
         oldMarkers = oldMarkerQuads;
-        colourShift = shift;
+        colourShift = input.OldToNewColourShift;
+        modelMarkers = input.ModelMarkerQuads ?? [];
+        wall = input.CarriedOutlines is { } outlines
+            ? NewHoldWallRegion.Of([.. input.NewToOld.Select(p => (p.SrcX, p.SrcY)), .. outlines.Select(o => (o.X, o.Y))], outlines.Select(o => o.RadiusPx))
+            : null;
     }
 
     /// <summary>Builds the geometry of <paramref name="input"/>; the old markers are only mapped when the panel is aligned.</summary>
@@ -99,7 +108,7 @@ internal sealed class NewHoldTriageGeometry
             }
         }
 
-        return new NewHoldTriageGeometry(areas, markers, input.OldToNewColourShift);
+        return new NewHoldTriageGeometry(areas, markers, input);
     }
 
     /// <summary>The footprint as a <see cref="HoldArea"/> in RAW pixels.</summary>
@@ -117,6 +126,20 @@ internal sealed class NewHoldTriageGeometry
     /// <param name="c">The candidate.</param>
     /// <returns>Whether it does.</returns>
     public bool OnOldMarker(TriageCandidate c) => oldMarkers.Any(q => NewHoldTriage.InsideGrown(q, c.X, c.Y));
+
+    /// <summary>True when the candidate's centre lies on a marker the active model places on the staged photo.</summary>
+    /// <param name="c">The candidate.</param>
+    /// <returns>Whether it does.</returns>
+    public bool OnModelMarker(TriageCandidate c) =>
+        modelMarkers.Any(q => NewHoldTriage.InsideGrown(q, c.X, c.Y, NewHoldTriage.ModelMarkerGrowth));
+
+    /// <summary>
+    /// True when the candidate lies well beyond every carried hold (the found-again pairs and the carried footprints); false
+    /// without carried footprints, or when they outline no wall.
+    /// </summary>
+    /// <param name="c">The candidate.</param>
+    /// <returns>Whether it is off the wall.</returns>
+    public bool OutsideWall(TriageCandidate c) => wall?.IsOutside(c.X, c.Y) == true;
 
     /// <summary>
     /// Inside when at least <see cref="InsideCarriedShare"/> of the candidate lies inside the footprints of carried holds: a

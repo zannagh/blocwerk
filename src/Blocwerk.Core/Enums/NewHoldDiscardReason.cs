@@ -30,4 +30,10 @@ public enum NewHoldDiscardReason
     /// (a bolt hole, a screw head, a facet of a volume).
     /// </summary>
     InsideCarriedHold,
+
+    /// <summary>
+    /// It lies well beyond every carried hold (mats, floor, beams, the electrics box of a wider photo) and the detector is
+    /// not sure of it.
+    /// </summary>
+    OutsideWall,
 }
