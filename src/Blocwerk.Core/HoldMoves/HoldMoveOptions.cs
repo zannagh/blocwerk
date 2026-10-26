@@ -16,11 +16,29 @@ public sealed class HoldMoveOptions
     /// <summary>A hold that moved at most this far (mm) stays on its boulders (marked for review); farther, it comes off them.</summary>
     public double CutoffMm { get; set; } = 100;
 
-    /// <summary>Below this (mm) a 3D measurement is registration noise, not a move.</summary>
+    /// <summary>
+    /// Below this (mm) a 3D measurement is registration noise, not a move. Only for a measure without its own tolerance
+    /// (<see cref="HoldMoveMeasure.ToleranceMm"/>, see <see cref="HoldMoveTolerance"/>).
+    /// </summary>
     public double NoiseMm { get; set; } = 30;
 
-    /// <summary>Below this (mm) a photo-warp estimate is alignment noise, not a move.</summary>
+    /// <summary>
+    /// Below this (mm) a photo-warp estimate is alignment noise, not a move. Used for a measure without its own tolerance
+    /// and for a panel with too few pairs to measure its noise (<see cref="HoldMoveTolerance"/>).
+    /// </summary>
     public double NoiseMm2D { get; set; } = 25;
+
+    /// <summary>The smallest noise floor (mm) of a measure's tolerance, however quiet the panel or the neighbourhood.</summary>
+    public double MinNoiseMm { get; set; } = 10;
+
+    /// <summary>The photo estimate's noise floor is this many times the panel's 90th percentile photo shift (mm).</summary>
+    public double PanelNoiseFactor { get; set; } = 2;
+
+    /// <summary>
+    /// A re-detected outline's centre may be off by this share of the hold's half size (mm), when that is more than the
+    /// measure's noise floor: a big hold's detection takes in a shadow or a bit of its volume.
+    /// </summary>
+    public double SizeShare { get; set; } = 0.45;
 
     /// <summary>
     /// When the 3D measure and the photo estimate both exist they must agree within this (mm, or half the distance when that is
@@ -46,8 +64,8 @@ public sealed class HoldMoveOptions
 
     /// <summary>
     /// When true, a confident move past the removal margin takes the hold off its boulders even without an accepted
-    /// "this hold moved", as long as the photo estimate backs it (it is the photo estimate, or the photo estimate agrees with
-    /// the 3D measure). A 3D measure alone never does. Default false: only a person's accepted relocation removes a hold, and
+    /// "this hold moved", as long as it is the photo estimate. A 3D measure never does, even when the photo estimate agrees
+    /// (both map the same detected centre flat onto the wall). Default false: only a person's accepted relocation removes a hold, and
     /// every other move past the cutoff is "possibly moved", kept for review.
     /// </summary>
     public bool RemoveUnconfirmedBeyondCutoff { get; set; }

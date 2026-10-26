@@ -136,11 +136,11 @@ public class HoldMoveMeasureTests
     }
 
     [Fact]
-    public void Reconcile_MarksPhotoBackedMeasures()
+    public void Reconcile_A3DMoveThePhotoAgreesWith_IsNotCorroborated_BothMapTheSameCentreFlat()
     {
         var three = new HoldMoveMeasure(90, HoldMoveSource.ThreeD, null, 6, true);
 
-        Assert.True(WallBigUpdateService.Reconcile(three, new HoldMoveMeasure(85, HoldMoveSource.TwoD, null), Options)!.Corroborated);
+        Assert.False(WallBigUpdateService.Reconcile(three, new HoldMoveMeasure(85, HoldMoveSource.TwoD, null), Options)!.Corroborated);
         Assert.False(WallBigUpdateService.Reconcile(three, null, Options)!.Corroborated);
     }
 
@@ -150,7 +150,7 @@ public class HoldMoveMeasureTests
         var three = new HoldMoveMeasure(90, HoldMoveSource.ThreeD, null, 6, true);
 
         Assert.Equal(HoldMoveSource.TwoD, WallBigUpdateService.Reconcile(three, new HoldMoveMeasure(5, HoldMoveSource.TwoD, null), Options)!.Source);
-        Assert.Equal(three with { Corroborated = true }, WallBigUpdateService.Reconcile(three, new HoldMoveMeasure(85, HoldMoveSource.TwoD, null), Options));
+        Assert.Equal(three, WallBigUpdateService.Reconcile(three, new HoldMoveMeasure(85, HoldMoveSource.TwoD, null), Options));
         Assert.Equal(200, WallBigUpdateService.Reconcile(three, new HoldMoveMeasure(200, HoldMoveSource.TwoD, null), Options)!.DistanceMm);
         Assert.Same(three, WallBigUpdateService.Reconcile(three, null, Options));
         var onlyPhoto = new HoldMoveMeasure(70, HoldMoveSource.TwoD, null);

@@ -98,7 +98,8 @@ public static class DifferentialDisplacement
                 kv.Value.SpreadMm,
                 kv.Value.SpreadMm <= options.MaxSpreadMm,
                 HoldMoveCalculator.Distance3D(olds[kv.Key], twins[kv.Key]),
-                kv.Value.ResidualMm));
+                kv.Value.ResidualMm,
+                ToleranceMm: HoldMoveTolerance.ThreeD(kv.Value.SpreadMm, olds[kv.Key], twins[kv.Key], options)));
     }
 
     private static double Norm(double a, double b, double c) => Math.Sqrt((a * a) + (b * b) + (c * c));

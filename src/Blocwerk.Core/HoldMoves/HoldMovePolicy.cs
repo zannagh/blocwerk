@@ -30,7 +30,12 @@ public static class HoldMovePolicy
             return HoldMoveOutcome.Stayed;
         }
 
-        var noise = measure.Source == HoldMoveSource.ThreeD ? Math.Max(options.NoiseMm, options.SpreadFactor * (measure.SpreadMm ?? 0)) : options.NoiseMm2D;
+        // The tolerance keeps an unmoved hold from being suspected; a hold a person says moved is held to the fixed floors.
+        var noise = !confirmedMove && measure.ToleranceMm is { } tolerance
+            ? tolerance
+            : measure.Source == HoldMoveSource.ThreeD
+                ? Math.Max(options.NoiseMm, options.SpreadFactor * (measure.SpreadMm ?? 0))
+                : options.NoiseMm2D;
         if (measure.DistanceMm >= noise || measure.RotationDeg >= options.MinRotationDeg)
         {
             return HoldMoveOutcome.Kept;

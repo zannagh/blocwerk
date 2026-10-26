@@ -58,13 +58,19 @@ public static class HoldMoveCalculator
         return Math.Sqrt((dx * dx) + (dy * dy)) * scale;
     }
 
+    /// <summary>
+    /// Both outlines must be at least this elongated for their orientations to say anything: below it the axis of a
+    /// re-detected outline swings freely (The Attic, gen 6 → 7: 13 unmoved holds of aspect 1.3–1.8 "turned" 45–81°).
+    /// </summary>
+    public const double MinTurnAspect = 2.0;
+
     /// <summary>How far an elongated hold turned (0..90 degrees), or null when either fingerprint cannot tell.</summary>
     /// <param name="old">The old hold's fingerprint.</param>
     /// <param name="twin">The successor's fingerprint.</param>
     /// <returns>The angle, or null.</returns>
     public static double? Rotation(HoldFingerprint? old, HoldFingerprint? twin)
     {
-        if (old is not { Aspect: >= 1.3 } || twin is not { Aspect: >= 1.3 })
+        if (old is not { Aspect: >= MinTurnAspect } || twin is not { Aspect: >= MinTurnAspect })
         {
             return null;
         }
