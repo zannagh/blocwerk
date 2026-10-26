@@ -32,6 +32,7 @@ internal static partial class LookOverCopy
         nameof(NewHoldDiscardReason.OnMarker) => "it sits on a marker",
         nameof(NewHoldDiscardReason.OffWallIn3D) => "in the 3D model the spot is off the wall",
         nameof(NewHoldDiscardReason.InsideCarriedHold) => "it lies inside a hold that is already there (a second outline or a part of it)",
+        nameof(NewHoldDiscardReason.OutsideWall) => "it lies outside the wall, well beyond every hold on it",
         _ => "the reason was not recorded",
     };
 
