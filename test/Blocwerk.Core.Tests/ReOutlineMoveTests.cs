@@ -120,7 +120,7 @@ public class ReOutlineMoveTests
     [SkippableTheory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task AHoldThatReallyMoved_IsStillMeasured_AndItsBoulderMarked(bool postgres)
+    public async Task AHoldThatReallyMoved_IsStillMeasured_AsASuspicion_ThatMarksNothingAndKeepsTheWarpedSpot(bool postgres)
     {
         using var h = Harness(postgres);
         var s = await HoldMovePromoteTests.SeedAsync(h, movedToA: 1060);
@@ -133,8 +133,12 @@ public class ReOutlineMoveTests
         await s.Service.PromoteAsync(s.WallId, WithWarp(s), s.SessionId);
 
         await using var check = h.CreateContext();
-        Assert.Equal(HoldMoveOutcome.Kept, (await check.HoldGenerationLinks.SingleAsync(l => l.OldHoldId == s.OldMover)).MoveOutcome);
-        Assert.True((await check.Boulders.SingleAsync(b => b.Id == s.BoulderId)).NeedsReview);
+        Assert.Equal(HoldMoveOutcome.Suspected, (await check.HoldGenerationLinks.SingleAsync(l => l.OldHoldId == s.OldMover)).MoveOutcome);
+        Assert.False((await check.Boulders.SingleAsync(b => b.Id == s.BoulderId)).NeedsReview);
+        Assert.Empty(await check.BoulderHoldMoves.ToListAsync());
+
+        // Nobody said it moved: the hold stays where the alignment puts the old one, not on the detection (x 0.56).
+        Assert.Equal(0.5, (await check.Holds.SingleAsync(x => x.Id == s.NewMover)).X, 6);
     }
 
     [SkippableTheory]
@@ -157,7 +161,7 @@ public class ReOutlineMoveTests
     [InlineData(true, 1340)]
     [InlineData(false, 1060)]
     [InlineData(true, 1060)]
-    public async Task AReOutlinedHold_ThatThe3DMeasureFindsMoved_IsMarkedAfterAll(bool postgres, double placedAtA)
+    public async Task AReOutlinedHold_ThatThe3DMeasureFindsMoved_IsAskedAboutAfterAll_NotMarked(bool postgres, double placedAtA)
     {
         using var h = Harness(postgres);
         var s = await HoldMovePromoteTests.SeedAsync(h, movedToA: 1060);
@@ -172,10 +176,13 @@ public class ReOutlineMoveTests
         await using var check = h.CreateContext();
         await HoldMovePromoteTests.PlaceNewAsync(check, s, placedAtA);
 
-        // 60 mm in 3D is past the re-outline's 25 mm bar (kept, marked); 340 mm is past the cutoff as well.
-        Assert.Equal(1, await HoldMoveRemeasurer.RunAsync(check, s.WallId, HoldMovePromoteTests.Loose, NullLogger.Instance));
+        // 60 mm and 340 mm in 3D are past the re-outline's 25 mm bar; nobody confirmed a move, so it is asked, not marked.
+        Assert.Equal(0, await HoldMoveRemeasurer.RunAsync(check, s.WallId, HoldMovePromoteTests.Loose, NullLogger.Instance));
         var link = await check.HoldGenerationLinks.SingleAsync(l => l.OldHoldId == s.OldMover);
-        Assert.Equal(placedAtA < 1100 ? HoldMoveOutcome.Kept : HoldMoveOutcome.Possible, link.MoveOutcome);
+        Assert.Equal(HoldMoveOutcome.Suspected, link.MoveOutcome);
+        Assert.False((await check.Boulders.SingleAsync(b => b.Id == s.BoulderId)).NeedsReview);
+        var finding = await check.WallLookOverFindings.SingleAsync();
+        Assert.Equal((LookOverFindingKind.SuspectedMove, s.OldMover, s.NewMover), (finding.Kind, finding.OldHoldId, finding.HoldId));
     }
 
     private static WarpedFootprint At(double x, double y) => new(new HoldPositionNorm(x, y), null, (4000, 3000));

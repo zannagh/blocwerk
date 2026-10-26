@@ -9,7 +9,8 @@ namespace Blocwerk.Core.Refresh.Review;
 
 /// <summary>
 /// Works the one review out of the session's facts: one item per card, per old hold kept in place without being found
-/// again, per staged detection that goes live as a new hold or was left out, and per "may have moved" suggestion. A hold
+/// again, per staged detection that goes live as a new hold or was left out, per "may have moved" suggestion and per carried
+/// hold the measurement says may have moved (see <see cref="SuspectedMoves"/>). A hold
 /// a card is about is asked about on its card only. Whether an item is answered comes from the same rows Apply reads
 /// (a card's status, a confirmed or removed carry verdict, a detection's keep/discard), so the review and the promote
 /// can never disagree. Pure.
@@ -29,6 +30,7 @@ internal static partial class UpdateReviewBuilder
         items.AddRange(NotFound(facts, cardOld));
         items.AddRange(Detections(facts, cardStaged));
         items.AddRange(facts.Relocations.Select(r => FromRelocation(facts, staged, r)));
+        items.AddRange(SuspectedMoves(facts, staged));
         return items
             .OrderBy(i => i.Group)
             .ThenByDescending(i => i.LeavesFinding)
