@@ -47,6 +47,11 @@
             {
                 <button type="button" class="btn-secondary" disabled="@Disabled" @onclick="() => AnswerAsync(LookOverAnswer.Unlink)">@LookOverCopy.UnlinkLabel</button>
             }
+            @if (Finding.Answers.Contains(LookOverAnswer.ConfirmMove))
+            {
+                <ConfirmAction Label="@LookOverCopy.ConfirmMoveLabel" Question="@LookOverCopy.ConfirmMoveQuestion(Finding)" ConfirmLabel="Mark as moved"
+                               ConfirmClass="btn-primary" Neutral="true" Disabled="Disabled" OnConfirm="() => AnswerAsync(LookOverAnswer.ConfirmMove)" />
+            }
             @if (Finding.Answers.Contains(LookOverAnswer.DifferentHold))
             {
                 <ConfirmAction Label="Different hold" Question="@LookOverCopy.DifferentQuestion(Finding)" ConfirmLabel="Mark as a different hold"

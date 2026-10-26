@@ -18,15 +18,16 @@
     @if (Summary.MovedHolds is { Count: > 0 } moved)
     {
         <section class="refresh-moves" aria-labelledby="refresh-moves-title">
-            <h3 id="refresh-moves-title">@(moved.Count == 1 ? "1 hold moved" : $"{moved.Count} holds moved")</h3>
+            <h3 id="refresh-moves-title">@MovesTitle(moved)</h3>
             <p class="hint">
-                A hold that moved up to 10 cm stays on its boulders, which are marked for review. A hold that moved farther
-                is taken off its boulders; they are marked for revision, and nothing is deleted.
+                A measured move is only a suspicion: the hold stays where it was and no boulder is marked until you say it
+                moved (in the review, "Moved?"). A confirmed move up to 10 cm stays on its boulders, which are marked for review;
+                one that moved farther is taken off its boulders; they are marked for revision, and nothing is deleted.
             </p>
             <ul class="refresh-moves-list">
                 @foreach (var m in moved)
                 {
-                    <li class="@(m.Outcome == HoldMoveOutcome.Removed ? "is-removed" : "is-kept")">
+                    <li class="@(m.Outcome switch { HoldMoveOutcome.Removed => "is-removed", HoldMoveOutcome.Suspected => "is-suspected", _ => "is-kept" })">
                         <strong>@(m.HoldName ?? "A hold")</strong> @m.Text
                         <span class="refresh-moves-source">(@(m.Source == HoldMoveSource.ThreeD ? "measured in 3D" : "estimated from the photo"))</span>
                         @if (m.Boulders.Count > 0)
@@ -124,6 +125,18 @@
 </div>
 
 @code {
+    private static string MovesTitle(IReadOnlyList<MovedHoldLine> moved)
+    {
+        var confirmed = moved.Count(m => m.Outcome != HoldMoveOutcome.Suspected);
+        var suspected = moved.Count - confirmed;
+        return (confirmed, suspected) switch
+        {
+            (0, _) => suspected == 1 ? "1 hold may have moved" : $"{suspected} holds may have moved",
+            (_, 0) => confirmed == 1 ? "1 hold moved" : $"{confirmed} holds moved",
+            _ => $"{confirmed} moved, {suspected} may have moved",
+        };
+    }
+
     [Parameter, EditorRequired]
     public WallRefreshView View { get; set; } = default!;
 

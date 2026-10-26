@@ -15,7 +15,8 @@ namespace Blocwerk.Core.Tests;
 
 /// <summary>
 /// 3D before the confirm decision (provisional placements of the staged holds feed the plan and its version) and 3D
-/// after the placement run (a later measurement marks boulders for review without silently changing them).
+/// after the placement run: a later measurement never acts on its own; a move nobody confirmed is asked about in the
+/// look-over, a confirmed one marks its boulders for review, and neither changes their holds.
 /// </summary>
 public class HoldMoveFollowUpTests
 {
@@ -80,7 +81,7 @@ public class HoldMoveFollowUpTests
     }
 
     [Fact]
-    public async Task Remeasure_AfterPlacement_MarksTheBoulderForReview_WithoutChangingItsHolds()
+    public async Task Remeasure_AfterPlacement_OfAMoveNobodyConfirmed_AsksInTheLookOver_AndMarksNothing()
     {
         using var h = new WallTestHarness();
         var s = await HoldMovePromoteTests.SeedAsync(h, movedToA: 1000, placeStaged: false);
@@ -95,25 +96,55 @@ public class HoldMoveFollowUpTests
 
         await using (var db = h.CreateContext())
         {
-            var marked = await HoldMoveRemeasurer.RunAsync(db, s.WallId, HoldMovePromoteTests.Loose, NullLogger.Instance);
-            Assert.Equal(1, marked);
+            Assert.Equal(0, await HoldMoveRemeasurer.RunAsync(db, s.WallId, HoldMovePromoteTests.Loose, NullLogger.Instance));
+        }
+
+        await using (var check = h.CreateContext())
+        {
+            Assert.False((await check.Boulders.SingleAsync(b => b.Id == s.BoulderId)).NeedsReview);
+            Assert.Equal(2, await check.BoulderHolds.CountAsync(b => b.BoulderId == s.BoulderId));
+            Assert.Empty(await check.BoulderHoldMoves.ToListAsync());
+            var link = await check.HoldGenerationLinks.SingleAsync(l => l.OldHoldId == s.OldMover);
+            Assert.Equal((HoldMoveSource.ThreeD, HoldMoveOutcome.Suspected), (link.MoveSource, link.MoveOutcome));
+            var finding = await check.WallLookOverFindings.SingleAsync();
+            Assert.Equal((LookOverFindingKind.SuspectedMove, s.OldMover, s.NewMover, 1), (finding.Kind, finding.OldHoldId, finding.HoldId, finding.BouldersAtApply));
+            Assert.NotNull((await check.Walls.IgnoreQueryFilters().SingleAsync(w => w.Id == s.WallId)).LookOverPendingSince);
+        }
+
+        // A second run asks nothing new.
+        await using (var db = h.CreateContext())
+        {
+            await HoldMoveRemeasurer.RunAsync(db, s.WallId, HoldMovePromoteTests.Loose, NullLogger.Instance);
+            Assert.Equal(1, await db.WallLookOverFindings.CountAsync());
+        }
+    }
+
+    [Fact]
+    public async Task Remeasure_AfterPlacement_OfAConfirmedMove_MarksTheBoulderForReview_WithoutChangingItsHolds()
+    {
+        using var h = new WallTestHarness();
+        var s = await HoldMovePromoteTests.SeedAsync(h, movedToA: 1000, placeStaged: false);
+        await s.Service.PromoteAsync(s.WallId, HoldMovePromoteTests.Confirm(s, CarryKind.Changed), s.SessionId);
+        await using (var db = h.CreateContext())
+        {
+            await HoldMovePromoteTests.PlaceNewAsync(db, s, 1340);
+        }
+
+        await using (var db = h.CreateContext())
+        {
+            await HoldMoveRemeasurer.RunAsync(db, s.WallId, HoldMovePromoteTests.Loose, NullLogger.Instance);
         }
 
         await using var check = h.CreateContext();
-        var boulder = await check.Boulders.SingleAsync(b => b.Id == s.BoulderId);
-        Assert.True(boulder.NeedsReview);
+        Assert.True((await check.Boulders.SingleAsync(b => b.Id == s.BoulderId)).NeedsReview);
 
-        // Nothing was taken off the boulder: the decision is a person's.
+        // Nothing was taken off the boulder: the measurement only adds its number to what the boulder was told.
         Assert.Equal(2, await check.BoulderHolds.CountAsync(b => b.BoulderId == s.BoulderId));
         var row = await check.BoulderHoldMoves.SingleAsync();
-        Assert.Equal((HoldMoveOutcome.Kept, HoldMoveOutcome.Possible), (row.Outcome, row.RemeasuredOutcome));
         Assert.Equal(340, row.RemeasuredDistanceMm!.Value, 1);
-        var link = await check.HoldGenerationLinks.SingleAsync(l => l.OldHoldId == s.OldMover);
-        Assert.Equal((HoldMoveSource.ThreeD, HoldMoveOutcome.Possible), (link.MoveSource, link.MoveOutcome));
-
+        Assert.Empty(await check.WallLookOverFindings.ToListAsync());
         var shown = Assert.Single(await h.BoulderService.GetBoulderMovesAsync(s.BoulderId));
         Assert.Contains("Measured again in 3D", shown.Text);
-        Assert.Contains("34 cm", shown.Text);
     }
 
     [Fact]
@@ -138,17 +169,18 @@ public class HoldMoveFollowUpTests
     }
 
     [Fact]
-    public async Task Remeasure_ThatConfirmsTheHoldStayed_ClearsTheReviewMarkAnEarlierEstimateSet()
+    public async Task Remeasure_ThatFindsTheHoldStayed_WithdrawsTheSuspicion_AndAsksNothing()
     {
         using var h = new WallTestHarness();
         var s = await HoldMovePromoteTests.SeedAsync(h, movedToA: 1000, placeStaged: false);
 
-        // At confirm time the provisional registration put the hold 6 cm away: kept, boulder marked.
+        // At confirm time the provisional registration put the hold 6 cm away: suspected, nothing marked.
         var provisional = new FakePlacer(HoldMovePromoteTests.Provisional(s, 1060));
         await Service(h, provisional).PromoteAsync(s.WallId, HoldMovePromoteTests.Confirm(s), s.SessionId);
         await using (var db = h.CreateContext())
         {
-            Assert.True((await db.Boulders.SingleAsync(b => b.Id == s.BoulderId)).NeedsReview);
+            Assert.False((await db.Boulders.SingleAsync(b => b.Id == s.BoulderId)).NeedsReview);
+            Assert.Equal(HoldMoveOutcome.Suspected, (await db.HoldGenerationLinks.SingleAsync(l => l.OldHoldId == s.OldMover)).MoveOutcome);
 
             // The real placement run says it did not move at all.
             await HoldMovePromoteTests.PlaceNewAsync(db, s, 1002);
@@ -162,6 +194,7 @@ public class HoldMoveFollowUpTests
         await using var check = h.CreateContext();
         Assert.False((await check.Boulders.SingleAsync(b => b.Id == s.BoulderId)).NeedsReview);
         Assert.Equal(HoldMoveOutcome.Stayed, (await check.HoldGenerationLinks.SingleAsync(l => l.OldHoldId == s.OldMover)).MoveOutcome);
+        Assert.Empty(await check.WallLookOverFindings.ToListAsync());
     }
 
     [Fact]
