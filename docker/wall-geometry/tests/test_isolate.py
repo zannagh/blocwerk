@@ -2,6 +2,7 @@
 import copy
 
 import multiview as mv
+import numpy as np
 import pytest
 
 from wallgeometry import isolate, solve_document
@@ -121,3 +122,32 @@ def test_the_option_is_checked():
     req, _ = mv.request()
     with pytest.raises(RequestError, match="isolateMarkers"):
         parse_request({**copy.deepcopy(req), "options": {"isolateMarkers": "yes"}})
+
+
+def test_a_trial_that_fails_numerically_keeps_the_solve_with_the_marker():
+    sol = _sol({17: 195.0, 4: 60.0, 5: 50.0}, downweighted=[17, 4, 5])
+    doc = _doc(4.98)
+
+    def crash(_):
+        raise np.linalg.LinAlgError("SVD did not converge")
+
+    out = isolate.run(doc, sol, {"photos": []}, crash, lambda *_: None)
+    assert out == (doc, sol, [])
+
+
+def test_a_plausibility_retry_that_fails_numerically_keeps_the_best_model(monkeypatch):
+    import wallgeometry
+    real, calls = wallgeometry._solve_once, []
+
+    def once(req, progress, limits):
+        calls.append(1)
+        if len(calls) > 1:
+            raise np.linalg.LinAlgError("SVD did not converge")
+        doc, sol = real(req, progress, limits)
+        doc["quality"]["checks"]["markerSideRmsErrMm"] = 99.0  # implausible: forces a retry
+        return doc, sol
+
+    monkeypatch.setattr(wallgeometry, "_solve_once", once)
+    doc, _ = wallgeometry.solve_document(mv.request()[0])
+    assert len(calls) == 2
+    assert doc["quality"]["plausibility"]["problems"]

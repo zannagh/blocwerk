@@ -52,7 +52,7 @@ def solve_document(request_doc, progress=None, limits=None):
 
 
 def _plausible(doc, sol, request_doc, progress, limits):
-    from . import plausible
+    from . import isolate, plausible
 
     why = plausible.problems(doc)
     best, first_why, dropped, records = (doc, sol, why, []), why, {}, []
@@ -65,7 +65,10 @@ def _plausible(doc, sol, request_doc, progress, limits):
         dropped.update(pick)
         records += [plausible.record(k, r, why, round_no) for k, r in pick.items()]
         progress(0.05, f"model implausible ({why[0]}); solving again without {len(dropped)} detection(s)")
-        doc, sol = _solve_once(plausible.without(request_doc, dropped), progress, limits)
+        try:
+            doc, sol = _solve_once(plausible.without(request_doc, dropped), progress, limits)
+        except isolate.TRIAL_ERRORS:
+            break  # a retry that fails numerically keeps the best model so far
         why = plausible.problems(doc)
         if len(why) < len(best[2]) or (len(why) == len(best[2]) and not why):
             best = (doc, sol, why, list(records))

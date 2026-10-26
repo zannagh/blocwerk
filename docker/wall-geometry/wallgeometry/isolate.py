@@ -24,6 +24,8 @@ The dropped marker is reported once in quality.rejectedObservations (reason REAS
 """
 import copy
 
+import numpy as np
+
 MIN_AFFECTED = 3
 MIN_REJECTED = 3
 REJECTED_SHARE = 0.25
@@ -32,6 +34,9 @@ POOR_PX = 4.0
 MIN_RMS_PX = 10.0  # a dominant marker must also be far off in absolute terms (a clean capture is ~1-3 px)
 MAX_ROUNDS = 2
 REASON = "inconsistent-marker"
+
+# A trial solve that fails numerically (or leaves a request the solver refuses) is a failed trial, never a failed solve.
+TRIAL_ERRORS = (np.linalg.LinAlgError, ValueError, FloatingPointError)
 
 
 def affected(sol):
@@ -128,7 +133,11 @@ def run(doc, sol, request_doc, solve_once, progress):
         mid, why = found
         progress(0.05, f"marker {mid} does not fit its photos; solving again without it")
         trial = without(request_doc, mid)
-        new_doc, new_sol = solve_once(trial)
+        try:
+            new_doc, new_sol = solve_once(trial)
+        except TRIAL_ERRORS as e:
+            progress(0.05, f"solving without marker {mid} failed ({type(e).__name__}); keeping the solve with it")
+            break
         if not better(new_sol, new_doc, sol, doc):
             break
         records.append(record(request_doc, mid, why, doc, new_doc))
