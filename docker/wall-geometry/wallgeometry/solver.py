@@ -124,7 +124,8 @@ def solve_structure(req, progress=_noop, drop_image=None, members=None):
     sol = {
         "req": req, "obs": obs, "cams": prob.cams, "prob": prob, "x": x, "fprob": fprob, "fx": fx,
         "members": members, "facet_segment": facet_segment, "decisions": decisions,
-        "downweighted": flagged, "rejected": rejected, "marker_rms_first": first_rms, "unreached": unreached, "free_intr": free_intr,
+        "downweighted": flagged, "rejected": rejected, "marker_rms_first": first_rms, "unreached": unreached,
+        "free_intr": free_intr,
         "free_normals": marker_normals(prob, x),
         "coplanarity_free": coplanarity(prob, x, members),
         "rms_free": rms(per_obs_err(prob, x), obs),

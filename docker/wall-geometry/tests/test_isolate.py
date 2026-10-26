@@ -98,11 +98,20 @@ def test_the_solve_without_the_suspect_is_kept_only_when_it_is_better(old, new, 
     assert isolate.better(s(new[0]), _doc(new[1]), s(old[0]), _doc(old[1])) is keep
 
 
-def test_without_drops_every_detection_of_the_marker_and_the_photos_left_empty():
+def test_a_solve_that_loses_gravity_is_never_kept():
+    def s():
+        return _sol({})
+    old = {"quality": {"reprojRmsPx": 94.6}, "world": {"gravityKnown": True}}
+    new = {"quality": {"reprojRmsPx": 0.39}, "world": {"gravityKnown": False}}
+    assert isolate.better(s(), new, s(), old) is False
+    assert isolate.better(s(), {**new, "world": {"gravityKnown": True}}, s(), old) is True
+
+
+def test_without_drops_every_detection_of_the_marker_but_keeps_the_photos():
     req = {"photos": [{"name": "a", "markers": [{"id": 17}]}, {"name": "b", "markers": [{"id": 17}, {"id": 3}]}],
            "unplannedMarkerIds": [17, 48]}
     out = isolate.without(req, 17)
-    assert out["photos"] == [{"name": "b", "markers": [{"id": 3}]}]
+    assert out["photos"] == [{"name": "a", "markers": []}, {"name": "b", "markers": [{"id": 3}]}]
     assert out["unplannedMarkerIds"] == [48]
     assert len(req["photos"]) == 2  # the caller's request is untouched
 

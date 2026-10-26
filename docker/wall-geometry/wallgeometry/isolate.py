@@ -84,18 +84,24 @@ def suspect(sol, doc):
 
 
 def better(new_sol, new_doc, old_sol, old_doc):
-    """The solve without the suspect fits more markers at no worse reprojection, or turns a poor solve usable."""
+    """The solve without the suspect fits more markers at no worse reprojection, or turns a poor solve usable; never one
+    that loses gravity (the marker was half of a level pair, or a reference segment's only one)."""
+    if _gravity(old_doc) and not _gravity(new_doc):
+        return False
     a_new, a_old = len(affected(new_sol)), len(affected(old_sol))
     r_new, r_old = new_doc["quality"]["reprojRmsPx"], old_doc["quality"]["reprojRmsPx"]
     return (a_new < a_old and r_new <= r_old) or (a_new <= a_old and r_old > POOR_PX >= r_new)
 
 
+def _gravity(doc):
+    return doc.get("world", {}).get("gravityKnown", True)
+
+
 def without(request_doc, mid):
-    """The request without any detection of marker `mid` (a photo left without markers is left out)."""
+    """The request without any detection of marker `mid` (a photo left without markers stays, listed as unused)."""
     req = copy.deepcopy(request_doc)
     for p in req["photos"]:
         p["markers"] = [m for m in p["markers"] if m["id"] != mid]
-    req["photos"] = [p for p in req["photos"] if p["markers"]]
     if req.get("unplannedMarkerIds"):
         req["unplannedMarkerIds"] = [i for i in req["unplannedMarkerIds"] if i != mid]
     return req
