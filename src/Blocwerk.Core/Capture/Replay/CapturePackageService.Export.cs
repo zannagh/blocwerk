@@ -117,7 +117,7 @@ public sealed partial class CapturePackageService
 
         var photos = await db.WallCapturePhotos.AsNoTracking().Where(p => p.CaptureId == captureId).OrderBy(p => p.Index).ToListAsync(ct);
         var textures = await db.WallGeometryTextures.AsNoTracking().Where(t => t.GeometryModelId == model.Id).OrderBy(t => t.FacetId).ToListAsync(ct);
-        return new CapturePackageRows(capture, photos, model, textures, job);
+        return new CapturePackageRows(capture, photos, model, textures, job, await LoadResultsAsync(db, capture, model, warnings, ct));
     }
 
     private static void CheckStandalone(WallGeometryModel model)
