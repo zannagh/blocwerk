@@ -5,6 +5,7 @@ import torch
 import torch.nn.functional as F
 
 SH_C0 = 0.28209479177387814
+KNN_BLOCK = 1 << 28  # floats in one knn chunk's distance matrix (1 GB; topk's scratch about doubles it)
 
 
 def ssim_map(a, b, size=11, sigma=1.5):
@@ -29,9 +30,12 @@ def ssim(a, b, size=11, sigma=1.5):
     return ssim_map(a, b, size, sigma).mean()
 
 
-def knn_mean_dist(points, k=3, chunk=2048):
-    """Mean distance of every point to its k nearest neighbours (chunked on the GPU)."""
+def knn_mean_dist(points, k=3, chunk=2048, block=KNN_BLOCK):
+    """Mean distance of every point to its k nearest neighbours (chunked on the GPU). A chunk's distance matrix
+    is chunk x n floats, so the chunk shrinks with n to keep it within `block` floats: a fixed 2048 rows took
+    7.9 GB at 0.5 M sparse points and exhausted 16 GB at 1 M (The Attic, 2026-10-26: 1166 views)."""
     out = torch.empty(len(points), device=points.device)
+    chunk = max(1, min(chunk, block // max(1, len(points))))
     for i in range(0, len(points), chunk):
         d = torch.cdist(points[i:i + chunk], points)
         out[i:i + chunk] = d.topk(min(k + 1, len(points)), largest=False).values[:, 1:].mean(1)
