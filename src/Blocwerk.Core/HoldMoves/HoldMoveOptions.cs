@@ -82,6 +82,11 @@ public sealed class HoldMoveOptions
     /// warped outline or a circle with a locally scaled radius) even when it was found again, no measured move or
     /// "not found again" marks a boulder, and the 3D re-measurement after placement marks nothing. Explicit answers
     /// ("gone", "remove", "this hold moved") still apply. Default false (off: nothing changes).
+    /// <para>
+    /// An operator switch for the whole instance (env <c>HOLDMOVES__ASSUMENOTHINGMOVED</c>, read once at startup), not a
+    /// per-update answer: set it for the one update it is true for, then unset it, or every later update on every wall
+    /// stops marking boulders for moved and missing holds.
+    /// </para>
     /// </summary>
     public bool AssumeNothingMoved { get; set; }
 
