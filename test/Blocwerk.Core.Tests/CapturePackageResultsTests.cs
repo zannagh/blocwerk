@@ -106,6 +106,35 @@ public class CapturePackageResultsTests
     }
 
     [Fact]
+    public async Task AHoldEditedOnTheSourceSinceItsPlacement_IsNotCarried_AndTheTargetRefinesIt()
+    {
+        using var h = new WallTestHarness();
+        using var f = await CapturePackageFlow.FinishedAsync(h);
+        var seed = await CapturePackageResultsSeed.CreateAsync(h);
+        var edited = seed.HoldIds[2];
+        await using (var db = h.CreateContext())
+        {
+            // Moved on the source; its refinement never ran, so its 3D fields are still those of the old position.
+            await db.Holds.Where(x => x.Id == edited).ExecuteUpdateAsync(s => s.SetProperty(x => x.X, 0.75));
+        }
+
+        var (manifest, bytes) = await f.ExportAsync();
+        await CapturePackageResultsSeed.ForgetAsync(f, manifest);
+        await f.Service.BeginImportAsync(manifest, CancellationToken.None);
+        await f.UploadAllAsync(manifest, bytes);
+        Assert.True((await f.Service.CommitImportAsync(f.CaptureId, CancellationToken.None)).Committed);
+
+        Assert.DoesNotContain(manifest.Rows.Results!.Holds, r => r.HoldId == edited);
+        await using (var db = h.CreateContext())
+        {
+            Assert.Null((await db.Holds.SingleAsync(x => x.Id == edited)).FacetId);
+            await AssertCarriedAsync(db, manifest, [seed.HoldIds[0], seed.HoldIds[1]]);
+        }
+
+        f.Refinements.Received(1).Enqueue(h.WallId, Arg.Is<IEnumerable<Guid>>(ids => ids.SequenceEqual(new[] { edited })));
+    }
+
+    [Fact]
     public async Task AFormatOnePackage_StillNeedsTheSplatWorker_AndIsQueuedToFinishItsView()
     {
         using var h = new WallTestHarness();

@@ -5,13 +5,14 @@ using System.Text.Json;
 using Blocwerk.Core.Capture.Replay;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Geometry.TextureRegistration;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Tests;
 
 /// <summary>
 /// The source side of a package with computed results: a live panel with three holds whose 3D fields were computed on the
-/// capture's model, a volume, two pending proposals, a boulder and hold links. <see cref="ForgetAsync"/> makes the same
+/// capture's model (recorded on a placement run), a volume, two pending proposals, a boulder and hold links. <see cref="ForgetAsync"/> makes the same
 /// instance the target: the capture is forgotten and the holds have no 3D fields and the wall no proposals yet.
 /// </summary>
 internal sealed record CapturePackageResultsSeed(Guid PanelId, IReadOnlyList<Guid> HoldIds, Guid FreeSpotProposalId, Guid FarProposalId)
@@ -43,6 +44,11 @@ internal sealed record CapturePackageResultsSeed(Guid PanelId, IReadOnlyList<Gui
         db.HoldGenerationLinks.Add(new HoldGenerationLink { WallId = h.WallId, OldHoldId = holds[2].Id, NewHoldId = holds[1].Id });
         db.WallVolumes.Add(new WallVolume { WallId = h.WallId, GeometryModelId = modelId, FacetId = "f1", FootprintJson = "[]", SurfaceJson = "{}" });
         db.HoldProposals.AddRange(free, far);
+        db.HoldPlacementRuns.Add(new HoldPlacementRun
+        {
+            WallId = h.WallId, GeometryModelId = modelId, CreatedByUserId = h.Owner.Id, Trigger = "capture",
+            HoldsJson = HoldPlacementEntry.ToJson(holds.Select(x => new HoldPlacementEntry { HoldId = x.Id, GeometryHash = HoldPlacementEntry.HashGeometry(x) })),
+        });
         await db.SaveChangesAsync();
         return new CapturePackageResultsSeed(panel.Id, holds.Select(x => x.Id).ToList(), free.Id, far.Id);
     }
