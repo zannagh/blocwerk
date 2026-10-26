@@ -33,6 +33,12 @@ public static class HoldMoveRemeasurer
     /// <returns>The number of boulders newly marked for review.</returns>
     public static async Task<int> RunAsync(BlocwerkDbContext db, Guid wallId, HoldMoveOptions options, ILogger logger)
     {
+        // Asserted "nothing moved": the promote marked no boulder for a move, so there is nothing to escalate or settle.
+        if (options.AssumeNothingMoved)
+        {
+            return 0;
+        }
+
         var generation = await db.Walls.Where(w => w.Id == wallId).Select(w => w.CurrentGeneration).FirstOrDefaultAsync();
         var links = (await db.HoldGenerationLinks
                 .Include(l => l.OldHold)

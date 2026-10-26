@@ -16,7 +16,26 @@ public static class LocalAffine
     public const int Neighbours = 12;
 
     /// <summary>The mapped point, or null when fewer than three usable pairs exist.</summary>
-    public static (double X, double Y)? Predict(IReadOnlyList<PointPair> pairs, double x, double y)
+    public static (double X, double Y)? Predict(IReadOnlyList<PointPair> pairs, double x, double y) =>
+        LocalFit(pairs, x, y) is { } fit ? Apply(fit, x, y) : null;
+
+    /// <summary>
+    /// The local area scale of the mapping at a point: the square root of the determinant of the ONE affine fitted around
+    /// it (destination units per source unit, the same in every direction), or null when fewer than three usable pairs exist.
+    /// </summary>
+    public static double? AreaScale(IReadOnlyList<PointPair> pairs, double x, double y) =>
+        LocalFit(pairs, x, y) is { } f ? Math.Sqrt(Math.Abs((f[0][0] * f[1][1]) - (f[0][1] * f[1][0]))) : null;
+
+    /// <summary>The local scale of the mapping at a point (destination pixels per source pixel).</summary>
+    public static double? Scale(IReadOnlyList<PointPair> pairs, double x, double y)
+    {
+        const double Step = 50;
+        var a = Predict(pairs, x, y);
+        var b = Predict(pairs, x + Step, y);
+        return a is null || b is null ? null : Math.Sqrt(Sq(b.Value.X - a.Value.X) + Sq(b.Value.Y - a.Value.Y)) / Step;
+    }
+
+    private static double[][]? LocalFit(IReadOnlyList<PointPair> pairs, double x, double y)
     {
         var near = pairs
             .OrderBy(p => Sq(p.SrcX - x) + Sq(p.SrcY - y))
@@ -31,17 +50,7 @@ public static class LocalAffine
         var residuals = near.Select(p => Residual(fit, p)).ToList();
         var median = residuals.OrderBy(r => r).ElementAt(residuals.Count / 2);
         var kept = near.Where((_, i) => residuals[i] <= Math.Max(3 * median, 8)).ToList();
-        fit = Fit(kept) ?? fit;
-        return Apply(fit, x, y);
-    }
-
-    /// <summary>The local scale of the mapping at a point (destination pixels per source pixel).</summary>
-    public static double? Scale(IReadOnlyList<PointPair> pairs, double x, double y)
-    {
-        const double Step = 50;
-        var a = Predict(pairs, x, y);
-        var b = Predict(pairs, x + Step, y);
-        return a is null || b is null ? null : Math.Sqrt(Sq(b.Value.X - a.Value.X) + Sq(b.Value.Y - a.Value.Y)) / Step;
+        return Fit(kept) ?? fit;
     }
 
     private static double[][]? Fit(IReadOnlyList<PointPair> pairs)

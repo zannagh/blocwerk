@@ -34,7 +34,9 @@ public partial class WallBigUpdateService
         var decisions = confirmation.Carryover
             .Where(d => d.Kind != CarryKind.Removed && d.NewHoldId is not null && !skip.Contains(d.OldHoldId))
             .ToList();
-        var notFound = NotFoundToMark(confirmation);
+
+        // Asserted "nothing moved": a hold not found again or "replaced" is a missed detection, it marks no boulder.
+        var notFound = moveOptions.AssumeNothingMoved ? new Dictionary<Guid, HoldMoveOutcome>() : NotFoundToMark(confirmation);
         if (decisions.Count == 0)
         {
             return notFound.Count == 0 ? HoldMovePlan.Empty : new HoldMovePlan([], notFound);

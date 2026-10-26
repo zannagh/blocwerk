@@ -69,11 +69,13 @@ public partial class WallBigUpdateService
         ICollection<Guid>? cardMarked = null)
     {
         var survivingCenterStaged = new HashSet<Guid>();
+        var warpRadii = await PureWarpRadiiAsync(db, oldHolds, warpPositions, panelPositions, newGenPanelByPosition, photoSizes);
 
-        // A hand-placed hold merged onto a detection adopts the detection's outline, not its own warped one.
+        // A hand-placed hold merged onto a detection adopts the detection's outline, not its own warped one — unless
+        // nothing moved is asserted: then it keeps its pure warp like every other carried hold.
         if (warpShapes is not null && confirmation.HandPlacedMergeOldIds is { Count: > 0 } merged)
         {
-            warpShapes = warpShapes.Where(kv => !merged.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
+            warpShapes = warpShapes.Where(kv => !merged.Contains(kv.Key) || warpRadii?.ContainsKey(kv.Key) == true).ToDictionary(kv => kv.Key, kv => kv.Value);
         }
 
         var claimedTwins = new HashSet<Guid>();
@@ -108,7 +110,7 @@ public partial class WallBigUpdateService
             var successor = await AdvanceCarriedHoldAsync(
                 db, wallId, destinationPanelId, newGen, oldHold, decision.Kind, decision.NewHoldId,
                 stagedTwins, claimedTwins, survivingCenterStaged, warpPositions, warpShapes, photoSizes, movePlan, userId,
-                confirmation.HandPlacedMergeOldIds?.Contains(decision.OldHoldId) == true);
+                confirmation.HandPlacedMergeOldIds?.Contains(decision.OldHoldId) == true, warpRadii);
             MarkKeptUnconfirmed(successor, oldHold, stagedTwins, newGen, decision.Confirmed);
             successors.Add((oldHold, successor));
 
@@ -138,7 +140,7 @@ public partial class WallBigUpdateService
                 oldHold, centerPanel.Id, panelPositions, newGenPanelByPosition);
             var blind = await AdvanceCarriedHoldAsync(
                 db, wallId, destinationPanelId, newGen, oldHold, CarryKind.Carried, null,
-                stagedTwins, claimedTwins, survivingCenterStaged, warpPositions, warpShapes, photoSizes, movePlan, userId);
+                stagedTwins, claimedTwins, survivingCenterStaged, warpPositions, warpShapes, photoSizes, movePlan, userId, warpRadii: warpRadii);
 
             // Nobody decided this hold: it is carried so nothing is lost, but flagged so a person looks at it.
             blind.NeedsReview = true;
@@ -178,7 +180,8 @@ public partial class WallBigUpdateService
         IReadOnlyDictionary<Guid, (int Width, int Height)> photoSizes,
         HoldMovePlan movePlan,
         Guid userId,
-        bool handPlacedMerge = false)
+        bool handPlacedMerge = false,
+        IReadOnlyDictionary<Guid, double>? warpRadii = null)
     {
         var changed = kind == CarryKind.Changed;
         var linkKind = changed ? HoldGenerationLinkKind.Changed : HoldGenerationLinkKind.Same;
@@ -190,6 +193,9 @@ public partial class WallBigUpdateService
                 staged.Generation = newGen;
                 CopyCuratedFields(oldHold, staged);
                 staged.NeedsReview = changed || oldHold.NeedsReview;
+
+                // Asserted "nothing moved": the old hold's pure warp, set first so the placement check sees the final spot.
+                ApplyPureWarp(staged, oldHold, changed, warpPositions, warpRadii);
                 CopyPlacementFields(
                     oldHold, staged, changed, warpPositions?.GetValueOrDefault(oldHold.Id),
                     staged.WallPanelId is { } panelId && photoSizes.TryGetValue(panelId, out var size) ? size : null);
@@ -232,6 +238,8 @@ public partial class WallBigUpdateService
 
             // Warp-carry (shapes): transform the custom outline onto the new image too. Applied AFTER the
             // centre is repositioned above, since ShapePoints are stored relative to the (final) centre.
+            // Asserted "nothing moved": the radius is scaled by the local warp too (it is otherwise kept unscaled).
+            ApplyPureWarp(clone, oldHold, changed, warpPositions, warpRadii);
             ApplyWarpedShape(clone, oldHold, warpShapes);
 
             db.Holds.Add(clone);

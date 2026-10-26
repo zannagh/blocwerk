@@ -16,6 +16,12 @@ public static class HoldMovePolicy
     /// <param name="confirmedMove">Whether a person confirmed that this hold moved (an accepted "this hold moved").</param>
     public static HoldMoveOutcome Classify(HoldMoveMeasure measure, HoldMoveOptions options, bool confirmedMove = false)
     {
+        // The person asserted nothing moved: a measured shift is detection jitter. A move they confirmed is still measured.
+        if (options.AssumeNothingMoved && !confirmedMove)
+        {
+            return HoldMoveOutcome.Stayed;
+        }
+
         if (measure.DistanceMm > options.CutoffMm)
         {
             // Taking a hold off a boulder needs everything to agree: a person said it moved, the measure is trustworthy and

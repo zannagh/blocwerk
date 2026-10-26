@@ -76,6 +76,15 @@ public sealed class HoldMoveOptions
     /// </summary>
     public double GoneMaxScore { get; set; } = 0.5;
 
+    /// <summary>
+    /// The person running the update asserts that no existing hold moved, turned or was replaced: holds were only added.
+    /// When true, the promote carries every old hold with a warp prediction at its pure warp geometry (warped centre,
+    /// warped outline or a circle with a locally scaled radius) even when it was found again, no measured move or
+    /// "not found again" marks a boulder, and the 3D re-measurement after placement marks nothing. Explicit answers
+    /// ("gone", "remove", "this hold moved") still apply. Default false (off: nothing changes).
+    /// </summary>
+    public bool AssumeNothingMoved { get; set; }
+
     /// <summary>Two holds this similar (fingerprint, 0..1) may be the same kind of hold on the wall.</summary>
     public double SimilarityMin { get; set; } = 0.85;
 
