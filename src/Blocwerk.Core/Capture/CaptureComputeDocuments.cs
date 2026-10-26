@@ -127,7 +127,7 @@ public static class CaptureComputeDocuments
 
         try
         {
-            return JsonSerializer.Deserialize<List<CaptureMarker>>(json) ?? [];
+            return JsonSerializer.Deserialize<List<CaptureMarker>>(json)?.Select(CaptureRetiredMarkers.Flag).ToList() ?? [];
         }
         catch (JsonException)
         {
