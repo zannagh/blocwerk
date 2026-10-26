@@ -92,6 +92,7 @@ def solve_structure(req, progress=_noop, drop_image=None, members=None):
     progress(0.05, "free bundle adjustment")
     prob, x, obs, unreached = run_free(obs, cams, intr, free_intr, prior, obj)
     progress(0.45, "outlier check")
+    first_rms = per_marker_rms(prob, x, obs)
     for o in obs:
         o["sigma0"] = o["sigma"].copy()
     flagged, rejected = {}, []
@@ -123,7 +124,8 @@ def solve_structure(req, progress=_noop, drop_image=None, members=None):
     sol = {
         "req": req, "obs": obs, "cams": prob.cams, "prob": prob, "x": x, "fprob": fprob, "fx": fx,
         "members": members, "facet_segment": facet_segment, "decisions": decisions,
-        "downweighted": flagged, "rejected": rejected, "unreached": unreached, "free_intr": free_intr,
+        "downweighted": flagged, "rejected": rejected, "marker_rms_first": first_rms, "unreached": unreached,
+        "free_intr": free_intr,
         "free_normals": marker_normals(prob, x),
         "coplanarity_free": coplanarity(prob, x, members),
         "rms_free": rms(per_obs_err(prob, x), obs),
