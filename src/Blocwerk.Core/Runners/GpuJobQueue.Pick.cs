@@ -51,12 +51,12 @@ public sealed partial class GpuJobQueue
         var online = Now - options.OnlineWindow;
         var ownOnline = await Assignments(db)
             .Where(rw => walls.Contains(rw.WallId) && rw.RunnerId != runner.Id && rw.Runner.LastSeenAt >= online && rw.Runner.Paused != true)
-            .Select(rw => new { rw.WallId, rw.RunnerId, rw.Runner.MaxQuality, rw.Runner.Capabilities, rw.Runner.TexturesMemoryMb }).ToListAsync(ct);
+            .Select(rw => new { rw.WallId, rw.RunnerId, rw.Runner.MaxQuality, rw.Runner.Capabilities, rw.Runner.TexturesMemoryMb, rw.Runner.MemoryBudgetMb }).ToListAsync(ct);
 
         // An own runner that already failed the job does not keep a shared one from helping.
         var eligible = candidates.Where(j => Rank(
             false, true, true,
-            ownOnline.Any(o => o.WallId == j.WallId && Able(j, o.MaxQuality, o.Capabilities, o.TexturesMemoryMb)
+            ownOnline.Any(o => o.WallId == j.WallId && Able(j, o.MaxQuality, o.Capabilities, o.TexturesMemoryMb, o.MemoryBudgetMb)
                                && !GpuJobFailedRunners.Contains(j, o.RunnerId))) is not null).ToList();
         return await FirstNotLeftToOthersAsync(db, runner.Id, eligible, ct);
     }
@@ -91,18 +91,19 @@ public sealed partial class GpuJobQueue
         var own = await Assignments(db)
             .Where(rw => rw.WallId == job.WallId && rw.Runner.LastSeenAt >= online && rw.Runner.Paused != true && !failed.Contains(rw.RunnerId)
                          && !busy.Any(j => j.ClaimedByRunnerId == rw.RunnerId))
-            .Select(rw => new { rw.Runner.MaxQuality, rw.Runner.Capabilities, rw.Runner.TexturesMemoryMb }).ToListAsync(ct);
+            .Select(rw => new { rw.Runner.MaxQuality, rw.Runner.Capabilities, rw.Runner.TexturesMemoryMb, rw.Runner.MemoryBudgetMb }).ToListAsync(ct);
         var shared = await Approvals(db)
             .Where(a => a.WallId == job.WallId && a.Runner.LastSeenAt >= online && a.Runner.Paused != true && !failed.Contains(a.RunnerId)
                         && !busy.Any(j => j.ClaimedByRunnerId == a.RunnerId))
-            .Select(a => new { a.Runner.MaxQuality, a.Runner.Capabilities, a.Runner.TexturesMemoryMb }).ToListAsync(ct);
-        return own.Concat(shared).Any(r => Able(job, r.MaxQuality, r.Capabilities, r.TexturesMemoryMb));
+            .Select(a => new { a.Runner.MaxQuality, a.Runner.Capabilities, a.Runner.TexturesMemoryMb, a.Runner.MemoryBudgetMb }).ToListAsync(ct);
+        return own.Concat(shared).Any(r => Able(job, r.MaxQuality, r.Capabilities, r.TexturesMemoryMb, r.MemoryBudgetMb));
     }
 
     /// <summary>
     /// The queued jobs this runner is offered: splat jobs unless it advertises only <c>textures</c>, and textures jobs only
     /// when it advertises <c>textures</c> and has the memory the job needs, hold detection jobs only when it advertises
-    /// <c>detect-holds</c>. A runner without capabilities (an older version) never sees a textures or hold detection job.
+    /// <c>detect-holds</c>, splat prepare / finish jobs only when it names <c>splat-prepare</c> / <c>splat-finish</c> and its
+    /// memory budget covers the job's. A runner without capabilities (an older version) never sees any of those.
     /// </summary>
     private static IQueryable<GpuJob> OfferedKinds(IQueryable<GpuJob> queued, GpuRunner runner)
     {
@@ -110,15 +111,25 @@ public sealed partial class GpuJobQueue
         var textures = RunnerCapabilities.Allows(runner.Capabilities, GpuJobKind.Textures);
         var holds = RunnerCapabilities.Allows(runner.Capabilities, GpuJobKind.DetectHolds);
         var panels = RunnerCapabilities.Allows(runner.Capabilities, GpuJobKind.RegisterPanels);
+        var prepare = RunnerCapabilities.Allows(runner.Capabilities, GpuJobKind.SplatPrepare);
+        var finish = RunnerCapabilities.Allows(runner.Capabilities, GpuJobKind.SplatFinish);
         var memory = runner.TexturesMemoryMb ?? 0;
+        var budget = runner.MemoryBudgetMb ?? 0;
         return queued.Where(j => (splat && j.Kind == GpuJobKind.Splat)
                                  || (textures && j.Kind == GpuJobKind.Textures && (j.RequiredMemoryMb ?? 0) <= memory)
                                  || (holds && j.Kind == GpuJobKind.DetectHolds)
-                                 || (panels && j.Kind == GpuJobKind.RegisterPanels));
+                                 || (panels && j.Kind == GpuJobKind.RegisterPanels)
+                                 || (prepare && j.Kind == GpuJobKind.SplatPrepare && (j.RequiredMemoryMb ?? 0) <= budget)
+                                 || (finish && j.Kind == GpuJobKind.SplatFinish && (j.RequiredMemoryMb ?? 0) <= budget));
     }
 
     /// <summary>Whether a runner with these reported facts could take <paramref name="job"/> (quality, kind, memory).</summary>
-    internal static bool Able(GpuJob job, string? maxQuality, string? capabilities, int? texturesMemoryMb) =>
+    internal static bool Able(GpuJob job, string? maxQuality, string? capabilities, int? texturesMemoryMb, int? memoryBudgetMb) =>
         RunnerCapabilities.Allows(capabilities, job.Kind)
-        && (job.Kind == GpuJobKind.Textures ? (job.RequiredMemoryMb ?? 0) <= (texturesMemoryMb ?? 0) : QualityCap(maxQuality, null) >= job.Quality);
+        && job.Kind switch
+        {
+            GpuJobKind.Textures => (job.RequiredMemoryMb ?? 0) <= (texturesMemoryMb ?? 0),
+            GpuJobKind.SplatPrepare or GpuJobKind.SplatFinish => (job.RequiredMemoryMb ?? 0) <= (memoryBudgetMb ?? 0),
+            _ => QualityCap(maxQuality, null) >= job.Quality,
+        };
 }

@@ -87,7 +87,7 @@ public class GpuRunner
     /// Reported by the runner (<c>hello</c>): what it can do, comma separated (<c>splat,textures</c>). Null for a runner that
     /// reports none (older versions): it trains splats only and is never offered a textures job.
     /// </summary>
-    [MaxLength(64)]
+    [MaxLength(256)]
     public string? Capabilities { get; set; }
 
     /// <summary>Reported by the runner: the memory a textures job may use on it, MB (null: it renders none).</summary>

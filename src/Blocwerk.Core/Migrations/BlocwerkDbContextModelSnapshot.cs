@@ -1025,8 +1025,8 @@ namespace Blocwerk.Core.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<string>("Capabilities")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");

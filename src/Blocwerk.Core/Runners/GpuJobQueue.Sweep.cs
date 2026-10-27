@@ -30,6 +30,7 @@ public sealed partial class GpuJobQueue
             await ExpireLeaseAsync(db, job, now, ct);
         }
 
+        await CancelDisabledComputeJobsAsync(db, now, ct);
         await ExpireQueuedAsync(db, now, ct);
         await RetryUnfinishedAsync(db, now, ct);
         await RetryPendingPreviewsAsync(now, ct);
@@ -41,11 +42,15 @@ public sealed partial class GpuJobQueue
     /// The queued job's line for <paramref name="online"/> able runners, <paramref name="busy"/> of them on another job;
     /// with none available but <paramref name="paused"/> able ones online and paused by their owner, "(paused)".
     /// </summary>
-    internal static string WaitingStage(SplatQuality quality, int online, int busy, int paused = 0, GpuJobKind kind = GpuJobKind.Splat) =>
+    internal static string WaitingStage(
+        SplatQuality quality, int online, int busy, int paused = 0, GpuJobKind kind = GpuJobKind.Splat, bool markerless = false) =>
         online == 0 && paused > 0 ? "waiting for a 3D runner (paused)"
         : online == 0 && kind == GpuJobKind.Textures ? "waiting for a 3D runner that can render wall textures (none online)"
         : online == 0 && kind == GpuJobKind.DetectHolds ? "waiting for a 3D runner that can find holds (none online)"
         : online == 0 && kind == GpuJobKind.RegisterPanels ? "waiting for a 3D runner that can register panel photos (none online)"
+        : online == 0 && kind == GpuJobKind.SplatPrepare && markerless ? "waiting for a 3D runner to reconstruct the wall (none online)"
+        : online == 0 && kind == GpuJobKind.SplatPrepare ? "waiting for a 3D runner to prepare the photos (none online)"
+        : online == 0 && kind == GpuJobKind.SplatFinish ? "waiting for a 3D runner to finish it (none online)"
         : online == 0 ? $"waiting for a 3D runner that can train {CaptureSplatDocuments.QualityName(quality)} (none online)"
         : busy >= online ? $"waiting for a 3D runner ({online} online, busy)"
         : busy == 0 ? $"waiting for a 3D runner ({online} online)"
@@ -54,11 +59,11 @@ public sealed partial class GpuJobQueue
     private async Task ExpireLeaseAsync(BlocwerkDbContext db, GpuJob job, DateTimeOffset now, CancellationToken ct)
     {
         var uploading = IsUploadingStage(job.Stage);
-        if (job.ClaimedAt is { } claimed && Deadline(claimed, uploading) <= now)
+        if (job.ClaimedAt is { } claimed && Deadline(claimed, uploading, job.Kind) <= now)
         {
             // Heartbeats alone never keep a claim past the wall-clock cap; that costs a training attempt.
-            logger.LogWarning("GPU job {JobId}: runner {RunnerId} held it past the cap: {Reason}", job.Id, job.ClaimedByRunnerId, TooLongReason());
-            await ReleaseAsync(db, job, ReleaseKind.Failure, TooLongReason(), ct);
+            logger.LogWarning("GPU job {JobId}: runner {RunnerId} held it past the cap: {Reason}", job.Id, job.ClaimedByRunnerId, TooLongReason(job.Kind));
+            await ReleaseAsync(db, job, ReleaseKind.Failure, TooLongReason(job.Kind), ct);
             return;
         }
 
@@ -74,19 +79,19 @@ public sealed partial class GpuJobQueue
     /// </summary>
     private async Task ExpireQueuedAsync(BlocwerkDbContext db, DateTimeOffset now, CancellationToken ct)
     {
-        var cutoff = now - options.QueuedLifetime;
-        var stale = await db.GpuJobs.AsNoTracking()
-            .Where(j => j.Status == GpuJobStatus.Queued && j.CreatedAt < cutoff).ToListAsync(ct);
-        foreach (var job in stale)
+        var candidates = await db.GpuJobs.AsNoTracking()
+            .Where(j => j.Status == GpuJobStatus.Queued && j.CreatedAt < now - ShortestQueuedLifetime).ToListAsync(ct);
+        var markerless = await MarkerlessCapturesAsync(db, candidates, ct);
+        foreach (var job in candidates)
         {
-            var days = options.QueuedLifetime.TotalDays.ToString("0.#", CultureInfo.InvariantCulture);
-            var reason = job.Kind switch
+            var lifetime = QueuedLifetimeOf(job, markerless);
+            if (job.CreatedAt >= now - lifetime)
             {
-                GpuJobKind.Textures => $"no 3D runner rendered the wall textures within {days} days",
-                GpuJobKind.DetectHolds => $"no 3D runner looked for holds within {days} days",
-                GpuJobKind.RegisterPanels => $"no 3D runner registered the panel photos within {days} days",
-                _ => $"no 3D runner took the photo-real view within {days} days",
-            };
+                continue;
+            }
+
+            var days = lifetime.TotalDays.ToString("0.#", CultureInfo.InvariantCulture);
+            var reason = ExpiredReason(job.Kind, markerless.Contains(job.CaptureId), days);
             var cancelled = await db.GpuJobs.Where(j => j.Id == job.Id && j.Status == GpuJobStatus.Queued)
                 .ExecuteUpdateAsync(
                     s => s.SetProperty(j => j.Status, GpuJobStatus.Cancelled)
@@ -107,6 +112,18 @@ public sealed partial class GpuJobQueue
             DeleteAll(KeepOnlyInstalledPreview(job), job.Id);
         }
     }
+
+    /// <summary>Why a job nobody claimed for <paramref name="days"/> days was cancelled.</summary>
+    private static string ExpiredReason(GpuJobKind kind, bool markerless, string days) => kind switch
+    {
+        GpuJobKind.Textures => $"no 3D runner rendered the wall textures within {days} days",
+        GpuJobKind.DetectHolds => $"no 3D runner looked for holds within {days} days",
+        GpuJobKind.RegisterPanels => $"no 3D runner registered the panel photos within {days} days",
+        GpuJobKind.SplatPrepare when markerless => $"no 3D runner reconstructed the wall within {days} days",
+        GpuJobKind.SplatPrepare => $"no 3D runner prepared the photos within {days} days",
+        GpuJobKind.SplatFinish => $"no 3D runner finished the 3D view within {days} days",
+        _ => $"no 3D runner took the photo-real view within {days} days",
+    };
 
     /// <summary>
     /// Delivered results the splat worker could not finish yet (it was unreachable): handed back to the capture pipeline
@@ -131,6 +148,12 @@ public sealed partial class GpuJobQueue
                 continue;
             }
 
+            if (job.Kind is GpuJobKind.SplatPrepare or GpuJobKind.SplatFinish)
+            {
+                await RetryComputeDeliveryAsync(db, job, now, ct);
+                continue;
+            }
+
             if (job.CompletedAt < now - FinishGiveUp)
             {
                 // The capture's processor gives up (it tells the capture why, or restores a re-finish's state); only a
@@ -138,7 +161,7 @@ public sealed partial class GpuJobQueue
                 logger.LogWarning("GPU job {JobId}: the delivered result could not be finished for a day; giving up", job.Id);
                 job.LeaseExpiresAt = now + FinishRetryInterval;
                 await db.SaveChangesAsync(ct);
-                if (await HandBackAsync(db, job.CaptureId, ct))
+                if (await HandBackAsync(db, job.CaptureId, job.Kind, ct))
                 {
                     continue;
                 }
@@ -162,7 +185,7 @@ public sealed partial class GpuJobQueue
 
             job.LeaseExpiresAt = now + FinishRetryInterval;
             await db.SaveChangesAsync(ct);
-            await HandBackAsync(db, job.CaptureId, ct);
+            await HandBackAsync(db, job.CaptureId, job.Kind, ct);
         }
     }
 
@@ -207,12 +230,13 @@ public sealed partial class GpuJobQueue
 
         var online = Now - options.OnlineWindow;
         var walls = waiting.Select(j => j.WallId).Distinct().ToList();
+        var markerless = await MarkerlessCapturesAsync(db, waiting, ct);
 
         // Paused runners are online but take no work: they only change "none online" into "paused".
         var own = await Assignments(db).Where(rw => walls.Contains(rw.WallId) && rw.Runner.LastSeenAt >= online)
-            .Select(rw => new { rw.WallId, rw.RunnerId, rw.Runner.MaxQuality, rw.Runner.Capabilities, rw.Runner.TexturesMemoryMb, Paused = rw.Runner.Paused == true }).ToListAsync(ct);
+            .Select(rw => new { rw.WallId, rw.RunnerId, rw.Runner.MaxQuality, rw.Runner.Capabilities, rw.Runner.TexturesMemoryMb, rw.Runner.MemoryBudgetMb, Paused = rw.Runner.Paused == true }).ToListAsync(ct);
         var shared = await Approvals(db).Where(a => walls.Contains(a.WallId) && a.Runner.LastSeenAt >= online)
-            .Select(a => new { a.WallId, a.RunnerId, a.Runner.MaxQuality, a.Runner.Capabilities, a.Runner.TexturesMemoryMb, Paused = a.Runner.Paused == true }).ToListAsync(ct);
+            .Select(a => new { a.WallId, a.RunnerId, a.Runner.MaxQuality, a.Runner.Capabilities, a.Runner.TexturesMemoryMb, a.Runner.MemoryBudgetMb, Paused = a.Runner.Paused == true }).ToListAsync(ct);
         var busy = (await db.GpuJobs.AsNoTracking()
                 .Where(j => (j.Status == GpuJobStatus.Claimed || j.Status == GpuJobStatus.Running) && j.ClaimedByRunnerId != null)
                 .Select(j => j.ClaimedByRunnerId!.Value).ToListAsync(ct))
@@ -220,10 +244,10 @@ public sealed partial class GpuJobQueue
         foreach (var job in waiting)
         {
             var candidates = own.Concat(shared)
-                .Where(o => o.WallId == job.WallId && Able(job, o.MaxQuality, o.Capabilities, o.TexturesMemoryMb)).ToList();
+                .Where(o => o.WallId == job.WallId && Able(job, o.MaxQuality, o.Capabilities, o.TexturesMemoryMb, o.MemoryBudgetMb)).ToList();
             var able = candidates.Where(o => !o.Paused).Select(o => o.RunnerId).Distinct().ToList();
             var paused = candidates.Where(o => o.Paused).Select(o => o.RunnerId).Distinct().Count();
-            var stage = WaitingStage(job.Quality, able.Count, able.Count(busy.Contains), paused, job.Kind);
+            var stage = WaitingStage(job.Quality, able.Count, able.Count(busy.Contains), paused, job.Kind, markerless.Contains(job.CaptureId));
             if (stage != job.Stage)
             {
                 // Conditional: a runner may have claimed it meanwhile (its stage then says so).
