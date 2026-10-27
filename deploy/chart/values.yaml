@@ -1,0 +1,242 @@
+# Blocwerk chart defaults. They describe the app as the compose stack runs it today (docker/docker-compose.prod.yml):
+# the same images, environment variables and volumes. Environment-specific settings (hostnames, storage, limits,
+# secret names) belong in the environment's own values file, e.g. the infra repo's prod values.
+#
+# Rules that are not up for configuration:
+#   - ONE web replica. The app keeps state in the process (Blazor circuits, edit leases, the feed signal, kiosk
+#     pairing, the in-process job queues), so `web.replicas` is 0 or 1 (values.schema.json). 0 only exists for a
+#     cutover: everything is created, nothing touches data.
+#   - Secrets are referenced by name only (`secrets.*`); the chart never creates or holds a secret value.
+#   - Empty environment values ("") are not rendered: an empty value means "unset, use the app's default", as the
+#     `${VAR:-}` lines in the compose file do.
+
+# Applied to every pod of the release, hooks and CronJobs included.
+imagePullSecrets: []        # e.g. [{name: ghcr-pull}]; the ghcr.io/zannagh images are public
+nodeSelector: {}
+tolerations: []
+
+# Existing Secrets, by name. Nothing here is a value.
+secrets:
+  # envFrom of the web container. Expected keys (all optional for the app to start, but see the notes):
+  # SMTP__HOST, SMTP__USERNAME, SMTP__PASSWORD, SMTP__FROM, SMTP__FROMNAME,
+  # BLOCWERK__ENCRYPTIONKEY (must never change: it decrypts existing columns), VAPID__SUBJECT, VAPID__PUBLICKEY,
+  # VAPID__PRIVATEKEY.
+  app: blocwerk-app
+  # Key POSTGRES_PASSWORD: the database password, for Postgres, the web app and the stats-reset CronJob.
+  postgres: blocwerk-postgres
+  # Optional. Key appsettings.json, mounted read-only at /app/appsettings.json (OAuth clients, JwtKey, admins).
+  # A section present in that file wins over the environment for that section (docs: env-var precedence).
+  appsettings: ""
+  # Keys COMPUTE_API_KEY (wall-geometry) and SPLAT_API_KEY (splat-cpu): bearer keys between the app and workers.
+  compute: blocwerk-compute
+  # Optional key BLOCWERK_DEPLOY_API_KEY (an Installation-scoped API key) for the deploy gate's announcement and
+  # forced flush. Without it the gate still waits for the busy check but neither announces nor flushes.
+  deploy: blocwerk-deploy
+
+# Capture limits, shared by the app (CAPTURE__*) and both workers (CAPTURE_MAX_*), as in compose. "" = app default.
+capture:
+  maxVideoMb: "2048"
+  maxPhotoMb: ""
+  maxPhotos: ""
+  maxVideoFrames: ""
+
+web:
+  # 0 or 1, never more (see the top of this file).
+  replicas: 1
+  image:
+    repository: ghcr.io/zannagh/blocwerk
+    tag: ""                 # "" = the chart's appVersion
+    digest: ""              # sha256:...; wins over the tag when set
+    pullPolicy: IfNotPresent
+  # Plain environment variables (compose: the `blocwerk` service). Computed by the chart and NOT to be set here:
+  # POSTGRES__*, OTEL_EXPORTER_OTLP_ENDPOINT (when aspire.enabled), GEOMETRYSERVICE__*, SPLATSERVICE__*, CAPTURE__*.
+  env:
+    ASPNETCORE_ENVIRONMENT: Production
+    Logging__LogLevel__Default: Information
+    # Logs evictions, reconnect attempts and permanent disconnects (a few lines per circuit).
+    Logging__LogLevel__Microsoft.AspNetCore.Components.Server.Circuits.CircuitRegistry: Debug
+    OTEL_SERVICE_NAME: Blocwerk
+    SMTP__PORT: ""
+    SMTP__SECURITY: ""
+    # always = photo-real training goes to a 3D runner; off = /api/runners/* is not mapped.
+    RUNNERS__MODE: "off"
+    # Retention of old 3D files: "" or true = log only, false = delete.
+    CAPTURE__RETENTIONDRYRUN: ""
+    # Only senders in this CIDR may set X-Forwarded-For: the ingress controller's pod network. "" = trust every sender.
+    BLOCWERK__SERVER__TRUSTEDPROXIES__0: ""
+    # "true" or set the window file: regular users get the "back online" notice after this deploy.
+    DEPLOY__MAINTENANCEWINDOW: ""
+    # API-key browser login for automation: enable only temporarily.
+    BLOCWERK__AUTH__APIKEYLOGIN__ENABLED: "false"
+    BLOCWERK__AUTH__APIKEYLOGIN__ALLOWEDUSERIDS__0: ""
+    HOLDDETECTION__REDETECT__ENABLED: "false"
+  service:
+    port: 5050
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    host: blocwerk.example
+    tlsSecretName: ""       # "" = no TLS block
+  persistence:
+    # One volume, four subdirectories: wall-images/ (gallery uploads and the image-variant cache), beta-videos/,
+    # keys/ (the DataProtection key ring and the cache-partition key: copy verbatim, never regenerate) and
+    # models/ (climbingcrux.onnx, optionally hold-segmenter-{encoder,decoder}.onnx; mounted read-only).
+    data:
+      existingClaim: ""     # "" = the chart creates <release>-data (kept on uninstall)
+      size: 20Gi
+      storageClass: ""
+      annotations: {}
+    # Uploads up to capture.maxVideoMb are buffered and transcoded in /tmp.
+    tmpSizeLimit: 8Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 640Mi
+    limits:
+      memory: 2Gi
+  # The .NET image runs as root by default (compose does); 1654 is its built-in "app" user. The data volume must be
+  # owned by this uid (the cutover runbook chowns it).
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1654
+    runAsGroup: 1654
+    fsGroup: 1654
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+    capabilities:
+      drop: [ALL]
+  # EF migrations and the ONNX model load run before /health answers.
+  startupFailureThreshold: 60
+
+postgres:
+  # false = use an external server (postgres.external); the password still comes from secrets.postgres.
+  enabled: true
+  replicas: 1
+  image:
+    repository: postgres
+    tag: "17.11"
+  database: blocwerk
+  username: postgres
+  # pg_stat_statements must be preloaded (/administration/db-stats reads it).
+  args:
+    - -c
+    - shared_preload_libraries=pg_stat_statements
+    - -c
+    - pg_stat_statements.max=2000
+    - -c
+    - pg_stat_statements.track=top
+  external:
+    host: ""
+    port: 5432
+  persistence:
+    existingClaim: ""       # "" = the chart creates <release>-postgres (kept on uninstall)
+    size: 5Gi
+    storageClass: ""
+    annotations: {}
+  resources:
+    requests:
+      cpu: 20m
+      memory: 128Mi
+    limits:
+      memory: 1Gi
+  # Resets pg_stat_statements every second day so the stats show recent load (autodeploy.sh did it every 48 h).
+  statsReset:
+    enabled: true
+    schedule: "30 4 */2 * *"
+    timeZone: Europe/Berlin
+
+# Wall geometry (marker observations -> 3D wall geometry, photos -> facet textures). In-memory job queue: one replica.
+geometry:
+  enabled: true
+  replicas: 1
+  image:
+    repository: ghcr.io/zannagh/blocwerk-geometry
+    tag: sha-b3bde06
+    digest: ""
+  # Plain environment (compose: `wall-geometry`). COMPUTE_API_KEY, CALLBACK_ALLOWED_HOSTS and CAPTURE_MAX_* are set by
+  # the chart. With a small memory limit, also lower TEXTURES_BLEND_MAX_BYTES (default 2 GB) and TEXTURES_MAX_MEGAPIXELS.
+  env:
+    RESULT_TTL_S: "3600"
+    MAX_REQUEST_MB: ""
+    MAX_PHOTOS: ""
+    TEXTURES_TIMEOUT_S: ""
+    TEXTURES_MAX_MEGAPIXELS: ""
+    TEXTURES_BLEND_MAX_BYTES: ""
+    SFM_MAX_SPARSE_MB: ""
+    SFM_TIMEOUT_S: ""
+  tmpSizeLimit: 20Gi        # job files, expire after RESULT_TTL_S
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: "2"
+      memory: 4Gi           # compose mem_limit; the infra O7 budget caps it at about 1.5 GiB on the VPS
+
+# The splat worker's CPU half (splat-prepare and splat-finish; SPLAT_WORKER_MODE=cpu never trains). Optional: off by
+# default, and the app runs without it (SPLATSERVICE__URL is only set while this is on). Compose profile `compute`.
+splatCpu:
+  enabled: false
+  replicas: 1
+  image:
+    repository: ghcr.io/zannagh/blocwerk-splat-worker
+    tag: sha-b3bde06
+    digest: ""
+  env:
+    RESULT_TTL_S: "3600"
+    SPLAT_TIMEOUT_S: ""
+    MAX_PHOTOS: ""
+    SPLAT_MAX_MEMORY_MB: "0"   # 0 = each job sizes COLMAP to the memory limit below
+    SPLAT_MAX_SWAP_GROWTH_MB: "2048"
+    COLMAP_MAX_IMAGE_SIZE: "2400"
+    COLMAP_MAX_FEATURES: "8192"
+    COLMAP_MAX_MATCHES: "8192"
+    COLMAP_THREADS: "3"
+  tmpSizeLimit: 20Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "4"
+      memory: 8Gi
+
+# Aspire dashboard: in-memory OTLP sink. Anonymous by design: never expose its UI (port 18888) on a public route.
+aspire:
+  enabled: true
+  replicas: 1
+  image:
+    repository: mcr.microsoft.com/dotnet/aspire-dashboard
+    tag: "9.0.0"
+  resources:
+    requests:
+      cpu: 10m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
+# The deploy gate: ArgoCD PreSync / Helm pre-upgrade hooks with the semantics of docker/prod/autodeploy.sh.
+#   web:     runs only when the web pod template changes (its fingerprint differs from the running pods'). Waits
+#            while /health/ready-to-deploy says busy (maxDefer polls), longer while /health/busy-eta reports an end
+#            (etaMaxDefer polls in all), then announces the maintenance, waits announceGraceSeconds, forces the
+#            flush of open editors, and lets the sync replace the pod.
+#   compute: (ArgoCD Sync hook between the web app and the workers) per enabled worker whose fingerprint changed:
+#            two consecutive idle polls of /v1/info, at most computeMaxDefer busy polls.
+# The hooks read the running pods through the kube API (a Role limited to get/list pods in this namespace).
+deployGate:
+  enabled: true
+  image:
+    repository: curlimages/curl
+    tag: "8.23.0"
+  pollSeconds: 60
+  maxDefer: 30
+  etaMaxDefer: 1440
+  announceEtaSeconds: 600
+  announceGraceSeconds: 5
+  flushTimeoutSeconds: 45
+  computeMaxDefer: 240

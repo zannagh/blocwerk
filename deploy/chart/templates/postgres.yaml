@@ -1,0 +1,82 @@
+{{- if .Values.postgres.enabled -}}
+{{- $pg := .Values.postgres -}}
+{{- $name := printf "%s-postgres" (include "blocwerk.fullname" .) -}}
+{{- $ctx := dict "root" . "component" "postgres" -}}
+{{- $ready := list "pg_isready" "-U" $pg.username "-d" $pg.database -}}
+# Plain single-replica StatefulSet on the official image, the compose service one to one. Backups are pg_dump.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "blocwerk.labels" $ctx | nindent 4 }}
+spec:
+  serviceName: {{ $name }}
+  replicas: {{ $pg.replicas }}
+  selector:
+    matchLabels:
+      {{- include "blocwerk.selectorLabels" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "blocwerk.selectorLabels" $ctx | nindent 8 }}
+    spec:
+      {{- include "blocwerk.podOptions" . | nindent 6 }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999   # "postgres" in the official image
+        runAsGroup: 999
+        fsGroup: 999
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: {{ include "blocwerk.image" (list $pg.image "") }}
+          args:
+            {{- toYaml $pg.args | nindent 12 }}
+          env:
+            - {name: POSTGRES_DB, value: {{ $pg.database | quote }}}
+            - {name: POSTGRES_USER, value: {{ $pg.username | quote }}}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: {{ .Values.secrets.postgres }}, key: POSTGRES_PASSWORD}
+            - {name: PGDATA, value: /var/lib/postgresql/data/pgdata}
+          ports:
+            - {name: postgres, containerPort: 5432}
+          startupProbe:
+            exec: {command: {{ toJson $ready }}}
+            periodSeconds: 5
+            failureThreshold: 60
+          livenessProbe:
+            exec: {command: {{ toJson $ready }}}
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            exec: {command: {{ toJson $ready }}}
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml $pg.resources | nindent 12 }}
+          securityContext:
+            {{- include "blocwerk.restrictedContainer" false | nindent 12 }}
+          volumeMounts:
+            - {name: pgdata, mountPath: /var/lib/postgresql/data}
+      volumes:
+        - name: pgdata
+          persistentVolumeClaim:
+            claimName: {{ default $name $pg.persistence.existingClaim }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "blocwerk.labels" $ctx | nindent 4 }}
+spec:
+  selector:
+    {{- include "blocwerk.selectorLabels" $ctx | nindent 4 }}
+  ports:
+    - {name: postgres, port: 5432, targetPort: postgres}
+{{- end }}

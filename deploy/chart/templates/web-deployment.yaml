@@ -1,0 +1,27 @@
+{{- $web := .Values.web -}}
+{{- if gt (int $web.replicas) 1 -}}
+{{- fail "web.replicas must be 0 or 1: the app keeps circuits, edit leases and job queues in its process" -}}
+{{- end -}}
+{{- $ctx := dict "root" . "component" "web" -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "blocwerk.fullname" . }}
+  labels:
+    {{- include "blocwerk.labels" $ctx | nindent 4 }}
+spec:
+  replicas: {{ $web.replicas }}
+  # One instance and an RWO volume: replaced, never rolled.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "blocwerk.selectorLabels" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "blocwerk.selectorLabels" $ctx | nindent 8 }}
+      annotations:
+        blocwerk.app/rollout: {{ include "blocwerk.fingerprint" (include "blocwerk.web.podSpec" .) | quote }}
+    spec:
+      {{- include "blocwerk.web.podSpec" . | nindent 6 }}

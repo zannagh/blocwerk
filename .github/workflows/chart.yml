@@ -1,0 +1,94 @@
+name: Helm chart
+
+# deploy/chart: lint, render and validate it on every change (deploy/chart/tests/), compare it with the production
+# compose file, and publish it to oci://ghcr.io/zannagh/charts when a release is published. The chart version is the
+# app version (the bundle): release vX.Y.Z publishes chart X.Y.Z with appVersion X.Y.Z, whose web image defaults to
+# ghcr.io/zannagh/blocwerk:X.Y.Z (built by main.yml from the same release).
+
+on:
+  pull_request:
+    paths:
+      - 'deploy/chart/**'
+      - 'docker/docker-compose.prod.yml'
+      - '.github/workflows/chart.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'deploy/chart/**'
+      - 'docker/docker-compose.prod.yml'
+      - '.github/workflows/chart.yml'
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  HELM_VERSION: v4.3.0
+  KUBECONFORM_VERSION: v0.8.0
+
+jobs:
+  test:
+    name: Lint, render and compare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      # yq (mikefarah v4) and shellcheck come with the runner image.
+      - name: Install kubeconform
+        run: |
+          curl -sSfL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" |
+            tar -xz -C /usr/local/bin kubeconform
+          kubeconform -v
+
+      - name: Chart tests (lint, template, kubeconform, render rules)
+        run: deploy/chart/tests/chart-test.sh
+
+      - name: Chart vs docker/docker-compose.prod.yml
+        run: deploy/chart/tests/compare-compose.sh
+
+  publish:
+    name: Publish to ghcr.io/zannagh/charts
+    needs: test
+    if: github.event_name == 'release' && !github.event.release.prerelease
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Version from the release tag
+        id: version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version="${TAG#v}"
+          version="${version#V}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::release tag '$TAG' is not vX.Y.Z"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Package and push
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          helm package deploy/chart --version "$VERSION" --app-version "$VERSION" --destination dist
+          printf '%s' "$GHCR_TOKEN" | helm registry login ghcr.io --username "$GHCR_USER" --password-stdin
+          helm push "dist/blocwerk-$VERSION.tgz" oci://ghcr.io/zannagh/charts

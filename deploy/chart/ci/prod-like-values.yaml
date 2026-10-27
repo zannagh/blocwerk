@@ -1,0 +1,40 @@
+# CI render that mirrors the infra prod environment's shape (cluster/apps/apps/blocwerk/values.yaml in the infra
+# repo): existing claims and secrets, ingress on, splat-cpu off, geometry capped for the VPS budget, cutover replicas.
+imagePullSecrets:
+  - name: ghcr-pull
+nodeSelector:
+  location: cloud
+secrets:
+  appsettings: blocwerk-appsettings
+web:
+  replicas: 0
+  env:
+    SMTP__PORT: "587"
+    SMTP__SECURITY: StartTls
+    RUNNERS__MODE: always
+    CAPTURE__RETENTIONDRYRUN: "false"
+    BLOCWERK__SERVER__TRUSTEDPROXIES__0: 10.42.0.0/16
+  ingress:
+    enabled: true
+    className: traefik
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+    host: blocwerk.app
+    tlsSecretName: blocwerk-app-tls
+  persistence:
+    data:
+      existingClaim: blocwerk-data
+postgres:
+  persistence:
+    existingClaim: blocwerk-postgres
+geometry:
+  replicas: 0
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: "2"
+      memory: 1536Mi
+splatCpu:
+  enabled: false
