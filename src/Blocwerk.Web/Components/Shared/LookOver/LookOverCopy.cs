@@ -21,6 +21,7 @@ internal static partial class LookOverCopy
         LookOverFindingKind.NotFound => "Not found again",
         LookOverFindingKind.PossiblyRemoved => "Possibly removed",
         LookOverFindingKind.UnsureMatch => "Unsure matches",
+        LookOverFindingKind.SuspectedMove => "May have moved",
         LookOverFindingKind.SameSpot => "Old and new hold on the same spot",
         LookOverFindingKind.MatchedToHandPlaced => "Hand-placed holds merged onto a detection",
         LookOverFindingKind.HandPlacedAmbiguous => "Hand-placed holds with several detections",
@@ -36,6 +37,7 @@ internal static partial class LookOverCopy
         LookOverFindingKind.NotFound => "Not found again",
         LookOverFindingKind.PossiblyRemoved => "Possibly removed",
         LookOverFindingKind.UnsureMatch => "Unsure match",
+        LookOverFindingKind.SuspectedMove => "May have moved",
         LookOverFindingKind.SameSpot => "Old and new hold on the same spot",
         LookOverFindingKind.MatchedToHandPlaced => "Matched to hand-placed hold (now detected)",
         LookOverFindingKind.HandPlacedAmbiguous => "Hand-placed hold, several detections",
@@ -68,6 +70,8 @@ internal static partial class LookOverCopy
             LookOverFindingKind.PossiblyRemoved =>
                 $"The update did not find {hold} again, and to it the spot looks like bare wall on the new photo and in the 3D model. It was kept where it was.",
             LookOverFindingKind.UnsureMatch => $"The update carried {hold} onto a detection that may not be the same hold. Compare the two photos.",
+            LookOverFindingKind.SuspectedMove =>
+                $"Measured on the 3D model, {hold} may have moved since the last photos. Nothing was changed and no boulder was marked. Compare the two photos.",
             LookOverFindingKind.SameSpot => $"The update did not find {hold} again and kept it where it was, and it detected a new hold on the same spot. Both are on the wall now.",
             LookOverFindingKind.MatchedToHandPlaced =>
                 "A hold placed by hand was merged onto a detected hold: it kept its boulders and settings and took the detection's position and outline. "
@@ -97,6 +101,7 @@ internal static partial class LookOverCopy
         return f.Kind switch
         {
             LookOverFindingKind.UnsureMatch => "Same hold",
+            LookOverFindingKind.SuspectedMove => "Not moved",
             LookOverFindingKind.ReplacedByOther => f.Converted ? "Keep this hold" : "Keep old hold here",
             LookOverFindingKind.NotFound => "Still there",
             LookOverFindingKind.PossiblyRemoved => "Keep hold",
@@ -105,6 +110,19 @@ internal static partial class LookOverCopy
             LookOverFindingKind.UnsureLink => "Yes",
             _ => "Understood",
         };
+    }
+
+    /// <summary>The name of "it moved" for a hold that may have moved.</summary>
+    public const string ConfirmMoveLabel = "It moved";
+
+    /// <summary>What confirming a move does, asked before it is done.</summary>
+    public static string ConfirmMoveQuestion(LookOverFindingView f)
+    {
+        var count = f.Boulders.Count;
+        var boulders = count == 0
+            ? "No current boulder uses it"
+            : $"{PlainCopy.Plural(count, "boulder")} ({Names(f)}) {(count == 1 ? "is" : "are")} marked for review";
+        return $"The hold moved? It is marked as changed. {boulders}. Nothing is removed.";
     }
 
     /// <summary>The name of "take the link apart" for an unsure link.</summary>
@@ -179,6 +197,7 @@ internal static partial class LookOverCopy
             LookOverAnswer.UseNewHold => "Merged into the new hold",
             LookOverAnswer.AddHold => "Added as a hold",
             LookOverAnswer.Unlink => "Two holds",
+            LookOverAnswer.ConfirmMove => "It moved",
             _ => f.KeptAtUpdate ? "Still here" : SettleLabel(f),
         };
         return f.AnsweredBy is { } who ? $"{what} · {who}" : what;
@@ -196,6 +215,8 @@ internal static partial class LookOverCopy
             LookOverAnswer.UseNewHold => NewHoldAllResult(f.ClearedBoulders),
             LookOverAnswer.Reassign => "Merged into the new hold. Undo under Wall settings › Possible duplicate holds.",
             LookOverAnswer.Moved => "Marked for review: check its outline in the hold editor.",
+            LookOverAnswer.ConfirmMove when boulders == 0 => "Marked as changed; no boulder uses it.",
+            LookOverAnswer.ConfirmMove => $"Marked as changed; {PlainCopy.Plural(boulders, "boulder")} {(boulders == 1 ? "is" : "are")} marked for review.",
             LookOverAnswer.Unlink => "The link is taken apart; both holds stay. Link them again in the hold editor if they are one hold.",
             LookOverAnswer.AddHold => f.CanUndo ? "It is on the wall now, marked for review." : "It is on the wall now; remove it in the hold editor if it is wrong.",
             LookOverAnswer.Settle when f.ClearedBoulders > 0 =>

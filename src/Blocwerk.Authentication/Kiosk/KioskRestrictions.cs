@@ -134,9 +134,11 @@ public static class KioskRestrictions
         "/tools",
         "/guides",
 
-        // Static content pages.
+        // Static content pages. /whats-new is the release notes the version in the Info popover links
+        // to; the popover shows on a tablet too, next to About and Privacy.
         "/about",
         "/privacy",
+        "/whats-new",
 
         // Where the cookie handler lands a forbidden signed-in user. Static text and a link home;
         // kiosk refusals are answered by the middleware and never come here.
@@ -217,6 +219,12 @@ public static class KioskRestrictions
         "Blocwerk.Web.Components.Pages.Home",
         "Blocwerk.Web.Components.Pages.About",
         "Blocwerk.Web.Components.Pages.Privacy",
+
+        // The release notes behind the version in the Info popover. Same footing as About and Privacy:
+        // static SSR, [AllowAnonymous], read-only, nothing to hand out. The notes come from GitHub
+        // through the server (cached, sanitised); their links open GitHub in a new tab and carry
+        // nothing of the session, so the blast radius stays on the tablet.
+        "Blocwerk.Web.Components.Pages.WhatsNew",
         "Blocwerk.Web.Components.Pages.AccessDenied",
         "Blocwerk.Web.Components.Pages.Activity",
         "Blocwerk.Web.Components.Pages.ActivityView",

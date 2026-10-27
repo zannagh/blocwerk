@@ -40,7 +40,10 @@ public sealed partial class GpuJobQueue
     }
 
     /// <summary>Whether a runner that may serve the wall, finds holds and takes work (online, not paused) is there right now.</summary>
-    public async Task<bool> HoldsRunnerReadyAsync(Guid wallId, CancellationToken ct)
+    public Task<bool> HoldsRunnerReadyAsync(Guid wallId, CancellationToken ct) => RunnerReadyAsync(wallId, GpuJobKind.DetectHolds, ct);
+
+    /// <summary>Whether a runner that may serve the wall, takes jobs of <paramref name="kind"/> and takes work (online, not paused) is there now.</summary>
+    public async Task<bool> RunnerReadyAsync(Guid wallId, GpuJobKind kind, CancellationToken ct)
     {
         if (options.Mode == GpuRunnerMode.Off)
         {
@@ -53,7 +56,7 @@ public sealed partial class GpuJobQueue
             .Select(rw => rw.Runner.Capabilities).ToListAsync(ct);
         var shared = await Approvals(db).Where(a => a.WallId == wallId && a.Runner.LastSeenAt >= online && a.Runner.Paused != true)
             .Select(a => a.Runner.Capabilities).ToListAsync(ct);
-        return own.Concat(shared).Any(c => RunnerCapabilities.Allows(c, GpuJobKind.DetectHolds));
+        return own.Concat(shared).Any(c => RunnerCapabilities.Allows(c, kind));
     }
 
     /// <summary>
@@ -117,6 +120,7 @@ public sealed partial class GpuJobQueue
     {
         GpuJobKind.Textures => "rendered; installing on the server",
         GpuJobKind.DetectHolds => "holds found; matching them on the server",
+        GpuJobKind.RegisterPanels => "panel photos registered",
         _ => "trained; finishing on the server",
     };
 
@@ -131,7 +135,7 @@ public sealed partial class GpuJobQueue
             case GpuJobKind.Textures:
                 NotifyTextures(job.CaptureId);
                 break;
-            case GpuJobKind.DetectHolds:
+            case GpuJobKind.DetectHolds or GpuJobKind.RegisterPanels:
                 break;
             default:
                 await MarkCaptureWithoutSplatAsync(db, job, reason, ct);

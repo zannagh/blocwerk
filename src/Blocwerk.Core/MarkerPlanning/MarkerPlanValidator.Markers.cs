@@ -23,6 +23,15 @@ public static partial class MarkerPlanValidator
                 issues.Add(Error("marker-id-range", $"Id {m.Id} doesn't exist in {ArucoDict4X4.DictionaryName} — use ids 0 to {ArucoDict4X4.Count - 1}.", m.Segment, m.Id));
             }
 
+            if (MarkerIdPolicy.IsRetired(m.Id))
+            {
+                issues.Add(Warning(
+                    "marker-id-retired",
+                    $"Id {m.Id} is retired: dark holds with a bright bolt read as it, so capture photos ignore it. Give this marker another id (delete it and add a new one) and print its new sheet.",
+                    m.Segment,
+                    m.Id));
+            }
+
             if (!segments.TryGetValue(m.Segment, out var segment))
             {
                 issues.Add(Error("marker-segment", $"Marker {m.Id} sits on segment {m.Segment}, which doesn't exist.", m.Segment, m.Id));

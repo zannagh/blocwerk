@@ -16,7 +16,8 @@ public class MarkerGeneratorTests
         var plan = MarkerGenerator.Generate(AtticMarkerPlan.Blank, MarkerGenerationOptions.Default);
 
         Assert.InRange(plan.Markers.Count, 12, ArucoDict4X4.Count);
-        Assert.Equal(Enumerable.Range(0, plan.Markers.Count), plan.Markers.Select(m => m.Id));
+        Assert.Equal(MarkerIdPolicy.IssueOrder.Take(plan.Markers.Count), plan.Markers.Select(m => m.Id));
+        Assert.DoesNotContain(plan.Markers, m => MarkerIdPolicy.IsRetired(m.Id));
         Assert.DoesNotContain(MarkerPlanValidator.Validate(plan), i => i.Severity == PlanIssueSeverity.Error);
         Assert.DoesNotContain(MarkerPlanValidator.Validate(plan), i => i.Code == "marker-too-small");
         foreach (var m in plan.Markers)

@@ -21,7 +21,10 @@ public static class RunnerCapabilities
     /// <summary>Finds holds in capture photos (ONNX Runtime is importable on the runner).</summary>
     public const string DetectHolds = "detect-holds";
 
-    private static readonly string[] Known = [Splat, Textures, DetectHolds];
+    /// <summary>Registers panel photos into a capture's cameras (COLMAP is on the runner).</summary>
+    public const string RegisterPanels = "register-panels";
+
+    private static readonly string[] Known = [Splat, Textures, DetectHolds, RegisterPanels];
 
     /// <summary>The stored form of a hello's list: known names only, de-duplicated, comma separated; null when none was sent.</summary>
     public static string? Store(IEnumerable<string>? reported)
@@ -35,6 +38,7 @@ public static class RunnerCapabilities
     {
         GpuJobKind.Textures => Has(stored, Textures),
         GpuJobKind.DetectHolds => Has(stored, DetectHolds),
+        GpuJobKind.RegisterPanels => Has(stored, RegisterPanels),
         _ => stored is null || Has(stored, Splat),
     };
 
@@ -47,6 +51,7 @@ public static class RunnerCapabilities
     {
         GpuJobKind.Textures => Textures,
         GpuJobKind.DetectHolds => DetectHolds,
+        GpuJobKind.RegisterPanels => RegisterPanels,
         _ => Splat,
     };
 }

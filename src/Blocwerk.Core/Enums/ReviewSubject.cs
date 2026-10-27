@@ -15,4 +15,7 @@ public enum ReviewSubject
 
     /// <summary>A detection the triage left out unless a person adds it.</summary>
     LeftOut = 2,
+
+    /// <summary>A carried hold whose measurement says it may have moved; it stays unless a person says it moved.</summary>
+    Move = 3,
 }

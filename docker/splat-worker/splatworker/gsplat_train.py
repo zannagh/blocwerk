@@ -50,6 +50,13 @@ BEHIND_EVERY, BEHIND_STRIDE = 4, 4
 AIR_EVERY = 100  # --aniso-air-reg: the air mask (gsplat_zones.ZoneMap.air_mask) is refreshed this often
 
 
+def is_vram_exhausted(error):
+    """Whether a RuntimeError is a full GPU in disguise: under WSL2 the expandable-segments allocator
+    (PYTORCH_CUDA_ALLOC_CONF, gsplat_trainer.train) gets CUDA_ERROR_NOT_READY from cuMemCreate when the VRAM is
+    used up, and torch raises "CUDA driver error: device not ready" instead of an OutOfMemoryError."""
+    return "CUDA driver error: device not ready" in str(error)
+
+
 def air_due(step, air, n, every=AIR_EVERY):
     """Whether the air mask must be recomputed before `step`: first, after growth (n changed), and on the step
     right after MCMC's refine step (step % every == 0 relocates dead splats onto live ones at the same count:
@@ -299,7 +306,9 @@ def main(argv=None):
                 print(f"eval wall psnr {w['psnr']:.3f} ssim {w['ssim']:.4f} views {w['views']}", flush=True)
         print("writing splats", flush=True)
         n = write_ply(params, a.out, frame=views.frame)
-    except torch.cuda.OutOfMemoryError as e:
+    except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
+        if not isinstance(e, torch.cuda.OutOfMemoryError) and not is_vram_exhausted(e):
+            raise
         print(f"GSPLAT_OOM {str(e).splitlines()[0][:200]}", flush=True)
         return OOM_EXIT
     print(f"wrote {n} splats; peak VRAM {torch.cuda.max_memory_reserved() >> 20} MB", flush=True)

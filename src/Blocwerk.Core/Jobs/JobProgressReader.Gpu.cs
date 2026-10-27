@@ -66,7 +66,7 @@ public sealed partial class JobProgressReader
         var kind = job.Kind switch
         {
             GpuJobKind.Textures => JobKinds.GpuTextures,
-            GpuJobKind.DetectHolds => JobKinds.GpuHolds,
+            GpuJobKind.DetectHolds or GpuJobKind.RegisterPanels => JobKinds.GpuHolds,
             _ => JobKinds.GpuTraining,
         };
         var stage = TrainingStage(job, state);
@@ -137,6 +137,7 @@ public sealed partial class JobProgressReader
             {
                 GpuJobKind.Textures => "rendering",
                 GpuJobKind.DetectHolds => "detecting",
+                GpuJobKind.RegisterPanels => "registering",
                 _ => "training",
             };
     }

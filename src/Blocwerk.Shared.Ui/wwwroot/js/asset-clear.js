@@ -131,7 +131,7 @@ window.bwAssetClear = (function (win) {
         await Promise.all(walls.map(wallId => Cache().manifestChanged(wallId)));
     }
 
-    const refreshMarks = () => (win.bwAssetReport ? win.bwAssetReport.marks.refresh() : Promise.resolve());
+    const refreshMarks = () => (win.bwAssetReport ? win.bwAssetReport.readiness.check() : Promise.resolve());
 
     async function clear() {
         const state = await started();

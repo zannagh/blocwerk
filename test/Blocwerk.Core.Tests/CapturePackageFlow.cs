@@ -2,11 +2,13 @@
 // See License in the project root for license information.
 
 using System.Text.Json;
+using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Capture.Replay;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Runners;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 
 namespace Blocwerk.Core.Tests;
 
@@ -23,7 +25,7 @@ internal sealed class CapturePackageFlow : IDisposable
         Service = new CapturePackageService(
             harness.RootContextFactory, harness.CurrentUser, runner.Scenario.Files, runner.Scenario.Queue,
             new FakeComputeJobClientFactory(runner.Scenario.Client, runner.Scenario.SplatClient), NullLogger<CapturePackageService>.Instance,
-            runner.Runners.Options, Disk);
+            runner.Runners.Options, Disk, refinements: Refinements);
     }
 
     public WallTestHarness Harness { get; }
@@ -33,6 +35,9 @@ internal sealed class CapturePackageFlow : IDisposable
     public CapturePackageService Service { get; }
 
     public FakeDiskSpace Disk { get; } = new();
+
+    /// <summary>The refinement queue the import hands holds without a matching carried result to.</summary>
+    public IHoldRefinementQueue Refinements { get; } = Substitute.For<IHoldRefinementQueue>();
 
     public Guid CaptureId => Runner.CaptureId;
 
@@ -89,6 +94,18 @@ internal sealed class CapturePackageFlow : IDisposable
         {
             await Service.PutFileAsync(manifest.CaptureId, file.Name, new MemoryStream(bytes[file.Name]), CancellationToken.None);
         }
+    }
+
+    /// <summary>The manifest as a format-1 package (before the computed results were carried) would have it.</summary>
+    public static CapturePackageManifest WithoutResults(CapturePackageManifest manifest)
+    {
+        var views = manifest.Rows.Results is { } r ? Capture.SplatLodLadder.Files(r.Splat).OfType<string>().ToHashSet() : [];
+        return manifest with
+        {
+            FormatVersion = 1,
+            Rows = manifest.Rows with { Results = null },
+            Files = manifest.Files.Where(x => !views.Contains(x.Name)).ToList(),
+        };
     }
 
     public void Dispose() => Runner.Dispose();

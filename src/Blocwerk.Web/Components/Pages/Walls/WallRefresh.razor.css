@@ -2,7 +2,7 @@
    short page; the check step (.is-one-screen) is exactly the screen between the top bar and the tab bar and does not
    scroll: numbers, the card deck, Apply at the bottom. Its list view scrolls like any page. */
 .refresh-page { max-width: 1280px; margin: 0 auto; padding: 6px 12px 48px; display: flex; flex-direction: column; gap: 8px; }
-.refresh-page.is-one-screen { height: calc(100dvh - var(--topbar-h, 0px) - var(--bottomnav-h, 0px)); min-height: 440px; padding-bottom: 8px; }
+.refresh-page.is-one-screen { height: calc(var(--bw-app-h, 100dvh) - var(--topbar-h, 0px) - var(--bottomnav-h, 0px)); min-height: 440px; padding-bottom: 8px; }
 .refresh-page > p { margin: 0; }
 .refresh-header { position: relative; flex: none; }
 .refresh-page ::deep .refresh-tool {

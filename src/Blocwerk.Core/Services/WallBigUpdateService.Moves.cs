@@ -139,7 +139,7 @@ public partial class WallBigUpdateService
     /// <summary>
     /// One carried pair's move. The rotation and the measure come first; a pair whose new outline explains the measured shift
     /// (<see cref="ReOutlineRule"/>: the outline changed, the hold did not turn, the shift is small) stayed. A move a person
-    /// confirmed is always measured.
+    /// confirmed is always measured; a measured move nobody confirmed is only suspected (offered in the review, flags nothing).
     /// </summary>
     private PlannedMove? PlanMove(Hold old, Hold twin, BigUpdateConfirmation confirmation, PanelMoveScope panel, HoldMoveMeasure? threeD, bool confirmedMove)
     {
@@ -160,7 +160,7 @@ public partial class WallBigUpdateService
             return new PlannedMove(old.Id, twin.Id, measure with { Source = HoldMoveSource.ReOutline }, HoldMoveOutcome.Stayed);
         }
 
-        return new PlannedMove(old.Id, twin.Id, measure, HoldMovePolicy.Classify(measure, moveOptions, confirmedMove));
+        return new PlannedMove(old.Id, twin.Id, measure, HoldMovePolicy.Unconfirmed(HoldMovePolicy.Classify(measure, moveOptions, confirmedMove), confirmedMove));
     }
 
     /// <summary>

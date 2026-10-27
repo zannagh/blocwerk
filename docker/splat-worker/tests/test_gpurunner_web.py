@@ -4,6 +4,7 @@ capped job history and the running job's ETA (history.py)."""
 import http.client
 import json
 import socket
+from types import SimpleNamespace
 
 import pytest
 
@@ -194,3 +195,11 @@ def test_damaged_history_rows_do_not_blank_the_page(page):
     runner.snapshot = lambda: {**StubRunner.snapshot(runner), "jobs": bad + good}
     status, _, html = call(ui, "GET", "/")
     assert status == 200 and "Jobs (newest first)" in html and "1 min 15 s" in html
+
+
+def test_the_log_never_carries_the_token(tmp_path, caplog, monkeypatch):
+    runner = SimpleNamespace(control=SimpleNamespace(path=str(tmp_path / "state" / "control.json")))
+    monkeypatch.setattr(web, "StatusPage", lambda r, h, p: SimpleNamespace(url="http://127.0.0.1:8190/", token=TOKEN))
+    with caplog.at_level("INFO", logger="gpurunner"):
+        web.start_status_page(runner, {"RUNNER_UI_PORT": "8190"})
+    assert TOKEN not in caplog.text and "fingerprint" in caplog.text

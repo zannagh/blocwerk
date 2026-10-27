@@ -3,7 +3,7 @@
 .wall3d-page {
     display: flex;
     flex-direction: column;
-    height: calc(100dvh - var(--topbar-h, 56px) - var(--bottomnav-h, 0px));
+    height: calc(var(--bw-app-h, 100dvh) - var(--topbar-h, 56px) - var(--bottomnav-h, 0px));
     min-height: 360px;
 }
 

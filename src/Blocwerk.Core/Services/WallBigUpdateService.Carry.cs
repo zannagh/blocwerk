@@ -185,11 +185,17 @@ public partial class WallBigUpdateService
 
         if (newHoldId is { } twinId && stagedTwins.TryGetValue(twinId, out var staged))
         {
+            var move = movePlan.For(oldHold.Id) is { } m && m.NewHoldId == staged.Id ? m : null;
             if (claimedTwins.Add(twinId))
             {
                 staged.Generation = newGen;
                 CopyCuratedFields(oldHold, staged);
                 staged.NeedsReview = changed || oldHold.NeedsReview;
+                if (move is { Outcome: HoldMoveOutcome.Suspected })
+                {
+                    KeepAtWarpedSpot(staged, oldHold, warpPositions?.GetValueOrDefault(oldHold.Id));
+                }
+
                 CopyPlacementFields(
                     oldHold, staged, changed, warpPositions?.GetValueOrDefault(oldHold.Id),
                     staged.WallPanelId is { } panelId && photoSizes.TryGetValue(panelId, out var size) ? size : null);
@@ -211,7 +217,6 @@ public partial class WallBigUpdateService
                 MergeCuratedFields(oldHold, staged, changed);
             }
 
-            var move = movePlan.For(oldHold.Id) is { } m && m.NewHoldId == staged.Id ? m : null;
             await RepointBouldersAsync(db, oldHold.Id, staged.Id, newGen, changed, move);
             RecordMove(AddGenerationLink(db, wallId, oldHold.Id, staged.Id, linkKind, oldHold.Generation, newGen, userId), move);
             return staged;

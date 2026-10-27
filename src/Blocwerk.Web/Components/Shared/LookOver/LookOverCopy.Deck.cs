@@ -20,6 +20,7 @@ internal static partial class LookOverCopy
         LookOverFindingKind.NotFound => "Not found again",
         LookOverFindingKind.PossiblyRemoved => "Possibly removed",
         LookOverFindingKind.UnsureMatch => "Unsure matches",
+        LookOverFindingKind.SuspectedMove => "May have moved",
         LookOverFindingKind.SameSpot => "Same spot",
         LookOverFindingKind.MatchedToHandPlaced => "Hand-placed, merged",
         LookOverFindingKind.HandPlacedAmbiguous => "Hand-placed, several",

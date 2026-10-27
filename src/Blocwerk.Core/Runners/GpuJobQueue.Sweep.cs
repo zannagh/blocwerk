@@ -45,6 +45,7 @@ public sealed partial class GpuJobQueue
         online == 0 && paused > 0 ? "waiting for a 3D runner (paused)"
         : online == 0 && kind == GpuJobKind.Textures ? "waiting for a 3D runner that can render wall textures (none online)"
         : online == 0 && kind == GpuJobKind.DetectHolds ? "waiting for a 3D runner that can find holds (none online)"
+        : online == 0 && kind == GpuJobKind.RegisterPanels ? "waiting for a 3D runner that can register panel photos (none online)"
         : online == 0 ? $"waiting for a 3D runner that can train {CaptureSplatDocuments.QualityName(quality)} (none online)"
         : busy >= online ? $"waiting for a 3D runner ({online} online, busy)"
         : busy == 0 ? $"waiting for a 3D runner ({online} online)"
@@ -83,6 +84,7 @@ public sealed partial class GpuJobQueue
             {
                 GpuJobKind.Textures => $"no 3D runner rendered the wall textures within {days} days",
                 GpuJobKind.DetectHolds => $"no 3D runner looked for holds within {days} days",
+                GpuJobKind.RegisterPanels => $"no 3D runner registered the panel photos within {days} days",
                 _ => $"no 3D runner took the photo-real view within {days} days",
             };
             var cancelled = await db.GpuJobs.Where(j => j.Id == job.Id && j.Status == GpuJobStatus.Queued)

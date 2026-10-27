@@ -247,6 +247,10 @@ public partial class AccountController : Controller
         // Drop the remembered method so an explicit logout isn't immediately undone by silent re-auth.
         Response.Cookies.Delete(RememberedMethodCookie);
 
+        // The boulder list's remembered filters (Blocwerk.Web BoulderListFilterCookie) are about this account ("done by
+        // me", "my favourites"), so they leave the device with it.
+        Response.Cookies.Delete("blocwerk-boulder-filters");
+
         // A kiosk session ending (release, idle) keeps the tablet's cache: every identity on it shares the wall's
         // partition, and nothing member-only is cached there (see SiteDataClearing).
         if (_kioskContext.IsKiosk)
