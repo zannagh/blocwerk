@@ -16,6 +16,8 @@ public sealed partial class GpuJobQueue
     {
         await using var db = dbContextFactory.CreateDbContext();
         var jobs = await CancelActiveAsync(db, [captureId], reason, Now, ct, GpuJobKind.Splat);
+        jobs.AddRange(await CancelActiveAsync(db, [captureId], reason, Now, ct, GpuJobKind.SplatPrepare));
+        jobs.AddRange(await CancelActiveAsync(db, [captureId], reason, Now, ct, GpuJobKind.SplatFinish));
         var spent = jobs.Select(KeepOnlyInstalledPreview).ToList();
         await db.SaveChangesAsync(ct);
         foreach (var (job, paths) in jobs.Zip(spent))

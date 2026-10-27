@@ -207,10 +207,10 @@ internal sealed class FakeComputeJobClient : IComputeJobClient
 }
 
 /// <summary>Hands out the fake geometry client, and the splat client (not configured unless given).</summary>
-internal sealed class FakeComputeJobClientFactory(FakeComputeJobClient client, FakeComputeJobClient? splat = null)
+internal sealed class FakeComputeJobClientFactory(FakeComputeJobClient client, IComputeJobClient? splat = null)
     : IComputeJobClientFactory
 {
-    private readonly FakeComputeJobClient splatClient =
+    private readonly IComputeJobClient splatClient =
         splat ?? new FakeComputeJobClient { Service = ComputeServiceKind.Splat, IsConfigured = false };
 
     public IComputeJobClient Get(ComputeServiceKind service) =>

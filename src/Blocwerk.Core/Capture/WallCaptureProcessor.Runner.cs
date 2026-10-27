@@ -87,8 +87,9 @@ public sealed partial class WallCaptureProcessor
             return SplatOutcome.AwaitingRunner;
         }
 
+        // On runners only (SplatOnRunners) an all-in-one job id from before is no reason to train on the server.
         if (capture.SplatJobId?.StartsWith(PrepareMark, StringComparison.Ordinal) == true
-            || (capture.SplatJobId is null && await UseRunnerAsync(capture, client, ct)))
+            || ((capture.SplatJobId is null || gpuJobs.Options.SplatOnRunners) && await UseRunnerAsync(capture, client, ct)))
         {
             await PrepareForRunnerAsync(capture, modelId, client, ct);
             return SplatOutcome.AwaitingRunner;
@@ -103,7 +104,7 @@ public sealed partial class WallCaptureProcessor
         var quality = capture.SplatQuality ?? SplatQuality.High;
 
         // Ultra waits for an ultra runner even when none is online: the splat worker would only train it as Max.
-        var wanted = gpuJobs!.Options.Mode == GpuRunnerMode.Always
+        var wanted = gpuJobs!.Options.Mode == GpuRunnerMode.Always || gpuJobs.Options.SplatOnRunners
                      || await gpuJobs.HasEligibleRunnerOnlineAsync(capture.WallId, quality, ct)
                      || (quality == SplatQuality.Ultra && await gpuJobs.UltraAvailableForWallAsync(capture.WallId, ct));
         if (!wanted)
@@ -131,7 +132,7 @@ public sealed partial class WallCaptureProcessor
 
     private async Task PrepareForRunnerAsync(WallCapture capture, Guid modelId, IComputeJobClient client, CancellationToken ct)
     {
-        var resumed = capture.SplatJobId?[PrepareMark.Length..];
+        var resumed = capture.SplatJobId?.StartsWith(PrepareMark, StringComparison.Ordinal) == true ? capture.SplatJobId[PrepareMark.Length..] : null;
         if (resumed is null)
         {
             await PrepareVideoFramesAsync(capture.Id, ct);
@@ -145,9 +146,23 @@ public sealed partial class WallCaptureProcessor
             new JobStage(capture.Id, WallCaptureStatus.Splatting, VideoBand, PrepareEnd, "Photo-real view", CaptureSplatDocuments.Describe),
             ct);
         await SetStageAsync(capture.Id, WallCaptureStatus.Splatting, PrepareEnd, "Photo-real view: packing the photos for a 3D runner", ct);
-        var (bundle, bytes, sha) = await StoreBundleAsync(status.JobId!, client, ct);
-        var prepared = await client.DownloadFileAsync(status.JobId!, PreparedFile, MaxPreparedBytes, ct);
-        await KeepSparsePointsAsync(capture, status.JobId!, client, ct);
+        try
+        {
+            await QueueTrainingAsync(capture, modelId, status.JobId!, client, ct);
+        }
+        finally
+        {
+            // Read (or unreadable): a prepare that ran on a runner drops its input; its result stays while referenced.
+            await client.DoneWithAsync(status.JobId!, CancellationToken.None);
+        }
+    }
+
+    /// <summary>Takes the prepare's bundle, state and sparse model and queues the training for a runner.</summary>
+    private async Task QueueTrainingAsync(WallCapture capture, Guid modelId, string prepareJobId, IComputeJobClient client, CancellationToken ct)
+    {
+        var (bundle, bytes, sha) = await StoreBundleAsync(prepareJobId, client, ct);
+        var prepared = await client.DownloadFileAsync(prepareJobId, PreparedFile, MaxPreparedBytes, ct);
+        await KeepSparsePointsAsync(capture, prepareJobId, client, ct);
         if (capture.GeometryMode == WallCaptureGeometryMode.Features)
         {
             prepared = await WithGeometryAsync(prepared, modelId, ct);
@@ -209,10 +224,17 @@ public sealed partial class WallCaptureProcessor
                 client,
                 new JobStage(capture.Id, WallCaptureStatus.Splatting, 0.96, 0.98, "Photo-real view", CaptureSplatDocuments.Describe),
                 ct);
-            await StoreSplatAsync(capture.Id, modelId, status.JobId!, client, ct);
+            try
+            {
+                await StoreSplatAsync(capture.Id, modelId, status.JobId!, client, ct);
+            }
+            finally
+            {
+                await client.DoneWithAsync(status.JobId!, CancellationToken.None);
+            }
         }
         catch (Exception ex) when (ex is CaptureFailedException or InvalidDataException or IOException
-                                   || (ex is ComputeJobException c && !IsWorkerAbsent(c)))
+                                   || (ex is ComputeJobException c && !IsWorkerAbsent(c) && c.Kind != ComputeFailureKind.Deferred))
         {
             // An unreachable worker keeps the delivered result: the sweep hands it back later (GpuJobQueue.SweepAsync).
             // A failed re-finish is restored by SplatAsync (RestoreAfterRefinishAsync): the view before is still installed.
@@ -257,6 +279,6 @@ public sealed partial class WallCaptureProcessor
         };
         logger.LogInformation(
             "Finishing GPU job {JobId} on the splat worker ({Bytes} bytes of {Format})", job.Id, new FileInfo(splat).Length, format);
-        return await client.SubmitMultipartAsync(FinishKind, parts, ct);
+        return await client.SubmitMultipartAsync(FinishKind, parts, new ComputeJobOwner(job.WallId, job.CaptureId, job.GeometryModelId), ct);
     }
 }

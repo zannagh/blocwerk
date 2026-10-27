@@ -115,6 +115,12 @@ public enum ComputeFailureKind
 
     /// <summary>The worker answered something that is not protocol v1.</summary>
     Protocol,
+
+    /// <summary>
+    /// The job waits for a 3D runner (<c>SPLATSERVICE__ONRUNNERS</c>): nothing failed, the caller stops waiting and is woken when
+    /// a runner delivers the result. Asking again later resumes it.
+    /// </summary>
+    Deferred,
 }
 
 /// <summary>A compute worker failure. <see cref="Exception.Message"/> is safe to show an admin.</summary>
@@ -130,4 +136,8 @@ public sealed class ComputeJobException(ComputeFailureKind kind, string message,
     public static ComputeJobException TooLarge(string name, long maxBytes) => new(
         ComputeFailureKind.Protocol,
         $"The 3D computation service sent a file ({name}) larger than {maxBytes / (1024 * 1024)} MB.");
+
+    /// <summary>The job waits for a 3D runner (<see cref="ComputeFailureKind.Deferred"/>).</summary>
+    public static ComputeJobException Deferred() =>
+        new(ComputeFailureKind.Deferred, "Waiting for a 3D runner: it will be done once a runner becomes available.");
 }

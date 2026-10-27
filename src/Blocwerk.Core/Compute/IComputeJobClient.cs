@@ -29,6 +29,13 @@ public interface IComputeJobClient
     /// <summary><c>POST /v1/jobs/{kind}</c> as multipart/form-data. Returns the job id.</summary>
     Task<string> SubmitMultipartAsync(string kind, IReadOnlyList<ComputeJobPart> parts, CancellationToken ct);
 
+    /// <summary>
+    /// <see cref="SubmitMultipartAsync(string, IReadOnlyList{ComputeJobPart}, CancellationToken)"/> for <paramref name="owner"/>'s
+    /// capture. An HTTP worker does not need to know whose job it is; a client that queues for a 3D runner does.
+    /// </summary>
+    Task<string> SubmitMultipartAsync(string kind, IReadOnlyList<ComputeJobPart> parts, ComputeJobOwner owner, CancellationToken ct) =>
+        SubmitMultipartAsync(kind, parts, ct);
+
     /// <summary><c>GET /v1/jobs/{id}</c>.</summary>
     Task<ComputeJobStatus> GetStatusAsync(string jobId, CancellationToken ct);
 
@@ -58,6 +65,12 @@ public interface IComputeJobClient
 
     /// <summary><c>DELETE /v1/jobs/{id}</c>. Best effort: failures are logged, never thrown.</summary>
     Task CancelAsync(string jobId, CancellationToken ct);
+
+    /// <summary>
+    /// The caller read what it needs of the job (or gave up on it) and will not wait for it again: a client that keeps results
+    /// itself may drop the job's input now. An HTTP worker forgets its jobs on its own (nothing happens).
+    /// </summary>
+    Task DoneWithAsync(string jobId, CancellationToken ct) => Task.CompletedTask;
 }
 
 /// <summary>Resolves the client of a configured worker. A new worker is a new enum value + settings.</summary>
@@ -72,6 +85,9 @@ public enum ComputeServiceKind
     /// <summary>wall-geometry: kinds <c>solve</c> and <c>textures</c>.</summary>
     Geometry,
 
-    /// <summary>splat-worker (future): kind <c>splat</c>.</summary>
+    /// <summary>
+    /// splat-worker: kinds <c>splat</c>, <c>splat-prepare</c>, <c>splat-finish</c>. With <c>SPLATSERVICE__ONRUNNERS</c> prepare and
+    /// finish run on 3D runners instead (<c>RunnerSplatClient</c>).
+    /// </summary>
     Splat,
 }

@@ -92,11 +92,13 @@ public sealed partial class GpuJobQueue
     public async Task ResumeIfDeliveredAsync(Guid captureId, CancellationToken ct)
     {
         await using var db = dbContextFactory.CreateDbContext();
-        var delivered = await db.GpuJobs.AnyAsync(
-            j => j.CaptureId == captureId && j.Kind == GpuJobKind.Splat && j.Status == GpuJobStatus.Succeeded && j.InstalledAt == null, ct);
-        if (delivered)
+        var delivered = await db.GpuJobs.Where(
+                j => j.CaptureId == captureId && j.Status == GpuJobStatus.Succeeded && j.InstalledAt == null
+                     && (j.Kind == GpuJobKind.Splat || j.Kind == GpuJobKind.SplatPrepare || j.Kind == GpuJobKind.SplatFinish))
+            .Select(j => (GpuJobKind?)j.Kind).FirstOrDefaultAsync(ct);
+        if (delivered is { } kind)
         {
-            await HandBackAsync(db, captureId, GpuJobKind.Splat, ct);
+            await HandBackAsync(db, captureId, kind, ct);
         }
     }
 

@@ -141,7 +141,7 @@ public sealed partial class WallCaptureProcessor
         }
 
         parts.Add(ComputeJobPart.Json("options", CaptureSplatDocuments.BuildOptions(settings.SplatMaxSteps, run.Capture.SplatQuality)));
-        return await splat.SubmitMultipartAsync(PrepareKind, parts, ct);
+        return await splat.SubmitMultipartAsync(PrepareKind, parts, new ComputeJobOwner(run.Capture.WallId, captureId, null), ct);
     }
 
     private async Task<string> SubmitSolveSfmAsync(
@@ -149,6 +149,9 @@ public sealed partial class WallCaptureProcessor
     {
         var capture = run.Capture;
         var sparse = await splat.DownloadFileAsync(sfmJobId, SparseFile, MaxSparseBytes, ct);
+
+        // Read: a reconstruction that ran on a runner is installed (its bundle stays for the photo-real view).
+        await splat.DoneWithAsync(sfmJobId, ct);
         await KeepSparsePointsAsync(capture, sparse, ct);
         var photos = await LoadUsablePhotosAsync(capture.Id, ct);
         var holds = await PhotoHoldsAsync(capture.Id, photos, ct);

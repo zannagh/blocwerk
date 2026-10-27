@@ -53,7 +53,7 @@ public sealed partial class GpuJobQueue
                 return new RunnerClaim(
                     job.Id, CaptureSplatDocuments.QualityName(job.Quality),
                     (int)options.Lease.TotalSeconds, job.BundleBytes, job.BundleSha256,
-                    options.Previews && job.Kind == GpuJobKind.Splat, reattached,
+                    options.PreviewsActive && job.Kind == GpuJobKind.Splat, reattached,
                     job.WallId, job.CaptureId, RunnerCapabilities.KindName(job.Kind), job.RequiredMemoryMb);
             }
 

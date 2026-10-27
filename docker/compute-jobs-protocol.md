@@ -195,6 +195,14 @@ only if its reported `memoryBudgetMb` covers the job: `splat-prepare` needs 6144
 draft-quality, never get previews, and a `splat-prepare` claim may run 10 h (`RUNNERS__PREPAREMAXHOURS`) instead of 6. The
 server only produces them when `SPLATSERVICE__ONRUNNERS=true`.
 
+With that flag the app has no splat worker (`SPLATSERVICE__URL` is not used; `RUNNERS__MODE=off` then switches photo-real views
+off and logs an error). Every photo-real view goes to runners, training previews are off, and the capture worker never waits
+more than 2 minutes for a runner: a marker capture completes as "Model ready" while its prepare waits, a finish parks the
+capture ("waiting for a 3D runner to finish it", given up after a day), and a markerless capture parks in Solving until a
+runner reconstructs it (72 h unclaimed, then it fails and keeps its photos). A delivery wakes the capture. A job no runner
+could take for 24 h says "(none online for a day)" and its capture's creator gets one push. Turning the flag off cancels the
+waiting jobs; their captures resubmit to the splat worker.
+
 ## Runner envelope (v1)
 
 How a `splat-prepare` / `splat-finish` request and its result cross the runner API. The runner downloads the job's bundle

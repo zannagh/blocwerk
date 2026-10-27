@@ -45,6 +45,7 @@ public static class CaptureServices
         // 3D runners: GPU machines that pull the photo-real training (see GpuJobQueue).
         services.AddSingleton(sp => Runners.GpuRunnerOptions.Bind(sp.GetService<IConfiguration>()));
         services.AddSingleton<Runners.GpuJobSignal>();
+        services.AddSingleton<Runners.IOnDemandComputeLauncher, Runners.NoOnDemandComputeLauncher>();
         services.AddSingleton<Runners.GpuJobQueue>();
         services.AddHostedService<Runners.GpuJobSweepWorker>();
 

@@ -105,6 +105,9 @@ public sealed class GpuRunnerOptions
     /// </summary>
     public bool Previews { get; init; } = true;
 
+    /// <summary>Whether previews are taken: <see cref="Previews"/>, but never on runners only (<see cref="SplatOnRunners"/>), which finish no previews.</summary>
+    public bool PreviewsActive => Previews && !SplatOnRunners;
+
     /// <summary>The earliest step a preview is taken at (earlier ones are a blur, not worth a finish on the server).</summary>
     public const int MinPreviewStep = 3000;
 

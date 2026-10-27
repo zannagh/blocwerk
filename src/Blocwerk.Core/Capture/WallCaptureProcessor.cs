@@ -114,7 +114,11 @@ public sealed partial class WallCaptureProcessor(
             await MarkBlurryPhotosAsync(run, ct);
             if (await DecideModeAsync(run, ct) == WallCaptureGeometryMode.Features)
             {
-                await SfmAndImportAsync(run, client, ct);
+                if (!await SfmAndImportOrParkAsync(run, client, ct))
+                {
+                    // Parked until a 3D runner reconstructs the photos; the queue wakes it.
+                    return;
+                }
             }
             else
             {
