@@ -45,6 +45,11 @@ public static partial class CapturePackageFiles
 
         names.Add((rows.GpuJob.PreparedPath, "prepared"));
         AddIf(names, rows.GpuJob.ResultPath, "trained-result");
+        foreach (var file in rows.Results is { } results ? SplatLodLadder.Files(results.Splat) : [])
+        {
+            AddIf(names, file, "photo-real-view");
+        }
+
         return names.DistinctBy(n => n.Name, StringComparer.Ordinal).ToList();
     }
 

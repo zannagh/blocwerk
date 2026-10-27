@@ -17,7 +17,7 @@ public sealed partial class UpdateReviewService
     /// <summary>A staged photo never changes for its panel row, so its size is read once per process.</summary>
     private static readonly ConcurrentDictionary<Guid, (int Width, int Height)> StagedSizes = new();
 
-    private async Task<UpdateReviewFacts?> ReadFactsAsync(BlocwerkDbContext db, Guid wallId, Guid sessionId)
+    private async Task<UpdateReviewFacts?> ReadFactsAsync(BlocwerkDbContext db, Guid wallId, Guid sessionId, IReadOnlyList<MovedHoldLine>? moves)
     {
         var stagedGen = await db.Walls.IgnoreQueryFilters().Where(w => w.Id == wallId).Select(w => w.CurrentGeneration + 1).FirstAsync();
         var panels = await StagedPanelsAsync(db, wallId, stagedGen);
@@ -33,7 +33,8 @@ public sealed partial class UpdateReviewService
         var relocations = await sessions.GetRelocationSuggestionsAsync(wallId);
         var carry = rows.Where(r => r.Kind == WallUpdateHoldDecisionKind.Carry)
             .ToDictionary(r => r.HoldId, r => new CarryFact(r.CarryKind, r.PairedHoldId, r.Confirmed, r.ConfirmedByUserId));
-        var oldIds = carry.Keys.Concat(cards.Select(c => c.OldHoldId).OfType<Guid>()).Concat(relocations.Select(r => r.OldHoldId)).ToHashSet();
+        var oldIds = carry.Keys.Concat(cards.Select(c => c.OldHoldId).OfType<Guid>()).Concat(relocations.Select(r => r.OldHoldId))
+            .Concat((moves ?? []).Select(m => m.OldHoldId)).ToHashSet();
         var users = answers.Select(a => a.ByUserId).Concat(cards.Select(c => c.DecidedByUserId)).Concat(carry.Values.Select(c => c.ConfirmedByUserId));
         return new UpdateReviewFacts(
             panels,
@@ -50,7 +51,8 @@ public sealed partial class UpdateReviewService
             relocations,
             await PhotoSizesAsync(db, panels),
             await UserNamesAsync(db, users),
-            matchCache is null ? null : (await matchCache.PeekAsync(db, wallId))?.CarriedWarpPositions);
+            matchCache is null ? null : (await matchCache.PeekAsync(db, wallId))?.CarriedWarpPositions,
+            moves);
     }
 
     private static async Task<List<ReviewPanel>> StagedPanelsAsync(BlocwerkDbContext db, Guid wallId, int stagedGen)

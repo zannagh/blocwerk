@@ -117,7 +117,7 @@ window.bwAssetPlan = (function () {
     }
 
     /** The cache keys of a core entry the fill plans on this device: the fit rendition and 640, as planFill plans them
-     * (the offline-ready mark, asset-report.js). */
+     * (offline readiness, asset-report.js). */
     function coreKeys(entry, width) {
         return photoWidths(entry, [width, THUMB]).map(w => keyOf(entry.sha, w));
     }

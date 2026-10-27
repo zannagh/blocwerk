@@ -102,6 +102,17 @@ public static class CaptureSplatDocuments
         _ => null,
     };
 
+    /// <summary>
+    /// The profile a retrain offers: the next one up (Ultra after Max only when <paramref name="ultraAvailable"/>),
+    /// else, when the last photo-real attempt failed, the same profile again (a failed Ultra has nothing above it).
+    /// </summary>
+    public static SplatQuality? RetrainQuality(SplatQuality? current, bool ultraAvailable, bool lastAttemptFailed)
+    {
+        var better = NextQuality(current) ?? (current == SplatQuality.Max && ultraAvailable ? SplatQuality.Ultra : null);
+        var again = lastAttemptFailed && (current != SplatQuality.Ultra || ultraAvailable) ? current : null;
+        return better ?? again;
+    }
+
     /// <summary>"Photo-real view: training (step 1200/15000)" from the worker's <c>stage</c>/<c>stageDetail</c>.</summary>
     public static string Describe(ComputeJobStatus status) => Describe(status, "Photo-real view");
 

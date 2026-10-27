@@ -35,6 +35,19 @@ public class WallCaptureSplatQualityTests
     public void NextQuality_StepsUpOnce(SplatQuality? current, SplatQuality? expected) =>
         Assert.Equal(expected, CaptureSplatDocuments.NextQuality(current));
 
+    [Theory]
+    [InlineData(SplatQuality.High, false, false, SplatQuality.Max)]
+    [InlineData(SplatQuality.Max, true, false, SplatQuality.Ultra)]
+    [InlineData(SplatQuality.Max, false, false, null)]
+    [InlineData(SplatQuality.Ultra, true, false, null)]
+    [InlineData(SplatQuality.Ultra, true, true, SplatQuality.Ultra)]
+    [InlineData(SplatQuality.Ultra, false, true, null)]
+    [InlineData(SplatQuality.Max, false, true, SplatQuality.Max)]
+    [InlineData(SplatQuality.High, false, true, SplatQuality.Max)]
+    public void RetrainQuality_StepsUp_OrRepeatsAFailedAttempt(
+        SplatQuality current, bool ultraAvailable, bool lastAttemptFailed, SplatQuality? expected) =>
+        Assert.Equal(expected, CaptureSplatDocuments.RetrainQuality(current, ultraAvailable, lastAttemptFailed));
+
     [Fact]
     public void TexturePart_DropsTheSplatHalfOfTheError()
     {

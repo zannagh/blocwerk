@@ -40,13 +40,3 @@ export const w1Routes = () => ({
         [sha('3'), 'view3d', { kind: 'texture' }],
     ]), 200, { etag: 'W/"m1"' }),
 });
-
-export function mark(wallId) {
-    const attrs = new Map([['data-bw-offline-ready', wallId]]);
-    return {
-        getAttribute: name => (attrs.has(name) ? attrs.get(name) : null),
-        setAttribute: (name, value) => attrs.set(name, value),
-        removeAttribute: name => attrs.delete(name),
-        get ready() { return attrs.has('data-ready'); },
-    };
-}

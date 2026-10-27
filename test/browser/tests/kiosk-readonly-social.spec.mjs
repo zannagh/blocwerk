@@ -51,6 +51,21 @@ async function trackInteractive(context) {
 
 const whenInteractive = page => page.waitForFunction(() => window.__bwBoulderInteractive === true);
 
+// Counts the comment boxes the page has shown: the prerendered one, then the one the circuit's first render puts in its
+// place. Installed before the document loads, so the prerendered box is always the first one counted.
+function countCommentBoxes() {
+    window.__bwCommentBoxes = 0;
+    const seen = new WeakSet();
+    const scan = () => {
+        const box = document.querySelector('.comment-input');
+        if (box && !seen.has(box)) {
+            seen.add(box);
+            window.__bwCommentBoxes++;
+        }
+    };
+    new MutationObserver(scan).observe(document, { childList: true, subtree: true });
+}
+
 const boulderUrl = (world, id) => `/walls/${world.social.wallId}/boulders/${id}`;
 const commentRow = (page, text) => page.locator('.comments-section .comment-row', { hasText: text });
 
@@ -96,8 +111,12 @@ test('the resting kiosk gets new comments and activity live, still without the n
     try {
         await trackInteractive(phone);
         const dave = await phone.newPage();
+        await dave.addInitScript(countCommentBoxes);
         await signIn(dave, world.users.dave, boulderUrl(world, world.social.live));
         await whenInteractive(dave);
+        // Typed into the prerendered box, the text is gone once the circuit's first render replaces it, and Post then
+        // sends nothing. That raced on WebKit (about 3 runs in 10, on main as well). Type into the interactive one.
+        await expect.poll(() => dave.evaluate(() => window.__bwCommentBoxes)).toBeGreaterThanOrEqual(2);
         const text = `Live comment ${Date.now()}`;
         await dave.locator('.comment-input').fill(text);
         await dave.locator('.comment-submit').click();

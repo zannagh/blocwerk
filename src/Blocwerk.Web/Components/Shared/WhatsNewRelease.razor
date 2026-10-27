@@ -1,0 +1,45 @@
+@using System.Globalization
+@using Blocwerk.Core.WhatsNew
+
+@* One release on /whats-new. BodyHtml is already safe (ReleaseMarkdown: raw HTML disabled, only
+   http(s)/mailto links, all with rel="noopener noreferrer"), which is the only reason it may be
+   written out as markup here. *@
+
+<article class="whatsnew-release @(IsCurrent ? "is-current" : null)" aria-current="@(IsCurrent ? "true" : null)"
+         data-tag="@Release.Tag">
+    <header class="whatsnew-release-head">
+        <h2>
+            <a href="@Release.HtmlUrl" target="_blank" rel="noopener noreferrer">@Release.Name</a>
+        </h2>
+        @if (IsCurrent)
+        {
+            <span class="whatsnew-badge whatsnew-badge-current">You're on this version</span>
+        }
+        @if (Release.IsPrerelease)
+        {
+            <span class="whatsnew-badge">Prerelease</span>
+        }
+        @if (Release.PublishedAt is { } published)
+        {
+            <time class="whatsnew-date" datetime="@published.ToString("O", CultureInfo.InvariantCulture)">
+                @published.ToString("d MMM yyyy", CultureInfo.InvariantCulture)
+            </time>
+        }
+    </header>
+    @if (string.IsNullOrEmpty(Release.BodyHtml))
+    {
+        <p class="whatsnew-empty">No notes for this release.</p>
+    }
+    else
+    {
+        <div class="whatsnew-notes">@((MarkupString)Release.BodyHtml)</div>
+    }
+</article>
+
+@code {
+    [Parameter, EditorRequired]
+    public ReleaseNote Release { get; set; } = default!;
+
+    [Parameter]
+    public bool IsCurrent { get; set; }
+}

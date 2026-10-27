@@ -1,7 +1,7 @@
 """What this runner can do: trainer (SPLAT_TRAINER: gsplat on CUDA, Brush on Vulkan / DX12 / Metal), GPU and
 VRAM (gpuprobe.py: NVIDIA, AMD, Intel, Apple), host memory budget -> the highest quality profile it will train (hello,
 claim); and whether it renders wall textures (`capabilities`, `texturesMemoryMb`: textures.py) and finds holds
-(`capabilities`: holds.py)."""
+(`capabilities`: holds.py) or registers panel photos (panels.py)."""
 import os
 import platform
 
@@ -9,7 +9,7 @@ from .. import __version__, brush, gpuprobe, gsplat_trainer, trainers
 from ..profiles import QUALITIES
 from ..resources import memory_budget, system_memory
 from ..settings import settings
-from . import holds, textures
+from . import holds, panels, textures
 
 # Brush's host-memory needs per profile (README "quality profiles"): high 5-6 GB, max 12+ GB.
 BRUSH_FLOOR_MB = {"max": 12 * 1024, "high": 5 * 1024}
@@ -104,7 +104,7 @@ class Capabilities:
                "platform": f"{platform.system()} {platform.machine()}", "trainer": self.trainer,
                "cuda": self.trainer == "gsplat" and version is not None, "trainerVersion": version,
                **textures.advertise()}
-        doc["capabilities"] = doc["capabilities"] + holds.advertise()
+        doc["capabilities"] = doc["capabilities"] + holds.advertise() + panels.advertise()
         if self.trainer == "brush":
             doc["brushVersion"] = version
         return doc

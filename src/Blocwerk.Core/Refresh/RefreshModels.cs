@@ -167,6 +167,7 @@ public sealed record NotFoundHoldLine(
 /// <param name="Outcome">Kept on its boulders or removed from them.</param>
 /// <param name="Text">Plain language, for example "moved 6 cm, kept".</param>
 /// <param name="Boulders">The boulders that use it.</param>
+/// <param name="RotationDeg">How far it turned, when measured.</param>
 public sealed record MovedHoldLine(
     Guid OldHoldId,
     Guid NewHoldId,
@@ -175,7 +176,8 @@ public sealed record MovedHoldLine(
     Enums.HoldMoveSource Source,
     Enums.HoldMoveOutcome Outcome,
     string Text,
-    IReadOnlyList<string> Boulders);
+    IReadOnlyList<string> Boulders,
+    double? RotationDeg = null);
 
 /// <summary>An uploaded file, as the drop zone lists it.</summary>
 public sealed record RefreshFile(Guid? PhotoId, string? FileName, bool IsVideo, string? Problem);

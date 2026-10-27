@@ -40,7 +40,8 @@ public partial class WallBigUpdateService
     /// </para>
     /// </summary>
     /// <remarks>
-    /// <paramref name="move"/> is also how a hold that was not found again reaches its boulders
+    /// A move nobody confirmed (<see cref="HoldMoveOutcome.Suspected"/>) re-points like a hold that stayed: no mark, no
+    /// move row. <paramref name="move"/> is also how a hold that was not found again reaches its boulders
     /// (<see cref="HoldMovePlan.NotFoundFor"/>): the membership moves onto the copy as for any carried hold, the boulder is
     /// marked for review and the reason is recorded. The hold is never taken off.
     /// </remarks>
@@ -62,7 +63,7 @@ public partial class WallBigUpdateService
             }
 
             db.BoulderHolds.Remove(link);
-            if (move is not null && outcome != HoldMoveOutcome.Stayed)
+            if (move is not null && HoldMovePolicy.Flags(outcome))
             {
                 RecordBoulderMove(db, link, newHoldId, newGen, move);
             }

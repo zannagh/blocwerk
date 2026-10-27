@@ -46,6 +46,25 @@ public static class GradeScale
         return Grades.FirstOrDefault(g => g.Font == fontGrade).V;
     }
 
+    /// <summary>
+    /// Which scale a stored grade is written in: true for Fontainebleau, false for the V-Scale, null when it is
+    /// empty or in neither (the two scales share no grade string).
+    /// </summary>
+    public static bool? IsFont(string? grade)
+    {
+        if (string.IsNullOrWhiteSpace(grade))
+        {
+            return null;
+        }
+
+        if (FontGrades.Contains(grade))
+        {
+            return true;
+        }
+
+        return VGrades.Contains(grade) ? false : null;
+    }
+
     public static string Display(string grade, bool useFont)
     {
         if (useFont)

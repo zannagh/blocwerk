@@ -17,10 +17,16 @@ namespace Blocwerk.Web.Controllers;
 /// OWNER is an admin of the wall (the service's own check). Never a kiosk or installation key (neither
 /// satisfies <see cref="BlocwerkPolicies.AnyApiKey"/>, and the service refuses kiosk sessions besides).
 /// </summary>
+/// <remarks>
+/// Antiforgery does not apply: the <c>[Authorize]</c> below pins the API-key scheme and nothing
+/// else, so a browser cookie can never authorize these routes and there is no ambient credential to
+/// forge with. <c>[IgnoreAntiforgeryToken]</c> states that in code rather than in a comment.
+/// </remarks>
 [ApiController]
 [Route("api/walls/{wallId:guid}/geometry/place-holds")]
 [Authorize(Policy = BlocwerkPolicies.AnyApiKey, AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName)]
 [Produces("application/json")]
+[IgnoreAntiforgeryToken]
 public sealed class WallGeometryPlacementController(
     IHoldTexturePlacementService placement, ILogger<WallGeometryPlacementController> logger) : WallAdminApiController(logger)
 {
@@ -33,6 +39,36 @@ public sealed class WallGeometryPlacementController(
     [HttpGet]
     public Task<IActionResult> Status(Guid wallId, CancellationToken ct) =>
         RunAsync(wallId, async () => Ok(await placement.GetStatusAsync(wallId, ct)));
+
+    /// <summary>Dry run of "re-place outlier holds in 3D": how many placed holds the wall contradicts, per panel photo.</summary>
+    [HttpGet("outliers")]
+    public Task<IActionResult> PreviewOutliers(Guid wallId, CancellationToken ct) =>
+        RunAsync(wallId, async () => Ok(await placement.PreviewOutliersAsync(wallId, ct)));
+
+    /// <summary>Re-places those holds in 3D only (revert the run like any other).</summary>
+    [HttpPost("outliers")]
+    public Task<IActionResult> ReplaceOutliers(Guid wallId, CancellationToken ct) =>
+        RunAsync(wallId, async () => Ok(await placement.ReplaceOutliersAsync(wallId, ct)));
+
+    /// <summary>The latest panel registration on a 3D runner (for surface placement).</summary>
+    [HttpGet("surface/registration")]
+    public Task<IActionResult> SurfaceRegistration(Guid wallId, CancellationToken ct) =>
+        RunAsync(wallId, async () => Ok(await placement.GetSurfaceRegistrationAsync(wallId, ct)));
+
+    /// <summary>Queues the panel photos for registration on a 3D runner.</summary>
+    [HttpPost("surface/registration")]
+    public Task<IActionResult> RegisterPanels(Guid wallId, CancellationToken ct) =>
+        RunAsync(wallId, async () => Ok(await placement.RegisterPanelsAsync(wallId, ct)));
+
+    /// <summary>Dry run of "place holds on the 3D surface".</summary>
+    [HttpGet("surface")]
+    public Task<IActionResult> PreviewSurface(Guid wallId, CancellationToken ct) =>
+        RunAsync(wallId, async () => Ok(await placement.PreviewSurfaceAsync(wallId, ct)));
+
+    /// <summary>Places the holds on the 3D surface, 3D fields only (revert the run like any other).</summary>
+    [HttpPost("surface")]
+    public Task<IActionResult> PlaceOnSurface(Guid wallId, CancellationToken ct) =>
+        RunAsync(wallId, async () => Ok(await placement.PlaceOnSurfaceAsync(wallId, ct)));
 
     /// <summary>Reverts a run: every hold it placed that nobody moved since gets its previous values back.</summary>
     [HttpPost("{runId:guid}/revert")]

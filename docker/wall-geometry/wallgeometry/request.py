@@ -256,11 +256,12 @@ def _parse_options(raw):
     options = raw or {}
     if not isinstance(options, dict):
         raise RequestError("'options' must be an object")
-    unknown = set(options) - {"validate", "autoDownweight", "rejectOutliers", "plausibilityRounds", "facets"}
+    known = {"validate", "autoDownweight", "rejectOutliers", "isolateMarkers", "plausibilityRounds", "facets"}
+    unknown = set(options) - known
     if unknown:
-        raise RequestError(f"unknown option(s) {sorted(unknown)}; known: autoDownweight, facets, plausibilityRounds, "
-                           "rejectOutliers, validate")
-    for k in ("validate", "autoDownweight", "rejectOutliers", "plausibilityRounds"):
+        raise RequestError(f"unknown option(s) {sorted(unknown)}; known: autoDownweight, facets, isolateMarkers, "
+                           "plausibilityRounds, rejectOutliers, validate")
+    for k in ("validate", "autoDownweight", "rejectOutliers", "isolateMarkers", "plausibilityRounds"):
         if k in options and not isinstance(options[k], bool):
             raise RequestError(f"options.{k} must be true or false")
     facets = options.get("facets")
