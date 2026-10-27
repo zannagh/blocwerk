@@ -9,6 +9,9 @@ import { fakeCaches, ORIGIN } from './page-sandbox.mjs';
 
 const SHELL_MODULES = ['asset-ledger-idb.js', 'asset-ledger.js', 'asset-wipe.js', 'asset-lock.js', 'asset-session.js', 'asset-clear.js'];
 const STORE = ['client-store-rows.js', 'client-store.js'].map(name => new URL(`../../../src/Blocwerk.Client/wwwroot/js/${name}`, import.meta.url));
+// The sync loop's network side (PR 3.12), as the shell loads it after the store: Web's refreshers, then client-sync.js.
+const SYNC_MODULES = ['asset-manifest.js', 'asset-data.js', 'asset-mine.js'];
+const SYNC = new URL('../../../src/Blocwerk.Client/wwwroot/js/client-sync.js', import.meta.url);
 
 /** Fake caches whose entries carry real bodies, with the top-level match the store uses. */
 export function bodyCaches() {
@@ -25,7 +28,8 @@ export function bodyCaches() {
 /**
  * opts: { path, caches, storage (Map: localStorage), ledger (carried over), degraded, pending (upgradePending), bus (a
  * shared Set: BroadcastChannel), modules (the shared modules to load; default all six), worker (a controller),
- * noCrypto (no WebCrypto: no share hash) }
+ * noCrypto (no WebCrypto: no share hash), sync (also load the sync modules and client-sync.js), fetch, EventSource,
+ * bwStatus (the status bubbles) }
  */
 export function loadClient(opts = {}) {
     const listeners = {};
@@ -33,6 +37,7 @@ export function loadClient(opts = {}) {
     const storage = opts.storage || new Map();
     const caches = opts.caches || bodyCaches();
     const posted = [];
+    const swListeners = {};
     const path = opts.path || '/v/';
     const meta = { getAttribute: name => (name === 'content' ? 'offline' : null) };
     const sandbox = {
@@ -47,7 +52,11 @@ export function loadClient(opts = {}) {
         CustomEvent: class { constructor(type) { this.type = type; } },
         caches,
         location: { pathname: path.split('?')[0], search: path.includes('?') ? '?' + path.split('?')[1] : '', origin: ORIGIN, href: ORIGIN + path },
-        navigator: { serviceWorker: { controller: opts.worker === null ? null : { postMessage: m => posted.push(m) } } },
+        navigator: { serviceWorker: {
+            controller: opts.worker === null ? null : { postMessage: m => posted.push(m) },
+            addEventListener: (type, fn) => { (swListeners[type] = swListeners[type] || []).push(fn); },
+        } },
+        fetch: opts.fetch, EventSource: opts.EventSource, bwStatus: opts.bwStatus,
         localStorage: { getItem: k => (storage.has(k) ? storage.get(k) : null), setItem: (k, v) => storage.set(k, String(v)), removeItem: k => storage.delete(k) },
         document: {
             visibilityState: 'visible',
@@ -64,7 +73,8 @@ export function loadClient(opts = {}) {
     for (const name of opts.modules || SHELL_MODULES) {
         vm.runInContext(readFileSync(moduleUrl(name), 'utf8'), context, { filename: name });
     }
-    for (const url of STORE) {
+    const sync = opts.sync ? SYNC_MODULES.map(moduleUrl).concat([SYNC]) : [];
+    for (const url of STORE.concat(sync)) {
         vm.runInContext(readFileSync(url, 'utf8'), context, { filename: url.pathname.split('/').pop() });
     }
     if (sandbox.bwAssetLedger) {
@@ -81,11 +91,13 @@ export function loadClient(opts = {}) {
     return {
         win: sandbox,
         store: sandbox.bwClientStore,
+        sync: sandbox.bwClientSync,
         caches,
         storage,
         posted,
         ledger: () => sandbox.bwAssetLedger.open(),
         winEvent: (type, event) => (listeners[type] || []).forEach(fn => fn(event || {})),
         docEvent: (type, event) => (docListeners[type] || []).forEach(fn => fn(event || {})),
+        swEvent: (type, event) => Promise.all((swListeners[type] || []).map(fn => fn(event || {}))),
     };
 }

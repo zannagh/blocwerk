@@ -1,0 +1,37 @@
+@implements IDisposable
+@inject ClientStore Store
+@inject ClientSync Sync
+@inject NavigationManager Navigation
+@* Keeps the wall the page shows live (ClientSync, PR 3.12): started once the store has read the device, and moved
+   along with the router. It renders only the sync state, for the tests and the status pill. *@
+<span class="bw-client-sync" hidden data-bw-sync="@(Sync.Live ? "live" : Sync.WallId is null ? "idle" : "catching-up")"></span>
+
+@code {
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= OnLocation;
+        Sync.Changed -= OnChanged;
+    }
+
+    /// <inheritdoc />
+    protected override void OnInitialized()
+    {
+        Navigation.LocationChanged += OnLocation;
+        Sync.Changed += OnChanged;
+    }
+
+    /// <inheritdoc />
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Store.StartAsync();
+            await Sync.StartAsync(Navigation.Uri);
+        }
+    }
+
+    private void OnLocation(object? sender, LocationChangedEventArgs e) => _ = Sync.NavigateAsync(e.Location);
+
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+}

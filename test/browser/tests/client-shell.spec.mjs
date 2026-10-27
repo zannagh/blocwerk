@@ -33,7 +33,7 @@ test('/v/ boots the client from its shell, with no circuit and no edit presence'
     const imports = await page.evaluate(() => JSON.parse(document.querySelector('script[type="importmap"]').textContent).imports);
     expect(imports['/v/_framework/dotnet.js']).toMatch(/^\/v\/_framework\/dotnet\.[a-z0-9]{10}\.js$/);
     expect(requests.filter(p => /^\/v\/_framework\/(dotnet|blazor\.webassembly)\.js$/.test(p))).toEqual([]);
-    const globals = await page.evaluate(() => ['bwAssetLedgerIdb', 'bwAssetLedger', 'bwAssetWipe', 'bwAssetLock', 'bwAssetSession', 'bwAssetClear', 'bwClientStoreRows', 'bwClientStore', 'bwClientView']
+    const globals = await page.evaluate(() => ['bwAssetLedgerIdb', 'bwAssetLedger', 'bwAssetWipe', 'bwAssetLock', 'bwAssetSession', 'bwAssetClear', 'bwClientStoreRows', 'bwClientStore', 'bwClientView', 'bwAssetManifest', 'bwAssetData', 'bwAssetMine', 'bwClientSync']
         .filter(name => typeof window[name] !== 'object'));
     expect(globals).toEqual([]);
 });
