@@ -34,13 +34,15 @@ public static class HoldTexturePlacer
 
     /// <summary>
     /// Whether a hold a user just moved, reshaped or added may be (re)placed: <see cref="IsEligible"/>, or its position is
-    /// the edit path's own estimate (<see cref="HoldMetric.HoldFit"/>, a fit to the photo's other placed holds). Its 2D
-    /// position and outline are the truth; the 3D placement is derived from them and may be recomputed.
+    /// the edit path's own estimate (<see cref="HoldMetric.HoldFit"/>, a fit to the photo's other placed holds), or a
+    /// "re-place outlier holds in 3D" placement (<see cref="HoldMetric.Consensus"/>), which a later edit measures again.
+    /// Its 2D position and outline are the truth; the 3D placement is derived from them and may be recomputed. The edit
+    /// path still skips a hold whose placement a run wrote for its current panel geometry (nothing was edited since).
     /// </summary>
     /// <param name="hold">The hold.</param>
     /// <returns>True when a registration may replace its placement.</returns>
     public static bool IsEligibleAfterEdit(Hold hold) =>
-        IsEligible(hold) || (!hold.IsVirtual && hold.WallPanelId is not null && hold.MetricSource == HoldMetric.HoldFit);
+        IsEligible(hold) || (!hold.IsVirtual && hold.WallPanelId is not null && hold.MetricSource is HoldMetric.HoldFit or HoldMetric.Consensus);
 
     /// <summary>
     /// Whether the marker pass measured only the hold's size, in its nearest marker's own square

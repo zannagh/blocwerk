@@ -1,3 +1,6 @@
+// Copyright (c) 2026, zannagh. All rights reserved.
+// See License in the project root for license information.
+
 using System.Text;
 using System.Text.Json;
 using Blocwerk.Core.Data;
@@ -80,6 +83,28 @@ public class HoldOutlierPlacementTests
         Assert.Equivalent(before, await s.LoadHoldsAsync());
         var status = await service.GetStatusAsync(h.WallId);
         Assert.Equal((HoldPlacementTrigger.Outliers, true), (status.LatestRun!.Trigger, status.LatestRun.RevertedAt is not null));
+    }
+
+    [Fact]
+    public async Task EditPath_LeavesTheMovedHoldsAlone_UntilOneIsReshaped()
+    {
+        using var h = new WallTestHarness();
+        var (s, stray, _) = await SeedAsync(h);
+        var service = s.Service();
+        await service.ReplaceOutliersAsync(h.WallId);
+
+        Assert.Empty(await service.PlaceEditedAsync(h.WallId, (await s.LoadHoldsAsync()).Keys.ToList()));
+
+        await using (var db = h.CreateContext())
+        {
+            var hold = await db.Holds.SingleAsync(x => x.Id == stray);
+            hold.InvalidateGlyphForEdit(moved: false, reshaped: true);
+            hold.ShapePoints = ShapePoint.DefaultOctagon(0.015);
+            await db.SaveChangesAsync();
+        }
+
+        Assert.Equal([stray], await service.PlaceEditedAsync(h.WallId, [stray]));
+        Assert.Equal(HoldMetric.TextureRegistration, (await s.LoadHoldsAsync())[stray].MetricSource);
     }
 
     [Fact]

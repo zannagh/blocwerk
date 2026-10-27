@@ -1,3 +1,6 @@
+// Copyright (c) 2026, zannagh. All rights reserved.
+// See License in the project root for license information.
+
 using Blocwerk.Core.Detection.Enrichment;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Geometry;
