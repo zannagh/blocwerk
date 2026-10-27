@@ -150,4 +150,23 @@ public class GpuRunnerSplatKindsTests
         await f.ApproveAsync(h.WallId, shared);
         Assert.Equal(job.Id, (await f.Queue.TryClaimAsync(stored, null, CancellationToken.None))?.Id);
     }
+
+    [Fact]
+    public async Task AHelloNamingAllSixCapabilities_IsStoredWhole_AndTheColumnIsWideEnough()
+    {
+        using var h = new WallTestHarness();
+        using var f = await RunnerFixture.CreateAsync(h);
+        var (runner, _) = await f.AddRunnerAsync("pc", walls: h.WallId);
+        string[] all = ["splat", "textures", "detect-holds", "register-panels", "splat-prepare", "splat-finish"];
+
+        var stored = await SplatJobSupport.HelloAsync(f, runner, 16_000, all);
+
+        Assert.Equal(string.Join(',', all), stored.Capabilities);
+        Assert.True(stored.Capabilities!.Length > 64);
+
+        // SQLite does not enforce the length; the Postgres column is varchar(MaxLength), so the model's limit is what must hold it.
+        await using var db = h.CreateContext();
+        var limit = db.Model.FindEntityType(typeof(GpuRunner))!.FindProperty(nameof(GpuRunner.Capabilities))!.GetMaxLength();
+        Assert.True(limit >= stored.Capabilities.Length * 2, $"max length {limit}");
+    }
 }
