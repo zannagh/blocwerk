@@ -17,10 +17,16 @@ namespace Blocwerk.Web.Controllers;
 /// OWNER is an admin of the wall (the service's own check). Never a kiosk or installation key (neither
 /// satisfies <see cref="BlocwerkPolicies.AnyApiKey"/>, and the service refuses kiosk sessions besides).
 /// </summary>
+/// <remarks>
+/// Antiforgery does not apply: the <c>[Authorize]</c> below pins the API-key scheme and nothing
+/// else, so a browser cookie can never authorize these routes and there is no ambient credential to
+/// forge with. <c>[IgnoreAntiforgeryToken]</c> states that in code rather than in a comment.
+/// </remarks>
 [ApiController]
 [Route("api/walls/{wallId:guid}/geometry/place-holds")]
 [Authorize(Policy = BlocwerkPolicies.AnyApiKey, AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName)]
 [Produces("application/json")]
+[IgnoreAntiforgeryToken]
 public sealed class WallGeometryPlacementController(
     IHoldTexturePlacementService placement, ILogger<WallGeometryPlacementController> logger) : WallAdminApiController(logger)
 {
