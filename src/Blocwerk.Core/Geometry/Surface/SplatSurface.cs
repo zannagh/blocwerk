@@ -19,23 +19,31 @@ public sealed class SplatSurface
     /// <summary>Fewer points than this along a ray is a miss.</summary>
     public const int MinPoints = 5;
 
+    /// <summary>The points (x, y, z, mm), sorted by grid cell: the only copy kept.</summary>
     private readonly float[] xyz;
     private readonly Dictionary<long, (int Start, int Count)> cells;
-    private readonly int[] order;
 
-    /// <summary>Initializes a new instance of the <see cref="SplatSurface"/> class: indexes <paramref name="points"/> (world mm).</summary>
+    /// <summary>
+    /// Initializes a new instance of the <see cref="SplatSurface"/> class: indexes <paramref name="points"/> (world mm). It keeps
+    /// one compact copy, sorted by cell (12 bytes a point plus the cell table); the caller can drop its list afterwards.
+    /// </summary>
     public SplatSurface(IReadOnlyList<(float X, float Y, float Z)> points)
     {
-        xyz = new float[points.Count * 3];
         var keys = new long[points.Count];
+        var order = new int[points.Count];
         for (var i = 0; i < points.Count; i++)
         {
-            (xyz[3 * i], xyz[(3 * i) + 1], xyz[(3 * i) + 2]) = points[i];
             keys[i] = Key(Cell(points[i].X), Cell(points[i].Y), Cell(points[i].Z));
+            order[i] = i;
         }
 
-        order = Enumerable.Range(0, points.Count).ToArray();
         Array.Sort(keys, order);
+        xyz = new float[points.Count * 3];
+        for (var k = 0; k < order.Length; k++)
+        {
+            (xyz[3 * k], xyz[(3 * k) + 1], xyz[(3 * k) + 2]) = points[order[k]];
+        }
+
         cells = [];
         for (var i = 0; i < keys.Length;)
         {
@@ -51,7 +59,7 @@ public sealed class SplatSurface
     }
 
     /// <summary>Gets how many points are indexed.</summary>
-    public int Count => order.Length;
+    public int Count => xyz.Length / 3;
 
     /// <summary>
     /// The front-surface hit of the ray from <paramref name="origin"/> along unit <paramref name="dir"/>, searched between
@@ -99,7 +107,7 @@ public sealed class SplatSurface
     {
         for (var k = cell.Start; k < cell.Start + cell.Count; k++)
         {
-            var i = 3 * order[k];
+            var i = 3 * k;
             double rx = xyz[i] - o[0], ry = xyz[i + 1] - o[1], rz = xyz[i + 2] - o[2];
             var t = (rx * d[0]) + (ry * d[1]) + (rz * d[2]);
             if (t < near || t > far)

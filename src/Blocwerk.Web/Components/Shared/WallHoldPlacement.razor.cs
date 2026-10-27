@@ -76,6 +76,7 @@ public partial class WallHoldPlacement
     /// <summary>The panel registration's state in a few words.</summary>
     internal static string SurfaceRegistrationText(SurfaceRegistration r) => r.State switch
     {
+        "none" when !r.RunnerReady => "needs a 3D runner that can register panel photos (none is online for this wall).",
         "none" => "not run yet.",
         "queued" => "waiting for a 3D runner.",
         "running" => $"running ({r.Stage}).",

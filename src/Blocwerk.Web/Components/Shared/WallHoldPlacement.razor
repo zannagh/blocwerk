@@ -44,7 +44,10 @@
         }
     </p>
     <div class="staged-actions">
-        <button class="btn-secondary" @onclick="RegisterPanelsAsync" disabled="@busy">Register panel photos on a 3D runner</button>
+        @if (surfaceRegistration is { RunnerReady: true })
+        {
+            <button class="btn-secondary" @onclick="RegisterPanelsAsync" disabled="@busy">Register panel photos on a 3D runner</button>
+        }
         @if (surfaceRegistration is { State: "done", Registered: > 0 })
         {
             <button class="btn-secondary" @onclick="CheckSurfaceAsync" disabled="@busy">Check holds on the surface</button>

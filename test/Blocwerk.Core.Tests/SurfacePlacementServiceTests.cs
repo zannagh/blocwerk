@@ -87,6 +87,27 @@ public sealed class SurfacePlacementServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task EditPath_LeavesTheRunsHoldsAlone_UntilOneIsReshaped()
+    {
+        using var h = new WallTestHarness();
+        var (s, service, onC0, _, _) = await SeedAsync(h);
+        var run = await service.PlaceOnSurfaceAsync(h.WallId);
+
+        Assert.Empty(await service.PlaceEditedAsync(h.WallId, (await s.LoadHoldsAsync()).Keys.ToList()));
+
+        await using (var db = h.CreateContext())
+        {
+            var hold = await db.Holds.SingleAsync(x => x.Id == onC0);
+            hold.InvalidateGlyphForEdit(moved: false, reshaped: true);
+            hold.ShapePoints = ShapePoint.DefaultOctagon(0.015);
+            await db.SaveChangesAsync();
+        }
+
+        Assert.Equal([onC0], await service.PlaceEditedAsync(h.WallId, [onC0]));
+        Assert.True(run.Placed > 0);
+    }
+
+    [Fact]
     public async Task NonAdmin_IsRefused()
     {
         using var h = new WallTestHarness();

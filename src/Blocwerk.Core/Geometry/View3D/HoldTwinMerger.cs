@@ -2,6 +2,7 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using Blocwerk.Core.Detection.Enrichment;
 using Blocwerk.Core.Services;
 
 namespace Blocwerk.Core.Geometry.View3D;
@@ -105,9 +106,11 @@ public static class HoldTwinMerger
     }
 
     /// <summary>
-    /// Orders a group so its best view comes first: a stored footprint beats a photo outline (stretched on a steep photo),
-    /// which beats a stand-in circle; then the more perpendicular camera (when both tilts are known and clearly differ);
-    /// then the hold nearer its panel photo's centre; the id breaks remaining ties so the choice is stable.
+    /// Orders a group so its best view comes first: a real outline beats a stand-in circle; then the more perpendicular
+    /// camera (when both tilts are known and clearly differ); then the hold nearer its panel photo's centre; the id breaks
+    /// remaining ties so the choice is stable. Holds placed by a 3D-only run (<see cref="IsPlacedIn3DOnly"/>) share one
+    /// position whatever the photo, so there a stored footprint comes first: their photo outlines are mapped with no
+    /// photo→facet fit of their own and come out stretched.
     /// </summary>
     /// <param name="group">The rows of one physical hold.</param>
     /// <returns>The rows, representative first.</returns>
@@ -120,7 +123,9 @@ public static class HoldTwinMerger
 
     private static int Compare(HoldTwinCandidate x, HoldTwinCandidate y)
     {
-        var shape = ShapeRank(x).CompareTo(ShapeRank(y));
+        var shape = IsPlacedIn3DOnly(x) || IsPlacedIn3DOnly(y)
+            ? ShapeRank(x).CompareTo(ShapeRank(y))
+            : HasOutline(y).CompareTo(HasOutline(x));
         if (shape != 0)
         {
             return shape;
@@ -134,6 +139,11 @@ public static class HoldTwinMerger
         var centre = CentreOffset(x).CompareTo(CentreOffset(y));
         return centre != 0 ? centre : x.Hold.Id.CompareTo(y.Hold.Id);
     }
+
+    /// <summary>Whether a "surface" or "consensus" run placed the hold (in 3D only, from another view or the splat).</summary>
+    private static bool IsPlacedIn3DOnly(HoldTwinCandidate c) => c.Hold.MetricSource is HoldMetric.Surface or HoldMetric.Consensus;
+
+    private static bool HasOutline(HoldTwinCandidate c) => c.Placed.Shape is { Source: not Wall3DShapeSource.Circle };
 
     /// <summary>Lower is better: a measured footprint, then a single-view one, then a photo outline, then a stand-in circle.</summary>
     private static int ShapeRank(HoldTwinCandidate c) => c.Placed.Shape?.Source switch

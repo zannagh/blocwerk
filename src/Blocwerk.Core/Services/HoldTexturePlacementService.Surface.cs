@@ -30,8 +30,9 @@ public sealed partial class HoldTexturePlacementService
         var (db, _) = await OpenForAdminAsync(wallId, ct);
         await using (db)
         {
-            var (_, plan) = await PlanSurfaceAsync(db, wallId, ct);
-            return SurfacePreview.Of(plan);
+            // Serialised with placing: each reads the whole photo-real view (one at a time per wall).
+            return await ExclusiveAsync(wallId, async () => SurfacePreview.Of((await PlanSurfaceAsync(db, wallId, ct)).Plan))
+                   ?? throw new UserFacingException("Holds are already being placed on this wall. Try again in a minute.");
         }
     }
 
@@ -118,6 +119,7 @@ public sealed partial class HoldTexturePlacementService
             throw new UserFacingException("This wall has no photo-real view to place the holds on.");
         }
 
+        // The SPZ bytes and the point list are dropped once the surface holds its one compact copy.
         return await Task.Run(() => new SplatSurface(SpzPoints.Read(spz, matrix!)), ct);
     }
 
