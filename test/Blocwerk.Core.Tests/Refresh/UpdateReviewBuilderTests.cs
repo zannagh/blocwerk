@@ -104,6 +104,54 @@ public class UpdateReviewBuilderTests
         Assert.True(items.Single(i => i.StagedHoldId == bare.Id).LeavesFinding);
     }
 
+    [Fact]
+    public void ASuspectedMove_IsAMovedQuestion_ThatLeavesNoFinding_AndAConfirmedOneReadsMoved()
+    {
+        var (suspected, confirmed, stayed) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        var twins = new[] { Staged(Centre), Staged(Centre) with { Id = Guid.NewGuid() }, Staged(Centre) with { Id = Guid.NewGuid() } };
+        var carry = new Dictionary<Guid, CarryFact>
+        {
+            [suspected] = new(CarryKind.Carried, twins[0].Id, false, null),
+            [confirmed] = new(CarryKind.Changed, twins[1].Id, true, null),
+            [stayed] = new(CarryKind.Carried, twins[2].Id, false, null),
+        };
+        List<Blocwerk.Core.Refresh.MovedHoldLine> lines =
+        [
+            Line(suspected, twins[0].Id, HoldMoveOutcome.Suspected, 60),
+            Line(confirmed, twins[1].Id, HoldMoveOutcome.Kept, 60),
+            Line(stayed, twins[2].Id, HoldMoveOutcome.Stayed, 5),
+        ];
+
+        var items = UpdateReviewBuilder.Build(Facts([], carry, [.. twins], suspected, confirmed, stayed) with { Moves = lines })
+            .Where(i => i.Group == ReviewGroup.Moved).ToList();
+
+        Assert.Equal(2, items.Count);
+        var asked = items.Single(i => i.OldHoldId == suspected);
+        Assert.Equal(($"m-{suspected}", twins[0].Id, (ReviewAnswer?)null, false), (asked.Key, asked.StagedHoldId, asked.Answer, asked.LeavesFinding));
+        Assert.Equal("moved about 6 cm (photos)", asked.Reason);
+        Assert.Equal(ReviewAnswer.Moved, items.Single(i => i.OldHoldId == confirmed).Answer);
+        Assert.Equal(0, ReviewCounts.Of(items).Open);
+    }
+
+    [Fact]
+    public void AMoveThatIsAlsoALookAlikeSuggestion_IsAskedOnce()
+    {
+        var old = Guid.NewGuid();
+        var twin = Staged(Centre);
+        var suggestion = new RelocationSuggestion(Guid.NewGuid(), old, twin.Id, 0.95, 0.2, true, RelocationProposalStatus.Accepted);
+
+        var items = UpdateReviewBuilder.Build(Facts([], new() { [old] = new(CarryKind.Changed, twin.Id, true, null) }, [twin], old) with
+        {
+            Relocations = [suggestion],
+            Moves = [Line(old, twin.Id, HoldMoveOutcome.Removed, 900)],
+        });
+
+        Assert.Equal($"r-{suggestion.Id}", Assert.Single(items, i => i.Group == ReviewGroup.Moved).Key);
+    }
+
+    private static Blocwerk.Core.Refresh.MovedHoldLine Line(Guid old, Guid twin, HoldMoveOutcome outcome, double mm) =>
+        new(old, twin, null, mm, HoldMoveSource.TwoD, outcome, string.Empty, []);
+
     private static StagedFact Staged(Guid panel) => new(Guid.NewGuid(), panel, 0.5, 0.5, 0.02, 0.95, null, null, false);
 
     private static UpdateReviewFacts Facts(

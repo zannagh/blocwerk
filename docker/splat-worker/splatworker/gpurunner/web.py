@@ -12,6 +12,7 @@ container's loopback is not the host's, so bind 0.0.0.0 inside and publish to th
 (uitoken.py: the link with `?token=` in the runner log sets a cookie; scripts send `X-Runner-Token`), so another
 container on the same Docker network cannot pause the runner. Requests naming another host (DNS rebinding) and
 cross-site form posts are refused. Two runners on one machine: one port each."""
+import hashlib
 import json
 import logging
 import os
@@ -184,6 +185,8 @@ def start_status_page(runner, env=None):
     except OSError as e:
         log.warning("status page not started on %s:%d (%s): set RUNNER_UI_PORT to a free port (0 = off)", host, port, e)
         return None
-    log.info("status page: %s ; to use its pause switch open %s?token=%s once (sets a cookie; token kept in %s)",
-             ui.url, ui.url, ui.token, os.path.join(os.path.dirname(runner.control.path), "ui-token"))
+    # Never the token itself: logs are copied around. Its fingerprint tells two tokens apart.
+    log.info("status page: %s ; its pause switch needs the token in %s (fingerprint %s): open %s?token=<that token> once",
+             ui.url, os.path.join(os.path.dirname(runner.control.path), "ui-token"),
+             hashlib.sha256(ui.token.encode()).hexdigest()[:8], ui.url)
     return ui

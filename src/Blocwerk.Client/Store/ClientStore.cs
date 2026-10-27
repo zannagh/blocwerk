@@ -56,6 +56,9 @@ public sealed class ClientStore
     /// <summary>Gets the cached walls the page may read; empty unless ready.</summary>
     public IReadOnlyList<StoreWallRow> Walls => State == StoreState.Ready ? snapshot.Walls : [];
 
+    /// <summary>Gets the viewer's stored marks of the cached walls; empty unless ready under a <c>u-</c> label.</summary>
+    public IReadOnlyList<StoreMineRow> MineRows => State == StoreState.Ready ? snapshot.Mine : [];
+
     /// <summary>Reads the device once and listens for changes; later calls wait for the same start.</summary>
     /// <returns>A task that completes after the first read.</returns>
     public Task StartAsync() => started ??= StartOnceAsync();
@@ -114,8 +117,9 @@ public sealed class ClientStore
                 return null;
             }
 
+            // Only the open wall stays parsed (a big wall's holds are megabytes); another one is read again when opened.
             var wall = Read(docs, AudienceOf(snapshot, wallId), MineOf(snapshot, wallId));
-            walls = new Dictionary<Guid, CachedWall>(walls) { [wallId] = wall };
+            walls = new Dictionary<Guid, CachedWall> { [wallId] = wall };
             return wall;
         }
 

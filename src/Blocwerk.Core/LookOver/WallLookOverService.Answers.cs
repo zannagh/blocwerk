@@ -182,6 +182,10 @@ public sealed partial class WallLookOverService
             case LookOverAnswer.Unlink:
                 await UnlinkAsync(db, finding, ct);
                 return null;
+            case LookOverAnswer.ConfirmMove:
+                // The person's confirmation of a measured move: the same mark as "Mark as changed" in the hold editor.
+                await walls.MarkHoldModifiedAsync(view.HoldId!.Value);
+                return null;
             default:
                 await UseNewHoldAsync(db, finding, view, onlyThese, ct);
                 return null;

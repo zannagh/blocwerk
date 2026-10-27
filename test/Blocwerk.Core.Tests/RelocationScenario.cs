@@ -64,8 +64,11 @@ internal sealed class RelocationScenario
         return h;
     }
 
-    /// <summary>Seeds the scenario; <paramref name="fingerprints"/> false leaves every hold without one.</summary>
-    public static async Task<RelocationScenario> SeedAsync(WallTestHarness h, bool fingerprints = true, bool glyphs = false)
+    /// <summary>
+    /// Seeds the scenario; <paramref name="fingerprints"/> false leaves every hold without one. <paramref name="stagedPhoto"/>
+    /// is the new centre photo (a placeholder that decodes to nothing by default).
+    /// </summary>
+    public static async Task<RelocationScenario> SeedAsync(WallTestHarness h, bool fingerprints = true, bool glyphs = false, byte[]? stagedPhoto = null)
     {
         var s = new RelocationScenario(h);
         await using var db = h.CreateContext();
@@ -80,7 +83,7 @@ internal sealed class RelocationScenario
         var live = new WallPanel { WallId = wall.Id, Col = 0, Row = 0, Photo = [1], PhotoContentType = "image/jpeg", Generation = 2 };
         var staged = new WallPanel
         {
-            WallId = wall.Id, Col = 0, Row = 0, StagedPhoto = [7], StagedPhotoContentType = "image/jpeg", Generation = 3,
+            WallId = wall.Id, Col = 0, Row = 0, StagedPhoto = stagedPhoto ?? [7], StagedPhotoContentType = "image/jpeg", Generation = 3,
         };
         db.WallPanels.AddRange(live, staged);
 
@@ -110,12 +113,13 @@ internal sealed class RelocationScenario
         return s;
     }
 
-    public WallBigUpdateService BigUpdate() =>
+    /// <summary>The update service; <paramref name="identityWarp"/> lets the matcher predict where every old hold is.</summary>
+    public WallBigUpdateService BigUpdate(bool identityWarp = false) =>
         new(
             Harness.DbContextFactory,
             Harness.CurrentUser,
             Harness.HoldDetection,
-            new PositionHoldMatcher(),
+            new PositionHoldMatcher(identityWarp),
             NullLogger<WallBigUpdateService>.Instance);
 
     public WallUpdateSessionService Sessions() => WallUpdateSessionFixture.Sessions(Harness);
@@ -143,10 +147,10 @@ internal sealed class RelocationScenario
     }
 
     /// <summary>Promotes exactly what the session recorded, as the wizard does.</summary>
-    public async Task PromoteAsync()
+    public async Task PromoteAsync(bool identityWarp = false)
     {
         var confirmation = await Sessions().GetDecisionsAsync(WallId);
-        await BigUpdate().PromoteAsync(WallId, confirmation, SessionId);
+        await BigUpdate(identityWarp).PromoteAsync(WallId, confirmation, SessionId);
     }
 
     private static Hold Old(Guid wallId, Guid panelId, double x, double y, string? fp) => new()

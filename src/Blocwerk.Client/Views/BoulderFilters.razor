@@ -1,0 +1,126 @@
+@using Blocwerk.Core.Helpers
+@* The wall view's filter card: the Server's (its markup and classes: a collapsed chip with a count, then search, sort,
+   grade range and, signed in, the viewer's own filters). The filters only narrow what the list shows; nothing here
+   writes. "Created by me", "Has beta video" and "Needs review" are left out: the cached documents cannot answer them. *@
+<div class="settings-panel settings-card filter-card@(open ? " open" : string.Empty)">
+    <button type="button" class="settings-card-summary" @onclick="() => open = !open"
+            aria-expanded="@(open ? "true" : "false")" aria-controls="@(open ? "boulder-filter-panel" : null)">
+        <span class="filter-card-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true">
+                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+            </svg>
+            Filters
+            @if (Filter.ActiveCount > 0)
+            {
+                <span class="filter-count">@Filter.ActiveCount</span>
+            }
+        </span>
+    </button>
+    @if (open)
+    {
+        <div class="settings-card-body" id="boulder-filter-panel">
+            <div class="filter-bar">
+                <input value="@Filter.Search" @oninput="e => Set(Filter with { Search = e.Value as string })"
+                       placeholder="Search..." class="filter-input" aria-label="Search boulders" />
+                <div class="sort-row">
+                    <label class="sort-label" for="bw-client-sort">Sort</label>
+                    <select id="bw-client-sort" class="filter-select" value="@Filter.Sort"
+                            @onchange="e => Set(Filter with { Sort = Enum.TryParse<BoulderSort>(e.Value as string, out var s) ? s : BoulderSort.Newest })">
+                        <option value="@BoulderSort.Newest">Newest</option>
+                        <option value="@BoulderSort.Oldest">Oldest</option>
+                        <option value="@BoulderSort.GradeAsc">Grade ↑ (easy first)</option>
+                        <option value="@BoulderSort.GradeDesc">Grade ↓ (hard first)</option>
+                        <option value="@BoulderSort.Rating">Rating</option>
+                        @if (ShowMine)
+                        {
+                            <option value="@BoulderSort.MyAttempts">Most attempts by me</option>
+                        }
+                    </select>
+                </div>
+                <div class="grade-range-row">
+                    <span class="sort-label" id="bw-client-grade-label">Grade</span>
+                    <div class="grade-range-picker" role="group" aria-labelledby="bw-client-grade-label">
+                        <div class="scale-toggle">
+                            <button type="button" class="scale-btn @(font ? string.Empty : "active")" aria-pressed="@(font ? "false" : "true")" @onclick="() => SetScale(false)">V</button>
+                            <button type="button" class="scale-btn @(font ? "active" : string.Empty)" aria-pressed="@(font ? "true" : "false")" @onclick="() => SetScale(true)">Font</button>
+                        </div>
+                        <select class="grade-select" value="@Filter.GradeMin" aria-label="Easiest grade"
+                                @onchange="e => Set(Filter with { GradeMin = Blank(e.Value as string) })">
+                            <option value="">Min</option>
+                            @foreach (var grade in Scale)
+                            {
+                                <option value="@grade">@grade</option>
+                            }
+                        </select>
+                        <span class="range-dash">&ndash;</span>
+                        <select class="grade-select" value="@Filter.GradeMax" aria-label="Hardest grade"
+                                @onchange="e => Set(Filter with { GradeMax = Blank(e.Value as string) })">
+                            <option value="">Max</option>
+                            @foreach (var grade in Scale)
+                            {
+                                <option value="@grade">@grade</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                @if (ShowMine)
+                {
+                    <div class="filter-checks">
+                        <label class="filter-check"><input type="checkbox" checked="@Filter.Attempted" @onchange="e => Set(Filter with { Attempted = e.Value is true })" /> Attempted by me</label>
+                        <label class="filter-check"><input type="checkbox" checked="@Filter.Done" @onchange="e => Set(Filter with { Done = e.Value is true })" /> Done by me</label>
+                        <label class="filter-check"><input type="checkbox" checked="@Filter.NotDone" @onchange="e => Set(Filter with { NotDone = e.Value is true })" /> Not done by me</label>
+                        <label class="filter-check"><input type="checkbox" checked="@Filter.Favourites" @onchange="e => Set(Filter with { Favourites = e.Value is true })" /> My favourites</label>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private bool open;
+    private bool font;
+
+    /// <summary>Gets or sets the filter shown.</summary>
+    [Parameter]
+    [EditorRequired]
+    public BoulderFilter Filter { get; set; } = new();
+
+    /// <summary>Gets or sets the callback with a changed filter.</summary>
+    [Parameter]
+    public EventCallback<BoulderFilter> FilterChanged { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether the card starts open (collapsed by default, as on the Server).</summary>
+    [Parameter]
+    public bool StartOpen { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether the viewer's own filters are offered (signed in).</summary>
+    [Parameter]
+    public bool ShowMine { get; set; }
+
+    /// <inheritdoc />
+    protected override void OnInitialized() => open = StartOpen;
+
+    private string[] Scale => font ? GradeScale.FontGrades : GradeScale.VGrades;
+
+    private static string? Blank(string? value) => string.IsNullOrEmpty(value) ? null : value;
+
+    private Task Set(BoulderFilter next) => FilterChanged.InvokeAsync(next);
+
+    // The bounds follow the scale, as the Server's GradeRangePicker converts them.
+    private Task SetScale(bool toFont)
+    {
+        if (font == toFont)
+        {
+            return Task.CompletedTask;
+        }
+
+        font = toFont;
+        return Set(Filter with { GradeMin = Convert(Filter.GradeMin), GradeMax = Convert(Filter.GradeMax) });
+
+        string? Convert(string? grade) => string.IsNullOrEmpty(grade)
+            ? grade
+            : (toFont ? GradeScale.ToFont(grade) : GradeScale.ToV(grade)) ?? grade;
+    }
+}

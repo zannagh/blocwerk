@@ -3,6 +3,7 @@ using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Capture;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Geometry.TextureRegistration;
+using Blocwerk.Core.Runners;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -33,6 +34,7 @@ public sealed partial class HoldTexturePlacementService : IHoldTexturePlacementS
     private readonly ICaptureFileStore? files;
     private readonly IHoldRefinementQueue? refinementQueue;
     private readonly IKioskContext? kioskContext;
+    private readonly GpuJobQueue? gpuJobs;
 
     /// <summary>Initializes a new instance of the <see cref="HoldTexturePlacementService"/> class.</summary>
     /// <param name="dbContextFactory">Context factory.</param>
@@ -42,6 +44,7 @@ public sealed partial class HoldTexturePlacementService : IHoldTexturePlacementS
     /// <param name="files">Where the textures are stored; null means the action is unavailable.</param>
     /// <param name="refinementQueue">Refines the placed holds' footprints afterwards; optional.</param>
     /// <param name="kioskContext">The kiosk context, when the host has one.</param>
+    /// <param name="gpuJobs">The 3D runner queue (panel registration for surface placement); null means that action is unavailable.</param>
     public HoldTexturePlacementService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
         ICurrentUserService currentUserService,
@@ -49,7 +52,8 @@ public sealed partial class HoldTexturePlacementService : IHoldTexturePlacementS
         IPhotoTextureMatcher? matcher = null,
         ICaptureFileStore? files = null,
         IHoldRefinementQueue? refinementQueue = null,
-        IKioskContext? kioskContext = null)
+        IKioskContext? kioskContext = null,
+        GpuJobQueue? gpuJobs = null)
     {
         this.dbContextFactory = dbContextFactory;
         this.currentUserService = currentUserService;
@@ -58,6 +62,7 @@ public sealed partial class HoldTexturePlacementService : IHoldTexturePlacementS
         this.files = files;
         this.refinementQueue = refinementQueue;
         this.kioskContext = kioskContext;
+        this.gpuJobs = gpuJobs;
     }
 
     private bool Enabled => matcher is not null && files is not null;
@@ -180,7 +185,8 @@ public sealed partial class HoldTexturePlacementService : IHoldTexturePlacementS
     }
 
     /// <summary>Runs <paramref name="action"/> unless the wall already has a run in progress (then null).</summary>
-    private static async Task<HoldPlacementResult?> ExclusiveAsync(Guid wallId, Func<Task<HoldPlacementResult>> action)
+    private static async Task<T?> ExclusiveAsync<T>(Guid wallId, Func<Task<T>> action)
+        where T : class
     {
         if (!Running.TryAdd(wallId, 0))
         {

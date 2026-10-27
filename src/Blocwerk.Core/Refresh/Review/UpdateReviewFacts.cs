@@ -24,6 +24,7 @@ namespace Blocwerk.Core.Refresh.Review;
 /// <param name="PhotoSizes">Each staged panel's photo size in pixels.</param>
 /// <param name="UserNames">Display names of the people who answered.</param>
 /// <param name="Spots">Where the matcher puts an old hold on the new photo, when it is known.</param>
+/// <param name="Moves">The summary's measured moves: the suspected ones are asked about, the confirmed ones shown answered.</param>
 internal sealed record UpdateReviewFacts(
     IReadOnlyList<ReviewPanel> Panels,
     Guid CentrePanelId,
@@ -39,7 +40,8 @@ internal sealed record UpdateReviewFacts(
     IReadOnlyList<RelocationSuggestion> Relocations,
     IReadOnlyDictionary<Guid, (int Width, int Height)> PhotoSizes,
     IReadOnlyDictionary<Guid, string> UserNames,
-    IReadOnlyDictionary<Guid, HoldPositionNorm>? Spots = null);
+    IReadOnlyDictionary<Guid, HoldPositionNorm>? Spots = null,
+    IReadOnlyList<MovedHoldLine>? Moves = null);
 
 /// <summary>One old hold's carry verdict.</summary>
 internal sealed record CarryFact(CarryKind Kind, Guid? PairedHoldId, bool Confirmed, Guid? ConfirmedByUserId);

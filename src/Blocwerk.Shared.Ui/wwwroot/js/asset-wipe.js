@@ -23,9 +23,8 @@
  *      list is dropped on the next start.
  *   6. `anon` hygiene: a page in the `anon` partition without a share token in its URL wipes `anon` too; it
  *      announces only when the device was not anonymous before.
- * KEEP SETS (PR 3.5). A wipe spares a SET of labels: the active one, plus a `u-` partition locked after its session
- * expired (asset-lock.js), which the session adds to `decide`'s keep. A locked partition thus survives every `anon` wipe
- * for up to 7 days, and goes with the lock (dropPartition).
+ * KEEP SETS (PR 3.5). A wipe spares the active label plus a `u-` partition locked after its session expired: it survives
+ * `anon` wipes for up to 7 days and goes with the lock (dropPartition). The client's own-rows cursor goes with its label.
  */
 window.bwAssetWipe = (function () {
     'use strict';
@@ -113,6 +112,7 @@ window.bwAssetWipe = (function () {
             /* storage unavailable: nothing to wipe there */
         }
         await env.ledger.deleteAllExcept([...kept]);
+        window.bwAssetSession && window.bwAssetSession.forgetMeCursor && window.bwAssetSession.forgetMeCursor(window, p => kept.has(p));
     }
 
     /** Deletes one partition: its two caches, then its wall, asset and mine rows (a dropped lock, Clear offline data). */
@@ -133,6 +133,7 @@ window.bwAssetWipe = (function () {
         for (const mine of await env.ledger.mineOf(partition)) {
             await env.ledger.deleteMine(partition, mine.wallId);
         }
+        window.bwAssetSession && window.bwAssetSession.forgetMeCursor && window.bwAssetSession.forgetMeCursor(window, p => p !== partition);
     }
 
     /** Deletes `keys` (`{sha}[/{width}]`) from a partition's caches and its ledger. */

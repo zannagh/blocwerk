@@ -70,11 +70,12 @@
 
         const state = api.state();
         if (state.phase === 'ready') {
-            return { tone: 'info', label: MAINTENANCE_READY_LABEL, detail: MAINTENANCE_READY_DETAIL };
+            return { tone: 'info', urgent: true, label: MAINTENANCE_READY_LABEL, detail: MAINTENANCE_READY_DETAIL };
         }
 
         return {
             tone: 'warn',
+            urgent: true,
             label: state.message || MAINTENANCE_LABEL,
             detail: state.message ? state.message + ' ' + MAINTENANCE_DETAIL : MAINTENANCE_DETAIL
         };
@@ -101,10 +102,10 @@
         }
 
         if (queueState.paused) {
-            return { tone: 'warn', label: 'Sign in to sync', detail: 'Your session expired. ' + count + ' action(s) are saved on this device.' };
+            return { tone: 'warn', urgent: true, label: 'Sign in to sync', detail: 'Your session expired. ' + count + ' action(s) are saved on this device.' };
         }
         if (connection === 'rejected') {
-            return { tone: 'warn', label: 'Session ended', detail: 'The server lost this session. Reload to continue; nothing queued is lost.' };
+            return { tone: 'warn', urgent: true, label: 'Session ended', detail: 'The server lost this session. Reload to continue; nothing queued is lost.' };
         }
         if (!queueState.online) {
             return { tone: 'warn', label: count > 0 ? 'Offline · ' + count : 'Offline', detail: count > 0 ? count + ' action(s) saved on this device, waiting for a connection.' : 'No connection. Ascents, ratings and comments still work and sync later.' };
@@ -113,72 +114,76 @@
             return { tone: 'warn', label: count > 0 ? 'Reconnecting · ' + count : 'Reconnecting', detail: 'Reconnecting to the server. Queued actions sync automatically.' };
         }
         if (count > 0) {
-            return { tone: 'info', label: 'Syncing · ' + count, detail: count + ' action(s) still to send.' };
+            return { tone: 'info', label: 'Uploading · ' + count, detail: count + ' action(s) still to send.' };
         }
         return null;
     }
 
-    function buildDetail(queueState, summary) {
-        const panel = document.createElement('div');
-        panel.className = 'bw-conn-panel';
+    /**
+     * A status bubble (status-bubble.js) up takes the pill's label and colour for its few seconds, over everything
+     * except an urgent lasting state (a deploy, a session to sign in to or reload), which always shows.
+     */
+    function withBubble(summary) {
+        const bubble = window.bwStatus ? window.bwStatus.current() : null;
+        if (!bubble || (summary && summary.urgent)) {
+            return summary;
+        }
+        const detail = bubble.kind === 'conflict' || !summary ? bubble.detail : summary.detail;
+        return { tone: bubble.tone, label: bubble.label, detail: detail, bubble: bubble.kind };
+    }
 
-        const text = document.createElement('p');
-        text.className = 'bw-conn-panel-text';
-        text.textContent = summary.detail;
-        panel.appendChild(text);
-
-        queueState.rejected.forEach(item => {
-            const failed = document.createElement('p');
-            failed.className = 'bw-conn-panel-error';
-            failed.textContent = item.kind + ': ' + item.message;
-            panel.appendChild(failed);
-        });
-
-        const actions = document.createElement('div');
-        actions.className = 'bw-conn-panel-actions';
-
+    function panelOf(queueState, summary) {
+        const actions = [];
         if (queueState.paused) {
-            const login = document.createElement('a');
-            login.className = 'bw-conn-btn';
-            login.href = '/account/login';
-            login.textContent = 'Sign in';
-            actions.appendChild(login);
+            actions.push({ key: 'sign-in', label: 'Sign in', href: '/account/login' });
         }
-
         // The offline client, when this device has it for this page (PR 3.14, client-continue.js).
-        const offlineView = window.bwClientContinue ? window.bwClientContinue.target() : null;
-        if (offlineView) {
-            actions.appendChild(button('Continue offline', () => window.bwClientContinue.go()));
+        if (window.bwClientContinue && window.bwClientContinue.target()) {
+            actions.push({ key: 'continue-offline', label: 'Continue offline', run: () => window.bwClientContinue.go() });
         }
-
         // A held-back maintenance reload is offered explicitly; the automatic one waits for the
         // text field to be empty, and the user may well want it sooner.
         if (window.bwMaintenance && window.bwMaintenance.active() && window.bwMaintenance.state().phase === 'ready') {
-            actions.appendChild(button('Reload now', () => window.bwMaintenance.reloadNow()));
+            actions.push({ key: 'reload-now', label: 'Reload now', run: () => window.bwMaintenance.reloadNow() });
         } else if (window.blocwerkConnection && window.blocwerkConnection.status() === 'rejected') {
-            actions.appendChild(button('Reload', () => window.blocwerkConnection.reload()));
+            actions.push({ key: 'reload', label: 'Reload', run: () => window.blocwerkConnection.reload() });
         }
-
-        actions.appendChild(button('Retry now', () => window.blocwerkOfflineQueue.retryNow()));
-
+        actions.push({ key: 'retry', label: 'Retry now', run: () => window.blocwerkOfflineQueue.retryNow() });
         if (queueState.rejected.length > 0) {
-            actions.appendChild(button('Dismiss', () => window.blocwerkOfflineQueue.dismissRejected()));
+            actions.push({ key: 'dismiss', label: 'Dismiss', run: () => window.blocwerkOfflineQueue.dismissRejected() });
         }
-
-        panel.appendChild(actions);
-        return panel;
+        return {
+            detail: summary.detail,
+            errors: queueState.rejected.map(item => item.kind + ': ' + item.message),
+            actions: actions
+        };
     }
 
-    function button(label, onClick) {
-        const el = document.createElement('button');
-        el.type = 'button';
-        el.className = 'bw-conn-btn';
-        el.textContent = label;
-        el.addEventListener('click', event => {
-            event.stopPropagation();
-            onClick();
-        });
-        return el;
+    /**
+     * What the pill shows. Actions that could not be uploaded never take the label from a lasting state or a bubble:
+     * they are a badge on the pill (and listed in its panel) until dismissed, and the label only when nothing else is.
+     */
+    function viewOf(queueState, connection) {
+        const lasting = summarise(queueState, connection);
+        const summary = withBubble(lasting);
+        const rejected = queueState.rejected.length;
+        if (summary && summary.bubble && !lasting && rejected === 0) {
+            // An event with nothing lasting behind it: shown, not opened.
+            expanded = false;
+            return { tone: summary.tone, label: summary.label, bubble: summary.bubble, openable: false };
+        }
+        if (!summary && rejected === 0) {
+            expanded = false;
+            // Nothing to report from the connection/queue — but a transient flash may be showing.
+            return flashState ? { tone: flashState.tone, label: flashState.label, openable: false, flash: true } : null;
+        }
+        const conflict = window.bwStatus ? window.bwStatus.label('conflict', { count: rejected }) : 'Not saved';
+        const effective = summary || { tone: 'error', label: conflict, detail: 'Some actions could not be saved. They are listed below.' };
+        return {
+            tone: effective.tone, label: effective.label, bubble: effective.bubble || null, openable: true,
+            badge: summary && summary.bubble !== 'conflict' ? rejected : 0, expanded: expanded,
+            onToggle: () => { expanded = !expanded; render(); }, panel: panelOf(queueState, effective)
+        };
     }
 
     function render() {
@@ -188,64 +193,7 @@
         const connection = window.blocwerkConnection
             ? window.blocwerkConnection.status()
             : 'connected';
-
-        const container = ensureHost();
-        container.textContent = '';
-
-        const summary = summarise(queueState, connection);
-        if (!summary && queueState.rejected.length === 0) {
-            // Nothing to report from the connection/queue — but a transient flash may be showing.
-            if (flashState) {
-                container.classList.add('bw-conn-active');
-                const flashPill = document.createElement('div');
-                flashPill.className = 'bw-conn-pill bw-conn-' + flashState.tone + ' bw-conn-flash';
-                const flashDot = document.createElement('span');
-                flashDot.className = 'bw-conn-dot';
-                flashPill.appendChild(flashDot);
-                const flashLabel = document.createElement('span');
-                flashLabel.className = 'bw-conn-label';
-                flashLabel.textContent = flashState.label;
-                flashPill.appendChild(flashLabel);
-                container.appendChild(flashPill);
-                return;
-            }
-            expanded = false;
-            container.classList.remove('bw-conn-active');
-            return;
-        }
-
-        const effective = summary || {
-            tone: 'warn',
-            label: 'Not saved',
-            detail: 'Some actions could not be saved.'
-        };
-
-        container.classList.add('bw-conn-active');
-
-        const pill = document.createElement('button');
-        pill.type = 'button';
-        pill.className = 'bw-conn-pill bw-conn-' + effective.tone;
-        pill.setAttribute('aria-expanded', expanded ? 'true' : 'false');
-
-        const dot = document.createElement('span');
-        dot.className = 'bw-conn-dot';
-        pill.appendChild(dot);
-
-        const label = document.createElement('span');
-        label.className = 'bw-conn-label';
-        label.textContent = effective.label;
-        pill.appendChild(label);
-
-        pill.addEventListener('click', () => {
-            expanded = !expanded;
-            render();
-        });
-
-        container.appendChild(pill);
-
-        if (expanded) {
-            container.appendChild(buildDetail(queueState, effective));
-        }
+        window.bwStatusPill.draw(ensureHost(), viewOf(queueState, connection));
     }
 
     if (window.blocwerkOfflineQueue) {
@@ -253,6 +201,10 @@
     }
     if (window.blocwerkConnection) {
         window.blocwerkConnection.subscribe(render);
+    }
+
+    if (window.bwStatus) {
+        window.bwStatus.subscribe(render);
     }
 
     window.addEventListener('bw:offline-error', render);

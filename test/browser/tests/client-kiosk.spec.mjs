@@ -174,11 +174,13 @@ test('data planted for another wall or another partition is never read offline',
 
 test('a kiosk session never sets the grade cookie: one planted before stays untouched, resting and acting as a member', async ({ page, context, world, baseURL }) => {
     const wall = `/walls/${world.walls.alpha.id}`;
-    const written = [];
-    page.on('response', async response => {
-        const set = (await response.headersArray()).filter(h => h.name.toLowerCase() === 'set-cookie' && /blocwerk-grade-pref/i.test(h.value));
-        written.push(...set.map(h => `${response.url()} ${h.value}`));
-    });
+    // Each response's Set-Cookie headers, read while the page is open: the listener only collects the reads, and they are
+    // awaited after it is removed, before the test ends, so none runs against a closed page (a WebKit teardown race).
+    const reads = [];
+    const onResponse = response => reads.push(response.headersArray()
+        .then(headers => headers.filter(h => h.name.toLowerCase() === 'set-cookie' && /blocwerk-grade-pref/i.test(h.value))
+            .map(h => `${response.url()} ${h.value}`)));
+    page.on('response', onResponse);
     await registerKiosk(page, world.kioskToken);
     await context.addCookies([{ name: 'blocwerk-grade-pref', value: 'planted', url: baseURL }]);
     expect((await gradeCookie(context)).map(c => c.value), 'the lookup sees a planted cookie').toEqual(['planted']);
@@ -188,6 +190,9 @@ test('a kiosk session never sets the grade cookie: one planted before stays unto
     await page.goto(wall);
     await expect(page.locator('body')).toHaveAttribute('data-bw-user', world.users.carol.id);
     await page.goto(`${wall}/boulders/${world.walls.alpha.boulder}`);
+    page.off('response', onResponse);
+    const written = (await Promise.all(reads)).flat();
+    expect(reads.length, 'the listener saw the kiosk pages').toBeGreaterThan(0);
     expect(written, 'no kiosk response sets or deletes it').toEqual([]);
     expect((await gradeCookie(context)).map(c => c.value)).toEqual(['planted']);
 });

@@ -65,6 +65,17 @@ public sealed partial class OfflineClientShellTests
     }
 
     [Fact]
+    public void TheSyncModules_LoadAfterTheStore_AndBeforeTheRuntime_WithTheRefreshersBeforeTheirCaller()
+    {
+        var store = Shell.IndexOf("OfflineClientShellAssets.StoreModules", StringComparison.Ordinal);
+        var sync = Shell.IndexOf("OfflineClientShellAssets.SyncModules", StringComparison.Ordinal);
+        var loader = Shell.IndexOf("OfflineClientShellAssets.Loader)", StringComparison.Ordinal);
+
+        Assert.True(store >= 0 && store < sync && sync < loader, "client-sync.js calls client-store.js and is called by the runtime");
+        Assert.Equal(new[] { "js/asset-manifest.js", "js/asset-data.js", "js/asset-mine.js", "v/js/client-sync.js" }, OfflineClientShellAssets.SyncModules);
+    }
+
+    [Fact]
     public void TheShell_HasTheClientBase_TheOfflinePartition_AndNoCircuit()
     {
         Assert.Contains("<base href=\"/v/\" />", Shell, StringComparison.Ordinal);

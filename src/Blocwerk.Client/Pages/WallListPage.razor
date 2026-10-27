@@ -1,0 +1,75 @@
+@page "/"
+@page "/walls"
+@implements IDisposable
+@inject ClientStore Store
+@inject WallSummaries Summaries
+@* The wall list (the Server's /walls, "My Walls"): the viewer's own walls the device holds, read-only — no "New Wall"
+   and no join box. Each card reads only its wall's summary (WallSummaries), never its holds or comments. A card opens
+   the wall's view in the client. /v/ itself shows it too, though the worker never hands "/" over (a declared route
+   starts with a literal segment). *@
+<PageTitle>My Walls - Blocwerk</PageTitle>
+
+<div class="wall-list">
+    <div class="list-header">
+        <h1>My Walls</h1>
+    </div>
+
+    @if (cards is null)
+    {
+        <p class="loading">Loading...</p>
+    }
+    else if (cards.Count == 0)
+    {
+        <div class="empty-state">
+            <p>No walls saved on this device yet. Open a wall online and it is saved for the next time you are offline.</p>
+        </div>
+    }
+    else
+    {
+        <div class="wall-cards">
+            @foreach (var wall in cards)
+            {
+                <a href="@ClientRoutes.WallLink(wall.WallId, null)" class="wall-card" data-bw-wall="@wall.WallId">
+                    <div class="wall-card-photo">
+                        @if (PhotoUrls.Thumbnail(wall.WallId, wall.PhotoSha, null) is { } url)
+                        {
+                            @* The name is the card's heading: the photo is decoration (alt="" keeps it from being read twice). *@
+                            <PanelPhoto Urls="[url]" Alt="" />
+                        }
+                        else
+                        {
+                            <div class="no-photo">No Photo</div>
+                        }
+                    </div>
+                    <div class="wall-card-info">
+                        <h3>@wall.Name</h3>
+                        @if (wall.BoulderCount is { } count)
+                        {
+                            <span class="member-count">@count boulder@(count != 1 ? "s" : string.Empty)</span>
+                        }
+                    </div>
+                </a>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<WallSummary>? cards;
+
+    /// <inheritdoc />
+    public void Dispose() => Store.Changed -= OnChanged;
+
+    /// <inheritdoc />
+    protected override async Task OnInitializedAsync()
+    {
+        Store.Changed += OnChanged;
+        cards = await Summaries.ListAsync();
+    }
+
+    private void OnChanged() => _ = InvokeAsync(async () =>
+    {
+        cards = await Summaries.ListAsync();
+        StateHasChanged();
+    });
+}

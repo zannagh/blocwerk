@@ -1,0 +1,82 @@
+@page "/whats-new"
+@attribute [AllowAnonymous]
+@attribute [StreamRendering]
+@using Blocwerk.Core.WhatsNew
+@inject IReleaseNotesService ReleaseNotes
+
+@* Static SSR, read-only, no circuit and no edit lease: the release list streams in after the shell, and
+   the prerelease toggle is a plain link (?prereleases=true). The GitHub fetch happens on the server, is
+   cached for an hour and is bounded to a few seconds, so this never hangs on GitHub. *@
+
+<PageTitle>What's new - Blocwerk</PageTitle>
+
+<div class="whatsnew-page">
+    <div class="page-header">
+        <a href="/" class="back-link">&larr; Home</a>
+        <h1>What's new</h1>
+        <p class="description">
+            You're running <strong class="whatsnew-running">v@(AppVersion.Current)</strong>.
+            These are Blocwerk's release notes, from its public GitHub repository.
+        </p>
+    </div>
+
+    @if (feed is null || listing is null)
+    {
+        <p class="whatsnew-status" role="status">Loading release notes&hellip;</p>
+    }
+    else
+    {
+        @if (!feed.Available)
+        {
+            <p class="whatsnew-notice" role="status">
+                The release notes couldn't be loaded from GitHub right now. You can read them on GitHub instead.
+            </p>
+        }
+        else
+        {
+            @if (listing.PreviewNewerThan is { } stable)
+            {
+                <p class="whatsnew-notice whatsnew-preview">
+                    You're on a preview build newer than <strong>@stable.Name</strong>.
+                    <a href="@listing.CompareUrl" target="_blank" rel="noopener noreferrer">See everything that changed since on GitHub</a>
+                </p>
+            }
+
+            <WhatsNewToggle ShowPrereleases="ShowPrereleases" HiddenCount="listing.HiddenPrereleases" />
+
+            @if (listing.Shown.Count == 0)
+            {
+                <p class="whatsnew-status">No releases to show yet.</p>
+            }
+
+            @foreach (var release in listing.Shown)
+            {
+                <WhatsNewRelease Release="release" IsCurrent="ReferenceEquals(release, listing.Current)" />
+            }
+        }
+
+        <p class="whatsnew-footer">
+            <a href="@feed.ReleasesPageUrl" target="_blank" rel="noopener noreferrer">All releases on GitHub &rarr;</a>
+        </p>
+    }
+</div>
+
+@code {
+    private ReleaseFeed? feed;
+    private ReleaseListing? listing;
+
+    // A string, not a bool: a hand-typed ?prereleases=1 must not fail the page on binding.
+    [SupplyParameterFromQuery(Name = "prereleases")]
+    public string? Prereleases { get; set; }
+
+    private bool ShowPrereleases => Prereleases is { } value
+        && (value.Equals("true", StringComparison.OrdinalIgnoreCase) || value == "1");
+
+    // Route data loads here, not in OnInitializedAsync: enhanced navigation between ?prereleases=1 and the
+    // plain page keeps this component and only sets its parameters again.
+    protected override async Task OnParametersSetAsync()
+    {
+        feed = await ReleaseNotes.GetAsync();
+        listing = ReleaseListingBuilder.Build(feed, AppVersion.Current, ShowPrereleases);
+    }
+}

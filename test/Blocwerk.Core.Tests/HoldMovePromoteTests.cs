@@ -14,9 +14,10 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Blocwerk.Core.Tests;
 
 /// <summary>
-/// A hold that physically moved between two panel generations, end to end through the real promote: within the cutoff it
-/// stays on its boulders (which are marked for review), beyond it it comes off them (they are marked for revision, never
-/// deleted), the lineage link records the measurement, and the "Then" view still draws the old position.
+/// A hold that physically moved between two panel generations, end to end through the real promote. A measurement alone
+/// marks nothing (a suspected move, asked about in the review); a move a person confirmed stays on its boulders within the
+/// cutoff (which are marked for review) and comes off them beyond it (they are marked for revision, never deleted), the
+/// lineage link records the measurement, and the "Then" view still draws the old position.
 /// </summary>
 public class HoldMovePromoteTests
 {
@@ -24,12 +25,12 @@ public class HoldMovePromoteTests
     internal static readonly HoldMoveOptions Loose = new() { MinNeighbours = 3 };
 
     [Fact]
-    public async Task MovedSixCm_StaysOnTheBoulder_AndTheBoulderNeedsReview()
+    public async Task MovedSixCm_ConfirmedByAPerson_StaysOnTheBoulder_AndTheBoulderNeedsReview()
     {
         using var h = new WallTestHarness();
         var s = await SeedAsync(h, movedToA: 1060);
 
-        await s.Service.PromoteAsync(s.WallId, Confirm(s), s.SessionId);
+        await s.Service.PromoteAsync(s.WallId, Confirm(s, CarryKind.Changed), s.SessionId);
 
         await using var db = h.CreateContext();
         var boulder = await db.Boulders.SingleAsync(b => b.Id == s.BoulderId);
@@ -83,20 +84,42 @@ public class HoldMovePromoteTests
         Assert.Equal(HoldType.Start, then.Single(t => t.HoldId == s.OldMover).Type);
     }
 
-    [Fact]
-    public async Task FarBeyondTheCutoff_ButNotConfirmedAsMoved_IsKeptAndMarked_NeverRemoved()
+    [Theory]
+    [InlineData(1060)]
+    [InlineData(1340)]
+    public async Task AMeasuredMove_NobodyConfirmed_IsOnlySuspected_AndMarksNoBoulder(double movedToA)
     {
         using var h = new WallTestHarness();
-        var s = await SeedAsync(h, movedToA: 1340);
+        var s = await SeedAsync(h, movedToA);
 
-        await s.Service.PromoteAsync(s.WallId, Confirm(s), s.SessionId);
+        var plan = await s.Service.PreviewHoldMovesAsync(s.WallId, Confirm(s));
+        await s.Service.PromoteAsync(s.WallId, Confirm(s) with { ExpectedMovesVersion = plan.Version }, s.SessionId);
+
+        Assert.Equal(HoldMoveOutcome.Suspected, plan.For(s.OldMover)!.Outcome);
+        await using var db = h.CreateContext();
+        var boulder = await db.Boulders.SingleAsync(b => b.Id == s.BoulderId);
+        Assert.False(boulder.NeedsReview);
+        Assert.Equal(3, boulder.Generation);
+        var holds = await db.BoulderHolds.Where(b => b.BoulderId == s.BoulderId).Select(b => b.HoldId).ToListAsync();
+        Assert.Equal(new[] { s.NewMover, s.NewStayer }.Order(), holds.Order());
+        Assert.Empty(await db.BoulderHoldMoves.ToListAsync());
+        var link = await db.HoldGenerationLinks.SingleAsync(l => l.OldHoldId == s.OldMover);
+        Assert.Equal((HoldMoveOutcome.Suspected, movedToA - 1000), (link.MoveOutcome, link.MoveDistanceMm!.Value));
+        Assert.Empty(await h.BoulderService.GetBoulderMovesAsync(s.BoulderId));
+    }
+
+    [Fact]
+    public async Task FarBeyondTheCutoff_ConfirmedByAPerson_ButNotCertain_IsKeptAndMarked()
+    {
+        using var h = new WallTestHarness();
+        var s = await SeedAsync(h, movedToA: 1130);
+
+        await s.Service.PromoteAsync(s.WallId, Confirm(s, CarryKind.Changed), s.SessionId);
 
         await using var db = h.CreateContext();
         Assert.True((await db.Boulders.SingleAsync(b => b.Id == s.BoulderId)).NeedsReview);
         Assert.Equal(2, await db.BoulderHolds.CountAsync(b => b.BoulderId == s.BoulderId));
         Assert.Equal(HoldMoveOutcome.Possible, (await db.HoldGenerationLinks.SingleAsync(l => l.OldHoldId == s.OldMover)).MoveOutcome);
-        var move = Assert.Single(await h.BoulderService.GetBoulderMovesAsync(s.BoulderId));
-        Assert.Equal("possibly moved about 34 cm, check this hold", move.Text);
     }
 
     [Fact]

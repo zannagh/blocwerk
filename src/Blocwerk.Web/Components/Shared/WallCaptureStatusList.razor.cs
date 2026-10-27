@@ -189,11 +189,12 @@ public partial class WallCaptureStatusList : IAsyncDisposable
 
     /// <summary>
     /// The retrain offer after the capture's quality: the next profile, and Ultra after Max only when a runner (or the
-    /// splat worker) can really train it.
+    /// splat worker) can really train it; the same profile again when the capture ended without its photo-real view.
     /// </summary>
-    private SplatQuality? BetterQuality(WallCaptureSummary capture) =>
-        CaptureSplatDocuments.NextQuality(capture.SplatQuality)
-        ?? (capture.SplatQuality == SplatQuality.Max && ultraAvailable ? SplatQuality.Ultra : null);
+    private SplatQuality? BetterQuality(WallCaptureSummary capture) => CaptureSplatDocuments.RetrainQuality(
+        capture.SplatQuality,
+        ultraAvailable,
+        lastAttemptFailed: capture.Status == WallCaptureStatus.SucceededWithoutSplat);
 
     /// <summary>Stops waiting for a 3D runner: the capture keeps its model (and any older photo-real view).</summary>
     private async Task CancelRunnerJobAsync(Guid captureId)

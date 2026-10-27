@@ -14,8 +14,11 @@ namespace Blocwerk.Core.Capture.Replay;
 /// </summary>
 public sealed record CapturePackageManifest
 {
-    /// <summary>The format this build writes and reads.</summary>
-    public const int CurrentFormat = 1;
+    /// <summary>The format this build writes. 2 adds <see cref="CapturePackageRows.Results"/>.</summary>
+    public const int CurrentFormat = 2;
+
+    /// <summary>The oldest format this build still reads (a format-1 package imports exactly as before).</summary>
+    public const int OldestFormat = 1;
 
     public int FormatVersion { get; init; } = CurrentFormat;
 
@@ -51,13 +54,17 @@ public sealed record CapturePackageManifest
     public IReadOnlyList<string> Warnings { get; init; } = [];
 }
 
-/// <summary>The rows a replay inserts. The trained view's GPU job carries the prepared state and the runner's result.</summary>
+/// <summary>
+/// The rows a replay inserts. The trained view's GPU job carries the prepared state and the runner's result; the source's
+/// computed results (null: the target computes them) let the target skip its own compute.
+/// </summary>
 public sealed record CapturePackageRows(
     WallCapture Capture,
     IReadOnlyList<WallCapturePhoto> Photos,
     WallGeometryModel Model,
     IReadOnlyList<WallGeometryTexture> Textures,
-    GpuJob GpuJob);
+    GpuJob GpuJob,
+    CapturePackageResults? Results = null);
 
 /// <summary>One stored file of the package: its bare name in the capture store, size, SHA-256 (lowercase hex) and what it is.</summary>
 public sealed record CapturePackageFile(string Name, long Bytes, string Sha256, string Role);

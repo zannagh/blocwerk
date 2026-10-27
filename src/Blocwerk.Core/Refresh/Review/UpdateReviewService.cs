@@ -43,7 +43,7 @@ public sealed partial class UpdateReviewService(
             return null;
         }
 
-        var facts = await ReadFactsAsync(db, refresh.WallId, sessionId);
+        var facts = await ReadFactsAsync(db, refresh.WallId, sessionId, RefreshTimeline.Summary(refresh)?.MovedHolds);
         if (facts is null)
         {
             return null;

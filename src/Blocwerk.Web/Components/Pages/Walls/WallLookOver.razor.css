@@ -4,7 +4,7 @@
    (same class names, so the two read alike). Colours come from the shared tokens. */
 .lookover-page {
     max-width: 1280px; margin: 0 auto; padding: 6px 12px 8px; display: flex; flex-direction: column; gap: 8px;
-    height: calc(100dvh - var(--topbar-h, 0px) - var(--bottomnav-h, 0px)); min-height: 420px;
+    height: calc(var(--bw-app-h, 100dvh) - var(--topbar-h, 0px) - var(--bottomnav-h, 0px)); min-height: 420px;
 }
 .lookover-page.is-list { height: auto; min-height: 0; padding-bottom: calc(48px + var(--bottomnav-h, 0px)); }
 .lookover-page > p { margin: 0; }

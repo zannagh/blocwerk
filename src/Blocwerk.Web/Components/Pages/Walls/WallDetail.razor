@@ -40,7 +40,7 @@ else if (_wall.UnderMaintenance && _currentUserId != _wall.MaintenanceByUserId)
 else
 {
     @* The mark goes first: a long wall name ellipsizes in the top bar and would cut a trailing mark off. *@
-    <SectionContent SectionName="TopBarTitle"><OfflineReadyMark WallId="_wall.Id" /> @_wall.Name</SectionContent>
+    <SectionContent SectionName="TopBarTitle">@_wall.Name</SectionContent>
 
     @* PageClasses is pipe-separated per page: only page 4 (the boulder list) gets a surface of its
        own — full-bleed slide, sticky list head, fold marker. See the .boulders-page block in
@@ -761,6 +761,28 @@ else
 
                 @if (_items.Count > 0)
                 {
+                    @* Search: a lens chip beside Filters opens a field in the sticky head. list-search.js shows
+                       and focuses it inside the tap, so a phone raises its keyboard. See WallDetail.ListFilters.cs. *@
+                    <button type="button" class="list-search-chip@(searchOpen || !string.IsNullOrEmpty(_searchText) ? " active" : string.Empty)"
+                            @ref="searchToggle" @onclick="ToggleSearch" data-bw-search-toggle
+                            aria-label="Search boulders" title="Search boulders"
+                            aria-expanded="@(searchOpen ? "true" : "false")" aria-controls="@SearchRowId">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                             stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true">
+                            <circle cx="11" cy="11" r="7"></circle>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        </svg>
+                    </button>
+                    <div class="list-search-row" id="@SearchRowId" hidden="@(!searchOpen)" role="search"
+                         @onkeydown="OnSearchKeyDownAsync">
+                        <input type="search" class="filter-input list-search-input" @ref="searchInput"
+                               @bind="_searchText" @bind:event="oninput"
+                               placeholder="Search name, grade, setter" aria-label="Search boulders"
+                               inputmode="search" enterkeyhint="search" autocomplete="off"
+                               autocapitalize="off" autocorrect="off" spellcheck="false" />
+                        <button type="button" class="list-search-close" @onclick="CloseSearch"
+                                aria-label="Close search" title="Close search">&times;</button>
+                    </div>
                     @* All boulder filters live in one collapsible card (collapsed by default), reusing
                        the page's settings-card/summary chrome. The chip carries a filter icon, a
                        "Filters" label and — when any filter is active — a count badge, so a collapsed
@@ -790,7 +812,6 @@ else
                         {
                         <div class="settings-card-body" id="boulder-filter-panel">
                             <div class="filter-bar">
-                                <input @bind="_searchText" @bind:event="oninput" placeholder="Search..." class="filter-input" />
                                 <div class="sort-row">
                                     <label class="sort-label">Sort</label>
                                     <select @bind="_sort" class="filter-select">
@@ -841,7 +862,7 @@ else
                 else if (ActiveBoulders.Count == 0 && ArchivedBoulders.Count == 0)
                 {
                     <div class="empty-boulders">
-                        <p>No boulders match your filters.</p>
+                        <p>@(string.IsNullOrWhiteSpace(_searchText) ? "No boulders match your filters." : "No boulders match your search.")</p>
                     </div>
                 }
                 else
@@ -1024,6 +1045,7 @@ else
     {
         // Every render, not just the first: the lease toggles when edit mode is entered or left.
         _editGuardActive = await EditGuardInterop.SyncAsync(JS, "wall-edit", _editLease is not null, _editGuardActive, EditActivity);
+        await AfterListRenderAsync();
         if (!_wallKeepChecked && _isEditing && _panelEditor is not null)
         {
             await RestoreKeptDecisionsAsync();
@@ -1111,14 +1133,14 @@ else
         await filtersToggle.FocusAsync();
     }
 
-    // Active-filter badge for the collapsed filter card: search text, a grade bound, and each
-    // checked box count once. Sort is an ordering, not a filter, so it is deliberately excluded.
+    // Active-filter badge for the collapsed filter card: a grade bound and each checked box count
+    // once. Sort is an ordering, not a filter, so it is deliberately excluded, and the search has
+    // its own chip.
     private int ActiveFilterCount
     {
         get
         {
             var count = 0;
-            if (!string.IsNullOrWhiteSpace(_searchText)) { count++; }
             if (!string.IsNullOrEmpty(_gradeMin) || !string.IsNullOrEmpty(_gradeMax)) { count++; }
             if (_fAttempted) { count++; }
             if (_fDone) { count++; }
@@ -1198,9 +1220,10 @@ else
 
     private IEnumerable<BoulderListItem> ApplyFilters(IEnumerable<BoulderListItem> src)
     {
-        if (!string.IsNullOrWhiteSpace(_searchText))
+        var terms = BoulderListSearch.Terms(_searchText);
+        if (terms.Length > 0)
         {
-            src = src.Where(i => i.Boulder.Name.Contains(_searchText, StringComparison.OrdinalIgnoreCase));
+            src = src.Where(i => BoulderListSearch.Matches(i, terms));
         }
 
         if (_fAttempted)
@@ -1303,7 +1326,8 @@ else
         Cache.Changed += OnCacheChanged;
 
         // Back from a boulder: the page as it was left renders at once, and the load below refreshes it.
-        await RefreshRestoredPageAsync(RestoreFromPageMemory(), LoadCurrentWall);
+        var restored = RestoreFromPageMemory();
+        await RefreshRestoredPageAsync(restored, () => LoadWallAndListFiltersAsync(restored));
     }
 
     // Navigating from one wall to another keeps this component alive — same route template, new
@@ -1322,10 +1346,13 @@ else
         // Drop the old wall first: it puts the page back on its "Loading..." state, which also
         // recreates the carousel so it opens on the new wall's initial page rather than wherever the
         // user had swiped the previous one.
+        // The search is a lookup on the wall it was typed on: whatever this wall's filters turn out to be, it starts
+        // without one.
         _wall = null;
         _show3D = false;
+        CloseSearch();
         StateHasChanged();
-        await LoadCurrentWall();
+        await LoadWallAndListFiltersAsync(restored: false);
     }
 
     private async Task LoadCurrentWall()

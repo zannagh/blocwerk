@@ -25,7 +25,7 @@
     inset: 0;
     z-index: 2147483000;
     width: 100vw;
-    height: 100dvh;
+    height: var(--bw-app-h, 100dvh);
     background: var(--bg, #fff);
 }
 

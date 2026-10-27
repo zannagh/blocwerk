@@ -1,39 +1,25 @@
 /* The offline client's frame (Blocwerk.Client). The views (PR 3.11) bring their own rules; the overlay's come from
    Blocwerk.Shared.Ui's hold-tap.css. */
+/* The frame's colours are the Server pages' tokens (client-base.css, their subset the shell loads first), so the client
+   looks like the page it stands in for; the fallbacks keep the frame readable without it. */
 :root {
-    --bw-c-bg: #f6f6f8;
-    --bw-c-surface: #ffffff;
-    --bw-c-text: #1b1b28;
-    --bw-c-muted: #5c5c70;
-    --bw-c-accent: #3366dd;
-    --bw-c-border: #dcdce6;
-    /* The Server's connection pill tones (Web app.css: the warning and info colours), so both pills read the same. */
-    --bw-c-warn-bg: #FFF3E0;
-    --bw-c-warn-text: #B33F00;
-    --bw-c-info-bg: #E3F2FD;
-    --bw-c-info-text: #0D47A1;
-}
-
-@media (prefers-color-scheme: dark) {
-    :root {
-        --bw-c-bg: #0f0f18;
-        --bw-c-surface: #1b1b28;
-        --bw-c-text: #e6e6ee;
-        --bw-c-muted: #a0a0b4;
-        --bw-c-accent: #7aa2ff;
-        --bw-c-border: #2c2c3c;
-        --bw-c-warn-bg: #3d2e1a;
-        --bw-c-warn-text: #FFB74D;
-        --bw-c-info-bg: #1a2a3d;
-        --bw-c-info-text: #64B5F6;
-    }
+    --bw-c-bg: var(--bg, #f5f4f1);
+    --bw-c-surface: var(--bg-surface, #ffffff);
+    --bw-c-text: var(--text, #2b2b33);
+    --bw-c-muted: var(--text-secondary, #666672);
+    --bw-c-accent: var(--accent, #cf2c49);
+    --bw-c-border: var(--border, #e3e0d9);
+    /* The Server's connection pill tones (the page tokens' warning and info), so both pills read the same. */
+    --bw-c-warn-bg: var(--warning-bg, #FFF3E0);
+    --bw-c-warn-text: var(--warning-text, #B33F00);
+    --bw-c-info-bg: var(--info-bg, #E3F2FD);
+    --bw-c-info-text: var(--info-text, #0D47A1);
 }
 
 html, body {
     margin: 0;
     background: var(--bw-c-bg);
     color: var(--bw-c-text);
-    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .bw-client-bar {
@@ -43,7 +29,8 @@ html, body {
     gap: 12px;
     padding: 12px 16px;
     padding-top: max(12px, env(safe-area-inset-top));
-    background: var(--bw-c-surface);
+    background: var(--topbar-bg, var(--bw-c-surface));
+    color: var(--topbar-text, inherit);
     border-bottom: 1px solid var(--bw-c-border);
 }
 

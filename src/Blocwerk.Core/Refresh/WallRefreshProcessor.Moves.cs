@@ -61,7 +61,8 @@ public sealed partial class WallRefreshProcessor
                 m.Measure.Source,
                 m.Outcome,
                 HoldMovePolicy.Describe(m.Measure.DistanceMm, m.Measure.RotationDeg, m.Outcome).Replace("this boulder", "its boulders", StringComparison.Ordinal),
-                uses.GetValueOrDefault(m.OldHoldId) ?? []))
+                uses.GetValueOrDefault(m.OldHoldId) ?? [],
+                m.Measure.RotationDeg is { } r ? Math.Round(r, 1) : null))
             .ToList();
     }
 
