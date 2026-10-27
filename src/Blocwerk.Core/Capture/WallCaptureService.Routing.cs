@@ -1,6 +1,7 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using Blocwerk.Core.Compute;
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Entities;
 
@@ -24,7 +25,7 @@ public sealed partial class WallCaptureService
             }
 
             var configured = settings?.GeometryTextures ?? new GeometryTextureSettings();
-            var host = TextureQualityEstimate.ForAll(inputs.Geometry, inputs.Photos, configured);
+            var host = TextureQualityEstimate.ForAll(inputs.Geometry, inputs.Photos, configured, await HostBlendBudgetAsync());
             if (gpuJobs is null || gpuJobs.Options.Mode == Runners.GpuRunnerMode.Off)
             {
                 return TextureRoutes.Decide(host, _ => null, false);
@@ -45,6 +46,10 @@ public sealed partial class WallCaptureService
             return TextureRoutes.Decide(host, q => offers.GetValueOrDefault(q), online);
         }
     }
+
+    /// <summary>The host worker's blend budget as it reports it (<c>/v1/info</c>), else the default it has without the setting.</summary>
+    private async Task<double> HostBlendBudgetAsync() =>
+        (await LimitsAsync(ComputeServiceKind.Geometry))?.TexturesBlendMaxBytes ?? TextureQualityEstimate.BlendBudgetBytes;
 
     /// <summary>Why a runner cannot render this quality now (no capable runner online), or null.</summary>
     private async Task<string?> RunnerProblemAsync(Data.BlocwerkDbContext db, WallCapture capture, TextureQuality quality)

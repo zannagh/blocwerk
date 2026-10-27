@@ -49,7 +49,9 @@ Only what a probe needs; nothing about paths, tools, limits or the queue:
 
 `/health`'s fields plus `gitSha`, `auth`, `jobs {queued, running}` and per-worker details (limits;
 the splat worker's tool paths/versions and GPU backend). The app reads `limits.maxPhotos` before it starts or redoes a
-capture and refuses one that would not fit, before anything is sent.
+capture and refuses one that would not fit, before anything is sent. wall-geometry also reports
+`limits.texturesBlendMaxMb` (its `TEXTURES_BLEND_MAX_BYTES` in MB of 10^6 bytes): the app estimates per texture quality
+whether the blend fits this worker in full, and routes a quality that does not to a 3D runner.
 
 Limits: both workers size `MAX_PHOTOS`, the request size and their timeouts from the capture limits the app uses,
 `CAPTURE_MAX_PHOTOS` and `CAPTURE_MAX_VIDEO_FRAMES` (`computejobs/capture_limits.py`, defaults in `capture_limits.json`):
@@ -82,6 +84,9 @@ refused before it is decoded.
   "message": null,               // human-readable note (e.g. why it was cancelled)
   "error": null,                 // set iff status == failed; short, no server paths (<= 400 chars);
                                  // unexpected failures are "internal error (ref <id>)", details in the worker log
+  "failureKind": null,           // "resource" iff the job needed more memory than the worker allows one job
+                                 // (JOB_MAX_MEMORY_MB, or the kernel killed it): not the input's fault, a machine
+                                 // with more memory can run it; null otherwise (older workers omit it)
   "createdAt": "2026-09-23T10:00:00+00:00", "updatedAt": "…",
   "result": null                 // set iff status == succeeded; per kind (below)
 }

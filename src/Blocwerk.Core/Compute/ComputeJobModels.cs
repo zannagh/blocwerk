@@ -12,6 +12,12 @@ public static class ComputeJobStates
     public const string Failed = "failed";
     public const string Cancelled = "cancelled";
 
+    /// <summary>
+    /// <c>failureKind</c> of a job that needed more memory than the worker allows one job (<c>JOB_MAX_MEMORY_MB</c>): not the
+    /// input's fault, a machine with more memory can run it.
+    /// </summary>
+    public const string ResourceFailure = "resource";
+
     public static bool IsTerminal(string? status) => status is Succeeded or Failed or Cancelled;
 }
 
@@ -39,6 +45,10 @@ public sealed record ComputeJobStatus
 
     [JsonPropertyName("error")]
     public string? Error { get; init; }
+
+    /// <summary>Why a failed job failed, when the worker says: <see cref="ComputeJobStates.ResourceFailure"/>, or null.</summary>
+    [JsonPropertyName("failureKind")]
+    public string? FailureKind { get; init; }
 
     /// <summary>Per-kind result, kept raw so each caller parses what it needs.</summary>
     [JsonPropertyName("result")]

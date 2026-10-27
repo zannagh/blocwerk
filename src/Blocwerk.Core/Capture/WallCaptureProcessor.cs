@@ -63,6 +63,10 @@ public sealed partial class WallCaptureProcessor(
         {
             await EndNotActivatedAsync(captureId, ex.Message, ct);
         }
+        catch (CaptureNeedsMoreMemoryException ex)
+        {
+            await ParkSolveOrFailAsync(captureId, ex.Message, ct);
+        }
         catch (CaptureFailedException ex)
         {
             await FailAsync(captureId, ex.Message, ct);

@@ -39,6 +39,12 @@ public sealed partial class WallCaptureProcessor
         {
             await RedoCountedAsync(
                 captureId, CaptureRedoKind.Rerender, async () => rendered = await RenderAndEndAsync(captureId, target.ModelId, target.JobId, target.Quality, ct), ct);
+
+            // Too big for the host's worker: it went to a 3D runner instead (queued now, installed when delivered).
+            if (!rendered && await RerenderTargetAsync(captureId, ct) is { OnRunner: true } deferred)
+            {
+                await RerenderOnRunnerAsync(captureId, deferred, ct);
+            }
         }
 
         if (rendered && followUps is not null)
@@ -56,6 +62,11 @@ public sealed partial class WallCaptureProcessor
         try
         {
             jobId = await RenderTexturesAgainAsync(captureId, modelId, existingJobId, quality, ct);
+        }
+        catch (CaptureNeedsMoreMemoryException) when (RunnersOn)
+        {
+            await DeferTexturesToRunnerAsync(captureId, quality, ct);
+            return false;
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
@@ -104,6 +115,12 @@ public sealed partial class WallCaptureProcessor
         await using var db = dbContextFactory.CreateDbContext();
         var capture = await db.WallCaptures.AsNoTracking().FirstOrDefaultAsync(c => c.Id == captureId, ct);
         if (capture is null || !CaptureTextureOutcome.IsRerendering(capture.TexturesJobId))
+        {
+            return null;
+        }
+
+        // The capture's own run deferred its textures to a 3D runner and is still going: the mark waits until it has ended.
+        if (capture.Status == WallCaptureStatus.Texturing && CaptureTextureOutcome.RerenderOnRunner(capture.TexturesJobId))
         {
             return null;
         }

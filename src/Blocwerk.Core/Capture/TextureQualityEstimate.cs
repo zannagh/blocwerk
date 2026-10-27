@@ -23,7 +23,10 @@ public enum TextureBlendFit
 public sealed record TextureQualityEstimate(
     TextureQuality Quality, double MmPerPx, double MegaPixels, double BlendGb, int BlendViews, TextureBlendFit Fit, double RelativeDuration)
 {
-    /// <summary>The worker's blend budget (<c>TEXTURES_BLEND_MAX_BYTES</c>, default; the 4 GiB prod worker).</summary>
+    /// <summary>
+    /// The worker's blend budget when it does not report one (<c>TEXTURES_BLEND_MAX_BYTES</c> default); a worker that does says
+    /// so in <c>/v1/info</c> (<see cref="Compute.ComputeLimits.TexturesBlendMaxBytes"/>).
+    /// </summary>
     public const double BlendBudgetBytes = 2.0e9;
 
     /// <summary>The worker's total pixel limit per job (<c>TEXTURES_MAX_MEGAPIXELS</c>, default).</summary>
