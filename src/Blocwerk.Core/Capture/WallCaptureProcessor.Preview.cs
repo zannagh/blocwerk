@@ -31,6 +31,13 @@ public sealed partial class WallCaptureProcessor
         }
 
         var (step, path) = (job.PreviewStep!.Value, job.PreviewPath!);
+        if (!gpuJobs!.Options.PreviewsActive)
+        {
+            // Previews were turned off since it arrived (on runners only, SplatOnRunners, no preview is finished).
+            await gpuJobs.DropPreviewAsync(job.Id, step, path, ct);
+            return;
+        }
+
         try
         {
             var stats = JsonSerializer.Serialize(new { previewStep = step, totalSteps = job.TotalSteps });

@@ -52,6 +52,12 @@ public interface IPushNotificationService
     Task NotifyWallPhotoRealReadyAsync(Guid wallId, Guid userId);
 
     /// <summary>
+    /// Tells the same admin that the capture's 3D work has waited a day for a 3D runner and none was online: it will be done
+    /// once one becomes available. Same opt-out as the model notice: it is part of the same capture story.
+    /// </summary>
+    Task NotifyNoRunnerAsync(Guid wallId, Guid userId);
+
+    /// <summary>
     /// Broadcasts an "app back online" notice to every subscribed user who has not opted out of
     /// <see cref="NotificationType.AppOnline"/>. For use ONLY after a real downtime window.
     /// </summary>

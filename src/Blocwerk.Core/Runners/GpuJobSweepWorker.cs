@@ -14,6 +14,11 @@ public sealed class GpuJobSweepWorker(GpuJobQueue queue, ILogger<GpuJobSweepWork
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (queue.Options.Mode == GpuRunnerMode.Off && queue.Options.SplatOnRunners)
+        {
+            logger.LogError("SPLATSERVICE__ONRUNNERS is on but RUNNERS__MODE is off: no photo-real view can be made until one of them changes");
+        }
+
         if (queue.Options.Mode == GpuRunnerMode.Off)
         {
             try

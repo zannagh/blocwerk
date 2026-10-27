@@ -908,6 +908,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<int>("LostLeaseCount")
                         .HasColumnType("integer");
 
+                    b.Property<DateTimeOffset?>("NoRunnerNotifiedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<int>("PauseCount")
                         .HasColumnType("integer");
 

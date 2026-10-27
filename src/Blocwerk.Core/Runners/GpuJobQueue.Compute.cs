@@ -29,9 +29,10 @@ public sealed partial class GpuJobQueue
     /// <summary>
     /// A prepare / finish job is over once the pipeline has read its result (<paramref name="error"/> null: installed) or given up
     /// on it: the input envelope (photos or the trained scene, gigabytes) goes at once; the result stays while something may still
-    /// read it (the sweep and the capture retention remove it), unless the job failed.
+    /// read it (the sweep and the capture retention remove it), unless the job failed or <paramref name="dropResult"/> (nothing
+    /// reads it again). <paramref name="cancelled"/>: the server no longer wants a job that has not ended; it ends Cancelled.
     /// </summary>
-    public async Task CloseComputeAsync(Guid jobId, string? error, CancellationToken ct)
+    public async Task CloseComputeAsync(Guid jobId, string? error, CancellationToken ct, bool cancelled = false, bool dropResult = false)
     {
         await using var db = dbContextFactory.CreateDbContext();
         var job = await db.GpuJobs.FirstOrDefaultAsync(
@@ -42,6 +43,7 @@ public sealed partial class GpuJobQueue
         }
 
         var spent = new[] { job.BundlePath, job.PreparedPath }.Distinct().ToList();
+        var ended = error is not null && job.Status is not (GpuJobStatus.Failed or GpuJobStatus.Cancelled);
         if (error is null)
         {
             job.InstalledAt = Now;
@@ -49,15 +51,24 @@ public sealed partial class GpuJobQueue
         }
         else
         {
-            spent.AddRange(new[] { job.ResultPath }.OfType<string>());
-            job.ResultPath = null;
-            job.Status = job.Status == GpuJobStatus.Cancelled ? GpuJobStatus.Cancelled : GpuJobStatus.Failed;
+            job.Status = job.Status == GpuJobStatus.Cancelled || cancelled ? GpuJobStatus.Cancelled : GpuJobStatus.Failed;
             job.Error = Clip(error, 2048);
             job.CompletedAt ??= Now;
         }
 
+        if ((error is not null || dropResult) && job.ResultPath is { } result)
+        {
+            spent.Add(result);
+            job.ResultPath = null;
+            job.LeftoverDroppedAt = error is null ? Now : job.LeftoverDroppedAt;
+        }
+
         await db.SaveChangesAsync(ct);
         DeleteAll(spent, job.Id);
+        if (ended)
+        {
+            PulseJob(job.WallId, job.Id, null, ended: true);
+        }
     }
 
     private TimeSpan ShortestQueuedLifetime =>
