@@ -34,6 +34,16 @@ public sealed class WallGeometryPlacementController(
     public Task<IActionResult> Status(Guid wallId, CancellationToken ct) =>
         RunAsync(wallId, async () => Ok(await placement.GetStatusAsync(wallId, ct)));
 
+    /// <summary>Dry run of "re-place outlier holds in 3D": how many placed holds the wall contradicts, per panel photo.</summary>
+    [HttpGet("outliers")]
+    public Task<IActionResult> PreviewOutliers(Guid wallId, CancellationToken ct) =>
+        RunAsync(wallId, async () => Ok(await placement.PreviewOutliersAsync(wallId, ct)));
+
+    /// <summary>Re-places those holds in 3D only (revert the run like any other).</summary>
+    [HttpPost("outliers")]
+    public Task<IActionResult> ReplaceOutliers(Guid wallId, CancellationToken ct) =>
+        RunAsync(wallId, async () => Ok(await placement.ReplaceOutliersAsync(wallId, ct)));
+
     /// <summary>Reverts a run: every hold it placed that nobody moved since gets its previous values back.</summary>
     [HttpPost("{runId:guid}/revert")]
     public Task<IActionResult> Revert(Guid wallId, Guid runId, CancellationToken ct) =>
