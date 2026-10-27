@@ -287,6 +287,7 @@ give the job memory to match (`SPLAT_MAX_MEMORY_MB` unset, container limit ≥ 1
 | `TEXTURES_BLEND_MAX_BYTES` | 50 % of the machine's memory | the multi-view blend's budget for a wall-textures job (the wall-geometry service's own variable); advertised as `texturesMemoryMb`. `RUNNER_TEXTURES_MEMORY_FRACTION` (0.1 to 0.9) changes the 50 % |
 | `RUNNER_TEXTURES_MAX_IMAGE_MP` | 200 | OpenCV's decode limit per photo of a textures job |
 | `RUNNER_HOLDS` | 1 | `0` = never advertise the `detect-holds` capability (hold detection, below) |
+| `RUNNER_PANELS` | 1 | `0` = never advertise the `register-panels` capability (panel registration, below; needs COLMAP) |
 | `RUNNER_KEEP_AWAKE` | 1 | Windows: keep the PC out of idle sleep while the runner runs; `0` = off (macOS: `caffeinate -i`) |
 | `RUNNER_WINPTY` | 1 | Windows: give Brush a ConPTY through pywinpty (live progress); `0` = a plain pipe |
 
@@ -668,6 +669,18 @@ letterbox, decode and NMS, the server's window merge) and uploads `{"version": 1
 into holds itself. It waits `RUNNERS__HOLDSCLAIMMINUTES` (10) for a claim and `RUNNERS__HOLDSMAXMINUTES` (180) overall,
 then detects in the app; an older runner never advertises the kind, so nothing changes for it.
 `RUNNER_HOLDS_THREADS` sets ONNX Runtime's threads, `RUNNER_HOLDS_MAX_IMAGE_MP` (200) the largest photo it decodes.
+
+### Panel registration (`register-panels` jobs)
+
+A wall's panel photos (the 2D hold overlays are drawn on them) have no camera pose. To place their holds on the photo-real
+surface the server asks a runner to register them: a runner with COLMAP on its `PATH` (`COLMAP_BIN` overrides; the CUDA
+image has it) advertises `"register-panels"` (`RUNNER_PANELS=0` turns it off) and gets a zip of `register-job.json`
+(`{"version": 1, "cameras": [{"name", "width", "height", "K", "dist", "R", "t"}], "panels": [name]}`: the capture's solved
+cameras in the wall world, mm), `photos/<camera>.jpg` and `panels/<panel id>r<photo revision>.jpg` (at most 8 GiB).
+`gpurunner/panels_colmap.py` extracts SIFT, matches each photo with its 12 nearest posed photos and every panel with every
+photo, triangulates with the capture poses fixed and registers the panels with the existing frames fixed, then uploads
+`{"version": 1, "panels": {name: {"width", "height", "params": [f, cx, cy, k1, k2], "R", "t", "observations", "rmsPx",
+"medianPx"}}}`. Nothing on the server waits for it; the poses are read when someone places holds on the surface.
 
 ### Status page and pause switch
 

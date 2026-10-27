@@ -171,3 +171,23 @@ def test_unit_frame_splats_are_written_back_in_the_colmap_frame(tmp_path):
     cols = read_ply(str(tmp_path / "s.ply"))
     assert np.allclose(np.stack([cols["x"], cols["y"], cols["z"]], 1), world, atol=1e-4)
     assert np.allclose(np.exp(cols["scale_0"]), 0.01 / s, rtol=1e-5)  # 1 cm in the unit frame = 4 cm in COLMAP's
+
+
+def test_knn_chunks_shrink_with_the_point_count_and_keep_the_result(monkeypatch):
+    torch = pytest.importorskip("torch")
+    from splatworker.gsplat_model import knn_mean_dist
+    pts = torch.rand(500, 3, generator=torch.Generator().manual_seed(1))
+    expected = torch.cdist(pts, pts).topk(4, largest=False).values[:, 1:].mean(1)
+    seen = []
+    real = torch.cdist
+    monkeypatch.setattr(torch, "cdist", lambda a, b: seen.append(len(a)) or real(a, b))
+    got = knn_mean_dist(pts, block=500 * 64)  # at most 64 rows of 500 distances per chunk
+    assert max(seen) == 64 and sum(seen) == 500
+    assert torch.allclose(got, expected)
+
+
+def test_a_wsl2_driver_not_ready_counts_as_a_full_gpu():
+    pytest.importorskip("torch")
+    from splatworker.gsplat_train import is_vram_exhausted
+    assert is_vram_exhausted(RuntimeError("CUDA driver error: device not ready"))
+    assert not is_vram_exhausted(RuntimeError("CUDA error: an illegal memory access was encountered"))

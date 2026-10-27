@@ -44,6 +44,10 @@ public static class IgnoredDetectionFindings
                 $"{head}: doesn't fit the plan layout{detail} — probably a false detection.",
             WallGeometryRejectedObservation.NoQuietZone =>
                 $"{head}: no white border around it — probably a hold or a shadow read as a marker.",
+            WallGeometryRejectedObservation.RetiredId =>
+                $"{head}: id {rejected.Id} is retired (holds are read as it), so it never goes to the solver — give this sheet another id in the marker plan.",
+            WallGeometryRejectedObservation.InconsistentMarker =>
+                $"{head}: {rejected.Detail ?? "its photos do not agree where it is"} — the marker was left out of the model; if it is a printed marker, give it another id in the marker plan.",
             WallGeometryRejectedObservation.ImplausibleModel =>
                 $"{head}: the model came out implausible with it{detail}, so it was left out and the model solved again.",
             WallGeometryRejectedObservation.UnplannedMisfit or WallGeometryRejectedObservation.UnplannedFewPhotos =>

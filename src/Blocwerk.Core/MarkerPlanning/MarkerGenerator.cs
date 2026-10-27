@@ -9,7 +9,8 @@ namespace Blocwerk.Core.MarkerPlanning;
 /// edge (and inside big surfaces) no further apart than half a photo, sizes picked as the SMALLEST
 /// available print size that reaches the role's measured on-photo pixel target on that surface
 /// (<see cref="MarkerSizing.RequiredPx"/>, steep-view margin included) — markers cost wall space. Deterministic: same plan and options, same
-/// markers, ids 0, 1, 2, … in segment order, corners before fillers.
+/// markers, ids in <see cref="MarkerIdPolicy.IssueOrder"/> (0, 1, 2, … without the retired 17) in segment order, corners
+/// before fillers.
 /// </summary>
 /// <remarks>
 /// Markers on both sides of a shared edge are wanted, not avoided: they are what ties two segments
@@ -39,7 +40,7 @@ public static partial class MarkerGenerator
             placed.AddRange(context.Markers);
         }
 
-        var numbered = placed.Select((m, i) => m with { Id = i }).ToList();
+        var numbered = placed.Select((m, i) => m with { Id = MarkerIdPolicy.IdAt(i) }).ToList();
         return plan with { Dictionary = ArucoDict4X4.DictionaryName, Markers = numbered };
     }
 

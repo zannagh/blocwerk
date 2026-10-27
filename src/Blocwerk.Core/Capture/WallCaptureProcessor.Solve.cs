@@ -30,7 +30,7 @@ public sealed partial class WallCaptureProcessor
             await CheckPlacementAsync(run, null, ct);
             if (!existing.IsActive)
             {
-                throw new CaptureNotActivatedException(NotActivatedMessage(null));
+                throw new CaptureNotActivatedException(CaptureActivationRefusal.Message([], null));
             }
 
             return;
@@ -72,21 +72,13 @@ public sealed partial class WallCaptureProcessor
         if (problems.Count > 0)
         {
             logger.LogWarning("Capture {CaptureId}: model {ModelId} not activated: {Problems}", capture.Id, imported.Model.Id, string.Join("; ", problems));
-            throw new CaptureNotActivatedException(
-                WallGeometrySanityGate.Describe(problems) + " It was saved but NOT activated, so hold positions stay as they are. "
-                + "Check the ignored detections in the solver notes and re-capture the parts they name.");
         }
 
-        if (!frame.Activate)
+        if (!activate)
         {
-            throw new CaptureNotActivatedException(NotActivatedMessage(frame.Refusal));
+            throw new CaptureNotActivatedException(CaptureActivationRefusal.Message(problems, frame.Activate ? null : frame.Refusal));
         }
     }
-
-    private static string NotActivatedMessage(string? reason) =>
-        (reason is null ? string.Empty : reason + " ")
-        + "The new 3D model was saved but NOT activated, so hold positions stay as they are. Re-capture with more unchanged "
-        + "markers in view, or activate the new model from the model history if its frame change is acceptable.";
 
     private async Task<(Guid Id, bool IsActive)?> ImportedModelAsync(WallCapture capture, CancellationToken ct)
     {

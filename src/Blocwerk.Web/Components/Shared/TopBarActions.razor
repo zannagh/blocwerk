@@ -1,5 +1,4 @@
 @rendermode InteractiveServer
-@using System.Reflection
 @inject IJSRuntime JS
 
 <button class="theme-toggle" @onclick="ToggleTheme" title="Toggle light/dark mode">
@@ -38,7 +37,9 @@
             <a href="/help/keyboard" @onclick="() => _showInfoPopover = false">Keyboard shortcuts</a>
             <a href="/about" @onclick="() => _showInfoPopover = false">Impressum</a>
             <a href="/privacy" @onclick="() => _showInfoPopover = false">Privacy Policy</a>
-            <span class="info-version" title="Deployed image version">v@(Version)</span>
+            @* The version links to what changed in it: Blocwerk's release notes, read from GitHub. *@
+            <a href="/whats-new" class="info-version" title="Deployed image version. See what's new"
+               @onclick="() => _showInfoPopover = false">v@(Version)</a>
         </div>
     }
 </div>
@@ -49,21 +50,8 @@
     private bool _showInfoPopover;
 
     // The build version stamped into the assembly by GitVersion (e.g. "0.0.1-54"), matching the
-    // pushed image tag. The "+<sha>" build-metadata suffix is trimmed for display.
-    private static readonly string Version = ResolveVersion();
-
-    private static string ResolveVersion()
-    {
-        var info = typeof(TopBarActions).Assembly
-            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
-        if (string.IsNullOrWhiteSpace(info))
-        {
-            return "dev";
-        }
-
-        var plus = info.IndexOf('+');
-        return plus > 0 ? info[..plus] : info;
-    }
+    // pushed image tag, without the "+<sha>" build metadata.
+    private static string Version => Blocwerk.Core.WhatsNew.AppVersion.Current;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {

@@ -20,7 +20,8 @@ namespace Blocwerk.Core.Capture.Replay;
 /// source maps, the prepared state) stays valid. It inserts only what the target cannot recompute without training:
 /// capture, photos, model, textures, and the trained view as a GPU job in the "delivered by a runner, not installed"
 /// state (<see cref="WallCaptureProcessor"/>'s resume path finishes it). Photo-real views, volumes, proposals, placement
-/// runs and hold changes are recomputed by the target's pipeline.
+/// runs and hold changes are recomputed by the target's pipeline, unless the package carries the source's computed
+/// results (<see cref="CapturePackageResults"/>): then those are taken over, and only holds that differ here are computed.
 /// </remarks>
 public sealed partial class CapturePackageService(
     RootDbContextFactory dbContextFactory,
@@ -31,7 +32,8 @@ public sealed partial class CapturePackageService(
     ILogger<CapturePackageService> logger,
     GpuRunnerOptions? runnerOptions = null,
     DiskSpaceProbe? diskSpace = null,
-    WallCapturePipelineOptions? pipelineOptions = null) : ICapturePackageService
+    WallCapturePipelineOptions? pipelineOptions = null,
+    IHoldRefinementQueue? refinements = null) : ICapturePackageService
 {
     private readonly CapturePackageStaging staging = new(files);
     private readonly DiskSpaceProbe disk = diskSpace ?? new DiskSpaceProbe();

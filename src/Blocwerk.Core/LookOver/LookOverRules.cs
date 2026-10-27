@@ -31,6 +31,7 @@ public static class LookOverRules
         LookOverFindingKind.NotFound,
         LookOverFindingKind.PossiblyRemoved,
         LookOverFindingKind.UnsureMatch,
+        LookOverFindingKind.SuspectedMove,
         LookOverFindingKind.SameSpot,
         LookOverFindingKind.MatchedToHandPlaced,
         LookOverFindingKind.HandPlacedAmbiguous,
@@ -148,6 +149,11 @@ public static class LookOverRules
         if (kind == LookOverFindingKind.UnsureMatch)
         {
             return [LookOverAnswer.Settle, LookOverAnswer.DifferentHold];
+        }
+
+        if (kind == LookOverFindingKind.SuspectedMove)
+        {
+            return [LookOverAnswer.Settle, LookOverAnswer.ConfirmMove];
         }
 
         if (!CanHaveOther(kind))

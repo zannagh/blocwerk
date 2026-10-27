@@ -7,8 +7,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core.Tests;
 
-/// <summary>Pairs holds that sit on the same spot (within 0.01); everything else is unmatched.</summary>
-internal sealed class PositionHoldMatcher : IHoldOverlapMatcher
+/// <summary>
+/// Pairs holds that sit on the same spot (within 0.01); everything else is unmatched. With <paramref name="identityWarp"/>
+/// it also predicts every old hold where it was (an unmoved photo), as the real matcher's warp field does.
+/// </summary>
+internal sealed class PositionHoldMatcher(bool identityWarp = false) : IHoldOverlapMatcher
 {
     public HoldOverlapResult Match(
         byte[] leftImage,
@@ -36,6 +39,7 @@ internal sealed class PositionHoldMatcher : IHoldOverlapMatcher
         return new HoldOverlapResult(
             proposals,
             leftHolds.Where(l => !matchedLeft.Contains(l.Id)).Select(l => l.Id).ToList(),
-            rightHolds.Where(r => !usedRight.Contains(r.Id)).Select(r => r.Id).ToList());
+            rightHolds.Where(r => !usedRight.Contains(r.Id)).Select(r => r.Id).ToList(),
+            identityWarp ? leftHolds.Select(l => ((double X, double Y)?)(l.X, l.Y)).ToList() : null);
     }
 }

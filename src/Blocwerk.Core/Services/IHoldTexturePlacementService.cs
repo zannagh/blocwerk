@@ -63,4 +63,52 @@ public interface IHoldTexturePlacementService
     /// <param name="ct">Cancellation.</param>
     /// <returns>The holds placed.</returns>
     Task<IReadOnlyList<Guid>> PlaceEditedAsync(Guid wallId, IReadOnlyCollection<Guid> holdIds, CancellationToken ct = default);
+
+    /// <summary>
+    /// Dry run of <see cref="ReplaceOutliersAsync"/>: which placed holds the wall's other placements contradict, counted per
+    /// panel photo. Writes nothing.
+    /// </summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>The counts.</returns>
+    Task<HoldOutlierPreview> PreviewOutliersAsync(Guid wallId, CancellationToken ct = default);
+
+    /// <summary>
+    /// "Re-place outlier holds in 3D": moves each placed hold whose 3D position the wall contradicts onto its linked copy on a
+    /// more consistent photo, or to where its neighbours on its own photo put it (<see cref="Geometry.TextureRegistration.HoldOutlierPlanner"/>).
+    /// Writes the holds' 3D fields only, recorded as a revertable <see cref="HoldPlacementTrigger.Outliers"/> run, and
+    /// queues the moved holds for refinement. Needs an active model but no textures or matcher.
+    /// </summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>The counts and the run id.</returns>
+    Task<HoldPlacementResult> ReplaceOutliersAsync(Guid wallId, CancellationToken ct = default);
+
+    /// <summary>The wall's latest panel registration for "place holds on the 3D surface" (active model).</summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>Its state.</returns>
+    Task<SurfaceRegistration> GetSurfaceRegistrationAsync(Guid wallId, CancellationToken ct = default);
+
+    /// <summary>Queues the live panel photos for registration into the active model's capture cameras on a 3D runner.</summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>The queued (or still open) registration.</returns>
+    Task<SurfaceRegistration> RegisterPanelsAsync(Guid wallId, CancellationToken ct = default);
+
+    /// <summary>Dry run of <see cref="PlaceOnSurfaceAsync"/>: counts per panel photo and linked-pair agreement. Writes nothing.</summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>The counts.</returns>
+    Task<SurfacePreview> PreviewSurfaceAsync(Guid wallId, CancellationToken ct = default);
+
+    /// <summary>
+    /// "Place holds on the 3D surface": casts every hold of a registered panel photo onto the photo-real surface
+    /// (<see cref="Geometry.Surface.SurfaceHoldPlanner"/>). Writes the holds' 3D fields only, recorded as a revertable
+    /// <see cref="HoldPlacementTrigger.Surface"/> run, and queues them for refinement.
+    /// </summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>The counts and the run id.</returns>
+    Task<HoldPlacementResult> PlaceOnSurfaceAsync(Guid wallId, CancellationToken ct = default);
 }

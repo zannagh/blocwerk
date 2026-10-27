@@ -31,6 +31,15 @@ public sealed record WallGeometryRejectedObservation
     /// <summary>Solver reason: a marker the plan does not list that the solve could not confirm on a solved surface.</summary>
     public const string UnplannedMisfit = "unplanned-misfit";
 
+    /// <summary>App reason: a retired id (<see cref="MarkerPlanning.MarkerIdPolicy.Retired"/>) that holds decode as.</summary>
+    public const string RetiredId = "retired-id";
+
+    /// <summary>
+    /// Solver reason: the photos disagree where the marker is so much that it dragged the others; the model was solved
+    /// again without any detection of it.
+    /// </summary>
+    public const string InconsistentMarker = "inconsistent-marker";
+
     /// <summary>App reason: a marker the plan does not list, decoded in too few photos to go to the solver.</summary>
     public const string UnplannedFewPhotos = "unplanned-few-photos";
 
@@ -54,7 +63,7 @@ public sealed record WallGeometryRejectedObservation
 
     /// <summary>
     /// <see cref="InconsistentWithOtherViews"/>, <see cref="SingleViewMisfit"/>, <see cref="ImplausibleModel"/>,
-    /// <see cref="PlanLayout"/> or <see cref="NoQuietZone"/>.
+    /// <see cref="InconsistentMarker"/>, <see cref="PlanLayout"/>, <see cref="NoQuietZone"/> or <see cref="RetiredId"/>.
     /// </summary>
     public string? Reason { get; init; }
 

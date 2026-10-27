@@ -160,6 +160,10 @@
        bwViewport / wallCarousel lazily, so this order is what keeps it from ever seeing a
        half-defined global. One coordinator for orientationchange/resize for the whole app. *@
     <script src="@Assets["js/orientation.js"]"></script>
+    @* Steps the fixed tab bar aside while the keyboard is up or the page is zoomed. Reads no other module. *@
+    <script src="@Assets["js/tabbar-guard.js"]"></script>
+    @* Re-applies the safe-area insets an installed iOS app can cold-start without. Reads no other module. *@
+    <script src="@Assets["js/safe-area.js"]"></script>
     @* The full-screen takeover. After viewport-gestures.js (it binds the shared recogniser) and
        after its own model; the lock last, because it reads bwStage in its watchdog — lazily, inside
        a function, so the order is for readability rather than load-bearing. Registered here like
@@ -170,6 +174,8 @@
     <script src="@Assets["js/fullscreen-stage-lock.js"]"></script>
     @* Defines window.bwKeys before any interactive component can register against it. *@
     <script src="@Assets["js/keyboard-shortcuts.js"]"></script>
+    @* Shows and focuses the boulder search inside the tap, so a phone raises its keyboard. *@
+    <script src="@Assets["js/list-search.js"]"></script>
     <script src="@Assets["js/progression-chart.js"]"></script>
     <script src="@Assets["js/image-stitcher.js"]"></script>
     <script src="@Assets["js/file-download.js"]"></script>
@@ -197,11 +203,14 @@
        each other lazily off window, inside functions, so neither order can break the other. *@
     <script src="@Assets["js/offline-db.js"]"></script>
     <script src="@Assets["js/offline-transport.js"]"></script>
+    <script src="@Assets["js/offline-rejected.js"]"></script>
     <script src="@Assets["js/offline-queue.js"]"></script>
     <script src="@Assets["js/offline-actions.js"]"></script>
     <script src="@Assets["js/offline-boulder.js"]"></script>
     @* Before blazor-boot.js, which calls it around a resume; maintenance.js calls it before a reload. *@
     <script src="@Assets["js/scroll-keeper.js"]"></script>
+    @* Before blazor-boot.js starts Blazor: it watches the circuit's socket for a drop the framework says nothing about. *@
+    <script src="@Assets["js/circuit-watchdog.js"]"></script>
     <script src="@Assets["js/blazor-boot.js"]"></script>
     @* After blazor-boot.js: reads blocwerkConnection to tell a dead circuit from a reconnect blip. *@
     <script src="@Assets["js/circuit-failed.js"]"></script>
@@ -212,6 +221,11 @@
     <script src="@Assets["js/edit-presence.js"]"></script>
     <script src="@Assets["js/deploy-drafts.js"]"></script>
     <script src="@Assets["js/maintenance.js"]"></script>
+    @* status-bubble.js: the short status bubbles (bwStatus), told by status-sources.js and asset-report.js; the pill
+       (status-pill.js draws what offline-status.js decides) shows them. *@
+    <script src="@Assets["js/status-bubble.js"]"></script>
+    <script src="@Assets["js/status-sources.js"]"></script>
+    <script src="@Assets["js/status-pill.js"]"></script>
     <script src="@Assets["js/offline-status.js"]"></script>
     <script src="@Assets["js/pwa.js"]"></script>
     @* The worker-loss guard (PR 3.9): a controller that no longer answers sw-info reloads the page once the server is
@@ -222,7 +236,7 @@
        the coordinator, which reads the others lazily off window and boots on DOM-ready. After pwa.js only for
        readability; it works with any worker, or none. asset-notice.js feeds StorageNotice.razor; asset-3d.js the 3D
        view's mobile-data notice and "Save 3D offline" (Wall3DStage); asset-report.js (with asset-clear.js)
-       OfflineStorageCard.razor and the offline-ready marks. asset-lock.js is the 401 lock (PR 3.5) and drives
+       OfflineStorageCard.razor and the "Offline mode available" bubble. asset-lock.js is the 401 lock (PR 3.5) and drives
        #bw-offline-lock below; asset-ledger-idb.js is the ledger's IndexedDB half. The ledger, wipe, lock, session
        and clear modules live in Blocwerk.Shared.Ui (PR 3.7), so the offline client loads the same files; the order
        is unchanged. *@

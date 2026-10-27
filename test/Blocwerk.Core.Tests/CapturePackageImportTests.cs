@@ -23,8 +23,9 @@ public class CapturePackageImportTests
     {
         using var h = new WallTestHarness();
         using var f = await CapturePackageFlow.FinishedAsync(h);
-        var (manifest, bytes) = await f.ExportAsync();
-        await f.ForgetAsync(manifest);
+        var (exported, bytes) = await f.ExportAsync();
+        await f.ForgetAsync(exported);
+        var manifest = CapturePackageFlow.WithoutResults(exported);
 
         var report = await f.Service.BeginImportAsync(manifest, CancellationToken.None);
         Assert.True(report.CanCommit, string.Join(" | ", report.Blockers));
@@ -149,8 +150,9 @@ public class CapturePackageImportTests
     {
         using var h = new WallTestHarness();
         using var f = await CapturePackageFlow.FinishedAsync(h);
-        var (manifest, _) = await f.ExportAsync();
-        await f.ForgetAsync(manifest);
+        var (exported, _) = await f.ExportAsync();
+        await f.ForgetAsync(exported);
+        var manifest = CapturePackageFlow.WithoutResults(exported);
         f.Runner.Scenario.SplatClient.IsConfigured = false;
         var photo = manifest.Files.First(x => x.Role == "photo");
         await File.WriteAllBytesAsync(f.Runner.Scenario.Files.ResolvePhysicalPath(photo.Name)!, [1, 2, 3]);
