@@ -197,11 +197,13 @@ public sealed partial class GpuJobQueue
         {
             "download" => "is downloading the photos",
             "upload" when kind == GpuJobKind.DetectHolds => "is uploading the holds it found",
+            "upload" when kind == GpuJobKind.RegisterPanels => "is uploading the panel photo poses",
             "upload" => kind == GpuJobKind.Textures ? UploadingTexturesStage : UploadingStage,
             _ => kind switch
             {
                 GpuJobKind.Textures => "is rendering the wall textures",
                 GpuJobKind.DetectHolds => "is finding holds in the photos",
+                GpuJobKind.RegisterPanels => "is registering the panel photos",
                 _ => "is training",
             },
         };

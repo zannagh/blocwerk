@@ -32,4 +32,10 @@ public enum HoldMoveOutcome
     /// Not a move: another hold sits where this one was. The boulder keeps the old hold and is marked for review.
     /// </summary>
     Replaced = 5,
+
+    /// <summary>
+    /// Measured as moved or turned, but no person confirmed it: nothing is flagged and the hold stays where the alignment
+    /// puts it. It is offered in the update's review ("Moved?"); only a person's "it moved" acts on the boulders.
+    /// </summary>
+    Suspected = 6,
 }

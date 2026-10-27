@@ -36,6 +36,7 @@ internal static class ReviewCopy
         ReviewGroup.NotFound => $"{Capital(Hold(item))} was not found on the new photo. Is it still on the wall?",
         ReviewGroup.LeftOut => $"Left out: {LookOverCopy.DiscardReason(item.Reason)}. Is it a hold?",
         ReviewGroup.NewHold => "Found on the new photo, not on the old one. Is it a hold?",
+        _ when IsMeasured(item) => $"Did {Hold(item)} move? It was measured at a new spot: {item.Reason}.",
         _ => $"Did {Hold(item)} move to this spot?",
     };
 
@@ -46,6 +47,7 @@ internal static class ReviewCopy
         ReviewGroup.LeftOut when item.LeavesFinding => "Left alone, it stays out; the look-over offers it again after Apply (it looks like a real hold).",
         ReviewGroup.LeftOut => "Left alone, it stays out.",
         ReviewGroup.NewHold => "Left alone, it goes live as a new hold.",
+        ReviewGroup.Moved when IsMeasured(item) => "Left alone, it is the same hold: it stays where it was and no boulder is marked.",
         ReviewGroup.Moved => "Left alone, the old hold stays where it was.",
         ReviewGroup.Conflicting3D => "Left alone, it stays out and the look-over asks again after Apply.",
         _ => "Left alone, the update does what it proposes and the look-over asks again after Apply.",
@@ -80,7 +82,7 @@ internal static class ReviewCopy
         ReviewGroup.NotFound => $"All {count}: still there",
         ReviewGroup.LeftOut => $"All {count}: not a hold",
         ReviewGroup.NewHold => $"All {count}: it is a hold",
-        ReviewGroup.Moved => $"All {count}: not related",
+        ReviewGroup.Moved => $"All {count}: nothing moved",
         ReviewGroup.Conflicting3D => $"All {count}: not a hold",
         _ => $"All {count}: as proposed",
     };
@@ -91,6 +93,7 @@ internal static class ReviewCopy
         ReviewGroup.NotFound => $"Mark {PlainCopy.Plural(count, "hold")} as still on the wall without looking at each? They stay where they were and are not asked about after Apply.",
         ReviewGroup.LeftOut => $"Leave {PlainCopy.Plural(count, "detection")} out for good? None of them is offered again after Apply.",
         ReviewGroup.NewHold => $"Keep {PlainCopy.Plural(count, "detection")} as new holds? They go live with Apply.",
+        ReviewGroup.Moved => $"Answer {PlainCopy.Plural(count, "item")} as \"nothing moved\"? The holds stay where they were and no boulder is marked.",
         _ => $"Answer {PlainCopy.Plural(count, "item")} as the update proposes?",
     };
 
@@ -105,6 +108,9 @@ internal static class ReviewCopy
             1 => "Gone (1 boulder becomes history)",
             var n => $"Gone ({n} boulders become history)",
         };
+
+    /// <summary>A carried hold the measurement says may have moved (not a look-alike suggestion).</summary>
+    private static bool IsMeasured(ReviewItem item) => item.Key.StartsWith("m-", StringComparison.Ordinal);
 
     private static string Hold(ReviewItem item) => item.HoldName is { Length: > 0 } name ? $"the {name} hold" : "this hold";
 

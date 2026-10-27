@@ -51,6 +51,12 @@
     {
         <button type="button" class="btn-secondary" disabled="@Disabled" @onclick="() => AnswerAsync(LookOverAnswer.Unlink)">@LookOverCopy.UnlinkLabel</button>
     }
+    @if (Takes(LookOverAnswer.ConfirmMove))
+    {
+        <ConfirmAction @ref="confirmMove" Label="@LookOverCopy.ConfirmMoveLabel" Question="@LookOverCopy.ConfirmMoveQuestion(Finding)"
+                       ConfirmLabel="Mark as moved" ConfirmClass="btn-primary" Neutral="true" Disabled="Disabled"
+                       OnConfirm="() => AnswerAsync(LookOverAnswer.ConfirmMove)" />
+    }
     @if (Takes(LookOverAnswer.DifferentHold))
     {
         <ConfirmAction @ref="different" Label="Different hold" Question="@LookOverCopy.DifferentQuestion(Finding)"
@@ -91,7 +97,8 @@
 
 @code {
     private static readonly LookOverAnswer[] Order =
-        [LookOverAnswer.Settle, LookOverAnswer.AddHold, LookOverAnswer.Unlink, LookOverAnswer.DifferentHold, LookOverAnswer.UseNewHold, LookOverAnswer.RemoveHold];
+        [LookOverAnswer.Settle, LookOverAnswer.AddHold, LookOverAnswer.Unlink, LookOverAnswer.ConfirmMove, LookOverAnswer.DifferentHold, LookOverAnswer.UseNewHold, LookOverAnswer.RemoveHold];
+    private ConfirmAction? confirmMove;
     private ConfirmAction? different;
     private ConfirmAction? merge;
     private ConfirmAction? remove;
@@ -137,7 +144,13 @@
             return AnswerAsync(answer);
         }
 
-        (answer == LookOverAnswer.DifferentHold ? different : answer == LookOverAnswer.UseNewHold ? merge : remove)?.Open();
+        (answer switch
+        {
+            LookOverAnswer.ConfirmMove => confirmMove,
+            LookOverAnswer.DifferentHold => different,
+            LookOverAnswer.UseNewHold => merge,
+            _ => remove,
+        })?.Open();
         return Task.CompletedTask;
     }
 

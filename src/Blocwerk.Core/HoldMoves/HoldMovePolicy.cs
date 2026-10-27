@@ -39,6 +39,23 @@ public static class HoldMovePolicy
         return HoldMoveOutcome.Stayed;
     }
 
+    /// <summary>
+    /// What a measured verdict does when <paramref name="confirmedMove"/> is false: a measurement alone never acts on boulders,
+    /// so anything but "stayed" becomes <see cref="HoldMoveOutcome.Suspected"/>, for a person to confirm in the review.
+    /// </summary>
+    /// <param name="outcome">The measured verdict (<see cref="Classify"/>).</param>
+    /// <param name="confirmedMove">Whether a person confirmed that this hold moved.</param>
+    /// <returns>The verdict the promote acts on.</returns>
+    public static HoldMoveOutcome Unconfirmed(HoldMoveOutcome outcome, bool confirmedMove) =>
+        confirmedMove || outcome is HoldMoveOutcome.Stayed or HoldMoveOutcome.NotFound or HoldMoveOutcome.Replaced
+            ? outcome
+            : HoldMoveOutcome.Suspected;
+
+    /// <summary>Whether <paramref name="outcome"/> acts on the boulders using the hold (marks them, or takes the hold off).</summary>
+    /// <param name="outcome">The verdict.</param>
+    /// <returns>False for a hold that stayed or a move nobody confirmed.</returns>
+    public static bool Flags(HoldMoveOutcome outcome) => outcome is not (HoldMoveOutcome.Stayed or HoldMoveOutcome.Suspected);
+
     /// <summary>The plain-language line for a move, as the boulder and the confirm screen show it.</summary>
     /// <param name="distanceMm">The distance, mm.</param>
     /// <param name="rotationDeg">The turn, degrees, when known.</param>
@@ -61,6 +78,7 @@ public static class HoldMovePolicy
         };
         return outcome switch
         {
+            HoldMoveOutcome.Suspected => $"may have {how}, confirm it in the review",
             HoldMoveOutcome.Removed => $"{how}, removed from this boulder",
             HoldMoveOutcome.Possible => $"possibly moved about {cm} cm, check this hold",
             _ => $"{how}, kept",

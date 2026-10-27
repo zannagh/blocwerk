@@ -42,7 +42,7 @@ public class HoldMoveRemeasureNotFoundTests
         await using (var db = h.CreateContext())
         {
             Assert.Equal(0, await HoldMoveRemeasurer.RunAsync(db, s.WallId, HoldMovePromoteTests.Loose, NullLogger.Instance));
-            Assert.Equal(HoldMoveOutcome.Possible, (await db.HoldGenerationLinks.SingleAsync(l => l.OldHoldId == s.OldMover)).MoveOutcome);
+            Assert.Equal(HoldMoveOutcome.Suspected, (await db.HoldGenerationLinks.SingleAsync(l => l.OldHoldId == s.OldMover)).MoveOutcome);
 
             // Second run at the same generation: now it measures as stayed, which would settle a move.
             await HoldMovePromoteTests.PlaceNewAsync(db, s, 1002);

@@ -22,6 +22,8 @@ from .control import PauseControl, state_dir
 from .history import JobHistory, JobStatus
 from .holds import KIND as HOLDS_KIND
 from .holds import HoldsRun
+from .panels import KIND as PANELS_KIND
+from .panels import PanelsRun
 from .job import JobRun
 from .textures import KIND as TEXTURES_KIND
 from .textures import TexturesRun
@@ -172,7 +174,7 @@ class Runner:
         self.current, outcome, run = status, "error", None
         self.control.set_busy(True)
         try:
-            kind = {TEXTURES_KIND: TexturesRun, HOLDS_KIND: HoldsRun}.get(job.get("kind"), JobRun)
+            kind = {TEXTURES_KIND: TexturesRun, HOLDS_KIND: HoldsRun, PANELS_KIND: PanelsRun}.get(job.get("kind"), JobRun)
             run = kind(self.client, job, self.work_dir, self.caps, self.shutdown, self.alive, self.resume,
                        pause=self.control.now, status=status)
             outcome = run.run()

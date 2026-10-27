@@ -179,3 +179,10 @@ the same `wall.splat` / `wall.spz` / `frame.json` as `splat`. Details: `splat-wo
 The app uses the split only when the worker's `/health` lists **both** kinds in `kinds`; otherwise it
 keeps sending `splat`. An optional `/health` field `maxQuality` (`"ultra"` when the worker trains ultra
 itself) lets the app offer the Ultra quality without a 3D runner.
+
+### 3D runner job kinds (not this protocol)
+
+A 3D runner pulls its jobs from the app (`/api/runners/claim`), never from these workers. Its kinds are `splat` (train
+the bundle `splat-prepare` made), `textures`, `detect-holds` and `register-panels` (register a wall's panel photos into
+the capture's solved cameras with COLMAP, for placing holds on the photo-real surface). Bundles and results:
+`splat-worker/README.md`.
