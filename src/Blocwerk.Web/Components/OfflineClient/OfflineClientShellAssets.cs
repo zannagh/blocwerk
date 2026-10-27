@@ -59,10 +59,17 @@ public static class OfflineClientShellAssets
     /// </summary>
     public const string Guard = "js/sw-guard.js";
 
+    /// <summary>
+    /// The sync loop's network side (PR 3.12): Web's docs-index and marks refreshers (with asset-manifest.js, whose
+    /// <c>signedOut</c> they call), so the client writes the ledger exactly as the Server pages do, then
+    /// <c>window.bwClientSync</c>. Loading them only defines their globals.
+    /// </summary>
+    public static readonly string[] SyncModules = ["js/asset-manifest.js", "js/asset-data.js", "js/asset-mine.js", "v/js/client-sync.js"];
+
     private static readonly ConditionalWeakTable<ResourceAssetCollection, string> Versions = new();
 
     /// <summary>Every label the shell names, for the tests that pin each one to a served file.</summary>
-    public static IEnumerable<string> All => Styles.Concat(CacheModules).Concat(StoreModules).Append(Guard).Append(Loader).Append(Boot);
+    public static IEnumerable<string> All => Styles.Concat(CacheModules).Concat(StoreModules).Concat(SyncModules).Append(Guard).Append(Loader).Append(Boot);
 
     /// <summary>
     /// The client's declared routes as the shell's <c>bw-client-routes</c> meta carries them: space-separated

@@ -121,6 +121,13 @@ window.bwAssetLock = (function (win) {
         }
     }
 
+    // A locked label's own-rows cursor (client-sync.js) goes: the poll resyncs once after the same user signs in again.
+    function forgetMeCursor() {
+        if (win.bwAssetSession && typeof win.bwAssetSession.forgetMeCursor === 'function') {
+            win.bwAssetSession.forgetMeCursor(win, () => false);
+        }
+    }
+
     /** Writes a changed lock to the worker's marker and tells the worker; the banner follows. */
     async function sync(lock, changed) {
         if (changed) {
@@ -128,6 +135,7 @@ window.bwAssetLock = (function (win) {
             tellWorker();
             if (lock) {
                 tellTabs(lock.label);
+                forgetMeCursor();
             }
         }
         render(lock);

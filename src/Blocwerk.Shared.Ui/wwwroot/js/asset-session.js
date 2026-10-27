@@ -37,6 +37,7 @@ window.bwAssetSession = (function () {
     const REAL_LABEL = /^(anon|[uk]-[a-z2-7]{20})$/;
     const USER_LABEL = /^u-[a-z2-7]{20}$/;
     const MIRROR_KEY = 'blocwerk-asset-identity';
+    const ME_CURSOR_KEY = 'bw-me-cursor';
     // Equal to no user tag, so an unreadable mirror counts as a changed user.
     const UNKNOWN_TAG = '\u0000unknown';
 
@@ -162,5 +163,21 @@ window.bwAssetSession = (function () {
         });
     }
 
-    return { begin, guard, pageLabel, mirror, clearedOf };
+    /**
+     * The offline client's own-rows cursor (client-sync.js, one `{ partition, cursor }` entry) names a `u-` label, so it
+     * goes whenever that label's data goes or locks (asset-wipe.js wipe and dropPartition, asset-lock.js). Kept only
+     * while `keeps(label)` says so.
+     */
+    function forgetMeCursor(win, keeps) {
+        try {
+            const stored = JSON.parse(win.localStorage.getItem(ME_CURSOR_KEY) || 'null');
+            if (stored && !keeps(stored.partition)) {
+                win.localStorage.removeItem(ME_CURSOR_KEY);
+            }
+        } catch (e) {
+            /* no storage: nothing was stored */
+        }
+    }
+
+    return { begin, guard, pageLabel, mirror, clearedOf, forgetMeCursor };
 })();
