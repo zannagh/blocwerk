@@ -1,0 +1,21 @@
+@* The prerelease toggle on /whats-new. A link, not a checkbox: the page is static SSR, so the state lives
+   in the query string and survives a reload or a shared URL. *@
+
+<p class="whatsnew-toolbar">
+    @if (ShowPrereleases)
+    {
+        <a class="whatsnew-toggle" href="/whats-new" aria-pressed="true">Hide prereleases</a>
+    }
+    else if (HiddenCount > 0)
+    {
+        <a class="whatsnew-toggle" href="/whats-new?prereleases=true" aria-pressed="false">Show prereleases (@HiddenCount)</a>
+    }
+</p>
+
+@code {
+    [Parameter]
+    public bool ShowPrereleases { get; set; }
+
+    [Parameter]
+    public int HiddenCount { get; set; }
+}

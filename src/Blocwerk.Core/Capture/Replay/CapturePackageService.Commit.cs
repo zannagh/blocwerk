@@ -45,11 +45,12 @@ public sealed partial class CapturePackageService
         }
 
         var moved = new List<string>();
+        List<Guid>? unmatched;
         try
         {
             MoveIntoStore(importId, report.Files, moved);
             await ScoreUnscoredPhotosAsync(manifest.Rows.Photos, ct);
-            await InsertAsync(manifest, ct);
+            unmatched = await InsertAsync(manifest, userId, ct);
         }
         catch
         {
@@ -58,11 +59,34 @@ public sealed partial class CapturePackageService
         }
 
         staging.Delete(importId);
-        queue.Enqueue(manifest.CaptureId);
         logger.LogInformation(
-            "Capture import {ImportId} committed by {UserId}: capture, {Photos} photos, model {ModelId} (active), {Textures} textures, GPU job {JobId} delivered; the capture is queued to finish its view",
+            "Capture import {ImportId} committed by {UserId}: capture, {Photos} photos, model {ModelId} (active), {Textures} textures, GPU job {JobId}",
             importId, userId, manifest.Rows.Photos.Count, manifest.Rows.Model.Id, manifest.Rows.Textures.Count, manifest.Rows.GpuJob.Id);
+        AfterCommit(manifest, unmatched);
         return report with { Committed = true };
+    }
+
+    /// <summary>
+    /// Without carried results the capture is queued to finish its view and run its chain. With them it is done; only the live
+    /// holds whose result did not match are placed and measured, by the refinement queue.
+    /// </summary>
+    private void AfterCommit(CapturePackageManifest manifest, List<Guid>? unmatched)
+    {
+        if (unmatched is null)
+        {
+            queue.Enqueue(manifest.CaptureId);
+            logger.LogInformation("Capture import {ImportId}: the capture is queued to finish its delivered view", manifest.CaptureId);
+            return;
+        }
+
+        if (unmatched.Count > 0)
+        {
+            refinements?.Enqueue(manifest.WallId, unmatched);
+        }
+
+        logger.LogInformation(
+            "Capture import {ImportId}: computed results taken over; {Unmatched} hold(s) changed or added here are computed again",
+            manifest.CaptureId, unmatched.Count);
     }
 
     /// <summary>Moves the staged files into the store, adding each to <paramref name="moved"/> as it lands (so a failure part-way moves those back).</summary>
@@ -92,9 +116,11 @@ public sealed partial class CapturePackageService
         }
     }
 
-    private async Task InsertAsync(CapturePackageManifest m, CancellationToken ct)
+    /// <summary>Inserts the rows; with carried results, returns the live holds left to compute (else null).</summary>
+    private async Task<List<Guid>?> InsertAsync(CapturePackageManifest m, Guid userId, CancellationToken ct)
     {
         var rows = m.Rows;
+        var results = rows.Results;
         var now = DateTimeOffset.UtcNow;
         var document = WallGeometryDocument.Parse(rows.Model.Json);
         await using var db = dbContextFactory.CreateDbContext();
@@ -102,8 +128,20 @@ public sealed partial class CapturePackageService
         var previous = await db.WallGeometryModels.Where(x => x.WallId == m.WallId && x.IsActive).Select(x => (Guid?)x.Id).FirstOrDefaultAsync(ct);
         var referenceHere = m.ReferenceModelId is { } reference && await db.WallGeometryModels.AnyAsync(x => x.Id == reference, ct);
         var model = CapturePackageRowCopies.Model(rows.Model, previous, m.ReferenceModelId, referenceHere);
-        var capture = CapturePackageRowCopies.Capture(rows.Capture);
+        var capture = results is null
+            ? CapturePackageRowCopies.Capture(rows.Capture)
+            : CapturePackageRowCopies.FinishedCapture(rows.Capture, results.FollowUpJson, now);
+        var job = results is null
+            ? CapturePackageRowCopies.DeliveredJob(rows.GpuJob, model.Id, now)
+            : CapturePackageRowCopies.InstalledJob(rows.GpuJob, model.Id, now);
+        var import = results is null ? null : await CapturePackageResultsImport.PrepareAsync(db, m.WallId, results, ct);
+        List<Guid>? unmatched = null;
         CapturePackageRowCopies.StampHashes(rows.Textures, m.Files);
+        if (results is not null)
+        {
+            CapturePackageRowCopies.StampHashes(results.Splat, m.Files);
+        }
+
         if (m.PlanRevision is not null && (await TargetPlanRevisionAsync(db, m, ct)).Revision is { } planRevision)
         {
             capture.PlanRevision = planRevision;
@@ -116,11 +154,13 @@ public sealed partial class CapturePackageService
             db.WallCaptures.Add(capture);
             db.WallCapturePhotos.AddRange(rows.Photos);
             db.WallGeometryTextures.AddRange(rows.Textures);
-            db.GpuJobs.Add(CapturePackageRowCopies.DeliveredJob(rows.GpuJob, model.Id, now));
+            db.GpuJobs.Add(job);
+            unmatched = import?.Apply(db, model, rows.Textures, userId);
             if (!document.IsFeatureFrame)
             {
                 wall.MarkerSizeMm ??= document.MarkerSizeMm;
             }
         });
+        return unmatched;
     }
 }

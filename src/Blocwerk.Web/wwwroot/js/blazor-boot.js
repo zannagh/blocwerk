@@ -27,6 +27,13 @@
  * Exposes `window.blocwerkConnection`:
  *   isUp()            -> bool
  *   status()          -> 'connected' | 'reconnecting' | 'failed' | 'rejected'
+ *   started()         -> bool: Blazor.start returned. It does not wait for the circuit (see circuitOpened).
+ *   circuitOpened()   -> bool: the circuit has opened at least once (the framework's onCircuitOpened). Before that,
+ *                        'connected' only means "nothing went wrong yet": a connection lost while the circuit is
+ *                        still starting is not one the framework reconnects; circuit-watchdog.js reports it.
+ *   markDown()        -> circuit-watchdog.js: the connection is gone and the framework raised nothing. Reported
+ *                        as 'failed', so the probe below gets the circuit back once the server answers.
+ *   lastChangeAt()    -> when the framework last raised a reconnect state (ms since epoch, 0 = never)
  *   subscribe(cb)     -> unsubscribe fn, cb(status)
  *   reconnect()       -> manual retry (used by the status pill)
  *   reload()          -> full page reload, for the 'rejected' case
@@ -113,11 +120,23 @@
             publish('rejected');
             return true;
         } catch (err) {
-            // The websocket did not open; the next probe tries again.
+            if (isTerminal(err)) {
+                // The circuit never got an id (circuit-watchdog.js reported a start that died): no reconnect or
+                // resume can bring it back, so retrying would leave the pill on Reconnecting forever. Offer the reload.
+                publish('rejected');
+                return true;
+            }
+            // The websocket did not open (the connection is not 'Connected', negotiation failed): the server may
+            // well still hold the circuit, so the next probe tries again.
             return false;
         } finally {
             attempting = false;
         }
+    }
+
+    // The framework's "no circuit to reconnect to": its reconnect throws this when the circuit never got an id.
+    function isTerminal(err) {
+        return /Circuit host not initialized/i.test(String(err && err.message ? err.message : err));
     }
 
     function scheduleProbe(delay) {
@@ -152,7 +171,27 @@
         }
     }
 
+    let started = false;
+    let circuitOpened = false;
+    let markedDown = false;
+    let lastChangeAt = 0;
+
     window.blocwerkConnection = {
+        started: function () {
+            return started;
+        },
+        circuitOpened: function () {
+            return circuitOpened;
+        },
+        lastChangeAt: function () {
+            return lastChangeAt;
+        },
+        markDown: function () {
+            if (status === 'connected') {
+                markedDown = true;
+                publish('failed');
+            }
+        },
         isUp: function () {
             return status === 'connected';
         },
@@ -181,6 +220,8 @@
 
     function onStateChanged(event) {
         const next = event && event.detail ? event.detail.state : null;
+        lastChangeAt = Date.now();
+        markedDown = false;
 
         if (next === 'hide') {
             publish('connected');
@@ -266,7 +307,8 @@
 
     window.Blazor.start({
         circuit: {
-            // Called around a resume only: the old circuit is closed and a new one opened in place.
+            // Called around a resume (the old circuit closed and a new one opened in place), and opened once when
+            // the circuit first starts.
             circuitHandlers: [{
                 onCircuitClosed: function () {
                     if (window.bwScrollKeeper) {
@@ -274,6 +316,12 @@
                     }
                 },
                 onCircuitOpened: function () {
+                    circuitOpened = true;
+                    // The watchdog called a start that seemed stuck down, and the circuit got through after all.
+                    if (markedDown) {
+                        markedDown = false;
+                        publish('connected');
+                    }
                     if (window.bwScrollKeeper) {
                         window.bwScrollKeeper.restore();
                     }
@@ -293,6 +341,8 @@
                 }
             }
         }
+    }).then(function () {
+        started = true;
     }).catch(function (err) {
         console.error('[blocwerk-connection] Blazor failed to start', err);
         publish('failed');

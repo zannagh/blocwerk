@@ -9,7 +9,8 @@ namespace Blocwerk.Core.Capture;
 /// <see cref="CaptureUnplannedMarkers"/>; 0..35 without a plan —
 /// duplicates rejected by the detector) and edge-refined corners, in PIXELS of the RAW grid (EXIF orientation ignored).
 /// With a plan, every photo's markers are then checked against the planned layout (<see cref="CapturePlanLayoutCheck"/>).
-/// Detections that are not printed markers (no quiet zone, or not fitting the plan) are stored flagged
+/// Detections that are not printed markers (no quiet zone, not fitting the plan, or a retired id — see
+/// <see cref="CaptureRetiredMarkers"/>) are stored flagged
 /// (<see cref="CaptureMarker.Ignored"/>), never dropped silently, and never given to the solver.
 /// </summary>
 internal static class CaptureMarkerDetection
@@ -34,9 +35,11 @@ internal static class CaptureMarkerDetection
         // The OpenCV detector is synchronous behind its Task (decode + ArUco + refinement of a photo up to
         // 20 MB); run it on the pool so an upload never blocks the caller's thread (a Blazor circuit).
         var result = await Task.Run(() => detector.DetectAsync(bytes, CaptureUnplannedMarkers.DetectionOptions(layout), ct), ct);
-        var markers = result.Markers
-            .Select(m => new CaptureMarker(m.Id, Corners(m.CornersPx), m.Synthetic, Math.Round(m.SidePx, 2)))
+        var detected = result.Markers
+            .Select(m => CaptureRetiredMarkers.Flag(new CaptureMarker(m.Id, Corners(m.CornersPx), m.Synthetic, Math.Round(m.SidePx, 2))))
             .ToList();
+        var markers = detected.Where(m => m.Ignored is null).ToList();
+        var retired = detected.Where(m => m.Ignored is not null);
         var verdict = CapturePlanLayoutCheck.Apply(layout, markers, focalPx);
         var noQuietZone = result.Rejected
             .Where(r => r.Reason == MarkerRejectionReason.NoQuietZone)
@@ -50,7 +53,7 @@ internal static class CaptureMarkerDetection
             Ignored = CapturePlanLayoutCheck.Reason,
             IgnoredDetail = i.Detail,
         });
-        return [.. verdict.Kept, .. planMisfits, .. noQuietZone];
+        return [.. verdict.Kept, .. planMisfits, .. retired, .. noQuietZone];
     }
 
     /// <summary>

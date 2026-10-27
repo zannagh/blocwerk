@@ -5,6 +5,7 @@
 using System.Collections.Concurrent;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Refresh.Review;
@@ -14,7 +15,8 @@ namespace Blocwerk.Core.Refresh.Review;
 /// is open). A card's pictures are the confirm screen's. An old hold: "old" around it on its live photo, "new" at the
 /// spot the matcher puts it on the new photo; while the match is not at hand (after a restart, until the summary is made
 /// again) there is no "new" picture at all, and nothing is cached: the old coordinates on the new photo can show bare
-/// wall a few centimetres off and invite a wrong "gone". A detection: "new" only; an old picture at the same coordinates
+/// wall a few centimetres off and invite a wrong "gone". A hold that may have moved: "old" as above, "new" at the detection
+/// it is paired with. A detection: "new" only; an old picture at the same coordinates
 /// could show another place, so there is none. Every lookup is scoped to the run's wall and session.
 /// </summary>
 public sealed partial class UpdateReviewService
@@ -68,6 +70,16 @@ public sealed partial class UpdateReviewService
                 : (view == CheckCropView.Old ? await OldCropAsync(db, wallId, suggestion.OldHoldId) : await StagedCropAsync(db, wallId, suggestion.NewHoldId), true);
         }
 
+        if (prefix == 'm')
+        {
+            return view switch
+            {
+                CheckCropView.Old => (await OldCropAsync(db, wallId, id), true),
+                CheckCropView.New => (await TwinCropAsync(db, wallId, sessionId, id), false),
+                _ => (null, true),
+            };
+        }
+
         if (prefix is 'n' or 'd')
         {
             return (view == CheckCropView.New ? await StagedCropAsync(db, wallId, id) : null, true);
@@ -106,6 +118,19 @@ public sealed partial class UpdateReviewService
 
         var photo = await db.WallPanels.AsNoTracking().Where(p => p.Id == panelId).Select(p => p.StagedPhoto).FirstOrDefaultAsync();
         return RefreshCheckCrops.Crop(photo, hold.X, hold.Y, hold.Radius).Bytes;
+    }
+
+    /// <summary>
+    /// The detection a carried old hold is paired with, on the new photo (a hold that may have moved). Not remembered: the
+    /// pairing is the person's to change.
+    /// </summary>
+    private static async Task<byte[]?> TwinCropAsync(BlocwerkDbContext db, Guid wallId, Guid sessionId, Guid oldHoldId)
+    {
+        var twin = await db.WallUpdateHoldDecisions.AsNoTracking()
+            .Where(d => d.SessionId == sessionId && d.Kind == WallUpdateHoldDecisionKind.Carry && d.HoldId == oldHoldId)
+            .Select(d => d.PairedHoldId)
+            .FirstOrDefaultAsync();
+        return twin is { } id ? await StagedCropAsync(db, wallId, id) : null;
     }
 
     /// <summary>The new photo at an old hold's spot, where the matcher puts it; none (and not remembered) without the match.</summary>

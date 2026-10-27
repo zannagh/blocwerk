@@ -16,8 +16,11 @@ namespace Blocwerk.Core.HoldMoves;
 /// latest update again with the real placements, the same differential way as the plan (each hold against its unmoved
 /// neighbourhood), and only acts on a CONFIDENT change:
 /// <list type="bullet">
-/// <item>a hold that now clearly moved (more than it was told) marks its boulders for review and records the new distance
-/// next to what they were told; memberships are never changed here;</item>
+/// <item>a hold a person confirmed as moved that now clearly moved more marks its boulders for review and records the new
+/// distance next to what they were told; memberships are never changed here;</item>
+/// <item>a hold nobody confirmed as moved that now clearly moved marks nothing: it is asked about in the look-over
+/// (<see cref="LookOverFindingKind.SuspectedMove"/>), and only a person's "it moved" marks its boulders. A hold the update's
+/// review already asked about (<see cref="HoldMoveOutcome.Suspected"/>) is not asked again;</item>
 /// <item>a hold that now clearly stayed clears the review reason an earlier, rougher measurement set, when nothing else
 /// about the boulder asks for a look.</item>
 /// </list>
@@ -53,7 +56,8 @@ public static class HoldMoveRemeasurer
                 continue;
             }
 
-            var outcome = HoldMovePolicy.Classify(measure, options, link.Kind == HoldGenerationLinkKind.Changed);
+            var confirmed = link.Kind == HoldGenerationLinkKind.Changed;
+            var outcome = HoldMovePolicy.Unconfirmed(HoldMovePolicy.Classify(measure, options, confirmed), confirmed);
             var before = link.MoveOutcome ?? HoldMoveOutcome.Stayed;
             if (link.MoveSource == HoldMoveSource.ThreeD && Rank(before) == Rank(outcome))
             {
@@ -62,7 +66,11 @@ public static class HoldMoveRemeasurer
 
             var told = (link.MoveDistanceMm ?? 0, link.MoveSource ?? HoldMoveSource.TwoD);
             (link.MoveDistanceMm, link.MoveSource, link.MoveOutcome) = (Math.Round(measure.DistanceMm, 1), HoldMoveSource.ThreeD, outcome);
-            if (Rank(outcome) > Rank(before))
+            if (Rank(outcome) > Rank(before) && !confirmed)
+            {
+                await AskAboutMoveAsync(db, link, generation, logger);
+            }
+            else if (Rank(outcome) > Rank(before))
             {
                 marked += await EscalateAsync(db, link, told, measure, outcome, generation, logger);
             }
@@ -128,6 +136,42 @@ public static class HoldMoveRemeasurer
             ct);
 
     private static int Rank(HoldMoveOutcome o) => o == HoldMoveOutcome.Stayed ? 0 : 1;
+
+    /// <summary>
+    /// A move nobody confirmed, seen only now in 3D: a look-over finding on the hold, unless one is already open about it.
+    /// Nothing on the wall or its boulders changes.
+    /// </summary>
+    private static async Task AskAboutMoveAsync(BlocwerkDbContext db, HoldGenerationLink link, int generation, ILogger logger)
+    {
+        var hold = link.NewHold!;
+        if (await db.WallLookOverFindings.AnyAsync(f => f.WallId == link.WallId && f.HoldId == hold.Id && f.Status == LookOverFindingStatus.Open))
+        {
+            return;
+        }
+
+        var boulders = await db.BoulderHolds.CountAsync(bh => bh.HoldId == hold.Id && !bh.Boulder.IsArchived && !bh.Boulder.IsHistoric);
+        db.WallLookOverFindings.Add(new WallLookOverFinding
+        {
+            WallId = link.WallId,
+            Generation = generation,
+            Kind = LookOverFindingKind.SuspectedMove,
+            OldHoldId = link.OldHoldId,
+            HoldId = hold.Id,
+            PanelId = hold.WallPanelId,
+            X = hold.X,
+            Y = hold.Y,
+            Radius = hold.Radius,
+            ShapePoints = hold.ShapePoints?.Select(p => new ShapePoint { Dx = p.Dx, Dy = p.Dy }).ToList(),
+            BouldersAtApply = boulders,
+        });
+        var wall = await db.Walls.IgnoreQueryFilters().FirstAsync(w => w.Id == link.WallId);
+        wall.LookOverPendingSince ??= DateTimeOffset.UtcNow;
+        wall.LookOverGeneration = generation;
+
+        logger.LogInformation(
+            "Hold move re-measured in 3D: hold {HoldId} may have moved {Mm} mm; nobody confirmed a move, so it is asked about in the look-over",
+            hold.Id, link.MoveDistanceMm);
+    }
 
     /// <summary>
     /// A pair the plan judged a re-outline keeps that verdict only while the 3D measure stays under the rule's own bar for an

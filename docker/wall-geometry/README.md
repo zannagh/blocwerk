@@ -52,6 +52,7 @@ source exists once (the previous `docker/wall-stitch/` rotted from copies).
   "options": { "validate": false,              // leave-one-photo-out (slow)
                "autoDownweight": true,         // see "Outlier markers"
                "rejectOutliers": true,         // see "False detections"
+               "isolateMarkers": true,         // see "Inconsistent markers"
                "plausibilityRounds": true,     // see "Implausible models"
                "facets": { "foldDeg": 5, "mergeDeg": 5, "mergeMm": 40, "minMarkersPerFacet": 2 } },
   "callbackUrl": "https://…"                   // optional (protocol)
@@ -125,6 +126,18 @@ average 125.4 mm, within ±3 mm except the bent marker 32 (2 photos, 133.7 mm).
   `"implausible-model"`, `detail` and `round`; `quality.plausibility` says what was wrong first and
   what still is. Never a photo's last detection. The app refuses to activate a model that is still
   implausible (`WallGeometrySanityGate`).
+- **Inconsistent markers** (`wallgeometry/isolate.py`). A plausible model can still be bent by one id that
+  something else on the wall repeats in neighbouring photos: The Attic's 781-photo capture of 2026-10-26 had dark
+  holds with a bright bolt read as id 17 (one 2×2 white block) in ~21 % of its detections; the free solve bent the
+  cameras that saw them and ten innocent markers were down-weighted (4.98 px; 3.55 px without 17). After the
+  plausibility rounds, one marker is a suspect when ≥ 3 and ≥ 25 % of its own photos were removed as inconsistent;
+  or when its first free-solve RMS is ≥ 2× every other marker's (and ≥ 10 px) while ≥ 3 markers are down-weighted
+  or lost detections; or when it has the worst first free-solve RMS of a solve over 4 px (the app's gate). The whole
+  solve (plausibility rounds included) runs again FROM SCRATCH without any detection of it, and that result is kept
+  only when it fits more markers at no worse reprojection, or turns a solve over 4 px into one under it (a wrecked
+  start ranks innocent markers first too; leaving one out lowers the error but does not make the model usable). Up
+  to 2 rounds. The dropped marker joins `quality.rejectedObservations` once, reason `"inconsistent-marker"`,
+  `markerDropped: true`. The app also never sends retired ids (17) to the solver.
 - **Gravity.** Least-squares `up` ⟂ every facet normal of a `verticalReference` segment and ⟂ every
   `levelPairs` centre-to-centre direction (unit weights; with exactly two references and no pairs
   this is `n1 × n2`). A reference segment that split into several facets counts ONCE, with its

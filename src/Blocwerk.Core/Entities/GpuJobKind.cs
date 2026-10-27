@@ -20,4 +20,10 @@ public enum GpuJobKind
     /// Only runners that advertise the <c>detect-holds</c> capability get it; without one the app detects them itself.
     /// </summary>
     DetectHolds = 2,
+
+    /// <summary>
+    /// Register a wall's panel photos into its capture's solved cameras (COLMAP on the runner), so their holds can be placed
+    /// on the photo-real surface. Only runners that advertise the <c>register-panels</c> capability get it.
+    /// </summary>
+    RegisterPanels = 3,
 }

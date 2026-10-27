@@ -99,7 +99,7 @@ public sealed partial class UpdateReviewService
         {
             for (var i = 0; i < answers.Count;)
             {
-                // A run of answers about holds (not found, new, left out) is written in one transaction: an "accept all"
+                // A run of answers about holds (not found, new, left out, may have moved) is written in one transaction: an "accept all"
                 // of a few hundred is one round, not a few hundred.
                 var run = answers.Skip(i).TakeWhile(a => IsHoldKey(a.Key)).ToList();
                 if (run.Count > 0)
@@ -141,18 +141,19 @@ public sealed partial class UpdateReviewService
             : sessions.DecideRelocationAsync(refresh.WallId, id, ReviewAnswerSets.ToRelocation(answer.Answer), sessionId);
     }
 
-    private static bool IsHoldKey(string key) => key is { Length: > 2 } && key[1] == '-' && key[0] is 'k' or 'n' or 'd';
+    private static bool IsHoldKey(string key) => key is { Length: > 2 } && key[1] == '-' && key[0] is 'k' or 'n' or 'd' or 'm';
 
     private static ReviewSubject SubjectOf(char prefix) => prefix switch
     {
         'k' => ReviewSubject.NotFound,
         'n' => ReviewSubject.NewHold,
+        'm' => ReviewSubject.Move,
         _ => ReviewSubject.LeftOut,
     };
 
     private static (char Prefix, Guid Id) ParseKey(string key)
     {
-        if (key is { Length: > 2 } && key[1] == '-' && "ckndr".Contains(key[0]) && Guid.TryParse(key.AsSpan(2), out var id))
+        if (key is { Length: > 2 } && key[1] == '-' && "ckndrm".Contains(key[0]) && Guid.TryParse(key.AsSpan(2), out var id))
         {
             return (key[0], id);
         }

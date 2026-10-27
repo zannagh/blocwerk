@@ -53,4 +53,19 @@ public sealed record HoldMetric(
     /// as not measured), and every later run tries to place it again.
     /// </summary>
     public const string TextureRegistrationRejected = "texture-registration-rejected";
+
+    /// <summary>
+    /// Metric source of a hold "re-place outlier holds in 3D" moved because the rest of the wall contradicted its position:
+    /// onto its linked copy on a more consistent photo, or where its trusted neighbours on its own photo put it
+    /// (<see cref="Geometry.TextureRegistration.HoldOutlierPlanner"/>). Like a marker placement, no texture registration
+    /// replaces it; a later edit of the hold measures it again.
+    /// </summary>
+    public const string Consensus = "consensus";
+
+    /// <summary>
+    /// Metric source of a hold placed from its registered panel photo onto the photo-real surface
+    /// (<see cref="Geometry.Surface.SurfaceHoldPlanner"/>). Like a marker placement, no texture registration replaces it; a
+    /// later edit of the hold measures it again.
+    /// </summary>
+    public const string Surface = "surface";
 }

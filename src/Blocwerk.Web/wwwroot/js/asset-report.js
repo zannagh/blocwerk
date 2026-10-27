@@ -1,6 +1,6 @@
 /*
  * bwAssetReport — what the wall-asset cache holds on this device, for Settings → "Offline storage" and the
- * offline-ready mark (design 2026-10-21 §6.8, PR 2.9). Reads the ledger of bwAssetCache's active partition.
+ * "Offline mode available" bubble (design 2026-10-21 §6.8, PR 2.9). Reads the ledger of bwAssetCache's active partition.
  *
  *   report():   the section's facts: total bytes (the ledger's count, never estimate()), per wall core / gallery / 3D /
  *               other bytes with its keep-offline pin and readiness, whether storage is persisted, the 3D setting
@@ -10,21 +10,31 @@
  *   clear():    "Clear offline data" (asset-clear.js): frees this partition's caches and ledger rows now, then
  *               rebuilds them in the background, and tells the other tabs.
  *
- * OFFLINE READY (the mark): the wall's manifest is in the ledger with nothing pending (every hash known), it lists at
+ * OFFLINE READY: the wall's manifest is in the ledger with nothing pending (every hash known), it lists at
  * least one core asset, and every core key the fill plans on this device (bwAssetPlan.coreKeys: the fit rendition
  * and 640) has a ledger row. Ledger rows come only from the worker's `asset-cached` (after its put succeeded) and from
  * the start's reconcile against cache.keys(), so a row is a confirmed cache entry.
  *
- * Marks are `[data-bw-offline-ready="{wallId}"]` elements (OfflineReadyMark.razor). This module adds `data-ready` to
- * the ready ones; CSS hides the rest. Blazor never owns `data-ready`, so its diffs leave it alone, and a
- * MutationObserver marks the elements a render adds.
+ * THE BUBBLE (readiness): when a wall becomes offline ready for the first time on this device, bwStatus shows
+ * "Offline mode available". The walls already told are kept per partition in localStorage (READY_KEY) with the time
+ * of the last bubble. A wall stays "told" while it is not ready for a while (a new panel photo pending, a viewport
+ * that wants a rendition not cached yet), and leaves only when it leaves the ledger (the viewer left it, or "Clear
+ * offline data"). Told at most once per READY_QUIET_MS, whatever the set holds, so walls that finish one after the
+ * other (across a reload, too) and a clear followed by its refill say so once. The bubble's readiness does not
+ * depend on the viewport: a core photo counts at its 640 rendition (READY_WIDTH), which the fill plans on every
+ * device; Settings' "Offline ready" keeps the device's own rule (isReady with the fit width). Not for a kiosk
+ * partition: a kiosk keeps nothing (no-store).
  */
 window.bwAssetReport = (function (win) {
     'use strict';
 
     const REAL_LABEL = /^(anon|[uk]-[a-z2-7]{20})$/;
-    const MARK_ATTR = 'data-bw-offline-ready';
-    const RECHECK_MS = 1000;
+    const READY_KEY = 'blocwerk-offline-ready';
+    const RECHECK_MS = 2000;
+    const READY_QUIET_MS = 10 * 60 * 1000;
+    const READY_WIDTH = 640;
+    const READY_RETRY_MS = 6000;
+    const READY_RETRIES = 10;
 
     const Cache = () => win.bwAssetCache;
     const Plan = () => win.bwAssetPlan;
@@ -51,7 +61,11 @@ window.bwAssetReport = (function (win) {
         if (core.length === 0 || core.some(e => !e.sha)) {
             return false;
         }
-        return core.every(entry => Plan().coreKeys(entry, width).every(key => keys.has(key)));
+        return core.every(entry => {
+            const wanted = Plan().coreKeys(entry, width);
+            // A photo offered at neither width: any rendition of it on the device will do.
+            return wanted.length > 0 ? wanted.every(key => keys.has(key)) : [...keys].some(key => key.startsWith(entry.sha));
+        });
     }
 
     /**
@@ -164,81 +178,126 @@ window.bwAssetReport = (function (win) {
 
     const clear = () => (win.bwAssetClear ? win.bwAssetClear.clear() : Promise.resolve(false));
 
-    const marks = createMarks();
+    const readiness = createReadiness();
 
-    function createMarks() {
-        let ready = null;
+    function createReadiness() {
         let timer = null;
+        let retryTimer = null;
+        let retries = 0;
+        let running = Promise.resolve();
 
         async function readySet() {
             const state = await active();
             if (!state) {
-                return new Set();
+                return { partition: null, known: new Set(), ready: new Set() };
             }
             const { walls, assets } = await snapshot(state);
             const keys = new Set(assets.map(a => a.key));
-            return new Set(walls.filter(w => isReady(w, keys, fitWidth())).map(w => w.wallId));
+            return {
+                partition: state.active, known: new Set(walls.map(w => w.wallId)),
+                ready: new Set(walls.filter(w => isReady(w, keys, READY_WIDTH)).map(w => w.wallId))
+            };
         }
 
-        async function apply() {
-            const elements = win.document.querySelectorAll ? [...win.document.querySelectorAll(`[${MARK_ATTR}]`)] : [];
-            if (elements.length === 0) {
+        // { walls: Set, toldAt }, or null when localStorage cannot be read.
+        function stored(partition) {
+            try {
+                const value = JSON.parse(win.localStorage.getItem(`${READY_KEY}:${partition}`) || '{}');
+                return { walls: new Set(value.walls || []), toldAt: value.toldAt || 0 };
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function store(partition, ready, toldAt) {
+            try {
+                win.localStorage.setItem(`${READY_KEY}:${partition}`, JSON.stringify({ walls: [...ready].sort(), toldAt }));
+            } catch (e) {
+                /* no storage: the bubble may repeat on the next load, nothing worse */
+            }
+        }
+
+        // One check at a time, so two cannot both find the same wall new.
+        function check() {
+            running = running.then(async () => {
+                const { partition, known, ready } = await readySet();
+                if (!partition || partition.startsWith('k-')) {
+                    return;
+                }
+                const before = stored(partition);
+                if (!before) {
+                    return;
+                }
+                const fresh = [...ready].filter(id => !before.walls.has(id));
+                const gone = [...before.walls].filter(id => !known.has(id));
+                const tell = fresh.length > 0 && Date.now() - before.toldAt >= READY_QUIET_MS;
+                // Told only if the bubble actually showed: another bubble up leaves the walls new and the quiet window
+                // unstarted, and asks again shortly. A page without bwStatus has nobody to tell, and leaves them new.
+                const told = tell && !!win.bwStatus && win.bwStatus.show('offline-ready');
+                if (tell && !told && win.bwStatus) {
+                    retryLater();
+                }
+                const absorbed = told || !tell ? fresh : [];
+                if (absorbed.length > 0 || gone.length > 0) {
+                    const walls = new Set([...before.walls, ...absorbed].filter(id => known.has(id)));
+                    store(partition, walls, told ? Date.now() : before.toldAt);
+                }
+            }).catch(() => undefined);
+            return running;
+        }
+
+        // At most READY_RETRIES times a page, never on a kiosk (bwStatus never shows it there, whatever the partition
+        // says), and not past the page's end.
+        function retryLater() {
+            const body = win.document.body;
+            const kiosk = !!(body && body.dataset && body.dataset.bwKiosk);
+            if (retryTimer || kiosk || retries >= READY_RETRIES) {
                 return;
             }
-            ready = ready || readySet().catch(() => new Set());
-            const set = await ready;
-            for (const el of elements) {
-                if (set.has(String(el.getAttribute(MARK_ATTR)).toLowerCase())) {
-                    el.setAttribute('data-ready', '');
-                } else {
-                    el.removeAttribute('data-ready');
-                }
-            }
+            retries++;
+            retryTimer = win.setTimeout(() => { retryTimer = null; check(); }, READY_RETRY_MS);
         }
 
-        // Many announcements come in a burst while a fill runs: one recheck per second at most.
+        function stop() {
+            win.clearTimeout(retryTimer);
+            retryTimer = null;
+            retries = READY_RETRIES;
+        }
+
+        // Many announcements come in a burst while a fill runs: one recheck per RECHECK_MS at most, once that fill is
+        // done, so a fill that makes several walls ready says so once.
         function invalidate() {
             if (!timer) {
-                timer = win.setTimeout(() => { timer = null; ready = null; apply(); }, RECHECK_MS);
+                timer = win.setTimeout(() => {
+                    timer = null;
+                    Promise.resolve(Cache() && Cache().filled()).catch(() => undefined).then(check);
+                }, RECHECK_MS);
             }
         }
 
-        // Now: after a clear, and once the start's fill has run.
-        function refresh() {
-            ready = null;
-            return apply();
-        }
-
-        return { apply, invalidate, refresh, readySet };
+        return { check, invalidate, readySet, stop };
     }
 
     function observe() {
         const sw = win.navigator.serviceWorker;
         if (sw && sw.addEventListener) {
-            sw.addEventListener('message', event => { if (event.data && event.data.type === 'asset-cached') { marks.invalidate(); } });
+            sw.addEventListener('message', event => { if (event.data && event.data.type === 'asset-cached') { readiness.invalidate(); } });
         }
-        if (typeof win.MutationObserver === 'function' && win.document.body) {
-            let queued = false;
-            new win.MutationObserver(() => {
-                if (!queued) {
-                    queued = true;
-                    win.setTimeout(() => { queued = false; marks.apply(); }, 100);
-                }
-            }).observe(win.document.body, { childList: true, subtree: true, attributes: true, attributeFilter: [MARK_ATTR] });
-        }
+        // The page is going: no retry outlives it.
+        win.addEventListener('pagehide', () => readiness.stop());
         // A wall opened by enhanced navigation refreshes its manifest; read the ledger again a little later.
         if (win.Blazor && win.Blazor.addEventListener) {
-            win.Blazor.addEventListener('enhancedload', () => marks.invalidate());
+            win.Blazor.addEventListener('enhancedload', () => readiness.invalidate());
         }
         if (win.bwAssetClear) {
             win.bwAssetClear.listen();
         }
         const cache = Cache();
         const started = cache && (cache.ready || cache.boot());
-        Promise.resolve(started).then(() => marks.refresh()).then(() => cache.filled()).then(() => marks.refresh()).catch(() => undefined);
+        Promise.resolve(started).then(() => cache.filled()).then(() => readiness.check()).catch(() => undefined);
     }
 
-    return { isReady, summarize, report, setKeepOffline, clear, observe, marks };
+    return { isReady, summarize, report, setKeepOffline, clear, observe, readiness };
 })(window);
 
 if (!window.__bwAssetCacheManual) {

@@ -25,6 +25,7 @@ window.wallCarousel = {
             el.style.scrollBehavior = 'auto';
             const done = () => {
                 el.style.scrollBehavior = prevBehavior;
+                this.markActive(el, idx);
                 // Reveal here, the moment the offset holds, instead of waiting for .NET's re-render
                 // after three more interop round-trips: that wait was the visible blank page.
                 el.classList.remove('carousel-pending');
@@ -78,6 +79,51 @@ window.wallCarousel = {
         }
         return idx * el.clientWidth;
     },
+    // Every page but the current one is `inert`, which takes it out of the browser's find-in-page (Ctrl+F used to
+    // match boulders on the list while the wall page was showing, and scroll there) and out of Tab order and the
+    // accessibility tree. Inert changes nothing that is painted, so the neighbour a swipe reveals still shows; it only
+    // stops a tap landing on a page that is not settled yet, and the track still scrolls under such a tap.
+    // Re-applied on every settle, so a page Blazor (re)creates is picked up the next time the track comes to rest.
+    //
+    // Focus inside a page that goes inert is moved on purpose, the same way in every engine: Chromium would drop it to
+    // <body> and WebKit would leave it on the inert element (an iOS keyboard stays up, typing a search into a list that
+    // is off screen). It is blurred, and the page now on screen takes it, so a keyboard user carries on from there.
+    markActive(el, page) {
+        const pages = el && el.children ? el.children : [];
+        const focused = document.activeElement;
+        let moveFocus = false;
+        for (let i = 0; i < pages.length; i++) {
+            const inert = i !== page;
+            if (pages[i].inert === inert) {
+                continue;
+            }
+            if (inert && focused && focused !== document.body && pages[i].contains(focused)) {
+                focused.blur();
+                moveFocus = true;
+            }
+            pages[i].inert = inert;
+        }
+        const target = pages[page];
+        if (moveFocus && target) {
+            if (!target.hasAttribute('tabindex')) {
+                target.setAttribute('tabindex', '-1');
+            }
+            target.focus({ preventScroll: true });
+        }
+    },
+    // The page under the track right now is usable at once, without waiting for the settle: on iOS (no scrollend) the
+    // settle is an idle timer that every touch restarts, so a page that stayed inert until then could not be scrolled
+    // or tapped for as long as the user kept trying. Only ever lifts inert; the settle re-marks the rest.
+    releaseNearest(el) {
+        const count = el && el.children ? el.children.length : 0;
+        if (count === 0 || el.clientWidth === 0) {
+            return;
+        }
+        const nearest = el.children[Math.min(count - 1, Math.max(0, Math.round(el.scrollLeft / el.clientWidth)))];
+        if (nearest.inert) {
+            nearest.inert = false;
+        }
+    },
     scrollToPage(el, idx, smooth) {
         if (!el) return;
         // `behavior: 'auto'` would resolve to the element's CSS scroll-behavior, so a non-smooth
@@ -95,6 +141,7 @@ window.wallCarousel = {
         const target = Math.min(count - 1, Math.max(0, this.currentPage(el) + dir));
         state.page = target;
         state.swiped = true;
+        this.markActive(el, target);
         this.scrollToPage(el, target, true);
         if (target !== state.reported) {
             state.reported = target;
@@ -204,6 +251,16 @@ window.wallCarousel = {
             if (state.locked || !el.isConnected || el.clientWidth === 0) {
                 return;
             }
+            // The width changed and nothing has re-snapped for it yet. A rotation makes the browser
+            // re-snap the mandatory track against the NEW page width — 3 x 390px is 1.95 pages of 600px,
+            // so it lands on page 2 — and that snap ends in a `scrollend` (WebKit has one since Safari
+            // 26) which arrives BEFORE the ResizeObserver or the window resize. Measured here, it reported
+            // the wrong page to .NET, which moved ?view= and the dots there for good. Hand it to the
+            // width-change path, which restores the remembered page instead.
+            if (!resnapping && el.clientWidth !== state.width) {
+                state.onWidthChange();
+                return;
+            }
             // A settle raised while the finger is still down (a stray scrollend during a gesture)
             // must not move anything either; the release re-arms it.
             if (state.pointers > 0) {
@@ -214,6 +271,7 @@ window.wallCarousel = {
             const page = resnapping ? Math.min(Math.max(0, state.page), Math.max(0, (el.children ? el.children.length : 1) - 1))
                 : this.currentPage(el);
             state.page = page;
+            this.markActive(el, page);
             const smooth = state.swiped && !resnapping;
             state.swiped = false;
             // Correct only when there is something to correct. Re-aiming at an offset we are already
@@ -240,7 +298,12 @@ window.wallCarousel = {
             // new width. See onWidthChange().
             if (el.clientWidth > 0 && el.clientWidth === state.width) {
                 state.frac = el.scrollLeft / el.clientWidth;
+            } else if (el.clientWidth > 0) {
+                // The first scroll of a resize can beat every resize signal: re-snap from here.
+                state.onWidthChange();
+                return;
             }
+            this.releaseNearest(el);
             state.arm();
         };
         state.width = el.clientWidth;
@@ -308,6 +371,7 @@ window.wallCarousel = {
         state.onWheel = (e) => state.pager.onWheel(e);
         state.onPointerDown = () => {
             state.pointers++;
+            this.releaseNearest(el);
             clearTimeout(state.confirmTimer);
             state.swiped = true;
             // A finger beats a pending re-snap: from here the user decides the page again.
@@ -319,6 +383,7 @@ window.wallCarousel = {
         };
         state.onPointerUp = () => {
             state.pointers = Math.max(0, state.pointers - 1);
+            this.releaseNearest(el);
             state.arm();
         };
         el.addEventListener('scroll', state.onScroll, { passive: true });
@@ -382,6 +447,7 @@ window.wallCarousel = {
         }
         el._bwCarousel.reported = idx;
         el._bwCarousel.page = idx;
+        this.markActive(el, idx);
         if (window.bwCarouselNav) {
             window.bwCarouselNav.pageChanged(el, idx);
         }
