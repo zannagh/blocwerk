@@ -1,6 +1,7 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -42,6 +43,17 @@ public sealed partial class GpuJobQueue
             logger.LogWarning("GPU job {JobId}: the panel poses cannot be read: {Reason}", job.Id, ex.Message);
             return null;
         }
+    }
+
+    /// <summary>
+    /// Nothing waits for a delivered registration: the poses are read when someone places holds, so it is installed at once
+    /// (no sweep finishes it, and retention keeps its result) and its photo bundle (gigabytes) goes now.
+    /// </summary>
+    private async Task InstallPanelPosesAsync(BlocwerkDbContext db, Guid jobId, DateTimeOffset now, CancellationToken ct)
+    {
+        var bundle = await db.GpuJobs.Where(j => j.Id == jobId).Select(j => j.BundlePath).FirstAsync(ct);
+        await db.GpuJobs.Where(j => j.Id == jobId).ExecuteUpdateAsync(s => s.SetProperty(j => j.InstalledAt, now), ct);
+        files.Delete(bundle);
     }
 
     private string? ValidateStoredPanels(string stored, GpuRunner runner, Guid jobId)

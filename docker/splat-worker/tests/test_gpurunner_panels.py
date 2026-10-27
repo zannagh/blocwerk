@@ -123,3 +123,9 @@ def test_the_registered_panels_are_read_with_their_reprojection_error(tmp_path):
     assert list(out) == ["abc"]
     assert out["abc"]["observations"] == 4 and out["abc"]["rmsPx"] < 1e-3
     assert np.allclose(np.reshape(out["abc"]["R"], (3, 3)), R, atol=1e-6)
+
+
+def test_a_bundle_over_the_cap_is_refused_with_its_size(monkeypatch):
+    monkeypatch.setattr(panels, "MAX_BYTES", 4)
+    with pytest.raises(PanelsInputError, match="GiB of photos, more than"):
+        panels.read_bundle(bundle([camera("p01", 0), camera("p02", 500)]))

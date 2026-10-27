@@ -229,8 +229,7 @@ public sealed partial class GpuJobQueue
 
         if (kind == GpuJobKind.RegisterPanels)
         {
-            // Nothing waits for it: the poses are read when someone places holds; installed now so no sweep finishes it.
-            await db.GpuJobs.Where(j => j.Id == jobId).ExecuteUpdateAsync(s => s.SetProperty(j => j.InstalledAt, now), ct);
+            await InstallPanelPosesAsync(db, jobId, now, ct);
             return RunnerJobOutcome.Ok;
         }
 

@@ -185,7 +185,8 @@ public sealed partial class HoldTexturePlacementService : IHoldTexturePlacementS
     }
 
     /// <summary>Runs <paramref name="action"/> unless the wall already has a run in progress (then null).</summary>
-    private static async Task<HoldPlacementResult?> ExclusiveAsync(Guid wallId, Func<Task<HoldPlacementResult>> action)
+    private static async Task<T?> ExclusiveAsync<T>(Guid wallId, Func<Task<T>> action)
+        where T : class
     {
         if (!Running.TryAdd(wallId, 0))
         {

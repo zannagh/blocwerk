@@ -27,7 +27,7 @@ KIND = CAPABILITY = "register-panels"
 JOB_FILE = "register-job.json"
 ENTRY = re.compile(r"^(photos|panels)/([A-Za-z0-9_\-]{1,100})\.(jpg|jpeg|png)$")
 MAX_ENTRIES = 20000
-MAX_BYTES = 64 << 30
+MAX_BYTES = 8 << 30  # a capture is a few GB (The Attic: 781 photos, 3.2 GB)
 MAX_DOC_BYTES = 8 << 20
 RESULT = "panels.json"
 
@@ -54,8 +54,10 @@ def read_bundle(zf):
     infos = [i for i in zf.infolist() if not i.is_dir()]
     if len(infos) > MAX_ENTRIES:
         raise PanelsInputError(f"the bundle has more than {MAX_ENTRIES} entries")
-    if sum(i.file_size for i in infos) > MAX_BYTES:
-        raise PanelsInputError("the bundle is too large")
+    total = sum(i.file_size for i in infos)
+    if total > MAX_BYTES:
+        raise PanelsInputError(f"the bundle holds {total / 2**30:.1f} GiB of photos, more than the {MAX_BYTES >> 30} GiB a panel "
+                               "registration accepts")
     names = {i.filename: i for i in infos}
     if JOB_FILE not in names or names[JOB_FILE].file_size > MAX_DOC_BYTES:
         raise PanelsInputError(f"the bundle lacks {JOB_FILE} or it is too large")

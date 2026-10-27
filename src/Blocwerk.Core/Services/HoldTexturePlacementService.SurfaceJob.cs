@@ -37,7 +37,8 @@ public sealed partial class HoldTexturePlacementService
             }
 
             var job = await gpuJobs.LatestPanelsJobAsync(wallId, model.Id, ct);
-            return SurfaceRegistration.Of(job, (await CurrentPosesAsync(db, job, ct)).Count);
+            return SurfaceRegistration.Of(job, (await CurrentPosesAsync(db, job, ct)).Count)
+                with { RunnerReady = await gpuJobs.RunnerReadyAsync(wallId, GpuJobKind.RegisterPanels, ct) };
         }
     }
 
@@ -54,15 +55,28 @@ public sealed partial class HoldTexturePlacementService
 
             var model = await ActiveModelTextures.FindAsync(db, wallId, ct)
                 ?? throw new UserFacingException("This wall has no active 3D model to register the panel photos in.");
-            if (await gpuJobs.LatestPanelsJobAsync(wallId, model.Id, ct) is { Status: GpuJobStatus.Queued or GpuJobStatus.Claimed or GpuJobStatus.Running } open)
-            {
-                return SurfaceRegistration.Of(open, 0);
-            }
 
-            var job = await QueuePanelsJobAsync(db, wallId, model.Id, model.Json, ct);
-            logger.LogInformation("Wall {WallId}: panel photos queued for registration on a 3D runner as GPU job {JobId}", wallId, job.Id);
-            return SurfaceRegistration.Of(job, 0);
+            // The per-wall lock makes "is one open? else queue one" atomic (one app instance).
+            return await ExclusiveAsync(wallId, () => QueueUnlessOpenAsync(db, wallId, model.Id, model.Json, ct))
+                   ?? throw new UserFacingException("Holds are already being placed on this wall. Try again in a minute.");
         }
+    }
+
+    private async Task<SurfaceRegistration> QueueUnlessOpenAsync(BlocwerkDbContext db, Guid wallId, Guid modelId, string modelJson, CancellationToken ct)
+    {
+        if (await gpuJobs!.LatestPanelsJobAsync(wallId, modelId, ct) is { Status: GpuJobStatus.Queued or GpuJobStatus.Claimed or GpuJobStatus.Running } open)
+        {
+            return SurfaceRegistration.Of(open, 0);
+        }
+
+        if (!await gpuJobs.RunnerReadyAsync(wallId, GpuJobKind.RegisterPanels, ct))
+        {
+            throw new UserFacingException("No 3D runner that can register panel photos (it needs COLMAP) is online for this wall.");
+        }
+
+        var job = await QueuePanelsJobAsync(db, wallId, modelId, modelJson, ct);
+        logger.LogInformation("Wall {WallId}: panel photos queued for registration on a 3D runner as GPU job {JobId}", wallId, job.Id);
+        return SurfaceRegistration.Of(job, 0) with { RunnerReady = true };
     }
 
     /// <summary>
@@ -93,11 +107,15 @@ public sealed partial class HoldTexturePlacementService
         var photos = SolvedCamera.ParseAll(modelJson).Where(c => stored.ContainsKey(c.Image)).Select(c => (c, stored[c.Image])).ToList();
         var panelIds = await LiveWallHolds.LoadPanelIdsAsync(db, wallId, ct);
         var panels = await db.WallPanels.AsNoTracking().Where(p => panelIds.Contains(p.Id) && p.Photo != null)
-            .Select(p => new { p.Id, p.PhotoRevision, p.Photo }).ToListAsync(ct);
+            .Select(p => new { p.Id, p.PhotoRevision }).ToListAsync(ct);
+
+        // One panel photo in memory at a time.
+        async Task<byte[]?> PhotoAsync(Guid id, CancellationToken token) =>
+            await db.WallPanels.AsNoTracking().Where(p => p.Id == id).Select(p => p.Photo).FirstOrDefaultAsync(token);
         try
         {
             var (bundle, bytes, sha) = await RunnerPanelsBundle.StoreAsync(
-                files!, photos, panels.Select(p => (p.Id, p.PhotoRevision, p.Photo!)).ToList(), gpuJobs!.Options.MaxBundleBytes, ct);
+                files!, photos, panels.Select(p => (p.Id, p.PhotoRevision)).ToList(), PhotoAsync, gpuJobs!.Options.MaxBundleBytes, ct);
             return await gpuJobs.EnqueueAsync(
                 new GpuJob
                 {

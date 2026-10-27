@@ -53,11 +53,12 @@ public static class RunnerPanelsBundle
     public static async Task<(string Stored, long Bytes, string Sha256)> StoreAsync(
         ICaptureFileStore files,
         IReadOnlyList<(SolvedCamera Camera, string StoredPath)> photos,
-        IReadOnlyList<(Guid PanelId, int Revision, byte[] Photo)> panels,
+        IReadOnlyList<(Guid PanelId, int Revision)> panels,
+        Func<Guid, CancellationToken, Task<byte[]?>> panelPhoto,
         long maxBytes,
         CancellationToken ct)
     {
-        var stored = await files.SaveWithAsync(".zip", (output, token) => WriteAsync(output, files, photos, panels, token), ct);
+        var stored = await files.SaveWithAsync(".zip", (output, token) => WriteAsync(output, files, photos, panels, panelPhoto, token), ct);
         var path = files.ResolvePhysicalPath(stored) ?? throw new IOException("The panel registration bundle was not stored.");
         var size = new FileInfo(path).Length;
         if (size > maxBytes)
@@ -74,7 +75,8 @@ public static class RunnerPanelsBundle
         Stream output,
         ICaptureFileStore files,
         IReadOnlyList<(SolvedCamera Camera, string StoredPath)> photos,
-        IReadOnlyList<(Guid PanelId, int Revision, byte[] Photo)> panels,
+        IReadOnlyList<(Guid PanelId, int Revision)> panels,
+        Func<Guid, CancellationToken, Task<byte[]?>> panelPhoto,
         CancellationToken ct)
     {
         using var zip = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true);
@@ -96,13 +98,20 @@ public static class RunnerPanelsBundle
             throw new CaptureFailedException("The capture photos are not on the server any more.");
         }
 
-        foreach (var (panelId, revision, photo) in panels)
+        var names = new List<string>();
+        foreach (var (panelId, revision) in panels)
         {
+            if (await panelPhoto(panelId, ct) is not { } photo)
+            {
+                continue;
+            }
+
             var clean = ImageMetadataStripper.Strip(photo);
-            Write(zip, PanelDir + Name(panelId, revision) + Extension(clean), clean);
+            names.Add(Name(panelId, revision));
+            Write(zip, PanelDir + names[^1] + Extension(clean), clean);
         }
 
-        Write(zip, JobFile, Encoding.UTF8.GetBytes(JobDocument(posed, panels.Select(p => Name(p.PanelId, p.Revision)))));
+        Write(zip, JobFile, Encoding.UTF8.GetBytes(JobDocument(posed, names)));
     }
 
     private static string Extension(byte[] bytes) => CapturePhotoFormat.Extension(CapturePhotoFormat.Sniff(bytes));

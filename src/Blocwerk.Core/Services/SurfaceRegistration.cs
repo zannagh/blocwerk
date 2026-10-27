@@ -14,6 +14,9 @@ namespace Blocwerk.Core.Services;
 /// <param name="Registered">Panel photos with a usable pose.</param>
 public sealed record SurfaceRegistration(string State, string? Stage, string? Error, DateTimeOffset? CompletedAt, int Registered)
 {
+    /// <summary>Gets a value indicating whether a runner that registers panel photos may serve the wall and is online now.</summary>
+    public bool RunnerReady { get; init; }
+
     /// <summary>Gets no registration.</summary>
     public static SurfaceRegistration None { get; } = new("none", null, null, null, 0);
 
