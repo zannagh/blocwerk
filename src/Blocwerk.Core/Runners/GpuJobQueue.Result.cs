@@ -71,6 +71,7 @@ public sealed partial class GpuJobQueue
         {
             GpuJobKind.Textures => ValidateStoredTextures(stored, runner, jobId),
             GpuJobKind.DetectHolds => ValidateStoredHolds(stored, runner, jobId),
+            GpuJobKind.RegisterPanels => ValidateStoredPanels(stored, runner, jobId),
             _ => ValidateStored(stored, runner, jobId),
         };
         if (format is null)
@@ -223,6 +224,13 @@ public sealed partial class GpuJobQueue
         if (kind == GpuJobKind.Textures)
         {
             NotifyTextures(captureId);
+            return RunnerJobOutcome.Ok;
+        }
+
+        if (kind == GpuJobKind.RegisterPanels)
+        {
+            // Nothing waits for it: the poses are read when someone places holds; installed now so no sweep finishes it.
+            await db.GpuJobs.Where(j => j.Id == jobId).ExecuteUpdateAsync(s => s.SetProperty(j => j.InstalledAt, now), ct);
             return RunnerJobOutcome.Ok;
         }
 

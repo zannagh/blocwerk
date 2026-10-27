@@ -44,6 +44,16 @@ public sealed class WallGeometryPlacementController(
     public Task<IActionResult> ReplaceOutliers(Guid wallId, CancellationToken ct) =>
         RunAsync(wallId, async () => Ok(await placement.ReplaceOutliersAsync(wallId, ct)));
 
+    /// <summary>The latest panel registration on a 3D runner (for surface placement).</summary>
+    [HttpGet("surface/registration")]
+    public Task<IActionResult> SurfaceRegistration(Guid wallId, CancellationToken ct) =>
+        RunAsync(wallId, async () => Ok(await placement.GetSurfaceRegistrationAsync(wallId, ct)));
+
+    /// <summary>Queues the panel photos for registration on a 3D runner.</summary>
+    [HttpPost("surface/registration")]
+    public Task<IActionResult> RegisterPanels(Guid wallId, CancellationToken ct) =>
+        RunAsync(wallId, async () => Ok(await placement.RegisterPanelsAsync(wallId, ct)));
+
     /// <summary>Reverts a run: every hold it placed that nobody moved since gets its previous values back.</summary>
     [HttpPost("{runId:guid}/revert")]
     public Task<IActionResult> Revert(Guid wallId, Guid runId, CancellationToken ct) =>

@@ -117,6 +117,7 @@ public sealed partial class GpuJobQueue
     {
         GpuJobKind.Textures => "rendered; installing on the server",
         GpuJobKind.DetectHolds => "holds found; matching them on the server",
+        GpuJobKind.RegisterPanels => "panel photos registered",
         _ => "trained; finishing on the server",
     };
 
@@ -131,7 +132,7 @@ public sealed partial class GpuJobQueue
             case GpuJobKind.Textures:
                 NotifyTextures(job.CaptureId);
                 break;
-            case GpuJobKind.DetectHolds:
+            case GpuJobKind.DetectHolds or GpuJobKind.RegisterPanels:
                 break;
             default:
                 await MarkCaptureWithoutSplatAsync(db, job, reason, ct);
