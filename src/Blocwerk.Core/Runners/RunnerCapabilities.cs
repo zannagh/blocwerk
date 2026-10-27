@@ -8,7 +8,8 @@ namespace Blocwerk.Core.Runners;
 /// <summary>
 /// What a 3D runner advertises in <c>hello</c> (<c>capabilities</c>) and which jobs that lets it claim. A runner that
 /// advertises none (every version before textures jobs) counts as <c>splat</c> only, so it never sees a textures job; a
-/// hold detection job only goes to a runner that names <c>detect-holds</c> (every version before it never does).
+/// hold detection job only goes to a runner that names <c>detect-holds</c> (every version before it never does); the same holds
+/// for <c>splat-prepare</c> and <c>splat-finish</c>, which no runner without them (null or any older list) ever sees.
 /// </summary>
 public static class RunnerCapabilities
 {
@@ -24,7 +25,13 @@ public static class RunnerCapabilities
     /// <summary>Registers panel photos into a capture's cameras (COLMAP is on the runner).</summary>
     public const string RegisterPanels = "register-panels";
 
-    private static readonly string[] Known = [Splat, Textures, DetectHolds, RegisterPanels];
+    /// <summary>Runs the splat worker's <c>splat-prepare</c> job (COLMAP is on the runner, and the memory suffices).</summary>
+    public const string SplatPrepare = "splat-prepare";
+
+    /// <summary>Runs the splat worker's <c>splat-finish</c> job (the finishing package imports on the runner).</summary>
+    public const string SplatFinish = "splat-finish";
+
+    private static readonly string[] Known = [Splat, Textures, DetectHolds, RegisterPanels, SplatPrepare, SplatFinish];
 
     /// <summary>The stored form of a hello's list: known names only, de-duplicated, comma separated; null when none was sent.</summary>
     public static string? Store(IEnumerable<string>? reported)
@@ -39,6 +46,8 @@ public static class RunnerCapabilities
         GpuJobKind.Textures => Has(stored, Textures),
         GpuJobKind.DetectHolds => Has(stored, DetectHolds),
         GpuJobKind.RegisterPanels => Has(stored, RegisterPanels),
+        GpuJobKind.SplatPrepare => Has(stored, SplatPrepare),
+        GpuJobKind.SplatFinish => Has(stored, SplatFinish),
         _ => stored is null || Has(stored, Splat),
     };
 
@@ -52,6 +61,8 @@ public static class RunnerCapabilities
         GpuJobKind.Textures => Textures,
         GpuJobKind.DetectHolds => DetectHolds,
         GpuJobKind.RegisterPanels => RegisterPanels,
+        GpuJobKind.SplatPrepare => SplatPrepare,
+        GpuJobKind.SplatFinish => SplatFinish,
         _ => Splat,
     };
 }

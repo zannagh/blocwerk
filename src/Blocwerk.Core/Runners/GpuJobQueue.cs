@@ -118,6 +118,7 @@ public sealed partial class GpuJobQueue(
         job.Status = GpuJobStatus.Queued;
         job.CreatedAt = Now;
         job.Stage = "waiting for a 3D runner";
+        NormalizeCompute(job);
         db.GpuJobs.Add(job);
         await db.SaveChangesAsync(ct);
         logger.LogInformation(

@@ -23,9 +23,13 @@ public sealed partial class GpuJobQueue
     public static IEnumerable<string> FilesOf(GpuJob job) =>
         new[] { job.BundlePath, job.PreparedPath, job.ResultPath, job.PreviewPath, job.InstalledPreviewPath }.OfType<string>().Distinct();
 
-    /// <summary>What the job keeps once its training is over: its result, else an installed preview; with it the prepared state.</summary>
+    /// <summary>
+    /// What the job keeps once its training is over: its result, else an installed preview; with it the prepared state. A splat
+    /// prepare / finish job keeps its result alone (its "prepared state" is the input envelope, which always goes).
+    /// </summary>
     public static IReadOnlyList<string> Leftover(GpuJob job) =>
-        job.ResultPath is not null ? [job.ResultPath, job.PreparedPath]
+        job.Kind is GpuJobKind.SplatPrepare or GpuJobKind.SplatFinish ? job.ResultPath is null ? [] : [job.ResultPath]
+        : job.ResultPath is not null ? [job.ResultPath, job.PreparedPath]
         : job.InstalledPreviewPath is not null ? [job.InstalledPreviewPath, job.PreparedPath]
         : [];
 
