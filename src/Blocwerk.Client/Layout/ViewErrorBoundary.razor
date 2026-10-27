@@ -1,0 +1,33 @@
+@implements IDisposable
+@inject NavigationManager Navigation
+@* Contains a view that throws while rendering (a document the reader accepted with something the view did not
+   expect): the page shows a short error with the way online and "Clear offline data" instead of a dead, blank app.
+   The next navigation tries the view again. *@
+<ErrorBoundary @ref="boundary">
+    <ChildContent>@ChildContent</ChildContent>
+    <ErrorContent>
+        <section class="bw-client-empty bw-client-view-error" role="alert">
+            <h1>Couldn't show this page</h1>
+            <p>Something in the offline data of this page could not be shown.</p>
+            <a class="bw-client-online" href="@ClientRoutes.ServerPath(Navigation.ToBaseRelativePath(Navigation.Uri))">Open it online</a>
+            <ClearOfflineData />
+        </section>
+    </ErrorContent>
+</ErrorBoundary>
+
+@code {
+    private ErrorBoundary? boundary;
+
+    /// <summary>Gets or sets the routed view.</summary>
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+
+    /// <inheritdoc />
+    public void Dispose() => Navigation.LocationChanged -= OnLocationChanged;
+
+    /// <inheritdoc />
+    protected override void OnInitialized() => Navigation.LocationChanged += OnLocationChanged;
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e) =>
+        _ = InvokeAsync(() => boundary?.Recover());
+}

@@ -20,19 +20,20 @@ test('/v/ boots the client from its shell, with no circuit and no edit presence'
     expect(response.status()).toBe(200);
     expect(response.headers()['cache-control']).toContain('no-cache');
     await expect(page.locator('meta[name="bw-partition"]')).toHaveAttribute('content', 'offline');
-    await expect(page.locator('h1')).toHaveText('Not available offline');
+    // /v/ shows the wall list (PR 3.11): nothing saved on a fresh browser.
+    await expect(page.locator('h1')).toHaveText('My Walls');
     expect(requests.some(p => p.startsWith('/v/_framework/') && p.endsWith('.wasm'))).toBe(true);
     expect(requests.filter(p => p.startsWith('/_blazor') || /blazor\.(web|server)\./.test(p) || p.includes('edit-presence'))).toEqual([]);
     // The shared library's modules come from Web's single copy at /_content/, never from under /v/.
     expect(requests.filter(p => p.startsWith('/v/_content/'))).toEqual([]);
     // Every file the shell names is fingerprinted, the runtime's modules through the import map.
     const named = await page.evaluate(() => [...document.querySelectorAll('script[src], link[rel="stylesheet"]')].map(e => e.getAttribute('src') || e.getAttribute('href')));
-    expect(named.length).toBe(17);
+    expect(named.length).toBe(21);
     expect(named.filter(u => !/^\/[^?#]+\.[a-z0-9]{10}\.(js|css)$/.test(u))).toEqual([]);
     const imports = await page.evaluate(() => JSON.parse(document.querySelector('script[type="importmap"]').textContent).imports);
     expect(imports['/v/_framework/dotnet.js']).toMatch(/^\/v\/_framework\/dotnet\.[a-z0-9]{10}\.js$/);
     expect(requests.filter(p => /^\/v\/_framework\/(dotnet|blazor\.webassembly)\.js$/.test(p))).toEqual([]);
-    const globals = await page.evaluate(() => ['bwAssetLedgerIdb', 'bwAssetLedger', 'bwAssetWipe', 'bwAssetLock', 'bwAssetSession', 'bwAssetClear', 'bwClientStoreRows', 'bwClientStore', 'bwAssetManifest', 'bwAssetData', 'bwAssetMine', 'bwClientSync']
+    const globals = await page.evaluate(() => ['bwAssetLedgerIdb', 'bwAssetLedger', 'bwAssetWipe', 'bwAssetLock', 'bwAssetSession', 'bwAssetClear', 'bwClientStoreRows', 'bwClientStore', 'bwClientView', 'bwAssetManifest', 'bwAssetData', 'bwAssetMine', 'bwClientSync']
         .filter(name => typeof window[name] !== 'object'));
     expect(globals).toEqual([]);
 });
@@ -106,7 +107,7 @@ test('a slow first boot that lands after the error replaces the error with the c
     await page.goto('/v/');
 
     await expect(page.locator('h1')).toHaveText("Couldn't open the offline view", { timeout: 40000 });
-    await expect(page.locator('h1')).toHaveText('Not available offline', { timeout: 40000 });
+    await expect(page.locator('h1')).toHaveText('My Walls', { timeout: 40000 });
     await expect(page.getByRole('button', { name: 'Retry' })).toHaveCount(0);
     expect(await page.evaluate(m => performance.getEntriesByName(m).length, READY)).toBe(1);
 });

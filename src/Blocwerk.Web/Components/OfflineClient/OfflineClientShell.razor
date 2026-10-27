@@ -32,6 +32,10 @@
     {
         <script src="@OfflineClientShellAssets.Url(Assets, module)"></script>
     }
+    @foreach (var module in OfflineClientShellAssets.ViewModules)
+    {
+        <script src="@OfflineClientShellAssets.Url(Assets, module)"></script>
+    }
     @foreach (var module in OfflineClientShellAssets.SyncModules)
     {
         <script src="@OfflineClientShellAssets.Url(Assets, module)"></script>

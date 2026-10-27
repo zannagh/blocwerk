@@ -17,6 +17,23 @@ test('a failed navigation goes to the client route when the version is complete 
     }
 });
 
+// The routes the client declares (ClientRoutes.Declared, PR 3.11).
+const DECLARED = 'walls walls/{WallId:guid} walls/{WallId:guid}/shared/{ShareToken} walls/{WallId:guid}/boulders/{BoulderId:guid} walls/{WallId:guid}/boulders/{BoulderId:guid}/shared/{ShareToken}';
+const GUID_A = '3f2a0000-0000-4000-8000-0000000000a1';
+const GUID_B = 'B2000000-0000-4000-8000-0000000000b2';
+
+test('a :guid parameter covers a GUID only, so the edit pages beside the declared views are never handed over', async () => {
+    const worker = workerWith();
+    deploy(worker.routes, V1, { shell: shellHtml(V1, DECLARED) });
+    await precache(worker);
+    for (const covered of ['/walls', `/walls/${GUID_A}`, `/walls/${GUID_A}/boulders/${GUID_B}`, `/walls/${GUID_A}/shared/tok`, `/walls/${GUID_A}/boulders/${GUID_B}/shared/tok`]) {
+        assert.equal((await navigate(worker, covered)).status, 302, covered);
+    }
+    for (const edit of ['/walls/create', `/walls/${GUID_A}/boulders/create`, `/walls/${GUID_A}/boulders/create/shared/tok`, '/walls/not-a-guid', `/walls/${GUID_A}/update`, `/walls/${GUID_A}/boulders/${GUID_B}/revise`]) {
+        assert.equal(await (await navigate(worker, edit)).text(), 'offline page', edit);
+    }
+});
+
 test('a locked partition, no partition (a kiosk that may keep nothing too) or no complete version gets offline.html, never the client', async () => {
     const cases = {
         locked: state => state.set('/__bw/locked', response(200, ALICE)),

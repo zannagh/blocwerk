@@ -1,0 +1,61 @@
+/* The offline client's views (PR 3.11). They render the Server pages' markup and classes, styled by Web's app.css,
+   pages.css and components.css (which the shell loads); this file only fits them into the client's frame and styles
+   what the Server pages do not have. It loads no image or font of its own: the worker precaches only what the shell
+   names (a Core test). */
+
+/* The views bring their own page gutter (.wall-list, .wall-detail, .boulder-detail), as on the Server. */
+.bw-client-main:has(.wall-list, .wall-detail, .boulder-detail) {
+    padding: 0 0 24px;
+}
+
+.bw-client-main .bw-client-saved {
+    padding: 0 16px;
+}
+
+/* A photo the device does not hold (and the network cannot give). */
+.bw-client-no-photo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 160px;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.wall-card-photo .bw-client-no-photo {
+    min-height: 0;
+    height: 100%;
+}
+
+.wall-card-photo img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.bw-client-wall .page-header .back-link {
+    display: inline-block;
+}
+
+.bw-client-wall .wall-main {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.bw-client-ascents {
+    margin-top: 6px;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+/* An extension point with a component mounted (PR 3.13): no box of its own. */
+.bw-view-slot {
+    display: contents;
+}
+
+/* The Server's list page is a full-bleed carousel slide; in the client it sits inside the wall view's own gutter. */
+.bw-client-wall .boulders-page .boulder-section {
+    padding: 0 0 12px;
+}

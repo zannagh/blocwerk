@@ -1,30 +1,20 @@
 /* The offline client's frame (Blocwerk.Client). The views (PR 3.11) bring their own rules; the overlay's come from
    Blocwerk.Shared.Ui's hold-tap.css. */
+/* The frame's colours are the Server pages' tokens (client-base.css, their subset the shell loads first), so the client
+   looks like the page it stands in for; the fallbacks keep the frame readable without it. */
 :root {
-    --bw-c-bg: #f6f6f8;
-    --bw-c-surface: #ffffff;
-    --bw-c-text: #1b1b28;
-    --bw-c-muted: #5c5c70;
-    --bw-c-accent: #3366dd;
-    --bw-c-border: #dcdce6;
-}
-
-@media (prefers-color-scheme: dark) {
-    :root {
-        --bw-c-bg: #0f0f18;
-        --bw-c-surface: #1b1b28;
-        --bw-c-text: #e6e6ee;
-        --bw-c-muted: #a0a0b4;
-        --bw-c-accent: #7aa2ff;
-        --bw-c-border: #2c2c3c;
-    }
+    --bw-c-bg: var(--bg, #f5f4f1);
+    --bw-c-surface: var(--bg-surface, #ffffff);
+    --bw-c-text: var(--text, #2b2b33);
+    --bw-c-muted: var(--text-secondary, #666672);
+    --bw-c-accent: var(--accent, #cf2c49);
+    --bw-c-border: var(--border, #e3e0d9);
 }
 
 html, body {
     margin: 0;
     background: var(--bw-c-bg);
     color: var(--bw-c-text);
-    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .bw-client-bar {
@@ -34,7 +24,8 @@ html, body {
     gap: 12px;
     padding: 12px 16px;
     padding-top: max(12px, env(safe-area-inset-top));
-    background: var(--bw-c-surface);
+    background: var(--topbar-bg, var(--bw-c-surface));
+    color: var(--topbar-text, inherit);
     border-bottom: 1px solid var(--bw-c-border);
 }
 
@@ -46,9 +37,9 @@ html, body {
 
 .bw-client-pill {
     padding: 2px 10px;
-    border: 1px solid var(--bw-c-border);
+    border: 1px solid currentColor;
     border-radius: 999px;
-    color: var(--bw-c-muted);
+    opacity: 0.8;
     font-size: 13px;
 }
 

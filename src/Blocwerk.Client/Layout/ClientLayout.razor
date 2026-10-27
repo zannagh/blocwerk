@@ -9,7 +9,7 @@
         <span class="bw-client-pill">Offline · read-only</span>
     </header>
     <main class="bw-client-main">
-        <StoreGate>@Body</StoreGate>
+        <StoreGate><ViewErrorBoundary>@Body</ViewErrorBoundary></StoreGate>
         <SyncDriver />
     </main>
 </div>

@@ -1,0 +1,64 @@
+@using Blocwerk.Client.Store
+@using Blocwerk.Contracts.Documents
+@* One boulder of the wall view's list: the Server's BoulderCard (its markup and classes) without its publish, archive
+   and restore buttons. The viewer's marks show as on the Server: favourite, then flash, send or the attempt count. *@
+<a href="@ClientRoutes.BoulderLink(WallId, Boulder.Id, ShareToken)" class="boulder-card" data-bw-boulder="@Boulder.Id">
+    <div class="boulder-card-left">
+        <span class="boulder-name">
+            @Boulder.Name
+            @if (Boulder.Draft == true) { <span class="draft-badge" title="Draft — not climbable until published">draft</span> }
+            @if (Boulder.IsHistoric) { <span class="historic-badge" title="Wall changed since creation">historic</span> }
+        </span>
+        <span class="boulder-meta">@Boulder.Holds.Count holds &middot; by @Boulder.SetBy</span>
+        @if (Boulder.Stats.RatingCount > 0)
+        {
+            <span class="boulder-rating">
+                <StarRating Value="@(Boulder.Stats.RatingAverage ?? 0)" Small="true"
+                            Title="@($"{Boulder.Stats.RatingAverage:0.0} from {Boulder.Stats.RatingCount} rating{(Boulder.Stats.RatingCount != 1 ? "s" : string.Empty)}")" />
+                <span class="rating-count">@Boulder.Stats.RatingCount</span>
+            </span>
+        }
+    </div>
+    <div class="boulder-card-right">
+        @if (Mine.IsFavourite(Boulder.Id))
+        {
+            <span class="status-icon fav-icon" title="Favorite">&#9733;</span>
+        }
+        @if (Mine.IsFlashed(Boulder.Id))
+        {
+            <span class="status-icon flash-icon" title="Flashed">&#9889;</span>
+        }
+        else if (Mine.IsSent(Boulder.Id))
+        {
+            <span class="status-icon send-icon" title="Sent">&#10003;</span>
+        }
+        else if (Mine.TickFor(Boulder.Id) is { Attempts: > 0 } tick)
+        {
+            <span class="status-icon try-icon" title="@tick.Attempts attempts">@tick.Attempts</span>
+        }
+        @if (!string.IsNullOrEmpty(Boulder.Grade))
+        {
+            <span class="boulder-grade">@Boulder.Grade</span>
+        }
+    </div>
+</a>
+
+@code {
+    /// <summary>Gets or sets the boulder.</summary>
+    [Parameter]
+    [EditorRequired]
+    public BouldersDocumentBoulder Boulder { get; set; } = null!;
+
+    /// <summary>Gets or sets its wall.</summary>
+    [Parameter]
+    [EditorRequired]
+    public Guid WallId { get; set; }
+
+    /// <summary>Gets or sets the share link's token, or null.</summary>
+    [Parameter]
+    public string? ShareToken { get; set; }
+
+    /// <summary>Gets or sets the viewer's marks (none on a share link or a kiosk).</summary>
+    [Parameter]
+    public MineMarks Mine { get; set; } = MineMarks.None;
+}
