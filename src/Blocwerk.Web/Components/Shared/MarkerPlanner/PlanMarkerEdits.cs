@@ -12,18 +12,8 @@ public static class PlanMarkerEdits
     /// <summary>Size of a hand-added marker on a surface that has none to copy from.</summary>
     public const double DefaultSizeMm = 100;
 
-    /// <summary>The lowest id not yet used (the dictionary has <see cref="ArucoDict4X4.Count"/>).</summary>
-    public static int NextFreeId(MarkerPlan plan)
-    {
-        var used = plan.Markers.Select(m => m.Id).ToHashSet();
-        var id = 0;
-        while (used.Contains(id))
-        {
-            id++;
-        }
-
-        return id;
-    }
+    /// <summary>The first id not yet used, in <see cref="MarkerIdPolicy.IssueOrder"/> (never a retired one).</summary>
+    public static int NextFreeId(MarkerPlan plan) => MarkerIdPolicy.NextFree(plan.Markers.Select(m => m.Id));
 
     /// <summary>
     /// Adds a filler at a (snapped) point of <paramref name="segment"/>, sized like the fillers already

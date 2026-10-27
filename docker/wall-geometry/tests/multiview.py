@@ -89,3 +89,21 @@ def with_moved_observation(doc, photo, mid, shift=(60.0, -45.0)):
     m = next(m for m in p["markers"] if m["id"] == mid)
     m["corners"] = (np.array(m["corners"]) + np.array(shift)).tolist()
     return doc
+
+
+def with_repeated_false_marker(n_false, scale=0.6, mid=17):
+    """Marker `mid` printed on the front facet AND a hold elsewhere that `n_false` photos read as it instead.
+
+    The hold is a square of `scale` x the marker size on the side facet: the same misread repeats in neighbouring
+    photos, so those views agree among themselves (The Attic, 2026-10-26: id 17 off dark holds with a bright bolt)."""
+    mk = _markers()
+    f1 = np.column_stack([[1, 0, 0], [0, 0, 1], [0, -1, 0]]).astype(float)
+    f2 = np.column_stack([[0, -1, 0], [0, 0, 1], [-1, 0, 0]]).astype(float)
+    mk[mid] = OBJ @ f1.T + np.array([1150.0, 0.0, 1000.0])
+    doc, _ = request(mk=mk)
+    hold = (OBJ * scale) @ f2.T + np.array([1510.0, -650.0, 800.0])
+    cams = {name: (R, t) for name, R, t in _cameras()}
+    for p in doc["photos"][:n_false]:
+        R, t = cams[p["name"]]
+        p["markers"] = [m for m in p["markers"] if m["id"] != mid] + [{"id": mid, "corners": project(R, t, hold).tolist()}]
+    return doc

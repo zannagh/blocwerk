@@ -2,6 +2,7 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using Blocwerk.Core.Detection.Enrichment;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Geometry;
@@ -119,6 +120,28 @@ public class Wall3DHoldTwinTests
         var square = placed.Single(c => c.Hold.Id == outlined.Id) with { Tilt = 0.1 };
         var noOutline = square with { Placed = square.Placed with { Shape = oblique.Placed.Shape } };
         Assert.Equal(outlined.Id, HoldTwinMerger.Order([oblique, noOutline])[0].Hold.Id);
+    }
+
+    [Theory]
+    [InlineData(HoldMetric.Surface, true)]
+    [InlineData(HoldMetric.Consensus, true)]
+    [InlineData(HoldMetric.MultiMarker, false)]
+    [InlineData(HoldMetric.TextureRegistration, false)]
+    public void Representative_PrefersAStoredFootprint_OnlyForHoldsPlacedIn3DOnly(string source, bool footprintFirst)
+    {
+        var wall = NewWall();
+        var flat = AddHold(wall, Left, 1000, 1000, "blue", x: 0.5, y: 0.5);
+        var steep = AddHold(wall, Right, 1000, 1000, "blue", x: 0.95, y: 0.95);
+        flat.ShapePoints = steep.ShapePoints = ShapePoint.DefaultOctagon(0.01);
+        flat.MetricSource = steep.MetricSource = source;
+        var placed = Candidates(wall);
+        var outline = placed.Single(c => c.Hold.Id == flat.Id) with { Tilt = 0.1 };
+        var other = placed.Single(c => c.Hold.Id == steep.Id) with { Tilt = 0.8 };
+        Wall3DHoldShape Shape(Wall3DShapeSource s) => new(s, [[-10, -10], [10, -10], [10, 10]], []);
+        var footprint = other with { Placed = other.Placed with { Shape = Shape(Wall3DShapeSource.FootprintApproximate) } };
+
+        // Other walls keep their choice: the outline seen more head-on wins over a footprint seen steeply.
+        Assert.Equal(footprintFirst ? steep.Id : flat.Id, HoldTwinMerger.Order([outline, footprint])[0].Hold.Id);
     }
 
     [Fact]

@@ -40,4 +40,7 @@ public enum LookOverAnswer
 
     /// <summary>"No, two holds": the link between the two holds of an unsure link is removed; both holds stay.</summary>
     Unlink = 7,
+
+    /// <summary>"It moved": a hold the measurement says may have moved did; it is marked as changed and its boulders for review.</summary>
+    ConfirmMove = 8,
 }

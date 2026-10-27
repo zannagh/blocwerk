@@ -159,4 +159,23 @@ public partial class WallBigUpdateService
         to.Material ??= from.Material;
         to.HandType ??= from.HandType;
     }
+
+    /// <summary>
+    /// A move nobody confirmed: the hold stays where the alignment puts the old one, not on the detection's centre. The
+    /// position (and with it the old 3D placement, see <see cref="CopyPlacementFields"/>) is the old hold's; an old circle
+    /// stays a circle instead of taking the detection's contour, and a shaped hold gets its warped outline afterwards.
+    /// </summary>
+    private static void KeepAtWarpedSpot(Hold staged, Hold oldHold, HoldPositionNorm? warped)
+    {
+        if (warped is null)
+        {
+            return;
+        }
+
+        (staged.X, staged.Y) = (warped.X, warped.Y);
+        if (oldHold.ShapePoints is not { Count: >= 3 })
+        {
+            (staged.ShapePoints, staged.ShapeHoles) = (null, null);
+        }
+    }
 }

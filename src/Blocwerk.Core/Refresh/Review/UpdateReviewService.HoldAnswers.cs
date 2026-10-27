@@ -13,7 +13,7 @@ namespace Blocwerk.Core.Refresh.Review;
 /// <summary>
 /// The answers about holds that are not cards, each in one transaction under the session's row lock: the person's
 /// answer (<see cref="WallUpdateReviewAnswer"/>) and its effect on the decision rows the promote reads. Not found: the
-/// carry verdict (kept and confirmed, or removed). A detection: the centre's keep/discard row, or a neighbour panel's
+/// carry verdict (kept and confirmed, or removed). May have moved: the carry verdict (changed, or carried). A detection: the centre's keep/discard row, or a neighbour panel's
 /// removal row (with any link of it). Undo puts the update's default back and forgets the answer.
 /// </summary>
 public sealed partial class UpdateReviewService
@@ -62,6 +62,10 @@ public sealed partial class UpdateReviewService
         if (subject == ReviewSubject.NotFound)
         {
             await AnswerNotFoundAsync(db, open.Id, holdId, answer, userId, now);
+        }
+        else if (subject == ReviewSubject.Move)
+        {
+            await AnswerMoveAsync(db, open.Id, holdId, answer, userId, now);
         }
         else
         {
@@ -182,7 +186,7 @@ public sealed partial class UpdateReviewService
         BlocwerkDbContext db, Guid sessionId, Guid holdId, ReviewSubject subject, ReviewAnswer answer, Guid userId, DateTimeOffset now)
     {
         // A detection has one answer: one given while it was "new" goes when it is answered as "left out", and back.
-        if (subject != ReviewSubject.NotFound)
+        if (subject is ReviewSubject.NewHold or ReviewSubject.LeftOut)
         {
             var other = subject == ReviewSubject.NewHold ? ReviewSubject.LeftOut : ReviewSubject.NewHold;
             db.WallUpdateReviewAnswers.RemoveRange(await db.WallUpdateReviewAnswers

@@ -17,6 +17,9 @@ public partial class WallHoldPlacement
     private string? message;
     private string? failure;
     private HoldPlacementStatus? status;
+    private HoldOutlierPreview? outliers;
+    private SurfaceRegistration? surfaceRegistration;
+    private SurfacePreview? surface;
 
     /// <summary>The wall being administered.</summary>
     [Parameter]
@@ -65,6 +68,28 @@ public partial class WallHoldPlacement
     internal static string WithUnmeasured(string text, IEnumerable<HoldPlacementPanelSummary> panels) =>
         HoldPlacementUnmeasured.Text(panels) is { Length: > 0 } unmeasured ? $"{text} {unmeasured}" : text;
 
+    /// <summary>The dry run of "re-place outlier holds in 3D" in one sentence.</summary>
+    internal static string OutlierText(HoldOutlierPreview p) =>
+        $"{p.ToReplace} of {p.Checked} placed holds disagree with the rest of the wall: {p.FromTwins} with their linked copy on a "
+        + $"better photo, {p.FromNeighbours} with their neighbours. {p.Undecided} could not be judged and stay as they are.";
+
+    /// <summary>The panel registration's state in a few words.</summary>
+    internal static string SurfaceRegistrationText(SurfaceRegistration r) => r.State switch
+    {
+        "none" when !r.RunnerReady => "needs a 3D runner that can register panel photos (none is online for this wall).",
+        "none" => "not run yet.",
+        "queued" => "waiting for a 3D runner.",
+        "running" => $"running ({r.Stage}).",
+        "done" => $"{r.Registered} panel photo(s) registered.",
+        _ => $"failed: {r.Error}",
+    };
+
+    /// <summary>The dry run of "place holds on the 3D surface" in one sentence.</summary>
+    internal static string SurfaceText(SurfacePreview p) =>
+        $"{p.ToPlace} of {p.Checked} holds would be placed on the surface: {p.OwnView} from their own photo, {p.SharedView} at a linked "
+        + $"copy's position, {p.Fallback} by the outlier check; {p.Missed} stay as they are. Linked copies seen in both photos: "
+        + $"{p.Pairs}, median {p.PairGapMedianMm?.ToString("0") ?? "-"} mm apart (p90 {p.PairGapP90Mm?.ToString("0") ?? "-"} mm).";
+
     // Route data is loaded here, not in OnInitializedAsync: WallDetail is retained across enhanced
     // navigation between walls, and so is this component.
     protected override async Task OnParametersSetAsync()
@@ -78,6 +103,8 @@ public partial class WallHoldPlacement
         message = null;
         failure = null;
         confirmRevert = false;
+        outliers = null;
+        surface = null;
         await ReloadAsync();
     }
 
@@ -86,6 +113,7 @@ public partial class WallHoldPlacement
         try
         {
             status = await Placement.GetStatusAsync(WallId);
+            surfaceRegistration = await Placement.GetSurfaceRegistrationAsync(WallId);
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidOperationException or KioskRestrictedException)
         {
@@ -102,6 +130,38 @@ public partial class WallHoldPlacement
         {
             message += " Their 3D shapes are refined in the background.";
         }
+    });
+
+    private Task CheckOutliersAsync() => RunAsync(async () =>
+    {
+        outliers = await Placement.PreviewOutliersAsync(WallId);
+        message = OutlierText(outliers);
+    });
+
+    private Task ReplaceOutliersAsync() => RunAsync(async () =>
+    {
+        var r = await Placement.ReplaceOutliersAsync(WallId);
+        outliers = null;
+        message = $"{r.Placed} holds re-placed in 3D; the holds in the photos did not change. Their 3D shapes are refined in the background.";
+    });
+
+    private Task RegisterPanelsAsync() => RunAsync(async () =>
+    {
+        surfaceRegistration = await Placement.RegisterPanelsAsync(WallId);
+        message = $"Panel photos: {SurfaceRegistrationText(surfaceRegistration)}";
+    });
+
+    private Task CheckSurfaceAsync() => RunAsync(async () =>
+    {
+        surface = await Placement.PreviewSurfaceAsync(WallId);
+        message = SurfaceText(surface);
+    });
+
+    private Task PlaceOnSurfaceAsync() => RunAsync(async () =>
+    {
+        var r = await Placement.PlaceOnSurfaceAsync(WallId);
+        surface = null;
+        message = $"{r.Placed} holds placed on the 3D surface; the holds in the photos did not change. Their 3D shapes are refined in the background.";
     });
 
     private Task RevertAsync(Guid runId) => RunAsync(async () =>

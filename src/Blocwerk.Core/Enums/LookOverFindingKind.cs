@@ -47,4 +47,11 @@ public enum LookOverFindingKind
     /// is it the same hold on both photos? "Yes" keeps the link, "No, two holds" takes it apart and both holds stay.
     /// </summary>
     UnsureLink = 9,
+
+    /// <summary>
+    /// After the update went live, the 3D placements measured a carried hold (<see cref="Entities.WallLookOverFinding.HoldId"/>,
+    /// carried from <see cref="Entities.WallLookOverFinding.OldHoldId"/>) as moved, and nobody had confirmed a move. Nothing
+    /// was marked: "Not moved" settles it, "It moved" marks the hold as changed and its boulders for review.
+    /// </summary>
+    SuspectedMove = 10,
 }

@@ -109,10 +109,12 @@ public sealed partial class GpuJobQueue
         var splat = RunnerCapabilities.Allows(runner.Capabilities, GpuJobKind.Splat);
         var textures = RunnerCapabilities.Allows(runner.Capabilities, GpuJobKind.Textures);
         var holds = RunnerCapabilities.Allows(runner.Capabilities, GpuJobKind.DetectHolds);
+        var panels = RunnerCapabilities.Allows(runner.Capabilities, GpuJobKind.RegisterPanels);
         var memory = runner.TexturesMemoryMb ?? 0;
         return queued.Where(j => (splat && j.Kind == GpuJobKind.Splat)
                                  || (textures && j.Kind == GpuJobKind.Textures && (j.RequiredMemoryMb ?? 0) <= memory)
-                                 || (holds && j.Kind == GpuJobKind.DetectHolds));
+                                 || (holds && j.Kind == GpuJobKind.DetectHolds)
+                                 || (panels && j.Kind == GpuJobKind.RegisterPanels));
     }
 
     /// <summary>Whether a runner with these reported facts could take <paramref name="job"/> (quality, kind, memory).</summary>

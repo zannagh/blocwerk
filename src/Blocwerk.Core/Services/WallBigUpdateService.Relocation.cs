@@ -127,8 +127,9 @@ public partial class WallBigUpdateService
         }
 
         var distance = await MoveDistanceAsync(db, session, disappeared, appeared, stagedPhoto);
-        var proposed = HoldRelocationProposer.Propose(disappeared, appeared, fingerprints, wall.GlyphsEnabled, distance, moveOptions);
-        return await GuardDisplacementAsync(db, session, proposed, disappeared, appeared, stagedPhoto);
+        // No limit on how far: a hold can be re-set anywhere on the wall, and a suggestion only acts once a person confirms it.
+        // Capping the jump (formerly ~4 % of the photo) turned a real move across the wall into a duplicate hold.
+        return HoldRelocationProposer.Propose(disappeared, appeared, fingerprints, wall.GlyphsEnabled, distance, moveOptions);
     }
 
     /// <summary>
