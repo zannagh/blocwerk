@@ -34,6 +34,15 @@ test('a missing texture, mask or document is missing: nothing is fetched to fill
     }
 });
 
+test("a model is ready only with all the 3D code in the client's cache, whatever navigator.onLine says", async () => {
+    assert.deepEqual(plain(await (await device3d(USER_A)).three.status(USER_A, W1)), ready(true));
+    for (const code of [false, ['/js/wall3d.js']]) {
+        const { three } = await device3d(USER_A, { code });
+        assert.equal((await three.status(USER_A, W1)).state, 'missing', JSON.stringify(code));
+        assert.equal(await three.view(USER_A, W1, DOC, null, null), null);
+    }
+});
+
 test('an older document cached in full stands in when the newest is not', async () => {
     const { three } = await device3d(USER_A, { docs: [OLD_DOC, DOC] });
     assert.deepEqual(plain(await three.status(USER_A, W1)), ready(true));

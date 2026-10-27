@@ -87,6 +87,6 @@ export const fetched = (worker, path) => worker.fetches.filter(f => f.path === p
 export async function completeWorker(options = {}) {
     const worker = workerWith(options);
     deploy(worker.routes, V1);
-    assert.deepEqual({ ...(await precache(worker)) }, { proto: 1, type: 'client-precached', version: V1, complete: true });
+    assert.deepEqual({ ...(await precache(worker)) }, { proto: 1, type: 'client-precached', version: V1, complete: true, with3d: false });
     return worker;
 }

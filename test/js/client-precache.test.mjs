@@ -12,7 +12,7 @@ const VERSION = 'abcdef0123456789';
 const ALICE = 'u-' + 'a'.repeat(20);
 
 // `ua` loads asset-plan.js (bwAssetPlan.isMobile) with that user agent; without it the page has no plan (a phone's rule).
-function precachePage({ version = VERSION, saveData = false, active = ALICE, walls = 1, degraded = false, worker = { client: null }, answer, storage = new Map(), fetchedAt = [], ua = null, keep3d = true } = {}) {
+function precachePage({ version = VERSION, saveData = false, active = ALICE, walls = 1, degraded = false, worker = { client: null }, answer, storage = new Map(), fetchedAt = [], ua = null, keep3d = true, saved3d = false } = {}) {
     const asked = [];
     const fields = [];
     const state = new Map();
@@ -26,7 +26,7 @@ function precachePage({ version = VERSION, saveData = false, active = ALICE, wal
             ready: Promise.resolve(),
             filled: () => Promise.resolve(),
             keep3d: () => keep3d,
-            state: () => ({ active, env: { ledger: { degraded, wallsOf: async () => Array.from({ length: walls }, (_, i) => ({ wallId: 'w' + i, fetchedAt: fetchedAt[i] })) } } }),
+            state: () => ({ active, env: { ledger: { degraded, wallsOf: async () => Array.from({ length: walls }, (_, i) => ({ wallId: 'w' + i, fetchedAt: fetchedAt[i], keepOffline: saved3d && i === 0, save3d: saved3d && i === 0 })) } } }),
         },
         bwAssetStore: {
             askWorker: async (w, type = 'sw-info', reply = type, ms = 0, extra = {}) => {
@@ -35,7 +35,8 @@ function precachePage({ version = VERSION, saveData = false, active = ALICE, wal
                 if (type === 'sw-info') {
                     return worker ? { proto: 1, type, shell: 'blocwerk-shell-v5', ...worker } : null;
                 }
-                return answer === undefined ? { proto: 1, type: 'client-precached', version: VERSION, complete: true } : answer;
+                return answer === undefined
+                    ? { proto: 1, type: 'client-precached', version: VERSION, complete: true, with3d: extra.group3d === 'precache' } : answer;
             },
         },
     };
@@ -125,10 +126,37 @@ test('a complete version is asked once more on a desktop that went without the 3
     assert.deepEqual(phone.asked, ['sw-info']);
 });
 
-test('store3d() asks the worker to store the 3D code', async () => {
-    const page = precachePage();
-    await page.win.bwClientPrecache.store3d();
-    assert.deepEqual(page.asked, ['client-store-3d']);
+test('with the opt-out, a wall saved for offline 3D makes the device `opened`: the 3D code stays across versions', async () => {
+    for (const ua of [DESKTOP, IPHONE]) {
+        const page = precachePage({ ua, keep3d: false, saved3d: true });
+        await page.run();
+        assert.equal(group3dOf(page), 'opened', ua);
+    }
+});
+
+test('store3d() asks the worker as the device is, and never with the opt-out and no wall saved for 3D', async () => {
+    const cases = [[{ ua: DESKTOP }, 'precache'], [{ ua: IPHONE }, 'opened'], [{ ua: IPHONE, keep3d: false, saved3d: true }, 'opened'],
+        [{ ua: DESKTOP, keep3d: false }, null]];
+    for (const [options, group] of cases) {
+        const page = precachePage(options);
+        await page.win.bwClientPrecache.store3d();
+        assert.deepEqual(page.fields.filter(f => f.type === 'client-store-3d').map(f => f.group3d), group ? [group] : [], JSON.stringify(options));
+    }
+});
+
+test('a desktop top-up whose 3D code failed is asked again only after 10 minutes', async () => {
+    const storage = new Map();
+    const first = precachePage({ ua: DESKTOP, storage, worker: { client: VERSION }, answer: { complete: true, version: VERSION, with3d: false } });
+    assert.equal(await first.run(), 'complete');
+    assert.equal(group3dOf(first), 'precache');
+    const soon = precachePage({ ua: DESKTOP, storage, worker: { client: VERSION } });
+    await soon.run();
+    assert.deepEqual(soon.asked, ['sw-info'], 'not on every page');
+    const marker = JSON.parse(storage.get('bw-client-precache'));
+    storage.set('bw-client-precache', JSON.stringify({ ...marker, at3d: Date.now() - 11 * 60 * 1000 }));
+    const later = precachePage({ ua: DESKTOP, storage, worker: { client: VERSION } });
+    await later.run();
+    assert.equal(group3dOf(later), 'precache');
 });
 
 // sw-guard.js: `answers` is how the controller answers each sw-info in turn (true answers, false stays silent).

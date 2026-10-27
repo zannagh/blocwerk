@@ -4,9 +4,6 @@
  * first mount: a page that never opens 3D loads none of them. The shell names every one of them in its import map
  * (OfflineClient3DAssets), so the worker precaches them with the client and serves them offline.
  *
- * THE 3D CODE OFFLINE. A phone or tablet precaches none of it (client-precache.js): a mount online asks the worker to
- * store it (`client-store-3d`), so 3D opened once online opens offline later too.
- *
  * THE FIRST ~20 S (decided, from the 3.8 gate): the client never puts a splat in memory before HOLD_MS after its
  * first render (the layout's `bw-client-ready` mark), while the WebAssembly runtime's start still holds 100–200 MiB
  * extra. Each mount sets wall3d-splat-hold.js's hold to the time left, so the view shows Schematic first and a
@@ -51,13 +48,6 @@ window.bwClient3dStage = (function (win) {
         holdModule.holdPhotoReal(left > 0 ? new Promise(resolve => win.setTimeout(resolve, left)) : null);
     }
 
-    function store3d() {
-        const sw = win.navigator.serviceWorker;
-        if (sw && sw.controller && win.navigator.onLine) {
-            sw.controller.postMessage({ proto: 1, type: 'client-store-3d' });
-        }
-    }
-
     const isCurrent = (element, token) => (mounts.get(element) || {}).token === token;
 
     function disposeQuietly(handle) {
@@ -85,7 +75,6 @@ window.bwClient3dStage = (function (win) {
             const [viewer, holdModule] = await modules();
             hold(holdModule);
             wall3d = viewer;
-            store3d();
         } catch (e) {
             return isCurrent(element, token) ? 'unavailable' : 'stale';
         }

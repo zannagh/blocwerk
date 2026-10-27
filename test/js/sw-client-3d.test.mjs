@@ -8,7 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { dispatchFetch, response, ORIGIN } from './fixtures/sw-sandbox.mjs';
-import { V1, V2, ROUTES, STATE, shellHtml, deploy, workerWith, precache } from './fixtures/sw-client.mjs';
+import { V1, V2, ROUTES, STATE, shellHtml, deploy, workerWith, precache, info } from './fixtures/sw-client.mjs';
 
 const WALL3D = '/js/wall3d.abcdefghij.js';
 const STAGE = '/js/wall3d-stage.bcdefghijk.js';
@@ -36,10 +36,10 @@ const cacheOf = (worker, version) => [...worker.stored].find(([name]) => name ==
 const held3d = (worker, version) => Object.values(MAPPED).filter(url => cacheOf(worker, version).has(ORIGIN + url));
 const fetched3d = worker => worker.fetches.filter(f => Object.values(MAPPED).includes(f.path)).length;
 
-function store3d(worker) {
+function store3d(worker, fields = { group3d: 'opened' }) {
     let pending;
     const sent = [];
-    worker.listeners.message({ data: { proto: 1, type: 'client-store-3d' }, ports: [{ postMessage: m => sent.push(m) }], waitUntil: p => { pending = p; } });
+    worker.listeners.message({ data: { ...fields, proto: 1, type: 'client-store-3d' }, ports: [{ postMessage: m => sent.push(m) }], waitUntil: p => { pending = p; } });
     return pending.then(() => sent[0]);
 }
 
@@ -113,4 +113,29 @@ test("a Server page's plain-path 3D imports stay network-first", async () => {
     assert.equal((await served(worker, '/js/wall3d-stage.js', '/js/wall3d.js')).network, 1);
     assert.equal((await served(worker, STAGE, '/walls/w/3d')).network, 1, 'a Server page asking for a fingerprinted URL too');
     assert.equal((await served(worker, '/lib/three/three.module.min.js', '/js/wall3d.js')).network, 'not intercepted', 'the browser fetches it, as before');
+});
+
+test('a device that is `none` (the opt-out, no wall saved for 3D), or says nothing, stores no 3D code on a 3D open, nor under Save-Data', async () => {
+    for (const group3d of ['none', undefined]) {
+        const worker = await worker3d('opened');
+        assert.equal((await store3d(worker, { group3d })).complete, false, String(group3d));
+        assert.deepEqual(held3d(worker, V1), [], String(group3d));
+        assert.equal(fetched3d(worker), 0, String(group3d));
+        assert.ok(!worker.stored.get(STATE).has('/__bw/client-3d-opened'), 'no opened mark either');
+    }
+    const saving = await worker3d('opened');
+    saving.self.navigator = { connection: { saveData: true } };
+    assert.equal((await store3d(saving)).complete, false);
+    assert.deepEqual(held3d(saving, V1), []);
+});
+
+test('a 3D file that fails leaves the client complete without the 3D code, and the answer says so', async () => {
+    const worker = workerWith();
+    deploy3d(worker, V1);
+    worker.routes[MAPPED['/lib/spark/spark.module.min.js']] = () => Promise.reject(new TypeError('offline'));
+    assert.deepEqual({ ...(await precache(worker, { group3d: 'precache' })) }, { proto: 1, type: 'client-precached', version: V1, complete: true, with3d: false });
+    assert.equal((await info(worker)).client, V1, 'the client is complete and served');
+    worker.routes[MAPPED['/lib/spark/spark.module.min.js']] = () => response(200, 'spark', { 'content-type': 'text/javascript' });
+    assert.equal((await precache(worker, { group3d: 'precache' })).with3d, true, 'a later top-up completes it');
+    assert.deepEqual(held3d(worker, V1), Object.values(MAPPED));
 });

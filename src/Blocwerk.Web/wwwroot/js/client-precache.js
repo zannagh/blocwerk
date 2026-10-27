@@ -10,13 +10,15 @@
  *   - the worker answers `sw-info` with a `client` field (blocwerk-shell-v5 or later; an older one is left alone);
  *   - the worker's complete version is not already this page's;
  *   - no failed attempt for this version started within RETRY_MS (a failing fill is not retried on every page);
- * it posts `client-precache` and records the outcome in localStorage (MARKER_KEY: `{ version, at, complete, with3d }`), the
+ * it posts `client-precache` and records the outcome in localStorage (MARKER_KEY: `{ version, at, complete, with3d, at3d }`), the
  * page's completeness marker. The worker's own record decides the hand-off; the marker only spares the repeat.
  * THE 3D CODE (PR 3.13). The message's `group3d` says whether the 3D view's code (~920 KiB) comes along: `precache` on a
  * desktop with 3D kept; `opened` on a phone or tablet (bwAssetPlan.isMobile, the asset cache's own test: no background
- * 3D there), where the worker takes it only once a 3D view was opened online on the device; `none` with the 3D opt-out.
- * A complete version is asked again once on a desktop whose marker says it went without the 3D code. `store3d()` is a
- * 3D view opened online (asset-3d.js): the worker stores the 3D code into the complete version and keeps it from then on.
+ * 3D there), where the worker takes it only once a 3D view was opened online on the device; `none` with the 3D opt-out,
+ * unless a wall of the partition is saved for offline 3D (`keepOffline` and `save3d`): that device is `opened`. The
+ * worker answers `with3d` (all the 3D code is there); a desktop whose complete version lacks it asks again, at most
+ * once per RETRY_MS (`at3d`). `store3d()` is a 3D view opened online (asset-3d.js): unless the device is `none`, the
+ * worker stores the 3D code into the complete version and keeps it from then on.
  * THE KIOSK STAMP (PR 3.15). On a kiosk tablet (`k-…`) every page, once its fill is done, also writes
  * `{ label, at }` to the worker's state cache (KIOSK_FRESH_KEY): `at` is the newest manifest success (`fetchedAt`) of the
  * partition's rows. The worker hands a `k-` tablet to the client only within KIOSK_MAX_AGE of it, as the client reads the
@@ -47,10 +49,19 @@ window.bwClientPrecache = (function (win) {
 
     const saveData = () => !!(win.navigator.connection && win.navigator.connection.saveData);
 
+    // A wall of the partition saved for offline 3D: its 3D shows whatever the opt-out says (client-3d.js).
+    async function savedFor3d(cache) {
+        const s = cache.state();
+        if (!s.env || s.env.ledger.degraded || !LABEL.test(s.active || '')) {
+            return false;
+        }
+        return (await s.env.ledger.wallsOf(s.active)).some(row => row.keepOffline && row.save3d);
+    }
+
     // The 3D code's part of the precache (see the header).
-    function group3d(cache) {
+    async function group3d(cache) {
         if (typeof cache.keep3d === 'function' && !cache.keep3d()) {
-            return 'none';
+            return (await savedFor3d(cache)) ? 'opened' : 'none';
         }
         const plan = win.bwAssetPlan;
         const mobile = !plan || plan.isMobile(win.navigator, typeof win.matchMedia === 'function' ? q => win.matchMedia(q) : null);
@@ -97,11 +108,13 @@ window.bwClientPrecache = (function (win) {
         if (!info || !('client' in info)) {
             return 'unsupported';
         }
-        const group = group3d(cache);
+        const group = await group3d(cache);
         const marker = readMarker();
-        const had3d = !!(marker && marker.version === version && marker.with3d);
-        if (info.client === version && (group !== 'precache' || had3d)) {
-            writeMarker({ version, at: Date.now(), complete: true, with3d: had3d });
+        const mine = !!(marker && marker.version === version);
+        const had3d = mine && !!marker.with3d;
+        const tried3d = mine && Date.now() - Number(marker.at3d) < RETRY_MS;
+        if (info.client === version && (group !== 'precache' || had3d || tried3d)) {
+            writeMarker({ version, at: Date.now(), complete: true, with3d: had3d, at3d: mine ? marker.at3d : undefined });
             return 'complete';
         }
         // Only a failed attempt waits (a complete version that lacks the 3D code never does): a marker that says complete
@@ -109,12 +122,14 @@ window.bwClientPrecache = (function (win) {
         if (info.client !== version && marker && marker.version === version && marker.complete === false && Date.now() - Number(marker.at) < RETRY_MS) {
             return 'waiting';
         }
-        writeMarker({ version, at: Date.now(), complete: false });
+        const at3d = group === 'precache' ? Date.now() : undefined;
+        // A top-up of a complete version stays complete whatever its answer; a fill is not until it says so.
+        writeMarker({ version, at: Date.now(), complete: info.client === version, at3d });
         const answer = await store.askWorker(win, 'client-precache', 'client-precached', ANSWER_MS, { group3d: group });
         if (!answer || !answer.complete) {
             return 'failed';
         }
-        writeMarker({ version: answer.version, at: Date.now(), complete: true, with3d: group === 'precache' });
+        writeMarker({ version: answer.version, at: Date.now(), complete: true, with3d: answer.with3d === true, at3d });
         return answer.version === version ? 'complete' : 'other';
     }
 
@@ -146,10 +161,16 @@ window.bwClientPrecache = (function (win) {
         return state.done;
     }
 
-    // A 3D view opened online (see the header); nothing to wait for.
-    function store3d() {
+    // A 3D view opened online (see the header); nothing to wait for. Never with the opt-out and no wall saved for 3D.
+    async function store3d() {
+        const cache = win.bwAssetCache;
         const store = win.bwAssetStore;
-        return store ? store.askWorker(win, 'client-store-3d', 'client-stored-3d', ANSWER_MS).catch(() => null) : Promise.resolve(null);
+        try {
+            const group = cache && store ? await group3d(cache) : 'none';
+            return group === 'none' ? null : await store.askWorker(win, 'client-store-3d', 'client-stored-3d', ANSWER_MS, { group3d: group });
+        } catch (e) {
+            return null;
+        }
     }
 
     return {

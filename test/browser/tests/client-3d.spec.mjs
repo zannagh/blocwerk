@@ -2,11 +2,11 @@
 // the device: a view3d document of Alpha in the partition's -3d cache and listed in the wall row's `docs`, its texture,
 // mask and splat level fetched through the worker (which caches them). Then: offline, the 3D route opens in the client
 // from the device alone, in Schematic, and photo-real waits for the client's first ~20 s (shortened here); a desktop
-// precaches the 3D code, a phone and the 3D opt-out do not; on a phone nothing 3D loads until the viewer opens 3D, its
-// first online open fetches the 3D code (never a 3D asset) and stores it, and 3D then opens offline; the 3D opt-out
-// shows no 3D; a model not cached in full says so and loads no 3D code.
-import { test, expect, assetPath, partitionOf } from '../harness/fixtures.mjs';
-import { precacheAsAlice, expectClient } from '../harness/client.mjs';
+// precaches the 3D code, a phone and the 3D opt-out do not; on a phone the client shows no 3D without the code, a 3D
+// view opened on a Server page stores it, and 3D then opens offline; with the opt-out a wall saved for 3D keeps the code
+// across a version; the 3D opt-out shows no 3D; a model not cached in full says so and loads no 3D code.
+import { test, expect, assetPath, partitionOf, controlled, settled } from '../harness/fixtures.mjs';
+import { precacheAsAlice, expectClient, declareRoutes, pageVersion, precacheOutcome, clientRecord } from '../harness/client.mjs';
 
 const DOC = '3d'.repeat(32);
 const HOLD_MS = 6000;
@@ -103,33 +103,71 @@ test('with the 3D opt-out the precache leaves the 3D code out', async ({ page, c
     expect((await held3d(page)).held).toBe(0);
 });
 
-test('on a phone nothing 3D is precached or loads until 3D opens; the first online open stores the 3D code, then 3D opens offline', async ({ page, context, world, server }) => {
+test('with the opt-out, a wall saved for offline 3D keeps the 3D code across a new client version, and opens offline', async ({ page, context, world, server, baseURL }) => {
+    const alpha = world.walls.alpha;
+    await context.addCookies([{ name: 'blocwerk-cache-3d', value: 'off', url: baseURL }]);
+    expect(await precacheAsAlice(page, world, server)).toBe('complete');
+    expect((await held3d(page)).held).toBe(0);
+    const partition = await plant3d(page, alpha);
+
+    // "Save 3D offline" (bwAsset3d.save): the wall row is kept for 3D, and the client's 3D code is stored.
+    await page.evaluate(async ([p, wallId]) => {
+        const ledger = await window.bwAssetLedger.open();
+        await ledger.updateWall(p, wallId, row => Object.assign(row, { keepOffline: true, save3d: true }));
+        await window.bwClientPrecache.store3d();
+    }, [partition, alpha.id]);
+    await expect.poll(async () => { const h = await held3d(page); return h.held === h.group; }).toBe(true);
+
+    // The next deploy is a new client version: the device, opted out but with a wall saved for 3D, carries the code.
+    const v1 = await pageVersion(page);
+    const bump = [v1, v1.split('').reverse().join('')];
+    await server.faults([declareRoutes(undefined, [bump]), { path: '^/walls/', rewrite: bump }]);
+    await page.evaluate(() => localStorage.removeItem('bw-client-precache'));
+    await page.goto(`/walls/${alpha.id}`);
+    await controlled(page);
+    await settled(page);
+    expect(await precacheOutcome(page)).toBe('complete');
+    expect((await clientRecord(page)).version).toBe(bump[1]);
+    const carried = await held3d(page);
+    expect(carried.held).toBe(carried.group);
+
+    await server.unreachable();
+    await expectClient(page, `/walls/${alpha.id}/3d`);
+    await expect(page.locator('.bw-client-3d')).toHaveAttribute('data-bw-3d', 'ready');
+    await expect(page.locator('.wall3d-stage-el canvas.w3d-canvas')).toHaveCount(1);
+});
+
+test('offline, 3D data with no 3D code on the device is "not saved", and loads no 3D code', async ({ page, context, world, server }) => {
+    const alpha = world.walls.alpha;
+    await context.addInitScript(ua => Object.defineProperty(navigator, 'userAgent', { get: () => ua }), IPHONE);
+    expect(await precacheAsAlice(page, world, server)).toBe('complete');
+    await plant3d(page, alpha);
+    await server.unreachable();
+
+    await expectClient(page, `/walls/${alpha.id}/3d`);
+    await expect(page.locator('.bw-client-3d')).toHaveAttribute('data-bw-3d', 'missing');
+    expect(await loaded3d(page)).toEqual([]);
+});
+
+test('on a phone nothing 3D is precached or loads in the client; a 3D view opened on a Server page stores the 3D code, then 3D opens offline', async ({ page, context, world, server }) => {
     const alpha = world.walls.alpha;
     await context.addInitScript(ua => Object.defineProperty(navigator, 'userAgent', { get: () => ua }), IPHONE);
     expect(await precacheAsAlice(page, world, server)).toBe('complete');
     expect((await held3d(page)).held, 'no 3D code in the precache').toBe(0);
     await plant3d(page, alpha);
-    const mark = await server.mark();
 
-    // Online: the client's wall view and boulder detail load no 3D file and ask the server for none.
+    // In the client, with 3D data but no 3D code: the switch says "not saved" and nothing 3D loads.
     await page.goto(`/v/walls/${alpha.id}`);
     await expect.poll(() => page.evaluate(() => performance.getEntriesByName('bw-client-ready').length), { timeout: 30000 }).toBe(1);
-    await expect(page.locator('.bw-client-3d-switch')).toBeVisible();
-    await page.locator(`.boulder-card[data-bw-boulder="${alpha.boulder}"]`).click();
-    await expect(page.locator('.boulder-detail .bw-client-3d-switch')).toBeVisible();
+    await page.locator('.bw-client-3d-switch').click();
+    await expect(page.locator('.bw-client-3d')).toHaveAttribute('data-bw-3d', 'missing');
     expect(await loaded3d(page)).toEqual([]);
 
-    // Opened online: the 3D code comes from the network this once, the model from the device only; then the worker
-    // holds the whole 3D group.
-    await page.locator('.bw-client-3d-switch').click();
-    await expect(page.locator('.wall3d-stage-el canvas.w3d-canvas')).toHaveCount(1);
-    expect((await loaded3d(page)).length).toBeGreaterThan(0);
-    const hits = (await server.log(mark)).map(e => e.url).filter(p => /\/d\/view3d\//.test(p) || [alpha.texture, alpha.mask, alpha.splat].some(s => p.includes(s)));
-    expect(hits, 'no 3D asset from the network').toEqual([]);
+    // A 3D view on a Server page: wall3d-doc.js notes its document (bwAsset3d.noteDoc), and the worker stores the code.
+    // (The seed's model is not one the Server's viewer can draw, so the test makes that call itself.)
+    await page.goto(`/walls/${alpha.id}`);
+    await page.evaluate(([wallId, sha]) => window.bwAsset3d.noteDoc(wallId, sha, 1), [alpha.id, DOC]);
     await expect.poll(async () => { const h = await held3d(page); return h.held === h.group; }, { timeout: 30000 }).toBe(true);
-
-    await page.locator('.bw-client-3d-switch').click();
-    await expect(page.locator('.boulder-detail .panel-viewer')).toBeVisible();
 
     // Offline later: the 3D route opens from the device, code included.
     await server.unreachable();

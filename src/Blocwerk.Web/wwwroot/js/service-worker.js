@@ -135,8 +135,11 @@ self.addEventListener('message', event => {
         const group3d = CLIENT_3D_GROUP.includes(data.group3d) ? data.group3d : 'none';
         lifetime(event, precacheClient(group3d).then(result => reply(event, { proto: PROTO, type: 'client-precached', ...result })));
     } else if (data.type === 'client-store-3d') {
-        // A 3D view opened online on this device (asset-3d.js, client-3d-stage.js): the client's 3D code joins its cache.
-        lifetime(event, storeClient3d().then(complete => reply(event, { proto: PROTO, type: 'client-stored-3d', complete })));
+        // A 3D view opened on a Server page of this device (asset-3d.js): the client's 3D code joins its cache,
+        // never for a device whose page says `none` (the 3D opt-out, no wall saved for 3D) or sends no choice.
+        const allowed = data.group3d === 'precache' || data.group3d === 'opened';
+        lifetime(event, (allowed ? storeClient3d() : Promise.resolve(false))
+            .then(complete => reply(event, { proto: PROTO, type: 'client-stored-3d', complete })));
     } else if (data.type === 'sw-refresh-partition') {
         // Answers `partition-refreshed` with the label served once the lookup is done, so the page can fill at once.
         const clientId = event.source && event.source.id;
@@ -282,6 +285,10 @@ self.addEventListener('fetch', event => {
  * the rest; `opened` (a phone or tablet: no background 3D there) fills them only once a 3D view was opened online on this
  * device (`client-store-3d` stores them into the complete version at once and leaves CLIENT_3D_OPENED_KEY, so later
  * versions carry them, copying the unchanged files from the version they replace); `none` (the 3D opt-out) never does.
+ * The 3D code is best effort: a version completes without it when one of its files fails (client-3d.js then shows no
+ * 3D offline), and the reply's `with3d` says whether it is all there. Its modules are part of the client version, so a
+ * change to the 3D graph is a new version for every device (decided for 0.3.0: deploys come with tagged releases only;
+ * a version of its own for the 3D code is a follow-up).
  *
  * Old versions are deleted only by a fill that completes a newer one (commitClient), never by activate: an activate
  * could otherwise delete a version another worker is still filling.
@@ -588,18 +595,24 @@ function clientWants3d(group3d) {
         && caches.match(CLIENT_3D_OPENED_KEY, { cacheName: ASSET_STATE_CACHE }).then(hit => !!hit, () => false));
 }
 
-// The files first, the shell last: a version's cache holds a shell only when everything it names is there. The 3D code
-// only when `with3d`, the files `previous` (the version being replaced) holds under the same URL copied, not fetched.
+// The 3D code into a version's cache, best effort: resolves whether all of it is there.
+function storeClient3dFiles(cache, modules3d, previous = null) {
+    return storeClientFiles(cache, modules3d, () => previous).then(() => true, () => false);
+}
+
+// The files first, the shell last: a version's cache holds a shell only when everything it names is there, the 3D code
+// apart. That comes after, only when `with3d`, best effort, the files `previous` (the version being replaced) holds under
+// the same URL copied, not fetched. Resolves whether the 3D code is all there.
 function fillClientVersion(cache, shell, with3d, previous) {
     const { files, modules3d, dotnet } = clientShellFiles(shell.html);
     if (!dotnet) {
         throw new Error('client shell: no dotnet.js');
     }
-    const reuse = path => (modules3d.includes(path) ? previous : null);
     return storeClientFile(cache, dotnet)
         .then(response => response.text())
-        .then(source => storeClientFiles(cache, [...files, ...clientBootFiles(dotnet, source), ...(with3d ? modules3d : [])], reuse))
-        .then(() => cache.put(clientUrl(CLIENT_SHELL_PATH), new Response(shell.html, { status: 200, headers: shell.headers })));
+        .then(source => storeClientFiles(cache, [...files, ...clientBootFiles(dotnet, source)]))
+        .then(() => cache.put(clientUrl(CLIENT_SHELL_PATH), new Response(shell.html, { status: 200, headers: shell.headers })))
+        .then(() => with3d && storeClient3dFiles(cache, modules3d, previous));
 }
 
 // The complete version's cache, when its shell is there (never creates one).
@@ -634,15 +647,17 @@ function fillClient(group3d) {
         .then(([shell, record, with3d]) => caches.open(clientCacheName(shell.version)).then(cache => cache.match(clientUrl(CLIENT_SHELL_PATH))
             .then(present => (record && record.version === shell.version && present
                 // Complete already: a desktop that skipped the 3D code before (the opt-out was on) gets it now.
-                ? Promise.resolve(with3d && storeClientFiles(cache, clientShellFiles(shell.html).modules3d)).then(() => shell.version)
-                : presentClientCache(record).then(previous => fillClientVersion(cache, shell, with3d, previous)).then(() => commitClient(shell))))));
+                ? Promise.resolve(with3d && storeClient3dFiles(cache, clientShellFiles(shell.html).modules3d))
+                : presentClientCache(record).then(previous => fillClientVersion(cache, shell, with3d, previous))
+                    .then(stored => commitClient(shell).then(() => stored)))
+                .then(stored => ({ version: shell.version, with3d: stored === true })))));
 }
 
-// `client-precache`: one fill at a time; resolves `{ version, complete }` (version null when it is unknown).
+// `client-precache`: one fill at a time; resolves `{ version, complete, with3d }` (version null when it is unknown).
 function precacheClient(group3d) {
     if (!clientState.filling) {
         clientState.filling = fillClient(group3d)
-            .then(version => ({ version, complete: true }), () => ({ version: clientState.record ? clientState.record.version : null, complete: false }))
+            .then(done => ({ ...done, complete: true }), () => ({ version: clientState.record ? clientState.record.version : null, complete: false }))
             .then(result => {
                 clientState.filling = null;
                 return result;
@@ -654,6 +669,10 @@ function precacheClient(group3d) {
 // `client-store-3d`: marks that a 3D view was opened online here, then stores the 3D code into the complete version
 // (after a running fill, so it lands in the version that fill completes). Resolves whether the code is all there.
 function storeClient3d() {
+    const connection = self.navigator && self.navigator.connection;
+    if (connection && connection.saveData) {
+        return Promise.resolve(false);
+    }
     if (!clientState.storing3d) {
         clientState.storing3d = caches.open(ASSET_STATE_CACHE)
             .then(state => state.put(CLIENT_3D_OPENED_KEY, new Response(String(Date.now()))))
@@ -662,8 +681,7 @@ function storeClient3d() {
             .then(presentClientCache)
             .then(cache => cache && cache.match(clientUrl(CLIENT_SHELL_PATH))
                 .then(shell => shell.text())
-                .then(html => storeClientFiles(cache, clientShellFiles(html).modules3d))
-                .then(() => true))
+                .then(html => storeClient3dFiles(cache, clientShellFiles(html).modules3d)))
             .then(done => !!done, () => false)
             .then(done => {
                 clientState.storing3d = null;

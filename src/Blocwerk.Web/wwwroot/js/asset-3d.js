@@ -24,7 +24,8 @@
  *                      MAX_DOCS), so eviction counts it as that wall's 3D instead of an orphan. Its size is the ledger's
  *                      count of the cached copy when there is one (the worker's Content-Length), else the page's.
  *                      It is also a 3D view opened online, so the offline client keeps the 3D code from then on
- *                      (bwClientPrecache.store3d, PR 3.13: phones precache none until then).
+ *                      (bwClientPrecache.store3d, PR 3.13: phones precache none until then; with the 3D opt-out
+ *                      only once a wall is saved for 3D, which save() also stores it for).
  * Every failure answers "no notice" / "not available": nothing here may keep a 3D view from starting.
  */
 window.bwAsset3d = (function (win) {
@@ -217,6 +218,10 @@ window.bwAsset3d = (function (win) {
             await persisting;
             await Cache().manifestChanged(id);
             await Cache().filled();
+            // The offline client's 3D code too, now that the wall's 3D shows whatever the opt-out says.
+            if (win.bwClientPrecache) {
+                win.bwClientPrecache.store3d();
+            }
             return { saved: (await status(id)).saved };
         } catch (e) {
             return { saved: false };

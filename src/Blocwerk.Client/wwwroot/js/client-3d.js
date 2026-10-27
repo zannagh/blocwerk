@@ -10,7 +10,9 @@
  *     none     the device knows no 3D model of the wall (no view3d document in its row);
  *     off      the viewer turned "Keep 3D on this device" off (bwPrefs' `blocwerk-cache-3d` cookie) and the wall is
  *              not saved for offline 3D (`save3d`): the client shows no 3D, whatever an older visit left behind;
- *     missing  a model is known, but no document is cached with all its textures and masks;
+ *     missing  a model is known, but no document is cached with all its textures and masks, or the 3D code is not in
+ *              the client's cache (a phone stores it only once 3D was opened on a Server page, client-precache.js; the
+ *              client may be up because the server is not, whatever navigator.onLine says);
  *     ready    `sha` is the newest such document; `photoReal` when at least one of its splat levels is cached too.
  *   view(partition, wallId, sha, token, boulder) → the Wall3DView wall3d.js draws, or null when `sha` is not (or no
  *     longer) ready. Its splat ladder keeps only the cached levels, so photo-real never downloads one; the share token
@@ -37,6 +39,22 @@ window.bwClient3d = (function (win) {
         } catch (e) {
             return false;
         }
+    }
+
+    // The 3D code, the import map's modules outside /v/ (the worker's 3D group), all in a client cache.
+    async function codeReady() {
+        const map = win.document.querySelector('script[type="importmap"]');
+        const imports = map ? (JSON.parse(map.textContent).imports || {}) : {};
+        const urls = Object.entries(imports).filter(([name]) => !name.startsWith('/v/')).map(([, url]) => url);
+        const names = (await win.caches.keys()).filter(name => name.startsWith('blocwerk-client-'));
+        const caches = await Promise.all(names.map(name => win.caches.open(name)));
+        for (const url of urls) {
+            const hits = await Promise.all(caches.map(cache => cache.match(new URL(url, win.location.origin).href)));
+            if (!hits.some(Boolean)) {
+                return false;
+            }
+        }
+        return urls.length > 0;
     }
 
     // The active label, unlocked, on a durable ledger: what client-store.js reads under.
@@ -136,7 +154,7 @@ window.bwClient3d = (function (win) {
         for (const ref of docs.filter(d => !only || d.sha === only)) {
             const doc = await docOf(partition, wallId, ref.sha);
             if (doc && (await allCached(partition, imageUrls(doc)))) {
-                return { state: 'ready', sha: ref.sha, doc };
+                return (await codeReady()) ? { state: 'ready', sha: ref.sha, doc } : { state: 'missing' };
             }
         }
         return { state: 'missing' };

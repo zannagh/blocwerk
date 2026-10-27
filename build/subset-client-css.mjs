@@ -23,7 +23,7 @@ import { join } from 'node:path';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const WEB_CSS = f => join(ROOT, 'src/Blocwerk.Web/wwwroot/css', f);
-const OUTPUTS = {
+export const OUTPUTS = {
     'client-base.css': ['app.css', 'pages.css', 'usage-heat.css'],
     'client-components.css': ['components.css'],
     'client-wall3d.css': ['wall3d.css'],
