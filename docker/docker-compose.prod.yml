@@ -8,7 +8,8 @@
 #    generated password.
 #  * no deploy-hook: an inbound webhook is an attack surface on a public host. A cron job polls
 #    GHCR for new images instead (docker/prod/autodeploy.sh).
-#  * no GPU services: this box has no GPU; training runs on the owner's 3D runner.
+#  * no GPU services: this box has no GPU; training runs on the owner's 3D runner. splat-cpu (the CPU half of
+#    the splat worker) sits behind its own off-by-default profile once 3D prep runs on runners (O7).
 #  * bounded container logs (the diagnostics retention, docker/prod/README.md "Diagnostics"): every service
 #    rotates its json-file log by size, so roughly two days of normal volume stay and nothing grows forever.
 #  * Postgres preloads pg_stat_statements (per-statement timings, read at /administration/db-stats).
@@ -108,8 +109,13 @@ services:
       GEOMETRYSERVICE__URL: ${GEOMETRYSERVICE_URL:-}
       GEOMETRYSERVICE__APIKEY: ${COMPUTE_API_KEY:-}
       # The splat worker's CPU half (splat-cpu below: prepare + finish). Training goes to a runner.
+      # Ignored while SPLATSERVICE__ONRUNNERS is true; kept set so the rollback is the flag alone.
       SPLATSERVICE__URL: ${SPLATSERVICE_URL:-}
       SPLATSERVICE__APIKEY: ${SPLAT_API_KEY:-}
+      # true = splat-prepare / splat-finish run on 3D runners as jobs (needs RUNNERS__MODE other than off and a runner
+      # advertising splat-prepare + splat-finish); splat-cpu is then not needed. false (default) = splat-cpu as before.
+      # Flip it only with the runbook (docs/runbooks/o7-splat-on-runners.md).
+      SPLATSERVICE__ONRUNNERS: ${SPLATSERVICE_ONRUNNERS:-false}
       # always = every photo-real training goes to a 3D runner (never trains on this box);
       # off = the runner API (/api/runners/*) is not mapped.
       RUNNERS__MODE: ${RUNNERS_MODE:-off}
@@ -192,14 +198,19 @@ services:
     restart: unless-stopped
     logging: *logging-small
 
-  # The splat worker's CPU half for 3D runners: splat-prepare (COLMAP, training bundle) and
-  # splat-finish (alignment, crop, clean-up, export). No GPU, no trainer: SPLAT_WORKER_MODE=cpu
-  # refuses the all-in-one `splat` kind, so nothing ever trains on this box. Training runs on the
-  # owner's GPU runner (RUNNERS_MODE=always, SPLATSERVICE_URL=http://splat-cpu:8100).
-  # Internal only (polled by the app), profile `compute`. Autodeploy updates it like wall-geometry.
+  # The splat worker's CPU half: splat-prepare (COLMAP, training bundle) and splat-finish (alignment,
+  # crop, clean-up, export). No GPU, no trainer: SPLAT_WORKER_MODE=cpu refuses the all-in-one `splat`
+  # kind, so nothing ever trains on this box.
+  # OFF BY DEFAULT (O7): with SPLATSERVICE_ONRUNNERS=true the app sends prepare and finish to the 3D
+  # runners as jobs, and this container is not needed. Its own profile `splat-cpu`, which
+  # COMPOSE_PROFILES does not list, keeps a plain `docker compose up -d` from starting it again.
+  # Only for the rollback (docs/runbooks/o7-splat-on-runners.md): flag off, then
+  # `docker compose --profile splat-cpu up -d splat-cpu` (SPLATSERVICE_URL=http://splat-cpu:8100).
+  # Internal only (polled by the app). While it runs, autodeploy updates it like wall-geometry; a
+  # stopped one is left alone.
   splat-cpu:
     image: ghcr.io/zannagh/blocwerk-splat-worker:latest
-    profiles: ["compute"]
+    profiles: ["splat-cpu"]
     environment:
       COMPUTE_API_KEY: ${SPLAT_API_KEY:-}
       COMPUTE_CALLBACK_SECRET: ${SPLAT_CALLBACK_SECRET:-}

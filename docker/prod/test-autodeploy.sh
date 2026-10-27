@@ -18,11 +18,19 @@ f=$AUTODEPLOY_DIR/fake
 answer() { cat "$f/$1" 2>/dev/null || true; }
 args="$*"
 case "$args" in
+  # The compute services (wall-geometry, splat-cpu): `ps -q` answers from fake/ps-<svc> (empty = not running, e.g.
+  # splat-cpu behind its off-by-default profile); every pull of one is recorded.
+  "compose pull -q wall-geometry"|"compose pull -q splat-cpu") echo "pull ${args##* }" >> "$AUTODEPLOY_DIR/calls" ;;
+  "compose ps -q wall-geometry"|"compose ps -q splat-cpu") answer "ps-${args##* }" ;;
+  "inspect --format {{.Config.Image}} cid-"*) echo "image-of-${args##* }" ;;
+  "inspect --format {{.Image}} cid-app") answer running ;;
+  "inspect --format {{.Image}} cid-"*) echo "sha:same" ;;
+  "image inspect --format {{.Id}} image-of-"*) echo "sha:same" ;;
   "image inspect"*) answer latest ;;
   "compose pull"*) exit 0 ;;
   "compose ps -q blocwerk") echo cid-app ;;
   "compose ps"*) exit 0 ;;
-  "inspect --format {{.Image}} cid-app") answer running ;;
+  "compose up -d --no-deps"*) echo "up ${args##* }" >> "$AUTODEPLOY_DIR/calls" ;;
   "compose up -d blocwerk") echo up >> "$AUTODEPLOY_DIR/calls" ;;
   "login"*) exit 0 ;;
   run*ready-to-deploy) answer ready ;;
@@ -38,16 +46,24 @@ FAKE
 chmod +x "$WORK/bin/docker"
 
 # The fake flock, for hosts without one (macOS): fd 8 is the app lock, taken when
-# $AUTODEPLOY_DIR/fake/app_lock_held exists; every other lock (the compute pass) is taken, so the
-# compute part stays skipped exactly as it is without flock. A host WITH a real flock also runs the
-# real concurrency scenario below.
+# $AUTODEPLOY_DIR/fake/app_lock_held exists; fd 9 (the compute pass) is free only when
+# $AUTODEPLOY_DIR/fake/compute_lock_free exists, so the compute part stays skipped in the app scenarios, exactly
+# as it is without flock. A host WITH a real flock also runs the real concurrency scenario below.
 REAL_FLOCK=$(command -v flock || true)
 cat > "$WORK/bin/flock" <<'FAKE'
 #!/usr/bin/env bash
 [ "$2" = 8 ] && [ ! -e "$AUTODEPLOY_DIR/fake/app_lock_held" ] && exit 0
+[ "$2" = 9 ] && [ -e "$AUTODEPLOY_DIR/fake/compute_lock_free" ] && exit 0
 exit 1
 FAKE
 chmod +x "$WORK/bin/flock"
+# The fake timeout (macOS has none): drops the duration and runs the command.
+cat > "$WORK/bin/timeout" <<'FAKE'
+#!/usr/bin/env bash
+shift
+exec "$@"
+FAKE
+chmod +x "$WORK/bin/timeout"
 
 failures=0
 scenario() {
@@ -96,6 +112,35 @@ scenario new-image-keeps    busy   0      200    12        "calls=[] deferrals=1
 # not even a deferral count, and leaves the deploy to the run that holds the lock.
 HOLD_APP_LOCK=1 scenario overlapping-run-quiet busy 0 200 3 "calls=[] deferrals=3"
 HOLD_APP_LOCK=1 scenario overlapping-idle-quiet idle 0 200 none "calls=[] deferrals=none"
+
+# The compute pass (after an app run with nothing to deploy): a running service is pulled and checked, a stopped one
+# is left alone. Since O7 splat-cpu is off by default (own profile, docs/runbooks/o7-splat-on-runners.md), so the
+# pass must not touch it, let alone start it; while it runs again (rollback) it is updated as before.
+compute_scenario() {
+  local name=$1 splat_cid=$2 expect=$3
+  local dir=$WORK/$name
+  mkdir -p "$dir/fake"
+  touch "$dir/fake/compute_lock_free"
+  printf 'BLOCWERK_DEPLOY_API_KEY=bwk_test\n' > "$dir/.env"
+  printf 'sha:new' > "$dir/fake/latest"
+  printf 'sha:new' > "$dir/fake/running"
+  printf 'cid-wall-geometry' > "$dir/fake/ps-wall-geometry"
+  printf '%s' "$splat_cid" > "$dir/fake/ps-splat-cpu"
+  : > "$dir/calls"
+  local log got
+  log=$(AUTODEPLOY_DIR=$dir PATH="$WORK/bin:$PATH" bash "$SCRIPT" 2>&1 || true)
+  got="calls=[$(tr '\n' ' ' < "$dir/calls" | sed 's/ $//')]"
+  if [ "$got" = "$expect" ]; then
+    echo "ok   $name"
+  else
+    echo "FAIL $name: expected '$expect', got '$got'"
+    while IFS= read -r line; do echo "     | $line"; done <<< "$log"
+    failures=$((failures + 1))
+  fi
+}
+
+compute_scenario splat-cpu-off-left-alone ""            "calls=[pull wall-geometry]"
+compute_scenario splat-cpu-on-updated     cid-splat-cpu "calls=[pull wall-geometry pull splat-cpu]"
 
 # The same with the real flock, where there is one: a background holder keeps the lock file locked, and the
 # run under test sees the real flock (its PATH has the fake docker only).

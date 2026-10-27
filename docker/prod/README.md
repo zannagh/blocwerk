@@ -22,7 +22,7 @@ truth, and you copy them over by hand.
   "Install / update on the box" or `rollout.sh`), the box keeps the plain 30 min cap. The search
   checkpoints per photo, so a deploy that still cuts it costs only the photo in hand.
   Then, from an EXIT trap so it never delays the app, the compute services: `wall-geometry` and
-  `splat-cpu` are recreated when their image changed, but only after two consecutive idle polls of
+  `splat-cpu` (only while it runs: since O7 it is off by default, see "splat-cpu" below) are recreated when their image changed, but only after two consecutive idle polls of
   their authenticated `/v1/info` (no queued or running job). A failed probe counts as busy unless docker
   reports the container unhealthy; a busy service is never overridden. After 240 busy polls it deploys
   anyway (job counts only, no start times, so this can cut a job that just started; see the script).
@@ -153,6 +153,14 @@ from pg_stat_statements order by total_exec_time desc limit 20"'
 If the migration ran before Postgres had the preload (the app updated first), create the extension by hand once:
 `docker compose exec -T postgres psql -U postgres -d blocwerk -c "create extension if not exists pg_stat_statements"`.
 
+## splat-cpu (off by default since O7)
+
+`splat-cpu`, the splat worker's CPU half (`splat-prepare` / `splat-finish`), has its own compose profile
+`splat-cpu`, which `COMPOSE_PROFILES` does not list. With `SPLATSERVICE_ONRUNNERS=true` in `.env` the app sends those
+jobs to the 3D runners and the container stays stopped. The flip, its checks and the rollback (flag off, then
+`docker compose --profile splat-cpu up -d splat-cpu`) are in `docs/runbooks/o7-splat-on-runners.md`.
+`check-prod-compose.sh` fails when the example `.env`'s profiles would start it by default.
+
 ## Renew the GHCR token before it expires
 
 `GHCR_TOKEN` in the box's `.env` is a GitHub token with `read:packages` and it **expires**. When it does,
@@ -195,7 +203,7 @@ Steps of `--apply`:
    unauthorized pulls in a row (`ROLLOUT_AUTH_FAILS`) fail fast: the box's `GHCR_TOKEN` expired, see
    "Renew the GHCR token" above.
 5. **Install** compose and `autodeploy.sh` as `.new`, validate, `mv`. `.env` is never copied.
-6. **Pull and `up -d`** the app, plus `wall-geometry` and `splat-cpu` with `--compute`.
+6. **Pull and `up -d`** the app, plus `wall-geometry` with `--compute` (never `splat-cpu`, see below).
 7. **Verify**: `/health` answers 200 (inside the `edge` network, up to 3 min) and the database's latest
    `__EFMigrationsHistory` id equals the repo's newest migration.
 8. **Resume autodeploy.** Post-steps (UI checks, flags) stay manual.

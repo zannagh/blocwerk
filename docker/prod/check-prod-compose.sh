@@ -10,6 +10,8 @@
 #     ports or healthcheck presence,
 #  5. prod publishes any port beyond 127.0.0.1, except the ones in EDGE_PUBLISHED (the reverse proxy in front is
 #     the only way in),
+#  6. the services prod.env.example's COMPOSE_PROFILES starts differ from DEFAULT_SERVICES (splat-cpu must stay
+#     off by default since 3D prep runs on runners, O7: a plain `docker compose up -d` must not bring it back),
 # unless the difference is listed as intentional below.
 # COMPOSE overrides the compose command (e.g. a standalone `docker-compose` binary).
 set -euo pipefail
@@ -50,6 +52,7 @@ blocwerk:env:prod:SMTP__FROMNAME
 blocwerk:env:prod:SMTP__SECURITY
 blocwerk:env:prod:BLOCWERK__ENCRYPTIONKEY
 blocwerk:env:prod:RUNNERS__MODE
+blocwerk:env:prod:SPLATSERVICE__ONRUNNERS
 blocwerk:env:prod:BLOCWERK__SERVER__TRUSTEDPROXIES__0
 blocwerk:env:prod:BLOCWERK__AUTH__APIKEYLOGIN__ENABLED
 blocwerk:env:prod:BLOCWERK__AUTH__APIKEYLOGIN__ALLOWEDUSERIDS__0
@@ -73,6 +76,10 @@ postgres:healthcheck:prod
 EDGE_PUBLISHED="
 blocwerk:5050:172.20.0.1
 "
+
+# What `docker compose up -d` starts on the box with prod.env.example's COMPOSE_PROFILES, sorted. splat-cpu is
+# missing on purpose (profile `splat-cpu`, only for the O7 rollback: docs/runbooks/o7-splat-on-runners.md).
+DEFAULT_SERVICES="blocwerk otel-dashboard postgres wall-geometry"
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -130,6 +137,11 @@ while read -r s target host_ip; do
   fail "prod publishes $s port $target on '${host_ip:-all addresses}' beyond 127.0.0.1"
 done < <(jq -r '.services | to_entries[] | .key as $s | (.value.ports // [])[]
                 | select((.host_ip // "") != "127.0.0.1") | "\($s) \(.target) \(.host_ip // "")"' "$tmp/prod.json")
+
+# The default profile set (COMPOSE_PROFILES from the env file, as on the box) starts exactly DEFAULT_SERVICES.
+default_services=$("${compose[@]}" -f docker-compose.prod.yml --env-file prod.env.example config --services | sort | xargs)
+[ "$default_services" = "$DEFAULT_SERVICES" ] \
+  || fail "prod starts '$default_services' by default (COMPOSE_PROFILES in prod.env.example), expected '$DEFAULT_SERVICES'"
 
 if [ "$errors" -gt 0 ]; then
   echo "$errors drift problem(s). Fix docker-compose.prod.yml (and the box), or list the difference as intentional in $0."
