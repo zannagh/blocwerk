@@ -711,8 +711,9 @@ is one stored zip to `PUT .../result`: `status.json` (the `GET /v1/jobs/{id}` bo
 as `{name, url}`) and the files it lists. The stats header adds `kind`, `files`, `seconds` and `peakMemoryMb`.
 
 A job `run_job` itself rejects (too few photos, no sparse model, ...) or an envelope that is not valid goes back as a
-failure that no retry fixes, with the HTTP job's `error` text; running past this machine's memory or `SPLAT_TIMEOUT_S` is
-this runner's (retryable) failure. The child reads the splat worker's own variables (`SPLAT_*`, `COLMAP_*`).
+failure that no retry fixes, with the HTTP job's `error` text; a fault of this machine (running past its memory or
+`SPLAT_TIMEOUT_S`, including COLMAP over `SPLAT_MAX_MEMORY_MB`, an `internal error (ref …)` such as a full disk, a crashed child) is
+this runner's (retryable) failure, so another runner may take the job. The child reads the splat worker's own variables (`SPLAT_*`, `COLMAP_*`).
 
 ### Status page and pause switch
 

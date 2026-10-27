@@ -3,8 +3,9 @@ GpuJobKind.SplatPrepare / SplatFinish), so the server need not run splat-cpu its
 
 The runner downloads the job's bundle, a compute envelope (compute_envelope.py), unpacks it into the job directory the
 HTTP upload of the same kind builds, runs the same `run_job` child under the memory guard (compute_child.py) and uploads
-a zip of the finished job's `status.json` and the files it lists. A job the child reports as failed is handed back with
-its message (a failure no retry fixes); an overrun of this machine's memory is a failure another runner may do better.
+a zip of the finished job's `status.json` and the files it lists. A job the child reports as failed because of its input
+is handed back with its message (a failure no retry fixes); a fault of this machine (memory past RUNNER_COMPUTE_MEMORY_FRACTION
+or SPLAT_MAX_MEMORY_MB, a full disk, a broken environment, a timeout) is a failure another runner may do better.
 
 Capabilities (hello): `capabilities` gains
   "splat-prepare"  when COLMAP is here (COLMAP_BIN) and RUNNER_SPLAT_CPU is not 0

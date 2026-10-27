@@ -10,7 +10,7 @@ of a JSON part inline. unpack() builds the job directory exactly as the HTTP upl
 upload.SplatUpload.store); the result is a zip of `status.json` (the GET /v1/jobs/{id} body of the finished job) and the
 files its `result.files` lists, which pack_result() writes.
 
-Only listed entries are read; a path that escapes, an unlisted entry or too many entries or bytes refuse the bundle (it
+Only listed entries are read; a path that escapes, an unlisted entry or two entries of one name, too many entries or too many bytes refuse the bundle (it
 comes from a server the key trusts, but a runner is a machine in somebody's home)."""
 import json
 import os
@@ -32,6 +32,8 @@ from ..upload import PHOTO_EXT, SplatUpload
 
 MANIFEST, STATUS = "parts.json", "status.json"
 VERSION, SERVICE = 1, "splat"
+MANIFEST_BYTES = MAX_JSON_BYTES + (4 << 20)  # an inline `prepared` (up to MAX_JSON_BYTES) plus the manifest's own framing
+EXTRA_ENTRIES = 16  # the non-photo entries (parts.json, geometry, options, prepared, trainStats, splat ...) beyond max_photos
 PARTS = {"splat-prepare": ("photos", "geometry", "options"), "splat-finish": ("prepared", "splat", "trainStats")}
 UNSAFE = re.compile(r"(^|/)\.\.?(/|$)|^/|\\|:")
 
@@ -114,10 +116,15 @@ def unpack(zip_path, job_dir, kind):
         raise EnvelopeError(f"{kind!r} is not an envelope kind")
     try:
         with zipfile.ZipFile(zip_path) as zf:
-            entries = {i.filename: i for i in zf.infolist() if not i.is_dir()}
+            infos = [i for i in zf.infolist() if not i.is_dir()]
+            entries = {i.filename: i for i in infos}
+            if len(entries) != len(infos):
+                raise EnvelopeError("the bundle holds two entries of one name")
+            if len(infos) > settings.max_photos + EXTRA_ENTRIES:
+                raise EnvelopeError(f"too many entries ({len(infos)}; max {settings.max_photos + EXTRA_ENTRIES})")
             if MANIFEST not in entries:
                 raise EnvelopeError(f"the bundle lacks {MANIFEST}")
-            parts = _check_manifest(json.loads(_read_entry(zf, entries[MANIFEST], MAX_JSON_BYTES)), kind)
+            parts = _check_manifest(json.loads(_read_entry(zf, entries[MANIFEST], MANIFEST_BYTES)), kind)
             named = [p["file"] for p in parts if "file" in p]
             if len(set(named)) != len(named) or set(named) != set(entries) - {MANIFEST}:
                 raise EnvelopeError(f"the entries of the bundle are not exactly the files {MANIFEST} lists")

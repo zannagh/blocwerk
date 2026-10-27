@@ -22,6 +22,7 @@ from splatworker.finish import run_finish
 from splatworker.gpurunner import caps as caps_module
 from splatworker.gpurunner import compute, compute_child
 from splatworker.gpurunner.client import Stopped
+from splatworker.gpurunner import compute_envelope
 from splatworker.gpurunner.compute_envelope import EnvelopeError, status_doc, unpack
 from splatworker.options import SplatOptions
 from splatworker.prepare import run_prepare
@@ -129,6 +130,7 @@ BAD = [
      "prepared"),
     (envelope("splat-finish", [("prepared", None, STATE), ("splat", "x.exe", b"x")]), "splat-finish", "splat.ply"),
     (b"not a zip", "splat-prepare", "bad envelope"),
+    (envelope("splat-prepare", [("photos", "p:0.jpg", jpeg())]), "splat-prepare", "invalid part"),
 ]
 
 
@@ -136,6 +138,31 @@ BAD = [
 def test_a_bad_envelope_is_refused(tmp_path, data, kind, why):
     with pytest.raises(EnvelopeError, match=why):
         unpack_to(tmp_path / "w", data, kind)
+
+
+def test_two_entries_of_one_name_are_refused(tmp_path):
+    with pytest.warns(UserWarning, match="Duplicate name"):
+        data = envelope("splat-prepare", [("photos", "p0.jpg", jpeg())], extra=[("p0.jpg", jpeg())])
+    with pytest.raises(EnvelopeError, match="two entries of one name"):
+        unpack_to(tmp_path / "env", data)
+
+
+def test_more_entries_than_the_photo_limit_allows_are_refused(tmp_path, monkeypatch):
+    monkeypatch.setattr(compute_envelope.settings, "max_photos", 2)
+    monkeypatch.setattr(compute_envelope, "EXTRA_ENTRIES", 1)  # parts.json + options + 3 photos > 2 + 1
+    with pytest.raises(EnvelopeError, match="too many entries"):
+        unpack_to(tmp_path / "env", prepare_envelope([(f"p{i}.jpg", jpeg()) for i in range(3)]))
+
+
+def test_a_manifest_carrying_a_prepared_near_its_cap_is_read(tmp_path, monkeypatch):
+    """The inline `prepared` may be as large as its own cap, so parts.json (it plus the framing) gets headroom."""
+    cap = len(json.dumps(STATE)) + 400
+    monkeypatch.setattr(compute_envelope, "MAX_JSON_BYTES", cap)
+    monkeypatch.setattr(compute_envelope, "MANIFEST_BYTES", cap + 400)
+    prepared = {**STATE, "pad": "x" * (cap - len(json.dumps(STATE)) - 20)}
+    data = finish_envelope(prepared, b"ply\n")
+    assert len(zipfile.ZipFile(io.BytesIO(data)).read("parts.json")) > cap
+    unpack_to(tmp_path / "env", data, "splat-finish")
 
 
 def test_a_scene_past_the_result_limit_is_refused(tmp_path, monkeypatch):
@@ -278,7 +305,8 @@ def test_the_child_failing_is_the_jobs_failure_and_an_overrun_is_this_runners(tm
                                                                               monkeypatch):
     data = prepare_envelope([(f"p{i}.jpg", jpeg()) for i in range(3)])
     for raised, retryable in ((compute_child.ChildFailed("sfm: too few images registered"), False),
-                              (MemoryLimitError("sfm", "too big", "memory"), True)):
+                              (MemoryLimitError("sfm", "too big", "memory"), True),
+                              (JobError("child", "internal error (ref ab12; details in the worker log)"), True)):
         def boom(*a, _e=raised, **k):
             raise _e
         monkeypatch.setattr(compute, "run_child", boom)
@@ -293,9 +321,10 @@ def test_the_child_failing_is_the_jobs_failure_and_an_overrun_is_this_runners(tm
 
 def test_the_child_reports_a_failed_job_and_a_stop(tmp_path):
     empty = tmp_path / "empty"
-    empty.mkdir()  # a finish without its inputs: run_job's internal error, as the HTTP job's `error`
-    with pytest.raises(compute_child.ChildFailed, match="internal error"):
+    empty.mkdir()  # a finish without its inputs: run_job's internal error, which is this machine's fault, not the input's
+    with pytest.raises(JobError, match="internal error") as raised:
         compute_child.run_child("splat-finish", str(empty), lambda *a: None, threading.Event(), 0, 60)
+    assert not isinstance(raised.value, compute_child.ChildFailed)
     stop = threading.Event()
     stop.set()
     with pytest.raises(Stopped):
@@ -315,3 +344,46 @@ def test_an_overrun_or_a_timeout_ends_the_child_as_this_runners_failure():
         compute_child._outcome(parent, Alive(), Tripped(), threading.Event(), 60, lambda *a: None)
     with pytest.raises(JobError, match="timed out"):
         compute_child._outcome(parent, Alive(), None, threading.Event(), -1, lambda *a: None)
+
+
+# --- which child errors are the input's and which this machine's ------------------------------------------------------
+
+class Quiet:
+    """Stands in for the child process: alive, never exited."""
+    exitcode = None
+
+    def is_alive(self):
+        return True
+
+
+def outcome_of(monkeypatch, body):
+    """What the parent makes of `body` failing inside run_job's child entry (run in this process over a real Pipe)."""
+    from splatworker import prepare, runner
+    monkeypatch.setattr(runner, "run_in_child", runner.run_in_child)  # restored; _run_job_tagged swaps it
+    monkeypatch.setattr(prepare, "run_prepare", body)
+    parent, child = mp.Pipe(duplex=False)
+    compute_child._run_job_tagged("splat-prepare", "/job", child)
+    try:
+        return compute_child._outcome(parent, Quiet(), None, threading.Event(), 60, lambda *a: None)
+    except Exception as e:  # noqa: BLE001 - the test inspects which one
+        return e
+
+
+def raising(exc):
+    def body(job_dir, progress):
+        raise exc
+    return body
+
+
+@pytest.mark.parametrize("exc, final", [
+    (ValueError("at least 3 photos"), True),  # invalid input, as the HTTP API's 422
+    (JobError("sfm", "too few images registered"), True),  # the job's own, reproducible failure
+    (MemoryLimitError("sfm", "colmap exceeded 8 GB", "memory"), False),  # past this machine's memory after the retries
+    (MemoryLimitError("sfm", "swap grew", "swap"), False),
+    (OSError(28, "No space left on device"), False),  # an internal error: disk full, a broken environment
+    (RuntimeError("boom"), False),
+], ids=["input", "job error", "memory", "swap", "disk full", "bug"])
+def test_a_child_error_is_final_only_when_the_input_caused_it(monkeypatch, exc, final):
+    got = outcome_of(monkeypatch, raising(exc))
+    assert isinstance(got, compute_child.ChildFailed) is final
+    assert isinstance(got, JobError) is (not final)

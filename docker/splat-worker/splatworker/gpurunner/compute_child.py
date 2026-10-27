@@ -17,7 +17,12 @@ POLL_S = 0.5
 
 
 class ChildFailed(Exception):
-    """run_job reported an error (its message is the HTTP job's `error`): the job fails the same way elsewhere."""
+    """run_job reported an input error (its message is the HTTP job's `error`): the job fails the same way elsewhere.
+    A fault of this machine (memory, disk, a broken environment) does not come as this: see _TaggedConn."""
+
+
+RUNNER_FAULT = "runner"  # the third item of an ("error", message, tag) message: this machine failed, not the input
+INTERNAL = "internal error (ref"  # what computejobs.child.run_in_child says for an exception nobody expected
 
 
 class _Proc:
@@ -33,12 +38,45 @@ class _Proc:
         self.proc.kill()
 
 
+class _TaggedConn:
+    """The child's end of the pipe. run_in_child reports every failure as ("error", message); an overrun of this
+    machine's memory (MemoryLimitError, after the tier retries) and an unexpected exception (disk full, a broken
+    environment) are the machine's, so those go out tagged RUNNER_FAULT and the job can be tried elsewhere."""
+
+    def __init__(self, conn):
+        self.conn, self.faulty = conn, False
+
+    def send(self, msg):
+        if msg[0] == "error" and (self.faulty or str(msg[1]).startswith(INTERNAL)):
+            msg = (*msg, RUNNER_FAULT)
+        self.conn.send(msg)
+
+    def close(self):
+        self.conn.close()
+
+
+def _run_job_tagged(kind, job_dir, conn):
+    from .. import runner
+    tagged, real = _TaggedConn(conn), runner.run_in_child
+
+    def run_in_child(body, job_dir_, conn_, input_errors=()):
+        def watched(d, progress):
+            try:
+                return body(d, progress)
+            except MemoryLimitError:
+                tagged.faulty = True
+                raise
+        return real(watched, job_dir_, conn_, input_errors)
+
+    runner.run_in_child = run_in_child  # in this (spawned) process only
+    return runner.run_job(kind, job_dir, tagged)
+
+
 def _entry(kind, job_dir, conn):
-    from ..runner import run_job
     if os.name == "posix":  # lead a process group and take the tools down with it (what the HTTP worker does)
         from computejobs.jobs import _child_entry
-        return _child_entry(run_job, kind, job_dir, conn)
-    return run_job(kind, job_dir, conn)
+        return _child_entry(_run_job_tagged, kind, job_dir, conn)
+    return _run_job_tagged(kind, job_dir, conn)
 
 
 def _kill_tree(proc):
@@ -70,6 +108,8 @@ def _outcome(parent, proc, guard, stop, timeout_s, report):
                 report(msg[1], stage, msg[3] if len(msg) > 3 else None)
             elif msg[0] == "done":
                 return msg[1]
+            elif len(msg) > 2 and msg[2] == RUNNER_FAULT:
+                raise JobError(stage, msg[1])  # retryable: another runner may fit or have the disk
             else:
                 raise ChildFailed(msg[1])
         elif not proc.is_alive() and not parent.poll(0):
@@ -78,8 +118,8 @@ def _outcome(parent, proc, guard, stop, timeout_s, report):
 
 def run_child(kind, job_dir, report, stop, limit_mb=0, timeout_s=3600):
     """Runs run_job(kind, job_dir) in a child; report(fraction, stage, detail). Returns (the result dict with its
-    `files`, the child tree's peak memory in MB). Raises ChildFailed, MemoryLimitError, JobError (timeout, crash)
-    or client.Stopped."""
+    `files`, the child tree's peak memory in MB). Raises ChildFailed (the input is at fault), MemoryLimitError or
+    JobError (this machine is: an overrun, a timeout, a crash, an internal error) or client.Stopped."""
     ctx = mp.get_context("spawn")
     parent, child = ctx.Pipe(duplex=False)
     proc = ctx.Process(target=_entry, args=(kind, job_dir, child), daemon=True)
