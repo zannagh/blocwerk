@@ -94,12 +94,13 @@ public sealed partial class GpuJobQueue
             await db.GpuJobs.Where(j => j.Id == job.Id).ExecuteUpdateAsync(s => s.SetProperty(j => j.LeaseExpiresAt, now + FinishRetryInterval), ct);
         }
 
-        await HandBackAsync(db, job.CaptureId, ct);
+        await HandBackAsync(db, job.CaptureId, job.Kind, ct);
     }
 
     /// <summary>
     /// With <see cref="GpuRunnerOptions.SplatOnRunners"/> off (a rollback, or never on) no pipeline reads these jobs any more and
-    /// their input is a copy of a capture's photos: every queued one is cancelled and its files deleted.
+    /// their input is a copy of a capture's photos: every queued one is cancelled and its files deleted, and a delivered one that
+    /// was never read is closed (it would otherwise wake its capture every retry interval for a day).
     /// </summary>
     private async Task CancelDisabledComputeJobsAsync(BlocwerkDbContext db, DateTimeOffset now, CancellationToken ct)
     {
@@ -126,6 +127,14 @@ public sealed partial class GpuJobQueue
             logger.LogInformation("GPU job {JobId} of capture {CaptureId} cancelled: {Reason}", job.Id, job.CaptureId, reason);
             await JobEndedAsync(db, job, reason, ct);
             DeleteAll(FilesOf(job), job.Id);
+        }
+
+        var delivered = await db.GpuJobs.AsNoTracking()
+            .Where(j => j.Status == GpuJobStatus.Succeeded && j.InstalledAt == null && (j.Kind == GpuJobKind.SplatPrepare || j.Kind == GpuJobKind.SplatFinish))
+            .Select(j => j.Id).ToListAsync(ct);
+        foreach (var id in delivered)
+        {
+            await CloseComputeAsync(id, reason, ct);
         }
     }
 

@@ -147,7 +147,8 @@ public sealed class GpuRunnerOptions
     /// <summary>
     /// Whether the splat worker's prepare and finish halves run on 3D runners (<c>SPLATSERVICE__ONRUNNERS</c>, default off).
     /// Off, queued <see cref="Entities.GpuJobKind.SplatPrepare"/> / <see cref="Entities.GpuJobKind.SplatFinish"/> jobs are
-    /// cancelled by the sweep (the rollback clean-up).
+    /// cancelled by the sweep (the rollback clean-up). This is the only place the setting is read: whatever decides to queue
+    /// these jobs (the capture pipeline's factory) takes it from this singleton, so the two can never disagree.
     /// </summary>
     public bool SplatOnRunners { get; init; }
 

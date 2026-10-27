@@ -222,14 +222,19 @@ The multipart request the HTTP worker would have received, as one zip:
 
 - `parts` keep the order of the original request. Each has `name` and exactly one of `file` or `json`.
 - A `file` is the name of an entry in the zip **and** the file name the part carries (photo names such as `vf_0001.jpg`
-  matter to the job). It is a plain name: never `/`, `\`, `.` or `..`, at most 255 characters, unique ignoring case, and never
-  `parts.json`. Names are not otherwise restricted (spaces and non-ASCII occur), so a reader must still treat them as untrusted
+  matter to the job). It is a plain name: never `/`, `\`, `:`, `.` or `..`, at most 255 characters, unique ignoring case, and never
+  `parts.json`. A zip holds at most 1431 entries (`RunnerComputeEnvelope.MaxEntries`), and a reader refuses a zip with two
+  entries of one name. Names are not otherwise restricted (spaces and non-ASCII occur), so a reader must still treat them as untrusted
   and write them with their base name only.
-- `json` is the JSON document of the field; a reader serialises it again to get the field's text.
+- `json` is the JSON document of the field; a reader serialises it again to get the field's text. The server copies it into
+  `parts.json` as it is (it is validated, not parsed into memory), so `parts.json` may be as large as the biggest field
+  (`prepared`, 64 MB) plus a few MB of framing; a runner's cap for it leaves that room.
 - Every file entry is **stored** (zip method 0, no compression); `parts.json` is the first entry. The zip is streamed: no part
   is held in memory on the server.
 
-For `splat-prepare` the parts are the `splat` request's (`photos`, optionally `anchors`, `options`, …). For `splat-finish` they
+For `splat-prepare` the parts are the `splat` request's: `photos` (repeated; the photos, the `vf_…` video frames and the
+`a00…` anchor photos all travel as `photos`), `geometry` and `options`. There is no part named `anchors`; a runner refuses an
+unknown part name. For `splat-finish` they
 are `prepared` (the `prepared.json` of the prepare job, as `json`), `splat` (the trained scene, a file named `splat.ply` or
 `splat.spz`) and optionally `trainStats` (`json`).
 
@@ -252,3 +257,12 @@ streams. A runner reports a failed run through the usual `fail` call, never by u
 
 The app serves the stored files from the zip by name and answers the status as above, so the capture pipeline reads a runner's
 result through the same code as an HTTP worker's.
+
+### Contract fixtures
+
+Both sides are checked against the other side's real output. `docker/compute-jobs-py/tests/contract/` holds
+`envelope-prepare.zip` and `envelope-finish.zip` (written by `RunnerComputeEnvelope`; the runner's pytest unpacks them) and
+`result-prepare.zip` and `result-finish.zip` (written by the runner's `pack_result`; `RunnerComputeResult` validates and reads
+them in xUnit). Each side also fails when its own writer stops producing exactly its golden. After an intended change to a
+writer, regenerate with `BLOCWERK_UPDATE_CONTRACT=1` (`dotnet test --filter GpuRunnerContractTests`, and
+`pytest docker/splat-worker/tests/test_gpurunner_contract.py` from the repo root) and commit the files in both PRs.

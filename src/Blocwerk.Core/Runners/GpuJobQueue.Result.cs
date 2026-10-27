@@ -96,7 +96,7 @@ public sealed partial class GpuJobQueue
             j => j.CaptureId == captureId && j.Kind == GpuJobKind.Splat && j.Status == GpuJobStatus.Succeeded && j.InstalledAt == null, ct);
         if (delivered)
         {
-            await HandBackAsync(db, captureId, ct);
+            await HandBackAsync(db, captureId, GpuJobKind.Splat, ct);
         }
     }
 
@@ -241,16 +241,17 @@ public sealed partial class GpuJobQueue
             return RunnerJobOutcome.Ok;
         }
 
-        await HandBackAsync(db, captureId, ct);
+        await HandBackAsync(db, captureId, kind, ct);
         return RunnerJobOutcome.Ok;
     }
 
     /// <summary>
     /// The capture (finished as "Model ready" while the runner trained) goes back to the photo-real stage, exactly
     /// like a retrain: its model and any older view stay live until the new view is stored. A capture parked in
-    /// <see cref="WallCaptureStatus.Solving"/> (waiting for a runner's reconstruction) is only woken.
+    /// <see cref="WallCaptureStatus.Solving"/> (waiting for a runner's reconstruction) is only woken, and only for the
+    /// <see cref="GpuJobKind.SplatPrepare"/> job it waits for.
     /// </summary>
-    private async Task<bool> HandBackAsync(BlocwerkDbContext db, Guid captureId, CancellationToken ct)
+    private async Task<bool> HandBackAsync(BlocwerkDbContext db, Guid captureId, GpuJobKind kind, CancellationToken ct)
     {
         var capture = await db.WallCaptures.FirstOrDefaultAsync(c => c.Id == captureId, ct);
         if (capture is { Status: WallCaptureStatus.Succeeded or WallCaptureStatus.SucceededWithoutTextures or WallCaptureStatus.SucceededWithoutSplat })
@@ -263,7 +264,8 @@ public sealed partial class GpuJobQueue
             capture.CompletedAt = null;
             await db.SaveChangesAsync(ct);
         }
-        else if (capture is not { Status: WallCaptureStatus.Splatting or WallCaptureStatus.Solving })
+        else if (capture is not { Status: WallCaptureStatus.Splatting }
+                 && !(capture is { Status: WallCaptureStatus.Solving } && kind == GpuJobKind.SplatPrepare))
         {
             // Splatting: the processor is mid-view. Solving: a markerless capture parked until a runner reconstructs it.
             return false;

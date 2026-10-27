@@ -25,6 +25,11 @@ namespace Blocwerk.Core.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            // PostgreSQL refuses to narrow a column that holds longer values, so a list over 64 characters is cut back to
+            // whole names first (a runner sends its capabilities again with its next hello).
+            migrationBuilder.Sql(
+                "UPDATE \"GpuRunners\" SET \"Capabilities\" = LEFT(regexp_replace(LEFT(\"Capabilities\", 65), ',[^,]*$', ''), 64) " +
+                "WHERE LENGTH(\"Capabilities\") > 64;");
             migrationBuilder.AlterColumn<string>(
                 name: "Capabilities",
                 table: "GpuRunners",

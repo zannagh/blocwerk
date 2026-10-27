@@ -57,6 +57,7 @@ public class RunnerComputeEnvelopeTests : IDisposable
     [InlineData("a/b.jpg")]
     [InlineData("a\\b.jpg")]
     [InlineData("..")]
+    [InlineData("a:b.jpg")]
     [InlineData("")]
     public async Task Write_RefusesAFileNameThatIsNotPlain(string name)
     {
@@ -73,6 +74,34 @@ public class RunnerComputeEnvelopeTests : IDisposable
         await Assert.ThrowsAsync<InvalidDataException>(() => RunnerComputeEnvelope.WriteAsync(output, "splat-prepare", twice, CancellationToken.None));
         await Assert.ThrowsAsync<InvalidDataException>(
             () => RunnerComputeEnvelope.WriteAsync(output, "splat-prepare", [ComputeJobPart.File("x", "parts.json", [1], "image/jpeg")], CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Write_CopiesAnInlineJsonPartAsItIs_AndRefusesOneThatIsNotJson()
+    {
+        using var output = new MemoryStream();
+        await RunnerComputeEnvelope.WriteAsync(output, "splat-finish", [ComputeJobPart.Json("prepared", "{\"n\":1.50,\"big\":12345678901234567890}")], CancellationToken.None);
+        using var zip = new ZipArchive(new MemoryStream(output.ToArray()));
+        using var text = new StreamReader(zip.GetEntry("parts.json")!.Open());
+        Assert.Equal(
+            "{\"version\":1,\"service\":\"splat\",\"kind\":\"splat-finish\",\"parts\":[{\"name\":\"prepared\",\"json\":{\"n\":1.50,\"big\":12345678901234567890}}]}",
+            await text.ReadToEndAsync());
+
+        foreach (var broken in new[] { "{\"a\":", "", "{} {}", "nope" })
+        {
+            await Assert.ThrowsAsync<InvalidDataException>(
+                () => RunnerComputeEnvelope.WriteAsync(new MemoryStream(), "splat-finish", [ComputeJobPart.Json("prepared", broken)], CancellationToken.None));
+        }
+    }
+
+    [Fact]
+    public async Task Write_RefusesMoreEntriesThanAnEnvelopeMayHold()
+    {
+        var parts = Enumerable.Range(0, RunnerComputeEnvelope.MaxEntries)
+            .Select(i => ComputeJobPart.File("photos", $"p{i}.jpg", [1], "image/jpeg")).ToArray();
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => RunnerComputeEnvelope.WriteAsync(new MemoryStream(), "splat-prepare", parts, CancellationToken.None));
+        await RunnerComputeEnvelope.WriteAsync(new MemoryStream(), "splat-prepare", parts.Take(RunnerComputeEnvelope.MaxEntries - 1).ToArray(), CancellationToken.None);
     }
 
     [Fact]

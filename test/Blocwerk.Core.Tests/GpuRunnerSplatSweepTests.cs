@@ -133,6 +133,28 @@ public class GpuRunnerSplatSweepTests
     }
 
     [Fact]
+    public async Task WithTheFlagOff_ADeliveredButUnreadResultIsClosed_NotWokenForADay()
+    {
+        using var h = new WallTestHarness();
+        using var f = await RunnerFixture.CreateAsync(h, new GpuRunnerOptions { ClaimWait = TimeSpan.Zero });
+        var (runner, _) = await f.AddRunnerAsync("pc", walls: h.WallId);
+        var stored = await SplatJobSupport.HelloAsync(f, runner, 16_000, SplatJobSupport.PrepareAndFinish);
+        var job = await SplatJobSupport.AddJobAsync(f, h.WallId, GpuJobKind.SplatPrepare, markerless: true, capture: WallCaptureStatus.Solving);
+        await f.Queue.TryClaimAsync(stored, null, CancellationToken.None);
+        await f.Queue.AcceptResultAsync(stored, job.Id, new MemoryStream(SplatJobSupport.PrepareResult()), null, null, CancellationToken.None);
+        _ = await f.CaptureQueue.DequeueAsync(CancellationToken.None);
+
+        f.Clock.Advance(TimeSpan.FromMinutes(16));
+        await f.Queue.SweepAsync(CancellationToken.None);
+
+        var closed = await SplatJobSupport.JobAsync(h, job.Id);
+        Assert.Equal(GpuJobStatus.Failed, closed.Status);
+        Assert.Contains("no longer prepare or finish", closed.Error);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            async () => await f.CaptureQueue.DequeueAsync(new CancellationTokenSource(TimeSpan.FromMilliseconds(300)).Token));
+    }
+
+    [Fact]
     public async Task WithTheFlagOn_TheSweepLeavesThemQueued()
     {
         using var h = new WallTestHarness();

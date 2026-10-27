@@ -161,7 +161,7 @@ public sealed partial class GpuJobQueue
                 logger.LogWarning("GPU job {JobId}: the delivered result could not be finished for a day; giving up", job.Id);
                 job.LeaseExpiresAt = now + FinishRetryInterval;
                 await db.SaveChangesAsync(ct);
-                if (await HandBackAsync(db, job.CaptureId, ct))
+                if (await HandBackAsync(db, job.CaptureId, job.Kind, ct))
                 {
                     continue;
                 }
@@ -185,7 +185,7 @@ public sealed partial class GpuJobQueue
 
             job.LeaseExpiresAt = now + FinishRetryInterval;
             await db.SaveChangesAsync(ct);
-            await HandBackAsync(db, job.CaptureId, ct);
+            await HandBackAsync(db, job.CaptureId, job.Kind, ct);
         }
     }
 

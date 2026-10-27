@@ -37,6 +37,19 @@ public class GpuRunnerSplatResultTests
     }
 
     [Fact]
+    public async Task AFinishResult_DoesNotWakeACaptureParkedInSolving_OnlyAPrepareResultDoes()
+    {
+        using var h = new WallTestHarness();
+        using var f = await RunnerFixture.CreateAsync(h);
+        var (runner, claimed) = await ClaimedAsync(f, h, GpuJobKind.SplatFinish, capture: WallCaptureStatus.Solving);
+
+        await f.Queue.AcceptResultAsync(runner, claimed.Id, new MemoryStream(SplatJobSupport.FinishResult()), null, null, CancellationToken.None);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            async () => await f.CaptureQueue.DequeueAsync(new CancellationTokenSource(TimeSpan.FromMilliseconds(300)).Token));
+    }
+
+    [Fact]
     public async Task AFinishResult_WakesAFinishedCapture_IntoItsPhotoRealStage()
     {
         using var h = new WallTestHarness();
@@ -151,7 +164,7 @@ public class GpuRunnerSplatResultTests
     public async Task ADeliveredResultNobodyReadsForADay_IsWokenAgain_ThenGivenUp()
     {
         using var h = new WallTestHarness();
-        using var f = await RunnerFixture.CreateAsync(h);
+        using var f = await RunnerFixture.CreateAsync(h, new GpuRunnerOptions { SplatOnRunners = true });
         var (runner, claimed) = await ClaimedAsync(f, h, GpuJobKind.SplatPrepare);
         await f.Queue.AcceptResultAsync(runner, claimed.Id, new MemoryStream(SplatJobSupport.PrepareResult()), null, null, CancellationToken.None);
         _ = await f.CaptureQueue.DequeueAsync(CancellationToken.None);

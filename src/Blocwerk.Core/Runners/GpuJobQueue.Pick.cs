@@ -124,7 +124,7 @@ public sealed partial class GpuJobQueue
     }
 
     /// <summary>Whether a runner with these reported facts could take <paramref name="job"/> (quality, kind, memory).</summary>
-    internal static bool Able(GpuJob job, string? maxQuality, string? capabilities, int? texturesMemoryMb, int? memoryBudgetMb = null) =>
+    internal static bool Able(GpuJob job, string? maxQuality, string? capabilities, int? texturesMemoryMb, int? memoryBudgetMb) =>
         RunnerCapabilities.Allows(capabilities, job.Kind)
         && job.Kind switch
         {

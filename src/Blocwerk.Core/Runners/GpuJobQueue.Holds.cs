@@ -140,7 +140,7 @@ public sealed partial class GpuJobQueue
             case GpuJobKind.DetectHolds or GpuJobKind.RegisterPanels:
                 break;
             case GpuJobKind.SplatPrepare or GpuJobKind.SplatFinish:
-                await HandBackAsync(db, job.CaptureId, ct);
+                await HandBackAsync(db, job.CaptureId, job.Kind, ct);
                 break;
             default:
                 await MarkCaptureWithoutSplatAsync(db, job, reason, ct);
