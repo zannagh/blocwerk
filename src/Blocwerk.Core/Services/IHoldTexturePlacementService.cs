@@ -63,4 +63,24 @@ public interface IHoldTexturePlacementService
     /// <param name="ct">Cancellation.</param>
     /// <returns>The holds placed.</returns>
     Task<IReadOnlyList<Guid>> PlaceEditedAsync(Guid wallId, IReadOnlyCollection<Guid> holdIds, CancellationToken ct = default);
+
+    /// <summary>
+    /// Dry run of <see cref="ReplaceOutliersAsync"/>: which placed holds the wall's other placements contradict, counted per
+    /// panel photo. Writes nothing.
+    /// </summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>The counts.</returns>
+    Task<HoldOutlierPreview> PreviewOutliersAsync(Guid wallId, CancellationToken ct = default);
+
+    /// <summary>
+    /// "Re-place outlier holds in 3D": moves each placed hold whose 3D position the wall contradicts onto its linked copy on a
+    /// more consistent photo, or to where its neighbours on its own photo put it (<see cref="Geometry.TextureRegistration.HoldOutlierPlanner"/>).
+    /// Writes the holds' 3D fields only, recorded as a revertable <see cref="HoldPlacementTrigger.Outliers"/> run, and
+    /// queues the moved holds for refinement. Needs an active model but no textures or matcher.
+    /// </summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>The counts and the run id.</returns>
+    Task<HoldPlacementResult> ReplaceOutliersAsync(Guid wallId, CancellationToken ct = default);
 }

@@ -22,6 +22,19 @@
         </div>
     }
 
+    <p class="hint">
+        Holds whose 3D position disagrees with the rest of the wall (their linked copy on another photo, or their
+        neighbours) can be moved in 3D only. Checking changes nothing; the holds in the photos, the panels, links and
+        boulders are never changed, and the move can be reverted below.
+    </p>
+    <div class="staged-actions">
+        <button class="btn-secondary" @onclick="CheckOutliersAsync" disabled="@busy">Check holds in 3D</button>
+        @if (outliers is { ToReplace: > 0 } found)
+        {
+            <button class="btn-secondary" @onclick="ReplaceOutliersAsync" disabled="@busy">Re-place @found.ToReplace holds in 3D</button>
+        }
+    </div>
+
     @if (busy)
     {
         <p class="loading-small">Matching every wall photo to the 3D model — this can take a few minutes…</p>

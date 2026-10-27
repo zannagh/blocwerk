@@ -17,6 +17,7 @@ public partial class WallHoldPlacement
     private string? message;
     private string? failure;
     private HoldPlacementStatus? status;
+    private HoldOutlierPreview? outliers;
 
     /// <summary>The wall being administered.</summary>
     [Parameter]
@@ -65,6 +66,11 @@ public partial class WallHoldPlacement
     internal static string WithUnmeasured(string text, IEnumerable<HoldPlacementPanelSummary> panels) =>
         HoldPlacementUnmeasured.Text(panels) is { Length: > 0 } unmeasured ? $"{text} {unmeasured}" : text;
 
+    /// <summary>The dry run of "re-place outlier holds in 3D" in one sentence.</summary>
+    internal static string OutlierText(HoldOutlierPreview p) =>
+        $"{p.ToReplace} of {p.Checked} placed holds disagree with the rest of the wall: {p.FromTwins} with their linked copy on a "
+        + $"better photo, {p.FromNeighbours} with their neighbours. {p.Undecided} could not be judged and stay as they are.";
+
     // Route data is loaded here, not in OnInitializedAsync: WallDetail is retained across enhanced
     // navigation between walls, and so is this component.
     protected override async Task OnParametersSetAsync()
@@ -78,6 +84,7 @@ public partial class WallHoldPlacement
         message = null;
         failure = null;
         confirmRevert = false;
+        outliers = null;
         await ReloadAsync();
     }
 
@@ -102,6 +109,19 @@ public partial class WallHoldPlacement
         {
             message += " Their 3D shapes are refined in the background.";
         }
+    });
+
+    private Task CheckOutliersAsync() => RunAsync(async () =>
+    {
+        outliers = await Placement.PreviewOutliersAsync(WallId);
+        message = OutlierText(outliers);
+    });
+
+    private Task ReplaceOutliersAsync() => RunAsync(async () =>
+    {
+        var r = await Placement.ReplaceOutliersAsync(WallId);
+        outliers = null;
+        message = $"{r.Placed} holds re-placed in 3D; the holds in the photos did not change. Their 3D shapes are refined in the background.";
     });
 
     private Task RevertAsync(Guid runId) => RunAsync(async () =>

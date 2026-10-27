@@ -29,6 +29,12 @@ public static class HoldPlacementTrigger
     /// (<see cref="Blocwerk.Core.Capture.Replay.CapturePackageResultsImport"/>), not registered again here.
     /// </summary>
     public const string Import = "import";
+
+    /// <summary>
+    /// "Re-place outlier holds in 3D": holds whose position the wall's other placements contradict, moved in 3D only
+    /// (<see cref="Geometry.TextureRegistration.HoldOutlierPlanner"/>).
+    /// </summary>
+    public const string Outliers = "outliers";
 }
 
 /// <summary>Whether the action can run on a wall, and its latest run.</summary>
