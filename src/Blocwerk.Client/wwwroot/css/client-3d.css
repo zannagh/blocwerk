@@ -1,6 +1,7 @@
 /* The offline client's 3D view (PR 3.13): the Server's scoped rules of Wall3D, Wall3DInline and Wall3DStage, which live
    in Web's component bundle the client does not load, for the same markup. What wall3d.js draws inside the stage is
-   styled by Web's css/wall3d.css, which the shell links (wall3d.js then injects no second copy). It loads no image or
+   styled by client-wall3d.css (Web's css/wall3d.css, copied by build/subset-client-css.mjs), which the shell links
+   (wall3d.js then injects no Web copy). It loads no image or
    font: the worker precaches only what the shell names. */
 
 /* The stage fills whatever box it is given: the full page, or the inline view in the photos' place. */

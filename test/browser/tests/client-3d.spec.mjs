@@ -1,9 +1,10 @@
 // The offline client's 3D view (Phase 3 PR 3.13) on the real engines. A Server page's 3D visit is planted as it leaves
 // the device: a view3d document of Alpha in the partition's -3d cache and listed in the wall row's `docs`, its texture,
 // mask and splat level fetched through the worker (which caches them). Then: offline, the 3D route opens in the client
-// from the device alone, in Schematic, and photo-real waits for the client's first ~20 s (shortened here); on a phone,
-// nothing 3D loads until the viewer opens 3D, and opening it reaches no server; the 3D opt-out shows no 3D; a model
-// not cached in full says so and loads no 3D code.
+// from the device alone, in Schematic, and photo-real waits for the client's first ~20 s (shortened here); a desktop
+// precaches the 3D code, a phone and the 3D opt-out do not; on a phone nothing 3D loads until the viewer opens 3D, its
+// first online open fetches the 3D code (never a 3D asset) and stores it, and 3D then opens offline; the 3D opt-out
+// shows no 3D; a model not cached in full says so and loads no 3D code.
 import { test, expect, assetPath, partitionOf } from '../harness/fixtures.mjs';
 import { precacheAsAlice, expectClient } from '../harness/client.mjs';
 
@@ -51,6 +52,17 @@ async function plant3d(page, wall, skip = []) {
 }
 
 const loaded3d = page => page.evaluate(re => performance.getEntriesByType('resource').map(e => e.name).filter(n => new RegExp(re).test(n)), THREE_D.source);
+// The 3D code in the complete client version: the import map's modules outside /v/ (the worker's 3D group), and how many
+// of them its cache holds.
+const held3d = page => page.evaluate(async () => {
+    const record = await (await caches.match('/__bw/client', { cacheName: 'bw-sw-state' })).json();
+    const cache = await caches.open(`blocwerk-client-${record.version}`);
+    const html = await (await cache.match('/v/')).text();
+    const imports = JSON.parse(/<script type="importmap"[^>]*>([\s\S]*?)<\/script>/.exec(html)[1]).imports;
+    const group = Object.entries(imports).filter(([name]) => !name.startsWith('/v/')).map(([, url]) => url);
+    return { group: group.length, held: (await Promise.all(group.map(url => cache.match(url)))).filter(Boolean).length };
+});
+
 const mode = page => page.evaluate(() => document.querySelector('.wall3d-stage-el')?.__wall3d?.state().mode ?? null);
 
 test('offline, the 3D route opens from the device in Schematic, and photo-real waits for the hold', async ({ page, context, world, server }) => {
@@ -78,10 +90,24 @@ test('offline, the 3D route opens from the device in Schematic, and photo-real w
     expect((await server.log(mark)).filter(e => !e.fault), 'nothing reached the server').toEqual([]);
 });
 
-test('on a phone nothing 3D loads until 3D opens, and opening it reaches no server', async ({ page, context, world, server }) => {
+test('a desktop precaches the 3D code with the client', async ({ page, world, server }) => {
+    expect(await precacheAsAlice(page, world, server)).toBe('complete');
+    const { group, held } = await held3d(page);
+    expect(group).toBeGreaterThan(40);
+    expect(held).toBe(group);
+});
+
+test('with the 3D opt-out the precache leaves the 3D code out', async ({ page, context, world, server, baseURL }) => {
+    await context.addCookies([{ name: 'blocwerk-cache-3d', value: 'off', url: baseURL }]);
+    expect(await precacheAsAlice(page, world, server)).toBe('complete');
+    expect((await held3d(page)).held).toBe(0);
+});
+
+test('on a phone nothing 3D is precached or loads until 3D opens; the first online open stores the 3D code, then 3D opens offline', async ({ page, context, world, server }) => {
     const alpha = world.walls.alpha;
     await context.addInitScript(ua => Object.defineProperty(navigator, 'userAgent', { get: () => ua }), IPHONE);
     expect(await precacheAsAlice(page, world, server)).toBe('complete');
+    expect((await held3d(page)).held, 'no 3D code in the precache').toBe(0);
     await plant3d(page, alpha);
     const mark = await server.mark();
 
@@ -93,15 +119,25 @@ test('on a phone nothing 3D loads until 3D opens, and opening it reaches no serv
     await expect(page.locator('.boulder-detail .bw-client-3d-switch')).toBeVisible();
     expect(await loaded3d(page)).toEqual([]);
 
-    // Opened: the viewer mounts from the device; the server still sees no 3D request.
+    // Opened online: the 3D code comes from the network this once, the model from the device only; then the worker
+    // holds the whole 3D group.
     await page.locator('.bw-client-3d-switch').click();
     await expect(page.locator('.wall3d-stage-el canvas.w3d-canvas')).toHaveCount(1);
     expect((await loaded3d(page)).length).toBeGreaterThan(0);
-    const hits = (await server.log(mark)).map(e => e.url).filter(p => THREE_D.test(p) || [alpha.texture, alpha.mask, alpha.splat].some(s => p.includes(s)));
-    expect(hits, 'no 3D file or 3D asset from the network').toEqual([]);
+    const hits = (await server.log(mark)).map(e => e.url).filter(p => /\/d\/view3d\//.test(p) || [alpha.texture, alpha.mask, alpha.splat].some(s => p.includes(s)));
+    expect(hits, 'no 3D asset from the network').toEqual([]);
+    await expect.poll(async () => { const h = await held3d(page); return h.held === h.group; }, { timeout: 30000 }).toBe(true);
 
     await page.locator('.bw-client-3d-switch').click();
     await expect(page.locator('.boulder-detail .panel-viewer')).toBeVisible();
+
+    // Offline later: the 3D route opens from the device, code included.
+    await server.unreachable();
+    const offline = await server.mark();
+    await expectClient(page, `/walls/${alpha.id}/3d`);
+    await expect(page.locator('.bw-client-3d')).toHaveAttribute('data-bw-3d', 'ready');
+    await expect(page.locator('.wall3d-stage-el canvas.w3d-canvas')).toHaveCount(1);
+    expect((await server.log(offline)).filter(e => !e.fault), 'nothing reached the server').toEqual([]);
 });
 
 test('with the 3D opt-out, the client offers no 3D and the 3D route says it is off', async ({ page, context, world, server, baseURL }) => {

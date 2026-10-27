@@ -31,8 +31,9 @@ window.bwAssetStore = (function () {
     const cacheName = (partition, suffix) => `bw-a1-${partition}-${suffix}`;
     const cacheUrl = (win, key) => `${win.location.origin}/__bw/${key}`;
 
-    // The worker's reply of `replyType` to a `type` message, or null (no worker, an old one that ignores it, a timeout).
-    function askWorker(win, type = 'sw-info', replyType = 'sw-info', timeoutMs = SW_INFO_TIMEOUT_MS) {
+    // The worker's reply of `replyType` to a `type` message (with `fields`), or null (no worker, an old one that ignores
+    // it, a timeout).
+    function askWorker(win, type = 'sw-info', replyType = 'sw-info', timeoutMs = SW_INFO_TIMEOUT_MS, fields = {}) {
         const sw = win.navigator.serviceWorker;
         const controller = sw && sw.controller;
         if (!controller || typeof win.MessageChannel !== 'function') {
@@ -47,7 +48,7 @@ window.bwAssetStore = (function () {
                 resolve(data.proto === PROTO && data.type === replyType ? data : null);
             };
             try {
-                controller.postMessage({ proto: PROTO, type }, [channel.port2]);
+                controller.postMessage({ ...fields, proto: PROTO, type }, [channel.port2]);
             } catch (e) {
                 win.clearTimeout(timer);
                 resolve(null);

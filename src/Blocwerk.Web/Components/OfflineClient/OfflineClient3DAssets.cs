@@ -6,7 +6,7 @@ namespace Blocwerk.Web.Components.OfflineClient;
 /// <summary>
 /// The 3D view's files the offline client's shell names (PR 3.13; plan §4: everything a view loads is named by the
 /// shell): Web's own <c>js/wall3d.js</c> and every module it imports, statically or on demand (Spark only for
-/// photo-real), with the vendored three.js and Spark, and wall3d.js's stylesheet. The modules go into the shell's import
+/// photo-real), with the vendored three.js and Spark, and the client's copy of wall3d.js's stylesheet. The modules go into the shell's import
 /// map, fingerprinted, so the worker precaches them with the client and the version hashes them, while nothing loads
 /// them before a 3D view opens (client-3d-stage.js imports <c>/js/wall3d.js</c> on the first mount). Spark's decode
 /// worker and its WebAssembly are inline in the module (a blob), so they are no files of their own. A Core test pins
@@ -14,8 +14,11 @@ namespace Blocwerk.Web.Components.OfflineClient;
 /// </summary>
 public static class OfflineClient3DAssets
 {
-    /// <summary>wall3d.js's stylesheet: the shell links it, so wall3d-stage.js injects no copy by its plain path.</summary>
-    public const string Stylesheet = "css/wall3d.css";
+    /// <summary>
+    /// The client's copy of wall3d.js's stylesheet (Web's css/wall3d.css, copied by build/subset-client-css.mjs, so a
+    /// Server CSS edit is no new client version): the shell links it, so wall3d-stage.js injects no Web copy.
+    /// </summary>
+    public const string Stylesheet = "v/css/client-wall3d.css";
 
     /// <summary>The 3D view's modules by static-asset label, wall3d.js first.</summary>
     public static readonly string[] Modules =

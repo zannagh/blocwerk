@@ -11,23 +11,27 @@ const js = name => readFileSync(new URL(`../../src/Blocwerk.Web/wwwroot/js/${nam
 const VERSION = 'abcdef0123456789';
 const ALICE = 'u-' + 'a'.repeat(20);
 
-function precachePage({ version = VERSION, saveData = false, active = ALICE, walls = 1, degraded = false, worker = { client: null }, answer, storage = new Map(), fetchedAt = [] } = {}) {
+// `ua` loads asset-plan.js (bwAssetPlan.isMobile) with that user agent; without it the page has no plan (a phone's rule).
+function precachePage({ version = VERSION, saveData = false, active = ALICE, walls = 1, degraded = false, worker = { client: null }, answer, storage = new Map(), fetchedAt = [], ua = null, keep3d = true } = {}) {
     const asked = [];
+    const fields = [];
     const state = new Map();
     const caches = { open: async name => ({ put: async (key, response) => state.set(`${name} ${key}`, await response.text()) }) };
     const win = {
         __bwAssetCacheManual: true,
         document: { querySelector: () => (version === null ? null : { getAttribute: () => version }) },
-        navigator: { connection: { saveData } },
+        navigator: { connection: { saveData }, userAgent: ua || '', maxTouchPoints: 0 },
         localStorage: { getItem: k => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v) },
         bwAssetCache: {
             ready: Promise.resolve(),
             filled: () => Promise.resolve(),
+            keep3d: () => keep3d,
             state: () => ({ active, env: { ledger: { degraded, wallsOf: async () => Array.from({ length: walls }, (_, i) => ({ wallId: 'w' + i, fetchedAt: fetchedAt[i] })) } } }),
         },
         bwAssetStore: {
-            askWorker: async (w, type = 'sw-info') => {
+            askWorker: async (w, type = 'sw-info', reply = type, ms = 0, extra = {}) => {
                 asked.push(type);
+                fields.push({ type, ...extra });
                 if (type === 'sw-info') {
                     return worker ? { proto: 1, type, shell: 'blocwerk-shell-v5', ...worker } : null;
                 }
@@ -36,8 +40,12 @@ function precachePage({ version = VERSION, saveData = false, active = ALICE, wal
         },
     };
     win.caches = caches;
-    vm.runInNewContext(js('client-precache.js'), { window: win, document: win.document, Date, JSON, Number, Response });
-    return { win, asked, storage, state, run: () => win.bwClientPrecache.boot() };
+    const context = vm.createContext({ window: win, document: win.document, Date, JSON, Number, Response });
+    if (ua !== null) {
+        vm.runInContext(js('asset-plan.js'), context);
+    }
+    vm.runInContext(js('client-precache.js'), context);
+    return { win, asked, fields, storage, state, run: () => win.bwClientPrecache.boot() };
 }
 
 test('the page asks for the precache once its fill is done, and records the complete version', async () => {
@@ -81,6 +89,46 @@ test('a failed attempt is not retried for 10 minutes, then is', async () => {
     assert.equal(await precachePage({ storage }).run(), 'complete');
     assert.equal(await precachePage({ storage, worker: { client: null } }).run(), 'complete',
         'a marker never stops a worker that lost its copy from being asked again');
+});
+
+const DESKTOP = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
+const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
+const ANDROID = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36';
+const group3dOf = page => page.fields.find(f => f.type === 'client-precache')?.group3d;
+
+test("the 3D code: a desktop precaches it, a phone or tablet only once 3D was opened there, the opt-out never", async () => {
+    const cases = { desktop: [{ ua: DESKTOP }, 'precache'], iPhone: [{ ua: IPHONE }, 'opened'], Android: [{ ua: ANDROID }, 'opened'],
+        'desktop, 3D opted out': [{ ua: DESKTOP, keep3d: false }, 'none'], 'phone, 3D opted out': [{ ua: IPHONE, keep3d: false }, 'none'],
+        'no asset plan': [{}, 'opened'] };
+    for (const [name, [options, group]] of Object.entries(cases)) {
+        const page = precachePage(options);
+        assert.equal(await page.run(), 'complete', name);
+        assert.equal(group3dOf(page), group, name);
+    }
+});
+
+test('a complete version is asked once more on a desktop that went without the 3D code, never on a phone', async () => {
+    const storage = new Map([['bw-client-precache', JSON.stringify({ version: VERSION, at: Date.now(), complete: true })]]);
+    const desktop = precachePage({ ua: DESKTOP, storage, worker: { client: VERSION } });
+    assert.equal(await desktop.run(), 'complete');
+    assert.equal(group3dOf(desktop), 'precache');
+    assert.equal(JSON.parse(storage.get('bw-client-precache')).with3d, true);
+    const again = precachePage({ ua: DESKTOP, storage, worker: { client: VERSION } });
+    await again.run();
+    assert.deepEqual(again.asked, ['sw-info'], 'not again once it has the 3D code');
+    const left = new Map([['bw-client-precache', JSON.stringify({ version: VERSION, at: Date.now(), complete: false })]]);
+    const reloaded = precachePage({ ua: DESKTOP, storage: left, worker: { client: VERSION } });
+    assert.equal(await reloaded.run(), 'complete', 'the page that asked was gone before the answer: no retry wait');
+    assert.equal(group3dOf(reloaded), 'precache');
+    const phone = precachePage({ ua: IPHONE, storage: new Map(), worker: { client: VERSION } });
+    await phone.run();
+    assert.deepEqual(phone.asked, ['sw-info']);
+});
+
+test('store3d() asks the worker to store the 3D code', async () => {
+    const page = precachePage();
+    await page.win.bwClientPrecache.store3d();
+    assert.deepEqual(page.asked, ['client-store-3d']);
 });
 
 // sw-guard.js: `answers` is how the controller answers each sw-info in turn (true answers, false stays silent).

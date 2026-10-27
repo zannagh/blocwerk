@@ -10,8 +10,13 @@
  *   - the worker answers `sw-info` with a `client` field (blocwerk-shell-v5 or later; an older one is left alone);
  *   - the worker's complete version is not already this page's;
  *   - no failed attempt for this version started within RETRY_MS (a failing fill is not retried on every page);
- * it posts `client-precache` and records the outcome in localStorage (MARKER_KEY: `{ version, at, complete }`), the
+ * it posts `client-precache` and records the outcome in localStorage (MARKER_KEY: `{ version, at, complete, with3d }`), the
  * page's completeness marker. The worker's own record decides the hand-off; the marker only spares the repeat.
+ * THE 3D CODE (PR 3.13). The message's `group3d` says whether the 3D view's code (~920 KiB) comes along: `precache` on a
+ * desktop with 3D kept; `opened` on a phone or tablet (bwAssetPlan.isMobile, the asset cache's own test: no background
+ * 3D there), where the worker takes it only once a 3D view was opened online on the device; `none` with the 3D opt-out.
+ * A complete version is asked again once on a desktop whose marker says it went without the 3D code. `store3d()` is a
+ * 3D view opened online (asset-3d.js): the worker stores the 3D code into the complete version and keeps it from then on.
  * THE KIOSK STAMP (PR 3.15). On a kiosk tablet (`k-…`) every page, once its fill is done, also writes
  * `{ label, at }` to the worker's state cache (KIOSK_FRESH_KEY): `at` is the newest manifest success (`fetchedAt`) of the
  * partition's rows. The worker hands a `k-` tablet to the client only within KIOSK_MAX_AGE of it, as the client reads the
@@ -41,6 +46,16 @@ window.bwClientPrecache = (function (win) {
     }
 
     const saveData = () => !!(win.navigator.connection && win.navigator.connection.saveData);
+
+    // The 3D code's part of the precache (see the header).
+    function group3d(cache) {
+        if (typeof cache.keep3d === 'function' && !cache.keep3d()) {
+            return 'none';
+        }
+        const plan = win.bwAssetPlan;
+        const mobile = !plan || plan.isMobile(win.navigator, typeof win.matchMedia === 'function' ? q => win.matchMedia(q) : null);
+        return mobile ? 'opened' : 'precache';
+    }
 
     function readMarker() {
         try {
@@ -82,21 +97,24 @@ window.bwClientPrecache = (function (win) {
         if (!info || !('client' in info)) {
             return 'unsupported';
         }
-        if (info.client === version) {
-            writeMarker({ version, at: Date.now(), complete: true });
+        const group = group3d(cache);
+        const marker = readMarker();
+        const had3d = !!(marker && marker.version === version && marker.with3d);
+        if (info.client === version && (group !== 'precache' || had3d)) {
+            writeMarker({ version, at: Date.now(), complete: true, with3d: had3d });
             return 'complete';
         }
-        const marker = readMarker();
-        // Only a failed attempt waits: a marker that says complete while the worker says not means it lost its copy.
-        if (marker && marker.version === version && marker.complete === false && Date.now() - Number(marker.at) < RETRY_MS) {
+        // Only a failed attempt waits (a complete version that lacks the 3D code never does): a marker that says complete
+        // while the worker says not means it lost its copy.
+        if (info.client !== version && marker && marker.version === version && marker.complete === false && Date.now() - Number(marker.at) < RETRY_MS) {
             return 'waiting';
         }
         writeMarker({ version, at: Date.now(), complete: false });
-        const answer = await store.askWorker(win, 'client-precache', 'client-precached', ANSWER_MS);
+        const answer = await store.askWorker(win, 'client-precache', 'client-precached', ANSWER_MS, { group3d: group });
         if (!answer || !answer.complete) {
             return 'failed';
         }
-        writeMarker({ version: answer.version, at: Date.now(), complete: true });
+        writeMarker({ version: answer.version, at: Date.now(), complete: true, with3d: group === 'precache' });
         return answer.version === version ? 'complete' : 'other';
     }
 
@@ -128,8 +146,15 @@ window.bwClientPrecache = (function (win) {
         return state.done;
     }
 
+    // A 3D view opened online (see the header); nothing to wait for.
+    function store3d() {
+        const store = win.bwAssetStore;
+        return store ? store.askWorker(win, 'client-store-3d', 'client-stored-3d', ANSWER_MS).catch(() => null) : Promise.resolve(null);
+    }
+
     return {
         boot,
+        store3d,
         // The outcome of this page's attempt, for tests: skipped, unsupported, complete, waiting, failed or other.
         get done() { return state.done; },
         // The kiosk stamp this page wrote ({ label, at }), or null; for tests.

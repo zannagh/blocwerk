@@ -65,10 +65,11 @@ export function restart(worker, change) {
     return loadWorker({ caches: Object.fromEntries([...worker.stored].map(([name, entries]) => [name, Object.fromEntries(entries)])) });
 }
 
-export function precache(worker) {
+// `fields`: the page's choices, e.g. `{ group3d: 'precache' }` (the 3D code too, a desktop; client-precache.js).
+export function precache(worker, fields = {}) {
     let pending;
     const sent = [];
-    worker.listeners.message({ data: { proto: 1, type: 'client-precache' }, ports: [{ postMessage: m => sent.push(m) }], waitUntil: p => { pending = p; } });
+    worker.listeners.message({ data: { ...fields, proto: 1, type: 'client-precache' }, ports: [{ postMessage: m => sent.push(m) }], waitUntil: p => { pending = p; } });
     return pending.then(() => sent[0]);
 }
 
