@@ -68,9 +68,10 @@ public interface IComputeJobClient
 
     /// <summary>
     /// The caller read what it needs of the job (or gave up on it) and will not wait for it again: a client that keeps results
-    /// itself may drop the job's input now. An HTTP worker forgets its jobs on its own (nothing happens).
+    /// itself may drop the job's input now, and its result too unless <paramref name="keepResult"/> (the caller reads it again
+    /// later). An HTTP worker forgets its jobs on its own (nothing happens).
     /// </summary>
-    Task DoneWithAsync(string jobId, CancellationToken ct) => Task.CompletedTask;
+    Task DoneWithAsync(string jobId, bool keepResult, CancellationToken ct) => Task.CompletedTask;
 }
 
 /// <summary>Resolves the client of a configured worker. A new worker is a new enum value + settings.</summary>

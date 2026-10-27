@@ -33,7 +33,8 @@ public sealed partial class WallCaptureProcessor
             return false;
         }
 
-        if (!gpuJobs.FinishGivenUp(job))
+        // A finish waiting for a runner is never given up here: its own queue lifetime ends it (and wakes the capture).
+        if (onRunner || !gpuJobs.FinishGivenUp(job))
         {
             logger.LogInformation(
                 "Capture {CaptureId}: its delivered photo-real view waits for {What}", captureId, onRunner ? "a 3D runner to finish it" : "the 3D worker (down)");
@@ -51,15 +52,8 @@ public sealed partial class WallCaptureProcessor
             return true;
         }
 
-        var reason = onRunner
-            ? "the trained view was not finished (no 3D runner finished it within a day)"
-            : "the trained view could not be finished on the server (the 3D worker was unreachable for a day)";
+        const string reason = "the trained view could not be finished on the server (the 3D worker was unreachable for a day)";
         logger.LogWarning("Capture {CaptureId}: giving up on finishing its photo-real view: {Reason}", captureId, reason);
-        if (onRunner && job.FinishJobId is { } finishJobId)
-        {
-            await computeClients.Get(Compute.ComputeServiceKind.Splat).CancelAsync(finishJobId, ct);
-        }
-
         if (await RestoreAfterRefinishAsync(captureId, reason, ct))
         {
             return true;

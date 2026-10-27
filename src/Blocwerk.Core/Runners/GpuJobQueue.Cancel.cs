@@ -1,6 +1,7 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using Blocwerk.Core.Capture;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -11,22 +12,80 @@ namespace Blocwerk.Core.Runners;
 /// <summary>Cancelling jobs: by an admin, by a retrain, by photo retention, by a revoke, and when runners are turned off.</summary>
 public sealed partial class GpuJobQueue
 {
-    /// <summary>Cancels the capture's waiting or running GPU job. The capture keeps its model (and any older photo-real view).</summary>
+    /// <summary>
+    /// Cancels the capture's waiting or running GPU jobs (training, and a prepare / finish on a runner). The capture keeps its model
+    /// (and any older photo-real view). A capture parked for them is ended here, because nothing would wake it any more: one waiting
+    /// for its finish ends as "Model ready" (a re-finish is put back as it was), one waiting for its reconstruction is woken to fail
+    /// with its photos kept.
+    /// </summary>
     public async Task<bool> CancelForCaptureAsync(Guid captureId, string reason, CancellationToken ct)
     {
         await using var db = dbContextFactory.CreateDbContext();
-        var jobs = await CancelActiveAsync(db, [captureId], reason, Now, ct, GpuJobKind.Splat);
+        var capture = await db.WallCaptures.FirstOrDefaultAsync(c => c.Id == captureId, ct);
+        var refinish = capture is { Status: WallCaptureStatus.Splatting } ? await RefinishingJobAsync(db, captureId, ct) : null;
+        var jobs = refinish is null ? await CancelActiveAsync(db, [captureId], reason, Now, ct, GpuJobKind.Splat) : [];
         jobs.AddRange(await CancelActiveAsync(db, [captureId], reason, Now, ct, GpuJobKind.SplatPrepare));
         jobs.AddRange(await CancelActiveAsync(db, [captureId], reason, Now, ct, GpuJobKind.SplatFinish));
+        if (capture is { Status: WallCaptureStatus.Splatting } && (jobs.Count > 0 || refinish is not null))
+        {
+            EndParkedForCancel(capture, refinish);
+        }
+
         var spent = jobs.Select(KeepOnlyInstalledPreview).ToList();
         await db.SaveChangesAsync(ct);
         foreach (var (job, paths) in jobs.Zip(spent))
         {
             logger.LogInformation("GPU job {JobId} of capture {CaptureId} cancelled: {Reason}", job.Id, captureId, reason);
+            if (job.Kind is GpuJobKind.SplatPrepare or GpuJobKind.SplatFinish)
+            {
+                PulseJob(job.WallId, job.Id, null, ended: true);
+            }
+
             DeleteAll(paths, job.Id);
         }
 
-        return jobs.Count > 0;
+        if (capture is { Status: WallCaptureStatus.Solving })
+        {
+            // The parked reconstruction is woken: it reads the cancel and fails the capture, keeping its photos.
+            foreach (var job in jobs.Where(j => j.Kind == GpuJobKind.SplatPrepare))
+            {
+                await JobEndedAsync(db, job, reason, ct);
+            }
+        }
+
+        return jobs.Count > 0 || refinish is not null;
+    }
+
+    /// <summary>The capture's training job while it is being re-finished (reopened, its state before kept), else null.</summary>
+    private static Task<GpuJob?> RefinishingJobAsync(BlocwerkDbContext db, Guid captureId, CancellationToken ct) =>
+        db.GpuJobs.Where(j => j.CaptureId == captureId && j.Kind == GpuJobKind.Splat && j.RefinishStateJson != null
+                              && j.Status == GpuJobStatus.Succeeded && j.InstalledAt == null)
+            .OrderByDescending(j => j.CreatedAt).FirstOrDefaultAsync(ct);
+
+    /// <summary>
+    /// Ends a capture parked for its photo-real view (not saved): a re-finish goes back to the view and status it had; otherwise
+    /// "Model ready" with any older view kept. Its prepare mark goes, so a restart never prepares and trains it again.
+    /// </summary>
+    private void EndParkedForCancel(WallCapture capture, GpuJob? refinish)
+    {
+        if (refinish is not null && GpuJobRefinishState.Parse(refinish.RefinishStateJson) is { } before)
+        {
+            before.RestoreJob(refinish);
+            capture.Status = before.CaptureStatus;
+            capture.Error = before.CaptureError;
+            capture.Stage = before.CaptureStage;
+            capture.CompletedAt = before.CaptureCompletedAt ?? Now;
+        }
+        else
+        {
+            capture.Error = WallCaptureService.TexturePart(capture.Error);
+            capture.Status = capture.Error is null ? WallCaptureStatus.Succeeded : WallCaptureStatus.SucceededWithoutTextures;
+            capture.Stage = capture.Error is null ? "Done" : "Done (without textures)";
+            capture.CompletedAt = Now;
+        }
+
+        capture.Progress = 1;
+        capture.SplatJobId = null;
     }
 
     /// <summary>

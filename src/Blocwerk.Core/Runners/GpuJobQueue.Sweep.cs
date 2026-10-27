@@ -248,7 +248,7 @@ public sealed partial class GpuJobQueue
             var able = candidates.Where(o => !o.Paused).Select(o => o.RunnerId).Distinct().ToList();
             var paused = candidates.Where(o => o.Paused).Select(o => o.RunnerId).Distinct().Count();
             var stage = WaitingStage(job.Quality, able.Count, able.Count(busy.Contains), paused, job.Kind, markerless.Contains(job.CaptureId));
-            stage = await NoRunnerStageAsync(job, stage, able.Count == 0, markerless.Contains(job.CaptureId), ct);
+            stage = await NoRunnerStageAsync(db, job, stage, able.Count == 0, markerless.Contains(job.CaptureId), ct);
 
             // Conditional: a runner may have claimed it meanwhile (its stage then says so).
             await SetWaitingStageAsync(db, job, stage, ct);

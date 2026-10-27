@@ -76,10 +76,31 @@ public class RunnerSplatClientTests
         Assert.Equal(ComputeFailureKind.Protocol, await FailureAsync(() => client.DownloadFileAsync(id, WallCaptureProcessor.BundleFile, 99, CancellationToken.None)));
         Assert.Equal(ComputeFailureKind.Protocol, await FailureAsync(() => client.DownloadFileAsync(id, "wall.spz", CancellationToken.None)));
 
-        await client.DoneWithAsync(id, CancellationToken.None);
+        await client.DoneWithAsync(id, keepResult: true, CancellationToken.None);
         var job = await SplatJobSupport.JobAsync(h, claimed.Id);
         Assert.NotNull(job.InstalledAt);
-        Assert.True(File.Exists(f.Files.ResolvePhysicalPath(job.ResultPath!)), "the result stays while the capture may read it again");
+        var result = f.Files.ResolvePhysicalPath(job.ResultPath!)!;
+        Assert.True(File.Exists(result), "the result stays while the capture may read it again");
+
+        await client.DoneWithAsync(id, keepResult: false, CancellationToken.None);
+        Assert.Null((await SplatJobSupport.JobAsync(h, claimed.Id)).ResultPath);
+        Assert.False(File.Exists(result));
+    }
+
+    [Fact]
+    public async Task CancellingAWaitingJob_EndsItCancelled()
+    {
+        using var h = new WallTestHarness();
+        using var f = await RunnerFixture.CreateAsync(h, RunnerSplatFlowTests.OnRunners());
+        IComputeJobClient client = Client(f);
+        var id = await client.SubmitMultipartAsync(
+            WallCaptureProcessor.FinishKind, [Photo], new ComputeJobOwner(h.WallId, await CaptureAsync(h), null), CancellationToken.None);
+
+        await client.CancelAsync(id, CancellationToken.None);
+
+        var job = await SplatJobSupport.JobAsync(h, Guid.Parse(id[RunnerSplatClient.IdPrefix.Length..]));
+        Assert.Equal(GpuJobStatus.Cancelled, job.Status);
+        Assert.Equal(ComputeJobStates.Cancelled, (await client.GetStatusAsync(id, CancellationToken.None)).Status);
     }
 
     private static async Task<ComputeFailureKind> FailureAsync(Func<Task> call) =>

@@ -16,6 +16,9 @@ namespace Blocwerk.Core.Tests;
 /// </summary>
 internal sealed class FakeSplatRunner(GpuJobQueue queue, GpuRunner runner)
 {
+    /// <summary>The runner's id.</summary>
+    public Guid Id => runner.Id;
+
     /// <summary>The jobs taken, with the part names of their envelope (empty for a training job).</summary>
     public List<(GpuJobKind Kind, string[] Parts)> Taken { get; } = [];
 

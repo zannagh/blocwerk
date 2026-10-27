@@ -146,15 +146,25 @@ public sealed partial class WallCaptureProcessor
             new JobStage(capture.Id, WallCaptureStatus.Splatting, VideoBand, PrepareEnd, "Photo-real view", CaptureSplatDocuments.Describe),
             ct);
         await SetStageAsync(capture.Id, WallCaptureStatus.Splatting, PrepareEnd, "Photo-real view: packing the photos for a 3D runner", ct);
+        // Read (or unreadable): a prepare that ran on a runner is dropped, the training has its own copy. Not on a shutdown: the
+        // restart reads it again.
+        await DoneWithUnlessStoppedAsync(() => QueueTrainingAsync(capture, modelId, status.JobId!, client, ct), status.JobId!, client);
+    }
+
+    /// <summary>Runs <paramref name="read"/>, then tells the client the job is done with, also when the read failed (not when stopped).</summary>
+    private static async Task DoneWithUnlessStoppedAsync(Func<Task> read, string jobId, IComputeJobClient client)
+    {
         try
         {
-            await QueueTrainingAsync(capture, modelId, status.JobId!, client, ct);
+            await read();
         }
-        finally
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // Read (or unreadable): a prepare that ran on a runner drops its input; its result stays while referenced.
-            await client.DoneWithAsync(status.JobId!, CancellationToken.None);
+            await client.DoneWithAsync(jobId, keepResult: false, CancellationToken.None);
+            throw;
         }
+
+        await client.DoneWithAsync(jobId, keepResult: false, CancellationToken.None);
     }
 
     /// <summary>Takes the prepare's bundle, state and sparse model and queues the training for a runner.</summary>
@@ -224,14 +234,7 @@ public sealed partial class WallCaptureProcessor
                 client,
                 new JobStage(capture.Id, WallCaptureStatus.Splatting, 0.96, 0.98, "Photo-real view", CaptureSplatDocuments.Describe),
                 ct);
-            try
-            {
-                await StoreSplatAsync(capture.Id, modelId, status.JobId!, client, ct);
-            }
-            finally
-            {
-                await client.DoneWithAsync(status.JobId!, CancellationToken.None);
-            }
+            await DoneWithUnlessStoppedAsync(() => StoreSplatAsync(capture.Id, modelId, status.JobId!, client, ct), status.JobId!, client);
         }
         catch (Exception ex) when (ex is CaptureFailedException or InvalidDataException or IOException
                                    || (ex is ComputeJobException c && !IsWorkerAbsent(c) && c.Kind != ComputeFailureKind.Deferred))

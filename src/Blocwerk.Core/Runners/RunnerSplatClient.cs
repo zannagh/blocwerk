@@ -123,43 +123,52 @@ public sealed class RunnerSplatClient(
     /// <inheritdoc />
     public Task<byte[]> DownloadFileAsync(string jobId, string name, CancellationToken ct) => DownloadFileAsync(jobId, name, long.MaxValue, ct);
 
-    /// <summary>One file of the result, read in full but never past its entry's size or <paramref name="maxBytes"/>.</summary>
+    /// <summary>
+    /// One file of the result, read in full into one array of the entry's size (known and capped at upload), never past it or
+    /// <paramref name="maxBytes"/>.
+    /// </summary>
     public Task<byte[]> DownloadFileAsync(string jobId, string name, long maxBytes, CancellationToken ct) =>
-        ReadFileAsync(
+        ReadEntryAsync(
             jobId,
             name,
-            async (stream, token) =>
+            async (stream, length, token) =>
             {
-                using var buffer = new MemoryStream();
-                await stream.CopyToAsync(buffer, token);
-                return buffer.ToArray();
+                var bytes = new byte[length];
+                await stream.ReadExactlyAsync(bytes, token);
+                return bytes;
             },
-            maxBytes,
+            Math.Min(maxBytes, Array.MaxLength),
             ct);
 
     /// <summary>One file of the result as a stream (a multi-GB bundle is never one array), bounded by its entry's size.</summary>
+    /// <typeparam name="T">What <paramref name="read"/> makes of the file.</typeparam>
     public Task<T> ReadFileAsync<T>(string jobId, string name, Func<Stream, CancellationToken, Task<T>> read, CancellationToken ct) =>
-        ReadFileAsync(jobId, name, read, long.MaxValue, ct);
+        ReadEntryAsync(jobId, name, (stream, _, token) => read(stream, token), long.MaxValue, ct);
 
-    /// <summary>Cancels the job (a delivered one is dropped); its runner learns it with its next call.</summary>
-    public Task CancelAsync(string jobId, CancellationToken ct) => CloseAsync(jobId, keepResult: false, ct);
+    /// <summary>Cancels a job that has not ended (it ends Cancelled); its runner learns it with its next call.</summary>
+    public Task CancelAsync(string jobId, CancellationToken ct) => CloseAsync(jobId, keepResult: false, cancel: true, ct);
 
     /// <summary>
-    /// A delivered job whose result was read is installed (its input envelope goes, its result stays while referenced); a job
-    /// that is still waiting is cancelled.
+    /// A delivered job whose result was read is installed: its input envelope goes, and its result too unless
+    /// <paramref name="keepResult"/> (it is read again later). A job that is still waiting is cancelled.
     /// </summary>
-    public Task DoneWithAsync(string jobId, CancellationToken ct) => CloseAsync(jobId, keepResult: true, ct);
+    public Task DoneWithAsync(string jobId, bool keepResult, CancellationToken ct) => CloseAsync(jobId, keepResult, cancel: false, ct);
 
-    private async Task CloseAsync(string jobId, bool keepResult, CancellationToken ct)
+    private async Task CloseAsync(string jobId, bool keepResult, bool cancel, CancellationToken ct)
     {
-        if (TryParse(jobId) is not { } id || await queue.FindAsync(id, ct) is not { InstalledAt: null } job
-            || job.Status is GpuJobStatus.Failed or GpuJobStatus.Cancelled)
+        if (TryParse(jobId) is not { } id || await queue.FindAsync(id, ct) is not { } job || job.Status is GpuJobStatus.Failed or GpuJobStatus.Cancelled)
         {
             return;
         }
 
-        var installed = keepResult && job.Status == GpuJobStatus.Succeeded;
-        await queue.CloseComputeAsync(id, installed ? null : "no longer needed by the server", ct);
+        if (job.Status != GpuJobStatus.Succeeded || (cancel && job.InstalledAt is null))
+        {
+            await queue.CloseComputeAsync(id, "no longer needed by the server", ct, cancelled: true);
+        }
+        else if (!cancel && (job.InstalledAt is null || (!keepResult && job.ResultPath is not null)))
+        {
+            await queue.CloseComputeAsync(id, null, ct, dropResult: !keepResult);
+        }
     }
 
     private static Guid? TryParse(string jobId) =>
@@ -183,8 +192,8 @@ public sealed class RunnerSplatClient(
         }
     }
 
-    private async Task<T> ReadFileAsync<T>(
-        string jobId, string name, Func<Stream, CancellationToken, Task<T>> read, long maxBytes, CancellationToken ct)
+    private async Task<T> ReadEntryAsync<T>(
+        string jobId, string name, Func<Stream, int, CancellationToken, Task<T>> read, long maxBytes, CancellationToken ct)
     {
         var job = await FindAsync(jobId, ct);
         if (job.Status != GpuJobStatus.Succeeded)
@@ -202,7 +211,7 @@ public sealed class RunnerSplatClient(
         try
         {
             await using var stream = new BoundedReadStream(entry.Open(), entry.Length);
-            return await read(stream, ct);
+            return await read(stream, (int)Math.Min(entry.Length, int.MaxValue), ct);
         }
         catch (InvalidDataException ex)
         {

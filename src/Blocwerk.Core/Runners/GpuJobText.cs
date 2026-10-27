@@ -22,16 +22,17 @@ public static class GpuJobText
             return [];
         }
 
-        // A prepare / finish on a runner (SplatOnRunners) is part of the view too; a reconstruction the running capture waits for is not.
+        // A prepare / finish on a runner (SplatOnRunners) is part of the view too; a markerless capture's reconstruction (its
+        // capture still Solving) gets its own line, so it can be cancelled like the view.
         var jobs = await db.GpuJobs.AsNoTracking()
             .Where(j => captureIds.Contains(j.CaptureId)
-                        && (j.Kind == GpuJobKind.Splat
-                            || ((j.Kind == GpuJobKind.SplatPrepare || j.Kind == GpuJobKind.SplatFinish) && j.Capture.Status != WallCaptureStatus.Solving))
+                        && (j.Kind == GpuJobKind.Splat || j.Kind == GpuJobKind.SplatPrepare || j.Kind == GpuJobKind.SplatFinish)
                         && (j.Status == GpuJobStatus.Queued || j.Status == GpuJobStatus.Claimed || j.Status == GpuJobStatus.Running
                             || (j.Status == GpuJobStatus.Succeeded && j.InstalledAt == null)))
             .Select(j => new
             {
                 j.CaptureId, j.Kind, j.Status, j.Stage, j.Progress, j.CreatedAt, j.PreviewInstalledStep, j.TotalSteps,
+                Reconstructing = j.Kind == GpuJobKind.SplatPrepare && j.Capture.Status == WallCaptureStatus.Solving,
                 Runner = j.ClaimedByRunner == null ? null : j.ClaimedByRunner.Name,
             })
             .ToListAsync();
@@ -39,7 +40,7 @@ public static class GpuJobText
             .ToDictionary(g => g.Key, g =>
             {
                 var j = g.OrderByDescending(x => x.CreatedAt).First();
-                return Pending(j.Status, j.Stage, j.Progress, j.Runner, j.PreviewInstalledStep, j.TotalSteps, j.Kind);
+                return j.Reconstructing ? $"Reconstruction pending: {j.Stage ?? "waiting for a 3D runner"}" : Pending(j.Status, j.Stage, j.Progress, j.Runner, j.PreviewInstalledStep, j.TotalSteps, j.Kind);
             });
     }
 

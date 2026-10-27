@@ -151,7 +151,7 @@ public sealed partial class WallCaptureProcessor
         var sparse = await splat.DownloadFileAsync(sfmJobId, SparseFile, MaxSparseBytes, ct);
 
         // Read: a reconstruction that ran on a runner is installed (its bundle stays for the photo-real view).
-        await splat.DoneWithAsync(sfmJobId, ct);
+        await splat.DoneWithAsync(sfmJobId, keepResult: true, ct);
         await KeepSparsePointsAsync(capture, sparse, ct);
         var photos = await LoadUsablePhotosAsync(capture.Id, ct);
         var holds = await PhotoHoldsAsync(capture.Id, photos, ct);

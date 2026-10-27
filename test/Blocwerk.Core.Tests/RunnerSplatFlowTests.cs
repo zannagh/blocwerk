@@ -40,6 +40,7 @@ public class RunnerSplatFlowTests
         var installed = await SplatJobSupport.JobAsync(h, prepare.Id);
         Assert.NotNull(installed.InstalledAt);
         Assert.False(File.Exists(s.Files.ResolvePhysicalPath(installed.BundlePath)), "the input envelope is dropped once read");
+        Assert.Null(installed.ResultPath);
         Assert.Equal(WallCaptureStatus.Succeeded, (await s.Service.GetCaptureAsync(captureId))!.Status);
 
         await runner.DeliverAsync(GpuJobKind.Splat);
@@ -97,16 +98,10 @@ public class RunnerSplatFlowTests
         await f.ForgetAsync(exported);
         var manifest = CapturePackageFlow.WithoutResults(exported);
         var scenario = f.Runner.Scenario;
-        var queue = new GpuJobQueue(
-            h.RootContextFactory, scenario.Files, scenario.Queue, OnRunners(), new GpuJobSignal(), NullLogger<GpuJobQueue>.Instance, clock: f.Runner.Clock);
-        var adapter = new RunnerSplatClient(queue, scenario.Files, NullLogger<RunnerSplatClient>.Instance, TimeSpan.Zero);
-        var clients = new FakeComputeJobClientFactory(scenario.Client, adapter);
+        var (queue, clients, processor) = FlippedOn(h, scenario, f.Runner.Clock);
         var packages = new CapturePackageService(
             h.RootContextFactory, h.CurrentUser, scenario.Files, scenario.Queue, clients, NullLogger<CapturePackageService>.Instance,
             queue.Options, f.Disk, refinements: f.Refinements);
-        var processor = new WallCaptureProcessor(
-            h.RootContextFactory, scenario.Settings, clients, scenario.Files, scenario.Push, NullLoggerFactory.Instance, scenario.Options,
-            scenario.Detector, scenario.Video, gpuJobs: queue);
 
         var report = await packages.BeginImportAsync(manifest, CancellationToken.None);
         Assert.True(report.CanCommit, string.Join(" | ", report.Blockers));
@@ -123,6 +118,36 @@ public class RunnerSplatFlowTests
         Assert.Equal(WallCaptureStatus.Succeeded, (await db.WallCaptures.SingleAsync()).Status);
         Assert.Single(await db.WallGeometrySplats.Where(x => x.GeometryModelId == manifest.Rows.Model.Id).ToListAsync());
         Assert.NotNull((await db.GpuJobs.SingleAsync(j => j.Kind == GpuJobKind.Splat)).InstalledAt);
+    }
+
+    [Fact]
+    public async Task APreviewPendingWhenTheFlagIsTurnedOn_IsDropped_NotFinishedOnARunner()
+    {
+        using var h = new WallTestHarness();
+        using var f = await RunnerCaptureFlow.StartAsync(h);
+        Assert.Equal(RunnerJobOutcome.Ok, await f.PreviewAsync(4000));
+        var (_, _, processor) = FlippedOn(h, f.Scenario, f.Clock);
+
+        await processor.InstallPreviewAsync(f.Job.Id, CancellationToken.None);
+
+        await using var db = h.CreateContext();
+        Assert.Null((await db.GpuJobs.SingleAsync(j => j.Id == f.Job.Id)).PreviewPath);
+        Assert.False(await db.GpuJobs.AnyAsync(j => j.Kind == GpuJobKind.SplatFinish));
+        Assert.Empty(await db.WallGeometrySplats.ToListAsync());
+    }
+
+    /// <summary>The same app after <c>SPLATSERVICE__ONRUNNERS</c> was turned on: its queue, its workers and its pipeline.</summary>
+    internal static (GpuJobQueue Queue, FakeComputeJobClientFactory Clients, WallCaptureProcessor Processor) FlippedOn(
+        WallTestHarness h, CaptureScenario scenario, TimeProvider clock)
+    {
+        var queue = new GpuJobQueue(
+            h.RootContextFactory, scenario.Files, scenario.Queue, OnRunners(), new GpuJobSignal(), NullLogger<GpuJobQueue>.Instance, clock: clock);
+        var clients = new FakeComputeJobClientFactory(
+            scenario.Client, new RunnerSplatClient(queue, scenario.Files, NullLogger<RunnerSplatClient>.Instance, TimeSpan.Zero));
+        var processor = new WallCaptureProcessor(
+            h.RootContextFactory, scenario.Settings, clients, scenario.Files, scenario.Push, NullLoggerFactory.Instance, scenario.Options,
+            scenario.Detector, scenario.Video, gpuJobs: queue);
+        return (queue, clients, processor);
     }
 
     internal static GpuRunnerOptions OnRunners(GpuRunnerMode mode = GpuRunnerMode.Auto) =>
@@ -142,12 +167,21 @@ public class RunnerSplatFlowTests
     }
 
     /// <summary>A marker capture whose view a runner prepared, trained and finished.</summary>
-    private static async Task<(Guid CaptureId, FakeSplatRunner Runner)> FinishedAsync(WallTestHarness h, CaptureScenario s)
+    internal static async Task<(Guid CaptureId, FakeSplatRunner Runner)> FinishedAsync(WallTestHarness h, CaptureScenario s)
+    {
+        var (captureId, runner) = await ParkedForFinishAsync(h, s);
+        await runner.DeliverAsync(GpuJobKind.SplatFinish);
+        await ProcessNextAsync(s, captureId);
+        return (captureId, runner);
+    }
+
+    /// <summary>A marker capture whose view a runner prepared and trained; it is parked until a runner finishes it.</summary>
+    internal static async Task<(Guid CaptureId, FakeSplatRunner Runner)> ParkedForFinishAsync(WallTestHarness h, CaptureScenario s)
     {
         var captureId = await s.StartCaptureAsync();
         var runner = await FakeSplatRunner.AddAsync(h, s.Runners!, h.WallId);
         await s.Processor.ProcessAsync(captureId, CancellationToken.None);
-        foreach (var kind in new[] { GpuJobKind.SplatPrepare, GpuJobKind.Splat, GpuJobKind.SplatFinish })
+        foreach (var kind in new[] { GpuJobKind.SplatPrepare, GpuJobKind.Splat })
         {
             await runner.DeliverAsync(kind);
             await ProcessNextAsync(s, captureId);

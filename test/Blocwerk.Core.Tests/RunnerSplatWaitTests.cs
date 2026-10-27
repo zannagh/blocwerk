@@ -56,25 +56,63 @@ public class RunnerSplatWaitTests
     }
 
     [Fact]
-    public async Task ADayWithoutARunner_SaysSo_AndPushesTheCreatorOnce()
+    public async Task ADayWithoutACapableRunner_SaysSo_AndPushesTheCreatorOnce_HoweverRunnersComeAndGo()
     {
         using var h = new WallTestHarness();
         using var s = RunnerSplatFlowTests.Scenario(h, out var clock);
         var captureId = await s.StartCaptureAsync();
         await s.Processor.ProcessAsync(captureId, CancellationToken.None);
 
+        // A runner that can take it is seen at hour 23 (busy elsewhere): the day starts again from its last call.
         clock.Advance(TimeSpan.FromHours(23));
+        var runner = await FakeSplatRunner.AddAsync(h, s.Runners!, h.WallId);
         await s.Runners!.SweepAsync(CancellationToken.None);
-        await s.Push.DidNotReceive().NotifyNoRunnerAsync(Arg.Any<Guid>(), Arg.Any<Guid>());
-
         clock.Advance(TimeSpan.FromHours(2));
         await s.Runners.SweepAsync(CancellationToken.None);
-        await s.Runners.SweepAsync(CancellationToken.None);
+        await s.Push.DidNotReceive().NotifyNoRunnerAsync(Arg.Any<Guid>(), Arg.Any<Guid>());
 
-        await s.Push.Received(1).NotifyNoRunnerAsync(h.WallId, h.Owner.Id);
+        clock.Advance(TimeSpan.FromHours(23));
+        await s.Runners.SweepAsync(CancellationToken.None);
         Assert.Equal(
             "Photo-real view pending: waiting for a 3D runner to prepare the photos (none online for a day)",
             (await s.Service.GetCaptureAsync(captureId))!.PhotoRealPending);
+        for (var i = 0; i < 3; i++)
+        {
+            await SeenAsync(h, runner.Id, clock.GetUtcNow());
+            await s.Runners.SweepAsync(CancellationToken.None);
+            clock.Advance(TimeSpan.FromHours(25));
+            await s.Runners.SweepAsync(CancellationToken.None);
+        }
+
+        await s.Push.Received(1).NotifyNoRunnerAsync(h.WallId, h.Owner.Id);
+    }
+
+    [Fact]
+    public async Task AFinishWaitsForARunnerPastADay_AndOnlyItsQueueLifetimeEndsIt_KeepingTheTrainedView()
+    {
+        using var h = new WallTestHarness();
+        using var s = RunnerSplatFlowTests.Scenario(h, out var clock);
+        var (captureId, runner) = await RunnerSplatFlowTests.ParkedForFinishAsync(h, s);
+        await SeenAsync(h, runner.Id, null);
+
+        clock.Advance(TimeSpan.FromHours(25));
+        await s.Runners!.SweepAsync(CancellationToken.None);
+        await RunnerSplatFlowTests.ProcessNextAsync(s, captureId);
+        await using (var db = h.CreateContext())
+        {
+            Assert.Equal(WallCaptureProcessor.WaitingForRunnerStage, (await db.WallCaptures.SingleAsync()).Stage);
+            Assert.Equal(GpuJobStatus.Queued, (await db.GpuJobs.SingleAsync(j => j.Kind == GpuJobKind.SplatFinish)).Status);
+        }
+
+        clock.Advance(TimeSpan.FromDays(14));
+        await s.Runners.SweepAsync(CancellationToken.None);
+        await RunnerSplatFlowTests.ProcessNextAsync(s, captureId);
+
+        await using var after = h.CreateContext();
+        var capture = await after.WallCaptures.SingleAsync();
+        Assert.Equal(WallCaptureStatus.SucceededWithoutSplat, capture.Status);
+        Assert.Contains("no 3D runner finished the 3D view within 14 days", capture.Error);
+        Assert.True((await s.Service.GetCaptureAsync(captureId))!.CanRefinish, "the trained view is kept to finish later");
     }
 
     [Fact]
@@ -113,6 +151,13 @@ public class RunnerSplatWaitTests
         await using var after = h.CreateContext();
         Assert.Equal(GpuJobStatus.Queued, (await after.GpuJobs.SingleAsync(j => j.Kind == GpuJobKind.Splat)).Status);
         Assert.Equal(WallCaptureStatus.Succeeded, (await after.WallCaptures.SingleAsync()).Status);
+    }
+
+    /// <summary>Sets when the runner last called (null: never).</summary>
+    private static async Task SeenAsync(WallTestHarness h, Guid runnerId, DateTimeOffset? at)
+    {
+        await using var db = h.CreateContext();
+        await db.GpuRunners.Where(r => r.Id == runnerId).ExecuteUpdateAsync(x => x.SetProperty(r => r.LastSeenAt, at));
     }
 
     private static async Task AssertParkedAsync(WallTestHarness h)
