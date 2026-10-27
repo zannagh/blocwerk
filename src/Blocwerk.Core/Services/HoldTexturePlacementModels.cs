@@ -35,6 +35,12 @@ public static class HoldPlacementTrigger
     /// (<see cref="Geometry.TextureRegistration.HoldOutlierPlanner"/>).
     /// </summary>
     public const string Outliers = "outliers";
+
+    /// <summary>
+    /// "Place holds on the 3D surface": holds cast from their registered panel photo onto the photo-real surface, in 3D only
+    /// (<see cref="Geometry.Surface.SurfaceHoldPlanner"/>).
+    /// </summary>
+    public const string Surface = "surface";
 }
 
 /// <summary>Whether the action can run on a wall, and its latest run.</summary>

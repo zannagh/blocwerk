@@ -95,4 +95,20 @@ public interface IHoldTexturePlacementService
     /// <param name="ct">Cancellation.</param>
     /// <returns>The queued (or still open) registration.</returns>
     Task<SurfaceRegistration> RegisterPanelsAsync(Guid wallId, CancellationToken ct = default);
+
+    /// <summary>Dry run of <see cref="PlaceOnSurfaceAsync"/>: counts per panel photo and linked-pair agreement. Writes nothing.</summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>The counts.</returns>
+    Task<SurfacePreview> PreviewSurfaceAsync(Guid wallId, CancellationToken ct = default);
+
+    /// <summary>
+    /// "Place holds on the 3D surface": casts every hold of a registered panel photo onto the photo-real surface
+    /// (<see cref="Geometry.Surface.SurfaceHoldPlanner"/>). Writes the holds' 3D fields only, recorded as a revertable
+    /// <see cref="HoldPlacementTrigger.Surface"/> run, and queues them for refinement.
+    /// </summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>The counts and the run id.</returns>
+    Task<HoldPlacementResult> PlaceOnSurfaceAsync(Guid wallId, CancellationToken ct = default);
 }

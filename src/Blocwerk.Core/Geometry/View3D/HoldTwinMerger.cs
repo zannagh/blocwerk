@@ -105,9 +105,9 @@ public static class HoldTwinMerger
     }
 
     /// <summary>
-    /// Orders a group so its best view comes first: a real outline beats a stand-in circle; then the
-    /// more perpendicular camera (when both tilts are known and clearly differ); then the hold nearer its
-    /// panel photo's centre; the id breaks remaining ties so the choice is stable.
+    /// Orders a group so its best view comes first: a stored footprint beats a photo outline (stretched on a steep photo),
+    /// which beats a stand-in circle; then the more perpendicular camera (when both tilts are known and clearly differ);
+    /// then the hold nearer its panel photo's centre; the id breaks remaining ties so the choice is stable.
     /// </summary>
     /// <param name="group">The rows of one physical hold.</param>
     /// <returns>The rows, representative first.</returns>
@@ -120,10 +120,10 @@ public static class HoldTwinMerger
 
     private static int Compare(HoldTwinCandidate x, HoldTwinCandidate y)
     {
-        var outline = HasOutline(y).CompareTo(HasOutline(x));
-        if (outline != 0)
+        var shape = ShapeRank(x).CompareTo(ShapeRank(y));
+        if (shape != 0)
         {
-            return outline;
+            return shape;
         }
 
         if (x.Tilt is { } tx && y.Tilt is { } ty && Math.Abs(tx - ty) > TiltDifference * Math.Max(tx, ty))
@@ -135,8 +135,14 @@ public static class HoldTwinMerger
         return centre != 0 ? centre : x.Hold.Id.CompareTo(y.Hold.Id);
     }
 
-    private static bool HasOutline(HoldTwinCandidate c) =>
-        c.Placed.Shape is { Source: not Wall3DShapeSource.Circle };
+    /// <summary>Lower is better: a measured footprint, then a single-view one, then a photo outline, then a stand-in circle.</summary>
+    private static int ShapeRank(HoldTwinCandidate c) => c.Placed.Shape?.Source switch
+    {
+        Wall3DShapeSource.Footprint => 0,
+        Wall3DShapeSource.FootprintApproximate => 1,
+        Wall3DShapeSource.Circle or null => 3,
+        _ => 2,
+    };
 
     private static double CentreOffset(HoldTwinCandidate c) =>
         Math.Sqrt(((c.Hold.X - 0.5) * (c.Hold.X - 0.5)) + ((c.Hold.Y - 0.5) * (c.Hold.Y - 0.5)));

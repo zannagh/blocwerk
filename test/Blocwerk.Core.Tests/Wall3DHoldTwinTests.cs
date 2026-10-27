@@ -122,6 +122,24 @@ public class Wall3DHoldTwinTests
     }
 
     [Fact]
+    public void Representative_PrefersAStoredFootprint_OverAPhotoOutline()
+    {
+        var wall = NewWall();
+        var stretched = AddHold(wall, Left, 1000, 1000, "blue", x: 0.5, y: 0.5);
+        var measured = AddHold(wall, Right, 1000, 1000, "blue", x: 0.95, y: 0.95);
+        stretched.ShapePoints = measured.ShapePoints = ShapePoint.DefaultOctagon(0.01);
+        var placed = Candidates(wall);
+        var outline = placed.Single(c => c.Hold.Id == stretched.Id) with { Tilt = 0.1 };
+        var other = placed.Single(c => c.Hold.Id == measured.Id) with { Tilt = 0.8 };
+        Wall3DHoldShape Shape(Wall3DShapeSource source) => new(source, [[-10, -10], [10, -10], [10, 10]], []);
+
+        var footprint = other with { Placed = other.Placed with { Shape = Shape(Wall3DShapeSource.FootprintApproximate) } };
+        Assert.Equal(measured.Id, HoldTwinMerger.Order([outline, footprint])[0].Hold.Id);
+        var multiView = outline with { Placed = outline.Placed with { Shape = Shape(Wall3DShapeSource.Footprint) } };
+        Assert.Equal(stretched.Id, HoldTwinMerger.Order([footprint, multiView])[0].Hold.Id);
+    }
+
+    [Fact]
     public void Tilt_IsZeroSquareOn_AndGrowsWithPerspective()
     {
         Assert.Equal(0, PhotoViewTilt.At((x, y) => (2000 * x + 300 * y, -1500 * y), 0.5, 0.5)!.Value, 1e-6);

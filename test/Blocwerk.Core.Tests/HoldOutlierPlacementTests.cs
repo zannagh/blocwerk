@@ -165,7 +165,7 @@ public class HoldOutlierPlacementTests
     };
 
     /// <summary>Every column of the holds except their 3D fields, and every column of panels, links, boulders and their holds.</summary>
-    private static async Task<string> NonThreeDSnapshotAsync(WallTestHarness h)
+    internal static async Task<string> NonThreeDSnapshotAsync(WallTestHarness h)
     {
         await using var db = h.CreateContext();
         var text = new StringBuilder();
