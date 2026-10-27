@@ -74,6 +74,7 @@ def test_hello_carries_the_capabilities(tmp_path, fast, server, monkeypatch):  #
                                                                     "texturesMemoryMb": 24576})
     monkeypatch.setattr(caps_module.holds, "advertise", lambda: [])
     monkeypatch.setattr(caps_module.panels, "advertise", lambda: [])
+    monkeypatch.setattr(caps_module.compute, "advertise", lambda: [])
     monkeypatch.setattr(caps_module, "gpu_info", lambda: ("Apple M4", 49152, True))
     monkeypatch.setattr(caps_module, "budget_mb", lambda: 20000)
     caps = caps_module.Capabilities()

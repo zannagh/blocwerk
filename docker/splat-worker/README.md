@@ -288,6 +288,8 @@ give the job memory to match (`SPLAT_MAX_MEMORY_MB` unset, container limit ≥ 1
 | `RUNNER_TEXTURES_MAX_IMAGE_MP` | 200 | OpenCV's decode limit per photo of a textures job |
 | `RUNNER_HOLDS` | 1 | `0` = never advertise the `detect-holds` capability (hold detection, below) |
 | `RUNNER_PANELS` | 1 | `0` = never advertise the `register-panels` capability (panel registration, below; needs COLMAP) |
+| `RUNNER_SPLAT_CPU` | 1 | `0` = never advertise `splat-prepare` (the CPU half's COLMAP work, below); `splat-finish` is advertised whenever the package imports |
+| `RUNNER_COMPUTE_MEMORY_FRACTION` | 0.9 | a `splat-prepare` / `splat-finish` child is killed (a failure another runner may do better) when its whole process tree passes this fraction of the machine's memory; the tools inside keep their own budget (`SPLAT_MAX_MEMORY_MB`) |
 | `RUNNER_KEEP_AWAKE` | 1 | Windows: keep the PC out of idle sleep while the runner runs; `0` = off (macOS: `caffeinate -i`) |
 | `RUNNER_WINPTY` | 1 | Windows: give Brush a ConPTY through pywinpty (live progress); `0` = a plain pipe |
 
@@ -681,6 +683,37 @@ cameras in the wall world, mm), `photos/<camera>.jpg` and `panels/<panel id>r<ph
 photo, triangulates with the capture poses fixed and registers the panels with the existing frames fixed, then uploads
 `{"version": 1, "panels": {name: {"width", "height", "params": [f, cx, cy, k1, k2], "R", "t", "observations", "rmsPx",
 "medianPx"}}}`. Nothing on the server waits for it; the poses are read when someone places holds on the surface.
+
+### The CPU half on a runner (`splat-prepare` / `splat-finish` jobs)
+
+So the server need not run `splat-cpu` itself, a runner can do the two CPU halves of a splat, the same `run_job` body the
+HTTP worker runs (`runner.py`), through the runner API:
+
+| capability | advertised when | job |
+|---|---|---|
+| `splat-prepare` | COLMAP is on the `PATH` (`COLMAP_BIN`; the CUDA and CPU images have it, a native Mac / Windows runner usually not) and `RUNNER_SPLAT_CPU` is not `0` | photos (+ anchor photos) -> `bundle.zip`, `prepared.json`, `sparse.zip` |
+| `splat-finish` | `splatworker.finish` imports | `prepared.json` + a trained scene -> `wall.splat`, `wall.spz`, `frame.json` (+ the uncleaned `wall.raw.spz`) |
+
+An older server ignores both names and never claims them; a runner without them never gets the kinds (the claim filters by
+capability, and `requiredMemoryMb` against `memoryBudgetMb`).
+
+The claim (`kind: "splat-prepare"` / `"splat-finish"`) has a **compute envelope** as its bundle: a stored zip of
+`parts.json` and the part files. `parts.json` is `{"version": 1, "service": "splat", "kind": <the claim's kind>, "parts":
+[{"name", "file" | "json"}, ...]}`: `name` is the multipart part of the HTTP request (`photos`, repeated, `options`,
+`geometry` for prepare; `prepared`, `trainStats`, `splat` for finish), `file` an entry of the zip (its base name is the
+HTTP file name: `IMG_1.jpg`, `splat.ply` / `splat.spz`), `json` the value of a JSON part inline. Nothing else may be in
+the zip. `gpurunner/compute_envelope.py` builds the job directory the HTTP upload builds, through the same code
+(`job_inputs.py`, `split_api.write_finish_inputs`, `SplatUpload.store`: photos are re-encoded metadata-free,
+options / geometry / prepared are validated), then `gpurunner/compute_child.py` runs `run_job(kind, ...)` in a spawned
+child with its own process group, as the HTTP worker's job manager does, under the stop event (pause, cancel) and a
+memory watchdog over the whole tree. Progress is the job's own stages (`ingest`, `sfm-matching`, `align`, ...). The result
+is one stored zip to `PUT .../result`: `status.json` (the `GET /v1/jobs/{id}` body of the finished job, `result.files`
+as `{name, url}`) and the files it lists. The stats header adds `kind`, `files`, `seconds` and `peakMemoryMb`.
+
+A job `run_job` itself rejects (too few photos, no sparse model, ...) or an envelope that is not valid goes back as a
+failure that no retry fixes, with the HTTP job's `error` text; a fault of this machine (running past its memory or
+`SPLAT_TIMEOUT_S`, including COLMAP over `SPLAT_MAX_MEMORY_MB`, an `internal error (ref …)` such as a full disk, a crashed child) is
+this runner's (retryable) failure, so another runner may take the job. The child reads the splat worker's own variables (`SPLAT_*`, `COLMAP_*`).
 
 ### Status page and pause switch
 
