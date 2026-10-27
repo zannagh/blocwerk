@@ -34,7 +34,8 @@ public sealed partial class GpuJobQueue
         await using var db = dbContextFactory.CreateDbContext();
         var candidates = await db.GpuJobs.AsNoTracking()
             .Where(j => j.ResultPath != null && j.RefinishStateJson == null && j.LeftoverDroppedAt == null
-                        && j.Status == GpuJobStatus.Succeeded && j.InstalledAt != null)
+                        && j.Status == GpuJobStatus.Succeeded && j.InstalledAt != null
+                        && j.Kind != GpuJobKind.RegisterPanels) // the panel poses (a few KB) are what surface placement reads
             .ToListAsync(ct);
 
         // Filtered in memory: SQLite cannot compare DateTimeOffset in SQL.

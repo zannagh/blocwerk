@@ -83,4 +83,16 @@ public interface IHoldTexturePlacementService
     /// <param name="ct">Cancellation.</param>
     /// <returns>The counts and the run id.</returns>
     Task<HoldPlacementResult> ReplaceOutliersAsync(Guid wallId, CancellationToken ct = default);
+
+    /// <summary>The wall's latest panel registration for "place holds on the 3D surface" (active model).</summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>Its state.</returns>
+    Task<SurfaceRegistration> GetSurfaceRegistrationAsync(Guid wallId, CancellationToken ct = default);
+
+    /// <summary>Queues the live panel photos for registration into the active model's capture cameras on a 3D runner.</summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>The queued (or still open) registration.</returns>
+    Task<SurfaceRegistration> RegisterPanelsAsync(Guid wallId, CancellationToken ct = default);
 }
