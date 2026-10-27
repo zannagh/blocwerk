@@ -29,7 +29,7 @@ test('a :guid parameter covers a GUID only, so the edit pages beside the declare
     for (const covered of ['/walls', `/walls/${GUID_A}`, `/walls/${GUID_A}/boulders/${GUID_B}`, `/walls/${GUID_A}/shared/tok`, `/walls/${GUID_A}/boulders/${GUID_B}/shared/tok`]) {
         assert.equal((await navigate(worker, covered)).status, 302, covered);
     }
-    for (const edit of ['/walls/create', `/walls/${GUID_A}/boulders/create`, `/walls/${GUID_A}/boulders/create/shared/tok`, '/walls/not-a-guid', `/walls/${GUID_A}/update`, `/walls/${GUID_A}/boulders/${GUID_B}/revise`]) {
+    for (const edit of ['/whats-new', '/walls/create', `/walls/${GUID_A}/boulders/create`, `/walls/${GUID_A}/boulders/create/shared/tok`, '/walls/not-a-guid', `/walls/${GUID_A}/update`, `/walls/${GUID_A}/boulders/${GUID_B}/revise`]) {
         assert.equal(await (await navigate(worker, edit)).text(), 'offline page', edit);
     }
 });

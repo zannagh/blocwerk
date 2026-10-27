@@ -29,7 +29,7 @@ class FakeElement {
 }
 
 function page({ path = '/v/walls/W1', alive = { clientSchemaMin: 1 }, schema = '1', version = OLD, worker = { version: NEW, complete: true },
-    session = new Map(), onLine = true, walls = [{ savedAt: Date.UTC(2026, 9, 24, 12, 30) }], storageThrows = false } = {}) {
+    session = new Map(), onLine = true, walls = [{ savedAt: Date.now() }], storageThrows = false } = {}) {
     const assigned = [];
     const reloads = [];
     const shown = [];
