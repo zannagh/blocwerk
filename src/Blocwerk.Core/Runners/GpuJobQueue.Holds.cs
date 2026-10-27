@@ -121,12 +121,14 @@ public sealed partial class GpuJobQueue
         GpuJobKind.Textures => "rendered; installing on the server",
         GpuJobKind.DetectHolds => "holds found; matching them on the server",
         GpuJobKind.RegisterPanels => "panel photos registered",
+        GpuJobKind.SplatPrepare => "prepared; reading the result on the server",
+        GpuJobKind.SplatFinish => "finished; reading the result on the server",
         _ => "trained; finishing on the server",
     };
 
     /// <summary>
     /// A job that ended for good (failed, cancelled, expired): the capture pipeline hears of it the way its kind needs. A
-    /// textures job wakes the re-render, a hold detection job nothing (its search polls), a splat job marks the capture.
+    /// textures job wakes the re-render, a hold detection job nothing (its search polls), a splat prepare / finish job wakes the capture parked on it, a splat job marks the capture.
     /// </summary>
     private async Task JobEndedAsync(BlocwerkDbContext db, GpuJob job, string reason, CancellationToken ct)
     {
@@ -136,6 +138,9 @@ public sealed partial class GpuJobQueue
                 NotifyTextures(job.CaptureId);
                 break;
             case GpuJobKind.DetectHolds or GpuJobKind.RegisterPanels:
+                break;
+            case GpuJobKind.SplatPrepare or GpuJobKind.SplatFinish:
+                await HandBackAsync(db, job.CaptureId, ct);
                 break;
             default:
                 await MarkCaptureWithoutSplatAsync(db, job, reason, ct);

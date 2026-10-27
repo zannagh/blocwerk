@@ -120,6 +120,7 @@ internal static class FeedBulkSites
     [
         Excluded("Runners/GpuJobQueue.cs", typeof(GpuJob), 1, GpuQueue),
         Excluded("Runners/GpuJobQueue.Claim.cs", typeof(GpuJob), 1, GpuQueue),
+        Excluded("Runners/GpuJobQueue.Compute.cs", typeof(GpuJob), 2, GpuQueue),
         Excluded("Runners/GpuJobQueue.Holds.cs", typeof(GpuJob), 2, GpuQueue),
         Excluded("Runners/GpuJobQueue.LeftoverRetention.cs", typeof(GpuJob), 1, GpuQueue),
         Excluded("Runners/GpuJobQueue.Preview.cs", typeof(GpuJob), 2, GpuQueue),

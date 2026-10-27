@@ -61,7 +61,8 @@ public sealed partial class GpuJobQueue
             return RunnerJobOutcome.InsufficientStorage;
         }
 
-        var (stored, refused) = await StoreUploadAsync(runner, jobId, body, encoding == "gzip", ct);
+        var cap = options.MaxUploadBytes(claimed.Kind);
+        var (stored, refused) = await StoreUploadAsync(runner, jobId, body, encoding == "gzip", ct, cap);
         if (stored is null)
         {
             return refused;
@@ -72,6 +73,7 @@ public sealed partial class GpuJobQueue
             GpuJobKind.Textures => ValidateStoredTextures(stored, runner, jobId),
             GpuJobKind.DetectHolds => ValidateStoredHolds(stored, runner, jobId),
             GpuJobKind.RegisterPanels => ValidateStoredPanels(stored, runner, jobId),
+            GpuJobKind.SplatPrepare or GpuJobKind.SplatFinish => ValidateStoredCompute(stored, runner, jobId, cap),
             _ => ValidateStored(stored, runner, jobId),
         };
         if (format is null)
@@ -245,7 +247,8 @@ public sealed partial class GpuJobQueue
 
     /// <summary>
     /// The capture (finished as "Model ready" while the runner trained) goes back to the photo-real stage, exactly
-    /// like a retrain: its model and any older view stay live until the new view is stored.
+    /// like a retrain: its model and any older view stay live until the new view is stored. A capture parked in
+    /// <see cref="WallCaptureStatus.Solving"/> (waiting for a runner's reconstruction) is only woken.
     /// </summary>
     private async Task<bool> HandBackAsync(BlocwerkDbContext db, Guid captureId, CancellationToken ct)
     {
@@ -260,8 +263,9 @@ public sealed partial class GpuJobQueue
             capture.CompletedAt = null;
             await db.SaveChangesAsync(ct);
         }
-        else if (capture is not { Status: WallCaptureStatus.Splatting })
+        else if (capture is not { Status: WallCaptureStatus.Splatting or WallCaptureStatus.Solving })
         {
+            // Splatting: the processor is mid-view. Solving: a markerless capture parked until a runner reconstructs it.
             return false;
         }
 

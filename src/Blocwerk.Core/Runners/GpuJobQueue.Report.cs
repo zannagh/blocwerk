@@ -22,9 +22,13 @@ public sealed partial class GpuJobQueue
     /// <summary>What the stage text of a textures job says while its runner uploads the rendered textures.</summary>
     internal const string UploadingTexturesStage = "is uploading the textures";
 
+    /// <summary>What the stage text of a splat prepare / finish job says while its runner uploads the result.</summary>
+    internal const string UploadingResultStage = "is uploading the result";
+
     /// <summary>Whether a job's stage text says its runner is uploading the result.</summary>
     internal static bool IsUploadingStage(string? stage) =>
-        stage?.StartsWith(UploadingStage, StringComparison.Ordinal) == true || stage?.StartsWith(UploadingTexturesStage, StringComparison.Ordinal) == true;
+        stage?.StartsWith(UploadingStage, StringComparison.Ordinal) == true || stage?.StartsWith(UploadingTexturesStage, StringComparison.Ordinal) == true
+        || stage?.StartsWith(UploadingResultStage, StringComparison.Ordinal) == true;
 
     /// <summary>
     /// The runner's claimed job, or why not: <see cref="RunnerJobOutcome.NotYours"/> when it never held it (or it went
@@ -90,10 +94,10 @@ public sealed partial class GpuJobQueue
 
         await using var db = dbContextFactory.CreateDbContext();
         var now = Now;
-        var deadline = Deadline(job.ClaimedAt ?? now, report.Stage == "upload");
+        var deadline = Deadline(job.ClaimedAt ?? now, report.Stage == "upload", job.Kind);
         if (now >= deadline)
         {
-            var released = await ReleaseAsync(db, job, ReleaseKind.Failure, TooLongReason(), ct);
+            var released = await ReleaseAsync(db, job, ReleaseKind.Failure, TooLongReason(job.Kind), ct);
             return released && job.Status != GpuJobStatus.Queued ? RunnerJobOutcome.Over : RunnerJobOutcome.Gone;
         }
 
@@ -185,11 +189,14 @@ public sealed partial class GpuJobQueue
     /// Until when a claim made at <paramref name="claimedAt"/> may run: <see cref="GpuRunnerOptions.MaxJobDuration"/>, plus
     /// <see cref="GpuRunnerOptions.MaxUploadDuration"/> once the trained view is <paramref name="uploading"/>.
     /// </summary>
-    private DateTimeOffset Deadline(DateTimeOffset claimedAt, bool uploading) =>
-        claimedAt + options.MaxJobDuration + (uploading ? options.MaxUploadDuration : TimeSpan.Zero);
+    private DateTimeOffset Deadline(DateTimeOffset claimedAt, bool uploading, GpuJobKind kind = GpuJobKind.Splat) =>
+        claimedAt + MaxDuration(kind) + (uploading ? options.MaxUploadDuration : TimeSpan.Zero);
 
-    private string TooLongReason() =>
-        $"the training took longer than {options.MaxJobDuration.TotalHours.ToString("0.#", CultureInfo.InvariantCulture)} h";
+    /// <summary>A prepare claim may run <see cref="GpuRunnerOptions.PrepareMaxJobDuration"/>; every other kind <see cref="GpuRunnerOptions.MaxJobDuration"/>.</summary>
+    private TimeSpan MaxDuration(GpuJobKind kind) => kind == GpuJobKind.SplatPrepare ? options.PrepareMaxJobDuration : options.MaxJobDuration;
+
+    private string TooLongReason(GpuJobKind kind = GpuJobKind.Splat) =>
+        $"the {(kind == GpuJobKind.SplatPrepare ? "preparation" : "training")} took longer than {MaxDuration(kind).TotalHours.ToString("0.#", CultureInfo.InvariantCulture)} h";
 
     private static string Describe(RunnerProgress report, GpuJobKind kind = GpuJobKind.Splat)
     {
@@ -198,9 +205,12 @@ public sealed partial class GpuJobQueue
             "download" => "is downloading the photos",
             "upload" when kind == GpuJobKind.DetectHolds => "is uploading the holds it found",
             "upload" when kind == GpuJobKind.RegisterPanels => "is uploading the panel photo poses",
+            "upload" when kind is GpuJobKind.SplatPrepare or GpuJobKind.SplatFinish => UploadingResultStage,
             "upload" => kind == GpuJobKind.Textures ? UploadingTexturesStage : UploadingStage,
             _ => kind switch
             {
+                GpuJobKind.SplatPrepare => "is preparing the photos",
+                GpuJobKind.SplatFinish => "is finishing the 3D view",
                 GpuJobKind.Textures => "is rendering the wall textures",
                 GpuJobKind.DetectHolds => "is finding holds in the photos",
                 GpuJobKind.RegisterPanels => "is registering the panel photos",
