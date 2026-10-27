@@ -184,6 +184,8 @@ public class HoldEditFollowIn3DTests
         Assert.False(HoldTexturePlacer.IsEligible(hold));
         hold.MetricSource = HoldMetric.Consensus;
         Assert.True(HoldTexturePlacer.IsEligibleAfterEdit(hold));
+        hold.MetricSource = HoldMetric.Surface;
+        Assert.True(HoldTexturePlacer.IsEligibleAfterEdit(hold));
         Assert.False(HoldTexturePlacer.IsEligible(hold));
         hold.MetricSource = HoldMetric.MultiMarker;
         Assert.False(HoldTexturePlacer.IsEligibleAfterEdit(hold));

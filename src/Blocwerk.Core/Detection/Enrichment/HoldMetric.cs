@@ -61,4 +61,11 @@ public sealed record HoldMetric(
     /// replaces it; a later edit of the hold measures it again.
     /// </summary>
     public const string Consensus = "consensus";
+
+    /// <summary>
+    /// Metric source of a hold placed from its registered panel photo onto the photo-real surface
+    /// (<see cref="Geometry.Surface.SurfaceHoldPlanner"/>). Like a marker placement, no texture registration replaces it; a
+    /// later edit of the hold measures it again.
+    /// </summary>
+    public const string Surface = "surface";
 }

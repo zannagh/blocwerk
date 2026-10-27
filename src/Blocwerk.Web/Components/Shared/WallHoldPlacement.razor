@@ -35,9 +35,32 @@
         }
     </div>
 
+    <p class="hint">
+        Holds can also be placed on the photo-real surface: a 3D runner first registers the panel photos into the capture,
+        then each hold is cast from its photo onto the surface (linked copies share one position). 3D only, revertable below.
+        @if (surfaceRegistration is { } reg)
+        {
+            <span> Registration: @SurfaceRegistrationText(reg)</span>
+        }
+    </p>
+    <div class="staged-actions">
+        @if (surfaceRegistration is { RunnerReady: true })
+        {
+            <button class="btn-secondary" @onclick="RegisterPanelsAsync" disabled="@busy">Register panel photos on a 3D runner</button>
+        }
+        @if (surfaceRegistration is { State: "done", Registered: > 0 })
+        {
+            <button class="btn-secondary" @onclick="CheckSurfaceAsync" disabled="@busy">Check holds on the surface</button>
+        }
+        @if (surface is { ToPlace: > 0 } planned)
+        {
+            <button class="btn-secondary" @onclick="PlaceOnSurfaceAsync" disabled="@busy">Place @planned.ToPlace holds on the surface</button>
+        }
+    </div>
+
     @if (busy)
     {
-        <p class="loading-small">Matching every wall photo to the 3D model — this can take a few minutes…</p>
+        <p class="loading-small">Working on the 3D placement — this can take a few minutes…</p>
     }
 
     @if (failure is not null)

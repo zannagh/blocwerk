@@ -54,6 +54,16 @@ public sealed class WallGeometryPlacementController(
     public Task<IActionResult> RegisterPanels(Guid wallId, CancellationToken ct) =>
         RunAsync(wallId, async () => Ok(await placement.RegisterPanelsAsync(wallId, ct)));
 
+    /// <summary>Dry run of "place holds on the 3D surface".</summary>
+    [HttpGet("surface")]
+    public Task<IActionResult> PreviewSurface(Guid wallId, CancellationToken ct) =>
+        RunAsync(wallId, async () => Ok(await placement.PreviewSurfaceAsync(wallId, ct)));
+
+    /// <summary>Places the holds on the 3D surface, 3D fields only (revert the run like any other).</summary>
+    [HttpPost("surface")]
+    public Task<IActionResult> PlaceOnSurface(Guid wallId, CancellationToken ct) =>
+        RunAsync(wallId, async () => Ok(await placement.PlaceOnSurfaceAsync(wallId, ct)));
+
     /// <summary>Reverts a run: every hold it placed that nobody moved since gets its previous values back.</summary>
     [HttpPost("{runId:guid}/revert")]
     public Task<IActionResult> Revert(Guid wallId, Guid runId, CancellationToken ct) =>
