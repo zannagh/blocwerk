@@ -129,7 +129,7 @@ public class OverlaySnapshotShapeTests
     private static List<ShapePoint> Ring(double radius, int count) =>
         [.. Enumerable.Range(0, count).Select(i => new ShapePoint
         {
-            Dx = radius * Math.Cos(i * 2 * Math.PI / count) * (1 + (0.1 * (i % 2))),
-            Dy = radius * Math.Sin(i * 2 * Math.PI / count),
+            Dx = radius * Math.Cos(i * 2.0 * Math.PI / count) * (1 + (0.1 * (i % 2))),
+            Dy = radius * Math.Sin(i * 2.0 * Math.PI / count),
         })];
 }

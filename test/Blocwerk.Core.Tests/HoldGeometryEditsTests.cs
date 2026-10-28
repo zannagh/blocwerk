@@ -126,7 +126,7 @@ public class HoldGeometryEditsTests
 
         Assert.DoesNotContain("data-hold", HoldShapeRenderer.Render(parameters));
 
-        parameters["HoldId"] = (Guid?)id;
+        parameters["HoldId"] = id;
         parameters["ShapePoints"] = ShapePoint.DefaultOctagon(0.02).AsDocumentRing();
         parameters["ShapeHoles"] = new List<List<ShapePoint>>
         {

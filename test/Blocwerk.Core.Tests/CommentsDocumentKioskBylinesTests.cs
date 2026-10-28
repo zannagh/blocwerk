@@ -30,12 +30,12 @@ public sealed class CommentsDocumentKioskBylinesTests
             var text = await CommentsDocumentSeed.TextAsync(f, token);
 
             var member = document.Comments.Single(c => c.Id == seed.ByMember).Author;
-            Assert.Equal((KioskBylines.PlaceholderName, false, (Guid?)null), (member.Name, member.HasAvatar, member.Id));
+            Assert.Equal((KioskBylines.PlaceholderName, false, null), (member.Name, member.HasAvatar, member.Id));
             Assert.DoesNotContain("member@test", text, StringComparison.Ordinal);
             Assert.DoesNotContain(f.Member.Id.ToString(), text, StringComparison.Ordinal);
 
             var owner = document.Comments.Single(c => c.Id == seed.ByOwner).Author;
-            Assert.Equal((ownerName, true, (Guid?)f.Harness.Owner.Id), (owner.Name, owner.HasAvatar, owner.Id));
+            Assert.Equal((ownerName, true, f.Harness.Owner.Id), (owner.Name, owner.HasAvatar, owner.Id));
 
             foreach (var id in new[] { seed.ByErased, seed.ByGhost })
             {

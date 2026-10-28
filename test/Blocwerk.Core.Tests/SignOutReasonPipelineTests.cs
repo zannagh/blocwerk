@@ -132,9 +132,9 @@ public sealed class SignOutReasonPipelineTests : IAsyncDisposable
 
     private static async Task<string> ReasonAsync(HttpClient client, string? cookies) => (await WhoAsync(client, cookies)).Reason;
 
-    private static Task<HttpResponseMessage> SendAsync(HttpClient client, string path, string? cookies, bool reject = false)
+    private static async Task<HttpResponseMessage> SendAsync(HttpClient client, string path, string? cookies, bool reject = false)
     {
-        var request = new HttpRequestMessage(HttpMethod.Get, path);
+        using var request = new HttpRequestMessage(HttpMethod.Get, path);
         if (cookies is not null)
         {
             request.Headers.Add("Cookie", cookies);
@@ -145,7 +145,7 @@ public sealed class SignOutReasonPipelineTests : IAsyncDisposable
             request.Headers.Add(Reject, "1");
         }
 
-        return client.SendAsync(request);
+        return await client.SendAsync(request);
     }
 
     private static List<string> CookiesOf(HttpResponseMessage response) =>

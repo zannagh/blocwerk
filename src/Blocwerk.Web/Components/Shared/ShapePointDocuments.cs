@@ -89,7 +89,7 @@ public static class ShapePointDocuments
 
         for (var i = 0; i < ring.Count; i++)
         {
-            if (kept[i].Dx != ring[i].Dx || kept[i].Dy != ring[i].Dy)
+            if (!kept[i].Dx.Equals(ring[i].Dx) || !kept[i].Dy.Equals(ring[i].Dy))
             {
                 return false;
             }

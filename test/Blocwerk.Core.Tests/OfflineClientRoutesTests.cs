@@ -1,9 +1,13 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using System.Net;
 using Blocwerk.Client;
 using Blocwerk.Web.Endpoints;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.TestHost;
 
 namespace Blocwerk.Core.Tests;
 
@@ -103,9 +107,30 @@ public sealed class OfflineClientRoutesTests
     [InlineData("/v/walls", null)]
     [InlineData("/vx", null)]
     [InlineData("/walls/v", null)]
+    [InlineData("/V//evil.com", "/v/evil.com")]
+    [InlineData("/V/\\evil.com", "/v/evil.com")]
+    [InlineData("/V/\\/\\evil.com", "/v/evil.com")]
     public void Canonical_RedirectsOnlyTheBaseInAnotherCase(string path, string? expected)
     {
         Assert.Equal(expected, OfflineClientEndpoints.Canonical(path));
     }
-}
 
+    [Theory]
+    [InlineData("/v?a=1", "/v/?a=1")]
+    [InlineData("/V//evil.com?x=y", "/v/evil.com?x=y")]
+    [InlineData("/V/%5Cevil.com", "/v/evil.com")]
+    public async Task TheMiddleware_RedirectsToALocalPath_AndKeepsTheQuery(string request, string location)
+    {
+        var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Production", ContentRootPath = AppContext.BaseDirectory });
+        builder.WebHost.UseTestServer();
+        await using var app = builder.Build();
+        app.MapOfflineClient();
+        await app.StartAsync();
+
+        using var response = await app.GetTestClient().GetAsync(request);
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Equal(location, response.Headers.Location?.OriginalString);
+        await app.StopAsync();
+    }
+}
