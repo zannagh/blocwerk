@@ -7,7 +7,7 @@
 // response sets the grade-scale cookie.
 import { test, expect, installWorker, partitionOf, settled, ledger } from '../harness/fixtures.mjs';
 import { registerKiosk, actAs } from '../harness/kiosk.mjs';
-import { declareRoutes, precacheOutcome, expectClient, expectOfflinePage, missingDocs } from '../harness/client.mjs';
+import { declareRoutes, precacheOutcome, expectClient, expectOfflinePage, missingDocs, clientRecord, pageVersion } from '../harness/client.mjs';
 
 const store = page => page.locator('.bw-client-store');
 const storeState = (page, state) => expect(store(page)).toHaveAttribute('data-bw-store', state, { timeout: 15000 });
@@ -43,7 +43,15 @@ async function precacheKiosk(page, server, token, wallId, { faults = [], member 
         const partition = await partitionOf(page);
         await expect.poll(() => missingDocs(page, partition, wallId), { timeout: 20000 }).toEqual([]);
     }
-    return precacheOutcome(page);
+    const outcome = await precacheOutcome(page);
+    if (outcome !== 'waiting') {
+        return outcome;
+    }
+    // The act-as navigation left the page before the worker finished the fill it started (the 3D modules make it
+    // ~3 MB more, PR 3.13): this page waits, the worker completes it on its own.
+    const version = await pageVersion(page);
+    await expect.poll(async () => (await clientRecord(page))?.version ?? null, { timeout: 60000 }).toBe(version);
+    return 'complete';
 }
 
 const gradeCookie = async context => (await context.cookies()).filter(c => c.name === 'blocwerk-grade-pref');

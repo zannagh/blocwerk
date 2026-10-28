@@ -1,0 +1,68 @@
+@implements IDisposable
+@inject View3DToggle Toggle
+@* The stage slot's 3D side (the Server's Wall3DInline): with the switch on 3D, the 3D view takes the photos' place, the
+   boulder highlighted on its detail, with a link to the full 3D page; otherwise the slot's own content (the panel
+   viewer) shows untouched. Another wall or boulder starts on the photos again. *@
+@if (Toggle.IsShown(Context.Wall.WallId, Context.Boulder?.Id))
+{
+    <div class="wall3d-inline bw-client-3d-inline">
+        <div class="wall3d-inline-stage">
+            <Wall3DView Wall="Context.Wall" Boulder="Context.Boulder" ShareToken="@Context.ShareToken" />
+        </div>
+        <div class="wall3d-inline-foot">
+            @if (Context.Boulder is not null)
+            {
+                <Wall3DLegend CssClass="wall3d-inline-legend" />
+            }
+            <a class="bw-client-3d-full" href="@ClientRoutes.Wall3DLink(Context.Wall.WallId, Context.ShareToken, Context.Boulder?.Id)">Full 3D view</a>
+        </div>
+    </div>
+}
+else
+{
+    @DefaultContent
+}
+
+@code {
+    private (Guid Wall, Guid? Boulder)? showing;
+
+    /// <summary>Gets or sets the slot's context.</summary>
+    [Parameter]
+    public ViewSlotContext Context { get; set; } = null!;
+
+    /// <summary>Gets or sets the slot's default content: the panel viewer.</summary>
+    [Parameter]
+    public RenderFragment? DefaultContent { get; set; }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        Toggle.Changed -= OnToggled;
+        Leave();
+    }
+
+    /// <inheritdoc />
+    protected override void OnInitialized() => Toggle.Changed += OnToggled;
+
+    /// <inheritdoc />
+    protected override void OnParametersSet()
+    {
+        var key = (Context.Wall.WallId, Context.Boulder?.Id);
+        if (showing != key)
+        {
+            Leave();
+            showing = key;
+        }
+    }
+
+    // The page moved on (the router keeps the instance for another wall or boulder) or went: back on the photos.
+    private void Leave()
+    {
+        if (showing is { } previous)
+        {
+            Toggle.Set(previous.Wall, previous.Boulder, false);
+        }
+    }
+
+    private void OnToggled() => _ = InvokeAsync(StateHasChanged);
+}

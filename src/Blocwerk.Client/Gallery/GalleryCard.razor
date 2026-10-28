@@ -1,0 +1,69 @@
+@using Blocwerk.Contracts.Documents
+@inject IClientViewEnv Env
+@* The wall's gallery from the device (the Server's WallGalleryPanel, read-only; PR 3.13), below the boulder list: the
+   gallery document's snapshots, newest first, 24 at a time, each from the rendition the device holds (the 640 grid,
+   then the original; "not saved" when neither is). A tap opens the lightbox on the stored image. No delete, no upload.
+   Without a cached gallery document the card stays away. *@
+@if (Context.Wall.Gallery is { } gallery)
+{
+    var images = gallery.Images;
+    <div class="settings-panel wall-gallery-panel bw-client-gallery">
+        <div class="wall-panel-head">
+            <h2>Gallery</h2>
+            <span class="wall-panel-hint">@images.Count image@(images.Count == 1 ? string.Empty : "s")</span>
+        </div>
+        @if (images.Count == 0)
+        {
+            <p class="wall-gallery-empty">No images yet.</p>
+        }
+        else
+        {
+            <div class="wall-gallery-grid">
+                @for (var i = 0; i < Math.Min(shownCount, images.Count); i++)
+                {
+                    var index = i;
+                    var image = images[i];
+                    <button type="button" class="wall-gallery-thumb" @key="image.Id" @onclick="() => selected = index">
+                        <PanelPhoto Urls="Urls(image, thumbnail: true)" Alt="@(image.Caption ?? "Wall image")" />
+                        <span class="wall-gallery-badge uploaded">Snapshot</span>
+                        <span class="wall-gallery-when">@ClientTime.Date(image.CapturedAt, facts.UtcOffset)</span>
+                    </button>
+                }
+            </div>
+            @if (images.Count > shownCount)
+            {
+                <button type="button" class="pager-btn wall-gallery-more" @onclick="() => shownCount += PageSize">Load more</button>
+            }
+        }
+    </div>
+
+    @if (selected >= 0 && selected < images.Count)
+    {
+        <GalleryLightbox Images="images" Index="selected" IndexChanged="i => selected = i" UrlsOf="i => Urls(i, thumbnail: false)" Offset="facts.UtcOffset" />
+    }
+}
+
+@code {
+    private const int PageSize = 24;
+    private int shownCount = PageSize;
+    private int selected = -1;
+    private ClientViewFacts facts = ClientViewFacts.Default;
+
+    /// <summary>Gets or sets the slot's context.</summary>
+    [Parameter]
+    public ViewSlotContext Context { get; set; } = null!;
+
+    /// <summary>Gets or sets the slot's default content (none below the list).</summary>
+    [Parameter]
+    public RenderFragment? DefaultContent { get; set; }
+
+    /// <inheritdoc />
+    protected override async Task OnInitializedAsync() => facts = await Env.FactsAsync();
+
+    // The grid asks for the 640 rendition first, the lightbox for the stored image; each falls back to the other.
+    private IReadOnlyList<string> Urls(GalleryDocumentImage image, bool thumbnail)
+    {
+        var urls = PhotoUrls.Renditions(Context.Wall.WallId, image.Sha, Context.ShareToken, ClientViewFacts.ThumbnailWidth);
+        return thumbnail ? urls : urls.Reverse().ToList();
+    }
+}

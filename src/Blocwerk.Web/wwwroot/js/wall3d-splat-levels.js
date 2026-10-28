@@ -5,6 +5,7 @@
 // A decode that never answers (a stuck Spark worker, seen on iOS) fails after DECODE_TIMEOUT_MS instead
 // of leaving the view on its level without a word; every stage is handed to `onStage` for the server log.
 import { createAborter, fetchSplatBytes } from './wall3d-splat-fetch.js';
+import { photoRealHold } from './wall3d-splat-hold.js';
 
 /** Minimum time between two splat sorts on a phone (each one reads back and sorts every splat). */
 const LIGHT_SORT_MS = 90;
@@ -56,6 +57,9 @@ export function createLevelLoader({ renderer, scene, view, levels, light, clip, 
     async function bytesOf(i, signal, progress) {
         downloading++;
         try {
+            // The offline client's first ~20 s (wall3d-splat-hold.js): nothing of the splat before then, Spark included.
+            await photoRealHold(signal);
+            if (signal.aborted) return null;
             spark ??= await import('../lib/spark/spark.module.min.js');
             return await fetchSplatBytes(levels[i].url, signal, progress);
         } finally {

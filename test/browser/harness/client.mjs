@@ -2,8 +2,8 @@
 // Server page, and reading what the worker recorded.
 import { expect, signIn, installWorker, settled } from './fixtures.mjs';
 
-// The routes the client declares (ClientRoutes.Declared, PR 3.11), as its shell's meta carries them.
-export const ROUTES = 'walls walls/{WallId:guid} walls/{WallId:guid}/shared/{ShareToken} walls/{WallId:guid}/boulders/{BoulderId:guid} walls/{WallId:guid}/boulders/{BoulderId:guid}/shared/{ShareToken}';
+// The routes the client declares (ClientRoutes.Declared, PR 3.11 and 3.13), as its shell's meta carries them.
+export const ROUTES = 'walls walls/{WallId:guid} walls/{WallId:guid}/shared/{ShareToken} walls/{WallId:guid}/boulders/{BoulderId:guid} walls/{WallId:guid}/boulders/{BoulderId:guid}/shared/{ShareToken} walls/{WallId:guid}/3d walls/{WallId:guid}/shared/{ShareToken}/3d';
 
 // The shell's routes meta rewritten to `routes` (the default keeps the declared ones): the worker reads the routes from
 // the shell it precaches. `pairs` adds further rewrites of the shell.

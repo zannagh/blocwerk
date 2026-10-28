@@ -1,0 +1,71 @@
+@implements IDisposable
+@inject IClient3D Client3D
+@inject ClientStore Store
+@inject View3DToggle Toggle
+@* The photo / 3D switch (the Server's WallViewToggle pill) in the wall header's and the boulder title's actions: flips
+   the stage slot (Stage3D) between the photos and the 3D view. Shown only when the device knows a 3D model of the
+   wall, and never with "Keep 3D on this device" off. Reading that status touches only the ledger and the caches; no 3D
+   file loads until the 3D view shows. *@
+@if (shown)
+{
+    var on = Toggle.IsShown(Context.Wall.WallId, Context.Boulder?.Id);
+    <button type="button" class="btn-view3d bw-client-3d-switch" aria-pressed="@(on ? "true" : "false")"
+            aria-label="@(on ? "Show the photos" : "Show in 3D")" title="@(on ? "Back to the photos" : "The measured 3D model")"
+            @onclick="Flip">
+        @if (on)
+        {
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="M21 15l-5-5L5 21" />
+            </svg>
+            <span>Photos</span>
+        }
+        else
+        {
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 2 3 7v10l9 5 9-5V7z" /><path d="M3 7l9 5 9-5" /><path d="M12 12v10" />
+            </svg>
+            <span>3D</span>
+        }
+    </button>
+}
+
+@code {
+    private bool shown;
+    private (Guid, string?)? checkedFor;
+
+    /// <summary>Gets or sets the slot's context.</summary>
+    [Parameter]
+    public ViewSlotContext Context { get; set; } = null!;
+
+    /// <summary>Gets or sets the slot's default content (none in an actions slot).</summary>
+    [Parameter]
+    public RenderFragment? DefaultContent { get; set; }
+
+    /// <inheritdoc />
+    public void Dispose() => Toggle.Changed -= OnToggled;
+
+    /// <inheritdoc />
+    protected override void OnInitialized() => Toggle.Changed += OnToggled;
+
+    /// <inheritdoc />
+    protected override async Task OnParametersSetAsync()
+    {
+        var key = (Context.Wall.WallId, Store.Partition);
+        if (checkedFor == key)
+        {
+            return;
+        }
+
+        checkedFor = key;
+        shown = false;
+        if (Store.Partition is { } partition)
+        {
+            var status = await Client3D.StatusAsync(partition, Context.Wall.WallId);
+            shown = status.Kind is Client3DState.Ready or Client3DState.Missing;
+        }
+    }
+
+    private void Flip() => Toggle.Set(Context.Wall.WallId, Context.Boulder?.Id, !Toggle.IsShown(Context.Wall.WallId, Context.Boulder?.Id));
+
+    private void OnToggled() => _ = InvokeAsync(StateHasChanged);
+}
