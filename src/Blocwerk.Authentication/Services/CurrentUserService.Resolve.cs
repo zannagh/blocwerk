@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Blocwerk.Authentication.Authorization;
+using Blocwerk.Contracts.Assets;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
@@ -216,6 +217,9 @@ public partial class CurrentUserService
     /// </remarks>
     private async Task TrySignOutAsync()
     {
+        // `gone` (SignOutReason): a device that cached this account's partition wipes it rather than lock it. Recorded
+        // even when the response already started, so this request's meta still says so.
+        SignOutReason.Mark(_accessor?.HttpContext, SignOutReasons.Gone);
         if (_accessor?.HttpContext is not { } httpContext || httpContext.Response.HasStarted)
         {
             return;

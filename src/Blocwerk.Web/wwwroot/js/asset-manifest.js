@@ -7,10 +7,14 @@
  *   304      → unchanged; the fetch time moves.
  *   403/404  → the wall is dropped (wipe rule 4): no access any more, a rotated share token, a kiosk that may not
  *              cache it.
+ *   401/410  → the session ended (signedOut, PR 3.5): a `u-` partition locks on a 401 `expired`, anything else wipes.
  *   anything else, or no network → the stored copy stands (offline: render from cache).
  * `pending > 0` means some assets have no hash yet (listed with `sha: null`, used network-only); the caller asks again
  * after pendingDelayMs (60 s, 2 min, 5 min, then every 15 min while it stays pending), when the server's backfill
  * will have stamped them.
+ *
+ * An `anon` row (a share link's) keeps `share`, the SHA-256 of the link's token (bwAssetLedger.shareHash), never the
+ * token: the offline client reads the row only on a /v/ page whose token hashes to it.
  *
  * Retention: a stored copy older than RETENTION_MS is not revalidated but fetched whole, and its feed cursor is
  * dropped. The feed keeps 30 days, so an older cursor is past its horizon and means a full resync.
@@ -54,7 +58,13 @@ window.bwAssetManifest = (function () {
      * Returns { outcome: 'updated'|'unchanged'|'dropped'|'offline'|'switched', pending }.
      */
     // The fields the manifest round owns; every other field of the row (keepOffline, save3d, docs) is kept as stored.
-    const MANIFEST_FIELDS = ['partition', 'wallId', 'entries', 'etag', 'cursor', 'pending', 'member', 'fetchedAt'];
+    const MANIFEST_FIELDS = ['partition', 'wallId', 'entries', 'etag', 'cursor', 'pending', 'member', 'share', 'fetchedAt'];
+
+    // The share link's token as an `anon` row keeps it: its hash only, and none on any other partition.
+    async function shareOf(partition, token) {
+        const ledger = window.bwAssetLedger;
+        return partition === 'anon' && token && ledger && typeof ledger.shareHash === 'function' ? ledger.shareHash(token) : null;
+    }
 
     // Writes this round's fields onto the row as it is stored NOW (not as it was read before the fetch).
     function write(env, row) {
@@ -66,6 +76,23 @@ window.bwAssetManifest = (function () {
         });
     }
 
+    /**
+     * A 401 or 410: the session ended. env.signedOut (asset-lock.js refused) locks a `u-` partition on a 401 `expired` and
+     * wipes otherwise; the stored copy is not written either way. Without it (a caller that never wired it) it stands.
+     */
+    async function signedOut(env, response) {
+        if ((response.status !== 401 && response.status !== 410) || typeof env.signedOut !== 'function') {
+            return false;
+        }
+        await env.signedOut(response);
+        return true;
+    }
+
+    // A failed round still records an opened wall it never stored (its lastOpened), except on a kiosk tablet: its `k-`
+    // partition holds the bound wall alone, and the offline client reads nothing beside a second row (PR 3.15), so an
+    // empty row for another wall opened during a blip would hide the bound wall offline.
+    const keepsOpened = (partition, opts) => !!opts.opened && !String(partition).startsWith('k-');
+
     async function refresh(env, partition, wallId, opts) {
         const now = env.now();
         const stored = await env.ledger.getWall(partition, wallId);
@@ -75,6 +102,7 @@ window.bwAssetManifest = (function () {
             row.cursor = null;
         }
         row.member = !!opts.member;
+        row.share = await shareOf(partition, opts.token);
         if (opts.opened) {
             row.lastOpened = now;
         }
@@ -86,7 +114,7 @@ window.bwAssetManifest = (function () {
         try {
             response = await env.fetch(manifestUrl(wallId, opts.token), { credentials: 'same-origin', cache: 'no-store', headers });
         } catch (e) {
-            if (stored || opts.opened) {
+            if (stored || keepsOpened(partition, opts)) {
                 await write(env, row);
             }
             return { outcome: 'offline', pending: row.pending || 0 };
@@ -98,13 +126,16 @@ window.bwAssetManifest = (function () {
             await opts.dropWall(wallId);
             return { outcome: 'dropped', pending: 0 };
         }
+        if (await signedOut(env, response)) {
+            return { outcome: 'signed-out', pending: 0 };
+        }
         if (response.status === 304) {
             row.fetchedAt = now;
             await write(env, row);
             return { outcome: 'unchanged', pending: row.pending || 0 };
         }
         if (!response.ok) {
-            if (stored || opts.opened) {
+            if (stored || keepsOpened(partition, opts)) {
                 await write(env, row);
             }
             return { outcome: 'offline', pending: row.pending || 0 };
@@ -124,5 +155,5 @@ window.bwAssetManifest = (function () {
         return { outcome: 'updated', pending: row.pending };
     }
 
-    return { PENDING_RETRY_MS, PENDING_CAP_MS, RETENTION_MS, pendingDelayMs, compact, manifestUrl, refresh };
+    return { PENDING_RETRY_MS, PENDING_CAP_MS, RETENTION_MS, pendingDelayMs, compact, manifestUrl, signedOut, refresh };
 })();

@@ -307,6 +307,14 @@ public class KioskAuthTests
     [InlineData("/Blocwerk.Web.styles.css", false)]
     [InlineData("/Blocwerk.Web.59ojwcjdxf.styles.css", false)]
     [InlineData("/x/Blocwerk.Web.styles.css", true)]
+
+    // The offline client (PR 3.15): its shell and files, on a tablet too. By segment, so a page beginning with "v"
+    // stays refused.
+    [InlineData("/v", false)]
+    [InlineData("/v/", false)]
+    [InlineData("/v/walls/11111111-1111-1111-1111-111111111111", false)]
+    [InlineData("/v/_framework/dotnet.js", false)]
+    [InlineData("/videos", true)]
     public void AllowList_PermitsTheKiosksJob_AndRefusesEverythingElse(string path, bool blocked)
     {
         Assert.Equal(blocked, KioskRestrictions.IsBlockedPath(new PathString(path)));

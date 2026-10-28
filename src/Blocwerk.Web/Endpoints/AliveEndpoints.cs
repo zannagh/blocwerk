@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Blocwerk.Client;
 using Blocwerk.Core.Services;
 using Blocwerk.Web.State;
 
@@ -63,7 +64,8 @@ public static class AliveEndpoints
                     ProcessInstance.StartedAt,
                     announcement is not null,
                     announcement?.Message,
-                    announcement?.ExpiresAt),
+                    announcement?.ExpiresAt,
+                    ClientSchema.Minimum),
                 WireFormat);
         })
         .AllowAnonymous()

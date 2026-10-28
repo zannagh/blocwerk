@@ -15,7 +15,8 @@ namespace Blocwerk.Browser.Seed;
 /// The harness's fixed world:
 /// <list type="bullet">
 /// <item><b>alpha</b>: Alice's wall with two panels, an active 3D model (texture, mask, splat), a boulder with a beta
-/// video thumbnail, a kiosk key, and Carol as a member who consented to the kiosk (no PIN).</item>
+/// video thumbnail (ticked and favourited by Alice and by Carol), a kiosk key, and Carol as a member who consented to the
+/// kiosk (no PIN).</item>
 /// <item>alpha also has a share link (<see cref="SeededWorld.ShareToken"/>).</item>
 /// <item><b>beta</b>: Alice's second wall, one panel, and a boulder list long enough to scroll.</item>
 /// <item><b>bobs</b>: Bob's wall, one panel. Bob is a member of nothing of Alice's.</item>
@@ -47,7 +48,9 @@ internal sealed class SeedWalls
         var alpha = AddWall("Alpha", alice, panels: 2, seed: 1);
         db.WallMembers.Add(new WallMember { WallId = alpha.Wall.Id, UserId = carol.Id, Role = WallRole.Member, KioskConsentedAt = DateTimeOffset.UtcNow });
         var geometry = await AddGeometryAsync(alpha.Wall.Id);
-        var thumbnail = AddVideoThumbnail(alpha.Wall.Id, alice.Id);
+        var (thumbnail, boulderId) = AddVideoThumbnail(alpha.Wall.Id, alice.Id);
+        AddMarks(boulderId, alice.Id, AttemptType.Send);
+        AddMarks(boulderId, carol.Id, AttemptType.Flash);
         var kioskToken = AddKioskKey(alpha.Wall.Id, alice.Id);
         alpha.Wall.ShareToken = "browser-harness-share-token";
 
@@ -75,7 +78,7 @@ internal sealed class SeedWalls
             },
             new Dictionary<string, SeededWall>
             {
-                ["alpha"] = new(alpha.Wall.Id, alpha.Shas, geometry.Texture, geometry.Mask, geometry.Splat, thumbnail),
+                ["alpha"] = new(alpha.Wall.Id, alpha.Shas, geometry.Texture, geometry.Mask, geometry.Splat, thumbnail, boulderId),
                 ["beta"] = new(beta.Wall.Id, beta.Shas, null, null, null, null),
                 ["bobs"] = new(bobs.Wall.Id, bobs.Shas, null, null, null, null),
                 ["social"] = new(socialWall.Wall.Id, socialWall.Shas, null, null, null, null),
@@ -145,13 +148,20 @@ internal sealed class SeedWalls
         }
     }
 
-    private string AddVideoThumbnail(Guid wallId, Guid uploaderId)
+    private (string Thumbnail, Guid BoulderId) AddVideoThumbnail(Guid wallId, Guid uploaderId)
     {
         var thumbnail = SeedImages.Jpeg(320, 180, 42);
         var boulder = new Boulder { WallId = wallId, Name = "Seeded boulder", CreatedByUserId = uploaderId };
         db.Boulders.Add(boulder);
         db.BetaVideos.Add(new BetaVideo { BoulderId = boulder.Id, UploadedByUserId = uploaderId, ContentType = "video/mp4", Thumbnail = thumbnail });
-        return Hex(thumbnail);
+        return (Hex(thumbnail), boulder.Id);
+    }
+
+    // A tick and a favourite of the user on the boulder: their own marks (/api/me/walls/{w}/mine, PR 3.4).
+    private void AddMarks(Guid boulderId, Guid userId, AttemptType type)
+    {
+        db.Attempts.Add(new Attempt { BoulderId = boulderId, UserId = userId, Type = type });
+        db.BoulderFavorites.Add(new BoulderFavorite { BoulderId = boulderId, UserId = userId });
     }
 
     private string AddKioskKey(Guid wallId, Guid ownerId)
@@ -172,4 +182,5 @@ internal sealed record SeededWorld(
 
 internal sealed record SeededUser(Guid Id, string Name);
 
-internal sealed record SeededWall(Guid Id, List<string> Panels, string? Texture, string? Mask, string? Splat, string? Thumbnail);
+internal sealed record SeededWall(
+    Guid Id, List<string> Panels, string? Texture, string? Mask, string? Splat, string? Thumbnail, Guid? Boulder = null);

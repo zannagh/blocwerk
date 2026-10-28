@@ -50,6 +50,11 @@
         @Body
     </main>
 
+    @* The live feed's data-document, manifest and own-mark changes, handed to the device cache (asset-data.js,
+       asset-mine.js). Its own interactive island: MainLayout is static, so without a render mode the relay never
+       reached OnAfterRender and never subscribed. It shares the page's circuit, so it sees that circuit's walls. *@
+    <AssetCacheFeedRelay @rendermode="InteractiveServer" />
+
     @* Every item in the non-kiosk bar is behind AuthorizeView, so an anonymous visitor would get an
        empty bar and a chevron that collapses nothing — Tools used to be the one tab they saw, and it
        now lives on Profile. A kiosk keeps its bar while anonymous: the user picker is on it. *@

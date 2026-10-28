@@ -45,7 +45,8 @@ public sealed class FeedCatchUp(IWallFeed feed, Func<BlocwerkDbContext> createCo
 
     /// <summary>
     /// Hydrates a page's rows as <paramref name="viewer"/> sees them, in one batch per kind of content, without the kiosk's
-    /// activity rows it may not read now (<see cref="FeedKioskActivity"/>).
+    /// activity rows it may not read now (<see cref="FeedKioskActivity"/>) or the comment rows of boulders an outside viewer
+    /// may not see now (<see cref="FeedOutsideComments"/>).
     /// </summary>
     public async Task<IReadOnlyList<FeedEnvelope>> HydrateAsync(FeedPage page, FeedViewer viewer, CancellationToken cancellationToken)
     {
@@ -57,7 +58,7 @@ public sealed class FeedCatchUp(IWallFeed feed, Func<BlocwerkDbContext> createCo
         await using var db = createContext();
         var hydrated = await FeedHydration.LoadAsync(db, page.Changes, cancellationToken, FeedKioskNeeds.Of([viewer]));
         var visibility = AuthorVisibility.For(viewer);
-        return page.Changes.Where(r => FeedKioskActivity.Allows(viewer, r, hydrated))
+        return page.Changes.Where(r => FeedKioskActivity.Allows(viewer, r, hydrated) && FeedOutsideComments.Allows(viewer, r, hydrated))
             .Select(r => FeedEnvelopes.Build(r, page.Next.Epoch, hydrated, visibility))
             .ToArray();
     }

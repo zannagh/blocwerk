@@ -4,6 +4,7 @@ using System.Reflection;
 using Blocwerk.Authentication;
 using Blocwerk.Authentication.Controllers;
 using Blocwerk.Authentication.Endpoints;
+using Blocwerk.Authentication.Services;
 using Blocwerk.Core;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Enums;
@@ -283,7 +284,7 @@ public static class Program
             .AddCheck<BusyHealthCheck>("busy", tags: new[] { "busy" })
             .AddCheck<DatabaseHealthCheck>("database", tags: new[] { "db" });
 
-        ConfigureApiCookieBehaviour(builder);
+        ConfigureApiCookieBehaviour(builder.Services);
 
         var app = builder.Build();
 
@@ -395,6 +396,10 @@ public static class Program
         // are — see AliveEndpoints.
         app.MapAlive();
 
+        // The offline gym client under /v/ (Blocwerk.Client, Phase 3). This also installs the middleware that redirects
+        // /v and wrong-case /V/… to /v/; the shell itself is OfflineClientShellController, its files are static assets.
+        app.MapOfflineClient();
+
         app.MapRazorComponents<BlocwerkApp>()
             .AddInteractiveServerRenderMode();
 
@@ -423,6 +428,9 @@ public static class Program
 
         // Their manifest per wall and the device's cache partition (design §6.4, §6.6).
         app.MapAssetManifest();
+
+        // The signed-in reader's own ticks and favourites of a wall (/api/me/walls/{w}/mine), for the offline client.
+        app.MapMine();
 
         // The live feed over HTTP: a wall's catch-up pages and event stream, and the caller's own rows (/api/me/changes).
         app.MapFeed();
@@ -553,9 +561,9 @@ public static class Program
     /// and drop it.</item>
     /// </list>
     /// </summary>
-    private static void ConfigureApiCookieBehaviour(WebApplicationBuilder builder)
+    internal static void ConfigureApiCookieBehaviour(IServiceCollection services)
     {
-        builder.Services.PostConfigure<CookieAuthenticationOptions>(
+        services.PostConfigure<CookieAuthenticationOptions>(
             CookieAuthenticationDefaults.AuthenticationScheme,
             options =>
             {
@@ -572,7 +580,9 @@ public static class Program
 
                     if (IsApiRequest(context.Request))
                     {
+                        // With the reason (SignOutReasons): a u- device locks its data on `expired` and wipes it otherwise.
                         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                        SignOutReason.Stamp(context.HttpContext);
                         return Task.CompletedTask;
                     }
 

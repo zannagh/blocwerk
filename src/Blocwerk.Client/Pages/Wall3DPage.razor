@@ -1,0 +1,53 @@
+@page "/walls/{WallId:guid}/3d"
+@page "/walls/{WallId:guid}/shared/{ShareToken}/3d"
+@inherits CachedWallPage
+@using Blocwerk.Client.ThreeD
+@* A wall's 3D view from the device (the Server's Wall3D, read-only): ?boulder= highlights one boulder, ?mode= picks
+   the start mode. No model corrections, no hold links, no "Show on wall" spot. An offline deep link with
+   ?mode=photoreal shows Schematic first: photo-real waits for the client's first ~20 s (client-3d-stage.js). *@
+<PageTitle>@(Wall?.Wall?.Name ?? "Wall") in 3D - Blocwerk</PageTitle>
+
+@if (!Loaded)
+{
+    <p class="loading">Loading...</p>
+}
+else if (Wall?.Wall is null)
+{
+    <NotSaved Title="This wall is not available offline" />
+}
+else
+{
+    <div class="wall3d-page bw-client-3d-page" data-bw-wall="@WallId">
+        <div class="wall3d-head">
+            <a href="@BackLink" class="back-link">&larr; @(boulder is null ? "Back to wall" : "Back to boulder")</a>
+            @if (boulder is not null)
+            {
+                <span class="wall3d-boulder">@boulder.Name</span>
+                <Wall3DLegend />
+            }
+        </div>
+        <div class="wall3d-stage">
+            <Wall3DView Wall="Wall" Boulder="boulder" ShareToken="@ShareToken" Mode="@Mode" />
+        </div>
+    </div>
+}
+
+@code {
+    private Blocwerk.Contracts.Documents.BouldersDocumentBoulder? boulder;
+
+    /// <summary>Gets or sets the boulder to highlight (<c>?boulder=</c>).</summary>
+    [SupplyParameterFromQuery(Name = "boulder")]
+    public Guid? BoulderId { get; set; }
+
+    /// <summary>Gets or sets the start mode (<c>?mode=schematic|photos|photoreal</c>).</summary>
+    [SupplyParameterFromQuery(Name = "mode")]
+    public string? Mode { get; set; }
+
+    private string BackLink => boulder is null
+        ? ClientRoutes.WallLink(WallId, ShareToken)
+        : ClientRoutes.BoulderLink(WallId, boulder.Id, ShareToken);
+
+    /// <inheritdoc />
+    protected override void OnWallRead() =>
+        boulder = BoulderId is { } id ? Wall?.VisibleBoulders.FirstOrDefault(b => b.Id == id) : null;
+}

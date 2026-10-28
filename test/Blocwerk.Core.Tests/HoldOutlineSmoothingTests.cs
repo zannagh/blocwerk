@@ -2,9 +2,9 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
-using Blocwerk.Core.Entities;
+using Blocwerk.Contracts.Documents;
 using Blocwerk.Core.Enums;
-using Blocwerk.Web.Components.Shared;
+using Blocwerk.Shared.Ui.Overlay;
 using Xunit;
 
 namespace Blocwerk.Core.Tests;
@@ -21,7 +21,7 @@ public class HoldOutlineSmoothingTests
         Assert.Equal(16, smooth.Count);
         Assert.Equal(-1, ring[0].Dx);
         Assert.Equal(-1, ring[0].Dy);
-        Assert.DoesNotContain(smooth, p => Math.Abs(p.Dx) == 1 && Math.Abs(p.Dy) == 1);
+        Assert.DoesNotContain(smooth, p => Math.Abs(Math.Abs(p.Dx) - 1) < 1e-9 && Math.Abs(Math.Abs(p.Dy) - 1) < 1e-9);
         Assert.All(smooth, p => Assert.True(Math.Abs(p.Dx) <= 1 && Math.Abs(p.Dy) <= 1));
     }
 
@@ -37,7 +37,7 @@ public class HoldOutlineSmoothingTests
     [Fact]
     public void Smooth_LeavesNoPolygonAlone()
     {
-        IReadOnlyList<ShapePoint> two = [new() { Dx = 0, Dy = 0 }, new() { Dx = 1, Dy = 1 }];
+        IReadOnlyList<DocumentPoint> two = [new(0, 0), new(1, 1)];
 
         Assert.Null(HoldOutlineSmoothing.Smooth(null));
         Assert.Same(two, HoldOutlineSmoothing.Smooth(two));
@@ -54,11 +54,5 @@ public class HoldOutlineSmoothingTests
         Assert.Equal(expected, BoulderHoldColors.Outline(type, usage));
     }
 
-    private static List<ShapePoint> Square() =>
-    [
-        new() { Dx = -1, Dy = -1 },
-        new() { Dx = 1, Dy = -1 },
-        new() { Dx = 1, Dy = 1 },
-        new() { Dx = -1, Dy = 1 },
-    ];
+    private static List<DocumentPoint> Square() => [new(-1, -1), new(1, -1), new(1, 1), new(-1, 1)];
 }

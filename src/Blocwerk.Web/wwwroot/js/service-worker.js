@@ -11,7 +11,8 @@
  *      the SignalR circuit — though those requests are ALWAYS network-only here; the queue owns
  *      their retry/idempotency, and a cached POST would be meaningless.
  *   3. Navigations that fail offline fall back to a tidy /offline.html instead of the browser's
- *      dinosaur.
+ *      dinosaur, or (PR 3.9) go to the offline gym client under /v/ when it is precached and covers the
+ *      route: the offline client section below.
  *
  * NEVER cached: anything under /api/* and /_blazor/* (SignalR), and any non-GET request. Those are
  * strictly network-only so auth, the circuit and the offline queue always talk to the live server.
@@ -27,10 +28,51 @@
  * offline-queue.js / blazor-boot.js, which covers the tab-open case; Background Sync would only add
  * closed-tab flushing and needs its own IndexedDB replay in the SW, so it is deferred.
  */
-const CACHE = 'blocwerk-shell-v4';
+const CACHE = 'blocwerk-shell-v5';
 const PROTO = 1;
 
+// ONE imported script, as before PR 3.9: on Linux WebKit (WPE) every further importScripts made the first install
+// hang now and then (the page's `serviceWorker.ready` never resolved: 6 of 50 runs with four imports, 1 of 50 with
+// two, 0 of 48 with one, 0 of 50 with this code inline). So the offline client's half and push live in this file,
+// above 300 lines on purpose.
 importScripts('/js/sw-asset-cache.js');
+
+// The worker's half of the 401 lock (Phase 3 PR 3.5): a `u-` partition the page locked after its session expired
+// (asset-lock.js) is kept for the same user's return but never served. The page writes the locked label to
+// `bw-sw-state` (ASSET_LOCK_KEY) and removes it on unlock or wipe; respondFromAssetCache and storeAsset
+// (sw-asset-cache.js) never serve from, nor store into, a partition of that label. Online the served label is the
+// cookie's, never the locked one, so this is a second guard there; on the OFFLINE path (the last known label) it is the
+// only one, so that path reads the marker fresh, while the online path uses the copy read once per worker start and
+// again on every `sw-refresh-partition`. Here, not in an imported file of its own: a worker that WebKit restarts with
+// the network down must never lack it.
+const ASSET_LOCK_KEY = '/__bw/locked';
+
+const assetLock = { label: null, read: null };
+
+// The locked label, or null. `fresh` reads the marker again instead of the copy.
+function lockedPartition(fresh) {
+    if (fresh || !assetLock.read) {
+        assetLock.read = caches.match(ASSET_LOCK_KEY, { cacheName: ASSET_STATE_CACHE })
+            .then(stored => (stored ? stored.text() : null))
+            .then(label => {
+                assetLock.label = typeof label === 'string' && label ? label : null;
+                return assetLock.label;
+            })
+            .catch(() => assetLock.label);
+    }
+    return assetLock.read;
+}
+
+// The next request reads the marker again (a page changed the lock).
+function forgetLockedPartition() {
+    assetLock.read = null;
+}
+
+// True when `label` must not be served or stored: it is the locked partition.
+function isLockedPartition(label, fresh) {
+    return lockedPartition(fresh).then(locked => locked !== null && locked === label);
+}
+
 
 // Stable-path assets only. The app's own CSS/JS are referenced from BlocwerkApp.razor through
 // @Assets[...], so the page requests them under a build-specific fingerprinted name that this file
@@ -59,7 +101,8 @@ self.addEventListener('activate', event => {
             // probe's size-ladder scratch (up to 1.5 GB a crashed run can leave behind). Every other cache on
             // the origin (the probe's markers in 'bw-storage-probe', on-device wall data in 'bw-a1-*') is not
             // the shell's to delete. Keeping 'bw-a1-*' here, before anything writes it, is what makes rolling
-            // back to this worker or any later one safe once the asset cache ships.
+            // back to this worker or any later one safe once the asset cache ships. The offline client's
+            // 'blocwerk-client-*' are not this handler's either: only a completed fill deletes old versions.
             .then(keys => Promise.all(keys.filter(isDisposableCache).map(k => caches.delete(k))))
             .then(() => self.clients.claim())
     );
@@ -71,8 +114,9 @@ function isDisposableCache(name) {
         || name === 'bw-storage-probe-ladder';
 }
 
-// The one message this protocol version answers: a page asking which worker it is talking to. The reply goes
-// to the sender's MessagePort when it passed one, otherwise back to the sending client.
+// The messages this protocol version answers: a page asking which worker it is talking to, asking it to look the
+// partition up again, or (PR 3.9) to precache the offline client or hold its hand-off for a deploy. The reply goes to
+// the sender's MessagePort when it passed one, otherwise back to the sending client.
 self.addEventListener('message', event => {
     const data = event.data;
     if (!data || typeof data !== 'object' || data.proto !== PROTO) {
@@ -80,18 +124,41 @@ self.addEventListener('message', event => {
     }
     if (data.type === 'sw-info') {
         // `partition`: the label the asset cache serves right now (sw-asset-cache.js), null before any lookup.
-        reply(event, { proto: PROTO, type: 'sw-info', shell: CACHE, partition: assetPartitions.current });
+        // `client`: the offline client's complete version whose shell is in its cache, else null. Read before answering,
+        // so a worker that just started never reports null for a version it has.
+        lifetime(event, presentClient().then(record => reply(event,
+            { proto: PROTO, type: 'sw-info', shell: CACHE, partition: assetPartitions.current, client: record ? record.version : null })));
+    } else if (data.type === 'deploy-pending' || data.type === 'deploy-done') {
+        // An announced deploy holds the offline client's hand-off until the new instance is seen (the offline client section).
+        lifetime(event, data.type === 'deploy-pending' ? holdForDeploy() : endDeployHold());
+    } else if (data.type === 'client-target') {
+        // PR 3.14: where "Continue offline" goes for the page's path, the hand-off rules without the deploy hold (the user
+        // asked), `target` null when the client cannot take it.
+        lifetime(event, clientTarget(data.path).then(target => reply(event, { proto: PROTO, type: 'client-target', target })));
+    } else if (data.type === 'client-precache') {
+        const group3d = CLIENT_3D_GROUP.includes(data.group3d) ? data.group3d : 'none';
+        lifetime(event, precacheClient(group3d).then(result => reply(event, { proto: PROTO, type: 'client-precached', ...result })));
+    } else if (data.type === 'client-store-3d') {
+        // A 3D view opened on a Server page of this device (asset-3d.js): the client's 3D code joins its cache,
+        // never for a device whose page says `none` (the 3D opt-out, no wall saved for 3D) or sends no choice.
+        const allowed = data.group3d === 'precache' || data.group3d === 'opened';
+        lifetime(event, (allowed ? storeClient3d() : Promise.resolve(false))
+            .then(complete => reply(event, { proto: PROTO, type: 'client-stored-3d', complete })));
     } else if (data.type === 'sw-refresh-partition') {
         // Answers `partition-refreshed` with the label served once the lookup is done, so the page can fill at once.
         const clientId = event.source && event.source.id;
         const done = refreshPartition(clientId)
             .then(() => reply(event, { proto: PROTO, type: 'partition-refreshed', partition: assetPartitions.current }))
             .catch(() => undefined);
-        if (typeof event.waitUntil === 'function') {
-            event.waitUntil(done);
-        }
+        lifetime(event, done);
     }
 });
+
+function lifetime(event, promise) {
+    if (typeof event.waitUntil === 'function') {
+        event.waitUntil(promise);
+    }
+}
 
 function reply(event, message) {
     const target = (event.ports && event.ports[0]) || event.source;
@@ -108,14 +175,16 @@ function isBypassed(url, request) {
     return url.pathname.startsWith('/api/') || url.pathname.startsWith('/_blazor');
 }
 
-// Our own CSS/JS/icons. The fingerprinted ones are immutable under a given name, and the ones that
-// keep a stable path (icons, the manifest) change on every deploy, so network-first is right for
-// both: it can never let a stale cache mask a fresh deploy — the exact trap that made a re-composed
-// image still serve the old front-end — and for a fingerprinted URL the `immutable` response is
-// already in the browser's HTTP cache, so the "network" leg costs no round trip.
+// Our own CSS/JS/icons, and the shared UI library's (/_content/Blocwerk.Shared.Ui/). The fingerprinted
+// ones are immutable under a given name, and the ones that keep a stable path (icons, the manifest)
+// change on every deploy, so network-first is right for both: it can never let a stale cache mask a
+// fresh deploy — the exact trap that made a re-composed image still serve the old front-end — and for
+// a fingerprinted URL the `immutable` response is already in the browser's HTTP cache, so the
+// "network" leg costs no round trip.
 function isOwnAsset(url) {
     return url.pathname.startsWith('/css/')
         || url.pathname.startsWith('/js/')
+        || url.pathname.startsWith('/_content/')
         || url.pathname.startsWith('/icons/')
         || url.pathname === '/manifest.webmanifest';
 }
@@ -148,11 +217,19 @@ self.addEventListener('fetch', event => {
         return; // Let the network handle it untouched.
     }
 
-    // Navigations (server-rendered): try the network, fall back to the offline page when it fails.
+    // Navigations (server-rendered): the network, falling back to the offline client or the offline page when it
+    // fails (the offline client section below); a /v/ navigation is the client's shell.
     if (request.mode === 'navigate') {
-        event.respondWith(
-            fetch(request).catch(() => caches.match('/offline.html'))
-        );
+        const offlinePage = () => caches.match('/offline.html');
+        event.respondWith(url.pathname.startsWith(CLIENT_SHELL_PATH)
+            ? respondWithClientShell(request, offlinePage)
+            : navigateWithHandoff(request, offlinePage));
+        return;
+    }
+
+    // The offline client's files, and what its pages load: cache-first from the client caches, then the network.
+    if (isClientFile(url, request)) {
+        event.respondWith(respondWithClientFile(request));
         return;
     }
 
@@ -174,6 +251,473 @@ self.addEventListener('fetch', event => {
         );
     }
 });
+
+// ===== The offline client (PR 3.9) =====
+
+/*
+ * The offline gym client's half of the worker (plan 2026-10-22 §1, PR 3.9). It reads sw-asset-cache.js's partition
+ * and state cache.
+ *
+ * PRECACHE (the fill is the section after this one). A Server page posts `client-precache` once its core fill is
+ * done (client-precache.js: not with Save-Data, once per client version). The worker then fetches the rendered shell `/v/` of the deploy it reaches,
+ * reads the version and the declared routes from the shell's metas, and fills `blocwerk-client-{version}` with every
+ * file the shell names (its scripts and stylesheets, the import map's runtime modules) and every eagerly loaded file of
+ * dotnet.js's boot manifest, then the shell itself. Every one of those URLs is fingerprinted, so a URL names one set of
+ * bytes and one version never mixes with another. Only then is `{version, routes}` written to `bw-sw-state`
+ * (CLIENT_STATE_KEY): the completeness record, and the older versions are deleted. A fill that fails anywhere writes no
+ * record; the next request resumes it (what is already in that version's cache is not fetched again).
+ *
+ * HAND-OFF. A Server-page navigation that fails (no response, a 502/503/504, or none within CLIENT_HANDOFF_MS) is redirected to
+ * the client (`/v` + path + query) when clientHandoff allows it; otherwise the navigation keeps today's answer (the
+ * network's, or offline.html when there is none). A slow server that answers is never cut off unless the client can
+ * take over: the timer only ever adds the redirect, it never ends the wait on its own.
+ *
+ * WHO MAY BE HANDED OVER (clientServable): a complete version whose shell is really in its cache (a record alone is not
+ * enough: the browser, or a fill racing a deletion, can leave a record without its cache), no locked partition on the
+ * device (the 401 lock: a locked partition is never shown), and a last known partition that is a person's (`u-…`),
+ * `anon`, or a kiosk tablet's (`k-…`, PR 3.15: the client then shows only the bound wall's kiosk-class data, whoever
+ * the tablet acts as, and only within 7 days of its last online fill: CLIENT_KIOSK_MAX_AGE_MS). `none` or no label has
+ * nothing offline to show (a kiosk that may keep nothing is `none`). Paths that are
+ * auth, kiosk, dev, admin or the client itself (CLIENT_NEVER) are never handed over, whatever a route says.
+ *
+ * DEPLOYS. A deploy is announced to the pages about 5 s before the restart; the page posts `deploy-pending` and the
+ * worker holds every hand-off until `deploy-done` (the page saw the new instance) or CLIENT_DEPLOY_MAX_MS, so a deploy
+ * keeps today's answers (offline.html, or the proxy's error). An outage nobody announced still hands over.
+ *
+ * THE 3D CODE (PR 3.13). The import map's modules outside /v/ (wall3d.js's graph, three.js, Spark: ~920 KiB) are a group
+ * of their own. The page says which (client-precache.js, `group3d`): `precache` (a desktop with 3D kept) fills them with
+ * the rest; `opened` (a phone or tablet: no background 3D there) fills them only once a 3D view was opened online on this
+ * device (`client-store-3d` stores them into the complete version at once and leaves CLIENT_3D_OPENED_KEY, so later
+ * versions carry them, copying the unchanged files from the version they replace); `none` (the 3D opt-out) never does.
+ * The 3D code is best effort: a version completes without it when one of its files fails (client-3d.js then shows no
+ * 3D offline), and the reply's `with3d` says whether it is all there. Its modules are part of the client version, so a
+ * change to the 3D graph is a new version for every device (decided for 0.3.0: deploys come with tagged releases only;
+ * a version of its own for the 3D code is a follow-up).
+ *
+ * Old versions are deleted only by a fill that completes a newer one (commitClient), never by activate: an activate
+ * could otherwise delete a version another worker is still filling.
+ *
+ * The client's files are answered cache-first from the client caches, for a /v/ page also its /_content/, /js/ and /lib/
+ * files and the imports of the fingerprinted modules it loads (the 3D view, PR 3.13): the server may be down or
+ * hanging, and those files are immutable under their names.
+ */
+const CLIENT_CACHE_PREFIX = 'blocwerk-client-';
+// A fingerprinted /js/ or /lib/ module: one the client's import map resolved (isClientFile).
+const CLIENT_MODULE_REFERRER = /^\/(?:js|lib)\/[\w./-]*\.[a-z0-9]{10}\.js$/;
+const CLIENT_STATE_KEY = '/__bw/client';
+const CLIENT_SHELL_PATH = '/v/';
+const CLIENT_HANDOFF_MS = 4000;
+// A navigation from a /v/ page waits this long instead (the client saw the server answer; see navigateWithHandoff).
+const CLIENT_HANDOFF_FROM_CLIENT_MS = 20000;
+const CLIENT_VERSION = /^[0-9a-f]{16}$/;
+const CLIENT_FILL_PARALLEL = 4;
+// The 3D code's precache choices (the 3D code paragraph above), and the mark a 3D view opened online leaves.
+const CLIENT_3D_GROUP = ['precache', 'opened', 'none'];
+const CLIENT_3D_OPENED_KEY = '/__bw/client-3d-opened';
+// An announced deploy (maintenance.js, via sw-guard.js) holds the hand-off for at most this long: the 502s of a restart
+// are not an outage. Persisted with its end in bw-sw-state, so a restarted worker keeps it, and never longer than this.
+const CLIENT_DEPLOY_KEY = '/__bw/deploy';
+const CLIENT_DEPLOY_MAX_MS = 3 * 60 * 1000;
+// Only a proxy's "the app is not there" hands over; a 500 is the app's own answer.
+const CLIENT_HANDOFF_STATUS = [502, 503, 504];
+// First segments never handed to the client: sign-in, sign-out and OAuth flows, account and settings, kiosk pairing,
+// the dev and admin tools, and /v itself.
+const CLIENT_NEVER = /^\/(?:account|signin[^/]*|signout[^/]*|signing-in|signed-out|signup|login|logout|oauth[^/]*|forgot-password|reset-password|access-denied|join|kiosk|dev|settings|administration|v)(?:\/|$)/i;
+// The boot manifest's eager resources (dotnet.js, between /*json-start*/ and /*json-end*/); build/check-client-bundle.mjs
+// reads the same kinds. Lazy assemblies, satellites and symbols are loaded on demand only, so they are left out.
+const CLIENT_BOOT_KINDS = ['jsModuleNative', 'jsModuleRuntime', 'jsModuleWorker', 'wasmNative', 'icu', 'coreAssembly', 'assembly'];
+
+const clientState = { record: null, read: null, filling: null, storing3d: null };
+
+// The complete version's record `{ version, routes }`, or null. `fresh` reads the state cache again.
+function completeClient(fresh) {
+    if (fresh || !clientState.read) {
+        clientState.read = caches.match(CLIENT_STATE_KEY, { cacheName: ASSET_STATE_CACHE })
+            .then(stored => (stored ? stored.json() : null))
+            .then(record => {
+                const valid = record && CLIENT_VERSION.test(record.version) && Array.isArray(record.routes);
+                clientState.record = valid ? { version: record.version, routes: record.routes.filter(r => typeof r === 'string') } : null;
+                return clientState.record;
+            })
+            .catch(() => clientState.record);
+    }
+    return clientState.read;
+}
+
+const clientCacheName = version => CLIENT_CACHE_PREFIX + version;
+const clientUrl = path => new URL(path, self.location.origin).href;
+const clientFileOk = response => !!response && response.status === 200 && response.type === 'basic' && !response.redirected;
+
+// True when a template (relative to /v/, `{name}` one segment, `{name:guid}` one GUID segment, `{*name}` the rest)
+// covers the path. The `:guid` constraint is honoured as the client's router honours it, so `walls/{WallId:guid}` never
+// covers /walls/create (an edit page the client has no view of).
+const CLIENT_GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function clientRouteCovers(template, pathname) {
+    const want = template.split('/').filter(Boolean);
+    const have = pathname.split('/').filter(Boolean);
+    for (let i = 0; i < want.length; i++) {
+        if (/^\{\*{1,2}[^}]+\}$/.test(want[i])) {
+            return true;
+        }
+        const parameter = /^\{[^}]+\}$/.test(want[i]);
+        if (i >= have.length || !(parameter || want[i].toLowerCase() === have[i].toLowerCase())) {
+            return false;
+        }
+        if (parameter && /:guid\}$/i.test(want[i]) && !CLIENT_GUID.test(have[i])) {
+            return false;
+        }
+    }
+    return want.length === have.length;
+}
+
+// A kiosk tablet's copy is handed over only within this long of its last successful online fill (client-precache.js
+// writes the stamp), as long as a `u-` lock is kept; past it, or with no stamp of its own label, it is treated like `none`.
+const CLIENT_KIOSK_FRESH_KEY = '/__bw/kiosk-fresh';
+const CLIENT_KIOSK_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+// A stamp this far ahead of the clock still counts (clock skew between page and worker is none, so this is small).
+const CLIENT_KIOSK_SKEW_MS = 5 * 60 * 1000;
+
+function clientServable(record, partition, locked, kioskFresh) {
+    if (!record || locked !== null) {
+        return false;
+    }
+    if (/^k-[a-z2-7]{20}$/.test(partition || '')) {
+        return kioskFreshFor(kioskFresh, partition, Date.now());
+    }
+    return partition === 'anon' || /^u-[a-z2-7]{20}$/.test(partition || '');
+}
+
+function kioskFreshFor(stamp, partition, now) {
+    return !!stamp && stamp.label === partition && Number.isFinite(stamp.at)
+        && now - stamp.at <= CLIENT_KIOSK_MAX_AGE_MS && stamp.at - now <= CLIENT_KIOSK_SKEW_MS;
+}
+
+function kioskStamp() {
+    return caches.match(CLIENT_KIOSK_FRESH_KEY, { cacheName: ASSET_STATE_CACHE })
+        .then(stored => (stored ? stored.json() : null))
+        .catch(() => null);
+}
+
+// What may serve the client right now: the complete record when the device's state allows it, else null.
+// The complete record when its version's shell is in its cache, else null.
+function presentClient() {
+    return completeClient(false)
+        .then(record => (record
+            ? caches.match(clientUrl(CLIENT_SHELL_PATH), { cacheName: clientCacheName(record.version) }).then(hit => (hit ? record : null))
+            : null))
+        .catch(() => null);
+}
+
+// True while an announced deploy holds the hand-off. Read from the state cache each time (failures are rare): a worker
+// restarted mid-deploy keeps it, and an end in the past, unreadable, or further away than the maximum (a clock that
+// jumped back) ends it at once, so it can never stay on.
+function deployHolding() {
+    return caches.match(CLIENT_DEPLOY_KEY, { cacheName: ASSET_STATE_CACHE })
+        .then(stored => (stored ? stored.text() : null))
+        .then(text => {
+            if (text === null) {
+                return false;
+            }
+            const until = Number(text);
+            const now = Date.now();
+            if (Number.isFinite(until) && until > now && until <= now + CLIENT_DEPLOY_MAX_MS) {
+                return true;
+            }
+            return endDeployHold().then(() => false);
+        })
+        .catch(() => false);
+}
+
+function holdForDeploy() {
+    return caches.open(ASSET_STATE_CACHE)
+        .then(cache => cache.put(CLIENT_DEPLOY_KEY, new Response(String(Date.now() + CLIENT_DEPLOY_MAX_MS))))
+        .catch(() => undefined);
+}
+
+function endDeployHold() {
+    return caches.open(ASSET_STATE_CACHE).then(cache => cache.delete(CLIENT_DEPLOY_KEY)).catch(() => undefined);
+}
+
+function servableClient() {
+    return Promise.all([presentClient(), lastKnownPartition(), lockedPartition(true), kioskStamp()])
+        .then(([record, partition, locked, fresh]) => (clientServable(record, partition, locked, fresh) ? record : null))
+        .catch(() => null);
+}
+
+// The client URL for a Server path the client covers on this device, or null (the deploy hold aside).
+function clientTarget(path) {
+    let url;
+    try {
+        url = new URL(typeof path === 'string' && path.startsWith('/') && !path.startsWith('//') ? path : '/', self.location.origin);
+    } catch (e) {
+        return Promise.resolve(null);
+    }
+    if (CLIENT_NEVER.test(url.pathname)) {
+        return Promise.resolve(null);
+    }
+    return servableClient()
+        .then(record => (record && record.routes.some(route => clientRouteCovers(route, url.pathname)) ? `/v${url.pathname}${url.search}` : null))
+        .catch(() => null);
+}
+
+// The client URL that takes over a failed navigation to `url`, or null.
+function clientHandoff(url) {
+    if (CLIENT_NEVER.test(url.pathname)) {
+        return Promise.resolve(null);
+    }
+    return Promise.all([servableClient(), deployHolding()]).then(([record, holding]) => {
+        const covered = !holding && !!record && record.routes.some(route => clientRouteCovers(route, url.pathname));
+        return covered ? `/v${url.pathname}${url.search}` : null;
+    });
+}
+
+const clientRedirect = path => Response.redirect(new URL(path, self.location.origin).href, 302);
+
+// A Server-page navigation: the network's answer, unless it fails and the client can take over (see HAND-OFF). A
+// navigation from a /v/ page (the client's hand-back, PR 3.14) gets a 20 s timer, not 4 s: the client saw the server answer,
+// so a slow page is waited for and a tap does not bounce straight back into the client; but a connection that hangs
+// (no error) still ends in the client, not the browser's own minutes-long timeout.
+function navigateWithHandoff(request, offlinePage) {
+    const url = new URL(request.url);
+    let target = null;
+    const handoff = () => target || (target = clientHandoff(url).catch(() => null));
+    const fromClient = typeof request.referrer === 'string' && request.referrer.startsWith(self.location.origin + CLIENT_SHELL_PATH);
+    return new Promise(resolve => {
+        const timer = setTimeout(() => handoff().then(path => {
+            if (path) {
+                resolve(clientRedirect(path));
+            }
+        }), fromClient ? CLIENT_HANDOFF_FROM_CLIENT_MS : CLIENT_HANDOFF_MS);
+        const settle = answer => {
+            clearTimeout(timer);
+            resolve(answer);
+        };
+        fetch(request).then(
+            response => (CLIENT_HANDOFF_STATUS.includes(response.status) ? handoff().then(path => settle(path ? clientRedirect(path) : response)) : settle(response)),
+            () => handoff().then(path => settle(path ? clientRedirect(path) : offlinePage())));
+    });
+}
+
+// A /v/ navigation: the complete version's shell when the client may be served, else the network (offline.html when
+// it fails). The shell's base is /v/, so this one copy opens every client route.
+function respondWithClientShell(request, offlinePage) {
+    return servableClient()
+        .then(record => (record ? caches.match(clientUrl(CLIENT_SHELL_PATH), { cacheName: clientCacheName(record.version) }) : undefined))
+        .catch(() => undefined)
+        .then(cached => cached || fetch(request).catch(() => offlinePage()));
+}
+
+// True for a request the client caches answer first: the client's own files, and the shared files a /v/ page loads,
+// including the 3D view's modules (PR 3.13): a module's imports carry the importing module as their referrer, and only
+// the client's import map resolves /js/ and /lib/ modules to fingerprinted URLs (the Server pages import plain paths).
+function isClientFile(url, request) {
+    if (url.pathname.startsWith(CLIENT_SHELL_PATH)) {
+        return true;
+    }
+    const origin = self.location.origin;
+    const referrer = typeof request.referrer === 'string' && request.referrer.startsWith(origin + '/') ? request.referrer.slice(origin.length) : '';
+    const fromClient = referrer.startsWith(CLIENT_SHELL_PATH) || CLIENT_MODULE_REFERRER.test(referrer.split(/[?#]/)[0]);
+    return fromClient && /^\/(?:_content|js|lib)\//.test(url.pathname);
+}
+
+function respondWithClientFile(request) {
+    return caches.keys()
+        .then(names => names.filter(name => name.startsWith(CLIENT_CACHE_PREFIX)))
+        .then(names => names.reduce((found, cacheName) => found.then(hit => hit
+            || caches.match(request.url, { cacheName, ignoreVary: true })), Promise.resolve(undefined)))
+        .catch(() => undefined)
+        // A failed network leg still finds a copy the shell cache keeps (/js/, /_content/), as the own-asset rule does.
+        .then(hit => hit || fetch(request).catch(error => caches.match(request).then(copy => copy || Promise.reject(error))));
+}
+
+completeClient(false);
+
+// ----- The offline client's precache -----
+
+const clientMeta = (html, name) => {
+    const match = new RegExp(`<meta name="${name}" content="([^"]*)"`).exec(html);
+    return match ? match[1] : null;
+};
+
+// The shell of the deploy the worker reaches: its markup, version and routes. A redirect (a kiosk session is sent
+// elsewhere) or any other answer than the shell's 200 fails the fill.
+function readClientShell() {
+    return fetch(CLIENT_SHELL_PATH, { credentials: 'same-origin', cache: 'no-store', redirect: 'error' }).then(response => {
+        if (!clientFileOk(response)) {
+            throw new Error('client shell: ' + response.status);
+        }
+        return response.text().then(html => {
+            const version = clientMeta(html, 'bw-client-version');
+            const routes = clientMeta(html, 'bw-client-routes');
+            if (!CLIENT_VERSION.test(version || '') || routes === null) {
+                throw new Error('client shell: no version');
+            }
+            // Only the type: the body is decoded text now, so the network's encoding and length no longer apply.
+            const headers = { 'content-type': response.headers.get('content-type') || 'text/html; charset=utf-8' };
+            return { html, version, routes: routes.split(/\s+/).filter(Boolean), headers };
+        });
+    });
+}
+
+// Every root-relative file the shell names: script and stylesheet URLs, and the import map's modules, those outside
+// /v/ apart (`modules3d`, the 3D code: the client's own runtime is all under /v/).
+function clientShellFiles(html) {
+    const files = [];
+    const tag = /<(?:script|link)\b[^>]*?\s(?:src|href)="(\/(?!\/)[^"]*)"/g;
+    for (let match = tag.exec(html); match; match = tag.exec(html)) {
+        files.push(match[1]);
+    }
+    const map = /<script type="importmap"[^>]*>([\s\S]*?)<\/script>/.exec(html);
+    const imports = map ? (JSON.parse(map[1]).imports || {}) : {};
+    const modules3d = [];
+    for (const [name, url] of Object.entries(imports)) {
+        if (typeof url === 'string' && /^\/(?!\/)/.test(url)) {
+            (name.startsWith(CLIENT_SHELL_PATH) ? files : modules3d).push(url);
+        }
+    }
+    return { files, modules3d, dotnet: imports['/v/_framework/dotnet.js'] || null };
+}
+
+// The eager files of dotnet.js's boot manifest, beside dotnet.js. An SDK that changes the layout fails the fill.
+function clientBootFiles(dotnetUrl, source) {
+    const start = source.indexOf('/*json-start*/');
+    const end = source.indexOf('/*json-end*/');
+    if (start < 0 || end < start) {
+        throw new Error('client boot manifest: not found');
+    }
+    const resources = JSON.parse(source.slice(start + 14, end)).resources || {};
+    const base = dotnetUrl.slice(0, dotnetUrl.lastIndexOf('/') + 1);
+    return CLIENT_BOOT_KINDS
+        .flatMap(kind => (Array.isArray(resources[kind]) ? resources[kind] : []))
+        .map(resource => resource && resource.name)
+        .filter(name => typeof name === 'string' && /^[\w.-]+$/.test(name))
+        .map(name => base + name);
+}
+
+// One file into the version's cache, unless it is already there (a resumed fill), copied from `previous` (the version
+// being replaced) when that holds the same fingerprinted URL, else fetched. Resolves with its response.
+function storeClientFile(cache, path, previous = null) {
+    const key = clientUrl(path);
+    return cache.match(key).then(hit => hit || Promise.resolve(previous && previous.match(key)).then(copy => (copy
+        ? cache.put(key, copy.clone()).then(() => copy)
+        : fetch(key, { credentials: 'same-origin' }).then(response => {
+            if (!clientFileOk(response)) {
+                throw new Error('client file: ' + path);
+            }
+            return cache.put(key, response.clone()).then(() => response);
+        }))));
+}
+
+// `reuse(path)`: the cache to copy that file from instead of fetching it (storeClientFile's `previous`), or null.
+function storeClientFiles(cache, paths, reuse = () => null) {
+    const queue = [...new Set(paths)];
+    const next = () => (queue.length > 0 ? storeClientFile(cache, queue[0], reuse(queue.shift())).then(next) : Promise.resolve());
+    return Promise.all(Array.from({ length: Math.min(CLIENT_FILL_PARALLEL, queue.length) }, next));
+}
+
+// Whether this version's fill takes the 3D code (the 3D code paragraph above).
+function clientWants3d(group3d) {
+    return group3d === 'precache' || (group3d === 'opened'
+        && caches.match(CLIENT_3D_OPENED_KEY, { cacheName: ASSET_STATE_CACHE }).then(hit => !!hit, () => false));
+}
+
+// The 3D code into a version's cache, best effort: resolves whether all of it is there.
+function storeClient3dFiles(cache, modules3d, previous = null) {
+    return storeClientFiles(cache, modules3d, () => previous).then(() => true, () => false);
+}
+
+// The files first, the shell last: a version's cache holds a shell only when everything it names is there, the 3D code
+// apart. That comes after, only when `with3d`, best effort, the files `previous` (the version being replaced) holds under
+// the same URL copied, not fetched. Resolves whether the 3D code is all there.
+function fillClientVersion(cache, shell, with3d, previous) {
+    const { files, modules3d, dotnet } = clientShellFiles(shell.html);
+    if (!dotnet) {
+        throw new Error('client shell: no dotnet.js');
+    }
+    return storeClientFile(cache, dotnet)
+        .then(response => response.text())
+        .then(source => storeClientFiles(cache, [...files, ...clientBootFiles(dotnet, source)]))
+        .then(() => cache.put(clientUrl(CLIENT_SHELL_PATH), new Response(shell.html, { status: 200, headers: shell.headers })))
+        .then(() => with3d && storeClient3dFiles(cache, modules3d, previous));
+}
+
+// The complete version's cache, when its shell is there (never creates one).
+function presentClientCache(record) {
+    return !record ? Promise.resolve(null)
+        : caches.match(clientUrl(CLIENT_SHELL_PATH), { cacheName: clientCacheName(record.version) })
+            .then(hit => (hit ? caches.open(clientCacheName(record.version)) : null));
+}
+
+// The completeness record, then every other version goes.
+function commitClient(shell) {
+    const record = { version: shell.version, routes: shell.routes };
+    return caches.open(ASSET_STATE_CACHE)
+        .then(cache => cache.put(CLIENT_STATE_KEY, new Response(JSON.stringify(record), { headers: { 'content-type': 'application/json' } })))
+        .then(() => {
+            clientState.record = record;
+            clientState.read = Promise.resolve(record);
+            return caches.keys();
+        })
+        .then(names => Promise.all(names
+            .filter(name => name.startsWith(CLIENT_CACHE_PREFIX) && name !== clientCacheName(record.version))
+            .map(name => caches.delete(name))))
+        .then(() => record.version);
+}
+
+function fillClient(group3d) {
+    const connection = self.navigator && self.navigator.connection;
+    if (connection && connection.saveData) {
+        return Promise.reject(new Error('client precache: Save-Data'));
+    }
+    return Promise.all([readClientShell(), completeClient(true), clientWants3d(group3d)])
+        .then(([shell, record, with3d]) => caches.open(clientCacheName(shell.version)).then(cache => cache.match(clientUrl(CLIENT_SHELL_PATH))
+            .then(present => (record && record.version === shell.version && present
+                // Complete already: a desktop that skipped the 3D code before (the opt-out was on) gets it now.
+                ? Promise.resolve(with3d && storeClient3dFiles(cache, clientShellFiles(shell.html).modules3d))
+                : presentClientCache(record).then(previous => fillClientVersion(cache, shell, with3d, previous))
+                    .then(stored => commitClient(shell).then(() => stored)))
+                .then(stored => ({ version: shell.version, with3d: stored === true })))));
+}
+
+// `client-precache`: one fill at a time; resolves `{ version, complete, with3d }` (version null when it is unknown).
+function precacheClient(group3d) {
+    if (!clientState.filling) {
+        clientState.filling = fillClient(group3d)
+            .then(done => ({ ...done, complete: true }), () => ({ version: clientState.record ? clientState.record.version : null, complete: false }))
+            .then(result => {
+                clientState.filling = null;
+                return result;
+            });
+    }
+    return clientState.filling;
+}
+
+// `client-store-3d`: marks that a 3D view was opened online here, then stores the 3D code into the complete version
+// (after a running fill, so it lands in the version that fill completes). Resolves whether the code is all there.
+function storeClient3d() {
+    const connection = self.navigator && self.navigator.connection;
+    if (connection && connection.saveData) {
+        return Promise.resolve(false);
+    }
+    if (!clientState.storing3d) {
+        clientState.storing3d = caches.open(ASSET_STATE_CACHE)
+            .then(state => state.put(CLIENT_3D_OPENED_KEY, new Response(String(Date.now()))))
+            .then(() => clientState.filling)
+            .then(() => completeClient(true))
+            .then(presentClientCache)
+            .then(cache => cache && cache.match(clientUrl(CLIENT_SHELL_PATH))
+                .then(shell => shell.text())
+                .then(html => storeClient3dFiles(cache, clientShellFiles(html).modules3d)))
+            .then(done => !!done, () => false)
+            .then(done => {
+                clientState.storing3d = null;
+                return done;
+            });
+    }
+    return clientState.storing3d;
+}
+
+// ===== Web Push and notification taps =====
 
 // Web Push (RFC 8291 / VAPID). The server sends a small JSON payload with lowercase fields
 // (title, body, url, tag, icon); anything missing falls back to a sensible default so a payload the

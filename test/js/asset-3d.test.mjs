@@ -54,7 +54,8 @@ test('no notice once the 3D is on the device, after Continue on this page, after
 
     await page.win.bwAsset3d.accept(W2, false);
     assert.equal((await page.win.bwAsset3d.gate(W2)).ask, false, 'continued on this page');
-    assert.equal(page.storage.size, 0, 'nothing remembered without "Don\'t ask again"');
+    // (blocwerk-asset-identity is the session's identity mirror, not a notice.)
+    assert.deepEqual([...page.storage.keys()].filter(k => k !== 'blocwerk-asset-identity'), [], 'nothing remembered without "Don\'t ask again"');
 
     const other = page3d();
     await other.boot();

@@ -1,6 +1,7 @@
 @using Microsoft.AspNetCore.Components.Web
 @using Blocwerk.Web.Components
 @using Blocwerk.Web.Components.Layout
+@using Blocwerk.Web.Components.OfflineClient
 @using Blocwerk.Core.Abstractions
 @inject ICurrentUserService CurrentUserService
 @inject IKioskContext KioskContext
@@ -25,6 +26,8 @@
     <link rel="manifest" href="manifest.webmanifest" />
     <meta name="theme-color" content="#16162a" />
     <CachePartitionMeta />
+    @* The offline client version this deploy serves (PR 3.9): client-precache.js asks the worker to precache it. *@
+    <meta name="bw-client-version" content="@OfflineClientShellAssets.Version(Assets)" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Blocwerk" />
@@ -36,7 +39,7 @@
     <link rel="stylesheet" href="@Assets["css/app.css"]" />
     <link rel="stylesheet" href="@Assets["css/pages.css"]" />
     <link rel="stylesheet" href="@Assets["css/usage-heat.css"]" />
-    <link rel="stylesheet" href="@Assets["css/hold-tap.css"]" />
+    <link rel="stylesheet" href="@Assets["_content/Blocwerk.Shared.Ui/css/hold-tap.css"]" />
     <link rel="stylesheet" href="@Assets["css/hybrid-zoom.css"]" />
     <link rel="stylesheet" href="@Assets["css/boulder-focus.css"]" />
     <link rel="stylesheet" href="@Assets["css/components.css"]" />
@@ -97,6 +100,19 @@
        never touched by a re-render. wwwroot/js/blazor-boot.js listens on it; the branded UI is the
        status pill, so this element itself stays invisible. *@
     <div id="components-reconnect-modal" class="bw-reconnect-sentinel" aria-hidden="true"></div>
+
+    @* The 401 lock (Phase 3 PR 3.5): this device holds offline data of a session that expired, kept hidden for that
+       user's return (Blocwerk.Shared.Ui's js/asset-lock.js unhides it). Outside <Routes /> like the sentinel above;
+       the sign-in link is a full page load, as every identity transition is. *@
+    <div id="bw-offline-lock" class="bw-install bw-offline-lock" role="region" aria-label="Offline data on this device" hidden>
+        <div class="bw-install-body">
+            <p class="bw-install-title">Sign in to keep your offline data.</p>
+        </div>
+        <div class="bw-install-actions">
+            <a class="bw-install-accept" href="/account/login" data-enhance-nav="false">Sign in</a>
+            <button type="button" class="bw-offline-lock-clear" data-bw-lock-clear>Clear offline data</button>
+        </div>
+    </div>
 
     @* Blazor unhides this on an unhandled exception on the circuit. Without it a failed
        server-side call is silent, which is how a button ends up stuck in its "busy" state
@@ -211,25 +227,40 @@
     <script src="@Assets["js/status-sources.js"]"></script>
     <script src="@Assets["js/status-pill.js"]"></script>
     <script src="@Assets["js/offline-status.js"]"></script>
+    @* "Continue offline" in the pill's panel while the circuit is down (PR 3.14): asks the worker for the offline
+       client's twin of this page; after offline-status.js, whose render it calls once the worker answers. *@
+    <script src="@Assets["js/client-continue.js"]"></script>
     <script src="@Assets["js/pwa.js"]"></script>
-    @* The page side of the on-device wall-asset cache: the ledger, budgets, wipe rules, manifests, the page's
-       partition session, the fill plan and its runner, then
+    @* The worker-loss guard (PR 3.9): a controller that no longer answers sw-info reloads the page once the server is
+       reachable, so the next offline navigation has a worker to catch it. The offline client's shell loads it too. *@
+    <script src="@Assets["js/sw-guard.js"]"></script>
+    @* The page side of the on-device wall-asset cache: the ledger, budgets, wipe rules, manifests, data documents and
+       the viewer's own marks (asset-mine.js, u- pages only), the page's partition session, the fill plan and its runner, then
        the coordinator, which reads the others lazily off window and boots on DOM-ready. After pwa.js only for
        readability; it works with any worker, or none. asset-notice.js feeds StorageNotice.razor; asset-3d.js the 3D
        view's mobile-data notice and "Save 3D offline" (Wall3DStage); asset-report.js (with asset-clear.js)
-       OfflineStorageCard.razor and the "Offline mode available" bubble. *@
-    <script src="@Assets["js/asset-ledger.js"]"></script>
+       OfflineStorageCard.razor and the "Offline mode available" bubble. asset-lock.js is the 401 lock (PR 3.5) and drives
+       #bw-offline-lock below; asset-ledger-idb.js is the ledger's IndexedDB half. The ledger, wipe, lock, session
+       and clear modules live in Blocwerk.Shared.Ui (PR 3.7), so the offline client loads the same files; the order
+       is unchanged. *@
+    <script src="@Assets["_content/Blocwerk.Shared.Ui/js/asset-ledger-idb.js"]"></script>
+    <script src="@Assets["_content/Blocwerk.Shared.Ui/js/asset-ledger.js"]"></script>
     <script src="@Assets["js/asset-budget.js"]"></script>
-    <script src="@Assets["js/asset-wipe.js"]"></script>
+    <script src="@Assets["_content/Blocwerk.Shared.Ui/js/asset-wipe.js"]"></script>
+    <script src="@Assets["_content/Blocwerk.Shared.Ui/js/asset-lock.js"]"></script>
     <script src="@Assets["js/asset-manifest.js"]"></script>
+    <script src="@Assets["js/asset-data.js"]"></script>
+    <script src="@Assets["js/asset-mine.js"]"></script>
     <script src="@Assets["js/asset-store.js"]"></script>
-    <script src="@Assets["js/asset-session.js"]"></script>
+    <script src="@Assets["_content/Blocwerk.Shared.Ui/js/asset-session.js"]"></script>
     <script src="@Assets["js/asset-plan.js"]"></script>
     <script src="@Assets["js/asset-fill.js"]"></script>
     <script src="@Assets["js/asset-cache.js"]"></script>
+    @* After the coordinator: once its first fill is done, the worker precaches the offline client (PR 3.9). *@
+    <script src="@Assets["js/client-precache.js"]"></script>
     <script src="@Assets["js/asset-notice.js"]"></script>
     <script src="@Assets["js/asset-3d.js"]"></script>
-    <script src="@Assets["js/asset-clear.js"]"></script>
+    <script src="@Assets["_content/Blocwerk.Shared.Ui/js/asset-clear.js"]"></script>
     <script src="@Assets["js/asset-report.js"]"></script>
     @* Defines bwPush; inert until NotificationPrompt.razor / the profile notification card calls it.
        No parse-time event to catch (unlike install-prompt.js), so it loads with the deferred bundle. *@

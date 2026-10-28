@@ -1,0 +1,25 @@
+@* A store state with nothing to show: its title, a line of text, the way online (the Server twin of this very path)
+   and "Clear offline data". *@
+<section class="bw-client-empty">
+    <h1>@Title</h1>
+    <p>@Text</p>
+    <a class="bw-client-online" href="@Online">Open it online</a>
+    <ClearOfflineData />
+</section>
+
+@code {
+    /// <summary>Gets or sets the notice's heading.</summary>
+    [Parameter]
+    [EditorRequired]
+    public string Title { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the line under it.</summary>
+    [Parameter]
+    [EditorRequired]
+    public string Text { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the Server page of the client's path (<see cref="ClientRoutes.ServerPath"/>).</summary>
+    [Parameter]
+    [EditorRequired]
+    public string Online { get; set; } = "/";
+}

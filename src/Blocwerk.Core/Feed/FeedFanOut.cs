@@ -9,7 +9,8 @@ namespace Blocwerk.Core.Feed;
 
 /// <summary>
 /// Hands one read's rows to a wall's subscribers, each narrowed to the audiences its viewer belongs to (and a kiosk's
-/// activity rows to what it may read now, <see cref="FeedKioskActivity"/>). Envelopes are built
+/// activity rows to what it may read now, <see cref="FeedKioskActivity"/>), and an outside viewer's comment rows to the
+/// boulders it may see now (<see cref="FeedOutsideComments"/>). Envelopes are built
 /// once per visibility rule, not per subscriber. A subscriber that throws is logged and skipped; the others still get
 /// their batch.
 /// </summary>
@@ -30,7 +31,8 @@ internal static class FeedFanOut
             var visible = new List<FeedEnvelope>();
             for (var i = 0; i < rows.Count; i++)
             {
-                if (FeedKioskActivity.Allows(subscriber.Viewer, rows[i], hydrated))
+                if (FeedKioskActivity.Allows(subscriber.Viewer, rows[i], hydrated)
+                    && FeedOutsideComments.Allows(subscriber.Viewer, rows[i], hydrated))
                 {
                     visible.Add(envelopes[i]);
                 }

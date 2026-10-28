@@ -1,0 +1,7 @@
+@* The client's router. Every path the client does not declare (ClientRoutes.Declared, none yet) lands on
+   NotOffline, which links to the Server page of the same path with a full navigation. *@
+<Router AppAssembly="typeof(App).Assembly" NotFoundPage="typeof(Pages.NotOffline)">
+    <Found Context="routeData">
+        <RouteView RouteData="routeData" DefaultLayout="typeof(ClientLayout)" />
+    </Found>
+</Router>

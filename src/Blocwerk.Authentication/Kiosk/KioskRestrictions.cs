@@ -173,6 +173,12 @@ public static class KioskRestrictions
         "/api",
         "/media",
 
+        // The offline client (Phase 3, PR 3.15): one shell and its files, the same bytes for every path and identity,
+        // with no data in them. The worker precaches it from /v/ and hands a failed gym navigation to it; on a tablet
+        // it then reads only the bound wall's kiosk-class cache, never marks (client-store.js). Refused, the tablet's
+        // precache failed and an outage showed offline.html.
+        "/v",
+
         // Blazor's own plumbing: the circuit hub, the runtime, and Razor class library assets.
         "/_blazor",
         "/_framework",

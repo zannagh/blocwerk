@@ -1,0 +1,10 @@
+@page "/not-offline"
+@inject NavigationManager Navigation
+@* What every client path shows until a view declares it (PR 3.11 on): the path is not saved offline, and a full
+   navigation to the Server page of the same path. The route itself is the router's NotFoundPage, never a gym route,
+   so ClientRoutes.Declared does not list it. *@
+<section class="bw-client-empty">
+    <h1>Not available offline</h1>
+    <p>This page is not saved on this device.</p>
+    <a class="bw-client-online" href="@ClientRoutes.ServerPath(Navigation.ToBaseRelativePath(Navigation.Uri))">Open it online</a>
+</section>

@@ -2,8 +2,8 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
-using Blocwerk.Core.Entities;
-using Blocwerk.Web.Components.Shared;
+using Blocwerk.Contracts.Documents;
+using Blocwerk.Shared.Ui.Overlay;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 
@@ -28,22 +28,22 @@ public class HoldShapeMarkupTests
         "<rect x=\"38.60\" y=\"28.60\" width=\"2.80\" height=\"2.80\" rx=\"0.3\" fill=\"none\" stroke=\"#00f\" stroke-width=\"0.3\" "
         + "style=\"cursor: inherit; pointer-events: none;\"></rect>";
 
-    private static readonly List<ShapePoint> Outer =
+    private static readonly List<DocumentPoint> Outer =
     [
-        new() { Dx = -0.01, Dy = -0.01 }, new() { Dx = 0.012, Dy = -0.008 },
-        new() { Dx = 0.009, Dy = 0.011 }, new() { Dx = -0.011, Dy = 0.007 },
+        new(-0.01, -0.01), new(0.012, -0.008),
+        new(0.009, 0.011), new(-0.011, 0.007),
     ];
 
-    private static readonly List<List<ShapePoint>> Hole =
+    private static readonly List<IReadOnlyList<DocumentPoint>> Hole =
     [
-        [new() { Dx = -0.003, Dy = -0.002 }, new() { Dx = 0.003, Dy = -0.002 }, new() { Dx = 0, Dy = 0.003 }],
+        [new(-0.003, -0.002), new(0.003, -0.002), new(0, 0.003)],
     ];
 
     [Fact]
     public void SolidHolds_RenderExactlyAsBeforePocketSupport()
     {
         Assert.Equal(BaselinePolygon, HoldShapeRenderer.Render(PolygonParams(holes: null)));
-        Assert.Equal(BaselinePolygon, HoldShapeRenderer.Render(PolygonParams(holes: new List<List<ShapePoint>>())));
+        Assert.Equal(BaselinePolygon, HoldShapeRenderer.Render(PolygonParams(holes: new List<IReadOnlyList<DocumentPoint>>())));
         Assert.Equal(BaselineCircle, HoldShapeRenderer.Render(new()
         {
             ["X"] = 0.4, ["Y"] = 0.3, ["Radius"] = 0.02, ["Fill"] = "none", ["Stroke"] = "#0f0", ["StrokeWidth"] = "0.3", ["OnClick"] = Click(),
@@ -96,7 +96,7 @@ public class HoldShapeMarkupTests
     [Fact]
     public void DegenerateHoleRings_AreSkipped_AndAloneDoNotMakeAPocket()
     {
-        var degenerate = new List<List<ShapePoint>> { new() { new() { Dx = 0, Dy = 0 }, new() { Dx = 0.001, Dy = 0 } } };
+        var degenerate = new List<IReadOnlyList<DocumentPoint>> { new List<DocumentPoint> { new(0, 0), new(0.001, 0) } };
 
         Assert.False(HoldShapeMarkup.HasPocket(Outer, degenerate));
         Assert.False(HoldShapeMarkup.HasPocket(null, Hole));
@@ -104,7 +104,7 @@ public class HoldShapeMarkupTests
         Assert.Equal(1, HoldShapeMarkup.PocketPath(0.4, 0.3, Outer, [.. Hole, .. degenerate]).Split('M').Length - 2);
     }
 
-    private static Dictionary<string, object?> PolygonParams(List<List<ShapePoint>>? holes) => new()
+    private static Dictionary<string, object?> PolygonParams(List<IReadOnlyList<DocumentPoint>>? holes) => new()
     {
         ["X"] = 0.4, ["Y"] = 0.3, ["Radius"] = 0.02, ["ShapePoints"] = Outer, ["ShapeHoles"] = holes,
         ["Fill"] = "rgba(255,0,0,0.2)", ["Stroke"] = "#f00", ["StrokeWidth"] = "0.35", ["Dash"] = "0.6 0.4",

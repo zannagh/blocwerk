@@ -1,0 +1,14 @@
+@inject NavigationManager Navigation
+@* One kind of a wall's data the device does not hold (its holds, boulders or comments are cached separately): said as
+   that, never as a fact about the wall ("No boulders yet"), with the Server page of this path. *@
+<p class="empty-msg bw-client-not-saved" data-bw-not-saved>
+    @Text
+    <a class="bw-client-online" href="@ClientRoutes.ServerPath(Navigation.ToBaseRelativePath(Navigation.Uri))">Open it online</a>
+</p>
+
+@code {
+    /// <summary>Gets or sets the sentence ("Comments are not saved on this device.").</summary>
+    [Parameter]
+    [EditorRequired]
+    public string Text { get; set; } = string.Empty;
+}
