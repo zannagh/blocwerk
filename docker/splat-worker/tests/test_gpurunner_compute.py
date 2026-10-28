@@ -399,3 +399,30 @@ def test_child_ignores_the_profile_override(monkeypatch):
     monkeypatch.setattr(runner, "run_job", lambda kind, job_dir, conn: seen.setdefault("override", worker_settings.profile_override))
     compute_child._run_job_tagged("splat-prepare", "/nonexistent", None)
     assert seen["override"] == ""
+
+
+def test_runner_takes_the_servers_largest_capture(monkeypatch):
+    """A runner without CAPTURE_MAX_* / MAX_PHOTOS must not refuse a capture the server accepted (The Attic has 781
+    photos; the worker's own default is 600 images), in the runner and in the spawned child alike."""
+    from splatworker import runner
+    from splatworker.gpurunner import runner_settings
+    from splatworker.settings import settings as worker_settings
+    monkeypatch.setattr(worker_settings, "max_photos", 600)
+    monkeypatch.setattr(worker_settings, "splat_timeout_s", 4 * 3600)
+    for name in ("MAX_PHOTOS", "SPLAT_TIMEOUT_S"):
+        monkeypatch.delenv(name, raising=False)
+    seen = {}
+    monkeypatch.setattr(runner, "run_job", lambda kind, job_dir, conn: seen.update(
+        photos=worker_settings.max_photos, timeout=worker_settings.splat_timeout_s))
+    compute_child._run_job_tagged("splat-prepare", "/nonexistent", None)
+    assert seen["photos"] == runner_settings.server_max_images() == 1415
+    assert seen["timeout"] > 4 * 3600
+
+
+def test_runner_keeps_an_explicit_photo_cap(monkeypatch):
+    from splatworker.gpurunner import runner_settings
+    from splatworker.settings import settings as worker_settings
+    monkeypatch.setattr(worker_settings, "max_photos", 300)
+    monkeypatch.setattr(worker_settings, "splat_timeout_s", 1800)
+    runner_settings.apply({"MAX_PHOTOS": "300", "SPLAT_TIMEOUT_S": "1800"})
+    assert worker_settings.max_photos == 300 and worker_settings.splat_timeout_s == 1800

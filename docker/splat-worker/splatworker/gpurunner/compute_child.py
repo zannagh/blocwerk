@@ -56,11 +56,10 @@ class _TaggedConn:
 
 
 def _as_runner():
-    """This (spawned) child imported the settings afresh from the environment. A 3D runner never overrides the
-    quality the server asked for: gpurunner/__main__.py clears SPLAT_PROFILE_OVERRIDE in the parent, so clear it here
-    too, or a prepare writes that profile into the training bundle (a draft capture trained as ultra)."""
-    from ..settings import settings
-    settings.profile_override = ""
+    """This (spawned) child imported the settings afresh from the environment: apply the runner's own settings again
+    (runner_settings: no SPLAT_PROFILE_OVERRIDE, else a draft capture trains as ultra; the server's photo cap)."""
+    from . import runner_settings
+    runner_settings.apply()
 
 
 def _run_job_tagged(kind, job_dir, conn):
