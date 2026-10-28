@@ -21,7 +21,7 @@ Real data: The Attic, capture `bbb2a0cf` (781 photos, 719 solved cameras, 3127 m
 
 | case | blend budget | limit | anon peak | time | outcome |
 |---|---|---|---|---|---|
-| solve (719 photos) | – | 1536m | 0.24 GiB (memory.peak 0.40 GiB) | > 25 min in free BA | still running at the time of writing; memory flat |
+| solve (719 photos) | – | 1536m | 0.25 GiB (memory.peak 0.40 GiB) | 2399 s (35 min of it the free BA) | ok; memory flat, time is the issue, not memory |
 | solve-sfm (353 images) | – | none / 1536m | 0.49 GiB | 32–36 s | ok |
 | textures standard | 2 GB (old default) | none | 3.14 GiB | 242 s | ok; **would not fit 1.5 GiB** |
 | textures high | 2 GB | none | 3.50 GiB | 465 s | ok; would not fit |
