@@ -50,9 +50,9 @@ The switch is one flag, `SPLATSERVICE_ONRUNNERS` in the box's `.env` (the compos
 
    What changes for the prepare once it runs in `gpu-runner-prod` instead of `splat-cpu`: COLMAP runs with the CUDA
    image's defaults (GPU matching, `COLMAP_MAX_FEATURES=16384`, `COLMAP_MAX_MATCHES=32768`) instead of splat-cpu's
-   `.env` values, and the runner's image cap is `max(600, CAPTURE_MAX_PHOTOS + CAPTURE_MAX_VIDEO_FRAMES + anchors)`
-   from the RUNNER's environment (unset there: 600). If prod's `CAPTURE__MAXPHOTOS + CAPTURE__MAXVIDEOFRAMES` is
-   larger, a big capture's prepare is refused on the runner; check it before the flip.
+   `.env` values. Since #246 a runner accepts the largest capture any server may send (1000 photos + 400 frames + 15
+   anchors = 1415 images) and grows the prepare timeout with it, unless its own `MAX_PHOTOS` / `SPLAT_TIMEOUT_S` say
+   otherwise; the server has already checked the capture against `CAPTURE__MAXPHOTOS` / `CAPTURE__MAXVIDEOFRAMES`.
 4. **Capture videos keep working**: frames are extracted in the app (ffmpeg, `CaptureVideoFrameExtractor`), not by
    splat-cpu; the upload gate (`IsSplatConfigured`) is true with the flag on as long as `RUNNERS__MODE` is not `off`.
    Verified on exp 2026-10-28 (video upload 200 with the splat worker stopped).
