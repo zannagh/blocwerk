@@ -298,6 +298,7 @@ this job's.
 | `MAX_IMAGE_MEGAPIXELS` | 100 | photos with a bigger header size are refused (`413`) |
 | `TEXTURES_MAX_MEGAPIXELS` | 200 | total output pixels of one textures job (`422` beyond) |
 | `TEXTURES_BLEND_MAX_BYTES` | 2000000000 | memory the multi-view blend may take (`(blendViews + 2) × 7` bytes per output pixel); a bigger job renders single-view. Raise it for `mmPerPx` < 2 on a machine with the RAM |
+| `JOB_MAX_MEMORY_MB` | 0 (off) | resident memory one job (its whole process group) may take; above it the job is stopped and fails with `failureKind: "resource"`, which the app treats as "run it on a 3D runner" (textures) or "try again later" (solve). Prod: 1280 inside a 1536m container |
 | `HOST` / `PORT` | 127.0.0.1 / 8000 (image: 0.0.0.0) | listen address |
 | `RESULT_TTL_S` | 3600 | finished jobs + files are deleted after this |
 | `MAX_REQUEST_MB` / `MAX_PHOTO_MB` / `MAX_PHOTOS` | 4096 / 40 / 200 | limits (`413`). A textures request carries every photo of the capture: 200 full-size 48 MP JPEGs (12–22 MB each) need up to ~4.4 GB, the usual ~15 MB each ~3 GB; each photo is written to the job dir as it arrives |

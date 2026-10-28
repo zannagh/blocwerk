@@ -8,6 +8,7 @@ child-process runner; everything protocol-shaped lives here:
 - security   bearer auth (constant time) + X-Blocwerk-Signature signing/verification
 - callbacks  best-effort signed status callbacks from a background thread
 - jobs       in-memory queue, one job at a time, each job in its own process group (hard kill)
+- memguard   per-job memory guard (JOB_MAX_MEMORY_MB): an overrun ends the job as a resource failure
 - limits     request-body limit middleware (413)
 - service    FastAPI app factory: /health, /v1/info, POST/GET/DELETE /v1/jobs/..., file download
 - child      helpers for the job body in the child process (sanitized errors, minimal tool env)

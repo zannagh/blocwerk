@@ -25,6 +25,12 @@ public sealed partial class WallCaptureProcessor
     {
         var capture = run.Capture;
         var modelId = capture.GeometryModelId!.Value;
+        if (CaptureTextureOutcome.RerenderOnRunner(capture.TexturesJobId))
+        {
+            // Resumed after deferring them (DeferTexturesToRunnerAsync): the re-render worker takes them to a runner.
+            return TexturesDeferredText;
+        }
+
         try
         {
             var status = await RunJobAsync(
@@ -36,6 +42,10 @@ public sealed partial class WallCaptureProcessor
                 ct);
             await StoreTexturesAsync(capture.Id, modelId, status, client, ct);
             return null;
+        }
+        catch (CaptureNeedsMoreMemoryException) when (RunnersOn)
+        {
+            return await DeferTexturesToRunnerAsync(capture.Id, TextureQuality.Standard, ct);
         }
         catch (Exception ex) when (ex is CaptureFailedException or ComputeJobException or InvalidDataException
                                        or IOException or DbUpdateException)

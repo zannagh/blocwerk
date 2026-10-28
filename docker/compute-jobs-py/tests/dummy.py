@@ -1,6 +1,7 @@
 """A toy compute service for the protocol tests (runner must be importable by spawned children)."""
 import json
 import os
+import signal
 import subprocess
 import time
 
@@ -19,6 +20,14 @@ def _body(job_dir, progress):
         raise ValueError("bad thing")
     if mode == "crash":
         raise KeyError(f"internal detail at {job_dir}")
+    if mode == "hog":  # grows until the memory guard stops it (pages touched, so they are resident)
+        hoard = []
+        for _ in range(req.get("mb", 2048) // 16):
+            hoard.append(bytearray(16 << 20))
+            time.sleep(0.02)
+        time.sleep(60)
+    if mode == "oom":  # what the kernel's OOM killer does to the job under the container's limit
+        os.kill(os.getpid(), signal.SIGKILL)
     if mode in ("sleep", "grandchild"):
         if mode == "grandchild":  # a tool the job started: must die with the job
             p = subprocess.Popen(["sleep", "120"])

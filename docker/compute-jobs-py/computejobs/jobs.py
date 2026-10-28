@@ -3,7 +3,8 @@
 Every job gets a directory under WORK_DIR for its inputs and output files, and runs in a child
 process (spawned, not forked: the parent is multi-threaded) that leads its own process group, so a
 timeout or cancel also kills whatever the job started (COLMAP, a trainer, ...). Finished jobs and
-their files are deleted RESULT_TTL_S after they finish.
+their files are deleted RESULT_TTL_S after they finish. A job above JOB_MAX_MEMORY_MB fails with
+`failureKind: "resource"` (memguard.py).
 
 Child -> parent messages over a multiprocessing Pipe (see child.py):
   ("progress", fraction, stage[, detail]) ... then exactly one of ("done", result) / ("error", message).
@@ -19,7 +20,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 
-from . import workdir
+from . import memguard, workdir
 from .callbacks import CallbackSender
 from .settings import settings
 
@@ -46,6 +47,7 @@ class Job:
         self.created = self.updated = _now()
         self.finished_at = None
         self.result, self.files = None, []
+        self.failure_kind = None
         self.callback_url = callback_url
         self.cancel_requested = False
 
@@ -54,10 +56,13 @@ class Job:
         if result is not None and self.files:
             result = {**result, "files": [{"name": f, "url": f"{url_prefix}/v1/jobs/{self.id}/files/{f}"}
                                           for f in self.files]}
-        return {"jobId": self.id, "kind": self.kind, "status": self.status,
-                "progress": round(self.progress, 3), "stage": self.stage, "stageDetail": self.stage_detail,
-                "message": self.message, "error": self.error, "createdAt": self.created,
-                "updatedAt": self.updated, "result": result}
+        status = {"jobId": self.id, "kind": self.kind, "status": self.status,
+                  "progress": round(self.progress, 3), "stage": self.stage, "stageDetail": self.stage_detail,
+                  "message": self.message, "error": self.error, "createdAt": self.created,
+                  "updatedAt": self.updated, "result": result}
+        if self.failure_kind:  # only when set: every other status keeps its keys (the runner envelope mirrors them)
+            status["failureKind"] = self.failure_kind
+        return status
 
 
 def _on_sigterm(_signum, _frame):
@@ -74,6 +79,7 @@ def _child_entry(runner, kind, job_dir, conn):
         signal.signal(signal.SIGTERM, _on_sigterm)
     except OSError:
         pass
+    memguard.volunteer_for_oom()
     runner(kind, job_dir, conn)
 
 
@@ -177,16 +183,24 @@ class JobManager:
                 self._finish(job, "failed", error=f"internal error: {type(e).__name__}")
 
     def _await_outcome(self, job, proc, parent, t0, timeout):
+        limit_mb, next_check, kills_before = settings.job_max_memory_mb, 0.0, memguard.oom_kills()
         while True:
             if job.cancel_requested:
                 return "cancelled", "cancelled while running"
             if time.time() - t0 > timeout:
                 return "failed", f"{job.stage}: timed out after {timeout} s"
-            if parent.poll(0.5):
+            if limit_mb > 0 and time.time() >= next_check:
+                next_check = time.time() + memguard.SAMPLE_S
+                used_mb = memguard.over_limit(proc.pid, limit_mb)
+                if used_mb is not None:
+                    log.warning("job %s (%s) took %d MB, above JOB_MAX_MEMORY_MB=%d: stopped",
+                                job.id, job.kind, used_mb, limit_mb)
+                    return memguard.RESOURCE, memguard.message(job.stage, limit_mb)
+            if parent.poll(memguard.SAMPLE_S if limit_mb > 0 else 0.5):
                 try:
                     msg = parent.recv()
                 except EOFError:
-                    return "failed", f"{job.stage}: worker process died (exit code {proc.exitcode})"
+                    return self._died(job, proc, limit_mb, kills_before)
                 if msg[0] == "progress":
                     detail = msg[3] if len(msg) > 3 else None
                     progress = max(job.progress, msg[1])  # monotone within a run
@@ -196,7 +210,15 @@ class JobManager:
                 else:
                     return "failed", msg[1]
             elif not proc.is_alive() and not parent.poll(0):
-                return "failed", f"{job.stage}: worker process died (exit code {proc.exitcode})"
+                return self._died(job, proc, limit_mb, kills_before)
+
+    @staticmethod
+    def _died(job, proc, limit_mb, kills_before):
+        proc.join(1)
+        if memguard.killed_by_oom(proc.exitcode, kills_before):
+            log.warning("job %s (%s) was killed by the kernel (out of memory)", job.id, job.kind)
+            return memguard.RESOURCE, memguard.message(job.stage, limit_mb)
+        return "failed", f"{job.stage}: worker process died (exit code {proc.exitcode})"
 
     def _run(self, job):
         timeout = self.timeout_for(job.kind)
@@ -217,6 +239,8 @@ class JobManager:
             self._finish(job, "succeeded", result=payload, files=files, stage="done")
         elif status == "cancelled":
             self._finish(job, "cancelled", message=payload, stage="cancelled")
+        elif status == memguard.RESOURCE:
+            self._finish(job, "failed", error=payload, failure_kind=memguard.RESOURCE, stage="failed")
         else:
             self._finish(job, "failed", error=payload, stage="failed")
 

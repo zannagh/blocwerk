@@ -166,6 +166,9 @@ services:
       TEXTURES_TIMEOUT_S: ${TEXTURES_TIMEOUT_S:-}
       TEXTURES_MAX_MEGAPIXELS: ${TEXTURES_MAX_MEGAPIXELS:-}
       TEXTURES_BLEND_MAX_BYTES: ${TEXTURES_BLEND_MAX_BYTES:-}
+      # Resident MB one job may take (empty/0 = no guard); above it the job ends as a "resource" failure and the app
+      # defers it (textures to a 3D runner, a solve to the next attempt). Keep it below the container's memory limit.
+      JOB_MAX_MEMORY_MB: ${GEOMETRY_JOB_MAX_MEMORY_MB:-}
       # solve-sfm (markerless captures): splat-prepare's sparse.zip cap (default 256 MB; The Attic's 353 images:
       # 37 MB) and the job timeout (default 900 s; The Attic: ~25 s).
       SFM_MAX_SPARSE_MB: ${SFM_MAX_SPARSE_MB:-}
