@@ -68,7 +68,7 @@ def oom_kills():
 
 def killed_by_oom(exitcode, kills_before):
     """A child SIGKILLed while the cgroup's OOM kill count went up: the container's memory limit, not a crash."""
-    if exitcode != -signal.SIGKILL or kills_before is None:
+    if exitcode != -getattr(signal, "SIGKILL", 9) or kills_before is None:  # no SIGKILL on Windows
         return False
     now = oom_kills()
     return now is not None and now > kills_before
