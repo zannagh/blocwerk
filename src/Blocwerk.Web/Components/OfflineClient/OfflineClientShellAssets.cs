@@ -63,6 +63,12 @@ public static class OfflineClientShellAssets
     public static readonly string[] StoreModules = ["v/js/client-store-rows.js", "v/js/client-store.js"];
 
     /// <summary>
+    /// The hand-back (PR 3.14: <c>window.bwClientHandback</c>): the client's pill, the /alive probe, the next tap's way back
+    /// to the Server page, and the schema update. After the store modules, whose snapshot names the saved time.
+    /// </summary>
+    public const string Handback = "v/js/client-handback.js";
+
+    /// <summary>
     /// The views' browser facts (PR 3.11: <c>window.bwClientView</c>: the cached photo width, the time offset, the stored
     /// theme), and the 3D view's device reads and mount (PR 3.13: <c>window.bwClient3d</c>, <c>window.bwClient3dStage</c>,
     /// which imports the <see cref="OfflineClient3DAssets.Modules"/> on a first mount only), before the runtime that calls
@@ -93,7 +99,7 @@ public static class OfflineClientShellAssets
     private static readonly HashSet<string> Modules3D = new(OfflineClient3DAssets.Modules, StringComparer.Ordinal);
 
     /// <summary>Every label the shell names, for the tests that pin each one to a served file.</summary>
-    public static IEnumerable<string> All => Styles.Concat(CacheModules).Concat(StoreModules).Concat(ViewModules).Concat(SyncModules).Append(Guard).Append(Loader).Append(Boot)
+    public static IEnumerable<string> All => Styles.Concat(CacheModules).Concat(StoreModules).Append(Handback).Concat(ViewModules).Concat(SyncModules).Append(Guard).Append(Loader).Append(Boot)
         .Concat(OfflineClient3DAssets.Modules);
 
     /// <summary>

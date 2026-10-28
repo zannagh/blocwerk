@@ -137,6 +137,10 @@
         if (queueState.paused) {
             actions.push({ key: 'sign-in', label: 'Sign in', href: '/account/login' });
         }
+        // The offline client, when this device has it for this page (PR 3.14, client-continue.js).
+        if (window.bwClientContinue && window.bwClientContinue.target()) {
+            actions.push({ key: 'continue-offline', label: 'Continue offline', run: () => window.bwClientContinue.go() });
+        }
         // A held-back maintenance reload is offered explicitly; the automatic one waits for the
         // text field to be empty, and the user may well want it sooner.
         if (window.bwMaintenance && window.bwMaintenance.active() && window.bwMaintenance.state().phase === 'ready') {

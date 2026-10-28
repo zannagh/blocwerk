@@ -28,8 +28,8 @@ test('/v/ boots the client from its shell, with no circuit and no edit presence'
     expect(requests.filter(p => p.startsWith('/v/_content/'))).toEqual([]);
     // Every file the shell names is fingerprinted, the runtime's modules through the import map.
     const named = await page.evaluate(() => [...document.querySelectorAll('script[src], link[rel="stylesheet"]')].map(e => e.getAttribute('src') || e.getAttribute('href')));
-    // 21 for the views and the sync, 4 for the 3D view and the gallery (PR 3.13: client-wall3d.css, client-3d.css, client-3d.js, client-3d-stage.js).
-    expect(named.length).toBe(25);
+    // 22 for the views, the sync and the hand-back, 4 for the 3D view and the gallery (PR 3.13: client-wall3d.css, client-3d.css, client-3d.js, client-3d-stage.js).
+    expect(named.length).toBe(26);
     expect(named.filter(u => !/^\/[^?#]+\.[a-z0-9]{10}\.(js|css)$/.test(u))).toEqual([]);
     const imports = await page.evaluate(() => JSON.parse(document.querySelector('script[type="importmap"]').textContent).imports);
     expect(imports['/v/_framework/dotnet.js']).toMatch(/^\/v\/_framework\/dotnet\.[a-z0-9]{10}\.js$/);

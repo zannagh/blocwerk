@@ -12,9 +12,14 @@ namespace Blocwerk.Web.Endpoints;
 /// When the announcement stops being shown. Null when none is live. A client that has been
 /// disconnected past this point should stop claiming an update is in progress.
 /// </param>
+/// <param name="ClientSchemaMin">
+/// The oldest offline client schema this server serves (<c>Blocwerk.Client.ClientSchema.Minimum</c>, PR 3.14). An
+/// offline client below it updates through the worker and reloads once.
+/// </param>
 public sealed record AliveResponse(
     string InstanceId,
     DateTimeOffset StartedAt,
     bool Maintenance,
     string? Message,
-    DateTimeOffset? MaintenanceExpiresAt);
+    DateTimeOffset? MaintenanceExpiresAt,
+    int ClientSchemaMin);

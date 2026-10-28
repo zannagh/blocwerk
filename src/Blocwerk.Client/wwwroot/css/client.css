@@ -9,6 +9,11 @@
     --bw-c-muted: var(--text-secondary, #666672);
     --bw-c-accent: var(--accent, #cf2c49);
     --bw-c-border: var(--border, #e3e0d9);
+    /* The Server's connection pill tones (the page tokens' warning and info), so both pills read the same. */
+    --bw-c-warn-bg: var(--warning-bg, #FFF3E0);
+    --bw-c-warn-text: var(--warning-text, #B33F00);
+    --bw-c-info-bg: var(--info-bg, #E3F2FD);
+    --bw-c-info-text: var(--info-text, #0D47A1);
 }
 
 html, body {
@@ -35,12 +40,60 @@ html, body {
     text-decoration: none;
 }
 
+/* The lasting connection pill (client-handback.js), drawn like the Server's .bw-conn-pill: a dot and a label, warn
+   while offline, info (a button to the live page) once the server answers again. */
+.bw-client-pill-slot {
+    display: inline-flex;
+    min-width: 0;
+}
+
 .bw-client-pill {
-    padding: 2px 10px;
-    border: 1px solid currentColor;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    max-width: 100%;
+    padding: 6px 14px;
+    border: 1px solid var(--bw-c-border);
     border-radius: 999px;
-    opacity: 0.8;
-    font-size: 13px;
+    font: 600 0.78rem/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.bw-client-pill-warn {
+    background: var(--bw-c-warn-bg);
+    color: var(--bw-c-warn-text);
+    border-color: color-mix(in srgb, var(--bw-c-warn-text) 30%, transparent);
+}
+
+.bw-client-pill-info {
+    background: var(--bw-c-info-bg);
+    color: var(--bw-c-info-text);
+    border-color: color-mix(in srgb, var(--bw-c-info-text) 30%, transparent);
+    cursor: pointer;
+}
+
+.bw-client-pill-dot {
+    flex: 0 0 auto;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: bw-client-pulse 1.6s ease-in-out infinite;
+}
+
+.bw-client-pill-label {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+@keyframes bw-client-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .bw-client-pill-dot { animation: none; }
 }
 
 .bw-client-main, .bw-client-loading {

@@ -53,6 +53,18 @@ public sealed partial class OfflineClientShellTests
     }
 
     [Fact]
+    public void TheHandback_LoadsAfterTheStore_AndBeforeTheRuntime_WithTheSchemaMeta()
+    {
+        var store = Shell.IndexOf("OfflineClientShellAssets.StoreModules", StringComparison.Ordinal);
+        var handback = Shell.IndexOf("OfflineClientShellAssets.Handback)", StringComparison.Ordinal);
+        var loader = Shell.IndexOf("OfflineClientShellAssets.Loader)", StringComparison.Ordinal);
+
+        Assert.True(store >= 0 && store < handback && handback < loader, "client-handback.js reads bwClientStore and is started by the layout");
+        Assert.Contains(OfflineClientShellAssets.Handback, OfflineClientShellAssets.All);
+        Assert.Contains("<meta name=\"bw-client-schema\" content=\"@ClientSchema.Current\" />", Shell, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void TheSyncModules_LoadAfterTheStore_AndBeforeTheRuntime_WithTheRefreshersBeforeTheirCaller()
     {
         var store = Shell.IndexOf("OfflineClientShellAssets.StoreModules", StringComparison.Ordinal);

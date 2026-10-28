@@ -131,6 +131,10 @@ self.addEventListener('message', event => {
     } else if (data.type === 'deploy-pending' || data.type === 'deploy-done') {
         // An announced deploy holds the offline client's hand-off until the new instance is seen (the offline client section).
         lifetime(event, data.type === 'deploy-pending' ? holdForDeploy() : endDeployHold());
+    } else if (data.type === 'client-target') {
+        // PR 3.14: where "Continue offline" goes for the page's path, the hand-off rules without the deploy hold (the user
+        // asked), `target` null when the client cannot take it.
+        lifetime(event, clientTarget(data.path).then(target => reply(event, { proto: PROTO, type: 'client-target', target })));
     } else if (data.type === 'client-precache') {
         const group3d = CLIENT_3D_GROUP.includes(data.group3d) ? data.group3d : 'none';
         lifetime(event, precacheClient(group3d).then(result => reply(event, { proto: PROTO, type: 'client-precached', ...result })));
@@ -303,6 +307,8 @@ const CLIENT_MODULE_REFERRER = /^\/(?:js|lib)\/[\w./-]*\.[a-z0-9]{10}\.js$/;
 const CLIENT_STATE_KEY = '/__bw/client';
 const CLIENT_SHELL_PATH = '/v/';
 const CLIENT_HANDOFF_MS = 4000;
+// A navigation from a /v/ page waits this long instead (the client saw the server answer; see navigateWithHandoff).
+const CLIENT_HANDOFF_FROM_CLIENT_MS = 20000;
 const CLIENT_VERSION = /^[0-9a-f]{16}$/;
 const CLIENT_FILL_PARALLEL = 4;
 // The 3D code's precache choices (the 3D code paragraph above), and the mark a 3D view opened online leaves.
@@ -438,6 +444,22 @@ function servableClient() {
         .catch(() => null);
 }
 
+// The client URL for a Server path the client covers on this device, or null (the deploy hold aside).
+function clientTarget(path) {
+    let url;
+    try {
+        url = new URL(typeof path === 'string' && path.startsWith('/') && !path.startsWith('//') ? path : '/', self.location.origin);
+    } catch (e) {
+        return Promise.resolve(null);
+    }
+    if (CLIENT_NEVER.test(url.pathname)) {
+        return Promise.resolve(null);
+    }
+    return servableClient()
+        .then(record => (record && record.routes.some(route => clientRouteCovers(route, url.pathname)) ? `/v${url.pathname}${url.search}` : null))
+        .catch(() => null);
+}
+
 // The client URL that takes over a failed navigation to `url`, or null.
 function clientHandoff(url) {
     if (CLIENT_NEVER.test(url.pathname)) {
@@ -451,17 +473,21 @@ function clientHandoff(url) {
 
 const clientRedirect = path => Response.redirect(new URL(path, self.location.origin).href, 302);
 
-// A Server-page navigation: the network's answer, unless it fails and the client can take over (see HAND-OFF).
+// A Server-page navigation: the network's answer, unless it fails and the client can take over (see HAND-OFF). A
+// navigation from a /v/ page (the client's hand-back, PR 3.14) gets a 20 s timer, not 4 s: the client saw the server answer,
+// so a slow page is waited for and a tap does not bounce straight back into the client; but a connection that hangs
+// (no error) still ends in the client, not the browser's own minutes-long timeout.
 function navigateWithHandoff(request, offlinePage) {
     const url = new URL(request.url);
     let target = null;
     const handoff = () => target || (target = clientHandoff(url).catch(() => null));
+    const fromClient = typeof request.referrer === 'string' && request.referrer.startsWith(self.location.origin + CLIENT_SHELL_PATH);
     return new Promise(resolve => {
         const timer = setTimeout(() => handoff().then(path => {
             if (path) {
                 resolve(clientRedirect(path));
             }
-        }), CLIENT_HANDOFF_MS);
+        }), fromClient ? CLIENT_HANDOFF_FROM_CLIENT_MS : CLIENT_HANDOFF_MS);
         const settle = answer => {
             clearTimeout(timer);
             resolve(answer);
