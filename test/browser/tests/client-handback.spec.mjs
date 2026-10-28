@@ -24,11 +24,20 @@ async function tap(page, href) {
 // Consent answered up front, as a returning user's is, so the banner does not cover the connection pill.
 const consented = (page, baseURL) => page.context().addCookies([{ name: 'cookie_consent', value: 'accepted', url: baseURL }]);
 
+// The pill is openable only once the page has noticed the server is gone (slower on WebKit), and a click on it before
+// then does nothing: click until the panel shows.
+const openPill = page => expect(async () => {
+    if (!(await page.getByRole('button', { name: 'Retry now' }).isVisible())) {
+        await page.locator('.bw-conn-pill').click({ timeout: 2000 });
+    }
+    await expect(page.getByRole('button', { name: 'Retry now' })).toBeVisible({ timeout: 2000 });
+}).toPass({ timeout: 30000 });
+
 async function continueOffline(page, world, server, baseURL) {
     await consented(page, baseURL);
     expect(await precacheAsAlice(page, world, server)).toBe('complete');
     await server.unreachable();
-    await page.locator('.bw-conn-pill').click();
+    await openPill(page);
     await page.getByRole('button', { name: 'Continue offline' }).click();
     await expect(page).toHaveURL(new RegExp(`/v${wallPath(world)}$`));
     await clientReady(page);
@@ -54,7 +63,7 @@ test('no "Continue offline" while connected, nor for a page the client does not 
     expect(await page.evaluate(() => window.bwClientContinue.target())).toBeNull();
 
     await server.unreachable();
-    await page.locator('.bw-conn-pill').click();
+    await openPill(page);
     await expect(page.getByRole('button', { name: 'Retry now' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Continue offline' })).toHaveCount(0);
     expect(await page.evaluate(() => window.bwClientContinue.refresh())).toBeNull();
