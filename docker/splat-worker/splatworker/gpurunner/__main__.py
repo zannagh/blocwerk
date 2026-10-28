@@ -12,6 +12,7 @@ import threading
 from ..settings import settings  # loads the env (SPLAT_TRAINER, GSPLAT_PYTHON, BRUSH_BIN, ...) first
 from .. import winsys
 from .alive import work_dir
+from . import runner_settings
 from .caps import Capabilities
 from .client import Client, check_server
 from .control import PauseControl, state_dir
@@ -81,7 +82,7 @@ def main(argv=None):
         sys.exit(str(e))
     if settings.profile_override:  # the server picks each job's quality; a runner never overrides it
         log.warning("SPLAT_PROFILE_OVERRIDE=%s is ignored by a 3D runner", settings.profile_override)
-        settings.profile_override = ""
+    runner_settings.apply()  # also in every compute child (compute_child._as_runner)
     try:
         caps = Capabilities()
     except ValueError as e:
