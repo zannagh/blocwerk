@@ -387,3 +387,15 @@ def test_a_child_error_is_final_only_when_the_input_caused_it(monkeypatch, exc, 
     got = outcome_of(monkeypatch, raising(exc))
     assert isinstance(got, compute_child.ChildFailed) is final
     assert isinstance(got, JobError) is (not final)
+
+
+def test_child_ignores_the_profile_override(monkeypatch):
+    """The spawned child re-reads SPLAT_PROFILE_OVERRIDE from the environment; a runner's prepare must still write the
+    quality the server asked for (seen on exp 2026-10-28: a draft capture prepared as ultra)."""
+    from splatworker import runner
+    from splatworker.settings import settings as worker_settings
+    monkeypatch.setattr(worker_settings, "profile_override", "ultra")
+    seen = {}
+    monkeypatch.setattr(runner, "run_job", lambda kind, job_dir, conn: seen.setdefault("override", worker_settings.profile_override))
+    compute_child._run_job_tagged("splat-prepare", "/nonexistent", None)
+    assert seen["override"] == ""
