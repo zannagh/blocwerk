@@ -35,7 +35,8 @@ ingresses for the dashboard, backups, and every Secret (referenced by name in `s
   plus `splatCpu.enabled: true`.
 - **Publishing:** a GitHub release `vX.Y.Z` (not a prerelease) of a commit that contains `.github/workflows/chart.yml`
   pushes chart `X.Y.Z`. The package `charts/blocwerk` is private on its first push; make it public once in its
-  settings (no API exists for that), then re-run the job, whose last step checks an anonymous pull.
+  settings (no API exists for that); until then the job's last step (anonymous pull) warns but does not fail. The
+  chart can also be installed from git (`deploy/chart` at the release tag), which needs no package at all.
 
 ## Deploy gate
 

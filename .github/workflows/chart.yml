@@ -102,7 +102,8 @@ jobs:
         run: |
           export HELM_REGISTRY_CONFIG="$RUNNER_TEMP/no-login.json"   # no stored login: what ArgoCD sees
           if ! helm show chart oci://ghcr.io/zannagh/charts/blocwerk --version "$VERSION" > /dev/null; then
-            echo "::error::chart $VERSION was pushed but is not public. Make it public once at https://github.com/users/zannagh/packages/container/charts%2Fblocwerk/settings (Change visibility -> Public), then re-run this job."
-            exit 1
+            # A warning, not a failure: the release stays green; the infra pointer can use the chart from git meanwhile.
+            echo "::warning::chart $VERSION was pushed but is not public. Make it public once at https://github.com/users/zannagh/packages/container/charts%2Fblocwerk/settings (Change visibility -> Public); nothing else is needed."
+            exit 0
           fi
           echo "chart $VERSION is pullable anonymously"
