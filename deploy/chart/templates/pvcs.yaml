@@ -1,0 +1,28 @@
+{{/* Created only when no existing claim is named. Kept on `helm uninstall`: they hold the data. */}}
+{{- $fullname := include "blocwerk.fullname" . -}}
+{{- $claims := list (dict "name" (printf "%s-data" $fullname) "component" "web" "p" .Values.web.persistence.data "on" true) -}}
+{{- $claims = append $claims (dict "name" (printf "%s-postgres" $fullname) "component" "postgres" "p" .Values.postgres.persistence "on" .Values.postgres.enabled) -}}
+{{- range $claims }}
+{{- if and .on (not .p.existingClaim) }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .name }}
+  labels:
+    {{- include "blocwerk.labels" (dict "root" $ "component" .component) | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+    {{- with .p.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- with .p.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: {{ .p.size }}
+{{- end }}
+{{- end }}

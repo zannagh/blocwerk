@@ -36,6 +36,10 @@ INSTRUCTIONS.md
 ##
 ## Get latest from https://github.com/github/gitignore/blob/main/VisualStudio.gitignore
 deploy/
+# ...except the Helm chart in /deploy/chart.
+!/deploy/
+/deploy/*
+!/deploy/chart/
 **/docker/deploy/**/*
 **/appsettings.json
 **/appsettings.Development.json

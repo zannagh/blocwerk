@@ -1,0 +1,37 @@
+# CI render with every optional part on and every optional environment value set, so the comparison with the compose
+# file (tests/compare-compose.sh) sees each variable the chart can render.
+secrets:
+  appsettings: blocwerk-appsettings
+capture:
+  maxPhotoMb: "50"
+  maxPhotos: "400"
+  maxVideoFrames: "200"
+web:
+  image:
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  env:
+    SMTP__PORT: "587"
+    SMTP__SECURITY: StartTls
+    CAPTURE__RETENTIONDRYRUN: "true"
+    BLOCWERK__SERVER__TRUSTEDPROXIES__0: 10.42.0.0/16
+    DEPLOY__MAINTENANCEWINDOW: "false"
+    BLOCWERK__AUTH__APIKEYLOGIN__ALLOWEDUSERIDS__0: "1"
+  ingress:
+    enabled: true
+    host: blocwerk.example
+    tlsSecretName: blocwerk-tls
+geometry:
+  env:
+    MAX_REQUEST_MB: "4096"
+    MAX_PHOTOS: "400"
+    TEXTURES_TIMEOUT_S: "1800"
+    TEXTURES_MAX_MEGAPIXELS: "12"
+    TEXTURES_BLEND_MAX_BYTES: "1000000000"
+    JOB_MAX_MEMORY_MB: "1280"
+    SFM_MAX_SPARSE_MB: "512"
+    SFM_TIMEOUT_S: "1800"
+splatCpu:
+  enabled: true
+  env:
+    SPLAT_TIMEOUT_S: "14400"
+    MAX_PHOTOS: "640"

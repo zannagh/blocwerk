@@ -1,0 +1,15 @@
+apiVersion: v2
+name: blocwerk
+description: >-
+  Blocwerk as it runs today: one web replica (Blazor Server, API, background services), Postgres,
+  wall-geometry (capped for a small server), the Aspire dashboard and, only when splat work does not run on
+  3D runners, a splat-cpu worker; behind an in-cluster deploy gate.
+type: application
+# The chart version IS the bundle: .github/workflows/chart.yml publishes it from a release tag with
+# version == appVersion == that app release, and the web image defaults to appVersion. The worker images are
+# pinned in values.yaml. 0.0.0-dev only exists for local renders.
+version: 0.0.0-dev
+appVersion: "0.0.0-dev"
+home: https://blocwerk.app
+sources:
+  - https://github.com/zannagh/blocwerk

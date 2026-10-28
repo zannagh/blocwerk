@@ -1,0 +1,58 @@
+{{- if .Values.deployGate.enabled -}}
+{{- $gate := .Values.deployGate -}}
+{{- $fullname := include "blocwerk.fullname" . -}}
+{{- $ctx := dict "root" . "component" "deploy-gate" -}}
+{{- $webEnv := list
+  (dict "name" "PORT" "value" (toString .Values.web.service.port))
+  (dict "name" "TARGET" "value" (include "blocwerk.fingerprint" (include "blocwerk.web.podSpec" .)))
+  (dict "name" "TARGET_IMAGE" "value" (include "blocwerk.image" (list .Values.web.image .Chart.AppVersion)))
+  (dict "name" "MAX_DEFER" "value" (toString $gate.maxDefer))
+  (dict "name" "ETA_MAX_DEFER" "value" (toString $gate.etaMaxDefer))
+  (dict "name" "ANNOUNCE_ETA" "value" (toString $gate.announceEtaSeconds))
+  (dict "name" "ANNOUNCE_GRACE" "value" (toString $gate.announceGraceSeconds))
+  (dict "name" "FLUSH_TIMEOUT" "value" (toString $gate.flushTimeoutSeconds)) -}}
+{{- if .Values.secrets.deploy }}
+{{- $webEnv = append $webEnv (dict "name" "BLOCWERK_DEPLOY_API_KEY" "valueFrom" (dict "secretKeyRef" (dict "name" .Values.secrets.deploy "key" "BLOCWERK_DEPLOY_API_KEY" "optional" true))) }}
+{{- end }}
+# The web gate (files/deploy-gate.sh). Runs before anything of the sync is applied.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $fullname }}-deploy-gate
+  labels:
+    {{- include "blocwerk.labels" $ctx | nindent 4 }}
+  annotations:
+    {{- include "blocwerk.hookAnnotations" (dict "phase" "PreSync" "wave" 0) | nindent 4 }}
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ add (mul (add $gate.etaMaxDefer $gate.maxDefer 2) (add $gate.pollSeconds 15)) 600 }}
+  template:
+    {{- include "blocwerk.gatePod" (dict "root" . "script" "deploy-gate.sh" "env" $webEnv) | nindent 4 }}
+{{- $workers := include "blocwerk.worker.list" . | fromJsonArray }}
+{{- if $workers }}
+{{- $specs := list }}
+{{- $computeEnv := list }}
+{{- range $workers }}
+{{- $keyVar := printf "%s_KEY" (.component | upper | replace "-" "_") }}
+{{- $target := include "blocwerk.fingerprint" (include "blocwerk.worker.podSpec" (merge (dict "root" $ "v" (index $.Values .key)) .)) }}
+{{- $specs = append $specs (printf "%s|http://%s-%s:%v|%s|%s" .component $fullname .component .port $target $keyVar) }}
+{{- $computeEnv = append $computeEnv (dict "name" $keyVar "valueFrom" (dict "secretKeyRef" (dict "name" $.Values.secrets.compute "key" .apiKey))) }}
+{{- end }}
+{{- $computeEnv = concat (list (dict "name" "WORKERS" "value" (join " " $specs)) (dict "name" "MAX_DEFER" "value" (toString $gate.computeMaxDefer))) $computeEnv }}
+---
+# The compute gate (files/compute-gate.sh): after the web app (wave 0), before the workers (wave 2).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $fullname }}-compute-gate
+  labels:
+    {{- include "blocwerk.labels" $ctx | nindent 4 }}
+  annotations:
+    {{- include "blocwerk.hookAnnotations" (dict "phase" "Sync" "wave" 1) | nindent 4 }}
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ add (mul (add $gate.computeMaxDefer 2) (add $gate.pollSeconds 15) (len $workers)) 600 }}
+  template:
+    {{- include "blocwerk.gatePod" (dict "root" . "script" "compute-gate.sh" "env" $computeEnv) | nindent 4 }}
+{{- end }}
+{{- end }}

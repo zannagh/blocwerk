@@ -1,0 +1,14 @@
+{{- $ctx := dict "root" . "component" "web" -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "blocwerk.fullname" . }}
+  labels:
+    {{- include "blocwerk.labels" $ctx | nindent 4 }}
+spec:
+  selector:
+    {{- include "blocwerk.selectorLabels" $ctx | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.web.service.port }}
+      targetPort: http
