@@ -37,6 +37,8 @@ public static class OfflineClientShellAssets
         "v/css/client-components.css",
         "v/css/client.css",
         "v/css/client-views.css",
+        OfflineClient3DAssets.Stylesheet,
+        "v/css/client-3d.css",
     ];
 
     /// <summary>
@@ -68,9 +70,11 @@ public static class OfflineClientShellAssets
 
     /// <summary>
     /// The views' browser facts (PR 3.11: <c>window.bwClientView</c>: the cached photo width, the time offset, the stored
-    /// theme), before the runtime that calls them.
+    /// theme), and the 3D view's device reads and mount (PR 3.13: <c>window.bwClient3d</c>, <c>window.bwClient3dStage</c>,
+    /// which imports the <see cref="OfflineClient3DAssets.Modules"/> on a first mount only), before the runtime that calls
+    /// them.
     /// </summary>
-    public static readonly string[] ViewModules = ["v/js/client-view.js"];
+    public static readonly string[] ViewModules = ["v/js/client-view.js", "v/js/client-3d.js", "v/js/client-3d-stage.js"];
 
     /// <summary>The Blazor WebAssembly loader, started by <see cref="Boot"/> (autostart off).</summary>
     public const string Loader = "v/_framework/blazor.webassembly.js";
@@ -92,9 +96,11 @@ public static class OfflineClientShellAssets
     public static readonly string[] SyncModules = ["js/asset-manifest.js", "js/asset-data.js", "js/asset-mine.js", "v/js/client-sync.js"];
 
     private static readonly ConditionalWeakTable<ResourceAssetCollection, string> Versions = new();
+    private static readonly HashSet<string> Modules3D = new(OfflineClient3DAssets.Modules, StringComparer.Ordinal);
 
     /// <summary>Every label the shell names, for the tests that pin each one to a served file.</summary>
-    public static IEnumerable<string> All => Styles.Concat(CacheModules).Concat(StoreModules).Append(Handback).Concat(ViewModules).Concat(SyncModules).Append(Guard).Append(Loader).Append(Boot);
+    public static IEnumerable<string> All => Styles.Concat(CacheModules).Concat(StoreModules).Append(Handback).Concat(ViewModules).Concat(SyncModules).Append(Guard).Append(Loader).Append(Boot)
+        .Concat(OfflineClient3DAssets.Modules);
 
     /// <summary>
     /// The client's declared routes as the shell's <c>bw-client-routes</c> meta carries them: space-separated
@@ -121,7 +127,9 @@ public static class OfflineClientShellAssets
     /// <summary>
     /// The import map for the client's runtime: every fingerprinted <c>v/_framework/*.js</c> under its plain name, with
     /// its integrity. The keys are absolute because the shell's base (/v/) is what an import map key resolves against.
-    /// <c>blazor.webassembly.js</c> imports <c>./dotnet.js</c>, which this maps to the fingerprinted file.
+    /// <c>blazor.webassembly.js</c> imports <c>./dotnet.js</c>, which this maps to the fingerprinted file. The 3D view's
+    /// modules (<see cref="OfflineClient3DAssets.Modules"/>) are mapped the same way: named, precached and versioned, but
+    /// loaded only when a 3D view opens; their relative imports resolve to the plain paths this maps.
     /// </summary>
     /// <param name="assets">The endpoint's asset collection.</param>
     /// <returns>The definition the shell's <c>ImportMap</c> renders.</returns>
@@ -132,13 +140,14 @@ public static class OfflineClientShellAssets
         foreach (var asset in assets)
         {
             var label = Property(asset, "label");
-            if (label is null || asset.Url == label || !label.StartsWith(FrameworkPrefix, StringComparison.Ordinal)
-                || !label.EndsWith(".js", StringComparison.Ordinal))
+            var mapped = label is not null && ((label.StartsWith(FrameworkPrefix, StringComparison.Ordinal) && label.EndsWith(".js", StringComparison.Ordinal))
+                || Modules3D.Contains(label));
+            if (!mapped || asset.Url == label)
             {
                 continue;
             }
 
-            imports["/" + label] = "/" + asset.Url;
+            imports["/" + label!] = "/" + asset.Url;
             if (Property(asset, "integrity") is { } hash)
             {
                 integrity["/" + asset.Url] = hash;

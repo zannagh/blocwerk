@@ -36,6 +36,18 @@ public sealed class OfflineClientVersionTests
     }
 
     [Fact]
+    public void Version_Changes_WhenA3DModuleChanges_ThoughTheShellNeverLoadsItAtBoot()
+    {
+        static ResourceAssetCollection With(string spark) => new(
+        [
+            Asset("v/_framework/dotnet.ab12.js", "v/_framework/dotnet.js"),
+            Asset("lib/spark/" + spark, "lib/spark/spark.module.min.js"),
+        ]);
+
+        Assert.NotEqual(OfflineClientShellAssets.Version(With("spark.module.min.aaaaaaaaaa.js")), OfflineClientShellAssets.Version(With("spark.module.min.bbbbbbbbbb.js")));
+    }
+
+    [Fact]
     public void Routes_AreTheDeclaredTemplates_SpaceSeparated()
     {
         Assert.Equal(string.Join(' ', ClientRoutes.Declared), OfflineClientShellAssets.Routes);

@@ -1,0 +1,60 @@
+@using Blocwerk.Contracts.Documents
+@* The gallery's lightbox (the Server's, without its delete): one image at a time, the stored one first, with previous,
+   next and close; the arrow keys and Escape work while it has focus. *@
+<div class="wall-lightbox bw-client-lightbox" tabindex="0" @onkeydown="OnKeyDown">
+    <div class="wall-lightbox-bar">
+        <span class="wall-lightbox-title">@(Current.Caption ?? "Snapshot")</span>
+        <button type="button" class="wall-lightbox-close" @onclick="() => IndexChanged.InvokeAsync(-1)" aria-label="Close">&times;</button>
+    </div>
+    <div class="wall-lightbox-stage">
+        <button type="button" class="wall-lightbox-nav prev" disabled="@(Index <= 0)" @onclick="() => Go(-1)" aria-label="Previous image">&lsaquo;</button>
+        <PanelPhoto Urls="UrlsOf(Current)" Alt="@(Current.Caption ?? "Wall image")" Class="wall-lightbox-img" />
+        <button type="button" class="wall-lightbox-nav next" disabled="@(Index >= Images.Count - 1)" @onclick="() => Go(1)" aria-label="Next image">&rsaquo;</button>
+    </div>
+    <div class="wall-lightbox-foot">
+        <span class="wall-lightbox-meta">
+            <span class="wall-gallery-badge uploaded">Snapshot</span>
+            @ClientTime.Date(Current.CapturedAt, Offset)
+        </span>
+    </div>
+</div>
+
+@code {
+    /// <summary>Gets or sets the gallery's images.</summary>
+    [Parameter]
+    [EditorRequired]
+    public IReadOnlyList<GalleryDocumentImage> Images { get; set; } = [];
+
+    /// <summary>Gets or sets the image shown.</summary>
+    [Parameter]
+    public int Index { get; set; }
+
+    /// <summary>Gets or sets what a move or a close (-1) reports.</summary>
+    [Parameter]
+    public EventCallback<int> IndexChanged { get; set; }
+
+    /// <summary>Gets or sets an image's renditions, the stored one first.</summary>
+    [Parameter]
+    [EditorRequired]
+    public Func<GalleryDocumentImage, IReadOnlyList<string>> UrlsOf { get; set; } = null!;
+
+    /// <summary>Gets or sets local time minus UTC.</summary>
+    [Parameter]
+    public TimeSpan Offset { get; set; }
+
+    private GalleryDocumentImage Current => Images[Math.Clamp(Index, 0, Images.Count - 1)];
+
+    private Task Go(int step)
+    {
+        var next = Index + step;
+        return next >= 0 && next < Images.Count ? IndexChanged.InvokeAsync(next) : Task.CompletedTask;
+    }
+
+    private Task OnKeyDown(KeyboardEventArgs args) => args.Key switch
+    {
+        "ArrowLeft" => Go(-1),
+        "ArrowRight" => Go(1),
+        "Escape" => IndexChanged.InvokeAsync(-1),
+        _ => Task.CompletedTask,
+    };
+}

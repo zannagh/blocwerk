@@ -14,17 +14,24 @@
  * @(...) alike, plus EXTRA),
  * or when it is a class-less rule of the page itself (:root, html, body, *, headings, [data-theme]). At-rule blocks
  * (@media, @container, @supports) keep the rules kept inside them; @keyframes are kept when a kept rule names them.
+ *
+ * wall3d.css is copied whole into client-wall3d.css (PR 3.13): it styles what Web's js/wall3d.js draws, which no
+ * .razor file spells out, and the client mounts that same viewer.
  */
 import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const WEB_CSS = f => join(ROOT, 'src/Blocwerk.Web/wwwroot/css', f);
-const OUTPUTS = {
+export const OUTPUTS = {
     'client-base.css': ['app.css', 'pages.css', 'usage-heat.css'],
     'client-components.css': ['components.css'],
+    'client-wall3d.css': ['wall3d.css'],
 };
-const RAZOR_DIRS = ['src/Blocwerk.Client/Pages', 'src/Blocwerk.Client/Views', 'src/Blocwerk.Client/Layout', 'src/Blocwerk.Shared.Ui/Overlay'];
+// Sources whose every rule is kept (see the header).
+const WHOLE = new Set(['wall3d.css']);
+const RAZOR_DIRS = ['src/Blocwerk.Client/Pages', 'src/Blocwerk.Client/Views', 'src/Blocwerk.Client/Layout',
+    'src/Blocwerk.Client/Gallery', 'src/Blocwerk.Client/ThreeD', 'src/Blocwerk.Shared.Ui/Overlay'];
 // Classes built from values the class attribute does not spell out (PanelViewer's chevrons, the tiers' `--tier` html).
 const EXTRA = ['left', 'right', 'up', 'down', 'active'];
 const PAGE_SELECTOR = /^(:root|html|body|\*|h[1-6]\b|a\b|\[data-theme|:where\()/;
@@ -151,7 +158,7 @@ export function build(sources) {
     const parts = [];
     for (const file of sources.map(WEB_CSS)) {
         const blocks = parse(readFileSync(file, 'utf8'));
-        const rules = subset(blocks, classes, animations);
+        const rules = subset(blocks, WHOLE.has(file.split('/').pop()) ? { has: () => true } : classes, animations);
         const frames = blocks.filter(b => b.body !== null && /^@keyframes\s/.test(b.prelude));
         parts.push(`/* ---- from Web's css/${file.split('/').pop()} ---- */`, ...rules, ...frames
             .filter(b => animations.has(b.prelude.split(/\s+/)[1]))

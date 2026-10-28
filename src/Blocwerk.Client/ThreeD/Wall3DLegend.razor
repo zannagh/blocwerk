@@ -1,0 +1,14 @@
+@using Blocwerk.Shared.Ui.Overlay
+@* The hold roles' colours beside a boulder's 3D view, as on the Server's 3D page and inline view. *@
+<span class="@CssClass" aria-label="Legend">
+    <span><i style="background:@BoulderHoldColors.Start"></i>Start</span>
+    <span><i style="background:@BoulderHoldColors.Normal"></i>Hand</span>
+    <span><i style="background:@BoulderHoldColors.Foot"></i>Foot</span>
+    <span><i style="background:@BoulderHoldColors.Top"></i>Top</span>
+</span>
+
+@code {
+    /// <summary>Gets or sets the legend's class (the page's or the inline view's).</summary>
+    [Parameter]
+    public string CssClass { get; set; } = "wall3d-legend";
+}

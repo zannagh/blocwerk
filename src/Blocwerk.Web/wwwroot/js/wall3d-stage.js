@@ -56,7 +56,9 @@ export function releaseTextures(group) {
 /** Injects wall3d.css once; returns the link while it is still loading (null when already there). */
 export function ensureStylesheet() {
     const href = new URL('../css/wall3d.css', import.meta.url).href;
-    if ([...document.querySelectorAll('link[rel="stylesheet"]')].some(l => l.href === href)) return null;
+    // The offline client's shell links its own copy, fingerprinted (v/css/client-wall3d.{fingerprint}.css).
+    const linked = l => l.href === href || /^\/v\/css\/client-wall3d\.[a-z0-9]+\.css$/.test(new URL(l.href, location.href).pathname);
+    if ([...document.querySelectorAll('link[rel="stylesheet"]')].some(linked)) return null;
     const link = document.createElement('link');
     link.rel = 'stylesheet';
     link.href = href;

@@ -3,7 +3,9 @@
 
 using System.Text.RegularExpressions;
 using Blocwerk.Client.Pages;
+using Blocwerk.Client.ThreeD;
 using Blocwerk.Client.Views;
+using Blocwerk.Core.Tests.OfflineClient3D;
 using Microsoft.AspNetCore.Components;
 using static Blocwerk.Core.Tests.OfflineClientStore.StoreWorld;
 using static Blocwerk.Core.Tests.OfflineClientViews.ViewWorld;
@@ -17,7 +19,13 @@ namespace Blocwerk.Core.Tests.OfflineClientViews;
 /// </summary>
 public sealed partial class NoEditControlTests
 {
-    private static readonly string[] AllowedButtons = ["panel-arrow", "holds-all-tool", "settings-card-summary", "scale-btn"];
+    // The 3D switch, the gallery's thumbnails and its "Load more" (PR 3.13) too.
+    private static readonly string[] AllowedButtons =
+    [
+        "panel-arrow", "holds-all-tool", "settings-card-summary", "scale-btn", "bw-client-3d-switch", "wall-gallery-thumb",
+        "wall-gallery-more",
+    ];
+
     private static readonly string[] AllowedSelects = ["filter-select", "grade-select"];
 
     public static TheoryData<string> Partitions => new() { UserA, Anon, Kiosk };
@@ -78,18 +86,29 @@ public sealed partial class NoEditControlTests
         }
     }
 
+    // Every page with PR 3.13's slots mounted (a cached gallery, a ready 3D model), on the photos and on 3D.
     private static async Task<List<string>> RenderAllAsync(string partition, string? token)
     {
-        await using var view = await ViewHarness.StartAsync(CachedDevice(partition), $"walls/{Wall}");
+        var toggle = new View3DToggle();
+        var device = View3DWorld.Device3D(partition, [View3DWorld.Image(1)]);
+        await using var view = await View3DWorld.StartAsync(device, $"walls/{Wall}", new FakeClient3D { Status = View3DWorld.Ready }, toggle);
         var pages = new List<string>
         {
             await view.RenderAsync<WallListPage>([]),
             await view.RenderAsync<WallViewPage>(new() { ["WallId"] = Wall, ["ShareToken"] = token }),
+            await view.RenderAsync<Wall3DPage>(new() { ["WallId"] = Wall, ["ShareToken"] = token }),
         };
+        toggle.Set(Wall, null, true);
+        pages.Add(await view.RenderAsync<WallViewPage>(new() { ["WallId"] = Wall, ["ShareToken"] = token }));
         foreach (var boulder in new[] { Crimp, Slab, Draft, Guid.NewGuid() })
         {
             pages.Add(await view.RenderAsync<BoulderPage>(new() { ["WallId"] = Wall, ["BoulderId"] = boulder, ["ShareToken"] = token }));
+            toggle.Set(Wall, boulder, true);
+            pages.Add(await view.RenderAsync<BoulderPage>(new() { ["WallId"] = Wall, ["BoulderId"] = boulder, ["ShareToken"] = token }));
         }
+
+        Assert.Contains(pages, p => p.Contains("wall-gallery-thumb", StringComparison.Ordinal));
+        Assert.Contains(pages, p => p.Contains("wall3d-stage-el", StringComparison.Ordinal));
 
         Assert.Contains(pages, p => p.Contains("Lovely crimps", StringComparison.Ordinal));
         return pages;

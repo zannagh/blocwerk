@@ -3,6 +3,8 @@
 
 using System.Text.RegularExpressions;
 using Blocwerk.Client.Pages;
+using Blocwerk.Client.ThreeD;
+using Blocwerk.Core.Tests.OfflineClient3D;
 using Blocwerk.Web.Components.OfflineClient;
 using static Blocwerk.Core.Tests.OfflineClientStore.StoreWorld;
 using static Blocwerk.Core.Tests.OfflineClientViews.ViewWorld;
@@ -19,9 +21,13 @@ public sealed partial class ClientStylesheetTests
 {
     // Classes the views render that the client leaves unstyled on purpose: boulder-photo is what the Server's focus
     // lightbulb (boulder-focus.css, Server interop) dims around, and the client has no focus mode.
+    // The gallery's and the 3D view's: the bw-client-* classes are hooks the tests select, and
+    // wall-gallery-panel, prev and next are unstyled on the Server's WallGalleryPanel too.
     private static readonly HashSet<string> Unstyled =
     [
         "boulder-photo",
+        "bw-client-3d-failed", "bw-client-3d-full", "bw-client-3d-inline", "bw-client-3d-page", "bw-client-3d-switch",
+        "bw-client-gallery", "bw-client-lightbox", "wall-gallery-panel", "prev", "next",
     ];
 
     private static readonly string Root = FeedBulkSiteScanner.RepoRoot();
@@ -52,6 +58,44 @@ public sealed partial class ClientStylesheetTests
 
         Assert.True(rendered.Count > 60, $"only {rendered.Count} classes rendered");
         Assert.Empty(rendered.Where(c => !styled.Contains(c) && !Unstyled.Contains(c)).Order());
+    }
+
+    [Fact]
+    public async Task EveryClassTheGalleryAndThe3DViewRender_IsStyledByTheClientsStylesheets()
+    {
+        var styled = Styled();
+        var rendered = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var html in await Render3DAsync())
+        {
+            foreach (Match attribute in ClassAttribute().Matches(html))
+            {
+                rendered.UnionWith(attribute.Groups[1].Value.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+            }
+        }
+
+        Assert.Contains("wall-gallery-thumb", rendered);
+        Assert.Contains("wall3d-inline-stage", rendered);
+        Assert.Empty(rendered.Where(c => !styled.Contains(c) && !Unstyled.Contains(c)).Order());
+    }
+
+    private static HashSet<string> Styled() => CssClass()
+        .Matches(string.Concat(OfflineClientShellAssets.Styles.Select(label => File.ReadAllText(Source(label)))))
+        .Select(m => m.Groups[1].Value)
+        .ToHashSet(StringComparer.Ordinal);
+
+    // The wall view with its gallery (more than one page) and the switch, the 3D view on both stages, and the 3D page.
+    private static async Task<List<string>> Render3DAsync()
+    {
+        var toggle = new View3DToggle();
+        var source = View3DWorld.Device3D(UserA, Enumerable.Range(1, 30).Select(i => View3DWorld.Image(i, "Monday")).ToList());
+        await using var view = await View3DWorld.StartAsync(source, $"walls/{Wall}", new FakeClient3D { Status = View3DWorld.Ready }, toggle);
+        var pages = new List<string> { await view.RenderAsync<WallViewPage>(new() { ["WallId"] = Wall }) };
+        toggle.Set(Wall, null, true);
+        pages.Add(await view.RenderAsync<WallViewPage>(new() { ["WallId"] = Wall }));
+        toggle.Set(Wall, Crimp, true);
+        pages.Add(await view.RenderAsync<BoulderPage>(new() { ["WallId"] = Wall, ["BoulderId"] = Crimp }));
+        pages.Add(await view.RenderAsync<Wall3DPage>(new() { ["WallId"] = Wall }));
+        return pages;
     }
 
     private static async Task<List<string>> RenderAllAsync()

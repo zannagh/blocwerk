@@ -149,5 +149,5 @@ window.bwClientStoreRows = (function (win) {
         return { key: keyOf(row), docs: out };
     }
 
-    return { KINDS, idOf, shareOf, rows, docsOf, keyOf };
+    return { KINDS, idOf, shareOf, mayRead, rows, docsOf, keyOf };
 })(window);

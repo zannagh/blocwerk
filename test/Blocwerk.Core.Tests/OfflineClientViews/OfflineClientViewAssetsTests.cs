@@ -51,12 +51,69 @@ public sealed partial class OfflineClientViewAssetsTests
     }
 
     [Fact]
-    public void NoNamedScript_LoadsAnotherFile()
+    public void NoNamedScript_LoadsAnotherFile_ButAModuleTheShellNames()
     {
-        foreach (var label in Named.Where(l => l.EndsWith(".js", StringComparison.Ordinal) && !l.StartsWith(OfflineClientShellAssets.FrameworkPrefix, StringComparison.Ordinal)))
+        var scripts = Named.Where(l => l.EndsWith(".js", StringComparison.Ordinal) && !l.StartsWith(OfflineClientShellAssets.FrameworkPrefix, StringComparison.Ordinal))
+            .Except(OfflineClient3DAssets.Modules);
+        foreach (var label in scripts)
         {
-            Assert.DoesNotMatch(DynamicLoad(), File.ReadAllText(Source(label)));
+            var text = File.ReadAllText(Source(label));
+            foreach (Match import in LiteralImport().Matches(text))
+            {
+                Assert.Contains(import.Groups[1].Value.TrimStart('/'), Named);
+            }
+
+            Assert.DoesNotMatch(DynamicLoad(), LiteralImport().Replace(text, string.Empty));
         }
+
+        Assert.Equal(
+            ["js/wall3d.js", "js/wall3d-splat-hold.js"],
+            LiteralImport().Matches(File.ReadAllText(Source("v/js/client-3d-stage.js"))).Select(m => m.Groups[1].Value.TrimStart('/')));
+    }
+
+    [Fact]
+    public void The3DModules_AreWall3dsWholeImportGraph()
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var todo = new Stack<string>(["js/wall3d.js", "js/wall3d-splat-hold.js"]);
+        while (todo.TryPop(out var label))
+        {
+            if (!seen.Add(label))
+            {
+                continue;
+            }
+
+            var code = Comments().Replace(File.ReadAllText(Source(label)), string.Empty);
+            foreach (Match import in ModuleImport().Matches(code))
+            {
+                var spec = import.Groups.Cast<Group>().Skip(1).First(g => g.Success).Value;
+                Assert.StartsWith(".", spec, StringComparison.Ordinal);
+                todo.Push(new Uri(new Uri("http://x/" + label), spec).AbsolutePath.TrimStart('/'));
+            }
+        }
+
+        Assert.Equal(seen.Order(StringComparer.Ordinal), OfflineClient3DAssets.Modules.Order(StringComparer.Ordinal));
+        Assert.All(OfflineClient3DAssets.Modules, label => Assert.Contains(label, Named));
+        Assert.Contains(OfflineClient3DAssets.Stylesheet, OfflineClientShellAssets.Styles);
+    }
+
+    [Fact]
+    public void The3DModules_LoadNoFileOfTheirOwn_ButWhatTheShellNames()
+    {
+        var loads = OfflineClient3DAssets.Modules
+            .SelectMany(label => DynamicLoad().Matches(File.ReadAllText(Source(label))).Select(m => $"{label}: {m.Value}"))
+            .ToList();
+
+        // Spark on demand (named: the graph test), wall3d.css (named: a shell stylesheet), the view's own texture URLs (the
+        // asset cache's, three.js's ImageLoader), and Spark's decode worker from its inline source (a blob, no file).
+        Assert.Equal(
+            [
+                "js/wall3d-splat-levels.js: import(", "js/wall3d-stage.js: createElement('link", "lib/three/three.core.min.js: .src=",
+                "lib/spark/spark.module.min.js: new Worker", "lib/spark/spark.module.min.js: new Worker", "lib/spark/spark.module.min.js: .src =",
+            ],
+            loads);
+        Assert.Contains("new URL('../css/wall3d.css', import.meta.url)", File.ReadAllText(Source("js/wall3d-stage.js")), StringComparison.Ordinal);
+        Assert.Contains("createObjectURL(DB)", File.ReadAllText(Source("lib/spark/spark.module.min.js")), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -136,6 +193,18 @@ public sealed partial class OfflineClientViewAssetsTests
 
     [GeneratedRegex("import\\(|importScripts|createElement\\(['\"](script|link|img)|new Worker|\\.src\\s*=")]
     private static partial Regex DynamicLoad();
+
+    // A dynamic import of a literal URL: allowed when the shell names that module (its import map).
+    [GeneratedRegex("import\\(\\s*'([^']+)'\\s*\\)")]
+    private static partial Regex LiteralImport();
+
+    // A module's static import or export-from, and a literal dynamic import (three.js's minified `from"./x.js"` too).
+    [GeneratedRegex("(?:import|export)\\s[^'\";]*?from\\s*['\"]([^'\"]+)['\"]|import\\(\\s*['\"]([^'\"]+)['\"]\\s*\\)|from\"([^\"]+)\"")]
+    private static partial Regex ModuleImport();
+
+    // Block and line comments (a line comment only at a line's start, so URLs inside code stay).
+    [GeneratedRegex("/\\*.*?\\*/|(?m)^[ \\t]*//[^\\n]*", RegexOptions.Singleline)]
+    private static partial Regex Comments();
 
     // A src or href attribute with a literal file path (not a Razor expression, not a client route or a Server page).
     [GeneratedRegex("(src|href)=\"(?!@)[^\"]*\\.(js|css|png|svg|jpg|jpeg|webp|woff2?|wasm|json)\"")]

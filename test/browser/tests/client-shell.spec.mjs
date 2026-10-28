@@ -28,10 +28,15 @@ test('/v/ boots the client from its shell, with no circuit and no edit presence'
     expect(requests.filter(p => p.startsWith('/v/_content/'))).toEqual([]);
     // Every file the shell names is fingerprinted, the runtime's modules through the import map.
     const named = await page.evaluate(() => [...document.querySelectorAll('script[src], link[rel="stylesheet"]')].map(e => e.getAttribute('src') || e.getAttribute('href')));
-    expect(named.length).toBe(22);
+    // 22 for the views, the sync and the hand-back, 4 for the 3D view and the gallery (PR 3.13: client-wall3d.css, client-3d.css, client-3d.js, client-3d-stage.js).
+    expect(named.length).toBe(26);
     expect(named.filter(u => !/^\/[^?#]+\.[a-z0-9]{10}\.(js|css)$/.test(u))).toEqual([]);
     const imports = await page.evaluate(() => JSON.parse(document.querySelector('script[type="importmap"]').textContent).imports);
     expect(imports['/v/_framework/dotnet.js']).toMatch(/^\/v\/_framework\/dotnet\.[a-z0-9]{10}\.js$/);
+    // The 3D view's modules are named through the import map, fingerprinted, and none loads at boot (PR 3.13).
+    expect(imports['/js/wall3d.js']).toMatch(/^\/js\/wall3d\.[a-z0-9]{10}\.js$/);
+    expect(imports['/lib/spark/spark.module.min.js']).toMatch(/^\/lib\/spark\/spark\.module\.min\.[a-z0-9]{10}\.js$/);
+    expect(requests.filter(p => /\/js\/wall3d|\/lib\//.test(p))).toEqual([]);
     expect(requests.filter(p => /^\/v\/_framework\/(dotnet|blazor\.webassembly)\.js$/.test(p))).toEqual([]);
     const globals = await page.evaluate(() => ['bwAssetLedgerIdb', 'bwAssetLedger', 'bwAssetWipe', 'bwAssetLock', 'bwAssetSession', 'bwAssetClear', 'bwClientStoreRows', 'bwClientStore', 'bwClientView', 'bwAssetManifest', 'bwAssetData', 'bwAssetMine', 'bwClientSync']
         .filter(name => typeof window[name] !== 'object'));

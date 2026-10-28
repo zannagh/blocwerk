@@ -1,0 +1,94 @@
+@implements IAsyncDisposable
+@inject IClient3D Client3D
+@inject ClientStore Store
+@* The 3D view of a cached wall (PR 3.13): Web's wall3d.js mounted with the view3d document the device holds, the
+   boulder highlighted on a boulder's view. Read-only, from the device alone: a wall whose 3D is not cached in full says
+   so with the Server page's link, and with "Keep 3D on this device" off it shows no 3D at all. The viewer starts in
+   Schematic; photo-real (only with a cached splat level) waits for the client's first ~20 s (client-3d-stage.js). *@
+<div class="bw-client-3d" data-bw-3d="@(session.Status?.Kind.ToString().ToLowerInvariant() ?? "loading")">
+    @if (session.Status is null)
+    {
+        <p class="wall3d-inline-message">Loading the 3D view…</p>
+    }
+    else if (session.ShowsStage)
+    {
+        <div class="wall3d-stage-el" @ref="stage"></div>
+    }
+    else if (session.Failure is { } failure)
+    {
+        <p class="wall3d-inline-message bw-client-3d-failed">@failure</p>
+    }
+    else
+    {
+        <div class="wall3d-inline-message">
+            <p>@Message</p>
+            @if (session.Status.Kind != Client3DState.None)
+            {
+                <a class="bw-client-online" href="@OnlinePath">Open the 3D view online</a>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private View3DSession session = null!;
+    private ElementReference stage;
+
+    /// <summary>Gets or sets the cached wall.</summary>
+    [Parameter]
+    [EditorRequired]
+    public CachedWall Wall { get; set; } = null!;
+
+    /// <summary>Gets or sets the boulder to highlight, or null for the wall's view.</summary>
+    [Parameter]
+    public Blocwerk.Contracts.Documents.BouldersDocumentBoulder? Boulder { get; set; }
+
+    /// <summary>Gets or sets the share link's token, or null.</summary>
+    [Parameter]
+    public string? ShareToken { get; set; }
+
+    /// <summary>Gets or sets the start mode ("schematic" by default).</summary>
+    [Parameter]
+    public string? Mode { get; set; }
+
+    private string Message => session.Status?.Kind switch
+    {
+        Client3DState.Off => "3D is turned off on this device (Keep 3D on this device, in the settings).",
+        Client3DState.Missing => "The 3D view of this wall is not saved on this device.",
+        _ => "This wall has no 3D model on this device.",
+    };
+
+    private string OnlinePath => ClientRoutes.ServerPath(ClientRoutes.Wall3DLink(Wall.WallId, ShareToken, Boulder?.Id));
+
+    /// <inheritdoc />
+    public async ValueTask DisposeAsync()
+    {
+        await session.UnmountAsync();
+        GC.SuppressFinalize(this);
+    }
+
+    /// <inheritdoc />
+    protected override void OnInitialized() => session = new View3DSession(Client3D);
+
+    /// <inheritdoc />
+    protected override Task OnParametersSetAsync() =>
+        session.LoadAsync((Wall.WallId, Boulder?.Id, Store.Partition, Mode), Store.Partition, Wall.WallId);
+
+    /// <inheritdoc />
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (session.ShowsStage && await session.MountAsync(stage, Request))
+        {
+            StateHasChanged();
+        }
+    }
+
+    private Client3DRequest Request(Client3DStatus status) => new(
+        Store.Partition ?? string.Empty,
+        Wall.WallId.ToString(),
+        status.Sha!,
+        ShareToken,
+        Client3DBoulders.Of(Boulder, Wall.Holds),
+        string.IsNullOrEmpty(Mode) ? "schematic" : Mode,
+        Blocwerk.Shared.Ui.Overlay.BoulderHoldColors.Wall3DRoles);
+}
