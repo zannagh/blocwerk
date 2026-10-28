@@ -9,7 +9,7 @@
 #
 # Flags: --sha <git-sha>      wait until the app image on GHCR was built from this commit
 #        --skip-wait          do not wait for the image (use the :latest that is there)
-#        --compute            also pull and recreate wall-geometry and splat-cpu
+#        --compute            also pull and recreate wall-geometry (never splat-cpu: off by default since O7)
 #        --images-tar         also tar wall-images/ into the backup (can be large)
 #        --keep-paused        on failure, leave autodeploy paused (default: the trap re-enables it)
 #        --restore-db         with --rollback --apply: also pg_restore the dump (typed confirmation)
@@ -298,7 +298,9 @@ install_files() {
   rr 'mv docker-compose.yml.new docker-compose.yml && mv autodeploy.sh.new autodeploy.sh'
 }
 
-services() { if [ "$COMPUTE" = 1 ]; then echo "blocwerk wall-geometry splat-cpu"; else echo blocwerk; fi; }
+# splat-cpu is not in the list: naming a service starts it even when its profile is off, and since O7 it stays
+# stopped (docs/runbooks/o7-splat-on-runners.md). Its rollback starts it by hand.
+services() { if [ "$COMPUTE" = 1 ]; then echo "blocwerk wall-geometry"; else echo blocwerk; fi; }
 
 deploy() {
   log "== pull and up -d: $(services)"

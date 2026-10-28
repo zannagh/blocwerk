@@ -115,7 +115,7 @@ public static partial class RunnerApiEndpoints
             return refused;
         }
 
-        var max = queue.Options.MaxResultBytes;
+        var max = await queue.UploadLimitAsync(jobId, http.RequestAborted);
         if (http.Request.ContentLength > max)
         {
             return Outcome(http, RunnerJobOutcome.TooLarge);

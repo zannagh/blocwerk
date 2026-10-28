@@ -50,6 +50,9 @@ class Settings:
         # callbacks to loopback/private addresses (SSRF guard, see netguard.py)
         self.callback_allow_private = env_flag("CALLBACK_ALLOW_PRIVATE")
         self.callback_allowed_hosts = os.environ.get("CALLBACK_ALLOWED_HOSTS", "")
+        # resident MB one job (its whole process group) may take; above it the job ends as a resource failure
+        # (memguard.py). 0 = no guard.
+        self.job_max_memory_mb = env_int("JOB_MAX_MEMORY_MB", 0)
         self.git_sha = os.environ.get("GIT_SHA", "unknown")
         return self
 

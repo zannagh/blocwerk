@@ -25,7 +25,8 @@ public enum GpuRunnerMode
 /// <c>RUNNERS__MAXJOBHOURS</c>, <c>RUNNERS__QUEUEDJOBDAYS</c>, <c>RUNNERS__MAXCONCURRENTUPLOADS</c>,
 /// <c>RUNNERS__MAXUPLOADMINUTES</c>, <c>RUNNERS__MINFREEDISKMB</c>, <c>RUNNERS__MAXRESULTSPLATS</c>,
 /// <c>RUNNERS__MAXRUNNERSPERUSER</c>, <c>RUNNERS__PREVIEWS</c>, <c>RUNNERS__HOLDS</c>, <c>RUNNERS__HOLDSCLAIMMINUTES</c>,
-/// <c>RUNNERS__HOLDSMAXMINUTES</c>).
+/// <c>RUNNERS__HOLDSMAXMINUTES</c>, <c>RUNNERS__PREPAREMEMORYMB</c>, <c>RUNNERS__FINISHMEMORYMB</c>, <c>RUNNERS__PREPAREMAXHOURS</c>,
+/// <c>RUNNERS__MARKERLESSQUEUEDDAYS</c>) and <c>SPLATSERVICE__ONRUNNERS</c>.
 /// </summary>
 public sealed class GpuRunnerOptions
 {
@@ -104,6 +105,9 @@ public sealed class GpuRunnerOptions
     /// </summary>
     public bool Previews { get; init; } = true;
 
+    /// <summary>Whether previews are taken: <see cref="Previews"/>, but never on runners only (<see cref="SplatOnRunners"/>), which finish no previews.</summary>
+    public bool PreviewsActive => Previews && !SplatOnRunners;
+
     /// <summary>The earliest step a preview is taken at (earlier ones are a blur, not worth a finish on the server).</summary>
     public const int MinPreviewStep = 3000;
 
@@ -143,6 +147,35 @@ public sealed class GpuRunnerOptions
     /// <summary>How often the search looks at its hold detection job while it waits.</summary>
     public TimeSpan HoldsPollInterval { get; init; } = TimeSpan.FromSeconds(5);
 
+    /// <summary>
+    /// Whether the splat worker's prepare and finish halves run on 3D runners (<c>SPLATSERVICE__ONRUNNERS</c>, default off).
+    /// Off, queued <see cref="Entities.GpuJobKind.SplatPrepare"/> / <see cref="Entities.GpuJobKind.SplatFinish"/> jobs are
+    /// cancelled by the sweep (the rollback clean-up). This is the only place the setting is read: whatever decides to queue
+    /// these jobs (the capture pipeline's factory) takes it from this singleton, so the two can never disagree.
+    /// </summary>
+    public bool SplatOnRunners { get; init; }
+
+    /// <summary>The memory a <c>splat-prepare</c> job needs on a runner, MB, when the job names none (<c>RUNNERS__PREPAREMEMORYMB</c>).</summary>
+    public int PrepareMemoryMb { get; init; } = 6144;
+
+    /// <summary>The memory a <c>splat-finish</c> job needs on a runner, MB, when the job names none (<c>RUNNERS__FINISHMEMORYMB</c>).</summary>
+    public int FinishMemoryMb { get; init; } = 3072;
+
+    /// <summary>Longest a <c>splat-prepare</c> claim may run (<c>RUNNERS__PREPAREMAXHOURS</c>): reconstructing a big wall outlasts a training.</summary>
+    public TimeSpan PrepareMaxJobDuration { get; init; } = TimeSpan.FromHours(10);
+
+    /// <summary>How long a markerless capture's <c>splat-prepare</c> may wait for a runner (<c>RUNNERS__MARKERLESSQUEUEDDAYS</c>); the capture is blocked meanwhile.</summary>
+    public TimeSpan MarkerlessQueuedLifetime { get; init; } = TimeSpan.FromDays(3);
+
+    /// <summary>
+    /// The largest <c>splat-prepare</c> result: the training bundle (<see cref="MaxBundleBytes"/>), <c>sparse.zip</c> (512 MiB) and
+    /// the small rest (64 MiB). A <c>splat-finish</c> result is bound by <see cref="MaxResultBytes"/>, like a trained splat.
+    /// </summary>
+    public long MaxPrepareResultBytes => MaxBundleBytes + (512L + 64) * 1024 * 1024;
+
+    /// <summary>The largest result upload of a job of <paramref name="kind"/> (decoded).</summary>
+    public long MaxUploadBytes(Entities.GpuJobKind kind) => kind == Entities.GpuJobKind.SplatPrepare ? MaxPrepareResultBytes : MaxResultBytes;
+
     public static GpuRunnerOptions Bind(IConfiguration? configuration)
     {
         var d = new GpuRunnerOptions();
@@ -168,6 +201,12 @@ public sealed class GpuRunnerOptions
             HoldsOnRunners = bool.TryParse(Read(configuration, "Holds"), out var holds) ? holds : d.HoldsOnRunners,
             HoldsClaimWait = Int(configuration, "HoldsClaimMinutes", 1, 24 * 60) is { } claim ? TimeSpan.FromMinutes(claim) : d.HoldsClaimWait,
             HoldsMaxWait = Int(configuration, "HoldsMaxMinutes", 1, 7 * 24 * 60) is { } most ? TimeSpan.FromMinutes(most) : d.HoldsMaxWait,
+            SplatOnRunners = bool.TryParse(
+                configuration?["Blocwerk:SplatService:OnRunners"] ?? Environment.GetEnvironmentVariable("SPLATSERVICE__ONRUNNERS"), out var onRunners) && onRunners,
+            PrepareMemoryMb = Int(configuration, "PrepareMemoryMb", 1, 10_000_000) ?? d.PrepareMemoryMb,
+            FinishMemoryMb = Int(configuration, "FinishMemoryMb", 1, 10_000_000) ?? d.FinishMemoryMb,
+            PrepareMaxJobDuration = Int(configuration, "PrepareMaxHours", 1, 168) is { } prepareHours ? TimeSpan.FromHours(prepareHours) : d.PrepareMaxJobDuration,
+            MarkerlessQueuedLifetime = Int(configuration, "MarkerlessQueuedDays", 1, 365) is { } markerless ? TimeSpan.FromDays(markerless) : d.MarkerlessQueuedLifetime,
         };
     }
 

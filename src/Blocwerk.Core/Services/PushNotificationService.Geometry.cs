@@ -32,4 +32,18 @@ public sealed partial class PushNotificationService
             // Same opt-out bit as the model notice (WallModelReady).
             await SendToUsersAsync([userId], payload, NotificationType.WallModelReady);
         });
+
+    public Task NotifyNoRunnerAsync(Guid wallId, Guid userId) =>
+        GuardAsync(nameof(NotifyNoRunnerAsync), async db =>
+        {
+            var wallName = await WallNameAsync(db, wallId);
+            var payload = new PushPayload(
+                Title: wallName,
+                Body: $"No 3D runner was online for a day. The 3D work for {wallName} will be done once one becomes available.",
+                Url: $"/walls/{wallId}",
+                Tag: $"wall-runner-wait-{wallId}");
+
+            // Same opt-out bit as the model notice (WallModelReady).
+            await SendToUsersAsync([userId], payload, NotificationType.WallModelReady);
+        });
 }

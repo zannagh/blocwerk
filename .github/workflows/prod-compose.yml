@@ -43,3 +43,6 @@ jobs:
 
       - name: Rollout script tests (fake box)
         run: docker/prod/tests/rollout-test.sh
+
+      - name: Autodeploy decisions (fake docker)
+        run: bash docker/prod/test-autodeploy.sh

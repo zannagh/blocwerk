@@ -26,4 +26,17 @@ public enum GpuJobKind
     /// on the photo-real surface. Only runners that advertise the <c>register-panels</c> capability get it.
     /// </summary>
     RegisterPanels = 3,
+
+    /// <summary>
+    /// The CPU half before the training (photos to training bundle, or the markerless reconstruction), run by a 3D runner so the
+    /// server needs no splat worker. The input and result are runner envelopes (<c>RunnerComputeEnvelope</c>). Only runners that
+    /// advertise <c>splat-prepare</c> and have the memory get it.
+    /// </summary>
+    SplatPrepare = 4,
+
+    /// <summary>
+    /// The CPU half after the training (the trained scene to the files the app installs), run by a 3D runner. Only runners that
+    /// advertise <c>splat-finish</c> and have the memory get it.
+    /// </summary>
+    SplatFinish = 5,
 }

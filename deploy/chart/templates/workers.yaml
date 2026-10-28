@@ -1,0 +1,4 @@
+{{- range include "blocwerk.worker.list" . | fromJsonArray }}
+---
+{{ include "blocwerk.worker" (merge (dict "root" $ "v" (index $.Values .key)) .) }}
+{{- end }}

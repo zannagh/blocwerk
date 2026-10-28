@@ -68,18 +68,23 @@ def check_frame_cameras(cams):
         raise OptionsError("frameCameras must be a list of cameras {image, width, height, K, dist, R, t}")
 
 
+def write_finish_inputs(job_dir, fields):
+    """prepared.json + trainStats.json of a `splat-finish` job from its parsed `prepared` / `trainStats` fields."""
+    prepared = json_field(fields, "prepared")
+    check_prepared(prepared)
+    stats = json_field(fields, "trainStats")
+    with open(os.path.join(job_dir, "prepared.json"), "w") as fh:
+        json.dump(prepared, fh)
+    with open(os.path.join(job_dir, "trainStats.json"), "w") as fh:
+        json.dump(stats if isinstance(stats, dict) else {}, fh)
+
+
 async def finish_job(svc, request, tools):
     require_tools("splat-finish", tools)
     job = svc.create_job("splat-finish", None)
     try:
         fields, _name = await FinishUpload(job.dir).read(request)
-        prepared = json_field(fields, "prepared")
-        check_prepared(prepared)
-        stats = json_field(fields, "trainStats")
-        with open(os.path.join(job.dir, "prepared.json"), "w") as fh:
-            json.dump(prepared, fh)
-        with open(os.path.join(job.dir, "trainStats.json"), "w") as fh:
-            json.dump(stats if isinstance(stats, dict) else {}, fh)
+        write_finish_inputs(job.dir, fields)
     except BaseException:
         svc.jobs().discard(job)
         raise

@@ -18,9 +18,9 @@ class SplatUpload(StreamingUpload):
     def __init__(self, job_dir):
         self.dir = os.path.join(job_dir, "arrived")
         os.makedirs(self.dir, exist_ok=True)
-        super().__init__(fields=FIELDS, photo_ext=PHOTO_EXT, process_photo=self._store, kind="splat")
+        super().__init__(fields=FIELDS, photo_ext=PHOTO_EXT, process_photo=self.store, kind="splat")
 
-    def _store(self, stem, _ext, raw):
+    def store(self, stem, _ext, raw):
         try:
             jpg, facts = sanitize(raw, settings.ingest_max_edge, settings.ingest_jpeg_quality)
         except PhotoError as e:

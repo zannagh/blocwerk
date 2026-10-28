@@ -1,0 +1,67 @@
+{{- if .Values.aspire.enabled -}}
+{{- $a := .Values.aspire -}}
+{{- $name := printf "%s-aspire" (include "blocwerk.fullname" .) -}}
+{{- $ctx := dict "root" . "component" "aspire" -}}
+# Aspire dashboard: the app's OTLP sink, telemetry kept in memory only. Anonymous by design, so the UI (18888) must
+# only be reached over a private route; 18889 is the OTLP/gRPC ingest.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "blocwerk.labels" $ctx | nindent 4 }}
+spec:
+  replicas: {{ $a.replicas }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "blocwerk.selectorLabels" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "blocwerk.selectorLabels" $ctx | nindent 8 }}
+    spec:
+      {{- include "blocwerk.podOptions" . | nindent 6 }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1654   # the .NET "app" user
+        runAsGroup: 1654
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: aspire
+          image: {{ include "blocwerk.image" (list $a.image "") }}
+          env:
+            - {name: DOTNET_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS, value: "true"}
+          ports:
+            - {name: ui, containerPort: 18888}
+            - {name: otlp, containerPort: 18889}
+          startupProbe:
+            tcpSocket: {port: ui}
+            periodSeconds: 3
+            failureThreshold: 40
+          livenessProbe:
+            tcpSocket: {port: ui}
+            periodSeconds: 30
+          readinessProbe:
+            tcpSocket: {port: otlp}
+            periodSeconds: 10
+          resources:
+            {{- toYaml $a.resources | nindent 12 }}
+          securityContext:
+            {{- include "blocwerk.restrictedContainer" false | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "blocwerk.labels" $ctx | nindent 4 }}
+spec:
+  selector:
+    {{- include "blocwerk.selectorLabels" $ctx | nindent 4 }}
+  ports:
+    - {name: ui, port: 18888, targetPort: ui}
+    - {name: otlp, port: 18889, targetPort: otlp}
+{{- end }}

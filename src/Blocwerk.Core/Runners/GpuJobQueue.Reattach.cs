@@ -34,7 +34,7 @@ public sealed partial class GpuJobQueue
         }
 
         // Past the wall-clock cap the sweep fails the attempt; a runner that lost the wall gets something else next time.
-        var deadline = Deadline(job.ClaimedAt ?? now, uploading: false);
+        var deadline = Deadline(job.ClaimedAt ?? now, uploading: false, job.Kind);
         if (now >= deadline || !await StillEligibleAsync(db, runner, job, ct))
         {
             return null;

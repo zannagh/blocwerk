@@ -61,7 +61,8 @@ public sealed partial class GpuJobQueue
             return RunnerJobOutcome.InsufficientStorage;
         }
 
-        var (stored, refused) = await StoreUploadAsync(runner, jobId, body, encoding == "gzip", ct);
+        var cap = options.MaxUploadBytes(claimed.Kind);
+        var (stored, refused) = await StoreUploadAsync(runner, jobId, body, encoding == "gzip", ct, cap);
         if (stored is null)
         {
             return refused;
@@ -72,6 +73,7 @@ public sealed partial class GpuJobQueue
             GpuJobKind.Textures => ValidateStoredTextures(stored, runner, jobId),
             GpuJobKind.DetectHolds => ValidateStoredHolds(stored, runner, jobId),
             GpuJobKind.RegisterPanels => ValidateStoredPanels(stored, runner, jobId),
+            GpuJobKind.SplatPrepare or GpuJobKind.SplatFinish => ValidateStoredCompute(stored, runner, jobId, cap),
             _ => ValidateStored(stored, runner, jobId),
         };
         if (format is null)
@@ -90,11 +92,13 @@ public sealed partial class GpuJobQueue
     public async Task ResumeIfDeliveredAsync(Guid captureId, CancellationToken ct)
     {
         await using var db = dbContextFactory.CreateDbContext();
-        var delivered = await db.GpuJobs.AnyAsync(
-            j => j.CaptureId == captureId && j.Kind == GpuJobKind.Splat && j.Status == GpuJobStatus.Succeeded && j.InstalledAt == null, ct);
-        if (delivered)
+        var delivered = await db.GpuJobs.Where(
+                j => j.CaptureId == captureId && j.Status == GpuJobStatus.Succeeded && j.InstalledAt == null
+                     && (j.Kind == GpuJobKind.Splat || j.Kind == GpuJobKind.SplatPrepare || j.Kind == GpuJobKind.SplatFinish))
+            .Select(j => (GpuJobKind?)j.Kind).FirstOrDefaultAsync(ct);
+        if (delivered is { } kind)
         {
-            await HandBackAsync(db, captureId, ct);
+            await HandBackAsync(db, captureId, kind, ct);
         }
     }
 
@@ -239,15 +243,17 @@ public sealed partial class GpuJobQueue
             return RunnerJobOutcome.Ok;
         }
 
-        await HandBackAsync(db, captureId, ct);
+        await HandBackAsync(db, captureId, kind, ct);
         return RunnerJobOutcome.Ok;
     }
 
     /// <summary>
     /// The capture (finished as "Model ready" while the runner trained) goes back to the photo-real stage, exactly
-    /// like a retrain: its model and any older view stay live until the new view is stored.
+    /// like a retrain: its model and any older view stay live until the new view is stored. A capture parked in
+    /// <see cref="WallCaptureStatus.Solving"/> (waiting for a runner's reconstruction) is only woken, and only for the
+    /// <see cref="GpuJobKind.SplatPrepare"/> job it waits for.
     /// </summary>
-    private async Task<bool> HandBackAsync(BlocwerkDbContext db, Guid captureId, CancellationToken ct)
+    private async Task<bool> HandBackAsync(BlocwerkDbContext db, Guid captureId, GpuJobKind kind, CancellationToken ct)
     {
         var capture = await db.WallCaptures.FirstOrDefaultAsync(c => c.Id == captureId, ct);
         if (capture is { Status: WallCaptureStatus.Succeeded or WallCaptureStatus.SucceededWithoutTextures or WallCaptureStatus.SucceededWithoutSplat })
@@ -260,8 +266,10 @@ public sealed partial class GpuJobQueue
             capture.CompletedAt = null;
             await db.SaveChangesAsync(ct);
         }
-        else if (capture is not { Status: WallCaptureStatus.Splatting })
+        else if (capture is not { Status: WallCaptureStatus.Splatting }
+                 && !(capture is { Status: WallCaptureStatus.Solving } && kind == GpuJobKind.SplatPrepare))
         {
+            // Splatting: the processor is mid-view. Solving: a markerless capture parked until a runner reconstructs it.
             return false;
         }
 

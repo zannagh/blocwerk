@@ -40,7 +40,8 @@ public sealed class ComputeJobClient(
 
         int? images = limits.TryGetProperty("maxPhotos", out var max) && max.TryGetInt32(out var n) && n > 0 ? n : null;
         long? bytes = limits.TryGetProperty("maxRequestMb", out var mb) && mb.TryGetInt64(out var m) && m > 0 ? m * 1024 * 1024 : null;
-        return new ComputeLimits(images, bytes);
+        long? blend = limits.TryGetProperty("texturesBlendMaxMb", out var bm) && bm.TryGetInt64(out var b) && b > 0 ? b * 1_000_000 : null;
+        return new ComputeLimits(images, bytes, blend);
     }
 
     public async Task<string> SubmitJsonAsync(string kind, string json, CancellationToken ct)
