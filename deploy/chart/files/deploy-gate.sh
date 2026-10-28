@@ -28,7 +28,7 @@ if [ -z "${api_failed:-}" ]; then
   fi
 fi
 
-n=0
+n=0 u=0
 while :; do
   state=$(curl -s --max-time 5 "$URL/health/ready-to-deploy" || echo unreachable)
   if [ "$state" = "unreachable" ]; then
@@ -37,12 +37,13 @@ while :; do
       echo "app not reachable and no web pod is ready; nothing to protect"
       break
     fi
-    if [ "$n" -ge "$MAX_DEFER" ]; then
-      echo "app still not reachable after $n polls (web pod readiness: $readiness); deploying anyway (cap)"
+    # Its own count: past the busy cap, one slow answer must not end the wait.
+    if [ "$u" -ge "$MAX_DEFER" ]; then
+      echo "app still not reachable after $u polls (web pod readiness: $readiness); deploying anyway (cap)"
       break
     fi
-    echo "app not reachable but the web pod readiness is '$readiness'; treating it as busy ($((n + 1))/$MAX_DEFER)"
-    n=$((n + 1))
+    u=$((u + 1))
+    echo "app not reachable but the web pod readiness is '$readiness'; treating it as busy ($u/$MAX_DEFER)"
     sleep "$POLL_SECONDS"
     continue
   fi
@@ -65,7 +66,7 @@ while :; do
   n=$((n + 1))
   sleep "$POLL_SECONDS"
 done
-echo "gate passed: state=$state after $n deferral(s)"
+echo "gate passed: state=$state after $n busy and $u unreachable deferral(s)"
 
 if [ "$state" = "unreachable" ]; then
   echo "app not reachable; nothing to announce or flush"

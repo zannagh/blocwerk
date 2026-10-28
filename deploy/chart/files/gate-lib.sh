@@ -34,8 +34,10 @@ running_rollouts() {
 }
 
 # pod_readiness <component>: "ready" when one of its pods reports a ready container, "none" when the API answered
-# and none does, "unknown" when the API cannot be read.
+# and none does, "unknown" when the API cannot be read. One try: the callers poll it, and the hook deadlines count
+# one API timeout per poll. Always called in $( ), so the API_TRIES below stays in that subshell.
 pod_readiness() {
+  API_TRIES=1
   p=$(pods_json "$1") || { echo unknown; return; }
   if printf '%s' "$p" | grep -q '"ready":true'; then echo ready; else echo none; fi
 }

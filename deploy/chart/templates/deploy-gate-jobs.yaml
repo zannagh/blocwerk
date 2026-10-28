@@ -25,7 +25,7 @@ metadata:
     {{- include "blocwerk.hookAnnotations" (dict "phase" "PreSync" "wave" 0) | nindent 4 }}
 spec:
   backoffLimit: 0
-  activeDeadlineSeconds: {{ add (mul (add $gate.etaMaxDefer 2) $gate.pollSeconds) 600 }}
+  activeDeadlineSeconds: {{ add (mul (add $gate.etaMaxDefer $gate.maxDefer 2) (add $gate.pollSeconds 15)) 600 }}
   template:
     {{- include "blocwerk.gatePod" (dict "root" . "script" "deploy-gate.sh" "env" $webEnv) | nindent 4 }}
 {{- $workers := include "blocwerk.worker.list" . | fromJsonArray }}
@@ -51,7 +51,7 @@ metadata:
     {{- include "blocwerk.hookAnnotations" (dict "phase" "Sync" "wave" 1) | nindent 4 }}
 spec:
   backoffLimit: 0
-  activeDeadlineSeconds: {{ add (mul (add $gate.computeMaxDefer 2) $gate.pollSeconds (len $workers)) 600 }}
+  activeDeadlineSeconds: {{ add (mul (add $gate.computeMaxDefer 2) (add $gate.pollSeconds 15) (len $workers)) 600 }}
   template:
     {{- include "blocwerk.gatePod" (dict "root" . "script" "compute-gate.sh" "env" $computeEnv) | nindent 4 }}
 {{- end }}
