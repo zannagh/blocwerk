@@ -10,7 +10,7 @@ namespace Blocwerk.Web.Components.Shared;
 
 /// <summary>
 /// One click and one pointer-down callback per hold id, made once and handed to every render. A fresh lambda per
-/// render made each <see cref="HoldShape"/> look changed and re-render with the editor (hundreds of polygons on a
+/// render made each <see cref="Blocwerk.Shared.Ui.Overlay.HoldShape"/> look changed and re-render with the editor (hundreds of polygons on a
 /// big panel, for any state change at all); with stable callbacks a hold that did not change skips its render
 /// (<c>HoldShape.ShouldRender</c>). The hold is looked up by id when the event arrives, so a callback made for an
 /// earlier copy of the working list (Discard restores fresh objects) still acts on the current one.

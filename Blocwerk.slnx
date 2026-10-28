@@ -13,8 +13,10 @@
     <Project Path="tools/hold-eval/HoldEval/HoldEval.csproj" />
   </Folder>
   <Project Path="src/Blocwerk.Authentication/Blocwerk.Authentication.csproj" />
+  <Project Path="src/Blocwerk.Client/Blocwerk.Client.csproj" />
   <Project Path="src/Blocwerk.Contracts/Blocwerk.Contracts.csproj" />
   <Project Path="src/Blocwerk.Core/Blocwerk.Core.csproj" />
   <Project Path="src/Blocwerk.HoldDetection/Blocwerk.HoldDetection.csproj" />
+  <Project Path="src/Blocwerk.Shared.Ui/Blocwerk.Shared.Ui.csproj" />
   <Project Path="src/Blocwerk.Web/Blocwerk.Web.csproj" />
 </Solution>

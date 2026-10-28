@@ -14,7 +14,7 @@
             <svg class="lookover-outlines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
                 @foreach (var hold in Picture.Outlines)
                 {
-                    <HoldShape X="hold.X" Y="hold.Y" Radius="hold.Radius" ShapePoints="hold.Shape" ShapeHoles="hold.Holes"
+                    <HoldShape X="hold.X" Y="hold.Y" Radius="hold.Radius" ShapePoints="hold.Shape.AsDocumentRing()" ShapeHoles="hold.Holes.AsDocumentRings()"
                                Foot="hold.Foot" FootScale="HoldShape.FullFoot" Kept="hold.Kept"
                                Fill="none" Stroke="@HoldPalette.StrokeHex(hold.Color)" StrokeWidth="1.1" />
                 }

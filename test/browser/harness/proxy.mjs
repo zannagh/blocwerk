@@ -5,8 +5,10 @@
  *
  *   - a request log (GET /__pw/log), so a test can prove a request never reached the server;
  *   - fault rules (POST /__pw/faults), so a test can make one path answer 404 or 503, or drop the connection (`drop`,
- *     that path unreachable), delay it (`delay` ms), or rewrite a page's body (`rewrite`), without touching the app or
- *     the database;
+ *     that path unreachable), delay it (`delay` ms), rewrite a page's body (`rewrite`, with `headers` overriding the
+ *     app's: a `no-store` answer the app would give a kiosk that may keep nothing), or answer a fixed 200 body
+ *     (`body`, with `headers`: an older build's file) or a file's bytes (`file`), without touching the app or the
+ *     database;
  *   - fixed pages for the Clear-Site-Data probes (GET /__pw/csd?status=200|302, /__pw/cacheable, /__pw/blank);
  *   - the server unreachable as a whole (POST /__pw/unreachable): every open connection is closed and the port stops
  *     listening, so a connect is refused, as with a server that is down. Cleared by the next POST /__pw/faults.
@@ -21,6 +23,7 @@
  * Control paths are under /__pw/ and never forwarded. The proxy holds no state the app relies on.
  */
 import { createHash } from 'node:crypto';
+import fs from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
 
@@ -52,7 +55,23 @@ export async function startProxy(appPort) {
             return;
         }
         if (fault && fault.rewrite) {
-            forwardRewritten(appPort, req, res, entry, fault.rewrite);
+            forwardRewritten(appPort, req, res, entry, fault.rewrite, fault.headers);
+            return;
+        }
+        if (fault && typeof fault.file === 'string') {
+            // A fixed answer read from a file (binary, e.g. the budget gate's splat), streamed as it is.
+            entry.status = 200;
+            entry.fault = true;
+            res.writeHead(200, { 'cache-control': 'no-store', 'content-length': fs.statSync(fault.file).size, ...(fault.headers || {}) });
+            fs.createReadStream(fault.file).pipe(res);
+            return;
+        }
+        if (fault && typeof fault.body === 'string') {
+            // A fixed answer in place of the app's, e.g. the released service worker of an older build.
+            entry.status = 200;
+            entry.fault = true;
+            res.writeHead(200, { 'cache-control': 'no-store', ...(fault.headers || {}) });
+            res.end(fault.body);
             return;
         }
         if (fault) {
@@ -130,26 +149,42 @@ function forward(appPort, req, res, entry) {
         }
         res.end('proxy: app unreachable');
     });
+    abortWithClient(res, upstream);
     req.pipe(upstream);
 }
 
-// A `rewrite: [from, to]` rule: the app's answer with every `from` in its body replaced (uncompressed, so it can be read).
-function forwardRewritten(appPort, req, res, entry, [from, to]) {
+// A `rewrite: [from, to]` rule (or a list of such pairs): the app's answer with every `from` in its body replaced
+// (uncompressed, so it can be read), and `override` (headers, lower-case names) over the app's own.
+function forwardRewritten(appPort, req, res, entry, rewrite, override) {
+    const pairs = Array.isArray(rewrite[0]) ? rewrite : [rewrite];
     const { 'accept-encoding': _, ...headers } = req.headers;
     entry.fault = true;
     const upstream = http.request({ host: '127.0.0.1', port: appPort, method: req.method, path: req.url, headers }, answer => {
         const chunks = [];
         answer.on('data', c => chunks.push(c));
         answer.on('end', () => {
-            const body = Buffer.from(Buffer.concat(chunks).toString('utf8').split(from).join(to), 'utf8');
+            const text = pairs.reduce((t, [from, to]) => t.split(from).join(to), Buffer.concat(chunks).toString('utf8'));
+            const body = Buffer.from(text, 'utf8');
             const { 'content-length': __, 'transfer-encoding': ___, ...rest } = answer.headers;
             entry.status = answer.statusCode;
-            res.writeHead(answer.statusCode, { ...rest, 'content-length': body.length });
+            res.writeHead(answer.statusCode, { ...rest, ...(override || {}), 'content-length': body.length });
             res.end(body);
         });
     });
     upstream.on('error', () => res.destroy());
+    abortWithClient(res, upstream);
     req.pipe(upstream);
+}
+
+// A browser that goes away before the answer ended (a closed tab or context, `unreachable`) takes the app's request with
+// it: without this the upstream connection stays open, and an open feed stream keeps its lease (FeedStreamLimits) for its
+// whole lifetime, so a user's later streams in the run meet the per-user cap's 429.
+function abortWithClient(res, upstream) {
+    res.on('close', () => {
+        if (!res.writableFinished) {
+            upstream.destroy();
+        }
+    });
 }
 
 // A raw TCP tunnel for the WebSocket upgrade: the request head is replayed, then both sockets are piped.

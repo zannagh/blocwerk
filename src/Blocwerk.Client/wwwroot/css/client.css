@@ -1,0 +1,145 @@
+/* The offline client's frame (Blocwerk.Client). The views (PR 3.11) bring their own rules; the overlay's come from
+   Blocwerk.Shared.Ui's hold-tap.css. */
+/* The frame's colours are the Server pages' tokens (client-base.css, their subset the shell loads first), so the client
+   looks like the page it stands in for; the fallbacks keep the frame readable without it. */
+:root {
+    --bw-c-bg: var(--bg, #f5f4f1);
+    --bw-c-surface: var(--bg-surface, #ffffff);
+    --bw-c-text: var(--text, #2b2b33);
+    --bw-c-muted: var(--text-secondary, #666672);
+    --bw-c-accent: var(--accent, #cf2c49);
+    --bw-c-border: var(--border, #e3e0d9);
+    /* The Server's connection pill tones (the page tokens' warning and info), so both pills read the same. */
+    --bw-c-warn-bg: var(--warning-bg, #FFF3E0);
+    --bw-c-warn-text: var(--warning-text, #B33F00);
+    --bw-c-info-bg: var(--info-bg, #E3F2FD);
+    --bw-c-info-text: var(--info-text, #0D47A1);
+}
+
+html, body {
+    margin: 0;
+    background: var(--bw-c-bg);
+    color: var(--bw-c-text);
+}
+
+.bw-client-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+    padding-top: max(12px, env(safe-area-inset-top));
+    background: var(--topbar-bg, var(--bw-c-surface));
+    color: var(--topbar-text, inherit);
+    border-bottom: 1px solid var(--bw-c-border);
+}
+
+.bw-client-brand {
+    color: inherit;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+/* The lasting connection pill (client-handback.js), drawn like the Server's .bw-conn-pill: a dot and a label, warn
+   while offline, info (a button to the live page) once the server answers again. */
+.bw-client-pill-slot {
+    display: inline-flex;
+    min-width: 0;
+}
+
+.bw-client-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    max-width: 100%;
+    padding: 6px 14px;
+    border: 1px solid var(--bw-c-border);
+    border-radius: 999px;
+    font: 600 0.78rem/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.bw-client-pill-warn {
+    background: var(--bw-c-warn-bg);
+    color: var(--bw-c-warn-text);
+    border-color: color-mix(in srgb, var(--bw-c-warn-text) 30%, transparent);
+}
+
+.bw-client-pill-info {
+    background: var(--bw-c-info-bg);
+    color: var(--bw-c-info-text);
+    border-color: color-mix(in srgb, var(--bw-c-info-text) 30%, transparent);
+    cursor: pointer;
+}
+
+.bw-client-pill-dot {
+    flex: 0 0 auto;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: bw-client-pulse 1.6s ease-in-out infinite;
+}
+
+.bw-client-pill-label {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+@keyframes bw-client-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .bw-client-pill-dot { animation: none; }
+}
+
+.bw-client-main, .bw-client-loading {
+    padding: 24px 16px;
+}
+
+.bw-client-empty h1 {
+    margin: 0 0 8px;
+    font-size: 20px;
+}
+
+.bw-client-empty p {
+    margin: 0 0 16px;
+    color: var(--bw-c-muted);
+}
+
+.bw-client-online {
+    color: var(--bw-c-accent);
+}
+
+.bw-client-retry {
+    margin-right: 16px;
+    padding: 8px 16px;
+    border: 1px solid var(--bw-c-border);
+    border-radius: 8px;
+    background: var(--bw-c-surface);
+    color: inherit;
+    font: inherit;
+}
+
+.bw-client-clear {
+    margin-left: 16px;
+    padding: 6px 14px;
+    border: 1px solid var(--bw-c-border);
+    border-radius: 8px;
+    background: var(--bw-c-surface);
+    color: inherit;
+    font: inherit;
+}
+
+.bw-client-saved {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-top: 24px;
+    color: var(--bw-c-muted);
+    font-size: 14px;
+}

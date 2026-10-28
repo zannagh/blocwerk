@@ -1,6 +1,7 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using Blocwerk.Contracts.Assets;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -68,6 +69,10 @@ public static class SiteDataClearing
     public static ContentResult SignedOutPage(HttpResponse response, string next)
     {
         Apply(response);
+
+        // Sticky `signed-out` (SignOutReason): should the page's own wipe not land, the next anonymous page still wipes
+        // the device's partition instead of locking it for this account's return. The next sign-in clears it.
+        SignOutReason.Mark(response.HttpContext, SignOutReasons.SignedOut);
         response.Headers.CacheControl = "no-store";
         return new ContentResult
         {

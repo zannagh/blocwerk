@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Blocwerk.Client;
 using Blocwerk.Core.Services;
 using Blocwerk.Web.Endpoints;
 using Microsoft.AspNetCore.Builder;
@@ -36,6 +37,7 @@ public class AliveBeaconTests
         "maintenance",
         "message",
         "maintenanceExpiresAt",
+        "clientSchemaMin",
     ];
 
     [Fact]
@@ -90,6 +92,21 @@ public class AliveBeaconTests
         using var expired = await host.GetAsync();
         Assert.False(expired.RootElement.GetProperty("maintenance").GetBoolean());
         Assert.Equal(JsonValueKind.Null, expired.RootElement.GetProperty("maintenanceExpiresAt").ValueKind);
+    }
+
+    /// <summary>
+    /// The offline client's schema floor (PR 3.14): a number, the server's <see cref="ClientSchema.Minimum"/>, never above
+    /// the schema the deploy's own client speaks, or that client would update and reload into itself.
+    /// </summary>
+    [Fact]
+    public async Task Alive_CarriesTheClientSchemaFloor_NeverAboveTheDeploysOwnClient()
+    {
+        using var host = new AliveHost();
+
+        using var body = await host.GetAsync();
+
+        Assert.Equal(ClientSchema.Minimum, body.RootElement.GetProperty("clientSchemaMin").GetInt32());
+        Assert.InRange(ClientSchema.Minimum, 1, ClientSchema.Current);
     }
 
     /// <summary>

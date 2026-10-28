@@ -539,7 +539,7 @@ else
                    plain circle. *@
                 var subdued = bh.Hold.IsVirtual || bh.Hold.KeptUnconfirmedGeneration is not null;
                 <HoldShine @key="bh.HoldId" X="bh.Hold.X" Y="bh.Hold.Y" Radius="bh.Hold.Radius"
-                           ShapePoints="bh.Hold.ShapePoints" ShapeHoles="bh.Hold.ShapeHoles"
+                           ShapePoints="bh.Hold.ShapePoints.AsDocumentRing()" ShapeHoles="bh.Hold.ShapeHoles.AsDocumentRings()"
                            Color="@BoulderHoldColors.Outline(bh.Type, bh.Usage)" Smooth="true"
                            Look="@(subdued ? "base" : null)" />
             }

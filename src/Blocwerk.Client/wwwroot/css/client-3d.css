@@ -1,0 +1,104 @@
+/* The offline client's 3D view (PR 3.13): the Server's scoped rules of Wall3D, Wall3DInline and Wall3DStage, which live
+   in Web's component bundle the client does not load, for the same markup. What wall3d.js draws inside the stage is
+   styled by client-wall3d.css (Web's css/wall3d.css, copied by build/subset-client-css.mjs), which the shell links
+   (wall3d.js then injects no Web copy). It loads no image or
+   font: the worker precaches only what the shell names. */
+
+/* The stage fills whatever box it is given: the full page, or the inline view in the photos' place. */
+.bw-client-3d {
+    position: relative;
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+}
+
+.bw-client-3d .wall3d-stage-el {
+    flex: 1 1 auto;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+}
+
+.wall3d-inline {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md, 10px);
+    overflow: hidden;
+    background: var(--bg);
+}
+
+.wall3d-inline-stage {
+    display: flex;
+    flex-direction: column;
+    height: min(80dvh, 860px);
+    min-height: 320px;
+}
+
+@media (max-width: 600px) and (orientation: portrait) {
+    .wall3d-inline-stage { height: min(80dvh, 860px, max(320px, 115vw)); }
+}
+
+.wall3d-inline-message {
+    margin: 0;
+    padding: 40px 16px;
+    text-align: center;
+    color: var(--text-secondary);
+}
+
+.wall3d-inline-message p { margin: 0 0 12px; }
+
+.wall3d-inline-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px 12px;
+    padding: 8px 12px;
+    border-top: 1px solid var(--border);
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.wall3d-inline-legend, .wall3d-legend { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; font-size: 0.8rem; color: var(--text-secondary); }
+.wall3d-inline-legend span, .wall3d-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.wall3d-inline-legend i, .wall3d-legend i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+
+/* The full page: the stage takes what is left under the client's bar. */
+.wall3d-page {
+    display: flex;
+    flex-direction: column;
+    height: calc(100dvh - 140px);
+    min-height: 360px;
+}
+
+.wall3d-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+    padding: 0 0 8px;
+}
+
+.wall3d-boulder {
+    font-family: var(--font-display);
+    font-weight: 700;
+    color: var(--text-heading);
+}
+
+.wall3d-stage {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md, 10px);
+    overflow: hidden;
+}
+
+@media (max-height: 520px) {
+    .wall3d-page { min-height: 0; }
+}

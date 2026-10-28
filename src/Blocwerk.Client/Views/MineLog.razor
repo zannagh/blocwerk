@@ -1,0 +1,28 @@
+@using Blocwerk.Client.Store
+@* The viewer's own log on a boulder, read-only: the Server's "My stats" line under the ascent buttons (which the
+   client does not have) with its chips. Nothing when the viewer has no log or no marks (a share link, a kiosk). *@
+@if (Mine.TickFor(BoulderId) is { } tick)
+{
+    <div class="my-stats" data-bw-mine="@BoulderId">
+        <span>My stats: @tick.Attempts attempt@(tick.Attempts != 1 ? "s" : string.Empty)</span>
+        @if (tick.Flashed)
+        {
+            <span class="chip flash-chip">Flashed!</span>
+        }
+        else if (tick.Sent)
+        {
+            <span class="chip send-chip">Sent</span>
+        }
+    </div>
+}
+
+@code {
+    /// <summary>Gets or sets the boulder.</summary>
+    [Parameter]
+    [EditorRequired]
+    public Guid BoulderId { get; set; }
+
+    /// <summary>Gets or sets the viewer's marks.</summary>
+    [Parameter]
+    public MineMarks Mine { get; set; } = MineMarks.None;
+}

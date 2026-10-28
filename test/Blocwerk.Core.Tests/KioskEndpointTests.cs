@@ -352,6 +352,7 @@ public class KioskEndpointTests
         Assert.False(HasClearSiteData(fixture));
 
         var page = Assert.IsType<ContentResult>(await fixture.Controller.Unregister());
+        Assert.Contains($"{Blocwerk.Authentication.Services.SignOutReason.MarkerCookie}=signed-out", fixture.Controller.Response.Headers.SetCookie.ToString());
         Assert.Equal(StatusCodes.Status200OK, page.StatusCode);
         Assert.True(HasClearSiteData(fixture));
         Assert.False(fixture.HasDeviceCookie());
