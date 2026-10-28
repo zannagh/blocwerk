@@ -25,7 +25,7 @@ public static class OfflineClientEndpoints
         {
             if (Canonical(context.Request.Path.Value) is { } target)
             {
-                context.Response.Redirect(target + context.Request.QueryString);
+                await Results.LocalRedirect(target + context.Request.QueryString).ExecuteAsync(context);
                 return;
             }
 
@@ -49,6 +49,10 @@ public static class OfflineClientEndpoints
         }
 
         var underBase = path.StartsWith(BasePath, StringComparison.OrdinalIgnoreCase);
-        return underBase && !path.StartsWith(BasePath, StringComparison.Ordinal) ? BasePath + path[BasePath.Length..] : null;
+
+        // Leading slashes and backslashes of the rest are dropped: "/V//host" must not become the scheme-relative "//host".
+        return underBase && !path.StartsWith(BasePath, StringComparison.Ordinal)
+            ? BasePath + path[BasePath.Length..].TrimStart('/', '\\')
+            : null;
     }
 }

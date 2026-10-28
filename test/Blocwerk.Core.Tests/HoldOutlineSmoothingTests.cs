@@ -21,7 +21,7 @@ public class HoldOutlineSmoothingTests
         Assert.Equal(16, smooth.Count);
         Assert.Equal(-1, ring[0].Dx);
         Assert.Equal(-1, ring[0].Dy);
-        Assert.DoesNotContain(smooth, p => Math.Abs(p.Dx) == 1 && Math.Abs(p.Dy) == 1);
+        Assert.DoesNotContain(smooth, p => Math.Abs(Math.Abs(p.Dx) - 1) < 1e-9 && Math.Abs(Math.Abs(p.Dy) - 1) < 1e-9);
         Assert.All(smooth, p => Assert.True(Math.Abs(p.Dx) <= 1 && Math.Abs(p.Dy) <= 1));
     }
 
