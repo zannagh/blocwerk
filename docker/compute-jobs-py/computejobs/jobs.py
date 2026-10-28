@@ -56,11 +56,13 @@ class Job:
         if result is not None and self.files:
             result = {**result, "files": [{"name": f, "url": f"{url_prefix}/v1/jobs/{self.id}/files/{f}"}
                                           for f in self.files]}
-        return {"jobId": self.id, "kind": self.kind, "status": self.status,
-                "progress": round(self.progress, 3), "stage": self.stage, "stageDetail": self.stage_detail,
-                "message": self.message, "error": self.error, "failureKind": self.failure_kind,
-                "createdAt": self.created,
-                "updatedAt": self.updated, "result": result}
+        status = {"jobId": self.id, "kind": self.kind, "status": self.status,
+                  "progress": round(self.progress, 3), "stage": self.stage, "stageDetail": self.stage_detail,
+                  "message": self.message, "error": self.error, "createdAt": self.created,
+                  "updatedAt": self.updated, "result": result}
+        if self.failure_kind:  # only when set: every other status keeps its keys (the runner envelope mirrors them)
+            status["failureKind"] = self.failure_kind
+        return status
 
 
 def _on_sigterm(_signum, _frame):

@@ -84,9 +84,9 @@ refused before it is decoded.
   "message": null,               // human-readable note (e.g. why it was cancelled)
   "error": null,                 // set iff status == failed; short, no server paths (<= 400 chars);
                                  // unexpected failures are "internal error (ref <id>)", details in the worker log
-  "failureKind": null,           // "resource" iff the job needed more memory than the worker allows one job
+  "failureKind": "resource",     // ONLY on a failed job that needed more memory than the worker allows one job
                                  // (JOB_MAX_MEMORY_MB, or the kernel killed it): not the input's fault, a machine
-                                 // with more memory can run it; null otherwise (older workers omit it)
+                                 // with more memory can run it. Absent otherwise
   "createdAt": "2026-09-23T10:00:00+00:00", "updatedAt": "…",
   "result": null                 // set iff status == succeeded; per kind (below)
 }

@@ -23,7 +23,7 @@ def test_guard_stops_a_hog_as_a_resource_failure(client, limit):  # noqa: F811
     assert f"({limit} MB)" in st["error"] and "more memory" in st["error"]
     # the service is alive and runs the next job normally
     ok = wait(client, client.post("/v1/jobs/echo", json={"echo": "after"}).json()["jobId"])
-    assert ok["status"] == "succeeded" and ok["failureKind"] is None and ok["result"]["echo"] == "after"
+    assert ok["status"] == "succeeded" and "failureKind" not in ok and ok["result"]["echo"] == "after"
 
 
 def test_a_job_the_kernel_kills_is_a_resource_failure(client, monkeypatch):  # noqa: F811
@@ -35,11 +35,11 @@ def test_a_job_the_kernel_kills_is_a_resource_failure(client, monkeypatch):  # n
 
 def test_other_failures_keep_no_failure_kind(client, monkeypatch):  # noqa: F811
     st = wait(client, client.post("/v1/jobs/echo", json={"mode": "fail"}).json()["jobId"])
-    assert st["status"] == "failed" and st["failureKind"] is None
+    assert st["status"] == "failed" and "failureKind" not in st
     # a SIGKILL without an OOM kill in the cgroup (the job's own SIGTERM handler, someone else) stays a plain failure
     monkeypatch.setattr(memguard, "oom_kills", lambda: 0)
     st = wait(client, client.post("/v1/jobs/echo", json={"mode": "oom"}).json()["jobId"])
-    assert st["status"] == "failed" and st["failureKind"] is None and "worker process died" in st["error"]
+    assert st["status"] == "failed" and "failureKind" not in st and "worker process died" in st["error"]
 
 
 def test_group_rss_counts_this_process():
