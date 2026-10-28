@@ -29,11 +29,12 @@ class FakeElement {
 }
 
 function page({ path = '/v/walls/W1', alive = { clientSchemaMin: 1 }, schema = '1', version = OLD, worker = { version: NEW, complete: true },
-    session = new Map(), onLine = true, walls = [{ savedAt: Date.now() }], storageThrows = false } = {}) {
+    session = new Map(), onLine = true, walls = [{ savedAt: Date.now() }], storageThrows = false, localMarker = null } = {}) {
     const assigned = [];
     const reloads = [];
     const shown = [];
     const asked = [];
+    const messages = [];
     const winListeners = {};
     const docListeners = {};
     const slot = new FakeElement('span');
@@ -58,9 +59,10 @@ function page({ path = '/v/walls/W1', alive = { clientSchemaMin: 1 }, schema = '
         location: { href: ORIGIN + path, origin: ORIGIN, assign: url => assigned.push(url), reload: () => reloads.push(1) },
         navigator: {
             onLine,
-            serviceWorker: { controller: { postMessage: (message, ports) => { asked.push(message.type); ports[0].onmessage({ data: worker ? { proto: 1, type: 'client-precached', ...worker } : null }); } } },
+            serviceWorker: { controller: { postMessage: (message, ports) => { asked.push(message.type); messages.push(message); ports[0].onmessage({ data: worker ? { proto: 1, type: 'client-precached', ...worker } : null }); } } },
         },
         sessionStorage: storage,
+        localStorage: { getItem: k => (k === 'bw-client-precache' ? localMarker : null) },
         setTimeout: () => 0,
         clearTimeout: () => undefined,
         MessageChannel: class { constructor() { this.port1 = {}; this.port2 = this.port1; } },
@@ -78,7 +80,7 @@ function page({ path = '/v/walls/W1', alive = { clientSchemaMin: 1 }, schema = '
     };
     vm.runInNewContext(source, { window: win, document: doc, URL, Date, Number, String, Math, Promise, Object, Array });
     const api = win.bwClientHandback;
-    return { api, win, doc, slot, assigned, reloads, shown, asked, session, state, winListeners, docListeners };
+    return { api, win, doc, slot, assigned, reloads, shown, asked, messages, session, state, winListeners, docListeners };
 }
 
 const pillText = p => p.slot.children[0].children[1].textContent;
@@ -191,4 +193,57 @@ test('the schema reload waits while someone types, and happens when the field is
     assert.equal(p.reloads.length, 1);
     p.docListeners.visibilitychange();
     assert.equal(p.reloads.length, 1, 'once');
+});
+
+test('a deploy\'s /alive (maintenance) is not online, and the next tap stays in the client', async () => {
+    const p = page({ alive: { clientSchemaMin: 1, maintenance: true } });
+    await p.api.start();
+    assert.equal(p.api.online, false);
+    assert.match(pillText(p), /^Offline/);
+    assert.equal(p.api.take(`${ORIGIN}/v/walls/W1`), false);
+    p.state.alive = { clientSchemaMin: 1, maintenance: false };
+    assert.equal(await p.api.probe(), true);
+});
+
+test('after "Continue offline" the next taps stay in the client for 2 minutes, or until the pill is tapped', async () => {
+    const session = new Map([['bw-stay-offline', String(Date.now())]]);
+    const p = page({ session });
+    await p.api.start();
+    assert.equal(p.api.online, true);
+    assert.equal(p.api.take(`${ORIGIN}/v/walls/W1/boulders/B2`), false, 'a circuit-only drop: /alive answers, the Server page would not');
+    assert.deepEqual(p.assigned, []);
+
+    p.slot.children[0].listeners.click();
+    assert.deepEqual(p.assigned, ['/walls/W1'], 'the pill itself always opens the live page');
+    assert.equal(p.api.take(`${ORIGIN}/v/walls/W1/boulders/B2`), true, 'and the next tap hands back again');
+
+    const old = page({ session: new Map([['bw-stay-offline', String(Date.now() - 121000)]]) });
+    await old.api.start();
+    assert.equal(old.api.take(`${ORIGIN}/v/walls/W1`), true, 'after 2 minutes a tap hands back as usual');
+});
+
+test('the pill is redrawn only when it changes, so a probe does not drop the focus on its button', async () => {
+    const p = page();
+    await p.api.start();
+    const first = p.slot.children[0];
+    await p.api.probe();
+    await p.api.probe();
+    assert.equal(p.slot.children[0], first);
+    p.state.alive = null;
+    await p.api.probe();
+    assert.notEqual(p.slot.children[0], first);
+});
+
+test('the schema update carries the 3D code as the last fill had it, and a stale result is tried again', async () => {
+    const withMarker = page({ alive: { clientSchemaMin: 2 }, localMarker: JSON.stringify({ version: OLD, complete: true, with3d: true }) });
+    await withMarker.api.start();
+    assert.equal(withMarker.messages[0].group3d, 'precache');
+    const without = page({ alive: { clientSchemaMin: 2 } });
+    await without.api.start();
+    assert.equal(without.messages[0].group3d, 'opened');
+
+    const busy = page({ alive: { clientSchemaMin: 2 }, worker: { version: OLD, complete: true } });
+    await busy.api.start();
+    assert.equal(await busy.api.checkSchema(2), 'stale');
+    assert.equal(busy.asked.length, 2, 'the check ran again instead of keeping the first answer for the page\'s life');
 });

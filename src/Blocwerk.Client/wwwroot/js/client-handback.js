@@ -13,7 +13,7 @@
  * Online, it answers true and makes a full navigation to the Server twin of the target instead: the client never hands
  * back on its own, only on a tap. Offline, or with the state unknown, the client navigates as usual (and probes). A
  * Server page that then fails is handed to the client again by the worker on a network error or a 502/503/504, never by
- * its 4 s timer (a navigation from a /v/ page is exempt), so a slow server is waited for and nothing loops.
+ * its 4 s timer (a navigation from a /v/ page waits 20 s instead), so a slow server is waited for and nothing loops.
  * sessionStorage `bw-handback` tells the Server page it was opened from here (client-continue.js shows "online").
  *
  * THE SCHEMA. /alive's `clientSchemaMin` above this shell's `bw-client-schema` means this client may misread the
@@ -33,9 +33,12 @@ window.bwClientHandback = (function (win, doc) {
     const PRECACHE_MS = 120000;
     const HANDBACK_KEY = 'bw-handback';
     const SCHEMA_KEY = 'bw-client-schema-reload';
+    const STAY_KEY = 'bw-stay-offline';
+    const STAY_MS = 120000;
+    const PRECACHE_MARKER_KEY = 'bw-client-precache';
     const PILL_ID = 'bw-client-pill';
 
-    const state = { started: false, online: null, savedAt: null, timer: null, probing: null, schema: null, pending: null };
+    const state = { started: false, online: null, savedAt: null, drawn: null, slot: null, timer: null, probing: null, schema: null, pending: null };
 
     const meta = name => {
         const el = doc.querySelector(`meta[name="${name}"]`);
@@ -97,12 +100,22 @@ window.bwClientHandback = (function (win, doc) {
             return;
         }
         const online = state.online === true;
+        // Redrawn only when the pill changes: a rebuild every probe would drop the focus on the button.
+        const drawn = online + '|' + pillLabel();
+        if (state.drawn === drawn && state.slot === slot) {
+            return;
+        }
+        state.drawn = drawn;
+        state.slot = slot;
         const pill = doc.createElement(online ? 'button' : 'span');
         pill.className = 'bw-client-pill ' + (online ? 'bw-client-pill-info' : 'bw-client-pill-warn');
         pill.setAttribute('data-bw-online', online ? 'true' : 'false');
         if (online) {
             pill.type = 'button';
-            pill.addEventListener('click', () => take(win.location.href));
+            pill.addEventListener('click', () => {
+                session.set(STAY_KEY, '0');
+                take(win.location.href);
+            });
         }
         const dot = doc.createElement('span');
         dot.className = 'bw-client-pill-dot';
@@ -158,7 +171,8 @@ window.bwClientHandback = (function (win, doc) {
         if (!state.probing) {
             state.probing = (async () => {
                 const body = win.navigator.onLine === false ? null : await alive();
-                setOnline(body !== null);
+                // A deploy's /alive (maintenance) answers 200 for the seconds before the restart: not a server to hand back to.
+                setOnline(body !== null && body.maintenance !== true);
                 if (body !== null) {
                     await checkSchema(body.clientSchemaMin);
                 }
@@ -178,10 +192,17 @@ window.bwClientHandback = (function (win, doc) {
         }, PROBE_MS);
     }
 
+    // "Continue offline" (client-continue.js) was chosen a moment ago: the server answers /alive but its circuit may not
+    // (a proxy that blocks WebSockets), so a tap stays in the client until the pill itself is tapped or STAY_MS pass.
+    function stayingOffline() {
+        const at = Number(session.get(STAY_KEY));
+        return at > 0 && Date.now() >= at && Date.now() - at < STAY_MS;
+    }
+
     /** True when the client hands this navigation back: it navigates to the Server page itself. */
     function take(target) {
         const url = serverUrl(target);
-        if (!url || state.online !== true || win.navigator.onLine === false) {
+        if (!url || state.online !== true || win.navigator.onLine === false || stayingOffline()) {
             if (state.online !== true) {
                 probe();
             }
@@ -222,6 +243,17 @@ window.bwClientHandback = (function (win, doc) {
         });
     }
 
+    // The 3D code goes along as the Server page's last fill had it (its marker); else 'opened', which the worker decides by
+    // whether a 3D view was ever opened on this device. The new version replaces the old, so never fewer files than before.
+    function group3d() {
+        try {
+            const marker = JSON.parse(win.localStorage.getItem(PRECACHE_MARKER_KEY) || 'null');
+            return marker && marker.with3d === true ? 'precache' : 'opened';
+        } catch (e) {
+            return 'opened';
+        }
+    }
+
     /** Resolves 'current', 'held' (already reloaded for this floor), 'stale' (no newer version), 'waiting' or 'reloading'. */
     function checkSchema(min) {
         const own = Number(meta('bw-client-schema'));
@@ -234,9 +266,11 @@ window.bwClientHandback = (function (win, doc) {
                 if (done === undefined || done === String(min)) {
                     return 'held';
                 }
-                const reply = await askWorker({ type: 'client-precache' }, PRECACHE_MS);
+                const reply = await askWorker({ type: 'client-precache', group3d: group3d() }, PRECACHE_MS);
                 const version = meta('bw-client-version');
                 if (!reply || reply.complete !== true || !reply.version || reply.version === version) {
+                    // A later probe may try again (a busy worker, a timed-out fill) or see a higher floor.
+                    state.schema = null;
                     return 'stale';
                 }
                 state.pending = String(min);

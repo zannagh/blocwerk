@@ -19,6 +19,8 @@ window.bwClientContinue = (function (win, doc) {
     const ASK_MS = 3000;
     const HANDBACK_KEY = 'bw-handback';
     const HANDBACK_FRESH_MS = 60000;
+    const STAY_KEY = 'bw-stay-offline';
+    const EDITING_MESSAGE = 'Unsaved changes in the editor will be lost. Continue offline anyway?';
 
     const state = { path: null, target: null, asking: null };
 
@@ -86,10 +88,20 @@ window.bwClientContinue = (function (win, doc) {
 
     function go() {
         const url = target();
-        if (url) {
-            win.location.assign(url);
+        if (!url) {
+            return false;
         }
-        return !!url;
+        // The circuit may come back and keep an open editor's work; the client is read-only and starts clean.
+        if (win.bwEditGuard && win.bwEditGuard.isEditing() && !(typeof win.confirm === 'function' && win.confirm(EDITING_MESSAGE))) {
+            return false;
+        }
+        try {
+            win.sessionStorage.setItem(STAY_KEY, String(Date.now()));
+        } catch (e) {
+            // Without it the client hands back on the first tap while the probe says online.
+        }
+        win.location.assign(url);
+        return true;
     }
 
     function onChange() {

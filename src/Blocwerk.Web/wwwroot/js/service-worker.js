@@ -307,6 +307,8 @@ const CLIENT_MODULE_REFERRER = /^\/(?:js|lib)\/[\w./-]*\.[a-z0-9]{10}\.js$/;
 const CLIENT_STATE_KEY = '/__bw/client';
 const CLIENT_SHELL_PATH = '/v/';
 const CLIENT_HANDOFF_MS = 4000;
+// A navigation from a /v/ page waits this long instead (the client saw the server answer; see navigateWithHandoff).
+const CLIENT_HANDOFF_FROM_CLIENT_MS = 20000;
 const CLIENT_VERSION = /^[0-9a-f]{16}$/;
 const CLIENT_FILL_PARALLEL = 4;
 // The 3D code's precache choices (the 3D code paragraph above), and the mark a 3D view opened online leaves.
@@ -472,19 +474,20 @@ function clientHandoff(url) {
 const clientRedirect = path => Response.redirect(new URL(path, self.location.origin).href, 302);
 
 // A Server-page navigation: the network's answer, unless it fails and the client can take over (see HAND-OFF). A
-// navigation from a /v/ page (the client's hand-back, PR 3.14) gets no 4 s timer: the client saw the server answer, so a
-// slow page is waited for, and a tap can never bounce straight back into the client.
+// navigation from a /v/ page (the client's hand-back, PR 3.14) gets a 20 s timer, not 4 s: the client saw the server answer,
+// so a slow page is waited for and a tap does not bounce straight back into the client; but a connection that hangs
+// (no error) still ends in the client, not the browser's own minutes-long timeout.
 function navigateWithHandoff(request, offlinePage) {
     const url = new URL(request.url);
     let target = null;
     const handoff = () => target || (target = clientHandoff(url).catch(() => null));
     const fromClient = typeof request.referrer === 'string' && request.referrer.startsWith(self.location.origin + CLIENT_SHELL_PATH);
     return new Promise(resolve => {
-        const timer = fromClient ? null : setTimeout(() => handoff().then(path => {
+        const timer = setTimeout(() => handoff().then(path => {
             if (path) {
                 resolve(clientRedirect(path));
             }
-        }), CLIENT_HANDOFF_MS);
+        }), fromClient ? CLIENT_HANDOFF_FROM_CLIENT_MS : CLIENT_HANDOFF_MS);
         const settle = answer => {
             clearTimeout(timer);
             resolve(answer);

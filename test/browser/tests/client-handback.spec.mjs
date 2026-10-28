@@ -33,6 +33,10 @@ const openPill = page => expect(async () => {
     await expect(page.getByRole('button', { name: 'Retry now' })).toBeVisible({ timeout: 2000 });
 }).toPass({ timeout: 30000 });
 
+// "Continue offline" keeps the client from handing back for 2 minutes (the Server may answer /alive while its circuit does
+// not); the specs that mean "the user has been in the client a while" end that window.
+const staySpent = page => page.evaluate(() => sessionStorage.setItem('bw-stay-offline', String(Date.now() - 3 * 60 * 1000)));
+
 async function continueOffline(page, world, server, baseURL) {
     await consented(page, baseURL);
     expect(await precacheAsAlice(page, world, server)).toBe('complete');
@@ -76,12 +80,30 @@ test('back online, the next tap opens the Server page, waiting for a slow one in
     await server.faults([declareRoutes(), { path: '^/walls/', delay: 6000 }]);
     await expect.poll(() => page.evaluate(() => window.bwClientHandback.probe()), { timeout: 20000 }).toBe(true);
     await expect(pill(page)).toHaveText('Back online · open live');
+    await staySpent(page);
 
     const began = Date.now();
     await tap(page, `walls/${world.walls.alpha.id}?view=boulders`);
     await expect(page).toHaveURL(new RegExp(`${wallPath(world)}\\?view=boulders$`), { timeout: 20000 });
     await expect(page.locator('meta[name="bw-partition"]')).toHaveAttribute('content', /^u-/);
     expect(Date.now() - began).toBeGreaterThanOrEqual(5500);
+    expect(new URL(page.url()).pathname.startsWith('/v/')).toBe(false);
+});
+
+test('right after "Continue offline" the server answers but a tap stays in the client; the pill itself goes live', async ({ page, world, server, baseURL }) => {
+    await continueOffline(page, world, server, baseURL);
+    // The server answers /alive again (a circuit that cannot be rebuilt looks just like this to the client).
+    await server.faults([declareRoutes()]);
+    await expect.poll(() => page.evaluate(() => window.bwClientHandback.probe()), { timeout: 20000 }).toBe(true);
+    await expect(pill(page)).toHaveText('Back online · open live');
+
+    await page.evaluate(() => { window.__bwSameDocument = true; });
+    await tap(page, `walls/${world.walls.alpha.id}?view=boulders`);
+    await expect(page).toHaveURL(new RegExp(`/v${wallPath(world)}\\?view=boulders$`));
+    expect(await page.evaluate(() => window.__bwSameDocument === true)).toBe(true);
+
+    await page.locator('#bw-client-pill button').click();
+    await expect(page.locator('meta[name="bw-partition"]')).toHaveAttribute('content', /^u-/);
     expect(new URL(page.url()).pathname.startsWith('/v/')).toBe(false);
 });
 
@@ -98,6 +120,7 @@ test('back online, a programmatic router navigation goes to the Server page too'
     await continueOffline(page, world, server, baseURL);
     await server.faults([declareRoutes()]);
     await expect.poll(() => page.evaluate(() => window.bwClientHandback.probe()), { timeout: 20000 }).toBe(true);
+    await staySpent(page);
     // What a view's NavigationManager.NavigateTo does: the router's own navigation, no anchor involved.
     await page.evaluate(path => window.Blazor.navigateTo(path), `/v${wallPath(world)}?view=boulders`);
     await expect(page).toHaveURL(new RegExp(`${wallPath(world)}\\?view=boulders$`));

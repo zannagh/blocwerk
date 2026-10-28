@@ -44,7 +44,7 @@ test('client-target is null for a locked partition, a stale kiosk or an incomple
     assert.equal(await target(held, '/walls/W1'), '/v/walls/W1');
 });
 
-test('a navigation from a /v/ page gets no 4 s timer, but a network error or a 502 still goes to the client', async () => {
+test('a navigation from a /v/ page gets a 20 s timer, not 4 s, and a network error or a 502 still goes to the client', async () => {
     const timers = [];
     const worker = workerWith({ timers });
     deploy(worker.routes, V1);
@@ -56,7 +56,8 @@ test('a navigation from a /v/ page gets no 4 s timer, but a network error or a 5
     const before = timers.filter(t => t.ms === 4000).length;
     const slow = dispatchFetch(worker, '/walls/W1', fromClient);
     await tick();
-    assert.equal(timers.filter(t => t.ms === 4000).length, before, 'no hand-off timer');
+    assert.equal(timers.filter(t => t.ms === 4000).length, before, 'not the 4 s timer');
+    assert.equal(timers.filter(t => t.ms === 20000).length, 1, 'a long one, so a hanging connection still ends in the client');
     release();
     assert.equal(await (await slow.settle()).text(), 'slow server page');
 

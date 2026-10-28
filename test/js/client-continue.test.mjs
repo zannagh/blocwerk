@@ -8,8 +8,9 @@ import vm from 'node:vm';
 
 const source = readFileSync(new URL('../../src/Blocwerk.Web/wwwroot/js/client-continue.js', import.meta.url), 'utf8');
 
-function page({ answer = '/v/walls/W1?view=x', session = new Map(), controller = true } = {}) {
+function page({ answer = '/v/walls/W1?view=x', session = new Map(), controller = true, editing = false, confirms = true } = {}) {
     const asked = [];
+    const confirmed = [];
     const assigned = [];
     const shown = [];
     const subscribers = [];
@@ -33,7 +34,9 @@ function page({ answer = '/v/walls/W1?view=x', session = new Map(), controller =
         MessageChannel: class { constructor() { this.port1 = {}; this.port2 = this.port1; } },
         setTimeout: fn => { timers.push(fn); return timers.length; },
         clearTimeout: () => undefined,
-        sessionStorage: { getItem: k => session.get(k) ?? null, removeItem: k => session.delete(k) },
+        sessionStorage: { getItem: k => session.get(k) ?? null, setItem: (k, v) => session.set(k, v), removeItem: k => session.delete(k) },
+        bwEditGuard: { isEditing: () => editing },
+        confirm: message => { confirmed.push(message); return confirms; },
         blocwerkConnection: { status: () => connection.status, subscribe: cb => { subscribers.push(cb); cb(connection.status); } },
         blocwerkOfflineQueue: { state: () => ({ online: queue.online }), subscribe: cb => subscribers.push(cb) },
         blocwerkStatus: { render: () => { renders++; } },
@@ -46,7 +49,7 @@ function page({ answer = '/v/walls/W1?view=x', session = new Map(), controller =
         subscribers.forEach(cb => cb(connection.status));
         await new Promise(resolve => setTimeout(resolve, 0));
     };
-    return { api: win.bwClientContinue, win, asked, assigned, shown, connection, queue, maintenance, change, timers, renders: () => renders };
+    return { api: win.bwClientContinue, win, session, confirmed, asked, assigned, shown, connection, queue, maintenance, change, timers, renders: () => renders };
 }
 
 test('connected, nothing is asked and nothing offered', async () => {
@@ -112,4 +115,26 @@ test('a page opened by the hand-back says "online" once, and only when fresh', (
     const stale = page({ session: new Map([['bw-handback', String(Date.now() - 120000)]]) });
     stale.timers.forEach(fn => fn());
     assert.deepEqual(stale.shown, []);
+});
+
+test('with an editor open, "Continue offline" asks first: declined, nothing happens; accepted, the client opens and stays', async () => {
+    const declined = page({ editing: true, confirms: false });
+    declined.connection.status = 'reconnecting';
+    await declined.change();
+    assert.equal(declined.api.go(), false);
+    assert.equal(declined.confirmed.length, 1);
+    assert.deepEqual(declined.assigned, []);
+
+    const accepted = page({ editing: true });
+    accepted.connection.status = 'reconnecting';
+    await accepted.change();
+    assert.equal(accepted.api.go(), true);
+    assert.deepEqual(accepted.assigned, ['/v/walls/W1?view=x']);
+    assert.ok(Number(accepted.session.get('bw-stay-offline')) > 0, 'the client then stays put for a while (client-handback.js)');
+
+    const idle = page();
+    idle.connection.status = 'failed';
+    await idle.change();
+    assert.equal(idle.api.go(), true);
+    assert.deepEqual(idle.confirmed, [], 'no question without an open editor');
 });
