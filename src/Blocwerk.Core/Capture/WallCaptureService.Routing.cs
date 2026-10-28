@@ -4,6 +4,7 @@
 using Blocwerk.Core.Compute;
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Entities;
+using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core.Capture;
 
@@ -48,8 +49,16 @@ public sealed partial class WallCaptureService
     }
 
     /// <summary>The host worker's blend budget as it reports it (<c>/v1/info</c>), else the default it has without the setting.</summary>
-    private async Task<double> HostBlendBudgetAsync() =>
-        (await LimitsAsync(ComputeServiceKind.Geometry))?.TexturesBlendMaxBytes ?? TextureQualityEstimate.BlendBudgetBytes;
+    private async Task<double> HostBlendBudgetAsync()
+    {
+        if ((await LimitsAsync(ComputeServiceKind.Geometry))?.TexturesBlendMaxBytes is { } reported)
+        {
+            return reported;
+        }
+
+        logger.LogInformation("The geometry worker reports no texture blend budget; estimating with the default {Bytes}", TextureQualityEstimate.BlendBudgetBytes);
+        return TextureQualityEstimate.BlendBudgetBytes;
+    }
 
     /// <summary>Why a runner cannot render this quality now (no capable runner online), or null.</summary>
     private async Task<string?> RunnerProblemAsync(Data.BlocwerkDbContext db, WallCapture capture, TextureQuality quality)

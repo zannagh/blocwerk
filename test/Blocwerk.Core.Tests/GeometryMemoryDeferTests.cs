@@ -82,14 +82,14 @@ public class GeometryMemoryDeferTests
     public async Task ASolveTooBigForTheHost_WaitsForTheNextAttempt_InsteadOfFailing()
     {
         using var h = new WallTestHarness();
-        using var s = new CaptureScenario(h);
+        using var s = new CaptureScenario(h, runnerOptions: new GpuRunnerOptions { ClaimWait = TimeSpan.Zero });
         s.Client.Terminal["solve"] = TooBig;
 
         var captureId = await FinishedAsync(s);
 
         var parked = await CaptureAsync(h);
         Assert.Equal((WallCaptureStatus.Solving, 0, null, null), (parked.Status, parked.Attempts, parked.SolveJobId, parked.GeometryModelId));
-        Assert.EndsWith(CaptureNeedsMoreMemoryException.WaitingText, parked.Stage);
+        Assert.EndsWith(CaptureNeedsMoreMemoryException.RetryText, parked.Stage);
         Assert.Null(parked.Error);
 
         // The next attempt (the worker resumes unfinished captures on start) submits the solve again.
@@ -99,6 +99,44 @@ public class GeometryMemoryDeferTests
         var done = await CaptureAsync(h);
         Assert.Equal(WallCaptureStatus.Succeeded, done.Status);
         Assert.Equal(2, s.Client.JsonSubmissions.Count(j => j.Kind == "solve"));
+    }
+
+    [Fact]
+    public async Task ASolveTooBigForTheHost_WithRunnersOff_FailsWithTheReason()
+    {
+        using var h = new WallTestHarness();
+        using var s = new CaptureScenario(h, runnerOptions: new GpuRunnerOptions { Mode = GpuRunnerMode.Off });
+        s.Client.Terminal["solve"] = TooBig;
+
+        await FinishedAsync(s);
+
+        var failed = await CaptureAsync(h);
+        Assert.Equal(WallCaptureStatus.Failed, failed.Status);
+        Assert.Contains("needs more memory than this server has", failed.Error);
+        Assert.DoesNotContain("runner", failed.Error);
+    }
+
+    [Fact]
+    public async Task ASolveThatKeepsRunningOutOfMemory_FailsOnceItHasWaitedADay()
+    {
+        using var h = new WallTestHarness();
+        using var s = new CaptureScenario(h, runnerOptions: new GpuRunnerOptions { ClaimWait = TimeSpan.Zero });
+        s.Client.Terminal["solve"] = TooBig;
+        var captureId = await FinishedAsync(s);
+        Assert.Equal(WallCaptureStatus.Solving, (await CaptureAsync(h)).Status);
+        await using (var db = h.CreateContext())
+        {
+            var longAgo = DateTimeOffset.UtcNow - WallCaptureProcessor.SolveParkLifetime - TimeSpan.FromMinutes(1);
+            await db.WallCaptures.Where(c => c.Id == captureId).ExecuteUpdateAsync(u => u.SetProperty(c => c.StartedAt, longAgo));
+        }
+
+        await s.Processor.ProcessAsync(captureId, CancellationToken.None);
+
+        var failed = await CaptureAsync(h);
+        Assert.Equal(WallCaptureStatus.Failed, failed.Status);
+        Assert.Contains("after retrying for 24 hours", failed.Error);
+        await using var check = h.CreateContext();
+        Assert.True(await check.WallCapturePhotos.AnyAsync(p => p.CaptureId == captureId));
     }
 
     [Fact]

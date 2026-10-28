@@ -196,7 +196,7 @@ class JobManager:
                     log.warning("job %s (%s) took %d MB, above JOB_MAX_MEMORY_MB=%d: stopped",
                                 job.id, job.kind, used_mb, limit_mb)
                     return memguard.RESOURCE, memguard.message(job.stage, limit_mb)
-            if parent.poll(0.5):
+            if parent.poll(memguard.SAMPLE_S if limit_mb > 0 else 0.5):
                 try:
                     msg = parent.recv()
                 except EOFError:
