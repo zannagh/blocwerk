@@ -12,6 +12,12 @@ public static class ComputeJobStates
     public const string Failed = "failed";
     public const string Cancelled = "cancelled";
 
+    /// <summary>
+    /// <c>failureKind</c> of a job that needed more memory than the worker allows one job (<c>JOB_MAX_MEMORY_MB</c>): not the
+    /// input's fault, a machine with more memory can run it.
+    /// </summary>
+    public const string ResourceFailure = "resource";
+
     public static bool IsTerminal(string? status) => status is Succeeded or Failed or Cancelled;
 }
 
@@ -39,6 +45,10 @@ public sealed record ComputeJobStatus
 
     [JsonPropertyName("error")]
     public string? Error { get; init; }
+
+    /// <summary>Why a failed job failed, when the worker says: <see cref="ComputeJobStates.ResourceFailure"/>, or null.</summary>
+    [JsonPropertyName("failureKind")]
+    public string? FailureKind { get; init; }
 
     /// <summary>Per-kind result, kept raw so each caller parses what it needs.</summary>
     [JsonPropertyName("result")]
@@ -115,6 +125,12 @@ public enum ComputeFailureKind
 
     /// <summary>The worker answered something that is not protocol v1.</summary>
     Protocol,
+
+    /// <summary>
+    /// The job waits for a 3D runner (<c>SPLATSERVICE__ONRUNNERS</c>): nothing failed, the caller stops waiting and is woken when
+    /// a runner delivers the result. Asking again later resumes it.
+    /// </summary>
+    Deferred,
 }
 
 /// <summary>A compute worker failure. <see cref="Exception.Message"/> is safe to show an admin.</summary>
@@ -130,4 +146,8 @@ public sealed class ComputeJobException(ComputeFailureKind kind, string message,
     public static ComputeJobException TooLarge(string name, long maxBytes) => new(
         ComputeFailureKind.Protocol,
         $"The 3D computation service sent a file ({name}) larger than {maxBytes / (1024 * 1024)} MB.");
+
+    /// <summary>The job waits for a 3D runner (<see cref="ComputeFailureKind.Deferred"/>).</summary>
+    public static ComputeJobException Deferred() =>
+        new(ComputeFailureKind.Deferred, "Waiting for a 3D runner: it will be done once a runner becomes available.");
 }

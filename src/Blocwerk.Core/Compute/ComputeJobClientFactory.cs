@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
+using Blocwerk.Core.Capture;
 using Blocwerk.Core.Configuration;
+using Blocwerk.Core.Runners;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -8,17 +10,26 @@ namespace Blocwerk.Core.Compute;
 /// <summary>
 /// Hands out one <see cref="ComputeJobClient"/> per configured worker, each over its own named
 /// <see cref="HttpClient"/>. Adding a worker = a <see cref="ComputeServiceKind"/> value, its settings
-/// block and a line in <see cref="SettingsFor"/>.
+/// block and a line in <see cref="SettingsFor"/>. With <see cref="GpuRunnerOptions.SplatOnRunners"/> on, the splat worker is
+/// <see cref="RunnerSplatClient"/> (3D runners prepare and finish) and <c>SPLATSERVICE__URL</c> is not used.
 /// </summary>
 public sealed class ComputeJobClientFactory(
     IHttpClientFactory httpClientFactory,
     BlocwerkSettings settings,
-    ILoggerFactory loggerFactory) : IComputeJobClientFactory
+    ILoggerFactory loggerFactory,
+    GpuJobQueue? gpuJobs = null,
+    ICaptureFileStore? files = null) : IComputeJobClientFactory
 {
     private readonly ConcurrentDictionary<ComputeServiceKind, bool> reported = new();
+    private RunnerSplatClient? runnerSplat;
 
     public IComputeJobClient Get(ComputeServiceKind service)
     {
+        if (service == ComputeServiceKind.Splat && gpuJobs is { Options.SplatOnRunners: true } && files is not null)
+        {
+            return runnerSplat ??= new RunnerSplatClient(gpuJobs, files, loggerFactory.CreateLogger<RunnerSplatClient>());
+        }
+
         var serviceSettings = SettingsFor(settings, service);
         if (serviceSettings.ConfigurationError is { } problem && reported.TryAdd(service, true))
         {

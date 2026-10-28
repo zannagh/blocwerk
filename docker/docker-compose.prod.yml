@@ -181,13 +181,17 @@ services:
       MAX_PHOTOS: ${GEOMETRY_MAX_PHOTOS:-}
       TEXTURES_TIMEOUT_S: ${TEXTURES_TIMEOUT_S:-}
       TEXTURES_MAX_MEGAPIXELS: ${TEXTURES_MAX_MEGAPIXELS:-}
-      TEXTURES_BLEND_MAX_BYTES: ${TEXTURES_BLEND_MAX_BYTES:-}
+      # Sized to the 1536m limit below (tools/o7-measure/README.md, The Attic, 719 photos): a 600 MB blend
+      # budget keeps every quality under ~1.1 GiB; the guard stops a job above 1280 MB as a "resource" failure,
+      # which the app defers to a 3D runner (textures) or the next attempt (solve) instead of failing it.
+      TEXTURES_BLEND_MAX_BYTES: ${TEXTURES_BLEND_MAX_BYTES:-600000000}
+      JOB_MAX_MEMORY_MB: ${GEOMETRY_JOB_MAX_MEMORY_MB:-1280}
       SFM_MAX_SPARSE_MB: ${SFM_MAX_SPARSE_MB:-}
       SFM_TIMEOUT_S: ${SFM_TIMEOUT_S:-}
-    # Shared host: capped. 4g rather than 2g: the multi-view
-    # texture blend alone may take TEXTURES_BLEND_MAX_BYTES (default 2 GB), decoded photos on top.
+    # Shared host: capped at 1.5 GiB (O7). Measured peaks: solve-sfm 0.5 GiB, textures 0.55-1.1 GiB with the
+    # 600 MB blend budget above; what does not fit is stopped by JOB_MAX_MEMORY_MB before the kernel's OOM killer.
     cpus: 2
-    mem_limit: 4g
+    mem_limit: 1536m
     # Job files live in the container's /tmp (writable layer) and expire after RESULT_TTL_S.
     restart: unless-stopped
     logging: *logging-small

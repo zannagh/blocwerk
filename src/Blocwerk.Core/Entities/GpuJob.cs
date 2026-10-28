@@ -224,6 +224,12 @@ public class GpuJob
     [MaxLength(100)]
     public string? PreviewFinishJobId { get; set; }
 
+    /// <summary>
+    /// When the creator of the job's capture was told that no 3D runner could take it for a day (splat prepare / finish jobs);
+    /// null until then. Set once, by a conditional update, so the push goes out once whatever runners come and go.
+    /// </summary>
+    public DateTimeOffset? NoRunnerNotifiedAt { get; set; }
+
     [MaxLength(2048)]
     public string? Error { get; set; }
 }

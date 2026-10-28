@@ -20,6 +20,8 @@ from .alive import Alive
 from .client import Backoff, Gone, Rejected, Transient, Unauthorized
 from .control import PauseControl, state_dir
 from .history import JobHistory, JobStatus
+from .compute import KINDS as COMPUTE_KINDS
+from .compute import ComputeRun
 from .holds import KIND as HOLDS_KIND
 from .holds import HoldsRun
 from .panels import KIND as PANELS_KIND
@@ -174,7 +176,8 @@ class Runner:
         self.current, outcome, run = status, "error", None
         self.control.set_busy(True)
         try:
-            kind = {TEXTURES_KIND: TexturesRun, HOLDS_KIND: HoldsRun, PANELS_KIND: PanelsRun}.get(job.get("kind"), JobRun)
+            kind = {TEXTURES_KIND: TexturesRun, HOLDS_KIND: HoldsRun, PANELS_KIND: PanelsRun,
+                    **dict.fromkeys(COMPUTE_KINDS, ComputeRun)}.get(job.get("kind"), JobRun)
             run = kind(self.client, job, self.work_dir, self.caps, self.shutdown, self.alive, self.resume,
                        pause=self.control.now, status=status)
             outcome = run.run()

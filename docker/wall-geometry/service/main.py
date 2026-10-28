@@ -140,6 +140,7 @@ service = ComputeService(
                                    "maxRequestMb": settings.max_request_bytes >> 20,
                                    "maxImageMegapixels": settings.max_image_pixels // 1_000_000,
                                    "texturesMaxMegapixels": settings.textures_max_pixels // 1_000_000,
+                                   "texturesBlendMaxMb": settings.textures_blend_max_bytes // 1_000_000,
                                    "sfmMaxSparseMb": settings.sfm_max_sparse_bytes >> 20,
                                    "sfmTimeoutS": settings.sfm_timeout_s}})
 app = service.app

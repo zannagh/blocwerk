@@ -41,13 +41,18 @@ internal sealed class CaptureScenario : IDisposable
             ? null
             : new GpuJobQueue(
                 harness.RootContextFactory, Files, Queue, runnerOptions, new GpuJobSignal(), NullLogger<GpuJobQueue>.Instance, busyGate, clock,
-                textureQueue: TextureQueue);
+                textureQueue: TextureQueue, notifications: Push);
+
+        // On runners only (SPLATSERVICE__ONRUNNERS) the splat worker is the real adapter over the queue, deferring at once.
+        SplatWorker = runnerOptions is { SplatOnRunners: true }
+            ? new RunnerSplatClient(Runners!, Files, NullLogger<RunnerSplatClient>.Instance, TimeSpan.Zero)
+            : SplatClient;
         Service = new WallCaptureService(
-            harness.DbContextFactory, harness.CurrentUser, Files, Queue, new FakeComputeJobClientFactory(Client, SplatClient),
+            harness.DbContextFactory, harness.CurrentUser, Files, Queue, new FakeComputeJobClientFactory(Client, SplatWorker),
             NullLogger<WallCaptureService>.Instance, kiosk, Detector, MarkerPlans, Video, Options, busyGate, photoConverter: photoConverter,
             textureQueue: TextureQueue, resolveQueue: ResolveQueue, settings: Settings, gpuJobs: Runners);
         Processor = new WallCaptureProcessor(
-            harness.RootContextFactory, Settings, new FakeComputeJobClientFactory(Client, SplatClient), Files, Push,
+            harness.RootContextFactory, Settings, new FakeComputeJobClientFactory(Client, SplatWorker), Files, Push,
             NullLoggerFactory.Instance, Options, Detector, Video, busyGate, followUps?.Invoke(harness), gpuJobs: Runners,
             holdDetection: holdDetection, afterCompletion: afterCompletion);
     }
@@ -60,6 +65,9 @@ internal sealed class CaptureScenario : IDisposable
     public BlocwerkSettings Settings { get; }
 
     public FakeComputeJobClient Client { get; } = new();
+
+    /// <summary>What the pipeline uses as the splat worker: <see cref="SplatClient"/>, or the runner adapter with SplatOnRunners.</summary>
+    public IComputeJobClient SplatWorker { get; }
 
     /// <summary>The splat worker. Not configured by default (the photo-real stage is skipped); set IsConfigured.</summary>
     public FakeComputeJobClient SplatClient { get; } = new() { Service = ComputeServiceKind.Splat, IsConfigured = false };

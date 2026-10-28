@@ -63,7 +63,7 @@ public sealed partial class WallCaptureService
         await using (db)
         {
             return await TextureInputsAsync(db, capture) is { } inputs
-                ? TextureQualityEstimate.ForAll(inputs.Geometry, inputs.Photos, settings?.GeometryTextures ?? new GeometryTextureSettings())
+                ? TextureQualityEstimate.ForAll(inputs.Geometry, inputs.Photos, settings?.GeometryTextures ?? new GeometryTextureSettings(), await HostBlendBudgetAsync())
                 : [];
         }
     }

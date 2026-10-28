@@ -22,13 +22,17 @@ public static class GpuJobText
             return [];
         }
 
+        // A prepare / finish on a runner (SplatOnRunners) is part of the view too; a markerless capture's reconstruction (its
+        // capture still Solving) gets its own line, so it can be cancelled like the view.
         var jobs = await db.GpuJobs.AsNoTracking()
-            .Where(j => captureIds.Contains(j.CaptureId) && j.Kind == GpuJobKind.Splat
+            .Where(j => captureIds.Contains(j.CaptureId)
+                        && (j.Kind == GpuJobKind.Splat || j.Kind == GpuJobKind.SplatPrepare || j.Kind == GpuJobKind.SplatFinish)
                         && (j.Status == GpuJobStatus.Queued || j.Status == GpuJobStatus.Claimed || j.Status == GpuJobStatus.Running
                             || (j.Status == GpuJobStatus.Succeeded && j.InstalledAt == null)))
             .Select(j => new
             {
-                j.CaptureId, j.Status, j.Stage, j.Progress, j.CreatedAt, j.PreviewInstalledStep, j.TotalSteps,
+                j.CaptureId, j.Kind, j.Status, j.Stage, j.Progress, j.CreatedAt, j.PreviewInstalledStep, j.TotalSteps,
+                Reconstructing = j.Kind == GpuJobKind.SplatPrepare && j.Capture.Status == WallCaptureStatus.Solving,
                 Runner = j.ClaimedByRunner == null ? null : j.ClaimedByRunner.Name,
             })
             .ToListAsync();
@@ -36,7 +40,7 @@ public static class GpuJobText
             .ToDictionary(g => g.Key, g =>
             {
                 var j = g.OrderByDescending(x => x.CreatedAt).First();
-                return Pending(j.Status, j.Stage, j.Progress, j.Runner, j.PreviewInstalledStep, j.TotalSteps);
+                return j.Reconstructing ? $"Reconstruction pending: {j.Stage ?? "waiting for a 3D runner"}" : Pending(j.Status, j.Stage, j.Progress, j.Runner, j.PreviewInstalledStep, j.TotalSteps, j.Kind);
             });
     }
 
@@ -45,12 +49,13 @@ public static class GpuJobText
     /// refining: 3D runner “Cellar PC” is training …").
     /// </summary>
     public static string Pending(
-        GpuJobStatus status, string? stage, double progress, string? runnerName, int? previewStep = null, int? totalSteps = null)
+        GpuJobStatus status, string? stage, double progress, string? runnerName, int? previewStep = null, int? totalSteps = null,
+        GpuJobKind kind = GpuJobKind.Splat)
     {
         var what = status switch
         {
             GpuJobStatus.Queued => stage ?? "waiting for a 3D runner",
-            GpuJobStatus.Succeeded => "trained, finishing on the server",
+            GpuJobStatus.Succeeded => kind == GpuJobKind.Splat ? "trained, finishing on the server" : "delivered, reading it on the server",
             _ => string.Create(CultureInfo.InvariantCulture, $"3D runner “{runnerName ?? "?"}” {stage ?? "is training"} ({progress:P0})"),
         };
         return previewStep is { } step

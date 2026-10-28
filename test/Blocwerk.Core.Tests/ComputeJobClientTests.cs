@@ -54,6 +54,20 @@ public class ComputeJobClientTests
     }
 
     [Fact]
+    public async Task TheBlendBudget_AndAResourceFailure_AreRead()
+    {
+        var handler = new StubHandler(r => Json(HttpStatusCode.OK, r.RequestUri!.AbsolutePath.EndsWith("/v1/info", StringComparison.Ordinal)
+            ? """{"limits":{"maxPhotos":200,"maxRequestMb":4096,"texturesBlendMaxMb":600}}"""
+            : """{"jobId":"j","status":"failed","error":"too big","failureKind":"resource"}"""));
+
+        var limits = await Client(handler).GetLimitsAsync(CancellationToken.None);
+        var job = await Client(handler).GetStatusAsync("j", CancellationToken.None);
+
+        Assert.Equal(new ComputeLimits(200, 4096L * 1024 * 1024, 600_000_000), limits);
+        Assert.Equal(ComputeJobStates.ResourceFailure, job.FailureKind);
+    }
+
+    [Fact]
     public async Task UnknownJob_OnStatus_IsJobNotFound()
     {
         var handler = new StubHandler(_ => Json(HttpStatusCode.NotFound, """{"detail":"no such job"}"""));

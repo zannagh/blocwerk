@@ -48,6 +48,12 @@ public sealed partial class WallCaptureProcessor
                 return status;
             }
 
+            if (status.Status == ComputeJobStates.Failed && status.FailureKind == ComputeJobStates.ResourceFailure)
+            {
+                logger.LogWarning("Compute job {JobId} ({Stage}) needed more memory than the worker allows: {Reason}", jobId, stage.Label, status.Error);
+                throw new CaptureNeedsMoreMemoryException($"{stage.Label}: needs more memory than this server has");
+            }
+
             if (status.Status is ComputeJobStates.Failed or ComputeJobStates.Cancelled)
             {
                 // The worker's text can carry paths and stack frames: logged in full, shown shortened.

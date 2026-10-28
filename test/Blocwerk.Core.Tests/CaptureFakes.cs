@@ -66,8 +66,13 @@ internal sealed class FakeComputeJobClient : IComputeJobClient
     /// <summary>What the worker reports it takes per request, bytes (<c>/v1/info</c>); null = it does not say.</summary>
     public long? MaxRequestBytes { get; set; }
 
+    /// <summary>The texture blend budget the worker reports, bytes (<c>/v1/info</c>); null = it does not say.</summary>
+    public long? TexturesBlendMaxBytes { get; set; }
+
     public Task<ComputeLimits?> GetLimitsAsync(CancellationToken ct) =>
-        Task.FromResult<ComputeLimits?>(MaxImages is null && MaxRequestBytes is null ? null : new ComputeLimits(MaxImages, MaxRequestBytes));
+        Task.FromResult<ComputeLimits?>(MaxImages is null && MaxRequestBytes is null && TexturesBlendMaxBytes is null
+            ? null
+            : new ComputeLimits(MaxImages, MaxRequestBytes, TexturesBlendMaxBytes));
 
     public Task<string> SubmitJsonAsync(string kind, string json, CancellationToken ct)
     {
@@ -207,10 +212,10 @@ internal sealed class FakeComputeJobClient : IComputeJobClient
 }
 
 /// <summary>Hands out the fake geometry client, and the splat client (not configured unless given).</summary>
-internal sealed class FakeComputeJobClientFactory(FakeComputeJobClient client, FakeComputeJobClient? splat = null)
+internal sealed class FakeComputeJobClientFactory(FakeComputeJobClient client, IComputeJobClient? splat = null)
     : IComputeJobClientFactory
 {
-    private readonly FakeComputeJobClient splatClient =
+    private readonly IComputeJobClient splatClient =
         splat ?? new FakeComputeJobClient { Service = ComputeServiceKind.Splat, IsConfigured = false };
 
     public IComputeJobClient Get(ComputeServiceKind service) =>

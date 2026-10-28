@@ -32,7 +32,9 @@ public sealed partial class GpuJobQueue(
     DiskSpaceProbe? diskSpace = null,
     GpuPreviewQueue? previews = null,
     WallTextureRerenderQueue? textureQueue = null,
-    Pulse.IWallPulse? pulse = null)
+    Pulse.IWallPulse? pulse = null,
+    Services.IPushNotificationService? notifications = null,
+    IOnDemandComputeLauncher? onDemand = null)
 {
     /// <summary>nvidia-smi's total of a "12 GB" card is 12282 MB; 98 % of 12 GB, like the worker's own ultra gate.</summary>
     public const int UltraMinVramMb = 12042;
@@ -43,6 +45,9 @@ public sealed partial class GpuJobQueue(
     private readonly RunnerUploadSlots uploads = new(options.MaxConcurrentUploads);
 
     public GpuRunnerOptions Options => options;
+
+    /// <summary>The queue's clock (the job times are on it).</summary>
+    public TimeProvider Clock => time;
 
     /// <summary>The per-runner rate limit, applied after the key authenticated.</summary>
     public RunnerCallLimiter Calls { get; } = new();
@@ -118,6 +123,7 @@ public sealed partial class GpuJobQueue(
         job.Status = GpuJobStatus.Queued;
         job.CreatedAt = Now;
         job.Stage = "waiting for a 3D runner";
+        NormalizeCompute(job);
         db.GpuJobs.Add(job);
         await db.SaveChangesAsync(ct);
         logger.LogInformation(

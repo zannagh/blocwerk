@@ -89,31 +89,8 @@ public sealed partial class WallCaptureProcessor
             return;
         }
 
-        SplatOutcome outcome;
-        try
+        if (await PhotoRealOutcomeAsync(run, modelId, client, ct) is not { } outcome)
         {
-            // The GPU half may go to a 3D runner: then the capture completes now and the view follows later.
-            outcome = await SplatOnServerOrRunnerAsync(capture, modelId, client, ct);
-        }
-        catch (ComputeJobException ex) when (IsWorkerAbsent(ex))
-        {
-            if (!await WaitForFinishWorkerAsync(run, ct))
-            {
-                await EndWithoutWorkerAsync(run, ex, ct);
-            }
-
-            return;
-        }
-        catch (Exception ex) when (ex is CaptureFailedException or ComputeJobException or InvalidDataException or IOException)
-        {
-            logger.LogInformation("Photo-real view of capture {CaptureId} failed: {Reason}", capture.Id, ex.Message);
-            if (await RestoreAfterRefinishAsync(capture.Id, ex.Message, ct))
-            {
-                return;
-            }
-
-            await FollowUpAsync(run, CaptureFollowUpPhase.Final, ct);
-            await EndWithoutViewAsync(capture.Id, ex.Message, ct);
             return;
         }
 
@@ -134,6 +111,45 @@ public sealed partial class WallCaptureProcessor
         // Model ready now; the photo-real view follows when a runner delivers it (the result may already be here).
         logger.LogInformation("Capture {CaptureId} is done; its photo-real view waits for a 3D runner", capture.Id);
         await gpuJobs!.ResumeIfDeliveredAsync(capture.Id, ct);
+    }
+
+    /// <summary>
+    /// What the photo-real stage did, or null when it already ended the capture (a failure, no worker) or parked it (a delivered
+    /// view waiting to be finished).
+    /// </summary>
+    private async Task<SplatOutcome?> PhotoRealOutcomeAsync(CaptureRun run, Guid modelId, IComputeJobClient client, CancellationToken ct)
+    {
+        var capture = run.Capture;
+        try
+        {
+            // The GPU half may go to a 3D runner: then the capture completes now and the view follows later.
+            return await SplatOnServerOrRunnerAsync(capture, modelId, client, ct);
+        }
+        catch (ComputeJobException ex) when (ex.Kind == ComputeFailureKind.Deferred)
+        {
+            // A prepare / finish waits for a 3D runner (SplatOnRunners): a finish parks the capture, a prepare lets it complete.
+            return await WaitForFinishWorkerAsync(run, ct, onRunner: true) ? null : SplatOutcome.AwaitingRunner;
+        }
+        catch (ComputeJobException ex) when (IsWorkerAbsent(ex))
+        {
+            if (!await WaitForFinishWorkerAsync(run, ct))
+            {
+                await EndWithoutWorkerAsync(run, ex, ct);
+            }
+
+            return null;
+        }
+        catch (Exception ex) when (ex is CaptureFailedException or ComputeJobException or InvalidDataException or IOException)
+        {
+            logger.LogInformation("Photo-real view of capture {CaptureId} failed: {Reason}", capture.Id, ex.Message);
+            if (!await RestoreAfterRefinishAsync(capture.Id, ex.Message, ct))
+            {
+                await FollowUpAsync(run, CaptureFollowUpPhase.Final, ct);
+                await EndWithoutViewAsync(capture.Id, ex.Message, ct);
+            }
+
+            return null;
+        }
     }
 
     /// <summary>
@@ -179,15 +195,15 @@ public sealed partial class WallCaptureProcessor
         Guid captureId, Guid modelId, SplatQuality? quality, IComputeJobClient client, CancellationToken ct, string jobKind = SplatKind)
     {
         await using var db = dbContextFactory.CreateDbContext();
-        var geometry = await db.WallGeometryModels.Where(m => m.Id == modelId).Select(m => m.Json).FirstAsync(ct);
-        var parts = new List<ComputeJobPart> { ComputeJobPart.Json("geometry", geometry) };
+        var model = await db.WallGeometryModels.Where(m => m.Id == modelId).Select(m => new { m.Json, m.WallId }).FirstAsync(ct);
+        var parts = new List<ComputeJobPart> { ComputeJobPart.Json("geometry", model.Json) };
         using var photoParts = new ComputePhotoParts(files);
         parts.AddRange(await PhotoPartsAsync(photoParts, await LoadUsablePhotosAsync(captureId, ct), CaptureComputeDocuments.PhotoName, ct));
 
         // The walk-along video's frames (if any): auxiliary images for coverage, never for alignment.
         parts.AddRange(await FramePartsAsync(photoParts, captureId, ct));
         parts.Add(ComputeJobPart.Json("options", CaptureSplatDocuments.BuildOptions(settings.SplatMaxSteps, quality)));
-        return await client.SubmitMultipartAsync(jobKind, parts, ct);
+        return await client.SubmitMultipartAsync(jobKind, parts, new ComputeJobOwner(model.WallId, captureId, modelId), ct);
     }
 
     /// <summary>

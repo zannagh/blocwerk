@@ -120,6 +120,7 @@ internal static class FeedBulkSites
     [
         Excluded("Runners/GpuJobQueue.cs", typeof(GpuJob), 1, GpuQueue),
         Excluded("Runners/GpuJobQueue.Claim.cs", typeof(GpuJob), 1, GpuQueue),
+        Excluded("Runners/GpuJobQueue.Compute.cs", typeof(GpuJob), 2, GpuQueue),
         Excluded("Runners/GpuJobQueue.Holds.cs", typeof(GpuJob), 2, GpuQueue),
         Excluded("Runners/GpuJobQueue.LeftoverRetention.cs", typeof(GpuJob), 1, GpuQueue),
         Excluded("Runners/GpuJobQueue.Preview.cs", typeof(GpuJob), 2, GpuQueue),
@@ -129,7 +130,8 @@ internal static class FeedBulkSites
         Excluded("Runners/GpuJobQueue.Report.cs", typeof(GpuJob), 1, GpuQueue),
         Excluded("Runners/GpuJobQueue.Result.cs", typeof(GpuJob), 1, GpuQueue),
         Excluded("Runners/GpuJobQueue.Panels.cs", typeof(GpuJob), 1, GpuQueue),
-        Excluded("Runners/GpuJobQueue.Sweep.cs", typeof(GpuJob), 2, GpuQueue),
+        Excluded("Runners/GpuJobQueue.RunnerWait.cs", typeof(GpuJob), 2, GpuQueue),
+        Excluded("Runners/GpuJobQueue.Sweep.cs", typeof(GpuJob), 1, GpuQueue),
         Excluded("Runners/GpuJobQueue.Textures.cs", typeof(GpuJob), 1, GpuQueue),
         Excluded("Runners/GpuJobQueue.Failures.cs", typeof(GpuRunnerFailure), 1, "runner failure retention, runner administration"),
     ];

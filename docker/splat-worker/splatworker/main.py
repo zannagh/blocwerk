@@ -5,19 +5,16 @@ Kinds: `splat` (all-in-one: photos -> splat on this machine) and the split for 3
 `splat-finish` (a runner's trained scene + prepared.json -> the same files as `splat`), both CPU only.
 SPLAT_WORKER_MODE=cpu serves the split only and needs no GPU and no trainer.
 """
-import json
 import os
 import platform
 import shutil
 
-from computejobs.service import ComputeService, bad, callback_url
-from computejobs.upload import json_field, text_field
+from computejobs.service import ComputeService, callback_url
+from computejobs.upload import text_field
 from fastapi import Request
 
 from . import __version__, brush, colmap, gpu, gsplat_trainer, split_api, trainers
-from .anchors import split_anchors
-from .frames import split
-from .options import OptionsError, parse_options, validate_geometry
+from .job_inputs import write_photo_inputs
 from .runner import run_job
 from .settings import settings
 from .upload import SplatUpload
@@ -94,28 +91,8 @@ async def _photos_job(svc, request: Request, kind):
     job = svc.create_job(kind, None)
     try:
         fields, photos = await SplatUpload(job.dir).read(request)
-        stills, frames = split(photos)  # vf_* = auxiliary video frames (frames.py): never aligned, never counted
-        stills, anchors = split_anchors(stills)  # a00, a01, ... = anchor photos (anchors.py): prepare only
-        if anchors and kind != "splat-prepare":
-            bad(f"anchor photos ({', '.join(anchors[:3])}, ...) are only accepted by splat-prepare", 422)
-        try:
-            options = parse_options(json_field(fields, "options"))
-            geometry = json_field(fields, "geometry")
-            if geometry is not None:
-                validate_geometry(geometry)
-                if not {c["image"] for c in geometry["cameras"]} & set(stills):
-                    raise OptionsError("no photo file name matches a camera 'image' of the geometry document")
-        except OptionsError as e:
-            bad(str(e), 422)
-        if len(stills) < settings.min_photos:
-            extra = f" and {len(frames)} video frames" if frames else ""
-            bad(f"need at least {settings.min_photos} photos (got {len(stills)}{extra})", 422)
+        write_photo_inputs(job.dir, fields, photos, kind)
         job.callback_url = callback_url(text_field(fields, "callbackUrl"))
-        if geometry is not None:
-            with open(os.path.join(job.dir, "geometry.json"), "w") as fh:
-                json.dump(geometry, fh)
-        with open(os.path.join(job.dir, "inputs.json"), "w") as fh:
-            json.dump({"photos": photos, "anchors": anchors, "options": options.to_dict()}, fh)
     except BaseException:
         svc.jobs().discard(job)
         raise
