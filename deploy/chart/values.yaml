@@ -150,7 +150,17 @@ postgres:
     schedule: "30 4 */2 * *"
     timeZone: Europe/Berlin
 
+# Where splat-prepare (COLMAP, training bundle) and splat-finish (alignment, crop, export) run (O7).
+#   true:  on 3D runners as jobs (SPLATSERVICE__ONRUNNERS=true). Needs web.env RUNNERS__MODE other than "off" and a
+#          runner advertising splat-prepare + splat-finish; splatCpu below is not needed and stays off.
+#   false: (the app's default) on the splat-cpu worker, so splatCpu.enabled must be true for photo-real 3D at all.
+# The rollback from runners is this flag plus splatCpu.enabled: true (blocwerk docs/runbooks/o7-splat-on-runners.md).
+splat:
+  onRunners: false
+
 # Wall geometry (marker observations -> 3D wall geometry, photos -> facet textures). In-memory job queue: one replica.
+# Sized for the O7 budget (compose: mem_limit 1536m): a job above JOB_MAX_MEMORY_MB is stopped with
+# failureKind "resource", which the app hands to a 3D runner (textures) or retries later (solve).
 geometry:
   enabled: true
   replicas: 1
@@ -166,7 +176,8 @@ geometry:
     MAX_PHOTOS: ""
     TEXTURES_TIMEOUT_S: ""
     TEXTURES_MAX_MEGAPIXELS: ""
-    TEXTURES_BLEND_MAX_BYTES: ""
+    TEXTURES_BLEND_MAX_BYTES: "600000000"   # multi-view blend budget; bigger jobs render single-view
+    JOB_MAX_MEMORY_MB: "1280"               # per-job resident cap inside the 1536Mi limit; "" or 0 = off
     SFM_MAX_SPARSE_MB: ""
     SFM_TIMEOUT_S: ""
   tmpSizeLimit: 20Gi        # job files, expire after RESULT_TTL_S
@@ -176,10 +187,11 @@ geometry:
       memory: 128Mi
     limits:
       cpu: "2"
-      memory: 4Gi           # compose mem_limit; the infra O7 budget caps it at about 1.5 GiB on the VPS
+      memory: 1536Mi        # compose mem_limit (O7); raise JOB_MAX_MEMORY_MB with it
 
-# The splat worker's CPU half (splat-prepare and splat-finish; SPLAT_WORKER_MODE=cpu never trains). Optional: off by
-# default, and the app runs without it (SPLATSERVICE__URL is only set while this is on). Compose profile `compute`.
+# The splat worker's CPU half (splat-prepare and splat-finish; SPLAT_WORKER_MODE=cpu never trains). Off by default:
+# with splat.onRunners those run on 3D runners. SPLATSERVICE__URL is only set while this is on. Compose: its own
+# off-by-default profile `splat-cpu`, for the rollback only.
 splatCpu:
   enabled: false
   replicas: 1

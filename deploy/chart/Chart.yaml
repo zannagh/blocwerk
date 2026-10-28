@@ -2,7 +2,8 @@ apiVersion: v2
 name: blocwerk
 description: >-
   Blocwerk as it runs today: one web replica (Blazor Server, API, background services), Postgres,
-  wall-geometry, an optional splat-cpu worker and the Aspire dashboard, behind an in-cluster deploy gate.
+  wall-geometry (capped for a small server), the Aspire dashboard and, only when splat work does not run on
+  3D runners, a splat-cpu worker; behind an in-cluster deploy gate.
 type: application
 # The chart version IS the bundle: .github/workflows/chart.yml publishes it from a release tag with
 # version == appVersion == that app release, and the web image defaults to appVersion. The worker images are

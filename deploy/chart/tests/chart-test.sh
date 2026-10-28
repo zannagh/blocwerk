@@ -48,8 +48,10 @@ done
 # splat-cpu is optional and nothing may assume it: off (default and prod-like) = no object and no SPLATSERVICE__ in the app.
 for name in default prod-like-values; do
   [[ -z "$(q "$OUT/$name.yaml" 'select(.metadata.name == "blocwerk-splat-cpu") | .kind')" ]] || fail "$name: splat-cpu rendered while off"
-  grep -q 'SPLATSERVICE__' "$OUT/$name.yaml" && fail "$name: SPLATSERVICE__ set while splat-cpu is off"
+  grep -qE 'SPLATSERVICE__(URL|APIKEY)' "$OUT/$name.yaml" && fail "$name: SPLATSERVICE__URL/APIKEY set while splat-cpu is off"
 done
+grep -A1 'name: SPLATSERVICE__ONRUNNERS' "$OUT/prod-like-values.yaml" | grep -q '"true"' ||
+  fail "prod-like: SPLATSERVICE__ONRUNNERS is not true"
 grep -q 'name: SPLATSERVICE__URL' "$OUT/all-on-values.yaml" || fail "all-on: SPLATSERVICE__URL missing"
 limit="$(q "$OUT/prod-like-values.yaml" 'select(.metadata.name == "blocwerk-geometry" and .kind == "Deployment") | .spec.template.spec.containers[0].resources.limits.memory')"
 [[ "$limit" == 1536Mi ]] || fail "prod-like: geometry memory limit $limit, expected 1536Mi"
@@ -58,6 +60,11 @@ limit="$(q "$OUT/prod-like-values.yaml" 'select(.metadata.name == "blocwerk-geom
 render --set web.replicas=2 >/dev/null 2>&1 && fail "schema accepted web.replicas=2"
 render --set geometry.replicas=3 >/dev/null 2>&1 && fail "schema accepted geometry.replicas=3"
 render --set web.env.POSTGRES__HOST=x >/dev/null 2>&1 && fail "schema accepted a chart-computed variable in web.env"
+render --set splat.onRunners=true >/dev/null 2>&1 && fail "splat.onRunners accepted with RUNNERS__MODE off"
+render --set splat.onRunners=true --set web.env.RUNNERS__MODE=always | grep -q 'name: SPLATSERVICE__ONRUNNERS' ||
+  fail "SPLATSERVICE__ONRUNNERS not rendered"
+render --set splat.onRunners=true --set web.env.RUNNERS__MODE=always | grep -q 'name: SPLATSERVICE__URL' &&
+  fail "SPLATSERVICE__URL rendered with splat-cpu off"
 render --set deployGate.enabled=false | grep -q 'argocd.argoproj.io/hook' && fail "hooks rendered with the gate off"
 
 [[ "$FAILED" -eq 0 ]] || { echo "$FAILED failure(s)" >&2; exit 1; }

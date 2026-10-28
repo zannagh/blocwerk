@@ -156,6 +156,11 @@
         }
       }
     },
+    "splat": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {"onRunners": {"type": "boolean"}}
+    },
     "geometry": {"$ref": "#/definitions/worker"},
     "splatCpu": {"$ref": "#/definitions/worker"},
     "aspire": {

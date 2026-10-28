@@ -38,6 +38,8 @@ containers:
         valueFrom:
           secretKeyRef: {name: {{ .Values.secrets.compute }}, key: COMPUTE_API_KEY}
       {{- end }}
+      - name: SPLATSERVICE__ONRUNNERS
+        value: {{ .Values.splat.onRunners | toString | quote }}
       {{- if .Values.splatCpu.enabled }}
       - name: SPLATSERVICE__URL
         value: "http://{{ $fullname }}-splat-cpu:8100"

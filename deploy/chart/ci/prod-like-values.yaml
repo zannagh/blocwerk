@@ -36,5 +36,7 @@ geometry:
     limits:
       cpu: "2"
       memory: 1536Mi
+splat:
+  onRunners: true
 splatCpu:
   enabled: false

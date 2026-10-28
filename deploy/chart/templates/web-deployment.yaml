@@ -2,6 +2,9 @@
 {{- if gt (int $web.replicas) 1 -}}
 {{- fail "web.replicas must be 0 or 1: the app keeps circuits, edit leases and job queues in its process" -}}
 {{- end -}}
+{{- if and .Values.splat.onRunners (eq (toString (default "off" (index $web.env "RUNNERS__MODE"))) "off") -}}
+{{- fail "splat.onRunners needs web.env.RUNNERS__MODE other than \"off\": prepare and finish would wait for a runner forever" -}}
+{{- end -}}
 {{- $ctx := dict "root" . "component" "web" -}}
 apiVersion: apps/v1
 kind: Deployment

@@ -22,6 +22,7 @@ blocwerk mount compose-only /app/models/hold-segmenter-encoder.onnx|as above
 blocwerk mount compose-only /app/models/hold-segmenter-decoder.onnx|as above
 blocwerk mount chart-only /app/models|as above
 blocwerk mount chart-only /tmp|uploads are buffered in an emptyDir with a size limit (compose: the container layer)
+blocwerk env chart-only SPLATSERVICE__ONRUNNERS|value splat.onRunners; in compose from O7 PR #242 (feat/o7-prod-config), then no longer a difference
 wall-geometry env compose-only COMPUTE_CALLBACK_SECRET|empty in production (the app polls); no callback secret is wired
 wall-geometry mount chart-only /tmp|job files in an emptyDir with a size limit (compose: the container layer)
 splat-cpu env compose-only COMPUTE_CALLBACK_SECRET|empty in production (the app polls); no callback secret is wired

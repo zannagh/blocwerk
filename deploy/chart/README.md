@@ -29,7 +29,13 @@ ingresses for the dashboard, backups, and every Secret (referenced by name in `s
 - **Secrets by name only.** `secrets.app` (envFrom), `secrets.postgres`, `secrets.compute`, optional
   `secrets.appsettings` and `secrets.deploy`. `BLOCWERK__ENCRYPTIONKEY` and the key ring in `keys/` on the data volume
   must be carried over verbatim when moving an installation.
-- **splat-cpu is optional** and nothing assumes it: with it off, `SPLATSERVICE__*` is not set.
+- **splat-cpu is optional** and nothing assumes it. `splat.onRunners: true` (`SPLATSERVICE__ONRUNNERS`) sends
+  splat-prepare and splat-finish to 3D runners as jobs (needs `web.env.RUNNERS__MODE` other than `off`; the render
+  fails otherwise); with splat-cpu off, `SPLATSERVICE__URL`/`__APIKEY` are not set. Rollback: `splat.onRunners: false`
+  plus `splatCpu.enabled: true`.
+- **Publishing:** a GitHub release `vX.Y.Z` (not a prerelease) of a commit that contains `.github/workflows/chart.yml`
+  pushes chart `X.Y.Z`. The package `charts/blocwerk` is private on its first push; make it public once in its
+  settings (no API exists for that), then re-run the job, whose last step checks an anonymous pull.
 
 ## Deploy gate
 

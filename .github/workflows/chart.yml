@@ -92,3 +92,17 @@ jobs:
           helm package deploy/chart --version "$VERSION" --app-version "$VERSION" --destination dist
           printf '%s' "$GHCR_TOKEN" | helm registry login ghcr.io --username "$GHCR_USER" --password-stdin
           helm push "dist/blocwerk-$VERSION.tgz" oci://ghcr.io/zannagh/charts
+
+      # ArgoCD pulls the chart without credentials. A package GHCR creates is private on its first push, and GitHub has
+      # no API to change a package's visibility: the owner switches it once in the UI (Package settings -> Danger
+      # Zone -> Change visibility -> Public), then re-runs this job. Later versions keep the visibility.
+      - name: Check the chart is pullable anonymously
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          export HELM_REGISTRY_CONFIG="$RUNNER_TEMP/no-login.json"   # no stored login: what ArgoCD sees
+          if ! helm show chart oci://ghcr.io/zannagh/charts/blocwerk --version "$VERSION" > /dev/null; then
+            echo "::error::chart $VERSION was pushed but is not public. Make it public once at https://github.com/users/zannagh/packages/container/charts%2Fblocwerk/settings (Change visibility -> Public), then re-run this job."
+            exit 1
+          fi
+          echo "chart $VERSION is pullable anonymously"
