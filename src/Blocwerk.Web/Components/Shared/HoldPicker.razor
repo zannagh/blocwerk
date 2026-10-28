@@ -111,7 +111,7 @@
                     strokeColor = "transparent";
                 }
 
-                <HoldShape @key="hold.Id" HoldId="hold.Id" X="hold.X" Y="hold.Y" Radius="hold.Radius" ShapePoints="hold.ShapePoints" ShapeHoles="hold.ShapeHoles"
+                <HoldShape @key="hold.Id" HoldId="hold.Id" X="hold.X" Y="hold.Y" Radius="hold.Radius" ShapePoints="hold.ShapePoints.AsDocumentRing()" ShapeHoles="hold.ShapeHoles.AsDocumentRings()"
                            Foot="isFoot" Fill="@fillColor" Stroke="@strokeColor" StrokeWidth="@sw" Dash="@dash" Kept="kept"
                            Style="cursor: pointer"
                            OnClick="(e) => OnHoldClicked(hold, e)" />
@@ -125,11 +125,11 @@
                 {
                     @* The hold it sits on, subdued: a second tap on the same spot picks that one. *@
                     <HoldShine @key="lower.Id" Look="base" X="lower.X" Y="lower.Y" Radius="lower.Radius"
-                               ShapePoints="lower.ShapePoints" ShapeHoles="lower.ShapeHoles"
+                               ShapePoints="lower.ShapePoints.AsDocumentRing()" ShapeHoles="lower.ShapeHoles.AsDocumentRings()"
                                Foot="lower.Category == HoldCategory.Foot" Color="@TappedColor(lower)" />
                 }
                 <HoldShine @key="tapped.Id" X="tapped.X" Y="tapped.Y" Radius="tapped.Radius"
-                           ShapePoints="tapped.ShapePoints" ShapeHoles="tapped.ShapeHoles"
+                           ShapePoints="tapped.ShapePoints.AsDocumentRing()" ShapeHoles="tapped.ShapeHoles.AsDocumentRings()"
                            Foot="tapped.Category == HoldCategory.Foot" Color="@TappedColor(tapped)" />
             </svg>
         }

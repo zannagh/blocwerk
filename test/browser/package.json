@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "test": "playwright test",
-    "browsers": "playwright install chromium webkit"
+    "browsers": "playwright install chromium webkit",
+    "gate": "rm -f .out/gate/results.json && playwright test -c playwright.gate.config.mjs; node gate/report.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0"

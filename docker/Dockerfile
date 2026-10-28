@@ -7,6 +7,8 @@ COPY src/Blocwerk.Contracts/Blocwerk.Contracts.csproj src/Blocwerk.Contracts/
 COPY src/Blocwerk.Core/Blocwerk.Core.csproj src/Blocwerk.Core/
 COPY src/Blocwerk.Authentication/Blocwerk.Authentication.csproj src/Blocwerk.Authentication/
 COPY src/Blocwerk.HoldDetection/Blocwerk.HoldDetection.csproj src/Blocwerk.HoldDetection/
+COPY src/Blocwerk.Shared.Ui/Blocwerk.Shared.Ui.csproj src/Blocwerk.Shared.Ui/
+COPY src/Blocwerk.Client/Blocwerk.Client.csproj src/Blocwerk.Client/
 COPY src/Blocwerk.Web/Blocwerk.Web.csproj src/Blocwerk.Web/
 RUN dotnet restore src/Blocwerk.Web/Blocwerk.Web.csproj -a $TARGETARCH
 

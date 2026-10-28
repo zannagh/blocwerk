@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -70,7 +69,6 @@ public static class ApiKeySessionValidator
         context.HttpContext.RequestServices.GetService<ILoggerFactory>()?
             .CreateLogger("Blocwerk.Authentication.ApiKeyLogin")
             .LogWarning("API key session for key {ApiKeyId} ended: {Reason}", keyId, reason);
-        context.RejectPrincipal();
-        await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        await SignOutReason.RejectAsync(context);
     }
 }

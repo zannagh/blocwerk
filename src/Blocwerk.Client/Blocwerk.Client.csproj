@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+
+  <!--
+    The offline gym client (Phase 3, plan 2026-10-22 §1): a standalone Blazor WebAssembly app that Blocwerk.Web serves
+    under /v/. It takes over only when a gym navigation fails (the service worker's redirect, PR 3.9) and shows local
+    data read-only. It renders the hold overlay through Blocwerk.Shared.Ui and reads the Blocwerk.Contracts documents,
+    never Core.
+
+    The shell is no file here: Web renders it (OfflineClientShell, through @Assets and an import map), so every URL it
+    names is fingerprinted from Web's static-asset manifest. StaticWebAssetBasePath puts the client's own files
+    (_framework, css, js) under /v/; Blocwerk.Shared.Ui's stay at /_content/ (Web serves one copy for both apps).
+
+    OverrideHtmlAssetPlaceholders stays OFF: with it on, the .NET 10.0.401 SDK drops the processed index.html from a
+    REFERENCING project's publish and copies the raw one to the Web root as wwwroot/index.html. BlazorFingerprintBlazorJs
+    and WasmFingerprintDotnetJs give blazor.webassembly.js and dotnet.js the fingerprints that setting would have; the
+    shell's import map maps blazor.webassembly.js's `import("./dotnet.js")` to the fingerprinted file.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <StaticWebAssetBasePath>v</StaticWebAssetBasePath>
+    <OverrideHtmlAssetPlaceholders>false</OverrideHtmlAssetPlaceholders>
+    <BlazorFingerprintBlazorJs>true</BlazorFingerprintBlazorJs>
+    <WasmFingerprintDotnetJs>true</WasmFingerprintDotnetJs>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <PublishTrimmed>true</PublishTrimmed>
+    <BlazorEnableTimeZoneSupport>false</BlazorEnableTimeZoneSupport>
+  </PropertyGroup>
+
+  <!-- Server-side telemetry and logging packages from Directory.Build.props have no place in the browser. -->
+  <ItemGroup>
+    <PackageReference Remove="Serilog" />
+    <PackageReference Remove="Serilog.Sinks.Console" />
+    <PackageReference Remove="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <PackageReference Remove="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Remove="OpenTelemetry.Instrumentation.AspNetCore" />
+    <PackageReference Remove="OpenTelemetry.Instrumentation.Http" />
+    <PackageReference Remove="OpenTelemetry.Instrumentation.Runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Blocwerk.Core.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Blocwerk.Contracts\Blocwerk.Contracts.csproj" />
+    <ProjectReference Include="..\Blocwerk.Shared.Ui\Blocwerk.Shared.Ui.csproj" />
+  </ItemGroup>
+
+</Project>

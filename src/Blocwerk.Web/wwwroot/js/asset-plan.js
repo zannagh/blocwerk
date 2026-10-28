@@ -3,7 +3,8 @@
  * decisions of 2026-10-21). Pure: asset-fill.js runs the plan.
  *
  * ORDER: tier first, then wall.
- *   1. `core` of every wall (the current panels at the fit rendition plus 640), always, whatever the budget;
+ *   1. `core` of every wall (the current panels at the fit rendition plus 640), always, whatever the budget, and
+ *      right after it every wall's data documents (`data`, asset-data.js: small JSON, the offline client's data);
  *   2. the gallery, newest images first, while the image budget has room: 640 and the original on a desktop with an
  *      unmetered connection, the 640 only on a phone, a tablet or a metered connection (originals cache on open);
  *   3. 3D (textures, masks, one splat level), only on a desktop browser (never on a phone or tablet, iOS or Android:
@@ -89,10 +90,15 @@ window.bwAssetPlan = (function () {
         return width ? `${sha}/${width}` : sha;
     }
 
-    function urlOf(wallId, sha, width, token) {
-        const path = `/api/walls/${wallId}/a/${sha}` + (width ? `/${width}` : '');
+    function urlOf(wallId, sha, width, token, kind) {
+        const path = kind ? `/api/walls/${wallId}/d/${kind}/${sha}` : `/api/walls/${wallId}/a/${sha}` + (width ? `/${width}` : '');
         return token ? `${path}?token=${encodeURIComponent(token)}` : path;
     }
+
+    // The wall row's data documents as entries: { sha, kind, bytes }.
+    const dataEntries = wall => Object.entries(wall.data || {})
+        .filter(([, doc]) => doc && typeof doc.sha === 'string')
+        .map(([kind, doc]) => ({ sha: doc.sha, kind, bytes: doc.bytes || 0 }));
 
     function wallOrder(walls, openWallId) {
         return walls.slice().sort((a, b) => {
@@ -150,7 +156,8 @@ window.bwAssetPlan = (function () {
             }
             planned.add(key);
             const token = state.tokens ? state.tokens.get(wall.wallId) : null;
-            tasks.push({ key, url: urlOf(wall.wallId, entry.sha, width, token), sha: entry.sha, width, tier, wallId: wall.wallId });
+            const url = urlOf(wall.wallId, entry.sha, width, token, tier === 'data' ? entry.kind : null);
+            tasks.push({ key, url, sha: entry.sha, width, tier, wallId: wall.wallId });
             return true;
         };
         // Pushes an entry's renditions that are not cached yet, all or none, while `room` holds their cost.
@@ -174,6 +181,10 @@ window.bwAssetPlan = (function () {
                     }
                 });
             }
+        }
+        // The data documents: whatever the budget, the device or the connection, like core (their bytes are JSON).
+        for (const wall of walls) {
+            dataEntries(wall).forEach(entry => push(wall, entry, null, 'data'));
         }
         // Saved 3D: asked for explicitly, so no budget, metered or mobile rule holds it back (a refusal still streams).
         const unbounded = { fits: () => true, take: () => undefined };

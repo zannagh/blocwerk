@@ -14,7 +14,7 @@
             @if (Hold is { } hold)
             {
                 <svg class="lookover-outlines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-                    <HoldShape X="X" Y="Y" Radius="hold.Radius" ShapePoints="hold.ShapePoints" ShapeHoles="hold.ShapeHoles"
+                    <HoldShape X="X" Y="Y" Radius="hold.Radius" ShapePoints="hold.ShapePoints.AsDocumentRing()" ShapeHoles="hold.ShapeHoles.AsDocumentRings()"
                                Foot="hold.Category == HoldCategory.Foot" FootScale="HoldShape.FullFoot"
                                Fill="none" Stroke="@(Stroke ?? HoldPalette.StrokeHex(hold.Color))" StrokeWidth="@F(1.1 / Scale)" />
                 </svg>

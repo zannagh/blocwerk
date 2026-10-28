@@ -180,7 +180,7 @@
 
             @* No @key here, deliberately: this loop has never had one, and keying it on the hold id
                would change the diff's identity rules for every overlay layered below. *@
-            <HoldShape HoldId="hold.Id" X="hold.X" Y="hold.Y" Radius="hold.Radius" ShapePoints="hold.ShapePoints" ShapeHoles="hold.ShapeHoles"
+            <HoldShape HoldId="hold.Id" X="hold.X" Y="hold.Y" Radius="hold.Radius" ShapePoints="hold.ShapePoints.AsDocumentRing()" ShapeHoles="hold.ShapeHoles.AsDocumentRings()"
                        Foot="isFoot" Fill="@fillColor" Stroke="@strokeColor" StrokeWidth="@sw" Dash="@dash"
                        Kept="hold.KeptUnconfirmedGeneration is not null" StackKeys="@StackKeys(stackOn, hold)"
                        PointerEvents="@hitEvents" Style="cursor: pointer"

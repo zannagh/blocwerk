@@ -47,7 +47,10 @@ test('3D is filled by default: textures and masks as images, one splat level in 
     const byCache = await assetKeys(page);
     const alpha = world.walls.alpha;
     expect(byCache[`bw-a1-${partition}-img`]).toEqual(expect.arrayContaining([alpha.texture, alpha.mask]));
-    expect(byCache[`bw-a1-${partition}-3d`]).toEqual([alpha.splat]);
+    // -3d also holds both walls' data documents (PR 3.3); of the 3D model, only the splat.
+    const dataShas = (await ledger(page, partition)).walls.flatMap(w => Object.values(w.data || {}).map(d => d.sha));
+    expect(dataShas.length).toBeGreaterThan(0);
+    expect(byCache[`bw-a1-${partition}-3d`].filter(k => !dataShas.includes(k))).toEqual([alpha.splat]);
 });
 
 test('the 3D opt-out fills core but no view3d asset', async ({ page, context, world, baseURL }) => {

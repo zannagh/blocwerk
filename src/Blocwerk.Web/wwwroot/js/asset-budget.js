@@ -28,7 +28,8 @@ window.bwAssetBudget = (function () {
     };
     // A quota this small is a private window or a crippled profile.
     const CONSTRAINED_QUOTA = 512 * MB;
-    const TIER_RANK = { core: 0, view3d: 1, lazy: 2 };
+    // `data`: the wall's data documents (asset-data.js), ranked like core: never a victim, only ever an orphan.
+    const TIER_RANK = { core: 0, data: 0, view3d: 1, lazy: 2 };
     const ORPHAN_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
 
     function isStandalone(win) {
@@ -104,8 +105,9 @@ window.bwAssetBudget = (function () {
     function classify(walls, assets) {
         const bySha = new Map();
         for (const wall of walls) {
-            // `docs`: the view3d documents the wall's 3D views loaded (bwAsset3d.noteDoc), 3D like its textures.
-            for (const entry of (wall.entries || []).concat(wall.docs || [])) {
+            // bwAssetLedger.listed: the manifest's entries, the view3d documents the wall's 3D views loaded
+            // (bwAsset3d.noteDoc, 3D like its textures) and the data documents (`data`, tier `data`).
+            for (const entry of window.bwAssetLedger.listed(wall)) {
                 const known = bySha.get(entry.sha) || { tier: entry.tier, kind: entry.kind, splats: entry.splats, bytes: entry.bytes, walls: [] };
                 if ((TIER_RANK[entry.tier] ?? 9) < (TIER_RANK[known.tier] ?? 9)) {
                     known.tier = entry.tier;

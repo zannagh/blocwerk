@@ -119,7 +119,7 @@ internal static class FeedBoulderResolver
             .AsNoTracking()
             .TagWith(LookupTag)
             .Where(b => ids.Contains(b.Id))
-            .Select(b => new FeedBoulderFacts(b.Id, b.WallId, b.IsDraft, b.Generation));
+            .Select(b => new FeedBoulderFacts(b.Id, b.WallId, b.IsDraft, b.Generation, b.IsArchived));
     }
 
     // A boulder the lookup does not find is gone; its delete wrote, or writes, its own row.

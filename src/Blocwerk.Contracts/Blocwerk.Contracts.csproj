@@ -3,6 +3,10 @@
   <!--
     Wire types shared by the server and the later Blocwerk.Client (standalone Blazor WebAssembly): the live-update feed's
     envelope, kinds and payloads. No EF, no ASP.NET, no Core reference, so the WASM client can take it as it is.
+    Holds/ carries the hold vocabulary the shared overlay (Blocwerk.Shared.Ui) draws from: HoldType, HoldUsage,
+    HoldCategory, HoldMaterial and HoldPalette keep their Core namespaces (Blocwerk.Core.Enums, Blocwerk.Core.Holds),
+    so moving them here touched no caller and no stored value. Grades/ (GradeScale, GradeScoring) moved the same way, in
+    Blocwerk.Core.Helpers, for the offline client's boulder list (PR 3.11).
   -->
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>

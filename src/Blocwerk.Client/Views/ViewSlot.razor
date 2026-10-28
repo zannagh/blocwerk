@@ -1,0 +1,34 @@
+@inject ViewSlotRegistry Registry
+@* An extension point of the views (PR 3.13 mounts gallery and 3D here through ViewSlotRegistry). With nothing
+   registered it renders its default content alone (a stage's panel viewer), or nothing; with components it wraps them
+   in one marked box and hands each the default content to show or replace. *@
+@{ var mounted = Registry.For(Name); }
+@if (mounted.Count == 0)
+{
+    @DefaultContent
+}
+else
+{
+    <div class="bw-view-slot" data-bw-slot="@Name.ToString()">
+        @foreach (var component in mounted)
+        {
+            @component(Context, DefaultContent)
+        }
+    </div>
+}
+
+@code {
+    /// <summary>Gets or sets which slot this is.</summary>
+    [Parameter]
+    [EditorRequired]
+    public ViewSlotName Name { get; set; }
+
+    /// <summary>Gets or sets what the mounted components are shown.</summary>
+    [Parameter]
+    [EditorRequired]
+    public ViewSlotContext Context { get; set; } = null!;
+
+    /// <summary>Gets or sets what the slot shows with nothing mounted (and hands to what is).</summary>
+    [Parameter]
+    public RenderFragment? DefaultContent { get; set; }
+}

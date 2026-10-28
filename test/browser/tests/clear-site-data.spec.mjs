@@ -82,8 +82,9 @@ test('the signed-out page loads its scripts by their fingerprinted URLs, and eac
     const scripts = [...html.matchAll(/<script src="([^"]+)"/g)].map(m => m[1]);
     expect(scripts.length).toBeGreaterThan(0);
     for (const src of scripts) {
-        // `/js/name.{fingerprint}.js`, the name `@Assets` hands out, not the plain path.
-        expect(src).toMatch(/^\/js\/[a-z-]+\.[a-z0-9]{6,}\.js$/);
+        // `/js/name.{fingerprint}.js` (the cache modules: `/_content/Blocwerk.Shared.Ui/js/…`, PR 3.7), the name `@Assets`
+        // hands out, not the plain path.
+        expect(src).toMatch(/^\/(_content\/Blocwerk\.Shared\.Ui\/)?js\/[a-z-]+\.[a-z0-9]{6,}\.js$/);
         const response = await fetch(baseURL + src);
         expect(response.status, src).toBe(200);
         expect(response.headers.get('content-type'), src).toContain('javascript');

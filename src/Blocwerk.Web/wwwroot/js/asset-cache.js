@@ -4,8 +4,9 @@
  * The service worker (sw-asset-cache.js) stores and serves the hashed `/a/` assets on its own; this module decides
  * what the device should hold and when to let go of it:
  *   start: the page's partition decision and wipes (asset-session.js) → ledger reconcile against the caches → the
- *          viewer's walls from /api/me/cache-summary → each wall's manifest, 3 at a time (asset-manifest.js) →
- *          eviction (asset-budget.js) → the background fill (asset-plan.js, asset-fill.js).
+ *          viewer's walls from /api/me/cache-summary → each wall's manifest, 3 at a time (asset-manifest.js), and
+ *          after a current one its docs index (asset-data.js) and the viewer's own marks (asset-mine.js) → eviction
+ *          (asset-budget.js) → the background fill (asset-plan.js, asset-fill.js).
  *   on a wall page: that wall's manifest is fetched (with the page's share token), it goes first in the fill, and
  *          leaving it runs eviction again.
  *   on `asset-cached` / `asset-refused` from the worker: the ledger records the asset / the fill learns of a refusal.
@@ -20,10 +21,8 @@
 window.bwAssetCache = (function (win) {
     'use strict';
 
-    const PROTO = 1;
     const WALL_PATH = /^\/walls\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\/|$)/i;
     const REAL_LABEL = /^(anon|[uk]-[a-z2-7]{20})$/;
-    const SEEN_MAX = 512;
     const MANIFEST_PARALLEL = 3;
 
     const Wipe = () => win.bwAssetWipe;
@@ -32,6 +31,8 @@ window.bwAssetCache = (function (win) {
     const Fill = () => win.bwAssetFill;
     const Manifest = () => win.bwAssetManifest;
     const Store = () => win.bwAssetStore;
+    const Data = () => win.bwAssetData;
+    const Mine = () => win.bwAssetMine;
 
     const state = {
         env: null, active: null, capable: false, summary: null, budget: null, context: null,
@@ -44,7 +45,10 @@ window.bwAssetCache = (function (win) {
     const now = () => Date.now();
     const keep3d = () => !(win.bwPrefs && typeof win.bwPrefs.getCache3d === 'function' && win.bwPrefs.getCache3d() === false);
     const mobile = () => Plan().isMobile(win.navigator, win.matchMedia ? query => win.matchMedia(query) : null);
-    const caching = () => typeof state.active === 'string' && REAL_LABEL.test(state.active);
+    // A degraded ledger (storage refused, or a pending v2 upgrade) knows nothing of the device: such a page decides
+    // and wipes (asset-session.js) but never reconciles, evicts or fills, so it cannot delete what it does not know of.
+    // The worker keeps serving and storing the partition's caches.
+    const caching = () => typeof state.active === 'string' && REAL_LABEL.test(state.active) && !(state.env && state.env.ledger.degraded);
     const snapshot = async () => ({ walls: await state.env.ledger.wallsOf(state.active), assets: await state.env.ledger.assetsOf(state.active) });
 
     function wallOfPage() {
@@ -52,29 +56,10 @@ window.bwAssetCache = (function (win) {
         return match ? match[1].toLowerCase() : null;
     }
 
-    function onWorkerMessage(event) {
-        const data = event.data;
-        const known = data && (data.type === 'asset-cached' || data.type === 'asset-refused');
-        if (!known || data.proto !== PROTO || typeof data.sha !== 'string' || !caching()) {
-            return;
-        }
-        const key = Plan().keyOf(data.sha, data.width);
-        const outcome = data.type === 'asset-cached' ? 'stored' : 'refused';
-        state.seen.set(key, outcome);
-        if (state.seen.size > SEEN_MAX) {
-            state.seen.delete(state.seen.keys().next().value);
-        }
-        if (outcome === 'stored') {
-            state.env.ledger.putAsset({ partition: state.active, key, sha: data.sha, width: data.width || null, cache: null, bytes: data.bytes || 0, cachedAt: now(), verifiedAt: now() });
-        }
-        const waiter = state.waiters.get(key);
-        if (waiter) {
-            state.waiters.delete(key);
-            waiter(outcome);
-        }
-    }
-
+    const onWorkerMessage = event => (caching() ? Store().record(win, state, event.data, now()) : undefined);
     const dropWall = wallId => Wipe().dropWall(state.env, state.active, wallId);
+    const refreshData = wallId => Data().refresh(state.env, state.active, wallId, { token: state.tokens.get(wallId) || null, dropWall });
+    const refreshMine = wallId => Mine().refresh(state.env, state.active, wallId);
 
     async function refreshWall(wallId, opened) {
         const member = !!(state.summary && state.summary.walls.includes(wallId));
@@ -82,6 +67,7 @@ window.bwAssetCache = (function (win) {
         const result = await Manifest().refresh(state.env, state.active, wallId, { token, member, opened, dropWall });
         if (result.outcome === 'updated' || result.outcome === 'unchanged') {
             state.fresh.add(wallId);
+            await Promise.all([refreshData(wallId), refreshMine(wallId)]);
         }
         win.clearTimeout(state.pendingTimers.get(wallId));
         const runs = result.pending > 0 && result.outcome !== 'dropped' ? (state.pendingRuns.get(wallId) || 0) + 1 : 0;
@@ -105,8 +91,9 @@ window.bwAssetCache = (function (win) {
         await Promise.all(Array.from({ length: Math.min(MANIFEST_PARALLEL, queue.length) }, worker));
     }
 
-    async function evict(snap) {
-        const { walls, assets } = snap || await snapshot();
+    async function evict() {
+        await Data().settle(state.env, state.active);
+        const { walls, assets } = await snapshot();
         // An orphan is only an orphan when every manifest it could be in was read on this page.
         const orphans = !!state.summary && walls.every(w => state.fresh.has(w.wallId));
         const keys = Budget().planEviction({ walls, assets, budget: state.budget, openWallId: state.openWallId, keep3d: keep3d(), orphans, now: now() });
@@ -244,7 +231,8 @@ window.bwAssetCache = (function (win) {
 
     async function start() {
         const ledger = await win.bwAssetLedger.open();
-        state.env = { caches: win.caches, ledger: win.bwAssetSession.guard(ledger), origin: win.location.origin, fetch: (u, i) => win.fetch(u, i), now, partition: () => state.active };
+        state.env = { caches: win.caches, ledger: win.bwAssetSession.guard(ledger), origin: win.location.origin, fetch: (u, i) => win.fetch(u, i), now, partition: () => state.active,
+            signedOut: response => win.bwAssetLock.refused(state, response) }; // a 401/410 of the manifest, docs or marks
         if (win.navigator.serviceWorker && win.navigator.serviceWorker.addEventListener) {
             win.navigator.serviceWorker.addEventListener('message', onWorkerMessage);
         }
@@ -279,6 +267,10 @@ window.bwAssetCache = (function (win) {
         dropWall: wallId => whenStarted(() => dropWall(String(wallId).toLowerCase())),
         // A `wall.manifest` / `wall.resync` for a wall: refetch it and fill what changed.
         manifestChanged: wallId => whenStarted(() => refreshWall(String(wallId).toLowerCase(), false).then(() => scheduleFill())),
+        // A data document of the wall may have changed (bwAssetData.changed, debounced): its docs index, then the fill.
+        dataChanged: wallId => whenStarted(() => refreshData(String(wallId).toLowerCase()).then(() => scheduleFill())),
+        // A tick.mine / favorite.changed of the wall (bwAssetMine.changed, debounced): the viewer's own marks, `u-` only.
+        mineChanged: wallId => whenStarted(() => refreshMine(String(wallId).toLowerCase())),
         // The 3D opt-out (2.9's settings and the high-storage notice).
         setKeep3d: function (on) {
             if (win.bwPrefs && typeof win.bwPrefs.setCache3d === 'function') {

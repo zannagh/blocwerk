@@ -1,16 +1,22 @@
 @using Blocwerk.Contracts.Assets
 @using Blocwerk.Core.Assets.Partition
+@using Blocwerk.Authentication.Services
 @inject ICachePartitionResolver Partitions
+@inject IServiceProvider Services
 
 @* The device's asset-cache partition (design §6.6), on every server-rendered page: the page modules compare it with the
    partition they last cached under and wipe on any difference, a missing meta included. Rendered in the head of BlocwerkApp,
    which every page goes through. "unknown" if the partition cannot be decided: a failure on the server must never make
    every device wipe on every page load, but neither may it keep a cache across a real identity switch, so the page
-   trusts nothing (caches nothing, wipes on a changed acting user). "offline" belongs to offline.html alone. *@
-<meta name="@CachePartitions.MetaName" content="@partition" />
+   trusts nothing (caches nothing, wipes on a changed acting user). "offline" belongs to offline.html alone.
+   An "anon" page also says why nobody is signed in (data-signout, SignOutReasons): "expired" locks the device's u-
+   partition for the same user's return, anything else wipes it. Read after the partition, whose resolution is what
+   records a "gone". *@
+<meta name="@CachePartitions.MetaName" content="@partition" data-signout="@signOut" />
 
 @code {
     private string partition = CachePartitions.Unknown;
+    private string? signOut;
 
     protected override async Task OnInitializedAsync()
     {
@@ -22,5 +28,10 @@
         {
             partition = CachePartitions.Unknown;
         }
+
+        // Null renders no attribute. The accessor is optional: a render outside a request knows no reason.
+        signOut = partition == CachePartitions.Anonymous
+            ? SignOutReason.Of(Services.GetService<IHttpContextAccessor>()?.HttpContext)
+            : null;
     }
 }

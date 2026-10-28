@@ -38,7 +38,8 @@ public class DevAuthenticationMiddleware
             && !context.Request.Path.StartsWithSegments("/account")
             && !context.Request.Path.StartsWithSegments("/_framework")
             && !context.Request.Path.StartsWithSegments("/css")
-            && !context.Request.Path.StartsWithSegments("/js"))
+            && !context.Request.Path.StartsWithSegments("/js")
+            && !context.Request.Path.StartsWithSegments("/_content"))
         {
             var claims = new List<Claim>
             {

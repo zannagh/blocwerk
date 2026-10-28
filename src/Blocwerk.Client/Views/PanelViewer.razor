@@ -1,0 +1,142 @@
+@using Blocwerk.Shared.Ui.Overlay
+@* The wall's photos one at a time, as the Server's MultiPanelViewer shows them (its markup and classes, without the
+   zoom engine, the lens and the full-screen stage, which are Server interop): the cached photo, the shared hold
+   overlay, the outdated chip, and a chevron to each neighbouring panel. On a boulder page it draws the boulder's holds
+   alone (its holds of no panel on the centre panel) and steps only to the panels carrying them. Nothing here edits;
+   the overlay is the read-only one. *@
+@if (panel is null)
+{
+    <p class="empty-msg">No panels to show.</p>
+}
+else
+{
+    <div class="panel-viewer" data-bw-panel="@(panel.Id?.ToString() ?? "photo")">
+        <div class="photo-viewport photo-section">
+            <div class="photo-editor">
+                <PanelPhoto Urls="PhotoUrls.Renditions(WallId, panel.Sha, ShareToken, FitWidth)"
+                            Alt="@($"Wall panel {panel.Col},{panel.Row}")" Class="@(Highlighted is null ? "wall-photo" : "wall-photo boulder-photo")" />
+                <PanelHoldOverlay Holds="@(Highlighted is null ? Grid.HoldsOn(panel) : Grid.BoulderHoldsOn(panel, Highlighted))" HighlightedHoldIds="Highlighted" FootHoldIds="FootHoldIds"
+                                  HoldColor="HoldColor" DrawsEveryHold="!OutlinesOnDemand || showAllHolds" />
+            </div>
+        </div>
+
+        @if (panel.Outdated)
+        {
+            <div class="panel-outdated-badge" role="status">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" width="14" height="14" aria-hidden="true">
+                    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                    <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+                <span>Last generation · needs update</span>
+            </div>
+        }
+
+        @if (OutlinesOnDemand)
+        {
+            @* The Server wall view's "Show all holds" (its tap-to-outline is Server interop the client does not have). *@
+            <button type="button" class="heat-tool holds-all-tool @(showAllHolds ? "active" : null)"
+                    aria-pressed="@(showAllHolds ? "true" : "false")" aria-label="Show all holds" title="Show all holds"
+                    @onclick="() => showAllHolds = !showAllHolds">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22" aria-hidden="true">
+                    <circle cx="7" cy="8" r="3.5" /><circle cx="17" cy="9" r="2.5" /><circle cx="11" cy="17" r="3" />
+                </svg>
+            </button>
+        }
+
+        @foreach (var (dir, dCol, dRow, title) in Directions)
+        {
+            if (Step(dCol, dRow) is { } next)
+            {
+                <button type="button" class="panel-arrow @dir" title="@title" aria-label="@title" @onclick="() => panel = next">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+                         stroke-linejoin="round" width="24" height="24" aria-hidden="true"><path d="@ChevronPath(dir)" /></svg>
+                </button>
+            }
+        }
+    </div>
+}
+
+@code {
+    private static readonly (string Dir, int DCol, int DRow, string Title)[] Directions =
+    [
+        ("left", -1, 0, "Panel to the left"),
+        ("right", 1, 0, "Panel to the right"),
+        ("up", 0, -1, "Panel above"),
+        ("down", 0, 1, "Panel below"),
+    ];
+
+    private PanelView? panel;
+    private WallPanelGrid? shownGrid;
+    private bool showAllHolds;
+
+    /// <summary>Gets or sets the wall.</summary>
+    [Parameter]
+    [EditorRequired]
+    public Guid WallId { get; set; }
+
+    /// <summary>Gets or sets the share link's token, or null.</summary>
+    [Parameter]
+    public string? ShareToken { get; set; }
+
+    /// <summary>Gets or sets the wall's photos and holds.</summary>
+    [Parameter]
+    [EditorRequired]
+    public WallPanelGrid Grid { get; set; } = null!;
+
+    /// <summary>Gets or sets the photo shown first (a new grid starts there again), or null for the grid's first.</summary>
+    [Parameter]
+    public PanelView? Start { get; set; }
+
+    /// <summary>Gets or sets the device's rendition width.</summary>
+    [Parameter]
+    public int FitWidth { get; set; } = ClientViewFacts.Default.FitWidth;
+
+    /// <summary>Gets or sets a boulder's holds, the only ones drawn; null on the wall view.</summary>
+    [Parameter]
+    public IReadOnlySet<Guid>? Highlighted { get; set; }
+
+    /// <summary>Gets or sets the boulder's foot-only holds.</summary>
+    [Parameter]
+    public IReadOnlySet<Guid>? FootHoldIds { get; set; }
+
+    /// <summary>Gets or sets the boulder's colours per hold.</summary>
+    [Parameter]
+    public Func<Guid, (string Fill, string Stroke)>? HoldColor { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether holds nobody highlights are drawn only once "Show all holds" is on (the
+    /// Server's wall view); otherwise they are always drawn, as context (the boulder view).
+    /// </summary>
+    [Parameter]
+    public bool OutlinesOnDemand { get; set; }
+
+    /// <summary>Gets or sets the panels a chevron may lead to (a boulder's), or null for every neighbour.</summary>
+    [Parameter]
+    public IReadOnlySet<Guid>? StepsTo { get; set; }
+
+    /// <inheritdoc />
+    protected override void OnParametersSet()
+    {
+        if (!ReferenceEquals(shownGrid, Grid))
+        {
+            // A new read of the wall: keep the panel the viewer stepped to while it is still there.
+            var kept = panel is null ? null : Grid.Panels.FirstOrDefault(p => p.Id == panel.Id && p.Col == panel.Col && p.Row == panel.Row);
+            panel = kept ?? Start ?? Grid.First();
+            shownGrid = Grid;
+        }
+    }
+
+    private PanelView? Step(int dCol, int dRow) => Grid.Neighbour(panel!, dCol, dRow) is { } next
+        && (StepsTo is null || (next.Id is { } id && StepsTo.Contains(id)))
+            ? next
+            : null;
+
+    private static string ChevronPath(string dir) => dir switch
+    {
+        "left" => "M15 5 L8 12 L15 19",
+        "right" => "M9 5 L16 12 L9 19",
+        "up" => "M5 15 L12 8 L19 15",
+        _ => "M5 9 L12 16 L19 9",
+    };
+}

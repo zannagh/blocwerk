@@ -32,14 +32,22 @@ public static class FeedHydration
 
         var authors = await AuthorsAsync(db, rows, cancellationToken);
         var content = await CommentsAsync(db, rows, cancellationToken);
+        var boulders = await CommentBouldersAsync(db, rows, cancellationToken);
         var facts = await FeedKioskFacts.LoadAsync(db, rows, kiosk, cancellationToken);
-        return new FeedHydrated(authors, content, facts);
+        return new FeedHydrated(authors, content, boulders, facts);
     }
 
     private static async Task<IReadOnlyDictionary<Guid, FeedAuthor>> AuthorsAsync(
         BlocwerkDbContext db, IReadOnlyList<WallChange> rows, CancellationToken cancellationToken)
     {
         var ids = rows.Where(r => r.ActorUserId is not null).Select(r => r.ActorUserId!.Value).Distinct().ToList();
+        return await AuthorsAsync(db, ids, cancellationToken);
+    }
+
+    /// <summary>The users <paramref name="ids"/> as bylines read them; a user row that is gone is simply missing.</summary>
+    internal static async Task<IReadOnlyDictionary<Guid, FeedAuthor>> AuthorsAsync(
+        BlocwerkDbContext db, IReadOnlyCollection<Guid> ids, CancellationToken cancellationToken)
+    {
         if (ids.Count == 0)
         {
             return new Dictionary<Guid, FeedAuthor>();
@@ -52,6 +60,24 @@ public static class FeedHydration
         return users.ToDictionary(
             u => u.Id,
             u => new FeedAuthor(u.Id, string.IsNullOrWhiteSpace(u.CustomDisplayName) ? u.DisplayName : u.CustomDisplayName, u.HasAvatar, u.DeletedAt != null));
+    }
+
+    // The comment rows' boulders as they are now, for FeedOutsideComments: one query, filters ignored (the gate decided).
+    private static async Task<IReadOnlyDictionary<Guid, FeedBoulderState>> CommentBouldersAsync(
+        BlocwerkDbContext db, IReadOnlyList<WallChange> rows, CancellationToken cancellationToken)
+    {
+        var ids = rows.Where(r => FeedOutsideComments.IsComment(r.Kind) && r.BoulderId is not null)
+            .Select(r => r.BoulderId!.Value).Distinct().ToList();
+        if (ids.Count == 0)
+        {
+            return new Dictionary<Guid, FeedBoulderState>();
+        }
+
+        var boulders = await db.Boulders.IgnoreQueryFilters().AsNoTracking()
+            .Where(b => ids.Contains(b.Id))
+            .Select(b => new { b.Id, b.IsDraft, b.IsArchived })
+            .ToListAsync(cancellationToken);
+        return boulders.ToDictionary(b => b.Id, b => new FeedBoulderState(b.IsDraft, b.IsArchived));
     }
 
     private static async Task<IReadOnlyDictionary<Guid, FeedContent>> CommentsAsync(

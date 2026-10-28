@@ -124,6 +124,18 @@ jobs:
       - name: Test
         run: dotnet test -c Release --no-build
 
+      # The offline client's bundle budget (Phase 3, PR 3.8): the Brotli bytes a cold /v/ boot loads, from a Release
+      # publish of the client alone, must stay within the gate's 2560 KiB. Deterministic, so it blocks.
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Offline client bundle budget
+        run: |
+          dotnet publish src/Blocwerk.Client -c Release -o "$RUNNER_TEMP/blocwerk-client" --nologo
+          node build/check-client-bundle.mjs "$RUNNER_TEMP/blocwerk-client/wwwroot" 2560
+
       - name: Set up QEMU
         if: needs.determine-jobs.outputs.should_push_image == 'true'
         uses: docker/setup-qemu-action@v3
@@ -213,23 +225,26 @@ jobs:
         run: dotnet test test/Blocwerk.Core.Tests --filter "Db=Postgres"
 
   # Real-browser tests of the service worker and the page-side asset cache (test/browser). Non-blocking: it reports, it
-  # never fails the workflow. GitHub-hosted, because the browsers' system dependencies need sudo to install.
+  # never fails the workflow. It runs in Playwright's own image, whose browsers and their system packages are baked in:
+  # `playwright install --with-deps` pulled those from apt, and stalled or failing mirrors kept the tests from running.
+  # The image tag must match @playwright/test in test/browser/package.json, or the preinstalled browsers do not fit.
   browser-tests:
     name: Browser Tests (non-blocking)
     runs-on: ubuntu-latest
     continue-on-error: true
-    # A hang (a stalled apt mirror once held the install for 50 min) must never stall the run.
-    timeout-minutes: 25
+    # A hang must never stall the run.
+    timeout-minutes: 35
     permissions:
       contents: read
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
     services:
+      # A container job reaches its services by name on the job's network, not on a localhost port.
       postgres:
         image: postgres:17
         env:
           POSTGRES_PASSWORD: blocwerk
           POSTGRES_DB: bw_browser_ci
-        ports:
-          - 5432/tcp
         options: >-
           --health-cmd "pg_isready -U postgres"
           --health-interval 5s
@@ -245,39 +260,28 @@ jobs:
         with:
           global-json-file: "global.json"
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: test/browser/package-lock.json
-
-      # Playwright's documented GitHub Actions setup: `install --with-deps`, no browser cache (restoring it takes about as
-      # long as the download, and the system packages cannot be cached). The packages come from apt, whose stalled
-      # connections never time out by default, so apt gets timeouts and retries and each attempt is bounded.
-      - name: Install the harness and its browsers
-        working-directory: test/browser
-        timeout-minutes: 8
-        env:
-          DEBIAN_FRONTEND: noninteractive
+      # build/Versioning.targets installs and runs the dotnet-gitversion global tool. Unlike the hosted runner, the
+      # container has no global tools folder on PATH, and its root user does not own the checkout (the runner's user
+      # does; checkout marks it safe only in a temporary HOME), so git refuses the repository as dubious ownership.
+      - name: Prepare the container for the build's GitVersion
         run: |
-          npm ci
-          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' \
-            | sudo tee /etc/apt/apt.conf.d/80-ci-timeouts > /dev/null
-          for attempt in 1 2; do
-            if timeout --kill-after=15s 180s npx playwright install --with-deps chromium webkit; then
-              exit 0
-            fi
-            echo "::warning::playwright install attempt $attempt failed or timed out"
-          done
-          exit 1
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
+      # Only the harness's npm packages: the image's Node runs it, and its browsers sit in PLAYWRIGHT_BROWSERS_PATH.
+      - name: Install the harness
+        working-directory: test/browser
+        timeout-minutes: 5
+        run: npm ci
+
+      # About 10 min for both engines on a quiet run (171 tests), plus CI's retries: 12 cut the WebKit half off.
       - name: Browser tests
         working-directory: test/browser
-        timeout-minutes: 12
+        timeout-minutes: 22
         env:
           CI: "true"
-          BW_BROWSER_PG: postgres://postgres:blocwerk@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/bw_browser_ci
+          BW_BROWSER_PG: postgres://postgres:blocwerk@postgres:5432/bw_browser_ci
+          BW_BROWSER_PG_SERVICE: postgres
         run: npm test
 
       # Retries hide a flaky test from the result (playwright.config.mjs: one retry in CI); name each one here instead.

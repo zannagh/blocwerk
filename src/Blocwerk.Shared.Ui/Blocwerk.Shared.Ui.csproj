@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <!--
+    The UI the server and the later Blocwerk.Client (standalone Blazor WebAssembly) render through the same code: the
+    hold overlay (HoldShape, HoldShine, PanelHoldOverlay, the boulder colours) over the Contracts document types, and its
+    CSS; and the device cache's page modules both load (wwwroot/js: the asset ledger and its IndexedDB half, the wipe
+    rules, the 401 lock, the partition session and "Clear offline data"). No EF, no Core reference. Its static assets
+    are served at _content/Blocwerk.Shared.Ui/..., fingerprinted like the app's own.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <SupportedPlatform Include="browser" />
+  </ItemGroup>
+
+  <!-- Server-side telemetry and logging packages from Directory.Build.props have no place in a client-shared library. -->
+  <ItemGroup>
+    <PackageReference Remove="Serilog" />
+    <PackageReference Remove="Serilog.Sinks.Console" />
+    <PackageReference Remove="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <PackageReference Remove="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Remove="OpenTelemetry.Instrumentation.AspNetCore" />
+    <PackageReference Remove="OpenTelemetry.Instrumentation.Http" />
+    <PackageReference Remove="OpenTelemetry.Instrumentation.Runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.Web" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Blocwerk.Core.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Blocwerk.Contracts\Blocwerk.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

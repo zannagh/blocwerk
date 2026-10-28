@@ -1,0 +1,21 @@
+@inject ClientStore Store
+@* "Clear offline data" inside the client (client-store.js clear(), not asset-clear.js's: that one needs Web's
+   bwAssetCache and is a silent no-op here). *@
+<button type="button" class="bw-client-clear" disabled="@busy" @onclick="ClearAsync">@(busy ? "Clearing…" : "Clear offline data")</button>
+
+@code {
+    private bool busy;
+
+    private async Task ClearAsync()
+    {
+        busy = true;
+        try
+        {
+            await Store.ClearAsync();
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+}

@@ -13,6 +13,9 @@ export function response(status, body = '', headers = {}, type = 'basic') {
     return r;
 }
 
+// A Request (or the plain request objects dispatchFetch makes) is keyed by its URL, as the Cache API does.
+const keyOf = key => String((key && key.url) || key);
+
 function fakeCaches(initial) {
     const stores = new Map();
     for (const [name, entries] of Object.entries(initial)) {
@@ -35,9 +38,10 @@ function fakeCaches(initial) {
                     if (caches.failPut) {
                         throw caches.failPut;
                     }
-                    store.set(String(key), value);
+                    store.set(keyOf(key), value);
                 },
-                match: async key => store.get(String(key))?.clone(),
+                match: async key => store.get(keyOf(key))?.clone(),
+                delete: async key => store.delete(keyOf(key)),
                 add: async () => {},
             };
         },
@@ -47,7 +51,7 @@ function fakeCaches(initial) {
             }
             const names = options.cacheName ? [options.cacheName] : [...stores.keys()];
             for (const name of names) {
-                const hit = stores.get(name)?.get(String(key));
+                const hit = stores.get(name)?.get(keyOf(key));
                 if (hit) {
                     return hit.clone();
                 }
@@ -109,10 +113,10 @@ export function loadWorker({ cacheNames = [], caches: initial = {}, routes = {},
 
 // Dispatches a fetch event. `handled` is false when the worker left the request to the network; `settle()` waits for
 // the response and every waitUntil the worker registered while producing it.
-export function dispatchFetch(worker, path, { clientId = 'tab-1', method = 'GET', headers = {}, mode = 'no-cors' } = {}) {
+export function dispatchFetch(worker, path, { clientId = 'tab-1', method = 'GET', headers = {}, mode = 'no-cors', referrer = '' } = {}) {
     const lifetime = [];
     const event = {
-        request: { url: new URL(path, ORIGIN).href, method, mode, headers: new Headers(headers) },
+        request: { url: new URL(path, ORIGIN).href, method, mode, referrer, headers: new Headers(headers) },
         clientId,
         handled: false,
         respondWith(p) { event.handled = true; event.response = Promise.resolve(p); },

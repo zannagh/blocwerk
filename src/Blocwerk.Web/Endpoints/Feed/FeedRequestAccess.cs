@@ -2,6 +2,7 @@
 // See License in the project root for license information.
 
 using Blocwerk.Authentication.Authorization;
+using Blocwerk.Authentication.Services;
 using Blocwerk.Contracts.Feed;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
@@ -38,7 +39,7 @@ internal static class FeedRequestAccess
         NoStore(http);
         return refusal switch
         {
-            FeedAccessRefusal.Unauthenticated => Refusal(FeedRefusals.Unauthenticated, StatusCodes.Status401Unauthorized),
+            FeedAccessRefusal.Unauthenticated => Unauthenticated(http),
             FeedAccessRefusal.AccountGone => Refusal(FeedRefusals.AccountGone, StatusCodes.Status410Gone),
             _ => Refusal(FeedRefusals.NoAccess, StatusCodes.Status403Forbidden),
         };
@@ -55,7 +56,15 @@ internal static class FeedRequestAccess
     {
         response.StatusCode = StatusCodes.Status401Unauthorized;
         response.Headers.CacheControl = "no-store";
-        return response.WriteAsJsonAsync(new FeedRefusal(FeedRefusals.Unauthenticated), FeedJson.Options);
+        SignOutReason.Stamp(response.HttpContext);
+        return response.WriteAsJsonAsync(new FeedRefusal(FeedRefusals.Unauthenticated, SignOutReason.Of(response.HttpContext)), FeedJson.Options);
+    }
+
+    // A 401 says why nobody is signed in, in the body and the header (SignOutReasons): `expired` locks a u- device.
+    private static IResult Unauthenticated(HttpContext http)
+    {
+        SignOutReason.Stamp(http);
+        return Results.Json(new FeedRefusal(FeedRefusals.Unauthenticated, SignOutReason.Of(http)), FeedJson.Options, statusCode: StatusCodes.Status401Unauthorized);
     }
 
     private static IResult Refusal(string error, int status) =>

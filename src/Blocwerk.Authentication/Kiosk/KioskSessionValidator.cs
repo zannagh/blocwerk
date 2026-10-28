@@ -1,5 +1,5 @@
 using System.Security.Claims;
-using Microsoft.AspNetCore.Authentication;
+using Blocwerk.Authentication.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -118,9 +118,6 @@ public static class KioskSessionValidator
         context.ShouldRenew = true;
     }
 
-    private static async Task RejectAsync(CookieValidatePrincipalContext context)
-    {
-        context.RejectPrincipal();
-        await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-    }
+    // A `forced` sign-out (SignOutReason): a device that cached this session's partition wipes it rather than lock it.
+    private static Task RejectAsync(CookieValidatePrincipalContext context) => SignOutReason.RejectAsync(context);
 }
