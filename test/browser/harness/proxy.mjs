@@ -149,6 +149,7 @@ function forward(appPort, req, res, entry) {
         }
         res.end('proxy: app unreachable');
     });
+    abortWithClient(res, upstream);
     req.pipe(upstream);
 }
 
@@ -171,7 +172,19 @@ function forwardRewritten(appPort, req, res, entry, rewrite, override) {
         });
     });
     upstream.on('error', () => res.destroy());
+    abortWithClient(res, upstream);
     req.pipe(upstream);
+}
+
+// A browser that goes away before the answer ended (a closed tab or context, `unreachable`) takes the app's request with
+// it: without this the upstream connection stays open, and an open feed stream keeps its lease (FeedStreamLimits) for its
+// whole lifetime, so a user's later streams in the run meet the per-user cap's 429.
+function abortWithClient(res, upstream) {
+    res.on('close', () => {
+        if (!res.writableFinished) {
+            upstream.destroy();
+        }
+    });
 }
 
 // A raw TCP tunnel for the WebSocket upgrade: the request head is replayed, then both sockets are piped.
