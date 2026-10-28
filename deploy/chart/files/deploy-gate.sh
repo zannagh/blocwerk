@@ -4,7 +4,9 @@
 #   1. Compare what runs with what this sync deploys: the pods' rollout fingerprint (image, env, volumes, resources)
 #      against TARGET. Unchanged = the sync does not replace the app, so there is nothing to wait for.
 #   2. Busy gate: wait while /health/ready-to-deploy says busy, MAX_DEFER polls; past that keep waiting while
-#      /health/busy-eta reports an end, up to ETA_MAX_DEFER polls in all; then go ahead regardless.
+#      /health/busy-eta reports an end, up to ETA_MAX_DEFER polls in all; then go ahead regardless. An app that does
+#      not answer counts as busy while its pod is (or may be) ready: from a new gate pod that is the gate's own
+#      network (see gate-lib.sh), not a stopped app. Only "no web pod is ready" lets an unreachable app pass at once.
 #   3. Announce the maintenance (best effort), wait ANNOUNCE_GRACE, then force the flush of open editors (best
 #      effort), so an edit made while the notice was on its way is saved too. Then the sync replaces the pod.
 # shellcheck source=SCRIPTDIR/gate-lib.sh
@@ -29,6 +31,21 @@ fi
 n=0
 while :; do
   state=$(curl -s --max-time 5 "$URL/health/ready-to-deploy" || echo unreachable)
+  if [ "$state" = "unreachable" ]; then
+    readiness=$(pod_readiness web)
+    if [ "$readiness" = "none" ]; then
+      echo "app not reachable and no web pod is ready; nothing to protect"
+      break
+    fi
+    if [ "$n" -ge "$MAX_DEFER" ]; then
+      echo "app still not reachable after $n polls (web pod readiness: $readiness); deploying anyway (cap)"
+      break
+    fi
+    echo "app not reachable but the web pod readiness is '$readiness'; treating it as busy ($((n + 1))/$MAX_DEFER)"
+    n=$((n + 1))
+    sleep "$POLL_SECONDS"
+    continue
+  fi
   [ "$state" = "busy" ] || break
   if [ "$n" -ge "$ETA_MAX_DEFER" ]; then
     echo "still busy after $n polls; deploying anyway (cap)"

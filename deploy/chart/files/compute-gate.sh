@@ -4,7 +4,8 @@
 # loses the job. Per worker in WORKERS ("component|url|target|key-variable", space-separated):
 #   - not running, or its rollout fingerprint unchanged: nothing to wait for;
 #   - otherwise go after two consecutive idle polls of GET /v1/info (POLL_SECONDS apart), so the app has fetched a
-#     result that just finished; unreachable = go; a failed probe counts as busy unless the pod is not ready;
+#     result that just finished; a probe that fails (refused, timed out, an error) counts as busy unless the kube API
+#     says no pod of the worker is ready: a new gate pod's first requests can be refused (gate-lib.sh);
 #   - cap: after MAX_DEFER busy polls go ahead regardless (job counts only, no start times: see autodeploy.sh).
 # Always exits 0.
 # shellcheck source=SCRIPTDIR/gate-lib.sh
@@ -33,15 +34,14 @@ gate_worker() {
   while :; do
     state=$(probe "$url" "$key")
     case "$state" in
-      down) echo "$name: not reachable; nothing to wait for"; return ;;
       idle)
         idle=$((idle + 1))
         if [ "$idle" -ge 2 ]; then echo "$name: idle twice; deploying"; return; fi
         echo "$name: idle, deploying after the next poll if it stays idle" ;;
       *)
         idle=0
-        if [ "$state" = "unknown" ] && ! printf '%s' "$(pods_json "$name")" | grep -q '"ready":true'; then
-          echo "$name: probe failed and the pod is not ready; deploying"; return
+        if [ "$state" != "busy" ] && [ "$(pod_readiness "$name")" = "none" ]; then
+          echo "$name: probe $state and no pod of it is ready; deploying"; return
         fi
         if [ "$n" -ge "$MAX_DEFER" ]; then echo "$name: still $state after $n busy polls; deploying anyway (cap)"; return; fi
         n=$((n + 1))
