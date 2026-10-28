@@ -27,7 +27,10 @@ The switch is one flag, `SPLATSERVICE_ONRUNNERS` in the box's `.env` (the compos
 2. **Exp verification passed** on the Windows PC with the runner image you are about to give `gpu-runner-prod`
    (marker capture end to end to a photo-real view; an old runner never claims the new kinds; a killed runner's
    prepare is reclaimed).
-3. **`gpu-runner-prod` bumped** (on the PC, not the box; `ssh pc`, PowerShell). Keep the old tag for the rollback:
+3. **`gpu-runner-prod` bumped** (on the PC, not the box; `ssh pc`, PowerShell). The image must contain #245 (a runner's
+   prepare child otherwise honours `SPLAT_PROFILE_OVERRIDE=ultra`, which `gpu-runner-prod` sets, and every view trains
+   as ultra). Verified on exp 2026-10-28: `blocwerk-exp/splat-worker-cuda:o7-32184ea` (local on the PC, built from
+   staging-o7 + #245). Keep the old tag for the rollback:
 
    ```powershell
    cd C:\Users\patri\blocwerk-data\compose
