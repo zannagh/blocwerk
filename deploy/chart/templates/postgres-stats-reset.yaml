@@ -35,15 +35,16 @@ spec:
           containers:
             - name: psql
               image: {{ include "blocwerk.image" (list $pg.image "") }}
-              command: ["psql"]
+              command: ["/bin/sh", "-ec"]
               args:
-                - --host={{ include "blocwerk.postgresHost" . }}
-                - --port={{ include "blocwerk.postgresPort" . }}
-                - --username={{ $pg.username }}
-                - --dbname={{ $pg.database }}
-                - --no-psqlrc
-                - --quiet
-                - --command=select pg_stat_statements_reset()
+                - |
+                  # A new pod is refused for its first seconds, until the k3s NetworkPolicy controller has added its
+                  # address (2026-10-29 04:30: both attempts failed with "Connection refused" against a Postgres that
+                  # had been up for 35 h): wait up to 60 s.
+                  i=0; until pg_isready -h {{ include "blocwerk.postgresHost" . }} -p {{ include "blocwerk.postgresPort" . }} -U {{ $pg.username }} -d {{ $pg.database }} -q; do
+                    i=$((i+1)); [ "$i" -lt 30 ] || { echo "{{ include "blocwerk.postgresHost" . }} not reachable after 60 s"; exit 1; }; sleep 2
+                  done
+                  psql -h {{ include "blocwerk.postgresHost" . }} -p {{ include "blocwerk.postgresPort" . }} -U {{ $pg.username }} -d {{ $pg.database }} --no-psqlrc --quiet -c 'select pg_stat_statements_reset()'
               env:
                 - name: PGPASSWORD
                   valueFrom:
