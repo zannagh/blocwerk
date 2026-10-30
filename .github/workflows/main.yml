@@ -22,35 +22,14 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  # determine-runner is a *composite action*, so it runs as a step inside a normal (GitHub-hosted)
-  # job and exposes the chosen runner labels as an output. It picks the online self-hosted runner
-  # matching required-labels, or falls back to ubuntu-latest when none is online / the token is
-  # absent — so every downstream job runs wherever this resolves to.
-  determine-runner:
-    name: Determine Runner
-    runs-on: ubuntu-latest
-    outputs:
-      runner: ${{ steps.pick.outputs.runner }}
-    steps:
-      - name: Pick a runner
-        id: pick
-        uses: zannagh/versionizer/determine-runner@v1
-        with:
-          # Fine-grained PAT with Administration:read on this repo (lists runners). Missing/invalid
-          # token degrades gracefully to default-runs-on.
-          runner-token: ${{ secrets.RUNNER_TOKEN }}
-          required-labels: 'Linux,X64'
-          default-runs-on: 'ubuntu-latest'
-
   determine-jobs:
     name: Determine Jobs
-    needs: [determine-runner]
     outputs:
       has_code_changes: ${{ steps.check_changes.outputs.has_code_changes }}
       should_push_image: ${{ github.event_name != 'pull_request' && (github.event_name == 'release' || github.event_name == 'workflow_dispatch' || steps.check_changes.outputs.has_code_changes == 'true') }}
       should_create_prerelease: ${{ github.event_name == 'push' && steps.check_changes.outputs.has_code_changes == 'true' }}
       is_release: ${{ github.event_name == 'release' }}
-    runs-on: ${{ fromJSON(needs.determine-runner.outputs.runner) }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -82,8 +61,8 @@ jobs:
 
   build:
     name: Build & Package
-    needs: [determine-runner, determine-jobs]
-    runs-on: ${{ fromJSON(needs.determine-runner.outputs.runner) }}
+    needs: [determine-jobs]
+    runs-on: ${{ (contains(fromJSON('["push","schedule","workflow_dispatch","merge_group"]'), github.event_name) || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON(vars.RUNS_ON || '{}').build || 'ubuntu-latest' }}
     outputs:
       semVer: ${{ steps.version.outputs.semVer }}
       tag: ${{ steps.extract_tag.outputs.tag }}
@@ -191,15 +170,14 @@ jobs:
   # writes, raw SQL), which the SQLite-backed suite in the build job cannot cover. Runs in parallel with it.
   postgres-tests:
     name: Postgres Tests
-    needs: [determine-runner]
-    runs-on: ${{ fromJSON(needs.determine-runner.outputs.runner) }}
+    runs-on: ${{ (contains(fromJSON('["push","schedule","workflow_dispatch","merge_group"]'), github.event_name) || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON(vars.RUNS_ON || '{}').postgres-tests || 'ubuntu-latest' }}
     services:
       postgres:
         image: postgres:17
         env:
           POSTGRES_USER: blocwerk
           POSTGRES_PASSWORD: blocwerk
-        # A random host port, so a self-hosted runner running several jobs never collides.
+        # A random mapped port; the test step reads it from the job context.
         ports:
           - 5432/tcp
         options: >-
@@ -230,7 +208,7 @@ jobs:
   # The image tag must match @playwright/test in test/browser/package.json, or the preinstalled browsers do not fit.
   browser-tests:
     name: Browser Tests (non-blocking)
-    runs-on: ubuntu-latest
+    runs-on: ${{ (contains(fromJSON('["push","schedule","workflow_dispatch","merge_group"]'), github.event_name) || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON(vars.RUNS_ON || '{}').browser-tests || 'ubuntu-latest' }}
     continue-on-error: true
     # A hang must never stall the run.
     timeout-minutes: 35
@@ -303,9 +281,9 @@ jobs:
 
   upload-to-release:
     name: Upload to GitHub Release
-    needs: [determine-runner, build, determine-jobs]
+    needs: [build, determine-jobs]
     if: needs.determine-jobs.outputs.is_release == 'true'
-    runs-on: ${{ fromJSON(needs.determine-runner.outputs.runner) }}
+    runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
@@ -320,8 +298,8 @@ jobs:
 
   create-prerelease:
     name: Create GitHub Prerelease
-    needs: [determine-runner, determine-jobs, build]
-    runs-on: ${{ fromJSON(needs.determine-runner.outputs.runner) }}
+    needs: [determine-jobs, build]
+    runs-on: ubuntu-latest
     if: needs.determine-jobs.outputs.should_create_prerelease == 'true'
     permissions:
       contents: write

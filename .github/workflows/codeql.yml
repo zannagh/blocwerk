@@ -49,7 +49,7 @@ jobs:
     name: Analyze
     needs: determine-jobs
     if: ${{ !cancelled() && needs.determine-jobs.outputs.has_code_changes == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ (contains(fromJSON('["push","schedule","workflow_dispatch","merge_group"]'), github.event_name) || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON(vars.RUNS_ON || '{}').analyze || 'ubuntu-latest' }}
     permissions:
       actions: read
       contents: read
