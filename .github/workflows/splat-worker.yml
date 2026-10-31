@@ -45,7 +45,7 @@ env:
 jobs:
   test:
     name: Test
-    runs-on: ubuntu-latest
+    runs-on: ${{ (contains(fromJSON('["push","schedule","workflow_dispatch","merge_group"]'), github.event_name) || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON(vars.RUNS_ON || '{}').splat-worker-test || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -67,7 +67,7 @@ jobs:
     name: Build & publish
     needs: [test]
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ${{ (contains(fromJSON('["push","schedule","workflow_dispatch","merge_group"]'), github.event_name) || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON(vars.RUNS_ON || '{}').publish || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
 
