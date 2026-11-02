@@ -289,6 +289,9 @@ jobs:
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v4
+        with:
+          # only the package; the Docker build record artifact fails to download
+          pattern: blocwerk-*
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
