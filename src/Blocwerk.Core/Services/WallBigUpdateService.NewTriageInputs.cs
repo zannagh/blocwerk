@@ -8,6 +8,7 @@ using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Feed;
+using Blocwerk.Core.Geometry.TextureRegistration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -108,6 +109,26 @@ public partial class WallBigUpdateService
             await db.SaveChangesAsync();
         }
     }
+
+    /// <summary>The active model's printed markers, for the triage to map onto each staged photo; empty without a model.</summary>
+    private async Task<IReadOnlyList<ModelMarker>> ModelMarkersAsync(BlocwerkDbContext db, Guid wallId)
+    {
+        try
+        {
+            return await ActiveModelTextures.FindAsync(db, wallId, CancellationToken.None) is { } model ? ModelMarkerProjection.Parse(model.Json) : [];
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "The active model's markers of wall {WallId} are unavailable; the triage maps none", wallId);
+            return [];
+        }
+    }
+
+    /// <summary>The found-again holds with the old hold's place on the model, as anchors on the staged photo (as the 3D evidence takes them).</summary>
+    private static List<PlaneAnchor> PlaneAnchors(IReadOnlyList<(Hold Old, Hold New)> twins) => twins
+        .Where(t => t.Old is { FacetId: not null, PlaneAMm: not null, PlaneBMm: not null } && !HoldTexturePlacer.IsRejected(t.Old))
+        .Select(t => new PlaneAnchor(t.New.X, t.New.Y, t.Old.FacetId!, t.Old.PlaneAMm!.Value, t.Old.PlaneBMm!.Value))
+        .ToList();
 
     private async Task<List<IReadOnlyList<(double X, double Y)>>> RescuedMarkerQuadsAsync(byte[] photo)
     {

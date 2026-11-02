@@ -46,9 +46,9 @@ public class UpdateOveraddAtticTests(ITestOutputHelper output)
 
         // The measured result, no slack: any change of these numbers is a change of behaviour to look at.
         Assert.Equal((123, 23, 26, 3), (Kept(all, emulated, _ => true), Kept(all, emulated, Noise.Contains), Kept(all, emulated, Duplicates.Contains), Discarded(all, emulated, Real.Contains)));
-        Assert.True(Kept(all, after, _ => true) <= 107, "new holds proposed");
+        Assert.True(Kept(all, after, _ => true) <= 101, "new holds proposed");
         Assert.True(Kept(all, after, Existing.Contains) >= 18, "existing holds that had no outline kept");
-        Assert.True(Kept(all, after, Noise.Contains) <= 19, "noise kept");
+        Assert.True(Kept(all, after, Noise.Contains) <= 18, "noise kept");
         Assert.True(Kept(all, after, Duplicates.Contains) <= 14, "duplicates kept");
         Assert.True(Discarded(all, after, Real.Contains) <= 2, "real new holds discarded");
         Assert.Equal(NewHoldDiscardReason.OnMarker, after[Id(all, "c91c1d44")]);

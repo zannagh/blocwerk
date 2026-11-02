@@ -38,7 +38,9 @@ public partial class WallBigUpdateService
                 .ToListAsync())
             .OrderBy(p => p is { Col: 0, Row: 0 } ? 0 : 1)
             .ToList();
-        var context = new TriageContext(wall, stagedGen, carryover, oldHolds.ToDictionary(h => h.Id), oldPanelPhotosById, oldCentrePhoto, neighbours, model3D, removals);
+        var markers = await ModelMarkersAsync(db, wall.Id);
+        var context = new TriageContext(
+            wall, stagedGen, carryover, oldHolds.ToDictionary(h => h.Id), oldPanelPhotosById, oldCentrePhoto, neighbours, model3D, removals, markers);
         TriagedCentre? centre = null;
         foreach (var panel in panels)
         {
@@ -77,7 +79,7 @@ public partial class WallBigUpdateService
             context.Removals.Warp[h.Id], h.Radius, context.Removals.WarpShapes?.GetValueOrDefault(h.Id), Carries(h, context.Removals), h.Id, Lab(h))).ToList();
         var oldPanelId = twins.Select(t => t.Old.WallPanelId).Concat(removable.Select(h => h.WallPanelId)).FirstOrDefault(id => id is not null);
         var outcome = await TriagePanelAsync(
-            db, new TriagedPanel(panel.Id, staged, twins, oldPhoto, oldPanelId), OwnerSource(centre, overlap, staged), verdicts, notFound);
+            db, new TriagedPanel(panel.Id, staged, twins, oldPhoto, oldPanelId, context.ModelMarkers), OwnerSource(centre, overlap, staged), verdicts, notFound);
         Collect(result, outcome, verdicts);
         result.Swaps.AddRange((outcome?.Swaps ?? []).Select(w => (w, panel.Id)));
         result.Evidence3DModelId ??= verdicts is null ? null : context.Model3D?.Id;
@@ -164,7 +166,8 @@ public partial class WallBigUpdateService
             notFound.Select(n => Spot(n.At.X, n.At.Y, n.Radius, newSize)).ToList(),
             CarriedOutlines(panel.Twins, notFound, newSize),
             oldMarkers,
-            ColourShift(panel.Twins));
+            ColourShift(panel.Twins),
+            ModelMarkerProjection.Project(panel.ModelMarkers, PlaneAnchors(panel.Twins), newSize));
         Func<IReadOnlyList<PresenceQuery>, IReadOnlyList<double?>>? presence =
             presenceProbe is null || panel.OldPhoto is null ? null : q => presenceProbe.Score(panel.OldPhoto, newPhoto, q);
         var swaps = new List<TriageSwap>();

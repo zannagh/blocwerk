@@ -36,13 +36,15 @@ public readonly record struct TriageSpot(double X, double Y, double RadiusPx);
 /// <param name="NotFound">The old holds no detection carries, at their predicted spot on the staged photo.</param>
 /// <param name="CarriedOutlines">
 /// The footprints of every carried hold on the staged photo: the detections an old hold is carried onto, and the old holds
-/// no detection carries at their warped spot and outline. Null: the inside-a-carried-hold rule does not run.
+/// no detection carries at their warped spot and outline. Null: the inside-a-carried-hold and the outside-the-wall rules do
+/// not run.
 /// </param>
 /// <param name="OldMarkerQuads">The printed markers the OLD photo showed (old photo RAW pixels), or null.</param>
 /// <param name="OldToNewColourShift">
 /// The typical colour change between the photos (median over the found-again pairs, new minus old): the white balance of
 /// the two captures. An old hold's colour is shifted by it before it is compared with a detection's.
 /// </param>
+/// <param name="ModelMarkerQuads">The active model's printed markers mapped onto the staged photo (<see cref="ModelMarkerProjection"/>), or null.</param>
 public sealed record NewHoldTriageInput(
     IReadOnlyList<TriageCandidate> Candidates,
     IReadOnlyList<PointPair> NewToOld,
@@ -54,15 +56,17 @@ public sealed record NewHoldTriageInput(
     IReadOnlyList<TriageSpot>? NotFound = null,
     IReadOnlyList<TriageOutline>? CarriedOutlines = null,
     IReadOnlyList<IReadOnlyList<(double X, double Y)>>? OldMarkerQuads = null,
-    TriageLab? OldToNewColourShift = null);
+    TriageLab? OldToNewColourShift = null,
+    IReadOnlyList<IReadOnlyList<(double X, double Y)>>? ModelMarkerQuads = null);
 
 /// <summary>
 /// Picks the unpaired staged detections that are most likely NOT new holds, so the review discards them
 /// by default (the user can still keep any of them). Conservative on purpose: a detection is only
-/// suggested when it sits on a printed marker (seen on the staged photo, or on the old one and mapped over), when (on a
-/// neighbour panel) the centre photo shows that spot, when it lies mostly inside a carried hold (a second outline, or a
-/// part of a hold such as a bolt hole), when the aligned old photo did not cover it, or when the old photo shows the
-/// same thing at the aligned spot.
+/// suggested when it sits on a printed marker (seen on the staged photo, on the old one and mapped over, or placed by the
+/// active model), when (on a neighbour panel) the centre photo shows that spot, when it lies mostly inside a carried hold
+/// (a second outline, or a part of a hold such as a bolt hole), when the aligned old photo did not cover it, when it lies
+/// well beyond every carried hold and the detector is not sure of it (<see cref="NewHoldWallRegion"/>), or when the old
+/// photo shows the same thing at the aligned spot.
 /// A detection on the spot of an old hold that was NOT found again is never "known" or "unchanged": it is what is
 /// there now, so it stays a new hold. Nor is a detection "known" for a carried hold of a clearly different size.
 /// </summary>
@@ -87,6 +91,12 @@ public static class NewHoldTriage
 
     /// <summary>The marker quad grown by this factor also covers its white print border.</summary>
     public const double MarkerGrowth = 1.35;
+
+    /// <summary>
+    /// A marker the model places on the photo is grown by this factor: it also absorbs the mapping's error (on The Attic's
+    /// gen-7 panels a median 15 px and up to about a marker side against the markers the photos decoded).
+    /// </summary>
+    public const double ModelMarkerGrowth = 2.0;
 
     /// <summary>Radii further apart than this factor (either way) are not the same hold.</summary>
     public const double SameHoldSizeFactor = 1.8;
@@ -142,7 +152,12 @@ public static class NewHoldTriage
     }
 
     /// <summary>Point-in-polygon (even-odd) against the quad grown about its centre.</summary>
-    public static bool InsideGrown(IReadOnlyList<(double X, double Y)> quad, double x, double y)
+    /// <param name="quad">The marker's corners.</param>
+    /// <param name="x">The point's x.</param>
+    /// <param name="y">The point's y.</param>
+    /// <param name="growth">The factor the quad is grown by about its centre.</param>
+    /// <returns>Whether the point lies inside.</returns>
+    public static bool InsideGrown(IReadOnlyList<(double X, double Y)> quad, double x, double y, double growth = MarkerGrowth)
     {
         if (quad.Count < 3)
         {
@@ -151,7 +166,7 @@ public static class NewHoldTriage
 
         var cx = quad.Average(p => p.X);
         var cy = quad.Average(p => p.Y);
-        var grown = quad.Select(p => (X: cx + ((p.X - cx) * MarkerGrowth), Y: cy + ((p.Y - cy) * MarkerGrowth))).ToList();
+        var grown = quad.Select(p => (X: cx + ((p.X - cx) * growth), Y: cy + ((p.Y - cy) * growth))).ToList();
         var inside = false;
         for (int i = 0, j = grown.Count - 1; i < grown.Count; j = i++)
         {
@@ -171,7 +186,7 @@ public static class NewHoldTriage
         NewHoldTriageInput input, NewHoldTriageGeometry geometry, bool aligned, TriageCandidate c, out TriageOutline? swappedWith)
     {
         swappedWith = null;
-        if (input.MarkerQuads.Any(q => InsideGrown(q, c.X, c.Y)) || geometry.OnOldMarker(c))
+        if (input.MarkerQuads.Any(q => InsideGrown(q, c.X, c.Y)) || geometry.OnOldMarker(c) || geometry.OnModelMarker(c))
         {
             return NewHoldDiscardReason.OnMarker;
         }
@@ -199,15 +214,25 @@ public static class NewHoldTriage
             return null;
         }
 
-        if (!aligned || LocalAffine.Predict(input.NewToOld, c.X, c.Y) is not { } old)
+        return Outside(input, geometry, aligned, c);
+    }
+
+    /// <summary>
+    /// Off the panel: the aligned old photo did not cover the spot, or (for a detection the detector is not sure of) it lies
+    /// well beyond every carried hold.
+    /// </summary>
+    private static NewHoldDiscardReason? Outside(NewHoldTriageInput input, NewHoldTriageGeometry geometry, bool aligned, TriageCandidate c)
+    {
+        if (aligned && LocalAffine.Predict(input.NewToOld, c.X, c.Y) is { } old)
         {
-            return null;
+            var (w, h) = input.OldSize!.Value;
+            if (old.X < -OutsideMargin * w || old.Y < -OutsideMargin * h || old.X > (1 + OutsideMargin) * w || old.Y > (1 + OutsideMargin) * h)
+            {
+                return NewHoldDiscardReason.OutsideOldPhoto;
+            }
         }
 
-        var (w, h) = input.OldSize!.Value;
-        return old.X < -OutsideMargin * w || old.Y < -OutsideMargin * h || old.X > (1 + OutsideMargin) * w || old.Y > (1 + OutsideMargin) * h
-            ? NewHoldDiscardReason.OutsideOldPhoto
-            : null;
+        return !c.Confident && geometry.OutsideWall(c) ? NewHoldDiscardReason.OutsideWall : null;
     }
 
     /// <summary>
