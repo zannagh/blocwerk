@@ -23,18 +23,22 @@ public sealed partial class HoldEnrichmentService : IHoldEnrichmentService
     private readonly ILogger<HoldEnrichmentService> logger;
     private readonly IHoldOutlineService? outlineService;
     private readonly IMarkerDetectionService? markerService;
+    private readonly IImageRecognitionGate? gate;
 
     /// <summary>Initializes a new instance of the <see cref="HoldEnrichmentService"/> class.</summary>
     /// <param name="settings">App settings (the outline / marker kill switches).</param>
     /// <param name="logger">Logger.</param>
     /// <param name="outlineService">The outliner; null disables outlines.</param>
     /// <param name="markerService">The marker detector; null disables the marker pass.</param>
+    /// <param name="gate">The process-wide recognition gate the whole run holds one slot of; null runs ungated.</param>
     public HoldEnrichmentService(
         BlocwerkSettings settings,
         ILogger<HoldEnrichmentService> logger,
         IHoldOutlineService? outlineService = null,
-        IMarkerDetectionService? markerService = null)
+        IMarkerDetectionService? markerService = null,
+        IImageRecognitionGate? gate = null)
     {
+        this.gate = gate;
         this.settings = settings.HoldDetection;
         this.logger = logger;
         this.outlineService = outlineService;
@@ -42,8 +46,21 @@ public sealed partial class HoldEnrichmentService : IHoldEnrichmentService
     }
 
     /// <inheritdoc/>
-    public async Task<HoldEnrichmentSummary> EnrichAsync(
+    public Task<HoldEnrichmentSummary> EnrichAsync(
         BlocwerkDbContext db, HoldEnrichmentRequest request, CancellationToken ct = default)
+    {
+        if (!settings.Enabled)
+        {
+            logger.LogInformation(
+                "Hold enrichment skipped on wall {WallId} panel {PanelId}: hold detection is switched off (HoldDetection:Enabled=false)",
+                request.Wall.Id, request.PanelId);
+            return Task.FromResult(HoldEnrichmentSummary.None);
+        }
+
+        return gate is null ? EnrichCoreAsync(db, request, ct) : gate.RunAsync("enrich", () => EnrichCoreAsync(db, request, ct), ct);
+    }
+
+    private async Task<HoldEnrichmentSummary> EnrichCoreAsync(BlocwerkDbContext db, HoldEnrichmentRequest request, CancellationToken ct)
     {
         if (ImagePixelLimit.IsTooLarge(request.Image))
         {

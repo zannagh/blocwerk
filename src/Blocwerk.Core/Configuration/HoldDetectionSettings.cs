@@ -11,6 +11,27 @@ public class HoldDetectionSettings
     public string ModelPath { get; set; } = "models/climbingcrux.onnx";
 
     /// <summary>
+    /// Kill switch for all hold recognition: off, photos get no detected holds and no outlines or markers, every other
+    /// recognition call (outlines, footprints, matchers, probe, texture matching) fails, and wall updates refuse to start.
+    /// Default true; config <c>HoldDetection:Enabled</c>, env <c>HOLDDETECTION__ENABLED</c>.
+    /// </summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// How many heavy image recognition runs (detection, enrichment, outline and matcher sessions) may hold decoded
+    /// photos and model buffers at once, across all users and jobs. Default 1; config <c>HoldDetection:MaxConcurrentRuns</c>,
+    /// env <c>HOLDDETECTION__MAXCONCURRENTRUNS</c>.
+    /// </summary>
+    public int MaxConcurrentRuns { get; set; } = 1;
+
+    /// <summary>
+    /// How long a run waits for a free slot before it fails as busy ("try again"); nothing ever runs without a slot.
+    /// Default 120; config
+    /// <c>HoldDetection:GateTimeoutSeconds</c>, env <c>HOLDDETECTION__GATETIMEOUTSECONDS</c>.
+    /// </summary>
+    public int GateTimeoutSeconds { get; set; } = 120;
+
+    /// <summary>
     /// Kill switch for hold outlines + fingerprints at ingest (every wall). Default true; config
     /// <c>HoldDetection:Outlines:Enabled</c>, env <c>HOLDDETECTION__OUTLINES__ENABLED</c>.
     /// </summary>
@@ -56,6 +77,9 @@ public class HoldDetectionSettings
         ModelPath = section["HoldDetection:ModelPath"]
                     ?? Environment.GetEnvironmentVariable("HOLDDETECTION__MODELPATH")
                     ?? "models/climbingcrux.onnx",
+        Enabled = ParseSwitch(section["HoldDetection:Enabled"], "HOLDDETECTION__ENABLED"),
+        MaxConcurrentRuns = ParseInt(section["HoldDetection:MaxConcurrentRuns"], "HOLDDETECTION__MAXCONCURRENTRUNS", 1),
+        GateTimeoutSeconds = ParseInt(section["HoldDetection:GateTimeoutSeconds"], "HOLDDETECTION__GATETIMEOUTSECONDS", 120),
         OutlinesEnabled = ParseSwitch(section["HoldDetection:Outlines:Enabled"], "HOLDDETECTION__OUTLINES__ENABLED"),
         BoxSeeds = ParseSwitch(section["HoldDetection:Outlines:BoxSeeds"], "HOLDDETECTION__OUTLINES__BOXSEEDS"),
         MarkersEnabled = ParseSwitch(section["HoldDetection:Markers:Enabled"], "HOLDDETECTION__MARKERS__ENABLED"),
@@ -68,4 +92,8 @@ public class HoldDetectionSettings
     /// <summary>A default-on switch: only an explicit, parseable "false" turns it off.</summary>
     private static bool ParseSwitch(string? sectionValue, string envName) =>
         !bool.TryParse(sectionValue ?? Environment.GetEnvironmentVariable(envName), out var value) || value;
+
+    /// <summary>A positive number, or the default when it is missing or not one.</summary>
+    private static int ParseInt(string? sectionValue, string envName, int fallback) =>
+        int.TryParse(sectionValue ?? Environment.GetEnvironmentVariable(envName), out var value) && value > 0 ? value : fallback;
 }

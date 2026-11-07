@@ -7,6 +7,7 @@ using Blocwerk.Core.Capture;
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Detection.Enrichment;
+using Blocwerk.Core.Detection.Gating;
 using Blocwerk.Core.Enhancement;
 using Blocwerk.Core.Feed;
 using Blocwerk.Core.HoldMoves;
@@ -260,6 +261,9 @@ public static class CoreServices
         // Post-detection hold outlines/fingerprints (all walls) and glyph metrics (glyph walls). Its CV
         // dependencies come from the HoldDetection project and are optional; stateless, so a singleton.
         builder.Services.AddSingleton<IHoldEnrichmentService, HoldEnrichmentService>();
+
+        // One process-wide limit on heavy image recognition, shared by circuits and background jobs (HoldDetection:MaxConcurrentRuns).
+        builder.Services.AddSingleton<IImageRecognitionGate, ImageRecognitionGate>();
 
         builder.Services.AddScoped<IWallService, WallService>();
         builder.Services.AddWall3DView();

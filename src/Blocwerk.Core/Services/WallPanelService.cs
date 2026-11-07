@@ -28,6 +28,7 @@ public partial class WallPanelService : IWallPanelService
     private readonly IChangeJournal? changeJournal;
     private readonly IHoldEnrichmentService? holdEnrichment;
     private readonly IHoldRefinementQueue? refinementQueue;
+    private readonly IImageRecognitionGate? recognitionGate;
 
     /// <summary>Creates the service.</summary>
     /// <remarks>
@@ -51,7 +52,8 @@ public partial class WallPanelService : IWallPanelService
         IKioskContext? kioskContext = null,
         IChangeJournal? changeJournal = null,
         IHoldEnrichmentService? holdEnrichment = null,
-        IHoldRefinementQueue? refinementQueue = null)
+        IHoldRefinementQueue? refinementQueue = null,
+        IImageRecognitionGate? recognitionGate = null)
     {
         this.dbContextFactory = dbContextFactory;
         this.currentUserService = currentUserService;
@@ -62,6 +64,7 @@ public partial class WallPanelService : IWallPanelService
         this.changeJournal = changeJournal;
         this.holdEnrichment = holdEnrichment;
         this.refinementQueue = refinementQueue;
+        this.recognitionGate = recognitionGate;
     }
 
     /// <inheritdoc/>
@@ -248,8 +251,8 @@ public partial class WallPanelService : IWallPanelService
                 logger);
             try
             {
-                var result = overlapMatcher.Match(
-                    neighborImage, neighborMatcherHolds, image, newMatcherHolds, direction, null, seed);
+                var result = await recognitionGate.RecogniseAsync("overlap-match", () => overlapMatcher.Match(
+                    neighborImage, neighborMatcherHolds, image, newMatcherHolds, direction, null, seed));
                 foreach (var p in result.Proposals)
                 {
                     proposals.Add(new OverlapProposalDto(
@@ -261,7 +264,7 @@ public partial class WallPanelService : IWallPanelService
                         p.ResidualPx));
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not ImageRecognitionUnavailableException)
             {
                 unalignedNeighbourIds.Add(neighbor.Id);
                 logger.LogWarning(

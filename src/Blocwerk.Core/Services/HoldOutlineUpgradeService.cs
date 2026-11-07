@@ -27,6 +27,7 @@ public sealed partial class HoldOutlineUpgradeService : IHoldOutlineUpgradeServi
     private readonly HoldDetectionSettings settings;
     private readonly ILogger<HoldOutlineUpgradeService> logger;
     private readonly IHoldOutlineService? outlineService;
+    private readonly IImageRecognitionGate? recognitionGate;
     private readonly IKioskContext? kioskContext;
     private readonly IHoldRefinementQueue? refinementQueue;
 
@@ -45,13 +46,15 @@ public sealed partial class HoldOutlineUpgradeService : IHoldOutlineUpgradeServi
         ILogger<HoldOutlineUpgradeService> logger,
         IHoldOutlineService? outlineService = null,
         IKioskContext? kioskContext = null,
-        IHoldRefinementQueue? refinementQueue = null)
+        IHoldRefinementQueue? refinementQueue = null,
+        IImageRecognitionGate? recognitionGate = null)
     {
         this.dbContextFactory = dbContextFactory;
         this.currentUserService = currentUserService;
         this.settings = settings.HoldDetection;
         this.logger = logger;
         this.outlineService = outlineService;
+        this.recognitionGate = recognitionGate;
         this.kioskContext = kioskContext;
         this.refinementQueue = refinementQueue;
     }
