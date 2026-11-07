@@ -272,29 +272,11 @@ public partial class WallBigUpdateService
                 centerPanelId = panel.Id;
             }
 
-            var detected = await holdDetectionService.DetectHoldsAsync(image);
-            var staged = new List<Hold>(detected.Count);
-            foreach (var d in detected)
-            {
-                staged.Add(new Hold
-                {
-                    WallId = wallId,
-                    WallPanelId = panel.Id,
-                    X = d.X,
-                    Y = d.Y,
-                    Radius = d.Radius,
-                    DetectedBox = HoldDetectedBox.Of(d),
-                    Color = d.Color,
-                    Confidence = d.Confidence,
-                    IsAutoDetected = true,
-                    NeedsReview = true,
-                    Generation = stagedGen,
-                });
-            }
-
-            db.Holds.AddRange(staged);
-            await holdEnrichment.EnrichSafelyAsync(
-                db, new HoldEnrichmentRequest(image, wall, staged, panel.Id, stagedGen, FromStagedPhoto: true), logger);
+            // One gate slot for the panel's detection AND enrichment: the next panel (or another user's
+            // run) only starts decoding once this one's rasters and model buffers are gone.
+            var staged = recognitionGate is null
+                ? await DetectAndEnrichPanelAsync(db, wall, panel, image, stagedGen)
+                : await recognitionGate.RunAsync("stage-panel", () => DetectAndEnrichPanelAsync(db, wall, panel, image, stagedGen));
             await HoldStacker.StackNewAsync(db, staged);
         }
 

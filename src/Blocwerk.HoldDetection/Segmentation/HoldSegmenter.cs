@@ -173,7 +173,9 @@ internal sealed class HoldSegmenter : IDisposable
         }
 
         beforeLoad?.Invoke();
-        using var options = new SessionOptions { IntraOpNumThreads = threads, InterOpNumThreads = 1 };
+
+        // No CPU arena: its buffers would stay reserved at the 1024² peak after every photo instead of going back.
+        using var options = new SessionOptions { IntraOpNumThreads = threads, InterOpNumThreads = 1, EnableCpuMemArena = false };
         decoder = new InferenceSession(decoderPath, options);
         encoder = new InferenceSession(encoderPath, options);
     }

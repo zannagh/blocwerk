@@ -83,6 +83,23 @@ public static partial class BlocwerkMetrics
     }
 
     /// <summary>
+    /// Records the memory side of one gated image recognition run (see <c>IImageRecognitionGate</c>).
+    /// </summary>
+    /// <param name="operation">The run: detect/enrich/stage-panel/outline-session/...</param>
+    /// <param name="rssAfter">Process RSS when it ended.</param>
+    /// <param name="rssDelta">RSS after minus before; recorded as growth, so a shrinking run counts 0.</param>
+    /// <param name="gcHeapAfter">Managed heap when it ended.</param>
+    /// <param name="waitMs">How long it waited for its slot.</param>
+    public static void RecordImageRecognitionMemory(string operation, long rssAfter, long rssDelta, long gcHeapAfter, double waitMs)
+    {
+        var tag = new KeyValuePair<string, object?>("operation", operation);
+        ImageRecognitionRss.Record(rssAfter, tag);
+        ImageRecognitionRssGrowth.Record(Math.Max(0, rssDelta), tag);
+        ImageRecognitionGcHeap.Record(gcHeapAfter, tag);
+        ImageRecognitionGateWait.Record(waitMs, tag);
+    }
+
+    /// <summary>
     /// Records one image-alignment run. <paramref name="outcome"/> is aligned/none/failed.
     /// </summary>
     public static void RecordImageAlignment(string outcome, double durationMs)

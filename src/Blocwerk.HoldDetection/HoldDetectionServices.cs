@@ -1,5 +1,6 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Configuration;
+using Blocwerk.Core.Detection.Gating;
 using Blocwerk.Core.Services;
 using Blocwerk.HoldDetection.Matching;
 using Blocwerk.HoldDetection.Outlines;
@@ -17,21 +18,23 @@ public static class HoldDetectionServices
         var modelPath = ResolveModelPath(settings.HoldDetection.ModelPath);
 
         var detector = new YoloHoldDetectionService(modelPath, settings.HoldDetection.Tiling);
-        builder.Services.AddSingleton<IHoldDetectionService>(detector);
+        builder.Services.AddSingleton<IHoldDetectionService>(services => new GatedHoldDetectionService(
+            detector, Gate(services), settings.HoldDetection, services.GetRequiredService<ILogger<GatedHoldDetectionService>>()));
         builder.Services.AddSingleton<IImageAlignmentService, SkiaImageAlignmentService>();
 
         // Cross-panel hold re-recognition for big walls. Stateless in-process OpenCV, so a singleton.
-        builder.Services.AddSingleton<IHoldOverlapMatcher, OpenCvHoldOverlapMatcher>();
-        builder.Services.AddSingleton<IHoldPresenceProbe, OpenCvHoldPresenceProbe>();
+        builder.Services.AddSingleton<IHoldOverlapMatcher>(services => new GatedHoldOverlapMatcher(new OpenCvHoldOverlapMatcher(), Gate(services)));
+        builder.Services.AddSingleton<IHoldPresenceProbe>(services => new GatedHoldPresenceProbe(new OpenCvHoldPresenceProbe(), Gate(services)));
 
         // Panel photo ↔ 3D-model facet texture registration ("place existing holds on the 3D model").
-        builder.Services.AddSingleton<IPhotoTextureMatcher, OpenCvPhotoTextureMatcher>();
+        builder.Services.AddSingleton<IPhotoTextureMatcher>(services => new GatedPhotoTextureMatcher(new OpenCvPhotoTextureMatcher(), Gate(services)));
 
         // ArUco markers ("glyphs") and hold outlines + fingerprints. Registration only: marker work runs
         // solely for walls that declare markers; outlines apply to every wall.
         builder.Services.AddMarkerDetection();
-        builder.Services.AddSingleton<IHoldOutlineService>(services =>
-            Outliner(settings.HoldDetection.Segmenter, detector, services.GetRequiredService<ILoggerFactory>().CreateLogger<HoldSegmenter>()));
+        builder.Services.AddSingleton<IHoldOutlineService>(services => new GatedHoldOutlineService(
+            Outliner(settings.HoldDetection.Segmenter, detector, services.GetRequiredService<ILoggerFactory>().CreateLogger<HoldSegmenter>()),
+            Gate(services)));
         builder.Services.AddHoldOutlines();
 
         return builder;
@@ -53,6 +56,9 @@ public static class HoldDetectionServices
                 ResolveModelPath(settings.EncoderPath), ResolveModelPath(settings.DecoderPath), settings.Threads, detector is null ? null : detector.Warm, logger))
             : new OpenCvHoldOutlineService();
     }
+
+    // Every heavy recognition entry point shares the one process-wide gate (registered by the core services).
+    private static IImageRecognitionGate Gate(IServiceProvider services) => services.GetRequiredService<IImageRecognitionGate>();
 
     public static string ResolveModelPath(string configuredPath) =>
         InAppCaptureHoldDetector.ResolveModelPath(configuredPath);

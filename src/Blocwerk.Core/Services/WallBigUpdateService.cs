@@ -36,6 +36,7 @@ public partial class WallBigUpdateService : IWallBigUpdateService
     private readonly HoldMoveOptions moveOptions;
     private readonly IStagedHoldPlacer? stagedPlacer;
     private readonly IHoldColorProposer colorProposer;
+    private readonly IImageRecognitionGate? recognitionGate;
 
     public WallBigUpdateService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
@@ -54,8 +55,10 @@ public partial class WallBigUpdateService : IWallBigUpdateService
         ICaptureFileStore? captureFiles = null,
         HoldMoveOptions? moveOptions = null,
         IStagedHoldPlacer? stagedPlacer = null,
-        IHoldColorProposer? colorProposer = null)
+        IHoldColorProposer? colorProposer = null,
+        IImageRecognitionGate? recognitionGate = null)
     {
+        this.recognitionGate = recognitionGate;
         this.colorProposer = colorProposer ?? new HoldColorProposer();
         this.stagedPlacer = stagedPlacer;
         this.moveOptions = moveOptions ?? new HoldMoveOptions();
