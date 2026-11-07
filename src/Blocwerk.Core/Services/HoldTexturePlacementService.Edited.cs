@@ -3,6 +3,7 @@
 // </copyright>
 
 using System.Diagnostics;
+using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Geometry.TextureRegistration;
@@ -137,7 +138,8 @@ public sealed partial class HoldTexturePlacementService
             .ToList();
         try
         {
-            var registrations = await Task.Run(() => Register(panel.Photo, textures, $"c{panel.Col} r{panel.Row}", anchors, null, ct), ct);
+            var registrations = await recognitionGate.RecogniseAsync(
+                "texture-registration", () => Register(panel.Photo, textures, $"c{panel.Col} r{panel.Row}", anchors, null, ct), ct);
             source.Registered++;
             PanelRegistrationCache.Put(cacheKey with { Photo = new PanelPhotoStamp(panel.Generation, panel.Photo.Length, panel.PhotoRevision) }, registrations);
             return registrations;

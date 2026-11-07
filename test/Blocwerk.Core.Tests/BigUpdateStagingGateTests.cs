@@ -43,4 +43,20 @@ public class BigUpdateStagingGateTests
         Assert.Equal(["stage-panel", "stage-panel"], gate.Runs);
         Assert.Equal([("detect", 1), ("enrich", 1), ("detect", 2), ("enrich", 2)], seen);
     }
+
+    [Fact]
+    public async Task Stage_WhileRecognitionIsOff_RefusesWithAClearMessage()
+    {
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync(holdCount: 0);
+        var service = new WallBigUpdateService(
+            h.DbContextFactory, h.CurrentUser, h.HoldDetection, Substitute.For<IHoldOverlapMatcher>(),
+            NullLogger<WallBigUpdateService>.Instance, recognitionGate: new RecordingRecognitionGate { Enabled = false });
+
+        var ex = await Assert.ThrowsAsync<ImageRecognitionUnavailableException>(
+            () => service.StageAsync(h.WallId, WallUpdateSessionFixture.CentrePhoto()));
+
+        Assert.Equal(ImageRecognitionUnavailableException.DisabledMessage, ex.Message);
+        await h.HoldDetection.DidNotReceiveWithAnyArgs().DetectHoldsAsync(default!, default);
+    }
 }

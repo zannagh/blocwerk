@@ -9,6 +9,8 @@ namespace Blocwerk.Core.Tests;
 /// <summary>Numbers its runs and tells which one (0 for none) is executing right now.</summary>
 internal sealed class RecordingRecognitionGate : IImageRecognitionGate
 {
+    public bool Enabled { get; init; } = true;
+
     public List<string> Runs { get; } = [];
 
     public int Inside { get; private set; }
@@ -27,5 +29,7 @@ internal sealed class RecordingRecognitionGate : IImageRecognitionGate
         }
     }
 
-    public IDisposable Enter(string operation) => throw new NotSupportedException();
+    public Task<IDisposable> EnterAsync(string operation, CancellationToken ct = default) => throw new NotSupportedException();
+
+    public IDisposable Enter(string operation, CancellationToken ct = default) => throw new NotSupportedException();
 }

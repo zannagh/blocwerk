@@ -73,7 +73,7 @@ public sealed partial class HoldOutlineUpgradeService
         (List<HoldOutlineUpgradeProposal> Proposals, int Width, int Height) outlined;
         try
         {
-            outlined = await Task.Run(() => Outline(bytes, holds, includeManual), ct);
+            outlined = await recognitionGate.RecogniseAsync("outline-upgrade", () => Outline(bytes, holds, includeManual), ct);
         }
         catch (ArgumentException ex)
         {

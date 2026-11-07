@@ -91,11 +91,15 @@ public partial class WallBigUpdateService
             var panel = RemovalPanelOf(scope, warp, evidence, model.Textures, newSize, oldSize);
             var images = model.Textures.GroupBy(t => t.Frame.FacetId, StringComparer.Ordinal)
                 .ToDictionary(g => g.Key, g => g.First().Image, StringComparer.Ordinal);
-            var findings = await Task.Run(() => RemovalCheck.Run(
-                panel,
-                q => probe.Score(oldPhoto, newPhoto, q),
-                (facet, q) => images.TryGetValue(facet, out var texture) ? probe.Score(texture, oldPhoto, q) : q.Select(_ => (double?)null).ToList(),
-                budget.Token));
+            // One gate slot for the whole check (not one per probe call); waiting for it counts against the budget.
+            var findings = await recognitionGate.RecogniseAsync(
+                "removal-check",
+                () => RemovalCheck.Run(
+                    panel,
+                    q => probe.Score(oldPhoto, newPhoto, q),
+                    (facet, q) => images.TryGetValue(facet, out var texture) ? probe.Score(texture, oldPhoto, q) : q.Select(_ => (double?)null).ToList(),
+                    budget.Token),
+                budget.Token);
             if (budget.IsCancellationRequested)
             {
                 logger.LogWarning(
@@ -109,7 +113,7 @@ public partial class WallBigUpdateService
                 "Removal check on panel {PanelId}: {Bare} of {Candidates} old holds not found again show bare wall ({Present} show a hold)",
                 scope.PanelId, bare.Count, findings.Count, findings.Count(f => f.Verdict == RemovalVerdict.HoldPresent));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ImageRecognitionUnavailableException)
         {
             // Contained whatever it is (a probe's cancellation or timeout too): the shutdown token never reaches this
             // service, and the refresh goes on without evidence rather than failing for it.

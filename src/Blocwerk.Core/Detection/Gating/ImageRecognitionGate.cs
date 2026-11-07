@@ -2,7 +2,6 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
-using System.Diagnostics;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Configuration;
 using Microsoft.Extensions.Logging;
@@ -12,8 +11,7 @@ namespace Blocwerk.Core.Detection.Gating;
 /// <summary>
 /// <see cref="IImageRecognitionGate"/> on a <see cref="SemaphoreSlim"/>. The flow that holds a slot is remembered in an
 /// <see cref="AsyncLocal{T}"/>, so recognition nested inside it (enrichment → outline session) never waits for its own
-/// slot. A wait longer than the timeout is logged and the run goes ahead without a slot: a missed nesting then costs
-/// memory headroom, never a hung wall update.
+/// slot. Fails closed: a wait past the timeout throws instead of running without a slot.
 /// </summary>
 public sealed class ImageRecognitionGate : IImageRecognitionGate, IDisposable
 {
@@ -22,71 +20,83 @@ public sealed class ImageRecognitionGate : IImageRecognitionGate, IDisposable
     private readonly ILogger logger;
 
     /// <summary>Initializes a new instance of the <see cref="ImageRecognitionGate"/> class from the app settings.</summary>
-    /// <param name="settings">App settings (<see cref="HoldDetectionSettings.MaxConcurrentRuns"/>, <see cref="HoldDetectionSettings.GateTimeoutSeconds"/>).</param>
+    /// <param name="settings">App settings (<see cref="HoldDetectionSettings.Enabled"/>, <see cref="HoldDetectionSettings.MaxConcurrentRuns"/>,
+    /// <see cref="HoldDetectionSettings.GateTimeoutSeconds"/>).</param>
     /// <param name="logger">Logger.</param>
     public ImageRecognitionGate(BlocwerkSettings settings, ILogger<ImageRecognitionGate> logger)
-        : this(settings.HoldDetection.MaxConcurrentRuns, TimeSpan.FromSeconds(settings.HoldDetection.GateTimeoutSeconds), logger)
+        : this(
+            settings.HoldDetection.MaxConcurrentRuns,
+            TimeSpan.FromSeconds(settings.HoldDetection.GateTimeoutSeconds),
+            logger,
+            settings.HoldDetection.Enabled)
     {
     }
 
     /// <summary>Initializes a new instance of the <see cref="ImageRecognitionGate"/> class.</summary>
     /// <param name="maxConcurrentRuns">Runs that may hold a slot at once (at least 1).</param>
-    /// <param name="timeout">How long a run waits before it goes ahead without a slot.</param>
+    /// <param name="timeout">How long a run waits for a slot before it fails as busy.</param>
     /// <param name="logger">Logger.</param>
-    public ImageRecognitionGate(int maxConcurrentRuns, TimeSpan timeout, ILogger logger)
+    /// <param name="enabled">Whether recognition is switched on; off, every call fails.</param>
+    public ImageRecognitionGate(int maxConcurrentRuns, TimeSpan timeout, ILogger logger, bool enabled = true)
     {
         int max = Math.Max(1, maxConcurrentRuns);
         slots = new SemaphoreSlim(max, max);
         this.timeout = timeout;
         this.logger = logger;
+        Enabled = enabled;
     }
+
+    /// <inheritdoc/>
+    public bool Enabled { get; }
 
     /// <summary>Gets the lease of the current flow, if any.</summary>
     internal static AsyncLocal<ImageRecognitionLease?> Current { get; } = new();
 
-    private static bool Held => Current.Value is { IsReleased: false };
+    private static bool Held => Current.Value is { IsHeld: true };
 
     /// <inheritdoc/>
     public async Task<T> RunAsync<T>(string operation, Func<Task<T>> work, CancellationToken ct = default)
     {
-        if (Held)
-        {
-            return await work();
-        }
-
-        long waitStart = Stopwatch.GetTimestamp();
-        bool acquired = await slots.WaitAsync(timeout, ct);
-        using var lease = Begin(operation, acquired, waitStart);
+        using var lease = await EnterAsync(operation, ct);
         return await work();
     }
 
     /// <inheritdoc/>
-    public IDisposable Enter(string operation)
+    public Task<IDisposable> EnterAsync(string operation, CancellationToken ct = default)
+    {
+        if (Held)
+        {
+            return Task.FromResult(ImageRecognitionLease.Nested);
+        }
+
+        return Begin(operation).AcquireAsync(ct);
+    }
+
+    /// <inheritdoc/>
+    public IDisposable Enter(string operation, CancellationToken ct = default)
     {
         if (Held)
         {
             return ImageRecognitionLease.Nested;
         }
 
-        long waitStart = Stopwatch.GetTimestamp();
-        bool acquired = slots.Wait(timeout);
-        return Begin(operation, acquired, waitStart);
+        var lease = Begin(operation);
+        lease.Acquire(ct);
+        return lease;
     }
 
     /// <inheritdoc/>
     public void Dispose() => slots.Dispose();
 
     // Not async on purpose: the AsyncLocal set here stays visible to the caller's flow (an async method would undo it on return).
-    private ImageRecognitionLease Begin(string operation, bool acquired, long waitStart)
+    private ImageRecognitionLease Begin(string operation)
     {
-        var waited = Stopwatch.GetElapsedTime(waitStart);
-        if (!acquired)
+        if (!Enabled)
         {
-            logger.LogWarning(
-                "Image recognition {Operation} waited {Waited:F0} s for a free slot and runs without one", operation, waited.TotalSeconds);
+            throw new ImageRecognitionUnavailableException(ImageRecognitionUnavailableException.DisabledMessage);
         }
 
-        var lease = new ImageRecognitionLease(operation, acquired ? slots : null, Current.Value, waited.TotalMilliseconds, logger);
+        var lease = new ImageRecognitionLease(operation, slots, timeout, Current.Value, logger);
         Current.Value = lease;
         return lease;
     }

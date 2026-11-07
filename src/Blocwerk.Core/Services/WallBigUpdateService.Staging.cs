@@ -22,6 +22,7 @@ public partial class WallBigUpdateService
     public async Task<BigUpdateSession> StageAsync(
         Guid wallId, IReadOnlyList<BigUpdatePhoto> photos, bool takeOverExisting = false, bool fullRevision = false)
     {
+        EnsureRecognitionOn();
         var user = await currentUserService.GetCurrentUserAsync();
         await using var db = await dbContextFactory.CreateDbContextAsync();
         db.CurrentUserId = user.Id;

@@ -32,21 +32,24 @@ public sealed class WallShapeRecognitionRunner
     private readonly BlocwerkSettings settings;
     private readonly ILogger<WallShapeRecognitionRunner> logger;
     private readonly IHoldOutlineService? outlineService;
+    private readonly IImageRecognitionGate? recognitionGate;
 
     public WallShapeRecognitionRunner(
         RootDbContextFactory factory,
         BlocwerkSettings settings,
         ILogger<WallShapeRecognitionRunner> logger,
-        IHoldOutlineService? outlineService = null)
+        IHoldOutlineService? outlineService = null,
+        IImageRecognitionGate? recognitionGate = null)
     {
         this.factory = factory;
         this.settings = settings;
         this.logger = logger;
         this.outlineService = outlineService;
+        this.recognitionGate = recognitionGate;
     }
 
-    /// <summary>Whether outlines can be recognised on this server (outliner present and not switched off).</summary>
-    public bool Available => settings.HoldDetection.OutlinesEnabled && outlineService is not null;
+    /// <summary>Whether outlines can be recognised on this server (outliner present, recognition and outlines not switched off).</summary>
+    public bool Available => settings.HoldDetection.Enabled && settings.HoldDetection.OutlinesEnabled && outlineService is not null;
 
     public bool IsRunning(Guid sessionId)
     {
@@ -72,7 +75,7 @@ public sealed class WallShapeRecognitionRunner
             }
 
             var cts = new CancellationTokenSource();
-            var job = new WallShapeRecognitionJob(factory, outlineService, logger);
+            var job = new WallShapeRecognitionJob(factory, outlineService, recognitionGate, logger);
             var task = Task.Run(async () =>
             {
                 var acquired = false;

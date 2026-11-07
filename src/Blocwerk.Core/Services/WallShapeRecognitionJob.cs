@@ -26,10 +26,12 @@ internal sealed class WallShapeRecognitionJob
 
     private readonly RootDbContextFactory factory;
     private readonly IHoldOutlineService outlines;
+    private readonly IImageRecognitionGate? recognitionGate;
     private readonly ILogger logger;
 
-    public WallShapeRecognitionJob(RootDbContextFactory factory, IHoldOutlineService outlines, ILogger logger)
+    public WallShapeRecognitionJob(RootDbContextFactory factory, IHoldOutlineService outlines, IImageRecognitionGate? recognitionGate, ILogger logger)
     {
+        this.recognitionGate = recognitionGate;
         this.factory = factory;
         this.outlines = outlines;
         this.logger = logger;
@@ -136,6 +138,9 @@ internal sealed class WallShapeRecognitionJob
             return true;
         }
 
+        // The slot is taken here, in this flow, so the session opened below and every batch see it as theirs; it is held
+        // for the whole panel (one decode), including the short progress saves between batches.
+        using var lease = recognitionGate is null ? null : await recognitionGate.EnterAsync("shape-recognition", ct);
         using var photo = await Task.Run(() => outlines.OpenSession(bytes), ct);
         foreach (var batch in targets.Chunk(BatchSize))
         {

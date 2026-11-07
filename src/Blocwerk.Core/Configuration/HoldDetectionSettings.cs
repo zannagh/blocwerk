@@ -11,7 +11,8 @@ public class HoldDetectionSettings
     public string ModelPath { get; set; } = "models/climbingcrux.onnx";
 
     /// <summary>
-    /// Kill switch for hold detection and enrichment: off, photos get no detected holds and no outlines or markers.
+    /// Kill switch for all hold recognition: off, photos get no detected holds and no outlines or markers, every other
+    /// recognition call (outlines, footprints, matchers, probe, texture matching) fails, and wall updates refuse to start.
     /// Default true; config <c>HoldDetection:Enabled</c>, env <c>HOLDDETECTION__ENABLED</c>.
     /// </summary>
     public bool Enabled { get; set; } = true;
@@ -24,10 +25,11 @@ public class HoldDetectionSettings
     public int MaxConcurrentRuns { get; set; } = 1;
 
     /// <summary>
-    /// How long a run waits for a free slot before it goes ahead anyway (logged). Default 300; config
+    /// How long a run waits for a free slot before it fails as busy ("try again"); nothing ever runs without a slot.
+    /// Default 120; config
     /// <c>HoldDetection:GateTimeoutSeconds</c>, env <c>HOLDDETECTION__GATETIMEOUTSECONDS</c>.
     /// </summary>
-    public int GateTimeoutSeconds { get; set; } = 300;
+    public int GateTimeoutSeconds { get; set; } = 120;
 
     /// <summary>
     /// Kill switch for hold outlines + fingerprints at ingest (every wall). Default true; config
@@ -77,7 +79,7 @@ public class HoldDetectionSettings
                     ?? "models/climbingcrux.onnx",
         Enabled = ParseSwitch(section["HoldDetection:Enabled"], "HOLDDETECTION__ENABLED"),
         MaxConcurrentRuns = ParseInt(section["HoldDetection:MaxConcurrentRuns"], "HOLDDETECTION__MAXCONCURRENTRUNS", 1),
-        GateTimeoutSeconds = ParseInt(section["HoldDetection:GateTimeoutSeconds"], "HOLDDETECTION__GATETIMEOUTSECONDS", 300),
+        GateTimeoutSeconds = ParseInt(section["HoldDetection:GateTimeoutSeconds"], "HOLDDETECTION__GATETIMEOUTSECONDS", 120),
         OutlinesEnabled = ParseSwitch(section["HoldDetection:Outlines:Enabled"], "HOLDDETECTION__OUTLINES__ENABLED"),
         BoxSeeds = ParseSwitch(section["HoldDetection:Outlines:BoxSeeds"], "HOLDDETECTION__OUTLINES__BOXSEEDS"),
         MarkersEnabled = ParseSwitch(section["HoldDetection:Markers:Enabled"], "HOLDDETECTION__MARKERS__ENABLED"),

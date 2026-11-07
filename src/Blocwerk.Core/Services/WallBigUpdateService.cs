@@ -81,6 +81,7 @@ public partial class WallBigUpdateService : IWallBigUpdateService
     /// <inheritdoc/>
     public async Task<BigUpdateSession> ResumeAsync(Guid wallId, bool use3DEvidence = false)
     {
+        EnsureRecognitionOn();
         var user = await currentUserService.GetCurrentUserAsync();
         await using var db = await dbContextFactory.CreateDbContextAsync();
         db.CurrentUserId = user.Id;
@@ -188,7 +189,7 @@ public partial class WallBigUpdateService : IWallBigUpdateService
         var oldCentrePhoto = OldCentrePhoto(wall, oldPanelPhotosById, panelPositions);
         try
         {
-            var carry = MatchUnlessUnaligned(
+            var carry = await MatchUnlessUnalignedAsync(
                 recorded.Carry.Contains(centerPanelId),
                 oldCentrePhoto!, oldMatcher, centerImage, centerMatcher, HoldOverlapDirection.Right, logger, centreSeed);
 
@@ -202,7 +203,7 @@ public partial class WallBigUpdateService : IWallBigUpdateService
             // unmatched-new detections are simply kept by the keep-all-except-removed neighbour contract.)
             newCenter.AddRange(carry.UnmatchedRight.Select(i => centerIndex[i]));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ImageRecognitionUnavailableException)
         {
             // Fail soft: never silently seed nothing. Record WHY so the review layer can show a banner
             // ("map changed holds manually") instead of a mute 0/0/0/0. The session still returns the
@@ -246,7 +247,7 @@ public partial class WallBigUpdateService : IWallBigUpdateService
             // detections, so a co-updated neighbour's holds twin-match on their own panel exactly as the
             // centre does — a matched old promotes its twin in place (no clone), only a truly unmatched old
             // clones. Distinct from the cross-PANEL overlap match below, which links identity across seams.
-            var aligned = MatchNeighbourCarryover(
+            var aligned = await MatchNeighbourCarryoverAsync(
                 oldNeighbourHolds,
                 oldPanelPhotosById, panel.StagedPhoto!, neighbourMatcher, neighbourIndex,
                 carryover, removedCandidates, carriedWarp, carriedShapes, (wall.Id, panel.Col, panel.Row), carrySeed,
@@ -261,7 +262,7 @@ public partial class WallBigUpdateService : IWallBigUpdateService
                 MergeHandPlaced(neighbourHolds, oldNeighbourHolds ?? [], panel.StagedPhoto!, carryover, removedCandidates, null, carriedWarp, handMerges, handAmbiguous);
             }
 
-            var proposals = ProposeOverlapLinks(
+            var proposals = await ProposeOverlapLinksAsync(
                 recorded.Overlap.Contains(panel.Id), centerImage, centerMatcher, centerIndex,
                 panel.StagedPhoto!, neighbourMatcher, neighbourIndex, direction, overlapSeed, (wall.Id, centerPanelId, panel.Id, panel.Col, panel.Row));
             var overlapFailed = proposals is null;

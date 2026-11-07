@@ -79,7 +79,7 @@ public partial class WallBigUpdateService
             var (matcher, index) = BuildMatcherHolds(holds);
             var seed = await OverlapSeedLoader.LoadAsync(
                 db, wall, stagedCentre, new OverlapSeedSide(panel.Id, true, panel.StagedPhoto!, holds), logger);
-            var proposals = ProposeOverlapLinks(
+            var proposals = await ProposeOverlapLinksAsync(
                 recorded.Overlap.Contains(panel.Id), centerImage, centerMatcher, centerIndex, panel.StagedPhoto!, matcher, index,
                 DirectionFromNeighbor(0, 0, panel.Col, panel.Row), seed, (wall.Id, centerPanelId, panel.Id, panel.Col, panel.Row));
             neighbours.Add(new NeighbourOverlap(panel.Id, panel.Col, panel.Row, proposals ?? [], proposals is null));
@@ -104,7 +104,7 @@ public partial class WallBigUpdateService
     /// The link proposals between the staged centre and one staged neighbour, each as (centre hold, neighbour hold); null
     /// when the two photos could not be lined up.
     /// </summary>
-    private List<OverlapProposalDto>? ProposeOverlapLinks(
+    private async Task<List<OverlapProposalDto>?> ProposeOverlapLinksAsync(
         bool recordedUnaligned,
         byte[] centerImage,
         IReadOnlyList<MatcherHold> centerMatcher,
@@ -118,7 +118,7 @@ public partial class WallBigUpdateService
     {
         try
         {
-            var result = MatchUnlessUnaligned(
+            var result = await MatchUnlessUnalignedAsync(
                 recordedUnaligned, centerImage, centerMatcher, neighbourImage, neighbourMatcher, direction, null, seed, carryPass: false);
 
             // NeighborPanelId is the panel HoldAId belongs to: the staged CENTRE panel, not this neighbour (the stepper
@@ -128,7 +128,7 @@ public partial class WallBigUpdateService
                     at.CentrePanelId, centerIndex[p.LeftHoldId], neighbourIndex[p.RightHoldId], p.Confidence, p.Moved, p.ResidualPx))
                 .ToList();
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ImageRecognitionUnavailableException)
         {
             logger.LogWarning(
                 ex,

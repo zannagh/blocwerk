@@ -29,7 +29,7 @@ public partial class WallBigUpdateService
     /// carries it by default (clone), never silently losing it.
     /// </summary>
     /// <returns>False when the panel could not be aligned, i.e. its old holds carry at their old positions.</returns>
-    private bool MatchNeighbourCarryover(
+    private async Task<bool> MatchNeighbourCarryoverAsync(
         List<Hold>? neighbourOldHolds,
         IReadOnlyDictionary<Guid, byte[]> oldPanelPhotosById,
         byte[] stagedPhoto,
@@ -59,12 +59,12 @@ public partial class WallBigUpdateService
         var (oldMatcher, oldIndex) = BuildMatcherHolds(neighbourOldHolds);
         try
         {
-            var carry = MatchUnlessUnaligned(
+            var carry = await MatchUnlessUnalignedAsync(
                 recordedUnaligned, oldPhoto, oldMatcher, stagedPhoto, stagedMatcher, HoldOverlapDirection.Right, logger, seed);
             CollectCarryover(carry, oldIndex, stagedIndex, carryover, removedCandidates, carriedWarp, carriedShapes);
             return true;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ImageRecognitionUnavailableException)
         {
             LogUnaligned(at, ex.Message, neighbourOldHolds.Count, ex);
             removedCandidates.AddRange(neighbourOldHolds.Select(h => h.Id));
@@ -77,7 +77,7 @@ public partial class WallBigUpdateService
     /// fails the same way without running, so a resume shows exactly what the user reviewed before (a
     /// borderline pair can pass a later RANSAC run and would otherwise swap blind carries for new guesses).
     /// </summary>
-    private HoldOverlapResult MatchUnlessUnaligned(
+    private Task<HoldOverlapResult> MatchUnlessUnalignedAsync(
         bool recordedUnaligned,
         byte[] leftImage,
         IReadOnlyList<MatcherHold> leftHolds,
@@ -94,10 +94,11 @@ public partial class WallBigUpdateService
         }
 
         // The carryover pass: an old hold may only be paired with a detection that is unambiguously its own. The overlap pass
-        // between two panels keeps every proposal; its unsure ones reach the review only as unsure links.
-        return carryPass && overlapMatcher is IHoldCarryMatcher carry
+        // between two panels keeps every proposal; its unsure ones reach the review only as unsure links. Off the circuit,
+        // after an awaited gate slot.
+        return recognitionGate.RecogniseAsync(carryPass ? "carry-match" : "overlap-match", () => carryPass && overlapMatcher is IHoldCarryMatcher carry
             ? carry.MatchCarry(leftImage, leftHolds, rightImage, rightHolds, direction, diag, seed)
-            : overlapMatcher.Match(leftImage, leftHolds, rightImage, rightHolds, direction, diag, seed);
+            : overlapMatcher.Match(leftImage, leftHolds, rightImage, rightHolds, direction, diag, seed));
     }
 
     /// <summary>The panels this open session has already recorded as unaligned (empty when none is open).</summary>

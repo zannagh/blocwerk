@@ -76,14 +76,58 @@ public class ImageRecognitionGateTests
     }
 
     [Fact]
-    public async Task WaitPastTheTimeout_RunsWithoutASlot()
+    public async Task WaitPastTheTimeout_FailsAsBusy_InsteadOfRunningUngated()
     {
         using var gate = new ImageRecognitionGate(1, TimeSpan.FromMilliseconds(50), NullLogger.Instance);
         using var held = OtherFlowSync(() => gate.Enter("stuck"));
+        var ran = false;
 
-        var result = await OtherFlow(() => gate.RunAsync("detect", () => Task.FromResult(3))).WaitAsync(Deadline);
+        var ex = await Assert.ThrowsAsync<ImageRecognitionUnavailableException>(
+            () => OtherFlow(() => gate.RunAsync("detect", () => { ran = true; return Task.FromResult(3); })));
 
-        Assert.Equal(3, result);
+        Assert.Equal(ImageRecognitionUnavailableException.BusyMessage, ex.Message);
+        Assert.False(ran);
+    }
+
+    [Fact]
+    public async Task CancelledWait_Throws_AndTheFlowDoesNotCountAsHolding()
+    {
+        using var gate = Gate();
+        using var held = OtherFlowSync(() => gate.Enter("stuck"));
+        using var cts = new CancellationTokenSource(50);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => gate.EnterAsync("detect", cts.Token));
+
+        held.Dispose();
+        using var next = await gate.EnterAsync("detect").WaitAsync(Deadline);
+    }
+
+    [Fact]
+    public async Task AwaitedSlot_CoversSyncRecognitionOnThePool()
+    {
+        using var gate = Gate();
+        var probe = new GatedHoldPresenceProbe(Substitute.For<IHoldPresenceProbe>(), gate);
+
+        // With one slot, a probe call that did not see the awaited slot as its own would wait for it until the deadline.
+        var calls = await gate.RecogniseAsync("removal-check", () =>
+        {
+            probe.Score([1], [2], []);
+            probe.Score([1], [2], []);
+            return 2;
+        }).WaitAsync(Deadline);
+
+        Assert.Equal(2, calls);
+    }
+
+    [Fact]
+    public void SwitchedOff_EveryGatedCallFails()
+    {
+        using var gate = new ImageRecognitionGate(1, TimeSpan.FromMinutes(1), NullLogger.Instance, enabled: false);
+        var outlines = new GatedHoldOutlineService(EnrichmentFakes.Outlines(), gate);
+
+        var ex = Assert.Throws<ImageRecognitionUnavailableException>(() => outlines.OpenSession([1, 2, 3]));
+
+        Assert.Equal(ImageRecognitionUnavailableException.DisabledMessage, ex.Message);
     }
 
     [Fact]
