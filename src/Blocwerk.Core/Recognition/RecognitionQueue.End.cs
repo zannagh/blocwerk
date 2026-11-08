@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging;
 namespace Blocwerk.Core.Recognition;
 
 /// <summary>
-/// How a job ends or goes back: every change is conditional on the status and holder it was read with. An ended job keeps
+/// How a job ends or goes back: every change is conditional on the job being as it was read (<see cref="AsRead"/>). An ended job keeps
 /// its last holder, so that runner's next call hears <c>410 over</c>; its input envelope is deleted and its waiter woken.
 /// </summary>
 public sealed partial class RecognitionQueue
@@ -36,26 +36,12 @@ public sealed partial class RecognitionQueue
         return false;
     }
 
-    /// <summary>An interactive job past its claim deadline is cancelled (no runner took it). Whether it was.</summary>
-    private async Task<bool> CancelIfUnclaimedAsync(RecognitionJob job, CancellationToken ct)
-    {
-        if (job is not { Status: GpuJobStatus.Queued, Lane: RecognitionLane.Interactive, LeaseExpiresAt: { } deadline } || deadline > Now)
-        {
-            return false;
-        }
-
-        await using var db = dbContextFactory.CreateDbContext();
-        var seconds = (int)options.InteractiveClaimWait.TotalSeconds;
-        return await FinishAsync(db, job, GpuJobStatus.Cancelled, $"no recognition runner took the job within {seconds} s", null, ct);
-    }
-
     /// <summary>Ends the job with <paramref name="status"/>, deletes its input and wakes its waiter. False when it moved first.</summary>
-    private async Task<bool> FinishAsync(
+    internal async Task<bool> FinishAsync(
         BlocwerkDbContext db, RecognitionJob job, GpuJobStatus status, string? error, string? resultJson, CancellationToken ct)
     {
-        var (from, holder) = (job.Status, job.ClaimedByRunnerId);
         var now = Now;
-        var changed = await db.RecognitionJobs.Where(j => j.Id == job.Id && j.Status == from && j.ClaimedByRunnerId == holder)
+        var changed = await AsRead(db.RecognitionJobs, job)
             .ExecuteUpdateAsync(
                 s => s.SetProperty(j => j.Status, status)
                     .SetProperty(j => j.Error, GpuJobQueue.Clip(error, 2048))
@@ -77,6 +63,32 @@ public sealed partial class RecognitionQueue
     }
 
     /// <summary>
+    /// <paramref name="job"/>'s row while it is as read: a held job still held by the same runner process (claimed or
+    /// running: a heartbeat in between does not matter), any other job still in the status it was read in.
+    /// </summary>
+    internal static IQueryable<RecognitionJob> AsRead(IQueryable<RecognitionJob> jobs, RecognitionJob job)
+    {
+        var (id, from, holder, token) = (job.Id, job.Status, job.ClaimedByRunnerId, job.ClaimToken);
+        return from is GpuJobStatus.Claimed or GpuJobStatus.Running
+            ? jobs.Where(j => j.Id == id && (j.Status == GpuJobStatus.Claimed || j.Status == GpuJobStatus.Running)
+                              && j.ClaimedByRunnerId == holder && j.ClaimToken == token)
+            : jobs.Where(j => j.Id == id && j.Status == from && j.ClaimedByRunnerId == holder);
+    }
+
+    /// <summary>An interactive job past its claim deadline is cancelled (no runner took it). Whether it was.</summary>
+    private async Task<bool> CancelIfUnclaimedAsync(RecognitionJob job, CancellationToken ct)
+    {
+        if (job is not { Status: GpuJobStatus.Queued, Lane: RecognitionLane.Interactive, LeaseExpiresAt: { } deadline } || deadline > Now)
+        {
+            return false;
+        }
+
+        await using var db = dbContextFactory.CreateDbContext();
+        var seconds = (int)options.InteractiveClaimWait.TotalSeconds;
+        return await FinishAsync(db, job, GpuJobStatus.Cancelled, $"no recognition runner took the job within {seconds} s", null, ct);
+    }
+
+    /// <summary>
     /// Back to the queue, or failed once the lane's attempts are used up. <paramref name="free"/> (a shutdown, a lost
     /// eligibility) gives the claim's attempt back; <paramref name="failedBy"/> marks a runner that failed it.
     /// </summary>
@@ -88,11 +100,10 @@ public sealed partial class RecognitionQueue
             return await FinishAsync(db, job, GpuJobStatus.Failed, reason, null, ct);
         }
 
-        var (from, holder) = (job.Status, job.ClaimedByRunnerId);
         var attempts = free ? Math.Max(0, job.Attempts - 1) : job.Attempts;
         var failedRunners = failedBy is { } id ? GpuJobFailedRunners.With(job.FailedRunnerIdsJson, id) : job.FailedRunnerIdsJson;
         var deadline = ClaimDeadline(job.Lane, Now);
-        var changed = await db.RecognitionJobs.Where(j => j.Id == job.Id && j.Status == from && j.ClaimedByRunnerId == holder)
+        var changed = await AsRead(db.RecognitionJobs, job)
             .ExecuteUpdateAsync(
                 s => s.SetProperty(j => j.Status, GpuJobStatus.Queued)
                     .SetProperty(j => j.ClaimedByRunnerId, (Guid?)null)

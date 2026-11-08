@@ -57,7 +57,7 @@ public class RecognitionQueueClaimTests
         var secondInteractive = await f.EnqueueAsync(RecognitionLane.Interactive);
 
         List<Guid> order = [];
-        foreach (var _ in Enumerable.Range(0, 3))
+        for (var i = 0; i < 3; i++)
         {
             var job = await f.Queue.TryClaimAsync(pod, CancellationToken.None);
             order.Add(job!.Id);

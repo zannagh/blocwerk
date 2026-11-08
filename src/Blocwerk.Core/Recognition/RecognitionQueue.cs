@@ -103,19 +103,20 @@ public sealed partial class RecognitionQueue(
     /// <summary>
     /// Awaits the end of the job (succeeded, failed or cancelled) and returns it; null when it does not exist. Woken by
     /// <see cref="RecognitionWaiters"/>, re-reading every <see cref="RecognitionQueueOptions.WaiterPoll"/> anyway. When
-    /// <paramref name="ct"/> fires (the page went away), the job is cancelled, so its runner stops at its next heartbeat.
+    /// <paramref name="ct"/> fires on an interactive job (the page went away), the job is cancelled, so its runner stops at
+    /// its next heartbeat; a background job stays queued (its caller finds it again, e.g. after a restart).
     /// </summary>
     public async Task<RecognitionJob?> WaitAsync(Guid jobId, CancellationToken ct)
     {
+        waiters.Watch(jobId);
         try
         {
             while (true)
             {
-                var ended = waiters.Watch(jobId);
+                var ended = waiters.Next(jobId);
                 var job = await FindAsync(jobId, ct);
                 if (job is null || IsOver(job.Status))
                 {
-                    waiters.Forget(jobId);
                     return job;
                 }
 
@@ -129,9 +130,16 @@ public sealed partial class RecognitionQueue(
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            waiters.Forget(jobId);
-            await CancelAsync(jobId, "the caller stopped waiting", CancellationToken.None);
+            if ((await FindAsync(jobId, CancellationToken.None))?.Lane == RecognitionLane.Interactive)
+            {
+                await CancelAsync(jobId, "the caller stopped waiting", CancellationToken.None);
+            }
+
             throw;
+        }
+        finally
+        {
+            waiters.Forget(jobId);
         }
     }
 

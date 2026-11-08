@@ -61,30 +61,19 @@ public sealed partial class RecognitionQueue
     }
 
     /// <summary>
-    /// Inputs older than the retention: a job that is not held by a runner right now is cancelled with it (a queued one
-    /// waited too long); an ended job whose delete failed loses the leftover.
+    /// Queued jobs whose input is older than the retention are cancelled with it (an ended job's input is already gone, a
+    /// held one ends by lease or attempts).
     /// </summary>
     private async Task DropOldInputsAsync(BlocwerkDbContext db, DateTimeOffset now, CancellationToken ct)
     {
         var cutoff = now - options.InputRetention;
         var old = await db.RecognitionJobs.AsNoTracking()
-            .Where(j => j.InputPath != null && j.CreatedAt < cutoff && j.Status != GpuJobStatus.Claimed && j.Status != GpuJobStatus.Running)
+            .Where(j => j.Status == GpuJobStatus.Queued && j.InputPath != null && j.CreatedAt < cutoff)
             .ToListAsync(ct);
         var hours = options.InputRetention.TotalHours.ToString("0.#", CultureInfo.InvariantCulture);
         foreach (var job in old)
         {
-            if (job.Status == GpuJobStatus.Queued)
-            {
-                await FinishAsync(db, job, GpuJobStatus.Cancelled, $"no recognition runner took the job within {hours} h", null, ct);
-                continue;
-            }
-
-            var dropped = await db.RecognitionJobs.Where(j => j.Id == job.Id && j.InputPath == job.InputPath)
-                .ExecuteUpdateAsync(s => s.SetProperty(j => j.InputPath, (string?)null), ct);
-            if (dropped == 1)
-            {
-                DeleteInput(job);
-            }
+            await FinishAsync(db, job, GpuJobStatus.Cancelled, $"no recognition runner took the job within {hours} h", null, ct);
         }
     }
 }

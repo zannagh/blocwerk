@@ -2,6 +2,7 @@
 // See License in the project root for license information.
 
 using System.Text.Json;
+using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Runners;
 using Microsoft.EntityFrameworkCore;
@@ -55,19 +56,7 @@ public sealed partial class RecognitionQueue
         }
 
         await using var db = dbContextFactory.CreateDbContext();
-        var lease = Now + TimeSpan.FromSeconds(job.LeaseSeconds);
-        var progress = report.Fraction is { } f && double.IsFinite(f) ? Math.Clamp(f, 0, 1) : job.Progress;
-        var stage = GpuJobQueue.Clip(report.Detail ?? report.Stage, 200) ?? job.Stage;
-        var updated = await db.RecognitionJobs
-            .Where(j => j.Id == jobId && j.ClaimedByRunnerId == runner.Id
-                        && (j.Status == GpuJobStatus.Claimed || j.Status == GpuJobStatus.Running))
-            .ExecuteUpdateAsync(
-                s => s.SetProperty(j => j.Status, GpuJobStatus.Running)
-                    .SetProperty(j => j.LeaseExpiresAt, lease)
-                    .SetProperty(j => j.Progress, progress)
-                    .SetProperty(j => j.Stage, stage),
-                ct);
-        return updated == 1 ? RunnerJobOutcome.Ok : (await FindClaimedAsync(runner, jobId, ct)).Outcome;
+        return await HeartbeatAsync(db, job, report, ct) ? RunnerJobOutcome.Ok : await LostAsync(runner, jobId, ct);
     }
 
     /// <summary>
@@ -89,7 +78,7 @@ public sealed partial class RecognitionQueue
 
         await using var db = dbContextFactory.CreateDbContext();
         var ended = await FinishAsync(db, job, GpuJobStatus.Succeeded, null, resultJson, ct);
-        return ended ? RunnerJobOutcome.Ok : (await FindClaimedAsync(runner, jobId, ct)).Outcome;
+        return ended ? RunnerJobOutcome.Ok : await LostAsync(runner, jobId, ct);
     }
 
     /// <summary>
@@ -109,20 +98,36 @@ public sealed partial class RecognitionQueue
             "Runner {RunnerId} failed recognition job {JobId} ({Kind}): {Reason} (retryable {Retryable}, shutdown {Shutdown})",
             runner.Id, job.Id, job.Kind, reason, failure.Retryable, failure.Shutdown);
         await using var db = dbContextFactory.CreateDbContext();
-        if (failure.Shutdown)
-        {
-            await ReleaseAsync(db, job, reason, failedBy: null, free: true, ct);
-        }
-        else if (failure.Retryable)
-        {
-            await ReleaseAsync(db, job, reason, failedBy: runner.Id, free: false, ct);
-        }
-        else
-        {
-            await FinishAsync(db, job, GpuJobStatus.Failed, reason, null, ct);
-        }
+        var changed = failure.Shutdown ? await ReleaseAsync(db, job, reason, failedBy: null, free: true, ct)
+            : failure.Retryable ? await ReleaseAsync(db, job, reason, failedBy: runner.Id, free: false, ct)
+            : await FinishAsync(db, job, GpuJobStatus.Failed, reason, null, ct);
+        return changed ? RunnerJobOutcome.Ok : await LostAsync(runner, jobId, ct);
+    }
 
-        return RunnerJobOutcome.Ok;
+    /// <summary>
+    /// Records progress and renews the lease by the job's <see cref="RecognitionJob.LeaseSeconds"/>, while <paramref name="job"/>
+    /// is still held as read (same runner process). Whether it was.
+    /// </summary>
+    internal async Task<bool> HeartbeatAsync(BlocwerkDbContext db, RecognitionJob job, RunnerProgress report, CancellationToken ct)
+    {
+        var lease = Now + TimeSpan.FromSeconds(job.LeaseSeconds);
+        var progress = report.Fraction is { } f && double.IsFinite(f) ? Math.Clamp(f, 0, 1) : job.Progress;
+        var stage = GpuJobQueue.Clip(report.Detail ?? report.Stage, 200) ?? job.Stage;
+        var updated = await AsRead(db.RecognitionJobs, job)
+            .ExecuteUpdateAsync(
+                s => s.SetProperty(j => j.Status, GpuJobStatus.Running)
+                    .SetProperty(j => j.LeaseExpiresAt, lease)
+                    .SetProperty(j => j.Progress, progress)
+                    .SetProperty(j => j.Stage, stage),
+                ct);
+        return updated == 1;
+    }
+
+    /// <summary>Why a call that changed nothing failed: the job moved on meanwhile, so never <see cref="RunnerJobOutcome.Ok"/>.</summary>
+    private async Task<RunnerJobOutcome> LostAsync(GpuRunner runner, Guid jobId, CancellationToken ct)
+    {
+        var (outcome, _) = await FindClaimedAsync(runner, jobId, ct);
+        return outcome == RunnerJobOutcome.Ok ? RunnerJobOutcome.Gone : outcome;
     }
 
     private static bool IsJsonObject(string json)
