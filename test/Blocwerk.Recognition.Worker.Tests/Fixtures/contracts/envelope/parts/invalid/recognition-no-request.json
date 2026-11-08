@@ -1,0 +1,1 @@
+{"version": 1, "service": "recognition", "kind": "presence", "parts": [{"name": "old", "file": "a.jpg"}, {"name": "new", "file": "b.jpg"}]}

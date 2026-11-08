@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "queries": [
+    {"newX": 1510, "newY": 2188, "oldX": 1498, "oldY": 2170, "scale": 1.0},
+    {"newX": 200, "newY": 300, "oldX": 190, "oldY": 310, "scale": 0.5, "radiusPx": 42}
+  ]
+}

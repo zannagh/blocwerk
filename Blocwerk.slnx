@@ -7,6 +7,7 @@
   <Folder Name="/test/">
     <Project Path="test/Blocwerk.Core.Tests/Blocwerk.Core.Tests.csproj" />
     <Project Path="test/Blocwerk.HoldDetection.Tests/Blocwerk.HoldDetection.Tests.csproj" />
+    <Project Path="test/Blocwerk.Recognition.Worker.Tests/Blocwerk.Recognition.Worker.Tests.csproj" />
     <Project Path="test/browser/seed/Blocwerk.Browser.Seed.csproj" />
   </Folder>
   <Folder Name="/tools/">
@@ -18,6 +19,7 @@
   <Project Path="src/Blocwerk.Core/Blocwerk.Core.csproj" />
   <Project Path="src/Blocwerk.HoldDetection/Blocwerk.HoldDetection.csproj" />
   <Project Path="src/Blocwerk.Recognition.Abstractions/Blocwerk.Recognition.Abstractions.csproj" />
+  <Project Path="src/Blocwerk.Recognition.Worker/Blocwerk.Recognition.Worker.csproj" />
   <Project Path="src/Blocwerk.Shared.Ui/Blocwerk.Shared.Ui.csproj" />
   <Project Path="src/Blocwerk.Web/Blocwerk.Web.csproj" />
 </Solution>

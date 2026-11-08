@@ -1,0 +1,10 @@
+{
+  "jobId": "3b1d7c528e444f0a9d635a2c7e91b0f4",
+  "kind": "presence",
+  "status": "succeeded",
+  "progress": 1.0,
+  "stage": "done",
+  "createdAt": "2026-11-08T10:00:00+00:00",
+  "updatedAt": "2026-11-08T10:00:02+00:00",
+  "result": {"version": 1, "scores": [0.91, null]}
+}

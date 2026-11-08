@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <!-- Design §4: workstation GC, conserve memory; one job at a time in a small pod. -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Blocwerk.Recognition.Abstractions\Blocwerk.Recognition.Abstractions.csproj" />
+    <ProjectReference Include="..\Blocwerk.HoldDetection\Blocwerk.HoldDetection.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Blocwerk.Recognition.Worker.Tests" />
+  </ItemGroup>
+
+</Project>

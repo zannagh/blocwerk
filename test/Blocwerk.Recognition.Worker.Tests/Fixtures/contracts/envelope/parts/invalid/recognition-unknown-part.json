@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "service": "recognition",
+  "kind": "presence",
+  "parts": [{"name": "photos", "file": "a.jpg"}]
+}

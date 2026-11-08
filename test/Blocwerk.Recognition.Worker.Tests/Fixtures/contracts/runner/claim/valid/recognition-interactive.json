@@ -1,0 +1,13 @@
+{
+  "jobId": "3b1d7c52-8e44-4f0a-9d63-5a2c7e91b0f4",
+  "quality": "draft",
+  "leaseSeconds": 30,
+  "bundleBytes": 2400000,
+  "bundleSha256": "1e6ed65d77d6364eeaed5a745ba5c4985ae2b700dd85d7cf7f027bdf294a33fc",
+  "previews": false,
+  "reattached": false,
+  "wallId": "0c3b8f7e-2d4a-4e8b-b1f2-7a9e5c3d1f20",
+  "captureId": null,
+  "kind": "outline-holds",
+  "requiredMemoryMb": 520
+}

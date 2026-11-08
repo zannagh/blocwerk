@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "service": "recognition",
+  "kind": "detect-holds@2",
+  "parts": [
+    {"name": "photos", "file": "p01.jpg"},
+    {"name": "photos", "file": "p02.jpg"},
+    {
+      "name": "request",
+      "json": {
+        "version": 1,
+        "tiling": {"enabled": true, "tileSize": 1280, "overlap": 256, "confidence": 0.35, "sampling": "nearest"},
+        "wholeImageConfidence": 0.25,
+        "windowIoU": 0.45,
+        "model": {
+          "name": "holds-yolo11m",
+          "sha256": "9f2c1e4b7a6d3c5e8b0a1d2f4c6e8a0b1d3f5a7c9e1b3d5f7a9c1e3b5d7f9a1b"
+        }
+      }
+    }
+  ]
+}

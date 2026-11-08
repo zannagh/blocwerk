@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "service": "splat",
+  "kind": "markers",
+  "parts": [{"name": "photo", "file": "a.jpg"}]
+}

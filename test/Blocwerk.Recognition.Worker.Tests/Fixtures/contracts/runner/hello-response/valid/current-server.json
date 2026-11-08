@@ -1,0 +1,6 @@
+{
+  "runnerId": "3e1f7a52-90b1-4c55-8d0e-2b6a4f9c7d11",
+  "name": "gpu-runner-prod",
+  "pollSeconds": 25,
+  "pauseAware": true
+}
