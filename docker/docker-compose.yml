@@ -144,7 +144,7 @@ services:
       - otel-dashboard
     restart: unless-stopped
 
-  # Recognition worker (docker/recognition/, src/Blocwerk.Recognition.Worker): hold detection, outlines, markers,
+  # Recognition worker (zannagh/blocwerk-recognition): hold detection, outlines, markers,
   # presence, panel matching and texture matching for the app, pulled through the runner API as the instance runner
   # (one job at a time). Started by default with no setup: it reads the instance key the app generated
   # (./recognition-key, read-only) unless RECOGNITION_INSTANCEKEY is set, and waits for that file while the app has not

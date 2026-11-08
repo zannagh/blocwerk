@@ -45,25 +45,16 @@
     <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.1" />
     <PackageVersion Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" Version="1.12.0-beta.1" />
 
-    <!-- Hold Detection -->
-    <PackageVersion Include="YoloDotNet" Version="3.1.0" />
-    <PackageVersion Include="Microsoft.ML.OnnxRuntime" Version="1.22.0" />
+    <!-- Hold recognition, from zannagh/blocwerk-recognition (GitHub Packages, see nuget.config). Blocwerk.HoldDetection
+         brings OpenCvSharp with both linux runtimes and the CPU ONNX runtime; the GPU ONNX packages are only
+         referenced to exclude them (Blocwerk.Web.csproj). -->
+    <PackageVersion Include="Blocwerk.Recognition.Abstractions" Version="0.1.0" />
+    <PackageVersion Include="Blocwerk.HoldDetection" Version="0.1.0" />
     <PackageVersion Include="Microsoft.ML.OnnxRuntime.Gpu" Version="1.22.1" />
     <PackageVersion Include="Microsoft.ML.OnnxRuntime.Gpu.Windows" Version="1.22.1" />
     <PackageVersion Include="Microsoft.ML.OnnxRuntime.Gpu.Linux" Version="1.22.1" />
     <PackageVersion Include="SkiaSharp" Version="3.119.1" />
     <PackageVersion Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="3.119.1" />
-
-    <!-- OpenCvSharp for cross-image hold matching (big wall). The native runtime is picked
-         per target OS *and* architecture in Blocwerk.HoldDetection.csproj: osx_arm64 ships
-         at a different version line than the linux runtimes, so the csproj conditions on it.
-         The linux x64 runtime only exists as the "official" (portable RID, statically linked)
-         package — OpenCvSharp4.runtime.linux-x64 stalled at 4.10 and the ubuntu.*-x64 ones
-         at 4.6, so "official" is the only x64 build on the pinned 4.13 line. -->
-    <PackageVersion Include="OpenCvSharp4" Version="4.13.0.20260526" />
-    <PackageVersion Include="OpenCvSharp4.runtime.linux-arm64" Version="4.13.0.20260526" />
-    <PackageVersion Include="OpenCvSharp4.official.runtime.linux-x64" Version="4.13.0.20260526" />
-    <PackageVersion Include="OpenCvSharp4.runtime.osx_arm64" Version="4.8.1" />
 
     <!-- Testing packages -->
     <PackageVersion Include="coverlet.collector" Version="6.0.2" />

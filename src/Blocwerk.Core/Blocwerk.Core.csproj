@@ -22,11 +22,12 @@
     <PackageReference Include="Markdig" />
     <PackageReference Include="System.Security.Cryptography.Xml" />
     <PackageReference Include="SkiaSharp" />
+    <!-- Hold recognition contracts, from zannagh/blocwerk-recognition. -->
+    <PackageReference Include="Blocwerk.Recognition.Abstractions" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Blocwerk.Contracts\Blocwerk.Contracts.csproj" />
-    <ProjectReference Include="..\Blocwerk.Recognition.Abstractions\Blocwerk.Recognition.Abstractions.csproj" />
   </ItemGroup>
 
 </Project>

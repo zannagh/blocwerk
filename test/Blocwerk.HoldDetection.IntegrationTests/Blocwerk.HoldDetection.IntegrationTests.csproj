@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The HoldDetection tests that need Core's entities, wall geometry and texture registration. The rest of them
+       moved to zannagh/blocwerk-recognition with the package. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Blocwerk.HoldDetection" />
+    <!-- YoloDotNet pulls in the GPU ONNX runtime again in every project that references the package. -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.Gpu" ExcludeAssets="all" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.Gpu.Windows" ExcludeAssets="all" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.Gpu.Linux" ExcludeAssets="all" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Blocwerk.Core\Blocwerk.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Fixtures\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
