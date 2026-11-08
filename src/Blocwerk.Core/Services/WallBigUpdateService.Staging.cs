@@ -5,6 +5,7 @@ using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Feed;
 using Blocwerk.Core.HoldStacks;
+using Blocwerk.Core.Recognition.Remote;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -246,8 +247,11 @@ public partial class WallBigUpdateService
     {
         var wallId = wall.Id;
         var centerPanelId = Guid.Empty;
-        foreach (var photo in photos)
+        using var recognitionWall = RecognitionWallScope.Begin(wallId);
+        var queued = QueueDetections(photos);
+        for (var i = 0; i < photos.Count; i++)
         {
+            var photo = photos[i];
             // Stored at full resolution (already stripped of location/metadata by StageAsync, pixels
             // and EXIF orientation untouched): hold detection and the panel matcher below must see the
             // camera's original. The browser is served downscaled variants instead, generated on
@@ -274,10 +278,11 @@ public partial class WallBigUpdateService
             }
 
             // One gate slot for the panel's detection AND enrichment: the next panel (or another user's
-            // run) only starts decoding once this one's rasters and model buffers are gone.
+            // run) only starts decoding once this one's rasters and model buffers are gone (a queued detection outside it).
+            var detected = queued is null ? null : await AwaitOrObserveRestAsync(queued, i);
             var staged = recognitionGate is null
-                ? await DetectAndEnrichPanelAsync(db, wall, panel, image, stagedGen)
-                : await recognitionGate.RunAsync("stage-panel", () => DetectAndEnrichPanelAsync(db, wall, panel, image, stagedGen));
+                ? await DetectAndEnrichPanelAsync(db, wall, panel, image, stagedGen, detected)
+                : await recognitionGate.RunAsync("stage-panel", () => DetectAndEnrichPanelAsync(db, wall, panel, image, stagedGen, detected));
             await HoldStacker.StackNewAsync(db, staged);
         }
 

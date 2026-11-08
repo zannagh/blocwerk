@@ -5,6 +5,7 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Recognition.Remote;
 
 namespace Blocwerk.Core.Services;
 
@@ -23,10 +24,44 @@ public partial class WallBigUpdateService
         }
     }
 
-    /// <summary>Detects one staged panel's holds, adds them at <paramref name="stagedGen"/> and enriches them.</summary>
-    private async Task<List<Hold>> DetectAndEnrichPanelAsync(BlocwerkDbContext db, Wall wall, WallPanel panel, byte[] image, int stagedGen)
+    /// <summary>
+    /// Through the recognition queue every panel's detection is queued at once, so a second runner shortens the wall; the
+    /// caller applies the results in panel order. Null in the app: one panel after the other, each in its own gate slot.
+    /// </summary>
+    private List<Task<List<DetectedHold>>>? QueueDetections(IReadOnlyList<BigUpdatePhoto> photos) =>
+        holdDetectionService is QueuedHoldDetectionService
+            ? photos.Select(p => holdDetectionService.DetectHoldsAsync(p.Image)).ToList()
+            : null;
+
+    /// <summary>
+    /// Panel <paramref name="index"/>'s queued detection. When it throws, the later panels' detections are still observed
+    /// (each of their jobs then ends on its own), so none of their failures goes unobserved.
+    /// </summary>
+    private static async Task<List<DetectedHold>> AwaitOrObserveRestAsync(List<Task<List<DetectedHold>>> queued, int index)
     {
-        var detected = await holdDetectionService.DetectHoldsAsync(image);
+        try
+        {
+            return await queued[index];
+        }
+        catch
+        {
+            foreach (var rest in queued.Skip(index + 1))
+            {
+                _ = rest.ContinueWith(t => t.Exception, TaskScheduler.Default);
+            }
+
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Detects one staged panel's holds (unless <paramref name="detected"/> already holds them), adds them at
+    /// <paramref name="stagedGen"/> and enriches them.
+    /// </summary>
+    private async Task<List<Hold>> DetectAndEnrichPanelAsync(
+        BlocwerkDbContext db, Wall wall, WallPanel panel, byte[] image, int stagedGen, List<DetectedHold>? detected = null)
+    {
+        detected ??= await holdDetectionService.DetectHoldsAsync(image);
         var staged = new List<Hold>(detected.Count);
         foreach (var d in detected)
         {

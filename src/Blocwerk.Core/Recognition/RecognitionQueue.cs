@@ -93,6 +93,13 @@ public sealed partial class RecognitionQueue(
         return await db.RecognitionJobs.AsNoTracking().FirstOrDefaultAsync(j => j.Id == jobId, ct);
     }
 
+    /// <summary>When the instance runner (the recognition pod) last called, e.g. to claim; null without one.</summary>
+    public async Task<DateTimeOffset?> InstanceRunnerSeenAtAsync(CancellationToken ct)
+    {
+        await using var db = dbContextFactory.CreateDbContext();
+        return await db.GpuRunners.AsNoTracking().Where(r => r.Scope == RunnerScope.Instance).Select(r => r.LastSeenAt).FirstOrDefaultAsync(ct);
+    }
+
     /// <summary>The newest job the caller queued under <paramref name="callerKey"/> (a background job after a restart), or null.</summary>
     public async Task<RecognitionJob?> FindByCallerKeyAsync(string callerKey, CancellationToken ct)
     {

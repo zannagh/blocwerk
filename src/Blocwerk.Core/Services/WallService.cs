@@ -9,6 +9,7 @@ using Blocwerk.Core.Enums;
 using Blocwerk.Core.Feed;
 using Blocwerk.Core.Helpers;
 using Blocwerk.Core.HoldStacks;
+using Blocwerk.Core.Recognition.Remote;
 using Blocwerk.Core.Telemetry;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -402,6 +403,7 @@ public class WallService : IWallService
                 return wall;
             }
 
+            using var recognitionWall = RecognitionWallScope.Begin(wallId);
             var detectedHolds = await _holdDetectionService.DetectHoldsAsync(photo);
             var newHolds = detectedHolds.Select(detected => new Hold
             {

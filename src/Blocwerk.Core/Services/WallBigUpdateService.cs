@@ -5,6 +5,7 @@ using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Helpers;
 using Blocwerk.Core.HoldMoves;
+using Blocwerk.Core.Recognition.Remote;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -82,6 +83,7 @@ public partial class WallBigUpdateService : IWallBigUpdateService
     public async Task<BigUpdateSession> ResumeAsync(Guid wallId, bool use3DEvidence = false)
     {
         EnsureRecognitionOn();
+        using var recognitionWall = RecognitionWallScope.Begin(wallId);
         var user = await currentUserService.GetCurrentUserAsync();
         await using var db = await dbContextFactory.CreateDbContextAsync();
         db.CurrentUserId = user.Id;

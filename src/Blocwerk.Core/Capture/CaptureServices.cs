@@ -60,6 +60,7 @@ public static class CaptureServices
 
         // The hold proposal search's detection on a runner that finds holds (the app detects itself without one).
         services.AddSingleton<Runners.RunnerHoldDetection>();
+        services.AddSingleton<Recognition.Remote.QueuedCaptureHoldDetection>();
 
         // Photo-real previews a runner uploads while it trains: installed beside the capture worker (GpuPreviewWorker).
         services.AddSingleton<Runners.GpuPreviewQueue>();

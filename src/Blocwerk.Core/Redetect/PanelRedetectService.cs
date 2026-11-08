@@ -10,6 +10,7 @@ using Blocwerk.Core.Entities;
 using Blocwerk.Core.Holds.Colors;
 using Blocwerk.Core.HoldStacks;
 using Blocwerk.Core.LookOver;
+using Blocwerk.Core.Recognition.Remote;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -230,6 +231,7 @@ public sealed partial class PanelRedetectService : IPanelRedetectService
         var photo = panel.Photo!;
 
         // The detector works for seconds on the calling thread; from the editor that thread is the page's own.
+        using var recognitionWall = RecognitionWallScope.Begin(wall.Id);
         var detected = await Task.Run(() => holdDetectionService.DetectHoldsAsync(photo), ct);
         var fresh = detected.Select(d => new Hold
         {
