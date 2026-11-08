@@ -40,8 +40,11 @@ public sealed class YoloBoxDetector : IDisposable
         }
     }
 
-    /// <summary>Detects on one photo; boxes in its pixels, as <c>[left, top, right, bottom, confidence, label]</c>.</summary>
-    public (int Width, int Height, IReadOnlyList<object[]> Boxes) Detect(byte[] photo, DetectRequest request)
+    /// <summary>
+    /// Detects on one photo; boxes in its pixels, as <c>[left, top, right, bottom, confidence, label]</c>. The tiled pass
+    /// checks <paramref name="ct"/> between windows, so a cancelled job stops its native work within one window.
+    /// </summary>
+    public (int Width, int Height, IReadOnlyList<object[]> Boxes) Detect(byte[] photo, DetectRequest request, CancellationToken ct)
     {
         lock (gate)
         {
@@ -55,7 +58,7 @@ public sealed class YoloBoxDetector : IDisposable
             if (request.Tiling.Enabled)
             {
                 using var raster = encoded.ToRasterImage(true);
-                boxes = YoloTiledDetector.Detect(yolo, options, raster, request.Tiling).Boxes;
+                boxes = YoloTiledDetector.Detect(yolo, options, raster, request.Tiling, ct).Boxes;
             }
             else
             {

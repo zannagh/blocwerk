@@ -29,7 +29,7 @@ public sealed class DetectHoldsHandler(ModelStore models, YoloBoxDetector detect
         foreach (var (file, bytes) in photos)
         {
             ct.ThrowIfCancellationRequested();
-            var (width, height, boxes) = detector.Detect(bytes, request);
+            var (width, height, boxes) = detector.Detect(bytes, request, ct);
             result[file] = new { width, height, boxes };
         }
 

@@ -7,7 +7,9 @@ using System.Text.Json.Nodes;
 using Blocwerk.Recognition.Worker.Envelope;
 using Blocwerk.Recognition.Worker.Jobs;
 using Blocwerk.Recognition.Worker.Runtime;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 
 namespace Blocwerk.Recognition.Worker.Tests;
 
@@ -17,6 +19,7 @@ public class JobExecutorTests
     private static readonly object PresenceRequest = new { version = 1, queries = new[] { new { newX = 1, newY = 1, oldX = 1, oldY = 1, scale = 1 } } };
 
     private readonly FakeRunnerServer server = new();
+    private readonly WorkerExit exit = new(Substitute.For<IHostApplicationLifetime>());
 
     [Fact]
     public async Task ASucceededJobPutsTheStatusZip()
@@ -47,7 +50,7 @@ public class JobExecutorTests
     }
 
     [Fact]
-    public async Task MemoryAboveTheLimitFailsTheJobAsResource()
+    public async Task MemoryAboveTheLimitFailsTheJobAsResource_AndEndsTheProcessWhenItStaysThere()
     {
         var claim = Serve(PresenceBundle());
         var handler = Waiting();
@@ -58,6 +61,8 @@ public class JobExecutorTests
         var failure = Failure();
         Assert.Equal(("resource", true), ((string?)failure["failureKind"], (bool)failure["retryable"]!));
         Assert.Null(server.Body("/result"));
+        Assert.Equal(WorkerExit.MemoryNotReleased, exit.Code);
+        Environment.ExitCode = 0;
     }
 
     [Fact]
@@ -113,6 +118,7 @@ public class JobExecutorTests
     private JobExecutor Executor(StubHandler handler, long maxMemoryMb = 0)
     {
         var options = TestOptions.Create() with { JobMaxMemoryMb = maxMemoryMb };
-        return new JobExecutor(server.Client(options), [handler], handler, options, TimeProvider.System, NullLogger<JobExecutor>.Instance);
+        var health = new WorkerHealth(options, TimeProvider.System);
+        return new JobExecutor(server.Client(options), [handler], handler, options, health, exit, TimeProvider.System, NullLogger<JobExecutor>.Instance);
     }
 }

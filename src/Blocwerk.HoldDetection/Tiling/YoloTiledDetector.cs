@@ -24,8 +24,14 @@ internal static class YoloTiledDetector
     /// <param name="options">Its options (sampling is switched per call; the caller serialises).</param>
     /// <param name="image">The decoded raster image.</param>
     /// <param name="settings">Tiling settings.</param>
+    /// <param name="cancellation">Checked between windows (an inference itself cannot be interrupted).</param>
     /// <returns>The merged boxes and the number of windows run.</returns>
-    public static (List<PixelBox> Boxes, int Windows) Detect(Yolo yolo, YoloOptions options, SKImage image, HoldDetectionTilingSettings settings)
+    public static (List<PixelBox> Boxes, int Windows) Detect(
+        Yolo yolo,
+        YoloOptions options,
+        SKImage image,
+        HoldDetectionTilingSettings settings,
+        CancellationToken cancellation = default)
     {
         int w = image.Width;
         int h = image.Height;
@@ -36,6 +42,7 @@ internal static class YoloTiledDetector
         options.SamplingOptions = sampling;
         foreach (var window in windows)
         {
+            cancellation.ThrowIfCancellationRequested();
             using var tile = image.Subset(SKRectI.Create(window.X, window.Y, window.Width, window.Height));
             var local = Run(yolo, tile, settings.Confidence);
             all.AddRange(TileBoxMerger.ToImage(local, window, w, h));
@@ -44,6 +51,7 @@ internal static class YoloTiledDetector
         // Only a whole-image pass sees an object wider than the overlap uncut. Keep just those from it.
         if (windows.Count > 1)
         {
+            cancellation.ThrowIfCancellationRequested();
             int minSide = settings.Overlap / 2;
             all.AddRange(Run(yolo, image, settings.Confidence).Where(b => LongSide(b) >= minSide));
         }

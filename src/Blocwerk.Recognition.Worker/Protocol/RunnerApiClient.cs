@@ -22,9 +22,16 @@ public sealed class RunnerApiClient
     {
         this.http = http;
         http.BaseAddress = options.Server;
-        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", options.Key);
+        if (options.Key.Length > 0)
+        {
+            UseKey(options.Key);
+        }
+
         http.DefaultRequestHeaders.Add("X-Blocwerk-Claim", options.ClaimToken);
     }
+
+    /// <summary>Sets the bearer key; called once, before the first call, when the key comes from the key file.</summary>
+    public void UseKey(string key) => http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", key);
 
     public async Task<RunnerHelloAnswer> HelloAsync(RunnerHello hello, CancellationToken ct)
     {

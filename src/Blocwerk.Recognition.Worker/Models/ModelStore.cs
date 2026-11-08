@@ -9,10 +9,13 @@ namespace Blocwerk.Recognition.Worker.Models;
 
 /// <summary>
 /// Finds a model by SHA-256: first among the files of the read-only models directory (the pod's mount), then in the cache
-/// directory, else it fetches <c>GET /api/runners/models/{sha256}</c> once into the cache (external runners).
+/// directory, else it fetches <c>GET /api/runners/models/{sha256}</c> once into the cache (external runners). The cache keeps
+/// the <see cref="CachedModels"/> most recently used models; older ones are deleted after a fetch.
 /// </summary>
 public sealed class ModelStore(WorkerOptions options, RunnerApiClient api, ILogger<ModelStore> logger)
 {
+    public const int CachedModels = 2;
+
     private readonly SemaphoreSlim gate = new(1, 1);
     private readonly Dictionary<string, string> known = new(StringComparer.Ordinal);
     private bool scanned;
@@ -31,6 +34,11 @@ public sealed class ModelStore(WorkerOptions options, RunnerApiClient api, ILogg
             await ScanAsync(ct);
             if (known.TryGetValue(sha256, out var path))
             {
+                if (InCache(path))
+                {
+                    File.SetLastWriteTimeUtc(path, DateTime.UtcNow);
+                }
+
                 return path;
             }
 
@@ -46,7 +54,9 @@ public sealed class ModelStore(WorkerOptions options, RunnerApiClient api, ILogg
             }
 
             File.Move(partial, target, overwrite: true);
-            return known[sha256] = target;
+            known[sha256] = target;
+            Evict(target);
+            return target;
         }
         finally
         {
@@ -67,6 +77,26 @@ public sealed class ModelStore(WorkerOptions options, RunnerApiClient api, ILogg
         finally
         {
             gate.Release();
+        }
+    }
+
+    private bool InCache(string path) =>
+        Path.GetDirectoryName(path) == Full(options.ModelCacheDirectory) && Full(options.ModelCacheDirectory) != Full(options.ModelsDirectory);
+
+    private static string Full(string directory) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
+
+    /// <summary>Deletes the cached models beyond the <see cref="CachedModels"/> most recently used (<paramref name="keep"/> one of them).</summary>
+    private void Evict(string keep)
+    {
+        var stale = known.Where(k => k.Value != keep && InCache(k.Value))
+            .OrderByDescending(k => File.GetLastWriteTimeUtc(k.Value))
+            .Skip(CachedModels - 1)
+            .ToList();
+        foreach (var (sha256, path) in stale)
+        {
+            File.Delete(path);
+            known.Remove(sha256);
+            logger.LogInformation("Model {Sha256} evicted from the cache", sha256);
         }
     }
 

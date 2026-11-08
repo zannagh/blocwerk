@@ -15,5 +15,7 @@ internal static class TestOptions
         ModelCacheDirectory = Path.Combine(Path.GetTempPath(), "blocwerk-worker-tests-none"),
         WatchdogInterval = TimeSpan.FromMilliseconds(10),
         RetryDelay = TimeSpan.FromMilliseconds(10),
+        ExitBackoff = TimeSpan.FromMilliseconds(10),
+        MemoryReleaseGrace = TimeSpan.FromMilliseconds(50),
     };
 }

@@ -8,9 +8,10 @@ using Blocwerk.Recognition.Worker.Protocol;
 namespace Blocwerk.Recognition.Worker.Runtime;
 
 /// <summary>
-/// The runner loop (protocol §1.2): warm the models, hello, then claim (long-poll) and run one job at a time. A hello whose
-/// answer confirms no recognition capability (a 1.1 server) stops the worker with exit code 2 (§1.5); a refused key with 3.
-/// After a transient error the loop says hello again before the next claim.
+/// The runner loop (protocol §1.2): read the key file when the key comes from one, warm the models, hello, then claim
+/// (long-poll) and run one job at a time. A hello whose answer confirms no recognition capability (a 1.1 server) stops the
+/// worker with exit code 2 (§1.5); a refused key with 3; both after <see cref="WorkerOptions.ExitBackoff"/>, so a restart
+/// loop stays slow. After a transient error the loop says hello again before the next claim.
 /// </summary>
 public sealed class RunnerLoop(
     RunnerApiClient api,
@@ -20,13 +21,9 @@ public sealed class RunnerLoop(
     IMemoryProbe memory,
     WorkerOptions options,
     WorkerHealth health,
-    IHostApplicationLifetime lifetime,
+    WorkerExit exit,
     ILogger<RunnerLoop> logger) : BackgroundService
 {
-    public const int ExitNotConfirmed = 2;
-
-    public const int ExitUnauthorized = 3;
-
     private const long Mb = 1024 * 1024;
 
     protected override async Task ExecuteAsync(CancellationToken stopping)
@@ -34,12 +31,17 @@ public sealed class RunnerLoop(
         await Task.Yield();
         try
         {
+            if (options.Key.Length == 0 && options.KeyFile is { } keyFile)
+            {
+                api.UseKey(await KeyFileWait.ReadAsync(keyFile, options, health, logger, stopping));
+            }
+
             await WarmAsync(stopping);
             while (!stopping.IsCancellationRequested)
             {
                 if (!await HelloAsync(stopping))
                 {
-                    Stop(ExitNotConfirmed);
+                    await ExitAsync(WorkerExit.NotConfirmed, stopping);
                     return;
                 }
 
@@ -48,8 +50,8 @@ public sealed class RunnerLoop(
         }
         catch (UnauthorizedAccessException ex)
         {
-            logger.LogCritical("{Message} Check RECOGNITION__INSTANCEKEY / RECOGNITION__RUNNERKEY.", ex.Message);
-            Stop(ExitUnauthorized);
+            logger.LogCritical("{Message} Check RECOGNITION__INSTANCEKEY / RECOGNITION__INSTANCEKEYFILE / RECOGNITION__RUNNERKEY.", ex.Message);
+            await ExitAsync(WorkerExit.Unauthorized, stopping);
         }
         catch (OperationCanceledException) when (stopping.IsCancellationRequested)
         {
@@ -75,6 +77,7 @@ public sealed class RunnerLoop(
         {
             try
             {
+                health.MarkAlive();
                 var answer = await api.HelloAsync(Hello(), stopping);
                 var confirmed = executor.Kinds.Intersect(answer.Capabilities ?? []).ToList();
                 if (confirmed.Count == 0)
@@ -102,7 +105,10 @@ public sealed class RunnerLoop(
             RunnerClaim? claim;
             try
             {
-                claim = await api.ClaimAsync(stopping);
+                health.MarkAlive();
+                using var call = CancellationTokenSource.CreateLinkedTokenSource(stopping);
+                call.CancelAfter(options.ClaimTimeout);
+                claim = await api.ClaimAsync(call.Token);
                 health.MarkContact();
             }
             catch (Exception ex) when (IsTransient(ex, stopping))
@@ -136,9 +142,10 @@ public sealed class RunnerLoop(
     private static bool IsTransient(Exception ex, CancellationToken stopping) =>
         ex is HttpRequestException || (ex is TaskCanceledException && !stopping.IsCancellationRequested);
 
-    private void Stop(int exitCode)
+    private async Task ExitAsync(int exitCode, CancellationToken stopping)
     {
-        Environment.ExitCode = exitCode;
-        lifetime.StopApplication();
+        logger.LogInformation("Exiting with code {Code} in {Backoff}", exitCode, options.ExitBackoff);
+        await Task.Delay(options.ExitBackoff, stopping).ContinueWith(_ => { }, TaskScheduler.Default);
+        exit.Request(exitCode);
     }
 }

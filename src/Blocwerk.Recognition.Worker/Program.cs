@@ -22,6 +22,7 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton(new RunnerApiClient(new HttpClient { Timeout = TimeSpan.FromMinutes(5) }, options));
 builder.Services.AddSingleton<IMemoryProbe, CgroupMemoryProbe>();
 builder.Services.AddSingleton<WorkerHealth>();
+builder.Services.AddSingleton<WorkerExit>();
 builder.Services.AddSingleton<ModelStore>();
 builder.Services.AddSingleton<YoloBoxDetector>();
 builder.Services.AddSingleton<IMarkerDetectionService, ArucoMarkerDetectionService>();
@@ -36,8 +37,8 @@ builder.Services.AddHostedService<RunnerLoop>();
 
 var app = builder.Build();
 
-// Liveness: the process answers. Readiness: models warm, hello answered, the server heard from recently.
-app.MapGet("/health", (WorkerHealth health) => Results.Json(health.Describe()));
+// Liveness: a claim, hello or heartbeat was attempted recently. Readiness: models warm, hello answered, the server heard from recently.
+app.MapGet("/health", (WorkerHealth health) => Results.Json(health.Describe(), statusCode: health.Live ? 200 : 503));
 app.MapGet("/health/ready", (WorkerHealth health) => Results.Json(health.Describe(), statusCode: health.Ready ? 200 : 503));
 
 app.Run();

@@ -9,15 +9,20 @@ using Blocwerk.Recognition.Worker.Protocol;
 namespace Blocwerk.Recognition.Worker.Runtime;
 
 /// <summary>
-/// Runs one claimed job: bundle (size and SHA-256 checked), the kind's handler under a lease heartbeat and the memory
-/// watchdog, then the result zip, or <c>fail</c> with how it should count. A job the server ended (<c>404</c>/<c>410</c>)
-/// is dropped without a call. The caller runs one job at a time; an abandoned handler is awaited before returning.
+/// Runs one claimed job: bundle (size and SHA-256 checked), the kind's handler under a lease heartbeat, the memory
+/// watchdog and its run deadline (<see cref="RunBudget"/>), then the result zip, or <c>fail</c> with how it should count. A
+/// job the server ended (<c>404</c>/<c>410</c>) is dropped without a call. The caller runs one job at a time; an abandoned
+/// handler is awaited before returning, until the run deadline plus <see cref="RunBudget.SettleMargin"/>. Work that outlives
+/// that, or memory the watchdog could not get back, ends the process (<see cref="WorkerExit"/>): native work cannot be
+/// cancelled, only restarted away.
 /// </summary>
 public sealed class JobExecutor(
     RunnerApiClient api,
     IEnumerable<IRecognitionJobHandler> handlers,
     IMemoryProbe memory,
     WorkerOptions options,
+    WorkerHealth health,
+    WorkerExit exit,
     TimeProvider time,
     ILogger<JobExecutor> logger)
 {
@@ -32,15 +37,19 @@ public sealed class JobExecutor(
     {
         logger.LogInformation("Job {JobId} ({Kind}, lease {Lease} s, {Memory} MB) claimed", claim.JobId, claim.Kind, claim.LeaseSeconds, claim.RequiredMemoryMb);
         using var job = CancellationTokenSource.CreateLinkedTokenSource(stopping);
-        var heartbeat = LeaseHeartbeat.Start(api, claim, job, logger);
-        var watchdog = MemoryWatchdog.Start(memory, options.JobMaxMemoryMb, options.WatchdogInterval, job);
+        var heartbeat = LeaseHeartbeat.Start(api, claim, job, health, logger);
+        var watchdog = MemoryWatchdog.Start(memory, options, job);
+        var started = time.GetUtcNow();
+        var settleBy = DateTimeOffset.MaxValue;
         RecognitionEnvelope? envelope = null;
         Task<object>? work = null;
         try
         {
             var handler = byKind.GetValueOrDefault(claim.Kind) ?? throw new InvalidOperationException($"Kind '{claim.Kind}' is not served here.");
-            var started = time.GetUtcNow();
             envelope = RecognitionEnvelope.Read(await api.BundleAsync(claim, job.Token), claim.Kind);
+            var budget = RunBudget.Of(claim, envelope);
+            settleBy = started + budget + RunBudget.SettleMargin;
+            job.CancelAfter(budget);
             work = Task.Run(() => handler.RunAsync(envelope, job.Token), CancellationToken.None);
             var result = await work.WaitAsync(job.Token);
             job.Token.ThrowIfCancellationRequested();
@@ -58,7 +67,7 @@ public sealed class JobExecutor(
         {
             await heartbeat.DisposeAsync();
             await watchdog.DisposeAsync();
-            await Settle(work, envelope);
+            await SettleAsync(claim, work, envelope, watchdog.NotReleased, settleBy);
         }
     }
 
@@ -69,6 +78,7 @@ public sealed class JobExecutor(
         OperationCanceledException when watchdog.Exceeded => new RunnerFailure(
             $"The job needed more than this runner's {options.JobMaxMemoryMb} MB.", Retryable: true, FailureKind: RunnerFailure.Resource),
         OperationCanceledException when stopping.IsCancellationRequested => new RunnerFailure("The recognition worker is stopping.", Retryable: false, Shutdown: true),
+        OperationCanceledException => new RunnerFailure("The job ran past its run deadline.", Retryable: true),
         RecognitionInputException input => new RunnerFailure(input.Message, Retryable: false, FailureKind: input.FailureKind),
         _ => new RunnerFailure($"{ex.GetType().Name}: {ex.Message}", Retryable: true),
     };
@@ -87,11 +97,30 @@ public sealed class JobExecutor(
         }
     }
 
-    private static async Task Settle(Task<object>? work, RecognitionEnvelope? envelope)
+    /// <summary>Waits for an abandoned handler until <paramref name="settleBy"/>; ends the process when it or the memory does not let go.</summary>
+    private async Task SettleAsync(RunnerClaim claim, Task<object>? work, RecognitionEnvelope? envelope, bool memoryNotReleased, DateTimeOffset settleBy)
     {
+        if (memoryNotReleased)
+        {
+            logger.LogCritical("Job {JobId}: memory stayed above {Limit} MB after it was cancelled; restarting the worker", claim.JobId, options.JobMaxMemoryMb);
+            exit.Request(WorkerExit.MemoryNotReleased);
+            return;
+        }
+
         if (work is not null)
         {
-            await work.ContinueWith(_ => { }, CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
+            var settled = work.ContinueWith(_ => { }, CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
+            var left = settleBy - time.GetUtcNow();
+            using var waited = new CancellationTokenSource();
+            var deadline = Task.Delay(left > TimeSpan.Zero ? left : TimeSpan.Zero, time, waited.Token);
+            var first = await Task.WhenAny(settled, deadline);
+            await waited.CancelAsync();
+            if (first != settled)
+            {
+                logger.LogCritical("Job {JobId}: its work did not end by the run deadline; restarting the worker", claim.JobId);
+                exit.Request(WorkerExit.WorkNotSettled);
+                return;
+            }
         }
 
         if (envelope?.MaxPixels > CompactAbovePixels)

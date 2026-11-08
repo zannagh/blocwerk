@@ -28,7 +28,7 @@ public class RunnerLoopTests
         await loop.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(10));
 
         lifetime.Received(1).StopApplication();
-        Assert.Equal(RunnerLoop.ExitNotConfirmed, Environment.ExitCode);
+        Assert.Equal(WorkerExit.NotConfirmed, Environment.ExitCode);
         Assert.DoesNotContain(server.Calls, c => c.Path == "/api/runners/claim");
         Assert.False(health.Ready);
         Environment.ExitCode = 0;
@@ -70,9 +70,10 @@ public class RunnerLoopTests
         var options = TestOptions.Create();
         var api = server.Client(options);
         var health = new WorkerHealth(options, TimeProvider.System);
-        var executor = new JobExecutor(api, [handler], handler, options, TimeProvider.System, NullLogger<JobExecutor>.Instance);
+        var exit = new WorkerExit(lifetime);
+        var executor = new JobExecutor(api, [handler], handler, options, health, exit, TimeProvider.System, NullLogger<JobExecutor>.Instance);
         var models = new ModelStore(options, api, NullLogger<ModelStore>.Instance);
-        var loop = new RunnerLoop(api, executor, models, new YoloBoxDetector(), handler, options, health, lifetime, NullLogger<RunnerLoop>.Instance);
+        var loop = new RunnerLoop(api, executor, models, new YoloBoxDetector(), handler, options, health, exit, NullLogger<RunnerLoop>.Instance);
         return (loop, health);
     }
 }

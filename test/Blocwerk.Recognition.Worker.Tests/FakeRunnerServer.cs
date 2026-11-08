@@ -21,6 +21,9 @@ internal sealed class FakeRunnerServer : HttpMessageHandler
 
     public HttpStatusCode ProgressStatus { get; set; } = HttpStatusCode.OK;
 
+    /// <summary>Gets how long the next progress calls hang, one entry per call (then they answer at once).</summary>
+    public Queue<TimeSpan> ProgressDelays { get; } = new();
+
     public byte[] Model { get; set; } = [];
 
     /// <summary>Gets or sets what runs on every claim call (e.g. stopping the loop once the queue is empty).</summary>
@@ -48,9 +51,19 @@ internal sealed class FakeRunnerServer : HttpMessageHandler
     {
         var body = request.Content is null ? [] : await request.Content.ReadAsByteArrayAsync(cancellationToken);
         var path = request.RequestUri!.AbsolutePath;
+        TimeSpan? delay = null;
         lock (calls)
         {
             calls.Add((request.Method.Method, path, body));
+            if (path.EndsWith("/progress", StringComparison.Ordinal) && ProgressDelays.TryDequeue(out var hang))
+            {
+                delay = hang;
+            }
+        }
+
+        if (delay is { } wait)
+        {
+            await Task.Delay(wait, cancellationToken);
         }
 
         return path switch

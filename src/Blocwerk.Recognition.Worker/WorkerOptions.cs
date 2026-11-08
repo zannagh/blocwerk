@@ -8,7 +8,8 @@ namespace Blocwerk.Recognition.Worker;
 /// <summary>
 /// The worker's settings, from <c>Recognition:*</c> or the environment: <c>RECOGNITION__SERVER</c> (the app's base URL),
 /// <c>RECOGNITION__RUNNERKEY</c> (a <c>bwr_</c> key, external runners) or <c>RECOGNITION__INSTANCEKEY</c> (the instance
-/// runner, runner protocol §1.5), <c>RECOGNITION__MODELSDIR</c> (read-only models mount), <c>RECOGNITION__MODELCACHEDIR</c>
+/// runner, runner protocol §1.5) or else <c>RECOGNITION__INSTANCEKEYFILE</c> (the file the app generates that key into,
+/// read once it exists), <c>RECOGNITION__MODELSDIR</c> (read-only models mount), <c>RECOGNITION__MODELCACHEDIR</c>
 /// (models fetched by hash), <c>RECOGNITION__WARMMODEL</c> (loaded at start) and <c>JOB_MAX_MEMORY_MB</c> (0: no watchdog).
 /// </summary>
 public sealed record WorkerOptions
@@ -18,7 +19,10 @@ public sealed record WorkerOptions
 
     public required Uri Server { get; init; }
 
+    /// <summary>Gets the runner key; empty while it is still to be read from <see cref="KeyFile"/>.</summary>
     public required string Key { get; init; }
+
+    public string? KeyFile { get; init; }
 
     /// <summary>Gets the per-process <c>X-Blocwerk-Claim</c> token, so replicas can share one key.</summary>
     public string ClaimToken { get; init; } = Guid.NewGuid().ToString("N");
@@ -36,18 +40,37 @@ public sealed record WorkerOptions
 
     public TimeSpan RetryDelay { get; init; } = TimeSpan.FromSeconds(5);
 
+    /// <summary>Gets how long the worker waits before exiting with code 2 or 3, so a restart loop does not hammer the app.</summary>
+    public TimeSpan ExitBackoff { get; init; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>Gets how long memory may stay above the limit after the watchdog cancelled a job before the process exits.</summary>
+    public TimeSpan MemoryReleaseGrace { get; init; } = TimeSpan.FromSeconds(2);
+
+    /// <summary>Gets the longest one claim long-poll may take (the server answers within ~25 s).</summary>
+    public TimeSpan ClaimTimeout { get; init; } = TimeSpan.FromSeconds(90);
+
+    /// <summary>Gets how long without a claim attempt or heartbeat before <c>GET /health</c> fails (liveness).</summary>
+    public TimeSpan LivenessTimeout { get; init; } = TimeSpan.FromMinutes(5);
+
     /// <summary>Gets how long without a server answer before the worker reads as not ready.</summary>
     public TimeSpan ContactTimeout { get; init; } = TimeSpan.FromMinutes(2);
 
     public static WorkerOptions Bind(IConfiguration configuration)
     {
         var d = new WorkerOptions { Server = new Uri("http://localhost"), Key = string.Empty };
-        var key = Text(configuration, "Recognition:RunnerKey") ?? Text(configuration, "Recognition:InstanceKey")
-            ?? throw new InvalidOperationException("Set RECOGNITION__INSTANCEKEY (instance runner) or RECOGNITION__RUNNERKEY (bwr_ key).");
+        var key = Text(configuration, "Recognition:RunnerKey") ?? Text(configuration, "Recognition:InstanceKey");
+        var keyFile = key is null ? Text(configuration, "Recognition:InstanceKeyFile") : null;
+        if (key is null && keyFile is null)
+        {
+            throw new InvalidOperationException(
+                "Set RECOGNITION__INSTANCEKEY or RECOGNITION__INSTANCEKEYFILE (instance runner) or RECOGNITION__RUNNERKEY (bwr_ key).");
+        }
+
         return new WorkerOptions
         {
             Server = new Uri(Text(configuration, "Recognition:Server") ?? "http://blocwerk:5050", UriKind.Absolute),
-            Key = key,
+            Key = key ?? string.Empty,
+            KeyFile = keyFile,
             ModelsDirectory = Text(configuration, "Recognition:ModelsDir") ?? d.ModelsDirectory,
             ModelCacheDirectory = Text(configuration, "Recognition:ModelCacheDir") ?? d.ModelCacheDirectory,
             WarmModel = Text(configuration, "Recognition:WarmModel") ?? d.WarmModel,

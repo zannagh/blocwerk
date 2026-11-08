@@ -5,24 +5,29 @@ namespace Blocwerk.Recognition.Worker.Runtime;
 
 /// <summary>
 /// Design §4, layer 3: reads the probe every interval while a job runs and cancels the job once memory passes
-/// <c>JOB_MAX_MEMORY_MB</c>, so the job fails with <c>failureKind: "resource"</c> before the kernel kills the pod.
+/// <c>JOB_MAX_MEMORY_MB</c>, so the job fails with <c>failureKind: "resource"</c> before the kernel kills the pod. Cancelling
+/// stops the managed work only; when memory is still above the limit <c>grace</c> later (native work carries on),
+/// <see cref="NotReleased"/> tells the caller to end the process.
 /// </summary>
 public sealed class MemoryWatchdog : IAsyncDisposable
 {
     private readonly CancellationTokenSource stop = new();
     private readonly Task loop;
 
-    private MemoryWatchdog(IMemoryProbe probe, long limitBytes, TimeSpan interval, CancellationTokenSource job)
+    private MemoryWatchdog(IMemoryProbe probe, long limitBytes, TimeSpan interval, TimeSpan grace, CancellationTokenSource job)
     {
-        loop = limitBytes > 0 ? WatchAsync(probe, limitBytes, interval, job) : Task.CompletedTask;
+        loop = limitBytes > 0 ? WatchAsync(probe, limitBytes, interval, grace, job) : Task.CompletedTask;
     }
 
     public bool Exceeded { get; private set; }
 
+    /// <summary>Gets a value indicating whether memory stayed above the limit for the grace period after the cancel.</summary>
+    public bool NotReleased { get; private set; }
+
     public long PeakBytes { get; private set; }
 
-    public static MemoryWatchdog Start(IMemoryProbe probe, long limitMb, TimeSpan interval, CancellationTokenSource job) =>
-        new(probe, limitMb * 1024 * 1024, interval, job);
+    public static MemoryWatchdog Start(IMemoryProbe probe, WorkerOptions options, CancellationTokenSource job) =>
+        new(probe, options.JobMaxMemoryMb * 1024 * 1024, options.WatchdogInterval, options.MemoryReleaseGrace, job);
 
     public async ValueTask DisposeAsync()
     {
@@ -31,7 +36,7 @@ public sealed class MemoryWatchdog : IAsyncDisposable
         stop.Dispose();
     }
 
-    private async Task WatchAsync(IMemoryProbe probe, long limitBytes, TimeSpan interval, CancellationTokenSource job)
+    private async Task WatchAsync(IMemoryProbe probe, long limitBytes, TimeSpan interval, TimeSpan grace, CancellationTokenSource job)
     {
         using var timer = new PeriodicTimer(interval);
         try
@@ -43,13 +48,27 @@ public sealed class MemoryWatchdog : IAsyncDisposable
                 {
                     Exceeded = true;
                     await job.CancelAsync();
-                    return;
+                    break;
                 }
             }
         }
         catch (OperationCanceledException)
         {
             // The job ended first.
+            return;
+        }
+
+        // Not stopped by the job's end: the caller waits the grace out before it settles.
+        var until = DateTime.UtcNow + grace;
+        while (probe.CurrentBytes() > limitBytes)
+        {
+            if (DateTime.UtcNow >= until)
+            {
+                NotReleased = true;
+                return;
+            }
+
+            await Task.Delay(interval, CancellationToken.None);
         }
     }
 }
