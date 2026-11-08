@@ -1,0 +1,58 @@
+{{- if .Values.recognition.enabled -}}
+{{- $name := printf "%s-recognition" (include "blocwerk.fullname" .) -}}
+{{- $ctx := dict "root" . "component" "recognition" -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "blocwerk.labels" $ctx | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"   # after the web app, like the other workers
+spec:
+  replicas: {{ .Values.recognition.replicas }}
+  strategy:
+    type: Recreate   # one instance runner
+  selector:
+    matchLabels:
+      {{- include "blocwerk.selectorLabels" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "blocwerk.selectorLabels" $ctx | nindent 8 }}
+    spec:
+      {{- include "blocwerk.recognition.podSpec" . | nindent 6 }}
+{{- if .Values.recognition.networkPolicy.enabled }}
+---
+# Ingress: none. The kubelet's probes come from the pod's own node, which the common policy controllers (k3s,
+# Calico, Cilium) allow without a rule. Egress: the web pods (behind the Service; policies apply after its address
+# rewrite) and cluster DNS. Other policies in the namespace that select this pod add to these rules.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "blocwerk.labels" $ctx | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "blocwerk.selectorLabels" $ctx | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "blocwerk.selectorLabels" (dict "root" . "component" "web") | nindent 14 }}
+      ports:
+        - {protocol: TCP, port: 5050}
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+{{- end }}
+{{- end }}

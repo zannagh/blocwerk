@@ -15,11 +15,12 @@ Every value is documented in [values.yaml](values.yaml); [values.schema.json](va
 | web (Blazor Server, API, background services, in-process ONNX) | Deployment `<release>`, Service :5050, optional Ingress, PVC `<release>-data` | none |
 | Postgres 17 (`pg_stat_statements` preloaded) | StatefulSet + Service `<release>-postgres`, PVC, stats-reset CronJob | `postgres.enabled` (then `postgres.external`) |
 | wall-geometry | Deployment + Service `<release>-geometry` :8000 | `geometry.enabled` |
+| recognition worker (hold detection and matching, pulls jobs from the app; on the web pod's node) | Deployment `<release>-recognition`, its NetworkPolicy (`recognition.networkPolicy.enabled`) | `recognition.enabled` (then the app recognises in-process) |
 | splat-cpu (COLMAP prepare/finish, never trains) | Deployment + Service `<release>-splat-cpu` :8100 | `splatCpu.enabled` (off by default) |
 | Aspire dashboard (anonymous: keep the UI private) | Deployment + Service `<release>-aspire` :18888/:18889 | `aspire.enabled` |
 | deploy gate | hook Jobs, their ConfigMap, ServiceAccount and Role | `deployGate.enabled` |
 
-Not in the chart, because they are environment-specific: network policies, the legacy-domain redirect, private
+Not in the chart, because they are environment-specific: network policies (except the recognition worker's), the legacy-domain redirect, private
 ingresses for the dashboard, backups, and every Secret (referenced by name in `secrets.*`).
 
 ## Rules
@@ -27,7 +28,7 @@ ingresses for the dashboard, backups, and every Secret (referenced by name in `s
 - **One web replica.** The app keeps circuits, edit leases, the feed signal and job queues in its process;
   `web.replicas` is 0 or 1 (0 only for a cutover). The later web/worker split changes this chart, not the rule's reason.
 - **Secrets by name only.** `secrets.app` (envFrom), `secrets.postgres`, `secrets.compute`, optional
-  `secrets.appsettings` and `secrets.deploy`. `BLOCWERK__ENCRYPTIONKEY` and the key ring in `keys/` on the data volume
+  `secrets.appsettings` and `secrets.deploy`, and `secrets.recognition` while the recognition worker is on. `BLOCWERK__ENCRYPTIONKEY` and the key ring in `keys/` on the data volume
   must be carried over verbatim when moving an installation.
 - **splat-cpu is optional** and nothing assumes it. `splat.onRunners: true` (`SPLATSERVICE__ONRUNNERS`) sends
   splat-prepare and splat-finish to 3D runners as jobs (needs `web.env.RUNNERS__MODE` other than `off`; the render
@@ -37,6 +38,26 @@ ingresses for the dashboard, backups, and every Secret (referenced by name in `s
   pushes chart `X.Y.Z`. The package `charts/blocwerk` is private on its first push; make it public once in its
   settings (no API exists for that); until then the job's last step (anonymous pull) warns but does not fail. The
   chart can also be installed from git (`deploy/chart` at the release tag), which needs no package at all.
+
+## Recognition worker
+
+`recognition.enabled` (on by default) runs `ghcr.io/zannagh/blocwerk-recognition` next to the app and sets the app's
+`RECOGNITION__MODE` (`recognition.mode`, default `queue+fallback`: the app recognises itself while no worker is alive)
+and `RECOGNITION__INSTANCEKEY`. Before installing, create the secret both read:
+
+```sh
+kubectl -n blocwerk create secret generic blocwerk-recognition \
+  --from-literal=RECOGNITION__INSTANCEKEY="$(openssl rand -hex 32)"
+```
+
+- The worker pulls jobs from the app (`http://<release>:5050`, runner API) one at a time and serves only `/health`
+  (liveness) and `/health/ready` (readiness) on 8080. A job it drops when replaced goes back to the queue when its
+  lease expires, so the compute gate does not wait for it.
+- It reads `models/` of the data volume read-only at `/models` and runs on the web pod's node (the volume is
+  ReadWriteOnce). Memory: `JOB_MAX_MEMORY_MB` (`recognition.env`) stays ~450 MB under the memory limit.
+- Its NetworkPolicy has no ingress rule (probes come from the node) and egress only to the web pods and kube-dns
+  (`k8s-app: kube-dns` in `kube-system`). A namespace-wide policy that also selects the worker widens that; exclude
+  it there (`app.kubernetes.io/component NotIn [recognition]`).
 
 ## Deploy gate
 
