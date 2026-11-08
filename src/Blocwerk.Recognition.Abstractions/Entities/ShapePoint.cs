@@ -22,7 +22,7 @@ public class ShapePoint
         return points;
     }
 
-    /// <summary>Deep-copies a list of rings (e.g. <see cref="Hold.ShapeHoles"/>); null stays null.</summary>
+    /// <summary>Deep-copies a list of rings (e.g. <c>Hold.ShapeHoles</c>); null stays null.</summary>
     /// <param name="rings">The rings to copy.</param>
     /// <returns>A detached copy.</returns>
     public static List<List<ShapePoint>>? CloneRings(IEnumerable<IEnumerable<ShapePoint>>? rings) =>

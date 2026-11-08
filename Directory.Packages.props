@@ -26,6 +26,7 @@
 
     <!-- HTTP -->
     <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.10" />
 
     <!-- Email (SMTP): MailKit is the send-side client used by EmailSender. -->
     <PackageVersion Include="MailKit" Version="4.16.0" />

@@ -4,15 +4,15 @@ using Blocwerk.Core.Entities;
 namespace Blocwerk.Core.Detection.Outlines;
 
 /// <summary>
-/// Conversions between an outline polygon and the <see cref="Hold.ShapePoints"/> storage convention.
+/// Conversions between an outline polygon and the <c>Hold.ShapePoints</c> storage convention.
 /// </summary>
 /// <remarks>
 /// <para><b>The convention</b> (as rendered by <c>HoldShape.razor</c>): a shape point is an offset from the
-/// hold centre in the SAME per-axis normalized space as <see cref="Hold.X"/>/<see cref="Hold.Y"/> —
+/// hold centre in the SAME per-axis normalized space as <c>Hold.X</c>/<c>Hold.Y</c> —
 /// <see cref="ShapePoint.Dx"/> is a fraction of the image WIDTH and <see cref="ShapePoint.Dy"/> a fraction of
 /// the image HEIGHT. The renderer draws vertex <c>i</c> at <c>((X + Dx)·100, (Y + Dy)·100)</c> inside an SVG
 /// with <c>viewBox="0 0 100 100" preserveAspectRatio="none"</c>, i.e. the absolute vertex is simply
-/// <c>(X + Dx, Y + Dy)</c> in normalized image space. It is NOT scaled by <see cref="Hold.Radius"/> and
+/// <c>(X + Dx, Y + Dy)</c> in normalized image space. It is NOT scaled by <c>Hold.Radius</c> and
 /// there is no aspect correction, so on a 4:3 photo a unit Dx spans 4/3 the pixels of a unit Dy.</para>
 /// <para>The renderer draws the polygon whenever there are ≥ 3 points, otherwise it falls back to the
 /// circle (or the foot square). The server-side carry code (<c>WallBigUpdateService.Carry</c>) writes

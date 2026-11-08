@@ -263,7 +263,8 @@ public static class CoreServices
         builder.Services.AddSingleton<IHoldEnrichmentService, HoldEnrichmentService>();
 
         // One process-wide limit on heavy image recognition, shared by circuits and background jobs (HoldDetection:MaxConcurrentRuns).
-        builder.Services.AddSingleton<IImageRecognitionGate, ImageRecognitionGate>();
+        builder.Services.AddSingleton<IImageRecognitionGate>(services => new ImageRecognitionGate(
+            services.GetRequiredService<BlocwerkSettings>().HoldDetection, services.GetRequiredService<ILogger<ImageRecognitionGate>>()));
 
         builder.Services.AddScoped<IWallService, WallService>();
         builder.Services.AddWall3DView();

@@ -11,7 +11,7 @@ namespace Blocwerk.Core.Detection.Outlines;
 /// <para>Pipeline: drop spikes and razor-thin incuts, clamp deep incuts toward the convex hull, Douglas-Peucker
 /// simplify, Chaikin-smooth, then verify with <see cref="IsSmooth"/>. A polygon that already passes the
 /// verification is returned untouched, so running the clean-up twice changes nothing. "Radius" in the depth
-/// limit is the shape's own equivalent radius (sqrt(area / pi)), not <see cref="Hold.Radius"/>, which can be a
+/// limit is the shape's own equivalent radius (sqrt(area / pi)), not <c>Hold.Radius</c>, which can be a
 /// stale placeholder.</para>
 /// </remarks>
 public static class HoldShapeSmoother

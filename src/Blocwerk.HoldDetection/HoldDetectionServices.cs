@@ -1,7 +1,7 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Detection.Gating;
-using Blocwerk.Core.Services;
+using Blocwerk.Core.Helpers;
 using Blocwerk.HoldDetection.Matching;
 using Blocwerk.HoldDetection.Outlines;
 using Blocwerk.HoldDetection.Segmentation;
@@ -13,13 +13,13 @@ namespace Blocwerk.HoldDetection;
 
 public static class HoldDetectionServices
 {
-    public static IHostApplicationBuilder ConfigureHoldDetection(this IHostApplicationBuilder builder, BlocwerkSettings settings)
+    public static IHostApplicationBuilder ConfigureHoldDetection(this IHostApplicationBuilder builder, HoldDetectionSettings settings)
     {
-        var modelPath = ResolveModelPath(settings.HoldDetection.ModelPath);
+        var modelPath = ResolveModelPath(settings.ModelPath);
 
-        var detector = new YoloHoldDetectionService(modelPath, settings.HoldDetection.Tiling);
+        var detector = new YoloHoldDetectionService(modelPath, settings.Tiling);
         builder.Services.AddSingleton<IHoldDetectionService>(services => new GatedHoldDetectionService(
-            detector, Gate(services), settings.HoldDetection, services.GetRequiredService<ILogger<GatedHoldDetectionService>>()));
+            detector, Gate(services), settings, services.GetRequiredService<ILogger<GatedHoldDetectionService>>()));
         builder.Services.AddSingleton<IImageAlignmentService, SkiaImageAlignmentService>();
 
         // Cross-panel hold re-recognition for big walls. Stateless in-process OpenCV, so a singleton.
@@ -33,7 +33,7 @@ public static class HoldDetectionServices
         // solely for walls that declare markers; outlines apply to every wall.
         builder.Services.AddMarkerDetection();
         builder.Services.AddSingleton<IHoldOutlineService>(services => new GatedHoldOutlineService(
-            Outliner(settings.HoldDetection.Segmenter, detector, services.GetRequiredService<ILoggerFactory>().CreateLogger<HoldSegmenter>()),
+            Outliner(settings.Segmenter, detector, services.GetRequiredService<ILoggerFactory>().CreateLogger<HoldSegmenter>()),
             Gate(services)));
         builder.Services.AddHoldOutlines();
 
@@ -61,5 +61,5 @@ public static class HoldDetectionServices
     private static IImageRecognitionGate Gate(IServiceProvider services) => services.GetRequiredService<IImageRecognitionGate>();
 
     public static string ResolveModelPath(string configuredPath) =>
-        InAppCaptureHoldDetector.ResolveModelPath(configuredPath);
+        ModelPathResolver.Resolve(configuredPath);
 }

@@ -56,7 +56,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Blocwerk.Core\Blocwerk.Core.csproj" />
+    <ProjectReference Include="..\Blocwerk.Recognition.Abstractions\Blocwerk.Recognition.Abstractions.csproj" />
   </ItemGroup>
 
   <!-- Expose internal matching helpers (e.g. the colour sanity-gate) to the unit tests. -->

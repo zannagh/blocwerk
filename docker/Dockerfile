@@ -4,6 +4,7 @@ WORKDIR /repo
 
 COPY Directory.Packages.props Directory.Build.props global.json .stylecop.json ./
 COPY src/Blocwerk.Contracts/Blocwerk.Contracts.csproj src/Blocwerk.Contracts/
+COPY src/Blocwerk.Recognition.Abstractions/Blocwerk.Recognition.Abstractions.csproj src/Blocwerk.Recognition.Abstractions/
 COPY src/Blocwerk.Core/Blocwerk.Core.csproj src/Blocwerk.Core/
 COPY src/Blocwerk.Authentication/Blocwerk.Authentication.csproj src/Blocwerk.Authentication/
 COPY src/Blocwerk.HoldDetection/Blocwerk.HoldDetection.csproj src/Blocwerk.HoldDetection/

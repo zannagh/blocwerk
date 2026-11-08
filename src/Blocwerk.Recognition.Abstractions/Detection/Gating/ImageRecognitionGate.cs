@@ -19,16 +19,16 @@ public sealed class ImageRecognitionGate : IImageRecognitionGate, IDisposable
     private readonly TimeSpan timeout;
     private readonly ILogger logger;
 
-    /// <summary>Initializes a new instance of the <see cref="ImageRecognitionGate"/> class from the app settings.</summary>
-    /// <param name="settings">App settings (<see cref="HoldDetectionSettings.Enabled"/>, <see cref="HoldDetectionSettings.MaxConcurrentRuns"/>,
+    /// <summary>Initializes a new instance of the <see cref="ImageRecognitionGate"/> class from the hold-detection settings.</summary>
+    /// <param name="settings">Hold-detection settings (<see cref="HoldDetectionSettings.Enabled"/>, <see cref="HoldDetectionSettings.MaxConcurrentRuns"/>,
     /// <see cref="HoldDetectionSettings.GateTimeoutSeconds"/>).</param>
     /// <param name="logger">Logger.</param>
-    public ImageRecognitionGate(BlocwerkSettings settings, ILogger<ImageRecognitionGate> logger)
+    public ImageRecognitionGate(HoldDetectionSettings settings, ILogger<ImageRecognitionGate> logger)
         : this(
-            settings.HoldDetection.MaxConcurrentRuns,
-            TimeSpan.FromSeconds(settings.HoldDetection.GateTimeoutSeconds),
+            settings.MaxConcurrentRuns,
+            TimeSpan.FromSeconds(settings.GateTimeoutSeconds),
             logger,
-            settings.HoldDetection.Enabled)
+            settings.Enabled)
     {
     }
 

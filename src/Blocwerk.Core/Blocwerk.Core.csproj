@@ -26,6 +26,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Blocwerk.Contracts\Blocwerk.Contracts.csproj" />
+    <ProjectReference Include="..\Blocwerk.Recognition.Abstractions\Blocwerk.Recognition.Abstractions.csproj" />
   </ItemGroup>
 
 </Project>

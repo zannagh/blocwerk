@@ -4,6 +4,7 @@
 
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Geometry.Proposals;
+using Blocwerk.Core.Helpers;
 using SkiaSharp;
 
 namespace Blocwerk.Core.Services;
@@ -31,17 +32,7 @@ public sealed class InAppCaptureHoldDetector(IHoldDetectionService detector, Con
     /// </summary>
     /// <param name="configuredPath">The configured path.</param>
     /// <returns>The path the detector opens.</returns>
-    public static string ResolveModelPath(string configuredPath)
-    {
-        if (Path.IsPathRooted(configuredPath))
-        {
-            return configuredPath;
-        }
-
-        var assemblyDir = Path.GetDirectoryName(typeof(InAppCaptureHoldDetector).Assembly.Location) ?? ".";
-        var resolved = Path.Join(assemblyDir, configuredPath);
-        return File.Exists(resolved) ? resolved : configuredPath;
-    }
+    public static string ResolveModelPath(string configuredPath) => ModelPathResolver.Resolve(configuredPath);
 
     /// <inheritdoc />
     public Task<bool> IsAvailableAsync(CancellationToken ct = default) => Task.FromResult(true);

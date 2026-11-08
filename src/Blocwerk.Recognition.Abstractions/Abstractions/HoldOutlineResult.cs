@@ -9,10 +9,10 @@ namespace Blocwerk.Core.Abstractions;
 /// a fraction of the height), ≤ 24 vertices, in contour order. For a
 /// <see cref="HoldOutlineMethod.CircleFallback"/> this is the seed circle sampled as a 16-gon.</param>
 /// <param name="AnchorX">The normalized centre the <paramref name="ShapePoints"/> are relative to — the
-/// SEED centre, i.e. the hold's existing <see cref="Hold.X"/>, so the points can be stored without moving
+/// SEED centre, i.e. the hold's existing <c>Hold.X</c>, so the points can be stored without moving
 /// the hold.</param>
 /// <param name="AnchorY">The normalized centre Y the shape points are relative to.</param>
-/// <param name="ShapePoints">The same polygon in the <see cref="Hold.ShapePoints"/> convention (see
+/// <param name="ShapePoints">The same polygon in the <c>Hold.ShapePoints</c> convention (see
 /// <see cref="Blocwerk.Core.Detection.Outlines.HoldOutlineGeometry"/>), ready to assign to a hold whose centre is
 /// (<paramref name="AnchorX"/>, <paramref name="AnchorY"/>). Null for a circle fallback, meaning "keep
 /// the plain circle".</param>

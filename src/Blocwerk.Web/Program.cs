@@ -136,7 +136,7 @@ public static class Program
 
         builder.ConfigureCoreServices(out var settings)
             .ConfigureAuthenticationAndAuthorization(settings)
-            .ConfigureHoldDetection(settings);
+            .ConfigureHoldDetection(settings.HoldDetection);
 
         builder.Services.AddControllersWithViews()
             .AddApplicationPart(typeof(AccountController).Assembly);
