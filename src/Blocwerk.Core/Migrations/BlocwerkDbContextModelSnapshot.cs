@@ -1066,7 +1066,7 @@ namespace Blocwerk.Core.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
-                    b.Property<Guid>("OwnerUserId")
+                    b.Property<Guid?>("OwnerUserId")
                         .HasColumnType("uuid");
 
                     b.Property<bool?>("Paused")
@@ -1082,6 +1082,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<string>("RunnerVersion")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
+
+                    b.Property<int>("Scope")
+                        .HasColumnType("integer");
 
                     b.Property<bool>("SharedWithOtherWalls")
                         .HasColumnType("boolean");
@@ -1931,6 +1934,12 @@ namespace Blocwerk.Core.Migrations
 
                     b.Property<string>("ResultJson")
                         .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("RunDeadlineAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("RunSeconds")
+                        .HasColumnType("integer");
 
                     b.Property<string>("Stage")
                         .HasMaxLength(200)
@@ -4355,8 +4364,7 @@ namespace Blocwerk.Core.Migrations
                     b.HasOne("Blocwerk.Core.Entities.User", "Owner")
                         .WithMany()
                         .HasForeignKey("OwnerUserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Cascade);
 
                     b.Navigation("Owner");
                 });

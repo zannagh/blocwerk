@@ -30,6 +30,9 @@ public static class GpuRunnerTokens
         value is { Length: TokenLength } && value.StartsWith(GpuRunner.TokenPrefix, StringComparison.Ordinal)
         && value.AsSpan(4).IndexOfAnyExcept("0123456789abcdef") < 0;
 
+    /// <summary>True when the value could be the instance runner's key (<c>RECOGNITION__INSTANCEKEY</c>: 32 to 256 characters).</summary>
+    public static bool LooksLikeInstanceKey(string? value) => value is { Length: >= 32 and <= 256 };
+
     /// <summary>Constant-time comparison of two hex hashes.</summary>
     public static bool HashEquals(string a, string b) =>
         CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(a), Encoding.ASCII.GetBytes(b));

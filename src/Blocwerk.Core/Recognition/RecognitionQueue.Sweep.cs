@@ -10,9 +10,9 @@ using Microsoft.Extensions.Logging;
 namespace Blocwerk.Core.Recognition;
 
 /// <summary>
-/// The sweep: expired leases go back to the queue (or fail once the attempts are used up), interactive jobs nobody claimed
-/// in time are cancelled, so are interactive jobs left over from before an app restart (their page is gone), and no input
-/// envelope stays longer than <see cref="RecognitionQueueOptions.InputRetention"/>.
+/// The sweep: expired leases and claims past their run deadline go back to the queue (or fail once the attempts are used
+/// up), interactive jobs nobody claimed in time are cancelled, so are interactive jobs left over from before an app restart
+/// (their page is gone), and no input envelope stays longer than <see cref="RecognitionQueueOptions.InputRetention"/>.
 /// </summary>
 public sealed partial class RecognitionQueue
 {
@@ -30,6 +30,7 @@ public sealed partial class RecognitionQueue
             await ReleaseAsync(db, job, "the recognition runner stopped responding (its lease expired)", failedBy: null, free: false, ct);
         }
 
+        await EndOverrunsAsync(db, now, ct);
         await CancelOrphanedAsync(db, ct);
         var unclaimed = await db.RecognitionJobs.AsNoTracking()
             .Where(j => j.Status == GpuJobStatus.Queued && j.Lane == RecognitionLane.Interactive && j.LeaseExpiresAt < now)
@@ -46,6 +47,22 @@ public sealed partial class RecognitionQueue
     /// <summary>Stored names the capture sweep must keep: the inputs of jobs that still have one.</summary>
     public static Task<List<string>> ReferencedFilesAsync(BlocwerkDbContext db, CancellationToken ct) =>
         db.RecognitionJobs.AsNoTracking().Where(j => j.InputPath != null).Select(j => j.InputPath!).ToListAsync(ct);
+
+    /// <summary>
+    /// Claims past their run deadline (heartbeats or not) go back to the queue, or fail once the attempts are used up; the
+    /// runner is marked, so another one tries first.
+    /// </summary>
+    private async Task EndOverrunsAsync(BlocwerkDbContext db, DateTimeOffset now, CancellationToken ct)
+    {
+        var overrun = await db.RecognitionJobs.AsNoTracking()
+            .Where(j => (j.Status == GpuJobStatus.Claimed || j.Status == GpuJobStatus.Running) && j.RunDeadlineAt < now)
+            .ToListAsync(ct);
+        foreach (var job in overrun)
+        {
+            logger.LogWarning("Recognition job {JobId}: runner {RunnerId} ran longer than {Seconds} s", job.Id, job.ClaimedByRunnerId, job.RunSeconds);
+            await ReleaseAsync(db, job, $"the recognition runner took longer than {job.RunSeconds} s", failedBy: job.ClaimedByRunnerId, free: false, ct);
+        }
+    }
 
     /// <summary>Interactive jobs queued before this process started: whoever waited for them went with the old process.</summary>
     private async Task CancelOrphanedAsync(BlocwerkDbContext db, CancellationToken ct)

@@ -9,11 +9,27 @@ namespace Blocwerk.Core.Recognition;
 
 /// <summary>
 /// Deadlines and budgets of the recognition queue, from <c>Blocwerk:Recognition:*</c> or <c>RECOGNITION__*</c>
-/// (<c>RECOGNITION__INTERACTIVECLAIMSECONDS</c>, <c>RECOGNITION__INPUTRETENTIONHOURS</c>, <c>RECOGNITION__MAXINPUTMB</c>).
+/// (<c>RECOGNITION__MODE</c>, <c>RECOGNITION__INSTANCEKEY</c>, <c>RECOGNITION__MODELSDIR</c>,
+/// <c>RECOGNITION__INTERACTIVECLAIMSECONDS</c>, <c>RECOGNITION__INPUTRETENTIONHOURS</c>, <c>RECOGNITION__MAXINPUTMB</c>).
 /// The lane values are the protocol's (runner protocol 1.2, §1.4 "Lanes and leases").
 /// </summary>
 public sealed class RecognitionQueueOptions
 {
+    /// <summary>The shortest instance key accepted; a shorter one is ignored (no instance runner).</summary>
+    public const int MinInstanceKeyLength = 32;
+
+    /// <summary>Where recognition runs; see <see cref="RecognitionMode"/>.</summary>
+    public RecognitionMode Mode { get; init; } = RecognitionMode.InProcess;
+
+    /// <summary>
+    /// Hex SHA-256 of <c>RECOGNITION__INSTANCEKEY</c>, the instance runner's key (§1.5); null without one. The key itself is
+    /// hashed as it is read and kept nowhere.
+    /// </summary>
+    public string? InstanceKeyHash { get; init; }
+
+    /// <summary>The directory <c>GET /api/runners/models/{sha256}</c> serves model files from (only files directly in it).</summary>
+    public string ModelsDirectory { get; init; } = Path.Combine(AppContext.BaseDirectory, "models");
+
     /// <summary>An interactive job nobody claimed within this is cancelled ("recognition unavailable").</summary>
     public TimeSpan InteractiveClaimWait { get; init; } = TimeSpan.FromSeconds(20);
 
@@ -38,6 +54,15 @@ public sealed class RecognitionQueueOptions
     /// <summary>How often a waiting caller re-reads its job, in case a completion signal was missed.</summary>
     public TimeSpan WaiterPoll { get; init; } = TimeSpan.FromSeconds(2);
 
+    /// <summary>How long an interactive claim may run (<c>detect-holds@2</c>: per photo).</summary>
+    public TimeSpan InteractiveRun { get; init; } = TimeSpan.FromSeconds(60);
+
+    /// <summary>How long an interactive <c>detect-holds@2</c> claim may run per photo.</summary>
+    public TimeSpan DetectRunPerPhoto { get; init; } = TimeSpan.FromSeconds(90);
+
+    /// <summary>How long a background claim may run.</summary>
+    public TimeSpan BackgroundRun { get; init; } = TimeSpan.FromMinutes(30);
+
     /// <summary>How often the sweep runs; short, so the interactive claim deadline holds to a few seconds.</summary>
     public TimeSpan SweepInterval { get; init; } = TimeSpan.FromSeconds(5);
 
@@ -47,21 +72,39 @@ public sealed class RecognitionQueueOptions
     /// <summary>The attempt budget of <paramref name="lane"/>.</summary>
     public int AttemptsOf(RecognitionLane lane) => lane == RecognitionLane.Interactive ? InteractiveAttempts : BackgroundAttempts;
 
+    /// <summary>How long a claim of <paramref name="kind"/> in <paramref name="lane"/> with <paramref name="photos"/> photos may run.</summary>
+    public TimeSpan RunOf(string kind, RecognitionLane lane, int photos) =>
+        lane == RecognitionLane.Background ? BackgroundRun
+        : kind == RecognitionKinds.DetectHolds ? DetectRunPerPhoto * Math.Max(1, photos)
+        : InteractiveRun;
+
     public static RecognitionQueueOptions Bind(IConfiguration? configuration)
     {
         var d = new RecognitionQueueOptions();
         return new RecognitionQueueOptions
         {
+            Mode = ParseMode(Text(configuration, "Mode")),
+            InstanceKeyHash = Text(configuration, "InstanceKey") is { Length: >= MinInstanceKeyLength } key ? Runners.GpuRunnerTokens.Hash(key) : null,
+            ModelsDirectory = Text(configuration, "ModelsDir") is { Length: > 0 } dir ? Path.GetFullPath(dir) : d.ModelsDirectory,
             InteractiveClaimWait = Int(configuration, "InteractiveClaimSeconds", 1, 3600) is { } s ? TimeSpan.FromSeconds(s) : d.InteractiveClaimWait,
             InputRetention = Int(configuration, "InputRetentionHours", 1, 24 * 30) is { } h ? TimeSpan.FromHours(h) : d.InputRetention,
             MaxInputBytes = Int(configuration, "MaxInputMb", 1, 16 * 1024) is { } mb ? mb * 1024L * 1024 : d.MaxInputBytes,
         };
     }
 
+    /// <summary><c>inprocess</c> (default, also for anything unknown), <c>queue+fallback</c> or <c>queue</c>.</summary>
+    public static RecognitionMode ParseMode(string? value) => value?.Trim().ToLowerInvariant() switch
+    {
+        "queue+fallback" => RecognitionMode.QueueWithFallback,
+        "queue" => RecognitionMode.Queue,
+        _ => RecognitionMode.InProcess,
+    };
+
+    private static string? Text(IConfiguration? configuration, string key) =>
+        configuration?[$"Blocwerk:Recognition:{key}"] ?? Environment.GetEnvironmentVariable($"RECOGNITION__{key.ToUpperInvariant()}");
+
     private static int? Int(IConfiguration? configuration, string key, int min, int max) =>
-        int.TryParse(
-            configuration?[$"Blocwerk:Recognition:{key}"] ?? Environment.GetEnvironmentVariable($"RECOGNITION__{key.ToUpperInvariant()}"),
-            NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) && v >= min && v <= max
+        int.TryParse(Text(configuration, key), NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) && v >= min && v <= max
             ? v
             : null;
 }

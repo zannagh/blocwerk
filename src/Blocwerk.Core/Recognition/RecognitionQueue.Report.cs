@@ -37,7 +37,7 @@ public sealed partial class RecognitionQueue
             return (RunnerJobOutcome.Over, null);
         }
 
-        if (await gpuQueue.MayServeAsync(db, runner.Id, job.WallId, ct))
+        if (await MayServeAsync(db, runner, job.WallId, ct))
         {
             return (RunnerJobOutcome.Ok, job);
         }

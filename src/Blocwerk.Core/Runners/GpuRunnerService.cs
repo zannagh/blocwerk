@@ -163,7 +163,7 @@ public sealed partial class GpuRunnerService(
         {
             db.CurrentUserId = user.Id;
             KioskGuard.EnsureNotKiosk(kioskContext, db, AdminAction);
-            var runner = await db.GpuRunners.FirstOrDefaultAsync(r => r.Id == runnerId && r.RevokedAt == null)
+            var runner = await db.GpuRunners.FirstOrDefaultAsync(r => r.Id == runnerId && r.RevokedAt == null && r.Scope == RunnerScope.Owned)
                          ?? throw new UserFacingException("Runner not found");
             if (runner.OwnerUserId != user.Id
                 && !(allowAppAdmin && await AppAdminGuard.IsAppAdminAsync(db, user.Id, CancellationToken.None)))

@@ -33,8 +33,9 @@ internal sealed class RecognitionFixture : IDisposable
     public RecognitionQueue Queue { get; private set; }
 
     /// <summary>Waiters poll fast by default, so a test never waits seconds for a missed signal.</summary>
-    public static async Task<RecognitionFixture> CreateAsync(WallTestHarness harness, RecognitionQueueOptions? options = null) =>
-        new(await RunnerFixture.CreateAsync(harness), options ?? new RecognitionQueueOptions { WaiterPoll = TimeSpan.FromMilliseconds(50) });
+    public static async Task<RecognitionFixture> CreateAsync(
+        WallTestHarness harness, RecognitionQueueOptions? options = null, GpuRunnerOptions? runnerOptions = null) =>
+        new(await RunnerFixture.CreateAsync(harness, runnerOptions), options ?? new RecognitionQueueOptions { WaiterPoll = TimeSpan.FromMilliseconds(50) });
 
     /// <summary>The app restarted: a new queue (and start time) over the same database.</summary>
     public void Restart()

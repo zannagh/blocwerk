@@ -17,10 +17,10 @@ public sealed record GpuRunnerViewer(Guid UserId, bool IsAppAdmin, IReadOnlySet<
     /// wall-panel rule (another wall's job on a shared runner is only "busy"), widened to the site admin. The runner's owner
     /// sees its jobs and the walls it serves, but not another wall's raw errors (<see cref="MaySeeDetails"/>).
     /// </summary>
-    public bool MaySeeJob(Guid wallId, Guid runnerOwnerId) => MaySeeDetails(wallId) || runnerOwnerId == UserId;
+    public bool MaySeeJob(Guid wallId, Guid? runnerOwnerId) => MaySeeDetails(wallId) || runnerOwnerId == UserId;
 
     /// <summary>Whether the viewer may see that a runner owned by <paramref name="runnerOwnerId"/> serves <paramref name="wallId"/>.</summary>
-    public bool MaySeeWall(Guid wallId, Guid runnerOwnerId) => MaySeeJob(wallId, runnerOwnerId);
+    public bool MaySeeWall(Guid wallId, Guid? runnerOwnerId) => MaySeeJob(wallId, runnerOwnerId);
 
     /// <summary>Whether the viewer may read the wall's errors as recorded (a site admin, or an admin of the wall).</summary>
     public bool MaySeeDetails(Guid wallId) => IsAppAdmin || Walls.Contains(wallId);

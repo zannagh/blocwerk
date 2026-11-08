@@ -109,6 +109,7 @@ public sealed partial class RecognitionQueue
                     .SetProperty(j => j.ClaimedByRunnerId, (Guid?)null)
                     .SetProperty(j => j.ClaimToken, (string?)null)
                     .SetProperty(j => j.LeaseExpiresAt, deadline)
+                    .SetProperty(j => j.RunDeadlineAt, (DateTimeOffset?)null)
                     .SetProperty(j => j.Attempts, attempts)
                     .SetProperty(j => j.FailedRunnerIdsJson, failedRunners)
                     .SetProperty(j => j.Error, GpuJobQueue.Clip(reason, 2048))

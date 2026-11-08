@@ -54,6 +54,9 @@ public static class CaptureServices
         services.AddSingleton<Recognition.RecognitionWaiters>();
         services.AddSingleton<Recognition.RecognitionQueue>();
         services.AddHostedService<Recognition.RecognitionSweepWorker>();
+        services.AddSingleton<Recognition.RecognitionModelCatalog>();
+        services.AddHostedService<Recognition.InstanceRunnerRegistration>();
+        services.AddSingleton<Runners.RunnerClaimDispatcher>();
 
         // The hold proposal search's detection on a runner that finds holds (the app detects itself without one).
         services.AddSingleton<Runners.RunnerHoldDetection>();

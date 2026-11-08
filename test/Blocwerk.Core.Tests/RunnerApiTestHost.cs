@@ -5,6 +5,8 @@ using System.Net.Http.Headers;
 using Blocwerk.Authentication.Authorization;
 using Blocwerk.Authentication.Endpoints;
 using Blocwerk.Authentication.Handlers;
+using Blocwerk.Core.Recognition;
+using Blocwerk.Core.Runners;
 using Blocwerk.Web.Endpoints;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -14,6 +16,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Blocwerk.Core.Tests;
 
@@ -21,7 +24,8 @@ namespace Blocwerk.Core.Tests;
 /// An in-memory host with the REAL runner API (<see cref="RunnerApiEndpoints"/>), BOTH rate-limit policies registered
 /// the way Program does (the API-key login's and the runners'), and the app's scheme selector
 /// (<see cref="ApiKeySurface.SelectScheme"/>) in front of permissive JWT / API-key handlers, plus probes that echo who
-/// the caller is. The queue is a <see cref="RunnerFixture"/>'s (SQLite, test clock).
+/// the caller is. The queue is a <see cref="RunnerFixture"/>'s (SQLite, test clock); the recognition queue is the one
+/// given, else a default one over the same store.
 /// </summary>
 internal sealed class RunnerApiTestHost : IAsyncDisposable
 {
@@ -40,8 +44,11 @@ internal sealed class RunnerApiTestHost : IAsyncDisposable
 
     public HttpClient Client { get; }
 
-    public static async Task<RunnerApiTestHost> StartAsync(RunnerFixture fixture)
+    public static async Task<RunnerApiTestHost> StartAsync(RunnerFixture fixture, RecognitionQueue? recognition = null)
     {
+        recognition ??= new RecognitionQueue(
+            fixture.Harness.RootContextFactory, fixture.Files, new RecognitionQueueOptions(), fixture.Queue, new GpuJobSignal(),
+            new RecognitionWaiters(), NullLogger<RecognitionQueue>.Instance, fixture.Clock);
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions
         {
             EnvironmentName = "Production",
@@ -49,6 +56,9 @@ internal sealed class RunnerApiTestHost : IAsyncDisposable
         });
         builder.WebHost.UseTestServer();
         builder.Services.AddSingleton(fixture.Queue);
+        builder.Services.AddSingleton(recognition);
+        builder.Services.AddSingleton(new RunnerClaimDispatcher(fixture.Queue, recognition, new GpuJobSignal()));
+        builder.Services.AddSingleton(new RecognitionModelCatalog(recognition.Options, NullLogger<RecognitionModelCatalog>.Instance));
         builder.Services.AddAuthentication("BlocwerkPolicy")
             .AddPolicyScheme("BlocwerkPolicy", "BlocwerkPolicy", o => o.ForwardDefaultSelector = ApiKeySurface.SelectScheme)
             .AddCookie(CookieAuthenticationDefaults.AuthenticationScheme)

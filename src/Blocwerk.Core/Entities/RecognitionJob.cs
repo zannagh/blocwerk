@@ -61,6 +61,12 @@ public class RecognitionJob
     /// </summary>
     public DateTimeOffset? LeaseExpiresAt { get; set; }
 
+    /// <summary>How long a claim may run, heartbeats or not (per kind and lane, set at enqueue).</summary>
+    public int RunSeconds { get; set; }
+
+    /// <summary>Until when the current claim may run (claim time + <see cref="RunSeconds"/>; a re-attach keeps it). Null while queued.</summary>
+    public DateTimeOffset? RunDeadlineAt { get; set; }
+
     /// <summary>How many times a runner claimed it; the job fails once its lane's attempt budget is used up.</summary>
     public int Attempts { get; set; }
 
