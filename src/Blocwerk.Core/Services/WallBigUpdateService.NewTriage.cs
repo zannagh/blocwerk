@@ -171,7 +171,9 @@ public partial class WallBigUpdateService
         Func<IReadOnlyList<PresenceQuery>, IReadOnlyList<double?>>? presence =
             presenceProbe is null || panel.OldPhoto is null ? null : q => presenceProbe.Score(panel.OldPhoto, newPhoto, q);
         var swaps = new List<TriageSwap>();
-        var result = NewHoldTriage.Classify(input, presence, swaps);
+        var result = presence is null
+            ? NewHoldTriage.Classify(input, presence, swaps)
+            : await recognitionGate.RecogniseAsync("new-triage", () => NewHoldTriage.Classify(input, presence, swaps));
         logger.LogInformation(
             "New-hold triage on panel {PanelId}: {Discarded} of {Candidates} unpaired detections discarded by default ({Reasons})",
             panel.PanelId, result.Count, candidates.Count,

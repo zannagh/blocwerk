@@ -3,6 +3,7 @@
 // </copyright>
 
 using System.Collections.Concurrent;
+using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Capture;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
@@ -123,7 +124,7 @@ public partial class WallBigUpdateService
             .Select(t => new PlaneAnchor(t.New.X, t.New.Y, t.Old.FacetId!, t.Old.PlaneAMm!.Value, t.Old.PlaneBMm!.Value))
             .ToList();
         var textures = model.Textures;
-        var registered = await Task.Run(() => Register(photo, textures, anchors, label));
+        var registered = await recognitionGate.RecogniseAsync("texture-registration", () => Register(photo, textures, anchors, label));
         if (Registered.Count >= MaxCachedRegistrations)
         {
             Registered.Clear();

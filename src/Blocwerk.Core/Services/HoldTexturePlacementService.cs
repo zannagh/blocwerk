@@ -35,6 +35,7 @@ public sealed partial class HoldTexturePlacementService : IHoldTexturePlacementS
     private readonly IHoldRefinementQueue? refinementQueue;
     private readonly IKioskContext? kioskContext;
     private readonly GpuJobQueue? gpuJobs;
+    private readonly IImageRecognitionGate? recognitionGate;
 
     /// <summary>Initializes a new instance of the <see cref="HoldTexturePlacementService"/> class.</summary>
     /// <param name="dbContextFactory">Context factory.</param>
@@ -53,12 +54,14 @@ public sealed partial class HoldTexturePlacementService : IHoldTexturePlacementS
         ICaptureFileStore? files = null,
         IHoldRefinementQueue? refinementQueue = null,
         IKioskContext? kioskContext = null,
-        GpuJobQueue? gpuJobs = null)
+        GpuJobQueue? gpuJobs = null,
+        IImageRecognitionGate? recognitionGate = null)
     {
         this.dbContextFactory = dbContextFactory;
         this.currentUserService = currentUserService;
         this.logger = logger;
         this.matcher = matcher;
+        this.recognitionGate = recognitionGate;
         this.files = files;
         this.refinementQueue = refinementQueue;
         this.kioskContext = kioskContext;

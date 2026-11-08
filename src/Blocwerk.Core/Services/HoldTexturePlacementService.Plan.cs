@@ -62,7 +62,8 @@ public sealed partial class HoldTexturePlacementService
         List<FacetRegistration> registrations;
         try
         {
-            registrations = await Task.Run(() => Register(panel.Photo, textures, $"c{col} r{row}", anchors, direct, ct), ct);
+            registrations = await recognitionGate.RecogniseAsync(
+                "texture-registration", () => Register(panel.Photo, textures, $"c{col} r{row}", anchors, direct, ct), ct);
         }
         catch (ArgumentException ex)
         {

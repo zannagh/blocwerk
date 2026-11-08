@@ -120,8 +120,8 @@ public partial class WallBigUpdateService
             .FirstOrDefaultAsync();
 
         // The old centre photo is the one the carryover matcher read the old holds from (the live centre panel's).
-        var fingerprints = Fingerprints(disappeared, await LoadOldCentrePhotoAsync(db, wall));
-        foreach (var (id, fingerprint) in Fingerprints(appeared, stagedPhoto))
+        var fingerprints = await FingerprintsAsync(disappeared, await LoadOldCentrePhotoAsync(db, wall));
+        foreach (var (id, fingerprint) in await FingerprintsAsync(appeared, stagedPhoto))
         {
             fingerprints[id] = fingerprint;
         }
@@ -137,7 +137,7 @@ public partial class WallBigUpdateService
     /// outliner is wired — ONE decode of <paramref name="photo"/> for all of them. Nothing is written back:
     /// the holds stay as they are; a hold that cannot be fingerprinted simply takes no part.
     /// </summary>
-    private Dictionary<Guid, HoldFingerprint> Fingerprints(IReadOnlyList<Hold> holds, byte[]? photo)
+    private async Task<Dictionary<Guid, HoldFingerprint>> FingerprintsAsync(IReadOnlyList<Hold> holds, byte[]? photo)
     {
         var result = new Dictionary<Guid, HoldFingerprint>();
         var missing = new List<Hold>();
@@ -160,13 +160,17 @@ public partial class WallBigUpdateService
 
         try
         {
-            using var outlines = outlineService.OpenSession(photo);
-            foreach (var hold in missing)
+            var measured = await recognitionGate.RecogniseAsync("relocation-fingerprints", () =>
             {
-                result[hold.Id] = WithHoldMetrics(outlines.Outline(new HoldSeed(hold.X, hold.Y, hold.Radius)).Fingerprint, hold);
+                using var outlines = outlineService.OpenSession(photo);
+                return missing.Select(h => outlines.Outline(new HoldSeed(h.X, h.Y, h.Radius)).Fingerprint).ToList();
+            });
+            for (int i = 0; i < missing.Count; i++)
+            {
+                result[missing[i].Id] = WithHoldMetrics(measured[i], missing[i]);
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ImageRecognitionUnavailableException)
         {
             logger.LogWarning(ex, "Could not fingerprint {Count} holds for relocation suggestions", missing.Count);
         }

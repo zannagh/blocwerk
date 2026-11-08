@@ -75,6 +75,18 @@ public static partial class BlocwerkMetrics
     public static readonly Histogram<double> ImageRecognitionDuration = Otel.Meter.CreateHistogram<double>(
         "blocwerk.image_recognition.duration", unit: "ms", description: "Wall-clock time of a hold-detection run.");
 
+    public static readonly Histogram<long> ImageRecognitionRss = Otel.Meter.CreateHistogram<long>(
+        "blocwerk.image_recognition.rss", unit: "By", description: "Process RSS after a gated image recognition run, tagged by operation.");
+
+    public static readonly Histogram<long> ImageRecognitionRssGrowth = Otel.Meter.CreateHistogram<long>(
+        "blocwerk.image_recognition.rss_growth", unit: "By", description: "How much a gated image recognition run grew the process RSS (0 when it shrank).");
+
+    public static readonly Histogram<long> ImageRecognitionGcHeap = Otel.Meter.CreateHistogram<long>(
+        "blocwerk.image_recognition.gc_heap", unit: "By", description: "Managed heap after a gated image recognition run.");
+
+    public static readonly Histogram<double> ImageRecognitionGateWait = Otel.Meter.CreateHistogram<double>(
+        "blocwerk.image_recognition.gate_wait", unit: "ms", description: "Time a run waited for a free image recognition slot.");
+
     public static readonly Histogram<double> ImageAlignmentDuration = Otel.Meter.CreateHistogram<double>(
         "blocwerk.image_alignment.duration", unit: "ms", description: "Wall-clock time of an image alignment run.");
 
