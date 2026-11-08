@@ -69,6 +69,8 @@ blocwerk:volume:prod:/app/models/hold-segmenter-decoder.onnx
 postgres:healthcheck:prod
 recognition:volume:base:/models
 recognition:volume:prod:/models/climbingcrux.onnx
+recognition:volume:prod:/models/hold-segmenter-encoder.onnx
+recognition:volume:prod:/models/hold-segmenter-decoder.onnx
 "
 
 # Ports prod publishes on the Docker `edge` network's gateway, one per line: <service>:<container port>:<host ip>.
