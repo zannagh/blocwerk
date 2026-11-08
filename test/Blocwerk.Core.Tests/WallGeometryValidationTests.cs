@@ -66,6 +66,6 @@ public class WallGeometryValidationTests
         }
 
         Assert.NotNull(dir);
-        return Path.Combine(dir.FullName, "test", "Blocwerk.HoldDetection.Tests", "Fixtures", "Glyphs", "wall-geometry.sample.json");
+        return Path.Combine(dir.FullName, "test", "Blocwerk.HoldDetection.IntegrationTests", "Fixtures", "Glyphs", "wall-geometry.sample.json");
     }
 }
