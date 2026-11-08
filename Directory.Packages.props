@@ -47,7 +47,8 @@
 
     <!-- Hold recognition, from zannagh/blocwerk-recognition (GitHub Packages, see nuget.config). Blocwerk.HoldDetection
          brings OpenCvSharp with both linux runtimes and the CPU ONNX runtime; the GPU ONNX packages are only
-         referenced to exclude them (Blocwerk.Web.csproj). -->
+         referenced to exclude them (Blocwerk.Web.csproj). The recognition image in docker/docker-compose*.yml is pinned
+         to the same version: bump them together. -->
     <PackageVersion Include="Blocwerk.Recognition.Abstractions" Version="0.1.0" />
     <PackageVersion Include="Blocwerk.HoldDetection" Version="0.1.0" />
     <PackageVersion Include="Microsoft.ML.OnnxRuntime.Gpu" Version="1.22.1" />

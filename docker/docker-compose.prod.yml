@@ -181,7 +181,9 @@ services:
   # Models are mounted read-only, never baked into the image. JOB_MAX_MEMORY_MB: above it a job fails as "resource"
   # (keep it ~450 MB under the memory limit).
   recognition:
-    image: ghcr.io/zannagh/blocwerk-recognition:latest
+    # Pinned to the Blocwerk.HoldDetection package version in Directory.Packages.props: worker and app speak the same
+    # recognition code. Bump both together.
+    image: ghcr.io/zannagh/blocwerk-recognition:0.1.0
     environment:
       RECOGNITION__SERVER: http://blocwerk:5050
       RECOGNITION__INSTANCEKEY: ${RECOGNITION_INSTANCEKEY:-}
