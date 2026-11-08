@@ -1,6 +1,7 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Detection.Gating;
+using Blocwerk.Core.Detection.Outlines;
 using Blocwerk.Core.Helpers;
 using Blocwerk.HoldDetection.Matching;
 using Blocwerk.HoldDetection.Outlines;
@@ -35,6 +36,7 @@ public static class HoldDetectionServices
         builder.Services.AddSingleton<IHoldOutlineService>(services => new GatedHoldOutlineService(
             Outliner(settings.Segmenter, detector, services.GetRequiredService<ILoggerFactory>().CreateLogger<HoldSegmenter>()),
             Gate(services)));
+        builder.Services.AddSingleton<IHoldOutlineBatch>(services => new SessionHoldOutlineBatch(services.GetRequiredService<IHoldOutlineService>(), Gate(services)));
         builder.Services.AddHoldOutlines();
 
         return builder;

@@ -138,10 +138,11 @@ services:
       BLOCWERK__AUTH__APIKEYLOGIN__ALLOWEDUSERIDS__0: ${APIKEYLOGIN_USER_ID:-}
       # Re-detect in the wall editor (proposals to accept or keep). OFF unless .env says otherwise.
       HOLDDETECTION__REDETECT__ENABLED: ${REDETECT_ENABLED:-false}
-      # Hold recognition: inprocess (default) | queue+fallback | queue (the recognition service below). The instance
+      # Hold recognition: queue (here the default: the recognition service below serves it) | queue+fallback (the app
+      # runs what the service does not) | inprocess (the app alone; the code's default without this setting). The instance
       # runner key needs no setup: without RECOGNITION_INSTANCEKEY the app generates it at its first start into
       # ./recognition-key/instance.key (0600, handed to the worker's uid 1654), which that service reads read-only.
-      RECOGNITION__MODE: ${RECOGNITION_MODE:-inprocess}
+      RECOGNITION__MODE: ${RECOGNITION_MODE:-queue}
       RECOGNITION__INSTANCEKEY: ${RECOGNITION_INSTANCEKEY:-}
       RECOGNITION__INSTANCEKEYFILE: /app/recognition/instance.key
       RECOGNITION__INSTANCEKEYFILEOWNER: "1654"
@@ -172,11 +173,11 @@ services:
       - default
       - edge
 
-  # Recognition worker (docker/recognition/, src/Blocwerk.Recognition.Worker): hold detection, markers, presence and
-  # panel matching for the app, pulled through the runner API as the instance runner (one job at a time). Started by
-  # default with no setup: it reads the instance key the app generated (./recognition-key, read-only) unless
-  # RECOGNITION_INSTANCEKEY is set, and waits for that file while the app has not written it yet. No published port:
-  # GET /health on 8080 inside (503 when the loop is stuck).
+  # Recognition worker (docker/recognition/, src/Blocwerk.Recognition.Worker): hold detection, outlines, markers,
+  # presence, panel matching and texture matching for the app, pulled through the runner API as the instance runner
+  # (one job at a time). Started by default with no setup: it reads the instance key the app generated
+  # (./recognition-key, read-only) unless RECOGNITION_INSTANCEKEY is set, and waits for that file while the app has not
+  # written it yet. No published port: GET /health on 8080 inside (503 when the loop is stuck).
   # Models are mounted read-only, never baked into the image. JOB_MAX_MEMORY_MB: above it a job fails as "resource"
   # (keep it ~450 MB under the memory limit).
   recognition:
@@ -190,6 +191,8 @@ services:
       # The instance key the app generated (RECOGNITION__INSTANCEKEYFILE of the app).
       - ./recognition-key:/recognition:ro
       - ./climbingcrux.onnx:/models/climbingcrux.onnx:ro
+      - ./hold-segmenter-encoder.onnx:/models/hold-segmenter-encoder.onnx:ro
+      - ./hold-segmenter-decoder.onnx:/models/hold-segmenter-decoder.onnx:ro
     mem_limit: 3g
     depends_on:
       - blocwerk

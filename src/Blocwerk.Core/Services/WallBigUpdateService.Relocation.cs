@@ -154,17 +154,16 @@ public partial class WallBigUpdateService
             }
         }
 
-        if (missing.Count == 0 || outlineService is null || photo is null)
+        if (missing.Count == 0 || outlineBatch is null || photo is null)
         {
             return result;
         }
 
         try
         {
-            using var lease = recognitionGate is null ? null : await recognitionGate.EnterAsync("relocation-fingerprints");
+            // The batch takes its own gate slot when it runs in the app; a queued one is awaited without one.
             var seeds = missing.Select(h => new HoldSeed(h.X, h.Y, h.Radius)).ToList();
-            var measured = await new SessionHoldOutlineBatch(outlineService, recognitionGate)
-                .OutlineAsync(photo, seeds, HoldOutlineBatchOptions.Separately);
+            var measured = await outlineBatch.OutlineAsync(photo, seeds, HoldOutlineBatchOptions.Separately);
             for (int i = 0; i < missing.Count; i++)
             {
                 result[missing[i].Id] = WithHoldMetrics(measured.Outlines[i].Fingerprint, missing[i]);

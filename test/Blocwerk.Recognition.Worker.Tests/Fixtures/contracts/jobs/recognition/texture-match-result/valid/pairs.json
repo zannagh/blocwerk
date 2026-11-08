@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "pairs": [{"srcX": 1200.5, "srcY": 800.25, "dstX": 640.0, "dstY": 410.5}],
+  "coarseInliers": 57,
+  "failure": null
+}

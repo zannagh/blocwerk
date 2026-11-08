@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "textureMmPerPx": 2.0,
+  "seed": [1, 0, 0, 0, 1, 0, 0, 0, 1],
+  "attempt": {"ransacSeed": 7, "coarsePass": null, "scaleJitter": 1.05}
+}

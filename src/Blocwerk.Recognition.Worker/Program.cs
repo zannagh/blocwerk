@@ -2,6 +2,8 @@
 // See License in the project root for license information.
 
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Configuration;
+using Blocwerk.HoldDetection;
 using Blocwerk.HoldDetection.Markers;
 using Blocwerk.HoldDetection.Matching;
 using Blocwerk.Recognition.Worker;
@@ -28,10 +30,24 @@ builder.Services.AddSingleton<YoloBoxDetector>();
 builder.Services.AddSingleton<IMarkerDetectionService, ArucoMarkerDetectionService>();
 builder.Services.AddSingleton<IHoldPresenceProbe, OpenCvHoldPresenceProbe>();
 builder.Services.AddSingleton<IHoldOverlapMatcher, OpenCvHoldOverlapMatcher>();
+builder.Services.AddSingleton<IPhotoTextureMatcher, OpenCvPhotoTextureMatcher>();
+
+// MobileSAM from the models mount, loaded at the first outline job (after the warm YOLO has created the ONNX runtime);
+// without its files the outliner works by colour, as the app does.
+builder.Services.AddSingleton<IHoldOutlineService>(sp => HoldDetectionServices.Outliner(
+    new HoldSegmenterSettings
+    {
+        EncoderPath = Path.Combine(options.ModelsDirectory, "hold-segmenter-encoder.onnx"),
+        DecoderPath = Path.Combine(options.ModelsDirectory, "hold-segmenter-decoder.onnx"),
+        Threads = 2,
+    },
+    logger: sp.GetRequiredService<ILoggerFactory>().CreateLogger("Blocwerk.HoldDetection.Segmentation.HoldSegmenter")));
 builder.Services.AddSingleton<IRecognitionJobHandler, DetectHoldsHandler>();
 builder.Services.AddSingleton<IRecognitionJobHandler, MarkersHandler>();
 builder.Services.AddSingleton<IRecognitionJobHandler, PresenceHandler>();
 builder.Services.AddSingleton<IRecognitionJobHandler, MatchPanelsHandler>();
+builder.Services.AddSingleton<IRecognitionJobHandler, OutlineHoldsHandler>();
+builder.Services.AddSingleton<IRecognitionJobHandler, TextureMatchHandler>();
 builder.Services.AddSingleton<JobExecutor>();
 builder.Services.AddHostedService<RunnerLoop>();
 

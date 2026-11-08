@@ -3,11 +3,14 @@
 
 using System.Text.Json;
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Entities;
+using Blocwerk.Core.Geometry;
 
 namespace Blocwerk.Core.Recognition.Remote;
 
 /// <summary>
-/// Reads the result documents of the <c>markers</c>, <c>presence</c> and <c>match-panels</c> kinds (contracts
+/// Reads the result documents of the <c>markers</c>, <c>presence</c>, <c>match-panels</c>, <c>outline-holds</c> and
+/// <c>texture-match</c> kinds (contracts
 /// <c>jobs/recognition/*-result</c>) back into the in-process types. A document off the contract throws, and
 /// <see cref="RecognitionCaller"/> treats the job as not served.
 /// </summary>
@@ -55,6 +58,56 @@ public static class RecognitionResults
         Optional(r, "warpedLeftShapes")?.Select(s => s.ValueKind == JsonValueKind.Null
             ? null
             : (IReadOnlyList<(double X, double Y)>)s.EnumerateArray().Select(Point).ToList()).ToList());
+
+    /// <summary>
+    /// The outlines of <paramref name="count"/> seeds sent with ids 0..count-1, on a photo of the given size. A seed the runner
+    /// could not outline makes the whole result unreadable: the in-process outliner always answers, with a circle at worst.
+    /// </summary>
+    public static HoldOutlineBatchResult Outlines(JsonElement r, int width, int height, int count)
+    {
+        var outlines = Items(r, "outlines").Select(Outline).ToList();
+        return outlines.Count == count && outlines.Select(o => o.Id).SequenceEqual(Enumerable.Range(0, count))
+            ? new HoldOutlineBatchResult(width, height, outlines.Select(o => o.Outline).ToList())
+            : throw new InvalidDataException("The outlines do not answer the seeds in order.");
+    }
+
+    public static PhotoTextureMatch TextureMatch(JsonElement r) => new(
+        Items(r, "pairs").Select(p => p.Deserialize<PointCorrespondence>(RecognitionParts.Json)).ToList(),
+        r.GetProperty("coarseInliers").GetInt32(),
+        r.TryGetProperty("failure", out var f) ? f.GetString() : null);
+
+    private static (int Id, HoldOutlineResult Outline) Outline(JsonElement o)
+    {
+        var id = o.GetProperty("id").GetInt32();
+        if (o.TryGetProperty("failure", out var failure))
+        {
+            throw new InvalidDataException($"Seed {id} has no outline: {failure.GetString()}");
+        }
+
+        var outline = new HoldOutlineResult(
+            o.GetProperty("polygon").EnumerateArray().Select(p => new NormalizedPoint(p[0].GetDouble(), p[1].GetDouble())).ToList(),
+            o.GetProperty("anchorX").GetDouble(),
+            o.GetProperty("anchorY").GetDouble(),
+            Read<List<ShapePoint>>(o, "shapePoints"),
+            o.GetProperty("areaPx").GetDouble(),
+            o.GetProperty("bounds").Deserialize<HoldOutlineBounds>(RecognitionParts.Json),
+            o.GetProperty("confidence").GetDouble(),
+            Enum.Parse<HoldOutlineMethod>(o.GetProperty("method").GetString() ?? string.Empty),
+            o.GetProperty("fingerprint").Deserialize<HoldFingerprint>(RecognitionParts.Json) ?? throw new InvalidDataException($"Seed {id} has no fingerprint."),
+            Read<List<List<ShapePoint>>>(o, "shapeHoles"))
+        {
+            Corroborated = Flag(o, "corroborated"),
+            Distinct = Flag(o, "distinct"),
+            Pale = Flag(o, "pale"),
+        };
+        return (id, outline);
+    }
+
+    private static T? Read<T>(JsonElement o, string name)
+        where T : class =>
+        o.TryGetProperty(name, out var value) ? value.Deserialize<T>(RecognitionParts.Json) : null;
+
+    private static bool Flag(JsonElement o, string name) => o.TryGetProperty(name, out var value) && value.GetBoolean();
 
     private static IEnumerable<JsonElement> Items(JsonElement r, string name) =>
         Optional(r, name) ?? throw new InvalidDataException($"The result has no '{name}'.");

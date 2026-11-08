@@ -32,17 +32,19 @@ public sealed partial class HoldEnrichmentService : IHoldEnrichmentService
     /// <param name="outlineService">The outliner; null disables outlines.</param>
     /// <param name="markerService">The marker detector; null disables the marker pass.</param>
     /// <param name="gate">The process-wide recognition gate the whole run holds one slot of; null runs ungated.</param>
+    /// <param name="outlineBatch">The outline batch (a queued one with <c>RECOGNITION__MODE</c>); null builds one on <paramref name="outlineService"/>.</param>
     public HoldEnrichmentService(
         BlocwerkSettings settings,
         ILogger<HoldEnrichmentService> logger,
         IHoldOutlineService? outlineService = null,
         IMarkerDetectionService? markerService = null,
-        IImageRecognitionGate? gate = null)
+        IImageRecognitionGate? gate = null,
+        IHoldOutlineBatch? outlineBatch = null)
     {
         this.gate = gate;
         this.settings = settings.HoldDetection;
         this.logger = logger;
-        outlineBatch = outlineService is null ? null : new SessionHoldOutlineBatch(outlineService, gate);
+        this.outlineBatch = outlineBatch ?? (outlineService is null ? null : new SessionHoldOutlineBatch(outlineService, gate));
         this.markerService = markerService;
     }
 
@@ -63,24 +65,24 @@ public sealed partial class HoldEnrichmentService : IHoldEnrichmentService
             return EnrichCoreAsync(db, request, null, ct);
         }
 
-        return markerService is QueuedMarkerDetectionService
-            ? EnrichWithRemoteMarkersAsync(db, request, gate, ct)
+        return markerService is QueuedMarkerDetectionService || outlineBatch is QueuedHoldOutlineBatch
+            ? EnrichWithRemoteRecognitionAsync(db, request, gate, ct)
             : gate.RunAsync("enrich", () => EnrichCoreAsync(db, request, null, ct), ct);
     }
 
     /// <summary>
-    /// A marker pass a recognition runner may serve runs first, outside the slot: the slot is for the app's own work, and a
-    /// marker pass the app ends up doing itself takes one of its own.
+    /// The outline batch and the marker pass a recognition runner may serve run first, outside the slot: the slot is for the
+    /// app's own work, and recognition the app ends up doing itself takes one of its own.
     /// </summary>
-    private async Task<HoldEnrichmentSummary> EnrichWithRemoteMarkersAsync(
+    private async Task<HoldEnrichmentSummary> EnrichWithRemoteRecognitionAsync(
         BlocwerkDbContext db, HoldEnrichmentRequest request, IImageRecognitionGate gate, CancellationToken ct)
     {
-        MarkerPass? markers = null;
+        EnrichmentPrefetch? prefetched = null;
         if (!ImagePixelLimit.IsTooLarge(request.Image))
         {
             try
             {
-                markers = await DetectMarkersAsync(db, request, ct);
+                prefetched = new EnrichmentPrefetch(await OutlineAsync(request, OutlineTargets(request), ct), await DetectMarkersAsync(db, request, ct));
             }
             catch (Exception ex)
             {
@@ -88,11 +90,11 @@ public sealed partial class HoldEnrichmentService : IHoldEnrichmentService
             }
         }
 
-        return await gate.RunAsync("enrich", () => EnrichCoreAsync(db, request, markers, ct), ct);
+        return await gate.RunAsync("enrich", () => EnrichCoreAsync(db, request, prefetched, ct), ct);
     }
 
     private async Task<HoldEnrichmentSummary> EnrichCoreAsync(
-        BlocwerkDbContext db, HoldEnrichmentRequest request, MarkerPass? detectedMarkers, CancellationToken ct)
+        BlocwerkDbContext db, HoldEnrichmentRequest request, EnrichmentPrefetch? prefetched, CancellationToken ct)
     {
         if (ImagePixelLimit.IsTooLarge(request.Image))
         {
@@ -108,8 +110,8 @@ public sealed partial class HoldEnrichmentService : IHoldEnrichmentService
 
             // Recognition first, geometry only (one outline batch, one marker pass); then the plan and its writes.
             var targets = OutlineTargets(request);
-            var outlined = await OutlineAsync(request, targets, ct);
-            var markers = detectedMarkers ?? await DetectMarkersAsync(db, request, ct);
+            var outlined = prefetched is null ? await OutlineAsync(request, targets, ct) : prefetched.Outlines;
+            var markers = prefetched?.Markers ?? await DetectMarkersAsync(db, request, ct);
 
             var plan = new HoldEnrichmentPlan();
             var size = PlanOutlines(request, targets, outlined, plan);

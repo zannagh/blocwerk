@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "seeds": [
+    {"id": 1, "x": 0.42, "y": 0.61, "radius": 0.012},
+    {"id": 2, "x": 0.1, "y": 0.2, "radius": 0.02, "boxWidth": 0.03, "boxHeight": 0.04}
+  ],
+  "options": {}
+}

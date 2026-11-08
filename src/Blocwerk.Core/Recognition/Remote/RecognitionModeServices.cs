@@ -11,8 +11,8 @@ namespace Blocwerk.Core.Recognition.Remote;
 
 /// <summary>
 /// <c>RECOGNITION__MODE</c> in the app's services: with <c>inprocess</c> (the default) nothing changes. With
-/// <c>queue+fallback</c> or <c>queue</c>, hold detection, markers, presence and the overlap pass go through the queue,
-/// each wrapping the in-process service it replaces (the fallback). Outlines and texture matching stay in the app.
+/// <c>queue+fallback</c> or <c>queue</c>, hold detection, markers, presence, the overlap pass, hold outlines and texture
+/// matching go through the queue, each wrapping the in-process service it replaces (the fallback).
 /// </summary>
 public static class RecognitionModeServices
 {
@@ -31,6 +31,8 @@ public static class RecognitionModeServices
         Decorate<IMarkerDetectionService>(services, (sp, inner) => new QueuedMarkerDetectionService(inner, sp.GetRequiredService<RecognitionCaller>(), sp.GetService<IImageRecognitionGate>()));
         Decorate<IHoldPresenceProbe>(services, (sp, inner) => new QueuedHoldPresenceProbe(inner, sp.GetRequiredService<RecognitionCaller>(), sp.GetService<IImageRecognitionGate>()));
         Decorate<IHoldOverlapMatcher>(services, (sp, inner) => new QueuedHoldOverlapMatcher(inner, sp.GetRequiredService<RecognitionCaller>(), sp.GetService<IImageRecognitionGate>()));
+        Decorate<IHoldOutlineBatch>(services, (sp, inner) => new QueuedHoldOutlineBatch(inner, sp.GetRequiredService<RecognitionCaller>()));
+        Decorate<IPhotoTextureMatcher>(services, (sp, inner) => new QueuedPhotoTextureMatcher(inner, sp.GetRequiredService<RecognitionCaller>()));
         return builder;
     }
 

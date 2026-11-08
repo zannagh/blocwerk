@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "service": "recognition",
+  "kind": "texture-match",
+  "parts": [
+    {"name": "photo", "file": "photo.jpg"},
+    {"name": "texture", "file": "facet_f1.jpg"},
+    {"name": "mask", "file": "facet_f1_mask.png"},
+    {"name": "request", "json": {"version": 1, "textureMmPerPx": 2.0}}
+  ]
+}
