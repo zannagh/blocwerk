@@ -12,8 +12,8 @@ namespace Blocwerk.Core.Recognition;
 /// <summary>
 /// At start, makes the instance runner's row (runner protocol 1.2, §1.5) match the deployment: one
 /// <see cref="RunnerScope.Instance"/> runner without owner whose key hash is <see cref="RecognitionQueueOptions.InstanceKeyHash"/>.
-/// Without a key (or one shorter than <see cref="RecognitionQueueOptions.MinInstanceKeyLength"/>) the row is revoked, so an
-/// old key stops working. Only the hash ever reaches the database or the log.
+/// Without a key (or one of a refused length, <see cref="RecognitionQueueOptions.InstanceKeyRefused"/>, logged as a warning)
+/// the row is revoked, so an old key stops working. Only the hash ever reaches the database or the log.
 /// </summary>
 public sealed class InstanceRunnerRegistration(
     RootDbContextFactory dbContextFactory, RecognitionQueueOptions options, ILogger<InstanceRunnerRegistration> logger) : IHostedService
@@ -38,7 +38,15 @@ public sealed class InstanceRunnerRegistration(
                 await db.SaveChangesAsync(ct);
             }
 
-            logger.LogInformation("No RECOGNITION__INSTANCEKEY (of at least {Min} characters): no instance recognition runner", RecognitionQueueOptions.MinInstanceKeyLength);
+            if (options.InstanceKeyRefused is { } why)
+            {
+                logger.LogWarning("RECOGNITION__INSTANCEKEY is refused ({Why}): no instance recognition runner", why);
+            }
+            else
+            {
+                logger.LogInformation("No RECOGNITION__INSTANCEKEY: no instance recognition runner");
+            }
+
             return;
         }
 

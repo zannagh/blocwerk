@@ -24,6 +24,10 @@ namespace Blocwerk.Core.Migrations
                 nullable: false,
                 defaultValue: 0);
 
+            // Jobs enqueued before this migration have no run cap; give them the background one (30 min), so a claim of
+            // theirs is not past its run deadline the moment it is made.
+            migrationBuilder.Sql("UPDATE \"RecognitionJobs\" SET \"RunSeconds\" = 1800;");
+
             migrationBuilder.AlterColumn<Guid>(
                 name: "OwnerUserId",
                 table: "GpuRunners",

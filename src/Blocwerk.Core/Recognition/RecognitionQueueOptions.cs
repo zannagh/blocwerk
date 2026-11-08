@@ -15,8 +15,11 @@ namespace Blocwerk.Core.Recognition;
 /// </summary>
 public sealed class RecognitionQueueOptions
 {
-    /// <summary>The shortest instance key accepted; a shorter one is ignored (no instance runner).</summary>
+    /// <summary>The shortest instance key accepted; a shorter one is refused (no instance runner).</summary>
     public const int MinInstanceKeyLength = 32;
+
+    /// <summary>The longest instance key accepted (the runner API reads no longer bearer key); a longer one is refused.</summary>
+    public const int MaxInstanceKeyLength = 256;
 
     /// <summary>Where recognition runs; see <see cref="RecognitionMode"/>.</summary>
     public RecognitionMode Mode { get; init; } = RecognitionMode.InProcess;
@@ -26,6 +29,9 @@ public sealed class RecognitionQueueOptions
     /// hashed as it is read and kept nowhere.
     /// </summary>
     public string? InstanceKeyHash { get; init; }
+
+    /// <summary>Why a configured <c>RECOGNITION__INSTANCEKEY</c> was refused (its length only), or null.</summary>
+    public string? InstanceKeyRefused { get; init; }
 
     /// <summary>The directory <c>GET /api/runners/models/{sha256}</c> serves model files from (only files directly in it).</summary>
     public string ModelsDirectory { get; init; } = Path.Combine(AppContext.BaseDirectory, "models");
@@ -81,10 +87,15 @@ public sealed class RecognitionQueueOptions
     public static RecognitionQueueOptions Bind(IConfiguration? configuration)
     {
         var d = new RecognitionQueueOptions();
+        var key = Text(configuration, "InstanceKey");
+        var keyOk = Runners.GpuRunnerTokens.LooksLikeInstanceKey(key);
         return new RecognitionQueueOptions
         {
             Mode = ParseMode(Text(configuration, "Mode")),
-            InstanceKeyHash = Text(configuration, "InstanceKey") is { Length: >= MinInstanceKeyLength } key ? Runners.GpuRunnerTokens.Hash(key) : null,
+            InstanceKeyHash = keyOk ? Runners.GpuRunnerTokens.Hash(key!) : null,
+            InstanceKeyRefused = keyOk || string.IsNullOrEmpty(key)
+                ? null
+                : $"it has {key.Length} characters, not {MinInstanceKeyLength} to {MaxInstanceKeyLength}",
             ModelsDirectory = Text(configuration, "ModelsDir") is { Length: > 0 } dir ? Path.GetFullPath(dir) : d.ModelsDirectory,
             InteractiveClaimWait = Int(configuration, "InteractiveClaimSeconds", 1, 3600) is { } s ? TimeSpan.FromSeconds(s) : d.InteractiveClaimWait,
             InputRetention = Int(configuration, "InputRetentionHours", 1, 24 * 30) is { } h ? TimeSpan.FromHours(h) : d.InputRetention,

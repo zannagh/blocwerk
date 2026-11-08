@@ -76,6 +76,11 @@ public static partial class RunnerApiEndpoints
             return await RecognitionBundleAsync(runner, jobId, http, recognition, logger);
         }
 
+        if (GpuJobsOff(queue))
+        {
+            return Outcome(http, RunnerJobOutcome.Over);
+        }
+
         // A bundle missing on the server fails the job at once (410 "over"), see GpuJobQueue.BundleForRunnerAsync.
         var (outcome, path) = await queue.BundleForRunnerAsync(runner, jobId, http.RequestAborted);
         if (outcome != RunnerJobOutcome.Ok || path is null)
@@ -98,6 +103,11 @@ public static partial class RunnerApiEndpoints
         }
 
         var recognitionJob = await recognition.FindAsync(jobId, http.RequestAborted);
+        if (recognitionJob is null && GpuJobsOff(queue))
+        {
+            return Outcome(http, RunnerJobOutcome.Over);
+        }
+
         var outcome = recognitionJob is null
             ? await queue.ProgressAsync(runner, jobId, report, http.RequestAborted)
             : await recognition.ProgressAsync(runner, jobId, report, http.RequestAborted);
@@ -115,7 +125,13 @@ public static partial class RunnerApiEndpoints
             return refused;
         }
 
-        var outcome = await recognition.FindAsync(jobId, http.RequestAborted) is null
+        var isGpuJob = await recognition.FindAsync(jobId, http.RequestAborted) is null;
+        if (isGpuJob && GpuJobsOff(queue))
+        {
+            return Outcome(http, RunnerJobOutcome.Over);
+        }
+
+        var outcome = isGpuJob
             ? await queue.FailAsync(runner, jobId, failure, http.RequestAborted)
             : await recognition.FailAsync(runner, jobId, failure, http.RequestAborted);
         return Outcome(http, outcome);
@@ -133,6 +149,11 @@ public static partial class RunnerApiEndpoints
         if (await recognition.FindAsync(jobId, http.RequestAborted) is not null)
         {
             return await RecognitionResultAsync(runner, jobId, http, queue, recognition, logger);
+        }
+
+        if (GpuJobsOff(queue))
+        {
+            return Outcome(http, RunnerJobOutcome.Over);
         }
 
         var max = await queue.UploadLimitAsync(jobId, http.RequestAborted);
@@ -175,6 +196,11 @@ public static partial class RunnerApiEndpoints
             return refused;
         }
 
+        if (GpuJobsOff(queue))
+        {
+            return Outcome(http, RunnerJobOutcome.Over);
+        }
+
         var max = queue.Options.MaxPreviewBytes;
         if (http.Request.ContentLength > max)
         {
@@ -199,6 +225,12 @@ public static partial class RunnerApiEndpoints
             return Results.Problem("The upload was interrupted.", statusCode: StatusCodes.Status400BadRequest);
         }
     }
+
+    /// <summary>
+    /// With <c>RUNNERS__MODE=off</c> the API may still be mapped for the recognition queue; the 3D job calls then answer
+    /// 410 "over", so a runner that held a 3D job drops it instead of retrying.
+    /// </summary>
+    private static bool GpuJobsOff(GpuJobQueue queue) => queue.Options.Mode == GpuRunnerMode.Off;
 
     /// <summary>Lets a body up to the cap in (the queue enforces the exact cap), and demands a minimum rate on HTTP/1.x.</summary>
     private static void PrepareBody(HttpContext http, long max)

@@ -8,6 +8,7 @@ using System.Text;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Recognition;
 using Blocwerk.Core.Runners;
+using Microsoft.Extensions.Configuration;
 using static Blocwerk.Core.Tests.RecognitionApiSupport;
 
 namespace Blocwerk.Core.Tests;
@@ -142,5 +143,24 @@ public class RecognitionRunnerApiModeTests
         Assert.Equal(TimeSpan.FromMinutes(30), options.RunOf(RecognitionKinds.DetectHolds, RecognitionLane.Background, 8));
         Assert.Equal(RecognitionMode.QueueWithFallback, RecognitionQueueOptions.ParseMode(" Queue+Fallback "));
         Assert.Equal(RecognitionMode.InProcess, RecognitionQueueOptions.ParseMode(null));
+    }
+
+    [Theory]
+    [InlineData(31, false)]
+    [InlineData(32, true)]
+    [InlineData(256, true)]
+    [InlineData(257, false)]
+    public void InstanceKey_OfARefusedLength_HasNoHash_AndSaysWhy(int length, bool accepted)
+    {
+        var key = new string('k', length);
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Blocwerk:Recognition:InstanceKey"] = key })
+            .Build();
+
+        var options = RecognitionQueueOptions.Bind(configuration);
+
+        Assert.Equal(accepted ? GpuRunnerTokens.Hash(key) : null, options.InstanceKeyHash);
+        Assert.Equal(accepted, options.InstanceKeyRefused is null);
+        Assert.Equal(accepted, GpuRunnerTokens.LooksLikeInstanceKey(key));
     }
 }
