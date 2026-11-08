@@ -118,6 +118,12 @@ services:
       GEOMETRYSERVICE__TEXTURES__MMPERPX: ${GEOMETRYSERVICE__TEXTURES__MMPERPX:-}
       GEOMETRYSERVICE__TEXTURES__MAXSIDEPX: ${GEOMETRYSERVICE__TEXTURES__MAXSIDEPX:-}
       GEOMETRYSERVICE__TEXTURES__JPEGQUALITY: ${GEOMETRYSERVICE__TEXTURES__JPEGQUALITY:-}
+      # Hold recognition: inprocess (default) runs it inside the app; queue+fallback / queue hand it to the
+      # recognition service below (runner protocol 1.2). RECOGNITION_INSTANCEKEY is the instance runner's key, shared by
+      # the app and that service: generate one into docker/.env (>= 32 characters, `openssl rand -hex 32`). Do NOT
+      # hardcode it here. Empty = no instance runner (the recognition service then exits at start).
+      RECOGNITION__MODE: ${RECOGNITION_MODE:-inprocess}
+      RECOGNITION__INSTANCEKEY: ${RECOGNITION_INSTANCEKEY:-}
     volumes:
       - ./appsettings.json:/app/appsettings.json:ro
       # Persist the DataProtection key ring across redeploys (see AuthenticationServices.cs) so a
@@ -130,6 +136,25 @@ services:
     depends_on:
       - postgres
       - otel-dashboard
+    restart: unless-stopped
+
+  # Recognition worker (docker/recognition/, src/Blocwerk.Recognition.Worker): hold detection, markers, presence and
+  # panel matching for the app, pulled through the runner API as the instance runner (one job at a time). Started by
+  # default; it needs RECOGNITION_INSTANCEKEY (same value as the app's). No published port: GET /health on 8080 inside.
+  # Models are mounted read-only, never baked into the image. JOB_MAX_MEMORY_MB: above it a job fails as "resource"
+  # (keep it ~450 MB under the memory limit).
+  recognition:
+    image: ghcr.io/zannagh/blocwerk-recognition:latest
+    environment:
+      RECOGNITION__SERVER: http://blocwerk:5050
+      RECOGNITION__INSTANCEKEY: ${RECOGNITION_INSTANCEKEY:-}
+      JOB_MAX_MEMORY_MB: ${RECOGNITION_JOB_MAX_MEMORY_MB:-2560}
+    volumes:
+      # The ONNX models (climbingcrux.onnx, ...) in docker/models.
+      - ./models:/models:ro
+    mem_limit: 3g
+    depends_on:
+      - blocwerk
     restart: unless-stopped
 
   # Wall-geometry service (docker/wall-geometry/): marker observations -> metric 3D wall geometry, and

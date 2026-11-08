@@ -5,6 +5,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
+using Blocwerk.Recognition.Worker.Jobs;
 
 namespace Blocwerk.Recognition.Worker.Protocol;
 
@@ -75,6 +76,20 @@ public sealed class RunnerApiClient
     {
         using var response = await http.PostAsJsonAsync($"api/runners/jobs/{jobId}/fail", failure, WorkerJson.Options, ct);
         Ensure(response, jobId);
+    }
+
+    /// <summary>Downloads a model by hash into <paramref name="target"/>; the caller checks the hash.</summary>
+    public async Task DownloadModelAsync(string sha256, string target, CancellationToken ct)
+    {
+        using var response = await http.GetAsync($"api/runners/models/{sha256}", HttpCompletionOption.ResponseHeadersRead, ct);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            throw new RecognitionInputException($"The server has no model {sha256}.");
+        }
+
+        Ensure(response, null);
+        await using var file = File.Create(target);
+        await response.Content.CopyToAsync(file, ct);
     }
 
     private static void Ensure(HttpResponseMessage response, Guid? jobId)

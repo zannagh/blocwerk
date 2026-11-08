@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "imageWidth": 4000,
+  "imageHeight": 3000,
+  "markers": [
+    {
+      "id": 7,
+      "cornersPx": [[100.0, 100.0], [180.0, 102.0], [178.0, 181.0], [99.0, 180.0]],
+      "cornersNormalized": [[0.025, 0.03333333333333333], [0.045, 0.034], [0.0445, 0.060333333333333336], [0.02475, 0.06]],
+      "sidePx": 79.6,
+      "edgeRatio": 1.02,
+      "synthetic": false
+    }
+  ],
+  "rejected": [
+    {
+      "id": 40,
+      "cornersPx": [[100.0, 100.0], [180.0, 102.0], [178.0, 181.0], [99.0, 180.0]],
+      "sidePx": 12.0,
+      "edgeRatio": 1.1,
+      "reason": "IdNotAllowed",
+      "detail": "id 40 is not on the wall"
+    }
+  ],
+  "undecodedCandidateCount": 3,
+  "suspicious": false,
+  "warnings": []
+}

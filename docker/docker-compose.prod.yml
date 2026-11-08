@@ -138,6 +138,10 @@ services:
       BLOCWERK__AUTH__APIKEYLOGIN__ALLOWEDUSERIDS__0: ${APIKEYLOGIN_USER_ID:-}
       # Re-detect in the wall editor (proposals to accept or keep). OFF unless .env says otherwise.
       HOLDDETECTION__REDETECT__ENABLED: ${REDETECT_ENABLED:-false}
+      # Hold recognition: inprocess (default) | queue+fallback | queue (the recognition service below). The instance
+      # runner key is shared with that service; generate it into .env (openssl rand -hex 32).
+      RECOGNITION__MODE: ${RECOGNITION_MODE:-inprocess}
+      RECOGNITION__INSTANCEKEY: ${RECOGNITION_INSTANCEKEY:-}
     volumes:
       - ./appsettings.json:/app/appsettings.json:ro
       - ./climbingcrux.onnx:/app/models/climbingcrux.onnx:ro
@@ -162,6 +166,25 @@ services:
     networks:
       - default
       - edge
+
+  # Recognition worker (docker/recognition/, src/Blocwerk.Recognition.Worker): hold detection, markers, presence and
+  # panel matching for the app, pulled through the runner API as the instance runner (one job at a time). Started by
+  # default; it needs RECOGNITION_INSTANCEKEY (same value as the app's). No published port: GET /health on 8080 inside.
+  # Models are mounted read-only, never baked into the image. JOB_MAX_MEMORY_MB: above it a job fails as "resource"
+  # (keep it ~450 MB under the memory limit).
+  recognition:
+    image: ghcr.io/zannagh/blocwerk-recognition:latest
+    environment:
+      RECOGNITION__SERVER: http://blocwerk:5050
+      RECOGNITION__INSTANCEKEY: ${RECOGNITION_INSTANCEKEY:-}
+      JOB_MAX_MEMORY_MB: ${RECOGNITION_JOB_MAX_MEMORY_MB:-2560}
+    volumes:
+      - ./climbingcrux.onnx:/models/climbingcrux.onnx:ro
+    mem_limit: 3g
+    depends_on:
+      - blocwerk
+    restart: unless-stopped
+    logging: *logging-app
 
   # Wall-geometry service: marker observations -> metric 3D wall geometry, photos + geometry ->
   # per-facet textures. Internal only (no ports, not on `edge`); the app reaches it as

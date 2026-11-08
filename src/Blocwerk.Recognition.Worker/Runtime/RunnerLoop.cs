@@ -2,18 +2,21 @@
 // See License in the project root for license information.
 
 using System.Runtime.InteropServices;
+using Blocwerk.Recognition.Worker.Models;
 using Blocwerk.Recognition.Worker.Protocol;
 
 namespace Blocwerk.Recognition.Worker.Runtime;
 
 /// <summary>
-/// The runner loop (protocol §1.2): hello, then claim (long-poll) and run one job at a time. A hello whose
+/// The runner loop (protocol §1.2): warm the models, hello, then claim (long-poll) and run one job at a time. A hello whose
 /// answer confirms no recognition capability (a 1.1 server) stops the worker with exit code 2 (§1.5); a refused key with 3.
 /// After a transient error the loop says hello again before the next claim.
 /// </summary>
 public sealed class RunnerLoop(
     RunnerApiClient api,
     JobExecutor executor,
+    ModelStore models,
+    YoloBoxDetector detector,
     IMemoryProbe memory,
     WorkerOptions options,
     WorkerHealth health,
@@ -31,7 +34,7 @@ public sealed class RunnerLoop(
         await Task.Yield();
         try
         {
-            health.MarkModelsLoaded();
+            await WarmAsync(stopping);
             while (!stopping.IsCancellationRequested)
             {
                 if (!await HelloAsync(stopping))
@@ -52,6 +55,17 @@ public sealed class RunnerLoop(
         {
             // Shutting down.
         }
+    }
+
+    private async Task WarmAsync(CancellationToken ct)
+    {
+        if (options.WarmModel is { } name && await models.FindLocalAsync(name, ct) is { } model)
+        {
+            detector.Load(model.Path, model.Sha256);
+            logger.LogInformation("Model {Name} ({Sha256}) loaded", name, model.Sha256);
+        }
+
+        health.MarkModelsLoaded();
     }
 
     private async Task<bool> HelloAsync(CancellationToken stopping)

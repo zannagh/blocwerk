@@ -67,6 +67,8 @@ blocwerk:volume:prod:/app/models/climbingcrux.onnx
 blocwerk:volume:prod:/app/models/hold-segmenter-encoder.onnx
 blocwerk:volume:prod:/app/models/hold-segmenter-decoder.onnx
 postgres:healthcheck:prod
+recognition:volume:base:/models
+recognition:volume:prod:/models/climbingcrux.onnx
 "
 
 # Ports prod publishes on the Docker `edge` network's gateway, one per line: <service>:<container port>:<host ip>.
@@ -79,7 +81,7 @@ blocwerk:5050:172.20.0.1
 
 # What `docker compose up -d` starts on the box with prod.env.example's COMPOSE_PROFILES, sorted. splat-cpu is
 # missing on purpose (profile `splat-cpu`, only for the O7 rollback: docs/runbooks/o7-splat-on-runners.md).
-DEFAULT_SERVICES="blocwerk otel-dashboard postgres wall-geometry"
+DEFAULT_SERVICES="blocwerk otel-dashboard postgres recognition wall-geometry"
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT

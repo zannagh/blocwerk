@@ -21,6 +21,8 @@ internal sealed class FakeRunnerServer : HttpMessageHandler
 
     public HttpStatusCode ProgressStatus { get; set; } = HttpStatusCode.OK;
 
+    public byte[] Model { get; set; } = [];
+
     /// <summary>Gets or sets what runs on every claim call (e.g. stopping the loop once the queue is empty).</summary>
     public Action? OnClaim { get; set; }
 
@@ -56,6 +58,7 @@ internal sealed class FakeRunnerServer : HttpMessageHandler
             "/api/runners/hello" => Json(HttpStatusCode.OK, HelloAnswer),
             "/api/runners/claim" => Claim(),
             _ when path.EndsWith("/bundle", StringComparison.Ordinal) => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(Bundle) },
+            _ when path.StartsWith("/api/runners/models/", StringComparison.Ordinal) => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(Model) },
             _ when path.EndsWith("/progress", StringComparison.Ordinal) => Json(ProgressStatus, """{"reason":"over"}"""),
             _ => Json(HttpStatusCode.OK, """{"ok":true}"""),
         };

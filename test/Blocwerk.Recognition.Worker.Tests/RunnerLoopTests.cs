@@ -3,6 +3,7 @@
 
 using System.Text.Json.Nodes;
 using Blocwerk.Recognition.Worker.Jobs;
+using Blocwerk.Recognition.Worker.Models;
 using Blocwerk.Recognition.Worker.Runtime;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -70,7 +71,8 @@ public class RunnerLoopTests
         var api = server.Client(options);
         var health = new WorkerHealth(options, TimeProvider.System);
         var executor = new JobExecutor(api, [handler], handler, options, TimeProvider.System, NullLogger<JobExecutor>.Instance);
-        var loop = new RunnerLoop(api, executor, handler, options, health, lifetime, NullLogger<RunnerLoop>.Instance);
+        var models = new ModelStore(options, api, NullLogger<ModelStore>.Instance);
+        var loop = new RunnerLoop(api, executor, models, new YoloBoxDetector(), handler, options, health, lifetime, NullLogger<RunnerLoop>.Instance);
         return (loop, health);
     }
 }

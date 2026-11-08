@@ -62,6 +62,8 @@
   <!-- Expose internal matching helpers (e.g. the colour sanity-gate) to the unit tests. -->
   <ItemGroup>
     <InternalsVisibleTo Include="Blocwerk.HoldDetection.Tests" />
+    <!-- The recognition worker replays the tiled YOLO boxes (YoloTiledDetector) for detect-holds@2. -->
+    <InternalsVisibleTo Include="Blocwerk.Recognition.Worker" />
   </ItemGroup>
 
 </Project>

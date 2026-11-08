@@ -2,9 +2,11 @@
 // See License in the project root for license information.
 
 using Blocwerk.Core.Abstractions;
+using Blocwerk.HoldDetection.Markers;
 using Blocwerk.HoldDetection.Matching;
 using Blocwerk.Recognition.Worker;
 using Blocwerk.Recognition.Worker.Jobs;
+using Blocwerk.Recognition.Worker.Models;
 using Blocwerk.Recognition.Worker.Protocol;
 using Blocwerk.Recognition.Worker.Runtime;
 using Serilog;
@@ -20,8 +22,15 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton(new RunnerApiClient(new HttpClient { Timeout = TimeSpan.FromMinutes(5) }, options));
 builder.Services.AddSingleton<IMemoryProbe, CgroupMemoryProbe>();
 builder.Services.AddSingleton<WorkerHealth>();
+builder.Services.AddSingleton<ModelStore>();
+builder.Services.AddSingleton<YoloBoxDetector>();
+builder.Services.AddSingleton<IMarkerDetectionService, ArucoMarkerDetectionService>();
 builder.Services.AddSingleton<IHoldPresenceProbe, OpenCvHoldPresenceProbe>();
+builder.Services.AddSingleton<IHoldOverlapMatcher, OpenCvHoldOverlapMatcher>();
+builder.Services.AddSingleton<IRecognitionJobHandler, DetectHoldsHandler>();
+builder.Services.AddSingleton<IRecognitionJobHandler, MarkersHandler>();
 builder.Services.AddSingleton<IRecognitionJobHandler, PresenceHandler>();
+builder.Services.AddSingleton<IRecognitionJobHandler, MatchPanelsHandler>();
 builder.Services.AddSingleton<JobExecutor>();
 builder.Services.AddHostedService<RunnerLoop>();
 

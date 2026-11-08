@@ -152,6 +152,28 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
+      # The recognition worker (docker/recognition/Dockerfile), released with the app it serves.
+      - name: Recognition image metadata
+        if: needs.determine-jobs.outputs.should_push_image == 'true'
+        id: meta-recognition
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-recognition
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || github.event_name == 'release' }}
+            type=raw,value=${{ steps.version.outputs.semVer }}
+
+      - name: Build and push the recognition image
+        if: needs.determine-jobs.outputs.should_push_image == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/recognition/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta-recognition.outputs.tags }}
+          labels: ${{ steps.meta-recognition.outputs.labels }}
+
       - name: Save Docker tarball
         if: needs.determine-jobs.outputs.is_release == 'true'
         run: |

@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "proposals": [{"leftHoldId": 1, "rightHoldId": 1, "confidence": 0.82, "moved": false, "residualPx": 3.4, "rescue": null}],
+  "unmatchedLeft": [2],
+  "unmatchedRight": [],
+  "warpedLeftPositions": [[0.1, 0.5], null],
+  "warpedLeftShapes": [null, [[0.09, 0.29], [0.11, 0.29], [0.1, 0.31]]]
+}

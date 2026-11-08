@@ -1,0 +1,4 @@
+{
+  "version": 1,
+  "options": {"allowedIds": [0, 1, 2, 35], "minQuietZoneContrast": 0.1, "refineCorners": true}
+}
