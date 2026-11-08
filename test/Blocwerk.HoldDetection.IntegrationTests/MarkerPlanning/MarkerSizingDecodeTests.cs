@@ -15,7 +15,7 @@ namespace Blocwerk.HoldDetection.Tests.MarkerPlanning;
 /// </summary>
 public class MarkerSizingDecodeTests
 {
-    [Theory]
+    [OpenCvTheory]
     [InlineData(0.0)]
     [InlineData(0.6)]
     public void SmallestPlanSizes_DecodeAtTheFillerFloor(double blurPx)

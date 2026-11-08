@@ -15,7 +15,7 @@ public class ExifOrientationFrameTests
 {
     private static readonly string Fixture = Path.Combine(AppContext.BaseDirectory, "Fixtures", "Glyphs", "img2783-topleft.jpg");
 
-    [Fact]
+    [OpenCvFact]
     public void Fixture_WithInjectedOrientation6_IsReadAsRotatedByDefaultOpenCv()
     {
         var raw = File.ReadAllBytes(Fixture);
@@ -31,7 +31,7 @@ public class ExifOrientationFrameTests
         Assert.Equal(plain.Height, applied.Width);
     }
 
-    [Fact]
+    [OpenCvFact]
     public async Task MarkerCorners_OnOrientation6Photo_MatchTheRawFrame()
     {
         var raw = File.ReadAllBytes(Fixture);
@@ -54,7 +54,7 @@ public class ExifOrientationFrameTests
         }
     }
 
-    [Fact]
+    [OpenCvFact]
     public void Outline_OnOrientation6Photo_MatchesTheRawFrame()
     {
         var raw = File.ReadAllBytes(Fixture);

@@ -24,7 +24,7 @@ public class MarkerPlanPrintDecodeTests
         AllowedIds = Enumerable.Range(0, ArucoDict4X4.Count).ToHashSet(),
     };
 
-    [Fact]
+    [OpenCvFact]
     public async Task EveryIdOfTheDictionary_PrintsAndDecodesToItself()
     {
         var markers = Enumerable.Range(0, ArucoDict4X4.Count)
@@ -44,7 +44,7 @@ public class MarkerPlanPrintDecodeTests
         Assert.All(decoded, d => Assert.InRange(d.SidePx, expectedPx * 0.98, expectedPx * 1.02));
     }
 
-    [Fact]
+    [OpenCvFact]
     public async Task OldSchemeIds_OnTheirPages_DecodeToThemselves()
     {
         // Ids 24–27 sit on segment 0 although the old scheme says segment 4: the plan carries them as-is.

@@ -120,6 +120,20 @@ dotnet test
 
 It runs on port 5050 because 5000 is taken by AirPlay on macOS. Migrations are applied automatically at startup, so there is no separate database setup step.
 
+**On a Mac, hold recognition runs in the worker container.** OpenCV's native library ships for Linux only, so in-process recognition cannot work on macOS and the tests that need OpenCV skip there (CI runs them on Linux). Run the app in queue mode and the recognition worker's arm64 image next to it, with the same instance key on both sides:
+
+```bash
+export RECOGNITION__INSTANCEKEY="$(openssl rand -hex 32)"
+RECOGNITION__MODE=queue dotnet run --project src/Blocwerk.Web
+
+# second terminal, same RECOGNITION__INSTANCEKEY; docker/models holds the ONNX models
+docker run --rm --platform linux/arm64 \
+  -e RECOGNITION__SERVER=http://host.docker.internal:5050 \
+  -e RECOGNITION__INSTANCEKEY \
+  -v "$PWD/docker/models:/models:ro" \
+  ghcr.io/zannagh/blocwerk-recognition:0.1.0
+```
+
 The main projects are `Blocwerk.Core` (entities, services, EF Core), `Blocwerk.Authentication` and `Blocwerk.Web` (Blazor Server, the REST API and everything user-facing). Hold recognition (ONNX detection, the OpenCV outlines and matcher) and the recognition worker live in [zannagh/blocwerk-recognition](https://github.com/zannagh/blocwerk-recognition).
 
 Two honest limitations while you are in there: the model detects holds but does not segment their shape, so hold outlines are an eight-point polygon you adjust by hand, and its colour classification is bad enough that recolouring with the paint tool is part of the normal workflow.

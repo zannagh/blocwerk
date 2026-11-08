@@ -20,7 +20,7 @@ public class MarkerPlaneMapperTests
         new(0, 80, 600), new(1, 880, 620), new(3, 90, 80), new(2, 860, 60), new(4, 470, 350),
     ];
 
-    [Fact]
+    [OpenCvFact]
     public void MultiMarker_RecoversPlaneDistancesWithinHalfAMillimetre()
     {
         using var scene = CreateScene();
@@ -41,7 +41,7 @@ public class MarkerPlaneMapperTests
         AssertScale(scene, map, 550, 400, 0.02);
     }
 
-    [Fact]
+    [OpenCvFact]
     public void SingleMarker_IsExactNearTheMarkerAndDegradesGracefully()
     {
         using var scene = CreateScene();
@@ -65,7 +65,7 @@ public class MarkerPlaneMapperTests
         AssertScale(scene, map, 532, 412, 0.02);
     }
 
-    [Fact]
+    [OpenCvFact]
     public void RansacDropsAMarkerWhosePlanePositionIsWrong()
     {
         using var scene = CreateScene();
@@ -80,7 +80,7 @@ public class MarkerPlaneMapperTests
         AssertRoundTrip(scene, map, (300, 450), (1000, 750), MultiToleranceMm);
     }
 
-    [Fact]
+    [OpenCvFact]
     public void LocalFallback_GivesEachMarkerItsOwnSquareFrame()
     {
         using var scene = CreateScene();
@@ -102,7 +102,7 @@ public class MarkerPlaneMapperTests
         AssertScale(scene, local, marker.CenterPx.X, marker.CenterPx.Y, 0.03);
     }
 
-    [Fact]
+    [OpenCvFact]
     public void Placement_ReportsTheFacetAndItsVisibleArea()
     {
         using var scene = CreateScene();

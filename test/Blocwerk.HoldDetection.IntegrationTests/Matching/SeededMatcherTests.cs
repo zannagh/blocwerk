@@ -20,7 +20,7 @@ public class SeededMatcherTests
         { 0.00002, 0.00001, 1 },
     };
 
-    [Fact]
+    [OpenCvFact]
     public void NoSharedTexture_TextureHomographyIsLost_ButTheSeedMatchesEveryHold()
     {
         // Identical holds, and a background that shares NO texture between the photos (the wide-baseline
@@ -48,7 +48,7 @@ public class SeededMatcherTests
         AssertAllMatched(scene, result);
     }
 
-    [Fact]
+    [OpenCvFact]
     public void Orientation6RightPhoto_SeededRunWorksInTheRawFrame()
     {
         var scene = Scene(sharedTexture: true);

@@ -21,7 +21,7 @@ public class PhotoTextureMatcherTests(ITestOutputHelper output)
 
     private static readonly TexturePlaneFrame Frame = new("0", -200, TextureWidth - 200, 100, TextureHeight + 100, TextureWidth, TextureHeight);
 
-    [Fact]
+    [OpenCvFact]
     public void KnownPerspective_IsRecoveredWithinFiveMillimetres()
     {
         using var texture = SyntheticTexture(seed: 7);
@@ -53,7 +53,7 @@ public class PhotoTextureMatcherTests(ITestOutputHelper output)
         Assert.True(worst <= 5, $"worst error {worst:F2} mm");
     }
 
-    [Fact]
+    [OpenCvFact]
     public void UnrelatedTexture_IsNotAccepted()
     {
         using var texture = SyntheticTexture(seed: 7);
@@ -69,7 +69,7 @@ public class PhotoTextureMatcherTests(ITestOutputHelper output)
         Assert.False(registration.Accepted);
     }
 
-    [Fact]
+    [OpenCvFact]
     public void UndecodablePhoto_Throws_AndUndecodableTexture_FailsTheMatch()
     {
         var matcher = new OpenCvPhotoTextureMatcher();

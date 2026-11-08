@@ -17,7 +17,7 @@ namespace Blocwerk.HoldDetection.Tests.Outlines;
 /// </summary>
 public class OutlineConfidenceScoringTests
 {
-    [Fact]
+    [OpenCvFact]
     public void CleanColourBlob_ScoresHigh()
     {
         var result = OutlineOnWood(new Scalar(40, 40, 200));
@@ -27,7 +27,7 @@ public class OutlineConfidenceScoringTests
         Assert.True(Classify(result) == HoldOutlineUpgradeOutcome.Outline);
     }
 
-    [Fact]
+    [OpenCvFact]
     public void WallColouredVolume_FallsBackToTheCircle_AndScoresLow()
     {
         // Within a few units of the synthetic wood (168, 192, 214): nothing to segment against.
@@ -39,7 +39,7 @@ public class OutlineConfidenceScoringTests
         Assert.True(Classify(result) == HoldOutlineUpgradeOutcome.KeepCircle);
     }
 
-    [Fact]
+    [OpenCvFact]
     public void PaleHoldOnWood_IsOutlinedByItsEdges_AndRankedForReview()
     {
         // Pale beige on the synthetic wood: too little colour contrast for the colour pass, a clear edge though.
@@ -50,7 +50,7 @@ public class OutlineConfidenceScoringTests
         Assert.InRange(result.Confidence, 0.2, 0.7);
     }
 
-    [Fact]
+    [OpenCvFact]
     public void TheSameHold_GetsTheSameOutline_WhateverRanOnTheThreadBefore()
     {
         // GrabCut draws from OpenCV's per-thread random generator; another history on the thread must not change the outline.
@@ -72,7 +72,7 @@ public class OutlineConfidenceScoringTests
         Assert.All(outlines, o => Assert.Equal(outlines[0].ShapePoints!.Select(p => (p.Dx, p.Dy)), o.ShapePoints!.Select(p => (p.Dx, p.Dy))));
     }
 
-    [Fact]
+    [OpenCvFact]
     public void AnOutlineThatTakesInTheShadowUnderTheHold_OrAPatchOfWall_IsNotOneHold()
     {
         using Mat img = SyntheticWall.Wood(600, 500);
@@ -94,7 +94,7 @@ public class OutlineConfidenceScoringTests
         Assert.True(OutlineContent.Measure(img, seed, withWall).Foreign >= OutlineContent.MaxForeignShare);
     }
 
-    [Fact]
+    [OpenCvFact]
     public void LessContrast_NeverScoresHigher()
     {
         var strong = OutlineOnWood(new Scalar(40, 40, 200));

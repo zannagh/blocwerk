@@ -11,7 +11,7 @@ namespace Blocwerk.HoldDetection.Tests.Outlines;
 /// </summary>
 public class HoldOutlineUpgradePlannerRealTests
 {
-    [Fact]
+    [OpenCvFact]
     public void ColouredHold_GetsAnOutline_AroundItsUnchangedCentre()
     {
         var (proposal, hold) = PlanOne(HoldFixtures.Green, autoDetected: true);
@@ -21,7 +21,7 @@ public class HoldOutlineUpgradePlannerRealTests
         Assert.Equal((hold.X, hold.Y), (proposal.Result.AnchorX, proposal.Result.AnchorY));
     }
 
-    [Fact]
+    [OpenCvFact]
     public void WallColouredVolume_StaysACircle_ButStillGetsAFingerprint()
     {
         var (proposal, _) = PlanOne(HoldFixtures.BigVolume, autoDetected: true);
@@ -30,7 +30,7 @@ public class HoldOutlineUpgradePlannerRealTests
         Assert.True(proposal.FillsFingerprint);
     }
 
-    [Fact]
+    [OpenCvFact]
     public void ManualHold_IsOnlyPlanned_WhenIncluded()
     {
         using Mat img = HoldFixtures.Load(HoldFixtures.Green.File);

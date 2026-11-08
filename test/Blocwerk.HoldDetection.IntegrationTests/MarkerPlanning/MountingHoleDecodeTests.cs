@@ -43,7 +43,7 @@ public class MountingHoleDecodeTests(ITestOutputHelper output)
     /// decodes and the refined corners are as good as a plain print. (Before the detector kept the black
     /// square over the paper's outline, the walls lost up to 5 of 8 markers or moved corners by 32 px.)
     /// </summary>
-    [Theory]
+    [OpenCvTheory]
     [InlineData(3, 6, null)]
     [InlineData(3, 6, 60.0)]
     [InlineData(3, 6, 128.0)]
@@ -63,7 +63,7 @@ public class MountingHoleDecodeTests(ITestOutputHelper output)
     /// Photo scale, tight default gaps, softened, dark heads, textured walls — at 60 and 120 px per marker
     /// (the planner's corner target and a close-up), 125 mm with a 6 mm head, 50 mm with 6 and 15 mm heads.
     /// </summary>
-    [Theory]
+    [OpenCvTheory]
     [InlineData(125, 3, 6, 60)]
     [InlineData(125, 3, 6, 120)]
     [InlineData(125, 3.5, 15, 60)]
@@ -87,7 +87,7 @@ public class MountingHoleDecodeTests(ITestOutputHelper output)
     /// They still decode, but the refined corners drift toward the wall — pinned so the warning is revisited
     /// when that changes.
     /// </summary>
-    [Theory]
+    [OpenCvTheory]
     [InlineData(60.0)]
     [InlineData(128.0)]
     public void TightDefaults_BelowTheBorderLimit_AreWorse(double wall)
@@ -106,7 +106,7 @@ public class MountingHoleDecodeTests(ITestOutputHelper output)
     /// Photo scale with the gaps the planner recommends for that scale (<see cref="MountingHoleSafety"/>,
     /// 4 px of border): as good as a plain print, refined.
     /// </summary>
-    [Theory]
+    [OpenCvTheory]
     [InlineData(125, 3, 6, 30)]
     [InlineData(125, 3, 6, 40)]
     [InlineData(125, 3, 6, 45)]
@@ -140,7 +140,7 @@ public class MountingHoleDecodeTests(ITestOutputHelper output)
     }
 
     /// <summary>Print scale with the recommended gaps, 50 and 125 mm on one page set.</summary>
-    [Theory]
+    [OpenCvTheory]
     [InlineData(null)]
     [InlineData(60.0)]
     [InlineData(128.0)]

@@ -16,7 +16,7 @@ public class ArucoDictionaryTableTests
 {
     private const int ModulePx = 10;
 
-    [Fact]
+    [OpenCvFact]
     public void Table_MatchesOpenCv_ForAll50Ids()
     {
         for (var id = 0; id < ArucoDict4X4.Count; id++)
