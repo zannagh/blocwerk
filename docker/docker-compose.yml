@@ -119,11 +119,14 @@ services:
       GEOMETRYSERVICE__TEXTURES__MAXSIDEPX: ${GEOMETRYSERVICE__TEXTURES__MAXSIDEPX:-}
       GEOMETRYSERVICE__TEXTURES__JPEGQUALITY: ${GEOMETRYSERVICE__TEXTURES__JPEGQUALITY:-}
       # Hold recognition: inprocess (default) runs it inside the app; queue+fallback / queue hand it to the
-      # recognition service below (runner protocol 1.2). RECOGNITION_INSTANCEKEY is the instance runner's key, shared by
-      # the app and that service: generate one into docker/.env (>= 32 characters, `openssl rand -hex 32`). Do NOT
-      # hardcode it here. Empty = no instance runner (the recognition service then exits at start).
+      # recognition service below (runner protocol 1.2). The instance runner's key needs no setup: without
+      # RECOGNITION_INSTANCEKEY the app generates one at its first start into ./recognition-key/instance.key (0600, handed
+      # to the worker's uid 1654), which the recognition service reads read-only. Set RECOGNITION_INSTANCEKEY in
+      # docker/.env only to choose it yourself (`openssl rand -hex 32`); do NOT hardcode it here.
       RECOGNITION__MODE: ${RECOGNITION_MODE:-inprocess}
       RECOGNITION__INSTANCEKEY: ${RECOGNITION_INSTANCEKEY:-}
+      RECOGNITION__INSTANCEKEYFILE: /app/recognition/instance.key
+      RECOGNITION__INSTANCEKEYFILEOWNER: "1654"
     volumes:
       - ./appsettings.json:/app/appsettings.json:ro
       # Persist the DataProtection key ring across redeploys (see AuthenticationServices.cs) so a
@@ -133,6 +136,8 @@ services:
       - ./beta-videos:/data/beta-videos
       # Wall gallery uploads + the image-variant cache (WALLIMAGE__STORAGEPATH above).
       - ./wall-images:/data/wall-images
+      # The generated instance runner key (RECOGNITION__INSTANCEKEYFILE), shared read-only with the recognition service.
+      - ./recognition-key:/app/recognition
     depends_on:
       - postgres
       - otel-dashboard
@@ -140,7 +145,9 @@ services:
 
   # Recognition worker (docker/recognition/, src/Blocwerk.Recognition.Worker): hold detection, markers, presence and
   # panel matching for the app, pulled through the runner API as the instance runner (one job at a time). Started by
-  # default; it needs RECOGNITION_INSTANCEKEY (same value as the app's). No published port: GET /health on 8080 inside.
+  # default with no setup: it reads the instance key the app generated (./recognition-key, read-only) unless
+  # RECOGNITION_INSTANCEKEY is set, and waits for that file while the app has not written it yet. No published port:
+  # GET /health on 8080 inside (503 when the loop is stuck).
   # Models are mounted read-only, never baked into the image. JOB_MAX_MEMORY_MB: above it a job fails as "resource"
   # (keep it ~450 MB under the memory limit).
   recognition:
@@ -148,8 +155,11 @@ services:
     environment:
       RECOGNITION__SERVER: http://blocwerk:5050
       RECOGNITION__INSTANCEKEY: ${RECOGNITION_INSTANCEKEY:-}
+      RECOGNITION__INSTANCEKEYFILE: /recognition/instance.key
       JOB_MAX_MEMORY_MB: ${RECOGNITION_JOB_MAX_MEMORY_MB:-2560}
     volumes:
+      # The instance key the app generated (RECOGNITION__INSTANCEKEYFILE of the app).
+      - ./recognition-key:/recognition:ro
       # The ONNX models (climbingcrux.onnx, ...) in docker/models.
       - ./models:/models:ro
     mem_limit: 3g

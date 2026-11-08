@@ -9,7 +9,8 @@ namespace Blocwerk.Core.Recognition;
 
 /// <summary>
 /// Deadlines and budgets of the recognition queue, from <c>Blocwerk:Recognition:*</c> or <c>RECOGNITION__*</c>
-/// (<c>RECOGNITION__MODE</c>, <c>RECOGNITION__INSTANCEKEY</c>, <c>RECOGNITION__MODELSDIR</c>,
+/// (<c>RECOGNITION__MODE</c>, <c>RECOGNITION__INSTANCEKEY</c>, <c>RECOGNITION__INSTANCEKEYFILE</c>,
+/// <c>RECOGNITION__INSTANCEKEYFILEOWNER</c>, <c>RECOGNITION__MODELSDIR</c>,
 /// <c>RECOGNITION__INTERACTIVECLAIMSECONDS</c>, <c>RECOGNITION__INPUTRETENTIONHOURS</c>, <c>RECOGNITION__MAXINPUTMB</c>).
 /// The lane values are the protocol's (runner protocol 1.2, §1.4 "Lanes and leases").
 /// </summary>
@@ -30,8 +31,17 @@ public sealed class RecognitionQueueOptions
     /// </summary>
     public string? InstanceKeyHash { get; init; }
 
-    /// <summary>Why a configured <c>RECOGNITION__INSTANCEKEY</c> was refused (its length only), or null.</summary>
+    /// <summary>Why a configured <c>RECOGNITION__INSTANCEKEY</c> was refused (<see cref="InstanceKeyPolicy"/>), or null.</summary>
     public string? InstanceKeyRefused { get; init; }
+
+    /// <summary>
+    /// Without <c>RECOGNITION__INSTANCEKEY</c>: the file the instance key is read from, generated at the first start
+    /// (<see cref="InstanceKeyFile"/>). Null: no file, no instance runner without a configured key.
+    /// </summary>
+    public string? InstanceKeyFile { get; init; }
+
+    /// <summary>The uid a generated key file is handed to when the app runs as root (the recognition worker's user).</summary>
+    public int? InstanceKeyFileOwner { get; init; }
 
     /// <summary>The directory <c>GET /api/runners/models/{sha256}</c> serves model files from (only files directly in it).</summary>
     public string ModelsDirectory { get; init; } = Path.Combine(AppContext.BaseDirectory, "models");
@@ -88,14 +98,14 @@ public sealed class RecognitionQueueOptions
     {
         var d = new RecognitionQueueOptions();
         var key = Text(configuration, "InstanceKey");
-        var keyOk = Runners.GpuRunnerTokens.LooksLikeInstanceKey(key);
+        var refused = string.IsNullOrEmpty(key) ? null : InstanceKeyPolicy.Refusal(key);
         return new RecognitionQueueOptions
         {
             Mode = ParseMode(Text(configuration, "Mode")),
-            InstanceKeyHash = keyOk ? Runners.GpuRunnerTokens.Hash(key!) : null,
-            InstanceKeyRefused = keyOk || string.IsNullOrEmpty(key)
-                ? null
-                : $"it has {key.Length} characters, not {MinInstanceKeyLength} to {MaxInstanceKeyLength}",
+            InstanceKeyHash = !string.IsNullOrEmpty(key) && refused is null ? Runners.GpuRunnerTokens.Hash(key) : null,
+            InstanceKeyRefused = refused,
+            InstanceKeyFile = Text(configuration, "InstanceKeyFile") is { Length: > 0 } file ? Path.GetFullPath(file) : null,
+            InstanceKeyFileOwner = Int(configuration, "InstanceKeyFileOwner", 1, int.MaxValue),
             ModelsDirectory = Text(configuration, "ModelsDir") is { Length: > 0 } dir ? Path.GetFullPath(dir) : d.ModelsDirectory,
             InteractiveClaimWait = Int(configuration, "InteractiveClaimSeconds", 1, 3600) is { } s ? TimeSpan.FromSeconds(s) : d.InteractiveClaimWait,
             InputRetention = Int(configuration, "InputRetentionHours", 1, 24 * 30) is { } h ? TimeSpan.FromHours(h) : d.InputRetention,

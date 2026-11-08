@@ -3,6 +3,7 @@
 
 docker/pgdata
 docker/logs
+docker/recognition-key
 docker/blocwerk.tar.gz
 
 # ONNX models (large binary files)

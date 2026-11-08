@@ -152,7 +152,7 @@ public class RecognitionRunnerApiModeTests
     [InlineData(257, false)]
     public void InstanceKey_OfARefusedLength_HasNoHash_AndSaysWhy(int length, bool accepted)
     {
-        var key = new string('k', length);
+        var key = string.Concat(Enumerable.Range(0, length).Select(i => (char)('a' + (i % 26))));
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Blocwerk:Recognition:InstanceKey"] = key })
             .Build();
