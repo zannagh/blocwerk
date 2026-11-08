@@ -6,8 +6,11 @@ using Blocwerk.Core.Abstractions;
 
 namespace Blocwerk.Core.Detection.Gating;
 
-/// <summary>An outline session that gives its gate slot back when it is disposed.</summary>
-internal sealed class GatedHoldOutlineSession : IHoldOutlineSession
+/// <summary>
+/// An outline session that gives its gate slot back when it is disposed. Keeps the inner session's joint outlining
+/// (the segmenter's batch path) reachable through <see cref="HoldOutlineSessionExtensions.OutlineEach"/>.
+/// </summary>
+internal sealed class GatedHoldOutlineSession : IHoldBatchOutlineSession
 {
     private readonly IHoldOutlineSession inner;
     private readonly IDisposable lease;
@@ -29,6 +32,9 @@ internal sealed class GatedHoldOutlineSession : IHoldOutlineSession
 
     /// <inheritdoc/>
     public HoldOutlineResult Outline(HoldSeed seed) => inner.Outline(seed);
+
+    /// <inheritdoc/>
+    public IReadOnlyList<HoldOutlineResult> OutlineAll(IReadOnlyList<HoldSeed> seeds) => inner.OutlineEach(seeds);
 
     /// <inheritdoc/>
     public void Dispose()

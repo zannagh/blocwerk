@@ -142,6 +142,36 @@ public class ImageRecognitionGateTests
         inner.ReceivedWithAnyArgs(1).Match(default!, default!, default!, default!, default);
     }
 
+    [Fact]
+    public void GatedSession_KeepsTheInnerSessionsBatchPath()
+    {
+        using var gate = Gate();
+        HoldSeed[] seeds = [new(0.2, 0.3, 0.02), new(0.6, 0.4, 0.03)];
+        var joint = new List<HoldOutlineResult>();
+        var inner = Substitute.For<IHoldBatchOutlineSession>();
+        inner.OutlineAll(seeds).Returns(joint);
+        var service = Substitute.For<IHoldOutlineService>();
+        service.OpenSession(Arg.Any<byte[]>()).Returns(inner);
+
+        using var session = new GatedHoldOutlineService(service, gate).OpenSession([1, 2, 3]);
+
+        Assert.Same(joint, session.OutlineEach(seeds));
+        inner.Received(1).OutlineAll(seeds);
+        inner.DidNotReceive().Outline(Arg.Any<HoldSeed>());
+    }
+
+    [Fact]
+    public void GatedSession_OverASessionWithoutBatching_OutlinesOneByOne()
+    {
+        using var gate = Gate();
+        HoldSeed[] seeds = [new(0.2, 0.3, 0.02), new(0.6, 0.4, 0.03)];
+        var outlines = new GatedHoldOutlineService(EnrichmentFakes.Outlines(), gate);
+
+        using var session = outlines.OpenSession([1, 2, 3]);
+
+        Assert.Equal([0.2, 0.6], session.OutlineEach(seeds).Select(r => r.AnchorX));
+    }
+
     private static ImageRecognitionGate Gate() => new(1, TimeSpan.FromMinutes(1), NullLogger.Instance);
 
     /// <summary>Runs <paramref name="work"/> as another caller would: without this flow's gate lease.</summary>
