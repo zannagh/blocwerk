@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Capture;
 using Blocwerk.Core.Data;
@@ -248,42 +249,24 @@ public partial class WallBigUpdateService
         var wallId = wall.Id;
         var centerPanelId = Guid.Empty;
         using var recognitionWall = RecognitionWallScope.Begin(wallId);
-        var queued = QueueDetections(photos);
-        for (var i = 0; i < photos.Count; i++)
+        using var stop = new CancellationTokenSource();
+        var queued = QueueDetections(photos, stop);
+        try
         {
-            var photo = photos[i];
-            // Stored at full resolution (already stripped of location/metadata by StageAsync, pixels
-            // and EXIF orientation untouched): hold detection and the panel matcher below must see the
-            // camera's original. The browser is served downscaled variants instead, generated on
-            // demand from these originals (see IImageVariantCache).
-            var image = photo.Image;
-            var contentType = photo.ContentType;
-
-            var panel = new WallPanel
+            for (var i = 0; i < photos.Count; i++)
             {
-                WallId = wallId,
-                Col = photo.Col,
-                Row = photo.Row,
-                Photo = null,
-                StagedPhoto = image,
-                StagedPhotoContentType = contentType,
-                StagedAt = DateTimeOffset.UtcNow,
-                StagedByUserId = userId,
-                Generation = stagedGen,
-            };
-            db.WallPanels.Add(panel);
-            if (photo.Col == 0 && photo.Row == 0)
+                centerPanelId = await StageOnePanelAsync(db, wall, photos[i], stagedGen, userId, queued?[i]) ?? centerPanelId;
+            }
+        }
+        catch (Exception ex) when (queued is not null)
+        {
+            // A panel whose job the stop cancelled reports the failure that stopped it, not the cancellation.
+            if (await StopQueuedAsync(queued, stop) is { } cause && ex is OperationCanceledException)
             {
-                centerPanelId = panel.Id;
+                ExceptionDispatchInfo.Throw(cause);
             }
 
-            // One gate slot for the panel's detection AND enrichment: the next panel (or another user's
-            // run) only starts decoding once this one's rasters and model buffers are gone (a queued detection outside it).
-            var detected = queued is null ? null : await AwaitOrObserveRestAsync(queued, i);
-            var staged = recognitionGate is null
-                ? await DetectAndEnrichPanelAsync(db, wall, panel, image, stagedGen, detected)
-                : await recognitionGate.RunAsync("stage-panel", () => DetectAndEnrichPanelAsync(db, wall, panel, image, stagedGen, detected));
-            await HoldStacker.StackNewAsync(db, staged);
+            throw;
         }
 
         return centerPanelId;

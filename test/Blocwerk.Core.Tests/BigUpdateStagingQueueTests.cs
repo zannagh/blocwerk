@@ -2,6 +2,8 @@
 // See License in the project root for license information.
 
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Configuration;
+using Blocwerk.Core.Detection.Gating;
 using Blocwerk.Core.Recognition;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
@@ -50,5 +52,47 @@ public sealed class BigUpdateStagingQueueTests : IDisposable
         Assert.Equal(1, holds.Count(x => (x.Col, x.Row) == (0, 0)));
         Assert.Equal(2, holds.Count(x => (x.Col, x.Row) == (1, 0)));
         await h.HoldDetection.DidNotReceiveWithAnyArgs().DetectHoldsAsync(default!, default);
+    }
+
+    /// <summary>
+    /// No pod (nothing is queued) or a pod that never claims (every job times out at once): either way each panel is detected
+    /// in the app inside its own gate slot, so eight panels never race for the one slot and none fails as busy.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Stage_WithFallback_NoRunnerServes_EightPanelsAreDetectedInTheApp_WithoutBusy(bool podAlive)
+    {
+        using var h = new WallTestHarness();
+        using var f = await FakeRecognitionClaimant.FixtureAsync(h, RecognitionMode.QueueWithFallback);
+        if (podAlive)
+        {
+            await FakeRecognitionClaimant.InstanceAsync(f);
+        }
+
+        using var gate = new ImageRecognitionGate(1, TimeSpan.FromMilliseconds(400), NullLogger.Instance);
+        h.HoldDetection.DetectHoldsAsync(default!, default).ReturnsForAnyArgs(async _ =>
+        {
+            await Task.Delay(100);
+            return new List<DetectedHold> { new(0.5, 0.5, 0.05, "red", 0.9) };
+        });
+        var inApp = new GatedHoldDetectionService(h.HoldDetection, gate, new HoldDetectionSettings(), NullLogger.Instance);
+        var service = new WallBigUpdateService(
+            h.DbContextFactory, h.CurrentUser, FakeRecognitionClaimant.Detector(f, inApp, modelFile),
+            Substitute.For<IHoldOverlapMatcher>(), NullLogger<WallBigUpdateService>.Instance, recognitionGate: gate);
+        var photos = Enumerable.Range(0, 8).Select(i => new BigUpdatePhoto(CaptureScenario.TinyJpeg(i), "image/jpeg", i, 0)).ToList();
+
+        var staging = service.StageAsync(h.WallId, photos);
+        if (podAlive)
+        {
+            await FakeRecognitionClaimant.QueuedAsync(f, 8);
+            f.Clock.Advance(f.Options.InteractiveClaimWait + TimeSpan.FromSeconds(1));
+        }
+
+        await staging;
+
+        await using var db = h.CreateContext();
+        Assert.Equal(8, await db.Holds.AsNoTracking().CountAsync(x => x.WallPanelId != null));
+        Assert.Equal(podAlive ? 8 : 0, await db.RecognitionJobs.CountAsync());
     }
 }

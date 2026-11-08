@@ -5,6 +5,7 @@
 using System.Diagnostics;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Geometry.Proposals;
+using Blocwerk.Core.Recognition.Remote;
 using Blocwerk.Core.Services;
 using Microsoft.Extensions.Logging;
 
@@ -27,8 +28,9 @@ public sealed partial class WallCaptureProcessor
 
     /// <summary>Photo index → hold centres [x, y] px; empty when there is no detector or nothing was found.</summary>
     private async Task<IReadOnlyDictionary<int, IReadOnlyList<double[]>>> PhotoHoldsAsync(
-        Guid captureId, IReadOnlyList<WallCapturePhoto> photos, CancellationToken ct)
+        WallCapture capture, IReadOnlyList<WallCapturePhoto> photos, CancellationToken ct)
     {
+        var captureId = capture.Id;
         var holds = new Dictionary<int, IReadOnlyList<double[]>>();
         if (holdDetection is null || photos.Count == 0)
         {
@@ -37,6 +39,7 @@ public sealed partial class WallCaptureProcessor
 
         await SetStageAsync(captureId, WallCaptureStatus.Solving, 0.55, "Finding the holds in the photos", ct);
         var detector = new InAppCaptureHoldDetector(holdDetection, settings);
+        using var recognitionWall = RecognitionWallScope.Begin(capture.WallId);
         var watch = Stopwatch.StartNew();
         foreach (var photo in photos)
         {

@@ -28,9 +28,9 @@ public static class RecognitionModeServices
         services.AddSingleton<RecognitionCaller>();
         Decorate<IHoldDetectionService>(services, (sp, inner) => new QueuedHoldDetectionService(
             inner, sp.GetRequiredService<RecognitionCaller>(), sp.GetRequiredService<RunnerHoldDetection>(), sp.GetRequiredService<BlocwerkSettings>().HoldDetection));
-        Decorate<IMarkerDetectionService>(services, (sp, inner) => new QueuedMarkerDetectionService(inner, sp.GetRequiredService<RecognitionCaller>()));
-        Decorate<IHoldPresenceProbe>(services, (sp, inner) => new QueuedHoldPresenceProbe(inner, sp.GetRequiredService<RecognitionCaller>()));
-        Decorate<IHoldOverlapMatcher>(services, (sp, inner) => new QueuedHoldOverlapMatcher(inner, sp.GetRequiredService<RecognitionCaller>()));
+        Decorate<IMarkerDetectionService>(services, (sp, inner) => new QueuedMarkerDetectionService(inner, sp.GetRequiredService<RecognitionCaller>(), sp.GetService<IImageRecognitionGate>()));
+        Decorate<IHoldPresenceProbe>(services, (sp, inner) => new QueuedHoldPresenceProbe(inner, sp.GetRequiredService<RecognitionCaller>(), sp.GetService<IImageRecognitionGate>()));
+        Decorate<IHoldOverlapMatcher>(services, (sp, inner) => new QueuedHoldOverlapMatcher(inner, sp.GetRequiredService<RecognitionCaller>(), sp.GetService<IImageRecognitionGate>()));
         return builder;
     }
 

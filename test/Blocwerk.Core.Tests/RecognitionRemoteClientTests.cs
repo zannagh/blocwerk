@@ -64,7 +64,7 @@ public sealed class RecognitionRemoteClientTests : IDisposable
         var probe = new QueuedHoldPresenceProbe(inProcess, FakeRecognitionClaimant.Caller(f));
         using var wall = RecognitionWallScope.Begin(h.WallId);
 
-        var call = Task.Run(() => probe.Score(CaptureScenario.TinyJpeg(1), CaptureScenario.TinyJpeg(2), [new PresenceQuery(1, 1, 1, 1, 1)]));
+        var call = probe.ScoreAsync("look-check", CaptureScenario.TinyJpeg(1), CaptureScenario.TinyJpeg(2), [new PresenceQuery(1, 1, 1, 1, 1)], CancellationToken.None);
         await pod.FailAsync(await pod.ClaimAsync(), "the photo cannot be decoded");
 
         var ex = await Assert.ThrowsAsync<ImageRecognitionUnavailableException>(() => call);
@@ -94,6 +94,7 @@ public sealed class RecognitionRemoteClientTests : IDisposable
     {
         using var h = new WallTestHarness();
         using var f = await FakeRecognitionClaimant.FixtureAsync(h, RecognitionMode.QueueWithFallback);
+        await FakeRecognitionClaimant.InstanceAsync(f);
         using var wall = RecognitionWallScope.Begin(h.WallId);
 
         var call = new QueuedMarkerDetectionService(inProcessMarkers, FakeRecognitionClaimant.Caller(f))

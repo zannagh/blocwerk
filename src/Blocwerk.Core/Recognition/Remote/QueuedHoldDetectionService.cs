@@ -21,18 +21,27 @@ public sealed class QueuedHoldDetectionService(
     private const string PhotoFile = "p01.jpg";
 
     /// <inheritdoc/>
-    public async Task<List<DetectedHold>> DetectHoldsAsync(byte[] imageData, HoldDetectionParameters? parameters = null)
+    public async Task<List<DetectedHold>> DetectHoldsAsync(byte[] imageData, HoldDetectionParameters? parameters = null) =>
+        await DetectRemoteAsync(imageData, CancellationToken.None) ?? await inProcess.DetectHoldsAsync(imageData, parameters);
+
+    /// <summary>
+    /// The runner's holds, or null when the app detects them itself (<see cref="DetectInAppAsync"/>): the caller decides
+    /// where that runs, e.g. inside a gate slot it already holds. <paramref name="ct"/> cancels the job.
+    /// </summary>
+    public async Task<List<DetectedHold>?> DetectRemoteAsync(byte[] imageData, CancellationToken ct)
     {
         if (!settings.Enabled || RecognitionDetectRequest.For(settings, models) is not { } request)
         {
-            return await inProcess.DetectHoldsAsync(imageData, parameters);
+            return null;
         }
 
         var parts = new[] { RecognitionParts.Request(request), RecognitionParts.Image("photos", PhotoFile, imageData) };
         var memory = RecognitionParts.MemoryMb([imageData], together: false);
-        return await caller.RunAsync(RecognitionKinds.DetectHolds, parts, memory, Read, CancellationToken.None)
-            ?? await inProcess.DetectHoldsAsync(imageData, parameters);
+        return await caller.RunAsync(RecognitionKinds.DetectHolds, parts, memory, Read, ct);
     }
+
+    /// <summary>The app's own detection (gated by the in-process service).</summary>
+    public Task<List<DetectedHold>> DetectInAppAsync(byte[] imageData) => inProcess.DetectHoldsAsync(imageData);
 
     private static List<DetectedHold> Read(JsonElement result) =>
         RunnerHoldsResult.ParseBoxes(result).TryGetValue(PhotoFile, out var photo)

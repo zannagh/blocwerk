@@ -96,9 +96,13 @@ public partial class WallBigUpdateService
         // The carryover pass: an old hold may only be paired with a detection that is unambiguously its own. The overlap pass
         // between two panels keeps every proposal; its unsure ones reach the review only as unsure links. Off the circuit,
         // after an awaited gate slot.
-        return recognitionGate.RecogniseAsync(carryPass ? "carry-match" : "overlap-match", () => carryPass && overlapMatcher is IHoldCarryMatcher carry
-            ? carry.MatchCarry(leftImage, leftHolds, rightImage, rightHolds, direction, diag, seed)
-            : overlapMatcher.Match(leftImage, leftHolds, rightImage, rightHolds, direction, diag, seed));
+        // The overlap pass may go to a recognition runner, awaited without a slot.
+        return carryPass
+            ? recognitionGate.RecogniseAsync("carry-match", () => overlapMatcher is IHoldCarryMatcher carry
+                ? carry.MatchCarry(leftImage, leftHolds, rightImage, rightHolds, direction, diag, seed)
+                : overlapMatcher.Match(leftImage, leftHolds, rightImage, rightHolds, direction, diag, seed))
+            : overlapMatcher.MatchAsync(
+                recognitionGate, "overlap-match", new MatcherPair(leftImage, leftHolds, rightImage, rightHolds), direction, diag, seed);
     }
 
     /// <summary>The panels this open session has already recorded as unaligned (empty when none is open).</summary>

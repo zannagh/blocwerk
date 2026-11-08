@@ -12,6 +12,9 @@ namespace Blocwerk.Core.Recognition.Remote;
 /// <summary>The envelope parts of a recognition job: the <c>request</c> JSON, the photos, and the memory they need on a runner.</summary>
 public static class RecognitionParts
 {
+    /// <summary>What an image whose header cannot be read is taken for: a 48 MP phone photo.</summary>
+    public const long UnreadablePixels = 48_000_000;
+
     /// <summary>The contracts' JSON: camelCase, enums by name, nulls left out.</summary>
     public static JsonSerializerOptions Json { get; } = new(JsonSerializerDefaults.Web)
     {
@@ -28,14 +31,16 @@ public static class RecognitionParts
     /// <summary>
     /// What a job needs on a runner, from the images' headers (no decode), design §4: 300 MB plus 12 bytes per pixel
     /// (RGBA raster, BGR Mat, grey and Lab copies) of the images held at once (<paramref name="together"/>) or of the
-    /// largest one (photos taken one after the other). Null when no header can be read.
+    /// largest one (photos taken one after the other). An image whose header cannot be read counts as
+    /// <see cref="UnreadablePixels"/>, so it never makes a job look small. Null without any image. The app's photos are
+    /// JPEG by then (staged and capture HEICs are converted on upload), so a HEIC header is not read here.
     /// </summary>
     public static int? MemoryMb(IEnumerable<byte[]> images, bool together) => MemoryMb(images.Select(ImagePixelLimit.ReadSize), together);
 
-    /// <summary>Like <see cref="MemoryMb(IEnumerable{byte[]}, bool)"/>, from sizes already read (null: unknown).</summary>
+    /// <summary>Like <see cref="MemoryMb(IEnumerable{byte[]}, bool)"/>, from sizes already read (null: unreadable).</summary>
     public static int? MemoryMb(IEnumerable<(int Width, int Height)?> sizes, bool together)
     {
-        var pixels = sizes.Where(s => s is not null).Select(s => (long)s!.Value.Width * s.Value.Height).ToList();
+        var pixels = sizes.Select(s => s is { } size ? (long)size.Width * size.Height : UnreadablePixels).ToList();
         if (pixels.Count == 0)
         {
             return null;

@@ -3,6 +3,7 @@ using System.Text.Json;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Helpers;
 using Blocwerk.Core.MarkerPlanning;
+using Blocwerk.Core.Recognition.Remote;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -50,6 +51,7 @@ public sealed partial class WallCaptureService
             // The draft's layout decides which ids are real: the plan's, or the legacy 0..35.
             var layout = await DraftLayoutAsync(db, capture);
             var focalPx = CapturePlanLayoutCheck.FocalPx(exif.Focal35mm, width, height);
+            using var recognitionWall = RecognitionWallScope.Begin(capture.WallId);
             var markers = await CaptureMarkerDetection.DetectOrNullAsync(markerDetection, clean, layout, focalPx, logger, ct);
             var photo = new WallCapturePhoto
             {

@@ -9,6 +9,7 @@ using Blocwerk.Core.Recognition;
 using Blocwerk.Core.Recognition.Remote;
 using Blocwerk.Core.Runners;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Blocwerk.Core.Tests;
@@ -22,7 +23,17 @@ internal sealed class FakeRecognitionClaimant(RecognitionFixture f, GpuRunner po
     public static Task<RecognitionFixture> FixtureAsync(WallTestHarness h, RecognitionMode mode) =>
         RecognitionFixture.CreateAsync(h, new RecognitionQueueOptions { Mode = mode, WaiterPoll = TimeSpan.FromMilliseconds(50) });
 
-    public static RecognitionCaller Caller(RecognitionFixture f) => new(f.Queue, NullLogger<RecognitionCaller>.Instance);
+    /// <summary>The deployment's instance runner (the recognition pod), seen just now.</summary>
+    public static async Task<FakeRecognitionClaimant> InstanceAsync(RecognitionFixture f)
+    {
+        var runner = await f.RunnerAsync("recognition-pod");
+        await using var db = f.Harness.CreateContext();
+        await db.GpuRunners.Where(r => r.Id == runner.Id).ExecuteUpdateAsync(s => s.SetProperty(r => r.Scope, RunnerScope.Instance));
+        return new FakeRecognitionClaimant(f, runner);
+    }
+
+    public static RecognitionCaller Caller(RecognitionFixture f, ILogger<RecognitionCaller>? logger = null) =>
+        new(f.Queue, logger ?? NullLogger<RecognitionCaller>.Instance);
 
     /// <summary>Waits until <paramref name="count"/> jobs are queued (none claimed yet); returns them oldest first.</summary>
     public static async Task<List<RecognitionJob>> QueuedAsync(RecognitionFixture f, int count = 1)

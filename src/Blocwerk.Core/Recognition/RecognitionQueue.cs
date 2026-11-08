@@ -100,6 +100,10 @@ public sealed partial class RecognitionQueue(
         return await db.GpuRunners.AsNoTracking().Where(r => r.Scope == RunnerScope.Instance).Select(r => r.LastSeenAt).FirstOrDefaultAsync(ct);
     }
 
+    /// <summary>Whether the instance runner called within <see cref="RecognitionQueueOptions.InstanceStaleAfter"/>.</summary>
+    public async Task<bool> InstanceRunnerAliveAsync(CancellationToken ct) =>
+        await InstanceRunnerSeenAtAsync(ct) is { } seen && Now - seen <= options.InstanceStaleAfter;
+
     /// <summary>The newest job the caller queued under <paramref name="callerKey"/> (a background job after a restart), or null.</summary>
     public async Task<RecognitionJob?> FindByCallerKeyAsync(string callerKey, CancellationToken ct)
     {

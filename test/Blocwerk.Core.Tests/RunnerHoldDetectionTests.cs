@@ -177,6 +177,28 @@ public sealed class RunnerHoldDetectionTests : IDisposable
         Assert.Equal(0.0075 * 4000, hold.RadiusPx, 6);
     }
 
+    /// <summary>A finished capture whose active model solved two cameras, with both photos in the store.</summary>
+    internal static async Task<CaptureFollowUpContext> SeedAsync(RunnerFixture f)
+    {
+        var h = f.Harness;
+        await using var db = h.CreateContext();
+        var model = new WallGeometryModel { WallId = h.WallId, Json = Cameras, Source = "test", IsActive = true };
+        var capture = new WallCapture
+        {
+            WallId = h.WallId, CreatedByUserId = h.Owner.Id, Status = WallCaptureStatus.Succeeded, Stage = "Done", GeometryModelId = model.Id,
+        };
+        db.WallGeometryModels.Add(model);
+        db.WallCaptures.Add(capture);
+        for (var i = 0; i < 2; i++)
+        {
+            var stored = await f.Files.SaveAsync(CaptureScenario.TinyJpeg(i), ".jpg", CancellationToken.None);
+            db.WallCapturePhotos.Add(new WallCapturePhoto { CaptureId = capture.Id, Index = i, StoredPath = stored, ContentHash = $"h{i}" });
+        }
+
+        await db.SaveChangesAsync();
+        return new CaptureFollowUpContext(capture.Id, h.WallId, model.Id, h.Owner.Id, null);
+    }
+
     private static GpuRunnerOptions Options() =>
         new() { ClaimWait = TimeSpan.Zero, HoldsPollInterval = TimeSpan.FromMilliseconds(10) };
 
@@ -208,27 +230,5 @@ public sealed class RunnerHoldDetectionTests : IDisposable
         }
 
         throw new TimeoutException("no hold detection job was queued");
-    }
-
-    /// <summary>A finished capture whose active model solved two cameras, with both photos in the store.</summary>
-    private static async Task<CaptureFollowUpContext> SeedAsync(RunnerFixture f)
-    {
-        var h = f.Harness;
-        await using var db = h.CreateContext();
-        var model = new WallGeometryModel { WallId = h.WallId, Json = Cameras, Source = "test", IsActive = true };
-        var capture = new WallCapture
-        {
-            WallId = h.WallId, CreatedByUserId = h.Owner.Id, Status = WallCaptureStatus.Succeeded, Stage = "Done", GeometryModelId = model.Id,
-        };
-        db.WallGeometryModels.Add(model);
-        db.WallCaptures.Add(capture);
-        for (var i = 0; i < 2; i++)
-        {
-            var stored = await f.Files.SaveAsync(CaptureScenario.TinyJpeg(i), ".jpg", CancellationToken.None);
-            db.WallCapturePhotos.Add(new WallCapturePhoto { CaptureId = capture.Id, Index = i, StoredPath = stored, ContentHash = $"h{i}" });
-        }
-
-        await db.SaveChangesAsync();
-        return new CaptureFollowUpContext(capture.Id, h.WallId, model.Id, h.Owner.Id, null);
     }
 }

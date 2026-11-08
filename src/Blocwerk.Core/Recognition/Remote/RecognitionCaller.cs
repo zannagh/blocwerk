@@ -1,6 +1,7 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using System.Collections.Concurrent;
 using System.Text.Json;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Capture;
@@ -15,10 +16,15 @@ namespace Blocwerk.Core.Recognition.Remote;
 /// Runs one interactive recognition job through the <see cref="RecognitionQueue"/> for the remote clients and decides by
 /// <see cref="RecognitionQueueOptions.Mode"/> what a job no runner served means (nobody claimed it within the interactive
 /// deadline, it failed, it could not be queued, its result is unreadable): <c>queue+fallback</c> hands it back to the app,
-/// <c>queue</c> throws <see cref="ImageRecognitionUnavailableException"/> ("recognition unavailable, retry").
+/// <c>queue</c> throws <see cref="ImageRecognitionUnavailableException"/> ("recognition unavailable, retry"). In
+/// <c>queue+fallback</c> a job is not even queued while the recognition pod is gone
+/// (<see cref="RecognitionQueueOptions.InstanceStaleAfter"/>).
 /// </summary>
 public sealed class RecognitionCaller(RecognitionQueue queue, ILogger<RecognitionCaller> logger)
 {
+    private readonly ConcurrentDictionary<string, bool> unscopedKinds = new(StringComparer.Ordinal);
+    private int podGoneLogged;
+
     /// <summary>Gets a value indicating whether recognition goes through the queue at all.</summary>
     public bool Queued => queue.Options.Mode != RecognitionMode.InProcess;
 
@@ -30,7 +36,22 @@ public sealed class RecognitionCaller(RecognitionQueue queue, ILogger<Recognitio
         string kind, IReadOnlyList<ComputeJobPart> parts, int? memoryMb, Func<JsonElement, T> read, CancellationToken ct)
         where T : class
     {
-        if (!Queued || RecognitionWallScope.Current is not { } wallId)
+        if (!Queued)
+        {
+            return null;
+        }
+
+        if (RecognitionWallScope.Current is not { } wallId)
+        {
+            if (unscopedKinds.TryAdd(kind, true))
+            {
+                logger.LogWarning("Recognition job {Kind} has no wall in scope; it runs in the app (logged once per kind)", kind);
+            }
+
+            return null;
+        }
+
+        if (!await PodAliveOrNoFallbackAsync(kind, ct))
         {
             return null;
         }
@@ -51,6 +72,25 @@ public sealed class RecognitionCaller(RecognitionQueue queue, ILogger<Recognitio
         }
 
         return Unserved<T>(kind, wallId, why);
+    }
+
+    /// <summary>False in <c>queue+fallback</c> while the pod is gone (logged once until it is back): the app runs the job.</summary>
+    private async Task<bool> PodAliveOrNoFallbackAsync(string kind, CancellationToken ct)
+    {
+        if (queue.Options.Mode != RecognitionMode.QueueWithFallback || await queue.InstanceRunnerAliveAsync(ct))
+        {
+            Interlocked.Exchange(ref podGoneLogged, 0);
+            return true;
+        }
+
+        if (Interlocked.Exchange(ref podGoneLogged, 1) == 0)
+        {
+            logger.LogWarning(
+                "The recognition pod has not been seen for {Seconds} s; recognition ({Kind} and later jobs) runs in the app until it is back",
+                queue.Options.InstanceStaleAfter.TotalSeconds, kind);
+        }
+
+        return false;
     }
 
     private async Task<(string? ResultJson, string Why)> TryRunAsync(RecognitionRequest request, CancellationToken ct)

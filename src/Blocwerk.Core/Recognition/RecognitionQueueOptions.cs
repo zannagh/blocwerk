@@ -49,6 +49,12 @@ public sealed class RecognitionQueueOptions
     /// <summary>An interactive job nobody claimed within this is cancelled ("recognition unavailable").</summary>
     public TimeSpan InteractiveClaimWait { get; init; } = TimeSpan.FromSeconds(20);
 
+    /// <summary>
+    /// In <c>queue+fallback</c>, an instance runner (the recognition pod) not seen for longer than this counts as gone: the
+    /// app runs the job itself at once instead of waiting out the claim deadline first.
+    /// </summary>
+    public TimeSpan InstanceStaleAfter { get; init; } = TimeSpan.FromSeconds(60);
+
     /// <summary>The lease of an interactive claim (heartbeat every 5 s).</summary>
     public TimeSpan InteractiveLease { get; init; } = TimeSpan.FromSeconds(30);
 

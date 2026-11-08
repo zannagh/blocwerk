@@ -254,8 +254,8 @@ public partial class WallPanelService : IWallPanelService
                 logger);
             try
             {
-                var result = await recognitionGate.RecogniseAsync("overlap-match", () => overlapMatcher.Match(
-                    neighborImage, neighborMatcherHolds, image, newMatcherHolds, direction, null, seed));
+                var result = await overlapMatcher.MatchAsync(
+                    recognitionGate, "overlap-match", new MatcherPair(neighborImage, neighborMatcherHolds, image, newMatcherHolds), direction, null, seed);
                 foreach (var p in result.Proposals)
                 {
                     proposals.Add(new OverlapProposalDto(

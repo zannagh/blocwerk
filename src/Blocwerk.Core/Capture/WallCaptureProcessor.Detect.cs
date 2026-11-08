@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Recognition.Remote;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Capture;
@@ -16,6 +17,7 @@ public sealed partial class WallCaptureProcessor
             return;
         }
 
+        using var recognitionWall = RecognitionWallScope.Begin(run.Capture.WallId);
         for (var i = 0; i < pending.Count; i++)
         {
             await SetStageAsync(

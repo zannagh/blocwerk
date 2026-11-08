@@ -7,12 +7,14 @@ using Microsoft.Extensions.Logging;
 namespace Blocwerk.Core.Recognition.Remote;
 
 /// <summary>
-/// The overlap pass between two panels as an interactive <c>match-panels</c> job; in the app when
-/// <see cref="RecognitionCaller"/> says so. The carryover pass (<see cref="IHoldCarryMatcher"/>) has no job kind yet and
-/// stays in the app. The diagnostics sink is not sent: it only adds a log line. Synchronous like
-/// <see cref="QueuedHoldPresenceProbe"/>, for the same reason.
+/// The overlap pass between two panels as an interactive <c>match-panels</c> job (<see cref="IAsyncHoldOverlapMatcher"/>),
+/// awaited without a gate slot; only the in-app run <see cref="RecognitionCaller"/> falls back to takes one. The carryover
+/// pass (<see cref="IHoldCarryMatcher"/>) has no job kind yet and stays in the app, and so does the synchronous
+/// <see cref="Match"/>, for the reason <see cref="QueuedHoldPresenceProbe"/> gives. The diagnostics sink is not sent: it
+/// only adds a log line.
 /// </summary>
-public sealed class QueuedHoldOverlapMatcher(IHoldOverlapMatcher inProcess, RecognitionCaller caller) : IHoldOverlapMatcher, IHoldCarryMatcher
+public sealed class QueuedHoldOverlapMatcher(IHoldOverlapMatcher inProcess, RecognitionCaller caller, IImageRecognitionGate? gate = null)
+    : IHoldOverlapMatcher, IHoldCarryMatcher, IAsyncHoldOverlapMatcher
 {
     /// <inheritdoc/>
     public HoldOverlapResult Match(
@@ -22,18 +24,23 @@ public sealed class QueuedHoldOverlapMatcher(IHoldOverlapMatcher inProcess, Reco
         IReadOnlyList<MatcherHold> rightHolds,
         HoldOverlapDirection direction,
         ILogger? diag = null,
-        HoldOverlapSeed? seed = null)
+        HoldOverlapSeed? seed = null) =>
+        inProcess.Match(leftImage, leftHolds, rightImage, rightHolds, direction, diag, seed);
+
+    /// <inheritdoc/>
+    public async Task<HoldOverlapResult> MatchAsync(
+        string operation, MatcherPair pair, HoldOverlapDirection direction, ILogger? diag, HoldOverlapSeed? seed, CancellationToken ct)
     {
         var parts = new[]
         {
-            RecognitionParts.Request(RecognitionMatchRequest.Of(leftHolds, rightHolds, direction, seed)),
-            RecognitionParts.Image("left", "left.jpg", leftImage),
-            RecognitionParts.Image("right", "right.jpg", rightImage),
+            RecognitionParts.Request(RecognitionMatchRequest.Of(pair.LeftHolds, pair.RightHolds, direction, seed)),
+            RecognitionParts.Image("left", "left.jpg", pair.LeftImage),
+            RecognitionParts.Image("right", "right.jpg", pair.RightImage),
         };
-        var memory = RecognitionParts.MemoryMb([leftImage, rightImage], together: true);
-        var result = Task.Run(() => caller.RunAsync(RecognitionKinds.MatchPanels, parts, memory, RecognitionResults.Match, CancellationToken.None))
-            .GetAwaiter().GetResult();
-        return result ?? inProcess.Match(leftImage, leftHolds, rightImage, rightHolds, direction, diag, seed);
+        var memory = RecognitionParts.MemoryMb([pair.LeftImage, pair.RightImage], together: true);
+        return await caller.RunAsync(RecognitionKinds.MatchPanels, parts, memory, RecognitionResults.Match, ct)
+            ?? await gate.RecogniseAsync(
+                operation, () => inProcess.Match(pair.LeftImage, pair.LeftHolds, pair.RightImage, pair.RightHolds, direction, diag, seed), ct);
     }
 
     /// <inheritdoc/>

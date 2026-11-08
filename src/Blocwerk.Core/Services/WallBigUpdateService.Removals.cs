@@ -6,6 +6,7 @@ using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Geometry.TextureRegistration;
+using Blocwerk.Core.Recognition.Remote;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -91,15 +92,7 @@ public partial class WallBigUpdateService
             var panel = RemovalPanelOf(scope, warp, evidence, model.Textures, newSize, oldSize);
             var images = model.Textures.GroupBy(t => t.Frame.FacetId, StringComparer.Ordinal)
                 .ToDictionary(g => g.Key, g => g.First().Image, StringComparer.Ordinal);
-            // One gate slot for the whole check (not one per probe call); waiting for it counts against the budget.
-            var findings = await recognitionGate.RecogniseAsync(
-                "removal-check",
-                () => RemovalCheck.Run(
-                    panel,
-                    q => probe.Score(oldPhoto, newPhoto, q),
-                    (facet, q) => images.TryGetValue(facet, out var texture) ? probe.Score(texture, oldPhoto, q) : q.Select(_ => (double?)null).ToList(),
-                    budget.Token),
-                budget.Token);
+            var findings = await ProbeRemovalsAsync(probe, panel, oldPhoto, newPhoto, images, budget.Token);
             if (budget.IsCancellationRequested)
             {
                 logger.LogWarning(
@@ -119,6 +112,48 @@ public partial class WallBigUpdateService
             // service, and the refresh goes on without evidence rather than failing for it.
             logger.LogWarning(ex, "Removal check failed on panel {PanelId}; no hold is reported as possibly removed", scope.PanelId);
         }
+    }
+
+    /// <summary>
+    /// One gate slot for the whole check (not one per probe call); waiting for it counts against the budget. A probe that
+    /// may run on a recognition runner gets every question at once instead, without a slot.
+    /// </summary>
+    private Task<IReadOnlyList<RemovalFinding>> ProbeRemovalsAsync(
+        IHoldPresenceProbe probe, RemovalPanel panel, byte[] oldPhoto, byte[] newPhoto, Dictionary<string, byte[]> images, CancellationToken budget) =>
+        probe is IAsyncHoldPresenceProbe remote
+            ? CheckPrefetchedAsync(remote, panel, oldPhoto, newPhoto, images, budget)
+            : recognitionGate.RecogniseAsync(
+                "removal-check",
+                () => RemovalCheck.Run(
+                    panel,
+                    q => probe.Score(oldPhoto, newPhoto, q),
+                    (facet, q) => images.TryGetValue(facet, out var texture) ? probe.Score(texture, oldPhoto, q) : q.Select(_ => (double?)null).ToList(),
+                    budget),
+                budget);
+
+    /// <summary>
+    /// <see cref="RemovalCheck"/> with every probe (the staged photo's and each facet texture's) in flight at once
+    /// (<see cref="PresencePrefetch"/>); what <paramref name="budget"/> cancels stays unknown.
+    /// </summary>
+    private static async Task<IReadOnlyList<RemovalFinding>> CheckPrefetchedAsync(
+        IAsyncHoldPresenceProbe probe,
+        RemovalPanel panel,
+        byte[] oldPhoto,
+        byte[] newPhoto,
+        Dictionary<string, byte[]> images,
+        CancellationToken budget)
+    {
+        const string Staged = "staged";
+        var prefetch = new PresencePrefetch();
+        RemovalCheck.Run(panel, prefetch.Probe(Staged), (facet, q) => prefetch.Probe("facet:" + facet)(q));
+        await prefetch.ScoreAsync(
+            (pair, q, ct) => pair == Staged
+                ? probe.ScoreAsync("removal-check", oldPhoto, newPhoto, q, ct)
+                : images.TryGetValue(pair["facet:".Length..], out var texture)
+                    ? probe.ScoreAsync("removal-check", texture, oldPhoto, q, ct)
+                    : Task.FromResult<IReadOnlyList<double?>>(new double?[q.Count]),
+            budget);
+        return RemovalCheck.Run(panel, prefetch.Probe(Staged), (facet, q) => prefetch.Probe("facet:" + facet)(q));
     }
 
     private static RemovalPanel RemovalPanelOf(

@@ -20,7 +20,8 @@ namespace Blocwerk.Core.Capture.FollowUp;
 /// (known holds are subtracted at their volume points), and a re-run reuses the cached photo detections. The detection goes
 /// through the recognition queue when it is on (<see cref="QueuedCaptureHoldDetection"/>, <c>detect-holds@2</c>), else to a
 /// 3D runner that finds holds when one is online (<see cref="RunnerHoldDetection"/>, <c>detect-holds</c> 1.0); without
-/// either it runs in the app.
+/// either it runs in the app. With <c>RECOGNITION__MODE=queue</c> only the queue serves it: its jobs wait for a runner, and
+/// one that ends unserved fails the step instead of falling back.
 /// </summary>
 public sealed class FindHoldProposalsFollowUpStep(
     IHoldProposalService proposals,

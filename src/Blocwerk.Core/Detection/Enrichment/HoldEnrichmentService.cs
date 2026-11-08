@@ -4,6 +4,7 @@ using Blocwerk.Core.Data;
 using Blocwerk.Core.Detection.Outlines;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Helpers;
+using Blocwerk.Core.Recognition.Remote;
 using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core.Detection.Enrichment;
@@ -57,10 +58,41 @@ public sealed partial class HoldEnrichmentService : IHoldEnrichmentService
             return Task.FromResult(HoldEnrichmentSummary.None);
         }
 
-        return gate is null ? EnrichCoreAsync(db, request, ct) : gate.RunAsync("enrich", () => EnrichCoreAsync(db, request, ct), ct);
+        if (gate is null)
+        {
+            return EnrichCoreAsync(db, request, null, ct);
+        }
+
+        return markerService is QueuedMarkerDetectionService
+            ? EnrichWithRemoteMarkersAsync(db, request, gate, ct)
+            : gate.RunAsync("enrich", () => EnrichCoreAsync(db, request, null, ct), ct);
     }
 
-    private async Task<HoldEnrichmentSummary> EnrichCoreAsync(BlocwerkDbContext db, HoldEnrichmentRequest request, CancellationToken ct)
+    /// <summary>
+    /// A marker pass a recognition runner may serve runs first, outside the slot: the slot is for the app's own work, and a
+    /// marker pass the app ends up doing itself takes one of its own.
+    /// </summary>
+    private async Task<HoldEnrichmentSummary> EnrichWithRemoteMarkersAsync(
+        BlocwerkDbContext db, HoldEnrichmentRequest request, IImageRecognitionGate gate, CancellationToken ct)
+    {
+        MarkerPass? markers = null;
+        if (!ImagePixelLimit.IsTooLarge(request.Image))
+        {
+            try
+            {
+                markers = await DetectMarkersAsync(db, request, ct);
+            }
+            catch (Exception ex)
+            {
+                return Failed(request, ex);
+            }
+        }
+
+        return await gate.RunAsync("enrich", () => EnrichCoreAsync(db, request, markers, ct), ct);
+    }
+
+    private async Task<HoldEnrichmentSummary> EnrichCoreAsync(
+        BlocwerkDbContext db, HoldEnrichmentRequest request, MarkerPass? detectedMarkers, CancellationToken ct)
     {
         if (ImagePixelLimit.IsTooLarge(request.Image))
         {
@@ -77,7 +109,7 @@ public sealed partial class HoldEnrichmentService : IHoldEnrichmentService
             // Recognition first, geometry only (one outline batch, one marker pass); then the plan and its writes.
             var targets = OutlineTargets(request);
             var outlined = await OutlineAsync(request, targets, ct);
-            var markers = await DetectMarkersAsync(db, request, ct);
+            var markers = detectedMarkers ?? await DetectMarkersAsync(db, request, ct);
 
             var plan = new HoldEnrichmentPlan();
             var size = PlanOutlines(request, targets, outlined, plan);
@@ -94,15 +126,18 @@ public sealed partial class HoldEnrichmentService : IHoldEnrichmentService
         }
         catch (Exception ex)
         {
-            // Never break ingest: nothing was applied (the plan is written only after it is complete),
-            // so the holds stay exactly as detection produced them.
-            logger.LogWarning(
-                ex,
-                "Hold enrichment failed on wall {WallId} panel {PanelId}; holds left as detected",
-                request.Wall.Id,
-                request.PanelId);
-            return HoldEnrichmentSummary.None with { Failed = true };
+            return Failed(request, ex);
         }
+    }
+
+    /// <summary>
+    /// Never break ingest: nothing was applied (the plan is written only after it is complete), so the holds stay exactly as
+    /// detection produced them.
+    /// </summary>
+    private HoldEnrichmentSummary Failed(HoldEnrichmentRequest request, Exception ex)
+    {
+        logger.LogWarning(ex, "Hold enrichment failed on wall {WallId} panel {PanelId}; holds left as detected", request.Wall.Id, request.PanelId);
+        return HoldEnrichmentSummary.None with { Failed = true };
     }
 
     /// <summary>Every auto-detected hold that has no shape yet.</summary>

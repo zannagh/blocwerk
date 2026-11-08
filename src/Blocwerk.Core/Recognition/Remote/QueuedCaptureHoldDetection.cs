@@ -2,6 +2,7 @@
 // See License in the project root for license information.
 
 using System.Text.Json;
+using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Capture;
 using Blocwerk.Core.Capture.FollowUp;
 using Blocwerk.Core.Compute;
@@ -17,10 +18,12 @@ namespace Blocwerk.Core.Recognition.Remote;
 /// The detection half of the post-capture hold proposal search through the recognition queue: <c>detect-holds@2</c> jobs of
 /// at most <see cref="PhotosPerJob"/> photos in the background lane, so interactive work goes first and no job holds a
 /// runner for long. The boxes become detections as <see cref="RunnerHoldDetection"/>'s do, under the same detector name.
-/// Null (the search tries <see cref="RunnerHoldDetection"/>, then the app) in in-process mode, when a runner could not
-/// replay the app's detection, when no runner claimed a job within <see cref="GpuRunnerOptions.HoldsClaimWait"/>, a job
-/// failed, or the wait passed <see cref="GpuRunnerOptions.HoldsMaxWait"/>. A shutdown leaves the jobs queued: the restart
-/// finds them again by caller key.
+/// Null (the search tries <see cref="RunnerHoldDetection"/>, then the app) in in-process mode and when a runner could not
+/// replay the app's detection. In <c>queue+fallback</c> also when the recognition pod is gone (nothing is queued, so the
+/// search waits only once, for a 3D runner), no runner claimed a job within <see cref="GpuRunnerOptions.HoldsClaimWait"/>, a
+/// job failed, or the wait passed <see cref="GpuRunnerOptions.HoldsMaxWait"/>. In <c>queue</c> an unclaimed job stays queued
+/// however long it waits, and a job that ends unserved throws <see cref="ImageRecognitionUnavailableException"/> (the step
+/// fails). A shutdown leaves the jobs queued: the restart finds them again by caller key.
 /// </summary>
 public sealed class QueuedCaptureHoldDetection(
     RecognitionQueue queue,
@@ -34,14 +37,22 @@ public sealed class QueuedCaptureHoldDetection(
     /// <summary>The most photos one job carries (design §1: short background jobs).</summary>
     public const int PhotosPerJob = 8;
 
-    private static readonly TimeSpan Slice = TimeSpan.FromMinutes(1);
     private readonly TimeProvider time = clock ?? TimeProvider.System;
+
+    /// <summary>Gets how long one wait for a job lasts before the search looks at it again.</summary>
+    internal TimeSpan Slice { get; init; } = TimeSpan.FromMinutes(1);
 
     /// <summary>The holds per camera name, or null: then the search finds them another way.</summary>
     public async Task<RunnerHoldsFound?> DetectAsync(CaptureFollowUpContext context, CancellationToken ct)
     {
         if (queue.Options.Mode == RecognitionMode.InProcess || RecognitionDetectRequest.For(settings.HoldDetection, models) is not { } request)
         {
+            return null;
+        }
+
+        if (Fallback && !await queue.InstanceRunnerAliveAsync(ct))
+        {
+            logger.LogInformation("Capture {CaptureId}: the recognition pod is gone; the hold search does not queue for it", context.CaptureId);
             return null;
         }
 
@@ -60,7 +71,7 @@ public sealed class QueuedCaptureHoldDetection(
                 if (await WaitAsync(job, ct) is not { ResultJson: { } json })
                 {
                     await CancelAsync(jobs, "another part of the hold search was not served");
-                    return null;
+                    return GiveUp();
                 }
 
                 Collect(json, names, found);
@@ -78,9 +89,15 @@ public sealed class QueuedCaptureHoldDetection(
         {
             logger.LogWarning(ex, "Capture {CaptureId}: the hold search could not go through the recognition queue", context.CaptureId);
             await CancelAsync(jobs, "the hold search stopped");
-            return null;
+            return GiveUp();
         }
     }
+
+    private bool Fallback => queue.Options.Mode == RecognitionMode.QueueWithFallback;
+
+    /// <summary>Null in <c>queue+fallback</c>: the search finds the holds another way. In <c>queue</c>: unavailable.</summary>
+    private RunnerHoldsFound? GiveUp() =>
+        Fallback ? null : throw new ImageRecognitionUnavailableException(ImageRecognitionUnavailableException.QueueMessage);
 
     private static void Collect(string json, (string Camera, string File)[] names, Dictionary<string, RunnerPhotoHolds> found)
     {
@@ -121,7 +138,10 @@ public sealed class QueuedCaptureHoldDetection(
         return (job, names);
     }
 
-    /// <summary>The job once it ended, or null when it ended unserved or the search stops waiting for it.</summary>
+    /// <summary>
+    /// The job once it ended, or null when it ended unserved or the search stops waiting for it (only in
+    /// <c>queue+fallback</c>: in <c>queue</c> a background job waits until a runner serves it).
+    /// </summary>
     private async Task<RecognitionJob?> WaitAsync(RecognitionJob job, CancellationToken ct)
     {
         var options = gpuJobs.Options;
@@ -141,7 +161,8 @@ public sealed class QueuedCaptureHoldDetection(
 
             var row = await queue.FindAsync(job.Id, ct);
             var waited = time.GetUtcNow() - job.CreatedAt;
-            if (row is null || waited > options.HoldsMaxWait || (row is { Status: GpuJobStatus.Queued, Attempts: 0 } && waited > options.HoldsClaimWait))
+            var givesUp = Fallback && (waited > options.HoldsMaxWait || (row is { Status: GpuJobStatus.Queued, Attempts: 0 } && waited > options.HoldsClaimWait));
+            if (row is null || givesUp)
             {
                 return Unserved(job, $"not served after {waited.TotalMinutes:0} minutes");
             }
