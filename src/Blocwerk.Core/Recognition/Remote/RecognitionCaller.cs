@@ -18,8 +18,9 @@ namespace Blocwerk.Core.Recognition.Remote;
 /// deadline, it failed, it could not be queued, its result is unreadable): <c>queue+fallback</c> hands it back to the app,
 /// <c>queue</c> throws <see cref="ImageRecognitionUnavailableException"/> ("recognition unavailable, retry"). In
 /// <c>queue+fallback</c> a job is not even queued while the recognition pod is gone
-/// (<see cref="RecognitionQueueOptions.InstanceStaleAfter"/>). A background job has no claim deadline: in <c>queue</c> it waits
-/// until a runner serves it, in <c>queue+fallback</c> until the pod is gone while it is still unclaimed.
+/// (<see cref="RecognitionQueueOptions.InstanceStaleAfter"/>). A background job unclaimed for
+/// <see cref="RecognitionQueueOptions.BackgroundClaimWait"/> is cancelled (and in <c>queue+fallback</c> also once the pod is gone):
+/// <c>queue+fallback</c> runs it in the app, <c>queue</c> throws <see cref="ImageRecognitionUnavailableException.WorkerNotRunningMessage"/>.
 /// </summary>
 public sealed class RecognitionCaller(RecognitionQueue queue, ILogger<RecognitionCaller> logger)
 {
@@ -45,7 +46,7 @@ public sealed class RecognitionCaller(RecognitionQueue queue, ILogger<Recognitio
     /// <summary>
     /// Like <see cref="RunAsync{T}(string, IReadOnlyList{ComputeJobPart}, int?, Func{JsonElement, T}, CancellationToken)"/> in
     /// <paramref name="lane"/>. A job queued under <paramref name="callerKey"/> before (a restarted background run) is taken up
-    /// again unless it failed or was cancelled.
+    /// again while it has not ended; an ended one never is, so a result that could not be read is not read again.
     /// </summary>
     /// <typeparam name="T">The in-process result type.</typeparam>
     public async Task<T?> RunAsync<T>(
@@ -118,7 +119,7 @@ public sealed class RecognitionCaller(RecognitionQueue queue, ILogger<Recognitio
     private async Task<(string? ResultJson, string Why)> TryRunAsync(RecognitionRequest request, CancellationToken ct)
     {
         var queued = request.CallerKey is { } key ? await queue.FindByCallerKeyAsync(key, ct) : null;
-        if (queued is null or { Status: GpuJobStatus.Failed or GpuJobStatus.Cancelled })
+        if (queued is null || RecognitionQueue.IsOver(queued.Status))
         {
             try
             {
@@ -130,9 +131,7 @@ public sealed class RecognitionCaller(RecognitionQueue queue, ILogger<Recognitio
             }
         }
 
-        var job = RecognitionQueue.IsOver(queued.Status) ? queued
-            : request.Lane == RecognitionLane.Interactive ? await queue.WaitAsync(queued.Id, ct)
-            : await WaitInBackgroundAsync(queued.Id, ct);
+        var job = request.Lane == RecognitionLane.Interactive ? await queue.WaitAsync(queued.Id, ct) : await WaitInBackgroundAsync(queued.Id, ct);
         return job switch
         {
             null => (null, "the job is gone"),
@@ -141,10 +140,7 @@ public sealed class RecognitionCaller(RecognitionQueue queue, ILogger<Recognitio
         };
     }
 
-    /// <summary>
-    /// Waits for a background job in slices. In <c>queue+fallback</c> a job still unclaimed while the pod is gone is cancelled,
-    /// so the app runs it; in <c>queue</c> it stays queued until a runner serves it.
-    /// </summary>
+    /// <summary>Waits for a background job in slices, until it ends or <see cref="GiveUpAsync"/> cancels it.</summary>
     private async Task<RecognitionJob?> WaitInBackgroundAsync(Guid jobId, CancellationToken ct)
     {
         while (true)
@@ -160,14 +156,31 @@ public sealed class RecognitionCaller(RecognitionQueue queue, ILogger<Recognitio
                 // A background job stays queued when its waiter stops; look at the pod.
             }
 
-            if (queue.Options.Mode == RecognitionMode.QueueWithFallback
-                && await queue.FindAsync(jobId, ct) is { Status: GpuJobStatus.Queued }
-                && !await queue.InstanceRunnerAliveAsync(ct))
+            if (await queue.FindAsync(jobId, ct) is { Status: GpuJobStatus.Queued } row && await GiveUpAsync(row, ct))
             {
-                await queue.CancelAsync(jobId, "the recognition pod is gone", CancellationToken.None);
                 return await queue.FindAsync(jobId, CancellationToken.None);
             }
         }
+    }
+
+    /// <summary>
+    /// Cancels a still queued background job nobody claimed for <see cref="RecognitionQueueOptions.BackgroundClaimWait"/>, or in
+    /// <c>queue+fallback</c> whose pod is gone. In <c>queue</c> that throws: the recognition worker is not running.
+    /// </summary>
+    private async Task<bool> GiveUpAsync(RecognitionJob row, CancellationToken ct)
+    {
+        var fallback = queue.Options.Mode == RecognitionMode.QueueWithFallback;
+        var unclaimed = row.Attempts == 0 && queue.Now - row.CreatedAt > queue.Options.BackgroundClaimWait;
+        var podGone = fallback && !await queue.InstanceRunnerAliveAsync(ct);
+        if (!unclaimed && !podGone)
+        {
+            return false;
+        }
+
+        var why = podGone ? "the recognition pod is gone" : $"no recognition runner took it within {queue.Options.BackgroundClaimWait.TotalMinutes:0} minutes";
+        logger.LogWarning("Background recognition job {JobId} ({Kind}) for wall {WallId} is cancelled: {Reason}", row.Id, row.Kind, row.WallId, why);
+        await queue.CancelAsync(row.Id, why, CancellationToken.None);
+        return fallback ? true : throw new ImageRecognitionUnavailableException(ImageRecognitionUnavailableException.WorkerNotRunningMessage);
     }
 
     private T? Unserved<T>(string kind, Guid wallId, string why)

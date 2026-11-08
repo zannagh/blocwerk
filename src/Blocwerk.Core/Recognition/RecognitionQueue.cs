@@ -44,7 +44,7 @@ public sealed partial class RecognitionQueue(
 
     public RecognitionQueueOptions Options => options;
 
-    private DateTimeOffset Now => time.GetUtcNow();
+    internal DateTimeOffset Now => time.GetUtcNow();
 
     /// <summary>
     /// Writes the input envelope to the capture store, queues the job and wakes waiting runners. An interactive job must be

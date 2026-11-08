@@ -34,13 +34,24 @@ builder.Services.AddSingleton<IPhotoTextureMatcher, OpenCvPhotoTextureMatcher>()
 
 // MobileSAM from the models mount, loaded at the first outline job (after the warm YOLO has created the ONNX runtime);
 // without its files the outliner works by colour, as the app does.
+var segmenter = new HoldSegmenterSettings
+{
+    EncoderPath = Path.Combine(options.ModelsDirectory, "hold-segmenter-encoder.onnx"),
+    DecoderPath = Path.Combine(options.ModelsDirectory, "hold-segmenter-decoder.onnx"),
+    Threads = 2,
+};
+var missingSegmenter = new[] { segmenter.EncoderPath, segmenter.DecoderPath }.Where(f => !File.Exists(f)).ToList();
+if (missingSegmenter.Count == 0)
+{
+    Log.Information("Outlines: MobileSAM ({Encoder}, {Decoder}), loaded at the first outline job; by colour if it cannot be loaded", segmenter.EncoderPath, segmenter.DecoderPath);
+}
+else
+{
+    Log.Warning("Outlines: by colour only, because the segmenter model files are missing: {Missing}", missingSegmenter);
+}
+
 builder.Services.AddSingleton<IHoldOutlineService>(sp => HoldDetectionServices.Outliner(
-    new HoldSegmenterSettings
-    {
-        EncoderPath = Path.Combine(options.ModelsDirectory, "hold-segmenter-encoder.onnx"),
-        DecoderPath = Path.Combine(options.ModelsDirectory, "hold-segmenter-decoder.onnx"),
-        Threads = 2,
-    },
+    segmenter,
     logger: sp.GetRequiredService<ILoggerFactory>().CreateLogger("Blocwerk.HoldDetection.Segmentation.HoldSegmenter")));
 builder.Services.AddSingleton<IRecognitionJobHandler, DetectHoldsHandler>();
 builder.Services.AddSingleton<IRecognitionJobHandler, MarkersHandler>();

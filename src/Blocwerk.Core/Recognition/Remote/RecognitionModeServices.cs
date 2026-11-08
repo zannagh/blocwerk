@@ -6,6 +6,7 @@ using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Runners;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core.Recognition.Remote;
 
@@ -31,7 +32,8 @@ public static class RecognitionModeServices
         Decorate<IMarkerDetectionService>(services, (sp, inner) => new QueuedMarkerDetectionService(inner, sp.GetRequiredService<RecognitionCaller>(), sp.GetService<IImageRecognitionGate>()));
         Decorate<IHoldPresenceProbe>(services, (sp, inner) => new QueuedHoldPresenceProbe(inner, sp.GetRequiredService<RecognitionCaller>(), sp.GetService<IImageRecognitionGate>()));
         Decorate<IHoldOverlapMatcher>(services, (sp, inner) => new QueuedHoldOverlapMatcher(inner, sp.GetRequiredService<RecognitionCaller>(), sp.GetService<IImageRecognitionGate>()));
-        Decorate<IHoldOutlineBatch>(services, (sp, inner) => new QueuedHoldOutlineBatch(inner, sp.GetRequiredService<RecognitionCaller>()));
+        Decorate<IHoldOutlineBatch>(services, (sp, inner) => new QueuedHoldOutlineBatch(
+            inner, sp.GetRequiredService<RecognitionCaller>(), sp.GetRequiredService<ILogger<QueuedHoldOutlineBatch>>()));
         Decorate<IPhotoTextureMatcher>(services, (sp, inner) => new QueuedPhotoTextureMatcher(inner, sp.GetRequiredService<RecognitionCaller>()));
         return builder;
     }

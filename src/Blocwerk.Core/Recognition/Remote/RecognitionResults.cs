@@ -60,13 +60,13 @@ public static class RecognitionResults
             : (IReadOnlyList<(double X, double Y)>)s.EnumerateArray().Select(Point).ToList()).ToList());
 
     /// <summary>
-    /// The outlines of <paramref name="count"/> seeds sent with ids 0..count-1, on a photo of the given size. A seed the runner
-    /// could not outline makes the whole result unreadable: the in-process outliner always answers, with a circle at worst.
+    /// The outlines of <paramref name="seeds"/>, sent with ids 0..n-1, on a photo of the given size. A seed the runner could not
+    /// outline (a <c>failure</c> entry) gets the circle fallback the in-process outliner would give it (<see cref="SeedCircleOutline"/>).
     /// </summary>
-    public static HoldOutlineBatchResult Outlines(JsonElement r, int width, int height, int count)
+    public static HoldOutlineBatchResult Outlines(JsonElement r, int width, int height, IReadOnlyList<HoldSeed> seeds)
     {
-        var outlines = Items(r, "outlines").Select(Outline).ToList();
-        return outlines.Count == count && outlines.Select(o => o.Id).SequenceEqual(Enumerable.Range(0, count))
+        var outlines = Items(r, "outlines").Select(o => Outline(o, seeds, width, height)).ToList();
+        return outlines.Count == seeds.Count && outlines.Select(o => o.Id).SequenceEqual(Enumerable.Range(0, seeds.Count))
             ? new HoldOutlineBatchResult(width, height, outlines.Select(o => o.Outline).ToList())
             : throw new InvalidDataException("The outlines do not answer the seeds in order.");
     }
@@ -76,12 +76,12 @@ public static class RecognitionResults
         r.GetProperty("coarseInliers").GetInt32(),
         r.TryGetProperty("failure", out var f) ? f.GetString() : null);
 
-    private static (int Id, HoldOutlineResult Outline) Outline(JsonElement o)
+    private static (int Id, HoldOutlineResult Outline) Outline(JsonElement o, IReadOnlyList<HoldSeed> seeds, int width, int height)
     {
         var id = o.GetProperty("id").GetInt32();
-        if (o.TryGetProperty("failure", out var failure))
+        if (o.TryGetProperty("failure", out _))
         {
-            throw new InvalidDataException($"Seed {id} has no outline: {failure.GetString()}");
+            return (id, SeedCircleOutline.Of(seeds[id], width, height));
         }
 
         var outline = new HoldOutlineResult(

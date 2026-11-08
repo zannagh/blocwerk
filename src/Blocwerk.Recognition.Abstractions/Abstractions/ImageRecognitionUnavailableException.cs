@@ -19,8 +19,12 @@ public sealed class ImageRecognitionUnavailableException : InvalidOperationExcep
     /// <summary>The message when no recognition runner took or finished the job (<c>RECOGNITION__MODE=queue</c>).</summary>
     public const string QueueMessage = "Hold recognition is unavailable right now. Please retry in a minute.";
 
+    /// <summary>The message when a background job waited out its claim deadline and nothing took it (<c>RECOGNITION__MODE=queue</c>).</summary>
+    public const string WorkerNotRunningMessage =
+        "The recognition worker is not running: no recognition runner took the job. Start it (or switch RECOGNITION__MODE) and retry.";
+
     /// <summary>Initializes a new instance of the <see cref="ImageRecognitionUnavailableException"/> class.</summary>
-    /// <param name="message">One of <see cref="DisabledMessage"/>, <see cref="BusyMessage"/> and <see cref="QueueMessage"/>.</param>
+    /// <param name="message">One of <see cref="DisabledMessage"/>, <see cref="BusyMessage"/>, <see cref="QueueMessage"/> and <see cref="WorkerNotRunningMessage"/>.</param>
     public ImageRecognitionUnavailableException(string message)
         : base(message)
     {

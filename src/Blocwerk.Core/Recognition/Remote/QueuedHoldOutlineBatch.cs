@@ -1,11 +1,13 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Helpers;
+using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core.Recognition.Remote;
 
@@ -15,10 +17,13 @@ namespace Blocwerk.Core.Recognition.Remote;
 /// a <c>SessionHoldOutlineBatch</c>) takes one. The photo's size comes from its header: the outliner, like the detector,
 /// ignores the EXIF orientation.
 /// </summary>
-public sealed class QueuedHoldOutlineBatch(IHoldOutlineBatch inProcess, RecognitionCaller caller) : IHoldOutlineBatch
+public sealed class QueuedHoldOutlineBatch(IHoldOutlineBatch inProcess, RecognitionCaller caller, ILogger<QueuedHoldOutlineBatch>? logger = null)
+    : IHoldOutlineBatch
 {
     /// <summary>The most seeds one job carries (contracts <c>outline-request</c>); a larger call runs in the app.</summary>
     public const int MaxSeeds = 2000;
+
+    private readonly ConcurrentDictionary<string, bool> loggedInApp = new(StringComparer.Ordinal);
 
     /// <inheritdoc/>
     public async Task<HoldOutlineBatchResult> OutlineAsync(
@@ -38,8 +43,20 @@ public sealed class QueuedHoldOutlineBatch(IHoldOutlineBatch inProcess, Recognit
     private async Task<HoldOutlineBatchResult?> RunAsync(
         RecognitionLane lane, string? callerKey, byte[] photo, IReadOnlyList<HoldSeed> seeds, HoldOutlineBatchOptions options, CancellationToken ct)
     {
-        if (seeds.Count is 0 or > MaxSeeds || ImagePixelLimit.ReadSize(photo) is not { } size)
+        if (seeds.Count == 0)
         {
+            return null;
+        }
+
+        var size = ImagePixelLimit.ReadSize(photo);
+        var inApp = size is null ? "its photo header cannot be read" : seeds.Count > MaxSeeds ? $"it has more than {MaxSeeds} seeds" : null;
+        if (inApp is not null)
+        {
+            if (loggedInApp.TryAdd(inApp, true))
+            {
+                logger?.LogWarning("An outline batch runs in the app, not on a recognition runner: {Reason} (logged once per reason)", inApp);
+            }
+
             return null;
         }
 
@@ -57,7 +74,7 @@ public sealed class QueuedHoldOutlineBatch(IHoldOutlineBatch inProcess, Recognit
             key,
             parts,
             RecognitionParts.MemoryMb([photo], together: false),
-            r => RecognitionResults.Outlines(r, size.Width, size.Height, seeds.Count),
+            r => RecognitionResults.Outlines(r, size!.Value.Width, size.Value.Height, seeds),
             ct);
     }
 

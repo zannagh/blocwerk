@@ -55,6 +55,12 @@ public sealed class RecognitionQueueOptions
     /// </summary>
     public TimeSpan InstanceStaleAfter { get; init; } = TimeSpan.FromSeconds(60);
 
+    /// <summary>
+    /// A background job of <see cref="Remote.RecognitionCaller"/> nobody claimed within this is cancelled: <c>queue+fallback</c> runs
+    /// it in the app, <c>queue</c> fails it as "recognition worker not running" instead of waiting forever.
+    /// </summary>
+    public TimeSpan BackgroundClaimWait { get; init; } = TimeSpan.FromMinutes(30);
+
     /// <summary>The lease of an interactive claim (heartbeat every 5 s).</summary>
     public TimeSpan InteractiveLease { get; init; } = TimeSpan.FromSeconds(30);
 

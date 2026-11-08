@@ -62,4 +62,25 @@ public sealed class ShapeRecognitionQueueTests
         Assert.Equal((ShapeRecognitionStatus.Completed, 2), (status.Status, status.Done));
         Assert.Equal((RecognitionLane.Background, GpuJobStatus.Cancelled), (job.Lane, (await f.RowAsync(job.Id)).Status));
     }
+
+    [Fact]
+    public async Task InQueueMode_AJobNobodyClaimsWithinTheClaimWait_FailsTheRun_AsWorkerNotRunning()
+    {
+        using var h = new WallTestHarness();
+        using var f = await FakeRecognitionClaimant.FixtureAsync(h, RecognitionMode.Queue);
+        var inApp = Substitute.For<IHoldOutlineBatch>();
+        var caller = new RecognitionCaller(f.Queue, NullLogger<RecognitionCaller>.Instance) { BackgroundSlice = TimeSpan.FromMilliseconds(100) };
+        var shapes = new ShapeStepFixture(h, outlineBatch: new QueuedHoldOutlineBatch(inApp, caller));
+        await shapes.StageAsync(Staged, ShapeStepFixture.AutoHold(0.9));
+
+        var run = shapes.RecogniseAsync();
+        var job = Assert.Single(await FakeRecognitionClaimant.QueuedAsync(f));
+        f.Clock.Advance(f.Options.BackgroundClaimWait + TimeSpan.FromMinutes(1));
+        var status = await run;
+
+        Assert.Equal(ShapeRecognitionStatus.Failed, status.Status);
+        Assert.Equal(ImageRecognitionUnavailableException.WorkerNotRunningMessage, status.Error);
+        Assert.Equal(GpuJobStatus.Cancelled, (await f.RowAsync(job.Id)).Status);
+        await inApp.DidNotReceiveWithAnyArgs().OutlineAsync(default!, default!, default!, default);
+    }
 }

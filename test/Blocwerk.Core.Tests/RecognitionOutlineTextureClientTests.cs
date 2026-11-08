@@ -2,11 +2,13 @@
 // See License in the project root for license information.
 
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Detection.Gating;
 using Blocwerk.Core.Detection.Outlines;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Geometry;
 using Blocwerk.Core.Recognition;
 using Blocwerk.Core.Recognition.Remote;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 namespace Blocwerk.Core.Tests;
@@ -42,7 +44,7 @@ public sealed class RecognitionOutlineTextureClientTests
     }
 
     [Fact]
-    public async Task Outlines_ARunnerAnswersWithAFailure_InQueueMode_RecognitionIsUnavailable()
+    public async Task Outlines_AFailureEntry_BecomesTheSeedCircle()
     {
         using var h = new WallTestHarness();
         using var f = await FakeRecognitionClaimant.FixtureAsync(h, RecognitionMode.Queue);
@@ -52,8 +54,34 @@ public sealed class RecognitionOutlineTextureClientTests
 
         var call = batch.OutlineAsync(Photo, [new HoldSeed(0.3, 0.2, 0.02)], HoldOutlineBatchOptions.Separately);
         await pod.CompleteAsync(await pod.ClaimAsync(), """{"version":1,"outlines":[{"id":0,"failure":"seed outside the photo"}]}""");
+        var circle = Assert.Single((await call).Outlines);
 
-        await Assert.ThrowsAsync<ImageRecognitionUnavailableException>(() => call);
+        Assert.Equal((HoldOutlineMethod.CircleFallback, SeedCircleOutline.Confidence, 0.3, 0.2, 16), (circle.Method, circle.Confidence, circle.AnchorX, circle.AnchorY, circle.Polygon.Count));
+        Assert.Null(circle.ShapePoints);
+        Assert.Equal(0.32, circle.Polygon[0].X, 9);
+        Assert.Equal((0.28, 0.18, 0.04, 0.04), (Math.Round(circle.Bounds.X, 9), Math.Round(circle.Bounds.Y, 9), Math.Round(circle.Bounds.Width, 9), Math.Round(circle.Bounds.Height, 9)));
+    }
+
+    [Fact]
+    public async Task Outlines_AnUnreadableResult_IsNeverTakenUpAgainByItsCallerKey()
+    {
+        using var h = new WallTestHarness();
+        using var f = await FakeRecognitionClaimant.FixtureAsync(h, RecognitionMode.Queue);
+        var pod = await FakeRecognitionClaimant.CreateAsync(f);
+        var batch = new QueuedHoldOutlineBatch(Substitute.For<IHoldOutlineBatch>(), FakeRecognitionClaimant.Caller(f));
+        HoldSeed[] seeds = [new(0.3, 0.2, 0.02)];
+        using var wall = RecognitionWallScope.Begin(h.WallId);
+
+        var first = batch.OutlineInBackgroundAsync(Photo, seeds, HoldOutlineBatchOptions.Separately, "shape-outlines:test", CancellationToken.None);
+        var unreadable = await pod.ClaimAsync();
+        await pod.CompleteAsync(unreadable, """{"version":1}""");
+        await Assert.ThrowsAsync<ImageRecognitionUnavailableException>(() => first);
+        var second = batch.OutlineInBackgroundAsync(Photo, seeds, HoldOutlineBatchOptions.Separately, "shape-outlines:test", CancellationToken.None);
+        var (again, _) = await FakeOutlineWorker.ServeAsync(pod, f, new SessionHoldOutlineBatch(EnrichmentFakes.Outlines(), null));
+
+        Assert.Single((await second).Outlines);
+        Assert.NotEqual(unreadable.Id, again.Id);
+        Assert.Equal(unreadable.CallerKey, again.CallerKey);
     }
 
     [Fact]
@@ -98,7 +126,28 @@ public sealed class RecognitionOutlineTextureClientTests
         f.Clock.Advance(f.Options.InteractiveClaimWait + TimeSpan.FromSeconds(1));
 
         Assert.Same(inAppMatch, await call);
-        session.Dispose();
         inAppSession.Received(1).Dispose();
+    }
+
+    [Fact]
+    public async Task TextureMatch_EachFallbackMatch_GivesItsGateSlotBack()
+    {
+        using var h = new WallTestHarness();
+        using var f = await FakeRecognitionClaimant.FixtureAsync(h, RecognitionMode.QueueWithFallback);
+        using var gate = new ImageRecognitionGate(1, TimeSpan.FromSeconds(1), NullLogger.Instance);
+        var inAppSession = Substitute.For<IPhotoTextureSession>();
+        inAppSession.Match(default!, default, default, default, default).ReturnsForAnyArgs(PhotoTextureMatch.Failed("in the app"));
+        var inner = Substitute.For<IPhotoTextureMatcher>();
+        inner.OpenPhoto(default!).ReturnsForAnyArgs(inAppSession);
+        using var wall = RecognitionWallScope.Begin(h.WallId);
+        using var session = new QueuedPhotoTextureMatcher(new GatedPhotoTextureMatcher(inner, gate), FakeRecognitionClaimant.Caller(f)).OpenQueued(Photo);
+
+        // No pod was ever seen, so queue+fallback matches in the app at once.
+        await session.MatchAsync(CaptureScenario.TinyJpeg(1), null, 2.0, null, null, CancellationToken.None);
+        await session.MatchAsync(CaptureScenario.TinyJpeg(2), null, 2.0, null, null, CancellationToken.None);
+        using var free = await Task.Run(() => gate.Enter("after", new CancellationTokenSource(TimeSpan.FromSeconds(1)).Token));
+
+        inner.ReceivedWithAnyArgs(2).OpenPhoto(default!);
+        inAppSession.Received(2).Dispose();
     }
 }

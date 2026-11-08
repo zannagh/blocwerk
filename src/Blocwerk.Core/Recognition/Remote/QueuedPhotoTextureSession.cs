@@ -8,14 +8,12 @@ namespace Blocwerk.Core.Recognition.Remote;
 
 /// <summary>
 /// One photo matched against textures one <c>texture-match</c> job at a time (one facet per job). A match the app runs itself
-/// (the synchronous <see cref="Match"/>, or the fallback) opens the in-process session once, which holds its gate slot until
-/// this session is disposed.
+/// (the synchronous <see cref="Match"/>, or the fallback) opens an in-process session for that match alone, so its gate slot is
+/// given back before the next job is awaited.
 /// </summary>
 public sealed class QueuedPhotoTextureSession(byte[] photo, int width, int height, IPhotoTextureMatcher inProcess, RecognitionCaller caller)
     : IAsyncPhotoTextureSession
 {
-    private IPhotoTextureSession? inApp;
-
     /// <inheritdoc/>
     public int Width => width;
 
@@ -23,8 +21,11 @@ public sealed class QueuedPhotoTextureSession(byte[] photo, int width, int heigh
     public int Height => height;
 
     /// <inheritdoc/>
-    public PhotoTextureMatch Match(byte[] encodedTexture, byte[]? encodedMask, double textureMmPerPx, double[]? seed = null, PhotoTextureAttempt? attempt = null) =>
-        InApp().Match(encodedTexture, encodedMask, textureMmPerPx, seed, attempt);
+    public PhotoTextureMatch Match(byte[] encodedTexture, byte[]? encodedMask, double textureMmPerPx, double[]? seed = null, PhotoTextureAttempt? attempt = null)
+    {
+        using var inApp = inProcess.OpenPhoto(photo);
+        return inApp.Match(encodedTexture, encodedMask, textureMmPerPx, seed, attempt);
+    }
 
     /// <inheritdoc/>
     public async Task<PhotoTextureMatch> MatchAsync(
@@ -48,7 +49,8 @@ public sealed class QueuedPhotoTextureSession(byte[] photo, int width, int heigh
     }
 
     /// <inheritdoc/>
-    public void Dispose() => inApp?.Dispose();
-
-    private IPhotoTextureSession InApp() => inApp ??= inProcess.OpenPhoto(photo);
+    public void Dispose()
+    {
+        // Nothing is held between matches.
+    }
 }

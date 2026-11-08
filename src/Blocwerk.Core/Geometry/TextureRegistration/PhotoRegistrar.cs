@@ -98,7 +98,7 @@ public sealed class PhotoRegistrar(
 
     /// <summary>
     /// The coarse-search registration: the plain match, and when that found the facet but only weakly the <see cref="RegistrationAttempts.Retries"/>
-    /// until one is strong or the budget is spent; the best is kept.
+    /// until one is strong or the budget is spent (on a queued session: <see cref="RegistrationAttempts.QueuedRetries"/>); the best is kept.
     /// </summary>
     private async Task<FacetRegistration> DirectAsync(RegistrationTexture texture, CancellationToken ct)
     {
@@ -109,7 +109,8 @@ public sealed class PhotoRegistrar(
         var retries = Stopwatch.StartNew();
         foreach (var attempt in RegistrationAttempts.Retries(label, texture.Frame.FacetId))
         {
-            if (!RegistrationAttempts.WorthRetrying(best) || retries.Elapsed >= budget)
+            var spent = session is IAsyncPhotoTextureSession ? attempts > RegistrationAttempts.QueuedRetries : retries.Elapsed >= budget;
+            if (!RegistrationAttempts.WorthRetrying(best) || spent)
             {
                 break;
             }
