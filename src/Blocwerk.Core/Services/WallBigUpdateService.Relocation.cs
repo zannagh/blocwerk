@@ -4,6 +4,7 @@
 
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
+using Blocwerk.Core.Detection.Outlines;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -160,14 +161,13 @@ public partial class WallBigUpdateService
 
         try
         {
-            var measured = await recognitionGate.RecogniseAsync("relocation-fingerprints", () =>
-            {
-                using var outlines = outlineService.OpenSession(photo);
-                return missing.Select(h => outlines.Outline(new HoldSeed(h.X, h.Y, h.Radius)).Fingerprint).ToList();
-            });
+            using var lease = recognitionGate is null ? null : await recognitionGate.EnterAsync("relocation-fingerprints");
+            var seeds = missing.Select(h => new HoldSeed(h.X, h.Y, h.Radius)).ToList();
+            var measured = await new SessionHoldOutlineBatch(outlineService, recognitionGate)
+                .OutlineAsync(photo, seeds, HoldOutlineBatchOptions.Separately);
             for (int i = 0; i < missing.Count; i++)
             {
-                result[missing[i].Id] = WithHoldMetrics(measured[i], missing[i]);
+                result[missing[i].Id] = WithHoldMetrics(measured.Outlines[i].Fingerprint, missing[i]);
             }
         }
         catch (Exception ex) when (ex is not ImageRecognitionUnavailableException)

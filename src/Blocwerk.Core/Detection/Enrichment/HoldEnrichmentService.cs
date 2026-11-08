@@ -21,7 +21,7 @@ public sealed partial class HoldEnrichmentService : IHoldEnrichmentService
 {
     private readonly HoldDetectionSettings settings;
     private readonly ILogger<HoldEnrichmentService> logger;
-    private readonly IHoldOutlineService? outlineService;
+    private readonly IHoldOutlineBatch? outlineBatch;
     private readonly IMarkerDetectionService? markerService;
     private readonly IImageRecognitionGate? gate;
 
@@ -41,7 +41,7 @@ public sealed partial class HoldEnrichmentService : IHoldEnrichmentService
         this.gate = gate;
         this.settings = settings.HoldDetection;
         this.logger = logger;
-        this.outlineService = outlineService;
+        outlineBatch = outlineService is null ? null : new SessionHoldOutlineBatch(outlineService, gate);
         this.markerService = markerService;
     }
 
@@ -73,9 +73,15 @@ public sealed partial class HoldEnrichmentService : IHoldEnrichmentService
         try
         {
             WarnOnRotatedPhoto(request);
+
+            // Recognition first, geometry only (one outline batch, one marker pass); then the plan and its writes.
+            var targets = OutlineTargets(request);
+            var outlined = await OutlineAsync(request, targets, ct);
+            var markers = await DetectMarkersAsync(db, request, ct);
+
             var plan = new HoldEnrichmentPlan();
-            var outlines = await Task.Run(() => PlanOutlines(request, plan), ct);
-            await PlanMarkersAsync(db, request, plan, outlines, ct);
+            var size = PlanOutlines(request, targets, outlined, plan);
+            await PlanMarkersAsync(db, request, plan, size, markers, ct);
 
             var summary = plan.Apply(db);
             logger.LogInformation(
@@ -99,27 +105,41 @@ public sealed partial class HoldEnrichmentService : IHoldEnrichmentService
         }
     }
 
-    /// <summary>
-    /// Outlines every auto-detected hold that has no shape yet, on one decoded image. Returns the image
-    /// size (null when the pass did not run) so the marker pass can build circle fallbacks in pixels.
-    /// </summary>
-    private (int Width, int Height)? PlanOutlines(HoldEnrichmentRequest request, HoldEnrichmentPlan plan)
+    /// <summary>Every auto-detected hold that has no shape yet.</summary>
+    private static List<Hold> OutlineTargets(HoldEnrichmentRequest request) =>
+        request.Holds.Where(h => h.IsAutoDetected && h.ShapePoints is null).ToList();
+
+    /// <summary>Outlines <paramref name="targets"/> in one batch on the photo; null when the pass does not run.</summary>
+    private async Task<HoldOutlineBatchResult?> OutlineAsync(HoldEnrichmentRequest request, List<Hold> targets, CancellationToken ct)
     {
-        var targets = request.Holds.Where(h => h.IsAutoDetected && h.ShapePoints is null).ToList();
-        if (!settings.OutlinesEnabled || outlineService is null || targets.Count == 0)
+        if (!settings.OutlinesEnabled || outlineBatch is null || targets.Count == 0)
         {
             return null;
         }
 
-        using var session = outlineService.OpenSession(request.Image);
-        var outlined = session.OutlineEach([.. targets.Select(h => HoldSeeds.Of(h, settings.BoxSeeds))]);
+        var seeds = targets.Select(h => HoldSeeds.Of(h, settings.BoxSeeds)).ToList();
+        return await outlineBatch.OutlineAsync(request.Image, seeds, HoldOutlineBatchOptions.Jointly, ct);
+    }
+
+    /// <summary>
+    /// Plans the outlines of <paramref name="targets"/>. Returns the image size (null when the pass did not run) so the
+    /// marker pass can build circle fallbacks in pixels.
+    /// </summary>
+    private static (int Width, int Height)? PlanOutlines(
+        HoldEnrichmentRequest request, List<Hold> targets, HoldOutlineBatchResult? outlined, HoldEnrichmentPlan plan)
+    {
+        if (outlined is null)
+        {
+            return null;
+        }
+
         for (int i = 0; i < targets.Count; i++)
         {
-            plan.Outlines[targets[i]] = outlined[i];
+            plan.Outlines[targets[i]] = outlined.Outlines[i];
         }
 
         // The panel's shapes must not overlap each other or a hand-placed hold: clip, else circle, else a smaller circle.
-        var aspect = (double)session.ImageWidth / Math.Max(1, session.ImageHeight);
+        var aspect = (double)outlined.ImageWidth / Math.Max(1, outlined.ImageHeight);
         foreach (var (hold, (outline, radius)) in HoldShapeCleanup.ResolveOutlines(request.Holds, plan.Outlines, allowRadiusShrink: true, aspect, keepTraced: true))
         {
             plan.Outlines[hold] = outline;
@@ -129,7 +149,7 @@ public sealed partial class HoldEnrichmentService : IHoldEnrichmentService
             }
         }
 
-        return (session.ImageWidth, session.ImageHeight);
+        return (outlined.ImageWidth, outlined.ImageHeight);
     }
 
     private void WarnOnRotatedPhoto(HoldEnrichmentRequest request)
