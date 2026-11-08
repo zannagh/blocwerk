@@ -21,6 +21,7 @@ public static class FeedCoverage
         [typeof(GpuRunnerApproval)] = "runner administration, not a wall view",
         [typeof(GpuRunnerFailure)] = "runner administration, not a wall view",
         [typeof(GpuRunnerWall)] = "runner administration, not a wall view",
+        [typeof(RecognitionJob)] = "job queue (RecognitionQueue); its caller awaits the result and writes mapped rows",
         [typeof(WallCapture)] = "capture workflow (unpublished until promoted; the promote writes mapped rows)",
         [typeof(WallEnhancementRun)] = "enhancement job state; progress goes through IWallPulse",
         [typeof(HoldOutlineUpgradeRun)] = "job state; its outline changes are Hold rows",

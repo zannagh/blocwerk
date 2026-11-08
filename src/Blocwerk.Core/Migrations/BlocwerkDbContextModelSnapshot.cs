@@ -1863,6 +1863,98 @@ namespace Blocwerk.Core.Migrations
                     b.ToTable("PushSubscriptions");
                 });
 
+            modelBuilder.Entity("Blocwerk.Core.Entities.RecognitionJob", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("CallerKey")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("ClaimToken")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid?>("ClaimedByRunnerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)");
+
+                    b.Property<string>("FailedRunnerIdsJson")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<long>("InputBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("InputPath")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("InputSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<int>("Lane")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("LeaseExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("LeaseSeconds")
+                        .HasColumnType("integer");
+
+                    b.Property<double>("Progress")
+                        .HasColumnType("double precision");
+
+                    b.Property<int?>("RequiredMemoryMb")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ResultJson")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Stage")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("WallId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CallerKey");
+
+                    b.HasIndex("ClaimedByRunnerId");
+
+                    b.HasIndex("WallId");
+
+                    b.HasIndex("Status", "Lane", "CreatedAt");
+
+                    b.ToTable("RecognitionJobs");
+                });
+
             modelBuilder.Entity("Blocwerk.Core.Entities.RefreshToken", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4522,6 +4614,24 @@ namespace Blocwerk.Core.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Blocwerk.Core.Entities.RecognitionJob", b =>
+                {
+                    b.HasOne("Blocwerk.Core.Entities.GpuRunner", "ClaimedByRunner")
+                        .WithMany()
+                        .HasForeignKey("ClaimedByRunnerId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Blocwerk.Core.Entities.Wall", "Wall")
+                        .WithMany()
+                        .HasForeignKey("WallId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ClaimedByRunner");
+
+                    b.Navigation("Wall");
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.TopLoggerConnection", b =>

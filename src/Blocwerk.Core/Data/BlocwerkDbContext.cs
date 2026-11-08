@@ -212,6 +212,7 @@ public partial class BlocwerkDbContext : DbContext
         ConfigureWallCapture(modelBuilder);
         ConfigureWallGeometrySplat(modelBuilder);
         ConfigureGpuRunners(modelBuilder);
+        ConfigureRecognitionJobs(modelBuilder);
         ConfigureHoldOutlineUpgrade(modelBuilder);
         ConfigureHoldDuplicates(modelBuilder);
         ConfigureHoldPlacement(modelBuilder);

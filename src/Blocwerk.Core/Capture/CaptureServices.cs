@@ -49,6 +49,12 @@ public static class CaptureServices
         services.AddSingleton<Runners.GpuJobQueue>();
         services.AddHostedService<Runners.GpuJobSweepWorker>();
 
+        // Hold recognition jobs for the instance runner and external runners (runner protocol 1.2, see RecognitionQueue).
+        services.AddSingleton(sp => Recognition.RecognitionQueueOptions.Bind(sp.GetService<IConfiguration>()));
+        services.AddSingleton<Recognition.RecognitionWaiters>();
+        services.AddSingleton<Recognition.RecognitionQueue>();
+        services.AddHostedService<Recognition.RecognitionSweepWorker>();
+
         // The hold proposal search's detection on a runner that finds holds (the app detects itself without one).
         services.AddSingleton<Runners.RunnerHoldDetection>();
 
