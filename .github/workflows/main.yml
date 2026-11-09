@@ -119,6 +119,24 @@ jobs:
           dotnet publish src/Blocwerk.Client -c Release -o "$RUNNER_TEMP/blocwerk-client" --nologo
           node build/check-client-bundle.mjs "$RUNNER_TEMP/blocwerk-client/wwwroot" 2560
 
+      # docker/Dockerfile restores from the csproj files alone and publishes without restoring again. The package
+      # with blazor.web.js must already be in that restore (0.5.0 shipped without it), which the image build only
+      # notices after merge: restore the same way here and check the assets file on every PR.
+      - name: Blazor framework assets in a csproj-only restore
+        run: |
+          dir="$RUNNER_TEMP/csproj-only"
+          mkdir -p "$dir"
+          cp Directory.Packages.props Directory.Build.props global.json .stylecop.json nuget.config "$dir/"
+          git ls-files 'src/*.csproj' | while read -r proj; do
+            mkdir -p "$dir/$(dirname "$proj")"
+            cp "$proj" "$dir/$proj"
+          done
+          dotnet restore "$dir/src/Blocwerk.Web/Blocwerk.Web.csproj" -a arm64
+          if ! grep -q '"Microsoft.AspNetCore.App.Internal.Assets/' "$dir/src/Blocwerk.Web/obj/project.assets.json"; then
+            echo "::error::Microsoft.AspNetCore.App.Internal.Assets (blazor.web.js) is missing from a csproj-only restore of Blocwerk.Web"
+            exit 1
+          fi
+
       - name: Set up QEMU
         if: needs.determine-jobs.outputs.should_push_image == 'true'
         uses: docker/setup-qemu-action@v3

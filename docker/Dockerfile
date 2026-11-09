@@ -21,6 +21,18 @@ COPY src/ src/
 RUN dotnet publish src/Blocwerk.Web/Blocwerk.Web.csproj -c Release -o /app -a $TARGETARCH --no-restore \
     -p:GenerateStaticWebAssetsManifest=true
 
+# Guard: the publish output must carry Blazor's framework script. It comes from a package the SDK only restores
+# for projects with .razor files, and the restore above sees csproj files only (RequiresAspNetWebAssets in
+# Blocwerk.Web.csproj covers that). Without it the image starts fine and every page stays at "Loading..." (0.5.0).
+RUN set -eu; \
+    js=/app/wwwroot/_framework/blazor.web.js; \
+    if [ ! -f "$js" ]; then echo "guard: $js missing from publish output"; exit 1; fi; \
+    if ! grep -q '"Route": *"_framework/blazor.web.js"' /app/Blocwerk.Web.staticwebassets.endpoints.json; then \
+      echo "guard: _framework/blazor.web.js missing from the static web assets endpoints manifest"; \
+      exit 1; \
+    fi; \
+    echo "guard: _framework/blazor.web.js published"
+
 # Guard: the publish output must carry the OpenCV native library built for $TARGETARCH.
 # This image is cross-built (one builder, both platforms), so a bad runtime package in
 # Blocwerk.HoldDetection (zannagh/blocwerk-recognition) would silently ship the wrong architecture — the app would

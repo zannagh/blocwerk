@@ -3,6 +3,11 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <OutputType>Exe</OutputType>
+    <!-- blazor.web.js ships in the Microsoft.AspNetCore.App.Internal.Assets package, which the SDK only adds to the
+         restore when the project has .razor Content. docker/Dockerfile restores from the csproj files alone (no .razor
+         yet) and publishes with no restore of its own, so without this the image ships no _framework/blazor.web.js
+         and every page stays at "Loading..." (0.5.0). -->
+    <RequiresAspNetWebAssets>true</RequiresAspNetWebAssets>
   </PropertyGroup>
 
   <ItemGroup>
