@@ -9,7 +9,7 @@ namespace Blocwerk.Core.Recognition;
 /// <summary>
 /// One recognition job to queue: its kind (<see cref="RecognitionKinds"/>), lane and wall, the envelope parts (the
 /// kind's <c>request</c> JSON and its photos), the memory it needs on a runner (from the photos' pixel counts) and an
-/// optional key the caller finds it again by.
+/// optional key the caller finds it again by. <c>Seeds</c> is the work of an <c>outline-holds</c> job; it sizes the run deadline.
 /// </summary>
 public sealed record RecognitionRequest(
     string Kind,
@@ -17,4 +17,5 @@ public sealed record RecognitionRequest(
     Guid WallId,
     IReadOnlyList<ComputeJobPart> Parts,
     int? RequiredMemoryMb = null,
-    string? CallerKey = null);
+    string? CallerKey = null,
+    int Seeds = 0);

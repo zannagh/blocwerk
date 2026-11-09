@@ -22,6 +22,9 @@ public sealed class RecognitionQueueOptions
     /// <summary>The longest instance key accepted (the runner API reads no longer bearer key); a longer one is refused.</summary>
     public const int MaxInstanceKeyLength = 256;
 
+    private const int MemoryBaseMb = 300;
+    private const int MemoryMbPerMegapixel = 12;
+
     /// <summary>Where recognition runs; see <see cref="RecognitionMode"/>.</summary>
     public RecognitionMode Mode { get; init; } = RecognitionMode.InProcess;
 
@@ -82,11 +85,29 @@ public sealed class RecognitionQueueOptions
     /// <summary>How often a waiting caller re-reads its job, in case a completion signal was missed.</summary>
     public TimeSpan WaiterPoll { get; init; } = TimeSpan.FromSeconds(2);
 
-    /// <summary>How long an interactive claim may run (<c>detect-holds@2</c>: per photo).</summary>
+    /// <summary>
+    /// How long an interactive claim may run at least (<c>detect-holds@2</c>: per photo, <c>outline-holds</c>: plus
+    /// <see cref="OutlineRunPerSeed"/> per seed, the other kinds: plus <see cref="RunPerMegapixel"/> per megapixel).
+    /// </summary>
     public TimeSpan InteractiveRun { get; init; } = TimeSpan.FromSeconds(60);
 
     /// <summary>How long an interactive <c>detect-holds@2</c> claim may run per photo.</summary>
     public TimeSpan DetectRunPerPhoto { get; init; } = TimeSpan.FromSeconds(90);
+
+    /// <summary>The run budget an <c>outline-holds</c> claim gains per seed (a 594-seed job gets 60 s + 297 s).</summary>
+    public TimeSpan OutlineRunPerSeed { get; init; } = TimeSpan.FromSeconds(0.5);
+
+    /// <summary>The longest an <c>outline-holds</c> claim may run, however many seeds.</summary>
+    public TimeSpan OutlineRunMax { get; init; } = TimeSpan.FromMinutes(15);
+
+    /// <summary>
+    /// The run budget the other interactive kinds (<c>texture-match</c>, <c>presence</c>, <c>match-panels</c>, <c>markers</c>) gain
+    /// per megapixel of the photos they hold (read back from <see cref="RecognitionRequest.RequiredMemoryMb"/>).
+    /// </summary>
+    public TimeSpan RunPerMegapixel { get; init; } = TimeSpan.FromSeconds(3);
+
+    /// <summary>The longest those kinds may run, however large the photos.</summary>
+    public TimeSpan RunMax { get; init; } = TimeSpan.FromMinutes(5);
 
     /// <summary>How long a background claim may run.</summary>
     public TimeSpan BackgroundRun { get; init; } = TimeSpan.FromMinutes(30);
@@ -100,11 +121,32 @@ public sealed class RecognitionQueueOptions
     /// <summary>The attempt budget of <paramref name="lane"/>.</summary>
     public int AttemptsOf(RecognitionLane lane) => lane == RecognitionLane.Interactive ? InteractiveAttempts : BackgroundAttempts;
 
-    /// <summary>How long a claim of <paramref name="kind"/> in <paramref name="lane"/> with <paramref name="photos"/> photos may run.</summary>
-    public TimeSpan RunOf(string kind, RecognitionLane lane, int photos) =>
-        lane == RecognitionLane.Background ? BackgroundRun
-        : kind == RecognitionKinds.DetectHolds ? DetectRunPerPhoto * Math.Max(1, photos)
-        : InteractiveRun;
+    /// <summary>
+    /// How long a claim of <paramref name="kind"/> in <paramref name="lane"/> may run, from its work: <paramref name="photos"/>
+    /// photos, <paramref name="seeds"/> outline seeds and the <paramref name="memoryMb"/> its photos need (null: unknown).
+    /// </summary>
+    public TimeSpan RunOf(string kind, RecognitionLane lane, int photos, int seeds = 0, int? memoryMb = null)
+    {
+        if (lane == RecognitionLane.Background)
+        {
+            return BackgroundRun;
+        }
+
+        if (kind == RecognitionKinds.DetectHolds)
+        {
+            return DetectRunPerPhoto * Math.Max(1, photos);
+        }
+
+        if (kind == RecognitionKinds.OutlineHolds)
+        {
+            return Min(InteractiveRun + OutlineRunPerSeed * Math.Max(0, seeds), OutlineRunMax);
+        }
+
+        var megapixels = Math.Max(0, (memoryMb ?? 0) - MemoryBaseMb) / (double)MemoryMbPerMegapixel;
+        return Min(InteractiveRun + RunPerMegapixel * megapixels, RunMax);
+    }
+
+    private static TimeSpan Min(TimeSpan a, TimeSpan b) => a < b ? a : b;
 
     public static RecognitionQueueOptions Bind(IConfiguration? configuration)
     {

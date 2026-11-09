@@ -75,7 +75,8 @@ public sealed class QueuedHoldOutlineBatch(IHoldOutlineBatch inProcess, Recognit
             parts,
             RecognitionParts.MemoryMb([photo], together: false),
             r => RecognitionResults.Outlines(r, size!.Value.Width, size.Value.Height, seeds),
-            ct);
+            ct,
+            seeds.Count);
     }
 
     private static string Hash(byte[] photo, object request)

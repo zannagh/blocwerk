@@ -183,7 +183,7 @@ services:
   recognition:
     # Pinned to the Blocwerk.HoldDetection package version in Directory.Packages.props: worker and app speak the same
     # recognition code. Bump both together.
-    image: ghcr.io/zannagh/blocwerk-recognition:0.1.0
+    image: ghcr.io/zannagh/blocwerk-recognition:0.1.1
     environment:
       RECOGNITION__SERVER: http://blocwerk:5050
       RECOGNITION__INSTANCEKEY: ${RECOGNITION_INSTANCEKEY:-}
