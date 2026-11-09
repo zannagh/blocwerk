@@ -207,7 +207,7 @@ recognition:
   replicas: 1
   image:
     repository: ghcr.io/zannagh/blocwerk-recognition
-    tag: "0.1.0"            # = the Blocwerk.HoldDetection package version of this release; bump both together
+    tag: "0.1.1"            # = the Blocwerk.HoldDetection package version of this release; bump both together
     digest: ""
     pullPolicy: IfNotPresent
   # Plain environment. RECOGNITION__SERVER and RECOGNITION__INSTANCEKEY are set by the chart.
