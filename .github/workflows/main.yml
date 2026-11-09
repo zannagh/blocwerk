@@ -206,6 +206,13 @@ jobs:
         with:
           global-json-file: "global.json"
 
+      # The build's GitVersion runs dotnet-gitversion; self-hosted runner images have neither the tool nor the global
+      # tools folder on PATH.
+      - name: Install GitVersion
+        run: |
+          dotnet tool install --global gitversion.tool
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
       - name: Test (Postgres tier)
         # The job context (the service's mapped port) is only available at step level.
         env:
