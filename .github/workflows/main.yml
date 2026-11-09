@@ -66,6 +66,10 @@ jobs:
     outputs:
       semVer: ${{ steps.version.outputs.semVer }}
       tag: ${{ steps.extract_tag.outputs.tag }}
+    # Blocwerk.Recognition.Abstractions and Blocwerk.HoldDetection come from GitHub Packages (nuget.config), which needs a
+    # token even to read: NuGet takes the source's credentials from this variable.
+    env:
+      NuGetPackageSourceCredentials_zannagh: Username=${{ github.actor }};Password=${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -151,6 +155,9 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # The restore in docker/Dockerfile reads the GitHub Packages feed with it (a BuildKit secret, not in any layer).
+          secrets: |
+            github_token=${{ secrets.GITHUB_TOKEN }}
 
       - name: Save Docker tarball
         if: needs.determine-jobs.outputs.is_release == 'true'
@@ -185,6 +192,9 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+    # The GitHub Packages feed (nuget.config), as in the build job.
+    env:
+      NuGetPackageSourceCredentials_zannagh: Username=${{ github.actor }};Password=${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -214,6 +224,10 @@ jobs:
     timeout-minutes: 35
     permissions:
       contents: read
+      # The GitHub Packages feed (nuget.config), as in the build job.
+      packages: read
+    env:
+      NuGetPackageSourceCredentials_zannagh: Username=${{ github.actor }};Password=${{ secrets.GITHUB_TOKEN }}
     container:
       image: mcr.microsoft.com/playwright:v1.63.0-noble
     services:

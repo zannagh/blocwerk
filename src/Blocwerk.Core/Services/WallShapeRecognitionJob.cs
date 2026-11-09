@@ -8,6 +8,7 @@ using Blocwerk.Core.Detection.Outlines;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Helpers;
+using Blocwerk.Core.Recognition.Remote;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -15,9 +16,11 @@ namespace Blocwerk.Core.Services;
 
 /// <summary>
 /// One background run of the wall-update shape recognition: works out the targets, then per staged panel
-/// decodes the staged photo ONCE and outlines its targets in small batches, writing a proposal per hold and
-/// the progress counter after every batch. A hold that already has a proposal is skipped, so a restarted
-/// run resumes where the last one stopped. Only proposal rows and the session's run fields are written.
+/// outlines its targets in small batches (one <see cref="IHoldOutlineBatch"/> call each), writing a proposal per hold
+/// and the progress counter after every batch. A hold that already has a proposal is skipped, so a restarted
+/// run resumes where the last one stopped. Only proposal rows and the session's run fields are written. Through the
+/// recognition queue (<see cref="QueuedHoldOutlineBatch"/>) a panel is one background <c>outline-holds</c> job instead,
+/// awaited without a gate slot, and its rows are written in the same batches.
 /// </summary>
 internal sealed class WallShapeRecognitionJob
 {
@@ -25,11 +28,11 @@ internal sealed class WallShapeRecognitionJob
     public const int BatchSize = 20;
 
     private readonly RootDbContextFactory factory;
-    private readonly IHoldOutlineService outlines;
+    private readonly IHoldOutlineBatch outlines;
     private readonly IImageRecognitionGate? recognitionGate;
     private readonly ILogger logger;
 
-    public WallShapeRecognitionJob(RootDbContextFactory factory, IHoldOutlineService outlines, IImageRecognitionGate? recognitionGate, ILogger logger)
+    public WallShapeRecognitionJob(RootDbContextFactory factory, IHoldOutlineBatch outlines, IImageRecognitionGate? recognitionGate, ILogger logger)
     {
         this.recognitionGate = recognitionGate;
         this.factory = factory;
@@ -54,11 +57,11 @@ internal sealed class WallShapeRecognitionJob
         }
     }
 
-    /// <summary>Outlines one hold and turns the result into a proposal row (pure but for the outliner).</summary>
-    internal static WallUpdateShapeProposal Propose(IHoldOutlineSession photo, Guid sessionId, Guid panelId, ShapeTarget target)
+    /// <summary>Turns one hold's outline (of its <see cref="HoldOutlineUpgradePlanner.SeedFor"/> seed) into a proposal row.</summary>
+    internal static WallUpdateShapeProposal Propose(
+        HoldOutlineBatchResult photo, HoldOutlineResult result, Guid sessionId, Guid panelId, ShapeTarget target)
     {
         var seed = HoldOutlineUpgradePlanner.SeedFor(target.Hold);
-        var result = photo.Outline(seed);
         var outcome = HoldOutlineUpgradePlanner.Classify(target.Hold, result, seed, photo.ImageWidth, photo.ImageHeight);
         var contour = outcome == HoldOutlineUpgradeOutcome.Outline;
         return new WallUpdateShapeProposal
@@ -97,6 +100,7 @@ internal sealed class WallShapeRecognitionJob
         session.ShapeSkippedManual = skippedManual;
         await db.SaveChangesAsync(ct);
 
+        using var recognitionWall = RecognitionWallScope.Begin(session.WallId);
         foreach (var panel in targets.GroupBy(t => t.Hold.WallPanelId!.Value))
         {
             if (!await OutlinePanelAsync(db, session, panel.Key, panel.ToList(), ct))
@@ -138,13 +142,22 @@ internal sealed class WallShapeRecognitionJob
             return true;
         }
 
-        // The slot is taken here, in this flow, so the session opened below and every batch see it as theirs; it is held
-        // for the whole panel (one decode), including the short progress saves between batches.
-        using var lease = recognitionGate is null ? null : await recognitionGate.EnterAsync("shape-recognition", ct);
-        using var photo = await Task.Run(() => outlines.OpenSession(bytes), ct);
+        var queued = outlines is QueuedHoldOutlineBatch q
+            ? await q.OutlineInBackgroundAsync(
+                bytes, targets.Select(t => HoldOutlineUpgradePlanner.SeedFor(t.Hold)).ToList(), HoldOutlineBatchOptions.Separately, $"shape-outlines:{session.Id:N}:{panelId:N}", ct)
+            : null;
+
+        // In the app the slot is taken here, in this flow, so every batch below sees it as its own; it is held for the whole
+        // panel, including the short progress saves between batches.
+        using var lease = queued is not null || recognitionGate is null ? null : await recognitionGate.EnterAsync("shape-recognition", ct);
+        var done = 0;
         foreach (var batch in targets.Chunk(BatchSize))
         {
-            var rows = await Task.Run(() => batch.Select(t => Propose(photo, session.Id, panelId, t)).ToList(), ct);
+            var photo = queued is null
+                ? await outlines.OutlineAsync(bytes, batch.Select(t => HoldOutlineUpgradePlanner.SeedFor(t.Hold)).ToList(), HoldOutlineBatchOptions.Separately, ct)
+                : queued with { Outlines = queued.Outlines.Skip(done).Take(batch.Length).ToList() };
+            done += batch.Length;
+            var rows = batch.Select((t, i) => Propose(photo, photo.Outlines[i], session.Id, panelId, t)).ToList();
             await db.Entry(session).ReloadAsync(ct);
             if (session.Status != WallUpdateSessionStatus.Open || session.ShapeStatus != ShapeRecognitionStatus.Running)
             {

@@ -6,6 +6,7 @@ using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Recognition.Remote;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -173,12 +174,27 @@ public partial class WallBigUpdateService
         var swaps = new List<TriageSwap>();
         var result = presence is null
             ? NewHoldTriage.Classify(input, presence, swaps)
-            : await recognitionGate.RecogniseAsync("new-triage", () => NewHoldTriage.Classify(input, presence, swaps));
+            : presenceProbe is IAsyncHoldPresenceProbe remote
+                ? await ClassifyPrefetchedAsync(remote, panel.OldPhoto!, newPhoto, input, swaps)
+                : await recognitionGate.RecogniseAsync("new-triage", () => NewHoldTriage.Classify(input, presence, swaps));
         logger.LogInformation(
             "New-hold triage on panel {PanelId}: {Discarded} of {Candidates} unpaired detections discarded by default ({Reasons})",
             panel.PanelId, result.Count, candidates.Count,
             string.Join(", ", result.GroupBy(r => r.Value).Select(g => $"{g.Key} {g.Count()}")));
         var kept = candidates.Where(c => !result.ContainsKey(c.Id)).Select(c => (c.X, c.Y)).ToList();
         return new PanelTriage(result, newSize, kept, swaps);
+    }
+
+    /// <summary>
+    /// The triage with a probe that may run on a recognition runner: its presence questions are scored first, without a
+    /// gate slot (<see cref="PresencePrefetch"/>); the triage itself does no image work.
+    /// </summary>
+    private static async Task<Dictionary<Guid, NewHoldDiscardReason>> ClassifyPrefetchedAsync(
+        IAsyncHoldPresenceProbe probe, byte[] oldPhoto, byte[] newPhoto, NewHoldTriageInput input, List<TriageSwap> swaps)
+    {
+        var prefetch = new PresencePrefetch();
+        NewHoldTriage.Classify(input, prefetch.Probe("photo"), new List<TriageSwap>());
+        await prefetch.ScoreAsync((_, q, ct) => probe.ScoreAsync("new-triage", oldPhoto, newPhoto, q, ct), CancellationToken.None);
+        return NewHoldTriage.Classify(input, prefetch.Probe("photo"), swaps);
     }
 }

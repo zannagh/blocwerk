@@ -118,6 +118,16 @@ services:
       GEOMETRYSERVICE__TEXTURES__MMPERPX: ${GEOMETRYSERVICE__TEXTURES__MMPERPX:-}
       GEOMETRYSERVICE__TEXTURES__MAXSIDEPX: ${GEOMETRYSERVICE__TEXTURES__MAXSIDEPX:-}
       GEOMETRYSERVICE__TEXTURES__JPEGQUALITY: ${GEOMETRYSERVICE__TEXTURES__JPEGQUALITY:-}
+      # Hold recognition: queue (here the default) hands it to the recognition service below (runner protocol 1.2);
+      # queue+fallback runs what the service does not serve in the app; inprocess keeps it all in the app (the code's
+      # default without this setting). The instance runner's key needs no setup: without
+      # RECOGNITION_INSTANCEKEY the app generates one at its first start into ./recognition-key/instance.key (0600, handed
+      # to the worker's uid 1654), which the recognition service reads read-only. Set RECOGNITION_INSTANCEKEY in
+      # docker/.env only to choose it yourself (`openssl rand -hex 32`); do NOT hardcode it here.
+      RECOGNITION__MODE: ${RECOGNITION_MODE:-queue}
+      RECOGNITION__INSTANCEKEY: ${RECOGNITION_INSTANCEKEY:-}
+      RECOGNITION__INSTANCEKEYFILE: /app/recognition/instance.key
+      RECOGNITION__INSTANCEKEYFILEOWNER: "1654"
     volumes:
       - ./appsettings.json:/app/appsettings.json:ro
       # Persist the DataProtection key ring across redeploys (see AuthenticationServices.cs) so a
@@ -127,9 +137,37 @@ services:
       - ./beta-videos:/data/beta-videos
       # Wall gallery uploads + the image-variant cache (WALLIMAGE__STORAGEPATH above).
       - ./wall-images:/data/wall-images
+      # The generated instance runner key (RECOGNITION__INSTANCEKEYFILE), shared read-only with the recognition service.
+      - ./recognition-key:/app/recognition
     depends_on:
       - postgres
       - otel-dashboard
+    restart: unless-stopped
+
+  # Recognition worker (zannagh/blocwerk-recognition): hold detection, outlines, markers,
+  # presence, panel matching and texture matching for the app, pulled through the runner API as the instance runner
+  # (one job at a time). Started by default with no setup: it reads the instance key the app generated
+  # (./recognition-key, read-only) unless RECOGNITION_INSTANCEKEY is set, and waits for that file while the app has not
+  # written it yet. No published port: GET /health on 8080 inside (503 when the loop is stuck).
+  # Models are mounted read-only, never baked into the image. JOB_MAX_MEMORY_MB: above it a job fails as "resource"
+  # (keep it ~450 MB under the memory limit).
+  recognition:
+    # Pinned to the Blocwerk.HoldDetection package version in Directory.Packages.props: worker and app speak the same
+    # recognition code. Bump both together.
+    image: ghcr.io/zannagh/blocwerk-recognition:0.1.0
+    environment:
+      RECOGNITION__SERVER: http://blocwerk:5050
+      RECOGNITION__INSTANCEKEY: ${RECOGNITION_INSTANCEKEY:-}
+      RECOGNITION__INSTANCEKEYFILE: /recognition/instance.key
+      JOB_MAX_MEMORY_MB: ${RECOGNITION_JOB_MAX_MEMORY_MB:-2560}
+    volumes:
+      # The instance key the app generated (RECOGNITION__INSTANCEKEYFILE of the app).
+      - ./recognition-key:/recognition:ro
+      # The ONNX models (climbingcrux.onnx, hold-segmenter-encoder/-decoder.onnx) in docker/models.
+      - ./models:/models:ro
+    mem_limit: 3g
+    depends_on:
+      - blocwerk
     restart: unless-stopped
 
   # Wall-geometry service (docker/wall-geometry/): marker observations -> metric 3D wall geometry, and

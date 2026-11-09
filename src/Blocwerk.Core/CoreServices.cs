@@ -206,8 +206,7 @@ public static class CoreServices
         builder.Services.AddSingleton<HybridZoomCache>();
         builder.Services.AddScoped<IHybridZoomService, HybridZoomService>();
 
-        // Multi-view hold proposals: the first AVAILABLE detector wins; the GPU runner stub stays unavailable.
-        builder.Services.AddScoped<ICaptureHoldDetector, ComputeCaptureHoldDetector>();
+        // Multi-view hold proposals: the first AVAILABLE detector wins (runner detection goes through the follow-up step).
         builder.Services.AddScoped<ICaptureHoldDetector, InAppCaptureHoldDetector>();
         builder.Services.AddScoped<IHoldProposalService, HoldProposalService>();
         builder.Services.AddSingleton<HoldSearchJobs>();
@@ -263,7 +262,8 @@ public static class CoreServices
         builder.Services.AddSingleton<IHoldEnrichmentService, HoldEnrichmentService>();
 
         // One process-wide limit on heavy image recognition, shared by circuits and background jobs (HoldDetection:MaxConcurrentRuns).
-        builder.Services.AddSingleton<IImageRecognitionGate, ImageRecognitionGate>();
+        builder.Services.AddSingleton<IImageRecognitionGate>(services => new ImageRecognitionGate(
+            services.GetRequiredService<BlocwerkSettings>().HoldDetection, services.GetRequiredService<ILogger<ImageRecognitionGate>>()));
 
         builder.Services.AddScoped<IWallService, WallService>();
         builder.Services.AddWall3DView();

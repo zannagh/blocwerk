@@ -20,7 +20,7 @@ public class HoldEnrichmentRealPhotoTests
 {
     private static readonly string Fixture = Path.Combine(AppContext.BaseDirectory, "Fixtures", "Glyphs", "img2783-topleft.jpg");
 
-    [Fact]
+    [OpenCvFact]
     public async Task RealCrop_WithActiveModel_FillsFacetPlanePositionAndMillimetres()
     {
         var image = await File.ReadAllBytesAsync(Fixture);

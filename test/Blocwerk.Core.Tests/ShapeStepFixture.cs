@@ -7,6 +7,7 @@ using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Blocwerk.Core.Tests;
@@ -17,11 +18,11 @@ namespace Blocwerk.Core.Tests;
 /// </summary>
 internal sealed class ShapeStepFixture
 {
-    public ShapeStepFixture(WallTestHarness h, IKioskContext? kiosk = null)
+    public ShapeStepFixture(WallTestHarness h, IKioskContext? kiosk = null, IHoldOutlineBatch? outlineBatch = null)
     {
         H = h;
         Runner = new WallShapeRecognitionRunner(
-            h.RootContextFactory, new BlocwerkSettings(), NullLogger<WallShapeRecognitionRunner>.Instance, new FakeOutliner());
+            h.RootContextFactory, new BlocwerkSettings(), NullLogger<WallShapeRecognitionRunner>.Instance, new FakeOutliner(), outlineBatch: outlineBatch);
         Service = new WallUpdateShapeService(
             h.DbContextFactory, h.CurrentUser, Runner, NullLogger<WallUpdateShapeService>.Instance, kiosk);
         BigUpdate = WallUpdateSessionFixture.BigUpdate(h);
@@ -39,12 +40,25 @@ internal sealed class ShapeStepFixture
 
     public Guid PanelId { get; private set; }
 
+    /// <summary>The fake outliner every run of this fixture outlines with in the app.</summary>
+    public static IHoldOutlineService Outliner() => new FakeOutliner();
+
     /// <summary>A wall with no old holds, a staged centre, and the given staged holds on it.</summary>
-    public async Task<List<Guid>> StageAsync(params Hold[] staged)
+    public Task<List<Guid>> StageAsync(params Hold[] staged) => StageAsync(WallUpdateSessionFixture.CentrePhoto(), staged);
+
+    /// <summary>Like <see cref="StageAsync(Hold[])"/> with <paramref name="photos"/> staged, on the wall a runner fixture seeded if it did.</summary>
+    public async Task<List<Guid>> StageAsync(List<BigUpdatePhoto> photos, params Hold[] staged)
     {
-        await H.SeedWallAsync(holdCount: 0);
+        await using (var seeded = H.CreateContext())
+        {
+            if (!await seeded.Walls.AnyAsync(w => w.Id == H.WallId))
+            {
+                await H.SeedWallAsync(holdCount: 0);
+            }
+        }
+
         WallUpdateSessionFixture.NoDetections(H);
-        await BigUpdate.StageAsync(H.WallId, WallUpdateSessionFixture.CentrePhoto());
+        await BigUpdate.StageAsync(H.WallId, photos);
         PanelId = await WallUpdateSessionFixture.PanelIdAsync(H, 0, 0);
         await using var db = H.CreateContext();
         SessionId = db.WallUpdateSessions.Single(s => s.Status == WallUpdateSessionStatus.Open).Id;

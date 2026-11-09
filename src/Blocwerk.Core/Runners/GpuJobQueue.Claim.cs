@@ -47,14 +47,9 @@ public sealed partial class GpuJobQueue
 
         while (true)
         {
-            var (job, reattached) = await TryClaimOrReattachAsync(runner, request, ct);
-            if (job is not null)
+            if (await ClaimOnceAsync(runner, request, ct) is { } claim)
             {
-                return new RunnerClaim(
-                    job.Id, CaptureSplatDocuments.QualityName(job.Quality),
-                    (int)options.Lease.TotalSeconds, job.BundleBytes, job.BundleSha256,
-                    options.PreviewsActive && job.Kind == GpuJobKind.Splat, reattached,
-                    job.WallId, job.CaptureId, RunnerCapabilities.KindName(job.Kind), job.RequiredMemoryMb);
+                return claim;
             }
 
             var left = deadline - Now;
@@ -65,6 +60,26 @@ public sealed partial class GpuJobQueue
 
             await signal.WaitAsync(left < RecheckInterval ? left : RecheckInterval, ct);
         }
+    }
+
+    /// <summary>One claim (or re-attach) attempt, as the runner receives it; null when there is nothing for it.</summary>
+    public async Task<RunnerClaim?> ClaimOnceAsync(GpuRunner runner, RunnerClaimRequest? request, CancellationToken ct)
+    {
+        var (job, reattached) = await TryClaimOrReattachAsync(runner, request, ct);
+        return job is null
+            ? null
+            : new RunnerClaim(
+                job.Id, CaptureSplatDocuments.QualityName(job.Quality),
+                (int)options.Lease.TotalSeconds, job.BundleBytes, job.BundleSha256,
+                options.PreviewsActive && job.Kind == GpuJobKind.Splat, reattached,
+                job.WallId, job.CaptureId, RunnerCapabilities.KindName(job.Kind), job.RequiredMemoryMb);
+    }
+
+    /// <summary>Whether the runner holds a GPU job (claimed or running).</summary>
+    public async Task<bool> HoldsClaimAsync(Guid runnerId, CancellationToken ct)
+    {
+        await using var db = dbContextFactory.CreateDbContext();
+        return await HoldsClaimAsync(db, runnerId, ct);
     }
 
     /// <summary>One claim attempt. Public for tests.</summary>
@@ -103,7 +118,7 @@ public sealed partial class GpuJobQueue
     }
 
     /// <summary>A runner that claims is not paused (any more), whatever its last hello said.</summary>
-    private async Task ClearPausedAsync(Guid runnerId, CancellationToken ct)
+    internal async Task ClearPausedAsync(Guid runnerId, CancellationToken ct)
     {
         await using var db = dbContextFactory.CreateDbContext();
         await db.GpuRunners.Where(r => r.Id == runnerId && r.Paused == true)

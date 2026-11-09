@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
+using Blocwerk.Core.Recognition.Remote;
 using Blocwerk.Core.Runners;
 using Microsoft.EntityFrameworkCore;
 
@@ -17,10 +18,16 @@ namespace Blocwerk.Core.Capture.FollowUp;
 /// proposes: accepting one adds the hold to its panel (panel truth), so nothing live changes here. Minutes on the
 /// CPU, so it runs once the capture already shows as done; it runs again only when the visible volumes changed
 /// (known holds are subtracted at their volume points), and a re-run reuses the cached photo detections. The detection goes
-/// to a 3D runner that finds holds when one is online (<see cref="RunnerHoldDetection"/>); without one it runs in the app.
+/// through the recognition queue when it is on (<see cref="QueuedCaptureHoldDetection"/>, <c>detect-holds@2</c>), else to a
+/// 3D runner that finds holds when one is online (<see cref="RunnerHoldDetection"/>, <c>detect-holds</c> 1.0); without
+/// either it runs in the app. With <c>RECOGNITION__MODE=queue</c> only the queue serves it: its jobs wait for a runner, and
+/// one that ends unserved fails the step instead of falling back.
 /// </summary>
 public sealed class FindHoldProposalsFollowUpStep(
-    IHoldProposalService proposals, IDbContextFactory<BlocwerkDbContext> dbContextFactory, RunnerHoldDetection? runners = null)
+    IHoldProposalService proposals,
+    IDbContextFactory<BlocwerkDbContext> dbContextFactory,
+    RunnerHoldDetection? runners = null,
+    QueuedCaptureHoldDetection? queued = null)
     : ICaptureFollowUpStep
 {
     /// <summary>The step's key in the follow-up record.</summary>
@@ -61,7 +68,8 @@ public sealed class FindHoldProposalsFollowUpStep(
     /// <inheritdoc />
     public async Task<CaptureFollowUpStepResult> RunAsync(CaptureFollowUpContext context, CancellationToken ct)
     {
-        var detected = runners is null ? null : await runners.DetectAsync(context, ct);
+        var detected = queued is null ? null : await queued.DetectAsync(context, ct);
+        detected ??= runners is null ? null : await runners.DetectAsync(context, ct);
         var result = detected is null
             ? await proposals.FindFromPipelineAsync(context.WallId, ct)
             : await proposals.FindFromPipelineAsync(context.WallId, detected, ct);

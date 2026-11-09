@@ -14,10 +14,15 @@
   <ItemGroup>
     <!-- Stands in for the signed-in user and the merge service when the app's re-detect is planned on a database copy. -->
     <PackageReference Include="NSubstitute" />
+    <PackageReference Include="Blocwerk.HoldDetection" />
+    <!-- YoloDotNet (inside Blocwerk.HoldDetection) pulls in the GPU ONNX runtime, which has no arm64 build and
+         would put a second libonnxruntime next to the CPU one: excluded in every project that references the package. -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.Gpu" ExcludeAssets="all" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.Gpu.Windows" ExcludeAssets="all" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.Gpu.Linux" ExcludeAssets="all" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\src\Blocwerk.HoldDetection\Blocwerk.HoldDetection.csproj" />
     <ProjectReference Include="..\..\..\src\Blocwerk.Core\Blocwerk.Core.csproj" />
   </ItemGroup>
 

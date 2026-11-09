@@ -41,7 +41,8 @@ for values in default "$CHART"/ci/*-values.yaml; do
   while read -r worker fp; do
     [[ -n "$worker" ]] || continue
     grep -q "^$worker|http://blocwerk-$worker:[0-9]*|$fp|" <<<"${workers// /$'\n'}" || fail "$name: compute gate has no target $fp for $worker"
-  done < <(q "$f" 'select(.kind == "Deployment" and .metadata.labels["app.kubernetes.io/component"] != "web" and .metadata.labels["app.kubernetes.io/component"] != "aspire") |
+  # Recognition pulls its jobs (leases re-queue a dropped one): no compute gate.
+  done < <(q "$f" 'select(.kind == "Deployment" and .metadata.labels["app.kubernetes.io/component"] != "web" and .metadata.labels["app.kubernetes.io/component"] != "aspire" and .metadata.labels["app.kubernetes.io/component"] != "recognition") |
     .metadata.labels["app.kubernetes.io/component"] + " " + .spec.template.metadata.annotations["blocwerk.app/rollout"]')
 done
 
@@ -56,10 +57,24 @@ grep -q 'name: SPLATSERVICE__URL' "$OUT/all-on-values.yaml" || fail "all-on: SPL
 limit="$(q "$OUT/prod-like-values.yaml" 'select(.metadata.name == "blocwerk-geometry" and .kind == "Deployment") | .spec.template.spec.containers[0].resources.limits.memory')"
 [[ "$limit" == 1536Mi ]] || fail "prod-like: geometry memory limit $limit, expected 1536Mi"
 
+# Recognition is on by default: worker, its policy and the app's two variables; off = none of them.
+for kind in Deployment NetworkPolicy; do
+  [[ -n "$(q "$OUT/default.yaml" "select(.kind == \"$kind\" and .metadata.name == \"blocwerk-recognition\") | .kind")" ]] ||
+    fail "default: no recognition $kind"
+done
+for var in RECOGNITION__MODE RECOGNITION__INSTANCEKEY; do
+  grep -q "name: $var" "$OUT/default.yaml" || fail "default: $var not set for the app"
+done
+render --set recognition.enabled=false > "$OUT/no-recognition.yaml"
+grep -q 'RECOGNITION__\|blocwerk-recognition' "$OUT/no-recognition.yaml" && fail "recognition objects or variables rendered while off"
+render --set recognition.networkPolicy.enabled=false | grep -q 'kind: NetworkPolicy' && fail "recognition policy rendered while off"
+
 # Hard rules enforced by the schema.
 render --set web.replicas=2 >/dev/null 2>&1 && fail "schema accepted web.replicas=2"
 render --set geometry.replicas=3 >/dev/null 2>&1 && fail "schema accepted geometry.replicas=3"
 render --set web.env.POSTGRES__HOST=x >/dev/null 2>&1 && fail "schema accepted a chart-computed variable in web.env"
+render --set web.env.RECOGNITION__MODE=queue >/dev/null 2>&1 && fail "schema accepted RECOGNITION__MODE in web.env"
+render --set recognition.mode=remote >/dev/null 2>&1 && fail "schema accepted recognition.mode=remote"
 render --set splat.onRunners=true >/dev/null 2>&1 && fail "splat.onRunners accepted with RUNNERS__MODE off"
 render --set splat.onRunners=true --set web.env.RUNNERS__MODE=always | grep -q 'name: SPLATSERVICE__ONRUNNERS' ||
   fail "SPLATSERVICE__ONRUNNERS not rendered"

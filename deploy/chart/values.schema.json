@@ -71,7 +71,8 @@
         "postgres": {"type": "string", "minLength": 1},
         "appsettings": {"type": "string"},
         "compute": {"type": "string", "minLength": 1},
-        "deploy": {"type": "string"}
+        "deploy": {"type": "string"},
+        "recognition": {"type": "string", "minLength": 1}
       }
     },
     "capture": {
@@ -94,8 +95,8 @@
         "env": {
           "allOf": [{"$ref": "#/definitions/env"}],
           "propertyNames": {
-            "description": "Set by the chart: POSTGRES__*, GEOMETRYSERVICE__*, SPLATSERVICE__*, CAPTURE__MAX* (use capture.*).",
-            "not": {"pattern": "^(POSTGRES__|GEOMETRYSERVICE__|SPLATSERVICE__|CAPTURE__MAX)"}
+            "description": "Set by the chart: POSTGRES__*, GEOMETRYSERVICE__*, SPLATSERVICE__*, CAPTURE__MAX* (use capture.*), RECOGNITION__* (use recognition.*).",
+            "not": {"pattern": "^(POSTGRES__|GEOMETRYSERVICE__|SPLATSERVICE__|CAPTURE__MAX|RECOGNITION__)"}
           }
         },
         "service": {
@@ -160,6 +161,31 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {"onRunners": {"type": "boolean"}}
+    },
+    "recognition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "mode", "replicas", "image", "resources"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "mode": {"type": "string", "enum": ["queue+fallback", "queue", "inprocess"]},
+        "replicas": {"$ref": "#/definitions/replicas"},
+        "image": {"$ref": "#/definitions/image"},
+        "env": {
+          "allOf": [{"$ref": "#/definitions/env"}],
+          "propertyNames": {
+            "description": "Set by the chart: RECOGNITION__SERVER, RECOGNITION__INSTANCEKEY (secrets.recognition).",
+            "not": {"enum": ["RECOGNITION__SERVER", "RECOGNITION__INSTANCEKEY"]}
+          }
+        },
+        "tmpSizeLimit": {"type": "string"},
+        "resources": {"$ref": "#/definitions/resources"},
+        "networkPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {"enabled": {"type": "boolean"}}
+        }
+      }
     },
     "geometry": {"$ref": "#/definitions/worker"},
     "splatCpu": {"$ref": "#/definitions/worker"},

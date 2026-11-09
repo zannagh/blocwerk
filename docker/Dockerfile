@@ -1,24 +1,29 @@
+# syntax=docker/dockerfile:1
+# Hold recognition (Blocwerk.Recognition.Abstractions, Blocwerk.HoldDetection) is restored from GitHub Packages, which
+# needs a token even to read. Pass it as a BuildKit secret, never as a build argument:
+#   docker buildx build -f docker/Dockerfile --secret id=github_token,env=GITHUB_TOKEN .
 FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG TARGETARCH
 WORKDIR /repo
 
-COPY Directory.Packages.props Directory.Build.props global.json .stylecop.json ./
+COPY Directory.Packages.props Directory.Build.props global.json .stylecop.json nuget.config ./
 COPY src/Blocwerk.Contracts/Blocwerk.Contracts.csproj src/Blocwerk.Contracts/
 COPY src/Blocwerk.Core/Blocwerk.Core.csproj src/Blocwerk.Core/
 COPY src/Blocwerk.Authentication/Blocwerk.Authentication.csproj src/Blocwerk.Authentication/
-COPY src/Blocwerk.HoldDetection/Blocwerk.HoldDetection.csproj src/Blocwerk.HoldDetection/
 COPY src/Blocwerk.Shared.Ui/Blocwerk.Shared.Ui.csproj src/Blocwerk.Shared.Ui/
 COPY src/Blocwerk.Client/Blocwerk.Client.csproj src/Blocwerk.Client/
 COPY src/Blocwerk.Web/Blocwerk.Web.csproj src/Blocwerk.Web/
-RUN dotnet restore src/Blocwerk.Web/Blocwerk.Web.csproj -a $TARGETARCH
+RUN --mount=type=secret,id=github_token,required=true \
+    NuGetPackageSourceCredentials_zannagh="Username=docker;Password=$(cat /run/secrets/github_token)" \
+    dotnet restore src/Blocwerk.Web/Blocwerk.Web.csproj -a $TARGETARCH
 
 COPY src/ src/
-RUN dotnet publish src/Blocwerk.Web/Blocwerk.Web.csproj -c Release -o /app -a $TARGETARCH \
+RUN dotnet publish src/Blocwerk.Web/Blocwerk.Web.csproj -c Release -o /app -a $TARGETARCH --no-restore \
     -p:GenerateStaticWebAssetsManifest=true
 
 # Guard: the publish output must carry the OpenCV native library built for $TARGETARCH.
-# This image is cross-built (one builder, both platforms), so a bad MSBuild condition in
-# Blocwerk.HoldDetection.csproj would silently ship the wrong architecture — the app would
+# This image is cross-built (one builder, both platforms), so a bad runtime package in
+# Blocwerk.HoldDetection (zannagh/blocwerk-recognition) would silently ship the wrong architecture — the app would
 # still start and only throw (DllNotFoundException) once the big-wall hold matcher runs.
 # Bytes 18-19 of the ELF header are e_machine: 3e00 = x86-64, b700 = AArch64 (little endian).
 RUN set -eu; \
@@ -44,8 +49,8 @@ WORKDIR /app
 # (see HeifCapturePhotoConverter); Ubuntu's ffmpeg 6.1 cannot read HEIC stills.
 # The remaining libs are native dependencies of libOpenCvSharpExtern.so, used by the big-wall
 # hold overlap matcher. This image is multi-arch and the two OpenCvSharp runtime packages do
-# NOT need the same libs, so the list below is the union of both (see the csproj for which
-# package each architecture gets):
+# NOT need the same libs, so the list below is the union of both (both are dependencies of the
+# Blocwerk.HoldDetection package; a RID-specific restore picks the one per architecture):
 #   arm64 (OpenCvSharp4.runtime.linux-arm64) links OpenCV's codecs dynamically and needs
 #     libtesseract5, libjpeg-turbo8, libwebp*, libpng16, libtiff6 (plus ffmpeg's libav*).
 #   amd64 (OpenCvSharp4.official.runtime.linux-x64) statically links those codecs but pulls in

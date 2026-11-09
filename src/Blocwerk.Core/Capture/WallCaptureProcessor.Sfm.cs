@@ -154,7 +154,7 @@ public sealed partial class WallCaptureProcessor
         await splat.DoneWithAsync(sfmJobId, keepResult: true, ct);
         await KeepSparsePointsAsync(capture, sparse, ct);
         var photos = await LoadUsablePhotosAsync(capture.Id, ct);
-        var holds = await PhotoHoldsAsync(capture.Id, photos, ct);
+        var holds = await PhotoHoldsAsync(capture, photos, ct);
         var request = CaptureSfmDocuments.BuildRequest(
             photos.Select(CaptureSfmPhoto.From),
             holds,

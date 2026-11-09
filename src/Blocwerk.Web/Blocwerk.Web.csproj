@@ -14,6 +14,13 @@
     <!-- Renders the kiosk pairing QR code. Already in the solution for the TOTP enrolment code
          (Blocwerk.Authentication); this project walks its module matrix into inline SVG. -->
     <PackageReference Include="QRCoder" />
+    <!-- Hold recognition (in-process mode), from zannagh/blocwerk-recognition. -->
+    <PackageReference Include="Blocwerk.HoldDetection" />
+    <!-- YoloDotNet (inside Blocwerk.HoldDetection) pulls in the GPU ONNX runtime, which has no arm64 build and
+         would put a second libonnxruntime next to the CPU one: excluded in every project that references the package. -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.Gpu" ExcludeAssets="all" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.Gpu.Windows" ExcludeAssets="all" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.Gpu.Linux" ExcludeAssets="all" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
@@ -30,7 +37,6 @@
   <ItemGroup>
     <ProjectReference Include="..\Blocwerk.Core\Blocwerk.Core.csproj" />
     <ProjectReference Include="..\Blocwerk.Authentication\Blocwerk.Authentication.csproj" />
-    <ProjectReference Include="..\Blocwerk.HoldDetection\Blocwerk.HoldDetection.csproj" />
     <ProjectReference Include="..\Blocwerk.Shared.Ui\Blocwerk.Shared.Ui.csproj" />
     <!-- The offline gym client (standalone WASM, Phase 3): its static web assets are served under /v/ (Program.cs). -->
     <ProjectReference Include="..\Blocwerk.Client\Blocwerk.Client.csproj" />

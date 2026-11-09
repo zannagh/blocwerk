@@ -1,10 +1,12 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Capture;
 using Blocwerk.Core.Data;
+using Blocwerk.Core.Detection.Outlines;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Helpers;
 using Blocwerk.Core.HoldMoves;
+using Blocwerk.Core.Recognition.Remote;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -26,7 +28,7 @@ public partial class WallBigUpdateService : IWallBigUpdateService
     private readonly ILogger<WallBigUpdateService> logger;
     private readonly IChangeJournal? changeJournal;
     private readonly IHoldEnrichmentService? holdEnrichment;
-    private readonly IHoldOutlineService? outlineService;
+    private readonly IHoldOutlineBatch? outlineBatch;
     private readonly IHoldRefinementQueue? refinementQueue;
     private readonly ICapturePhotoConverter? photoConverter;
     private readonly IHoldPresenceProbe? presenceProbe;
@@ -56,7 +58,8 @@ public partial class WallBigUpdateService : IWallBigUpdateService
         HoldMoveOptions? moveOptions = null,
         IStagedHoldPlacer? stagedPlacer = null,
         IHoldColorProposer? colorProposer = null,
-        IImageRecognitionGate? recognitionGate = null)
+        IImageRecognitionGate? recognitionGate = null,
+        IHoldOutlineBatch? outlineBatch = null)
     {
         this.recognitionGate = recognitionGate;
         this.colorProposer = colorProposer ?? new HoldColorProposer();
@@ -75,13 +78,14 @@ public partial class WallBigUpdateService : IWallBigUpdateService
         this.logger = logger;
         this.changeJournal = changeJournal;
         this.holdEnrichment = holdEnrichment;
-        this.outlineService = outlineService;
+        this.outlineBatch = outlineBatch ?? (outlineService is null ? null : new SessionHoldOutlineBatch(outlineService, recognitionGate));
     }
 
     /// <inheritdoc/>
     public async Task<BigUpdateSession> ResumeAsync(Guid wallId, bool use3DEvidence = false)
     {
         EnsureRecognitionOn();
+        using var recognitionWall = RecognitionWallScope.Begin(wallId);
         var user = await currentUserService.GetCurrentUserAsync();
         await using var db = await dbContextFactory.CreateDbContextAsync();
         db.CurrentUserId = user.Id;

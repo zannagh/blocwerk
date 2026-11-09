@@ -68,22 +68,41 @@ public static class RunnerHoldsResult
     public static IReadOnlyList<CaptureDetection> ToDetections(string photo, int width, int height, IReadOnlyList<RunnerHoldBox> boxes)
     {
         double longSide = Math.Max(width, height);
+        return ToHolds(width, height, boxes)
+            .Where(h => h.Color != "white")
+            .Select(h => new CaptureDetection(photo, h.X * width, h.Y * height, h.Radius * longSide, h.Confidence))
+            .ToList();
+    }
+
+    /// <summary>
+    /// A photo's boxes as the app's detector reports holds (<c>YoloHoldDetectionService.ToHolds</c>, step for step):
+    /// normalised and rounded, centres outside the photo dropped, the mat filter applied, volumes as "white".
+    /// </summary>
+    /// <param name="width">The photo's width.</param>
+    /// <param name="height">The photo's height.</param>
+    /// <param name="boxes">The merged boxes.</param>
+    /// <returns>The holds.</returns>
+    public static List<DetectedHold> ToHolds(int width, int height, IReadOnlyList<RunnerHoldBox> boxes)
+    {
+        double longSide = Math.Max(width, height);
         var holds = boxes
             .Select(b => new DetectedHold(
                 X: Math.Round((b.Left + ((b.Right - b.Left) / 2.0)) / width, 4),
                 Y: Math.Round((b.Top + ((b.Bottom - b.Top) / 2.0)) / height, 4),
                 Radius: Math.Round(Math.Max(b.Right - b.Left, b.Bottom - b.Top) / (2.0 * longSide), 4),
                 Color: b.Label == VolumeLabel ? "white" : null,
-                Confidence: Math.Round(b.Confidence, 3)))
+                Confidence: Math.Round(b.Confidence, 3),
+                BoxWidth: Math.Round((double)(b.Right - b.Left) / width, 5),
+                BoxHeight: Math.Round((double)(b.Bottom - b.Top) / height, 5)))
             .Where(h => h.X is >= 0 and <= 1 && h.Y is >= 0 and <= 1)
             .ToList();
-        return MatFalseDetectionFilter.Classify(holds).Kept
-            .Where(h => h.Color != "white")
-            .Select(h => new CaptureDetection(photo, h.X * width, h.Y * height, h.Radius * longSide, h.Confidence))
-            .ToList();
+        return MatFalseDetectionFilter.Classify(holds).Kept.ToList();
     }
 
-    private static Dictionary<string, RunnerPhotoHolds> Parse(JsonElement root)
+    /// <summary>The boxes per photo of a result document (also a <c>detect-holds@2</c> result, keyed by part file name).</summary>
+    /// <param name="root">The document.</param>
+    /// <returns>Size and boxes per photo.</returns>
+    internal static Dictionary<string, (int Width, int Height, List<RunnerHoldBox> Boxes)> ParseBoxes(JsonElement root)
     {
         if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("version", out var version)
             || version.ValueKind != JsonValueKind.Number || version.GetInt32() != 1
@@ -92,7 +111,7 @@ public static class RunnerHoldsResult
             throw new InvalidDataException("The hold detection result is not a version 1 document with photos.");
         }
 
-        var result = new Dictionary<string, RunnerPhotoHolds>(StringComparer.OrdinalIgnoreCase);
+        var result = new Dictionary<string, (int, int, List<RunnerHoldBox>)>(StringComparer.OrdinalIgnoreCase);
         foreach (var photo in photos.EnumerateObject())
         {
             if (result.Count >= MaxPhotos || photo.Name.Length is 0 or > 200)
@@ -100,12 +119,16 @@ public static class RunnerHoldsResult
                 throw new InvalidDataException("The hold detection result names too many photos or an odd one.");
             }
 
-            var (width, height, boxes) = ParsePhoto(photo.Value);
-            result[photo.Name] = new RunnerPhotoHolds(width, height, ToDetections(photo.Name, width, height, boxes));
+            result[photo.Name] = ParsePhoto(photo.Value);
         }
 
         return result;
     }
+
+    private static Dictionary<string, RunnerPhotoHolds> Parse(JsonElement root) =>
+        ParseBoxes(root).ToDictionary(
+            p => p.Key, p => new RunnerPhotoHolds(p.Value.Width, p.Value.Height, ToDetections(p.Key, p.Value.Width, p.Value.Height, p.Value.Boxes)),
+            StringComparer.OrdinalIgnoreCase);
 
     private static (int Width, int Height, List<RunnerHoldBox> Boxes) ParsePhoto(JsonElement photo)
     {

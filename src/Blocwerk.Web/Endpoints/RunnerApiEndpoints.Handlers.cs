@@ -1,6 +1,7 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using Blocwerk.Core.Recognition;
 using Blocwerk.Core.Runners;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
@@ -29,18 +30,20 @@ public static partial class RunnerApiEndpoints
             return refused;
         }
 
-        await queue.HelloAsync(runner, hello, http.RequestAborted);
+        var capabilities = await queue.HelloAsync(runner, hello, http.RequestAborted);
 
         // pauseAware: this server understands hello's "paused" and fail's "pause" (a runner pausing against an older
-        // server stops saying paused hellos, which would look like an idle online runner there).
+        // server stops saying paused hellos, which would look like an idle online runner there). capabilities (1.2): the
+        // names accepted, so the instance runner can confirm the recognition kinds.
         return Results.Ok(new
         {
-            runnerId = runner.Id, name = runner.Name, pollSeconds = (int)queue.Options.ClaimWait.TotalSeconds, pauseAware = true,
+            runnerId = runner.Id, name = runner.Name, pollSeconds = (int)queue.Options.ClaimWait.TotalSeconds, pauseAware = true, capabilities,
         });
     }
 
     private static async Task<IResult> ClaimAsync(
-        HttpContext http, [FromBody] RunnerClaimRequest? request, [FromServices] GpuJobQueue queue, [FromServices] ILogger<GpuJobQueue> logger)
+        HttpContext http, [FromBody] RunnerClaimRequest? request, [FromServices] GpuJobQueue queue, [FromServices] RunnerClaimDispatcher claims,
+        [FromServices] ILogger<GpuJobQueue> logger)
     {
         var (runner, refused) = await RunnerAsync(http, queue, logger);
         if (runner is null)
@@ -50,7 +53,7 @@ public static partial class RunnerApiEndpoints
 
         try
         {
-            var claim = await queue.ClaimAsync(runner, queue.Options.ClaimWait, request, http.RequestAborted);
+            var claim = await claims.ClaimAsync(runner, queue.Options.ClaimWait, request, http.RequestAborted);
             return claim is null ? Results.NoContent() : Results.Ok(claim);
         }
         catch (OperationCanceledException) when (http.RequestAborted.IsCancellationRequested)
@@ -60,12 +63,22 @@ public static partial class RunnerApiEndpoints
     }
 
     private static async Task<IResult> BundleAsync(
-        Guid jobId, HttpContext http, [FromServices] GpuJobQueue queue, [FromServices] ILogger<GpuJobQueue> logger)
+        Guid jobId, HttpContext http, [FromServices] GpuJobQueue queue, [FromServices] RecognitionQueue recognition, [FromServices] ILogger<GpuJobQueue> logger)
     {
         var (runner, refused) = await RunnerAsync(http, queue, logger);
         if (runner is null)
         {
             return refused;
+        }
+
+        if (await recognition.FindAsync(jobId, http.RequestAborted) is not null)
+        {
+            return await RecognitionBundleAsync(runner, jobId, http, recognition, logger);
+        }
+
+        if (GpuJobsOff(queue))
+        {
+            return Outcome(http, RunnerJobOutcome.Over);
         }
 
         // A bundle missing on the server fails the job at once (410 "over"), see GpuJobQueue.BundleForRunnerAsync.
@@ -80,7 +93,8 @@ public static partial class RunnerApiEndpoints
     }
 
     private static async Task<IResult> ProgressAsync(
-        Guid jobId, HttpContext http, [FromBody] RunnerProgress report, [FromServices] GpuJobQueue queue, [FromServices] ILogger<GpuJobQueue> logger)
+        Guid jobId, HttpContext http, [FromBody] RunnerProgress report, [FromServices] GpuJobQueue queue, [FromServices] RecognitionQueue recognition,
+        [FromServices] ILogger<GpuJobQueue> logger)
     {
         var (runner, refused) = await RunnerAsync(http, queue, logger);
         if (runner is null)
@@ -88,14 +102,22 @@ public static partial class RunnerApiEndpoints
             return refused;
         }
 
-        var outcome = await queue.ProgressAsync(runner, jobId, report, http.RequestAborted);
-        return outcome == RunnerJobOutcome.Ok
-            ? Results.Ok(new { cancel = false, leaseSeconds = (int)queue.Options.Lease.TotalSeconds })
-            : Outcome(http, outcome);
+        var recognitionJob = await recognition.FindAsync(jobId, http.RequestAborted);
+        if (recognitionJob is null && GpuJobsOff(queue))
+        {
+            return Outcome(http, RunnerJobOutcome.Over);
+        }
+
+        var outcome = recognitionJob is null
+            ? await queue.ProgressAsync(runner, jobId, report, http.RequestAborted)
+            : await recognition.ProgressAsync(runner, jobId, report, http.RequestAborted);
+        var lease = recognitionJob?.LeaseSeconds ?? (int)queue.Options.Lease.TotalSeconds;
+        return outcome == RunnerJobOutcome.Ok ? Results.Ok(new { cancel = false, leaseSeconds = lease }) : Outcome(http, outcome);
     }
 
     private static async Task<IResult> FailAsync(
-        Guid jobId, HttpContext http, [FromBody] RunnerFailure failure, [FromServices] GpuJobQueue queue, [FromServices] ILogger<GpuJobQueue> logger)
+        Guid jobId, HttpContext http, [FromBody] RunnerFailure failure, [FromServices] GpuJobQueue queue, [FromServices] RecognitionQueue recognition,
+        [FromServices] ILogger<GpuJobQueue> logger)
     {
         var (runner, refused) = await RunnerAsync(http, queue, logger);
         if (runner is null)
@@ -103,16 +125,35 @@ public static partial class RunnerApiEndpoints
             return refused;
         }
 
-        return Outcome(http, await queue.FailAsync(runner, jobId, failure, http.RequestAborted));
+        var isGpuJob = await recognition.FindAsync(jobId, http.RequestAborted) is null;
+        if (isGpuJob && GpuJobsOff(queue))
+        {
+            return Outcome(http, RunnerJobOutcome.Over);
+        }
+
+        var outcome = isGpuJob
+            ? await queue.FailAsync(runner, jobId, failure, http.RequestAborted)
+            : await recognition.FailAsync(runner, jobId, failure, http.RequestAborted);
+        return Outcome(http, outcome);
     }
 
     private static async Task<IResult> ResultAsync(
-        Guid jobId, HttpContext http, [FromServices] GpuJobQueue queue, [FromServices] ILogger<GpuJobQueue> logger)
+        Guid jobId, HttpContext http, [FromServices] GpuJobQueue queue, [FromServices] RecognitionQueue recognition, [FromServices] ILogger<GpuJobQueue> logger)
     {
         var (runner, refused) = await RunnerAsync(http, queue, logger);
         if (runner is null)
         {
             return refused;
+        }
+
+        if (await recognition.FindAsync(jobId, http.RequestAborted) is not null)
+        {
+            return await RecognitionResultAsync(runner, jobId, http, queue, recognition, logger);
+        }
+
+        if (GpuJobsOff(queue))
+        {
+            return Outcome(http, RunnerJobOutcome.Over);
         }
 
         var max = await queue.UploadLimitAsync(jobId, http.RequestAborted);
@@ -155,6 +196,11 @@ public static partial class RunnerApiEndpoints
             return refused;
         }
 
+        if (GpuJobsOff(queue))
+        {
+            return Outcome(http, RunnerJobOutcome.Over);
+        }
+
         var max = queue.Options.MaxPreviewBytes;
         if (http.Request.ContentLength > max)
         {
@@ -179,6 +225,12 @@ public static partial class RunnerApiEndpoints
             return Results.Problem("The upload was interrupted.", statusCode: StatusCodes.Status400BadRequest);
         }
     }
+
+    /// <summary>
+    /// With <c>RUNNERS__MODE=off</c> the API may still be mapped for the recognition queue; the 3D job calls then answer
+    /// 410 "over", so a runner that held a 3D job drops it instead of retrying.
+    /// </summary>
+    private static bool GpuJobsOff(GpuJobQueue queue) => queue.Options.Mode == GpuRunnerMode.Off;
 
     /// <summary>Lets a body up to the cap in (the queue enforces the exact cap), and demands a minimum rate on HTTP/1.x.</summary>
     private static void PrepareBody(HttpContext http, long max)

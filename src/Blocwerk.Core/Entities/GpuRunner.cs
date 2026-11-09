@@ -32,11 +32,14 @@ public class GpuRunner
     [MaxLength(100)]
     public required string Name { get; set; }
 
-    /// <summary>The user who created the runner; only they (or a site admin) manage it.</summary>
-    public Guid OwnerUserId { get; set; }
+    /// <summary>The user who created the runner; only they (or a site admin) manage it. Null for the instance runner.</summary>
+    public Guid? OwnerUserId { get; set; }
 
     [ForeignKey(nameof(OwnerUserId))]
-    public User Owner { get; set; } = null!;
+    public User? Owner { get; set; }
+
+    /// <summary>A user's runner, or the deployment's instance runner (see <see cref="RunnerScope"/>).</summary>
+    public RunnerScope Scope { get; set; }
 
     /// <summary>
     /// "Other walls can use this runner" (set by site admins only): walls whose admin approved this runner and that have

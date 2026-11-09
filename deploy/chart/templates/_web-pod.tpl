@@ -47,6 +47,13 @@ containers:
         valueFrom:
           secretKeyRef: {name: {{ .Values.secrets.compute }}, key: SPLAT_API_KEY}
       {{- end }}
+      {{- if .Values.recognition.enabled }}
+      - name: RECOGNITION__MODE
+        value: {{ .Values.recognition.mode | quote }}
+      - name: RECOGNITION__INSTANCEKEY
+        valueFrom:
+          secretKeyRef: {name: {{ .Values.secrets.recognition }}, key: RECOGNITION__INSTANCEKEY}
+      {{- end }}
       {{- with include "blocwerk.envMap" (dict
             "CAPTURE__MAXVIDEOMB" .Values.capture.maxVideoMb
             "CAPTURE__MAXPHOTOMB" .Values.capture.maxPhotoMb

@@ -5,6 +5,7 @@ using Blocwerk.Core.Entities;
 using Blocwerk.Core.Geometry;
 using Blocwerk.Core.Geometry.TextureRegistration;
 using Blocwerk.Core.Geometry.View3D;
+using Blocwerk.Core.Recognition.Remote;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -49,7 +50,7 @@ public sealed partial class HoldTexturePlacementService
         IReadOnlyList<FacetRegistration>? direct = null)
     {
         var panel = await db.WallPanels.AsNoTracking().Where(p => p.Id == panelId)
-            .Select(p => new { p.Col, p.Row, p.Generation, p.Photo, p.PhotoRevision }).FirstOrDefaultAsync(ct);
+            .Select(p => new { p.WallId, p.Col, p.Row, p.Generation, p.Photo, p.PhotoRevision }).FirstOrDefaultAsync(ct);
         var eligible = holds.Where(HoldTexturePlacer.IsEligible).ToList();
         var skipped = holds.Count - eligible.Count;
         var (col, row) = (panel?.Col ?? 0, panel?.Row ?? 0);
@@ -62,8 +63,10 @@ public sealed partial class HoldTexturePlacementService
         List<FacetRegistration> registrations;
         try
         {
-            registrations = await recognitionGate.RecogniseAsync(
-                "texture-registration", () => Register(panel.Photo, textures, $"c{col} r{row}", anchors, direct, ct), ct);
+            registrations = matcher is QueuedPhotoTextureMatcher queued
+                ? await RegisterQueuedAsync(queued, panel.WallId, panel.Photo, textures, $"c{col} r{row}", anchors, direct, ct)
+                : await recognitionGate.RecogniseAsync(
+                    "texture-registration", () => Register(panel.Photo, textures, $"c{col} r{row}", anchors, direct, ct), ct);
         }
         catch (ArgumentException ex)
         {
@@ -97,7 +100,32 @@ public sealed partial class HoldTexturePlacementService
         CancellationToken ct)
     {
         using var session = matcher!.OpenPhoto(photo);
+        return Registrar(session, photo, label, anchors, direct).RegisterAll(textures, ct);
+    }
+
+    /// <summary>
+    /// <see cref="Register"/> with each match a <c>texture-match</c> job for the panel's wall, awaited without a gate slot; a
+    /// match the app runs itself takes one (<see cref="QueuedPhotoTextureSession"/>).
+    /// </summary>
+    private async Task<List<FacetRegistration>> RegisterQueuedAsync(
+        QueuedPhotoTextureMatcher queued,
+        Guid wallId,
+        byte[] photo,
+        List<RegistrationTexture> textures,
+        string label,
+        List<PlaneAnchor> anchors,
+        IReadOnlyList<FacetRegistration>? direct,
+        CancellationToken ct)
+    {
+        using var recognitionWall = RecognitionWallScope.Begin(wallId);
+        using var session = queued.OpenQueued(photo);
+        return await Task.Run(() => Registrar(session, photo, label, anchors, direct).RegisterAllAsync(textures, ct), ct);
+    }
+
+    private PhotoRegistrar Registrar(
+        IPhotoTextureSession session, byte[] photo, string label, List<PlaneAnchor> anchors, IReadOnlyList<FacetRegistration>? direct)
+    {
         var focal = ExifCameraReader.Read(photo).Focal35mm is { } f35 ? f35 / 36.0 * Math.Max(session.Width, session.Height) : (double?)null;
-        return new PhotoRegistrar(session, logger, label, focal, anchors, direct).RegisterAll(textures, ct);
+        return new PhotoRegistrar(session, logger, label, focal, anchors, direct);
     }
 }

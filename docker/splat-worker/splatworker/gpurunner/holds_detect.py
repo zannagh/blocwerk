@@ -1,5 +1,5 @@
 """The app's hold detector, replayed on a runner: YOLO on ONNX Runtime over overlapping windows plus one whole-image
-pass, merged exactly like the Blocwerk server merges them (src/Blocwerk.HoldDetection/Tiling: TileGrid, TileBoxMerger,
+pass, merged exactly like the Blocwerk server merges them (zannagh/blocwerk-recognition, src/Blocwerk.HoldDetection/Tiling: TileGrid, TileBoxMerger,
 YoloTiledDetector; YoloDotNet 3.1's letterbox, decode and NMS). The server turns the merged boxes into holds itself
 (normalising, the mat filter, volumes left out), so this module returns boxes in the photo's pixels:
 (left, top, right, bottom, confidence, label), integer edges, right and bottom exclusive.

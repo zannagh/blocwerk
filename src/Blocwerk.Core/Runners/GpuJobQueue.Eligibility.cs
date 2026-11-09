@@ -19,14 +19,16 @@ public sealed partial class GpuJobQueue
 {
     /// <summary>
     /// Runners that may act at all: not revoked, and the owner is a live account (not deleted/anonymised, not the
-    /// Ghost, not locked out).
+    /// Ghost, not locked out); the instance runner has no owner.
     /// </summary>
     internal IQueryable<GpuRunner> ActiveRunners(BlocwerkDbContext db)
     {
         var now = Now;
-        return db.GpuRunners.Where(r => r.RevokedAt == null && r.OwnerUserId != GhostUser.Id
-            && db.Users.IgnoreQueryFilters().Any(u => u.Id == r.OwnerUserId && u.DeletedAt == null
-                                                       && (u.LockoutUntil == null || u.LockoutUntil <= now)));
+        return db.GpuRunners.Where(r => r.RevokedAt == null
+            && (r.Scope == RunnerScope.Instance
+                || (r.OwnerUserId != GhostUser.Id
+                    && db.Users.IgnoreQueryFilters().Any(u => u.Id == r.OwnerUserId && u.DeletedAt == null
+                                                               && (u.LockoutUntil == null || u.LockoutUntil <= now)))));
     }
 
     /// <summary>

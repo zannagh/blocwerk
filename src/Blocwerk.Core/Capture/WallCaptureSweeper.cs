@@ -233,10 +233,13 @@ public sealed class WallCaptureSweeper(
         // failed or cancelled job is deleted with it; what survived a failed delete is an orphan here.
         var gpu = await Runners.GpuJobQueue.ReferencedFilesAsync(db, ct);
 
+        // .zip: the input envelopes of recognition jobs (deleted when the job ends, or by the recognition sweep).
+        var recognition = await Recognition.RecognitionQueue.ReferencedFilesAsync(db, ct);
+
         // Videos dropped into an "Update panels + 3D" run, kept until its 3D capture starts.
         var refreshVideos = await Refresh.RefreshTimeline.StoredVideosAsync(db, ct);
         return new HashSet<string>(
-            photos.Concat(textures).Concat(masks).Concat(sourceMaps).Concat(videos).Concat(sparse).Concat(splats).Concat(gpu).Concat(refreshVideos),
+            photos.Concat(textures).Concat(masks).Concat(sourceMaps).Concat(videos).Concat(sparse).Concat(splats).Concat(gpu).Concat(recognition).Concat(refreshVideos),
             StringComparer.Ordinal);
     }
 

@@ -5,6 +5,7 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Data;
+using Blocwerk.Core.Detection.Outlines;
 using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core.Services;
@@ -33,14 +34,17 @@ public sealed class WallShapeRecognitionRunner
     private readonly ILogger<WallShapeRecognitionRunner> logger;
     private readonly IHoldOutlineService? outlineService;
     private readonly IImageRecognitionGate? recognitionGate;
+    private readonly IHoldOutlineBatch? outlineBatch;
 
     public WallShapeRecognitionRunner(
         RootDbContextFactory factory,
         BlocwerkSettings settings,
         ILogger<WallShapeRecognitionRunner> logger,
         IHoldOutlineService? outlineService = null,
-        IImageRecognitionGate? recognitionGate = null)
+        IImageRecognitionGate? recognitionGate = null,
+        IHoldOutlineBatch? outlineBatch = null)
     {
+        this.outlineBatch = outlineBatch;
         this.factory = factory;
         this.settings = settings;
         this.logger = logger;
@@ -75,7 +79,7 @@ public sealed class WallShapeRecognitionRunner
             }
 
             var cts = new CancellationTokenSource();
-            var job = new WallShapeRecognitionJob(factory, outlineService, recognitionGate, logger);
+            var job = new WallShapeRecognitionJob(factory, outlineBatch ?? new SessionHoldOutlineBatch(outlineService, recognitionGate), recognitionGate, logger);
             var task = Task.Run(async () =>
             {
                 var acquired = false;

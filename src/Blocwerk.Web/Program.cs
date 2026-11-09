@@ -8,6 +8,7 @@ using Blocwerk.Authentication.Services;
 using Blocwerk.Core;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Recognition.Remote;
 using Blocwerk.Core.Services;
 using Blocwerk.Core.Telemetry;
 using Blocwerk.HoldDetection;
@@ -136,7 +137,8 @@ public static class Program
 
         builder.ConfigureCoreServices(out var settings)
             .ConfigureAuthenticationAndAuthorization(settings)
-            .ConfigureHoldDetection(settings);
+            .ConfigureHoldDetection(settings.HoldDetection)
+            .UseRecognitionMode();
 
         builder.Services.AddControllersWithViews()
             .AddApplicationPart(typeof(AccountController).Assembly);

@@ -65,11 +65,14 @@ public sealed class RunnerHoldDetection(
     /// The runner detector's identity, <c>yolo-runner:&lt;first 12 hex of the model's SHA-256&gt;</c>: what its detections are
     /// cached under, so they are never taken for the app detector's (or another model's).
     /// </summary>
-    internal string DetectorName()
+    internal string DetectorName() => ModelSha256() is { } sha ? $"yolo-runner:{sha[..12]}" : "yolo-runner:unknown";
+
+    /// <summary>The lower-case hex SHA-256 of the app's model file (hashed once per file version), or null without one.</summary>
+    internal string? ModelSha256()
     {
         if (ModelFile() is not { } path)
         {
-            return "yolo-runner:unknown";
+            return null;
         }
 
         var info = new FileInfo(path);
@@ -83,13 +86,13 @@ public sealed class RunnerHoldDetection(
         }
 
         using var stream = File.OpenRead(path);
-        var name = $"yolo-runner:{Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream))[..12].ToLowerInvariant()}";
+        var sha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream)).ToLowerInvariant();
         lock (ModelHashes)
         {
-            ModelHashes[key] = name;
+            ModelHashes[key] = sha;
         }
 
-        return name;
+        return sha;
     }
 
     /// <summary>The model file the app's detector loads, resolved like the detector does; null when there is none.</summary>
@@ -133,7 +136,7 @@ public sealed class RunnerHoldDetection(
     }
 
     /// <summary>The photos the search reads: every camera of the model that has a stored capture photo.</summary>
-    private async Task<List<(string Name, string StoredPath)>> PhotosAsync(Guid modelId, CancellationToken ct)
+    internal async Task<List<(string Name, string StoredPath)>> PhotosAsync(Guid modelId, CancellationToken ct)
     {
         await using var db = dbContextFactory.CreateDbContext();
         var json = await db.WallGeometryModels.AsNoTracking().Where(m => m.Id == modelId).Select(m => m.Json).FirstAsync(ct);

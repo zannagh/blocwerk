@@ -4,6 +4,7 @@ using Blocwerk.Core.Data;
 using Blocwerk.Core.Detection.Outlines;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Helpers;
+using Blocwerk.Core.Recognition.Remote;
 using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core.Detection.Enrichment;
@@ -21,7 +22,7 @@ public sealed partial class HoldEnrichmentService : IHoldEnrichmentService
 {
     private readonly HoldDetectionSettings settings;
     private readonly ILogger<HoldEnrichmentService> logger;
-    private readonly IHoldOutlineService? outlineService;
+    private readonly IHoldOutlineBatch? outlineBatch;
     private readonly IMarkerDetectionService? markerService;
     private readonly IImageRecognitionGate? gate;
 
@@ -31,17 +32,19 @@ public sealed partial class HoldEnrichmentService : IHoldEnrichmentService
     /// <param name="outlineService">The outliner; null disables outlines.</param>
     /// <param name="markerService">The marker detector; null disables the marker pass.</param>
     /// <param name="gate">The process-wide recognition gate the whole run holds one slot of; null runs ungated.</param>
+    /// <param name="outlineBatch">The outline batch (a queued one with <c>RECOGNITION__MODE</c>); null builds one on <paramref name="outlineService"/>.</param>
     public HoldEnrichmentService(
         BlocwerkSettings settings,
         ILogger<HoldEnrichmentService> logger,
         IHoldOutlineService? outlineService = null,
         IMarkerDetectionService? markerService = null,
-        IImageRecognitionGate? gate = null)
+        IImageRecognitionGate? gate = null,
+        IHoldOutlineBatch? outlineBatch = null)
     {
         this.gate = gate;
         this.settings = settings.HoldDetection;
         this.logger = logger;
-        this.outlineService = outlineService;
+        this.outlineBatch = outlineBatch ?? (outlineService is null ? null : new SessionHoldOutlineBatch(outlineService, gate));
         this.markerService = markerService;
     }
 
@@ -57,10 +60,41 @@ public sealed partial class HoldEnrichmentService : IHoldEnrichmentService
             return Task.FromResult(HoldEnrichmentSummary.None);
         }
 
-        return gate is null ? EnrichCoreAsync(db, request, ct) : gate.RunAsync("enrich", () => EnrichCoreAsync(db, request, ct), ct);
+        if (gate is null)
+        {
+            return EnrichCoreAsync(db, request, null, ct);
+        }
+
+        return markerService is QueuedMarkerDetectionService || outlineBatch is QueuedHoldOutlineBatch
+            ? EnrichWithRemoteRecognitionAsync(db, request, gate, ct)
+            : gate.RunAsync("enrich", () => EnrichCoreAsync(db, request, null, ct), ct);
     }
 
-    private async Task<HoldEnrichmentSummary> EnrichCoreAsync(BlocwerkDbContext db, HoldEnrichmentRequest request, CancellationToken ct)
+    /// <summary>
+    /// The outline batch and the marker pass a recognition runner may serve run first, outside the slot: the slot is for the
+    /// app's own work, and recognition the app ends up doing itself takes one of its own.
+    /// </summary>
+    private async Task<HoldEnrichmentSummary> EnrichWithRemoteRecognitionAsync(
+        BlocwerkDbContext db, HoldEnrichmentRequest request, IImageRecognitionGate gate, CancellationToken ct)
+    {
+        EnrichmentPrefetch? prefetched = null;
+        if (!ImagePixelLimit.IsTooLarge(request.Image))
+        {
+            try
+            {
+                prefetched = new EnrichmentPrefetch(await OutlineAsync(request, OutlineTargets(request), ct), await DetectMarkersAsync(db, request, ct));
+            }
+            catch (Exception ex)
+            {
+                return Failed(request, ex);
+            }
+        }
+
+        return await gate.RunAsync("enrich", () => EnrichCoreAsync(db, request, prefetched, ct), ct);
+    }
+
+    private async Task<HoldEnrichmentSummary> EnrichCoreAsync(
+        BlocwerkDbContext db, HoldEnrichmentRequest request, EnrichmentPrefetch? prefetched, CancellationToken ct)
     {
         if (ImagePixelLimit.IsTooLarge(request.Image))
         {
@@ -73,9 +107,15 @@ public sealed partial class HoldEnrichmentService : IHoldEnrichmentService
         try
         {
             WarnOnRotatedPhoto(request);
+
+            // Recognition first, geometry only (one outline batch, one marker pass); then the plan and its writes.
+            var targets = OutlineTargets(request);
+            var outlined = prefetched is null ? await OutlineAsync(request, targets, ct) : prefetched.Outlines;
+            var markers = prefetched?.Markers ?? await DetectMarkersAsync(db, request, ct);
+
             var plan = new HoldEnrichmentPlan();
-            var outlines = await Task.Run(() => PlanOutlines(request, plan), ct);
-            await PlanMarkersAsync(db, request, plan, outlines, ct);
+            var size = PlanOutlines(request, targets, outlined, plan);
+            await PlanMarkersAsync(db, request, plan, size, markers, ct);
 
             var summary = plan.Apply(db);
             logger.LogInformation(
@@ -88,38 +128,55 @@ public sealed partial class HoldEnrichmentService : IHoldEnrichmentService
         }
         catch (Exception ex)
         {
-            // Never break ingest: nothing was applied (the plan is written only after it is complete),
-            // so the holds stay exactly as detection produced them.
-            logger.LogWarning(
-                ex,
-                "Hold enrichment failed on wall {WallId} panel {PanelId}; holds left as detected",
-                request.Wall.Id,
-                request.PanelId);
-            return HoldEnrichmentSummary.None with { Failed = true };
+            return Failed(request, ex);
         }
     }
 
     /// <summary>
-    /// Outlines every auto-detected hold that has no shape yet, on one decoded image. Returns the image
-    /// size (null when the pass did not run) so the marker pass can build circle fallbacks in pixels.
+    /// Never break ingest: nothing was applied (the plan is written only after it is complete), so the holds stay exactly as
+    /// detection produced them.
     /// </summary>
-    private (int Width, int Height)? PlanOutlines(HoldEnrichmentRequest request, HoldEnrichmentPlan plan)
+    private HoldEnrichmentSummary Failed(HoldEnrichmentRequest request, Exception ex)
     {
-        var targets = request.Holds.Where(h => h.IsAutoDetected && h.ShapePoints is null).ToList();
-        if (!settings.OutlinesEnabled || outlineService is null || targets.Count == 0)
+        logger.LogWarning(ex, "Hold enrichment failed on wall {WallId} panel {PanelId}; holds left as detected", request.Wall.Id, request.PanelId);
+        return HoldEnrichmentSummary.None with { Failed = true };
+    }
+
+    /// <summary>Every auto-detected hold that has no shape yet.</summary>
+    private static List<Hold> OutlineTargets(HoldEnrichmentRequest request) =>
+        request.Holds.Where(h => h.IsAutoDetected && h.ShapePoints is null).ToList();
+
+    /// <summary>Outlines <paramref name="targets"/> in one batch on the photo; null when the pass does not run.</summary>
+    private async Task<HoldOutlineBatchResult?> OutlineAsync(HoldEnrichmentRequest request, List<Hold> targets, CancellationToken ct)
+    {
+        if (!settings.OutlinesEnabled || outlineBatch is null || targets.Count == 0)
         {
             return null;
         }
 
-        using var session = outlineService.OpenSession(request.Image);
-        var outlined = session.OutlineEach([.. targets.Select(h => HoldSeeds.Of(h, settings.BoxSeeds))]);
+        var seeds = targets.Select(h => HoldSeeds.Of(h, settings.BoxSeeds)).ToList();
+        return await outlineBatch.OutlineAsync(request.Image, seeds, HoldOutlineBatchOptions.Jointly, ct);
+    }
+
+    /// <summary>
+    /// Plans the outlines of <paramref name="targets"/>. Returns the image size (null when the pass did not run) so the
+    /// marker pass can build circle fallbacks in pixels.
+    /// </summary>
+    private static (int Width, int Height)? PlanOutlines(
+        HoldEnrichmentRequest request, List<Hold> targets, HoldOutlineBatchResult? outlined, HoldEnrichmentPlan plan)
+    {
+        if (outlined is null)
+        {
+            return null;
+        }
+
         for (int i = 0; i < targets.Count; i++)
         {
-            plan.Outlines[targets[i]] = outlined[i];
+            plan.Outlines[targets[i]] = outlined.Outlines[i];
         }
 
         // The panel's shapes must not overlap each other or a hand-placed hold: clip, else circle, else a smaller circle.
-        var aspect = (double)session.ImageWidth / Math.Max(1, session.ImageHeight);
+        var aspect = (double)outlined.ImageWidth / Math.Max(1, outlined.ImageHeight);
         foreach (var (hold, (outline, radius)) in HoldShapeCleanup.ResolveOutlines(request.Holds, plan.Outlines, allowRadiusShrink: true, aspect, keepTraced: true))
         {
             plan.Outlines[hold] = outline;
@@ -129,7 +186,7 @@ public sealed partial class HoldEnrichmentService : IHoldEnrichmentService
             }
         }
 
-        return (session.ImageWidth, session.ImageHeight);
+        return (outlined.ImageWidth, outlined.ImageHeight);
     }
 
     private void WarnOnRotatedPhoto(HoldEnrichmentRequest request)

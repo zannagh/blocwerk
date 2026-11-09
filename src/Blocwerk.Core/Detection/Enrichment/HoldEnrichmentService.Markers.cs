@@ -11,17 +11,16 @@ namespace Blocwerk.Core.Detection.Enrichment;
 /// <summary>The glyph (marker) half of the enrichment: glyph walls only.</summary>
 public sealed partial class HoldEnrichmentService
 {
-    private async Task PlanMarkersAsync(
-        BlocwerkDbContext db,
-        HoldEnrichmentRequest request,
-        HoldEnrichmentPlan plan,
-        (int Width, int Height)? outlineImageSize,
-        CancellationToken ct)
+    /// <summary>
+    /// Detects the photo's markers with the wall's marker plan (glyph walls only); null when the pass does not run.
+    /// Only reads: everything it finds is planned by <see cref="PlanMarkersAsync"/>.
+    /// </summary>
+    private async Task<MarkerPass?> DetectMarkersAsync(BlocwerkDbContext db, HoldEnrichmentRequest request, CancellationToken ct)
     {
         // Markers are opt-in per wall: detection never even runs on a wall without the flag.
         if (!settings.MarkersEnabled || markerService is null || !request.Wall.GlyphsEnabled)
         {
-            return;
+            return null;
         }
 
         // The wall's plan says which ids are real (and how big each is); without one: the legacy defaults.
@@ -33,6 +32,23 @@ public sealed partial class HoldEnrichmentService
             ? layout.DetectionOptions with { AllowedIds = layout.AllowedIds.Union(MarkerRevisionCandidates.AllIds(candidates)).ToHashSet() }
             : null;
         var detection = await Task.Run(() => markerService.DetectAsync(request.Image, options, ct), ct);
+        return new MarkerPass(layout, candidates, detection);
+    }
+
+    private async Task PlanMarkersAsync(
+        BlocwerkDbContext db,
+        HoldEnrichmentRequest request,
+        HoldEnrichmentPlan plan,
+        (int Width, int Height)? outlineImageSize,
+        MarkerPass? pass,
+        CancellationToken ct)
+    {
+        if (pass is null)
+        {
+            return;
+        }
+
+        var (layout, candidates, detection) = pass;
         plan.MarkerPassRan = true;
         plan.MarkerCount = detection.Markers.Count;
 

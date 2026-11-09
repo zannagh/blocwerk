@@ -22,6 +22,8 @@ internal static class FeedBulkSites
     private const string QuarantineReason = "a mismatched hash cleared WHERE hash = the failed sha: wall.manifest in the clear's transaction";
     private const string GpuQueue = "GPU job queue bookkeeping (claim, lease, preview, result); progress goes through IWallPulse and results land on mapped rows";
 
+    private const string RecognitionQueue = "recognition job queue bookkeeping (claim, lease, end); the waiting caller writes the mapped rows";
+
     /// <summary>
     /// Gets the entities that are not wall-scoped but whose bulk writes still reach the feed as rows for one user (an
     /// external ascent: <c>ticks.resync</c>), so the guard scans them too.
@@ -133,6 +135,10 @@ internal static class FeedBulkSites
         Excluded("Runners/GpuJobQueue.RunnerWait.cs", typeof(GpuJob), 2, GpuQueue),
         Excluded("Runners/GpuJobQueue.Sweep.cs", typeof(GpuJob), 1, GpuQueue),
         Excluded("Runners/GpuJobQueue.Textures.cs", typeof(GpuJob), 1, GpuQueue),
+        Excluded("Recognition/RecognitionQueue.Claim.cs", typeof(RecognitionJob), 1, RecognitionQueue),
+        Excluded("Recognition/RecognitionQueue.End.cs", typeof(RecognitionJob), 2, RecognitionQueue),
+        Excluded("Recognition/RecognitionQueue.Reattach.cs", typeof(RecognitionJob), 1, RecognitionQueue),
+        Excluded("Recognition/RecognitionQueue.Report.cs", typeof(RecognitionJob), 1, RecognitionQueue),
         Excluded("Runners/GpuJobQueue.Failures.cs", typeof(GpuRunnerFailure), 1, "runner failure retention, runner administration"),
     ];
 

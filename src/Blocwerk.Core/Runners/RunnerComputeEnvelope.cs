@@ -36,14 +36,16 @@ public static class RunnerComputeEnvelope
     /// <summary>
     /// Streams the envelope into <paramref name="output"/>: the manifest first, then the file parts in order. A file part without
     /// a plain file name, a name taken twice (ignoring case), more than <see cref="MaxEntries"/> entries, or a JSON part that is
-    /// not JSON throws <see cref="InvalidDataException"/>.
+    /// not JSON throws <see cref="InvalidDataException"/>. <paramref name="service"/>: the manifest's <c>service</c>
+    /// (<c>recognition</c> for the recognition kinds).
     /// </summary>
-    public static async Task WriteAsync(Stream output, string kind, IReadOnlyList<ComputeJobPart> parts, CancellationToken ct)
+    public static async Task WriteAsync(
+        Stream output, string kind, IReadOnlyList<ComputeJobPart> parts, CancellationToken ct, string service = Service)
     {
         var files = parts.Where(p => !IsInlineJson(p)).Select(p => (Part: p, Name: EntryName(p))).ToList();
         CheckEntries(files.Select(f => f.Name));
         using var zip = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true);
-        await WriteManifestAsync(zip, kind, parts, ct);
+        await WriteManifestAsync(zip, service, kind, parts, ct);
         foreach (var (part, name) in files)
         {
             await WriteEntryAsync(zip, name, part.SourcePath is { } path ? File.OpenRead(path) : new MemoryStream(part.Content, writable: false), ct);
@@ -55,14 +57,14 @@ public static class RunnerComputeEnvelope
     /// when the parts alone exceed <paramref name="maxBytes"/>.
     /// </summary>
     public static async Task<(string Stored, long Bytes, string Sha256)> StoreAsync(
-        ICaptureFileStore files, string kind, IReadOnlyList<ComputeJobPart> parts, long maxBytes, CancellationToken ct)
+        ICaptureFileStore files, string kind, IReadOnlyList<ComputeJobPart> parts, long maxBytes, CancellationToken ct, string service = Service)
     {
         if (parts.Sum(PartBytes) > maxBytes)
         {
             throw new CaptureFailedException($"the files to send to a 3D runner are larger than {maxBytes / (1024 * 1024)} MB.");
         }
 
-        var stored = await files.SaveWithAsync(".zip", (output, token) => WriteAsync(output, kind, parts, token), ct);
+        var stored = await files.SaveWithAsync(".zip", (output, token) => WriteAsync(output, kind, parts, token, service), ct);
         var path = files.ResolvePhysicalPath(stored) ?? throw new IOException("The runner envelope was not stored.");
         var size = new FileInfo(path).Length;
         if (size > maxBytes)
@@ -97,13 +99,14 @@ public static class RunnerComputeEnvelope
     /// Writes the manifest straight into its entry: an inline JSON part (<c>prepared</c> can be tens of MB) is validated and copied
     /// as it is, never parsed into a document.
     /// </summary>
-    private static async Task WriteManifestAsync(ZipArchive zip, string kind, IReadOnlyList<ComputeJobPart> parts, CancellationToken ct)
+    private static async Task WriteManifestAsync(
+        ZipArchive zip, string service, string kind, IReadOnlyList<ComputeJobPart> parts, CancellationToken ct)
     {
         await using var target = NewEntry(zip, ManifestName).Open();
         await using var json = new Utf8JsonWriter(target);
         json.WriteStartObject();
         json.WriteNumber("version", Version);
-        json.WriteString("service", Service);
+        json.WriteString("service", service);
         json.WriteString("kind", kind);
         json.WriteStartArray("parts");
         foreach (var part in parts)

@@ -32,6 +32,9 @@ secrets:
   # Optional key BLOCWERK_DEPLOY_API_KEY (an Installation-scoped API key) for the deploy gate's announcement and
   # forced flush. Without it the gate still waits for the busy check but neither announces nor flushes.
   deploy: blocwerk-deploy
+  # Key RECOGNITION__INSTANCEKEY (32 to 256 characters, e.g. `openssl rand -hex 32`): the recognition worker's
+  # instance runner key, read by the web app and the worker. Only used while recognition.enabled.
+  recognition: blocwerk-recognition
 
 # Capture limits, shared by the app (CAPTURE__*) and both workers (CAPTURE_MAX_*), as in compose. "" = app default.
 capture:
@@ -49,7 +52,8 @@ web:
     digest: ""              # sha256:...; wins over the tag when set
     pullPolicy: IfNotPresent
   # Plain environment variables (compose: the `blocwerk` service). Computed by the chart and NOT to be set here:
-  # POSTGRES__*, OTEL_EXPORTER_OTLP_ENDPOINT (when aspire.enabled), GEOMETRYSERVICE__*, SPLATSERVICE__*, CAPTURE__*.
+  # POSTGRES__*, OTEL_EXPORTER_OTLP_ENDPOINT (when aspire.enabled), GEOMETRYSERVICE__*, SPLATSERVICE__*, CAPTURE__*,
+  # RECOGNITION__* (use recognition.*).
   env:
     ASPNETCORE_ENVIRONMENT: Production
     Logging__LogLevel__Default: Information
@@ -188,6 +192,39 @@ geometry:
     limits:
       cpu: "2"
       memory: 1536Mi        # compose mem_limit (O7); raise JOB_MAX_MEMORY_MB with it
+
+# Recognition worker (hold detection, outlines, markers, presence, panel and texture matching): pulls recognition jobs
+# from the web app over the runner API, one at a time, so the app's memory stays free of ONNX/OpenCV peaks. Needs
+# secrets.recognition. Runs on the web pod's node and reads the models/ folder of the data volume read-only.
+# Off: the app recognises in-process (RECOGNITION__MODE is then not set: the app's default, inprocess).
+recognition:
+  enabled: true
+  # RECOGNITION__MODE of the web app while the worker is on:
+  #   queue+fallback  the worker serves recognition; the app runs a job itself when no worker is alive (recommended)
+  #   queue           only the worker; jobs fail as "recognition unavailable" without one
+  #   inprocess       the app alone; the worker idles
+  mode: queue+fallback
+  replicas: 1
+  image:
+    repository: ghcr.io/zannagh/blocwerk-recognition
+    tag: "0.1.0"            # = the Blocwerk.HoldDetection package version of this release; bump both together
+    digest: ""
+    pullPolicy: IfNotPresent
+  # Plain environment. RECOGNITION__SERVER and RECOGNITION__INSTANCEKEY are set by the chart.
+  env:
+    JOB_MAX_MEMORY_MB: "2560"   # above it a job fails as "resource"; keep it ~450 MB under the memory limit
+  tmpSizeLimit: 1Gi             # models fetched from the app by hash when models/ lacks them
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1536Mi
+    limits:
+      cpu: "2"
+      memory: 3Gi
+  # A NetworkPolicy for the worker: no ingress (the kubelet's probes come from the node), egress only to the web pods
+  # and kube-dns. Turn off when the cluster enforces no policies or the namespace has its own.
+  networkPolicy:
+    enabled: true
 
 # The splat worker's CPU half (splat-prepare and splat-finish; SPLAT_WORKER_MODE=cpu never trains). Off by default:
 # with splat.onRunners those run on 3D runners. SPLATSERVICE__URL is only set while this is on. Compose: its own

@@ -54,6 +54,10 @@ jobs:
       actions: read
       contents: read
       security-events: write
+      # Blocwerk.Recognition.Abstractions and Blocwerk.HoldDetection come from GitHub Packages (nuget.config).
+      packages: read
+    env:
+      NuGetPackageSourceCredentials_zannagh: Username=${{ github.actor }};Password=${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - uses: actions/checkout@v7

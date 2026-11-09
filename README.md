@@ -90,7 +90,7 @@ A few things worth knowing before you run it:
 
 * **`appsettings.json` wins over environment variables.** Settings are read from the JSON section first and fall back to the env var. If you set `WALLIMAGE__STORAGEPATH` but also have a `Blocwerk:WallImage` section in the mounted JSON, the JSON wins and your volume mount quietly does nothing. Leave a section out of the JSON if you want to drive it from the environment.
 * **Mount `./dpkeys:/app/keys`.** That is the DataProtection key ring. Without it, every redeploy logs everyone out and makes kiosk registrations, TOTP secrets and TopLogger tokens unreadable.
-* **The detection model is not in the repository.** It is about 100 MB, so it is gitignored. Put `climbingcrux.onnx` at `src/Blocwerk.HoldDetection/models/` before building, or point `HOLDDETECTION__MODELPATH` at wherever you keep it. The model comes from [climbingcrux_model](https://github.com/mkurc1/climbingcrux_model).
+* **The detection model is not in the repository.** It is about 100 MB, so it is gitignored. Put `climbingcrux.onnx` in a `models/` folder next to the app (for `dotnet run`, `src/Blocwerk.Web/models/`), or point `HOLDDETECTION__MODELPATH` at wherever you keep it. The model comes from [climbingcrux_model](https://github.com/mkurc1/climbingcrux_model).
 * **Email, push and TopLogger are all optional.** Leave `SMTP__*` and `VAPID__*` empty and those features stay dormant instead of breaking.
 * **Signing in with a personal API key is off by default.** It exists for automation (Playwright) against an instance you control. See [`docs/api-key-login.md`](docs/api-key-login.md) before setting `BLOCWERK__AUTH__APIKEYLOGIN__ENABLED`. It also needs an allow-list of user ids, and the same page covers `Blocwerk:Server:TrustedProxies` for the forwarded-headers trust.
 * Wall photos, panel photos and avatars live in Postgres. Gallery uploads, beta video clips and the derived image cache live on disk, so give them volumes.
@@ -101,7 +101,11 @@ A few things worth knowing before you run it:
 
 ### Building from source
 
-Needs the .NET 10 SDK and a Postgres to talk to.
+Needs the .NET 10 SDK and a Postgres to talk to. Hold recognition comes as NuGet packages (`Blocwerk.Recognition.Abstractions`, `Blocwerk.HoldDetection`) from [zannagh/blocwerk-recognition](https://github.com/zannagh/blocwerk-recognition) on GitHub Packages, which needs a token even to read. `nuget.config` names the feed; give NuGet the credentials from your environment:
+
+```bash
+export NuGetPackageSourceCredentials_zannagh="Username=<github user>;Password=<token with read:packages>"
+```
 
 ```bash
 # Postgres
@@ -116,7 +120,21 @@ dotnet test
 
 It runs on port 5050 because 5000 is taken by AirPlay on macOS. Migrations are applied automatically at startup, so there is no separate database setup step.
 
-The solution is four projects: `Blocwerk.Core` (entities, services, EF Core, no project references of its own), `Blocwerk.Authentication`, `Blocwerk.HoldDetection` (ONNX detection and the OpenCV matcher) and `Blocwerk.Web` (Blazor Server, the REST API and everything user-facing).
+**On a Mac, hold recognition runs in the worker container.** OpenCV's native library ships for Linux only, so in-process recognition cannot work on macOS and the tests that need OpenCV skip there (CI runs them on Linux). Run the app in queue mode and the recognition worker's arm64 image next to it, with the same instance key on both sides:
+
+```bash
+export RECOGNITION__INSTANCEKEY="$(openssl rand -hex 32)"
+RECOGNITION__MODE=queue dotnet run --project src/Blocwerk.Web
+
+# second terminal, same RECOGNITION__INSTANCEKEY; docker/models holds the ONNX models
+docker run --rm --platform linux/arm64 \
+  -e RECOGNITION__SERVER=http://host.docker.internal:5050 \
+  -e RECOGNITION__INSTANCEKEY \
+  -v "$PWD/docker/models:/models:ro" \
+  ghcr.io/zannagh/blocwerk-recognition:0.1.0
+```
+
+The main projects are `Blocwerk.Core` (entities, services, EF Core), `Blocwerk.Authentication` and `Blocwerk.Web` (Blazor Server, the REST API and everything user-facing). Hold recognition (ONNX detection, the OpenCV outlines and matcher) and the recognition worker live in [zannagh/blocwerk-recognition](https://github.com/zannagh/blocwerk-recognition).
 
 Two honest limitations while you are in there: the model detects holds but does not segment their shape, so hold outlines are an eight-point polygon you adjust by hand, and its colour classification is bad enough that recolouring with the paint tool is part of the normal workflow.
 

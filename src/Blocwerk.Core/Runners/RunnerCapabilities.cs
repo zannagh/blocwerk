@@ -2,6 +2,7 @@
 // See License in the project root for license information.
 
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Recognition;
 
 namespace Blocwerk.Core.Runners;
 
@@ -31,14 +32,25 @@ public static class RunnerCapabilities
     /// <summary>Runs the splat worker's <c>splat-finish</c> job (the finishing package imports on the runner).</summary>
     public const string SplatFinish = "splat-finish";
 
-    private static readonly string[] Known = [Splat, Textures, DetectHolds, RegisterPanels, SplatPrepare, SplatFinish];
+    /// <summary>The names a hello may list: the 3D kinds and the recognition kinds (runner protocol 1.2).</summary>
+    private static readonly string[] Known = [Splat, Textures, DetectHolds, RegisterPanels, SplatPrepare, SplatFinish, .. RecognitionKinds.All];
 
-    /// <summary>The stored form of a hello's list: known names only, de-duplicated, comma separated; null when none was sent.</summary>
-    public static string? Store(IEnumerable<string>? reported)
+    /// <summary>
+    /// The stored form of a hello's list: known names only (with <paramref name="recognitionOnly"/>, as for the instance
+    /// runner, only the recognition kinds), de-duplicated, comma separated; null when none is left.
+    /// </summary>
+    public static string? Store(IEnumerable<string>? reported, bool recognitionOnly = false)
     {
-        var names = (reported ?? []).Select(n => n?.Trim().ToLowerInvariant()).Where(n => n is not null && Known.Contains(n)).Distinct().ToList();
+        var allowed = recognitionOnly ? RecognitionKinds.All : Known;
+        var names = (reported ?? []).Select(n => n?.Trim().ToLowerInvariant()).Where(n => n is not null && allowed.Contains(n)).Distinct().ToList();
         return names.Count == 0 ? null : string.Join(',', names);
     }
+
+    /// <summary>Whether the stored list names a recognition kind (runner protocol 1.2).</summary>
+    public static bool HasRecognition(string? stored) => RecognitionKinds.All.Any(k => Has(stored, k));
+
+    /// <summary>The stored list as names (the hello answer's <c>capabilities</c>: what the server accepted).</summary>
+    public static IReadOnlyList<string> Names(string? stored) => stored?.Split(',', StringSplitOptions.RemoveEmptyEntries) ?? [];
 
     /// <summary>Whether a runner with this stored list may claim jobs of <paramref name="kind"/>.</summary>
     public static bool Allows(string? stored, GpuJobKind kind) => kind switch

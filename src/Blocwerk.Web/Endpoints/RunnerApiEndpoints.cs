@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Threading.RateLimiting;
 using Blocwerk.Authentication.Endpoints;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Recognition;
 using Blocwerk.Core.Runners;
 
 namespace Blocwerk.Web.Endpoints;
@@ -16,7 +17,9 @@ namespace Blocwerk.Web.Endpoints;
 /// the key names a runner, never a person, and every job-scoped call re-checks that the job is the
 /// runner's own claim (a 404 otherwise, a 410 once it was taken away or the runner may no longer train its wall; its
 /// <c>reason</c> says whether the job is over for good or went back to the queue).
-/// Not mapped at all with <c>RUNNERS__MODE=off</c>.
+/// The same endpoints serve the recognition queue (runner protocol 1.2): the claim looks at both queues, and every job-scoped
+/// call finds the job in either. Mapped when runners are on or recognition is queued (<c>RECOGNITION__MODE</c> not
+/// <c>inprocess</c>); with <c>RUNNERS__MODE=off</c> only the 3D kinds stop.
 /// </summary>
 public static partial class RunnerApiEndpoints
 {
@@ -46,11 +49,13 @@ public static partial class RunnerApiEndpoints
     public static void MapRunnerApi(this WebApplication app)
     {
         var options = app.Services.GetService<GpuRunnerOptions>() ?? app.Services.GetRequiredService<GpuJobQueue>().Options;
-        if (options.Mode == GpuRunnerMode.Off)
+        var recognition = app.Services.GetService<RecognitionQueueOptions>() ?? app.Services.GetRequiredService<RecognitionQueue>().Options;
+        if (options.Mode == GpuRunnerMode.Off && recognition.Mode == RecognitionMode.InProcess)
         {
             return;
         }
 
+        app.Services.GetRequiredService<RecognitionModelCatalog>().Warm();
         var group = app.MapGroup(Prefix).AllowAnonymous().DisableAntiforgery().RequireRateLimiting(RateLimitPolicy);
         group.MapPost("/hello", HelloAsync);
 
@@ -61,6 +66,7 @@ public static partial class RunnerApiEndpoints
         group.MapPut("/jobs/{jobId:guid}/result", ResultAsync);
         group.MapPut("/jobs/{jobId:guid}/preview", PreviewAsync);
         group.MapPost("/jobs/{jobId:guid}/fail", FailAsync);
+        group.MapGet("/models/{sha256:length(64)}", ModelAsync);
     }
 
     /// <summary>

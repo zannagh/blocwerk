@@ -39,8 +39,8 @@
              Text="Project $(ProjectName) built with file version $(FileVersion) and version $(Version)" />
   </Target>
 
-  <!-- Ignore package source mapping warning as we do not want nuget.config files within the
-  repositories. -->
+  <!-- nuget.config maps the sources (Blocwerk.* from GitHub Packages); NU1507 stays quiet for
+  builds that bring their own configuration. -->
   <PropertyGroup>
     <NoWarn>$(NoWarn);NU1507;NU5118;CS8032;SA1633;SA1402;SA1649;SA1201;SA1204;SA1117</NoWarn>
   </PropertyGroup>

@@ -4,6 +4,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Recognition;
 
 namespace Blocwerk.Core.Runners;
 
@@ -29,6 +30,9 @@ public static class GpuRunnerTokens
     public static bool LooksLikeRunnerKey(string? value) =>
         value is { Length: TokenLength } && value.StartsWith(GpuRunner.TokenPrefix, StringComparison.Ordinal)
         && value.AsSpan(4).IndexOfAnyExcept("0123456789abcdef") < 0;
+
+    /// <summary>True when the value could be the instance runner's key (<see cref="InstanceKeyPolicy"/>).</summary>
+    public static bool LooksLikeInstanceKey(string? value) => value is not null && InstanceKeyPolicy.Refusal(value) is null;
 
     /// <summary>Constant-time comparison of two hex hashes.</summary>
     public static bool HashEquals(string a, string b) =>

@@ -56,11 +56,12 @@ public sealed partial class GpuJobQueue(
 
     /// <summary>
     /// The runner a bearer key names, or null (unknown, malformed, revoked, or its owner deleted, the Ghost or locked
-    /// out). Stamps last-seen.
+    /// out). A key not shaped like a <c>bwr_</c> key can only name the instance runner. Stamps last-seen.
     /// </summary>
     public async Task<GpuRunner?> AuthenticateAsync(string? token, CancellationToken ct)
     {
-        if (!GpuRunnerTokens.LooksLikeRunnerKey(token))
+        var instanceKey = !GpuRunnerTokens.LooksLikeRunnerKey(token);
+        if (instanceKey && !GpuRunnerTokens.LooksLikeInstanceKey(token))
         {
             return null;
         }
@@ -68,7 +69,8 @@ public sealed partial class GpuJobQueue(
         var hash = GpuRunnerTokens.Hash(token!);
         await using var db = dbContextFactory.CreateDbContext();
         var runner = await db.GpuRunners.FirstOrDefaultAsync(r => r.KeyHash == hash, ct);
-        if (runner is null || !GpuRunnerTokens.HashEquals(runner.KeyHash, hash) || runner.RevokedAt is not null
+        if (runner is null || (instanceKey && runner.Scope != RunnerScope.Instance)
+            || !GpuRunnerTokens.HashEquals(runner.KeyHash, hash) || runner.RevokedAt is not null
             || !await ActiveRunners(db).AnyAsync(r => r.Id == runner.Id, ct))
         {
             return null;
@@ -84,8 +86,8 @@ public sealed partial class GpuJobQueue(
         return runner;
     }
 
-    /// <summary>Stores what the runner reports about itself.</summary>
-    public async Task HelloAsync(GpuRunner runner, RunnerHello hello, CancellationToken ct)
+    /// <summary>Stores what the runner reports about itself; returns the capabilities it accepted (the instance runner: recognition kinds only).</summary>
+    public async Task<IReadOnlyList<string>> HelloAsync(GpuRunner runner, RunnerHello hello, CancellationToken ct)
     {
         await using var db = dbContextFactory.CreateDbContext();
         var row = await db.GpuRunners.FirstAsync(r => r.Id == runner.Id, ct);
@@ -95,7 +97,7 @@ public sealed partial class GpuJobQueue(
         row.MaxQuality = AcceptedMaxQuality(hello.MaxQuality, row.Trainer, row.VramMb);
         row.MemoryBudgetMb = hello.MemoryBudgetMb is > 0 and < 10_000_000 ? hello.MemoryBudgetMb : null;
         row.RunnerVersion = Clip(hello.RunnerVersion, 64);
-        row.Capabilities = RunnerCapabilities.Store(hello.Capabilities);
+        row.Capabilities = RunnerCapabilities.Store(hello.Capabilities, recognitionOnly: row.Scope == RunnerScope.Instance);
         row.TexturesMemoryMb = RunnerCapabilities.Has(row.Capabilities, RunnerCapabilities.Textures) && hello.TexturesMemoryMb is > 0 and < 10_000_000
             ? hello.TexturesMemoryMb
             : null;
@@ -114,6 +116,8 @@ public sealed partial class GpuJobQueue(
                 "Runner {RunnerId} ({Name}) said hello: {Gpu}, {Vram} MB, {Trainer}, max quality {Quality}, version {Version}, paused {Paused}",
                 runner.Id, runner.Name, row.GpuName, row.VramMb, row.Trainer, row.MaxQuality, row.RunnerVersion, row.Paused);
         }
+
+        return RunnerCapabilities.Names(row.Capabilities);
     }
 
     /// <summary>Queues a prepared job and wakes waiting runners.</summary>

@@ -68,6 +68,9 @@ public static partial class RunnerComputeResult
         return ReadStatus(zip) with { JobId = jobId };
     }
 
+    /// <summary>The status of an open result zip (a recognition result's, read in memory).</summary>
+    internal static ComputeJobStatus StatusOf(ZipArchive zip) => ReadStatus(zip);
+
     private static void CheckEntries(ZipArchive zip, long maxBytes)
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

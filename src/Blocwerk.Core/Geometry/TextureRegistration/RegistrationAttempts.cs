@@ -24,6 +24,12 @@ public static class RegistrationAttempts
     /// <summary>RANSAC seeds tried per coarse scale (the first keeps the matches' own order).</summary>
     public const int Seeds = 5;
 
+    /// <summary>
+    /// The retries of one photo × facet through the recognition queue, where the time a retry takes is mostly the queue's (its
+    /// upload and wait), not the matcher's: one per coarse pass of the first two RANSAC seeds.
+    /// </summary>
+    public const int QueuedRetries = 4;
+
     /// <summary>How long the attempts on one photo × facet may take in total, after the first.</summary>
     public static readonly TimeSpan DefaultBudget = TimeSpan.FromSeconds(15);
 

@@ -11,6 +11,7 @@ using Blocwerk.Core.Enums;
 using Blocwerk.Core.Geometry;
 using Blocwerk.Core.Geometry.Footprints;
 using Blocwerk.Core.Geometry.Proposals;
+using Blocwerk.Core.Recognition.Remote;
 using Blocwerk.Core.Runners;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -68,6 +69,7 @@ public sealed partial class HoldProposalService(
         await Gate.WaitAsync(ct);
         try
         {
+            using var recognitionWall = RecognitionWallScope.Begin(wallId);
             return await RunAsync(wallId, ct, detected: detected);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

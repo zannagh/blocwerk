@@ -17,7 +17,7 @@ public sealed partial class GpuRunnerService
         var (db, userId) = await OpenForWallAdminAsync(wallId);
         await using (db)
         {
-            var runners = db.GpuRunners.Where(r => r.RevokedAt == null
+            var runners = db.GpuRunners.Where(r => r.RevokedAt == null && r.Scope == RunnerScope.Owned
                 && (r.SharedWithOtherWalls || r.OwnerUserId == userId || db.GpuRunnerWalls.Any(rw => rw.RunnerId == r.Id && rw.WallId == wallId)));
             return await ProjectAsync(db, runners, userId, wallId);
         }
@@ -48,7 +48,7 @@ public sealed partial class GpuRunnerService
         db.CurrentUserId = user.Id;
         KioskGuard.EnsureNotKiosk(kioskContext, db, AdminAction);
         await AppAdminGuard.EnsureAppAdminAsync(db, user.Id, CancellationToken.None);
-        return await ProjectAsync(db, db.GpuRunners, user.Id, null);
+        return await ProjectAsync(db, db.GpuRunners.Where(r => r.Scope == RunnerScope.Owned), user.Id, null);
     }
 
     private async Task<List<GpuRunnerInfo>> ProjectAsync(BlocwerkDbContext db, IQueryable<GpuRunner> runners, Guid userId, Guid? wallId)
@@ -59,7 +59,7 @@ public sealed partial class GpuRunnerService
             .Select(r => new
             {
                 Runner = r,
-                r.Owner.CustomDisplayName,
+                r.Owner!.CustomDisplayName,
                 r.Owner.DisplayName,
                 Walls = db.GpuRunnerWalls.Where(rw => rw.RunnerId == r.Id).Select(rw => rw.WallId).ToList(),
                 Approved = wallId != null && db.GpuRunnerApprovals.Any(a => a.RunnerId == r.Id && a.WallId == wallId),
@@ -86,7 +86,7 @@ public sealed partial class GpuRunnerService
                 : sameWall ? new GpuRunnerCurrentJob(job.Id, job.WallId, job.WallName, job.Progress, job.Stage)
                 : GpuRunnerCurrentJob.Busy;
             return new GpuRunnerInfo(
-                x.Id, x.Name, x.OwnerUserId, GpuRunnerOverviewService.OwnerName(r.CustomDisplayName, r.DisplayName), x.OwnerUserId == userId,
+                x.Id, x.Name, x.OwnerUserId.GetValueOrDefault(), GpuRunnerOverviewService.OwnerName(r.CustomDisplayName, r.DisplayName), x.OwnerUserId == userId,
                 x.SharedWithOtherWalls, wallId is { } w && r.Walls.Contains(w), x.RevokedAt is null && x.LastSeenAt >= online,
                 x.RevokedAt is not null, x.KeyPrefix, x.CreatedAt, x.LastSeenAt, x.LastJobAt,
                 new GpuRunnerCapabilities(x.GpuName, x.VramMb, x.MaxQuality, x.MemoryBudgetMb, x.RunnerVersion, x.Platform, x.Capabilities, x.TexturesMemoryMb),

@@ -12,20 +12,20 @@ public sealed partial class GpuRunnerOverviewService
 {
     /// <summary>
     /// A site admin: every runner, revoked ones included. Anyone else: the live runners they own or that serve one of their
-    /// walls (assigned to it, or shared and approved for it); none without walls or runners.
+    /// walls (assigned to it, or shared and approved for it); none without walls or runners. Never the instance runner.
     /// </summary>
     private static async Task<List<GpuRunnerOverviewInput>> RunnersAsync(BlocwerkDbContext db, GpuRunnerViewer viewer, CancellationToken ct)
     {
         var walls = viewer.Walls.ToList();
         var userId = viewer.UserId;
         var runners = viewer.IsAppAdmin
-            ? db.GpuRunners
-            : db.GpuRunners.Where(r => r.RevokedAt == null
+            ? db.GpuRunners.Where(r => r.Scope == RunnerScope.Owned)
+            : db.GpuRunners.Where(r => r.RevokedAt == null && r.Scope == RunnerScope.Owned
                 && (r.OwnerUserId == userId
                     || db.GpuRunnerWalls.Any(rw => rw.RunnerId == r.Id && walls.Contains(rw.WallId))
                     || (r.SharedWithOtherWalls && db.GpuRunnerApprovals.Any(a => a.RunnerId == r.Id && walls.Contains(a.WallId)))));
         var rows = await runners.AsNoTracking()
-            .Select(r => new { Runner = r, r.Owner.CustomDisplayName, r.Owner.DisplayName })
+            .Select(r => new { Runner = r, r.Owner!.CustomDisplayName, r.Owner.DisplayName })
             .ToListAsync(ct);
         var ids = rows.Select(r => r.Runner.Id).ToList();
         var own = await db.GpuRunnerWalls.AsNoTracking().Where(rw => ids.Contains(rw.RunnerId))

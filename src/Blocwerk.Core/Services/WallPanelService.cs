@@ -7,6 +7,7 @@ using Blocwerk.Core.Enums;
 using Blocwerk.Core.Feed;
 using Blocwerk.Core.Helpers;
 using Blocwerk.Core.HoldStacks;
+using Blocwerk.Core.Recognition.Remote;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -70,6 +71,7 @@ public partial class WallPanelService : IWallPanelService
     /// <inheritdoc/>
     public async Task<StagePanelResult> StagePanelAsync(Guid wallId, int col, int row, byte[] image, string contentType)
     {
+        using var recognitionWall = RecognitionWallScope.Begin(wallId);
         // Stored at full resolution — the panel matcher and hold detection below need it; the browser
         // gets downscaled variants (see IImageVariantCache) — but without location or other metadata.
         // The pixels and the EXIF orientation are untouched, so holds stay where they are drawn.
@@ -164,6 +166,7 @@ public partial class WallPanelService : IWallPanelService
     /// <inheritdoc/>
     public async Task<StagePanelResult> ResumePanelAsync(Guid wallId, Guid panelId)
     {
+        using var recognitionWall = RecognitionWallScope.Begin(wallId);
         var user = await currentUserService.GetCurrentUserAsync();
         await using var db = await dbContextFactory.CreateDbContextAsync();
         db.CurrentUserId = user.Id;
@@ -251,8 +254,8 @@ public partial class WallPanelService : IWallPanelService
                 logger);
             try
             {
-                var result = await recognitionGate.RecogniseAsync("overlap-match", () => overlapMatcher.Match(
-                    neighborImage, neighborMatcherHolds, image, newMatcherHolds, direction, null, seed));
+                var result = await overlapMatcher.MatchAsync(
+                    recognitionGate, "overlap-match", new MatcherPair(neighborImage, neighborMatcherHolds, image, newMatcherHolds), direction, null, seed);
                 foreach (var p in result.Proposals)
                 {
                     proposals.Add(new OverlapProposalDto(

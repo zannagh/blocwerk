@@ -1,6 +1,7 @@
 @using Blocwerk.Core.Runners
 @using Blocwerk.Web.Components.Pages.Walls
 @inject IGpuRunnerService Runners
+@inject Blocwerk.Core.Recognition.RecognitionQueue Recognition
 @inject ILogger<GpuRunnersAdminPanel> Logger
 
 @* Every 3D runner on the server. Rendered only inside Dashboard.razor (AppAdmin policy); the
@@ -14,6 +15,7 @@
         receiving wall's admin then approves that runner) or revoke anyone's.
     </p>
     <p class="hint"><a href="/administration/runners">Open the runner overview</a> (state, current jobs, failures).</p>
+    <p class="hint">Recognition: @RecognitionSeen</p>
     @if (error is not null)
     {
         <div class="error-msg">@error</div>
@@ -46,6 +48,11 @@
 @code {
     private IReadOnlyList<GpuRunnerInfo>? runners;
     private string? error;
+    private DateTimeOffset? recognitionSeenAt;
+
+    private string RecognitionSeen => recognitionSeenAt is { } at
+        ? $"last claim {Math.Max(0, (int)(DateTimeOffset.UtcNow - at).TotalSeconds)} s ago"
+        : "the recognition pod has not called yet";
 
     protected override Task OnInitializedAsync() => LoadAsync();
 
@@ -54,6 +61,7 @@
         try
         {
             runners = await Runners.ListAllAsync();
+            recognitionSeenAt = await Recognition.InstanceRunnerSeenAtAsync(CancellationToken.None);
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or KioskRestrictedException)
         {

@@ -12,7 +12,7 @@ public class WallCaptureRealPhotoTests
 {
     private static readonly string Dir = Path.Combine(AppContext.BaseDirectory, "Fixtures", "Glyphs");
 
-    [Fact]
+    [OpenCvFact]
     public async Task RealCrops_FlowIntoTheSolveRequest_WithRefinedPixelCorners()
     {
         var topLeft = await File.ReadAllBytesAsync(Path.Combine(Dir, "img2783-topleft.jpg"));

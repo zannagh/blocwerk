@@ -22,6 +22,18 @@ blocwerk mount compose-only /app/models/hold-segmenter-encoder.onnx|as above
 blocwerk mount compose-only /app/models/hold-segmenter-decoder.onnx|as above
 blocwerk mount chart-only /app/models|as above
 blocwerk mount chart-only /tmp|uploads are buffered in an emptyDir with a size limit (compose: the container layer)
+blocwerk env chart-only RECOGNITION__MODE|value recognition.mode; in compose with the recognition queue (feat/recognition-app-queue), then no longer a difference
+blocwerk env chart-only RECOGNITION__INSTANCEKEY|from secrets.recognition; in compose with the recognition queue, then no longer a difference
+blocwerk env compose-only RECOGNITION__INSTANCEKEYFILE|compose generates the key into a shared file; the chart reads it from secrets.recognition
+blocwerk env compose-only RECOGNITION__INSTANCEKEYFILEOWNER|as above
+blocwerk mount compose-only /app/recognition|as above
+recognition env compose-only RECOGNITION__INSTANCEKEYFILE|as above
+recognition mount compose-only /recognition|as above
+recognition mount compose-only /models/climbingcrux.onnx|the models/ subdirectory of the data volume is mounted at /models, as for the app
+recognition mount compose-only /models/hold-segmenter-encoder.onnx|as above
+recognition mount compose-only /models/hold-segmenter-decoder.onnx|as above
+recognition mount chart-only /models|the models/ subdirectory of the data volume, read-only (compose mounts the three files)
+recognition mount chart-only /tmp|the model cache in an emptyDir with a size limit (compose: the container layer)
 blocwerk env chart-only SPLATSERVICE__ONRUNNERS|value splat.onRunners; in compose from O7 PR #242 (feat/o7-prod-config), then no longer a difference
 wall-geometry env compose-only COMPUTE_CALLBACK_SECRET|empty in production (the app polls); no callback secret is wired
 wall-geometry mount chart-only /tmp|job files in an emptyDir with a size limit (compose: the container layer)
@@ -64,5 +76,9 @@ check() {
 check blocwerk blocwerk "$APP_SECRET_KEYS"
 check wall-geometry blocwerk-geometry
 check splat-cpu blocwerk-splat-cpu
+# The compose service arrives with the recognition queue; until then only the chart has the worker.
+if yq -e '.services.recognition' "$COMPOSE" >/dev/null 2>&1; then
+  check recognition blocwerk-recognition
+fi
 [[ "$FAILED" -eq 0 ]] || { echo "$FAILED unexpected difference(s) between the chart and $COMPOSE" >&2; exit 1; }
 echo "chart matches the compose file (intended differences listed above)"

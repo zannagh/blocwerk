@@ -177,8 +177,8 @@ public partial class WallBigUpdateService
 
         try
         {
-            var measured = await recognitionGate.RecogniseAsync(
-                "look-check", () => probe.Score(panel.OldPhoto, panel.NewPhoto, asked.Select(i => queries[i]!.Value).ToList()));
+            var measured = await probe.ScoreAsync(
+                recognitionGate, "look-check", panel.OldPhoto, panel.NewPhoto, asked.Select(i => queries[i]!.Value).ToList());
             for (var k = 0; k < asked.Count && k < measured.Count; k++)
             {
                 scores[asked[k]] = measured[k];
