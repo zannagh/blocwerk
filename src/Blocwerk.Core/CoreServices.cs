@@ -95,6 +95,7 @@ public static class CoreServices
         // because it feeds a shared bounded channel that the background sender drains off the request
         // thread — recipient resolution stays inline, the outbound HTTP does not.
         var vapidOptions = builder.Configuration.GetSection("Vapid").Get<VapidOptions>() ?? new VapidOptions();
+        vapidOptions.Suppressed = settings.Staging;
         builder.Services.AddSingleton(vapidOptions);
         builder.Services.AddSingleton<PushSendQueue>();
         builder.Services.AddSingleton<IPushNotificationService, PushNotificationService>();

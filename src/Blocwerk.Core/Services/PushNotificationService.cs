@@ -34,7 +34,7 @@ public sealed partial class PushNotificationService : IPushNotificationService
         this.logger = logger;
     }
 
-    public string? PublicKey => vapid.IsConfigured ? vapid.PublicKey : null;
+    public string? PublicKey => vapid.IsConfigured && !vapid.Suppressed ? vapid.PublicKey : null;
 
     // The client re-saves the current device's subscription on every navigation. When nothing
     // material changed we skip the UPDATE if we already refreshed LastSeenUtc this recently, so a
@@ -128,6 +128,18 @@ public sealed partial class PushNotificationService : IPushNotificationService
         await db.PushSubscriptions.Where(s => s.Endpoint == endpoint).ExecuteDeleteAsync();
     }
 
+    /// <summary>True when nothing may be sent: VAPID is unconfigured, or this is the staging copy (which logs instead).</summary>
+    private bool IsSuppressed(string operation)
+    {
+        if (vapid.Suppressed)
+        {
+            logger.LogInformation("Staging: Web Push '{Operation}' suppressed, nothing is sent.", operation);
+            return true;
+        }
+
+        return !vapid.IsConfigured;
+    }
+
     /// <summary>
     /// Runs a notify body defensively so every call site can simply <c>await</c> a Notify* method
     /// without its own try/catch: it no-ops when VAPID is unconfigured, opens the shared read context
@@ -136,7 +148,7 @@ public sealed partial class PushNotificationService : IPushNotificationService
     /// </summary>
     private async Task GuardAsync(string operation, Func<BlocwerkDbContext, Task> body)
     {
-        if (!vapid.IsConfigured)
+        if (IsSuppressed(operation))
         {
             return;
         }
@@ -158,7 +170,7 @@ public sealed partial class PushNotificationService : IPushNotificationService
     /// </summary>
     private async Task SendToUsersAsync(IEnumerable<Guid> userIds, PushPayload payload, NotificationType type)
     {
-        if (!vapid.IsConfigured)
+        if (IsSuppressed(type.ToString()))
         {
             return;
         }

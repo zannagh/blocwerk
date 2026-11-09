@@ -291,6 +291,7 @@ public static class Program
         var app = builder.Build();
 
         app.UseForwardedHeaders();
+        app.UseStagingHeaders(settings.Staging);
         app.UseSlowRequestLogging();
 
         // Outside the exception handler, so its bodiless 500 is covered too: a kiosk tablet never sits on a dead

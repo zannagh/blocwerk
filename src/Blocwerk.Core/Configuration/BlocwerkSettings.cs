@@ -8,6 +8,12 @@ public class BlocwerkSettings
 {
     public string JwtKey { get; private set; } = string.Empty;
 
+    /// <summary>
+    /// True on the anonymised staging copy (<c>Blocwerk:Staging</c>, env <c>BLOCWERK__STAGING=true</c>): a visible
+    /// banner, no indexing, and no outgoing e-mail or web push whatever their settings say. Off by default.
+    /// </summary>
+    public bool Staging { get; private set; }
+
     public TimeSpan JwtTokenLifetime { get; private set; } = TimeSpan.FromHours(1);
 
     public OAuthProviderSettings GitHubOAuth { get; private set; } = new();
@@ -89,6 +95,10 @@ public class BlocwerkSettings
         }
 
         JwtKey = string.IsNullOrEmpty(jwtKey) ? GenerateRandomKey() : jwtKey;
+
+        Staging = bool.TryParse(
+            section["Staging"] ?? Environment.GetEnvironmentVariable("BLOCWERK__STAGING"),
+            out var staging) && staging;
 
         if (TimeSpan.TryParse(
                 section["JwtTokenLifetime"] ?? Environment.GetEnvironmentVariable("SECURITY__TOKENLIFETIME"),

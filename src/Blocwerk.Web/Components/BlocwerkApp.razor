@@ -5,6 +5,7 @@
 @using Blocwerk.Core.Abstractions
 @inject ICurrentUserService CurrentUserService
 @inject IKioskContext KioskContext
+@inject Blocwerk.Core.Configuration.BlocwerkSettings Settings
 
 <!DOCTYPE html>
 <html lang="en">
@@ -76,6 +77,10 @@
     @* Inert unless the page renders the kiosk PIN form; it only types into that form and submits it.
        Deferred: its listeners bind on/after DOM-ready and it defines no parse-time global. *@
     <script defer src="@Assets["js/kiosk-numpad.js"]"></script>
+    @if (Settings.Staging)
+    {
+        <meta name="robots" content="noindex,nofollow" />
+    }
     <HeadOutlet />
     <title>Blocwerk</title>
 </head>
@@ -93,6 +98,7 @@
    data-enhance-nav="false". *@
 
 <body data-bw-user="@ActingUserId" data-bw-kiosk="@KioskKeyId">
+    <StagingBanner />
     <Routes />
 
     @* Blazor sets components-reconnect-* classes and raises components-reconnect-state-changed on

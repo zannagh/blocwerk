@@ -1,0 +1,6 @@
+.bw-staging-banner {
+    position: fixed; top: 0; left: 50%; transform: translateX(-50%); z-index: 2000;
+    padding: 1px 14px; border-radius: 0 0 var(--r-sm, 6px) var(--r-sm, 6px);
+    background: #d9a400; color: #1a1a1a; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.12em;
+    pointer-events: none;
+}
