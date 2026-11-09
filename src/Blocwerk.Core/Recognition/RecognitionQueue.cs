@@ -63,7 +63,7 @@ public sealed partial class RecognitionQueue(
         {
             Kind = request.Kind, Lane = request.Lane, WallId = request.WallId, InputPath = stored, InputBytes = bytes, InputSha256 = sha,
             RequiredMemoryMb = request.RequiredMemoryMb, LeaseSeconds = (int)options.LeaseOf(request.Lane).TotalSeconds,
-            RunSeconds = (int)options.RunOf(request.Kind, request.Lane, request.Parts.Count(p => p.Name == "photos")).TotalSeconds,
+            RunSeconds = (int)options.RunOf(request.Kind, request.Lane, request.Parts.Count(p => p.Name == "photos"), request.Seeds, request.RequiredMemoryMb).TotalSeconds,
             LeaseExpiresAt = ClaimDeadline(request.Lane, now), CreatedAt = now, Stage = WaitingStage,
             CallerKey = GpuJobQueue.Clip(request.CallerKey, 200),
         };

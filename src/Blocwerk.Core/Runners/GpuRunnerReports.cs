@@ -58,7 +58,8 @@ public sealed record RunnerFailure(
 /// <summary>
 /// A claimed job as the runner receives it. <c>Previews</c>: the server takes intermediate splats (<c>PUT .../preview</c>).
 /// <c>Reattached</c>: the runner already held this job (it restarted) and gets it back. <c>WallId</c> / <c>CaptureId</c>:
-/// what the job trains, for the runner's local status page (ids only, no names).
+/// what the job trains, for the runner's local status page (ids only, no names). <c>RunSeconds</c>: how long a recognition claim
+/// may run (the server's run budget; the runner settles by it); absent for splat jobs.
 /// </summary>
 public sealed record RunnerClaim(
     [property: JsonPropertyName("jobId")] Guid JobId,
@@ -71,7 +72,8 @@ public sealed record RunnerClaim(
     [property: JsonPropertyName("wallId")] Guid? WallId = null,
     [property: JsonPropertyName("captureId")] Guid? CaptureId = null,
     [property: JsonPropertyName("kind")] string Kind = "splat",
-    [property: JsonPropertyName("requiredMemoryMb")] int? RequiredMemoryMb = null);
+    [property: JsonPropertyName("requiredMemoryMb")] int? RequiredMemoryMb = null,
+    [property: JsonPropertyName("runSeconds")] int? RunSeconds = null);
 
 /// <summary>What a job-scoped runner call found.</summary>
 public enum RunnerJobOutcome

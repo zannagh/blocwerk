@@ -82,7 +82,7 @@ public sealed class RunnerClaimDispatcher(GpuJobQueue gpuQueue, RecognitionQueue
         {
             return new RunnerClaim(
                 job.Id, "draft", job.LeaseSeconds, job.InputBytes, job.InputSha256, Previews: false, reattached,
-                job.WallId, CaptureId: null, job.Kind, job.RequiredMemoryMb);
+                job.WallId, CaptureId: null, job.Kind, job.RequiredMemoryMb, job.RunSeconds);
         }
 
         return !gpu || await recognitionQueue.HoldsClaimAsync(runner.Id, ct) ? null : await gpuQueue.ClaimOnceAsync(runner, request, ct);

@@ -7,6 +7,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Recognition;
+using Blocwerk.Core.Recognition.Remote;
 using Blocwerk.Core.Runners;
 using Microsoft.Extensions.Configuration;
 using static Blocwerk.Core.Tests.RecognitionApiSupport;
@@ -143,6 +144,24 @@ public class RecognitionRunnerApiModeTests
         Assert.Equal(TimeSpan.FromMinutes(30), options.RunOf(RecognitionKinds.DetectHolds, RecognitionLane.Background, 8));
         Assert.Equal(RecognitionMode.QueueWithFallback, RecognitionQueueOptions.ParseMode(" Queue+Fallback "));
         Assert.Equal(RecognitionMode.InProcess, RecognitionQueueOptions.ParseMode(null));
+    }
+
+    [Fact]
+    public void RunBudget_ScalesWithTheWork_AndHoldsItsCaps()
+    {
+        var options = new RecognitionQueueOptions();
+        var interactive = RecognitionLane.Interactive;
+
+        Assert.Equal(TimeSpan.FromSeconds(357), options.RunOf(RecognitionKinds.OutlineHolds, interactive, 1, seeds: 594));
+        Assert.Equal(TimeSpan.FromSeconds(60), options.RunOf(RecognitionKinds.OutlineHolds, interactive, 1, seeds: 0));
+        Assert.Equal(TimeSpan.FromMinutes(15), options.RunOf(RecognitionKinds.OutlineHolds, interactive, 1, seeds: 100_000));
+        Assert.Equal(TimeSpan.FromSeconds(270), options.RunOf(RecognitionKinds.DetectHolds, interactive, 3, seeds: 594));
+
+        var twelveMegapixels = RecognitionParts.MemoryMb([(4000, 3000)], together: false);
+        Assert.InRange(options.RunOf(RecognitionKinds.TextureMatch, interactive, 2, memoryMb: twelveMegapixels).TotalSeconds, 90, 100);
+        Assert.Equal(TimeSpan.FromSeconds(60), options.RunOf(RecognitionKinds.Markers, interactive, 1, memoryMb: 300));
+        Assert.Equal(TimeSpan.FromMinutes(5), options.RunOf(RecognitionKinds.MatchPanels, interactive, 2, memoryMb: 200_000));
+        Assert.Equal(TimeSpan.FromMinutes(30), options.RunOf(RecognitionKinds.OutlineHolds, RecognitionLane.Background, 1, seeds: 594));
     }
 
     [Theory]

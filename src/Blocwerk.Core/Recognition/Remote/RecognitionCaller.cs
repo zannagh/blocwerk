@@ -56,7 +56,8 @@ public sealed class RecognitionCaller(RecognitionQueue queue, ILogger<Recognitio
         IReadOnlyList<ComputeJobPart> parts,
         int? memoryMb,
         Func<JsonElement, T> read,
-        CancellationToken ct)
+        CancellationToken ct,
+        int seeds = 0)
         where T : class
     {
         if (!Queued)
@@ -79,7 +80,7 @@ public sealed class RecognitionCaller(RecognitionQueue queue, ILogger<Recognitio
             return null;
         }
 
-        var (json, why) = await TryRunAsync(new RecognitionRequest(kind, lane, wallId, parts, memoryMb, callerKey), ct);
+        var (json, why) = await TryRunAsync(new RecognitionRequest(kind, lane, wallId, parts, memoryMb, callerKey, seeds), ct);
         if (json is not null)
         {
             try
