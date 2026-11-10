@@ -30,14 +30,43 @@ and silent.
 | `VAPID__*` | its own keys or unset (push is suppressed on staging regardless) |
 | `SMTP__*` | the Mailpit catcher or unset (mail is suppressed on staging regardless, so Mailpit stays empty) |
 | `RECOGNITION__INSTANCEKEY` | its own; `RECOGNITION__MODE=queue`; `RUNNERS__MODE` off |
-| OAuth client ids/secrets | unset, or staging-only apps (`UserIdentities` are deleted) |
-| Admins (`Blocwerk:AdminIdentifiers`) | by the new identifiers `staging__<user id>` |
+| OAuth (`GITHUB__*`, `GOOGLE__*`, `MICROSOFT__*`) | see [OAuth sign-in](#oauth-sign-in-on-staging) |
+| Admins (`Blocwerk:AdminIdentifiers`) | OAuth admins by their production identifier `{name}__{subject}` (the check compares the sign-in claim, not the stored value) |
 
 ## Signing in on staging
 
 Password hashes are kept: use the production password. Users whose login name was an e-mail address now log in as
-`user-<id>@staging.invalid`; other login names are unchanged. OAuth-only users have no password and cannot sign in
-(an admin can set one). API keys, kiosk registrations, TOTP, TopLogger links, share links and runner keys are gone and
+`user-<id>@staging.invalid`; other login names are unchanged. OAuth users sign in with their provider as on production
+(next section) and land on their own account. API keys, kiosk registrations, TOTP, TopLogger links, share links and runner keys are gone and
 must be created again.
+
+## OAuth sign-in on staging
+
+Providers: GitHub, Google and Microsoft, each enabled by its own settings. An OAuth login resolves the account by the
+provider's stable subject: `UserIdentities (Provider, ProviderUserId)`, else, for accounts that never got an identity
+row, the `__<subject>` suffix of `Users.Identifier`. The script keeps both: `UserIdentities` is untouched (it holds only
+provider, subject and creation time; the app stores no provider tokens, e-mail or avatar URL there), and `Identifier`
+becomes `staging__<subject>`, dropping the provider-name part. Google and Microsoft issue subjects per client / app
+registration, so staging must use the same client as production to receive the same subjects:
+
+| Provider | Setting names (env, or `Blocwerk:<Name>OAuth:<Key>`) |
+| --- | --- |
+| GitHub | `GITHUB__ENABLED=true`, `GITHUB__CLIENTID`, `GITHUB__CLIENTSECRET` |
+| Google | `GOOGLE__ENABLED=true`, `GOOGLE__CLIENTID`, `GOOGLE__CLIENTSECRET` |
+| Microsoft | `MICROSOFT__ENABLED=true`, `MICROSOFT__CLIENTID`, `MICROSOFT__CLIENTSECRET` |
+
+(`*__OAUTHURL` overrides the authorize URL; the defaults are right.) Register this **redirect URI** at each provider:
+
+```
+https://experimental.blocwerk.app/oauth-callback
+```
+
+It is built from the request host (`{scheme}://{host}/oauth-callback`), so the reverse proxy must forward the public host
+and scheme (the app's trusted-proxy setting). `/account/callback` is internal and is not registered at a provider.
+
+**Recommended:** add the staging redirect URI to the **existing production OAuth apps** (GitHub and Microsoft allow
+several; Google lists several authorised redirect URIs) and reuse their client id and secret as staging secrets. A
+separate staging app is only an option for GitHub (its user ids are global); a separate Google client or Microsoft app
+registration issues different subjects, so nobody would land on their own account (they would get a new, empty one). Whichever you pick, the secret lives only in the staging secret store.
 
 The anonymise is tested against the real schema (`StagingAnonymiseTests`, runs where `BLOCWERK_TEST_PG` is set).

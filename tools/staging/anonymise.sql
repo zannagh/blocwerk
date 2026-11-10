@@ -7,11 +7,16 @@
 --
 -- CHANGES (personal data and anything that grants access to the real world or to the real instance)
 --   Users              Email -> user-<id>@staging.invalid; LoginUsername too when it is an address (it is how that user
---                      logs in on staging then); Identifier of OAuth users (provider ids) -> staging__<id>; display names
+--                      logs in on staging then); Identifier "{name}__{subject}" of OAuth users -> staging__{subject} (the provider-name part
+--                      goes, the subject suffix stays: it is the sign-in fallback for accounts without a UserIdentities row,
+--                      see LegacyIdentityResolver); display names
 --                      that are addresses -> "User <id8>"; avatars removed; TOTP secret/flag/last step, failed-login
 --                      count and lockout reset. Password hashes are KEPT, so testers sign in with their production
 --                      password. Display names that are not addresses stay. The ghost user (system:*) and local__* identifiers are left alone.
---   UserIdentities     deleted: OAuth provider account ids of real people (the Identifier above is the same data).
+--   UserIdentities     KEPT as is: (Provider, ProviderUserId) is what an OAuth sign-in resolves the account by, so a tester
+--                      signing in with the same provider lands on their own account. The table holds nothing else personal
+--                      (no e-mail, name, avatar or tokens; the app stores no provider tokens). Needs the OAuth client
+--                      that issued the subjects, see README.md.
 --   ApiKeys            deleted: personal, wall, kiosk-device and installation keys (kiosk registrations included).
 --   PushSubscriptions  deleted: real browser endpoints and keys.
 --   RefreshTokens      deleted: login tokens (the new DataProtection key ring ends cookie sessions as well).
@@ -21,7 +26,7 @@
 --   WallMembers        kiosk PIN hash and length cleared (a 4-8 digit hash is trivially brute-forced).
 --   GpuRunners         deleted (cascades to GpuRunnerWalls, GpuRunnerApprovals = pending approvals, GpuRunnerFailures);
 --                      the app re-registers the instance runner from RECOGNITION__INSTANCEKEY on start.
--- KEPT: walls, panels, photos (bytea), holds, boulders, ticks/attempts, ratings, comments, users, memberships, roles.
+-- KEPT: OAuth identities, walls, panels, photos (bytea), holds, boulders, ticks/attempts, ratings, comments, users, memberships, roles.
 -- The schema has no outbound webhook or notification target tables, nor recovery codes or security stamps; if a later
 -- migration adds one, add it here.
 
@@ -30,7 +35,8 @@ BEGIN;
 UPDATE "Users"
 SET "Email"           = CASE WHEN "Email" IS NULL THEN NULL ELSE 'user-' || "Id"::text || '@staging.invalid' END,
     "LoginUsername"   = CASE WHEN "LoginUsername" LIKE '%@%' THEN 'user-' || "Id"::text || '@staging.invalid' ELSE "LoginUsername" END,
-    "Identifier"      = CASE WHEN "Identifier" LIKE 'local\_\_%' THEN "Identifier" ELSE 'staging__' || "Id"::text END,
+    "Identifier"      = CASE WHEN "Identifier" LIKE 'local\_\_%' THEN "Identifier"
+                             ELSE 'staging__' || (string_to_array("Identifier", '__'))[cardinality(string_to_array("Identifier", '__'))] END,
     "DisplayName"     = CASE WHEN "DisplayName" LIKE '%@%' THEN 'User ' || left("Id"::text, 8) ELSE "DisplayName" END,
     "CustomDisplayName" = CASE WHEN "CustomDisplayName" LIKE '%@%' THEN NULL ELSE "CustomDisplayName" END,
     "AvatarImage"       = NULL,
@@ -54,7 +60,6 @@ UPDATE "WallMembers"
 SET "KioskPinHash" = NULL, "KioskPinLength" = 0
 WHERE "KioskPinHash" IS NOT NULL OR "KioskPinLength" <> 0;
 
-DELETE FROM "UserIdentities";
 DELETE FROM "ApiKeys";
 DELETE FROM "PushSubscriptions";
 DELETE FROM "RefreshTokens";
@@ -66,9 +71,9 @@ DELETE FROM "GpuRunnerFailures";
 DELETE FROM "GpuRunners";
 
 -- What is left in the cleared tables (all must be 0), and what remains of the personal columns.
+-- (UserIdentities is not among them: it is kept on purpose.)
 SELECT t.name AS cleared, t.n AS rows_left FROM (
-    SELECT 'UserIdentities' AS name, count(*) AS n FROM "UserIdentities"
-    UNION ALL SELECT 'ApiKeys', count(*) FROM "ApiKeys"
+    SELECT 'ApiKeys' AS name, count(*) AS n FROM "ApiKeys"
     UNION ALL SELECT 'PushSubscriptions', count(*) FROM "PushSubscriptions"
     UNION ALL SELECT 'RefreshTokens', count(*) FROM "RefreshTokens"
     UNION ALL SELECT 'EmailVerificationCodes', count(*) FROM "EmailVerificationCodes"

@@ -9,7 +9,7 @@ namespace Blocwerk.Core.Tests;
 
 /// <summary>
 /// <c>tools/staging/anonymise.sql</c> against the real schema: a seeded user, API key and push subscription come out
-/// anonymised or cleared, what staging keeps survives, and a second run changes nothing.
+/// anonymised or cleared, what staging keeps survives (the OAuth identity with its subject, so a sign-in still resolves), and a second run changes nothing.
 /// </summary>
 [Trait("Db", "Postgres")]
 public class StagingAnonymiseTests
@@ -27,14 +27,17 @@ public class StagingAnonymiseTests
         var user = await db.Users.IgnoreQueryFilters().SingleAsync(u => u.Id == userId);
         Assert.Equal($"user-{userId}@staging.invalid", user.Email);
         Assert.Equal($"user-{userId}@staging.invalid", user.LoginUsername);
-        Assert.Equal($"staging__{userId}", user.Identifier);
+        Assert.Equal("staging__12345", user.Identifier);
         Assert.Equal("hash", user.PasswordHash);
         Assert.Null(user.TotpSecretProtected);
         Assert.False(user.TotpEnabled);
         Assert.Equal("Climber", user.DisplayName);
         Assert.Empty(await db.ApiKeys.ToListAsync());
         Assert.Empty(await db.PushSubscriptions.ToListAsync());
-        Assert.Empty(await db.UserIdentities.ToListAsync());
+        var identity = Assert.Single(await db.UserIdentities.ToListAsync());
+        Assert.Equal(userId, identity.UserId);
+        Assert.Equal("github", identity.Provider);
+        Assert.Equal("12345", identity.ProviderUserId);
         Assert.Null((await db.Walls.IgnoreQueryFilters().SingleAsync(w => w.Id == wallId)).ShareToken);
         Assert.Contains(await db.Users.IgnoreQueryFilters().ToListAsync(), u => u.Identifier == "system:ghost");
     }
@@ -44,7 +47,7 @@ public class StagingAnonymiseTests
         await using var db = database.CreateContext();
         var user = new User
         {
-            Identifier = "github__12345",
+            Identifier = "Real Name__12345",
             DisplayName = "Climber",
             Email = "real@example.com",
             LoginUsername = "real@example.com",
