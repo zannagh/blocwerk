@@ -15,11 +15,13 @@ namespace Blocwerk.Core.Services;
 public class EmailSender : IEmailSender
 {
     private readonly SmtpSettings settings;
+    private readonly bool staging;
     private readonly ILogger<EmailSender> logger;
 
     public EmailSender(BlocwerkSettings settings, ILogger<EmailSender> logger)
     {
         this.settings = settings.Smtp;
+        staging = settings.Staging;
         this.logger = logger;
     }
 
@@ -32,6 +34,13 @@ public class EmailSender : IEmailSender
         string? plainTextBody = null,
         CancellationToken ct = default)
     {
+        if (staging)
+        {
+            // The staging copy sends nothing, not even to a catcher: the address is only an anonymised placeholder there.
+            logger.LogInformation("Staging: email to a {Domain} address suppressed, nothing is sent.", RecipientDomain(toEmail));
+            return;
+        }
+
         if (!IsConfigured)
         {
             throw new InvalidOperationException(

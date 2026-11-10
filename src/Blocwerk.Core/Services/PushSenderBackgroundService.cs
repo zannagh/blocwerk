@@ -44,6 +44,12 @@ public sealed class PushSenderBackgroundService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (vapid.Suppressed)
+        {
+            logger.LogInformation("Web Push is suppressed: this is the staging copy. Nothing is sent.");
+            return;
+        }
+
         if (!vapid.IsConfigured)
         {
             // The single startup warning for a missing VAPID keypair. Nothing is ever enqueued in this

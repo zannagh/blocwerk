@@ -1,0 +1,8 @@
+@inject BlocwerkSettings Settings
+
+@* Only on the staging copy (Blocwerk:Staging). Rendered once in BlocwerkApp, outside <Routes />, so every page carries it:
+   MainLayout, EmptyLayout and the kiosk view alike. A fixed corner tag that takes no clicks, so it moves nothing. *@
+@if (Settings.Staging)
+{
+    <div class="bw-staging-banner" role="note">STAGING</div>
+}

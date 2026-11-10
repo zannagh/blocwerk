@@ -23,6 +23,12 @@ public sealed class VapidOptions
     /// <summary>The VAPID private key (Base64url). Server-side only; never sent to the client.</summary>
     public string PrivateKey { get; set; } = string.Empty;
 
+    /// <summary>
+    /// True on the staging copy (<c>Blocwerk:Staging</c>): nothing is sent, whatever the keys say, and the public key is
+    /// not handed to clients, so no device can subscribe. A would-be send is logged instead.
+    /// </summary>
+    public bool Suppressed { get; set; }
+
     /// <summary>True only when all three values are present, so push can actually be signed and sent.</summary>
     public bool IsConfigured =>
         !string.IsNullOrWhiteSpace(Subject)
