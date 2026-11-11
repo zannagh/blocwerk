@@ -94,6 +94,33 @@ self.addEventListener('install', event => {
     );
 });
 
+// The precache again, file by file, for whatever the install missed (it tolerates failures, so a flaky connection at
+// install time used to leave offline.html out until the next worker version). Run once activation is done (never inside
+// it: a fetch hanging on a dead host would hold every navigation back) and on every page's sw-info; a file already cached
+// costs one match, and it never keeps anything waiting longer than TOP_UP_MS.
+const TOP_UP_MS = 10000;
+
+function topUpShell() {
+    const topUp = caches.open(CACHE)
+        .then(cache => Promise.allSettled(PRECACHE.map(url => cache.match(url).then(hit => hit || cache.add(url)))))
+        .catch(() => undefined);
+    return Promise.race([topUp, new Promise(resolve => setTimeout(resolve, TOP_UP_MS))]);
+}
+
+// What a navigation gets when nothing else answers and offline.html is not cached either: never no answer at all, which
+// an installed app on Android shows as its splash logo, or the browser's own error page.
+const OFFLINE_FALLBACK_HTML = '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" />'
+    + '<meta name="viewport" content="width=device-width, initial-scale=1" /><title>Blocwerk · offline</title></head>'
+    + '<body style="font-family:system-ui,sans-serif;text-align:center;padding:48px 16px">'
+    + '<h1>You\'re offline</h1><p>Blocwerk can\'t be reached right now.</p>'
+    + '<button type="button" onclick="location.reload()">Try again</button></body></html>';
+
+function offlinePage() {
+    return caches.match('/offline.html')
+        .catch(() => undefined)
+        .then(page => page || new Response(OFFLINE_FALLBACK_HTML, { headers: { 'content-type': 'text/html; charset=utf-8' } }));
+}
+
 self.addEventListener('activate', event => {
     event.waitUntil(
         caches.keys()
@@ -105,6 +132,8 @@ self.addEventListener('activate', event => {
             // 'blocwerk-client-*' are not this handler's either: only a completed fill deletes old versions.
             .then(keys => Promise.all(keys.filter(isDisposableCache).map(k => caches.delete(k))))
             .then(() => self.clients.claim())
+            // Not awaited: activation is done without it (see topUpShell).
+            .then(() => { topUpShell(); })
     );
 });
 
@@ -126,8 +155,9 @@ self.addEventListener('message', event => {
         // `partition`: the label the asset cache serves right now (sw-asset-cache.js), null before any lookup.
         // `client`: the offline client's complete version whose shell is in its cache, else null. Read before answering,
         // so a worker that just started never reports null for a version it has.
-        lifetime(event, presentClient().then(record => reply(event,
-            { proto: PROTO, type: 'sw-info', shell: CACHE, partition: assetPartitions.current, client: record ? record.version : null })));
+        // Every page asks this, so it also tops up what the install missed of the shell (offline.html above all).
+        lifetime(event, Promise.all([presentClient().then(record => reply(event,
+            { proto: PROTO, type: 'sw-info', shell: CACHE, partition: assetPartitions.current, client: record ? record.version : null })), topUpShell()]));
     } else if (data.type === 'deploy-pending' || data.type === 'deploy-done') {
         // An announced deploy holds the offline client's hand-off until the new instance is seen (the offline client section).
         lifetime(event, data.type === 'deploy-pending' ? holdForDeploy() : endDeployHold());
@@ -220,7 +250,6 @@ self.addEventListener('fetch', event => {
     // Navigations (server-rendered): the network, falling back to the offline client or the offline page when it
     // fails (the offline client section below); a /v/ navigation is the client's shell.
     if (request.mode === 'navigate') {
-        const offlinePage = () => caches.match('/offline.html');
         event.respondWith(url.pathname.startsWith(CLIENT_SHELL_PATH)
             ? respondWithClientShell(request, offlinePage)
             : navigateWithHandoff(request, offlinePage));
@@ -259,7 +288,7 @@ self.addEventListener('fetch', event => {
  * and state cache.
  *
  * PRECACHE (the fill is the section after this one). A Server page posts `client-precache` once its core fill is
- * done (client-precache.js: not with Save-Data, once per client version). The worker then fetches the rendered shell `/v/` of the deploy it reaches,
+ * done (client-precache.js: not with Save-Data unless the device is a kiosk tablet, once per client version). The worker then fetches the rendered shell `/v/` of the deploy it reaches,
  * reads the version and the declared routes from the shell's metas, and fills `blocwerk-client-{version}` with every
  * file the shell names (its scripts and stylesheets, the import map's runtime modules) and every eagerly loaded file of
  * dotnet.js's boot manifest, then the shell itself. Every one of those URLs is fingerprinted, so a URL names one set of
@@ -267,10 +296,11 @@ self.addEventListener('fetch', event => {
  * (CLIENT_STATE_KEY): the completeness record, and the older versions are deleted. A fill that fails anywhere writes no
  * record; the next request resumes it (what is already in that version's cache is not fetched again).
  *
- * HAND-OFF. A Server-page navigation that fails (no response, a 502/503/504, or none within CLIENT_HANDOFF_MS) is redirected to
- * the client (`/v` + path + query) when clientHandoff allows it; otherwise the navigation keeps today's answer (the
- * network's, or offline.html when there is none). A slow server that answers is never cut off unless the client can
- * take over: the timer only ever adds the redirect, it never ends the wait on its own.
+ * HAND-OFF. A Server-page navigation that fails (no response, a proxy's 502/503/504 or a CDN's 52x, or none within
+ * CLIENT_HANDOFF_MS) is redirected to the client (`/v` + path + query; the landing pages / and /home to its wall list)
+ * when clientHandoff allows it. Otherwise a network error or a proxy's error gets offline.html (an announced deploy keeps
+ * the proxy's answer), and a server that answers within NAVIGATE_GIVE_UP_MS is never cut off: the 4 s timer only ever
+ * adds the redirect; past NAVIGATE_GIVE_UP_MS a navigation with no answer at all gets offline.html.
  *
  * WHO MAY BE HANDED OVER (clientServable): a complete version whose shell is really in its cache (a record alone is not
  * enough: the browser, or a fill racing a deletion, can leave a record without its cache), no locked partition on the
@@ -318,8 +348,20 @@ const CLIENT_3D_OPENED_KEY = '/__bw/client-3d-opened';
 // are not an outage. Persisted with its end in bw-sw-state, so a restarted worker keeps it, and never longer than this.
 const CLIENT_DEPLOY_KEY = '/__bw/deploy';
 const CLIENT_DEPLOY_MAX_MS = 3 * 60 * 1000;
-// Only a proxy's "the app is not there" hands over; a 500 is the app's own answer.
-const CLIENT_HANDOFF_STATUS = [502, 503, 504];
+// Only a proxy's "the app is not there" hands over; a 500 is the app's own answer. 502–504 are Caddy's (and any reverse
+// proxy's); 520–524 and 530 are a CDN's origin errors (Cloudflare), should one ever sit in front. The app itself never
+// answers a navigation with any of them, so one that the client cannot take gets offline.html, not the proxy's page.
+const CLIENT_HANDOFF_STATUS = [502, 503, 504, 520, 521, 522, 523, 524, 530];
+// A navigation still unanswered after this long is the server not answering at all (a host that drops packets): the
+// client, or offline.html, instead of the browser's own minutes-long wait (an installed app on Android shows only its
+// splash logo meanwhile). Well past the first byte of any page the app renders.
+const NAVIGATE_GIVE_UP_MS = 15000;
+// Endpoints that are no page (health, metrics, the liveness beacon, OAuth's token endpoint, the well-known documents,
+// robots.txt, the favicon and the manifest): opened in a tab, they get the network's own answer, a 5xx included, and
+// offline.html only when there is no answer at all, as before the hand-off.
+const NOT_A_PAGE = /^\/(?:health|metrics|alive|token|\.well-known|robots\.txt|favicon\.ico|manifest\.webmanifest)(?:\/|$)/i;
+// The Server's landing pages, which redirect to a wall or the wall list: offline they open the client's wall list.
+const CLIENT_LANDING = /^\/(?:home\/?)?$/i;
 // First segments never handed to the client: sign-in, sign-out and OAuth flows, account and settings, kiosk pairing,
 // the dev and admin tools, and /v itself.
 const CLIENT_NEVER = /^\/(?:account|signin[^/]*|signout[^/]*|signing-in|signed-out|signup|login|logout|oauth[^/]*|forgot-password|reset-password|access-denied|join|kiosk|dev|settings|administration|v)(?:\/|$)/i;
@@ -455,9 +497,13 @@ function clientTarget(path) {
     if (CLIENT_NEVER.test(url.pathname)) {
         return Promise.resolve(null);
     }
-    return servableClient()
-        .then(record => (record && record.routes.some(route => clientRouteCovers(route, url.pathname)) ? `/v${url.pathname}${url.search}` : null))
-        .catch(() => null);
+    return servableClient().then(record => clientPathFor(record, url)).catch(() => null);
+}
+
+// The /v/ twin of `url` when the record's routes cover it (a landing page as the wall list), else null.
+function clientPathFor(record, url) {
+    const pathname = CLIENT_LANDING.test(url.pathname) ? '/walls' : url.pathname;
+    return record && record.routes.some(route => clientRouteCovers(route, pathname)) ? `/v${pathname}${url.search}` : null;
 }
 
 // The client URL that takes over a failed navigation to `url`, or null.
@@ -465,10 +511,7 @@ function clientHandoff(url) {
     if (CLIENT_NEVER.test(url.pathname)) {
         return Promise.resolve(null);
     }
-    return Promise.all([servableClient(), deployHolding()]).then(([record, holding]) => {
-        const covered = !holding && !!record && record.routes.some(route => clientRouteCovers(route, url.pathname));
-        return covered ? `/v${url.pathname}${url.search}` : null;
-    });
+    return Promise.all([servableClient(), deployHolding()]).then(([record, holding]) => (holding ? null : clientPathFor(record, url)));
 }
 
 const clientRedirect = path => Response.redirect(new URL(path, self.location.origin).href, 302);
@@ -477,23 +520,47 @@ const clientRedirect = path => Response.redirect(new URL(path, self.location.ori
 // navigation from a /v/ page (the client's hand-back, PR 3.14) gets a 20 s timer, not 4 s: the client saw the server answer,
 // so a slow page is waited for and a tap does not bounce straight back into the client; but a connection that hangs
 // (no error) still ends in the client, not the browser's own minutes-long timeout.
+// What the client cannot take: a network error gets offline.html; a proxy's error page (CLIENT_HANDOFF_STATUS) gets it
+// too, except while an announced deploy holds (its 502s are today's answer); and a navigation that hangs gets it after
+// NAVIGATE_GIVE_UP_MS, unless a deploy holds, when it keeps waiting for the new instance.
 function navigateWithHandoff(request, offlinePage) {
     const url = new URL(request.url);
+    if (NOT_A_PAGE.test(url.pathname)) {
+        return fetch(request).catch(() => offlinePage());
+    }
     let target = null;
     const handoff = () => target || (target = clientHandoff(url).catch(() => null));
     const fromClient = typeof request.referrer === 'string' && request.referrer.startsWith(self.location.origin + CLIENT_SHELL_PATH);
+    const orOffline = fallback => deployHolding().then(holding => (holding ? fallback : offlinePage()));
     return new Promise(resolve => {
-        const timer = setTimeout(() => handoff().then(path => {
-            if (path) {
-                resolve(clientRedirect(path));
-            }
-        }), fromClient ? CLIENT_HANDOFF_FROM_CLIENT_MS : CLIENT_HANDOFF_MS);
+        const timers = [];
         const settle = answer => {
-            clearTimeout(timer);
+            timers.forEach(clearTimeout);
             resolve(answer);
         };
+        const handoffMs = fromClient ? CLIENT_HANDOFF_FROM_CLIENT_MS : CLIENT_HANDOFF_MS;
+        // The give-up never comes before the hand-off timer (a hand-back from /v/ waits its 20 s, and the give-up then
+        // is its one timer), and never on a CLIENT_NEVER route: a slow sign-in or OAuth callback is waited for, its
+        // one-time code is not thrown away.
+        const givesUp = !CLIENT_NEVER.test(url.pathname);
+        if (!givesUp || handoffMs < NAVIGATE_GIVE_UP_MS) {
+            timers.push(setTimeout(() => handoff().then(path => {
+                if (path) {
+                    settle(clientRedirect(path));
+                }
+            }), handoffMs));
+        }
+        if (givesUp) {
+            timers.push(setTimeout(() => handoff().then(path => (path ? settle(clientRedirect(path)) : deployHolding().then(holding => {
+                if (!holding) {
+                    offlinePage().then(settle);
+                }
+            }))), Math.max(NAVIGATE_GIVE_UP_MS, handoffMs)));
+        }
         fetch(request).then(
-            response => (CLIENT_HANDOFF_STATUS.includes(response.status) ? handoff().then(path => settle(path ? clientRedirect(path) : response)) : settle(response)),
+            response => (CLIENT_HANDOFF_STATUS.includes(response.status)
+                ? handoff().then(path => (path ? clientRedirect(path) : orOffline(response))).then(settle)
+                : settle(response)),
             () => handoff().then(path => settle(path ? clientRedirect(path) : offlinePage())));
     });
 }
@@ -664,11 +731,21 @@ function commitClient(shell) {
         .then(() => record.version);
 }
 
-function fillClient(group3d) {
+// Save-Data refuses the client's precache and 3D code, except on a kiosk tablet (`k-`): without them it has nothing to
+// show offline, and it is the gym's own screen, not a member's data plan.
+function saveDataRefuses() {
     const connection = self.navigator && self.navigator.connection;
-    if (connection && connection.saveData) {
-        return Promise.reject(new Error('client precache: Save-Data'));
+    if (!(connection && connection.saveData)) {
+        return Promise.resolve(false);
     }
+    return lastKnownPartition().then(partition => !/^k-[a-z2-7]{20}$/.test(partition || ''), () => true);
+}
+
+function fillClient(group3d) {
+    return saveDataRefuses().then(refused => (refused ? Promise.reject(new Error('client precache: Save-Data')) : fillClientNow(group3d)));
+}
+
+function fillClientNow(group3d) {
     return Promise.all([readClientShell(), completeClient(true), clientWants3d(group3d)])
         .then(([shell, record, with3d]) => caches.open(clientCacheName(shell.version)).then(cache => cache.match(clientUrl(CLIENT_SHELL_PATH))
             .then(present => (record && record.version === shell.version && present
@@ -695,10 +772,10 @@ function precacheClient(group3d) {
 // `client-store-3d`: marks that a 3D view was opened online here, then stores the 3D code into the complete version
 // (after a running fill, so it lands in the version that fill completes). Resolves whether the code is all there.
 function storeClient3d() {
-    const connection = self.navigator && self.navigator.connection;
-    if (connection && connection.saveData) {
-        return Promise.resolve(false);
-    }
+    return saveDataRefuses().then(refused => (refused ? false : storeClient3dNow()));
+}
+
+function storeClient3dNow() {
     if (!clientState.storing3d) {
         clientState.storing3d = caches.open(ASSET_STATE_CACHE)
             .then(state => state.put(CLIENT_3D_OPENED_KEY, new Response(String(Date.now()))))

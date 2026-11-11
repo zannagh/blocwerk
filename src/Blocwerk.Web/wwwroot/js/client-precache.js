@@ -1,9 +1,10 @@
 /*
  * bwClientPrecache — the page's half of the offline client's precache (plan 2026-10-22 §1, PR 3.9).
  *
- * The page triggers it, the worker does it (service-worker.js, the offline client section). Once this page's asset-cache start and its first fill
- * are done, and only when:
- *   - the page names a client version (its `bw-client-version` meta) and Save-Data is off (any connection type counts);
+ * The page triggers it, the worker does it (service-worker.js, the offline client section). Once this page's asset-cache start
+ * is done (the walls' manifests and data documents) and its first fill is done or has run FILL_WAIT_MS, and only when:
+ *   - the page names a client version (its `bw-client-version` meta) and Save-Data is off (any connection type counts),
+ *     except on a kiosk tablet (`k-…`), which ignores Save-Data: without the client it has nothing to show offline;
  *   - the page caches for a person (`u-…`), a share viewer (`anon`) or a kiosk tablet (`k-…`, PR 3.15) with a durable
  *     ledger, and the device holds at least one wall of that partition, so there is something to open offline (a kiosk
  *     that may keep nothing is `none`, and is never precached);
@@ -13,9 +14,10 @@
  * it posts `client-precache` and records the outcome in localStorage (MARKER_KEY: `{ version, at, complete, with3d, at3d }`), the
  * page's completeness marker. The worker's own record decides the hand-off; the marker only spares the repeat.
  * THE 3D CODE (PR 3.13). The message's `group3d` says whether the 3D view's code (~920 KiB) comes along: `precache` on a
- * desktop with 3D kept; `opened` on a phone or tablet (bwAssetPlan.isMobile, the asset cache's own test: no background
- * 3D there), where the worker takes it only once a 3D view was opened online on the device; `none` with the 3D opt-out,
- * unless a wall of the partition is saved for offline 3D (`keepOffline` and `save3d`): that device is `opened`. The
+ * kiosk tablet, always, and on a desktop with the 3D opt-in; `opened` on a phone or tablet (bwAssetPlan.isMobile, the
+ * asset cache's own test: no background 3D there), where the worker takes it only once a 3D view was opened online on
+ * the device; `none` without the 3D opt-in, unless a wall of the partition is saved for offline 3D (`keepOffline` and
+ * `save3d`): that device is `opened`. The
  * worker answers `with3d` (all the 3D code is there); a desktop whose complete version lacks it asks again, at most
  * once per RETRY_MS (`at3d`). `store3d()` is a 3D view opened online (asset-3d.js): unless the device is `none`, the
  * worker stores the 3D code into the complete version and keeps it from then on.
@@ -32,6 +34,10 @@ window.bwClientPrecache = (function (win) {
     const RETRY_MS = 10 * 60 * 1000;
     // A cold 2–3 MB fill on a slow connection; the worker keeps going after the page stops waiting.
     const ANSWER_MS = 5 * 60 * 1000;
+    // How long the precache waits for the page's image fill. Not for all of it: a member's first fill can take minutes
+    // on a phone, and an app opened for a minute at a time then never got the client (an outage showed the splash logo
+    // until the connection timed out). The walls' data documents are in by then; the images keep filling beside it.
+    const FILL_WAIT_MS = 20000;
     const VERSION = /^[0-9a-f]{16}$/;
     const LABEL = /^(anon|[uk]-[a-z2-7]{20})$/;
 
@@ -49,7 +55,7 @@ window.bwClientPrecache = (function (win) {
 
     const saveData = () => !!(win.navigator.connection && win.navigator.connection.saveData);
 
-    // A wall of the partition saved for offline 3D: its 3D shows whatever the opt-out says (client-3d.js).
+    // A wall of the partition saved for offline 3D: its 3D shows whatever the 3D setting says (client-3d.js).
     async function savedFor3d(cache) {
         const s = cache.state();
         if (!s.env || s.env.ledger.degraded || !LABEL.test(s.active || '')) {
@@ -58,8 +64,13 @@ window.bwClientPrecache = (function (win) {
         return (await s.env.ledger.wallsOf(s.active)).some(row => row.keepOffline && row.save3d);
     }
 
+    const kioskPage = cache => KIOSK_LABEL.test(cache.state().active || '');
+
     // The 3D code's part of the precache (see the header).
     async function group3d(cache) {
+        if (kioskPage(cache)) {
+            return 'precache';
+        }
         if (typeof cache.keep3d === 'function' && !cache.keep3d()) {
             return (await savedFor3d(cache)) ? 'opened' : 'none';
         }
@@ -96,11 +107,14 @@ window.bwClientPrecache = (function (win) {
 
     async function run(cache, store) {
         const version = pageVersion();
-        if (!version || saveData() || !cache || !store) {
+        if (!version || !cache || !store) {
             return 'skipped';
         }
         await cache.ready;
-        await cache.filled();
+        if (saveData() && !kioskPage(cache)) {
+            return 'skipped';
+        }
+        await Promise.race([cache.filled(), new Promise(resolve => win.setTimeout(resolve, FILL_WAIT_MS))]);
         if (!(await hasOfflineWalls(cache))) {
             return 'skipped';
         }
@@ -161,7 +175,7 @@ window.bwClientPrecache = (function (win) {
         return state.done;
     }
 
-    // A 3D view opened online (see the header); nothing to wait for. Never with the opt-out and no wall saved for 3D.
+    // A 3D view opened online (see the header); nothing to wait for. Never without the opt-in and no wall saved for 3D.
     async function store3d() {
         const cache = win.bwAssetCache;
         const store = win.bwAssetStore;

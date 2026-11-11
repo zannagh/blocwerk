@@ -176,10 +176,10 @@ window.bwPrefs = (function () {
             writeCookie(TOOLBAR_PLACEMENT_KEY, v);
             return v;
         },
-        // Keep 3D data on this device (asset-cache.js). The one cache setting: wall data is always kept, 3D is kept
-        // unless this says "off". A cookie, so 2.9's settings page can read it on the first paint.
+        // Keep 3D data on this device (asset-cache.js). The one cache setting: wall data is always kept, 3D only when
+        // this says "on" (an opt-in; a kiosk keeps 3D whatever it says). A cookie, so the offline client reads it too.
         getCache3d: function () {
-            return readCookie(CACHE_3D_KEY) !== 'off';
+            return readCookie(CACHE_3D_KEY) === 'on';
         },
         setCache3d: function (on) {
             writeCookie(CACHE_3D_KEY, on ? 'on' : 'off');

@@ -1,6 +1,8 @@
 // The worker's hand-off of a failed Server-page navigation to the offline client (service-worker.js, Phase 3 PR 3.9):
-// a network error, a 502/503/504 or the 4 s timer redirect to /v/ only for a complete, cached, covered version on a
-// u-/anon/k- partition with no lock and no announced deploy; everything else keeps today's answer.
+// a network error, a proxy's 502/503/504 (or a CDN's 52x), the 4 s timer or the 15 s give-up redirect to /v/ only for a
+// complete, cached, covered version on a u-/anon/k- partition with no lock and no announced deploy (the landing pages /
+// and /home as the wall list). Otherwise a network error, a proxy's error or the give-up gets offline.html, except that
+// an announced deploy keeps the proxy's answer and waits; the app's own answers are never replaced.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadWorker, dispatchFetch, response, ORIGIN } from './fixtures/sw-sandbox.mjs';
@@ -88,9 +90,9 @@ test('a kiosk copy past 7 days, stamped for another label, from the future, or n
     }
 });
 
-test('only a 502, 503 or 504 is handed over; a 500 or any other status is the server answer', async () => {
+test("only a proxy's error (502–504, a CDN's 52x/530) is handed over; a 500 or any other status is the server answer", async () => {
     const worker = await completeWorker();
-    for (const status of [502, 503, 504]) {
+    for (const status of [502, 503, 504, 520, 521, 522, 523, 524, 530]) {
         worker.routes['/walls/W1'] = () => response(status, 'proxy');
         assert.equal((await navigate(worker, '/walls/W1')).status, 302, String(status));
     }
@@ -100,8 +102,24 @@ test('only a 502, 503 or 504 is handed over; a 500 or any other status is the se
         assert.equal(served.status, status, String(status));
         assert.equal(await served.text(), 'the app said so', String(status));
     }
-    worker.routes['/settings'] = () => response(503, 'Unavailable');
-    assert.equal((await navigate(worker, '/settings')).status, 503, 'an uncovered route keeps the 503');
+    for (const status of [502, 503, 504, 522]) {
+        worker.routes['/settings'] = () => response(status, "the proxy's page");
+        assert.equal(await (await navigate(worker, '/settings')).text(), 'offline page', `an uncovered route gets offline.html, not the proxy's ${status}`);
+    }
+    worker.routes['/walls/W1'] = () => response(502, "the proxy's page");
+    assert.equal(await (await navigate(workerWith(), '/walls/W1')).text(), 'offline page', 'no client on the device: offline.html too');
+});
+
+test("the landing pages / and /home open the client's wall list when the client covers it", async () => {
+    const worker = workerWith();
+    deploy(worker.routes, V1, { shell: shellHtml(V1, 'walls walls/{WallId:guid}') });
+    await precache(worker);
+    for (const [path, target] of [['/', '/v/walls'], ['/home', '/v/walls'], ['/?utm=x', '/v/walls?utm=x']]) {
+        assert.equal((await navigate(worker, path)).headers.get('location'), ORIGIN + target, path);
+    }
+    worker.routes['/'] = () => response(502, "the proxy's page");
+    assert.equal((await navigate(worker, '/')).headers.get('location'), `${ORIGIN}/v/walls`, 'a 502 at the root too');
+    assert.equal(await (await navigate(worker, '/homes')).text(), 'offline page');
 });
 
 const post = (worker, type) => {
@@ -173,6 +191,95 @@ test('the 4 s timer redirects a hanging navigation only when the client can take
     await tick();
     release();
     assert.equal(await (await slow.settle()).text(), 'slow settings', 'an uncovered route waits for the server');
+});
+
+test('a navigation that hangs 15 s gets offline.html when the client cannot take it, but waits during a deploy', async () => {
+    const timers = [];
+    const worker = workerWith({ timers });
+    deploy(worker.routes, V1);
+    assert.equal((await precache(worker)).complete, true);
+    worker.routes['/profile'] = () => new Promise(() => undefined);
+
+    const hanging = dispatchFetch(worker, '/profile', { mode: 'navigate' });
+    await tick();
+    timers.filter(t => t.ms === 4000).at(-1).fn();
+    timers.filter(t => t.ms === 15000).at(-1).fn();
+    assert.equal(await (await hanging.settle()).text(), 'offline page');
+
+    await post(worker, 'deploy-pending');
+    let release;
+    worker.routes['/profile'] = () => new Promise(resolve => { release = () => resolve(response(200, 'the new instance')); });
+    const held = dispatchFetch(worker, '/profile', { mode: 'navigate' });
+    await tick();
+    timers.filter(t => t.ms === 15000).at(-1).fn();
+    for (let i = 0; i < 5; i++) {
+        await tick();
+    }
+    release();
+    assert.equal(await (await held.settle()).text(), 'the new instance');
+});
+
+test('with offline.html missing from the cache a failed navigation still gets a page, and the next sw-info adds it back', async () => {
+    const worker = workerWith();
+    worker.stored.get('blocwerk-shell-v5').delete(abs('/offline.html'));
+    worker.stored.get('blocwerk-shell-v5').delete('/offline.html');
+    const served = await navigate(worker, '/walls/W1');
+    assert.match(served.headers.get('content-type'), /^text\/html/);
+    assert.match(await served.text(), /You're offline/);
+
+    await info(worker);
+    assert.ok((worker.caches.added || []).some(entry => entry.startsWith('blocwerk-shell-v5 ') && entry.endsWith('/offline.html')));
+});
+
+test('the 15 s give-up neither cuts a hand-back from /v/ short nor touches a sign-in or OAuth callback', async () => {
+    const timers = [];
+    const worker = workerWith({ timers });
+    deploy(worker.routes, V1);
+    assert.equal((await precache(worker)).complete, true);
+    let release;
+    const slow = text => () => new Promise(resolve => { release = () => resolve(response(200, text)); });
+
+    worker.routes['/walls/W1'] = slow('the server page');
+    const first = timers.length;
+    const back = dispatchFetch(worker, '/walls/W1', { mode: 'navigate', referrer: `${ORIGIN}/v/walls/W1` });
+    await tick();
+    assert.deepEqual(timers.slice(first).map(t => t.ms), [20000], 'one timer, at the 20 s hand-back');
+    release();
+    assert.equal(await (await back.settle()).text(), 'the server page');
+
+    for (const path of ['/signin-oidc', '/account/callback', '/join/tok', '/kiosk/users']) {
+        worker.routes[path] = slow('the callback page');
+        const before = timers.length;
+        const callback = dispatchFetch(worker, path, { mode: 'navigate' });
+        await tick();
+        assert.equal(timers.slice(before).filter(t => t.ms === 15000).length, 0, path);
+        timers.slice(before).forEach(t => t.fn());
+        await tick();
+        release();
+        assert.equal(await (await callback.settle()).text(), 'the callback page', path);
+    }
+});
+
+test("a page that is no UI keeps the app's 5xx: /health's 503 is never offline.html", async () => {
+    const worker = await completeWorker();
+    for (const path of ['/health', '/health/ready-to-deploy', '/alive', '/metrics']) {
+        worker.routes[path] = () => response(503, 'unhealthy');
+        const served = await navigate(worker, path);
+        assert.equal(served.status, 503, path);
+        assert.equal(await served.text(), 'unhealthy', path);
+    }
+});
+
+test('activation never waits for the shell top-up, so a dead host cannot hold navigations back', async () => {
+    const worker = workerWith();
+    worker.stored.get('blocwerk-shell-v5').delete('/offline.html');
+    worker.caches.addHangs = true;
+    let pending;
+    worker.listeners.activate({ waitUntil: p => { pending = p; } });
+    const settled = await Promise.race([pending.then(() => 'activated'), new Promise(resolve => setTimeout(() => resolve('stuck'), 200))]);
+    assert.equal(settled, 'activated');
+    assert.equal(worker.self.claimed, true);
+    assert.ok(worker.caches.added.some(entry => entry.endsWith('/offline.html')), 'the top-up still ran');
 });
 
 test('a healthy navigation is the network answer, whatever the client state', async () => {

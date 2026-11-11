@@ -2,13 +2,16 @@
 // the device: a view3d document of Alpha in the partition's -3d cache and listed in the wall row's `docs`, its texture,
 // mask and splat level fetched through the worker (which caches them). Then: offline, the 3D route opens in the client
 // from the device alone, in Schematic, and photo-real waits for the client's first ~20 s (shortened here); a desktop
-// precaches the 3D code, a phone and the 3D opt-out do not; on a phone the client shows no 3D without the code, a 3D
-// view opened on a Server page stores it, and 3D then opens offline; with the opt-out a wall saved for 3D keeps the code
-// across a version; the 3D opt-out shows no 3D; a model not cached in full says so and loads no 3D code.
+// with the 3D opt-in (the `blocwerk-cache-3d=on` cookie) precaches the 3D code, a phone and a device without the opt-in
+// do not; on a phone the client shows no 3D without the code, a 3D view opened on a Server page stores it, and 3D then
+// opens offline; without the opt-in a wall saved for 3D keeps the code across a version; without the opt-in no 3D shows;
+// a model not cached in full says so and loads no 3D code.
 import { test, expect, assetPath, partitionOf, controlled, settled } from '../harness/fixtures.mjs';
-import { precacheAsAlice, expectClient, declareRoutes, pageVersion, precacheOutcome, clientRecord } from '../harness/client.mjs';
+import { precacheAsAlice, expectClient, declareRoutes, pageVersion, precacheOutcome, clientRecord, held3d } from '../harness/client.mjs';
 
 const DOC = '3d'.repeat(32);
+// The viewer's 3D opt-in (Settings → Offline storage → Keep 3D data offline): off on a fresh device.
+const optIn3d = (context, baseURL) => context.addCookies([{ name: 'blocwerk-cache-3d', value: 'on', url: baseURL }]);
 const HOLD_MS = 6000;
 const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
 const THREE_D = /\/js\/wall3d|\/lib\/(three|spark)\/|\/d\/view3d\//;
@@ -52,21 +55,12 @@ async function plant3d(page, wall, skip = []) {
 }
 
 const loaded3d = page => page.evaluate(re => performance.getEntriesByType('resource').map(e => e.name).filter(n => new RegExp(re).test(n)), THREE_D.source);
-// The 3D code in the complete client version: the import map's modules outside /v/ (the worker's 3D group), and how many
-// of them its cache holds.
-const held3d = page => page.evaluate(async () => {
-    const record = await (await caches.match('/__bw/client', { cacheName: 'bw-sw-state' })).json();
-    const cache = await caches.open(`blocwerk-client-${record.version}`);
-    const html = await (await cache.match('/v/')).text();
-    const imports = JSON.parse(/<script type="importmap"[^>]*>([\s\S]*?)<\/script>/.exec(html)[1]).imports;
-    const group = Object.entries(imports).filter(([name]) => !name.startsWith('/v/')).map(([, url]) => url);
-    return { group: group.length, held: (await Promise.all(group.map(url => cache.match(url)))).filter(Boolean).length };
-});
 
 const mode = page => page.evaluate(() => document.querySelector('.wall3d-stage-el')?.__wall3d?.state().mode ?? null);
 
-test('offline, the 3D route opens from the device in Schematic, and photo-real waits for the hold', async ({ page, context, world, server }) => {
+test('offline, the 3D route opens from the device in Schematic, and photo-real waits for the hold', async ({ page, context, world, server, baseURL }) => {
     const alpha = world.walls.alpha;
+    await optIn3d(context, baseURL);
     await context.addInitScript(ms => { window.__bwClient3dHoldMs = ms; }, HOLD_MS);
     expect(await precacheAsAlice(page, world, server)).toBe('complete');
     await plant3d(page, alpha);
@@ -90,20 +84,20 @@ test('offline, the 3D route opens from the device in Schematic, and photo-real w
     expect((await server.log(mark)).filter(e => !e.fault), 'nothing reached the server').toEqual([]);
 });
 
-test('a desktop precaches the 3D code with the client', async ({ page, world, server }) => {
+test('a desktop with the 3D opt-in precaches the 3D code with the client', async ({ page, context, world, server, baseURL }) => {
+    await optIn3d(context, baseURL);
     expect(await precacheAsAlice(page, world, server)).toBe('complete');
     const { group, held } = await held3d(page);
     expect(group).toBeGreaterThan(40);
     expect(held).toBe(group);
 });
 
-test('with the 3D opt-out the precache leaves the 3D code out', async ({ page, context, world, server, baseURL }) => {
-    await context.addCookies([{ name: 'blocwerk-cache-3d', value: 'off', url: baseURL }]);
+test('without the 3D opt-in the precache leaves the 3D code out', async ({ page, world, server }) => {
     expect(await precacheAsAlice(page, world, server)).toBe('complete');
     expect((await held3d(page)).held).toBe(0);
 });
 
-test('with the opt-out, a wall saved for offline 3D keeps the 3D code across a new client version, and opens offline', async ({ page, context, world, server, baseURL }) => {
+test('without the opt-in, a wall saved for offline 3D keeps the 3D code across a new client version, and opens offline', async ({ page, context, world, server, baseURL }) => {
     const alpha = world.walls.alpha;
     await context.addCookies([{ name: 'blocwerk-cache-3d', value: 'off', url: baseURL }]);
     expect(await precacheAsAlice(page, world, server)).toBe('complete');
@@ -118,7 +112,7 @@ test('with the opt-out, a wall saved for offline 3D keeps the 3D code across a n
     }, [partition, alpha.id]);
     await expect.poll(async () => { const h = await held3d(page); return h.held === h.group; }).toBe(true);
 
-    // The next deploy is a new client version: the device, opted out but with a wall saved for 3D, carries the code.
+    // The next deploy is a new client version: the device, not opted in but with a wall saved for 3D, carries the code.
     const v1 = await pageVersion(page);
     const bump = [v1, v1.split('').reverse().join('')];
     await server.faults([declareRoutes(undefined, [bump]), { path: '^/walls/', rewrite: bump }]);
@@ -137,8 +131,9 @@ test('with the opt-out, a wall saved for offline 3D keeps the 3D code across a n
     await expect(page.locator('.wall3d-stage-el canvas.w3d-canvas')).toHaveCount(1);
 });
 
-test('offline, 3D data with no 3D code on the device is "not saved", and loads no 3D code', async ({ page, context, world, server }) => {
+test('offline, 3D data with no 3D code on the device is "not saved", and loads no 3D code', async ({ page, context, world, server, baseURL }) => {
     const alpha = world.walls.alpha;
+    await optIn3d(context, baseURL);
     await context.addInitScript(ua => Object.defineProperty(navigator, 'userAgent', { get: () => ua }), IPHONE);
     expect(await precacheAsAlice(page, world, server)).toBe('complete');
     await plant3d(page, alpha);
@@ -149,8 +144,9 @@ test('offline, 3D data with no 3D code on the device is "not saved", and loads n
     expect(await loaded3d(page)).toEqual([]);
 });
 
-test('on a phone nothing 3D is precached or loads in the client; a 3D view opened on a Server page stores the 3D code, then 3D opens offline', async ({ page, context, world, server }) => {
+test('on a phone nothing 3D is precached or loads in the client; a 3D view opened on a Server page stores the 3D code, then 3D opens offline', async ({ page, context, world, server, baseURL }) => {
     const alpha = world.walls.alpha;
+    await optIn3d(context, baseURL);
     await context.addInitScript(ua => Object.defineProperty(navigator, 'userAgent', { get: () => ua }), IPHONE);
     expect(await precacheAsAlice(page, world, server)).toBe('complete');
     expect((await held3d(page)).held, 'no 3D code in the precache').toBe(0);
@@ -178,7 +174,7 @@ test('on a phone nothing 3D is precached or loads in the client; a 3D view opene
     expect((await server.log(offline)).filter(e => !e.fault), 'nothing reached the server').toEqual([]);
 });
 
-test('with the 3D opt-out, the client offers no 3D and the 3D route says it is off', async ({ page, context, world, server, baseURL }) => {
+test('without the 3D opt-in, the client offers no 3D and the 3D route says it is off', async ({ page, context, world, server, baseURL }) => {
     const alpha = world.walls.alpha;
     expect(await precacheAsAlice(page, world, server)).toBe('complete');
     await plant3d(page, alpha);
@@ -191,12 +187,13 @@ test('with the 3D opt-out, the client offers no 3D and the 3D route says it is o
 
     await expectClient(page, `/walls/${alpha.id}/3d`);
     await expect(page.locator('.bw-client-3d')).toHaveAttribute('data-bw-3d', 'off');
-    await expect(page.locator('.bw-client-3d')).toContainText('3D is turned off on this device');
+    await expect(page.locator('.bw-client-3d')).toContainText('3D is not kept on this device');
     expect(await loaded3d(page)).toEqual([]);
 });
 
-test('a model not cached in full is "not saved", with the Server page, and loads no 3D code', async ({ page, world, server }) => {
+test('a model not cached in full is "not saved", with the Server page, and loads no 3D code', async ({ page, context, world, server, baseURL }) => {
     const alpha = world.walls.alpha;
+    await optIn3d(context, baseURL);
     expect(await precacheAsAlice(page, world, server)).toBe('complete');
     await plant3d(page, alpha, [alpha.mask]);
     await server.unreachable();

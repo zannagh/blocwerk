@@ -51,7 +51,7 @@ export function manifest(wallId, assets, extra = {}) {
 /**
  * opts: { label (meta content, null = no meta), path, search, caches, routes: { path → fn(init, url) }, partitionOfWorker,
  *         swReply ('v4' | 'none' | 'v3' | null = no controller), maxTouchPoints, coarse (a coarse pointer), refuse (worker posts asset-refused), silent (worker
- *         neither stores nor answers: a slow write), prefs3d, ua, quota, ledger, user, connection, persisted (persisted()'s answer),
+ *         neither stores nor answers: a slow write), prefs3d (or realPrefs: prefs.js itself, with `cookie`), ua, quota, ledger, user, connection, persisted (persisted()'s answer),
  *         gate (awaited before an asset fetch), bus (a shared Set: BroadcastChannel between pages given the same one),
  *         degraded (the ledger's refused-storage fallback instead of the plain memory ledger), storage (a Map shared as localStorage between pages),
  *         storageBlocked (localStorage throws), signOut (the meta's data-signout), banner (an #bw-offline-lock element) }
@@ -162,6 +162,8 @@ export function loadPage(opts = {}) {
         },
     };
 
+    // The 3D opt-in (bwPrefs.getCache3d): a device that turned it on, unless a test says otherwise (prefs.js's own default
+    // is off; asset-cache-kiosk.test.mjs checks it).
     let keep3d = opts.prefs3d === undefined ? true : opts.prefs3d;
     const sandbox = {
         routes: opts.routes || {},
@@ -213,11 +215,23 @@ export function loadPage(opts = {}) {
     if (opts.deployDrafts) {
         sandbox.bwDeployDrafts = opts.deployDrafts;
     }
+    if (opts.realPrefs) {
+        // The real prefs.js instead of the bwPrefs stand-in, over a cookie jar that starts as `opts.cookie`.
+        delete sandbox.bwPrefs;
+        const jar = new Map((opts.cookie || '').split(';').map(c => c.trim()).filter(Boolean).map(c => c.split('=')));
+        Object.defineProperty(sandbox.document, 'cookie', {
+            get: () => [...jar].map(([k, v]) => `${k}=${v}`).join('; '),
+            set: value => { const [pair] = value.split(';'); const at = pair.indexOf('='); jar.set(pair.slice(0, at), pair.slice(at + 1)); },
+        });
+    }
     sandbox.window = sandbox;
     const context = vm.createContext(sandbox);
     if (opts.ledger) {
         // A ledger carried over from an earlier page load of the same browser.
         context.__ledger = opts.ledger;
+    }
+    if (opts.realPrefs) {
+        vm.runInContext(readFileSync(new URL('../../../src/Blocwerk.Web/wwwroot/js/prefs.js', import.meta.url), 'utf8'), context, { filename: 'prefs.js' });
     }
     for (const name of MODULES) {
         vm.runInContext(readFileSync(moduleUrl(name), 'utf8'), context, { filename: name });

@@ -1,6 +1,8 @@
 # A kiosk tablet without a connection
 
-A paired kiosk tablet keeps a read-only copy of **its own wall** on the device. When the gym's connection drops, or the server is restarting, the tablet keeps showing that wall instead of an error page. This uses the same offline view as everyone else's phone: the page under `/v/`.
+A paired kiosk tablet keeps a read-only copy of **its own wall** on the device, **3D included**. When the gym's connection drops, or the server is restarting, the tablet keeps showing that wall instead of an error page. This uses the same offline view as everyone else's phone: the page under `/v/`.
+
+There is no setting for this. A tablet always keeps its wall and its wall's 3D model, even though it is a tablet and even with the browser's data saver (Save-Data) on. On a signed-in person's own device the wall is kept offline by default too, but the 3D model only when they turn on **Keep 3D data offline** in Settings → Offline storage, or save one wall's 3D from its 3D view.
 
 ## What the tablet shows offline
 
@@ -37,6 +39,8 @@ A paired kiosk tablet keeps a read-only copy of **its own wall** on the device. 
 * The service worker hands a failed page load over to `/v/` for `k-` partitions, as it does for signed-in people (`u-`) and share links (`anon`).
   * For `k-` it does so only while the worker's stamp `/__bw/kiosk-fresh` names that partition and is at most 7 days old.
   * Every online page of the tablet writes that stamp after its fill (`client-precache.js`), with the time of the last successful manifest round.
+* A `k-` page precaches the offline view with its 3D code (`group3d: precache`) and fills the wall's 3D in the background, whatever the device, the 3D setting or Save-Data says (`asset-cache.js`, `client-precache.js`). The offline view shows that 3D without the 3D opt-in (`client-3d.js`).
+* Its photos follow the same plan as any phone or tablet: the wall's photos at the screen's width, and the gallery's 640 px grid only, never the full-size originals (`asset-plan.js`). Only the 3D ignores the tablet and connection rules.
 * The offline page reads a `k-` partition only when all of these hold:
   * the partition holds exactly one wall;
   * that wall's document is in the cache;

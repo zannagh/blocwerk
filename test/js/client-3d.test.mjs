@@ -1,11 +1,11 @@
 // The offline client's 3D reads (Phase 3 PR 3.13, client-3d.js): 3D shows only when the device holds the view3d
-// document AND every texture and mask it draws (cache.match, never a fetch); the 3D opt-out hides it unless the wall
-// is saved for offline 3D; photo-real only with a cached splat level, and the view's ladder keeps only cached levels;
+// document AND every texture and mask it draws (cache.match, never a fetch); without the 3D opt-in it is hidden unless
+// the wall is saved for offline 3D or the device is a kiosk tablet; photo-real only with a cached splat level, and the view's ladder keeps only cached levels;
 // the share token rides on every URL; a boulder lights its holds by role; a lock, another label or another share
 // link's wall reads nothing. Run by `node --test test/js/`.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { USER_A, USER_B, ORIGIN } from './fixtures/page-sandbox.mjs';
+import { USER_A, USER_B, KIOSK, ORIGIN } from './fixtures/page-sandbox.mjs';
 import { W1, W2 } from './fixtures/asset-pages.mjs';
 import { TOKEN, plain } from './fixtures/client-device.mjs';
 import { device3d, DOC, OLD_DOC, TEXTURE, MASK, LEVELS } from './fixtures/client-3d-device.mjs';
@@ -66,15 +66,24 @@ test('the view keeps only the cached splat levels, so photo-real never downloads
     assert.deepEqual(plain(view.splatLevels.map(l => l.url)), [`/api/walls/${W1}/a/${LEVELS[0]}`]);
 });
 
-test('the 3D opt-out shows no 3D, whatever is cached; a wall saved for offline 3D still shows', async () => {
-    const off = await device3d(USER_A, { cookie: 'theme=dark; blocwerk-cache-3d=off' });
-    assert.deepEqual(plain(await off.three.status(USER_A, W1)), { state: 'off', sha: null, photoReal: false });
-    assert.equal(await off.three.view(USER_A, W1, DOC, null, null), null);
+test('without the 3D opt-in no 3D shows, whatever is cached; a wall saved for offline 3D still shows', async () => {
+    for (const cookie of ['', 'theme=dark; blocwerk-cache-3d=off']) {
+        const off = await device3d(USER_A, { cookie });
+        assert.deepEqual(plain(await off.three.status(USER_A, W1)), { state: 'off', sha: null, photoReal: false }, cookie);
+        assert.equal(await off.three.view(USER_A, W1, DOC, null, null), null);
+    }
 
     const saved = await device3d(USER_A, { cookie: 'blocwerk-cache-3d=off', save3d: true });
     assert.deepEqual(plain(await saved.three.status(USER_A, W1)), ready(true));
     const on = await device3d(USER_A, { cookie: 'blocwerk-cache-3d=on' });
     assert.deepEqual(plain(await on.three.status(USER_A, W1)), ready(true));
+});
+
+test('a kiosk tablet shows its cached 3D with no opt-in, whatever the cookie says', async () => {
+    for (const cookie of ['', 'blocwerk-cache-3d=off']) {
+        const { three } = await device3d(KIOSK, { cookie, walls: [W1] });
+        assert.deepEqual(plain(await three.status(KIOSK, W1)), ready(true), cookie);
+    }
 });
 
 test('a lock, another label than the active one, or a refused ledger reads nothing', async () => {

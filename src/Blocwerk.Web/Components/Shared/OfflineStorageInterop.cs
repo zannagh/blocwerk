@@ -14,7 +14,7 @@ internal sealed class OfflineStorageInterop(IJSRuntime js)
 {
     /// <summary>What the card shows when the browser could not answer: no caching, 3D at its default.</summary>
     public static OfflineStorageFacts Unavailable { get; } =
-        new(false, false, false, true, false, false, false, null, false, 0, []);
+        new(false, false, false, false, false, false, false, null, false, 0, []);
 
     /// <summary>Whether <paramref name="ex"/> is an interop failure the card absorbs (the repo's pattern).</summary>
     public static bool IsInteropFailure(Exception ex) =>

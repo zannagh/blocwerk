@@ -12,19 +12,21 @@ const VERSION = 'abcdef0123456789';
 const ALICE = 'u-' + 'a'.repeat(20);
 
 // `ua` loads asset-plan.js (bwAssetPlan.isMobile) with that user agent; without it the page has no plan (a phone's rule).
-function precachePage({ version = VERSION, saveData = false, active = ALICE, walls = 1, degraded = false, worker = { client: null }, answer, storage = new Map(), fetchedAt = [], ua = null, keep3d = true, saved3d = false } = {}) {
+function precachePage({ version = VERSION, saveData = false, active = ALICE, walls = 1, degraded = false, worker = { client: null }, answer, storage = new Map(), fetchedAt = [], ua = null, keep3d = true, saved3d = false, filled = () => Promise.resolve() } = {}) {
     const asked = [];
+    const timers = [];
     const fields = [];
     const state = new Map();
     const caches = { open: async name => ({ put: async (key, response) => state.set(`${name} ${key}`, await response.text()) }) };
     const win = {
         __bwAssetCacheManual: true,
+        setTimeout: (fn, ms) => timers.push({ fn, ms }),
         document: { querySelector: () => (version === null ? null : { getAttribute: () => version }) },
         navigator: { connection: { saveData }, userAgent: ua || '', maxTouchPoints: 0 },
         localStorage: { getItem: k => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v) },
         bwAssetCache: {
             ready: Promise.resolve(),
-            filled: () => Promise.resolve(),
+            filled,
             keep3d: () => keep3d,
             state: () => ({ active, env: { ledger: { degraded, wallsOf: async () => Array.from({ length: walls }, (_, i) => ({ wallId: 'w' + i, fetchedAt: fetchedAt[i], keepOffline: saved3d && i === 0, save3d: saved3d && i === 0 })) } } }),
         },
@@ -46,7 +48,7 @@ function precachePage({ version = VERSION, saveData = false, active = ALICE, wal
         vm.runInContext(js('asset-plan.js'), context);
     }
     vm.runInContext(js('client-precache.js'), context);
-    return { win, asked, fields, storage, state, run: () => win.bwClientPrecache.boot() };
+    return { win, asked, fields, storage, state, timers, run: () => win.bwClientPrecache.boot() };
 }
 
 test('the page asks for the precache once its fill is done, and records the complete version', async () => {
@@ -54,6 +56,18 @@ test('the page asks for the precache once its fill is done, and records the comp
     assert.equal(await page.run(), 'complete');
     assert.deepEqual(page.asked, ['sw-info', 'client-precache']);
     assert.equal(JSON.parse(page.storage.get('bw-client-precache')).complete, true);
+});
+
+test('a fill still running after 20 s does not hold the precache back: an app opened for a minute gets the client', async () => {
+    const page = precachePage({ filled: () => new Promise(() => undefined) });
+    const done = page.run();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.deepEqual(page.asked, [], 'it waits for the fill at first');
+    const wait = page.timers.find(t => t.ms === 20000);
+    assert.ok(wait, 'for at most 20 s');
+    wait.fn();
+    assert.equal(await done, 'complete');
+    assert.deepEqual(page.asked, ['sw-info', 'client-precache']);
 });
 
 test('Save-Data, no version, no partition, a degraded ledger or no offline wall: no precache', async () => {
@@ -97,14 +111,23 @@ const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebK
 const ANDROID = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36';
 const group3dOf = page => page.fields.find(f => f.type === 'client-precache')?.group3d;
 
-test("the 3D code: a desktop precaches it, a phone or tablet only once 3D was opened there, the opt-out never", async () => {
+test("the 3D code: a desktop precaches it, a phone or tablet only once 3D was opened there, never without the opt-in", async () => {
     const cases = { desktop: [{ ua: DESKTOP }, 'precache'], iPhone: [{ ua: IPHONE }, 'opened'], Android: [{ ua: ANDROID }, 'opened'],
-        'desktop, 3D opted out': [{ ua: DESKTOP, keep3d: false }, 'none'], 'phone, 3D opted out': [{ ua: IPHONE, keep3d: false }, 'none'],
+        'desktop, no 3D opt-in': [{ ua: DESKTOP, keep3d: false }, 'none'], 'phone, no 3D opt-in': [{ ua: IPHONE, keep3d: false }, 'none'],
         'no asset plan': [{}, 'opened'] };
     for (const [name, [options, group]] of Object.entries(cases)) {
         const page = precachePage(options);
         assert.equal(await page.run(), 'complete', name);
         assert.equal(group3dOf(page), group, name);
+    }
+});
+
+test('a kiosk tablet precaches the 3D code whatever the device, the 3D setting or Save-Data says', async () => {
+    const KIOSK = 'k-' + 'k'.repeat(20);
+    for (const options of [{ ua: IPHONE }, { ua: ANDROID, keep3d: false }, { ua: DESKTOP, saveData: true }, { ua: IPHONE, keep3d: false, saveData: true }]) {
+        const page = precachePage({ active: KIOSK, fetchedAt: [Date.now()], ...options });
+        assert.equal(await page.run(), 'complete', JSON.stringify(options));
+        assert.equal(group3dOf(page), 'precache', JSON.stringify(options));
     }
 });
 
@@ -126,7 +149,7 @@ test('a complete version is asked once more on a desktop that went without the 3
     assert.deepEqual(phone.asked, ['sw-info']);
 });
 
-test('with the opt-out, a wall saved for offline 3D makes the device `opened`: the 3D code stays across versions', async () => {
+test('without the opt-in, a wall saved for offline 3D makes the device `opened`: the 3D code stays across versions', async () => {
     for (const ua of [DESKTOP, IPHONE]) {
         const page = precachePage({ ua, keep3d: false, saved3d: true });
         await page.run();
@@ -134,7 +157,7 @@ test('with the opt-out, a wall saved for offline 3D makes the device `opened`: t
     }
 });
 
-test('store3d() asks the worker as the device is, and never with the opt-out and no wall saved for 3D', async () => {
+test('store3d() asks the worker as the device is, and never without the opt-in and no wall saved for 3D', async () => {
     const cases = [[{ ua: DESKTOP }, 'precache'], [{ ua: IPHONE }, 'opened'], [{ ua: IPHONE, keep3d: false, saved3d: true }, 'opened'],
         [{ ua: DESKTOP, keep3d: false }, null]];
     for (const [options, group] of cases) {

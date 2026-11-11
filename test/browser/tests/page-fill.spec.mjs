@@ -1,4 +1,4 @@
-// The 2.7 page modules in a real browser: the background fill, the 3D opt-out, and how manifest failures treat a
+// The 2.7 page modules in a real browser: the background fill, the 3D opt-in, and how manifest failures treat a
 // wall (rule 4 drops on 403/404; anything else keeps the stored copy). Skipped on a build without the modules.
 import { test, expect, signIn, installWorker, partitionOf, assetKeys, allKeys, hasPageModules, settled, ledger } from '../harness/fixtures.mjs';
 
@@ -42,7 +42,8 @@ test('the fill stores the core tier of every wall the viewer is a member of', as
     expect(book.meta.activePartition).toBe(partition);
 });
 
-test('3D is filled by default: textures and masks as images, one splat level in -3d', async ({ page, world }) => {
+test('with the 3D opt-in, 3D is filled: textures and masks as images, one splat level in -3d', async ({ page, context, world, baseURL }) => {
+    await context.addCookies([{ name: 'blocwerk-cache-3d', value: 'on', url: baseURL }]);
     const partition = await filledAsAlice(page, world);
     const byCache = await assetKeys(page);
     const alpha = world.walls.alpha;
@@ -53,8 +54,7 @@ test('3D is filled by default: textures and masks as images, one splat level in 
     expect(byCache[`bw-a1-${partition}-3d`].filter(k => !dataShas.includes(k))).toEqual([alpha.splat]);
 });
 
-test('the 3D opt-out fills core but no view3d asset', async ({ page, context, world, baseURL }) => {
-    await context.addCookies([{ name: 'blocwerk-cache-3d', value: 'off', url: baseURL }]);
+test('without the 3D opt-in (the default) core is filled but no view3d asset', async ({ page, world }) => {
     await filledAsAlice(page, world);
     const keys = allKeys(await assetKeys(page));
     expect(keys).toEqual(expect.arrayContaining(await expectedCore(page, world.walls.alpha.id)));

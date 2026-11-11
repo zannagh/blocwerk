@@ -3,7 +3,7 @@
  * decisions of 2026-10-21).
  *
  *   high-storage: the viewer belongs to HIGH_STORAGE_WALLS or more walls with 3D data (/api/me/cache-summary's
- *                 `wallsWith3d`) and still keeps 3D. It offers the 3D opt-out.
+ *                 `wallsWith3d`) and still keeps 3D. It offers to turn the 3D opt-in off.
  *   install-ios:  an iPhone/iPad Safari tab that holds cached walls. Tab storage there is best-effort and can be
  *                 evicted; the installed app is where it persists (the storage probe). Not while the general install
  *                 banner (bwInstall) is showing, which already says the same.

@@ -73,6 +73,17 @@ test('the fill goes tier by tier: every wall\'s core, then the gallery newest fi
     assert.ok(!tasks.some(t => t.sha === sha('b')));
 });
 
+test('a kiosk fills 3D past the mobile and metered rules, and keeps the 640 gallery grid on a tablet', () => {
+    const walls = [wall('w', 1, [photo(sha('a'), 'core'), gallery(sha('g'), '2026-06-01T00:00:00+00:00'), { sha: sha('c'), kind: 'texture', tier: 'view3d', bytes: 10 }])];
+    for (const device of [{ mobile: true }, { metered: true }, { mobile: true, metered: true }]) {
+        const tasks = plan(walls, { kiosk: true, ...device });
+        assert.ok(tasks.some(t => t.tier === 'view3d'), JSON.stringify(device));
+        assert.deepEqual(plain(tasks.filter(t => t.tier === 'gallery').map(t => t.width)), [640], JSON.stringify(device));
+    }
+    assert.ok(plan(walls, { mobile: true }).every(t => t.tier !== 'view3d'), 'not without the kiosk');
+    assert.ok(plan(walls, { kiosk: true, keep3d: false }).every(t => t.tier !== 'view3d'), 'the page decides keep3d');
+});
+
 test('the gallery fills only while the image budget has room; core fills whatever the budget', () => {
     const walls = [wall('w', 1, [photo(sha('a'), 'core', 500), gallery(sha('g'), '2026-06-01T00:00:00+00:00', 300), gallery(sha('h'), '2026-01-01T00:00:00+00:00', 300)])];
     const tasks = plan(walls, { usedImages: 500, budget: { images: 900, view3d: 1e9 } });

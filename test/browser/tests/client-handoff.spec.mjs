@@ -1,5 +1,6 @@
 // The worker hands a failed Server-page navigation to the precached offline client (Phase 3 PR 3.9): with the server
-// down, answering a 502/503/504, or silent for 4 s, a route the client declares opens at its /v/ twin, from the device alone.
+// down, answering a 502/503/504, or silent for 4 s, a route the client declares opens at its /v/ twin, from the device alone
+// (the landing page / as the wall list). A proxy's error on a route the client cannot take gets offline.html.
 // A healthy or merely slow-but-answering server is never cut off for a route the client cannot take, and the client is
 // never shown for a locked partition, an undeclared route or an incomplete version: those get offline.html. A kiosk
 // tablet is handed over since PR 3.15 (client-kiosk.spec.mjs has the rest of its offline mode).
@@ -59,13 +60,20 @@ test('an undeclared route, and a client that declares none, get offline.html', a
     await expectOfflinePage(page, wallPath(world));
 });
 
-test('a route outside the declared ones gets offline.html, a 5xx on it the server answer', async ({ page, world, server }) => {
+test("a route outside the declared ones gets offline.html, also for a proxy's 503 on it", async ({ page, world, server }) => {
     expect(await precacheAsAlice(page, world, server)).toBe('complete');
     await server.faults([{ path: '^/walls/[^/]+/gallery$', status: 503 }]);
-    const response = await page.goto(`${wallPath(world)}/gallery`);
-    expect(response.status()).toBe(503);
+    await expectOfflinePage(page, `${wallPath(world)}/gallery`);
     await server.unreachable();
     await expectOfflinePage(page, `${wallPath(world)}/gallery`);
+});
+
+test("the landing page / opens the client's wall list with the server down", async ({ page, world, server }) => {
+    expect(await precacheAsAlice(page, world, server)).toBe('complete');
+    await server.unreachable();
+    await page.goto('/');
+    await expect(page).toHaveURL(/\/v\/walls$/);
+    await expect(page.locator('.bw-client-store')).toHaveAttribute('data-bw-store', 'ready', { timeout: 15000 });
 });
 
 test('a locked partition is never handed to the client', async ({ page, world, server }) => {
