@@ -43,6 +43,17 @@ export function clientCaches(page) {
     return page.evaluate(async () => (await caches.keys()).filter(n => n.startsWith('blocwerk-client-')).sort());
 }
 
+// The 3D code in the complete client version: the import map's modules outside /v/ (the worker's 3D group), and how many
+// of them its cache holds.
+export const held3d = page => page.evaluate(async () => {
+    const record = await (await caches.match('/__bw/client', { cacheName: 'bw-sw-state' })).json();
+    const cache = await caches.open(`blocwerk-client-${record.version}`);
+    const html = await (await cache.match('/v/')).text();
+    const imports = JSON.parse(/<script type="importmap"[^>]*>([\s\S]*?)<\/script>/.exec(html)[1]).imports;
+    const group = Object.entries(imports).filter(([name]) => !name.startsWith('/v/')).map(([, url]) => url);
+    return { group: group.length, held: (await Promise.all(group.map(url => cache.match(url)))).filter(Boolean).length };
+});
+
 /** The client version the page's meta names. */
 export function pageVersion(page) {
     return page.locator('meta[name="bw-client-version"]').getAttribute('content');

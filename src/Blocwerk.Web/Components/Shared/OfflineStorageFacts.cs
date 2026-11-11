@@ -11,7 +11,7 @@ namespace Blocwerk.Web.Components.Shared;
 /// <param name="Caching">Whether this page caches at all (a real partition label and a started cache).</param>
 /// <param name="Kiosk">Whether the partition is a wall tablet's.</param>
 /// <param name="Persisted">Whether the browser granted persistent storage (it will not evict on its own).</param>
-/// <param name="Keep3d">The 3D opt-out cookie <c>blocwerk-cache-3d</c>: true unless turned off.</param>
+/// <param name="Keep3d">The 3D opt-in cookie <c>blocwerk-cache-3d</c>: true once turned on, and on a kiosk.</param>
 /// <param name="Mobile">A phone or tablet: 3D is cached only when a 3D view is opened.</param>
 /// <param name="Background3d">Whether this device downloads 3D in the background right now.</param>
 /// <param name="IosTab">An iPhone or iPad Safari tab, where storage is best-effort; the installed app keeps it.</param>

@@ -4,7 +4,7 @@
 
 @* "Save 3D offline" in the 3D view's tool column (design §6.8, PR 2.8), a toggle: it keeps this wall's 3D (textures,
    masks, one splat level, the model document) on the device and asks the browser to keep the storage (persist());
-   once saved it reads "Saved offline. Remove", which hands the wall back to eviction and the 3D opt-out.
+   once saved it reads "Saved offline. Remove", which hands the wall back to eviction and the 3D setting.
    Offered only where the device cache runs for a signed-in viewer (bwAsset3d.status). In an iOS Safari tab, whose
    storage is not kept, it is the install nudge instead. A browser that refuses the storage leaves the view
    streaming, and the button simply goes back to offering the save. *@

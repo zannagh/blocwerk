@@ -9,7 +9,7 @@ using Microsoft.JSInterop;
 namespace Blocwerk.Web.Components.Shared;
 
 /// <summary>
-/// Settings → "Offline storage": the device's cache size per wall, the 3D opt-out, the keep-offline pin and the clear.
+/// Settings → "Offline storage": the device's cache size per wall, the 3D opt-in, the keep-offline pin and the clear.
 /// <para>
 /// HIDDEN ON A KIOSK. A tablet's partition holds only its bound wall's wall-level assets and manages itself (it is
 /// refilled after any wipe and never grows past one wall). Whoever stands at the tablet is a member acting on it, not

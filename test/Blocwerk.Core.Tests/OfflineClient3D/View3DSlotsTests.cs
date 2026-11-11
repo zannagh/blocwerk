@@ -82,7 +82,7 @@ public sealed class View3DSlotsTests
 
     [Theory]
     [InlineData("missing", "not saved on this device")]
-    [InlineData("off", "3D is turned off on this device")]
+    [InlineData("off", "3D is not kept on this device")]
     public async Task A3DViewTheDeviceCannotShow_SaysWhy_WithTheServerPage(string state, string text)
     {
         var toggle = new View3DToggle();

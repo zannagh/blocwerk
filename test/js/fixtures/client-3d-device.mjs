@@ -36,7 +36,7 @@ const IMPORT_MAP = { textContent: JSON.stringify({ imports: { '/v/_framework/dot
 
 /**
  * more: device()'s options, plus docs (the row's view3d documents, newest first; default [DOC]), save3d, cookie
- * (document.cookie), missing (worker keys left out of the caches), doc (the document's fields), code (the 3D code in
+ * (document.cookie; default the 3D opt-in, `blocwerk-cache-3d=on`), missing (worker keys left out of the caches), doc (the document's fields), code (the 3D code in
  * the client's cache; default true, false for none, or the list of import-map keys held).
  */
 export async function device3d(label, more = {}) {
@@ -45,7 +45,7 @@ export async function device3d(label, more = {}) {
     for (const script of SCRIPTS) {
         vm.runInContext(readFileSync(script, 'utf8'), client.win, { filename: script.pathname.split('/').pop() });
     }
-    client.win.document.cookie = more.cookie || '';
+    client.win.document.cookie = more.cookie ?? 'blocwerk-cache-3d=on';
     const query = client.win.document.querySelector;
     client.win.document.querySelector = selector => (selector === 'script[type="importmap"]' ? IMPORT_MAP : query(selector));
     const held = more.code === false ? [] : Array.isArray(more.code) ? more.code : Object.keys(CODE);

@@ -41,7 +41,7 @@ public sealed class Wall3DPageTests
     }
 
     [Theory]
-    [InlineData("off", "3D is turned off on this device")]
+    [InlineData("off", "3D is not kept on this device")]
     [InlineData("missing", "not saved on this device")]
     [InlineData("none", "no 3D model on this device")]
     public async Task WhatTheDeviceCannotShow_SaysWhy(string state, string text)

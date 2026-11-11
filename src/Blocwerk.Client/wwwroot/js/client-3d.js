@@ -8,8 +8,9 @@
  *
  *   status(partition, wallId) → { state, sha, photoReal }
  *     none     the device knows no 3D model of the wall (no view3d document in its row);
- *     off      the viewer turned "Keep 3D on this device" off (bwPrefs' `blocwerk-cache-3d` cookie) and the wall is
- *              not saved for offline 3D (`save3d`): the client shows no 3D, whatever an older visit left behind;
+ *     off      the viewer has not turned "Keep 3D data offline" on (bwPrefs' `blocwerk-cache-3d` cookie, an opt-in)
+ *              and the wall is not saved for offline 3D (`save3d`): the client shows no 3D, whatever an older visit
+ *              left behind. Never on a kiosk tablet (`k-`), which keeps its wall's 3D with no setting;
  *     missing  a model is known, but no document is cached with all its textures and masks, or the 3D code is not in
  *              the client's cache (a phone stores it only once 3D was opened on a Server page, client-precache.js; the
  *              client may be up because the server is not, whatever navigator.onLine says);
@@ -24,7 +25,8 @@ window.bwClient3d = (function (win) {
 
     const SHA = /^[0-9a-f]{64}$/;
     const ASSET = /^\/api\/walls\/[^/?#]+\/a\/([0-9a-f]{64})(?:\/(\d{1,5}))?(?:[?#]|$)/;
-    const OPT_OUT = /(?:^|;)\s*blocwerk-cache-3d=off\s*(?:;|$)/;
+    const OPT_IN = /(?:^|;)\s*blocwerk-cache-3d=on\s*(?:;|$)/;
+    const KIOSK = /^k-[a-z2-7]{20}$/;
     const ROLE_RANK = { Start: 4, Top: 4, Hand: 3, Foot: 2, ColorFoot: 1 };
 
     const Ledger = () => win.bwAssetLedger;
@@ -33,11 +35,14 @@ window.bwClient3d = (function (win) {
     const idOf = value => String(value || '').toLowerCase();
     let parsed = { sha: null, doc: null };
 
-    function optedOut() {
-        try {
-            return OPT_OUT.test(win.document.cookie || '');
-        } catch (e) {
+    function optedOut(partition) {
+        if (KIOSK.test(partition || '')) {
             return false;
+        }
+        try {
+            return !OPT_IN.test(win.document.cookie || '');
+        } catch (e) {
+            return true;
         }
     }
 
@@ -148,7 +153,7 @@ window.bwClient3d = (function (win) {
         if (docs.length === 0) {
             return { state: 'none' };
         }
-        if (optedOut() && !row.save3d) {
+        if (optedOut(partition) && !row.save3d) {
             return { state: 'off' };
         }
         for (const ref of docs.filter(d => !only || d.sha === only)) {

@@ -142,7 +142,7 @@ window.bwAssetReport = (function (win) {
         const install = win.bwInstall && typeof win.bwInstall.instructions === 'function' ? win.bwInstall.instructions() : null;
         const facts = {
             caching: !!state, kiosk: !!state && state.active.startsWith('k-'), persisted: await persisted(),
-            keep3d: cache ? cache.keep3d() : true, mobile: Plan() ? Plan().isMobile(win.navigator) : false,
+            keep3d: cache ? cache.keep3d() : false, mobile: Plan() ? Plan().isMobile(win.navigator) : false,
             background3d: cache ? cache.fills3dInBackground() : false, iosTab: isIosTab(), installHint: isIosTab() ? install : null,
             paused: !!(state && state.runner && state.runner.streaming), total: 0, walls: []
         };
@@ -170,7 +170,7 @@ window.bwAssetReport = (function (win) {
             await win.navigator.storage.persist().catch(() => false);
         }
         if (!on && saved3d) {
-            // As bwAsset3d.unsave: the budget and the opt-out apply to the wall's 3D again.
+            // As bwAsset3d.unsave: the budget and the 3D setting apply to the wall's 3D again.
             await Cache().evict();
         }
         return true;

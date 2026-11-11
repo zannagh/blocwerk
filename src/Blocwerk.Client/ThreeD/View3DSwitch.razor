@@ -4,8 +4,8 @@
 @inject View3DToggle Toggle
 @* The photo / 3D switch (the Server's WallViewToggle pill) in the wall header's and the boulder title's actions: flips
    the stage slot (Stage3D) between the photos and the 3D view. Shown only when the device knows a 3D model of the
-   wall, and never with "Keep 3D on this device" off. Reading that status touches only the ledger and the caches; no 3D
-   file loads until the 3D view shows. *@
+   wall, and never without the "Keep 3D data offline" opt-in. Reading that status touches only the ledger and the
+   caches; no 3D file loads until the 3D view shows. *@
 @if (shown)
 {
     var on = Toggle.IsShown(Context.Wall.WallId, Context.Boulder?.Id);

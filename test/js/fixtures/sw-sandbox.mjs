@@ -42,7 +42,12 @@ function fakeCaches(initial) {
                 },
                 match: async key => store.get(keyOf(key))?.clone(),
                 delete: async key => store.delete(keyOf(key)),
-                add: async () => {},
+                // Records what the worker asked to add (cache.add fetches; these tests only need the ask).
+                add: key => {
+                    (caches.added ||= []).push(`${name} ${keyOf(key)}`);
+                    // `addHangs`: a fetch to a dead host, which never answers.
+                    return caches.addHangs ? new Promise(() => undefined) : Promise.resolve();
+                },
             };
         },
         match: async (key, options = {}) => {

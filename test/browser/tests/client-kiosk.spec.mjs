@@ -3,11 +3,12 @@
 // partition: the kiosk class (no draft, no archived boulder, an unconsented member as "A member"), never another
 // wall, never marks, also while it acts as a member who has some. A tablet whose answers were `no-store` keeps nothing
 // and shows "Not available offline" (a defence in depth: in production such a tablet is `none`). Data planted for another
-// wall or another partition is never read. A copy past 7 days since its last online fill is not handed over. No kiosk
-// response sets the grade-scale cookie.
+// wall or another partition is never read. A copy past 7 days since its last online fill is not handed over. A tablet
+// with Save-Data on still precaches the client, 3D code included, with no setting. No kiosk response sets the
+// grade-scale cookie.
 import { test, expect, installWorker, partitionOf, settled, ledger } from '../harness/fixtures.mjs';
 import { registerKiosk, actAs } from '../harness/kiosk.mjs';
-import { declareRoutes, precacheOutcome, expectClient, expectOfflinePage, missingDocs, clientRecord, pageVersion } from '../harness/client.mjs';
+import { declareRoutes, precacheOutcome, expectClient, expectOfflinePage, missingDocs, clientRecord, pageVersion, held3d } from '../harness/client.mjs';
 
 const store = page => page.locator('.bw-client-store');
 const storeState = (page, state) => expect(store(page)).toHaveAttribute('data-bw-store', state, { timeout: 15000 });
@@ -87,6 +88,20 @@ test('an airplane-mode tablet shows only its bound wall, in the kiosk class', as
     await page.goto(`/v/walls/${world.walls.alpha.id}`);
     await storeState(page, 'ready');
     expect((await snapshot(page)).walls.map(w => w.wallId)).toEqual([wallId]);
+});
+
+test('a tablet with Save-Data on still precaches the client and its 3D code, and goes offline with no setting', async ({ page, world, server }) => {
+    await page.addInitScript(() => {
+        Object.defineProperty(navigator, 'connection', { configurable: true, value: { saveData: true, type: 'wifi', effectiveType: '4g', addEventListener() {} } });
+    });
+    const wallId = world.social.wallId;
+    expect(await precacheKiosk(page, server, world.social.kioskToken, wallId)).toBe('complete');
+    await expect.poll(async () => { const h = await held3d(page); return h.group > 0 && h.held === h.group; }, { timeout: 30000 })
+        .toBe(true);
+
+    await server.unreachable();
+    await expectClient(page, `/walls/${wallId}`);
+    await storeState(page, 'ready');
 });
 
 test('acting as a member who sees drafts, the offline tablet keeps the kiosk class and nothing of hers', async ({ page, world, server }) => {

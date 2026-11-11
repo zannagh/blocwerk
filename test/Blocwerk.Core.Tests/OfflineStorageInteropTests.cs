@@ -41,10 +41,10 @@ public class OfflineStorageInteropTests
     }
 
     [Fact]
-    public void TheUnavailableFactsCacheNothingAndKeep3dAtItsDefault()
+    public void TheUnavailableFactsCacheNothingAndKeep3dAtItsOptInDefault()
     {
         Assert.False(OfflineStorageInterop.Unavailable.Caching);
-        Assert.True(OfflineStorageInterop.Unavailable.Keep3d);
+        Assert.False(OfflineStorageInterop.Unavailable.Keep3d);
     }
 
     private static Exception Make(string failure) => failure switch

@@ -3,12 +3,13 @@
 // every module that fingerprinted module imports in turn (their referrer is the importing module, not the page) are
 // answered from the client cache with no network, /lib/ included; a Server page, which imports the plain paths, stays
 // network-first as before. The 3D code is a group of its own: a desktop precaches it, a phone or tablet only once a 3D
-// view was opened online there (`client-store-3d`, then carried into later versions), the 3D opt-out never.
+// view was opened online there (`client-store-3d`, then carried into later versions), without the 3D opt-in never; a
+// kiosk tablet precaches it even under Save-Data.
 // Run by `node --test test/js/`.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { dispatchFetch, response, ORIGIN } from './fixtures/sw-sandbox.mjs';
-import { V1, V2, ROUTES, STATE, shellHtml, deploy, workerWith, precache, info } from './fixtures/sw-client.mjs';
+import { V1, V2, ROUTES, STATE, KIOSK, shellHtml, deploy, workerWith, precache, info } from './fixtures/sw-client.mjs';
 
 const WALL3D = '/js/wall3d.abcdefghij.js';
 const STAGE = '/js/wall3d-stage.bcdefghijk.js';
@@ -127,6 +128,21 @@ test('a device that is `none` (the opt-out, no wall saved for 3D), or says nothi
     saving.self.navigator = { connection: { saveData: true } };
     assert.equal((await store3d(saving)).complete, false);
     assert.deepEqual(held3d(saving, V1), []);
+});
+
+test('Save-Data refuses the precache and the 3D code, except on a kiosk tablet, which gets both', async () => {
+    const member = workerWith();
+    deploy3d(member, V1);
+    member.self.navigator = { connection: { saveData: true } };
+    assert.equal((await precache(member, { group3d: 'precache' })).complete, false);
+
+    const tablet = workerWith({ partition: KIOSK });
+    deploy3d(tablet, V1);
+    tablet.self.navigator = { connection: { saveData: true } };
+    const done = await precache(tablet, { group3d: 'precache' });
+    assert.equal(done.complete, true);
+    assert.equal(done.with3d, true);
+    assert.deepEqual(held3d(tablet, V1), Object.values(MAPPED));
 });
 
 test('a 3D file that fails leaves the client complete without the 3D code, and the answer says so', async () => {

@@ -3,8 +3,8 @@
 @inject ClientStore Store
 @* The 3D view of a cached wall (PR 3.13): Web's wall3d.js mounted with the view3d document the device holds, the
    boulder highlighted on a boulder's view. Read-only, from the device alone: a wall whose 3D is not cached in full says
-   so with the Server page's link, and with "Keep 3D on this device" off it shows no 3D at all. The viewer starts in
-   Schematic; photo-real (only with a cached splat level) waits for the client's first ~20 s (client-3d-stage.js). *@
+   so with the Server page's link, and without the "Keep 3D data offline" opt-in it shows no 3D at all. The viewer
+   starts in Schematic; photo-real (only with a cached splat level) waits for the client's first ~20 s (client-3d-stage.js). *@
 <div class="bw-client-3d" data-bw-3d="@(session.Status?.Kind.ToString().ToLowerInvariant() ?? "loading")">
     @if (session.Status is null)
     {
@@ -53,7 +53,7 @@
 
     private string Message => session.Status?.Kind switch
     {
-        Client3DState.Off => "3D is turned off on this device (Keep 3D on this device, in the settings).",
+        Client3DState.Off => "3D is not kept on this device. Turn on Keep 3D data offline in the settings, or save this wall for offline 3D.",
         Client3DState.Missing => "The 3D view of this wall is not saved on this device.",
         _ => "This wall has no 3D model on this device.",
     };

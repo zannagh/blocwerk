@@ -14,17 +14,17 @@
  *                      `install` holds bwInstall's instructions instead: the button becomes the install nudge.
  *   save(wallId)     → { saved }: marks the wall keepOffline and save3d in the ledger, asks for persistent storage, and
  *                      fills the wall's 3D now (asset-plan.js plans a saved wall's 3D on every device and connection,
- *                      past the 3D budget and the opt-out; eviction never takes it). A browser that refuses the storage
- *                      leaves the page streaming (asset-fill.js), silently: `saved` is simply false.
+ *                      past the 3D budget and the 3D setting; eviction never takes it). A browser that refuses the
+ *                      storage leaves the page streaming (asset-fill.js), silently: `saved` is simply false.
  *   unsave(wallId)   → { saved: false }: the undo. Clears save3d and keepOffline and runs eviction, so the budget and
- *                      the opt-out apply to the wall's 3D again.
+ *                      the 3D setting apply to the wall's 3D again.
  *   held(shas)       → Set of those shas the ledger holds in this page's partition (the photo-real ladder skips the
  *                      splat levels between the ones on the device); empty when nothing caches here.
  *   noteDoc(wallId, sha, bytes)  wall3d-doc.js loaded a view3d document; the wall's row lists it (the newest
  *                      MAX_DOCS), so eviction counts it as that wall's 3D instead of an orphan. Its size is the ledger's
  *                      count of the cached copy when there is one (the worker's Content-Length), else the page's.
  *                      It is also a 3D view opened online, so the offline client keeps the 3D code from then on
- *                      (bwClientPrecache.store3d, PR 3.13: phones precache none until then; with the 3D opt-out
+ *                      (bwClientPrecache.store3d, PR 3.13: phones precache none until then; without the 3D opt-in
  *                      only once a wall is saved for 3D, which save() also stores it for).
  * Every failure answers "no notice" / "not available": nothing here may keep a 3D view from starting.
  */
@@ -218,7 +218,7 @@ window.bwAsset3d = (function (win) {
             await persisting;
             await Cache().manifestChanged(id);
             await Cache().filled();
-            // The offline client's 3D code too, now that the wall's 3D shows whatever the opt-out says.
+            // The offline client's 3D code too, now that the wall's 3D shows whatever the 3D setting says.
             if (win.bwClientPrecache) {
                 win.bwClientPrecache.store3d();
             }

@@ -9,7 +9,9 @@ public enum Client3DState
     /// <summary>The device knows no 3D model of the wall: no 3D control shows.</summary>
     None,
 
-    /// <summary>The viewer turned "Keep 3D on this device" off and the wall is not saved for offline 3D.</summary>
+    /// <summary>
+    /// The viewer has not opted in to "Keep 3D data offline" and the wall is not saved for offline 3D (never on a kiosk).
+    /// </summary>
     Off,
 
     /// <summary>A model is known, but its document, textures or masks are not all cached.</summary>

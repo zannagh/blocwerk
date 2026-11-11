@@ -11,7 +11,7 @@
  *      there 3D is cached only when a 3D view is opened), while 3D is kept, the connection is unmetered and the 3D
  *      budget has room.
  * A wall the viewer saved for offline 3D (`save3d`, bwAsset3d.save) is the exception: its 3D goes right after core, on
- * every device and connection, past the 3D budget and the opt-out, because the viewer asked for exactly that.
+ * every device and connection, past the 3D budget and the 3D setting, because the viewer asked for exactly that.
  * Within a tier the open wall goes first, then the walls by when they were last opened. Every other `lazy` asset
  * (superseded panels, reset photos, video thumbnails) is never background-filled: the worker caches it on use, and so
  * it does 3D on a phone, a tablet or a metered connection.
@@ -141,7 +141,8 @@ window.bwAssetPlan = (function () {
     }
 
     /**
-     * The ordered download list. `state`: { walls, cachedKeys: Set, openWallId, keep3d, metered, mobile, budget: {images,
+     * The ordered download list. `state`: { walls, cachedKeys: Set, openWallId, keep3d, metered, mobile, kiosk (3D past the
+     * metered and mobile rules), budget: {images,
      * view3d}, usedImages, used3d, width, tokens: Map wallId → token }. Returns [{ key, url, sha, width, tier, wallId }].
      */
     function planFill(state) {
@@ -198,7 +199,7 @@ window.bwAssetPlan = (function () {
         for (const wall of walls) {
             galleryEntries(wall).forEach(entry => within(wall, entry, galleryWidths, 'gallery', images));
         }
-        if (state.keep3d && !state.metered && !state.mobile) {
+        if (state.keep3d && (state.kiosk || (!state.metered && !state.mobile))) {
             const view3d = roomOf(state.used3d || 0, state.budget.view3d);
             for (const wall of walls) {
                 view3dEntries(wall, cachedShas).forEach(entry => within(wall, entry, [null], 'view3d', view3d));

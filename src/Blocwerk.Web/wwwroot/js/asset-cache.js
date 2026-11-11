@@ -13,8 +13,11 @@
  *   a fill that stopped resumes: on visibilitychange (hidden), on `online` (a network failure), on a timer (another
  *          tab held the lock, or the worker was too slow to confirm).
  *
- * WALL DATA IS ALWAYS CACHED for the viewer's walls (no setting turns it off). 3D is cached unless the viewer opted
- * out (bwPrefs.getCache3d(), default on), and background-filled only on an unmetered connection. An old worker that
+ * WALL DATA IS ALWAYS CACHED for the viewer's walls (no setting turns it off). 3D is cached only when the viewer opted
+ * in (bwPrefs.getCache3d(), default off), and background-filled only on an unmetered desktop. A kiosk tablet (`k-`)
+ * keeps its wall's 3D with no setting and background-fills it whatever the device and connection, Save-Data included:
+ * it is the gym's own screen, and offline it has nothing else to show. Its images follow the device's plan as anyone's
+ * (a tablet's gallery fills the 640 grid only). An old worker that
  * does not answer `sw-info` (a missing reply is normal) gets no background fill; the wipe rules still run. Every
  * failure here leaves the page streaming, never broken.
  */
@@ -23,6 +26,7 @@ window.bwAssetCache = (function (win) {
 
     const WALL_PATH = /^\/walls\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\/|$)/i;
     const REAL_LABEL = /^(anon|[uk]-[a-z2-7]{20})$/;
+    const KIOSK_LABEL = /^k-[a-z2-7]{20}$/;
     const MANIFEST_PARALLEL = 3;
 
     const Wipe = () => win.bwAssetWipe;
@@ -43,8 +47,11 @@ window.bwAssetCache = (function (win) {
     state.summaryLoaded = new Promise(resolve => { summaryResolve = resolve; });
 
     const now = () => Date.now();
-    const keep3d = () => !(win.bwPrefs && typeof win.bwPrefs.getCache3d === 'function' && win.bwPrefs.getCache3d() === false);
+    const kiosk = () => KIOSK_LABEL.test(state.active || '');
+    const keep3d = () => kiosk() || !!(win.bwPrefs && typeof win.bwPrefs.getCache3d === 'function' && win.bwPrefs.getCache3d() === true);
+    // A kiosk keeps the device's image plan (a tablet fills the gallery's 640 grid only); only its 3D ignores them.
     const mobile = () => Plan().isMobile(win.navigator, win.matchMedia ? query => win.matchMedia(query) : null);
+    const metered = () => Plan().isMetered(win.navigator);
     // A degraded ledger (storage refused, or a pending v2 upgrade) knows nothing of the device: such a page decides
     // and wipes (asset-session.js) but never reconciles, evicts or fills, so it cannot delete what it does not know of.
     // The worker keeps serving and storing the partition's caches.
@@ -122,7 +129,7 @@ window.bwAssetCache = (function (win) {
         const bytesIn = test => classified.filter(test).reduce((sum, item) => sum + (item.asset.bytes || 0), 0);
         const tasks = Plan().planFill({
             walls, cachedKeys: new Set(assets.map(a => a.key)), openWallId: state.openWallId, keep3d: keep3d(),
-            metered: Plan().isMetered(win.navigator), mobile: mobile(), budget: state.budget,
+            metered: metered(), mobile: mobile(), kiosk: kiosk(), budget: state.budget,
             usedImages: bytesIn(item => item.tier === 'core' || item.tier === 'lazy'), used3d: bytesIn(item => item.tier === 'view3d'),
             width: Plan().fitWidth(win.innerWidth, win.devicePixelRatio), tokens: state.tokens
         });
@@ -271,7 +278,7 @@ window.bwAssetCache = (function (win) {
         dataChanged: wallId => whenStarted(() => refreshData(String(wallId).toLowerCase()).then(() => scheduleFill())),
         // A tick.mine / favorite.changed of the wall (bwAssetMine.changed, debounced): the viewer's own marks, `u-` only.
         mineChanged: wallId => whenStarted(() => refreshMine(String(wallId).toLowerCase())),
-        // The 3D opt-out (2.9's settings and the high-storage notice).
+        // The 3D opt-in (2.9's settings) and the high-storage notice's way out. A kiosk keeps 3D whatever this says.
         setKeep3d: function (on) {
             if (win.bwPrefs && typeof win.bwPrefs.setCache3d === 'function') {
                 win.bwPrefs.setCache3d(!!on);
@@ -282,8 +289,8 @@ window.bwAssetCache = (function (win) {
         // An eviction pass now (bwAsset3d.unsave: a wall that is no longer kept offline).
         evict: () => whenStarted(() => evict()),
         // Whether this device background-fills 3D (2.8's data-volume warning on opening 3D reads it): never on a phone
-        // or tablet (bwAssetPlan.isMobile), nor on a metered connection, nor with 3D opted out.
-        fills3dInBackground: () => keep3d() && !mobile() && !Plan().isMetered(win.navigator),
+        // or tablet (bwAssetPlan.isMobile), nor on a metered connection, nor without the 3D opt-in; always on a kiosk.
+        fills3dInBackground: () => keep3d() && (kiosk() || (!mobile() && !metered())),
         summary: () => state.summaryLoaded,
         // The running fill, for tests and 2.9's progress: resolves when the queue is drained.
         filled: () => state.filling || Promise.resolve()

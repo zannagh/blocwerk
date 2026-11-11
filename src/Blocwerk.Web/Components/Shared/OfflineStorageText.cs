@@ -64,8 +64,8 @@ public static class OfflineStorageText
     {
         if (!facts.Keep3d)
         {
-            return "3D data isn't kept on this device, except for walls you saved 3D for. Elsewhere it downloads again "
-                + "each time you open a 3D view.";
+            return "Off: 3D data isn't kept on this device, except for walls you saved 3D for. Elsewhere it downloads "
+                + "again each time you open a 3D view. Turn it on to keep 3D for offline use too.";
         }
 
         if (facts.Mobile)
