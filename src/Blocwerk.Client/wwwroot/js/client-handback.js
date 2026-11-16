@@ -16,6 +16,12 @@
  * its 4 s timer (a navigation from a /v/ page waits 20 s instead), so a slow server is waited for and nothing loops.
  * sessionStorage `bw-handback` tells the Server page it was opened from here (client-continue.js shows "online").
  *
+ * A KIOSK TABLET (the store's partition is `k-…`) has nobody to tap: once the probe finds the server, it hands back on its
+ * own, at most once per KIOSK_RETRY_MS (sessionStorage `bw-kiosk-golive`, its own stamp: the Server page clears
+ * `bw-handback`), so a Server page that keeps failing back into the client is retried slowly, never in a loop. Without a
+ * stamp it can write, it never goes on its own. And its wall list (/v/, /v/walls: the worker's stand-in for the landing page) hands
+ * back to `/`, which sends the tablet to its wall: /walls is a signed-in page a resting tablet cannot open.
+ *
  * THE SCHEMA. /alive's `clientSchemaMin` above this shell's `bw-client-schema` means this client may misread the
  * server's documents. The client asks the worker to precache the deploy's version (`client-precache`) and, once a
  * DIFFERENT complete version is there, reloads into it when idle (visible, nobody typing). sessionStorage
@@ -37,8 +43,12 @@ window.bwClientHandback = (function (win, doc) {
     const STAY_MS = 120000;
     const PRECACHE_MARKER_KEY = 'bw-client-precache';
     const PILL_ID = 'bw-client-pill';
+    const KIOSK_LABEL = /^k-[a-z2-7]{20}$/;
+    const KIOSK_RETRY_MS = 60000;
+    const KIOSK_GOLIVE_KEY = 'bw-kiosk-golive';
+    const CLIENT_LIST = /^\/(?:walls\/?)?(?:[?#]|$)/i;
 
-    const state = { started: false, online: null, savedAt: null, drawn: null, slot: null, timer: null, probing: null, schema: null, pending: null };
+    const state = { started: false, kiosk: false, online: null, savedAt: null, drawn: null, slot: null, timer: null, probing: null, schema: null, pending: null };
 
     const meta = name => {
         const el = doc.querySelector(`meta[name="${name}"]`);
@@ -84,6 +94,12 @@ window.bwClientHandback = (function (win, doc) {
         return when.toDateString() === today.toDateString()
             ? when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             : when.toLocaleDateString([], { day: 'numeric', month: 'short' });
+    }
+
+    /** The live page a hand-back opens: the Server twin, except a kiosk tablet's wall list, which opens `/`. */
+    function liveUrl(href) {
+        const url = serverUrl(href);
+        return url && state.kiosk && CLIENT_LIST.test(url) ? '/' : url;
     }
 
     function pillLabel() {
@@ -140,10 +156,12 @@ window.bwClientHandback = (function (win, doc) {
             const snap = win.bwClientStore ? await win.bwClientStore.snapshot() : null;
             const times = (snap && Array.isArray(snap.walls) ? snap.walls : []).map(w => w.savedAt).filter(t => typeof t === 'number');
             state.savedAt = times.length > 0 ? Math.max(...times) : null;
+            state.kiosk = !!snap && KIOSK_LABEL.test(String(snap.partition || ''));
         } catch (e) {
             state.savedAt = null;
         }
         render();
+        kioskGoLive();
     }
 
     async function alive() {
@@ -176,6 +194,7 @@ window.bwClientHandback = (function (win, doc) {
                 if (body !== null) {
                     await checkSchema(body.clientSchemaMin);
                 }
+                kioskGoLive();
                 return state.online;
             })().catch(() => state.online).finally(() => { state.probing = null; });
         }
@@ -201,7 +220,7 @@ window.bwClientHandback = (function (win, doc) {
 
     /** True when the client hands this navigation back: it navigates to the Server page itself. */
     function take(target) {
-        const url = serverUrl(target);
+        const url = liveUrl(target);
         if (!url || state.online !== true || win.navigator.onLine === false || stayingOffline()) {
             if (state.online !== true) {
                 probe();
@@ -211,6 +230,18 @@ window.bwClientHandback = (function (win, doc) {
         session.set(HANDBACK_KEY, String(Date.now()));
         win.location.assign(url);
         return true;
+    }
+
+    // A kiosk tablet back online goes live by itself (see the header), unless it went live less than KIOSK_RETRY_MS ago
+    // (that page failed back into the client), or its stamp cannot be read or written (no guard against a loop).
+    function kioskGoLive() {
+        if (!state.kiosk || state.online !== true || stayingOffline() || win.navigator.onLine === false) {
+            return false;
+        }
+        const last = session.get(KIOSK_GOLIVE_KEY);
+        const at = Number(last);
+        const due = last === null || !(at > 0) || at > Date.now() || Date.now() - at >= KIOSK_RETRY_MS;
+        return last !== undefined && due && session.set(KIOSK_GOLIVE_KEY, String(Date.now())) && take(win.location.href);
     }
 
     // A focused text field with something typed in it, or a hidden tab: no reload now.

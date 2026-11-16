@@ -317,3 +317,40 @@ test("the client's files are cache-first, and a /v/ page's /_content/ and /js/ f
     worker.routes['/v/_framework/missing.wasm'] = () => response(404, 'no');
     assert.equal((await dispatchFetch(worker, '/v/_framework/missing.wasm').settle()).status, 404, 'a miss goes to the network');
 });
+
+const GUID_W = '3f2a0000-0000-4000-8000-0000000000a1';
+const kioskWorker = async stamp => {
+    const worker = workerWith({ partition: KIOSK });
+    deploy(worker.routes, V1, { shell: shellHtml(V1, 'walls walls/{WallId:guid}') });
+    await precache(worker);
+    return restart(worker, state => state.set('/__bw/kiosk-fresh', response(200, JSON.stringify(stamp))));
+};
+
+test("a kiosk tablet's failed landing page opens its own wall in the client when its stamp names it, else the wall list", async () => {
+    const own = await kioskWorker({ label: KIOSK, at: Date.now(), wall: GUID_W });
+    for (const path of ['/', '/home']) {
+        assert.equal((await navigate(own, path)).headers.get('location'), `${ORIGIN}/v/walls/${GUID_W}`, path);
+    }
+    own.routes['/'] = () => response(502, "the proxy's page");
+    assert.equal((await navigate(own, '/')).headers.get('location'), `${ORIGIN}/v/walls/${GUID_W}`, 'a 502 too');
+    assert.equal((await navigate(own, '/walls')).headers.get('location'), `${ORIGIN}/v/walls`, 'the list itself stays the list');
+
+    const cases = {
+        'a stamp of 0.5.2 (no wall)': { label: KIOSK, at: Date.now() },
+        'two walls (null)': { label: KIOSK, at: Date.now(), wall: null },
+        'not a GUID': { label: KIOSK, at: Date.now(), wall: '../x' },
+    };
+    for (const [name, stamp] of Object.entries(cases)) {
+        assert.equal((await navigate(await kioskWorker(stamp), '/')).headers.get('location'), `${ORIGIN}/v/walls`, name);
+    }
+});
+
+test("a leftover kiosk stamp with a wall is ignored on a person's or a share viewer's partition: the landing opens the list", async () => {
+    for (const partition of [ALICE, 'anon']) {
+        const worker = workerWith({ partition });
+        deploy(worker.routes, V1, { shell: shellHtml(V1, 'walls walls/{WallId:guid}') });
+        await precache(worker);
+        const left = restart(worker, state => state.set('/__bw/kiosk-fresh', response(200, JSON.stringify({ label: KIOSK, at: Date.now(), wall: GUID_W }))));
+        assert.equal((await navigate(left, '/')).headers.get('location'), `${ORIGIN}/v/walls`, partition);
+    }
+});

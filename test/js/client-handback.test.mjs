@@ -29,7 +29,7 @@ class FakeElement {
 }
 
 function page({ path = '/v/walls/W1', alive = { clientSchemaMin: 1 }, schema = '1', version = OLD, worker = { version: NEW, complete: true },
-    session = new Map(), onLine = true, walls = [{ savedAt: Date.now() }], storageThrows = false, localMarker = null } = {}) {
+    session = new Map(), onLine = true, walls = [{ savedAt: Date.now() }], storageThrows = false, localMarker = null, partition = 'u-' + 'a'.repeat(20), setThrows = false } = {}) {
     const assigned = [];
     const reloads = [];
     const shown = [];
@@ -53,7 +53,7 @@ function page({ path = '/v/walls/W1', alive = { clientSchemaMin: 1 }, schema = '
     };
     const storage = {
         getItem: k => { if (storageThrows) { throw new Error('denied'); } return session.get(k) ?? null; },
-        setItem: (k, v) => { if (storageThrows) { throw new Error('denied'); } session.set(k, v); },
+        setItem: (k, v) => { if (storageThrows || setThrows) { throw new Error('denied'); } session.set(k, v); },
     };
     const win = {
         location: { href: ORIGIN + path, origin: ORIGIN, assign: url => assigned.push(url), reload: () => reloads.push(1) },
@@ -76,7 +76,7 @@ function page({ path = '/v/walls/W1', alive = { clientSchemaMin: 1 }, schema = '
             return { ok: true, json: async () => state.alive };
         },
         bwStatus: { show: kind => shown.push(kind) },
-        bwClientStore: { snapshot: async () => ({ state: 'ready', walls }) },
+        bwClientStore: { snapshot: async () => ({ state: 'ready', partition, walls }) },
     };
     vm.runInNewContext(source, { window: win, document: doc, URL, Date, Number, String, Math, Promise, Object, Array });
     const api = win.bwClientHandback;
@@ -246,4 +246,102 @@ test('the schema update carries the 3D code as the last fill had it, and a stale
     await busy.api.start();
     assert.equal(await busy.api.checkSchema(2), 'stale');
     assert.equal(busy.asked.length, 2, 'the check ran again instead of keeping the first answer for the page\'s life');
+});
+
+// A kiosk tablet (PR 3.15) the worker handed to /v/walls (0.5.2: a failed or slow landing page `/` opens the wall list).
+const KIOSK = 'k-' + 'k'.repeat(20);
+
+test('a kiosk tablet back online goes live by itself, and its wall list opens `/` (its wall), not the signed-in /walls', async () => {
+    for (const path of ['/v/walls', '/v/', '/v/walls?x=1']) {
+        const p = page({ path, partition: KIOSK });
+        await p.api.start();
+        await settle();
+        assert.deepEqual(p.assigned, ['/'], path);
+    }
+    const wall = page({ path: '/v/walls/W1', partition: KIOSK });
+    await wall.api.start();
+    await settle();
+    assert.deepEqual(wall.assigned, ['/walls/W1'], 'the wall itself goes to its live page');
+
+    const pill = page({ path: '/v/walls', partition: KIOSK, session: new Map([['bw-kiosk-golive', String(Date.now() - 5000)]]) });
+    await pill.api.start();
+    await settle();
+    assert.deepEqual(pill.assigned, [], 'it went live 5 s ago and failed back: no loop');
+    pill.slot.children[0].listeners.click();
+    assert.deepEqual(pill.assigned, ['/'], 'the pill opens the landing, which sends the tablet to its wall');
+});
+
+test('a kiosk retries going live once a minute; a person, an offline tablet, "Continue offline" or no storage never goes on its own', async () => {
+    const later = page({ path: '/v/walls', partition: KIOSK, session: new Map([['bw-kiosk-golive', String(Date.now() - 61000)]]) });
+    await later.api.start();
+    await settle();
+    assert.deepEqual(later.assigned, ['/']);
+
+    const cases = {
+        person: { path: '/v/walls' },
+        offline: { path: '/v/walls', partition: KIOSK, alive: null },
+        'continue offline': { path: '/v/walls', partition: KIOSK, session: new Map([['bw-stay-offline', String(Date.now())]]) },
+        'no session storage': { path: '/v/walls', partition: KIOSK, storageThrows: true },
+    };
+    for (const [name, options] of Object.entries(cases)) {
+        const p = page(options);
+        await p.api.start();
+        await settle();
+        assert.deepEqual(p.assigned, [], name);
+    }
+    const person = page({ path: '/v/walls' });
+    await person.api.start();
+    assert.equal(person.api.take(`${ORIGIN}/v/walls`), true);
+    assert.deepEqual(person.assigned, ['/walls'], "a person's wall list is still /walls");
+});
+
+test('no flapping: a kiosk with the server down sits on its wall, and one whose pages bounce back retries once a minute', async () => {
+    // The server down: /alive never answers, whatever wakes the probe; the tablet stays on its wall in the client.
+    const down = page({ path: '/v/walls/W1', partition: KIOSK, alive: null });
+    await down.api.start();
+    for (let i = 0; i < 5; i++) {
+        await down.api.probe();
+    }
+    down.winListeners.online();
+    down.docListeners.visibilitychange();
+    await settle();
+    assert.deepEqual(down.assigned, []);
+    assert.match(pillText(down), /^Offline/);
+
+    // /alive answers but the Server page fails: the tablet goes live once, the worker bounces it back to /v/ (a new page in
+    // the same tab), and that page waits out the minute however often it probes.
+    const session = new Map();
+    const first = page({ path: '/v/walls/W1', partition: KIOSK, session });
+    await first.api.start();
+    await settle();
+    assert.deepEqual(first.assigned, ['/walls/W1']);
+    session.delete('bw-handback'); // the Server page's welcomeBack() clears the hand-back stamp, never the kiosk's
+    const bounced = page({ path: '/v/walls/W1', partition: KIOSK, session });
+    await bounced.api.start();
+    for (let i = 0; i < 4; i++) {
+        await bounced.api.probe();
+    }
+    bounced.winListeners.online();
+    await settle();
+    assert.deepEqual(bounced.assigned, [], 'within the minute');
+    session.set('bw-kiosk-golive', String(Date.now() - 61000));
+    await bounced.api.probe();
+    assert.deepEqual(bounced.assigned, ['/walls/W1'], 'a minute later, once');
+    await bounced.api.probe();
+    assert.deepEqual(bounced.assigned, ['/walls/W1']);
+});
+
+test("a kiosk stays offline through a deploy's /alive (maintenance), and without a stamp it can write it never goes on its own", async () => {
+    const deploying = page({ path: '/v/walls/W1', partition: KIOSK, alive: { clientSchemaMin: 1, maintenance: true } });
+    await deploying.api.start();
+    await deploying.api.probe();
+    await settle();
+    assert.equal(deploying.api.online, false);
+    assert.deepEqual(deploying.assigned, []);
+
+    const readOnly = page({ path: '/v/walls/W1', partition: KIOSK, setThrows: true });
+    await readOnly.api.start();
+    await readOnly.api.probe();
+    await settle();
+    assert.deepEqual(readOnly.assigned, [], 'no write, no retry limit: no auto go-live');
 });

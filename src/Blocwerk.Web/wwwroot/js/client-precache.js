@@ -22,8 +22,9 @@
  * once per RETRY_MS (`at3d`). `store3d()` is a 3D view opened online (asset-3d.js): unless the device is `none`, the
  * worker stores the 3D code into the complete version and keeps it from then on.
  * THE KIOSK STAMP (PR 3.15). On a kiosk tablet (`k-…`) every page, once its fill is done, also writes
- * `{ label, at }` to the worker's state cache (KIOSK_FRESH_KEY): `at` is the newest manifest success (`fetchedAt`) of the
- * partition's rows. The worker hands a `k-` tablet to the client only within KIOSK_MAX_AGE of it, as the client reads the
+ * `{ label, at, wall }` to the worker's state cache (KIOSK_FRESH_KEY): `at` is the newest manifest success (`fetchedAt`) of the
+ * partition's rows, `wall` the tablet's wall when the partition holds exactly one (else null): the worker opens it in the
+ * client when the landing page `/` fails, instead of the wall list. The worker hands a `k-` tablet to the client only within KIOSK_MAX_AGE of it, as the client reads the
  * row itself, so a tablet revoked, re-paired or changed while offline stops showing its copy after 7 days, as a `u-` lock does.
  * Nothing here throws into the page.
  */
@@ -158,11 +159,12 @@ window.bwClientPrecache = (function (win) {
         if (!KIOSK_LABEL.test(s.active || '') || !s.env || s.env.ledger.degraded) {
             return null;
         }
-        const at = Math.max(0, ...(await s.env.ledger.wallsOf(s.active)).map(row => Number(row.fetchedAt) || 0));
+        const rows = await s.env.ledger.wallsOf(s.active);
+        const at = Math.max(0, ...rows.map(row => Number(row.fetchedAt) || 0));
         if (at <= 0) {
             return null;
         }
-        const value = { label: s.active, at };
+        const value = { label: s.active, at, wall: rows.length === 1 ? String(rows[0].wallId) : null };
         await (await win.caches.open(STATE_CACHE)).put(KIOSK_FRESH_KEY, new Response(JSON.stringify(value)));
         return value;
     }
@@ -192,7 +194,7 @@ window.bwClientPrecache = (function (win) {
         store3d,
         // The outcome of this page's attempt, for tests: skipped, unsupported, complete, waiting, failed or other.
         get done() { return state.done; },
-        // The kiosk stamp this page wrote ({ label, at }), or null; for tests.
+        // The kiosk stamp this page wrote ({ label, at, wall }), or null; for tests.
         get stamped() { return state.stamped; },
         MARKER_KEY
     };

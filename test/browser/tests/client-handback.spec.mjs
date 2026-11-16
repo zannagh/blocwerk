@@ -132,14 +132,14 @@ test('a raised clientSchemaMin reloads the client into the new version once, and
     const old = 'aaaaaaaaaaaaaaaa';
     const aged = declareRoutes(undefined, [
         ['name="bw-client-version" content="', `name="bw-client-version" content="${old}" data-real="`],
-        ['name="bw-client-schema" content="1"', 'name="bw-client-schema" content="0"']
+        ['name="bw-client-schema" content="2"', 'name="bw-client-schema" content="0"']
     ]);
     await precacheAsAlice(page, world, server, [aged]);
     expect((await clientRecord(page)).version).toBe(old);
     const current = await pageVersion(page);
 
-    // This deploy serves the real client (schema 1) but asks for 7: one update and reload, then held.
-    await server.faults([declareRoutes(), { path: '^/alive$', rewrite: ['"clientSchemaMin":1', '"clientSchemaMin":7'] }]);
+    // This deploy serves the real client (schema 2) but asks for 7: one update and reload, then held.
+    await server.faults([declareRoutes(), { path: '^/alive$', rewrite: ['"clientSchemaMin":2', '"clientSchemaMin":7'] }]);
     let loads = 0;
     page.on('framenavigated', frame => { if (frame === page.mainFrame()) { loads++; } });
     await page.goto(`/v${wallPath(world)}`);
@@ -152,5 +152,5 @@ test('a raised clientSchemaMin reloads the client into the new version once, and
     expect(await page.evaluate(() => window.bwClientHandback.probe())).toBe(true);
     await page.waitForTimeout(3000);
     expect(loads).toBe(2);
-    await expect(page.locator('meta[name="bw-client-schema"]')).toHaveAttribute('content', '1');
+    await expect(page.locator('meta[name="bw-client-schema"]')).toHaveAttribute('content', '2');
 });

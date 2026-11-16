@@ -271,8 +271,11 @@ test('a kiosk page stamps its last online fill for the worker; no other label, a
     const KIOSK = 'k-' + 'k'.repeat(20);
     const tablet = precachePage({ active: KIOSK, walls: 1, fetchedAt: [1234] });
     await tablet.run();
-    assert.deepEqual(JSON.parse(JSON.stringify(await tablet.win.bwClientPrecache.stamped)), { label: KIOSK, at: 1234 });
-    assert.equal(tablet.state.get('bw-sw-state /__bw/kiosk-fresh'), JSON.stringify({ label: KIOSK, at: 1234 }));
+    assert.deepEqual(JSON.parse(JSON.stringify(await tablet.win.bwClientPrecache.stamped)), { label: KIOSK, at: 1234, wall: 'w0' });
+    assert.equal(tablet.state.get('bw-sw-state /__bw/kiosk-fresh'), JSON.stringify({ label: KIOSK, at: 1234, wall: 'w0' }));
+    const two = precachePage({ active: KIOSK, walls: 2, fetchedAt: [1, 2] });
+    await two.run();
+    assert.equal((await two.win.bwClientPrecache.stamped).wall, null, 'two walls under the label: no wall of its own to open');
 
     for (const options of [{ active: ALICE, fetchedAt: [1234] }, { active: KIOSK, fetchedAt: [undefined] }, { active: KIOSK, degraded: true, fetchedAt: [1] }]) {
         const page = precachePage(options);
