@@ -15,11 +15,13 @@ public static class ClientSchema
     /// The schema this build speaks. Raise it, together with <see cref="Minimum"/>, when a document, feed event or
     /// endpoint the client reads changes in a way an older client would misread.
     /// </summary>
-    public const int Current = 1;
+    public const int Current = 2;
 
     /// <summary>
     /// The oldest client schema this server still serves correctly. Never above <see cref="Current"/>; raising it makes
     /// every older client on a device update and reload once.
     /// </summary>
-    public const int Minimum = 1;
+    /// <remarks>2 (0.5.3): a kiosk tablet stuck in the client's wall list since 0.5.2 reloads into the client that goes
+    /// live on its own (client-handback.js); no document changed.</remarks>
+    public const int Minimum = 2;
 }

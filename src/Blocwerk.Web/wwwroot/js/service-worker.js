@@ -480,9 +480,13 @@ function endDeployHold() {
     return caches.open(ASSET_STATE_CACHE).then(cache => cache.delete(CLIENT_DEPLOY_KEY)).catch(() => undefined);
 }
 
+// `{ record, wall }` when the client may serve: `wall` is a kiosk tablet's own wall from its stamp (client-precache.js),
+// else null. Null when the client may not serve.
 function servableClient() {
     return Promise.all([presentClient(), lastKnownPartition(), lockedPartition(true), kioskStamp()])
-        .then(([record, partition, locked, fresh]) => (clientServable(record, partition, locked, fresh) ? record : null))
+        .then(([record, partition, locked, fresh]) => (clientServable(record, partition, locked, fresh)
+            ? { record, wall: fresh && fresh.label === partition && CLIENT_GUID.test(String(fresh.wall)) ? fresh.wall : null }
+            : null))
         .catch(() => null);
 }
 
@@ -497,13 +501,22 @@ function clientTarget(path) {
     if (CLIENT_NEVER.test(url.pathname)) {
         return Promise.resolve(null);
     }
-    return servableClient().then(record => clientPathFor(record, url)).catch(() => null);
+    return servableClient().then(servable => clientPathFor(servable, url)).catch(() => null);
 }
 
-// The /v/ twin of `url` when the record's routes cover it (a landing page as the wall list), else null.
-function clientPathFor(record, url) {
-    const pathname = CLIENT_LANDING.test(url.pathname) ? '/walls' : url.pathname;
-    return record && record.routes.some(route => clientRouteCovers(route, pathname)) ? `/v${pathname}${url.search}` : null;
+// The /v/ twin of `url` when the record's routes cover it, else null. A landing page is the kiosk tablet's own wall when
+// its stamp names one the routes cover (the Server's `/` sends a tablet there), else the wall list.
+function clientPathFor(servable, url) {
+    if (!servable) {
+        return null;
+    }
+    const covers = pathname => servable.record.routes.some(route => clientRouteCovers(route, pathname));
+    let pathname = url.pathname;
+    if (CLIENT_LANDING.test(pathname)) {
+        const wall = servable.wall ? `/walls/${servable.wall}` : null;
+        pathname = wall && covers(wall) ? wall : '/walls';
+    }
+    return covers(pathname) ? `/v${pathname}${url.search}` : null;
 }
 
 // The client URL that takes over a failed navigation to `url`, or null.
@@ -511,7 +524,7 @@ function clientHandoff(url) {
     if (CLIENT_NEVER.test(url.pathname)) {
         return Promise.resolve(null);
     }
-    return Promise.all([servableClient(), deployHolding()]).then(([record, holding]) => (holding ? null : clientPathFor(record, url)));
+    return Promise.all([servableClient(), deployHolding()]).then(([servable, holding]) => (holding ? null : clientPathFor(servable, url)));
 }
 
 const clientRedirect = path => Response.redirect(new URL(path, self.location.origin).href, 302);
@@ -569,7 +582,7 @@ function navigateWithHandoff(request, offlinePage) {
 // it fails). The shell's base is /v/, so this one copy opens every client route.
 function respondWithClientShell(request, offlinePage) {
     return servableClient()
-        .then(record => (record ? caches.match(clientUrl(CLIENT_SHELL_PATH), { cacheName: clientCacheName(record.version) }) : undefined))
+        .then(servable => (servable ? caches.match(clientUrl(CLIENT_SHELL_PATH), { cacheName: clientCacheName(servable.record.version) }) : undefined))
         .catch(() => undefined)
         .then(cached => cached || fetch(request).catch(() => offlinePage()));
 }
