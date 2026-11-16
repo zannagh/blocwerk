@@ -7,6 +7,7 @@ on:
   push:
     branches:
       - main
+      - staging
   workflow_dispatch:
 
 concurrency:
@@ -27,7 +28,7 @@ jobs:
     outputs:
       has_code_changes: ${{ steps.check_changes.outputs.has_code_changes }}
       should_push_image: ${{ github.event_name != 'pull_request' && (github.event_name == 'release' || github.event_name == 'workflow_dispatch' || steps.check_changes.outputs.has_code_changes == 'true') }}
-      should_create_prerelease: ${{ github.event_name == 'push' && steps.check_changes.outputs.has_code_changes == 'true' }}
+      should_create_prerelease: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.check_changes.outputs.has_code_changes == 'true' }}
       is_release: ${{ github.event_name == 'release' }}
     runs-on: ubuntu-latest
     steps:
@@ -161,6 +162,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || github.event_name == 'release' }}
+            type=raw,value=staging,enable=${{ github.ref == 'refs/heads/staging' }}
             type=raw,value=${{ steps.version.outputs.semVer }}
 
       - name: Build and push Docker image
