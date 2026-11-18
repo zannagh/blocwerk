@@ -2,6 +2,10 @@
 @page "/walls/{WallId:guid}/shared/{ShareToken}"
 @inherits CachedWallPage
 @using Blocwerk.Contracts.Documents
+@using Blocwerk.Core.Enums
+@using Blocwerk.Core.Helpers
+@using Blocwerk.Shared.Ui.Styles
+@inject NavigationManager Navigation
 @* A wall's view from the device (the Server's WallDetail, read-only): its photos with the hold overlay, the counts,
    and the boulder list with search, sort, grade range and (signed in) the viewer's own filters and marks. No edit
    mode, no settings, no members, no "+ New". A kind of data the device does not hold (holds, boulders) says so. Slots
@@ -62,10 +66,26 @@ else
         @* .boulders-page: the Server's list page (one sticky head: title, count and the filter chip). *@
         <div class="boulders-page">
             <div class="boulder-section">
+                @if (ShowStyleCards)
+                {
+                    @* First screen of the boulder browser: pick a style. The style is in the URL (?style=), as on the Server. *@
+                    <div class="boulder-list-head">
+                        <div class="section-header">
+                            <h2>Boulders<span class="list-count">@BoulderList.Visible(boulders).Count</span></h2>
+                        </div>
+                    </div>
+                    <BoulderStyleCards Total="BoulderList.Visible(boulders).Count" Counts="styleCounts" HrefFor="StyleHref" />
+                }
+                else
+                {
                 <div class="boulder-list-head">
                     <div class="section-header">
                         <h2>Boulders<span class="list-count">@active.Count</span></h2>
                     </div>
+                    @if (!string.IsNullOrEmpty(Style))
+                    {
+                        <BoulderStyleBar Style="StyleFilter" BackHref="@StyleHref(null, cards: true)" />
+                    }
                     @if (boulders.Count > 0)
                     {
                         <BoulderFilters Filter="filter" FilterChanged="OnFilterChanged" ShowMine="ShowsMine" />
@@ -101,6 +121,7 @@ else
                         </details>
                     }
                 }
+                }
             </div>
         </div>
 
@@ -116,6 +137,30 @@ else
     private IReadOnlyList<BouldersDocumentBoulder> archived = [];
     private int holdCount;
     private CachedWall? derivedFrom;
+    private IReadOnlyDictionary<BoulderStyle, int> styleCounts = new Dictionary<BoulderStyle, int>();
+
+    /// <summary>Gets or sets the <c>?style=</c> value: a style's name, <c>all</c>, or absent for the cards.</summary>
+    [SupplyParameterFromQuery(Name = "style")]
+    public string? Style { get; set; }
+
+    private BoulderStyle? StyleFilter => BoulderStyles.FromSlug(Style);
+
+    // The cards come first while some boulder carries a style; a wall without any tags opens on the list directly.
+    private bool ShowStyleCards => string.IsNullOrEmpty(Style) && styleCounts.Values.Any(c => c > 0);
+
+    private string StyleHref(BoulderStyle? style) => StyleHref(style, cards: false);
+
+    private string StyleHref(BoulderStyle? style, bool cards) => Navigation.GetUriWithQueryParameters(
+        new Dictionary<string, object?> { ["style"] = cards ? null : style is { } s ? BoulderStyles.Slug(s) : "all" });
+
+    /// <inheritdoc />
+    protected override void OnParametersSet()
+    {
+        if (Wall is not null)
+        {
+            (active, archived) = BoulderList.Apply(boulders, Wall.Mine, filter with { Style = StyleFilter });
+        }
+    }
 
     // The viewer's own filters need marks: a signed-in device's (a share link and a kiosk hold none).
     private bool ShowsMine => Store.Partition?.StartsWith("u-", StringComparison.Ordinal) == true;
@@ -125,6 +170,7 @@ else
     {
         filter = new BoulderFilter();
         (grid, derivedFrom, boulders, active, archived) = (null, null, [], [], []);
+        styleCounts = new Dictionary<BoulderStyle, int>();
     }
 
     /// <inheritdoc />
@@ -143,9 +189,10 @@ else
             grid = new WallPanelGrid(Wall.Wall!, Wall.Holds);
             holdCount = Wall.Holds?.Holds.Count(h => !h.Kept) ?? 0;
             boulders = ClassBoulders.Of(Wall);
+            styleCounts = BoulderList.StyleCounts(boulders);
         }
 
-        (active, archived) = BoulderList.Apply(boulders, Wall.Mine, filter);
+        (active, archived) = BoulderList.Apply(boulders, Wall.Mine, filter with { Style = StyleFilter });
     }
 
     private void OnFilterChanged(BoulderFilter next)

@@ -30,6 +30,9 @@ public sealed record BoulderFilter
     /// <summary>Gets a value indicating whether only the viewer's favourites are shown.</summary>
     public bool Favourites { get; init; }
 
+    /// <summary>Gets the style the list is limited to (from the URL, not a filter chip), or null for every boulder.</summary>
+    public Blocwerk.Core.Enums.BoulderStyle? Style { get; init; }
+
     /// <summary>Gets how many filters narrow the list (the chip's count), as the Server counts them.</summary>
     public int ActiveCount =>
         (string.IsNullOrWhiteSpace(Search) ? 0 : 1)

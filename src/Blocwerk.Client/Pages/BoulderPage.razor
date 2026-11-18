@@ -2,7 +2,9 @@
 @page "/walls/{WallId:guid}/boulders/{BoulderId:guid}/shared/{ShareToken}"
 @inherits CachedWallPage
 @using Blocwerk.Contracts.Documents
+@using Blocwerk.Core.Helpers
 @using Blocwerk.Core.Holds
+@using Blocwerk.Shared.Ui.Styles
 @* A boulder's detail from the device (the Server's BoulderDetail, read-only): name, grade, badges and setter; the
    rule banners; the photo with the boulder's holds; the hold breakdown; rating and ascents; the viewer's best result as an icon by the grade
    and favourite; and every comment, newest first. No ascent buttons, no rating, no favourite
@@ -89,6 +91,8 @@ else
                         }
                     </div>
                 }
+
+                <BoulderStyleBadges Styles="BoulderStyles.FromNames(boulder.Styles)" />
 
                 @if (!holds.Saved)
                 {
