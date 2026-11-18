@@ -1,0 +1,30 @@
+@using Blocwerk.Core.Helpers
+@* The boulder browser's first screen: "All" always, then one card per style at least one boulder carries. Plain links, so
+   the choice is a history entry (back returns here) and the style is in the URL. Two columns with "All" across the top:
+   seven cards stay on a 375 x 667 screen without scrolling. *@
+<nav class="style-cards" aria-label="Boulder styles">
+    <a class="style-card style-card-all" href="@HrefFor(null)" data-style="all">
+        <span class="style-card-icon"><BoulderStyleIcon Style="null" Size="26" /></span>
+        <span class="style-card-label">All</span>
+        <span class="style-card-count">@Total</span>
+    </a>
+    @foreach (var style in BoulderStyles.All.Where(s => Counts.GetValueOrDefault(s) > 0))
+    {
+        <a class="style-card" href="@HrefFor(style)" data-style="@BoulderStyles.Slug(style)">
+            <span class="style-card-icon"><BoulderStyleIcon Style="style" Size="26" /></span>
+            <span class="style-card-label">@BoulderStyles.Label(style)</span>
+            <span class="style-card-count">@Counts[style]</span>
+        </a>
+    }
+</nav>
+
+@code {
+    /// <summary>Gets or sets how many boulders the "All" card counts.</summary>
+    [Parameter] public int Total { get; set; }
+
+    /// <summary>Gets or sets the boulders per style; a style with none gets no card.</summary>
+    [Parameter] public IReadOnlyDictionary<Blocwerk.Core.Enums.BoulderStyle, int> Counts { get; set; } = new Dictionary<Blocwerk.Core.Enums.BoulderStyle, int>();
+
+    /// <summary>Gets or sets the link of a card: the style, or null for "All".</summary>
+    [Parameter, EditorRequired] public Func<Blocwerk.Core.Enums.BoulderStyle?, string> HrefFor { get; set; } = _ => "#";
+}

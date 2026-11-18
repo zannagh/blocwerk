@@ -349,6 +349,7 @@ else
 
         @* Right column on the desktop tier: everything you DO with the boulder. *@
         <div class="boulder-side-col">
+        <BoulderStylesPanel Boulder="_boulder" CanEdit="CanManageBoulder" />
         <BoulderRulesSummary Boulder="_boulder" />
 
         @if (!_isAnonymous)

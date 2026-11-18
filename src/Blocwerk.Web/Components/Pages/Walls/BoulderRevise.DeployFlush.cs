@@ -2,6 +2,8 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using Blocwerk.Core.Enums;
+using Blocwerk.Core.Helpers;
 using Blocwerk.Web.State;
 using Microsoft.AspNetCore.Components;
 
@@ -78,7 +80,7 @@ public partial class BoulderRevise
             _isSubmitting = true;
             await BoulderService.ReviseBoulderAsync(
                 BoulderId, ReplaceHolds ? _selectedHolds : null, _name, _grade ?? string.Empty, _allKickboardOn, EffectiveHandsFollowFeet,
-                _footColorOnly ?? string.Empty, _noMatch, _selectedSetters.ToList(), _customRule ?? string.Empty);
+                _footColorOnly ?? string.Empty, _noMatch, _selectedSetters.ToList(), _customRule ?? string.Empty, _styles);
 
             // Saved. Everything below needs the browser, is bounded, and cannot undo the save.
             await DeployDraftInterop.TellSavedAsync(JS, KeepKey, $"Your draft “{_name}” was saved before an update.", DetailUrl);
@@ -130,6 +132,7 @@ public partial class BoulderRevise
             _selectedHolds = snapshot.Holds.Where(h => displayIds.Contains(h.HoldId)).Select(h => h.ToInput()).ToList();
         }
 
+        _styles = snapshot.Styles is { } keptStyles ? BoulderStyles.Normalize((BoulderStyle)keptStyles) : _styles;
         _selectedSetters.Clear();
         foreach (var id in (snapshot.Setters ?? []).Where(id => _members.Any(m => m.UserId == id)))
         {

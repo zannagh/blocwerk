@@ -31,7 +31,7 @@ export const OUTPUTS = {
 // Sources whose every rule is kept (see the header).
 const WHOLE = new Set(['wall3d.css']);
 const RAZOR_DIRS = ['src/Blocwerk.Client/Pages', 'src/Blocwerk.Client/Views', 'src/Blocwerk.Client/Layout',
-    'src/Blocwerk.Client/Gallery', 'src/Blocwerk.Client/ThreeD', 'src/Blocwerk.Shared.Ui/Overlay'];
+    'src/Blocwerk.Client/Gallery', 'src/Blocwerk.Client/ThreeD', 'src/Blocwerk.Shared.Ui/Overlay', 'src/Blocwerk.Shared.Ui/Styles'];
 // Classes built from values the class attribute does not spell out (PanelViewer's chevrons, the tiers' `--tier` html).
 const EXTRA = ['left', 'right', 'up', 'down', 'active'];
 const PAGE_SELECTOR = /^(:root|html|body|\*|h[1-6]\b|a\b|\[data-theme|:where\()/;

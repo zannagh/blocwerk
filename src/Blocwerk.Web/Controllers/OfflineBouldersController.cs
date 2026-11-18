@@ -1,5 +1,6 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -80,7 +81,8 @@ public sealed class OfflineBouldersController : ControllerBase
                 request.Id,
                 request.NoMatch,
                 request.Setters,
-                request.CustomRule);
+                request.CustomRule,
+                (BoulderStyle)request.Styles);
 
             return Canonical(boulder);
         });
@@ -111,7 +113,8 @@ public sealed class OfflineBouldersController : ControllerBase
                 request.FootColorOnly ?? string.Empty, // "" clears the foot colour server-side; null would mean "leave unchanged".
                 request.NoMatch,
                 request.Setters,
-                request.CustomRule);
+                request.CustomRule,
+                request.Styles is { } styles ? (BoulderStyle)styles : null);
 
             return Canonical(boulder);
         });

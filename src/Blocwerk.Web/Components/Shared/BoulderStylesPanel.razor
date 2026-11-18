@@ -1,0 +1,65 @@
+@using Blocwerk.Core.Entities
+@using Blocwerk.Core.Enums
+@inject IBoulderService BoulderService
+@inject ILogger<BoulderStylesPanel> Logger
+@* A boulder's styles on its page. Everybody sees them as small chips; whoever may edit the boulder (CanEdit, the same
+   rule the service enforces) gets the chips as toggles that save on the tap, so the boulders already on a wall can be
+   tagged without opening the editor. *@
+@if (CanEdit)
+{
+    <div class="boulder-styles editable">
+        <span class="boulder-styles-label">Styles</span>
+        <BoulderStyleChips Value="value" ValueChanged="SetAsync" Disabled="saving" />
+        @if (error is not null)
+        {
+            <p class="boulder-styles-error" role="alert">@error</p>
+        }
+    </div>
+}
+else if (value != BoulderStyle.None)
+{
+    <div class="boulder-styles">
+        <BoulderStyleBadges Styles="value" />
+    </div>
+}
+
+@code {
+    /// <summary>Gets or sets the boulder.</summary>
+    [Parameter, EditorRequired] public Boulder Boulder { get; set; } = null!;
+
+    /// <summary>Gets or sets a value indicating whether the viewer may edit the boulder (creator, setter, wall admin).</summary>
+    [Parameter] public bool CanEdit { get; set; }
+
+    private BoulderStyle value;
+    private bool saving;
+    private string? error;
+
+    protected override void OnParametersSet()
+    {
+        if (!saving)
+        {
+            value = Boulder.Styles;
+        }
+    }
+
+    private async Task SetAsync(BoulderStyle next)
+    {
+        var previous = value;
+        (value, saving, error) = (next, true, null);
+        try
+        {
+            var saved = await BoulderService.SetBoulderStylesAsync(Boulder.Id, next);
+            value = saved.Styles;
+            Boulder.Styles = saved.Styles;
+        }
+        catch (InvalidOperationException ex)
+        {
+            Logger.LogWarning(ex, "Setting styles of boulder {BoulderId} failed", Boulder.Id);
+            (value, error) = (previous, ex.Message);
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+}

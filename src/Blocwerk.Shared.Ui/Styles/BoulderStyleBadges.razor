@@ -1,0 +1,18 @@
+@using Blocwerk.Core.Helpers
+@* A boulder's styles, compactly: small icon chips, wrapping, nothing when it has none. *@
+@if (Styles != Blocwerk.Core.Enums.BoulderStyle.None)
+{
+    <ul class="style-badges" aria-label="Styles">
+        @foreach (var style in BoulderStyles.Split(Styles))
+        {
+            <li class="style-badge" data-style="@BoulderStyles.Slug(style)">
+                <BoulderStyleIcon Style="style" Size="13" /><span>@BoulderStyles.Label(style)</span>
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    /// <summary>Gets or sets the styles to show.</summary>
+    [Parameter] public Blocwerk.Core.Enums.BoulderStyle Styles { get; set; }
+}
