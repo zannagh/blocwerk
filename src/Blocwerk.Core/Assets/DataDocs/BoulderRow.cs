@@ -2,6 +2,7 @@
 // See License in the project root for license information.
 
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Enums;
 
 namespace Blocwerk.Core.Assets.DataDocs;
 
@@ -23,7 +24,8 @@ internal sealed record BoulderRow(
     string? CustomRule,
     Guid CreatorId,
     string CreatorDisplayName,
-    string? CreatorCustomName)
+    string? CreatorCustomName,
+    BoulderStyle Styles)
 {
     /// <summary>The creator as <c>BoulderSetterNames.Describe</c> reads one: id and names only.</summary>
     public User Creator() => new()

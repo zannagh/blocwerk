@@ -83,6 +83,12 @@ public class Boulder
 
     public bool IsArchived { get; set; }
 
+    /// <summary>
+    /// The style tags the boulder carries, any combination. Stays on the same row through revisions, so a boulder
+    /// keeps its tags in every generation.
+    /// </summary>
+    public BoulderStyle Styles { get; set; }
+
     public bool IsHistoric { get; set; }
 
     public bool NeedsReview { get; set; }
