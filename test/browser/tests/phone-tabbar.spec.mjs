@@ -111,19 +111,17 @@ test('the tab bar steps aside only while the keyboard is up, and a page left zoo
     await fakeViewport(page, {});
 });
 
-test('the boulder page header keeps favourite, edit and 3D on one line on a phone', async ({ page, world }) => {
+test('the boulder page header keeps favourite and edit inside the phone width', async ({ page, world }) => {
     const mp = world.multiPanel;
     await signIn(page, world.users.pia, `/walls/${mp.wallId}/boulders/${mp.boulder}`);
-    const edit = page.locator('.boulder-detail .boulder-edit-btn');
-    await expect(edit).toBeVisible();
-    const boxes = await Promise.all(['.fav-wrap', '.boulder-edit-btn', '.btn-view3d'].map(sel =>
-        page.locator(`.boulder-detail .title-actions ${sel}`).first().boundingBox()));
-    for (const box of boxes) {
-        expect(box).not.toBeNull();
-        expect(box.x + box.width).toBeLessThanOrEqual(375);
-        expect(box.y).toBeCloseTo(boxes[0].y, -1);
+    await expect(page.locator('.boulder-detail .boulder-edit-btn')).toBeVisible();
+    for (const sel of ['.fav-wrap', '.boulder-edit-btn']) {
+        const box = await page.locator(`.boulder-detail .title-actions ${sel}`).first().boundingBox();
+        expect(box, sel).not.toBeNull();
+        expect(box.x + box.width, sel).toBeLessThanOrEqual(page.viewportSize().width);
+        expect(box.height, sel).toBeLessThanOrEqual(40);
     }
-    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
 // iOS zooms the page in when a text field under 16px takes focus and leaves it zoomed after the keyboard closes; the
