@@ -149,8 +149,7 @@ svg.stat-value { margin-inline: auto; }
 .boulder-photo-col,
 .boulder-side-col { display: var(--boulder-col-display, contents); flex-direction: column; min-width: 0; }
 .boulder-photo-col { position: var(--boulder-photo-col-position, static); top: calc(var(--topbar-h) + 8px); }
-.boulder-wide-col { display: var(--boulder-wide-display, contents); columns: 340px 3; column-gap: 20px; min-width: 0; }
-.boulder-wide-col > * { break-inside: avoid; }
+.boulder-wide-col { display: var(--boulder-wide-display, contents); grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); align-items: start; gap: 0 20px; min-width: 0; }
 .page-header { margin-bottom: 12px; }
 .title-row { display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: wrap; }
 .title-row h1 { font-size: 1.4rem; font-weight: 700; color: var(--text-heading); min-width: 0; }
@@ -195,7 +194,7 @@ img.avatar { object-fit: cover; }
 }
 @media (min-width: 900px) {
     @container style(--tier: desktop) {
-        body { --wall-main-display: grid; --wall-main-align: start; --wall-side-display: flex; --wall-side-max-h: calc(var(--bw-app-h, 100dvh) - var(--topbar-h) - var(--bottomnav-h) - 48px); --stats-wrap: wrap; --stat-basis: 130px; --boulder-list-display: grid; --boulder-list-columns: repeat(auto-fill, minmax(360px, 1fr)); --boulder-detail-display: grid; --boulder-col-display: block; --boulder-wide-display: block; --boulder-photo-col-position: sticky; --boulder-page-max: 1320px; --boulder-photo-chrome: 190px; }
+        body { --wall-main-display: grid; --wall-main-align: start; --wall-side-display: flex; --wall-side-max-h: calc(var(--bw-app-h, 100dvh) - var(--topbar-h) - var(--bottomnav-h) - 48px); --stats-wrap: wrap; --stat-basis: 130px; --boulder-list-display: grid; --boulder-list-columns: repeat(auto-fill, minmax(360px, 1fr)); --boulder-detail-display: grid; --boulder-col-display: block; --boulder-wide-display: grid; --boulder-wide-group-display: flex; --boulder-photo-col-position: sticky; --boulder-page-max: 1320px; --boulder-photo-chrome: 190px; }
         .wall-main:has(> .wall-side) { --wall-photo-chrome: var(--wall-photo-chrome-base); }
     }
 }

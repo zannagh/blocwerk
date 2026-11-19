@@ -102,6 +102,7 @@ public sealed class ClientStoreFeedTests
     [Theory]
     [InlineData(FeedKinds.TickMine, FeedFollowUp.RefetchMine)]
     [InlineData(FeedKinds.FavoriteChanged, FeedFollowUp.RefetchMine)]
+    [InlineData(FeedKinds.ProjectChanged, FeedFollowUp.RefetchMine)]
     [InlineData(FeedKinds.RatingMine, FeedFollowUp.None)]
     [InlineData(FeedKinds.TicksResync, FeedFollowUp.Resync | FeedFollowUp.RefetchMine)]
     [InlineData(FeedKinds.UserResync, FeedFollowUp.Resync | FeedFollowUp.RefetchMine)]

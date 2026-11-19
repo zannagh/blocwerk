@@ -1182,18 +1182,23 @@ a.wall3d-link {
 }
 .boulder-photo-col { position: var(--boulder-photo-col-position, static); top: calc(var(--topbar-h) + 8px); }
 
-/* The long-form row: comments, beta videos, variants, styles, hold type, history and activity, in that order.
-   Transparent on the phone tier like the other two wrappers, so its sections stay in the single stack. On the desktop
-   tier it is a block under .boulder-main-row spanning its full width, flowed into as many ~340px columns as fit (three
-   at 1280+, two at 1024, one at the bottom of the tier). Columns rather than a grid: the sections read top to bottom in
-   their order and a short one never leaves a gap the height of a long comment thread beside it. */
+/* The long-form row: comments | beta videos, variants, styles, hold type | history, activity. Transparent on the phone
+   tier like the other two wrappers, so its sections stay in the single stack in that order. On the desktop tier it is a
+   block under .boulder-main-row spanning its full width, and an auto-fit grid of its three groups: each gets at least
+   340px (three columns at 1280+, two at 1024, one at the bottom of the tier). The groups are fixed cells, so a section
+   never changes column as comments or activity load. align-items: start so a short group does not stretch. */
 .boulder-wide-col {
     display: var(--boulder-wide-display, contents);
-    columns: 340px 3;
-    column-gap: 20px;
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    align-items: start;
+    gap: 0 20px;
     min-width: 0;
 }
-.boulder-wide-col > * { break-inside: avoid; }
+.boulder-wide-group {
+    display: var(--boulder-wide-group-display, contents);
+    flex-direction: column;
+    min-width: 0;
+}
 
 .page-header { margin-bottom: 12px; }
 .title-row { display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: wrap; }
@@ -2162,7 +2167,8 @@ html.bw-fullscreen { --tier: desktop; }
             /* Boulder detail: header + photo left, interaction rail right. */
             --boulder-detail-display: grid;
             --boulder-col-display: block;
-            --boulder-wide-display: block;
+            --boulder-wide-display: grid;
+            --boulder-wide-group-display: flex;
             --boulder-photo-col-position: sticky;
             --boulder-page-max: 1320px;
             --boulder-photo-chrome: 190px;
@@ -4027,6 +4033,7 @@ a.wall-update-link {
     }
     /* Everything is "below the fold" unless it is given a place on the first screen. */
     .boulder-detail :is(.boulder-main-row, .boulder-photo-col, .boulder-side-col, .boulder-wide-col) > * { order: 20; margin-top: 0; margin-bottom: 0; }
+    .boulder-detail .boulder-wide-group > * { order: 20; margin-top: 0; margin-bottom: 0; }
     .boulder-detail .page-header { order: 1; margin: 0; }
     .boulder-detail .boulder-toggle-row { order: 2; margin: 0; }
     .boulder-detail:has(.boulder-toggle-row:not(:has(.view-toggle))) { --boulder-toggles-h: 0px; }
@@ -4084,6 +4091,7 @@ a.wall-update-link {
     .boulder-detail .boulder-toggle-row { grid-column: 2; grid-row: 2; flex-direction: column; }
     .boulder-detail .attempt-section { grid-column: 2; grid-row: 3; }
     .boulder-detail :is(.boulder-main-row, .boulder-photo-col, .boulder-side-col, .boulder-wide-col) > :not(.page-header, .boulder-toggle-row, .boulder-view-slot, .attempt-section) { grid-column: 1 / -1; grid-row: auto; }
+    .boulder-detail .boulder-wide-group > * { grid-column: 1 / -1; grid-row: auto; }
 }
 
 /* What's new (/whats-new): Blocwerk's GitHub release notes, linked from the version in the Info popover. */

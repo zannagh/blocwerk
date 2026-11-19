@@ -464,13 +464,17 @@ else
         </div>
         </div>
 
-        @* Full-width row under both columns on the desktop tier: the sections whose content has no natural length,
-           flowed into as many readable columns as the width affords. Same display:contents trick as the two columns
-           above, so on the phone tier this is simply the rest of the stack, in this order. *@
+        @* Full-width row under both columns on the desktop tier, in three fixed groups that are its grid cells:
+           comments; beta videos, variants, styles and hold type; history and activity. Fixed so a section never
+           moves to another column as content loads. The row and its groups are display:contents on the phone tier,
+           so there this is simply the rest of the stack, in this order. *@
         <div class="boulder-wide-col">
+        <div class="boulder-wide-group">
         <BoulderComments @ref="_commentList" BoulderId="BoulderId" WallId="WallId" ShareToken="@ShareToken"
                          CurrentUserId="_currentUserId" IsAnonymous="_isAnonymous" />
+        </div>
 
+        <div class="boulder-wide-group">
         <BoulderBetaVideos @ref="_betaVideos" BoulderId="BoulderId" WallId="WallId" CurrentUserId="_currentUserId"
                            IsAnonymous="_isAnonymous" ShareToken="@ShareToken"
                            Uploaded="OnBetaVideoUploaded" />
@@ -480,7 +484,9 @@ else
 
         <BoulderStylesPanel Boulder="_boulder" CanEdit="CanManageBoulder" />
         <BoulderHoldTypePanel Boulder="_boulder" CanEdit="CanManageBoulder" />
+        </div>
 
+        <div class="boulder-wide-group">
         @if (!_isAnonymous && _attempts.Count > 0)
         {
             <div class="history-section">
@@ -503,6 +509,7 @@ else
         }
 
         <BoulderActivityFeed @ref="_activityFeed" BoulderId="BoulderId" WallId="WallId" ShareToken="@ShareToken" />
+        </div>
         </div>
     </div>
 }

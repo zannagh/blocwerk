@@ -121,6 +121,20 @@ public sealed class SocialFeedMapperTests : IDisposable
     }
 
     [Fact]
+    public async Task AProject_IsOnlyTheUsersOwnRow()
+    {
+        var boulder = await fixture.SeedAsync();
+        await fixture.AddAsync(new BoulderProject { BoulderId = boulder, UserId = fixture.OwnerId });
+        await fixture.ChangeAsync<BoulderProject>(p => p.BoulderId == boulder, (p, db) => db.Remove(p));
+
+        var rows = await fixture.RowsAsync();
+        Assert.Equal(2, rows.Count);
+        Assert.All(rows, r => Assert.Equal(
+            (FeedKinds.ProjectChanged, FeedAudience.User, (Guid?)fixture.OwnerId, (Guid?)fixture.WallId),
+            (r.Kind, r.Audience, r.AudienceUserId, r.WallId)));
+    }
+
+    [Fact]
     public async Task AGalleryImage_IsChangedThenDeleted()
     {
         await fixture.SeedAsync();
