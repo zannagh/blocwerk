@@ -284,9 +284,6 @@ namespace Blocwerk.Core.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
-                    b.Property<int?>("DominantHoldType")
-                        .HasColumnType("integer");
-
                     b.Property<string>("FootColorOnly")
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
@@ -300,6 +297,9 @@ namespace Blocwerk.Core.Migrations
 
                     b.Property<bool>("HandsFollowFeet")
                         .HasColumnType("boolean");
+
+                    b.Property<int>("HoldTypes")
+                        .HasColumnType("integer");
 
                     b.Property<bool>("IsArchived")
                         .HasColumnType("boolean");

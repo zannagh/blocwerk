@@ -10,8 +10,20 @@ namespace Blocwerk.Core.Tests;
 public sealed class BoulderStylesTests
 {
     [Fact]
-    public void TheSetIsTheSevenStyles_InCardOrder() =>
-        Assert.Equal(["Warmup", "Tension", "Dynamic", "Funky", "Endurance", "Power", "Technical"], BoulderStyles.All.Select(BoulderStyles.Label));
+    public void TheSetIsTheNineStyles_InCardOrder() =>
+        Assert.Equal(
+            ["Warmup", "Tension", "Dynamic", "Funky", "Endurance", "Power", "Technical", "Reachy", "Flexy"],
+            BoulderStyles.All.Select(BoulderStyles.Label));
+
+    [Fact]
+    public void ReachyAndFlexy_TakeTheNextFreeBits_AndSayWhatTheyNeed()
+    {
+        Assert.Equal(128, (int)BoulderStyle.Reachy);
+        Assert.Equal(256, (int)BoulderStyle.Flexy);
+        Assert.Equal(BoulderStyle.Reachy | BoulderStyle.Flexy, BoulderStyles.FromNames(["reachy", "Flexy"]));
+        Assert.Contains("wingspan", BoulderStyles.Description(BoulderStyle.Reachy), StringComparison.Ordinal);
+        Assert.Contains("flexibility", BoulderStyles.Description(BoulderStyle.Flexy), StringComparison.Ordinal);
+    }
 
     [Fact]
     public void Warmup_TakesTheNextFreeBit_SoStoredValuesKeepTheirMeaning()
@@ -24,7 +36,7 @@ public sealed class BoulderStylesTests
 
     [Fact]
     public void EveryStyle_HasALabelAndAnIcon() =>
-        Assert.All(BoulderStyles.Definitions, d => Assert.False(string.IsNullOrEmpty(d.Label) || string.IsNullOrEmpty(d.Icon)));
+        Assert.All(BoulderStyles.Definitions, d => Assert.False(string.IsNullOrEmpty(d.Label) || string.IsNullOrEmpty(d.Icon) || string.IsNullOrEmpty(d.Description)));
 
     [Theory]
     [InlineData("tension", BoulderStyle.Tension)]
@@ -56,7 +68,7 @@ public sealed class BoulderStylesTests
     }
 
     [Fact]
-    public void AStrayBitIsDropped() => Assert.Equal(BoulderStyle.Power, BoulderStyles.Normalize((BoulderStyle)(16 | 1024)));
+    public void AStrayBitIsDropped() => Assert.Equal(BoulderStyle.Power, BoulderStyles.Normalize((BoulderStyle)(16 | 4096)));
 
     [Fact]
     public void ABoulderCountsOnceUnderEachOfItsStyles()

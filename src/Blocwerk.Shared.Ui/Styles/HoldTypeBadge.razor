@@ -1,14 +1,20 @@
 @using Blocwerk.Core.Helpers
-@* A boulder's effective hold type as a badge; an inferred one says so ("Crimp · from holds"). Nothing when it has none. *@
+@* A boulder's effective hold types as badges; an inferred one says so ("Crimp · from holds"). Nothing when it has none. *@
 @if (Value is { } effective)
 {
-    <span class="style-badge hold-type-badge" data-hold-type="@BoulderHoldTypes.Slug(effective.Type)" data-inferred="@(effective.Inferred ? "true" : "false")">
-        <BrowseIcon Markup="@BoulderHoldTypes.Icon(effective.Type)" Size="13" />
-        <span>@BoulderHoldTypes.Label(effective.Type)@(effective.Inferred ? " · from holds" : string.Empty)</span>
-    </span>
+    <ul class="style-badges hold-type-badges" aria-label="Hold types" data-inferred="@(effective.Inferred ? "true" : "false")">
+        @foreach (var type in BoulderHoldTypes.Split(effective.Types))
+        {
+            <li class="style-badge hold-type-badge" data-hold-type="@BoulderHoldTypes.Slug(type)" data-inferred="@(effective.Inferred ? "true" : "false")"
+                title="@BoulderHoldTypes.Description(type)">
+                <BrowseIcon Markup="@BoulderHoldTypes.Icon(type)" Size="13" />
+                <span>@BoulderHoldTypes.Label(type)@(effective.Inferred ? " · from holds" : string.Empty)</span>
+            </li>
+        }
+    </ul>
 }
 
 @code {
-    /// <summary>Gets or sets the effective hold type, or null.</summary>
+    /// <summary>Gets or sets the effective hold types, or null.</summary>
     [Parameter] public EffectiveHoldType? Value { get; set; }
 }

@@ -10,29 +10,29 @@ using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core.Services;
 
-/// <summary>Setting a boulder's dominant hold type on its own.</summary>
+/// <summary>Setting a boulder's hold types on their own.</summary>
 public partial interface IBoulderService
 {
     /// <summary>
-    /// Sets the hold type a boulder is mainly climbed on, or clears it (null) so its holds decide again
-    /// (<see cref="BoulderHoldTypes.Effective"/>). Allowed for the same people as editing it: its creator, one of its
-    /// setters, or an admin or owner of its wall; anybody else is refused with an <see cref="InvalidOperationException"/>,
-    /// as is a value outside the five hold types.
+    /// Sets the hold types a boulder is mainly climbed on (any combination of grips and hooks), or clears them
+    /// (<see cref="BoulderHoldType.None"/>) so its holds decide again (<see cref="BoulderHoldTypes.Effective"/>). Allowed
+    /// for the same people as editing it: its creator, one of its setters, or an admin or owner of its wall; anybody else
+    /// is refused with an <see cref="InvalidOperationException"/>, as is a value outside the known types.
     /// </summary>
     /// <param name="boulderId">The boulder.</param>
-    /// <param name="holdType">The type, or null to clear it.</param>
-    /// <returns>The boulder, with the type as stored afterwards.</returns>
-    Task<Boulder> SetBoulderHoldTypeAsync(Guid boulderId, HoldHandType? holdType);
+    /// <param name="holdTypes">The types, or none to clear them.</param>
+    /// <returns>The boulder, with the types as stored afterwards.</returns>
+    Task<Boulder> SetBoulderHoldTypesAsync(Guid boulderId, BoulderHoldType holdTypes);
 }
 
-/// <summary>Implements <see cref="IBoulderService.SetBoulderHoldTypeAsync"/>.</summary>
+/// <summary>Implements <see cref="IBoulderService.SetBoulderHoldTypesAsync"/>.</summary>
 public partial class BoulderService
 {
     /// <summary>The refusal for somebody who may not edit the boulder; the Server pages also show it.</summary>
-    public const string HoldTypeNotAllowedMessage = "Only the creator, a setter, or a wall admin can set a boulder's hold type";
+    public const string HoldTypeNotAllowedMessage = "Only the creator, a setter, or a wall admin can set a boulder's hold types";
 
     /// <inheritdoc />
-    public async Task<Boulder> SetBoulderHoldTypeAsync(Guid boulderId, HoldHandType? holdType)
+    public async Task<Boulder> SetBoulderHoldTypesAsync(Guid boulderId, BoulderHoldType holdTypes)
     {
         using var op = BlocwerkMetrics.TimeOperation("Boulder.SetHoldType");
         try
@@ -48,17 +48,17 @@ public partial class BoulderService
 
             if (!await CanManageBoulderAsync(db, boulder, user.Id))
             {
-                _logger.LogWarning("Set hold type denied: user {UserId} may not edit boulder {BoulderId}", user.Id, boulderId);
+                _logger.LogWarning("Set hold types denied: user {UserId} may not edit boulder {BoulderId}", user.Id, boulderId);
                 throw new InvalidOperationException(HoldTypeNotAllowedMessage);
             }
 
-            EnsureKnownHoldType(holdType);
+            EnsureKnownHoldTypes(holdTypes);
 
-            if (boulder.DominantHoldType != holdType)
+            if (boulder.HoldTypes != holdTypes)
             {
-                boulder.DominantHoldType = holdType;
+                boulder.HoldTypes = holdTypes;
                 await db.SaveChangesAsync();
-                _logger.LogInformation("Boulder {BoulderId} hold type set to {HoldType} by {UserId}", boulderId, holdType, user.Id);
+                _logger.LogInformation("Boulder {BoulderId} hold types set to {HoldTypes} by {UserId}", boulderId, holdTypes, user.Id);
             }
 
             return boulder;
@@ -70,10 +70,10 @@ public partial class BoulderService
         }
     }
 
-    // Refuses anything but one of the five hold types (null, clearing, is fine).
-    private static void EnsureKnownHoldType(HoldHandType? holdType)
+    // Refuses any bit outside the known types (none, clearing, is fine).
+    private static void EnsureKnownHoldTypes(BoulderHoldType holdTypes)
     {
-        if (holdType is { } type && BoulderHoldTypes.Definitions.All(d => d.Value != type))
+        if (BoulderHoldTypes.Normalize(holdTypes) != holdTypes)
         {
             throw new InvalidOperationException("Unknown hold type");
         }

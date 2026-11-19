@@ -22,4 +22,4 @@ public sealed record BoulderFamilyRow(
     IReadOnlyList<string> VariantNames,
     BoulderStyle Styles = BoulderStyle.None,
     IReadOnlyList<Guid>? VariantIds = null,
-    IReadOnlyList<HoldHandType>? HoldTypes = null);
+    BoulderHoldType HoldTypes = BoulderHoldType.None);

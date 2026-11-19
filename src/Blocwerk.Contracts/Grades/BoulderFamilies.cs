@@ -82,6 +82,6 @@ public static class BoulderFamilies
             variants.Select(v => v.Name).ToList(),
             variants.Aggregate(head.Styles, (styles, v) => styles | v.Styles),
             variants.Select(v => v.Id).ToList(),
-            variants.Prepend(head).Where(m => m.HoldType.HasValue).Select(m => m.HoldType!.Value).Distinct().ToList());
+            variants.Aggregate(head.HoldTypes, (types, v) => types | v.HoldTypes));
     }
 }

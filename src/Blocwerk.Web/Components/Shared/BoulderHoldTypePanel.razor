@@ -3,17 +3,17 @@
 @using Blocwerk.Core.Helpers
 @inject IBoulderService BoulderService
 @inject ILogger<BoulderHoldTypePanel> Logger
-@* A boulder's dominant hold type on its page. Everybody sees the type the browser files it under, marked "from holds" when
-   it is inferred; whoever may edit the boulder (CanEdit, the rule the service enforces) gets the five types as chips that
-   save on the tap, and tapping the chosen one again clears it, so the holds decide again. *@
+@* A boulder's hold types on its page. Everybody sees the types the browser files it under, marked "from holds" when the
+   holds suggest one; whoever may edit the boulder (CanEdit, the rule the service enforces) gets the grips and hooks as
+   chips that toggle and save on the tap. With none chosen the holds decide again. *@
 @if (CanEdit)
 {
     <div class="boulder-styles editable" data-hold-type-panel>
-        <span class="boulder-styles-label">Hold type</span>
+        <span class="boulder-styles-label">Hold types</span>
         <HoldTypeChips Value="value" ValueChanged="SetAsync" Inferred="inferred" Disabled="saving" />
-        @if (value is null)
+        @if (value == BoulderHoldType.None)
         {
-            <p class="boulder-hold-type-note">@(inferred is { } type ? $"{BoulderHoldTypes.Label(type)} · from holds. Tap a type to set it." : "None yet. Tap a type to set it.")</p>
+            <p class="boulder-hold-type-note">@(inferred is { } type ? $"{BoulderHoldTypes.Label(type)} · from holds. Tap types to set them." : "None yet. Tap types to set them.")</p>
         }
         @if (error is not null)
         {
@@ -35,8 +35,8 @@ else if (BoulderHoldTypes.Effective(value, gripped) is { } effective)
     /// <summary>Gets or sets a value indicating whether the viewer may edit the boulder (creator, setter, wall admin).</summary>
     [Parameter] public bool CanEdit { get; set; }
 
-    private HoldHandType? value;
-    private HoldHandType? inferred;
+    private BoulderHoldType value;
+    private BoulderHoldType? inferred;
     private List<HoldHandType?> gripped = [];
     private bool saving;
     private string? error;
@@ -50,30 +50,30 @@ else if (BoulderHoldTypes.Effective(value, gripped) is { } effective)
         inferred = BoulderHoldTypes.Infer(gripped);
         if (!saving)
         {
-            value = Boulder.DominantHoldType;
+            value = Boulder.HoldTypes;
         }
     }
 
-    private async Task SetAsync(HoldHandType? next)
+    private async Task SetAsync(BoulderHoldType next)
     {
         var previous = value;
         (value, saving, error) = (next, true, null);
         try
         {
-            var saved = await BoulderService.SetBoulderHoldTypeAsync(Boulder.Id, next);
-            value = saved.DominantHoldType;
-            Boulder.DominantHoldType = saved.DominantHoldType;
+            var saved = await BoulderService.SetBoulderHoldTypesAsync(Boulder.Id, next);
+            value = saved.HoldTypes;
+            Boulder.HoldTypes = saved.HoldTypes;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // The click handler must not throw: an unhandled exception here ends the circuit.
-            Logger.LogWarning(ex, "Setting the hold type of boulder {BoulderId} failed", Boulder.Id);
+            Logger.LogWarning(ex, "Setting the hold types of boulder {BoulderId} failed", Boulder.Id);
             value = previous;
             error = ex switch
             {
                 InvalidOperationException => ex.Message,
-                UnauthorizedAccessException => "Your session has ended. Sign in again to change the hold type.",
-                _ => "The hold type could not be saved. Try again.",
+                UnauthorizedAccessException => "Your session has ended. Sign in again to change the hold types.",
+                _ => "The hold types could not be saved. Try again.",
             };
         }
         finally

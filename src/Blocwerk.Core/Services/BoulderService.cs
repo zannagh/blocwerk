@@ -1167,11 +1167,11 @@ public partial class BoulderService : IBoulderService
                 boulder.Styles = BoulderStyles.Normalize(styles.Value);
             }
 
-            // Null leaves the dominant hold type as it is, like the tags; a change with no type clears it.
+            // Null leaves the hold types as they are, like the tags; a change with no types clears them.
             if (holdType is { } change)
             {
-                EnsureKnownHoldType(change.Type);
-                boulder.DominantHoldType = change.Type;
+                EnsureKnownHoldTypes(change.Types);
+                boulder.HoldTypes = change.ApplyTo(boulder.HoldTypes);
             }
 
             if (updatedHolds is not null)
@@ -1608,7 +1608,7 @@ public partial class BoulderService : IBoulderService
             return false;
         }
 
-        if (holdType is { } change && boulder.DominantHoldType != change.Type)
+        if (holdType is { } change && boulder.HoldTypes != change.ApplyTo(boulder.HoldTypes))
         {
             return false;
         }

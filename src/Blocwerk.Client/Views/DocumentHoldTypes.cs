@@ -8,9 +8,9 @@ using Blocwerk.Core.Helpers;
 namespace Blocwerk.Client.Views;
 
 /// <summary>
-/// A cached boulder's effective hold type, by the Server's rule (<see cref="BoulderHoldTypes.Effective"/>): the type set on
-/// it (the boulders document's <c>HoldType</c>), else the one its gripped holds show in the holds document. Without the
-/// holds document only a type set on the boulder counts.
+/// A cached boulder's effective hold types, by the Server's rule (<see cref="BoulderHoldTypes.Effective"/>): the types set on
+/// it (the boulders document's <c>HoldTypes</c>, or its single <c>HoldType</c> from a Server before them), else the one its
+/// gripped holds show in the holds document. Without the holds document only types set on the boulder count.
 /// </summary>
 public static class DocumentHoldTypes
 {
@@ -20,10 +20,10 @@ public static class DocumentHoldTypes
     public static IReadOnlyDictionary<Guid, HoldsDocumentHold> Index(HoldsDocument? holds) =>
         (holds?.Holds ?? []).GroupBy(h => h.Id).ToDictionary(g => g.Key, g => g.First());
 
-    /// <summary>The effective hold type of one boulder.</summary>
+    /// <summary>The effective hold types of one boulder.</summary>
     /// <param name="boulder">The boulder.</param>
     /// <param name="holds">The holds by id (<see cref="Index"/>).</param>
-    /// <returns>The type and whether it is inferred, or null.</returns>
+    /// <returns>The types and whether they are inferred, or null.</returns>
     public static EffectiveHoldType? Of(BouldersDocumentBoulder boulder, IReadOnlyDictionary<Guid, HoldsDocumentHold> holds)
     {
         var gripped = new List<HoldHandType?>();
@@ -34,10 +34,11 @@ public static class DocumentHoldTypes
                 && Enum.TryParse<HoldUsage>(bh.Usage, out var usage)
                 && BoulderHoldTypes.IsGripped(category, usage))
             {
-                gripped.Add(BoulderHoldTypes.FromSlug(hold.HandType));
+                gripped.Add(Enum.TryParse<HoldHandType>(hold.HandType, ignoreCase: true, out var hand) ? hand : null);
             }
         }
 
-        return BoulderHoldTypes.Effective(BoulderHoldTypes.FromSlug(boulder.HoldType), gripped);
+        var set = boulder.HoldTypes is { } names ? BoulderHoldTypes.FromNames(names) : BoulderHoldTypes.FromNames([boulder.HoldType]);
+        return BoulderHoldTypes.Effective(set, gripped);
     }
 }

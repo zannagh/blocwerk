@@ -127,7 +127,7 @@ public class PostgresMigrationTests
     }
 
     /// <summary>Migrates up to the migration just before <paramref name="name"/>, so rows can be written at the schema it meets.</summary>
-    private static async Task MigrateBeforeAsync(PostgresTestDatabase database, string name)
+    internal static async Task MigrateBeforeAsync(PostgresTestDatabase database, string name)
     {
         await using var db = database.CreateContext();
         var migrations = db.Database.GetMigrations().ToList();
@@ -137,7 +137,7 @@ public class PostgresMigrationTests
     }
 
     /// <summary>Migrates up to and including <paramref name="name"/>, or all the way when null.</summary>
-    private static async Task MigrateToAsync(PostgresTestDatabase database, string? name)
+    internal static async Task MigrateToAsync(PostgresTestDatabase database, string? name)
     {
         await using var db = database.CreateContext();
         var target = name is null ? null : db.Database.GetMigrations().Single(m => m.EndsWith("_" + name, StringComparison.Ordinal));

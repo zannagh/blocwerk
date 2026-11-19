@@ -8,13 +8,14 @@ namespace Blocwerk.Core.Helpers;
 /// <summary>
 /// Where in the boulder browser a URL is, the same on the Server and in the offline client. Every level has a URL of its
 /// own, so reload and back return to it: nothing for the landing cards, <c>?browse=holds</c> and <c>?browse=styles</c> for
-/// the two card pages, and <c>?style=all</c>, <c>?style=power</c>, <c>?hold=crimp</c> or <c>?mine=favorites</c> for a list.
+/// the two card pages, and <c>?style=all</c>, <c>?style=power</c>, <c>?hold=crimp</c>, <c>?hold=heel-hook</c> or
+/// <c>?mine=favorites</c> for a list.
 /// </summary>
 /// <param name="Level">The screen.</param>
 /// <param name="Style">The style a list is limited to.</param>
 /// <param name="HoldType">The hold type a list is limited to.</param>
 /// <param name="Mine">The viewer's own list (favourites, projects) a list is limited to.</param>
-public sealed record BoulderBrowse(BoulderBrowseLevel Level, BoulderStyle? Style = null, HoldHandType? HoldType = null, BoulderMine? Mine = null)
+public sealed record BoulderBrowse(BoulderBrowseLevel Level, BoulderStyle? Style = null, BoulderHoldType? HoldType = null, BoulderMine? Mine = null)
 {
     /// <summary>The query keys the browser owns.</summary>
     public const string BrowseKey = "browse", StyleKey = "style", HoldKey = "hold", MineKey = "mine";

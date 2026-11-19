@@ -1,12 +1,12 @@
 // The boulder browser by hold type: the landing (All, By Hold Type, By Style, My projects, Favorites), the hold-type cards with greyed-out empty
 // ones, the list of one type with its families, the boulder page's type (inferred "from holds", or set) and back to the
 // same list, setting and clearing the type on the boulder page, and the same browsing in the offline client. The Grips
-// wall (seed/SeedHoldTypes.cs) is only listed here: 6 rows (the variant folds into its family), Jug 1, Crimp 2 (Crimpy and the family), Pinch, Sloper and
-// Pocket empty, one Warmup boulder.
+// wall (seed/SeedHoldTypes.cs) is only listed here: 6 rows (the variant folds into its family), Jug 1, Crimp 2 (Crimpy and
+// the family), Heel hook 1 (Jug set, which has Jug and Heel hook set), Pinch, Sloper, Pocket and Toe hook empty, one Warmup boulder.
 import { test, expect, signIn } from '../harness/fixtures.mjs';
 import { precacheAs, expectClient } from '../harness/client.mjs';
 
-const PHONE = { width: 390, height: 844 };
+const PHONE = { width: 402, height: 874 }; // iPhone 16 Pro
 const listPage = page => page.locator('.wall-carousel > .wall-page').nth(3);
 const card = (scope, key) => scope.locator(`.style-card[data-card="${key}"]`);
 const rows = scope => scope.locator('.boulder-card');
@@ -34,14 +34,15 @@ test('phone: landing, hold-type cards, a type\'s list, its boulder and back agai
     await expect(card(list, 'holds').locator('.style-card-count')).toHaveText('3');
     await expect(card(list, 'styles').locator('.style-card-count')).toHaveText('1');
     await expectFits(page, list);
-    await page.screenshot({ path: '../../.out/holds-landing-390.png' });
+    await page.screenshot({ path: '../../.out/holds-landing-402.png' });
 
     await card(list, 'holds').click();
     await expect(page).toHaveURL(/browse=holds/);
-    await expect(list.locator('.style-card')).toHaveCount(5);
+    await expect(list.locator('.style-card')).toHaveCount(7);
     await expect(card(list, 'jug').locator('.style-card-count')).toHaveText('1');
     await expect(card(list, 'crimp').locator('.style-card-count')).toHaveText('2');
-    for (const empty of ['pinch', 'sloper', 'pocket']) {
+    await expect(card(list, 'heel-hook').locator('.style-card-count')).toHaveText('1');
+    for (const empty of ['pinch', 'sloper', 'pocket', 'toe-hook']) {
         await expect(card(list, empty)).toHaveClass(/is-empty/);
         await expect(card(list, empty)).toHaveAttribute('aria-disabled', 'true');
     }
@@ -49,7 +50,7 @@ test('phone: landing, hold-type cards, a type\'s list, its boulder and back agai
     await card(list, 'pinch').click();
     await expect(page).toHaveURL(/browse=holds/);
     await expectFits(page, list);
-    await page.screenshot({ path: '../../.out/holds-cards-390.png' });
+    await page.screenshot({ path: '../../.out/holds-cards-402.png' });
 
     await card(list, 'crimp').click();
     await expect(page).toHaveURL(/hold=crimp/);
@@ -61,7 +62,7 @@ test('phone: landing, hold-type cards, a type\'s list, its boulder and back agai
     await expect(page).toHaveURL(/\/boulders\/.*hold=crimp/);
     await expect(page.locator('[data-hold-type-panel]')).toContainText('Crimp · from holds');
     await expect(page.locator('[data-hold-type-panel] .style-pick[data-hold-type="crimp"]')).toHaveClass(/inferred/);
-    await page.screenshot({ path: '../../.out/holds-boulder-390.png' });
+    await page.screenshot({ path: '../../.out/holds-boulder-402.png' });
     await page.locator('.back-link').click();
     await expect(page).toHaveURL(/hold=crimp/);
     await expect(rows(list)).toHaveCount(2);
@@ -75,33 +76,55 @@ test('phone: landing, hold-type cards, a type\'s list, its boulder and back agai
     await expect(rows(list)).toHaveCount(2);
     await list.locator('[data-browse-back]').click();
     await expect(page).toHaveURL(/browse=holds/);
-    await expect(list.locator('.style-card')).toHaveCount(5);
+    await expect(list.locator('.style-card')).toHaveCount(7);
+
+    // A hook, set by hand, files its boulder too: Jug set shows both of its types and no "from holds".
+    await card(list, 'heel-hook').click();
+    await expect(page).toHaveURL(/hold=heel-hook/);
+    await expect(rows(list)).toHaveCount(1);
+    await expect(rows(list).first()).toContainText('Jug set');
+    await rows(list).first().click();
+    await expect(page.locator('[data-hold-type-panel] .style-pick[aria-pressed="true"]')).toHaveCount(2);
+    await expect(page.locator('[data-hold-type-panel]')).not.toContainText('from holds');
+    await page.locator('.back-link').click();
+    await expect(page).toHaveURL(/hold=heel-hook/);
+    await list.locator('[data-browse-back]').click();
+    await expect(list.locator('.style-card')).toHaveCount(7);
     await list.locator('[data-browse-back]').click();
     await expect(list.locator('.style-card')).toHaveCount(5);
 });
 
-test('the boulder page sets a hold type and clears it again', async ({ page, world }) => {
+test('the boulder page sets several hold types, a hook among them, and clears them again', async ({ page, world }) => {
     const wall = await open(page, world, 'view=boulders&style=all');
     await rows(listPage(page)).filter({ hasText: 'Override me' }).click();
     const sloper = page.locator('[data-hold-type-panel] .style-pick[data-hold-type="sloper"]');
+    const toe = page.locator('[data-hold-type-panel] .style-pick[data-hold-type="toe-hook"]');
     await expect(page.locator('[data-hold-type-panel]')).toContainText('None yet');
     await sloper.click();
     await expect(sloper).toHaveAttribute('aria-pressed', 'true');
+    await toe.click();
+    await expect(toe).toHaveAttribute('aria-pressed', 'true');
     await page.reload();
     await expect(sloper).toHaveAttribute('aria-pressed', 'true');
+    await expect(toe).toHaveAttribute('aria-pressed', 'true');
 
     await page.goto(`/walls/${wall.id}?view=boulders&browse=holds`);
     await expect(card(listPage(page), 'sloper').locator('.style-card-count')).toHaveText('1');
-    await card(listPage(page), 'sloper').click();
+    await expect(card(listPage(page), 'toe-hook').locator('.style-card-count')).toHaveText('1');
+    await card(listPage(page), 'toe-hook').click();
     await rows(listPage(page)).filter({ hasText: 'Override me' }).click();
 
     // Cleared, the holds decide again (this boulder has none), and the wall is as seeded for the next browser.
     await sloper.click();
     await expect(sloper).toHaveAttribute('aria-pressed', 'false');
+    await toe.click();
+    await expect(toe).toHaveAttribute('aria-pressed', 'false');
     await page.reload();
     await expect(sloper).toHaveAttribute('aria-pressed', 'false');
+    await expect(toe).toHaveAttribute('aria-pressed', 'false');
     await page.goto(`/walls/${wall.id}?view=boulders&browse=holds`);
     await expect(card(listPage(page), 'sloper')).toHaveClass(/is-empty/);
+    await expect(card(listPage(page), 'toe-hook')).toHaveClass(/is-empty/);
 });
 
 test('offline client: the same levels, cards and list at phone width', async ({ page, world, server }) => {
@@ -119,8 +142,9 @@ test('offline client: the same levels, cards and list at phone width', async ({ 
 
     await card(page, 'holds').click();
     await expect(page).toHaveURL(/browse=holds/);
-    await expect(page.locator('.style-card')).toHaveCount(5);
+    await expect(page.locator('.style-card')).toHaveCount(7);
     await expect(card(page, 'pinch')).toHaveAttribute('aria-disabled', 'true');
+    await expect(card(page, 'heel-hook').locator('.style-card-count')).toHaveText('1');
     await expectFits(page, page);
     await card(page, 'crimp').click();
     await expect(page).toHaveURL(/hold=crimp/);
@@ -128,12 +152,16 @@ test('offline client: the same levels, cards and list at phone width', async ({ 
 
     await rows(page).filter({ hasText: 'Crimpy' }).click();
     await expect(page.locator('.hold-type-badge')).toContainText('from holds');
-    await page.screenshot({ path: '../../.out/holds-client-boulder-390.png' });
+    await page.screenshot({ path: '../../.out/holds-client-boulder-402.png' });
     await page.locator('.back-link').click();
     await expect(page).toHaveURL(/hold=crimp/);
     await expect(rows(page)).toHaveCount(2);
     await page.locator('[data-browse-back]').click();
-    await expect(page.locator('.style-card')).toHaveCount(5);
+    await expect(page.locator('.style-card')).toHaveCount(7);
+    await card(page, 'heel-hook').click();
+    await expect(page).toHaveURL(/hold=heel-hook/);
+    await expect(rows(page)).toHaveCount(1);
+    await page.locator('[data-browse-back]').click();
     await page.locator('[data-browse-back]').click();
     await expect(page.locator('.style-card')).toHaveCount(5);
 });

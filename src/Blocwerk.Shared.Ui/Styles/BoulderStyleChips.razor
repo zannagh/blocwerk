@@ -6,7 +6,7 @@
     {
         var on = Value.HasFlag(style);
         <button type="button" class="style-pick@(on ? " on" : string.Empty)" aria-pressed="@(on ? "true" : "false")"
-                data-style="@BoulderStyles.Slug(style)" disabled="@Disabled" @onclick="() => Toggle(style)">
+                data-style="@BoulderStyles.Slug(style)" title="@BoulderStyles.Description(style)" disabled="@Disabled" @onclick="() => Toggle(style)">
             <BoulderStyleIcon Style="style" Size="15" /><span>@BoulderStyles.Label(style)</span>
         </button>
     }

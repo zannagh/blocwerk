@@ -9,8 +9,8 @@ using Blocwerk.Web.State;
 namespace Blocwerk.Core.Tests;
 
 /// <summary>
-/// A revise kept on the device across a deploy comes back whole, the hold type included: the snapshot writes it (so a
-/// change of the hold type alone counts as unsaved), and RestoreKeptAsync reads every field back. Checked against the
+/// A revise kept on the device across a deploy comes back whole, the hold types included: the snapshot writes them (so a
+/// change of the hold types alone counts as unsaved), and RestoreKeptAsync reads every field back. Checked against the
 /// source, since the page has no harness of its own.
 /// </summary>
 public class BoulderReviseRestoreTests
@@ -34,35 +34,32 @@ public class BoulderReviseRestoreTests
     }
 
     [Fact]
-    public void TheSnapshot_CarriesTheHoldType_AndTheSaveBeforeADeploySendsIt()
+    public void TheSnapshot_CarriesTheHoldTypes_AndTheSaveBeforeADeploySendsThem()
     {
         var page = Source("BoulderRevise.razor");
         var snapshot = page[page.IndexOf("private string SnapshotJson", StringComparison.Ordinal)..];
         snapshot = snapshot[..snapshot.IndexOf("});", StringComparison.Ordinal)];
-        Assert.Contains("holdType = BoulderHoldTypeChange.ToForm(_holdType)", snapshot, StringComparison.Ordinal);
+        Assert.Contains("holdTypes = BoulderHoldTypeChange.ToNames(_holdTypes)", snapshot, StringComparison.Ordinal);
 
         var flush = Source("BoulderRevise.DeployFlush.cs");
         var save = flush[flush.IndexOf("private async Task<bool> TrySaveDraftAsync", StringComparison.Ordinal)..];
         save = save[..save.IndexOf("\n    }\n", StringComparison.Ordinal)];
-        Assert.Contains("new BoulderHoldTypeChange(_holdType)", save, StringComparison.Ordinal);
+        Assert.Contains("new BoulderHoldTypeChange(_holdTypes)", save, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void AKeptSnapshot_ReadsBackItsHoldType()
+    public void AKeptSnapshot_ReadsBackItsHoldTypes()
     {
-        var kept = BoulderFormSnapshot.TryParse("""{"id":"11111111-1111-1111-1111-111111111111","holdType":"Sloper"}""");
-        Assert.Equal(new BoulderHoldTypeChange(HoldHandType.Sloper), BoulderHoldTypeChange.FromForm(kept!.HoldType));
+        var kept = BoulderFormSnapshot.TryParse("""{"id":"11111111-1111-1111-1111-111111111111","holdTypes":["Sloper","Heel hook"]}""");
+        Assert.Equal(BoulderHoldType.Sloper | BoulderHoldType.HeelHook, BoulderHoldTypeChange.FromRequest(kept!.HoldTypes, kept.HoldType)!.Value.ApplyTo(BoulderHoldType.Jug));
     }
 
-    [Theory]
-    [InlineData(null, false, null)]
-    [InlineData("", true, null)]
-    [InlineData("crimp", true, HoldHandType.Crimp)]
-    [InlineData("bogus", false, null)]
-    public void TheFormValue_LeavesClearsOrSets(string? value, bool changes, HoldHandType? type)
+    [Fact]
+    public void ASnapshotKeptBy_A070Page_SetsItsGrip_AndKeepsTheHooks()
     {
-        var change = BoulderHoldTypeChange.FromForm(value);
-        Assert.Equal(changes, change.HasValue);
-        Assert.Equal(type, change?.Type);
+        var kept = BoulderFormSnapshot.TryParse("""{"id":"11111111-1111-1111-1111-111111111111","holdType":"Sloper"}""");
+        Assert.Equal(
+            BoulderHoldType.Sloper | BoulderHoldType.ToeHook,
+            BoulderHoldTypeChange.FromRequest(kept!.HoldTypes, kept.HoldType)!.Value.ApplyTo(BoulderHoldType.Crimp | BoulderHoldType.ToeHook));
     }
 }

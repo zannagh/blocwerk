@@ -34,7 +34,7 @@ public sealed record BoulderFilter
     public Blocwerk.Core.Enums.BoulderStyle? Style { get; init; }
 
     /// <summary>Gets the hold type the list is limited to (from the URL, not a filter chip), or null for every boulder.</summary>
-    public Blocwerk.Core.Enums.HoldHandType? HoldType { get; init; }
+    public Blocwerk.Core.Enums.BoulderHoldType? HoldType { get; init; }
 
     /// <summary>Gets the viewer's own list the list is limited to (from the URL, not a filter chip), or null for every boulder.</summary>
     public Blocwerk.Core.Helpers.BoulderMine? Mine { get; init; }
