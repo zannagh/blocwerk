@@ -60,6 +60,14 @@ public static class BoulderList
         return BoulderStyles.CountBy(Visible(boulders).Select(b => families[b.Id].Styles));
     }
 
+    /// <summary>Families on one of the viewer's own lists over <see cref="Visible"/>, as its landing card shows them.</summary>
+    /// <param name="boulders">The boulders the class may see.</param>
+    /// <param name="mine">The viewer's marks.</param>
+    /// <param name="list">The list.</param>
+    /// <returns>How many rows the list has.</returns>
+    public static int MineCount(IReadOnlyList<BouldersDocumentBoulder> boulders, MineMarks mine, BoulderMine list) =>
+        Filter(Visible(boulders), mine, new BoulderFilter { Mine = list }, Families(boulders)).Count();
+
     /// <summary>The rows of the list by boulder: a variant under a listed parent has none.</summary>
     /// <param name="boulders">The boulders the class may see.</param>
     /// <param name="holds">The holds document, for the boulders' hold types; null when the device does not hold it.</param>
@@ -83,6 +91,11 @@ public static class BoulderList
         if (filter.HoldType is { } hold)
         {
             src = src.Where(b => families[b.Id].HoldTypes?.Contains(hold) == true);
+        }
+
+        if (filter.Mine is BoulderMine.Favorites)
+        {
+            src = src.Where(b => AnyMember(b, families, mine.IsFavourite));
         }
 
         if (!string.IsNullOrWhiteSpace(filter.Search))

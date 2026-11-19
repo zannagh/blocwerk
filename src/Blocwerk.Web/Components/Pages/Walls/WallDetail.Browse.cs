@@ -12,7 +12,9 @@ namespace Blocwerk.Web.Components.Pages.Walls;
 /// The boulder list's browser. Opening the list from the wall's Boulders card shows three cards, All, By Hold Type and
 /// By Style (<c>BoulderBrowser</c>); the latter two open a page of cards, and a card opens the list limited to it. Every
 /// level lives in the URL (<see cref="BoulderBrowse"/>: <c>?view=boulders&amp;browse=holds</c>, <c>&amp;hold=crimp</c>,
-/// <c>&amp;style=power</c>, <c>&amp;style=all</c>), so reload and back return to it.
+/// <c>&amp;style=power</c>, <c>&amp;style=all</c>, <c>&amp;mine=favorites</c>), so reload and back return to it. Signed in,
+/// the landing also has a card per own list (favourites). On the desktop tier the landing shows the whole list under
+/// the cards (pages.css hides it on a phone).
 /// </summary>
 public partial class WallDetail
 {
@@ -28,8 +30,12 @@ public partial class WallDetail
     [SupplyParameterFromQuery(Name = BoulderBrowse.HoldKey)]
     public string? Hold { get; set; }
 
+    /// <summary>Gets or sets the <c>?mine=</c> query value: one of the viewer's own lists (<c>favorites</c>).</summary>
+    [SupplyParameterFromQuery(Name = BoulderBrowse.MineKey)]
+    public string? Mine { get; set; }
+
     /// <summary>The browser's level as the URL names it.</summary>
-    private BoulderBrowse Browsing => BoulderBrowse.From(Browse, Style, Hold);
+    private BoulderBrowse Browsing => BoulderBrowse.From(Browse, Style, Hold, Mine);
 
     /// <summary>
     /// The boulders the list shows as its rows (archived ones sit apart): the ONE query both the list and the browser's
@@ -44,6 +50,16 @@ public partial class WallDetail
     private bool ShowNewBoulderLink => _holds.Count > 0 && (!_isAnonymous || _canCreateAnonymously);
 
     private bool ShowBrowseCards => Browsing.Level != BoulderBrowseLevel.List;
+
+    // The landing carries the whole list under its cards (shown on the desktop tier only); the card pages carry none.
+    private bool ShowBoulderList => Browsing.Level is BoulderBrowseLevel.List or BoulderBrowseLevel.Landing;
+
+    // The viewer's own lists on the landing, counted as families like the other cards: only a signed-in viewer has marks
+    // (the list's "My favourites" filter follows the same rule), so a share link or an anonymous kiosk has no such card.
+    private IReadOnlyDictionary<BoulderMine, int>? MineCounts => _isAnonymous ? null : new Dictionary<BoulderMine, int>
+    {
+        [BoulderMine.Favorites] = VisibleItems().Count(i => AnyMember(i, m => m.IsFavorite)),
+    };
 
     // The same wall URL at another level of the browser, whatever else it carries (a share token sits in the path).
     private string BrowseHref(BoulderBrowse level)
@@ -70,6 +86,7 @@ public partial class WallDetail
     {
         { Style: { } style } => FamilyOf(item).Styles.HasFlag(style),
         { HoldType: { } hold } => FamilyOf(item).HoldTypes?.Contains(hold) == true,
+        { Mine: BoulderMine.Favorites } => !_isAnonymous && AnyMember(item, m => m.IsFavorite),
         _ => true,
     };
 }

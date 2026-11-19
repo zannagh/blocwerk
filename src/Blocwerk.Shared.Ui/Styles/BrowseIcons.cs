@@ -23,6 +23,10 @@ public static class BrowseIcons
         "<path d=\"M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z\"/>"
         + "<path d=\"M19 15l.8 2.2 2.2.8-2.2.8L19 21l-.8-2.2-2.2-.8 2.2-.8z\"/>";
 
+    /// <summary>A heart: the viewer's favourites.</summary>
+    public const string Favorites =
+        "<path d=\"M19.5 12.6 12 20l-7.5-7.4A4.8 4.8 0 0 1 12 6.3a4.8 4.8 0 0 1 7.5 6.3z\"/>";
+
     /// <summary>The name and icon of a screen or list, for the bar above it.</summary>
     /// <param name="browse">The level.</param>
     /// <returns>Its name and icon.</returns>
@@ -32,6 +36,7 @@ public static class BrowseIcons
         { Level: BoulderBrowseLevel.Styles } => ("By Style", Styles),
         { HoldType: { } hold } => (BoulderHoldTypes.Label(hold), BoulderHoldTypes.Icon(hold)),
         { Style: { } style } => (BoulderStyles.Label(style), BoulderStyles.Icon(style)),
+        { Mine: BoulderMine.Favorites } => ("Favorites", Favorites),
         _ => ("All", All),
     };
 }

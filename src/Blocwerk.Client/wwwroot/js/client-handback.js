@@ -84,10 +84,10 @@ window.bwClientHandback = (function (win, doc) {
         }
         // Never protocol-relative: `/v//evil.example` must stay on this origin.
         const twin = '/' + path.slice(BASE.length).replace(/^[/\\]+/, '');
-        // A wall view at a level of the boulder browser (?browse=, ?hold=, ?style=) is the Server wall page's list page:
+        // A wall view at a level of the boulder browser (?browse=, ?hold=, ?style=, ?mine=) is the Server wall page's list page:
         // without ?view=boulders the Server would open the wall's overview instead.
         const params = url.searchParams;
-        if (WALL_VIEW.test(twin) && !params.has('view') && ['browse', 'hold', 'style'].some(k => params.has(k))) {
+        if (WALL_VIEW.test(twin) && !params.has('view') && ['browse', 'hold', 'style', 'mine'].some(k => params.has(k))) {
             params.set('view', 'boulders');
         }
         return twin + url.search + url.hash;

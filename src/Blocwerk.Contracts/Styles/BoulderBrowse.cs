@@ -8,15 +8,16 @@ namespace Blocwerk.Core.Helpers;
 /// <summary>
 /// Where in the boulder browser a URL is, the same on the Server and in the offline client. Every level has a URL of its
 /// own, so reload and back return to it: nothing for the landing cards, <c>?browse=holds</c> and <c>?browse=styles</c> for
-/// the two card pages, and <c>?style=all</c>, <c>?style=power</c> or <c>?hold=crimp</c> for a list.
+/// the two card pages, and <c>?style=all</c>, <c>?style=power</c>, <c>?hold=crimp</c> or <c>?mine=favorites</c> for a list.
 /// </summary>
 /// <param name="Level">The screen.</param>
 /// <param name="Style">The style a list is limited to.</param>
 /// <param name="HoldType">The hold type a list is limited to.</param>
-public sealed record BoulderBrowse(BoulderBrowseLevel Level, BoulderStyle? Style = null, HoldHandType? HoldType = null)
+/// <param name="Mine">The viewer's own list (favourites) a list is limited to.</param>
+public sealed record BoulderBrowse(BoulderBrowseLevel Level, BoulderStyle? Style = null, HoldHandType? HoldType = null, BoulderMine? Mine = null)
 {
     /// <summary>The query keys the browser owns.</summary>
-    public const string BrowseKey = "browse", StyleKey = "style", HoldKey = "hold";
+    public const string BrowseKey = "browse", StyleKey = "style", HoldKey = "hold", MineKey = "mine";
 
     /// <summary>Gets the landing cards.</summary>
     public static BoulderBrowse Landing { get; } = new(BoulderBrowseLevel.Landing);
@@ -25,7 +26,7 @@ public sealed record BoulderBrowse(BoulderBrowseLevel Level, BoulderStyle? Style
     public static BoulderBrowse All { get; } = new(BoulderBrowseLevel.List);
 
     /// <summary>Gets a value indicating whether a list shows every boulder.</summary>
-    public bool IsAll => Level == BoulderBrowseLevel.List && Style is null && HoldType is null;
+    public bool IsAll => Level == BoulderBrowseLevel.List && Style is null && HoldType is null && Mine is null;
 
     /// <summary>Gets the screen one step up: a list's card page (the landing for "All"), the landing for a card page.</summary>
     public BoulderBrowse Up => (Level, Style, HoldType) switch
@@ -46,15 +47,18 @@ public sealed record BoulderBrowse(BoulderBrowseLevel Level, BoulderStyle? Style
     /// <summary>Gets the query a boulder's link carries, so its back link returns to this list; null off a list.</summary>
     public string? ListQuery => Level != BoulderBrowseLevel.List ? null
         : HoldType is { } hold ? $"{HoldKey}={BoulderHoldTypes.Slug(hold)}"
+        : Mine is { } mine ? $"{MineKey}={BoulderMines.Slug(mine)}"
         : $"{StyleKey}={(Style is { } style ? BoulderStyles.Slug(style) : "all")}";
 
     /// <summary>Reads the browser's query values; an unknown value falls back to the landing.</summary>
     /// <param name="browse">The <c>browse</c> value.</param>
     /// <param name="style">The <c>style</c> value.</param>
     /// <param name="hold">The <c>hold</c> value.</param>
+    /// <param name="mine">The <c>mine</c> value.</param>
     /// <returns>The level.</returns>
-    public static BoulderBrowse From(string? browse, string? style, string? hold) =>
+    public static BoulderBrowse From(string? browse, string? style, string? hold, string? mine = null) =>
         BoulderHoldTypes.FromSlug(hold) is { } type ? new(BoulderBrowseLevel.List, HoldType: type)
+        : BoulderMines.FromSlug(mine) is { } m ? new(BoulderBrowseLevel.List, Mine: m)
         : BoulderStyles.FromSlug(style) is { } s ? new(BoulderBrowseLevel.List, s)
         : BoulderStyles.QueryValue(style) == "all" ? All
         : browse?.Trim().ToLowerInvariant() switch
@@ -74,7 +78,8 @@ public sealed record BoulderBrowse(BoulderBrowseLevel Level, BoulderStyle? Style
             BoulderBrowseLevel.Styles => "styles",
             _ => null,
         },
-        [StyleKey] = Level == BoulderBrowseLevel.List && HoldType is null ? Style is { } s ? BoulderStyles.Slug(s) : "all" : null,
+        [StyleKey] = Level == BoulderBrowseLevel.List && HoldType is null && Mine is null ? Style is { } s ? BoulderStyles.Slug(s) : "all" : null,
         [HoldKey] = HoldType is { } h ? BoulderHoldTypes.Slug(h) : null,
+        [MineKey] = Mine is { } m ? BoulderMines.Slug(m) : null,
     };
 }

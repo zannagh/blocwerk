@@ -36,6 +36,9 @@ public sealed record BoulderFilter
     /// <summary>Gets the hold type the list is limited to (from the URL, not a filter chip), or null for every boulder.</summary>
     public Blocwerk.Core.Enums.HoldHandType? HoldType { get; init; }
 
+    /// <summary>Gets the viewer's own list the list is limited to (from the URL, not a filter chip), or null for every boulder.</summary>
+    public Blocwerk.Core.Helpers.BoulderMine? Mine { get; init; }
+
     /// <summary>Gets how many filters narrow the list (the chip's count), as the Server counts them.</summary>
     public int ActiveCount =>
         (string.IsNullOrWhiteSpace(Search) ? 0 : 1)

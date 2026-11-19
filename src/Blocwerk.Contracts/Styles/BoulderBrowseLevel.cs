@@ -6,7 +6,7 @@ namespace Blocwerk.Core.Helpers;
 /// <summary>Which screen of the boulder browser a URL opens.</summary>
 public enum BoulderBrowseLevel
 {
-    /// <summary>The three cards: All, By Hold Type, By Style.</summary>
+    /// <summary>The cards: All, By Hold Type, By Style and (signed in) the viewer's own lists.</summary>
     Landing,
 
     /// <summary>One card per hold type (<c>?browse=holds</c>).</summary>
@@ -15,6 +15,6 @@ public enum BoulderBrowseLevel
     /// <summary>One card per style (<c>?browse=styles</c>).</summary>
     Styles,
 
-    /// <summary>The list: every boulder (<c>?style=all</c>), one style's or one hold type's.</summary>
+    /// <summary>The list: every boulder (<c>?style=all</c>), one style's, one hold type's or the viewer's favourites.</summary>
     List,
 }

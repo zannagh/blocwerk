@@ -567,7 +567,11 @@ else
     [SupplyParameterFromQuery(Name = "hold")]
     public string? Hold { get; set; }
 
-    private string BackStyleQuery => Blocwerk.Core.Helpers.BoulderBrowse.From(null, Style, Hold).ListQuery is { } list ? "&" + list : string.Empty;
+    /// <summary>The viewer's own list this boulder was opened from (<c>?mine=</c>), so back returns to that very list.</summary>
+    [SupplyParameterFromQuery(Name = "mine")]
+    public string? Mine { get; set; }
+
+    private string BackStyleQuery => Blocwerk.Core.Helpers.BoulderBrowse.From(null, Style, Hold, Mine).ListQuery is { } list ? "&" + list : string.Empty;
 
     // Route params of the boulder currently loaded. Under enhanced navigation, boulder→boulder
     // navigation keeps this component alive (same route template, new parameters), so these guard a

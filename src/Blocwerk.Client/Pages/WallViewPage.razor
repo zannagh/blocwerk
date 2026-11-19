@@ -79,16 +79,26 @@ else
                             <h2>Boulders<span class="list-count">@browseRows.Count</span></h2>
                         </div>
                     </div>
-                    <BoulderBrowser Browse="Browsing" Rows="browseRows" HrefFor="BrowseHref" />
+                    <BoulderBrowser Browse="Browsing" Rows="browseRows" HrefFor="BrowseHref" MineCounts="MineCounts" />
                 }
-                else
+                @if (Browsing.Level is BoulderBrowseLevel.List or BoulderBrowseLevel.Landing)
                 {
+                var atLanding = Browsing.Level == BoulderBrowseLevel.Landing;
+                @* Under the landing's cards the whole list is a block only the desktop tier shows, as on the Server. *@
+                <div class="boulder-list-block@(atLanding ? " browse-landing-list" : string.Empty)" data-browse-list="@(atLanding ? "landing" : "level")">
+                @if (atLanding)
+                {
+                    <div class="browse-list-divider" role="separator"><span>All boulders</span></div>
+                }
                 <div class="boulder-list-head">
-                    <div class="section-header">
-                        <h2>Boulders<span class="list-count">@active.Count</span></h2>
-                    </div>
-                    @{ var (browseLabel, browseIcon) = BrowseIcons.Describe(Browsing); }
-                    <BrowseBar BackHref="@BrowseHref(Browsing.Up)" BackLabel="@Browsing.UpLabel" Label="@browseLabel" Icon="@browseIcon" />
+                    @if (!atLanding)
+                    {
+                        <div class="section-header">
+                            <h2>Boulders<span class="list-count">@active.Count</span></h2>
+                        </div>
+                        var (browseLabel, browseIcon) = BrowseIcons.Describe(Browsing);
+                        <BrowseBar BackHref="@BrowseHref(Browsing.Up)" BackLabel="@Browsing.UpLabel" Label="@browseLabel" Icon="@browseIcon" />
+                    }
                     @if (boulders.Count > 0)
                     {
                         <BoulderFilters Filter="filter" FilterChanged="OnFilterChanged" ShowMine="ShowsMine" />
@@ -124,6 +134,7 @@ else
                         </details>
                     }
                 }
+                </div>
                 }
             </div>
         </div>
@@ -155,13 +166,24 @@ else
     [SupplyParameterFromQuery(Name = BoulderBrowse.HoldKey)]
     public string? Hold { get; set; }
 
-    private BoulderBrowse Browsing => BoulderBrowse.From(Browse, Style, Hold);
+    /// <summary>Gets or sets the <c>?mine=</c> value: one of the viewer's own lists (<c>favorites</c>).</summary>
+    [SupplyParameterFromQuery(Name = BoulderBrowse.MineKey)]
+    public string? Mine { get; set; }
+
+    private BoulderBrowse Browsing => BoulderBrowse.From(Browse, Style, Hold, Mine);
+
+    // The viewer's own lists on the landing: only a signed-in device holds marks.
+    private IReadOnlyDictionary<BoulderMine, int>? MineCounts => !ShowsMine || Wall is null ? null : new Dictionary<BoulderMine, int>
+    {
+        [BoulderMine.Favorites] = BoulderList.MineCount(boulders, Wall.Mine, BoulderMine.Favorites),
+    };
 
     private bool ShowBrowseCards => Browsing.Level != BoulderBrowseLevel.List;
 
     private string BrowseHref(BoulderBrowse level) => Navigation.GetUriWithQueryParameters(level.Query());
 
-    private BoulderFilter ListFilter => filter with { Style = Browsing.Style, HoldType = Browsing.HoldType };
+    // A share link or a kiosk holds no marks, so a list of the viewer's own (?mine=) is empty there.
+    private BoulderFilter ListFilter => filter with { Style = Browsing.Style, HoldType = Browsing.HoldType, Mine = Browsing.Mine };
 
     /// <inheritdoc />
     protected override void OnParametersSet()

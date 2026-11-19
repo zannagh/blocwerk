@@ -748,6 +748,7 @@ else
                 {
                     @* The browser's card screens: the landing and the two card pages (WallDetail.Browse.cs). *@
                     var browseRows = BrowseRows;
+                    <div class="browse-landing-block">
                     <div class="boulder-list-head">
                         <div class="section-header">
                             <h2>Boulders<span class="list-count">@browseRows.Count</span></h2>
@@ -757,13 +758,25 @@ else
                             }
                         </div>
                     </div>
-                    <BoulderBrowser Browse="Browsing" Rows="browseRows" HrefFor="BrowseHref" />
+                    <BoulderBrowser Browse="Browsing" Rows="browseRows" HrefFor="BrowseHref" MineCounts="MineCounts" />
+                    </div>
                 }
-                else
+                @if (ShowBoulderList)
                 {
+                var atLanding = Browsing.Level == BoulderBrowseLevel.Landing;
+                @* A list level's rows join the section's grid (display: contents); under the landing's cards the
+                   whole list is a block of its own that only the desktop tier shows (pages.css). *@
+                <div class="boulder-list-block@(atLanding ? " browse-landing-list" : string.Empty)" data-browse-list="@(atLanding ? "landing" : "level")">
+                @if (atLanding)
+                {
+                    <div class="browse-list-divider" role="separator"><span>All boulders</span></div>
+                }
                 @* Header + filters are ONE sticky head: on a list this long they used to scroll away
-                   within the first flick and never come back. *@
+                   within the first flick and never come back. Under the landing's cards the title and
+                   "+ New" are the cards' own, so only search and the filters repeat here. *@
                 <div class="boulder-list-head">
+                @if (!atLanding)
+                {
                 <div class="section-header">
                     <h2>Boulders<span class="list-count">@ActiveBoulders.Count</span></h2>
                     @* Anonymous kiosk setting is opt-in per wall, so the button mirrors exactly what
@@ -776,8 +789,9 @@ else
                     }
                 </div>
 
-                @{ var (browseLabel, browseIcon) = BrowseIcons.Describe(Browsing); }
+                var (browseLabel, browseIcon) = BrowseIcons.Describe(Browsing);
                 <BrowseBar BackHref="@BrowseHref(Browsing.Up)" BackLabel="@Browsing.UpLabel" Label="@browseLabel" Icon="@browseIcon" />
+                }
 
                 @if (_items.Count > 0)
                 {
@@ -915,6 +929,7 @@ else
                    the end of the page. wall-carousel.js toggles `has-more` on the slide; this fades
                    in only while there really is more below. *@
                 <div class="list-fade" aria-hidden="true"></div>
+                </div>
                 }
             </div>
         </Page4>
