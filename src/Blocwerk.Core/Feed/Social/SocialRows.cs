@@ -40,7 +40,7 @@ internal static class SocialRows
     }
 
     /// <summary>
-    /// Adds a "mine" row (<c>tick.mine</c>, <c>rating.mine</c>, <c>favorite.changed</c>) once per save: the
+    /// Adds a "mine" row (<c>tick.mine</c>, <c>rating.mine</c>, <c>favorite.changed</c>, <c>project.changed</c>) once per save: the
     /// <see cref="FeedAudience.User"/> audience of <paramref name="userId"/> only, never another user or a kiosk. The
     /// Ghost user has no devices to tell.
     /// </summary>

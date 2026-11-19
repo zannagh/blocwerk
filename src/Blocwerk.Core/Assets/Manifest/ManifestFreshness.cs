@@ -31,7 +31,7 @@ public static class ManifestFreshness
     {
         FeedKinds.MemberChanged, FeedKinds.AccessRevoked, FeedKinds.SegmentChanged, FeedKinds.LinkChanged, FeedKinds.VolumeChanged,
         FeedKinds.HoldChanged, FeedKinds.HoldDeleted, FeedKinds.BoulderStats, FeedKinds.CommentAdded, FeedKinds.CommentDeleted,
-        FeedKinds.ActivityAdded, FeedKinds.FavoriteChanged, FeedKinds.RatingMine, FeedKinds.TickMine, FeedKinds.UserProfile,
+        FeedKinds.ActivityAdded, FeedKinds.FavoriteChanged, FeedKinds.ProjectChanged, FeedKinds.RatingMine, FeedKinds.TickMine, FeedKinds.UserProfile,
         FeedKinds.TicksResync, FeedKinds.UserResync, FeedKinds.WallsChanged, FeedKinds.PanelStaged,
     };
 

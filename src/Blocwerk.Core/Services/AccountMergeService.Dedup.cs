@@ -133,4 +133,36 @@ public partial class AccountMergeService
 
         await db.SaveChangesAsync();
     }
+
+    private static async Task DedupBoulderProjectsAsync(BlocwerkDbContext db, Guid sourceUserId, Guid targetUserId)
+    {
+        var sourceProjects = await db.BoulderProjects
+            .Where(p => p.UserId == sourceUserId)
+            .ToListAsync();
+        var targetProjectBoulders = (await db.BoulderProjects
+                .Where(p => p.UserId == targetUserId)
+                .Select(p => p.BoulderId)
+                .ToListAsync())
+            .ToHashSet();
+
+        foreach (var sourceProject in sourceProjects)
+        {
+            db.BoulderProjects.Remove(sourceProject);
+
+            // Target already has this boulder as a project: one row is enough, drop the source's.
+            if (targetProjectBoulders.Contains(sourceProject.BoulderId))
+            {
+                continue;
+            }
+
+            db.BoulderProjects.Add(new BoulderProject
+            {
+                BoulderId = sourceProject.BoulderId,
+                UserId = targetUserId,
+                CreatedAt = sourceProject.CreatedAt,
+            });
+        }
+
+        await db.SaveChangesAsync();
+    }
 }

@@ -109,7 +109,7 @@ window.bwClientStoreRows = (function (win) {
         const shown = new Set(walls.map(w => w.wallId));
         const mine = USER_LABEL.test(partition)
             ? (await ledger.mineOf(partition)).filter(m => m.partition === partition && shown.has(idOf(m.wallId)))
-                .map(m => ({ wallId: idOf(m.wallId), cursor: m.cursor ?? null, ticks: (m.ticks || []).map(tickOf), favourites: m.favourites || [] }))
+                .map(m => ({ wallId: idOf(m.wallId), cursor: m.cursor ?? null, ticks: (m.ticks || []).map(tickOf), favourites: m.favourites || [], projects: m.projects || [] }))
             : [];
         return { share, walls, mine };
     }

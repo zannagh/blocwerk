@@ -69,6 +69,10 @@ internal sealed class MineDocumentFixture : IDisposable
             new BoulderFavorite { BoulderId = other.Id, UserId = Member.Id },
             new BoulderFavorite { BoulderId = Docs.HistoricId, UserId = Setter.Id },
             new BoulderFavorite { BoulderId = Docs.PublishedId, UserId = Outsider.Id });
+        db.BoulderProjects.AddRange(
+            new BoulderProject { BoulderId = Docs.ArchivedId, UserId = Member.Id },
+            new BoulderProject { BoulderId = other.Id, UserId = Member.Id },
+            new BoulderProject { BoulderId = Docs.PublishedId, UserId = Setter.Id });
         await db.SaveChangesAsync();
         Docs.Caller = Member;
     }

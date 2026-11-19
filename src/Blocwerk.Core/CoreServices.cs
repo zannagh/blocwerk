@@ -20,6 +20,7 @@ using Blocwerk.Core.Refresh;
 using Blocwerk.Core.Services;
 using Blocwerk.Core.Services.HybridZoom;
 using Blocwerk.Core.Services.PanelCrop;
+using Blocwerk.Core.Services.Projects;
 using Blocwerk.Core.Services.TopLogger;
 using Blocwerk.Core.Telemetry;
 using Blocwerk.Core.WhatsNew;
@@ -142,6 +143,7 @@ public static class CoreServices
         builder.Services.AddSingleton<KioskAnonymousSettingThrottle>();
         builder.Services.AddScoped<IBoulderService, BoulderService>();
         builder.Services.AddScoped<IBoulderFeedbackService, BoulderFeedbackService>();
+        builder.Services.AddScoped<IBoulderProjectService, BoulderProjectService>();
         builder.Services.AddScoped<IAttemptService, AttemptService>();
         builder.Services.AddScoped<ICommentService, CommentService>();
         builder.Services.AddSingleton<IBetaVideoStorage, FileSystemBetaVideoStorage>();

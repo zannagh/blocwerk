@@ -279,6 +279,7 @@ public sealed class DeletionFixture
         });
         db.BoulderRatings.Add(new BoulderRating { BoulderId = boulder.Id, UserId = leaver.Id, Stars = 4 });
         db.BoulderFavorites.Add(new BoulderFavorite { BoulderId = boulder.Id, UserId = leaver.Id });
+        db.BoulderProjects.Add(new BoulderProject { BoulderId = boulder.Id, UserId = leaver.Id });
         db.GradeProposals.Add(new GradeProposal
         {
             BoulderId = boulder.Id,

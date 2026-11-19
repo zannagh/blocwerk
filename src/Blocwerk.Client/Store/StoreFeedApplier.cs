@@ -17,7 +17,7 @@ namespace Blocwerk.Client.Store;
 /// </summary>
 public static class StoreFeedApplier
 {
-    private static readonly HashSet<string> MineKinds = new(StringComparer.Ordinal) { FeedKinds.TickMine, FeedKinds.FavoriteChanged };
+    private static readonly HashSet<string> MineKinds = new(StringComparer.Ordinal) { FeedKinds.TickMine, FeedKinds.FavoriteChanged, FeedKinds.ProjectChanged };
 
     private static readonly HashSet<string> ResyncKinds = new(StringComparer.Ordinal)
     {

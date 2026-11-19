@@ -66,6 +66,7 @@ public partial class AccountDeletionService
         await db.PullupSessions.Where(x => x.UserId == userId).ExecuteDeleteAsync(ct);
         await db.ClimbingSessions.Where(x => x.UserId == userId).ExecuteDeleteAsync(ct);
         await db.BoulderFavorites.Where(x => x.UserId == userId).ExecuteDeleteAsync(ct);
+        await db.BoulderProjects.Where(x => x.UserId == userId).ExecuteDeleteAsync(ct);
 
         // Activity clusters are a private view over the attempts, not content: the attempts survive
         // (Attempt.ActivityId is SetNull) so send counts on shared boulders do not change.

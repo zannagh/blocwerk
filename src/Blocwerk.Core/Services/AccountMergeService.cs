@@ -74,6 +74,7 @@ public partial class AccountMergeService : IAccountMergeService
         await DedupWallMembersAsync(db, sourceUserId, targetUserId);
         await DedupBoulderRatingsAsync(db, sourceUserId, targetUserId);
         await DedupBoulderFavoritesAsync(db, sourceUserId, targetUserId);
+        await DedupBoulderProjectsAsync(db, sourceUserId, targetUserId);
 
         // Move the source's provider identities onto the target so every provider that used to resolve
         // to the source now resolves to the target.

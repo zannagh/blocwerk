@@ -121,6 +121,9 @@ public class Boulder
 
     public ICollection<BoulderFavorite> Favorites { get; set; } = [];
 
+    /// <summary>The users who marked this boulder as one of their projects.</summary>
+    public ICollection<BoulderProject> Projects { get; set; } = [];
+
     /// <summary>
     /// Who set the boulder on the wall (one or more co-setters). Distinct from
     /// <see cref="CreatedBy"/>, which is whoever added it in the app.

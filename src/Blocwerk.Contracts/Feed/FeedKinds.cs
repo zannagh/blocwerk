@@ -48,6 +48,9 @@ public static class FeedKinds
     /// <summary>An activity entry is gone (its attempt was deleted): the lists that show it re-read.</summary>
     public const string ActivityRemoved = "activity.removed";
     public const string FavoriteChanged = "favorite.changed";
+
+    /// <summary>The user marked or unmarked a boulder as one of their projects; for their own devices only.</summary>
+    public const string ProjectChanged = "project.changed";
     public const string RatingMine = "rating.mine";
     public const string TickMine = "tick.mine";
     public const string UserProfile = "user.profile";
@@ -70,7 +73,7 @@ public static class FeedKinds
         WallUpdated, WallManifest, WallResync, MemberChanged, AccessRevoked, SegmentChanged, PanelChanged, LinkChanged,
         VolumeChanged, HoldChanged, HoldDeleted, BoulderChanged, BoulderDeleted, BoulderStats, CommentAdded, CommentDeleted,
         VideoAdded, VideoStatus, VideoDeleted, GalleryChanged, GalleryDeleted, View3DChanged, ActivityAdded, ActivityRemoved,
-        FavoriteChanged, RatingMine, TickMine, UserProfile, TicksResync, UserResync, PanelStaged, WallsChanged,
+        FavoriteChanged, ProjectChanged, RatingMine, TickMine, UserProfile, TicksResync, UserResync, PanelStaged, WallsChanged,
     };
 
     /// <summary>True for a kind this assembly knows; a client ignores the rest.</summary>
