@@ -28,7 +28,11 @@ html, body {
     justify-content: space-between;
     gap: 12px;
     padding: 12px 16px;
-    padding-top: max(12px, env(safe-area-inset-top));
+    /* Same as the Server's .bw-topbar: 12px of its own plus the status-bar strip (0 in a tab and in landscape), and the
+       landscape notch side cleared. --bw-safe-top is client-components.css's. */
+    padding-top: calc(12px + var(--bw-safe-top, env(safe-area-inset-top, 0px)));
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
     background: var(--topbar-bg, var(--bw-c-surface));
     color: var(--topbar-text, inherit);
     border-bottom: 1px solid var(--bw-c-border);

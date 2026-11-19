@@ -89,6 +89,13 @@ public static class OfflineClientShellAssets
     public const string Guard = "js/sw-guard.js";
 
     /// <summary>
+    /// Web's <c>js/safe-area.js</c>, which the Server pages load too: an installed iOS app can start with the safe-area
+    /// insets still 0, and this re-applies viewport-fit until they are real. Without it the offline bar sat under the
+    /// status bar after a cold start on <c>/v/</c>.
+    /// </summary>
+    public const string SafeArea = "js/safe-area.js";
+
+    /// <summary>
     /// The sync loop's network side (PR 3.12): Web's docs-index and marks refreshers (with asset-manifest.js, whose
     /// <c>signedOut</c> they call), so the client writes the ledger exactly as the Server pages do, then
     /// <c>window.bwClientSync</c>. Loading them only defines their globals.
@@ -99,7 +106,7 @@ public static class OfflineClientShellAssets
     private static readonly HashSet<string> Modules3D = new(OfflineClient3DAssets.Modules, StringComparer.Ordinal);
 
     /// <summary>Every label the shell names, for the tests that pin each one to a served file.</summary>
-    public static IEnumerable<string> All => Styles.Concat(CacheModules).Concat(StoreModules).Append(Handback).Concat(ViewModules).Concat(SyncModules).Append(Guard).Append(Loader).Append(Boot)
+    public static IEnumerable<string> All => Styles.Concat(CacheModules).Concat(StoreModules).Append(Handback).Concat(ViewModules).Concat(SyncModules).Append(Guard).Append(SafeArea).Append(Loader).Append(Boot)
         .Concat(OfflineClient3DAssets.Modules);
 
     /// <summary>

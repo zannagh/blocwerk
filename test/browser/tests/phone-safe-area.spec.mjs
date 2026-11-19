@@ -113,6 +113,12 @@ test('an installed app re-applies viewport-fit=cover at start and again at 100, 
     await page.evaluate(() => window.dispatchEvent(new Event('orientationchange')));
     await page.waitForTimeout(1300);
     expect(await page.evaluate(() => window.__fits.length)).toBeGreaterThan(before);
+
+    // So does a resume from the app switcher, which iOS reports as visibilitychange with no pageshow.
+    const beforeResume = await page.evaluate(() => window.__fits.length);
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await page.waitForTimeout(1300);
+    expect(await page.evaluate(() => window.__fits.length)).toBeGreaterThan(beforeResume);
 });
 
 test('a browser tab never touches viewport-fit', async ({ page, world }) => {

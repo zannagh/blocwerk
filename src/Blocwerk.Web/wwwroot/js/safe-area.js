@@ -6,7 +6,8 @@
  * bottom bar above a dead strip. Following https://gist.github.com/fozzedout/5e77925381991a9570151550992baf14:
  * in an installed app, flip viewport-fit to auto and back to cover, which makes WebKit recompute the insets, at
  * start, again after 100, 500 and 1000 ms (the insets can settle late on a cold start), and on every pageshow
- * (restored from the background) and orientationchange (rotations report stale geometry for a while).
+ * (restored from the background), visibilitychange to visible (iOS resumes a home-screen app from the app switcher
+ * with this event and no pageshow) and orientationchange (rotations report stale geometry for a while).
  *
  * Only an installed iOS app (navigator.standalone is WebKit's own flag); a browser tab and every other platform are
  * left alone. The flip is idempotent and costs one relayout.
@@ -56,6 +57,11 @@ window.bwSafeArea = (function () {
     }
     window.addEventListener('pageshow', burst);
     window.addEventListener('orientationchange', burst);
+    document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'visible') {
+            burst();
+        }
+    });
 
     return {
         /** The inset WebKit reports right now, in CSS px ('top', 'bottom', 'left', 'right'). For the console. */
