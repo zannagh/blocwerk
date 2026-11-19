@@ -1,4 +1,4 @@
-// The boulder browser by hold type: the landing (All, By Hold Type, By Style), the hold-type cards with greyed-out empty
+// The boulder browser by hold type: the landing (All, By Hold Type, By Style, Favorites), the hold-type cards with greyed-out empty
 // ones, the list of one type with its families, the boulder page's type (inferred "from holds", or set) and back to the
 // same list, setting and clearing the type on the boulder page, and the same browsing in the offline client. The Grips
 // wall (seed/SeedHoldTypes.cs) is only listed here: 6 rows (the variant folds into its family), Jug 1, Crimp 2 (Crimpy and the family), Pinch, Sloper and
@@ -29,7 +29,7 @@ test('phone: landing, hold-type cards, a type\'s list, its boulder and back agai
     await page.setViewportSize(PHONE);
     await open(page, world, 'view=boulders');
     const list = listPage(page);
-    await expect(list.locator('.style-card')).toHaveCount(3);
+    await expect(list.locator('.style-card')).toHaveCount(4);
     await expect(card(list, 'all').locator('.style-card-count')).toHaveText('6');
     await expect(card(list, 'holds').locator('.style-card-count')).toHaveText('3');
     await expect(card(list, 'styles').locator('.style-card-count')).toHaveText('1');
@@ -77,7 +77,7 @@ test('phone: landing, hold-type cards, a type\'s list, its boulder and back agai
     await expect(page).toHaveURL(/browse=holds/);
     await expect(list.locator('.style-card')).toHaveCount(5);
     await list.locator('[data-browse-back]').click();
-    await expect(list.locator('.style-card')).toHaveCount(3);
+    await expect(list.locator('.style-card')).toHaveCount(4);
 });
 
 test('the boulder page sets a hold type and clears it again', async ({ page, world }) => {
@@ -110,7 +110,7 @@ test('offline client: the same levels, cards and list at phone width', async ({ 
     expect(await precacheAs(page, server, world.users.gina, `/walls/${wall.id}`)).toBe('complete');
     await server.unreachable();
     await expectClient(page, `/walls/${wall.id}`);
-    await expect(page.locator('.style-card')).toHaveCount(3);
+    await expect(page.locator('.style-card')).toHaveCount(4);
     await expect(card(page, 'holds').locator('.style-card-count')).toHaveText('3');
     await expectFits(page, page);
     await page.screenshot({ path: '../../.out/holds-client-landing-390.png' });
@@ -133,5 +133,5 @@ test('offline client: the same levels, cards and list at phone width', async ({ 
     await page.locator('[data-browse-back]').click();
     await expect(page.locator('.style-card')).toHaveCount(5);
     await page.locator('[data-browse-back]').click();
-    await expect(page.locator('.style-card')).toHaveCount(3);
+    await expect(page.locator('.style-card')).toHaveCount(4);
 });

@@ -45,12 +45,69 @@ public sealed class WallViewBrowseTests
         await using var view = await ViewHarness.StartAsync(CachedDevice(UserA), $"walls/{Wall}");
         var html = await RenderAsync(view);
 
-        Assert.Contains("<a class=\"style-card style-card-all\" href=", html, StringComparison.Ordinal);
-        Assert.Contains("<span class=\"style-card is-empty style-card-all\" aria-disabled=\"true\" data-card=\"holds\">", html, StringComparison.Ordinal);
-        Assert.Contains("<span class=\"style-card is-empty style-card-all\" aria-disabled=\"true\" data-card=\"styles\">", html, StringComparison.Ordinal);
-        Assert.DoesNotContain("Crimp Line", html, StringComparison.Ordinal);
+        Assert.Matches("<a class=\"style-card browse-hero is-link\" href=\"[^\"]*\\?style=all\" data-card=\"all\"", html);
+        Assert.Contains("<a class=\"style-card browse-tall is-empty\" aria-disabled=\"true\" data-card=\"holds\">", html, StringComparison.Ordinal);
+        Assert.Contains("<a class=\"style-card browse-tall is-empty\" aria-disabled=\"true\" data-card=\"styles\">", html, StringComparison.Ordinal);
         // The landing keeps the wall's photo (and the stage the 3D switch uses) and its counts.
         Assert.Contains("wall-photo-container", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TheLanding_CarriesTheWholeListUnderItsCards_ForTheDesktopTier()
+    {
+        await using var view = await ViewHarness.StartAsync(Device(["Tension"], ["Power"]), $"walls/{Wall}");
+        var html = await RenderAsync(view);
+
+        Assert.Contains("data-browse-level=\"landing\"", html, StringComparison.Ordinal);
+        Assert.Contains("class=\"boulder-list-block browse-landing-list\" data-browse-list=\"landing\"", html, StringComparison.Ordinal);
+        Assert.Contains("browse-list-divider", html, StringComparison.Ordinal);
+        Assert.Contains("Crimp Line", html, StringComparison.Ordinal);
+        Assert.Contains("Second Line", html, StringComparison.Ordinal);
+        Assert.Contains($"href=\"walls/{Wall}/boulders/{Crimp}\"", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SignedIn_TheLandingHasAFavoritesCard_CountingTheFavouriteFamilies()
+    {
+        await using var view = await ViewHarness.StartAsync(Device([], []), $"walls/{Wall}");
+        var html = await RenderAsync(view);
+
+        Assert.Matches("<a class=\"style-card browse-mine is-link\" href=\"[^\"]*\\?mine=favorites\" data-card=\"favorites\">", html);
+        Assert.Matches("(?s)data-card=\"favorites\">.*?<span class=\"style-card-count\">1</span>", html);
+    }
+
+    [Theory]
+    [InlineData(Kiosk)]
+    [InlineData(Anon)]
+    public async Task WithoutMarks_TheLandingHasNoFavoritesCard_AndTheListIsEmpty(string partition)
+    {
+        await using var landing = await ViewHarness.StartAsync(CachedDevice(partition), $"walls/{Wall}");
+        Assert.DoesNotContain("data-card=\"favorites\"", await RenderAsync(landing), StringComparison.Ordinal);
+
+        await using var list = await ViewHarness.StartAsync(CachedDevice(partition), $"walls/{Wall}?mine=favorites");
+        Assert.DoesNotContain("Crimp Line", await RenderAsync(list), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task MineFavorites_LimitsTheListToTheFavourites_AndTheBoulderLinkReturnsToIt()
+    {
+        await using var view = await ViewHarness.StartAsync(Device([], []), $"walls/{Wall}?mine=favorites");
+        var html = await RenderAsync(view);
+
+        Assert.Contains("Crimp Line", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("Second Line", html, StringComparison.Ordinal);
+        Assert.Contains($"href=\"walls/{Wall}/boulders/{Crimp}?mine=favorites\"", html, StringComparison.Ordinal);
+        Assert.Contains("data-browse-back", html, StringComparison.Ordinal);
+        Assert.Contains("data-browse-list=\"level\"", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TheBoulderPage_OpenedFromTheFavourites_BacksIntoThem()
+    {
+        await using var view = await ViewHarness.StartAsync(Device([], []), $"walls/{Wall}/boulders/{Crimp}?mine=favorites");
+        var html = await RenderBoulderAsync(view, Crimp);
+
+        Assert.Contains($"href=\"walls/{Wall}?mine=favorites\"", html, StringComparison.Ordinal);
     }
 
     [Fact]

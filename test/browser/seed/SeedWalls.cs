@@ -24,6 +24,7 @@ namespace Blocwerk.Browser.Seed;
 /// Dave), so no other test's walls or pages change with it (<see cref="SeedSocial"/>).</item>
 /// <item><b>wide</b>: Pia's wall of two panels and a boulder with holds on both (<see cref="SeedMultiPanel"/>).</item>
 /// <item><b>grips</b>: Gina's wall of typed holds for the boulder browser's hold types (<see cref="SeedHoldTypes"/>).</item>
+/// <item><b>landing</b>: Lena's wall with two favourites, for the browser's landing cards (<see cref="SeedLanding"/>).</item>
 /// </list>
 /// </summary>
 internal sealed class SeedWalls
@@ -74,6 +75,9 @@ internal sealed class SeedWalls
         var gina = AddUser("gina@browser.test", "Gina");
         var grips = AddWall("Grips", gina, panels: 1, seed: 70);
         SeedHoldTypes.Add(db, grips.Wall.Id, db.WallPanels.Local.Single(p => p.WallId == grips.Wall.Id).Id, gina.Id);
+        var lena = AddUser("lena@browser.test", "Lena");
+        var landing = AddWall("Landing", lena, panels: 1, seed: 80);
+        SeedLanding.Add(db, landing.Wall, lena.Id);
         await db.SaveChangesAsync();
 
         return new SeededWorld(
@@ -89,6 +93,7 @@ internal sealed class SeedWalls
                 ["stella"] = new(stella.Id, stella.DisplayName),
                 ["vera"] = new(vera.Id, vera.DisplayName),
                 ["gina"] = new(gina.Id, gina.DisplayName),
+                ["lena"] = new(lena.Id, lena.DisplayName),
             },
             new Dictionary<string, SeededWall>
             {
@@ -100,6 +105,7 @@ internal sealed class SeedWalls
                 ["wide"] = new(wide.Wall.Id, wide.Shas, null, null, null, null),
                 ["variants"] = new(variants.Wall.Id, variants.Shas, null, null, null, null),
                 ["grips"] = new(grips.Wall.Id, grips.Shas, null, null, null, null),
+                ["landing"] = new(landing.Wall.Id, landing.Shas, null, null, null, null),
             },
             kioskToken,
             alpha.Wall.ShareToken,
