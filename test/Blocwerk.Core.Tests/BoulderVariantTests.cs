@@ -193,7 +193,8 @@ public class BoulderVariantTests
         var climber = await h.AddMemberAsync("climber@test", WallRole.Member);
         var boulder = await h.BoulderService.CreateBoulderAsync(
             h.WallId, "Boulder", null, [new BoulderHoldInput(holds[0].Id)], setterUserIds: [setter.Id]);
-        var other = await CreateAsync(h, holds, "Other");
+        var other = await h.BoulderService.CreateBoulderAsync(
+            h.WallId, "Other", null, [new BoulderHoldInput(holds[0].Id)], setterUserIds: [setter.Id]);
 
         h.ActingUser = climber;
         await AssertRefusedAsync(BoulderService.VariantPermissionMessage, () => h.BoulderService.SetVariantsAsync(boulder.Id, [other.Id]));
@@ -207,6 +208,44 @@ public class BoulderVariantTests
         h.ActingUser = admin;
         await h.BoulderService.SetVariantsAsync(boulder.Id, [added.Id]);
         Assert.Null(await ParentOfAsync(h, other.Id));
+    }
+
+    [Fact]
+    public async Task AClimberCannotMarkSomebodyElsesBoulder_AndNothingMoves()
+    {
+        using var h = new WallTestHarness();
+        var holds = await h.SeedWallAsync();
+        var theirs = await CreateAsync(h, holds, "The setter's");
+        var climber = await h.AddMemberAsync("climber@test", WallRole.Member);
+        h.ActingUser = climber;
+        var mine = await CreateAsync(h, holds, "Mine");
+
+        await AssertRefusedAsync(BoulderService.VariantTargetPermissionMessage, () => h.BoulderService.SetVariantsAsync(mine.Id, [theirs.Id]));
+        Assert.False((await h.BoulderService.GetVariantChoicesAsync(mine.Id))!.Choices.Single(c => c.Id == theirs.Id).CanMove);
+
+        Assert.Null(await ParentOfAsync(h, theirs.Id));
+        Assert.Null(await ParentOfAsync(h, mine.Id));
+    }
+
+    [Fact]
+    public async Task AClimberCannotTurnSomebodyElsesFamilyAround_NorTakeAVariantOutOfIt()
+    {
+        using var h = new WallTestHarness();
+        var holds = await h.SeedWallAsync();
+        var parent = await CreateAsync(h, holds, "The setter's parent");
+        var climber = await h.AddMemberAsync("climber@test", WallRole.Member);
+        h.ActingUser = climber;
+        var myVariant = await VariantAsync(h, holds, "My variant", parent.Id);
+        var mine = await CreateAsync(h, holds, "Mine");
+
+        // Picking the parent would put the setter's boulder under mine.
+        await AssertRefusedAsync(BoulderService.VariantTargetPermissionMessage, () => h.BoulderService.SetVariantsAsync(myVariant.Id, [parent.Id]));
+        // My own variant may move only with the family's parent's say.
+        await AssertRefusedAsync(BoulderService.VariantTargetPermissionMessage, () => h.BoulderService.SetVariantsAsync(mine.Id, [myVariant.Id]));
+
+        Assert.Null(await ParentOfAsync(h, parent.Id));
+        Assert.Equal(parent.Id, await ParentOfAsync(h, myVariant.Id));
+        Assert.Null(await ParentOfAsync(h, mine.Id));
     }
 
     [Fact]

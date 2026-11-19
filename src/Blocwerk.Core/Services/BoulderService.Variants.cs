@@ -63,6 +63,9 @@ public partial class BoulderService
     /// <summary>The refusal when somebody without edit rights changes a boulder's variants.</summary>
     public const string VariantPermissionMessage = "Only the creator, a setter, or a wall admin can change this boulder's variants.";
 
+    /// <summary>The refusal when a boulder would move that the user may not edit, or out of a family they may not edit.</summary>
+    public const string VariantTargetPermissionMessage = "You can only mark boulders as variants that you may edit, together with their family.";
+
     /// <summary>The refusal when a draft, archived or historic boulder is linked.</summary>
     public const string VariantNotLiveMessage = "Only published boulders that are still on the wall can be marked as variants.";
 
@@ -126,9 +129,12 @@ public partial class BoulderService
 
             var rows = await db.Boulders.AsNoTracking()
                 .Where(b => b.WallId == start.WallId && b.Id != boulderId)
-                .Select(b => new VariantRow(b.Id, b.Name, b.Grade, b.ParentBoulderId, !b.IsDraft && !b.IsArchived && !b.IsHistoric))
+                .Select(b => new VariantRow(
+                    b.Id, b.Name, b.Grade, b.ParentBoulderId, !b.IsDraft && !b.IsArchived && !b.IsHistoric,
+                    b.CreatedByUserId == user.Id || b.Setters.Any(s => s.UserId == user.Id)))
                 .ToListAsync(ct);
-            return BuildChoices(start, rows, await CanManageBoulderAsync(db, start, user.Id));
+            var isAdmin = await WallAdminGuard.IsWallAdminAsync(db, start.WallId, user.Id, ct);
+            return BuildChoices(start, rows, await CanManageBoulderAsync(db, start, user.Id), isAdmin);
         }
         catch (Exception ex)
         {
@@ -154,8 +160,13 @@ public partial class BoulderService
             }
 
             var ids = variantIds.Distinct().ToList();
-            var targets = await db.Boulders.Where(b => ids.Contains(b.Id)).ToListAsync(ct);
+            var targets = await db.Boulders.Include(b => b.Setters).Where(b => ids.Contains(b.Id)).ToListAsync(ct);
             EnsureLinkable(start, targets, ids.Count);
+
+            // A variant has no variants of its own: what it gathers joins its parent, unless that parent is what it picked.
+            var keepsParent = start.ParentBoulderId is { } current && !ids.Contains(current);
+            var parentId = keepsParent ? start.ParentBoulderId!.Value : boulderId;
+            await EnsureMayMoveAsync(db, targets, parentId, user.Id, ct);
 
             var affected = ids.Append(boulderId).ToList();
             var variants = await db.Boulders.Where(b => b.ParentBoulderId != null && affected.Contains(b.ParentBoulderId.Value)).ToListAsync(ct);
@@ -166,9 +177,6 @@ public partial class BoulderService
 
             if (targets.Count > 0)
             {
-                // A variant has no variants of its own: what it gathers joins its parent, unless that parent is what it picked.
-                var keepsParent = start.ParentBoulderId is { } current && !ids.Contains(current);
-                var parentId = keepsParent ? start.ParentBoulderId!.Value : boulderId;
                 start.ParentBoulderId = keepsParent ? parentId : null;
                 foreach (var moved in variants.Where(v => v.ParentBoulderId is { } p && ids.Contains(p) && v.Id != boulderId).Concat(targets))
                 {
@@ -230,11 +238,32 @@ public partial class BoulderService
         }
     }
 
+    /// <summary>
+    /// Refuses before anything moves unless the user may edit every chosen boulder that changes parent, and the parent of
+    /// every family one of them is taken out of. Rights on the boulder the change starts from cover only that boulder.
+    /// </summary>
+    private async Task EnsureMayMoveAsync(BlocwerkDbContext db, List<Boulder> targets, Guid parentId, Guid userId, CancellationToken ct)
+    {
+        var moving = targets.Where(t => t.ParentBoulderId != parentId).ToList();
+        var formerParentIds = moving.Select(t => t.ParentBoulderId).OfType<Guid>().Distinct().ToList();
+        var formerParents = await db.Boulders.AsNoTracking().Include(b => b.Setters).Where(b => formerParentIds.Contains(b.Id)).ToListAsync(ct);
+        foreach (var boulder in moving.Concat(formerParents))
+        {
+            if (!await CanManageBoulderAsync(db, boulder, userId))
+            {
+                _logger.LogWarning("Variant change refused: user {UserId} may not move boulder {BoulderId}", userId, boulder.Id);
+                throw new UserFacingException(VariantTargetPermissionMessage);
+            }
+        }
+    }
+
     private static bool IsLiveBoulder(Boulder b) => b is { IsDraft: false, IsArchived: false, IsHistoric: false };
 
-    private static BoulderVariantChoices BuildChoices(Boulder start, List<VariantRow> rows, bool canEdit)
+    private static BoulderVariantChoices BuildChoices(Boulder start, List<VariantRow> rows, bool canEdit, bool isAdmin)
     {
         var names = rows.ToDictionary(r => r.Id, r => r.Name);
+        var mine = rows.Where(r => isAdmin || r.IsMine).Select(r => r.Id).ToHashSet();
+        bool MayMove(VariantRow r) => mine.Contains(r.Id) && (r.ParentId is not { } p || p == start.ParentBoulderId || mine.Contains(p));
         var counts = rows.Where(r => r.ParentId is not null && r.IsLive).GroupBy(r => r.ParentId!.Value).ToDictionary(g => g.Key, g => g.Count());
         var choices = rows.Where(r => r.IsLive)
             .Select(r => new BoulderVariantChoice(
@@ -244,6 +273,7 @@ public partial class BoulderService
                 r.ParentId == start.Id,
                 r.Id == start.ParentBoulderId,
                 start.ParentBoulderId is not null && r.ParentId == start.ParentBoulderId,
+                MayMove(r),
                 counts.GetValueOrDefault(r.Id),
                 r.ParentId is { } parent && parent != start.Id ? names.GetValueOrDefault(parent) : null))
             .OrderByDescending(c => c.IsParent)
@@ -311,5 +341,5 @@ public partial class BoulderService
         return await db.BoulderHolds.AsNoTracking().Where(h => h.BoulderId == id).Select(h => h.HoldId).ToListAsync();
     }
 
-    private sealed record VariantRow(Guid Id, string Name, string? Grade, Guid? ParentId, bool IsLive);
+    private sealed record VariantRow(Guid Id, string Name, string? Grade, Guid? ParentId, bool IsLive, bool IsMine);
 }

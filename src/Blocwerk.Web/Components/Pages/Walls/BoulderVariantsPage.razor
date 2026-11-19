@@ -87,6 +87,11 @@
             }
         </ul>
 
+        @if (_asParent && NotMovable > 0)
+        {
+            <p class="hint">@NotMovable more can't be listed here: you may only mark boulders you may edit.</p>
+        }
+
         @if (_asParent && _choices.UnlistedVariants > 0)
         {
             <p class="hint">@_choices.UnlistedVariants more (drafts, archived or historic) are not listed and stay linked.</p>
@@ -129,9 +134,11 @@
 
     // A boulder's own variants cannot be its parent, so the second mode does not offer them.
     private List<BoulderVariantChoice> Visible => (_choices?.Choices ?? [])
-        .Where(c => _asParent ? !c.IsSibling : !c.IsVariant)
+        .Where(c => _asParent ? !c.IsSibling && (c.IsVariant || c.CanMove) : !c.IsVariant)
         .Where(c => string.IsNullOrWhiteSpace(_search) || c.Name.Contains(_search.Trim(), StringComparison.CurrentCultureIgnoreCase))
         .ToList();
+
+    private int NotMovable => (_choices?.Choices ?? []).Count(c => !c.CanMove && !c.IsVariant && !c.IsSibling);
 
     private string? ParentName => _choices?.Choices.FirstOrDefault(c => c.IsParent)?.Name;
 
