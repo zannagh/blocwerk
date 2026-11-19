@@ -4,7 +4,10 @@
 using Blocwerk.Client.Store;
 using Blocwerk.Client.Views;
 using Blocwerk.Contracts.Documents;
+using Blocwerk.Core.Enums;
 using Blocwerk.Core.Helpers;
+using Blocwerk.Core.Tests.OfflineClientViews;
+using static Blocwerk.Core.Tests.OfflineClientStore.StoreWorld;
 using static Blocwerk.Core.Tests.OfflineClientViews.ViewWorld;
 
 namespace Blocwerk.Core.Tests;
@@ -75,6 +78,45 @@ public class BoulderFamiliesTests
         Assert.Equal(["Parent"], Names(boulders, new BoulderFilter { GradeMin = "7A" }));
         Assert.Equal(["Parent", "Middle"], Names(boulders, new BoulderFilter { Sort = BoulderSort.GradeAsc }));
         Assert.Equal("6A–7B", BoulderList.Families(boulders)[Parent].GradeRange);
+    }
+
+    [Fact]
+    public void AFamily_ShowsUnderEveryStyleOfAPublishedMember_AndCountsOnce()
+    {
+        IReadOnlyList<BouldersDocumentBoulder> boulders =
+        [
+            CrimpLine() with { Id = Parent, Name = "Parent", Styles = ["Power"] },
+            CrimpLine() with { Id = Guid.NewGuid(), Name = "Variant", Styles = ["Power", "Tension"], ParentBoulderId = Parent },
+            CrimpLine() with { Id = Guid.NewGuid(), Name = "Draft", Draft = true, Styles = ["Funky"], ParentBoulderId = Parent },
+        ];
+
+        var counts = BoulderList.StyleCounts(boulders);
+
+        Assert.Equal(1, counts[BoulderStyle.Power]);
+        Assert.Equal(1, counts[BoulderStyle.Tension]);
+        Assert.Equal(["Parent"], Names(boulders, new BoulderFilter { Style = BoulderStyle.Tension }));
+        Assert.False(BoulderList.Families(boulders)[Parent].Styles.HasFlag(BoulderStyle.Funky));
+    }
+
+    [Fact]
+    public async Task TheOfflineCard_MarksTheParent_ListsSiblings_AndLeavesDraftsOut()
+    {
+        var variant = CrimpLine() with { Id = Guid.NewGuid(), Name = "Variant", ParentBoulderId = Parent };
+        IReadOnlyList<BouldersDocumentBoulder> boulders =
+        [
+            CrimpLine() with { Id = Parent, Name = "The Parent" },
+            variant,
+            CrimpLine() with { Id = Guid.NewGuid(), Name = "Sibling", ParentBoulderId = Parent },
+            CrimpLine() with { Id = Guid.NewGuid(), Name = "Unpublished", Draft = true, ParentBoulderId = Parent },
+        ];
+
+        await using var view = await ViewHarness.StartAsync(CachedDevice(UserA), $"walls/{Wall}");
+        var html = await view.RenderAsync<VariantsCard>(new() { ["Boulder"] = variant, ["Boulders"] = boulders, ["WallId"] = Wall });
+
+        Assert.Contains("The Parent", html, StringComparison.Ordinal);
+        Assert.Contains("bw-client-variants-parent", html, StringComparison.Ordinal);
+        Assert.Contains("Sibling", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("Unpublished", html, StringComparison.Ordinal);
     }
 
     private static IEnumerable<string> Names(IReadOnlyList<BouldersDocumentBoulder> boulders, BoulderFilter filter) =>

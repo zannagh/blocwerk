@@ -1,0 +1,10 @@
+/* A bottom sheet on the phone, a wider dialog from the tablet up. */
+.variant-peek ::deep .bw-modal-backdrop { align-items: flex-end; padding: 0; }
+.variant-peek ::deep .variant-peek-panel {
+    max-width: 100%; max-height: 88%; border-radius: 14px 14px 0 0;
+    padding-bottom: max(18px, env(safe-area-inset-bottom));
+}
+@media (min-width: 768px) {
+    .variant-peek ::deep .bw-modal-backdrop { align-items: center; padding: 20px; }
+    .variant-peek ::deep .variant-peek-panel { max-width: 720px; border-radius: 14px; }
+}

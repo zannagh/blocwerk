@@ -278,6 +278,7 @@ public static class KioskRestrictions
         "Blocwerk.Web.Components.Pages.Walls.BoulderCreate",
         "Blocwerk.Web.Components.Pages.Walls.BoulderDetail",
         "Blocwerk.Web.Components.Pages.Walls.BoulderRevise",
+        "Blocwerk.Web.Components.Pages.Walls.BoulderVariantsPage",
     ];
 
     /// <summary>

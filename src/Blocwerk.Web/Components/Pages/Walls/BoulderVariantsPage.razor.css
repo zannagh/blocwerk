@@ -1,0 +1,23 @@
+.variant-page { max-width: 640px; margin: 0 auto; padding: 0 16px 24px; box-sizing: border-box; }
+.variant-modes { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; padding: 0; border: 0; min-width: 0; }
+.variant-modes legend { padding: 0; margin-bottom: 8px; font-weight: 600; color: var(--text-heading); }
+.variant-mode {
+    display: flex; align-items: flex-start; gap: 10px; padding: 12px; cursor: pointer;
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r-md);
+}
+.variant-mode.is-on { border-color: var(--accent); background: var(--accent-soft); }
+.variant-mode span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.variant-mode small, .variant-text small { color: var(--text-secondary); font-size: 0.8rem; }
+.variant-search { width: 100%; box-sizing: border-box; margin-bottom: 8px; }
+.variant-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.variant-row {
+    display: flex; align-items: center; gap: 8px; padding: 4px 8px;
+    background: var(--bg-surface); border: 1px solid var(--border-light); border-radius: var(--r-md);
+}
+.variant-pick { flex: 1 1 auto; min-width: 0; min-height: 44px; display: flex; align-items: center; gap: 10px; cursor: pointer; }
+.variant-pick input { flex: none; width: 20px; height: 20px; margin: 0; }
+.variant-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.variant-name { font-weight: 600; overflow-wrap: anywhere; color: var(--text); }
+.variant-row .variant-peek-btn { flex: none; width: auto; min-width: 0; min-height: 44px; margin: 0; padding: 6px 12px; }
+.variant-submit { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+.variant-submit > * { flex: 1 1 140px; width: auto; margin: 0; text-align: center; box-sizing: border-box; }

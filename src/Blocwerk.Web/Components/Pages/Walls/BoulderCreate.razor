@@ -24,8 +24,8 @@
 
 <div class="boulder-create">
     <div class="page-header">
-        <a href="/walls/@WallId" class="back-link">&larr; Back</a>
-        <h1>Create Boulder</h1>
+        <a href="@BackUrl" class="back-link">&larr; Back</a>
+        <h1>@PageHeading</h1>
     </div>
 
     @if (_wall == null)
@@ -48,6 +48,8 @@
     }
     else
     {
+        <BoulderVariantNotice OriginName="@_variantOriginName" />
+
         <div class="form-section">
             @* The name is pre-filled with a generated, wall-unique name so a kiosk tablet with no
                keyboard can publish straight away. The shuffle button re-rolls it. *@
@@ -284,6 +286,7 @@
         styles = (int)_styles,
         holds = _selectedHolds.Select(h => new { holdId = h.HoldId, type = (int)h.Type, usage = (int)h.Usage }),
         setters = _selectedSetters.ToList(),
+        variantOfBoulderId = _variantOriginId,
     });
 
     // Marks the app "busy" for the duration this create page is mounted (see EditActivityRegistry).
@@ -388,6 +391,7 @@
             }
 
             _currentPanel = _panels.FirstOrDefault(p => p is { Col: 0, Row: 0 }) ?? _panels.FirstOrDefault();
+            await ApplyVariantOriginAsync();
 
             await BuildTwinMapAsync();
 
@@ -526,7 +530,7 @@
             var boulder = await BoulderService.CreateBoulderAsync(
                 WallId, _name, _grade, _selectedHolds, isDraft,
                 _allKickboardOn, EffectiveHandsFollowFeet, _footColorOnly, _clientId, _noMatch,
-                _selectedSetters.ToList(), _customRule, _styles);
+                _selectedSetters.ToList(), _customRule, _styles, _variantOriginId);
             Navigation.NavigateTo($"/walls/{WallId}/boulders/{boulder.Id}");
         }
         catch (Exception ex)

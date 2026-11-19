@@ -1,0 +1,36 @@
+@inject IBoulderService BoulderService
+@using Blocwerk.Core.Entities
+@* Add Variant and Mark Variant, for a boulder that is on the wall. Add Variant is for anyone who may create a boulder here;
+   Mark Variant for those who may edit this one. The service enforces both. *@
+@if (Boulder is { IsDraft: false, IsArchived: false, IsHistoric: false } && (canCreate || CanEdit))
+{
+    <div class="variant-actions">
+        @if (canCreate)
+        {
+            <a class="variant-action" href="/walls/@Boulder.WallId/boulders/create?variantOf=@Boulder.Id">Add Variant</a>
+        }
+        @if (CanEdit)
+        {
+            <a class="variant-action" href="/walls/@Boulder.WallId/boulders/@Boulder.Id/variants">Mark Variant</a>
+        }
+    </div>
+}
+
+@code {
+    private bool canCreate;
+
+    /// <summary>The boulder on the page.</summary>
+    [Parameter, EditorRequired] public Boulder Boulder { get; set; } = null!;
+
+    /// <summary>Whether the viewer may edit the boulder.</summary>
+    [Parameter] public bool CanEdit { get; set; }
+
+    /// <summary>Whether nobody is signed in (a share link or a kiosk tablet).</summary>
+    [Parameter] public bool IsAnonymous { get; set; }
+
+    /// <inheritdoc />
+    protected override async Task OnParametersSetAsync()
+    {
+        canCreate = !IsAnonymous || await BoulderService.CanCreateAnonymouslyAsync(Boulder.WallId);
+    }
+}

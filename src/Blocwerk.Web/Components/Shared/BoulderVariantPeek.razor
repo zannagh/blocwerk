@@ -1,0 +1,94 @@
+@inject IBoulderService BoulderService
+@inject IWallPanelService WallPanelService
+@using Blocwerk.Core.Entities
+@using Blocwerk.Core.Enums
+@* A look at another boulder's route without leaving the page: a bottom sheet with the wall's panels and its holds marked. *@
+<div class="variant-peek">
+    <Modal Title="@(boulder?.Name ?? "Boulder")" OnClose="OnClose" PanelClass="variant-peek-panel">
+        @if (!loaded)
+        {
+            <p class="loading">Loading...</p>
+        }
+        else if (panels.Count == 0 || holdsByPanel.Count == 0)
+        {
+            <p class="hint">This boulder's holds can't be shown on the wall.</p>
+        }
+        else
+        {
+            <MultiPanelViewer @key="BoulderId" WallId="WallId" Panels="panels" StartCol="startCol" StartRow="startRow"
+                              ArrowMode="MultiPanelViewer.ArrowDisplayMode.HoldsOnly" HoldsByPanel="holdsByPanel"
+                              HighlightedHoldIds="highlighted" FootHoldIds="feet" HoldColor="ColorOf"
+                              HighlightedPanelIds="highlightedPanels" EnableSwipe="true" />
+        }
+        <div class="bw-modal-actions">
+            <button type="button" class="btn-secondary" @onclick="OnClose">Close</button>
+        </div>
+    </Modal>
+</div>
+
+@code {
+    private Boulder? boulder;
+    private List<WallPanelInfo> panels = [];
+    private Dictionary<Guid, IReadOnlyList<PanelHold>> holdsByPanel = [];
+    private HashSet<Guid> highlighted = [];
+    private HashSet<Guid> feet = [];
+    private HashSet<Guid> highlightedPanels = [];
+    private Dictionary<Guid, (HoldType Type, HoldUsage Usage)> marks = [];
+    private int startCol;
+    private int startRow;
+    private bool loaded;
+    private Guid? loadedId;
+
+    /// <summary>The wall.</summary>
+    [Parameter] public Guid WallId { get; set; }
+
+    /// <summary>The boulder to show.</summary>
+    [Parameter] public Guid BoulderId { get; set; }
+
+    /// <summary>Raised when the sheet is dismissed.</summary>
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    /// <inheritdoc />
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loadedId == BoulderId)
+        {
+            return;
+        }
+
+        loadedId = BoulderId;
+        loaded = false;
+        boulder = await BoulderService.GetBoulderAsync(BoulderId);
+        panels = (await WallPanelService.GetPanelsAsync(WallId)).Where(p => p.IsLive).ToList();
+        PlaceHolds();
+        loaded = true;
+    }
+
+    private void PlaceHolds()
+    {
+        var live = panels.Select(p => p.Id).ToHashSet();
+        var centre = BoulderGenerationView.CentrePanel(panels)?.Id;
+        var placed = (boulder?.BoulderHolds ?? [])
+            .Select(bh => (Mark: bh, Panel: bh.Hold.WallPanelId is { } id ? (live.Contains(id) ? id : (Guid?)null) : centre))
+            .Where(x => x.Panel is not null)
+            .ToList();
+
+        holdsByPanel = placed.GroupBy(x => x.Panel!.Value).ToDictionary(
+            g => g.Key,
+            g => (IReadOnlyList<PanelHold>)g.Select(x => ToPanelHold(x.Mark.Hold)).ToList());
+        highlighted = placed.Select(x => x.Mark.HoldId).ToHashSet();
+        feet = placed.Where(x => x.Mark.Usage == HoldUsage.FootOnly).Select(x => x.Mark.HoldId).ToHashSet();
+        marks = placed.ToDictionary(x => x.Mark.HoldId, x => (x.Mark.Type, x.Mark.Usage));
+        highlightedPanels = holdsByPanel.Keys.ToHashSet();
+
+        var start = panels.FirstOrDefault(p => p.Id == holdsByPanel.OrderByDescending(kv => kv.Value.Count).Select(kv => kv.Key).FirstOrDefault());
+        (startCol, startRow) = start is null ? (0, 0) : (start.Col, start.Row);
+    }
+
+    private static PanelHold ToPanelHold(Hold h) => new(
+        h.Id, h.X, h.Y, h.Radius, h.Color, h.Category, h.ShapePoints, h.IsVirtual, h.ShapeHoles, h.KeptUnconfirmedGeneration is not null, h.StackedOnHoldId);
+
+    private (string Fill, string Stroke) ColorOf(Guid holdId) => marks.TryGetValue(holdId, out var m)
+        ? (BoulderHoldColors.FillFor(m.Type, m.Usage), BoulderHoldColors.Outline(m.Type, m.Usage))
+        : (BoulderHoldColors.Fill(HoldType.Normal), BoulderHoldColors.Normal);
+}

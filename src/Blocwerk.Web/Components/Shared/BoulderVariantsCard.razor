@@ -1,0 +1,71 @@
+@inject IBoulderService BoulderService
+@* The rest of this boulder's family: on a parent its variants, on a variant the parent (marked) and the siblings. *@
+@if (family.Count > 0)
+{
+    <details class="settings-panel settings-card variants-card" open>
+        <summary class="settings-card-summary"><h2>Variants</h2></summary>
+        <div class="settings-card-body">
+            <ul class="variants-list">
+                @foreach (var member in family)
+                {
+                    <li>
+                        <a class="variants-row" href="@LinkTo(member.Id)">
+                            <span class="variants-name">@member.Name</span>
+                            @if (member.IsParent)
+                            {
+                                <span class="variants-parent">parent</span>
+                            }
+                            @if (member.IsHistoric)
+                            {
+                                <span class="historic-badge">historic</span>
+                            }
+                            @if (!string.IsNullOrEmpty(member.Grade))
+                            {
+                                <span class="grade-badge">@member.Grade</span>
+                            }
+                        </a>
+                    </li>
+                }
+            </ul>
+        </div>
+    </details>
+}
+
+@code {
+    private IReadOnlyList<BoulderVariantView> family = [];
+    private (Guid, string?)? loaded;
+
+    /// <summary>The boulder's wall.</summary>
+    [Parameter] public Guid WallId { get; set; }
+
+    /// <summary>The boulder on the page.</summary>
+    [Parameter] public Guid BoulderId { get; set; }
+
+    /// <summary>The wall's share token on the share path.</summary>
+    [Parameter] public string? ShareToken { get; set; }
+
+    /// <inheritdoc />
+    protected override async Task OnParametersSetAsync()
+    {
+        // The boulder page stays mounted when the card's own links move between boulders.
+        if (loaded == (BoulderId, ShareToken))
+        {
+            return;
+        }
+
+        loaded = (BoulderId, ShareToken);
+        family = [];
+        try
+        {
+            family = await BoulderService.GetVariantsAsync(BoulderId, ShareToken);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // A viewer who may not read the family simply sees no card.
+        }
+    }
+
+    private string LinkTo(Guid id) => string.IsNullOrEmpty(ShareToken)
+        ? $"/walls/{WallId}/boulders/{id}"
+        : $"/walls/{WallId}/boulders/{id}/shared/{ShareToken}";
+}

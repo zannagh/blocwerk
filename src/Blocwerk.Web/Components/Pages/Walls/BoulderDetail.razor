@@ -361,6 +361,8 @@ else
                 <BoulderAttemptBar BoulderId="_boulder.Id" />
             }
 
+            <BoulderVariantsCard WallId="WallId" BoulderId="BoulderId" ShareToken="@ShareToken" />
+
             <div class="rating-section">
                 <div class="rating-summary">
                     @if (_rating.Count > 0)
@@ -427,6 +429,8 @@ else
         }
         else
         {
+            <BoulderVariantsCard WallId="WallId" BoulderId="BoulderId" ShareToken="@ShareToken" />
+
             @* Two different anonymous viewers, two different next steps. On a tablet nobody logs IN;
                they tap their own name on the kiosk picker, and pointing them at a login page they are
                not meant to complete is what this whole fix is about. *@
@@ -470,6 +474,8 @@ else
            Same display:contents trick as the two columns above, so the phone tier is untouched and
            the DOM order stays exactly the order the phone stack has always rendered. *@
         <div class="boulder-wide-col">
+        <BoulderVariantActions Boulder="_boulder" CanEdit="CanManageBoulder" IsAnonymous="_isAnonymous" />
+
         <BoulderActivityFeed @ref="_activityFeed" BoulderId="BoulderId" WallId="WallId" ShareToken="@ShareToken" />
 
         <BoulderComments @ref="_commentList" BoulderId="BoulderId" WallId="WallId" ShareToken="@ShareToken"
