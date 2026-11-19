@@ -67,7 +67,7 @@
     </PropertyGroup>
 
     <Exec Condition="'$(GitVersionToolInstalled)' != 'true'"
-          Command="dotnet tool update --global gitversion.tool" />
+          Command="dotnet tool update --global gitversion.tool --version '6.*'" />
 
     <Message Condition="'$(GitVersionToolInstalled)' != 'true'" Importance="High"
              Text="🔧 GitVersion.Tool installed: $(GitVersionToolInstalled)" />
