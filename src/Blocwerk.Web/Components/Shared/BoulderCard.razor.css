@@ -1,0 +1,5 @@
+.boulder-variants-pill {
+    flex: none; padding: 2px 8px; font-size: 0.75rem; font-weight: 700; line-height: 1.4; white-space: nowrap;
+    color: var(--text); background: var(--bg-surface-alt); border: 1px solid var(--border); border-radius: 999px;
+}
+.boulder-grade { white-space: nowrap; }

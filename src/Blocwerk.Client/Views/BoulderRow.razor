@@ -36,9 +36,13 @@
         {
             <span class="status-icon try-icon" title="@tick.Attempts attempts">@tick.Attempts</span>
         }
-        @if (!string.IsNullOrEmpty(Boulder.Grade))
+        @if (Family is { VariantCount: > 0 } family)
         {
-            <span class="boulder-grade">@Boulder.Grade</span>
+            <span class="boulder-variants-pill" title="@VariantsLabel(family.VariantCount)" aria-label="@VariantsLabel(family.VariantCount)">+@family.VariantCount</span>
+        }
+        @if (!string.IsNullOrEmpty(Family?.GradeRange ?? Boulder.Grade))
+        {
+            <span class="boulder-grade">@(Family?.GradeRange ?? Boulder.Grade)</span>
         }
     </div>
 </a>
@@ -48,6 +52,10 @@
     [Parameter]
     [EditorRequired]
     public BouldersDocumentBoulder Boulder { get; set; } = null!;
+
+    /// <summary>Gets or sets the family this row stands for, if the list worked it out.</summary>
+    [Parameter]
+    public Blocwerk.Core.Helpers.BoulderFamilyRow? Family { get; set; }
 
     /// <summary>Gets or sets its wall.</summary>
     [Parameter]
@@ -65,4 +73,6 @@
     /// <summary>Gets or sets the list's style (<c>?style=</c>), carried into the link so the boulder's back link returns to that list.</summary>
     [Parameter]
     public string? Style { get; set; }
+
+    private static string VariantsLabel(int count) => count == 1 ? "1 variant" : $"{count} variants";
 }

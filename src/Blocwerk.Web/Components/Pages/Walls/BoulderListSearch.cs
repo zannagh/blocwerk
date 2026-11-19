@@ -20,15 +20,15 @@ internal static class BoulderListSearch
             ? []
             : Fold(query).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
 
-    /// <summary>Whether <paramref name="item"/> matches every one of <paramref name="terms"/>.</summary>
-    public static bool Matches(BoulderListItem item, IReadOnlyList<string> terms)
+    /// <summary>Whether <paramref name="item"/>, or the names of the variants its row stands for, match every one of <paramref name="terms"/>.</summary>
+    public static bool Matches(BoulderListItem item, IReadOnlyList<string> terms, IReadOnlyList<string>? variantNames = null)
     {
         if (terms.Count == 0)
         {
             return true;
         }
 
-        var haystack = Fold(string.Join('\n', item.Boulder.Name, item.Boulder.Grade ?? string.Empty, item.AuthorDisplay));
+        var haystack = Fold(string.Join('\n', [item.Boulder.Name, item.Boulder.Grade ?? string.Empty, item.AuthorDisplay, .. variantNames ?? []]));
         foreach (var term in terms)
         {
             if (!haystack.Contains(term, StringComparison.Ordinal))

@@ -118,6 +118,7 @@ else
 
             <div class="boulder-side-col">
                 <RulesSummary Boulder="boulder" />
+                <VariantsCard Boulder="boulder" Boulders="ClassBoulders.Of(Wall)" WallId="WallId" ShareToken="@ShareToken" />
                 <div class="rating-section">
                     <div class="rating-summary">
                         @if (boulder.Stats.RatingCount > 0)

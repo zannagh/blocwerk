@@ -1,3 +1,4 @@
+@using Blocwerk.Core.Helpers
 @using Blocwerk.Core.Services
 
 <a href="@BoulderUrl" class="boulder-card">
@@ -65,15 +66,22 @@
                 <span class="status-icon try-icon" title="@Item.MyAttemptCount attempts">@Item.MyAttemptCount</span>
             }
         }
-        @if (!string.IsNullOrEmpty(Boulder.Grade))
+        @if (Family is { VariantCount: > 0 } family)
         {
-            <span class="boulder-grade">@Boulder.Grade</span>
+            <span class="boulder-variants-pill" title="@VariantsLabel(family.VariantCount)" aria-label="@VariantsLabel(family.VariantCount)">+@family.VariantCount</span>
+        }
+        @if (!string.IsNullOrEmpty(GradeText))
+        {
+            <span class="boulder-grade">@GradeText</span>
         }
     </div>
 </a>
 
 @code {
     [Parameter] public required BoulderListItem Item { get; set; }
+
+    /// <summary>The family this row stands for: its grade range and how many variants it hides.</summary>
+    [Parameter] public BoulderFamilyRow? Family { get; set; }
 
     [Parameter] public Guid WallId { get; set; }
 
@@ -107,6 +115,10 @@
     [Parameter] public EventCallback<Boulder> OnUnarchive { get; set; }
 
     private Boulder Boulder => Item.Boulder;
+
+    private string? GradeText => Family?.GradeRange ?? Boulder.Grade;
+
+    private static string VariantsLabel(int count) => count == 1 ? "1 variant" : $"{count} variants";
 
     private int DisplayHoldCount => ReconciledHoldCount ?? Boulder.BoulderHolds.Count;
 

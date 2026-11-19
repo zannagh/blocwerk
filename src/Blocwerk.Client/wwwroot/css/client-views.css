@@ -59,3 +59,62 @@
 .bw-client-wall .boulders-page .boulder-section {
     padding: 0 0 12px;
 }
+
+/* A boulder's family of variants: the list row's pill and the boulder page's card. */
+.boulder-variants-pill {
+    flex: none;
+    padding: 2px 8px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    line-height: 1.4;
+    white-space: nowrap;
+    color: var(--text);
+    background: var(--bg-surface-alt);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+}
+
+.boulder-card-right .boulder-grade {
+    white-space: nowrap;
+}
+
+.bw-client-variants > .settings-card-body {
+    margin-top: 8px;
+}
+
+.bw-client-variants-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.bw-client-variants-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 6px 8px;
+    box-sizing: border-box;
+    color: var(--text);
+    text-decoration: none;
+}
+
+.bw-client-variants-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-weight: 600;
+}
+
+.bw-client-variants-parent {
+    flex: none;
+    padding: 1px 8px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--info-text);
+    background: var(--info-bg);
+    border-radius: 999px;
+}

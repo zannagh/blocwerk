@@ -1,0 +1,62 @@
+@using Blocwerk.Contracts.Documents
+@* The rest of a boulder's published family, read-only, from the cached document: on a parent its variants, on a variant
+   the parent (marked) and the siblings. *@
+@if (Family.Count > 0)
+{
+    <details class="settings-panel settings-card bw-client-variants" open>
+        <summary class="settings-card-summary"><h2>Variants</h2></summary>
+        <div class="settings-card-body">
+            <ul class="bw-client-variants-list">
+                @foreach (var member in Family)
+                {
+                    <li>
+                        <a class="bw-client-variants-row" href="@ClientRoutes.BoulderLink(WallId, member.Id, ShareToken)">
+                            <span class="bw-client-variants-name">@member.Name</span>
+                            @if (member.Id == ParentId)
+                            {
+                                <span class="bw-client-variants-parent">parent</span>
+                            }
+                            @if (member.IsHistoric)
+                            {
+                                <span class="historic-badge">historic</span>
+                            }
+                            @if (!string.IsNullOrEmpty(member.Grade))
+                            {
+                                <span class="grade-badge">@member.Grade</span>
+                            }
+                        </a>
+                    </li>
+                }
+            </ul>
+        </div>
+    </details>
+}
+
+@code {
+    /// <summary>Gets or sets the boulder on the page.</summary>
+    [Parameter]
+    [EditorRequired]
+    public BouldersDocumentBoulder Boulder { get; set; } = null!;
+
+    /// <summary>Gets or sets the boulders the class may see.</summary>
+    [Parameter]
+    [EditorRequired]
+    public IReadOnlyList<BouldersDocumentBoulder> Boulders { get; set; } = [];
+
+    /// <summary>Gets or sets its wall.</summary>
+    [Parameter]
+    [EditorRequired]
+    public Guid WallId { get; set; }
+
+    /// <summary>Gets or sets the share link's token, or null.</summary>
+    [Parameter]
+    public string? ShareToken { get; set; }
+
+    private Guid ParentId => Boulder.ParentBoulderId ?? Boulder.Id;
+
+    private List<BouldersDocumentBoulder> Family => Boulders
+        .Where(b => b.Id != Boulder.Id && b.Draft != true && !b.IsArchived && (b.Id == ParentId || b.ParentBoulderId == ParentId))
+        .OrderByDescending(b => b.Id == ParentId)
+        .ThenBy(b => b.Name, StringComparer.OrdinalIgnoreCase)
+        .ToList();
+}
