@@ -63,6 +63,7 @@ internal sealed class SeedWalls
         var wide = AddWall("Wide", pia, panels: 2, seed: 40);
         var widePanels = db.WallPanels.Local.Where(p => p.WallId == wide.Wall.Id).OrderBy(p => p.Col).Select(p => p.Id).ToList();
         var multiPanel = SeedMultiPanel.Add(db, wide.Wall.Id, widePanels, pia.Id);
+        AddSpecBoulders(wide.Wall.Id, pia.Id);
         await db.SaveChangesAsync();
 
         return new SeededWorld(
@@ -88,6 +89,16 @@ internal sealed class SeedWalls
             alpha.Wall.ShareToken,
             social,
             multiPanel);
+    }
+
+    // One boulder per browser project for the specs that log on a boulder (boulder-page-cleanup): the browsers share this
+    // world, and no other spec lists or counts the Wide wall, so a log here cannot move another spec's numbers.
+    private void AddSpecBoulders(Guid wallId, Guid setterId)
+    {
+        for (var i = 0; i < 3; i++)
+        {
+            db.Boulders.Add(new Boulder { WallId = wallId, Name = $"Logging boulder {i}", CreatedByUserId = setterId });
+        }
     }
 
     private static string Hex(byte[] bytes) => ContentHash.ToHex(ContentHash.Of(bytes))!;
