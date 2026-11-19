@@ -86,6 +86,11 @@ test('offline, the viewer\'s own marks show on the list and the boulder, and the
     await expect(page.locator('.boulder-custom-rule')).toHaveText('No heel hooks <b>here</b>');
     await expect(page.locator('.boulder-custom-rule b')).toHaveCount(0);
     await expect(page.locator('.legend-chip')).toHaveCount(0);
+    await page.setViewportSize({ width: 375, height: 812 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: '.out/shots/offline-boulder-375.png' });
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.screenshot({ path: '.out/shots/offline-boulder-375-dark.png' });
     await expect(page.locator('.title-row .boulder-status.send, .title-row .boulder-status.flash')).toHaveAccessibleName(/Sent|Flashed/);
     await expectReadOnly(page);
 });
