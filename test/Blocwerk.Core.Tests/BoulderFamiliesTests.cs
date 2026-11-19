@@ -207,6 +207,21 @@ public class BoulderFamiliesTests
         Assert.DoesNotContain("Unpublished", html, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void TheWallsCount_IncludesVariants_WhileTheListShowsTheFamilyOnce()
+    {
+        IReadOnlyList<BouldersDocumentBoulder> boulders =
+        [
+            CrimpLine() with { Id = Parent, Name = "The Parent" },
+            CrimpLine() with { Id = Guid.NewGuid(), Name = "Variant one", ParentBoulderId = Parent },
+            CrimpLine() with { Id = Guid.NewGuid(), Name = "Variant two", ParentBoulderId = Parent },
+            CrimpLine() with { Id = Guid.NewGuid(), Name = "Archived", IsArchived = true },
+        ];
+
+        Assert.Equal(3, BoulderList.ActiveCount(boulders));
+        Assert.Single(BoulderList.Visible(boulders));
+    }
+
     private static IEnumerable<string> Names(IReadOnlyList<BouldersDocumentBoulder> boulders, BoulderFilter filter) =>
         BoulderList.Apply(boulders, MineMarks.None, filter).Active.Select(b => b.Name);
 
