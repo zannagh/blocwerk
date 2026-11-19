@@ -79,26 +79,18 @@ else
                             <h2>Boulders<span class="list-count">@browseRows.Count</span></h2>
                         </div>
                     </div>
-                    <BoulderBrowser Browse="Browsing" Rows="browseRows" HrefFor="BrowseHref" MineCounts="MineCounts" />
+                    <BoulderBrowser Browse="Browsing" Rows="browseRows" HrefFor="BrowseHref" MineCounts="mineCounts" />
                 }
-                @if (Browsing.Level is BoulderBrowseLevel.List or BoulderBrowseLevel.Landing)
+                else
                 {
-                var atLanding = Browsing.Level == BoulderBrowseLevel.Landing;
-                @* Under the landing's cards the whole list is a block only the desktop tier shows, as on the Server. *@
-                <div class="boulder-list-block@(atLanding ? " browse-landing-list" : string.Empty)" data-browse-list="@(atLanding ? "landing" : "level")">
-                @if (atLanding)
-                {
-                    <div class="browse-list-divider" role="separator"><span>All boulders</span></div>
-                }
+                @* A list level. Unlike the Server's desktop tier, the device shows no list under the landing's cards. *@
+                <div class="boulder-list-block" data-browse-list="level">
                 <div class="boulder-list-head">
-                    @if (!atLanding)
-                    {
-                        <div class="section-header">
-                            <h2>Boulders<span class="list-count">@active.Count</span></h2>
-                        </div>
-                        var (browseLabel, browseIcon) = BrowseIcons.Describe(Browsing);
-                        <BrowseBar BackHref="@BrowseHref(Browsing.Up)" BackLabel="@Browsing.UpLabel" Label="@browseLabel" Icon="@browseIcon" />
-                    }
+                    <div class="section-header">
+                        <h2>Boulders<span class="list-count">@active.Count</span></h2>
+                    </div>
+                    @{ var (browseLabel, browseIcon) = BrowseIcons.Describe(Browsing); }
+                    <BrowseBar BackHref="@BrowseHref(Browsing.Up)" BackLabel="@Browsing.UpLabel" Label="@browseLabel" Icon="@browseIcon" />
                     @if (boulders.Count > 0)
                     {
                         <BoulderFilters Filter="filter" FilterChanged="OnFilterChanged" ShowMine="ShowsMine" />
@@ -153,6 +145,7 @@ else
     private int holdCount;
     private CachedWall? derivedFrom;
     private IReadOnlyList<BoulderFamilyRow> browseRows = [];
+    private IReadOnlyDictionary<BoulderMine, int>? mineCounts;
 
     /// <summary>Gets or sets the <c>?browse=</c> value: <c>holds</c> or <c>styles</c> for a card page.</summary>
     [SupplyParameterFromQuery(Name = BoulderBrowse.BrowseKey)]
@@ -170,20 +163,17 @@ else
     [SupplyParameterFromQuery(Name = BoulderBrowse.MineKey)]
     public string? Mine { get; set; }
 
-    private BoulderBrowse Browsing => BoulderBrowse.From(Browse, Style, Hold, Mine);
+    // ?mine= only counts where the viewer has own lists.
+    private BoulderBrowse Browsing => BoulderBrowse.From(Browse, Style, Hold, HasOwnLists ? Mine : null);
 
-    // The viewer's own lists on the landing: only a signed-in device holds marks.
-    private IReadOnlyDictionary<BoulderMine, int>? MineCounts => !ShowsMine || Wall is null ? null : new Dictionary<BoulderMine, int>
-    {
-        [BoulderMine.Projects] = BoulderList.MineCount(boulders, Wall.Mine, BoulderMine.Projects),
-        [BoulderMine.Favorites] = BoulderList.MineCount(boulders, Wall.Mine, BoulderMine.Favorites),
-    };
+    // The viewer's own lists (My projects, Favorites): a signed-in device's marks, on the wall itself. A share link shows
+    // the wall as its link holder sees it, and a kiosk holds no marks, so neither has the cards or the level.
+    private bool HasOwnLists => ShowsMine && string.IsNullOrEmpty(ShareToken);
 
     private bool ShowBrowseCards => Browsing.Level != BoulderBrowseLevel.List;
 
     private string BrowseHref(BoulderBrowse level) => Navigation.GetUriWithQueryParameters(level.Query());
 
-    // A share link or a kiosk holds no marks, so a list of the viewer's own (?mine=) is empty there.
     private BoulderFilter ListFilter => filter with { Style = Browsing.Style, HoldType = Browsing.HoldType, Mine = Browsing.Mine };
 
     /// <inheritdoc />
@@ -204,6 +194,7 @@ else
         filter = new BoulderFilter();
         (grid, derivedFrom, boulders, active, archived) = (null, null, [], [], []);
         browseRows = [];
+        mineCounts = null;
     }
 
     /// <inheritdoc />
@@ -224,6 +215,7 @@ else
             boulders = ClassBoulders.Of(Wall);
             families = BoulderList.Families(boulders, Wall.Holds);
             browseRows = BoulderList.Visible(boulders).Select(b => families[b.Id]).ToList();
+            mineCounts = HasOwnLists ? BoulderList.MineCounts(boulders, Wall.Mine, families) : null;
         }
 
         (active, archived) = BoulderList.Apply(boulders, Wall.Mine, ListFilter, Wall.Holds);

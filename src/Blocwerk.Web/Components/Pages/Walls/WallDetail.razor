@@ -1082,6 +1082,10 @@ else
         // Every render, not just the first: the lease toggles when edit mode is entered or left.
         _editGuardActive = await EditGuardInterop.SyncAsync(JS, "wall-edit", _editLease is not null, _editGuardActive, EditActivity);
         await AfterListRenderAsync();
+        if (firstRender)
+        {
+            await WatchBrowseTierAsync();
+        }
         if (!_wallKeepChecked && _isEditing && _panelEditor is not null)
         {
             await RestoreKeptDecisionsAsync();
@@ -1535,6 +1539,7 @@ else
     {
         _disposed = true;
         Cache.Changed -= OnCacheChanged;
+        StopBrowseTierWatch();
         _editLease?.Dispose();
         _flushRegistration?.Dispose();
 

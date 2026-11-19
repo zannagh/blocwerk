@@ -1,7 +1,7 @@
 // The boulder browser's landing: All across the grid, By Hold Type and By Style side by side and taller than wide on a
-// phone, the viewer's My projects and Favorites cards and their lists, the whole list under a divider on the desktop tier (absent on a
-// phone), and no own-list card for a viewer without marks. The Landing wall (seed/SeedLanding.cs) is only listed here:
-// 5 boulders, Fav one and Fav two Lena's favourites, the three Plain ones her projects.
+// phone, the viewer's My projects and Favorites cards and their lists, the whole list under a divider rendered on the
+// desktop tier only, and no own-list card or ?mine= level on a share link or a kiosk, signed in or not. The Landing wall
+// (seed/SeedLanding.cs) is only listed here: 5 boulders, Fav one and Fav two Lena's favourites, the Plain ones her projects.
 import { test, expect, signIn } from '../harness/fixtures.mjs';
 import { precacheAs, expectClient } from '../harness/client.mjs';
 
@@ -58,8 +58,7 @@ test('phone: All spans the grid, the pair is portrait, everything fits, and no l
     expect(favorites.bottom).toBeLessThanOrEqual(PHONE.height);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 
-    await expect(list.locator('[data-browse-list="landing"]')).toBeHidden();
-    await expect(list.locator('.browse-list-divider')).toBeHidden();
+    await expect(list.locator('[data-browse-list="landing"]')).toHaveCount(0);
     await shoot(page, 'phone');
 });
 
@@ -132,22 +131,69 @@ for (const viewport of [DESKTOP, { width: 1280, height: 800 }]) {
     });
 }
 
-test('signed out (share link): no My projects or Favorites card, and their URLs list nothing', async ({ page, world }) => {
+// The landing on a share link or a kiosk: the base cards, no own-list card, and a ?mine= URL opens the landing.
+async function expectNoOwnLists(page, url, cards) {
+    const list = listPage(page);
+    for (const mine of ['', '&mine=favorites', '&mine=projects']) {
+        await page.goto(url + mine);
+        await expect(page.locator('.wall-carousel:not(.carousel-pending)')).toBeVisible();
+        await expect(list.locator('nav.style-cards .style-card')).toHaveCount(cards);
+        await expect(card(list, 'favorites')).toHaveCount(0);
+        await expect(card(list, 'projects')).toHaveCount(0);
+        await expect(list.locator('[data-browse-current]')).toHaveCount(0);
+    }
+}
+
+test('signed out (share link): no own-list cards, and a ?mine= URL opens the landing', async ({ page, world }) => {
     await page.setViewportSize(PHONE);
     const wall = world.walls.landing;
-    await page.goto(`/walls/${wall.id}/shared/${SHARE}?view=boulders`);
-    await expect(page.locator('.wall-carousel:not(.carousel-pending)')).toBeVisible();
-    const list = listPage(page);
-    await expect(list.locator('nav.style-cards .style-card')).toHaveCount(3);
-    await expect(card(list, 'favorites')).toHaveCount(0);
-    await expect(card(list, 'projects')).toHaveCount(0);
-    await expect(card(list, 'all').locator('.style-card-count')).toHaveText('5');
+    await expectNoOwnLists(page, `/walls/${wall.id}/shared/${SHARE}?view=boulders`, 3);
+    await expect(card(listPage(page), 'all').locator('.style-card-count')).toHaveText('5');
+});
 
-    await page.goto(`/walls/${wall.id}/shared/${SHARE}?view=boulders&mine=favorites`);
-    await expect(list.locator('.empty-boulders')).toBeVisible();
+test('signed in on a share link: still no own-list cards, and ?mine= is ignored', async ({ page, world }) => {
+    const wall = await open(page, world, 'view=boulders', PHONE);
+    await expect(card(listPage(page), 'favorites')).toHaveCount(1);
+    await expectNoOwnLists(page, `/walls/${wall.id}/shared/${SHARE}?view=boulders`, 3);
+});
+
+test('kiosk acting as a member with favourites: no own-list cards, and ?mine= is ignored', async ({ page, world }) => {
+    await page.setViewportSize(PHONE);
+    await page.goto('/oauth-select');
+    await page.getByText('Register this device as a wall kiosk').click();
+    await page.getByLabel('Kiosk key').fill(world.kioskToken);
+    await page.getByRole('button', { name: 'Register kiosk' }).click();
+    await page.waitForURL(/\/walls\/[0-9a-f-]{36}/);
+    // Act as Carol, who favourited a boulder on Alpha (the act-as form POST, as in kiosk-readonly-social).
+    await page.goto(`/kiosk/users/${world.users.carol.id}`);
+    const form = page.locator('form[action="/kiosk/act-as"]').first();
+    await expect(form).toBeAttached();
+    const antiforgery = await form.locator('input[name="__RequestVerificationToken"]').inputValue();
+    const response = await page.request.post('/kiosk/act-as', {
+        form: { userId: world.users.carol.id, pin: '', __RequestVerificationToken: antiforgery },
+    });
+    expect(response.ok()).toBe(true);
+    await page.goto(`/walls/${world.walls.alpha.id}`);
+    await expect(page.locator('body')).toHaveAttribute('data-bw-user', world.users.carol.id);
+
+    await expectNoOwnLists(page, `/walls/${world.walls.alpha.id}?view=boulders`, 3);
+    // Nor the list under the cards: a kiosk never renders it, whatever its width.
+    await page.setViewportSize(DESKTOP);
+    await page.reload();
+    await expect(page.locator('.wall-carousel:not(.carousel-pending)')).toBeVisible();
+    await expect(listPage(page).locator('[data-browse-list="landing"]')).toHaveCount(0);
+});
+
+test('phone: no list is rendered under the cards, and widening the window to desktop renders it', async ({ page, world }) => {
+    await open(page, world, 'view=boulders', PHONE);
+    const list = listPage(page);
+    await expect(list.locator('nav.style-cards .style-card')).toHaveCount(5);
+    await expect(list.locator('[data-browse-list="landing"]')).toHaveCount(0);
     await expect(rows(list)).toHaveCount(0);
-    await page.goto(`/walls/${wall.id}/shared/${SHARE}?view=boulders&mine=projects`);
-    await expect(list.locator('.empty-boulders')).toBeVisible();
+    await page.setViewportSize(DESKTOP);
+    await expect(rows(list.locator('[data-browse-list="landing"]'))).toHaveCount(5);
+    await page.setViewportSize(PHONE);
+    await expect(list.locator('[data-browse-list="landing"]')).toHaveCount(0);
 });
 
 test('offline client: the same landing with My projects and Favorites, and their lists', async ({ page, world, server }) => {
@@ -163,7 +209,7 @@ test('offline client: the same landing with My projects and Favorites, and their
     const [holds, styles] = await Promise.all([box(card(page, 'holds')), box(card(page, 'styles'))]);
     expect(holds.height).toBeGreaterThan(holds.width);
     expect(Math.abs(holds.top - styles.top)).toBeLessThan(1);
-    await expect(page.locator('[data-browse-list="landing"]')).toBeHidden();
+    await expect(page.locator('[data-browse-list]')).toHaveCount(0);
     await shoot(page, 'client-phone');
 
     await card(page, 'favorites').click();

@@ -56,17 +56,25 @@ public sealed class WallViewBrowseTests
     }
 
     [Fact]
-    public async Task TheLanding_CarriesTheWholeListUnderItsCards_ForTheDesktopTier()
+    public async Task TheLanding_RendersNoListUnderItsCards()
     {
         await using var view = await ViewHarness.StartAsync(Device(["Tension"], ["Power"]), $"walls/{Wall}");
         var html = await RenderAsync(view);
 
         Assert.Contains("data-browse-level=\"landing\"", html, StringComparison.Ordinal);
-        Assert.Contains("class=\"boulder-list-block browse-landing-list\" data-browse-list=\"landing\"", html, StringComparison.Ordinal);
-        Assert.Contains("browse-list-divider", html, StringComparison.Ordinal);
-        Assert.Contains("Crimp Line", html, StringComparison.Ordinal);
-        Assert.Contains("Second Line", html, StringComparison.Ordinal);
-        Assert.Contains($"href=\"walls/{Wall}/boulders/{Crimp}\"", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("data-browse-list", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("Crimp Line", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SignedInOnAShareLink_HasNoOwnListCards_AndIgnoresMine()
+    {
+        await using var view = await ViewHarness.StartAsync(Device([], []), $"walls/{Wall}/shared/tok?mine=favorites");
+        var html = await view.RenderAsync<WallViewPage>(new() { ["WallId"] = Wall, ["ShareToken"] = "tok" });
+
+        Assert.Contains("data-browse-level=\"landing\"", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("data-card=\"favorites\"", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("data-card=\"projects\"", html, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -97,15 +105,18 @@ public sealed class WallViewBrowseTests
     [Theory]
     [InlineData(Kiosk)]
     [InlineData(Anon)]
-    public async Task WithoutMarks_TheLandingHasNoOwnListCards_AndTheListIsEmpty(string partition)
+    public async Task WithoutMarks_TheLandingHasNoOwnListCards_AndMineIsIgnored(string partition)
     {
         await using var landing = await ViewHarness.StartAsync(CachedDevice(partition), $"walls/{Wall}");
         var html = await RenderAsync(landing);
         Assert.DoesNotContain("data-card=\"favorites\"", html, StringComparison.Ordinal);
         Assert.DoesNotContain("data-card=\"projects\"", html, StringComparison.Ordinal);
 
+        // The level is ignored: the URL opens the landing, not a list.
         await using var list = await ViewHarness.StartAsync(CachedDevice(partition), $"walls/{Wall}?mine=favorites");
-        Assert.DoesNotContain("Crimp Line", await RenderAsync(list), StringComparison.Ordinal);
+        var ignored = await RenderAsync(list);
+        Assert.Contains("data-browse-level=\"landing\"", ignored, StringComparison.Ordinal);
+        Assert.DoesNotContain("Crimp Line", ignored, StringComparison.Ordinal);
     }
 
     [Fact]

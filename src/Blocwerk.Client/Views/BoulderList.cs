@@ -60,13 +60,21 @@ public static class BoulderList
         return BoulderStyles.CountBy(Visible(boulders).Select(b => families[b.Id].Styles));
     }
 
-    /// <summary>Families on one of the viewer's own lists over <see cref="Visible"/>, as its landing card shows them.</summary>
+    /// <summary>Families on each of the viewer's own lists over the list's rows, as their landing cards show them.</summary>
     /// <param name="boulders">The boulders the class may see.</param>
     /// <param name="mine">The viewer's marks.</param>
-    /// <param name="list">The list.</param>
-    /// <returns>How many rows the list has.</returns>
-    public static int MineCount(IReadOnlyList<BouldersDocumentBoulder> boulders, MineMarks mine, BoulderMine list) =>
-        Filter(Visible(boulders), mine, new BoulderFilter { Mine = list }, Families(boulders)).Count();
+    /// <param name="families">The rows by boulder (<see cref="Families"/>), already built for the list.</param>
+    /// <returns>How many rows each list has.</returns>
+    public static IReadOnlyDictionary<BoulderMine, int> MineCounts(
+        IReadOnlyList<BouldersDocumentBoulder> boulders, MineMarks mine, IReadOnlyDictionary<Guid, BoulderFamilyRow> families)
+    {
+        var rows = boulders.Where(b => !b.IsArchived && families.ContainsKey(b.Id)).ToList();
+        return new Dictionary<BoulderMine, int>
+        {
+            [BoulderMine.Projects] = rows.Count(b => AnyMember(b, families, mine.IsProject)),
+            [BoulderMine.Favorites] = rows.Count(b => AnyMember(b, families, mine.IsFavourite)),
+        };
+    }
 
     /// <summary>The rows of the list by boulder: a variant under a listed parent has none.</summary>
     /// <param name="boulders">The boulders the class may see.</param>
