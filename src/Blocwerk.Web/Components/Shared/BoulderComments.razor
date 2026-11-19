@@ -35,7 +35,7 @@
                     <span class="comment-time"><LocalTime Value="@comment.CreatedAt" Format="LocalTimeFormat.Relative" /></span>
                     @if (CurrentUserId != Guid.Empty && comment.OwnerId == CurrentUserId)
                     {
-                        <button class="delete-btn" @onclick="() => DeleteAsync(comment.Id)">x</button>
+                        <button class="delete-btn" @onclick="() => DeleteAsync(comment.Id)" title="Delete comment" aria-label="Delete comment">&times;</button>
                     }
                 </div>
                 <p class="comment-text">@comment.Text</p>
