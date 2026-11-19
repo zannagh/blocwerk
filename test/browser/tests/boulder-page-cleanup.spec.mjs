@@ -15,6 +15,15 @@ test.afterEach(async ({ page }) => {
     }, { timeout: 15000 }).toBe('200 idle');
 });
 
+// The browsers share one seeded world, so a spec that logs or edits picks a boulder of its own per browser.
+const slot = testInfo => ['chromium', 'webkit', 'firefox'].indexOf(testInfo.project.name);
+
+async function openBetaBoulder(page, world, name) {
+    await signIn(page, world.users.alice, `/walls/${world.walls.beta.id}?view=boulders`);
+    await page.locator('.boulder-card', { hasText: name }).first().click();
+    await expect(page.locator('.rules-bar')).toBeVisible();
+}
+
 const noHorizontalScroll = page => expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 
 test('the boulder page drops the hold counts, the stats line and the separate Revise button, and shows the sent icon', async ({ page, world }) => {
@@ -46,9 +55,8 @@ test('a flash shows the thunder icon; a boulder without activity shows no icon',
     await signIn(page, world.users.carol, `/walls/${alpha.id}/boulders/${alpha.boulder}`);
     await expect(page.locator('.title-row .boulder-status')).toHaveAccessibleName('Flashed');
 
-    const mp = world.multiPanel;
-    await signIn(page, world.users.pia, `/walls/${mp.wallId}/boulders/${mp.boulder}`);
-    await expect(page.locator('.rules-bar')).toBeVisible();
+    // A Beta boulder nothing ever logs on (the logging spec below uses others): no activity, no icon.
+    await openBetaBoulder(page, world, 'List boulder 30');
     await expect(page.locator('.boulder-status')).toHaveCount(0);
 });
 
@@ -65,7 +73,8 @@ test('the header row keeps favourite, edit, 3D and the status icon inside 375 px
     await noHorizontalScroll(page);
 });
 
-test('the pencil opens the full editor, where the custom rule is set and then shown on the boulder page', async ({ page, world }) => {
+test('the pencil opens the full editor, where the custom rule is set and then shown on the boulder page', async ({ page, world }, testInfo) => {
+    const text = `Bring chalk ${slot(testInfo)}`;
     const mp = world.multiPanel;
     await signIn(page, world.users.pia, `/walls/${mp.wallId}/boulders/${mp.boulder}`);
     await page.locator('.boulder-edit-btn').click();
@@ -74,12 +83,11 @@ test('the pencil opens the full editor, where the custom rule is set and then sh
     await expect(page.locator('.form-group', { hasText: 'Grade' })).toBeVisible();
     const rule = page.locator('#boulder-custom-rule');
     await rule.scrollIntoViewIfNeeded();
-    await expect(rule).toHaveValue('');
     await expect.poll(() => rule.evaluate(e => parseFloat(getComputedStyle(e).fontSize))).toBeGreaterThanOrEqual(16);
     await noHorizontalScroll(page);
     await page.screenshot({ path: '.out/shots/revise-rules-375.png', fullPage: true });
 
-    await rule.fill('  Bring chalk  ');
+    await rule.fill(`  ${text}  `);
     // The cookie banner sits over the bottom of a phone screen: accept it, as a visitor would, then bring Save to the middle.
     const consent = page.locator('.bw-consent');
     if (await consent.isVisible()) {
@@ -97,14 +105,14 @@ test('the pencil opens the full editor, where the custom rule is set and then sh
     }
     await save.click({ timeout: 15000 });
     await expect(page).toHaveURL(new RegExp(`/boulders/${mp.boulder}$`));
-    await expect(page.locator('.boulder-custom-rule')).toHaveText('Bring chalk');
+    await expect(page.locator('.boulder-custom-rule')).toHaveText(text);
     await noHorizontalScroll(page);
 });
 
-test('logging an attempt, a send and a flash still works, and the icon follows the best result', async ({ page, world }) => {
-    const mp = world.multiPanel;
-    await signIn(page, world.users.pia, `/walls/${mp.wallId}/boulders/${mp.boulder}`);
+test('logging an attempt, a send and a flash still works, and the icon follows the best result', async ({ page, world }, testInfo) => {
+    await openBetaBoulder(page, world, `List boulder ${String(5 + slot(testInfo)).padStart(2, '0')}`);
     const status = page.locator('.title-row .boulder-status');
+    await expect(status).toHaveCount(0);
     await page.locator('[data-bw-action="attempt"][data-bw-type="Attempt"]').click();
     await expect(status).toHaveAccessibleName('Attempted', { timeout: 20000 });
     await page.locator('[data-bw-action="attempt"][data-bw-type="Send"]').click();

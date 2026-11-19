@@ -114,13 +114,13 @@ test('the tab bar steps aside only while the keyboard is up, and a page left zoo
 test('the boulder page header keeps favourite and edit inside the phone width', async ({ page, world }) => {
     const mp = world.multiPanel;
     await signIn(page, world.users.pia, `/walls/${mp.wallId}/boulders/${mp.boulder}`);
-    await expect(page.locator('.boulder-detail .boulder-edit-btn')).toBeVisible();
-    for (const sel of ['.fav-wrap', '.boulder-edit-btn']) {
-        const box = await page.locator(`.boulder-detail .title-actions ${sel}`).first().boundingBox();
-        expect(box, sel).not.toBeNull();
-        expect(box.x + box.width, sel).toBeLessThanOrEqual(page.viewportSize().width);
-        expect(box.height, sel).toBeLessThanOrEqual(40);
-    }
+    // The page is prerendered and then re-rendered when its circuit connects, so measure until the header holds still.
+    await expect.poll(async () => {
+        const boxes = await Promise.all(['.fav-wrap', '.boulder-edit-btn'].map(sel =>
+            page.locator(`.boulder-detail .title-actions ${sel}`).first().boundingBox().catch(() => null)));
+        const width = page.viewportSize().width;
+        return boxes.every(box => box && box.x + box.width <= width && box.height <= 40);
+    }, { timeout: 20000 }).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
