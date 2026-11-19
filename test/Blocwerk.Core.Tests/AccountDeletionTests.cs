@@ -78,6 +78,7 @@ public class AccountDeletionTests
         Assert.Empty(await db.ExternalAscents.Where(x => x.UserId == leaver).ToListAsync());
         Assert.Empty(await db.UserGradeMappings.Where(x => x.UserId == leaver).ToListAsync());
         Assert.Empty(await db.BoulderFavorites.Where(x => x.UserId == leaver).ToListAsync());
+        Assert.Empty(await db.BoulderProjects.Where(x => x.UserId == leaver).ToListAsync());
         Assert.Empty(await db.HangboardSessions.Where(x => x.UserId == leaver).ToListAsync());
         Assert.Empty(await db.PullupSessions.Where(x => x.UserId == leaver).ToListAsync());
         Assert.Empty(await db.ClimbingSessions.Where(x => x.UserId == leaver).ToListAsync());

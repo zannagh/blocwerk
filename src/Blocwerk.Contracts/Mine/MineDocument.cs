@@ -20,5 +20,12 @@ namespace Blocwerk.Contracts.Mine;
 /// <param name="Cursor">The feed mark read before the marks were: the caller's own rows after it are replayed.</param>
 /// <param name="Ticks">One entry per boulder the reader logged an attempt on, by boulder id.</param>
 /// <param name="Favourites">The reader's favourite boulders of the wall, by id.</param>
+/// <param name="Projects">The reader's project boulders of the wall, by id (absent from a document of an older server).</param>
 public sealed record MineDocument(
-    int V, Guid WallId, string Partition, string Cursor, IReadOnlyList<MineDocumentTick> Ticks, IReadOnlyList<Guid> Favourites);
+    int V,
+    Guid WallId,
+    string Partition,
+    string Cursor,
+    IReadOnlyList<MineDocumentTick> Ticks,
+    IReadOnlyList<Guid> Favourites,
+    IReadOnlyList<Guid>? Projects = null);

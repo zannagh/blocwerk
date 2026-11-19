@@ -101,7 +101,7 @@ public sealed partial class DataDocumentPrivacyTests
     [GeneratedRegex(@"^(Is)?(My|Mine|Own|Favou?rite|Tick|Attempt|Done|Viewer|User|Token|Email|Partition|Member|Caller)", RegexOptions.IgnoreCase)]
     private static partial Regex PerUser();
 
-    [GeneratedRegex(@"ICurrentUserService|CurrentUserId|GetCurrentUser|BoulderFavorites|ShareToken|UserId\s*==|==\s*\w*[uU]serId|FeedSession|IKioskContext|HttpContext")]
+    [GeneratedRegex(@"ICurrentUserService|CurrentUserId|GetCurrentUser|BoulderFavorites|BoulderProjects|ShareToken|UserId\s*==|==\s*\w*[uU]serId|FeedSession|IKioskContext|HttpContext")]
     private static partial Regex ReadsTheReader();
 
     private static void Kiosk(DataDocumentFixture f, Entities.User? actingAs)

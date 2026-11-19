@@ -159,7 +159,7 @@ internal sealed class MeChangesPoll
                 case FeedKinds.TicksResync or FeedKinds.UserResync:
                     all = true;
                     break;
-                case FeedKinds.TickMine or FeedKinds.FavoriteChanged when envelope.WallId is { } wallId:
+                case FeedKinds.TickMine or FeedKinds.FavoriteChanged or FeedKinds.ProjectChanged when envelope.WallId is { } wallId:
                     marks.Add(wallId);
                     break;
             }

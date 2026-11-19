@@ -46,6 +46,7 @@ public sealed class AssetCacheSignalsTests
     [Theory]
     [InlineData(FeedKinds.TickMine)]
     [InlineData(FeedKinds.FavoriteChanged)]
+    [InlineData(FeedKinds.ProjectChanged)]
     [InlineData(FeedKinds.VideoStatus)]
     [InlineData(FeedKinds.PanelStaged)]
     [InlineData(FeedKinds.ActivityAdded)]
@@ -56,6 +57,7 @@ public sealed class AssetCacheSignalsTests
     [Theory]
     [InlineData(FeedKinds.TickMine)]
     [InlineData(FeedKinds.FavoriteChanged)]
+    [InlineData(FeedKinds.ProjectChanged)]
     public void AnOwnMark_RefetchesMine_AndNoDocument(string kind)
     {
         Assert.True(AssetCacheSignals.ChangesMine(Delivery(FeedKinds.VideoStatus, kind)));

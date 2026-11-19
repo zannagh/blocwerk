@@ -13,16 +13,19 @@ public sealed class MineMarks
 {
     private readonly IReadOnlyDictionary<Guid, MineDocumentTick> ticks;
     private readonly IReadOnlySet<Guid> favourites;
+    private readonly IReadOnlySet<Guid> projects;
 
     /// <summary>Initializes a new instance of the <see cref="MineMarks"/> class.</summary>
     /// <param name="cursor">The feed cursor the marks were read at.</param>
     /// <param name="ticks">The viewer's log per boulder.</param>
     /// <param name="favourites">The viewer's favourites.</param>
-    public MineMarks(string? cursor, IEnumerable<MineDocumentTick> ticks, IEnumerable<Guid> favourites)
+    /// <param name="projects">The viewer's projects, or null for none.</param>
+    public MineMarks(string? cursor, IEnumerable<MineDocumentTick> ticks, IEnumerable<Guid> favourites, IEnumerable<Guid>? projects = null)
     {
         Cursor = cursor;
         this.ticks = ticks.GroupBy(t => t.BoulderId).ToDictionary(g => g.Key, g => g.Last());
         this.favourites = favourites.ToHashSet();
+        this.projects = (projects ?? []).ToHashSet();
     }
 
     /// <summary>Gets no marks: a device that may hold none (anonymous, kiosk) or has none yet.</summary>
@@ -37,12 +40,12 @@ public sealed class MineMarks
     /// <summary>The marks of a stored mine row.</summary>
     /// <param name="row">The row.</param>
     /// <returns>Its marks.</returns>
-    public static MineMarks From(StoreMineRow row) => new(row.Cursor, row.Ticks, row.Favourites);
+    public static MineMarks From(StoreMineRow row) => new(row.Cursor, row.Ticks, row.Favourites, row.Projects);
 
     /// <summary>The marks of a fetched mine document (the sync loop, PR 3.12).</summary>
     /// <param name="document">The document.</param>
     /// <returns>Its marks.</returns>
-    public static MineMarks From(MineDocument document) => new(document.Cursor, document.Ticks, document.Favourites);
+    public static MineMarks From(MineDocument document) => new(document.Cursor, document.Ticks, document.Favourites, document.Projects);
 
     /// <summary>The viewer's log on a boulder, or null.</summary>
     /// <param name="boulderId">The boulder.</param>
@@ -63,4 +66,9 @@ public sealed class MineMarks
     /// <param name="boulderId">The boulder.</param>
     /// <returns>Whether it is a favourite.</returns>
     public bool IsFavourite(Guid boulderId) => favourites.Contains(boulderId);
+
+    /// <summary>True when the boulder is one of the viewer's projects.</summary>
+    /// <param name="boulderId">The boulder.</param>
+    /// <returns>Whether it is a project.</returns>
+    public bool IsProject(Guid boulderId) => projects.Contains(boulderId);
 }

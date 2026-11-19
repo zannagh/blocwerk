@@ -13,7 +13,8 @@ const B2 = 'b2b2b2b2-0000-4000-8000-000000000002';
 const body = (wallId, more = {}) => Object.assign({
     v: 1, wallId, partition: USER_A, cursor: '1.2.3',
     ticks: [{ boulderId: B1, attempts: 3, sent: true, flashed: false, lastAt: '2026-10-22T10:00:00Z' }],
-    favourites: [B2]
+    favourites: [B2],
+    projects: [B1]
 }, more);
 const mineRoute = (wallId, fn) => ({ [`/api/me/walls/${wallId}/mine`]: fn || (() => json(body(wallId))) });
 const mineRoutes = () => Object.assign(mineRoute(W1), mineRoute(W2));
@@ -32,11 +33,12 @@ test('a signed-in page stores each current wall\'s marks in `mine`, fetched no-s
     const page = await signedInWithMarks();
     const rows = await rowsOf(page);
     const w1 = rows.find(r => r.wallId === W1);
-    assert.deepEqual(Object.keys(w1).sort(), ['cursor', 'favourites', 'fetchedAt', 'partition', 'ticks', 'wallId']);
+    assert.deepEqual(Object.keys(w1).sort(), ['cursor', 'favourites', 'fetchedAt', 'partition', 'projects', 'ticks', 'wallId']);
     assert.equal(w1.partition, USER_A);
     assert.equal(w1.cursor, '1.2.3');
     assert.deepEqual(w1.ticks, [{ boulderId: B1, attempts: 3, sent: true, flashed: false, lastAt: '2026-10-22T10:00:00Z' }]);
     assert.deepEqual(w1.favourites, [B2]);
+    assert.deepEqual(w1.projects, [B1]);
     assert.ok(mineFetches(page).every(f => f.init.cache === 'no-store' && f.init.credentials === 'same-origin'));
     assert.ok(mineFetches(page).every(f => f.search === ''), 'a share token is never sent with the marks');
 });
@@ -50,6 +52,16 @@ test('a body for another wall, or a malformed one, is not stored; bad ticks and 
     assert.deepEqual(rows.map(r => r.wallId), [W2]);
     assert.deepEqual(rows[0].ticks, [{ boulderId: B1, attempts: 0, sent: false, flashed: false, lastAt: null }]);
     assert.deepEqual(rows[0].favourites, [B2]);
+});
+
+test('a body from a server without projects stores none, and bad project ids are dropped', async () => {
+    const page = memberPage({ swReply: 'none', routes: Object.assign(
+        mineRoute(W1, () => json(body(W1, { projects: undefined }))),
+        mineRoute(W2, () => json(body(W2, { projects: [B1, 7, 'x'] })))) });
+    await page.boot();
+    const rows = await rowsOf(page);
+    assert.deepEqual(rows.find(r => r.wallId === W1).projects, []);
+    assert.deepEqual(rows.find(r => r.wallId === W2).projects, [B1]);
 });
 
 // A 401 or 410 ends the session (a lock or a wipe of the whole partition): asset-lock.test.mjs (PR 3.5).

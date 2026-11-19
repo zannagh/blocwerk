@@ -6,7 +6,7 @@
  * beside its docs index (asset-cache.js), and on bwAssetMine.changed(wallId): the circuit saw a `tick.mine`,
  * `favorite.changed`, `boulder.changed` or `boulder.deleted` row of the wall (AssetCacheFeedRelay.cs; the last two
  * because a mark on a deleted, drafted or archived boulder leaves the set), one refetch DEBOUNCE_MS after a burst began.
- *   200          → the wall's row { partition, wallId, cursor, ticks, favourites, fetchedAt } replaces the stored one,
+ *   200          → the wall's row { partition, wallId, cursor, ticks, favourites, projects, fetchedAt } replaces the stored one,
  *                  when the body's `partition` is this tab's label and the wall still has its row (a dropWall racing
  *                  the fetch wins). Another label means the cookie is another user's now (they signed in in another
  *                  tab): nothing is stored, and this partition's row for the wall goes too.
@@ -56,7 +56,8 @@ window.bwAssetMine = (function (win) {
         return { partition: body.partition, fields: {
             cursor: typeof body.cursor === 'string' ? body.cursor : null,
             ticks: body.ticks.map(tickOf).filter(Boolean),
-            favourites: body.favourites.map(idOf).filter(id => UUID.test(id))
+            favourites: body.favourites.map(idOf).filter(id => UUID.test(id)),
+            projects: (Array.isArray(body.projects) ? body.projects : []).map(idOf).filter(id => UUID.test(id))
         } };
     }
 

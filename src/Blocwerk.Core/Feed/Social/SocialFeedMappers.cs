@@ -13,6 +13,7 @@ public static class SocialFeedMappers
         new BetaVideoFeedMapper(),
         new BoulderStatsFeedMapper(),
         new FavoriteFeedMapper(),
+        new ProjectFeedMapper(),
         new GalleryFeedMapper(),
         new ActivityLogFeedMapper(),
         new View3DFeedMapper(),

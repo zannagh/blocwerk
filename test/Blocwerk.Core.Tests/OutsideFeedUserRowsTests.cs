@@ -14,7 +14,7 @@ namespace Blocwerk.Core.Tests;
 /// </summary>
 public sealed class OutsideFeedUserRowsTests
 {
-    private static readonly string[] MineKinds = [FeedKinds.TickMine, FeedKinds.FavoriteChanged, FeedKinds.RatingMine, FeedKinds.UserProfile];
+    private static readonly string[] MineKinds = [FeedKinds.TickMine, FeedKinds.FavoriteChanged, FeedKinds.ProjectChanged, FeedKinds.RatingMine, FeedKinds.UserProfile];
 
     [Fact]
     public Task AnAnonymousShareLink_GetsNoUserRows() => AssertNoUserRowsAsync(f =>

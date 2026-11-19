@@ -17,13 +17,14 @@
  * server truth — see "REFRESHING AFTER A FLUSH" below.
  *
  *   REQUIRED on every action element
- *     data-bw-action="attempt" | "rating" | "favorite" | "comment"
+ *     data-bw-action="attempt" | "rating" | "favorite" | "project" | "comment"
  *     data-bw-boulder="<boulder guid>"
  *
  *   PER ACTION
  *     attempt   data-bw-type="Attempt" | "Send" | "Flash"
  *     rating    data-bw-stars="1".."5"
  *     favorite  data-bw-favorite="true" | "false"
+ *     project   data-bw-project="true" | "false"
  *                 The DESIRED state AFTER the click, not a toggle. Render the inverse of the
  *                 current state. Absolute values are what make a replay idempotent; a queued
  *                 toggle replayed twice flips back to where it started.
@@ -157,6 +158,9 @@
         if (kind === 'favorite') {
             return { boulderId: boulderId, favorite: element.getAttribute('data-bw-favorite') === 'true' };
         }
+        if (kind === 'project') {
+            return { boulderId: boulderId, project: element.getAttribute('data-bw-project') === 'true' };
+        }
         if (kind === 'comment') {
             const source = document.querySelector(element.getAttribute('data-bw-text') || '');
             const text = source && source.value ? source.value.trim() : '';
@@ -169,10 +173,14 @@
         return null;
     }
 
+    // The key carries the state a mark toggle asks for, so taking a mark back right after setting it is a second
+    // action, not a double tap of the first.
     function isDoubleTap(element, kind) {
         const key = kind + '|' + (element.getAttribute('data-bw-boulder') || '') + '|' +
             (element.getAttribute('data-bw-type') || '') + '|' +
-            (element.getAttribute('data-bw-stars') || '');
+            (element.getAttribute('data-bw-stars') || '') + '|' +
+            (element.getAttribute('data-bw-favorite') || '') + '|' +
+            (element.getAttribute('data-bw-project') || '');
         const now = Date.now();
         const previous = lastClick.get(key) || 0;
         lastClick.set(key, now);

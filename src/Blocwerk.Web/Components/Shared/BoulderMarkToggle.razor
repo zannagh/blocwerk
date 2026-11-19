@@ -1,0 +1,48 @@
+@*
+    One of the viewer's own marks on a boulder (favourite, project) as a labelled toggle button.
+
+    Circuit-independent, like the rating stars: two buttons, one per direction, because the offline contract is
+    ABSOLUTE (a button carries the state it wants in data-bw-{Action}, never "flip it"). With the circuit down Blazor
+    cannot re-render a single button to invert that attribute. Both are in the DOM and CSS shows one from the wrapper's
+    `bw-opt-on` class, which offline-actions.js adds (data-bw-on) and removes (data-bw-off) on tap. Blazor rewrites the
+    class from server truth on its next render, so a replay that lands differently self-corrects. The visible button's
+    aria-pressed says the state, so the pair reads as one toggle.
+*@
+
+<span id="@WrapId" class="mark-wrap mark-@Action @(IsOn ? "bw-opt-on" : string.Empty)">
+    <button type="button" class="mark-toggle mark-add" title="@AddLabel" aria-label="@AddLabel" aria-pressed="false"
+            data-bw-action="@Action" data-bw-boulder="@BoulderId" @attributes="Wants(true)"
+            data-bw-on="#@WrapId" data-bw-pip="none">
+        <span class="mark-icon" aria-hidden="true">@OffIcon</span><span>@Label</span>
+    </button>
+    <button type="button" class="mark-toggle mark-remove on" title="@RemoveLabel" aria-label="@RemoveLabel" aria-pressed="true"
+            data-bw-action="@Action" data-bw-boulder="@BoulderId" @attributes="Wants(false)"
+            data-bw-off="#@WrapId" data-bw-pip="none">
+        <span class="mark-icon" aria-hidden="true">@OnIcon</span><span>@Label</span>
+    </button>
+</span>
+
+@code {
+    [Parameter, EditorRequired] public Guid BoulderId { get; set; }
+
+    [Parameter] public bool IsOn { get; set; }
+
+    /// <summary>The offline action kind (offline-actions.js): <c>favorite</c> or <c>project</c>.</summary>
+    [Parameter, EditorRequired] public string Action { get; set; } = string.Empty;
+
+    /// <summary>The short visible label, the same in both states.</summary>
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired] public string AddLabel { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired] public string RemoveLabel { get; set; } = string.Empty;
+
+    [Parameter] public RenderFragment? OffIcon { get; set; }
+
+    [Parameter] public RenderFragment? OnIcon { get; set; }
+
+    /// <summary>The id the optimistic selectors point at; unique per toggle on the page.</summary>
+    [Parameter, EditorRequired] public string WrapId { get; set; } = string.Empty;
+
+    private Dictionary<string, object> Wants(bool on) => new() { [$"data-bw-{Action}"] = on ? "true" : "false" };
+}

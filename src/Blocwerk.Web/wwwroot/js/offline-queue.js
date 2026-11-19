@@ -8,7 +8,7 @@
  * for the failure matrix.
  *
  * Public API (window.blocwerkOfflineQueue), where `kind` is
- * 'attempt' | 'rating' | 'favorite' | 'comment':
+ * 'attempt' | 'rating' | 'favorite' | 'project' | 'comment':
  *   enqueue(kind, payload) -> Promise<entry>   queue an action and try to send it immediately
  *   flush()                -> Promise<summary> send everything that is due
  *   pending()              -> Promise<entry[]> everything still queued, oldest first
@@ -51,7 +51,7 @@
     // stacking. Attempts and comments are additive, so they never collapse. A boulder
     // create/revise is a whole-form snapshot keyed on the boulder id, so a re-tap before the first
     // send is the latest intent and collapses onto the pending entry (see offline-boulder.js).
-    const DEDUPABLE = { rating: true, favorite: true, 'boulder-create': true, 'boulder-revise': true };
+    const DEDUPABLE = { rating: true, favorite: true, project: true, 'boulder-create': true, 'boulder-revise': true };
 
     const MAX_QUEUE = 200;
     const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;

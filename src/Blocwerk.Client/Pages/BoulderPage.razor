@@ -6,9 +6,9 @@
 @using Blocwerk.Core.Holds
 @using Blocwerk.Shared.Ui.Styles
 @* A boulder's detail from the device (the Server's BoulderDetail, read-only): name, grade, badges and setter; the
-   rule banners; the photo with the boulder's holds; the hold breakdown; rating and ascents; the viewer's best result as an icon by the grade
-   and favourite; and every comment, newest first. No ascent buttons, no rating, no favourite
-   toggle, no comment box, no revise or edit. Slots for PR 3.13: BoulderActions and BoulderStage (wraps the photo). *@
+   rule banners; the photo with the boulder's holds; the hold breakdown; rating and ascents; the viewer's best result as an icon by the grade;
+   their project and favourite marks; every comment, newest first; variants, styles and hold type. In the Server page's
+   order. No ascent buttons, no rating, no mark toggles, no comment box, no revise or edit. Slots for PR 3.13: BoulderActions and BoulderStage (wraps the photo). *@
 <PageTitle>@(boulder?.Name ?? "Boulder") - Blocwerk</PageTitle>
 
 @if (!Loaded)
@@ -47,10 +47,6 @@ else
                             <span class="archived-badge">archived</span>
                         }
                         <div class="title-actions">
-                            @if (Wall.Mine.IsFavourite(boulder.Id))
-                            {
-                                <span class="status-icon fav-icon" title="One of your favourites">&#9733;</span>
-                            }
                             <ViewSlot Name="ViewSlotName.BoulderActions" Context="slot" />
                         </div>
                     </div>
@@ -92,9 +88,6 @@ else
                     </div>
                 }
 
-                <BoulderStyleBadges Styles="BoulderStyles.FromNames(boulder.Styles)" />
-                <HoldTypeBadge Value="holdType" />
-
                 @if (!holds.Saved)
                 {
                     <NotSavedNote Text="The holds of this boulder are not saved on this device." />
@@ -119,7 +112,7 @@ else
 
             <div class="boulder-side-col">
                 <RulesSummary Boulder="boulder" />
-                <VariantsCard Boulder="boulder" Boulders="ClassBoulders.Of(Wall)" WallId="WallId" ShareToken="@ShareToken" />
+                <MineMarksRow BoulderId="boulder.Id" Mine="Wall.Mine" />
                 <div class="rating-section">
                     <div class="rating-summary">
                         @if (boulder.Stats.RatingCount > 0)
@@ -140,6 +133,9 @@ else
 
         <div class="boulder-wide-col">
             <CommentList Comments="comments" Saved="@Wall.Shas.ContainsKey(DataDocumentKinds.Comments)" OffsetOf="OffsetOf" />
+            <VariantsCard Boulder="boulder" Boulders="ClassBoulders.Of(Wall)" WallId="WallId" ShareToken="@ShareToken" />
+            <BoulderStyleBadges Styles="BoulderStyles.FromNames(boulder.Styles)" />
+            <HoldTypeBadge Value="holdType" />
         </div>
     </div>
 }

@@ -64,6 +64,7 @@ public static class DevDataImporter
             await CopyAsync(source.GradeProposals, target, target.GradeProposals, logger);
             await CopyAsync(source.BoulderRatings, target, target.BoulderRatings, logger);
             await CopyAsync(source.BoulderFavorites, target, target.BoulderFavorites, logger);
+            await CopyAsync(source.BoulderProjects, target, target.BoulderProjects, logger);
             await CopyAsync(source.WallResets, target, target.WallResets, logger);
             await CopyAsync(source.ActivityLog, target, target.ActivityLog, logger);
             await CopyAsync(source.RefreshTokens, target, target.RefreshTokens, logger);

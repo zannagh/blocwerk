@@ -38,7 +38,7 @@ public interface IBoulderFeedbackService
 
     /// <summary>
     /// Every boulder on the wall (including archived and the user's own drafts) with the
-    /// per-user attempt, favorite and rating data the overview page needs, in one pass.
+    /// per-user attempt, favorite, project and rating data the overview page needs, in one pass.
     /// </summary>
     Task<List<BoulderListItem>> GetBoulderListAsync(Guid wallId);
 }
@@ -55,7 +55,8 @@ public record BoulderListItem(
     int RatingCount,
     int? MyRating,
     IReadOnlyList<string>? SetterNames = null,
-    bool HasBetaVideo = false)
+    bool HasBetaVideo = false,
+    bool IsProject = false)
 {
     public bool DoneByMe => HasSent || HasFlashed;
 
@@ -306,6 +307,12 @@ public class BoulderFeedbackService : IBoulderFeedbackService
                     .ToListAsync())
                 .ToHashSet();
 
+            var myProjects = (await db.BoulderProjects
+                    .Where(p => ids.Contains(p.BoulderId) && p.UserId == user.Id)
+                    .Select(p => p.BoulderId)
+                    .ToListAsync())
+                .ToHashSet();
+
             var ratings = await db.BoulderRatings
                 .Where(r => ids.Contains(r.BoulderId))
                 .Select(r => new { r.BoulderId, r.UserId, r.Stars })
@@ -341,7 +348,8 @@ public class BoulderFeedbackService : IBoulderFeedbackService
                     RatingCount: rs?.Count ?? 0,
                     MyRating: rs?.FirstOrDefault(r => r.UserId == user.Id)?.Stars,
                     SetterNames: setterNames.GetValueOrDefault(b.Id),
-                    HasBetaVideo: bouldersWithBeta.Contains(b.Id));
+                    HasBetaVideo: bouldersWithBeta.Contains(b.Id),
+                    IsProject: myProjects.Contains(b.Id));
             }).ToList();
         }
         catch (Exception ex)
@@ -351,28 +359,6 @@ public class BoulderFeedbackService : IBoulderFeedbackService
         }
     }
 
-    /// <summary>
-    /// Ratings and favorites are for wall members only; the boulder detail UI already
-    /// hides the controls from guests, but the service guards the write path too.
-    /// </summary>
-    private static async Task EnsureMemberAsync(BlocwerkDbContext db, Guid boulderId, Guid userId)
-    {
-        var wallId = await db.Boulders
-            .Where(b => b.Id == boulderId)
-            .Select(b => (Guid?)b.WallId)
-            .FirstOrDefaultAsync();
-
-        if (wallId == null)
-        {
-            throw new InvalidOperationException("Boulder not found");
-        }
-
-        var isMember = await db.WallMembers
-            .AnyAsync(m => m.WallId == wallId.Value && m.UserId == userId);
-
-        if (!isMember)
-        {
-            throw new InvalidOperationException("Only wall members can do this");
-        }
-    }
+    private static Task EnsureMemberAsync(BlocwerkDbContext db, Guid boulderId, Guid userId) =>
+        BoulderMemberGuard.EnsureMemberAsync(db, boulderId, userId);
 }

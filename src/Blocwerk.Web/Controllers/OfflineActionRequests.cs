@@ -54,6 +54,11 @@ public sealed class SetFavoriteRequest : OfflineActionRequest
     public bool Favorite { get; set; }
 }
 
+public sealed class SetProjectRequest : OfflineActionRequest
+{
+    public bool Project { get; set; }
+}
+
 public sealed class AddCommentRequest : OfflineActionRequest
 {
     public string Text { get; set; } = string.Empty;

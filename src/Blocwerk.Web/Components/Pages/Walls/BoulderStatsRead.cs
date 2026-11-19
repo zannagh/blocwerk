@@ -24,4 +24,6 @@ internal sealed class BoulderStatsRead
     public RatingInfo? Rating { get; set; }
 
     public bool? Favorite { get; set; }
+
+    public bool? Project { get; set; }
 }

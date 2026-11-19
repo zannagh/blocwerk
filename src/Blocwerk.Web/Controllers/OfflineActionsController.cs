@@ -1,5 +1,6 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Services;
+using Blocwerk.Core.Services.Projects;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Serilog;
@@ -7,7 +8,7 @@ using Serilog;
 namespace Blocwerk.Web.Controllers;
 
 /// <summary>
-/// REST surface for the four mutations the client-side offline queue can replay. Every action
+/// REST surface for the mutations the client-side offline queue can replay. Every action
 /// is reachable without a live Blazor circuit, so a queued click still lands after the SignalR
 /// connection has dropped, and every action is idempotent under replay of the same
 /// <c>clientRequestId</c>.
@@ -89,6 +90,18 @@ public sealed class OfflineActionsController : ControllerBase
         {
             var favorite = await feedbackService.SetFavoriteAsync(request.BoulderId, request.Favorite);
             return new { favorite };
+        });
+    }
+
+    [HttpPost("projects")]
+    [ValidateAntiForgeryToken]
+    public Task<IActionResult> SetProject([FromBody] SetProjectRequest request, [FromServices] IBoulderProjectService projectService)
+    {
+        // Absolute, like the favourite: a replay of the same entry is a no-op.
+        return ExecuteAsync(request, async () =>
+        {
+            var project = await projectService.SetProjectAsync(request.BoulderId, request.Project);
+            return new { project };
         });
     }
 

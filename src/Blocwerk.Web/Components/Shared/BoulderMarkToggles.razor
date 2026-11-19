@@ -1,0 +1,40 @@
+@*
+    The viewer's own marks on the boulder page: Project and Favorite side by side, each a clear toggle. The favourite
+    used to be a bare star in the header. A kiosk tablet is shared, so whoever is picked there has no projects on it
+    and sees only the favourite.
+*@
+
+<div class="boulder-marks" role="group" aria-label="Your marks">
+    @if (ShowProject)
+    {
+        <BoulderMarkToggle BoulderId="BoulderId" IsOn="IsProject" Action="project" Label="Project" WrapId="bw-project"
+                           AddLabel="Mark as project" RemoveLabel="Remove from projects"
+                           OffIcon="FlagIcon(false)" OnIcon="FlagIcon(true)" />
+    }
+    <BoulderMarkToggle BoulderId="BoulderId" IsOn="IsFavorite" Action="favorite" Label="Favorite" WrapId="bw-fav"
+                       AddLabel="Add to favourites" RemoveLabel="Remove from favourites"
+                       OffIcon="StarIcon(false)" OnIcon="StarIcon(true)" />
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Guid BoulderId { get; set; }
+
+    [Parameter] public bool IsFavorite { get; set; }
+
+    [Parameter] public bool IsProject { get; set; }
+
+    [Parameter] public bool ShowProject { get; set; } = true;
+
+    private static RenderFragment FlagIcon(bool filled) =>
+        @<svg viewBox="0 0 24 24" width="18" height="18" fill="@(filled ? "currentColor" : "none")" stroke="currentColor"
+              stroke-width="2" stroke-linejoin="round" stroke-linecap="round">
+            <path d="M5 21V4" />
+            <path d="M5 4h11l-2 4 2 4H5" />
+        </svg>;
+
+    private static RenderFragment StarIcon(bool filled) =>
+        @<svg viewBox="0 0 24 24" width="18" height="18" fill="@(filled ? "currentColor" : "none")" stroke="currentColor"
+              stroke-width="2" stroke-linejoin="round">
+            <path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z" />
+        </svg>;
+}

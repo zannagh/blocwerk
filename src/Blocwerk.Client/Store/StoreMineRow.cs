@@ -10,4 +10,10 @@ namespace Blocwerk.Client.Store;
 /// <param name="Cursor">The feed cursor the marks were read at, or null.</param>
 /// <param name="Ticks">The viewer's log per boulder.</param>
 /// <param name="Favourites">The boulders the viewer marked as favourites.</param>
-public sealed record StoreMineRow(Guid WallId, string? Cursor, IReadOnlyList<MineDocumentTick> Ticks, IReadOnlyList<Guid> Favourites);
+/// <param name="Projects">The boulders the viewer marked as projects (absent from a row stored before projects existed).</param>
+public sealed record StoreMineRow(
+    Guid WallId,
+    string? Cursor,
+    IReadOnlyList<MineDocumentTick> Ticks,
+    IReadOnlyList<Guid> Favourites,
+    IReadOnlyList<Guid>? Projects = null);

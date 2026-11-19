@@ -81,6 +81,7 @@ internal static class FeedBulkSites
         Resync(Erase, typeof(WallMember), 1, "memberships deleted; " + ErasedWalls + "; their devices reload and lose the wall"),
         Resync(Erase, typeof(ExternalAscent), 1, "imported ascents deleted; the erasure scrubs every row addressed to the user"),
         Resync(Erase, typeof(BoulderFavorite), 1, "user-private (favorite.changed is User); the erasure scrubs every row addressed to the user"),
+        Resync(Erase, typeof(BoulderProject), 1, "user-private (project.changed is User); the erasure scrubs every row addressed to the user"),
         Excluded(Erase, typeof(Activity), 1, "user-private training activity (FeedCoverage: excluded)"),
         Excluded(Erase, typeof(ClimbingSession), 1, "user-private check-ins (FeedCoverage: excluded)"),
         Excluded(Erase, typeof(ApiKey), 2, "credentials: wall keys handed to the owner, user keys deleted; no wall view shows them"),

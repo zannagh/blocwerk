@@ -94,6 +94,18 @@ svg.stat-value { margin-inline: auto; }
 .star-rating.small.readonly .star-track { font-size: 0.85rem; }
 .star-back { color: var(--star-off); }
 .star-fill { position: absolute; top: 0; left: 0; overflow: hidden; white-space: nowrap; color: var(--star-gold); }
+.boulder-marks { display: flex; gap: 8px; margin-bottom: 16px; }
+.mark-wrap { display: flex; flex: 1 1 0; min-width: 0; color: inherit; opacity: 1; }
+.mark-toggle { display: flex; flex: 1 1 auto; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-surface); color: var(--text); font: inherit; font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease; }
+.mark-toggle:not(.mark-chip):hover { border-color: var(--text-secondary); }
+.mark-chip { cursor: default; }
+.mark-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mark-icon { display: inline-flex; color: var(--text-secondary); }
+.mark-toggle:is([aria-pressed="true"], .is-on) { border-color: var(--accent); background: var(--accent-soft); color: var(--text-heading); }
+.mark-project .mark-toggle:is([aria-pressed="true"], .is-on) .mark-icon { color: var(--accent); }
+.mark-favorite .mark-toggle:is([aria-pressed="true"], .is-on) .mark-icon,
+.mark-favorite .mark-toggle:hover .mark-icon { color: var(--star-gold); }
+.mark-favorite .mark-toggle:is([aria-pressed="true"], .is-on) { border-color: var(--star-gold); background: color-mix(in srgb, var(--star-gold) 14%, var(--bg-surface)); }
 .archived-badge { font-size: 0.65rem; padding: 1px 6px; background: var(--border-light); color: var(--text-secondary); border-radius: 4px; font-weight: 600; }
 .rating-section { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; background: var(--bg-surface-alt); border-radius: 10px; margin: 12px 0; }
 .rating-summary { display: flex; align-items: center; gap: 8px; }
@@ -182,7 +194,7 @@ img.avatar { object-fit: cover; }
 }
 @media (min-width: 900px) {
     @container style(--tier: desktop) {
-        body { --wall-main-display: grid; --wall-main-align: start; --wall-side-display: flex; --wall-side-max-h: calc(var(--bw-app-h, 100dvh) - var(--topbar-h) - var(--bottomnav-h) - 48px); --stats-wrap: wrap; --stat-basis: 130px; --boulder-list-display: grid; --boulder-list-columns: repeat(auto-fill, minmax(360px, 1fr)); --boulder-detail-display: grid; --boulder-col-display: block; --boulder-wide-display: grid; --boulder-photo-col-position: sticky; --boulder-page-max: 1320px; --boulder-photo-chrome: 190px; }
+        body { --wall-main-display: grid; --wall-main-align: start; --wall-side-display: flex; --wall-side-max-h: calc(var(--bw-app-h, 100dvh) - var(--topbar-h) - var(--bottomnav-h) - 48px); --stats-wrap: wrap; --stat-basis: 130px; --boulder-list-display: grid; --boulder-list-columns: repeat(auto-fill, minmax(360px, 1fr)); --boulder-detail-display: grid; --boulder-col-display: block; --boulder-wide-display: grid; --boulder-wide-group-display: flex; --boulder-photo-col-position: sticky; --boulder-page-max: 1320px; --boulder-photo-chrome: 190px; }
         .wall-main:has(> .wall-side) { --wall-photo-chrome: var(--wall-photo-chrome-base); }
     }
 }

@@ -11,6 +11,7 @@
         attempt: '/api/offline/attempts',
         rating: '/api/offline/ratings',
         favorite: '/api/offline/favorites',
+        project: '/api/offline/projects',
         comment: '/api/offline/comments',
         // The whole-form boulder kinds (see offline-boulder.js). 'boulder-revise' addresses the
         // boulder by id in the path, so its endpoint is a prefix completed per entry.
