@@ -1,41 +1,7 @@
 @using Blocwerk.Core.Enums
-@* One icon per style (null = "All"), drawn inline so it takes the text colour and needs no file. *@
-<svg class="style-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-     stroke-linejoin="round" width="@Size" height="@Size" aria-hidden="true" focusable="false">
-    @switch (Style)
-    {
-        case BoulderStyle.Tension:
-            @* Two arrows pulling apart along a taut line. *@
-            <path d="M3 12h18"></path><path d="M7 8l-4 4 4 4"></path><path d="M17 8l4 4-4 4"></path>
-            break;
-        case BoulderStyle.Dynamic:
-            @* A leap: an arc ending in an arrow head. *@
-            <path d="M4 19c2-8 7-12 16-13"></path><path d="M15 3l5 3-3 5"></path>
-            break;
-        case BoulderStyle.Funky:
-            @* A wobbling line. *@
-            <path d="M2 13c2.5-7 5-7 7.5 0s5 7 7.5 0c1.2-3 2.4-4 5-3"></path>
-            break;
-        case BoulderStyle.Endurance:
-            @* A battery with charge left. *@
-            <rect x="2" y="8" width="17" height="8" rx="2"></rect><path d="M22 11v2"></path><path d="M6 12h6"></path>
-            break;
-        case BoulderStyle.Power:
-            @* A bolt. *@
-            <path d="M13 2L4 14h7l-1 8 9-12h-7z"></path>
-            break;
-        case BoulderStyle.Technical:
-            @* A dial with ticks: precision. *@
-            <circle cx="12" cy="12" r="3"></circle>
-            <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"></path>
-            break;
-        default:
-            @* All: four tiles. *@
-            <rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect>
-            <rect x="3" y="14" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect>
-            break;
-    }
-</svg>
+@using Blocwerk.Core.Helpers
+@* One icon per style (null = "All"), from the style's definition in BoulderStyles. *@
+<BrowseIcon Markup="@(Style is { } s ? BoulderStyles.Icon(s) : BrowseIcons.All)" Size="Size" />
 
 @code {
     /// <summary>Gets or sets the style, or null for the "All" icon.</summary>

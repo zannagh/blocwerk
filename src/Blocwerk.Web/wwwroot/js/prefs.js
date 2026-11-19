@@ -72,6 +72,14 @@ window.bwPrefs = (function () {
         return !NON_RECORDABLE.test(path);
     }
 
+    // The boulder list a boulder page was opened from, as a query: hold=crimp, style=power, or style=all.
+    function boulderListLevel(params) {
+        const hold = params.get('hold');
+        return hold
+            ? 'hold=' + encodeURIComponent(hold)
+            : 'style=' + encodeURIComponent(params.get('style') || 'all');
+    }
+
     function recordLastPage() {
         // Defensive: never let a blocked cookie store or an odd location throw and break navigation.
         try {
@@ -80,10 +88,12 @@ window.bwPrefs = (function () {
                 return;
             }
 
-            // Collapse a boulder-detail view to its boulder list so returning lands on the list.
+            // Collapse a boulder-detail view to its boulder list so returning lands on the list: the list it was
+            // opened from (its ?hold= or ?style=, which the boulder page carries), else the whole list. A bare
+            // ?view=boulders would land on the boulder browser's cards instead.
             const detail = path.match(BOULDER_DETAIL);
             const value = detail
-                ? '/walls/' + detail[1] + '?view=boulders'
+                ? '/walls/' + detail[1] + '?view=boulders&' + boulderListLevel(new URLSearchParams(location.search))
                 : path + location.search;
 
             writeCookie(LAST_PAGE_KEY, value);

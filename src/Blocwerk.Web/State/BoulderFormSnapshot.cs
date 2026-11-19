@@ -21,7 +21,8 @@ public sealed record BoulderFormSnapshot(
     List<BoulderFormHold>? Holds,
     List<Guid>? Setters,
     string? CustomRule = null,
-    int? Styles = null)
+    int? Styles = null,
+    string? HoldType = null)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 

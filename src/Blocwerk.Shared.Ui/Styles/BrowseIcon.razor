@@ -1,0 +1,11 @@
+@* An icon of the boulder browser, drawn inline from its SVG content (BrowseDefinition.Icon) so it takes the text colour. *@
+<svg class="style-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+     stroke-linejoin="round" width="@Size" height="@Size" aria-hidden="true" focusable="false">@((MarkupString)Markup)</svg>
+
+@code {
+    /// <summary>Gets or sets the SVG content on a 24 x 24 view box.</summary>
+    [Parameter] public string Markup { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the edge length in pixels.</summary>
+    [Parameter] public int Size { get; set; } = 24;
+}

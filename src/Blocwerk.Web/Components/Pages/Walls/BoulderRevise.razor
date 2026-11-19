@@ -164,6 +164,14 @@
             </div>
         </details>
 
+        <details class="settings-panel settings-card" open>
+            <summary class="settings-card-summary"><h2>Hold type</h2></summary>
+            <div class="settings-card-body">
+                @* Unset, the boulder's holds decide (shown on the boulder page as "from holds"). *@
+                <HoldTypeChips @bind-Value="_holdType" />
+            </div>
+        </details>
+
         @if (_members.Count > 0)
         {
             <details class="settings-panel settings-card">
@@ -244,6 +252,7 @@
     private bool _noMatch;
     private string? _customRule;
     private BoulderStyle _styles;
+    private HoldHandType? _holdType;
     // The current user's preferred grade scale, seeded into the GradePicker so the grade input opens
     // on Fontainebleau or V-Scale to match their profile setting.
     private bool _preferFont = true;
@@ -316,6 +325,8 @@
         // null = a metadata-only save: the stored holds and the review state stay as they are.
         holds = ReplaceHolds ? _selectedHolds.Select(h => new { holdId = h.HoldId, type = (int)h.Type, usage = (int)h.Usage }) : null,
         styles = (int)_styles,
+        // The type's name; "" clears it (the holds decide again), a missing value would leave it as stored.
+        holdType = BoulderHoldTypeChange.ToForm(_holdType),
         setters = _selectedSetters.ToList(),
     });
 
@@ -426,6 +437,7 @@
         _noMatch = _boulder.NoMatch;
         _customRule = _boulder.CustomRule;
         _styles = _boulder.Styles;
+        _holdType = _boulder.DominantHoldType;
         _displayHolds = _wall.Holds.ToList();
 
         // Every wall carries its holds across several panel images, each in its own panel-local
@@ -582,7 +594,8 @@
                 _noMatch,
                 _selectedSetters.ToList(),
                 _customRule ?? string.Empty,
-                _styles);
+                _styles,
+                new BoulderHoldTypeChange(_holdType));
             Navigation.NavigateTo($"/walls/{WallId}/boulders/{BoulderId}");
         }
         catch (Exception ex)

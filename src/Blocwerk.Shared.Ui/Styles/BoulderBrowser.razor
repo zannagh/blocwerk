@@ -1,0 +1,79 @@
+@using Blocwerk.Core.Enums
+@using Blocwerk.Core.Helpers
+@* The boulder browser's card screens, the same on the Server and offline: the landing (All, By Hold Type, By Style) and
+   the two card pages. Plain links, so every choice is a history entry and its level is in the URL (BoulderBrowse).
+   A card counts families, as the list shows them; one with none is greyed out and not a link. Laid out to fit a
+   390 x 844 phone without scrolling: the landing is three rows, a card page two columns. *@
+@if (Browse.Level != BoulderBrowseLevel.Landing)
+{
+    var (label, icon) = BrowseIcons.Describe(Browse);
+    <BrowseBar BackHref="@HrefFor(Browse.Up)" BackLabel="@Browse.UpLabel" Label="@label" Icon="@icon" />
+}
+<nav class="style-cards"
+     aria-label="@BrowseIcons.Describe(Browse).Label" data-browse-level="@Browse.Level.ToString().ToLowerInvariant()">
+    @foreach (var card in cards)
+    {
+        if (card.Count > 0 || card.Key == "all")
+        {
+            <a class="style-card@(card.Wide ? " style-card-all" : string.Empty)" href="@card.Href" data-card="@card.Key">
+                <span class="style-card-icon"><BrowseIcon Markup="@card.Icon" Size="26" /></span>
+                <span class="style-card-label">@card.Label</span>
+                <span class="style-card-count">@card.Count</span>
+            </a>
+        }
+        else
+        {
+            <span class="style-card is-empty@(card.Wide ? " style-card-all" : string.Empty)" aria-disabled="true" data-card="@card.Key">
+                <span class="style-card-icon"><BrowseIcon Markup="@card.Icon" Size="26" /></span>
+                <span class="style-card-label">@card.Label</span>
+                <span class="style-card-count">None yet</span>
+            </span>
+        }
+    }
+</nav>
+
+@code {
+    private IReadOnlyList<BrowseCard> cards = [];
+
+    /// <summary>Gets or sets the screen (the landing or a card page).</summary>
+    [Parameter, EditorRequired] public BoulderBrowse Browse { get; set; } = BoulderBrowse.Landing;
+
+    /// <summary>Gets or sets the list's rows (families), as the list shows them before any filter.</summary>
+    [Parameter, EditorRequired] public IReadOnlyCollection<BoulderFamilyRow> Rows { get; set; } = [];
+
+    /// <summary>Gets or sets the link of a level.</summary>
+    [Parameter, EditorRequired] public Func<BoulderBrowse, string> HrefFor { get; set; } = _ => "#";
+
+    /// <inheritdoc />
+    protected override void OnParametersSet() => cards = Browse.Level switch
+    {
+        BoulderBrowseLevel.HoldTypes => HoldTypeCards(),
+        BoulderBrowseLevel.Styles => StyleCards(),
+        _ => LandingCards(),
+    };
+
+    private List<BrowseCard> LandingCards() =>
+    [
+        new("all", "All", BrowseIcons.All, Rows.Count, HrefFor(BoulderBrowse.All), Wide: true),
+        new("holds", "By Hold Type", BrowseIcons.HoldTypes, Rows.Count(r => r.HoldTypes is { Count: > 0 }),
+            HrefFor(new BoulderBrowse(BoulderBrowseLevel.HoldTypes)), Wide: true),
+        new("styles", "By Style", BrowseIcons.Styles, Rows.Count(r => r.Styles != BoulderStyle.None),
+            HrefFor(new BoulderBrowse(BoulderBrowseLevel.Styles)), Wide: true),
+    ];
+
+    private List<BrowseCard> HoldTypeCards()
+    {
+        var counts = BoulderHoldTypes.CountBy(Rows.Select(r => r.HoldTypes));
+        return BoulderHoldTypes.Definitions
+            .Select(d => new BrowseCard(d.Slug, d.Label, d.Icon, counts[d.Value], HrefFor(new BoulderBrowse(BoulderBrowseLevel.List, HoldType: d.Value))))
+            .ToList();
+    }
+
+    private List<BrowseCard> StyleCards()
+    {
+        var counts = BoulderStyles.CountBy(Rows.Select(r => r.Styles));
+        return BoulderStyles.Definitions
+            .Select(d => new BrowseCard(d.Slug, d.Label, d.Icon, counts[d.Value], HrefFor(new BoulderBrowse(BoulderBrowseLevel.List, d.Value))))
+            .ToList();
+    }
+}

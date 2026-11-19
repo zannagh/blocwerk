@@ -95,6 +95,12 @@ test('the Server twin of a client URL keeps the query and fragment, and never le
     assert.equal(api.serverUrl('/v//evil.example/x'), '/evil.example/x');
     assert.equal(api.serverUrl('/vx/walls'), null);
     assert.equal(api.serverUrl('https://elsewhere.test/v/walls'), null);
+    // A level of the boulder browser opens the Server wall page on its list page, not the overview.
+    assert.equal(api.serverUrl('/v/walls/W1?hold=crimp'), '/walls/W1?hold=crimp&view=boulders');
+    assert.equal(api.serverUrl('/v/walls/W1/shared/T?browse=styles'), '/walls/W1/shared/T?browse=styles&view=boulders');
+    assert.equal(api.serverUrl('/v/walls/W1?view=boulders&style=all'), '/walls/W1?view=boulders&style=all');
+    assert.equal(api.serverUrl('/v/walls/W1/boulders/B2?style=power'), '/walls/W1/boulders/B2?style=power');
+    assert.equal(api.serverUrl('/v/walls/W1'), '/walls/W1');
 });
 
 test('offline, the pill says read-only with the saved time, and a tap stays in the client', async () => {

@@ -35,8 +35,9 @@ else
             </div>
         </div>
 
-        @* While the style cards show they are the screen: the photo and counts come back with the list, so all seven fit. *@
-        @if (!ShowStyleCards)
+        @* The photo (or the 3D stage its switch puts there) and the counts show on the landing and with a list. On the two
+           card pages the cards are the screen, so all of them fit a phone without scrolling. *@
+        @if (Browsing.Level is not (BoulderBrowseLevel.HoldTypes or BoulderBrowseLevel.Styles))
         {
         <div class="wall-main">
             <div class="wall-detail-card">
@@ -70,15 +71,15 @@ else
         @* .boulders-page: the Server's list page (one sticky head: title, count and the filter chip). *@
         <div class="boulders-page">
             <div class="boulder-section">
-                @if (ShowStyleCards)
+                @if (ShowBrowseCards)
                 {
-                    @* First screen of the boulder browser: pick a style. The style is in the URL (?style=), as on the Server. *@
+                    @* The browser's card screens, as on the Server: the level is in the URL (BoulderBrowse). *@
                     <div class="boulder-list-head">
                         <div class="section-header">
-                            <h2>Boulders<span class="list-count">@BoulderList.Visible(boulders).Count</span></h2>
+                            <h2>Boulders<span class="list-count">@browseRows.Count</span></h2>
                         </div>
                     </div>
-                    <BoulderStyleCards Total="BoulderList.Visible(boulders).Count" Counts="styleCounts" HrefFor="StyleHref" />
+                    <BoulderBrowser Browse="Browsing" Rows="browseRows" HrefFor="BrowseHref" />
                 }
                 else
                 {
@@ -86,10 +87,8 @@ else
                     <div class="section-header">
                         <h2>Boulders<span class="list-count">@active.Count</span></h2>
                     </div>
-                    @if (!string.IsNullOrEmpty(Style))
-                    {
-                        <BoulderStyleBar Style="StyleFilter" BackHref="@StyleHref(null, cards: true)" />
-                    }
+                    @{ var (browseLabel, browseIcon) = BrowseIcons.Describe(Browsing); }
+                    <BrowseBar BackHref="@BrowseHref(Browsing.Up)" BackLabel="@Browsing.UpLabel" Label="@browseLabel" Icon="@browseIcon" />
                     @if (boulders.Count > 0)
                     {
                         <BoulderFilters Filter="filter" FilterChanged="OnFilterChanged" ShowMine="ShowsMine" />
@@ -112,7 +111,7 @@ else
                 {
                     @foreach (var boulder in active)
                     {
-                        <BoulderRow @key="boulder.Id" Boulder="boulder" Family="families.GetValueOrDefault(boulder.Id)" WallId="WallId" ShareToken="@ShareToken" Mine="Wall.Mine" Style="@Style" />
+                        <BoulderRow @key="boulder.Id" Boulder="boulder" Family="families.GetValueOrDefault(boulder.Id)" WallId="WallId" ShareToken="@ShareToken" Mine="Wall.Mine" ListQuery="@Browsing.ListQuery" />
                     }
                     @if (archived.Count > 0)
                     {
@@ -120,7 +119,7 @@ else
                             <summary class="archive-summary">Archive (@archived.Count)</summary>
                             @foreach (var boulder in archived)
                             {
-                                <BoulderRow @key="boulder.Id" Boulder="boulder" Family="families.GetValueOrDefault(boulder.Id)" WallId="WallId" ShareToken="@ShareToken" Mine="Wall.Mine" Style="@Style" />
+                                <BoulderRow @key="boulder.Id" Boulder="boulder" Family="families.GetValueOrDefault(boulder.Id)" WallId="WallId" ShareToken="@ShareToken" Mine="Wall.Mine" ListQuery="@Browsing.ListQuery" />
                             }
                         </details>
                     }
@@ -142,28 +141,34 @@ else
     private IReadOnlyList<BouldersDocumentBoulder> archived = [];
     private int holdCount;
     private CachedWall? derivedFrom;
-    private IReadOnlyDictionary<BoulderStyle, int> styleCounts = new Dictionary<BoulderStyle, int>();
+    private IReadOnlyList<BoulderFamilyRow> browseRows = [];
 
-    /// <summary>Gets or sets the <c>?style=</c> value: a style's name, <c>all</c>, or absent for the cards.</summary>
-    [SupplyParameterFromQuery(Name = "style")]
+    /// <summary>Gets or sets the <c>?browse=</c> value: <c>holds</c> or <c>styles</c> for a card page.</summary>
+    [SupplyParameterFromQuery(Name = BoulderBrowse.BrowseKey)]
+    public string? Browse { get; set; }
+
+    /// <summary>Gets or sets the <c>?style=</c> value: a style's name or <c>all</c>.</summary>
+    [SupplyParameterFromQuery(Name = BoulderBrowse.StyleKey)]
     public string? Style { get; set; }
 
-    private BoulderStyle? StyleFilter => BoulderStyles.FromSlug(Style);
+    /// <summary>Gets or sets the <c>?hold=</c> value: a hold type's name.</summary>
+    [SupplyParameterFromQuery(Name = BoulderBrowse.HoldKey)]
+    public string? Hold { get; set; }
 
-    // The cards come first while some boulder carries a style; a wall without any tags opens on the list directly.
-    private bool ShowStyleCards => string.IsNullOrEmpty(Style) && styleCounts.Values.Any(c => c > 0);
+    private BoulderBrowse Browsing => BoulderBrowse.From(Browse, Style, Hold);
 
-    private string StyleHref(BoulderStyle? style) => StyleHref(style, cards: false);
+    private bool ShowBrowseCards => Browsing.Level != BoulderBrowseLevel.List;
 
-    private string StyleHref(BoulderStyle? style, bool cards) => Navigation.GetUriWithQueryParameters(
-        new Dictionary<string, object?> { ["style"] = cards ? null : style is { } s ? BoulderStyles.Slug(s) : "all" });
+    private string BrowseHref(BoulderBrowse level) => Navigation.GetUriWithQueryParameters(level.Query());
+
+    private BoulderFilter ListFilter => filter with { Style = Browsing.Style, HoldType = Browsing.HoldType };
 
     /// <inheritdoc />
     protected override void OnParametersSet()
     {
         if (Wall is not null)
         {
-            (active, archived) = BoulderList.Apply(boulders, Wall.Mine, filter with { Style = StyleFilter });
+            (active, archived) = BoulderList.Apply(boulders, Wall.Mine, ListFilter, Wall.Holds);
         }
     }
 
@@ -175,7 +180,7 @@ else
     {
         filter = new BoulderFilter();
         (grid, derivedFrom, boulders, active, archived) = (null, null, [], [], []);
-        styleCounts = new Dictionary<BoulderStyle, int>();
+        browseRows = [];
     }
 
     /// <inheritdoc />
@@ -194,11 +199,11 @@ else
             grid = new WallPanelGrid(Wall.Wall!, Wall.Holds);
             holdCount = Wall.Holds?.Holds.Count(h => !h.Kept) ?? 0;
             boulders = ClassBoulders.Of(Wall);
-            styleCounts = BoulderList.StyleCounts(boulders);
-            families = BoulderList.Families(boulders);
+            families = BoulderList.Families(boulders, Wall.Holds);
+            browseRows = BoulderList.Visible(boulders).Select(b => families[b.Id]).ToList();
         }
 
-        (active, archived) = BoulderList.Apply(boulders, Wall.Mine, filter with { Style = StyleFilter });
+        (active, archived) = BoulderList.Apply(boulders, Wall.Mine, ListFilter, Wall.Holds);
     }
 
     private void OnFilterChanged(BoulderFilter next)

@@ -744,19 +744,20 @@ else
         <Page4>
             @* Boulders *@
             <div class="boulder-section" @ref="_boulderSection">
-                @if (ShowStyleCards)
+                @if (ShowBrowseCards)
                 {
-                    @* First screen of the boulder browser: pick a style (WallDetail.Styles.cs). *@
+                    @* The browser's card screens: the landing and the two card pages (WallDetail.Browse.cs). *@
+                    var browseRows = BrowseRows;
                     <div class="boulder-list-head">
                         <div class="section-header">
-                            <h2>Boulders<span class="list-count">@StyleTotal</span></h2>
+                            <h2>Boulders<span class="list-count">@browseRows.Count</span></h2>
                             @if (ShowNewBoulderLink)
                             {
                                 <a href="/walls/@WallId/boulders/create" class="btn-add-boulder">+ New</a>
                             }
                         </div>
                     </div>
-                    <BoulderStyleCards Total="StyleTotal" Counts="StyleCounts" HrefFor="StyleHref" />
+                    <BoulderBrowser Browse="Browsing" Rows="browseRows" HrefFor="BrowseHref" />
                 }
                 else
                 {
@@ -775,10 +776,8 @@ else
                     }
                 </div>
 
-                @if (!string.IsNullOrEmpty(Style))
-                {
-                    <BoulderStyleBar Style="StyleFilter" BackHref="@StyleUri(null)" />
-                }
+                @{ var (browseLabel, browseIcon) = BrowseIcons.Describe(Browsing); }
+                <BrowseBar BackHref="@BrowseHref(Browsing.Up)" BackLabel="@Browsing.UpLabel" Label="@browseLabel" Icon="@browseIcon" />
 
                 @if (_items.Count > 0)
                 {
@@ -890,7 +889,7 @@ else
                 {
                     @foreach (var item in ActiveBoulders)
                     {
-                        <BoulderCard @key="item.Boulder.Id" Item="item" Family="FamilyOf(item)" WallId="WallId" ShareToken="@ShareToken" Style="@Style"
+                        <BoulderCard @key="item.Boulder.Id" Item="item" Family="FamilyOf(item)" WallId="WallId" ShareToken="@ShareToken" ListQuery="@Browsing.ListQuery"
                                      CurrentUserId="_currentUserId" IsAnonymous="_isAnonymous"
                                      IsWallAdmin="_isAdmin"
                                      ShowArchiveAction="true" ReconciledHoldCount="ReconciledHoldCount(item.Boulder)"
@@ -903,7 +902,7 @@ else
                             <summary class="archive-summary">Archive (@ArchivedBoulders.Count)</summary>
                             @foreach (var item in ArchivedBoulders)
                             {
-                                <BoulderCard @key="item.Boulder.Id" Item="item" Family="FamilyOf(item)" WallId="WallId" ShareToken="@ShareToken" Style="@Style"
+                                <BoulderCard @key="item.Boulder.Id" Item="item" Family="FamilyOf(item)" WallId="WallId" ShareToken="@ShareToken" ListQuery="@Browsing.ListQuery"
                                              CurrentUserId="_currentUserId" IsAnonymous="_isAnonymous"
                                              IsWallAdmin="_isAdmin"
                                              ReconciledHoldCount="ReconciledHoldCount(item.Boulder)"
@@ -1204,11 +1203,11 @@ else
     private List<BoulderListItem>? _activeCache;
     private List<BoulderListItem>? _archivedCache;
     private object? _boulderCacheItemsRef;
-    private (string?, bool, bool, bool, bool, bool, bool, bool, string?, string?, SortMode, Guid?, BoulderStyle?) _boulderCacheKey;
+    private (string?, bool, bool, bool, bool, bool, bool, bool, string?, string?, SortMode, Guid?, BoulderBrowse) _boulderCacheKey;
 
     private void EnsureBoulderLists()
     {
-        var key = (_searchText, _fAttempted, _fDone, _fNotDone, _fFavorites, _fCreated, _fBeta, _fNeedsReview, _gradeMin, _gradeMax, _sort, _currentUserId, StyleFilter);
+        var key = (_searchText, _fAttempted, _fDone, _fNotDone, _fFavorites, _fCreated, _fBeta, _fNeedsReview, _gradeMin, _gradeMax, _sort, _currentUserId, Browsing);
         if (_activeCache is not null && _archivedCache is not null
             && ReferenceEquals(_boulderCacheItemsRef, _items) && key.Equals(_boulderCacheKey))
         {
@@ -1242,10 +1241,7 @@ else
 
     private IEnumerable<BoulderListItem> ApplyFilters(IEnumerable<BoulderListItem> src)
     {
-        if (StyleFilter is { } style)
-        {
-            src = src.Where(i => FamilyOf(i).Styles.HasFlag(style));
-        }
+        src = src.Where(MatchesBrowse);
 
         var terms = BoulderListSearch.Terms(_searchText);
         if (terms.Length > 0)

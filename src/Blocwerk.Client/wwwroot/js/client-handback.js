@@ -47,6 +47,8 @@ window.bwClientHandback = (function (win, doc) {
     const KIOSK_RETRY_MS = 60000;
     const KIOSK_GOLIVE_KEY = 'bw-kiosk-golive';
     const CLIENT_LIST = /^\/(?:walls\/?)?(?:[?#]|$)/i;
+    // A wall's own view (also through a share link), not one of its boulders or its 3D view.
+    const WALL_VIEW = /^\/walls\/[^/]+(?:\/shared\/[^/]+)?$/i;
 
     const state = { started: false, kiosk: false, online: null, savedAt: null, drawn: null, slot: null, timer: null, probing: null, schema: null, pending: null };
 
@@ -81,7 +83,14 @@ window.bwClientHandback = (function (win, doc) {
             return null;
         }
         // Never protocol-relative: `/v//evil.example` must stay on this origin.
-        return '/' + path.slice(BASE.length).replace(/^[/\\]+/, '') + url.search + url.hash;
+        const twin = '/' + path.slice(BASE.length).replace(/^[/\\]+/, '');
+        // A wall view at a level of the boulder browser (?browse=, ?hold=, ?style=) is the Server wall page's list page:
+        // without ?view=boulders the Server would open the wall's overview instead.
+        const params = url.searchParams;
+        if (WALL_VIEW.test(twin) && !params.has('view') && ['browse', 'hold', 'style'].some(k => params.has(k))) {
+            params.set('view', 'boulders');
+        }
+        return twin + url.search + url.hash;
     }
 
     /** "14:32" today, "22 Oct" on an earlier day; null without a time. */

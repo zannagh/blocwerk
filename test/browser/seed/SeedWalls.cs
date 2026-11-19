@@ -23,6 +23,7 @@ namespace Blocwerk.Browser.Seed;
 /// <item><b>social</b>: Erin's wall of comments and activity, with a kiosk key of its own and users of its own (Erin, Cora,
 /// Dave), so no other test's walls or pages change with it (<see cref="SeedSocial"/>).</item>
 /// <item><b>wide</b>: Pia's wall of two panels and a boulder with holds on both (<see cref="SeedMultiPanel"/>).</item>
+/// <item><b>grips</b>: Gina's wall of typed holds for the boulder browser's hold types (<see cref="SeedHoldTypes"/>).</item>
 /// </list>
 /// </summary>
 internal sealed class SeedWalls
@@ -70,6 +71,9 @@ internal sealed class SeedWalls
         var vera = AddUser("vera@browser.test", "Vera");
         var variants = AddWall("Variants", vera, panels: 1, seed: 60);
         SeedVariants.Add(db, variants.Wall.Id, db.WallPanels.Local.Single(p => p.WallId == variants.Wall.Id).Id, vera.Id);
+        var gina = AddUser("gina@browser.test", "Gina");
+        var grips = AddWall("Grips", gina, panels: 1, seed: 70);
+        SeedHoldTypes.Add(db, grips.Wall.Id, db.WallPanels.Local.Single(p => p.WallId == grips.Wall.Id).Id, gina.Id);
         await db.SaveChangesAsync();
 
         return new SeededWorld(
@@ -84,6 +88,7 @@ internal sealed class SeedWalls
                 ["pia"] = new(pia.Id, pia.DisplayName),
                 ["stella"] = new(stella.Id, stella.DisplayName),
                 ["vera"] = new(vera.Id, vera.DisplayName),
+                ["gina"] = new(gina.Id, gina.DisplayName),
             },
             new Dictionary<string, SeededWall>
             {
@@ -94,6 +99,7 @@ internal sealed class SeedWalls
                 ["social"] = new(socialWall.Wall.Id, socialWall.Shas, null, null, null, null),
                 ["wide"] = new(wide.Wall.Id, wide.Shas, null, null, null, null),
                 ["variants"] = new(variants.Wall.Id, variants.Shas, null, null, null, null),
+                ["grips"] = new(grips.Wall.Id, grips.Shas, null, null, null, null),
             },
             kioskToken,
             alpha.Wall.ShareToken,

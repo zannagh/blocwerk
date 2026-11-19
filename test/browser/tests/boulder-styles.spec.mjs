@@ -1,7 +1,7 @@
-// Boulder styles: the cards that open the boulder list of a wall once any boulder is tagged (All with its count, one card
-// per style in use), the list limited to a style with the style in the URL, tagging from the boulder page, and the same
-// cards in the offline client. The Styled wall has eight boulders: tension 2, dynamic 1, funky 1, endurance 1, power 2,
-// technical 1 and two untagged; the Beta wall (no tags) must open its list directly.
+// Boulder styles: the By Style cards of the boulder browser (one per style, greyed out when no boulder carries it), the list
+// limited to a style with the style in the URL, tagging from the boulder page, and the same cards in the offline client.
+// The Styled wall has eight boulders: tension 2, dynamic 1, funky 1, endurance 1, power 2, technical 1, warmup none and
+// two untagged; the Beta wall (no tags) still opens on the landing, its All card leading to the list.
 import { test, expect, signIn } from '../harness/fixtures.mjs';
 import { precacheAs, expectClient } from '../harness/client.mjs';
 
@@ -10,7 +10,7 @@ const listPage = page => page.locator('.wall-carousel > .wall-page').nth(3);
 const cards = page => listPage(page).locator('.style-card');
 const rows = page => listPage(page).locator('.boulder-card');
 
-async function openBrowser(page, world, query = 'view=boulders') {
+async function openBrowser(page, world, query = 'view=boulders&browse=styles') {
     const wall = world.walls.styled;
     await signIn(page, world.users.stella, `/walls/${wall.id}?${query}`);
     await page.goto(`/walls/${wall.id}?${query}`);
@@ -22,10 +22,13 @@ async function expectNoOverflow(page) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 }
 
-test('a wall without tags opens the list directly', async ({ page, world }) => {
+test('a wall without tags opens on the landing, its By Style card greyed out, All leading to the list', async ({ page, world }) => {
     await signIn(page, world.users.alice, `/walls/${world.walls.beta.id}?view=boulders`);
     await expect(page.locator('.wall-carousel:not(.carousel-pending)')).toBeVisible();
-    await expect(page.locator('.style-cards')).toHaveCount(0);
+    await expect(cards(page)).toHaveCount(3);
+    await expect(listPage(page).locator('.style-card[data-card="styles"]')).toHaveClass(/is-empty/);
+    await listPage(page).locator('.style-card[data-card="all"]').click();
+    await expect(page).toHaveURL(/style=all/);
     await expect(rows(page)).toHaveCount(40);
 });
 
@@ -33,9 +36,9 @@ test('phone: seven cards fit one screen with their counts, and a card opens the 
     await page.setViewportSize(PHONE);
     await openBrowser(page, world);
     await expect(cards(page)).toHaveCount(7);
-    await expect(listPage(page).locator('[data-style="all"] .style-card-count')).toHaveText('8');
+    await expect(listPage(page).locator('.style-card[data-card="warmup"]')).toHaveClass(/is-empty/);
     for (const [style, n] of [['tension', '2'], ['dynamic', '1'], ['funky', '1'], ['endurance', '1'], ['power', '2'], ['technical', '1']]) {
-        await expect(listPage(page).locator(`.style-card[data-style="${style}"] .style-card-count`)).toHaveText(n);
+        await expect(listPage(page).locator(`.style-card[data-card="${style}"] .style-card-count`)).toHaveText(n);
     }
     await expectNoOverflow(page);
     const lastBottom = await cards(page).last().evaluate(el => el.getBoundingClientRect().bottom);
@@ -43,7 +46,7 @@ test('phone: seven cards fit one screen with their counts, and a card opens the 
     expect(await listPage(page).evaluate(el => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
     await page.screenshot({ path: '../../.out/styles-cards-375.png' });
 
-    await listPage(page).locator('.style-card[data-style="tension"]').click();
+    await listPage(page).locator('.style-card[data-card="tension"]').click();
     await expect(page).toHaveURL(/style=tension/);
     await expect(rows(page)).toHaveCount(2);
     await expect(listPage(page).locator('.style-current')).toContainText('Tension');
@@ -61,23 +64,26 @@ test('phone: seven cards fit one screen with their counts, and a card opens the 
     await page.goBack();
     await expect(rows(page)).toHaveCount(2);
 
-    // Reload keeps the style; back returns to the cards; "Styles" goes back too.
+    // Reload keeps the style; back returns to the cards; the bar goes up to the landing, whose All card lists every boulder.
     await page.reload();
     await expect(rows(page)).toHaveCount(2);
     await page.goBack();
     await expect(cards(page)).toHaveCount(7);
-    await listPage(page).locator('.style-card[data-style="all"]').click();
+    await listPage(page).locator('[data-browse-back]').click();
+    await expect(cards(page)).toHaveCount(3);
+    await expect(listPage(page).locator('.style-card[data-card="all"] .style-card-count')).toHaveText('8');
+    await listPage(page).locator('.style-card[data-card="all"]').click();
     await expect(page).toHaveURL(/style=all/);
     await expect(rows(page)).toHaveCount(8);
-    await listPage(page).locator('[data-style-back]').click();
-    await expect(cards(page)).toHaveCount(7);
+    await listPage(page).locator('[data-browse-back]').click();
+    await expect(cards(page)).toHaveCount(3);
 });
 
 test('desktop: the same cards and filtering', async ({ page, world }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await openBrowser(page, world);
     await expect(cards(page)).toHaveCount(7);
-    await listPage(page).locator('.style-card[data-style="power"]').click();
+    await listPage(page).locator('.style-card[data-card="power"]').click();
     await expect(rows(page)).toHaveCount(2);
 });
 
@@ -91,8 +97,8 @@ test('tagging from the boulder page saves at once and the style shows up in the 
     await page.reload();
     await expect(page.locator('.boulder-styles .style-pick[data-style="funky"]')).toHaveAttribute('aria-pressed', 'true');
 
-    await page.goto(`/walls/${wall.id}?view=boulders`);
-    await expect(listPage(page).locator('.style-card[data-style="funky"] .style-card-count')).toHaveText('2');
+    await page.goto(`/walls/${wall.id}?view=boulders&browse=styles`);
+    await expect(listPage(page).locator('.style-card[data-card="funky"] .style-card-count')).toHaveText('2');
 
     // The database is shared by the browser projects: put the boulder back as seeded, so the next project counts the same.
     await page.goto(`/walls/${wall.id}?view=boulders&style=all`);
@@ -109,21 +115,24 @@ test('offline client: the cards, the counts and the filtered list at phone width
     expect(await precacheAs(page, server, world.users.stella, `/walls/${wall.id}`)).toBe('complete');
     await server.unreachable();
     await expectClient(page, `/walls/${wall.id}`);
+    await expect(page.locator('.style-card')).toHaveCount(3);
+    await expect(page.locator('.style-card[data-card="all"] .style-card-count')).toHaveText('8');
+    await page.locator('.style-card[data-card="styles"]').click();
+    await expect(page).toHaveURL(/browse=styles/);
     await expect(page.locator('.style-card')).toHaveCount(7);
     // The cards are the screen: all seven sit inside the viewport without scrolling.
     const box = async n => page.locator('.style-card').nth(n).evaluate(el => { const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; });
     expect((await box(0)).top).toBeGreaterThanOrEqual(0);
     expect((await box(6)).bottom).toBeLessThanOrEqual(PHONE.height);
     await expect(page.locator('.wall-photo-container')).toHaveCount(0);
-    await expect(page.locator('.style-card[data-style="all"] .style-card-count')).toHaveText('8');
-    await expect(page.locator('.style-card[data-style="power"] .style-card-count')).toHaveText('2');
+    await expect(page.locator('.style-card[data-card="power"] .style-card-count')).toHaveText('2');
     await expectNoOverflow(page);
     await page.screenshot({ path: '../../.out/styles-client-375.png' });
 
-    await page.locator('.style-card[data-style="power"]').click();
+    await page.locator('.style-card[data-card="power"]').click();
     await expect(page).toHaveURL(/style=power/);
     await expect(page.locator('.boulder-card')).toHaveCount(2);
-    await expect(page.locator('[data-style-back]')).toBeVisible();
+    await expect(page.locator('[data-browse-back]')).toBeVisible();
     await page.screenshot({ path: '../../.out/styles-client-list-375.png' });
 
     // Badges on the boulder page: "Styled boulder 1" is tension + power.
@@ -134,7 +143,7 @@ test('offline client: the cards, the counts and the filtered list at phone width
     await page.locator('.back-link').click();
     await expect(page).toHaveURL(/style=power/);
     await expect(page.locator('.boulder-card')).toHaveCount(2);
-    await page.locator('[data-style-back]').click();
+    await page.locator('[data-browse-back]').click();
     await expect(page.locator('.style-card')).toHaveCount(7);
 });
 
@@ -144,11 +153,11 @@ test('dark mode at phone width: cards, list header and the tagging chips', async
     const wall = await openBrowser(page, world);
     await expect(cards(page)).toHaveCount(7);
     await page.screenshot({ path: '../../.out/styles-cards-dark-375.png' });
-    await listPage(page).locator('.style-card[data-style="power"]').click();
+    await listPage(page).locator('.style-card[data-card="power"]').click();
     await expect(rows(page)).toHaveCount(2);
     await page.screenshot({ path: '../../.out/styles-list-dark-375.png' });
     await rows(page).first().click();
-    await expect(page.locator('.boulder-styles .style-pick')).toHaveCount(6);
+    await expect(page.locator('.boulder-styles .style-pick[data-style]')).toHaveCount(7);
     await page.screenshot({ path: '../../.out/styles-boulder-dark-375.png' });
     expect(wall.id).toBeTruthy();
 });

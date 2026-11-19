@@ -13,6 +13,9 @@ namespace Blocwerk.Core.Tests;
 /// </summary>
 public class BoulderCreateRestoreTests
 {
+    // Fields only Revise has: a new boulder's hold type comes from its holds until somebody sets one on the boulder.
+    private static readonly string[] ReviseOnly = [nameof(BoulderFormSnapshot.HoldType)];
+
     [Fact]
     public void ApplySnapshot_RestoresEveryFieldOfTheSnapshot()
     {
@@ -24,6 +27,7 @@ public class BoulderCreateRestoreTests
         var missing = typeof(BoulderFormSnapshot)
             .GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Select(p => p.Name)
+            .Except(ReviseOnly)
             .Where(name => !body.Contains($"snapshot.{name}", StringComparison.Ordinal));
 
         Assert.Empty(missing);

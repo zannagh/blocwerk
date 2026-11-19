@@ -89,6 +89,12 @@ public class Boulder
     /// </summary>
     public BoulderStyle Styles { get; set; }
 
+    /// <summary>
+    /// The hold type the boulder is mainly climbed on, when somebody set it; null leaves it to the boulder's holds
+    /// (<c>BoulderHoldTypes.Effective</c>). Stays on the same row through revisions, as the style tags do.
+    /// </summary>
+    public HoldHandType? DominantHoldType { get; set; }
+
     public bool IsHistoric { get; set; }
 
     public bool NeedsReview { get; set; }

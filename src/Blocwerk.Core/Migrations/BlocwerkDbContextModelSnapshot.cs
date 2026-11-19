@@ -284,6 +284,9 @@ namespace Blocwerk.Core.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<int?>("DominantHoldType")
+                        .HasColumnType("integer");
+
                     b.Property<string>("FootColorOnly")
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");

@@ -4219,3 +4219,13 @@ a.wall-update-link {
 .boulder-styles.editable { display: flex; flex-direction: column; gap: 6px; }
 .boulder-styles-label { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-secondary); }
 .boulder-styles-error { margin: 0; color: var(--danger-text); font-size: 0.82rem; }
+
+/* ---- Boulder browser: compact cards (a card page fits a 375 x 667 phone), greyed-out empty cards, the hold-type hint and note ---- */
+.style-cards { gap: 8px; padding: 4px 0 8px; }
+.style-card { min-height: 64px; padding: 10px 14px; }
+.style-card-all { min-height: 60px; }
+.style-card.is-empty { opacity: 0.5; box-shadow: none; filter: grayscale(1); cursor: default; }
+.style-card.is-empty .style-card-icon { background: var(--border-light); color: var(--text-secondary); }
+.style-pick.inferred { border-style: dashed; border-color: var(--accent); color: var(--accent); }
+.boulder-hold-type-note { margin: 0; color: var(--text-secondary); font-size: 0.82rem; }
+.hold-type-badge { margin: 8px 0; }

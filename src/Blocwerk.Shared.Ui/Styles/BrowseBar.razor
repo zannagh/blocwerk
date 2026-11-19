@@ -1,0 +1,24 @@
+@* Above a card page or a list: the way one step back up, and where the viewer is. *@
+<div class="style-bar">
+    <a class="style-back" href="@BackHref" data-browse-back>
+        <span aria-hidden="true">&larr;</span><span> @BackLabel</span>
+    </a>
+    <span class="style-current" data-browse-current>
+        <BrowseIcon Markup="@Icon" Size="16" />
+        <span>@Label</span>
+    </span>
+</div>
+
+@code {
+    /// <summary>Gets or sets the link one step up.</summary>
+    [Parameter, EditorRequired] public string BackHref { get; set; } = "#";
+
+    /// <summary>Gets or sets the name of the screen one step up.</summary>
+    [Parameter] public string BackLabel { get; set; } = "Boulders";
+
+    /// <summary>Gets or sets the name of this screen.</summary>
+    [Parameter] public string Label { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the icon of this screen.</summary>
+    [Parameter] public string Icon { get; set; } = string.Empty;
+}
