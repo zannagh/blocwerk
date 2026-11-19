@@ -23,6 +23,11 @@ async function open(page, world, query, viewport) {
 }
 
 async function shoot(page, name) {
+    // The cookie notice floats over the bottom of the screen; accepted, the screenshot shows what a returning user sees.
+    const ok = page.locator('.bw-consent-accept');
+    if (await ok.isVisible().catch(() => false)) {
+        await ok.click();
+    }
     for (const scheme of ['light', 'dark']) {
         await page.emulateMedia({ colorScheme: scheme });
         await page.screenshot({ path: `../../.out/landing-${name}-${scheme}.png` });
@@ -95,26 +100,37 @@ test('phone: My projects opens the projects, and back returns to the landing', a
     await expect(page).not.toHaveURL(/mine=/);
 });
 
-test('desktop: the cards, a divider, and the whole list with its search under it', async ({ page, world }) => {
-    await open(page, world, 'view=boulders', DESKTOP);
-    const list = listPage(page);
-    const below = list.locator('[data-browse-list="landing"]');
-    await expect(list.locator('nav.style-cards .style-card')).toHaveCount(5);
-    await expect(list.locator('.browse-list-divider')).toBeVisible();
-    await expect(rows(below)).toHaveCount(5);
-    await expect(rows(below).first()).toBeVisible();
+for (const viewport of [DESKTOP, { width: 1280, height: 800 }]) {
+    test(`desktop ${viewport.width}x${viewport.height}: compact cards, a divider, and the whole list with its search under it`, async ({ page, world }) => {
+        await open(page, world, 'view=boulders', viewport);
+        const list = listPage(page);
+        const below = list.locator('[data-browse-list="landing"]');
+        await expect(list.locator('nav.style-cards .style-card')).toHaveCount(5);
+        await expect(list.locator('.browse-list-divider')).toBeVisible();
+        await expect(rows(below)).toHaveCount(5);
 
-    const nav = await box(list.locator('nav.style-cards'));
-    const divider = await box(list.locator('.browse-list-divider'));
-    expect(nav.width).toBeLessThanOrEqual(720);
-    expect(divider.top).toBeGreaterThanOrEqual(nav.bottom);
-    expect((await box(rows(below).first())).top).toBeGreaterThan(divider.bottom);
-    await shoot(page, 'desktop');
+        // One banner and one row of landscape cards, so the list starts in the top half of the screen.
+        const [nav, all, holds, styles, projects, favorites] = await Promise.all([list.locator('nav.style-cards'),
+            card(list, 'all'), card(list, 'holds'), card(list, 'styles'), card(list, 'projects'), card(list, 'favorites')].map(box));
+        expect(nav.width).toBeLessThanOrEqual(960);
+        for (const small of [holds, styles, projects, favorites]) {
+            expect(Math.abs(small.top - holds.top)).toBeLessThan(1);
+            expect(small.width).toBeGreaterThan(small.height);
+        }
+        expect(all.height).toBeLessThan(100);
+        const divider = await box(list.locator('.browse-list-divider'));
+        expect(divider.top).toBeGreaterThanOrEqual(nav.bottom);
+        expect(divider.top).toBeLessThan(viewport.height * 0.45);
+        const firstRow = await box(rows(below).first());
+        expect(firstRow.top).toBeGreaterThan(divider.bottom);
+        await expect(rows(below).nth(3)).toBeInViewport();
+        await shoot(page, `desktop-${viewport.width}`);
 
-    await below.locator('[data-bw-search-toggle]').click();
-    await below.locator('.list-search-input').fill('Fav');
-    await expect(rows(below)).toHaveCount(2);
-});
+        await below.locator('[data-bw-search-toggle]').click();
+        await below.locator('.list-search-input').fill('Fav');
+        await expect(rows(below)).toHaveCount(2);
+    });
+}
 
 test('signed out (share link): no My projects or Favorites card, and their URLs list nothing', async ({ page, world }) => {
     await page.setViewportSize(PHONE);

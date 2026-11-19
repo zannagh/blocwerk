@@ -4287,6 +4287,28 @@ a.wall-update-link {
 @media (min-width: 600px) {
     .browse-landing .browse-tall { aspect-ratio: auto; min-height: 180px; }
 }
+/* Desktop tier: the list under the cards is the point, so the cards get compact. All is a short banner (icon, name and
+   count in one row), and the pair and the own lists share one row of landscape cards; the portrait pair is phone-only. */
+@media (min-width: 900px) {
+    @container style(--tier: desktop) {
+        .style-cards.browse-landing { grid-template-columns: repeat(4, minmax(0, 1fr)); max-width: 960px; gap: 10px; padding-bottom: 4px; }
+        .browse-landing .browse-hero {
+            grid-template-columns: auto auto auto; justify-content: center; align-items: center; column-gap: 14px;
+            min-height: 0; padding: 14px 20px;
+        }
+        .browse-landing .browse-hero .style-card-icon { width: 44px; height: 44px; }
+        .browse-landing .browse-hero .style-card-label { font-size: 1.15rem; }
+        .browse-landing .browse-tall {
+            grid-template-columns: auto 1fr; grid-template-rows: auto auto; row-gap: 0; align-items: center;
+            min-height: 72px; padding: 12px 14px;
+        }
+        .browse-landing .browse-tall .style-card-icon { grid-row: 1 / span 2; width: 40px; height: 40px; border-radius: 50%; }
+        .browse-landing .browse-tall .style-card-label { align-self: end; font-size: 1rem; white-space: nowrap; }
+        .browse-landing .browse-tall .style-card-count { align-self: start; font-size: 1.05rem; }
+        .browse-landing .browse-mine { min-height: 72px; }
+        .browse-list-divider { margin-top: 14px; }
+    }
+}
 @media (prefers-reduced-motion: reduce) {
     .browse-landing .style-card { transition: none; }
     .browse-landing .style-card.is-link:active { transform: none; }
