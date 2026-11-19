@@ -19,5 +19,10 @@
 .variant-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .variant-name { font-weight: 600; overflow-wrap: anywhere; color: var(--text); }
 .variant-row .variant-peek-btn { flex: none; width: auto; min-width: 0; min-height: 44px; margin: 0; padding: 6px 12px; }
-.variant-submit { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+/* Stays above the tab bar and any banner, so Confirm is in reach however long the wall's list is. */
+.variant-submit {
+    position: sticky; bottom: calc(var(--bottomnav-h, 0px) + 8px); z-index: 2;
+    display: flex; justify-content: flex-end; align-items: center; gap: 8px; flex-wrap: wrap;
+    margin-top: 16px; padding: 8px 0; background: var(--bg);
+}
 .variant-submit > * { flex: 1 1 140px; width: auto; margin: 0; text-align: center; box-sizing: border-box; }
