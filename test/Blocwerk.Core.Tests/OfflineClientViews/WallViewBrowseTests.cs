@@ -12,13 +12,16 @@ namespace Blocwerk.Core.Tests.OfflineClientViews;
 /// <summary>The offline wall view's boulder browser: the landing, the card pages with their counts, and the limited lists.</summary>
 public sealed class WallViewBrowseTests
 {
+    // The second boulder, the viewer's one project (Crimp Line is the favourite).
+    private static readonly Guid Second = Guid.Parse("5ec0bd00-0000-4000-8000-000000000002");
+
     private static FakeStoreSource Device(string[] first, string[] second, string? secondHoldType = null, string? startHandType = null)
     {
         var source = new FakeStoreSource();
         BouldersDocumentBoulder[] boulders =
         [
             CrimpLine() with { Styles = first },
-            CrimpLine() with { Id = Guid.NewGuid(), Name = "Second Line", Styles = second, HoldType = secondHoldType },
+            CrimpLine() with { Id = Second, Name = "Second Line", Styles = second, HoldType = secondHoldType },
             SlabArchived(),
         ];
         var holds = HoldsDoc();
@@ -30,7 +33,7 @@ public sealed class WallViewBrowseTests
             [DataDocumentKinds.Boulders] = new(Sha('b'), Json(new BouldersDocument(1, Wall, boulders))),
             [DataDocumentKinds.Comments] = new(Sha('c'), Json(new CommentsDocument(1, Wall, []))),
         },
-        mine: [Marks()]);
+        mine: [Marks() with { Projects = [Second] }]);
         return source;
     }
 
@@ -76,13 +79,30 @@ public sealed class WallViewBrowseTests
         Assert.Matches("(?s)data-card=\"favorites\">.*?<span class=\"style-card-count\">1</span>", html);
     }
 
+    [Fact]
+    public async Task SignedIn_TheLandingHasAMyProjectsCard_AndItsListHoldsTheProjects()
+    {
+        await using var landing = await ViewHarness.StartAsync(Device([], []), $"walls/{Wall}");
+        var html = await RenderAsync(landing);
+        Assert.Matches("<a class=\"style-card browse-mine is-link\" href=\"[^\"]*\\?mine=projects\" data-card=\"projects\">", html);
+        Assert.Matches("(?s)data-card=\"projects\">.*?<span class=\"style-card-count\">1</span>", html);
+
+        await using var list = await ViewHarness.StartAsync(Device([], []), $"walls/{Wall}?mine=projects");
+        var rows = await RenderAsync(list);
+        Assert.Contains("Second Line", rows, StringComparison.Ordinal);
+        Assert.DoesNotContain("Crimp Line", rows, StringComparison.Ordinal);
+        Assert.Contains($"href=\"walls/{Wall}/boulders/{Second}?mine=projects\"", rows, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(Kiosk)]
     [InlineData(Anon)]
-    public async Task WithoutMarks_TheLandingHasNoFavoritesCard_AndTheListIsEmpty(string partition)
+    public async Task WithoutMarks_TheLandingHasNoOwnListCards_AndTheListIsEmpty(string partition)
     {
         await using var landing = await ViewHarness.StartAsync(CachedDevice(partition), $"walls/{Wall}");
-        Assert.DoesNotContain("data-card=\"favorites\"", await RenderAsync(landing), StringComparison.Ordinal);
+        var html = await RenderAsync(landing);
+        Assert.DoesNotContain("data-card=\"favorites\"", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("data-card=\"projects\"", html, StringComparison.Ordinal);
 
         await using var list = await ViewHarness.StartAsync(CachedDevice(partition), $"walls/{Wall}?mine=favorites");
         Assert.DoesNotContain("Crimp Line", await RenderAsync(list), StringComparison.Ordinal);

@@ -9,7 +9,8 @@ namespace Blocwerk.Browser.Seed;
 /// <summary>
 /// The Landing wall (Lena's), which only the browse-landing spec lists or counts, with a share link of its own
 /// (<see cref="ShareToken"/>). Five boulders, newest last: <b>Fav one</b> and <b>Fav two</b>, which Lena marked as
-/// favourites, then <b>Plain one</b>, <b>Plain two</b> and <b>Plain three</b>. So the landing reads All 5, Favorites 2.
+/// favourites, then <b>Plain one</b>, <b>Plain two</b> and <b>Plain three</b>, which are her projects. So the landing
+/// reads All 5, My projects 3, Favorites 2.
 /// </summary>
 internal static class SeedLanding
 {
@@ -28,6 +29,10 @@ internal static class SeedLanding
             if (i < 2)
             {
                 db.BoulderFavorites.Add(new BoulderFavorite { BoulderId = boulder.Id, UserId = lenaId });
+            }
+            else
+            {
+                db.BoulderProjects.Add(new BoulderProject { BoulderId = boulder.Id, UserId = lenaId });
             }
         }
     }

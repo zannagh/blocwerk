@@ -80,6 +80,18 @@ public sealed class BoulderBrowseTests
         Assert.Equal(BoulderBrowse.Landing, BoulderBrowse.From(null, null, null, value));
 
     [Fact]
+    public void MineProjects_IsAListOfItsOwn_WithItsOwnQuery()
+    {
+        var browse = BoulderBrowse.From(null, null, null, "PROJECTS");
+
+        Assert.Equal(new BoulderBrowse(BoulderBrowseLevel.List, Mine: BoulderMine.Projects), browse);
+        Assert.Equal(BoulderBrowseLevel.Landing, browse.Up.Level);
+        Assert.Equal("mine=projects", browse.ListQuery);
+        Assert.Equal("projects", browse.Query()["mine"]);
+        Assert.Null(browse.Query()["style"]);
+    }
+
+    [Fact]
     public void AHoldTypeInTheUrl_WinsOverMine() =>
         Assert.Equal(HoldHandType.Crimp, BoulderBrowse.From(null, null, "crimp", "favorites").HoldType);
 }

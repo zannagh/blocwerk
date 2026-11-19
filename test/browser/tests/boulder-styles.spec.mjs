@@ -25,7 +25,7 @@ async function expectNoOverflow(page) {
 test('a wall without tags opens on the landing, its By Style card greyed out, All leading to the list', async ({ page, world }) => {
     await signIn(page, world.users.alice, `/walls/${world.walls.beta.id}?view=boulders`);
     await expect(page.locator('.wall-carousel:not(.carousel-pending)')).toBeVisible();
-    await expect(cards(page)).toHaveCount(4);
+    await expect(cards(page)).toHaveCount(5);
     await expect(listPage(page).locator('.style-card[data-card="styles"]')).toHaveClass(/is-empty/);
     await listPage(page).locator('.style-card[data-card="all"]').click();
     await expect(page).toHaveURL(/style=all/);
@@ -70,13 +70,13 @@ test('phone: seven cards fit one screen with their counts, and a card opens the 
     await page.goBack();
     await expect(cards(page)).toHaveCount(7);
     await listPage(page).locator('[data-browse-back]').click();
-    await expect(cards(page)).toHaveCount(4);
+    await expect(cards(page)).toHaveCount(5);
     await expect(listPage(page).locator('.style-card[data-card="all"] .style-card-count')).toHaveText('8');
     await listPage(page).locator('.style-card[data-card="all"]').click();
     await expect(page).toHaveURL(/style=all/);
     await expect(rows(page)).toHaveCount(8);
     await listPage(page).locator('[data-browse-back]').click();
-    await expect(cards(page)).toHaveCount(4);
+    await expect(cards(page)).toHaveCount(5);
 });
 
 test('desktop: the same cards and filtering', async ({ page, world }) => {
@@ -115,7 +115,7 @@ test('offline client: the cards, the counts and the filtered list at phone width
     expect(await precacheAs(page, server, world.users.stella, `/walls/${wall.id}`)).toBe('complete');
     await server.unreachable();
     await expectClient(page, `/walls/${wall.id}`);
-    await expect(page.locator('.style-card')).toHaveCount(4);
+    await expect(page.locator('.style-card')).toHaveCount(5);
     await expect(page.locator('.style-card[data-card="all"] .style-card-count')).toHaveText('8');
     await page.locator('.style-card[data-card="styles"]').click();
     await expect(page).toHaveURL(/browse=styles/);

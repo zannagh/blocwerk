@@ -24,7 +24,7 @@ namespace Blocwerk.Browser.Seed;
 /// Dave), so no other test's walls or pages change with it (<see cref="SeedSocial"/>).</item>
 /// <item><b>wide</b>: Pia's wall of two panels and a boulder with holds on both (<see cref="SeedMultiPanel"/>).</item>
 /// <item><b>grips</b>: Gina's wall of typed holds for the boulder browser's hold types (<see cref="SeedHoldTypes"/>).</item>
-/// <item><b>landing</b>: Lena's wall with two favourites, for the browser's landing cards (<see cref="SeedLanding"/>).</item>
+/// <item><b>landing</b>: Lena's wall with two favourites and three projects, for the browser's landing cards (<see cref="SeedLanding"/>).</item>
 /// </list>
 /// </summary>
 internal sealed class SeedWalls
