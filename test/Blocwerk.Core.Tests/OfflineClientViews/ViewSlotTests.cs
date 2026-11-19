@@ -47,7 +47,7 @@ public sealed class ViewSlotTests
             .Add<ProbeSlotComponent>(ViewSlotName.WallActions)
             .Add<ProbeSlotComponent>(ViewSlotName.WallStage)
             .Add<ProbeSlotComponent>(ViewSlotName.WallBelow);
-        await using var view = await ViewHarness.StartAsync(CachedDevice(UserA), $"walls/{Wall}", slots);
+        await using var view = await ViewHarness.StartAsync(CachedDevice(UserA), $"walls/{Wall}?style=all", slots);
         var html = await view.RenderAsync<WallViewPage>(new() { ["WallId"] = Wall });
 
         Assert.Equal(3, html.Split("class=\"probe\"").Length - 1);

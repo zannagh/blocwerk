@@ -22,7 +22,7 @@ public sealed class WallViewPageTests
     [Fact]
     public async Task ShowsTheWall_ItsFirstPanel_AndTheBoulderList()
     {
-        await using var view = await ViewHarness.StartAsync(CachedDevice(UserA), $"walls/{Wall}");
+        await using var view = await ViewHarness.StartAsync(CachedDevice(UserA), $"walls/{Wall}?style=all");
         var html = await RenderAsync(view);
 
         Assert.Contains("<h1 title=\"The Attic\">The Attic</h1>", html, StringComparison.Ordinal);
@@ -40,7 +40,7 @@ public sealed class WallViewPageTests
         Assert.Contains("<span class=\"stat-value\">3</span>", html, StringComparison.Ordinal);
         Assert.Contains("<span class=\"stat-value\">2</span>", html, StringComparison.Ordinal);
         Assert.Contains("Archive (1)", html, StringComparison.Ordinal);
-        Assert.Contains($"href=\"walls/{Wall}/boulders/{Crimp}\"", html, StringComparison.Ordinal);
+        Assert.Contains($"href=\"walls/{Wall}/boulders/{Crimp}?style=all\"", html, StringComparison.Ordinal);
         Assert.Contains("draft-badge", html, StringComparison.Ordinal);
         Assert.True(html.IndexOf("Work in Progress", StringComparison.Ordinal) < html.IndexOf("Crimp Line", StringComparison.Ordinal), "newest first");
     }
@@ -48,7 +48,7 @@ public sealed class WallViewPageTests
     [Fact]
     public async Task TheViewersMarks_ShowOnTheRows_AndTheirFiltersAreOffered()
     {
-        await using var view = await ViewHarness.StartAsync(CachedDevice(UserA), $"walls/{Wall}");
+        await using var view = await ViewHarness.StartAsync(CachedDevice(UserA), $"walls/{Wall}?style=all");
         var html = await RenderAsync(view);
 
         var crimp = Row(html, Crimp);
@@ -63,18 +63,18 @@ public sealed class WallViewPageTests
     [Fact]
     public async Task AShareLink_ShowsNoMarks_AndKeepsItsTokenInEveryLink()
     {
-        await using var view = await ViewHarness.StartAsync(CachedDevice(Anon), $"walls/{Wall}/shared/tok");
+        await using var view = await ViewHarness.StartAsync(CachedDevice(Anon), $"walls/{Wall}/shared/tok?style=all");
         var html = await RenderAsync(view, "tok");
 
         Assert.DoesNotContain("status-icon", html, StringComparison.Ordinal);
-        Assert.Contains($"href=\"walls/{Wall}/boulders/{Crimp}/shared/tok\"", html, StringComparison.Ordinal);
+        Assert.Contains($"href=\"walls/{Wall}/boulders/{Crimp}/shared/tok?style=all\"", html, StringComparison.Ordinal);
         Assert.DoesNotContain("My Walls", html, StringComparison.Ordinal);
     }
 
     [Fact]
     public async Task ABoulderGoneToDraft_LeavesAnOutsidersList_AtOnce()
     {
-        await using var view = await ViewHarness.StartAsync(CachedDevice(Anon, withDraft: false), $"walls/{Wall}/shared/tok");
+        await using var view = await ViewHarness.StartAsync(CachedDevice(Anon, withDraft: false), $"walls/{Wall}/shared/tok?style=all");
         Assert.Contains("Crimp Line", await RenderAsync(view, "tok"), StringComparison.Ordinal);
 
         view.Store.Apply(Anon, Envelope(FeedKinds.BoulderChanged, Crimp, Crimp, new BoulderPayload(2, true)));
@@ -105,7 +105,7 @@ public sealed class WallViewPageTests
             [DataDocumentKinds.Wall] = new(Sha('a'), Json(single)),
             [DataDocumentKinds.Holds] = new(Sha('h'), Json(holds)),
         });
-        await using var view = await ViewHarness.StartAsync(source, $"walls/{Wall}");
+        await using var view = await ViewHarness.StartAsync(source, $"walls/{Wall}?style=all");
         var html = await RenderAsync(view);
 
         Assert.Contains("data-bw-panel=\"photo\"", html, StringComparison.Ordinal);

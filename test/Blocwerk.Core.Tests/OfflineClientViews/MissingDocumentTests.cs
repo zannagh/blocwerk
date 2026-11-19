@@ -18,11 +18,11 @@ public sealed class MissingDocumentTests
     [Fact]
     public async Task NoBouldersDocument_ReadsNotSaved_NeverNoBouldersYet()
     {
-        await using var view = await ViewHarness.StartAsync(PartialDevice(UserA, DataDocumentKinds.Wall, DataDocumentKinds.Holds), $"walls/{Wall}");
+        await using var view = await ViewHarness.StartAsync(PartialDevice(UserA, DataDocumentKinds.Wall, DataDocumentKinds.Holds), $"walls/{Wall}?style=all");
         var html = await view.RenderAsync<WallViewPage>(new() { ["WallId"] = Wall });
 
         Assert.Contains("Boulders are not saved on this device.", html, StringComparison.Ordinal);
-        Assert.Contains($"href=\"/walls/{Wall}\"", html, StringComparison.Ordinal);
+        Assert.Contains($"href=\"/walls/{Wall}?style=all\"", html, StringComparison.Ordinal);
         Assert.DoesNotContain("No boulders yet", html, StringComparison.Ordinal);
         Assert.Contains($"<span class=\"stat-value\">{System.Text.Encodings.Web.HtmlEncoder.Default.Encode("–")}</span>", html, StringComparison.Ordinal);
     }

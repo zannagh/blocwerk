@@ -10,8 +10,21 @@ namespace Blocwerk.Core.Tests;
 public sealed class BoulderStylesTests
 {
     [Fact]
-    public void TheSetIsTheSixStyles_InCardOrder() =>
-        Assert.Equal(["Tension", "Dynamic", "Funky", "Endurance", "Power", "Technical"], BoulderStyles.All.Select(BoulderStyles.Label));
+    public void TheSetIsTheSevenStyles_InCardOrder() =>
+        Assert.Equal(["Warmup", "Tension", "Dynamic", "Funky", "Endurance", "Power", "Technical"], BoulderStyles.All.Select(BoulderStyles.Label));
+
+    [Fact]
+    public void Warmup_TakesTheNextFreeBit_SoStoredValuesKeepTheirMeaning()
+    {
+        Assert.Equal(64, (int)BoulderStyle.Warmup);
+        Assert.Equal(BoulderStyle.Technical | BoulderStyle.Tension, BoulderStyles.Normalize((BoulderStyle)33));
+        Assert.Equal(BoulderStyle.Warmup, BoulderStyles.FromSlug("warmup"));
+        Assert.Equal(["Warmup"], BoulderStyles.ToNames(BoulderStyle.Warmup));
+    }
+
+    [Fact]
+    public void EveryStyle_HasALabelAndAnIcon() =>
+        Assert.All(BoulderStyles.Definitions, d => Assert.False(string.IsNullOrEmpty(d.Label) || string.IsNullOrEmpty(d.Icon)));
 
     [Theory]
     [InlineData("tension", BoulderStyle.Tension)]

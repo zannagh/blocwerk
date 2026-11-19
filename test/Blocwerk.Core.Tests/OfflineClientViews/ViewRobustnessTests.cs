@@ -60,7 +60,7 @@ public sealed class ViewRobustnessTests
     [InlineData(Kiosk)]
     public async Task AnOutsidersClass_NeverShowsADraftOrAnArchivedBoulder_EvenIfOneArrived(string partition)
     {
-        await using var view = await ViewHarness.StartAsync(CachedDevice(partition), $"walls/{Wall}");
+        await using var view = await ViewHarness.StartAsync(CachedDevice(partition), $"walls/{Wall}?style=all");
         var token = partition == Anon ? "tok" : null;
         var wall = await view.RenderAsync<WallViewPage>(new() { ["WallId"] = Wall, ["ShareToken"] = token });
         var draft = await view.RenderAsync<BoulderPage>(new() { ["WallId"] = Wall, ["BoulderId"] = Draft, ["ShareToken"] = token });
