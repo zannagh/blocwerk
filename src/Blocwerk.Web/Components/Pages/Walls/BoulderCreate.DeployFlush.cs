@@ -31,9 +31,9 @@ public partial class BoulderCreate
     [Inject]
     private ILogger<BoulderCreate> Logger { get; set; } = default!;
 
-    private string KeepKey => KeptCopyKey.For(_flushUserId, KioskContext, $"boulder-create:{WallId}");
+    private string KeepKey => KeptCopyKey.For(_flushUserId, KioskContext, $"boulder-create:{WallId}{VariantKeySuffix}");
 
-    private string CreateUrl => $"/walls/{WallId}/boulders/create";
+    private string CreateUrl => $"/walls/{WallId}/boulders/create{VariantQuery}";
 
     private bool IsDirty => _pristineSnapshot is not null && SnapshotJson != _pristineSnapshot;
 
@@ -79,7 +79,7 @@ public partial class BoulderCreate
             var boulder = await BoulderService.CreateBoulderAsync(
                 WallId, _name, _grade, _selectedHolds, isDraft: true,
                 _allKickboardOn, EffectiveHandsFollowFeet, _footColorOnly, _clientId, _noMatch,
-                _selectedSetters.ToList(), _customRule, _styles);
+                _selectedSetters.ToList(), _customRule, _styles, _variantOriginId);
 
             // Saved. Everything below needs the browser, is bounded, and cannot undo the save.
             NavigateQuietly(DetailUrl);
@@ -147,6 +147,7 @@ public partial class BoulderCreate
         _name = string.IsNullOrWhiteSpace(snapshot.Name) ? _name : snapshot.Name;
         _grade = snapshot.Grade;
         _allKickboardOn = snapshot.KickboardFootholdsOn;
+        _handsFollowFeet = snapshot.HandsFollowFeet;
         _footColorOnly = snapshot.FootColorOnly;
         _noMatch = snapshot.NoMatch;
         _customRule = snapshot.CustomRule;

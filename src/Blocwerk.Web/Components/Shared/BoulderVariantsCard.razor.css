@@ -1,0 +1,12 @@
+.variants-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.variants-row {
+    display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 6px 8px; box-sizing: border-box;
+    color: var(--text); text-decoration: none; border-radius: var(--r-sm);
+}
+.variants-row:hover { background: var(--bg-surface-alt); }
+.variants-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.variants-name { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
+.variants-parent {
+    flex: none; padding: 1px 8px; font-size: 0.75rem; font-weight: 600; color: var(--info-text);
+    background: var(--info-bg); border-radius: 999px;
+}

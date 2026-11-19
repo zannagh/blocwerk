@@ -25,7 +25,8 @@ internal sealed record BoulderRow(
     Guid CreatorId,
     string CreatorDisplayName,
     string? CreatorCustomName,
-    BoulderStyle Styles)
+    BoulderStyle Styles,
+    Guid? ParentBoulderId)
 {
     /// <summary>The creator as <c>BoulderSetterNames.Describe</c> reads one: id and names only.</summary>
     public User Creator() => new()

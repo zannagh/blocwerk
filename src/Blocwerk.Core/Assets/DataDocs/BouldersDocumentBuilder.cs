@@ -37,7 +37,7 @@ internal static class BouldersDocumentBuilder
             .Select(b => new BoulderRow(
                 b.Id, b.Name, b.Grade, b.Generation, b.IsDraft, b.IsHistoric, b.IsArchived, b.CreatedAt, b.PublishedAt,
                 b.NoMatch, b.KickboardFootholdsOn, b.HandsFollowFeet, b.FootColorOnly, b.CustomRule, b.CreatedByUserId,
-                b.CreatedBy.DisplayName, b.CreatedBy.CustomDisplayName, b.Styles))
+                b.CreatedBy.DisplayName, b.CreatedBy.CustomDisplayName, b.Styles, b.ParentBoulderId))
             .ToListAsync(ct);
         var ids = boulders.Select(b => b.Id).ToList();
         var holds = (await db.BoulderHolds.AsNoTracking()
@@ -75,5 +75,6 @@ internal static class BouldersDocumentBuilder
         stats ?? BoulderStatsCounts.None,
         holds.OrderBy(h => h.HoldId).ToList(),
         b.CustomRule,
-        BoulderStyles.ToNames(b.Styles));
+        BoulderStyles.ToNames(b.Styles),
+        b.ParentBoulderId);
 }

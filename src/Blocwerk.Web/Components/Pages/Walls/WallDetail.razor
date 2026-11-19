@@ -890,7 +890,7 @@ else
                 {
                     @foreach (var item in ActiveBoulders)
                     {
-                        <BoulderCard @key="item.Boulder.Id" Item="item" WallId="WallId" ShareToken="@ShareToken" Style="@Style"
+                        <BoulderCard @key="item.Boulder.Id" Item="item" Family="FamilyOf(item)" WallId="WallId" ShareToken="@ShareToken" Style="@Style"
                                      CurrentUserId="_currentUserId" IsAnonymous="_isAnonymous"
                                      IsWallAdmin="_isAdmin"
                                      ShowArchiveAction="true" ReconciledHoldCount="ReconciledHoldCount(item.Boulder)"
@@ -903,7 +903,7 @@ else
                             <summary class="archive-summary">Archive (@ArchivedBoulders.Count)</summary>
                             @foreach (var item in ArchivedBoulders)
                             {
-                                <BoulderCard @key="item.Boulder.Id" Item="item" WallId="WallId" ShareToken="@ShareToken" Style="@Style"
+                                <BoulderCard @key="item.Boulder.Id" Item="item" Family="FamilyOf(item)" WallId="WallId" ShareToken="@ShareToken" Style="@Style"
                                              CurrentUserId="_currentUserId" IsAnonymous="_isAnonymous"
                                              IsWallAdmin="_isAdmin"
                                              ReconciledHoldCount="ReconciledHoldCount(item.Boulder)"
@@ -1223,12 +1223,12 @@ else
         _activeCache = ApplySort(ApplyFilters(VisibleItems()))
             .OrderBy(i => i.Boulder.IsHistoric)
             .ToList();
-        _archivedCache = ApplySort(ApplyFilters(_items.Where(i => i.Boulder.IsArchived))).ToList();
+        _archivedCache = ApplySort(ApplyFilters(_items.Where(i => i.Boulder.IsArchived && FamilyRows.ContainsKey(i.Boulder.Id)))).ToList();
     }
 
     // The overview's count is the boulder list's own rows (drafts only where the list shows them), never
     // _wall.Boulders: the count must not tell a share or anonymous-kiosk viewer that drafts exist.
-    private int ActiveBoulderCount => _boulders.Count(b => !b.IsArchived);
+    private int ActiveBoulderCount => VisibleItems().Count();
 
     private List<BoulderListItem> ActiveBoulders
     {
@@ -1244,28 +1244,28 @@ else
     {
         if (StyleFilter is { } style)
         {
-            src = src.Where(i => i.Boulder.Styles.HasFlag(style));
+            src = src.Where(i => FamilyOf(i).Styles.HasFlag(style));
         }
 
         var terms = BoulderListSearch.Terms(_searchText);
         if (terms.Length > 0)
         {
-            src = src.Where(i => BoulderListSearch.Matches(i, terms));
+            src = src.Where(i => BoulderListSearch.Matches(i, terms, FamilyOf(i).VariantNames));
         }
 
         if (_fAttempted)
         {
-            src = src.Where(i => i.AttemptedByMe);
+            src = src.Where(i => AnyMember(i, m => m.AttemptedByMe));
         }
 
         if (_fDone)
         {
-            src = src.Where(i => i.DoneByMe);
+            src = src.Where(i => AnyMember(i, m => m.DoneByMe));
         }
 
         if (_fNotDone)
         {
-            src = src.Where(i => !i.DoneByMe);
+            src = src.Where(i => AnyMember(i, m => !m.DoneByMe));
         }
 
         if (_fBeta)
@@ -1277,44 +1277,27 @@ else
         // IsHistoric, so a boulder can need review without being historic and vice versa.
         if (_fNeedsReview)
         {
-            src = src.Where(i => i.Boulder.NeedsReview);
+            src = src.Where(i => AnyMember(i, m => m.Boulder.NeedsReview));
         }
 
         if (_fFavorites)
         {
-            src = src.Where(i => i.IsFavorite);
+            src = src.Where(i => AnyMember(i, m => m.IsFavorite));
         }
 
         if (_fCreated)
         {
-            src = src.Where(i => i.Boulder.CreatedByUserId == _currentUserId);
+            src = src.Where(i => AnyMember(i, m => m.Boulder.CreatedByUserId == _currentUserId));
         }
 
         var minScore = ScoreOf(_gradeMin);
         var maxScore = ScoreOf(_gradeMax);
         if (minScore.HasValue || maxScore.HasValue)
         {
-            src = src.Where(i => MatchesGradeRange(i.Boulder.Grade, minScore, maxScore));
+            src = src.Where(i => BoulderFamilies.MatchesGradeRange(FamilyOf(i), minScore, maxScore));
         }
 
         return src;
-    }
-
-    // Ungraded (or unrecognised) boulders always stay visible when a grade range is set.
-    private static bool MatchesGradeRange(string? grade, int? minScore, int? maxScore)
-    {
-        var score = GradeScoring.GetScore(grade, false);
-        if (score == 0)
-        {
-            return true;
-        }
-
-        if (minScore.HasValue && score < minScore.Value)
-        {
-            return false;
-        }
-
-        return !maxScore.HasValue || score <= maxScore.Value;
     }
 
     private static int? ScoreOf(string? grade)
@@ -1333,8 +1316,8 @@ else
         SortMode.Newest => src.OrderByDescending(i => i.Boulder.CreatedAt),
         SortMode.Oldest => src.OrderBy(i => i.Boulder.CreatedAt),
         // Ungraded (score 0) sinks to the bottom of the easy-first order.
-        SortMode.GradeAsc => src.OrderBy(i => GradeScoring.GetScore(i.Boulder.Grade, false) is 0 ? int.MaxValue : GradeScoring.GetScore(i.Boulder.Grade, false)),
-        SortMode.GradeDesc => src.OrderByDescending(i => GradeScoring.GetScore(i.Boulder.Grade, false)),
+        SortMode.GradeAsc => src.OrderBy(i => FamilyOf(i).LowestScore is 0 ? int.MaxValue : FamilyOf(i).LowestScore),
+        SortMode.GradeDesc => src.OrderByDescending(i => FamilyOf(i).LowestScore),
         SortMode.Rating => src.OrderByDescending(i => i.AverageRating ?? -1),
         SortMode.MyAttempts => src.OrderByDescending(i => i.MyAttemptCount),
         _ => src,

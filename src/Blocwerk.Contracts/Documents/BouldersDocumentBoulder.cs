@@ -23,6 +23,7 @@ namespace Blocwerk.Contracts.Documents;
 /// <param name="CustomRule">The setter's free-text rule (plain text), if any.</param>
 /// <param name="Styles">The style tags (<c>Tension</c>, <c>Power</c>...) it carries; left out when it has none. Appended
 /// last and optional, so an older client reads the document unchanged and a document without it means "no tags".</param>
+/// <param name="ParentBoulderId">The boulder this one is a variant of, if any; left out otherwise, so a client that does not know it reads the document unchanged.</param>
 public sealed record BouldersDocumentBoulder(
     Guid Id,
     string Name,
@@ -41,4 +42,5 @@ public sealed record BouldersDocumentBoulder(
     BouldersDocumentStats Stats,
     IReadOnlyList<BouldersDocumentHold> Holds,
     string? CustomRule = null,
-    IReadOnlyList<string>? Styles = null);
+    IReadOnlyList<string>? Styles = null,
+    Guid? ParentBoulderId = null);

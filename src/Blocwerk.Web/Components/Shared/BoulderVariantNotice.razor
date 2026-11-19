@@ -1,0 +1,12 @@
+@* Says what the create form is doing when it was opened from Add Variant. *@
+@if (!string.IsNullOrEmpty(OriginName))
+{
+    <p class="hint">
+        Starting from all holds of <strong>@OriginName</strong>. Remove or add holds and set the grade; the original stays as it is.
+    </p>
+}
+
+@code {
+    /// <summary>The boulder the variant starts from; null on an ordinary create.</summary>
+    [Parameter] public string? OriginName { get; set; }
+}

@@ -26,6 +26,11 @@ public partial interface IBoulderService
     /// <paramref name="setterUserIds"/> attributes the boulder to one or more setters (co-setters),
     /// distinct from the creator. Each id is validated as a member of the wall; non-members are
     /// skipped. Null or empty leaves the boulder without an explicit setter.
+    /// <para>
+    /// <paramref name="variantOfBoulderId"/> makes the new boulder a variant of that boulder, or of its parent when that
+    /// boulder is a variant itself. It must be on the same wall; one deleted while the create waited in the offline queue
+    /// leaves a plain boulder.
+    /// </para>
     /// </remarks>
     Task<Boulder> CreateBoulderAsync(
         Guid wallId,
@@ -40,7 +45,8 @@ public partial interface IBoulderService
         bool noMatch = false,
         IReadOnlyList<Guid>? setterUserIds = null,
         string? customRule = null,
-        BoulderStyle styles = BoulderStyle.None);
+        BoulderStyle styles = BoulderStyle.None,
+        Guid? variantOfBoulderId = null);
 
     /// <summary>
     /// Whether THIS session — a registered kiosk tablet with nobody signed in — satisfies every
@@ -276,7 +282,8 @@ public partial class BoulderService : IBoulderService
         bool noMatch = false,
         IReadOnlyList<Guid>? setterUserIds = null,
         string? customRule = null,
-        BoulderStyle styles = BoulderStyle.None)
+        BoulderStyle styles = BoulderStyle.None,
+        Guid? variantOfBoulderId = null)
     {
         using var op = BlocwerkMetrics.TimeOperation("Boulder.Create", wallId);
         try
@@ -366,7 +373,9 @@ public partial class BoulderService : IBoulderService
                 PublishedAt = isDraft ? null : DateTimeOffset.UtcNow,
             };
 
-            await EnsureNoUnconfirmedHoldAddedAsync(db, holds, []);
+            // A variant starts from its original's holds, so those count as already used.
+            var originHolds = await AttachToOriginAsync(db, boulder, variantOfBoulderId);
+            await EnsureNoUnconfirmedHoldAddedAsync(db, holds, originHolds);
             db.Boulders.Add(boulder);
 
             foreach (var h in holds)

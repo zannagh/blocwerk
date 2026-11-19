@@ -321,6 +321,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<bool>("NoMatch")
                         .HasColumnType("boolean");
 
+                    b.Property<Guid?>("ParentBoulderId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTimeOffset?>("PublishedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -333,6 +336,8 @@ namespace Blocwerk.Core.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedByUserId");
+
+                    b.HasIndex("ParentBoulderId");
 
                     b.HasIndex("WallId");
 
@@ -4155,6 +4160,11 @@ namespace Blocwerk.Core.Migrations
                         .HasForeignKey("CreatedByUserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("Blocwerk.Core.Entities.Boulder", null)
+                        .WithMany()
+                        .HasForeignKey("ParentBoulderId")
+                        .OnDelete(DeleteBehavior.SetNull);
 
                     b.HasOne("Blocwerk.Core.Entities.Wall", "Wall")
                         .WithMany("Boulders")

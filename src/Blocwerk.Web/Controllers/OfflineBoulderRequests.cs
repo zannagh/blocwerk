@@ -69,6 +69,9 @@ public sealed class CreateBoulderRequest
     /// </summary>
     public List<Guid> Setters { get; set; } = [];
 
+    /// <summary>The boulder this one was created as a variant of, if any.</summary>
+    public Guid? VariantOfBoulderId { get; set; }
+
     public List<BoulderHoldInput> ToInputs() => Holds.Select(h => h.ToInput()).ToList();
 }
 

@@ -1,0 +1,223 @@
+@page "/walls/{WallId:guid}/boulders/{BoulderId:guid}/variants"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject IBoulderService BoulderService
+@inject NavigationManager Navigation
+@using Blocwerk.Web.Components.Shared
+
+<PageTitle>Mark Variant - Blocwerk</PageTitle>
+
+<div class="variant-page">
+    <div class="page-header">
+        <a href="@DetailUrl" class="back-link">&larr; Back</a>
+        <h1>Mark Variant</h1>
+        @if (_choices is not null)
+        {
+            <p class="meta">@_choices.BoulderName</p>
+        }
+    </div>
+
+    @if (!_loaded)
+    {
+        <p class="loading">Loading...</p>
+    }
+    else if (_choices is null || !_choices.CanEdit)
+    {
+        <div class="empty-msg"><p>Only the creator, a setter, or a wall admin can change this boulder's variants.</p></div>
+    }
+    else
+    {
+        <fieldset class="variant-modes">
+            <legend>How are they related?</legend>
+            <label class="variant-mode @(_asParent ? "is-on" : "")">
+                <input type="radio" name="variant-mode" checked="@_asParent" @onchange="() => _asParent = true" />
+                <span><strong>Variants of this boulder</strong><small>@VariantsHint</small></span>
+            </label>
+            <label class="variant-mode @(!_asParent ? "is-on" : "")">
+                <input type="radio" name="variant-mode" checked="@(!_asParent)" @onchange="() => _asParent = false" />
+                <span><strong>This boulder is a variant of...</strong><small>The boulder you pick becomes the parent.</small></span>
+            </label>
+        </fieldset>
+
+        <input type="search" class="form-input variant-search" placeholder="Search boulders" aria-label="Search boulders"
+               @bind="_search" @bind:event="oninput" />
+
+        @if (Visible.Count == 0)
+        {
+            <p class="hint">No boulders to choose from.</p>
+        }
+
+        <ul class="variant-rows">
+            @if (!_asParent && _choices.ParentId is not null)
+            {
+                <li class="variant-row">
+                    <label class="variant-pick">
+                        <input type="radio" name="variant-parent" checked="@(_parentChoice is null)" @onchange="() => _parentChoice = null" />
+                        <span class="variant-text"><span class="variant-name">Not a variant</span></span>
+                    </label>
+                </li>
+            }
+            @foreach (var choice in Visible)
+            {
+                var id = choice.Id;
+                <li class="variant-row" @key="id">
+                    <label class="variant-pick">
+                        @if (_asParent)
+                        {
+                            <input type="checkbox" checked="@_checked.Contains(id)" @onchange="e => Toggle(id, e.Value is true)" />
+                        }
+                        else
+                        {
+                            <input type="radio" name="variant-parent" checked="@(_parentChoice == id)" @onchange="() => _parentChoice = id" />
+                        }
+                        <span class="variant-text">
+                            <span class="variant-name">@choice.Name</span>
+                            @if (RowNote(choice) is { } note)
+                            {
+                                <small>@note</small>
+                            }
+                        </span>
+                        @if (!string.IsNullOrEmpty(choice.Grade))
+                        {
+                            <span class="grade-badge">@choice.Grade</span>
+                        }
+                    </label>
+                    <button type="button" class="btn-secondary variant-peek-btn" aria-label="Peek at @choice.Name" @onclick="() => _peekId = id">Peek</button>
+                </li>
+            }
+        </ul>
+
+        @if (_asParent && NotMovable > 0)
+        {
+            <p class="hint">@NotMovable more can't be listed here: you may only mark boulders you may edit.</p>
+        }
+
+        @if (_asParent && _choices.UnlistedVariants > 0)
+        {
+            <p class="hint">@_choices.UnlistedVariants more (drafts, archived or historic) are not listed and stay linked.</p>
+        }
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div class="error-msg">@_error</div>
+        }
+
+        <div class="variant-submit">
+            <a href="@DetailUrl" class="btn-secondary">Cancel</a>
+            <button type="button" class="btn-submit" disabled="@(_saving || !CanConfirm)" @onclick="ConfirmAsync">@ConfirmLabel</button>
+        </div>
+    }
+</div>
+
+@if (_peekId is { } peek)
+{
+    <BoulderVariantPeek WallId="WallId" BoulderId="peek" OnClose="() => _peekId = null" />
+}
+
+@code {
+    private readonly HashSet<Guid> _checked = [];
+    private BoulderVariantChoices? _choices;
+    private bool _loaded;
+    private bool _asParent = true;
+    private Guid? _parentChoice;
+    private Guid? _peekId;
+    private string _search = string.Empty;
+    private string? _error;
+    private bool _saving;
+    private (Guid, Guid)? _route;
+
+    [Parameter] public Guid WallId { get; set; }
+
+    [Parameter] public Guid BoulderId { get; set; }
+
+    private string DetailUrl => $"/walls/{WallId}/boulders/{BoulderId}";
+
+    // A boulder's own variants cannot be its parent, so the second mode does not offer them.
+    private List<BoulderVariantChoice> Visible => (_choices?.Choices ?? [])
+        .Where(c => _asParent ? !c.IsSibling && (c.IsVariant || c.CanMove) : !c.IsVariant)
+        .Where(c => string.IsNullOrWhiteSpace(_search) || c.Name.Contains(_search.Trim(), StringComparison.CurrentCultureIgnoreCase))
+        .ToList();
+
+    private int NotMovable => (_choices?.Choices ?? []).Count(c => !c.CanMove && !c.IsVariant && !c.IsSibling);
+
+    private string? ParentName => _choices?.Choices.FirstOrDefault(c => c.IsParent)?.Name;
+
+    private string VariantsHint => ParentName is { } parent
+        ? $"They join {parent}'s family. Pick {parent} itself to make this boulder the parent."
+        : "This boulder stays or becomes the parent.";
+
+    private bool CanConfirm => _asParent || _parentChoice is not null || _choices?.ParentId is not null;
+
+    private string ConfirmLabel => _saving ? "Saving..." : _asParent ? $"Confirm {_checked.Count} variant{(_checked.Count == 1 ? string.Empty : "s")}" : "Confirm parent";
+
+    /// <inheritdoc />
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_route == (WallId, BoulderId))
+        {
+            return;
+        }
+
+        _route = (WallId, BoulderId);
+        _loaded = false;
+        _checked.Clear();
+        _choices = await BoulderService.GetVariantChoicesAsync(BoulderId);
+        _checked.UnionWith((_choices?.Choices ?? []).Where(c => c.IsVariant).Select(c => c.Id));
+        _parentChoice = _choices?.ParentId;
+        _asParent = _choices?.ParentId is null;
+        _loaded = true;
+    }
+
+    private void Toggle(Guid id, bool on)
+    {
+        if (on)
+        {
+            _checked.Add(id);
+        }
+        else
+        {
+            _checked.Remove(id);
+        }
+    }
+
+    private string? RowNote(BoulderVariantChoice choice)
+    {
+        if (choice.IsParent)
+        {
+            return _asParent ? "Parent of this boulder. Picking it makes this boulder the parent" : "Parent of this boulder";
+        }
+
+        if (choice.ParentName is { } parent)
+        {
+            return _asParent ? $"Moves here from {parent}" : $"Variant of {parent}, so {parent} becomes the parent";
+        }
+
+        return choice.VariantCount > 0 && _asParent
+            ? $"Its {choice.VariantCount} variant{(choice.VariantCount == 1 ? string.Empty : "s")} move here too"
+            : null;
+    }
+
+    private async Task ConfirmAsync()
+    {
+        _saving = true;
+        _error = null;
+        try
+        {
+            if (_asParent)
+            {
+                await BoulderService.SetVariantsAsync(BoulderId, _checked.ToList());
+            }
+            else
+            {
+                await BoulderService.SetParentAsync(BoulderId, _parentChoice);
+            }
+
+            Navigation.NavigateTo(DetailUrl);
+        }
+        catch (UserFacingException ex)
+        {
+            _error = ex.Message;
+            _saving = false;
+        }
+    }
+}

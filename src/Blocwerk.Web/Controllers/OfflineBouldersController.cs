@@ -38,6 +38,7 @@ public sealed class OfflineBouldersController : ControllerBase
         [BoulderService.SentByOthersRevisionMessage] = StatusCodes.Status403Forbidden,
         ["Select at least one hold"] = StatusCodes.Status400BadRequest,
         [BoulderService.UnconfirmedHoldMessage] = StatusCodes.Status400BadRequest,
+        [BoulderService.VariantOtherWallMessage] = StatusCodes.Status400BadRequest,
     };
 
     private readonly IBoulderService boulderService;
@@ -82,7 +83,8 @@ public sealed class OfflineBouldersController : ControllerBase
                 request.NoMatch,
                 request.Setters,
                 request.CustomRule,
-                (BoulderStyle)request.Styles);
+                (BoulderStyle)request.Styles,
+                request.VariantOfBoulderId);
 
             return Canonical(boulder);
         });

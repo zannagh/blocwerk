@@ -36,7 +36,8 @@
             }
         }
         const h = banner ? Math.ceil(banner.getBoundingClientRect().height) + GAP_PX : 0;
-        if (h === last) {
+        // An enhanced navigation syncs <html> to the new page and drops the inline value: set it again.
+        if (h === last && document.documentElement.style.getPropertyValue('--bw-banner-h') !== '') {
             return;
         }
         last = h;

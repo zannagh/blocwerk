@@ -31,11 +31,11 @@ public partial class WallDetail
     /// The boulders the list shows as its rows (archived ones sit apart): the ONE query both the list and the style
     /// cards' counts start from, so a rule about what counts as a row (variant families, say) is applied here only.
     /// </summary>
-    private IEnumerable<BoulderListItem> VisibleItems() => _items.Where(i => !i.Boulder.IsArchived);
+    private IEnumerable<BoulderListItem> VisibleItems() => _items.Where(i => !i.Boulder.IsArchived && FamilyRows.ContainsKey(i.Boulder.Id));
 
     private int StyleTotal => VisibleItems().Count();
 
-    // Boulders per style over what the list shows (archived ones apart), not over the filtered rows: a card's number is the wall's.
+    // Families per style over what the list shows (archived ones apart), not over the filtered rows: a card's number is the wall's.
     private IReadOnlyDictionary<BoulderStyle, int> StyleCounts
     {
         get
@@ -43,7 +43,7 @@ public partial class WallDetail
             if (styleCountsCache is null || !ReferenceEquals(styleCountsItemsRef, _items))
             {
                 styleCountsItemsRef = _items;
-                styleCountsCache = BoulderStyles.CountBy(VisibleItems().Select(i => i.Boulder.Styles));
+                styleCountsCache = BoulderStyles.CountBy(VisibleItems().Select(i => FamilyOf(i).Styles));
             }
 
             return styleCountsCache;
