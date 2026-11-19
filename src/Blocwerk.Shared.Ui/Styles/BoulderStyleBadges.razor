@@ -5,7 +5,7 @@
     <ul class="style-badges" aria-label="Styles">
         @foreach (var style in BoulderStyles.Split(Styles))
         {
-            <li class="style-badge" data-style="@BoulderStyles.Slug(style)">
+            <li class="style-badge" data-style="@BoulderStyles.Slug(style)" title="@BoulderStyles.Description(style)">
                 <BoulderStyleIcon Style="style" Size="13" /><span>@BoulderStyles.Label(style)</span>
             </li>
         }

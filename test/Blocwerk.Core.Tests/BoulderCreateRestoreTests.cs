@@ -13,8 +13,8 @@ namespace Blocwerk.Core.Tests;
 /// </summary>
 public class BoulderCreateRestoreTests
 {
-    // Fields only Revise has: a new boulder's hold type comes from its holds until somebody sets one on the boulder.
-    private static readonly string[] ReviseOnly = [nameof(BoulderFormSnapshot.HoldType)];
+    // Fields only Revise has: a new boulder's hold types come from its holds until somebody sets them on the boulder.
+    private static readonly string[] ReviseOnly = [nameof(BoulderFormSnapshot.HoldType), nameof(BoulderFormSnapshot.HoldTypes)];
 
     [Fact]
     public void ApplySnapshot_RestoresEveryFieldOfTheSnapshot()

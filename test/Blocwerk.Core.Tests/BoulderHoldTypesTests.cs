@@ -6,21 +6,35 @@ using Blocwerk.Core.Helpers;
 
 namespace Blocwerk.Core.Tests;
 
-/// <summary>A boulder's dominant hold type: set on it, or inferred from its gripped holds; and counting families per type.</summary>
+/// <summary>A boulder's hold types: set on it (any combination), or one grip inferred from its gripped holds; and counting families per type.</summary>
 public sealed class BoulderHoldTypesTests
 {
-    private const HoldHandType Jug = HoldHandType.Jug, Crimp = HoldHandType.Crimp, Sloper = HoldHandType.Sloper;
+    private const HoldHandType Jug = HoldHandType.Jug, Crimp = HoldHandType.Crimp;
+    private const BoulderHoldType BJug = BoulderHoldType.Jug, BCrimp = BoulderHoldType.Crimp, BSloper = BoulderHoldType.Sloper;
+    private const BoulderHoldType Heel = BoulderHoldType.HeelHook, Toe = BoulderHoldType.ToeHook;
 
     [Fact]
-    public void TheCardsAreTheFiveTypes_InOrder() =>
-        Assert.Equal(["Jug", "Crimp", "Pinch", "Sloper", "Pocket"], BoulderHoldTypes.Definitions.Select(d => d.Label));
+    public void TheCardsAreTheFiveGripsAndTheTwoHooks_InOrder() =>
+        Assert.Equal(["Jug", "Crimp", "Pinch", "Sloper", "Pocket", "Heel hook", "Toe hook"], BoulderHoldTypes.Definitions.Select(d => d.Label));
+
+    [Fact]
+    public void EveryType_HasALabelAnIconAndADescription_AndItsOwnBit()
+    {
+        Assert.All(BoulderHoldTypes.Definitions, d => Assert.False(string.IsNullOrEmpty(d.Icon) || string.IsNullOrEmpty(d.Description)));
+        Assert.Equal(127, (int)BoulderHoldTypes.Mask);
+        Assert.Equal(31, (int)BoulderHoldTypes.Grips);
+    }
+
+    [Fact]
+    public void TheHooksSlugsAreHyphenated() =>
+        Assert.Equal(["heel-hook", "toe-hook"], new[] { Heel, Toe }.Select(BoulderHoldTypes.Slug));
 
     [Fact]
     public void TheMostCommonTypeWins_WhenAtLeastHalfTheHoldsHaveOne() =>
-        Assert.Equal(Crimp, BoulderHoldTypes.Infer([Crimp, Crimp, Jug, null, null]));
+        Assert.Equal(BCrimp, BoulderHoldTypes.Infer([Crimp, Crimp, Jug, null, null]));
 
     [Fact]
-    public void ExactlyHalfTyped_IsEnough() => Assert.Equal(Crimp, BoulderHoldTypes.Infer([Crimp, null]));
+    public void ExactlyHalfTyped_IsEnough() => Assert.Equal(BCrimp, BoulderHoldTypes.Infer([Crimp, null]));
 
     [Fact]
     public void FewerThanHalfTyped_TellsNothing() => Assert.Null(BoulderHoldTypes.Infer([Crimp, Crimp, null, null, null]));
@@ -32,14 +46,22 @@ public sealed class BoulderHoldTypesTests
     public void NoHolds_TellNothing() => Assert.Null(BoulderHoldTypes.Infer([]));
 
     [Fact]
-    public void ATypeSetOnTheBoulder_WinsOverItsHolds() =>
-        Assert.Equal(new EffectiveHoldType(Sloper, false), BoulderHoldTypes.Effective(Sloper, [Crimp, Crimp]));
+    public void EveryHandTypeMapsToItsGrip() =>
+        Assert.All(Enum.GetValues<HoldHandType>(), h => Assert.Equal(h.ToString(), BoulderHoldTypes.FromHand(h).ToString()));
 
     [Fact]
-    public void Cleared_TheHoldsDecideAgain()
+    public void TypesSetOnTheBoulder_WinOverItsHolds() =>
+        Assert.Equal(new EffectiveHoldType(BSloper | Heel, false), BoulderHoldTypes.Effective(BSloper | Heel, [Crimp, Crimp]));
+
+    [Fact]
+    public void OnlyAHookSet_StillWinsOverTheHolds() =>
+        Assert.Equal(new EffectiveHoldType(Toe, false), BoulderHoldTypes.Effective(Toe, [Crimp, Crimp]));
+
+    [Fact]
+    public void NoneSet_TheHoldsDecide()
     {
-        Assert.Equal(new EffectiveHoldType(Crimp, true), BoulderHoldTypes.Effective(null, [Crimp, Crimp]));
-        Assert.Null(BoulderHoldTypes.Effective(null, [Crimp, null, null]));
+        Assert.Equal(new EffectiveHoldType(BCrimp, true), BoulderHoldTypes.Effective(BoulderHoldType.None, [Crimp, Crimp]));
+        Assert.Null(BoulderHoldTypes.Effective(BoulderHoldType.None, [Crimp, null, null]));
     }
 
     [Theory]
@@ -51,34 +73,48 @@ public sealed class BoulderHoldTypesTests
         Assert.Equal(expected, BoulderHoldTypes.IsGripped(category, usage));
 
     [Theory]
-    [InlineData("crimp", HoldHandType.Crimp)]
-    [InlineData(" Pocket ", HoldHandType.Pocket)]
+    [InlineData("crimp", BoulderHoldType.Crimp)]
+    [InlineData(" Pocket ", BoulderHoldType.Pocket)]
+    [InlineData("heel-hook", BoulderHoldType.HeelHook)]
+    [InlineData("Heel hook", BoulderHoldType.HeelHook)]
+    [InlineData("ToeHook", BoulderHoldType.ToeHook)]
     [InlineData("nonsense", null)]
+    [InlineData("none", null)]
     [InlineData(null, null)]
-    public void ASlugNamesItsType(string? slug, HoldHandType? expected) => Assert.Equal(expected, BoulderHoldTypes.FromSlug(slug));
+    public void ASlugNamesItsType(string? slug, BoulderHoldType? expected) => Assert.Equal(expected, BoulderHoldTypes.FromSlug(slug));
+
+    [Fact]
+    public void NamesRoundTrip_AndAnUnknownNameIsIgnored()
+    {
+        var set = BCrimp | Heel | Toe;
+        Assert.Equal(["Crimp", "Heel hook", "Toe hook"], BoulderHoldTypes.ToNames(set));
+        Assert.Equal(set, BoulderHoldTypes.FromNames(BoulderHoldTypes.ToNames(set)));
+        Assert.Equal(BJug, BoulderHoldTypes.FromNames(["Jug", "Bogus", null]));
+    }
 
     [Fact]
     public void AFamilyCountsOnceUnderEachOfItsTypes()
     {
-        var counts = BoulderHoldTypes.CountBy([[Crimp, Jug], [Crimp, Crimp], [], null]);
+        var counts = BoulderHoldTypes.CountBy([BCrimp | BJug, BCrimp | Heel, BoulderHoldType.None]);
 
-        Assert.Equal(2, counts[Crimp]);
-        Assert.Equal(1, counts[Jug]);
-        Assert.Equal(0, counts[Sloper]);
+        Assert.Equal(2, counts[BCrimp]);
+        Assert.Equal(1, counts[BJug]);
+        Assert.Equal(1, counts[Heel]);
+        Assert.Equal(0, counts[BSloper]);
     }
 
     [Fact]
-    public void APublishedVariantsType_FilesTheFamily_ButADraftOrHistoricOneDoesNot()
+    public void APublishedVariantsTypes_FileTheFamily_ButADraftOrHistoricOneDoesNot()
     {
         var parent = Guid.NewGuid();
         var rows = BoulderFamilies.Rows(
         [
-            new(parent, null, "Parent", "6A", false, false, HoldType: Jug),
-            new(Guid.NewGuid(), parent, "Variant", "6B", false, false, HoldType: Crimp),
-            new(Guid.NewGuid(), parent, "Draft", "6C", true, false, HoldType: Sloper),
-            new(Guid.NewGuid(), parent, "Old", "6C", false, false, IsHistoric: true, HoldType: HoldHandType.Pocket),
+            new(parent, null, "Parent", "6A", false, false, HoldTypes: BJug),
+            new(Guid.NewGuid(), parent, "Variant", "6B", false, false, HoldTypes: BCrimp | Heel),
+            new(Guid.NewGuid(), parent, "Draft", "6C", true, false, HoldTypes: BSloper),
+            new(Guid.NewGuid(), parent, "Old", "6C", false, false, IsHistoric: true, HoldTypes: Toe),
         ]);
 
-        Assert.Equal([Jug, Crimp], rows[parent].HoldTypes);
+        Assert.Equal(BJug | BCrimp | Heel, rows[parent].HoldTypes);
     }
 }

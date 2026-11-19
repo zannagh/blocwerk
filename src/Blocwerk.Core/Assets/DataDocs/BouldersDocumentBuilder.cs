@@ -3,6 +3,7 @@
 
 using Blocwerk.Contracts.Documents;
 using Blocwerk.Core.Data;
+using Blocwerk.Core.Enums;
 using Blocwerk.Core.Helpers;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
@@ -37,7 +38,7 @@ internal static class BouldersDocumentBuilder
             .Select(b => new BoulderRow(
                 b.Id, b.Name, b.Grade, b.Generation, b.IsDraft, b.IsHistoric, b.IsArchived, b.CreatedAt, b.PublishedAt,
                 b.NoMatch, b.KickboardFootholdsOn, b.HandsFollowFeet, b.FootColorOnly, b.CustomRule, b.CreatedByUserId,
-                b.CreatedBy.DisplayName, b.CreatedBy.CustomDisplayName, b.Styles, b.ParentBoulderId, b.DominantHoldType))
+                b.CreatedBy.DisplayName, b.CreatedBy.CustomDisplayName, b.Styles, b.ParentBoulderId, b.HoldTypes))
             .ToListAsync(ct);
         var ids = boulders.Select(b => b.Id).ToList();
         var holds = (await db.BoulderHolds.AsNoTracking()
@@ -77,5 +78,6 @@ internal static class BouldersDocumentBuilder
         b.CustomRule,
         BoulderStyles.ToNames(b.Styles),
         b.ParentBoulderId,
-        b.DominantHoldType is { } type ? BoulderHoldTypes.Label(type) : null);
+        BoulderHoldTypes.FirstGrip(b.HoldTypes) is var grip && grip != BoulderHoldType.None ? BoulderHoldTypes.Label(grip) : null,
+        BoulderHoldTypes.ToNames(b.HoldTypes) is { Count: > 0 } names ? names : null);
 }

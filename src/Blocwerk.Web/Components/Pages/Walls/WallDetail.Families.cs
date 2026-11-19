@@ -2,6 +2,7 @@
 // See License in the project root for license information.
 
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Enums;
 using Blocwerk.Core.Helpers;
 using Blocwerk.Core.Services;
 
@@ -34,7 +35,7 @@ public partial class WallDetail
     }
 
     private BoulderFamilyMember FamilyMember(Boulder b) =>
-        new(b.Id, b.ParentBoulderId, b.Name, b.Grade, b.IsDraft, b.IsArchived, b.Styles, b.IsHistoric, EffectiveHoldTypeOf(b)?.Type);
+        new(b.Id, b.ParentBoulderId, b.Name, b.Grade, b.IsDraft, b.IsArchived, b.Styles, b.IsHistoric, EffectiveHoldTypeOf(b)?.Types ?? BoulderHoldType.None);
 
     private BoulderFamilyRow FamilyOf(BoulderListItem item) => FamilyRows.GetValueOrDefault(item.Boulder.Id, NoFamily);
 

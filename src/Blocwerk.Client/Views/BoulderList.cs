@@ -3,6 +3,7 @@
 
 using Blocwerk.Client.Store;
 using Blocwerk.Contracts.Documents;
+using Blocwerk.Core.Enums;
 using Blocwerk.Core.Helpers;
 
 namespace Blocwerk.Client.Views;
@@ -85,7 +86,7 @@ public static class BoulderList
         var byId = DocumentHoldTypes.Index(holds);
         return BoulderFamilies.Rows(boulders.Select(b => new BoulderFamilyMember(
             b.Id, b.ParentBoulderId, b.Name, b.Grade, b.Draft == true, b.IsArchived, BoulderStyles.FromNames(b.Styles), b.IsHistoric,
-            DocumentHoldTypes.Of(b, byId)?.Type)));
+            DocumentHoldTypes.Of(b, byId)?.Types ?? BoulderHoldType.None)));
     }
 
     private static IEnumerable<BouldersDocumentBoulder> Filter(
@@ -98,7 +99,7 @@ public static class BoulderList
 
         if (filter.HoldType is { } hold)
         {
-            src = src.Where(b => families[b.Id].HoldTypes?.Contains(hold) == true);
+            src = src.Where(b => families[b.Id].HoldTypes.HasFlag(hold));
         }
 
         if (filter.Mine is BoulderMine.Favorites)

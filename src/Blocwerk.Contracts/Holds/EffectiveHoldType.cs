@@ -5,7 +5,7 @@ using Blocwerk.Core.Enums;
 
 namespace Blocwerk.Core.Helpers;
 
-/// <summary>A boulder's dominant hold type as the browser files it.</summary>
-/// <param name="Type">The hold type.</param>
-/// <param name="Inferred">True when it comes from the boulder's holds, false when somebody set it on the boulder.</param>
-public readonly record struct EffectiveHoldType(HoldHandType Type, bool Inferred);
+/// <summary>A boulder's prominent hold types as the browser files it.</summary>
+/// <param name="Types">The types, never <see cref="BoulderHoldType.None"/>.</param>
+/// <param name="Inferred">True when they come from the boulder's holds (a single type), false when somebody set them on the boulder.</param>
+public readonly record struct EffectiveHoldType(BoulderHoldType Types, bool Inferred);

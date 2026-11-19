@@ -24,8 +24,10 @@ namespace Blocwerk.Contracts.Documents;
 /// <param name="Styles">The style tags (<c>Tension</c>, <c>Power</c>...) it carries; left out when it has none. Appended
 /// last and optional, so an older client reads the document unchanged and a document without it means "no tags".</param>
 /// <param name="ParentBoulderId">The boulder this one is a variant of, if any; left out otherwise, so a client that does not know it reads the document unchanged.</param>
-/// <param name="HoldType">The dominant hold type set on the boulder, by name (<c>Crimp</c>...); left out when none is set and
-/// its holds decide. Appended last and optional, like <paramref name="Styles"/>.</param>
+/// <param name="HoldType">For a 0.7.0 client, which knows one type: the first grip among <paramref name="HoldTypes"/>, by name
+/// (<c>Crimp</c>...); left out when the boulder has no grip set. A client that reads <paramref name="HoldTypes"/> ignores it.</param>
+/// <param name="HoldTypes">The hold types set on the boulder, by name (<c>Crimp</c>, <c>Heel hook</c>...); left out when none is set
+/// and its holds decide. Appended last and optional, like <paramref name="Styles"/>.</param>
 public sealed record BouldersDocumentBoulder(
     Guid Id,
     string Name,
@@ -46,4 +48,5 @@ public sealed record BouldersDocumentBoulder(
     string? CustomRule = null,
     IReadOnlyList<string>? Styles = null,
     Guid? ParentBoulderId = null,
-    string? HoldType = null);
+    string? HoldType = null,
+    IReadOnlyList<string>? HoldTypes = null);

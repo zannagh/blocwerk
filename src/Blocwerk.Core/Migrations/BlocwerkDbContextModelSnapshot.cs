@@ -301,6 +301,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<bool>("HandsFollowFeet")
                         .HasColumnType("boolean");
 
+                    b.Property<int>("HoldTypes")
+                        .HasColumnType("integer");
+
                     b.Property<bool>("IsArchived")
                         .HasColumnType("boolean");
 

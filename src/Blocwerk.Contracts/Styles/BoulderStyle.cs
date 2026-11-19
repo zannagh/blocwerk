@@ -33,4 +33,10 @@ public enum BoulderStyle
 
     /// <summary>Warm-up: easy, flowing climbing to get going.</summary>
     Warmup = 64,
+
+    /// <summary>Reachy: long moves that need a long wingspan.</summary>
+    Reachy = 128,
+
+    /// <summary>Flexy: high steps and wide positions that need good flexibility.</summary>
+    Flexy = 256,
 }

@@ -7,7 +7,7 @@ using Blocwerk.Core.Helpers;
 
 namespace Blocwerk.Web.Components.Pages.Walls;
 
-/// <summary>A boulder's effective hold type on the list: the one set on it, else the one its gripped holds show.</summary>
+/// <summary>A boulder's effective hold types on the list: the ones set on it, else the one its gripped holds show.</summary>
 public partial class WallDetail
 {
     private Dictionary<Guid, Hold> holdsById = [];
@@ -30,6 +30,6 @@ public partial class WallDetail
             }
         }
 
-        return BoulderHoldTypes.Effective(boulder.DominantHoldType, gripped);
+        return BoulderHoldTypes.Effective(boulder.HoldTypes, gripped);
     }
 }

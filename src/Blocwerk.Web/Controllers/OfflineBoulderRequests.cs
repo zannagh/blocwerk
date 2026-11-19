@@ -109,8 +109,14 @@ public sealed class ReviseBoulderRequest
     /// <summary>The style tags as <c>BoulderStyle</c> flags; absent leaves the boulder's tags as they are.</summary>
     public int? Styles { get; set; }
 
-    /// <summary>The dominant hold type by name; absent leaves it as stored, "" clears it (<c>BoulderHoldTypeChange.FromForm</c>).</summary>
+    /// <summary>
+    /// The single hold type a 0.7.0 client sends, by name; read only when <see cref="HoldTypes"/> is absent. It speaks for the
+    /// grips alone: a name makes it the only grip, "" clears the grips, the hooks stay (<c>BoulderHoldTypeChange.FromLegacy</c>).
+    /// </summary>
     public string? HoldType { get; set; }
+
+    /// <summary>The hold types by name; absent leaves them as stored, an empty list clears them (<c>BoulderHoldTypeChange.FromNames</c>).</summary>
+    public List<string?>? HoldTypes { get; set; }
 
     /// <summary>The boulder's holds; null (a metadata-only save) leaves the stored holds and the review state alone.</summary>
     public List<BoulderHoldDto>? Holds { get; set; } = [];

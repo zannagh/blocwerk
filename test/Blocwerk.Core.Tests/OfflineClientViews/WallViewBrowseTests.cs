@@ -15,13 +15,14 @@ public sealed class WallViewBrowseTests
     // The second boulder, the viewer's one project (Crimp Line is the favourite).
     private static readonly Guid Second = Guid.Parse("5ec0bd00-0000-4000-8000-000000000002");
 
-    private static FakeStoreSource Device(string[] first, string[] second, string? secondHoldType = null, string? startHandType = null)
+    private static FakeStoreSource Device(
+        string[] first, string[] second, string? secondHoldType = null, string? startHandType = null, string[]? secondHoldTypes = null)
     {
         var source = new FakeStoreSource();
         BouldersDocumentBoulder[] boulders =
         [
             CrimpLine() with { Styles = first },
-            CrimpLine() with { Id = Second, Name = "Second Line", Styles = second, HoldType = secondHoldType },
+            CrimpLine() with { Id = Second, Name = "Second Line", Styles = second, HoldType = secondHoldType, HoldTypes = secondHoldTypes },
             SlabArchived(),
         ];
         var holds = HoldsDoc();
@@ -175,6 +176,32 @@ public sealed class WallViewBrowseTests
         Assert.DoesNotContain("Crimp Line", html, StringComparison.Ordinal);
         Assert.Contains("?hold=sloper\"", html, StringComparison.Ordinal);
         Assert.Contains("wall-photo-container", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SeveralTypesSetOnABoulder_FileItUnderEach_AHookIncluded_AndTheHoldsNoLonger()
+    {
+        var device = Device([], [], startHandType: "Crimp", secondHoldTypes: ["Sloper", "Heel hook"]);
+        await using var heel = await ViewHarness.StartAsync(device, $"walls/{Wall}?hold=heel-hook");
+        var html = await RenderAsync(heel);
+        Assert.Contains("Second Line", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("Crimp Line", html, StringComparison.Ordinal);
+
+        await using var crimp = await ViewHarness.StartAsync(device, $"walls/{Wall}?hold=crimp");
+        html = await RenderAsync(crimp);
+        Assert.Contains("Crimp Line", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("Second Line", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TheHoldTypesCardPage_HasSevenCards_AndCountsEach()
+    {
+        await using var view = await ViewHarness.StartAsync(Device([], [], secondHoldTypes: ["Sloper", "Toe hook"]), $"walls/{Wall}?browse=holds");
+        var html = await RenderAsync(view);
+
+        Assert.Equal(7, html.Split(" data-card=\"", StringSplitOptions.None).Length - 1);
+        Assert.Contains("data-card=\"toe-hook\"", html, StringComparison.Ordinal);
+        Assert.Contains("?hold=toe-hook", html, StringComparison.Ordinal);
     }
 
     [Fact]

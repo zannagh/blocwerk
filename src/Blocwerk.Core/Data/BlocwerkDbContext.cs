@@ -737,6 +737,10 @@ public partial class BlocwerkDbContext : DbContext
     {
         modelBuilder.Entity<Boulder>(entity =>
         {
+            // The single hold type of 0.7.x, kept as a shadow column for one release so a rollback to 0.7.1 still reads it;
+            // HoldTypes replaces it (migration BoulderHoldTypesSet). A later release drops it.
+            entity.Property<int?>("DominantHoldType");
+
             entity.HasOne(b => b.Wall)
                 .WithMany(w => w.Boulders)
                 .HasForeignKey(b => b.WallId)

@@ -80,7 +80,7 @@ public partial class WallDetail
     private bool MatchesBrowse(BoulderListItem item) => Browsing switch
     {
         { Style: { } style } => FamilyOf(item).Styles.HasFlag(style),
-        { HoldType: { } hold } => FamilyOf(item).HoldTypes?.Contains(hold) == true,
+        { HoldType: { } hold } => FamilyOf(item).HoldTypes.HasFlag(hold),
         { Mine: BoulderMine.Favorites } => AnyMember(item, m => m.IsFavorite),
         { Mine: BoulderMine.Projects } => AnyMember(item, m => m.IsProject),
         _ => true,

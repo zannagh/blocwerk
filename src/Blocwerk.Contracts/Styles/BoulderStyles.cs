@@ -17,13 +17,21 @@ public static class BoulderStyles
     /// </summary>
     public static IReadOnlyList<BrowseDefinition<BoulderStyle>> Definitions { get; } =
     [
-        new(BoulderStyle.Warmup, "Warmup", "<path d=\"M12 22a6 6 0 0 0 6-6c0-4-3-6-4-10-2 2-3 4-3 6-1-1-2-2-2-3-2 2-3 4-3 7a6 6 0 0 0 6 6z\"/>"),
-        new(BoulderStyle.Tension, "Tension", "<path d=\"M3 12h18\"/><path d=\"M7 8l-4 4 4 4\"/><path d=\"M17 8l4 4-4 4\"/>"),
-        new(BoulderStyle.Dynamic, "Dynamic", "<path d=\"M4 19c2-8 7-12 16-13\"/><path d=\"M15 3l5 3-3 5\"/>"),
-        new(BoulderStyle.Funky, "Funky", "<path d=\"M2 13c2.5-7 5-7 7.5 0s5 7 7.5 0c1.2-3 2.4-4 5-3\"/>"),
-        new(BoulderStyle.Endurance, "Endurance", "<rect x=\"2\" y=\"8\" width=\"17\" height=\"8\" rx=\"2\"/><path d=\"M22 11v2\"/><path d=\"M6 12h6\"/>"),
-        new(BoulderStyle.Power, "Power", "<path d=\"M13 2L4 14h7l-1 8 9-12h-7z\"/>"),
-        new(BoulderStyle.Technical, "Technical", "<circle cx=\"12\" cy=\"12\" r=\"3\"/><path d=\"M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1\"/>"),
+        new(BoulderStyle.Warmup, "Warmup", "<path d=\"M12 22a6 6 0 0 0 6-6c0-4-3-6-4-10-2 2-3 4-3 6-1-1-2-2-2-3-2 2-3 4-3 7a6 6 0 0 0 6 6z\"/>",
+            "Easy, flowing climbing to get going"),
+        new(BoulderStyle.Tension, "Tension", "<path d=\"M3 12h18\"/><path d=\"M7 8l-4 4 4 4\"/><path d=\"M17 8l4 4-4 4\"/>",
+            "Staying tight between holds: compression and lock-offs"),
+        new(BoulderStyle.Dynamic, "Dynamic", "<path d=\"M4 19c2-8 7-12 16-13\"/><path d=\"M15 3l5 3-3 5\"/>", "Dynos and swings"),
+        new(BoulderStyle.Funky, "Funky", "<path d=\"M2 13c2.5-7 5-7 7.5 0s5 7 7.5 0c1.2-3 2.4-4 5-3\"/>", "Unusual, coordination-heavy movement"),
+        new(BoulderStyle.Endurance, "Endurance", "<rect x=\"2\" y=\"8\" width=\"17\" height=\"8\" rx=\"2\"/><path d=\"M22 11v2\"/><path d=\"M6 12h6\"/>",
+            "Long or pumpy"),
+        new(BoulderStyle.Power, "Power", "<path d=\"M13 2L4 14h7l-1 8 9-12h-7z\"/>", "Few, hard moves"),
+        new(BoulderStyle.Technical, "Technical", "<circle cx=\"12\" cy=\"12\" r=\"3\"/><path d=\"M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1\"/>",
+            "Footwork and precision"),
+        new(BoulderStyle.Reachy, "Reachy", "<circle cx=\"12\" cy=\"5\" r=\"2\"/><path d=\"M3 10h18M5.5 7.5L3 10l2.5 2.5M18.5 7.5L21 10l-2.5 2.5\"/><path d=\"M12 10v5l-3 6M12 15l3 6\"/>",
+            "Long moves that need a long wingspan"),
+        new(BoulderStyle.Flexy, "Flexy", "<circle cx=\"12\" cy=\"5\" r=\"2\"/><path d=\"M12 7v6\"/><path d=\"M12 9L8 5M12 9l4-4\"/><path d=\"M2 19l10-6 10 6\"/>",
+            "High steps and wide positions that need good flexibility"),
     ];
 
     /// <summary>Gets the styles in the order the cards and pickers show them.</summary>
@@ -41,6 +49,11 @@ public static class BoulderStyles
     /// <param name="style">A single style.</param>
     /// <returns>The SVG content.</returns>
     public static string Icon(BoulderStyle style) => Definitions.FirstOrDefault(d => d.Value == style)?.Icon ?? string.Empty;
+
+    /// <summary>What one style means, for a tooltip.</summary>
+    /// <param name="style">A single style.</param>
+    /// <returns>The description; empty for anything but a single style.</returns>
+    public static string Description(BoulderStyle style) => Definitions.FirstOrDefault(d => d.Value == style)?.Description ?? string.Empty;
 
     /// <summary>The URL value of one style (lower case, the label).</summary>
     /// <param name="style">A single style.</param>

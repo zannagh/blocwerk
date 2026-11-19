@@ -16,6 +16,7 @@ public sealed class BoulderBrowseTests
     [InlineData(null, "all", null, BoulderBrowseLevel.List)]
     [InlineData(null, "power", null, BoulderBrowseLevel.List)]
     [InlineData(null, null, "crimp", BoulderBrowseLevel.List)]
+    [InlineData(null, null, "heel-hook", BoulderBrowseLevel.List)]
     [InlineData("bogus", "bogus", "bogus", BoulderBrowseLevel.Landing)]
     public void TheUrlNamesTheLevel(string? browse, string? style, string? hold, BoulderBrowseLevel expected) =>
         Assert.Equal(expected, BoulderBrowse.From(browse, style, hold).Level);
@@ -33,6 +34,7 @@ public sealed class BoulderBrowseTests
     public void AListCarriesItsLevel_IntoTheBoulderLink()
     {
         Assert.Equal("hold=crimp", BoulderBrowse.From(null, null, "Crimp").ListQuery);
+        Assert.Equal("hold=toe-hook", BoulderBrowse.From(null, null, "toe-hook").ListQuery);
         Assert.Equal("style=warmup", BoulderBrowse.From(null, "warmup", null).ListQuery);
         Assert.Equal("style=all", BoulderBrowse.All.ListQuery);
         Assert.Null(BoulderBrowse.Landing.ListQuery);
@@ -41,11 +43,12 @@ public sealed class BoulderBrowseTests
     [Fact]
     public void ALevelsQuery_NamesEveryKey_SoItReplacesThePreviousLevel()
     {
-        var query = new BoulderBrowse(BoulderBrowseLevel.List, HoldType: HoldHandType.Sloper).Query();
+        var query = new BoulderBrowse(BoulderBrowseLevel.List, HoldType: BoulderHoldType.Sloper).Query();
 
         Assert.Equal(new Dictionary<string, object?> { ["browse"] = null, ["style"] = null, ["hold"] = "sloper", ["mine"] = null }, query);
         Assert.Equal("holds", new BoulderBrowse(BoulderBrowseLevel.HoldTypes).Query()["browse"]);
         Assert.Equal("all", BoulderBrowse.All.Query()["style"]);
+        Assert.Equal("heel-hook", new BoulderBrowse(BoulderBrowseLevel.List, HoldType: BoulderHoldType.HeelHook).Query()["hold"]);
     }
 
     [Theory]
@@ -93,5 +96,5 @@ public sealed class BoulderBrowseTests
 
     [Fact]
     public void AHoldTypeInTheUrl_WinsOverMine() =>
-        Assert.Equal(HoldHandType.Crimp, BoulderBrowse.From(null, null, "crimp", "favorites").HoldType);
+        Assert.Equal(BoulderHoldType.Crimp, BoulderBrowse.From(null, null, "crimp", "favorites").HoldType);
 }

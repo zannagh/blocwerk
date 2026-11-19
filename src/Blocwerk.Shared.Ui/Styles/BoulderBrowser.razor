@@ -4,7 +4,7 @@
    signed in, the viewer's own lists) and the two card pages. Plain links, so every choice is a history entry and its
    level is in the URL (BoulderBrowse). A card counts families, as the list shows them; one with none is greyed out and
    not a link. The landing is All across the grid, then two portrait cards, then the own lists, all on one phone screen;
-   a card page is two columns. *@
+   a card page is two columns (seven hold types, nine styles). *@
 @if (Browse.Level != BoulderBrowseLevel.Landing)
 {
     var (label, icon) = BrowseIcons.Describe(Browse);
@@ -18,7 +18,7 @@
         var empty = card.Count == 0 && card.Key != "all";
         var size = card.Shape is BrowseCardShape.Hero or BrowseCardShape.Tall ? 30 : 24;
         <a class="style-card @(card.Shape switch { BrowseCardShape.Hero => "browse-hero", BrowseCardShape.Tall => "browse-tall", BrowseCardShape.Mine => "browse-mine", _ => "" }) @(empty ? "is-empty" : "is-link")"
-           href="@(empty ? null : card.Href)" aria-disabled="@(empty ? "true" : null)" data-card="@card.Key">
+           href="@(empty ? null : card.Href)" aria-disabled="@(empty ? "true" : null)" data-card="@card.Key" title="@card.Tooltip">
             <span class="style-card-icon"><BrowseIcon Markup="@card.Icon" Size="size" /></span>
             <span class="style-card-label">@card.Label</span>
             <span class="style-card-count">@(empty ? "None yet" : card.Count.ToString(System.Globalization.CultureInfo.InvariantCulture))</span>
@@ -57,7 +57,7 @@
         List<BrowseCard> landing =
         [
             new("all", "All boulders", BrowseIcons.All, Rows.Count, HrefFor(BoulderBrowse.All), BrowseCardShape.Hero),
-            new("holds", "By Hold Type", BrowseIcons.HoldTypes, Rows.Count(r => r.HoldTypes is { Count: > 0 }),
+            new("holds", "By Hold Type", BrowseIcons.HoldTypes, Rows.Count(r => r.HoldTypes != BoulderHoldType.None),
                 HrefFor(new BoulderBrowse(BoulderBrowseLevel.HoldTypes)), BrowseCardShape.Tall),
             new("styles", "By Style", BrowseIcons.Styles, Rows.Count(r => r.Styles != BoulderStyle.None),
                 HrefFor(new BoulderBrowse(BoulderBrowseLevel.Styles)), BrowseCardShape.Tall),
@@ -81,7 +81,7 @@
     {
         var counts = BoulderHoldTypes.CountBy(Rows.Select(r => r.HoldTypes));
         return BoulderHoldTypes.Definitions
-            .Select(d => new BrowseCard(d.Slug, d.Label, d.Icon, counts[d.Value], HrefFor(new BoulderBrowse(BoulderBrowseLevel.List, HoldType: d.Value))))
+            .Select(d => new BrowseCard(d.Slug, d.Label, d.Icon, counts[d.Value], HrefFor(new BoulderBrowse(BoulderBrowseLevel.List, HoldType: d.Value)), Description: d.Description))
             .ToList();
     }
 
@@ -89,7 +89,7 @@
     {
         var counts = BoulderStyles.CountBy(Rows.Select(r => r.Styles));
         return BoulderStyles.Definitions
-            .Select(d => new BrowseCard(d.Slug, d.Label, d.Icon, counts[d.Value], HrefFor(new BoulderBrowse(BoulderBrowseLevel.List, d.Value))))
+            .Select(d => new BrowseCard(d.Slug, d.Label, d.Icon, counts[d.Value], HrefFor(new BoulderBrowse(BoulderBrowseLevel.List, d.Value)), Description: d.Description))
             .ToList();
     }
 }
