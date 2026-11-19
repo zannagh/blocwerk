@@ -36,10 +36,26 @@ public sealed class BoulderHoldTypeChangeTests
 
     [Theory]
     [InlineData("Sloper", BoulderHoldType.Sloper | BoulderHoldType.HeelHook)]
-    [InlineData("crimp", BoulderHoldType.Crimp | BoulderHoldType.HeelHook)]
+    [InlineData("pinch", BoulderHoldType.Pinch | BoulderHoldType.HeelHook)]
     [InlineData("", BoulderHoldType.HeelHook)]
     public void TheOldSingleField_ReplacesTheGrips_AndKeepsTheHooks(string value, BoulderHoldType expected) =>
         Assert.Equal(expected, BoulderHoldTypeChange.FromRequest(null, value)!.Value.ApplyTo(Stored));
+
+    [Fact]
+    public void AStale070Replay_OfTheGripItWasShown_ChangesNothing()
+    {
+        // A 0.7.0 page showed the set's first grip (Crimp here) and sends it back on every save, changed or not.
+        Assert.Equal(Stored, BoulderHoldTypeChange.FromRequest(null, "Crimp")!.Value.ApplyTo(Stored));
+        Assert.Equal(
+            BoulderHoldType.Crimp | BoulderHoldType.Pinch,
+            BoulderHoldTypeChange.FromRequest(null, "crimp")!.Value.ApplyTo(BoulderHoldType.Crimp | BoulderHoldType.Pinch));
+    }
+
+    [Theory]
+    [InlineData(BoulderHoldType.None)]
+    [InlineData(BoulderHoldType.HeelHook | BoulderHoldType.ToeHook)]
+    public void AStale070Replay_OfNoType_ChangesNothing_WhenTheSetHasNoGrip(BoulderHoldType current) =>
+        Assert.Equal(current, BoulderHoldTypeChange.FromRequest(null, string.Empty)!.Value.ApplyTo(current));
 
     [Theory]
     [InlineData("bogus")]

@@ -80,6 +80,12 @@ public static class BoulderHoldTypes
         _ => BoulderHoldType.None,
     };
 
+    /// <summary>The first grip of a set in display order: the one type a 0.7.0 client is shown and sends back.</summary>
+    /// <param name="value">Any combination.</param>
+    /// <returns>The grip, or <see cref="BoulderHoldType.None"/> when the set has no grip.</returns>
+    public static BoulderHoldType FirstGrip(BoulderHoldType value) =>
+        Split(value & Grips) is { Count: > 0 } grips ? grips[0] : BoulderHoldType.None;
+
     /// <summary>The single types set in <paramref name="value"/>, in display order.</summary>
     /// <param name="value">Any combination.</param>
     /// <returns>The types it holds.</returns>

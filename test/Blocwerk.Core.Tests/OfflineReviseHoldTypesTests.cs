@@ -26,6 +26,7 @@ public sealed class OfflineReviseHoldTypesTests
     [InlineData("""{"name":"B","holdType":""}""", BoulderHoldType.HeelHook)]
     [InlineData("""{"name":"B"}""", Stored)]
     [InlineData("""{"name":"B","holdType":"Bogus"}""", Stored)]
+    [InlineData("""{"name":"B","holdType":"Crimp"}""", Stored)]
     public async Task TheRequestsHoldTypes_ReachTheRevision(string json, BoulderHoldType expected)
     {
         var request = JsonSerializer.Deserialize<ReviseBoulderRequest>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
@@ -42,5 +43,16 @@ public sealed class OfflineReviseHoldTypesTests
         await new OfflineBouldersController(boulders, currentUser).Revise(Guid.NewGuid(), request);
 
         Assert.Equal(expected, sent is { } change ? change.ApplyTo(Stored) : Stored);
+    }
+
+    [Theory]
+    [InlineData("Crimp", BoulderHoldType.Crimp | BoulderHoldType.Pinch)]
+    [InlineData("Jug", BoulderHoldType.Jug)]
+    public void AStale070Replay_KeepsSeveralGrips_UnlessItNamesAnotherOne(string legacy, BoulderHoldType expected)
+    {
+        var request = JsonSerializer.Deserialize<ReviseBoulderRequest>(
+            $$"""{"name":"B","holdType":"{{legacy}}"}""", new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        var change = BoulderHoldTypeChange.FromRequest(request.HoldTypes, request.HoldType)!.Value;
+        Assert.Equal(expected, change.ApplyTo(BoulderHoldType.Crimp | BoulderHoldType.Pinch));
     }
 }

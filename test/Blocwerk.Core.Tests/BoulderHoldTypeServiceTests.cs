@@ -137,6 +137,10 @@ public sealed class BoulderHoldTypeServiceTests
         var boulder = await h.BoulderService.CreateBoulderAsync(h.WallId, "B", null, [new BoulderHoldInput(holds[0].Id)]);
         await h.BoulderService.SetBoulderHoldTypesAsync(boulder.Id, BoulderHoldType.Crimp | BoulderHoldType.Jug | BoulderHoldType.HeelHook);
 
+        // The page showed Jug, the set's first grip: sending it back, as every 0.7.0 save does, changes nothing.
+        await h.BoulderService.ReviseBoulderAsync(boulder.Id, null, name: "B", holdType: BoulderHoldTypeChange.FromRequest(null, "Jug"));
+        Assert.Equal(BoulderHoldType.Crimp | BoulderHoldType.Jug | BoulderHoldType.HeelHook, await StoredAsync(h, boulder.Id));
+
         await h.BoulderService.ReviseBoulderAsync(boulder.Id, null, name: "B", holdType: BoulderHoldTypeChange.FromRequest(null, "Sloper"));
         Assert.Equal(BoulderHoldType.Sloper | BoulderHoldType.HeelHook, await StoredAsync(h, boulder.Id));
 

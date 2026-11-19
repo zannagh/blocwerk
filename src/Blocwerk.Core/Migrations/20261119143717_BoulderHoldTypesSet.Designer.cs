@@ -13,7 +13,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Blocwerk.Core.Migrations
 {
     [DbContext(typeof(BlocwerkDbContext))]
-    [Migration("20261119130934_BoulderHoldTypesSet")]
+    [Migration("20261119143717_BoulderHoldTypesSet")]
     partial class BoulderHoldTypesSet
     {
         /// <inheritdoc />
@@ -286,6 +286,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<string>("CustomRule")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
+
+                    b.Property<int?>("DominantHoldType")
+                        .HasColumnType("integer");
 
                     b.Property<string>("FootColorOnly")
                         .HasMaxLength(32)

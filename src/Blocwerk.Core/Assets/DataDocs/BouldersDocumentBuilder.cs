@@ -3,6 +3,7 @@
 
 using Blocwerk.Contracts.Documents;
 using Blocwerk.Core.Data;
+using Blocwerk.Core.Enums;
 using Blocwerk.Core.Helpers;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
@@ -77,6 +78,6 @@ internal static class BouldersDocumentBuilder
         b.CustomRule,
         BoulderStyles.ToNames(b.Styles),
         b.ParentBoulderId,
-        BoulderHoldTypes.Split(b.HoldTypes & BoulderHoldTypes.Grips) is { Count: > 0 } grips ? BoulderHoldTypes.Label(grips[0]) : null,
+        BoulderHoldTypes.FirstGrip(b.HoldTypes) is var grip && grip != BoulderHoldType.None ? BoulderHoldTypes.Label(grip) : null,
         BoulderHoldTypes.ToNames(b.HoldTypes) is { Count: > 0 } names ? names : null);
 }
