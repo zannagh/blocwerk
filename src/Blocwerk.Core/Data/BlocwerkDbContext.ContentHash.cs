@@ -17,6 +17,7 @@ public partial class BlocwerkDbContext
         try
         {
             ContentHashStamp.Apply(ChangeTracker, contentHashCarries);
+            BoulderVariantPromotion.Apply(this);
             return base.SaveChanges(acceptAllChangesOnSuccess);
         }
         finally
@@ -31,6 +32,7 @@ public partial class BlocwerkDbContext
         try
         {
             ContentHashStamp.Apply(ChangeTracker, contentHashCarries);
+            await BoulderVariantPromotion.ApplyAsync(this, cancellationToken);
             return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
         }
         finally

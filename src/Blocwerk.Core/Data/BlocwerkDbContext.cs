@@ -743,6 +743,11 @@ public partial class BlocwerkDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(b => b.CreatedByUserId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne<Boulder>()
+                .WithMany()
+                .HasForeignKey(b => b.ParentBoulderId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
     }
 

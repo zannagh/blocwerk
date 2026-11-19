@@ -95,6 +95,12 @@ public class Boulder
 
     public int Generation { get; set; }
 
+    /// <summary>
+    /// The boulder this one is a variant of, on the same wall. Always one level deep: a parent has variants, a variant
+    /// has none of its own. Null for a parent and for a boulder outside any family.
+    /// </summary>
+    public Guid? ParentBoulderId { get; set; }
+
     public ICollection<BoulderHold> BoulderHolds { get; set; } = [];
 
     public ICollection<Attempt> Attempts { get; set; } = [];
