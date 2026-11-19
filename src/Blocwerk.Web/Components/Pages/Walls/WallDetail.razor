@@ -890,7 +890,7 @@ else
                 {
                     @foreach (var item in ActiveBoulders)
                     {
-                        <BoulderCard @key="item.Boulder.Id" Item="item" WallId="WallId" ShareToken="@ShareToken"
+                        <BoulderCard @key="item.Boulder.Id" Item="item" WallId="WallId" ShareToken="@ShareToken" Style="@Style"
                                      CurrentUserId="_currentUserId" IsAnonymous="_isAnonymous"
                                      IsWallAdmin="_isAdmin"
                                      ShowArchiveAction="true" ReconciledHoldCount="ReconciledHoldCount(item.Boulder)"
@@ -903,7 +903,7 @@ else
                             <summary class="archive-summary">Archive (@ArchivedBoulders.Count)</summary>
                             @foreach (var item in ArchivedBoulders)
                             {
-                                <BoulderCard @key="item.Boulder.Id" Item="item" WallId="WallId" ShareToken="@ShareToken"
+                                <BoulderCard @key="item.Boulder.Id" Item="item" WallId="WallId" ShareToken="@ShareToken" Style="@Style"
                                              CurrentUserId="_currentUserId" IsAnonymous="_isAnonymous"
                                              IsWallAdmin="_isAdmin"
                                              ReconciledHoldCount="ReconciledHoldCount(item.Boulder)"

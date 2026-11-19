@@ -42,20 +42,31 @@ else if (value != BoulderStyle.None)
         }
     }
 
+    // The chips hand over the whole new set; what the tap changed is the one bit that differs, and that bit is what is sent,
+    // so the service applies it to the stored tags instead of replacing them with this page's possibly stale copy.
     private async Task SetAsync(BoulderStyle next)
     {
         var previous = value;
+        var toggled = next ^ previous;
         (value, saving, error) = (next, true, null);
         try
         {
-            var saved = await BoulderService.SetBoulderStylesAsync(Boulder.Id, next);
+            var saved = await BoulderService.SetBoulderStyleAsync(Boulder.Id, toggled, next.HasFlag(toggled));
             value = saved.Styles;
             Boulder.Styles = saved.Styles;
         }
-        catch (InvalidOperationException ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            // Whatever failed (a refusal, a database error, a session that ran out), the click handler must not throw: an
+            // unhandled exception here ends the circuit.
             Logger.LogWarning(ex, "Setting styles of boulder {BoulderId} failed", Boulder.Id);
-            (value, error) = (previous, ex.Message);
+            value = previous;
+            error = ex switch
+            {
+                InvalidOperationException => ex.Message,
+                UnauthorizedAccessException => "Your session has ended. Sign in again to change the styles.",
+                _ => "The styles could not be saved. Try again.",
+            };
         }
         finally
         {

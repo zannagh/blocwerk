@@ -159,7 +159,12 @@ else
     protected override IEnumerable<DateTimeOffset> TimesShown() =>
         boulder is null ? [] : comments.Select(c => c.CreatedAt).Append(boulder.CreatedAt);
 
-    private string BackLink => ClientRoutes.WallLink(WallId, ShareToken);
+    /// <summary>Gets or sets the style of the list this boulder was opened from (<c>?style=</c>).</summary>
+    [SupplyParameterFromQuery(Name = "style")]
+    public string? Style { get; set; }
+
+    private string BackLink => ClientRoutes.WallLink(WallId, ShareToken)
+        + (BoulderStyles.QueryValue(Style) is { } style ? "?style=" + style : string.Empty);
 
     private RenderFragment Byline => @<text>by @boulder!.SetBy &middot; <time datetime="@boulder.CreatedAt.UtcDateTime.ToString("o")">@ClientTime.Date(boulder.CreatedAt, OffsetOf(boulder.CreatedAt))</time></text>;
 

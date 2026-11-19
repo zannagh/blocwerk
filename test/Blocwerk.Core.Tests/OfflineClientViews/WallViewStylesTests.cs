@@ -59,6 +59,36 @@ public sealed class WallViewStylesTests
     }
 
     [Fact]
+    public async Task TheCards_ReplaceThePhotoAndCounts_SoTheyFitOneScreen()
+    {
+        await using var view = await ViewHarness.StartAsync(Device(["Tension"], ["Power"]), $"walls/{Wall}");
+        var html = await RenderAsync(view);
+
+        Assert.Contains("style-cards", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("wall-photo-container", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("stats-bar", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ARowInAStyleList_LinksToItsBoulderWithTheStyle()
+    {
+        await using var view = await ViewHarness.StartAsync(Device(["Tension"], ["Power"]), $"walls/{Wall}?style=tension");
+        var html = await RenderAsync(view);
+
+        Assert.Contains($"href=\"walls/{Wall}/boulders/{Crimp}?style=tension\"", html, StringComparison.Ordinal);
+        Assert.Contains("wall-photo-container", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TheBoulderPage_BacksIntoTheStyleItWasOpenedFrom()
+    {
+        await using var view = await ViewHarness.StartAsync(Device(["Tension"], ["Power"]), $"walls/{Wall}/boulders/{Crimp}?style=tension");
+        var html = await view.RenderAsync<Blocwerk.Client.Pages.BoulderPage>(new() { ["WallId"] = Wall, ["BoulderId"] = Crimp });
+
+        Assert.Contains($"href=\"walls/{Wall}?style=tension\"", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task AStyleInTheUrl_LimitsTheList_AndOffersTheWayBack()
     {
         await using var view = await ViewHarness.StartAsync(Device(["Tension"], ["Power"]), $"walls/{Wall}?style=tension");

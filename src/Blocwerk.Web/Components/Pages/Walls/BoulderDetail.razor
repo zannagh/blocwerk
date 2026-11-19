@@ -38,7 +38,7 @@ else
            page stays the single stack it has always been. *@
         <div class="boulder-photo-col">
         <div class="page-header">
-            @{ var backUrl = !string.IsNullOrEmpty(ShareToken) ? $"/walls/{WallId}/shared/{ShareToken}?view=boulders" : $"/walls/{WallId}?view=boulders"; }
+            @{ var backUrl = (!string.IsNullOrEmpty(ShareToken) ? $"/walls/{WallId}/shared/{ShareToken}?view=boulders" : $"/walls/{WallId}?view=boulders") + BackStyleQuery; }
             @* A step back in history when the list is the page this boulder was opened from (bwNav.backTo), so the
                list returns as it was left and the browser's back button agrees; a plain link otherwise. *@
             <a href="@backUrl" class="back-link" aria-label="Back to boulder list"
@@ -543,6 +543,12 @@ else
     [Parameter] public Guid WallId { get; set; }
     [Parameter] public Guid BoulderId { get; set; }
     [Parameter] public string? ShareToken { get; set; }
+
+    /// <summary>The style of the list this boulder was opened from (<c>?style=</c>), so back returns to that very list.</summary>
+    [SupplyParameterFromQuery(Name = "style")]
+    public string? Style { get; set; }
+
+    private string BackStyleQuery => Blocwerk.Core.Helpers.BoulderStyles.QueryValue(Style) is { } style ? $"&style={style}" : string.Empty;
 
     // Route params of the boulder currently loaded. Under enhanced navigation, boulder→boulder
     // navigation keeps this component alive (same route template, new parameters), so these guard a

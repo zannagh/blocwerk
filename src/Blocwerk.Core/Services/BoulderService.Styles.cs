@@ -14,24 +14,26 @@ namespace Blocwerk.Core.Services;
 public partial interface IBoulderService
 {
     /// <summary>
-    /// Replaces the style tags of a boulder without touching anything else, so existing boulders can be tagged one tap
-    /// at a time. Allowed for the same people as editing it: its creator, one of its setters, or an admin or owner of its
-    /// wall; anybody else is refused with an <see cref="InvalidOperationException"/>. Unknown bits are dropped.
+    /// Switches ONE style tag of a boulder on or off without touching anything else, so existing boulders can be tagged one
+    /// tap at a time. The change is applied to the value stored now, not to what the caller last saw, so two people tagging
+    /// the same boulder do not overwrite each other. Allowed for the same people as editing it: its creator, one of its setters, or an admin or owner of its
+    /// wall; anybody else is refused with an <see cref="InvalidOperationException"/>, as is anything but one known style.
     /// </summary>
     /// <param name="boulderId">The boulder.</param>
-    /// <param name="styles">The complete set it should carry afterwards (<see cref="BoulderStyle.None"/> clears it).</param>
-    /// <returns>The boulder.</returns>
-    Task<Boulder> SetBoulderStylesAsync(Guid boulderId, BoulderStyle styles);
+    /// <param name="style">The one style to switch.</param>
+    /// <param name="on">True to add it, false to remove it.</param>
+    /// <returns>The boulder, with the tags as stored afterwards.</returns>
+    Task<Boulder> SetBoulderStyleAsync(Guid boulderId, BoulderStyle style, bool on);
 }
 
-/// <summary>Implements <see cref="IBoulderService.SetBoulderStylesAsync"/>.</summary>
+/// <summary>Implements <see cref="IBoulderService.SetBoulderStyleAsync"/>.</summary>
 public partial class BoulderService
 {
     /// <summary>The refusal for somebody who may not edit the boulder; the Server pages also show it.</summary>
     public const string StylesNotAllowedMessage = "Only the creator, a setter, or a wall admin can set a boulder's styles";
 
     /// <inheritdoc />
-    public async Task<Boulder> SetBoulderStylesAsync(Guid boulderId, BoulderStyle styles)
+    public async Task<Boulder> SetBoulderStyleAsync(Guid boulderId, BoulderStyle style, bool on)
     {
         using var op = BlocwerkMetrics.TimeOperation("Boulder.SetStyles");
         try
@@ -51,7 +53,12 @@ public partial class BoulderService
                 throw new InvalidOperationException(StylesNotAllowedMessage);
             }
 
-            var normalized = BoulderStyles.Normalize(styles);
+            if (!BoulderStyles.All.Contains(style))
+            {
+                throw new InvalidOperationException("Unknown style");
+            }
+
+            var normalized = BoulderStyles.Normalize(on ? boulder.Styles | style : boulder.Styles & ~style);
             if (boulder.Styles != normalized)
             {
                 boulder.Styles = normalized;

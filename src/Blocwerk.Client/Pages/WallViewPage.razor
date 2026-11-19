@@ -35,6 +35,9 @@ else
             </div>
         </div>
 
+        @* While the style cards show they are the screen: the photo and counts come back with the list, so all seven fit. *@
+        @if (!ShowStyleCards)
+        {
         <div class="wall-main">
             <div class="wall-detail-card">
                 @if (!string.IsNullOrEmpty(doc.Description))
@@ -62,6 +65,7 @@ else
                 </div>
             </div>
         </div>
+        }
 
         @* .boulders-page: the Server's list page (one sticky head: title, count and the filter chip). *@
         <div class="boulders-page">
@@ -108,7 +112,7 @@ else
                 {
                     @foreach (var boulder in active)
                     {
-                        <BoulderRow @key="boulder.Id" Boulder="boulder" WallId="WallId" ShareToken="@ShareToken" Mine="Wall.Mine" />
+                        <BoulderRow @key="boulder.Id" Boulder="boulder" WallId="WallId" ShareToken="@ShareToken" Mine="Wall.Mine" Style="@Style" />
                     }
                     @if (archived.Count > 0)
                     {
@@ -116,7 +120,7 @@ else
                             <summary class="archive-summary">Archive (@archived.Count)</summary>
                             @foreach (var boulder in archived)
                             {
-                                <BoulderRow @key="boulder.Id" Boulder="boulder" WallId="WallId" ShareToken="@ShareToken" Mine="Wall.Mine" />
+                                <BoulderRow @key="boulder.Id" Boulder="boulder" WallId="WallId" ShareToken="@ShareToken" Mine="Wall.Mine" Style="@Style" />
                             }
                         </details>
                     }

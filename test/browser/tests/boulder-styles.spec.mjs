@@ -50,6 +50,17 @@ test('phone: seven cards fit one screen with their counts, and a card opens the 
     await expectNoOverflow(page);
     await page.screenshot({ path: '../../.out/styles-list-375.png' });
 
+    // A boulder opened from this list backs into this list (the style kept, the list as it was), by its back link and by
+    // the browser's back button.
+    await rows(page).first().click();
+    await expect(page).toHaveURL(/\/boulders\/.*style=tension/);
+    await page.locator('.back-link').click();
+    await expect(page).toHaveURL(/style=tension/);
+    await expect(rows(page)).toHaveCount(2);
+    await rows(page).first().click();
+    await page.goBack();
+    await expect(rows(page)).toHaveCount(2);
+
     // Reload keeps the style; back returns to the cards; "Styles" goes back too.
     await page.reload();
     await expect(rows(page)).toHaveCount(2);
@@ -91,6 +102,11 @@ test('offline client: the cards, the counts and the filtered list at phone width
     await server.unreachable();
     await expectClient(page, `/walls/${wall.id}`);
     await expect(page.locator('.style-card')).toHaveCount(7);
+    // The cards are the screen: all seven sit inside the viewport without scrolling.
+    const box = async n => page.locator('.style-card').nth(n).evaluate(el => { const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; });
+    expect((await box(0)).top).toBeGreaterThanOrEqual(0);
+    expect((await box(6)).bottom).toBeLessThanOrEqual(PHONE.height);
+    await expect(page.locator('.wall-photo-container')).toHaveCount(0);
     await expect(page.locator('.style-card[data-style="all"] .style-card-count')).toHaveText('8');
     await expect(page.locator('.style-card[data-style="power"] .style-card-count')).toHaveText('2');
     await expectNoOverflow(page);
@@ -106,9 +122,11 @@ test('offline client: the cards, the counts and the filtered list at phone width
     await page.locator('.boulder-card', { hasText: 'Styled boulder 1' }).click();
     await expect(page.locator('.style-badge')).toHaveCount(2);
     await page.screenshot({ path: '../../.out/styles-client-badges-375.png' });
-    await page.goBack();
+    // Back from the boulder lands on the same style list, not on the cards.
+    await page.locator('.back-link').click();
+    await expect(page).toHaveURL(/style=power/);
     await expect(page.locator('.boulder-card')).toHaveCount(2);
-    await page.goBack();
+    await page.locator('[data-style-back]').click();
     await expect(page.locator('.style-card')).toHaveCount(7);
 });
 

@@ -26,7 +26,8 @@ public sealed class BoulderStyleServiceTests
         h.ActingUser = creator;
         var boulder = await h.BoulderService.CreateBoulderAsync(h.WallId, "Mine", null, [new BoulderHoldInput(holds[0].Id)]);
 
-        await h.BoulderService.SetBoulderStylesAsync(boulder.Id, BoulderStyle.Tension | BoulderStyle.Power);
+        await h.BoulderService.SetBoulderStyleAsync(boulder.Id, BoulderStyle.Tension, on: true);
+        await h.BoulderService.SetBoulderStyleAsync(boulder.Id, BoulderStyle.Power, on: true);
 
         Assert.Equal(BoulderStyle.Tension | BoulderStyle.Power, await StoredAsync(h, boulder.Id));
     }
@@ -42,9 +43,9 @@ public sealed class BoulderStyleServiceTests
             h.WallId, "Theirs", null, [new BoulderHoldInput(holds[0].Id)], setterUserIds: [setter.Id]);
 
         h.ActingUser = setter;
-        await h.BoulderService.SetBoulderStylesAsync(boulder.Id, BoulderStyle.Funky);
+        await h.BoulderService.SetBoulderStyleAsync(boulder.Id, BoulderStyle.Funky, on: true);
         h.ActingUser = admin;
-        await h.BoulderService.SetBoulderStylesAsync(boulder.Id, BoulderStyle.Funky | BoulderStyle.Dynamic);
+        await h.BoulderService.SetBoulderStyleAsync(boulder.Id, BoulderStyle.Dynamic, on: true);
 
         Assert.Equal(BoulderStyle.Funky | BoulderStyle.Dynamic, await StoredAsync(h, boulder.Id));
     }
@@ -60,10 +61,39 @@ public sealed class BoulderStyleServiceTests
 
         h.ActingUser = other;
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => h.BoulderService.SetBoulderStylesAsync(boulder.Id, BoulderStyle.Power));
+            () => h.BoulderService.SetBoulderStyleAsync(boulder.Id, BoulderStyle.Power, on: true));
 
         Assert.Equal(BoulderService.StylesNotAllowedMessage, ex.Message);
         Assert.Equal(BoulderStyle.Technical, await StoredAsync(h, boulder.Id));
+    }
+
+    [Fact]
+    public async Task TwoSettersTaggingTheSameBoulder_DoNotOverwriteEachOther()
+    {
+        using var h = new WallTestHarness();
+        var holds = await h.SeedWallAsync(holdCount: 1);
+        var boulder = await h.BoulderService.CreateBoulderAsync(h.WallId, "B", null, [new BoulderHoldInput(holds[0].Id)]);
+
+        // Both pages loaded the boulder untagged; each switches its own style on afterwards.
+        await h.BoulderService.SetBoulderStyleAsync(boulder.Id, BoulderStyle.Tension, on: true);
+        await h.BoulderService.SetBoulderStyleAsync(boulder.Id, BoulderStyle.Power, on: true);
+        await h.BoulderService.SetBoulderStyleAsync(boulder.Id, BoulderStyle.Tension, on: false);
+
+        Assert.Equal(BoulderStyle.Power, await StoredAsync(h, boulder.Id));
+    }
+
+    [Theory]
+    [InlineData(BoulderStyle.None)]
+    [InlineData(BoulderStyle.Tension | BoulderStyle.Power)]
+    [InlineData((BoulderStyle)4096)]
+    public async Task OnlyOneKnownStyleCanBeSwitched(BoulderStyle style)
+    {
+        using var h = new WallTestHarness();
+        var holds = await h.SeedWallAsync(holdCount: 1);
+        var boulder = await h.BoulderService.CreateBoulderAsync(h.WallId, "B", null, [new BoulderHoldInput(holds[0].Id)]);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => h.BoulderService.SetBoulderStyleAsync(boulder.Id, style, on: true));
+        Assert.Equal(BoulderStyle.None, await StoredAsync(h, boulder.Id));
     }
 
     [Fact]
@@ -73,7 +103,7 @@ public sealed class BoulderStyleServiceTests
         var holds = await h.SeedWallAsync(holdCount: 1);
         var boulder = await h.BoulderService.CreateBoulderAsync(h.WallId, "B", null, [new BoulderHoldInput(holds[0].Id)]);
 
-        await h.BoulderService.SetBoulderStylesAsync(boulder.Id, (BoulderStyle)(2 | 4096));
+        await h.BoulderService.SetBoulderStyleAsync(boulder.Id, BoulderStyle.Dynamic, on: true);
 
         Assert.Equal(BoulderStyle.Dynamic, await StoredAsync(h, boulder.Id));
     }

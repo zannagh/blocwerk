@@ -51,6 +51,12 @@ public static class BoulderStyles
         return null;
     }
 
+    /// <summary>The <c>?style=</c> value a link may carry: a style's slug, <c>all</c>, or null for anything else.</summary>
+    /// <param name="slug">The raw query value.</param>
+    /// <returns>The normalised value, or null.</returns>
+    public static string? QueryValue(string? slug) =>
+        string.Equals(slug?.Trim(), "all", StringComparison.OrdinalIgnoreCase) ? "all" : FromSlug(slug) is { } s ? Slug(s) : null;
+
     /// <summary>The styles set in <paramref name="value"/>, in display order.</summary>
     /// <param name="value">Any combination.</param>
     /// <returns>The single styles it holds.</returns>

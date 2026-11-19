@@ -26,6 +26,13 @@ public sealed class BoulderStylesTests
     [InlineData("nonsense")]
     public void AnythingElseIsNoSingleStyle(string? slug) => Assert.Null(BoulderStyles.FromSlug(slug));
 
+    [Theory]
+    [InlineData("ALL", "all")]
+    [InlineData("Power", "power")]
+    [InlineData("x&view=y", null)]
+    [InlineData(null, null)]
+    public void OnlyAKnownValueSurvivesIntoALink(string? raw, string? expected) => Assert.Equal(expected, BoulderStyles.QueryValue(raw));
+
     [Fact]
     public void NamesRoundTrip_AndNoStylesIsLeftOutOfTheDocument()
     {
