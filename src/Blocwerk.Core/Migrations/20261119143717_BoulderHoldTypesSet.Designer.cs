@@ -492,6 +492,24 @@ namespace Blocwerk.Core.Migrations
                     b.ToTable("BoulderHoldMoves");
                 });
 
+            modelBuilder.Entity("Blocwerk.Core.Entities.BoulderProject", b =>
+                {
+                    b.Property<Guid>("BoulderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("BoulderId", "UserId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("BoulderProjects");
+                });
+
             modelBuilder.Entity("Blocwerk.Core.Entities.BoulderRating", b =>
                 {
                     b.Property<Guid>("BoulderId")
@@ -4268,6 +4286,25 @@ namespace Blocwerk.Core.Migrations
                     b.Navigation("OldHold");
                 });
 
+            modelBuilder.Entity("Blocwerk.Core.Entities.BoulderProject", b =>
+                {
+                    b.HasOne("Blocwerk.Core.Entities.Boulder", "Boulder")
+                        .WithMany("Projects")
+                        .HasForeignKey("BoulderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Blocwerk.Core.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Boulder");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("Blocwerk.Core.Entities.BoulderRating", b =>
                 {
                     b.HasOne("Blocwerk.Core.Entities.Boulder", "Boulder")
@@ -5101,6 +5138,8 @@ namespace Blocwerk.Core.Migrations
                     b.Navigation("Favorites");
 
                     b.Navigation("GradeProposals");
+
+                    b.Navigation("Projects");
 
                     b.Navigation("Ratings");
 

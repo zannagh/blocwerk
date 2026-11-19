@@ -96,5 +96,5 @@ public sealed class BoulderBrowseTests
 
     [Fact]
     public void AHoldTypeInTheUrl_WinsOverMine() =>
-        Assert.Equal(HoldHandType.Crimp, BoulderBrowse.From(null, null, "crimp", "favorites").HoldType);
+        Assert.Equal(BoulderHoldType.Crimp, BoulderBrowse.From(null, null, "crimp", "favorites").HoldType);
 }
