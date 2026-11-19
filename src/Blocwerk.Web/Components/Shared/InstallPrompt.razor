@@ -2,13 +2,15 @@
 @inject IJSRuntime JS
 @inject Blocwerk.Core.Abstractions.IKioskContext KioskContext
 
-@* Never rendered on a wall tablet: a kiosk is set up deliberately, once, by somebody who is not
+@* An inline card on the walls list (WallList.razor), not a fixed banner over every page: it showed above the tab
+   bar everywhere until dismissed and covered the last list rows and the comment box.
+   Never rendered on a wall tablet: a kiosk is set up deliberately, once, by somebody who is not
    the person standing at it, so an install prompt there is pure noise. Every other reason to stay
    hidden (already installed, not a phone, dismissed) is a client fact, so bwInstall decides it and
-   this renders nothing until it has answered — which is why the banner can never flash. *@
+   this renders nothing until it has answered — which is why the card can never flash. *@
 @if (_show)
 {
-    <div class="bw-install" role="region" aria-label="Install Blocwerk">
+    <div class="bw-install-inline" role="region" aria-label="Install Blocwerk">
         <p class="bw-install-title">@(_instructions ?? "Install Blocwerk as an app")</p>
         @if (_instructions == null)
         {

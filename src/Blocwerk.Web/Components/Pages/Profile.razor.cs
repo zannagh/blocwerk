@@ -12,9 +12,9 @@ using Microsoft.AspNetCore.Components;
 namespace Blocwerk.Web.Components.Pages;
 
 /// <summary>
-/// The profile page: a persistent identity column beside one of four screens — Progress, App, Account
-/// and TopLogger — for your own profile, and a reduced identity-and-progression view for anybody
-/// else's. The open screen is carried in the URL so it can be linked and survives a reload.
+/// The profile page: a persistent identity column beside one of three screens — App, Account and
+/// TopLogger — for your own profile (your progression is on the Activity tab), and a reduced
+/// identity-and-progression view for anybody else's. The open screen is carried in the URL so it can be linked and survives a reload.
 /// </summary>
 public partial class Profile
 {
@@ -46,10 +46,10 @@ public partial class Profile
     [Inject]
     private Blocwerk.Core.Abstractions.IKioskContext KioskContext { get; set; } = default!;
 
-    private const ProfileTab DefaultTab = ProfileTab.Progress;
+    private const ProfileTab DefaultTab = ProfileTab.App;
 
     private static readonly ProfileTab[] Tabs =
-        [ProfileTab.Progress, ProfileTab.App, ProfileTab.Account, ProfileTab.TopLogger];
+        [ProfileTab.App, ProfileTab.Account, ProfileTab.TopLogger];
 
     private ProfileTab _tab = DefaultTab;
 
@@ -83,10 +83,9 @@ public partial class Profile
 
     private static string TabLabel(ProfileTab tab) => tab switch
     {
-        ProfileTab.App => "App",
         ProfileTab.Account => "Account",
         ProfileTab.TopLogger => "TopLogger",
-        _ => "Progress",
+        _ => "App",
     };
 
     private static ProfileTab? ParseTab(string? value) =>

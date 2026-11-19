@@ -10,10 +10,8 @@ namespace Blocwerk.Web.Components.Shared.ProfilePanes;
 /// </summary>
 public enum ProfileTab
 {
-    /// <summary>Rolling progression scores and charts. The default screen.</summary>
-    Progress,
-
-    /// <summary>How the app behaves for this member: home wall, zoom lens, grades, nav, notifications.</summary>
+    /// <summary>How the app behaves for this member: home wall, zoom lens, grades, nav, notifications, and the
+    /// links to Tools (and Administration). The default screen; progression is on the Activity tab.</summary>
     App,
 
     /// <summary>E-mail, password sign-in, two-factor, linked accounts, API keys, account deletion.</summary>

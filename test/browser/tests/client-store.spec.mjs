@@ -53,6 +53,10 @@ test('offline, the client shows the device\'s walls, and its own Clear offline d
     expect(JSON.parse(read.docs.boulders.text).boulders.length).toBeGreaterThan(0);
     expect(await page.evaluate(() => ['bwAssetCache', 'bwAssetStore', 'bwAssetReport', 'bwDeployDrafts'].filter(n => n in window))).toEqual([]);
 
+    // "Clear offline data" is on the wall list, not on the wall's own page.
+    await expect(page.getByRole('button', { name: 'Clear offline data' })).toHaveCount(0);
+    await expectClient(page, '/walls');
+    await storeState(page, 'ready');
     await page.getByRole('button', { name: 'Clear offline data' }).click();
     await storeState(page, 'empty');
     await expect(page.getByText('Nothing saved on this device')).toBeVisible();

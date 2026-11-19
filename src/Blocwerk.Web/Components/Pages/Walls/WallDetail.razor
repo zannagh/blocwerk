@@ -66,7 +66,7 @@ else
                         @foreach (var item in _activityItems)
                         {
                             <div class="activity-row">
-                                <span class="activity-icon">@WallActivityText.Icon(item.Type)</span>
+                                <span class="attempt-type activity-chip @WallActivityText.ChipTone(item.Type)">@WallActivityText.Chip(item.Type)</span>
                                 <span class="activity-text">@ActivityAuthor(item) @WallActivityText.Verb(item.Type)</span>
                                 <span class="activity-time"><LocalTime Value="@item.Timestamp" Format="LocalTimeFormat.Relative" /></span>
                             </div>
@@ -645,36 +645,38 @@ else
                             <span class="stat-value">@_wall.Members.Count</span>
                             <span class="stat-label">Members</span>
                         </button>
-                        @* Any member can hand out the wall's invite link, not just admins. Hidden for
-                           non-members (kiosks and never-joined viewers); the service guard is the gate. *@
+                    </div>
+
+                    @* The actions under the numbers, as buttons rather than a fifth stat tile. Invite: any member
+                       can hand out the wall's invite link, not just admins; hidden for non-members (kiosks and
+                       never-joined viewers), and the service guard is the gate. The 3D page renders only when the
+                       wall has a measured 3D model; share-link viewers keep their token, and the kiosk may open it
+                       (Wall3D is on its allow-list). It reads "Open 3D view" with an open-page arrow, so it does not
+                       look like the photo's cube button, which shows the 3D view in place. *@
+                    <div class="wall-actions">
                         @if (_isMember)
                         {
-                            <button type="button" class="stat clickable" @onclick="InviteAsync">
-                                <svg class="stat-value" width="24" height="24" viewBox="0 0 24 24" fill="none"
-                                     stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <button type="button" class="btn-secondary wall-invite" @onclick="InviteAsync">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                     <circle cx="18" cy="5" r="3"></circle>
                                     <circle cx="6" cy="12" r="3"></circle>
                                     <circle cx="18" cy="19" r="3"></circle>
                                     <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
                                     <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
                                 </svg>
-                                <span class="stat-label">Invite</span>
+                                Invite
                             </button>
                         }
+                        <Wall3DLink WallId="WallId" ShareToken="@ShareToken">
+                            Open 3D view
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                 stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M7 17 17 7"></path>
+                                <path d="M8 7h9v9"></path>
+                            </svg>
+                        </Wall3DLink>
                     </div>
-
-                    @* Renders only when the wall has a measured 3D model. A full-width button under
-                       the stats (a fifth stat tile does not fit a phone row); share-link viewers keep
-                       their token, and the kiosk may open it (Wall3D is on its allow-list). *@
-                    <Wall3DLink WallId="WallId" ShareToken="@ShareToken">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <path d="M12 2 3 7v10l9 5 9-5V7z"></path>
-                            <path d="M3 7l9 5 9-5"></path>
-                            <path d="M12 12v10"></path>
-                        </svg>
-                        View in 3D
-                    </Wall3DLink>
 
                     @if (_canEditHolds && KeptHoldCount > 0 && string.IsNullOrEmpty(ShareToken))
                     {

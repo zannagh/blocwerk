@@ -1,4 +1,4 @@
-// Bottom banners (cookie consent, "install the app", "get notified") never cover the page.
+// Bottom banners (cookie consent, "get notified", the storage and offline-lock notices) never cover the page.
 //
 // The banners are fixed above the tab bar, one at a time (app.css). This keeps --bw-banner-h on
 // <html> at the height of the one showing (plus a gap), and app.css adds it to --bottomnav-h, the

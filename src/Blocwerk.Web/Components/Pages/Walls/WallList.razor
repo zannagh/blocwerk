@@ -14,7 +14,7 @@
 
 <div class="wall-list">
     <div class="list-header">
-        <h1>My Walls</h1>
+        <h1 class="page-title">My Walls</h1>
         <a href="/walls/create" class="btn-create">+ New Wall</a>
     </div>
 
@@ -61,6 +61,8 @@
             }
         </div>
     }
+
+    <InstallPrompt />
 </div>
 
 @if (!string.IsNullOrEmpty(_error))

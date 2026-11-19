@@ -1,0 +1,29 @@
+@implements IDisposable
+@inject ClientStore Store
+@* What this device holds and "Clear offline data", on the wall list only (WallListPage): storage management is not
+   for a wall or boulder page. The store's other states (locked, updating, kiosk, unavailable) offer Clear with their
+   own notice (StoreGate). *@
+@if (Store.State is StoreState.Ready or StoreState.Empty)
+{
+    <footer class="bw-client-saved">
+        <span>@SavedText</span>
+        <ClearOfflineData />
+    </footer>
+}
+
+@code {
+    private string SavedText => Store.Walls.Count switch
+    {
+        0 => "Nothing saved on this device",
+        1 => "1 wall saved on this device",
+        var n => $"{n} walls saved on this device",
+    };
+
+    /// <inheritdoc />
+    public void Dispose() => Store.Changed -= OnChanged;
+
+    /// <inheritdoc />
+    protected override void OnInitialized() => Store.Changed += OnChanged;
+
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+}
