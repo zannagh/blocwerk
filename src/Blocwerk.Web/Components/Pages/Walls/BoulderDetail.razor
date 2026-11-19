@@ -195,8 +195,8 @@ else
         @* The historic Then/Now toggle. The photo / 3D switch is the header's "3D" button: the 3D model is
            today's wall, so going to "Then" leaves the 3D view, and asking for 3D on "Then" goes to "Now". *@
         <div class="boulder-toggle-row">
-        @* Only for a boulder that needs revision (or while the historic view is up, so it can be left). *@
-        @if (CanViewHistoric && (_boulder.NeedsReview || _showHistoric))
+        @* Only for a boulder that needs revision or is historic (or while the historic view is up, so it can be left). *@
+        @if (BoulderReviseRules.OfferGenerationToggle(CanViewHistoric, _boulder.NeedsReview, _boulder.IsHistoric, _showHistoric))
         {
             @* Both states are rendered, with the active one marked. A single button labelled with the
                CURRENT state reads as a status label, so nobody could tell whether "Then" meant "you

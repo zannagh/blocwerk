@@ -202,6 +202,9 @@
     [Parameter] public Guid WallId { get; set; }
     [Parameter] public Guid BoulderId { get; set; }
 
+    /// <summary>Set by the review notice's link (?review=true): saving then confirms the review even with no hold edit.</summary>
+    [SupplyParameterFromQuery(Name = "review")] public bool Review { get; set; }
+
     private Wall? _wall;
     private Boulder? _boulder;
     private List<Hold> _displayHolds = [];
@@ -293,7 +296,8 @@
     {
         id = BoulderId,
         name = _name,
-        grade = _grade,
+        // "" clears the grade server-side; a missing value would leave it as stored.
+        grade = _grade ?? string.Empty,
         kickboardFootholdsOn = _allKickboardOn,
         handsFollowFeet = EffectiveHandsFollowFeet,
         // "" clears the foot colour server-side; the revise endpoint maps a missing value the same way.
@@ -301,7 +305,8 @@
         noMatch = _noMatch,
         // "" clears the rule server-side; a missing value would leave it as stored.
         customRule = _customRule ?? string.Empty,
-        holds = _selectedHolds.Select(h => new { holdId = h.HoldId, type = (int)h.Type, usage = (int)h.Usage }),
+        // null = a metadata-only save: the stored holds and the review state stay as they are.
+        holds = ReplaceHolds ? _selectedHolds.Select(h => new { holdId = h.HoldId, type = (int)h.Type, usage = (int)h.Usage }) : null,
         setters = _selectedSetters.ToList(),
     });
 
@@ -558,9 +563,9 @@
             // "" clears the foot colour server-side; null there would mean "leave unchanged".
             await BoulderService.ReviseBoulderAsync(
                 BoulderId,
-                _selectedHolds,
+                ReplaceHolds ? _selectedHolds : null,
                 _name,
-                _grade,
+                _grade ?? string.Empty,
                 _allKickboardOn,
                 EffectiveHandsFollowFeet,
                 _footColorOnly ?? string.Empty,

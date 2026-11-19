@@ -153,7 +153,7 @@ public partial interface IBoulderService
     /// </summary>
     Task<Boulder> ReviseBoulderAsync(
         Guid boulderId,
-        List<BoulderHoldInput> updatedHolds,
+        List<BoulderHoldInput>? updatedHolds,
         string? name = null,
         string? grade = null,
         bool? kickboardFootholdsOn = null,
@@ -162,13 +162,6 @@ public partial interface IBoulderService
         bool noMatch = false,
         IReadOnlyList<Guid>? setterUserIds = null,
         string? customRule = null);
-
-    /// <summary>
-    /// Renames and/or regrades a boulder in place, without touching its holds. Only the
-    /// creator may do this, and it works on a live boulder (unlike <see cref="ReviseBoulderAsync"/>,
-    /// which is for historic/draft remaps). Pass null or empty <paramref name="grade"/> to clear it.
-    /// </summary>
-    Task<Boulder> RenameBoulderAsync(Guid boulderId, string name, string? grade);
 
     /// <summary>
     /// Permanently removes a boulder. Only its creator, one of its setters, or an admin of its
@@ -1013,58 +1006,9 @@ public partial class BoulderService : IBoulderService
         }
     }
 
-    public async Task<Boulder> RenameBoulderAsync(Guid boulderId, string name, string? grade)
-    {
-        using var op = BlocwerkMetrics.TimeOperation("Boulder.Rename");
-        try
-        {
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                _logger.LogWarning("Rename rejected: empty name for boulder {BoulderId}", boulderId);
-                throw new InvalidOperationException("A boulder needs a name");
-            }
-
-            var user = await _currentUserService.GetCurrentUserAsync();
-            await using var db = await _dbContextFactory.CreateDbContextAsync();
-            db.CurrentUserId = user.Id;
-
-            var boulder = await db.Boulders
-                .Include(b => b.Setters)
-                .FirstOrDefaultAsync(b => b.Id == boulderId);
-            if (boulder == null)
-            {
-                _logger.LogWarning("Rename failed: boulder {BoulderId} not found for user {UserId}", boulderId, user.Id);
-                throw new InvalidOperationException("Boulder not found");
-            }
-
-            // The creator, any of the boulder's setters, and any wall admin may edit its name/grade.
-            var isCreator = boulder.CreatedByUserId == user.Id;
-            var isSetter = boulder.Setters.Any(s => s.UserId == user.Id);
-            if (!isCreator && !isSetter
-                && !await WallAdminGuard.IsWallAdminAsync(db, boulder.WallId, user.Id, CancellationToken.None))
-            {
-                _logger.LogWarning(
-                    "Rename denied: user {UserId} is neither creator {OwnerUserId}, a setter, nor an admin of boulder {BoulderId}",
-                    user.Id, boulder.CreatedByUserId, boulderId);
-                throw new InvalidOperationException("Only the creator, a setter, or a wall admin can edit this boulder");
-            }
-
-            boulder.Name = name.Trim();
-            boulder.Grade = string.IsNullOrWhiteSpace(grade) ? null : grade.Trim();
-            await db.SaveChangesAsync();
-            _logger.LogInformation("Boulder {BoulderId} renamed by {UserId}", boulderId, user.Id);
-            return boulder;
-        }
-        catch (Exception ex)
-        {
-            op.Fail(ex);
-            throw;
-        }
-    }
-
     public async Task<Boulder> ReviseBoulderAsync(
         Guid boulderId,
-        List<BoulderHoldInput> updatedHolds,
+        List<BoulderHoldInput>? updatedHolds,
         string? name = null,
         string? grade = null,
         bool? kickboardFootholdsOn = null,
@@ -1120,7 +1064,7 @@ public partial class BoulderService : IBoulderService
                     // photos and signed it off. Clearing the flag here keeps the replay idempotent
                     // anyway, because the first apply already left it false and a second pass then
                     // writes nothing.
-                    if (boulder.NeedsReview)
+                    if (updatedHolds is not null && boulder.NeedsReview)
                     {
                         boulder.NeedsReview = false;
                         await db.SaveChangesAsync();
@@ -1152,7 +1096,14 @@ public partial class BoulderService : IBoulderService
                 }
             }
 
-            if (updatedHolds.Count == 0 && !boulder.IsDraft)
+            // null holds = a metadata-only save (name, grade, rules, setters): the stored holds stay as they are, and
+            // so does the review state. A historic or draft boulder has no such save, its holds must be supplied.
+            if (updatedHolds is null && (boulder.IsHistoric || boulder.IsDraft))
+            {
+                throw new InvalidOperationException("Select at least one hold");
+            }
+
+            if (updatedHolds is { Count: 0 } && !boulder.IsDraft)
             {
                 _logger.LogWarning("Revise rejected: boulder {BoulderId} has no holds", boulderId);
                 throw new InvalidOperationException("Select at least one hold");
@@ -1160,12 +1111,13 @@ public partial class BoulderService : IBoulderService
 
             if (!string.IsNullOrWhiteSpace(name))
             {
-                boulder.Name = name;
+                boulder.Name = name.Trim();
             }
 
+            // "" clears the grade, as "" clears the foot colour; null leaves it alone.
             if (grade != null)
             {
-                boulder.Grade = grade;
+                boulder.Grade = NormalizeGrade(grade);
             }
 
             if (kickboardFootholdsOn.HasValue)
@@ -1192,17 +1144,20 @@ public partial class BoulderService : IBoulderService
                 boulder.CustomRule = BoulderCustomRule.Normalize(customRule);
             }
 
-            await EnsureNoUnconfirmedHoldAddedAsync(db, updatedHolds, boulder.BoulderHolds.Select(bh => bh.HoldId).ToList());
-            db.BoulderHolds.RemoveRange(boulder.BoulderHolds);
-            foreach (var h in EnforceHandsFollowFeet(updatedHolds, boulder.HandsFollowFeet))
+            if (updatedHolds is not null)
             {
-                db.BoulderHolds.Add(new BoulderHold
+                await EnsureNoUnconfirmedHoldAddedAsync(db, updatedHolds, boulder.BoulderHolds.Select(bh => bh.HoldId).ToList());
+                db.BoulderHolds.RemoveRange(boulder.BoulderHolds);
+                foreach (var h in EnforceHandsFollowFeet(updatedHolds, boulder.HandsFollowFeet))
                 {
-                    BoulderId = boulderId,
-                    HoldId = h.HoldId,
-                    Type = h.Type,
-                    Usage = h.Usage,
-                });
+                    db.BoulderHolds.Add(new BoulderHold
+                    {
+                        BoulderId = boulderId,
+                        HoldId = h.HoldId,
+                        Type = h.Type,
+                        Usage = h.Usage,
+                    });
+                }
             }
 
             // Replace the setter set when the caller supplied one (null = leave untouched).
@@ -1212,17 +1167,20 @@ public partial class BoulderService : IBoulderService
                 await AddSettersAsync(db, boulderId, boulder.WallId, setterUserIds);
             }
 
-            // Remapping onto the current hold model resolves both staleness flags.
-            boulder.IsHistoric = false;
-            boulder.NeedsReview = false;
-
-            var wallGeneration = await db.Walls
-                .Where(w => w.Id == boulder.WallId)
-                .Select(w => (int?)w.CurrentGeneration)
-                .FirstOrDefaultAsync();
-            if (wallGeneration is { } generation)
+            // Remapping onto the current hold model resolves both staleness flags (only when holds were supplied).
+            if (updatedHolds is not null)
             {
-                boulder.Generation = generation;
+                boulder.IsHistoric = false;
+                boulder.NeedsReview = false;
+
+                var wallGeneration = await db.Walls
+                    .Where(w => w.Id == boulder.WallId)
+                    .Select(w => (int?)w.CurrentGeneration)
+                    .FirstOrDefaultAsync();
+                if (wallGeneration is { } generation)
+                {
+                    boulder.Generation = generation;
+                }
             }
 
             await db.SaveChangesAsync();
@@ -1538,6 +1496,8 @@ public partial class BoulderService : IBoulderService
     /// <summary>
     /// An empty foot color means "no foot color rule"; anything else is stored as given.
     /// </summary>
+    private static string? NormalizeGrade(string? grade) => string.IsNullOrWhiteSpace(grade) ? null : grade.Trim();
+
     private static string? NormalizeFootColor(string? footColorOnly) =>
         string.IsNullOrWhiteSpace(footColorOnly) ? null : footColorOnly;
 
@@ -1548,7 +1508,7 @@ public partial class BoulderService : IBoulderService
     /// </summary>
     private static bool RevisionIsNoOp(
         Boulder boulder,
-        List<BoulderHoldInput> updatedHolds,
+        List<BoulderHoldInput>? updatedHolds,
         string? name,
         string? grade,
         bool? kickboardFootholdsOn,
@@ -1559,24 +1519,27 @@ public partial class BoulderService : IBoulderService
         string? customRule)
     {
         var effectiveHandsFollowFeet = handsFollowFeet ?? boulder.HandsFollowFeet;
-        var target = EnforceHandsFollowFeet(updatedHolds, effectiveHandsFollowFeet)
-            .Select(h => (h.HoldId, h.Type, h.Usage))
-            .ToHashSet();
-        var current = boulder.BoulderHolds
-            .Select(h => (h.HoldId, h.Type, h.Usage))
-            .ToHashSet();
+        if (updatedHolds is not null)
+        {
+            var target = EnforceHandsFollowFeet(updatedHolds, effectiveHandsFollowFeet)
+                .Select(h => (h.HoldId, h.Type, h.Usage))
+                .ToHashSet();
+            var current = boulder.BoulderHolds
+                .Select(h => (h.HoldId, h.Type, h.Usage))
+                .ToHashSet();
 
-        if (!current.SetEquals(target))
+            if (!current.SetEquals(target))
+            {
+                return false;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(name) && boulder.Name != name.Trim())
         {
             return false;
         }
 
-        if (!string.IsNullOrWhiteSpace(name) && boulder.Name != name)
-        {
-            return false;
-        }
-
-        if (grade != null && boulder.Grade != grade)
+        if (grade != null && boulder.Grade != NormalizeGrade(grade))
         {
             return false;
         }

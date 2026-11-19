@@ -77,7 +77,7 @@ public partial class BoulderRevise
         {
             _isSubmitting = true;
             await BoulderService.ReviseBoulderAsync(
-                BoulderId, _selectedHolds, _name, _grade, _allKickboardOn, EffectiveHandsFollowFeet,
+                BoulderId, ReplaceHolds ? _selectedHolds : null, _name, _grade ?? string.Empty, _allKickboardOn, EffectiveHandsFollowFeet,
                 _footColorOnly ?? string.Empty, _noMatch, _selectedSetters.ToList(), _customRule ?? string.Empty);
 
             // Saved. Everything below needs the browser, is bounded, and cannot undo the save.
@@ -125,7 +125,11 @@ public partial class BoulderRevise
         _footColorOnly = string.IsNullOrEmpty(snapshot.FootColorOnly) ? null : snapshot.FootColorOnly;
         _noMatch = snapshot.NoMatch;
         _customRule = snapshot.CustomRule;
-        _selectedHolds = (snapshot.Holds ?? []).Where(h => displayIds.Contains(h.HoldId)).Select(h => h.ToInput()).ToList();
+        if (snapshot.Holds is not null)
+        {
+            _selectedHolds = snapshot.Holds.Where(h => displayIds.Contains(h.HoldId)).Select(h => h.ToInput()).ToList();
+        }
+
         _selectedSetters.Clear();
         foreach (var id in (snapshot.Setters ?? []).Where(id => _members.Any(m => m.UserId == id)))
         {
