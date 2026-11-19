@@ -18,9 +18,12 @@ test.afterEach(async ({ page }) => {
 // The browsers share one seeded world, so a spec that logs or edits picks a boulder of its own per browser.
 const slot = testInfo => ['chromium', 'webkit', 'firefox'].indexOf(testInfo.project.name);
 
-async function openBetaBoulder(page, world, name) {
-    await signIn(page, world.users.alice, `/walls/${world.walls.beta.id}?view=boulders`);
-    await page.locator('.boulder-card', { hasText: name }).first().click();
+// Pia's Wide wall holds a "Logging boulder 0..2" of its own for this: Beta's boulders are counted by
+// boulder-list-search ("Not done by me" expects all 40), so a log there would change its numbers.
+async function openWideBoulder(page, world, name) {
+    await signIn(page, world.users.pia, `/walls/${world.walls.wide.id}?view=boulders`);
+    await expect(page.locator('.wall-carousel:not(.carousel-pending)')).toBeVisible();
+    await page.locator('.wall-carousel > .wall-page').nth(3).locator('.boulder-card', { hasText: name }).click();
     await expect(page.locator('.rules-bar')).toBeVisible();
 }
 
@@ -55,8 +58,8 @@ test('a flash shows the thunder icon; a boulder without activity shows no icon',
     await signIn(page, world.users.carol, `/walls/${alpha.id}/boulders/${alpha.boulder}`);
     await expect(page.locator('.title-row .boulder-status')).toHaveAccessibleName('Flashed');
 
-    // A Beta boulder nothing ever logs on (the logging spec below uses others): no activity, no icon.
-    await openBetaBoulder(page, world, 'List boulder 30');
+    // The multi-panel boulder nothing logs on (the logging spec below uses the Logging boulders): no activity, no icon.
+    await openWideBoulder(page, world, 'Pinky');
     await expect(page.locator('.boulder-status')).toHaveCount(0);
 });
 
@@ -110,7 +113,7 @@ test('the pencil opens the full editor, where the custom rule is set and then sh
 });
 
 test('logging an attempt, a send and a flash still works, and the icon follows the best result', async ({ page, world }, testInfo) => {
-    await openBetaBoulder(page, world, `List boulder ${String(5 + slot(testInfo)).padStart(2, '0')}`);
+    await openWideBoulder(page, world, `Logging boulder ${slot(testInfo)}`);
     const status = page.locator('.title-row .boulder-status');
     await expect(status).toHaveCount(0);
     await page.locator('[data-bw-action="attempt"][data-bw-type="Attempt"]').click();
