@@ -63,10 +63,12 @@ test('a flash shows the thunder icon; a boulder without activity shows no icon',
     await expect(page.locator('.boulder-status')).toHaveCount(0);
 });
 
-test('the header row keeps favourite, edit, 3D and the status icon inside 375 px', async ({ page, world }) => {
+test('the header row keeps edit, 3D and the status icon inside 375 px, and the favourite is no longer in it', async ({ page, world }) => {
     const alpha = world.walls.alpha;
     await signIn(page, world.users.alice, `/walls/${alpha.id}/boulders/${alpha.boulder}`);
-    const parts = ['.title-row .boulder-status', '.title-actions .fav-toggle:visible', '.title-actions .boulder-edit-btn', '.title-actions .btn-view3d'];
+    await expect(page.locator('.boulder-marks')).toBeVisible();
+    await expect(page.locator('.title-actions .mark-wrap')).toHaveCount(0);
+    const parts = ['.title-row .boulder-status', '.title-actions .boulder-edit-btn', '.title-actions .btn-view3d', '.boulder-marks .mark-toggle:visible'];
     for (const sel of parts) {
         const box = await page.locator(sel).first().boundingBox().catch(() => null);
         if (box) {

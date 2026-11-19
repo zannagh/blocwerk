@@ -173,10 +173,14 @@
         return null;
     }
 
+    // The key carries the state a mark toggle asks for, so taking a mark back right after setting it is a second
+    // action, not a double tap of the first.
     function isDoubleTap(element, kind) {
         const key = kind + '|' + (element.getAttribute('data-bw-boulder') || '') + '|' +
             (element.getAttribute('data-bw-type') || '') + '|' +
-            (element.getAttribute('data-bw-stars') || '');
+            (element.getAttribute('data-bw-stars') || '') + '|' +
+            (element.getAttribute('data-bw-favorite') || '') + '|' +
+            (element.getAttribute('data-bw-project') || '');
         const now = Date.now();
         const previous = lastClick.get(key) || 0;
         lastClick.set(key, now);

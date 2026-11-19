@@ -111,15 +111,15 @@ test('the tab bar steps aside only while the keyboard is up, and a page left zoo
     await fakeViewport(page, {});
 });
 
-test('the boulder page header keeps favourite and edit inside the phone width', async ({ page, world }) => {
+test('the boulder page header keeps edit inside the phone width, and the marks row fits it too', async ({ page, world }) => {
     const mp = world.multiPanel;
     await signIn(page, world.users.pia, `/walls/${mp.wallId}/boulders/${mp.boulder}`);
     // The page is prerendered and then re-rendered when its circuit connects, so measure until the header holds still.
     await expect.poll(async () => {
-        const boxes = await Promise.all(['.fav-wrap', '.boulder-edit-btn'].map(sel =>
-            page.locator(`.boulder-detail .title-actions ${sel}`).first().boundingBox().catch(() => null)));
+        const edit = await page.locator('.boulder-detail .title-actions .boulder-edit-btn').first().boundingBox().catch(() => null);
+        const marks = await page.locator('.boulder-detail .boulder-marks').first().boundingBox().catch(() => null);
         const width = page.viewportSize().width;
-        return boxes.every(box => box && box.x + box.width <= width && box.height <= 40);
+        return !!edit && edit.x + edit.width <= width && edit.height <= 40 && !!marks && marks.x + marks.width <= width;
     }, { timeout: 20000 }).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });

@@ -1,0 +1,46 @@
+@using Blocwerk.Client.Store
+@* The viewer's project and favourite marks on the boulder page, where the Server page has its two toggles. Read-only
+   here: the device shows what it has saved and changes nothing. Only the marks that are set show; a device that holds
+   no marks (anonymous, kiosk, share link) shows none. *@
+@if (Mine.IsProject(BoulderId) || Mine.IsFavourite(BoulderId))
+{
+    <div class="boulder-marks" role="group" aria-label="Your marks">
+        @if (Mine.IsProject(BoulderId))
+        {
+            <span class="mark-wrap mark-project">
+                <span class="mark-toggle mark-chip is-on">
+                    <svg class="mark-icon" viewBox="0 0 24 24" width="18" height="18" fill="currentColor" stroke="currentColor"
+                         stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+                        <path d="M5 21V4" />
+                        <path d="M5 4h11l-2 4 2 4H5" />
+                    </svg>
+                    <span class="mark-label">Project</span>
+                </span>
+            </span>
+        }
+        @if (Mine.IsFavourite(BoulderId))
+        {
+            <span class="mark-wrap mark-favorite">
+                <span class="mark-toggle mark-chip is-on">
+                    <svg class="mark-icon" viewBox="0 0 24 24" width="18" height="18" fill="currentColor" stroke="currentColor"
+                         stroke-width="2" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z" />
+                    </svg>
+                    <span class="mark-label">Favorite</span>
+                </span>
+            </span>
+        }
+    </div>
+}
+
+@code {
+    /// <summary>Gets or sets the boulder.</summary>
+    [Parameter]
+    [EditorRequired]
+    public Guid BoulderId { get; set; }
+
+    /// <summary>Gets or sets the viewer's marks on the wall.</summary>
+    [Parameter]
+    [EditorRequired]
+    public MineMarks Mine { get; set; } = MineMarks.None;
+}

@@ -8,7 +8,7 @@ namespace Blocwerk.Web.Components.Pages.Walls;
 
 /// <summary>
 /// The boulder page's live counts (design §5.5). <c>boulder.stats</c> is coarse (ticks, ratings or grade proposals of the
-/// boulder changed), and so are the viewer's own rows (<c>tick.mine</c>, <c>rating.mine</c>, <c>favorite.changed</c>, from
+/// boulder changed), and so are the viewer's own rows (<c>tick.mine</c>, <c>rating.mine</c>, <c>favorite.changed</c>, <c>project.changed</c>, from
 /// their other devices; never on a kiosk): each re-reads every count, computed at read time. Held while the name/grade or the proposal form is open, so a
 /// refresh never replaces what the user is choosing; applied when the form closes.
 /// </summary>
@@ -16,7 +16,7 @@ public partial class BoulderDetail
 {
     private static readonly IReadOnlySet<string> StatsKinds = new HashSet<string>
     {
-        FeedKinds.BoulderStats, FeedKinds.TickMine, FeedKinds.RatingMine, FeedKinds.FavoriteChanged,
+        FeedKinds.BoulderStats, FeedKinds.TickMine, FeedKinds.RatingMine, FeedKinds.FavoriteChanged, FeedKinds.ProjectChanged,
     };
 
     private LeafFeed? _statsFeed;
@@ -99,6 +99,7 @@ public partial class BoulderDetail
         read.Summary = await AttemptService.GetBoulderSummaryForUserAsync(boulderId);
         read.Rating = await FeedbackService.GetRatingAsync(boulderId);
         read.Favorite = await FeedbackService.IsFavoritedAsync(boulderId);
+        read.Project = ShowsProjects ? await ProjectService.IsProjectAsync(boulderId) : null;
         return read;
     }
 
@@ -113,5 +114,6 @@ public partial class BoulderDetail
         _summary = read.Summary ?? _summary;
         _rating = read.Rating ?? _rating;
         _isFavorite = read.Favorite ?? _isFavorite;
+        _isProject = read.Project ?? _isProject;
     }
 }

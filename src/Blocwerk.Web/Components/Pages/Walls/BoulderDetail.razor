@@ -3,6 +3,7 @@
 @rendermode InteractiveServer
 @inject IBoulderService BoulderService
 @inject IBoulderFeedbackService FeedbackService
+@inject IBoulderProjectService ProjectService
 @inject IAttemptService AttemptService
 @inject IWallService WallService
 @inject IWallPanelService WallPanelService
@@ -14,6 +15,7 @@
 @inject IJSRuntime JS
 @inject CircuitEditActivity EditActivity
 @inject ILogger<BoulderDetail> Logger
+@using Blocwerk.Core.Services.Projects
 @using Blocwerk.Web.Components.Shared
 @using Blocwerk.Web.State
 @implements IAsyncDisposable
@@ -66,10 +68,6 @@ else
                     <span class="archived-badge">archived</span>
                 }
                 <div class="title-actions">
-                    @if (!_isAnonymous)
-                    {
-                        <BoulderFavoriteToggle BoulderId="_boulder.Id" IsFavorite="_isFavorite" />
-                    }
                     @* The pencil opens the full editor (name, grade, holds, rules); same permission as before. *@
                     @if (CanFullRevise)
                     {
@@ -347,12 +345,10 @@ else
         </div>
         </div>
 
-        @* Right column on the desktop tier: everything you DO with the boulder. *@
+        @* Right column on the desktop tier: everything you DO with the boulder. On the phone tier the columns are
+           transparent and the DOM order below is the stack: (header, view and ascent buttons first, by CSS order)
+           then the details block and notices of the left column, then this column, then the long-form row. *@
         <div class="boulder-side-col">
-        <BoulderStylesPanel Boulder="_boulder" CanEdit="CanManageBoulder" />
-        <BoulderHoldTypePanel Boulder="_boulder" CanEdit="CanManageBoulder" />
-        <BoulderRulesSummary Boulder="_boulder" />
-
         @if (!_isAnonymous)
         {
             @* A draft can't be logged (the server rejects it, the offline queue drops it as
@@ -361,77 +357,9 @@ else
             {
                 <BoulderAttemptBar BoulderId="_boulder.Id" />
             }
-
-            <BoulderVariantsCard WallId="WallId" BoulderId="BoulderId" ShareToken="@ShareToken" />
-
-            <div class="rating-section">
-                <div class="rating-summary">
-                    @if (_rating.Count > 0)
-                    {
-                        <StarRating Value="@(_rating.Average ?? 0)" ReadOnly="true" />
-                        <span class="rating-avg">@_rating.Average?.ToString("0.0")</span>
-                        <span class="rating-count">(@_rating.Count rating@(_rating.Count != 1 ? "s" : ""))</span>
-                    }
-                    else
-                    {
-                        <span class="rating-empty">No ratings yet</span>
-                    }
-                </div>
-                <div class="rating-mine">
-                    <span class="rating-mine-label">Your rating</span>
-                    <StarRating Value="@(_rating.MyRating ?? 0)" ActionBoulderId="_boulder.Id"
-                                ContainerId="bw-my-rating" />
-                    @if (_rating.MyRating.HasValue)
-                    {
-                        @* Server-only: there is no "remove rating" action in the offline
-                           queue, so this needs a live circuit. Re-rating works offline. *@
-                        <button class="rating-clear" @onclick="ClearRating" title="Clear your rating">clear</button>
-                    }
-                </div>
-            </div>
-
-            @if (!_boulder.IsDraft)
-            {
-                <details class="backdate-card">
-                    <summary>Log at a specific time</summary>
-                    <div class="backdate-body">
-                        <label class="backdate-label" for="bw-backdate">When did you climb it?</label>
-                        <input id="bw-backdate" type="datetime-local" class="backdate-input" @bind="_backdateTime" />
-                        <div class="attempt-buttons">
-                            <button type="button" class="attempt-btn try" @onclick="() => LogBackdated(AttemptType.Attempt)">Attempt</button>
-                            <button type="button" class="attempt-btn send" @onclick="() => LogBackdated(AttemptType.Send)">Send</button>
-                            <button type="button" class="attempt-btn flash" @onclick="() => LogBackdated(AttemptType.Flash)">Flash</button>
-                        </div>
-                    </div>
-                </details>
-            }
-
-            @* Proposing stays exactly as the server has it (ProposeGradeAsync refuses only your OWN
-               boulder), so a setter or wall admin who did not create it can still propose. *@
-            @if (!_isCreator)
-            {
-                @if (_showGradeForm)
-                {
-                    <div class="grade-propose-form">
-                        @* A proposal starts empty: open on the scale the boulder's own grade is written in. *@
-                        <GradePicker @bind-Value="_proposedGrade" DefaultUseFont="@GradeScale.IsFont(_boulder.Grade)" />
-                        <div class="grade-propose-actions">
-                            <button class="proposal-btn accept" @onclick="SubmitGradeProposal"
-                                    disabled="@(string.IsNullOrEmpty(_proposedGrade))">Propose</button>
-                            <button class="proposal-btn reject" @onclick="CancelGradeForm">Cancel</button>
-                        </div>
-                    </div>
-                }
-                else
-                {
-                    <button class="btn-propose-grade" @onclick="ShowGradeForm">Propose different grade</button>
-                }
-            }
         }
         else
         {
-            <BoulderVariantsCard WallId="WallId" BoulderId="BoulderId" ShareToken="@ShareToken" />
-
             @* Two different anonymous viewers, two different next steps. On a tablet nobody logs IN;
                they tap their own name on the kiosk picker, and pointing them at a login page they are
                not meant to complete is what this whole fix is about. *@
@@ -462,25 +390,96 @@ else
             }
         }
 
+        <BoulderRulesSummary Boulder="_boulder" />
+
+        @if (!_isAnonymous)
+        {
+            @if (!_boulder.IsDraft)
+            {
+                <details class="backdate-card">
+                    <summary>Log at a specific time</summary>
+                    <div class="backdate-body">
+                        <label class="backdate-label" for="bw-backdate">When did you climb it?</label>
+                        <input id="bw-backdate" type="datetime-local" class="backdate-input" @bind="_backdateTime" />
+                        <div class="attempt-buttons">
+                            <button type="button" class="attempt-btn try" @onclick="() => LogBackdated(AttemptType.Attempt)">Attempt</button>
+                            <button type="button" class="attempt-btn send" @onclick="() => LogBackdated(AttemptType.Send)">Send</button>
+                            <button type="button" class="attempt-btn flash" @onclick="() => LogBackdated(AttemptType.Flash)">Flash</button>
+                        </div>
+                    </div>
+                </details>
+            }
+
+            <BoulderMarkToggles BoulderId="_boulder.Id" IsFavorite="_isFavorite" IsProject="_isProject"
+                                ShowProject="ShowsProjects" />
+
+            <div class="rating-section">
+                <div class="rating-summary">
+                    @if (_rating.Count > 0)
+                    {
+                        <StarRating Value="@(_rating.Average ?? 0)" ReadOnly="true" />
+                        <span class="rating-avg">@_rating.Average?.ToString("0.0")</span>
+                        <span class="rating-count">(@_rating.Count rating@(_rating.Count != 1 ? "s" : ""))</span>
+                    }
+                    else
+                    {
+                        <span class="rating-empty">No ratings yet</span>
+                    }
+                </div>
+                <div class="rating-mine">
+                    <span class="rating-mine-label">Your rating</span>
+                    <StarRating Value="@(_rating.MyRating ?? 0)" ActionBoulderId="_boulder.Id"
+                                ContainerId="bw-my-rating" />
+                    @if (_rating.MyRating.HasValue)
+                    {
+                        @* Server-only: there is no "remove rating" action in the offline
+                           queue, so this needs a live circuit. Re-rating works offline. *@
+                        <button class="rating-clear" @onclick="ClearRating" title="Clear your rating">clear</button>
+                    }
+                </div>
+            </div>
+
+            @* Proposing stays exactly as the server has it (ProposeGradeAsync refuses only your OWN
+               boulder), so a setter or wall admin who did not create it can still propose. *@
+            @if (!_isCreator)
+            {
+                @if (_showGradeForm)
+                {
+                    <div class="grade-propose-form">
+                        @* A proposal starts empty: open on the scale the boulder's own grade is written in. *@
+                        <GradePicker @bind-Value="_proposedGrade" DefaultUseFont="@GradeScale.IsFont(_boulder.Grade)" />
+                        <div class="grade-propose-actions">
+                            <button class="proposal-btn accept" @onclick="SubmitGradeProposal"
+                                    disabled="@(string.IsNullOrEmpty(_proposedGrade))">Propose</button>
+                            <button class="proposal-btn reject" @onclick="CancelGradeForm">Cancel</button>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <button class="btn-propose-grade" @onclick="ShowGradeForm">Propose different grade</button>
+                }
+            }
+        }
+        </div>
+        </div>
+
+        @* Full-width row under both columns on the desktop tier: the sections whose content has no natural length,
+           flowed into as many readable columns as the width affords. Same display:contents trick as the two columns
+           above, so on the phone tier this is simply the rest of the stack, in this order. *@
+        <div class="boulder-wide-col">
+        <BoulderComments @ref="_commentList" BoulderId="BoulderId" WallId="WallId" ShareToken="@ShareToken"
+                         CurrentUserId="_currentUserId" IsAnonymous="_isAnonymous" />
+
         <BoulderBetaVideos @ref="_betaVideos" BoulderId="BoulderId" WallId="WallId" CurrentUserId="_currentUserId"
                            IsAnonymous="_isAnonymous" ShareToken="@ShareToken"
                            Uploaded="OnBetaVideoUploaded" />
-        </div>
-        </div>
 
-        @* Full-width row under both columns on the desktop tier: the three sections whose content
-           has no natural length — activity, comments, history. In a 360px rail they were a thin
-           stack of wrapped text next to half a screen of empty space beside the photo; here they
-           fill the width the photo column leaves and flow into as many readable columns as fit.
-           Same display:contents trick as the two columns above, so the phone tier is untouched and
-           the DOM order stays exactly the order the phone stack has always rendered. *@
-        <div class="boulder-wide-col">
+        <BoulderVariantsCard WallId="WallId" BoulderId="BoulderId" ShareToken="@ShareToken" />
         <BoulderVariantActions Boulder="_boulder" CanEdit="CanManageBoulder" IsAnonymous="_isAnonymous" />
 
-        <BoulderActivityFeed @ref="_activityFeed" BoulderId="BoulderId" WallId="WallId" ShareToken="@ShareToken" />
-
-        <BoulderComments @ref="_commentList" BoulderId="BoulderId" WallId="WallId" ShareToken="@ShareToken"
-                         CurrentUserId="_currentUserId" IsAnonymous="_isAnonymous" />
+        <BoulderStylesPanel Boulder="_boulder" CanEdit="CanManageBoulder" />
+        <BoulderHoldTypePanel Boulder="_boulder" CanEdit="CanManageBoulder" />
 
         @if (!_isAnonymous && _attempts.Count > 0)
         {
@@ -502,6 +501,8 @@ else
                 }
             </div>
         }
+
+        <BoulderActivityFeed @ref="_activityFeed" BoulderId="BoulderId" WallId="WallId" ShareToken="@ShareToken" />
         </div>
     </div>
 }
@@ -654,6 +655,10 @@ else
     private bool _showGradeForm;
     private string? _proposedGrade;
     private bool _isFavorite;
+    private bool _isProject;
+
+    // Projects are a signed-in member's own; a kiosk tablet is shared, so whoever is picked there has none on it.
+    private bool ShowsProjects => !_isAnonymous && !KioskContext.IsKiosk;
     private RatingInfo _rating = new(null, 0, null);
 
     private DateTime _backdateTime = DateTime.Now;
@@ -796,6 +801,7 @@ else
                 if (!_isAnonymous)
                 {
                     _isFavorite = await FeedbackService.IsFavoritedAsync(BoulderId);
+                    _isProject = ShowsProjects && await ProjectService.IsProjectAsync(BoulderId);
                     _rating = await FeedbackService.GetRatingAsync(BoulderId);
                 }
             },
@@ -1179,6 +1185,7 @@ else
         _renderHolds = [];
         _activeProposal = null;
         _isFavorite = false;
+        _isProject = false;
         _rating = new(null, 0, null);
         _publishError = null;
         OpenStatsFeed();
@@ -1303,6 +1310,7 @@ else
         if (!_isAnonymous)
         {
             _isFavorite = await FeedbackService.IsFavoritedAsync(BoulderId);
+            _isProject = ShowsProjects && await ProjectService.IsProjectAsync(BoulderId);
             _rating = await FeedbackService.GetRatingAsync(BoulderId);
         }
     }

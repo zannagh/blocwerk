@@ -86,6 +86,8 @@ test('the resting kiosk reads a boulder read-only, naming consenting members and
     await expect(comments.locator('.comment-input')).toHaveCount(0);
     await expect(comments.locator('.comment-submit')).toHaveCount(0);
     await expect(comments.locator('.delete-btn')).toHaveCount(0);
+    // Nobody is picked, so nobody's marks: no Project, no Favorite.
+    await expect(page.locator('.boulder-marks')).toHaveCount(0);
     await expect(commentRow(page, world.social.comment).locator('.comment-author')).toHaveText('Cora');
     const dave = commentRow(page, world.social.unconsentedComment);
     await expect(dave.locator('.comment-author')).toHaveText(PLACEHOLDER);
@@ -171,6 +173,10 @@ test('acting as a member, the tablet shows the names that member sees', async ({
     await expect(commentRow(page, world.social.unconsentedComment).locator('.comment-author')).toHaveText('Dave');
     await expect(page.locator('.activity-feed')).toContainText('Dave flashed this');
     await expect(page.locator('.bw-grade-proposal-notice')).toContainText('has been proposed by Dave');
+
+    // The tablet is shared: the picked member keeps the favourite toggle but has no projects on it.
+    await expect(page.locator('.boulder-marks .mark-favorite')).toHaveCount(1);
+    await expect(page.locator('.boulder-marks .mark-project')).toHaveCount(0);
 });
 
 test('the resting kiosk reads nothing of an archived boulder', async ({ page, world }) => {
