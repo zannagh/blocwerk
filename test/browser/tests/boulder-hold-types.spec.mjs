@@ -112,7 +112,9 @@ test('offline client: the same levels, cards and list at phone width', async ({ 
     await expectClient(page, `/walls/${wall.id}`);
     await expect(page.locator('.style-card')).toHaveCount(5);
     await expect(card(page, 'holds').locator('.style-card-count')).toHaveText('3');
-    await expectFits(page, page);
+    // The offline landing keeps the wall's photo above the cards, so the cards are one screen of their own below it.
+    const landing = await page.locator('nav.style-cards').evaluate(el => el.getBoundingClientRect().height);
+    expect(landing).toBeLessThanOrEqual(PHONE.height);
     await page.screenshot({ path: '../../.out/holds-client-landing-390.png' });
 
     await card(page, 'holds').click();

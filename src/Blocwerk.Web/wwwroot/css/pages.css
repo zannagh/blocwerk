@@ -4262,7 +4262,7 @@ a.wall-update-link {
     border: none; color: var(--on-accent);
     background:
         radial-gradient(120% 90% at 85% 0%, rgba(255, 255, 255, 0.22) 0%, transparent 55%),
-        linear-gradient(135deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 55%, var(--secondary)) 100%);
+        linear-gradient(135deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 55%, var(--topbar-bg)) 100%);
     box-shadow: 0 10px 24px -12px color-mix(in srgb, var(--accent) 80%, transparent);
 }
 .browse-landing .browse-hero.is-link:hover { box-shadow: 0 14px 28px -12px color-mix(in srgb, var(--accent) 90%, transparent); }
