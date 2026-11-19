@@ -15,15 +15,16 @@ public partial class WallDetail
     private IReadOnlyDictionary<Guid, BoulderFamilyRow>? familyRowsCache;
     private Dictionary<Guid, BoulderListItem> familyItemsById = [];
     private object? familyRowsItemsRef;
+    private object? familyRowsHoldsRef;
 
-    // Recomputed when _items is reassigned, which is the only way the list changes.
+    // Recomputed when _items is reassigned, which is the only way the list changes, or the holds (their types) are.
     private IReadOnlyDictionary<Guid, BoulderFamilyRow> FamilyRows
     {
         get
         {
-            if (familyRowsCache is null || !ReferenceEquals(familyRowsItemsRef, _items))
+            if (familyRowsCache is null || !ReferenceEquals(familyRowsItemsRef, _items) || !ReferenceEquals(familyRowsHoldsRef, _holds))
             {
-                familyRowsItemsRef = _items;
+                (familyRowsItemsRef, familyRowsHoldsRef) = (_items, _holds);
                 familyRowsCache = BoulderFamilies.Rows(_items.Select(i => FamilyMember(i.Boulder)));
                 familyItemsById = _items.ToDictionary(i => i.Boulder.Id);
             }
@@ -32,8 +33,8 @@ public partial class WallDetail
         }
     }
 
-    private static BoulderFamilyMember FamilyMember(Boulder b) =>
-        new(b.Id, b.ParentBoulderId, b.Name, b.Grade, b.IsDraft, b.IsArchived, b.Styles, b.IsHistoric);
+    private BoulderFamilyMember FamilyMember(Boulder b) =>
+        new(b.Id, b.ParentBoulderId, b.Name, b.Grade, b.IsDraft, b.IsArchived, b.Styles, b.IsHistoric, EffectiveHoldTypeOf(b)?.Type);
 
     private BoulderFamilyRow FamilyOf(BoulderListItem item) => FamilyRows.GetValueOrDefault(item.Boulder.Id, NoFamily);
 

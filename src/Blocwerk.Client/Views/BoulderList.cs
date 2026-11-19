@@ -17,11 +17,12 @@ public static class BoulderList
     /// <param name="boulders">The boulders the class may see.</param>
     /// <param name="mine">The viewer's marks.</param>
     /// <param name="filter">The filter.</param>
+    /// <param name="holds">The holds document, for the boulders' hold types; null when the device does not hold it.</param>
     /// <returns>Both lists.</returns>
     public static (IReadOnlyList<BouldersDocumentBoulder> Active, IReadOnlyList<BouldersDocumentBoulder> Archived) Apply(
-        IReadOnlyList<BouldersDocumentBoulder> boulders, MineMarks mine, BoulderFilter filter)
+        IReadOnlyList<BouldersDocumentBoulder> boulders, MineMarks mine, BoulderFilter filter, HoldsDocument? holds = null)
     {
-        var families = Families(boulders);
+        var families = Families(boulders, holds);
         var active = Sort(Filter(Visible(boulders), mine, filter, families), mine, filter.Sort, families)
             .OrderBy(b => b.IsHistoric)
             .ToList();
@@ -61,10 +62,15 @@ public static class BoulderList
 
     /// <summary>The rows of the list by boulder: a variant under a listed parent has none.</summary>
     /// <param name="boulders">The boulders the class may see.</param>
+    /// <param name="holds">The holds document, for the boulders' hold types; null when the device does not hold it.</param>
     /// <returns>Each listed boulder's family.</returns>
-    public static IReadOnlyDictionary<Guid, BoulderFamilyRow> Families(IReadOnlyList<BouldersDocumentBoulder> boulders) =>
-        BoulderFamilies.Rows(boulders.Select(b => new BoulderFamilyMember(
-            b.Id, b.ParentBoulderId, b.Name, b.Grade, b.Draft == true, b.IsArchived, BoulderStyles.FromNames(b.Styles), b.IsHistoric)));
+    public static IReadOnlyDictionary<Guid, BoulderFamilyRow> Families(IReadOnlyList<BouldersDocumentBoulder> boulders, HoldsDocument? holds = null)
+    {
+        var byId = DocumentHoldTypes.Index(holds);
+        return BoulderFamilies.Rows(boulders.Select(b => new BoulderFamilyMember(
+            b.Id, b.ParentBoulderId, b.Name, b.Grade, b.Draft == true, b.IsArchived, BoulderStyles.FromNames(b.Styles), b.IsHistoric,
+            DocumentHoldTypes.Of(b, byId)?.Type)));
+    }
 
     private static IEnumerable<BouldersDocumentBoulder> Filter(
         IEnumerable<BouldersDocumentBoulder> src, MineMarks mine, BoulderFilter filter, IReadOnlyDictionary<Guid, BoulderFamilyRow> families)
@@ -72,6 +78,11 @@ public static class BoulderList
         if (filter.Style is { } style)
         {
             src = src.Where(b => families[b.Id].Styles.HasFlag(style));
+        }
+
+        if (filter.HoldType is { } hold)
+        {
+            src = src.Where(b => families[b.Id].HoldTypes?.Contains(hold) == true);
         }
 
         if (!string.IsNullOrWhiteSpace(filter.Search))

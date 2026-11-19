@@ -137,11 +137,11 @@
             || Boulder.Setters.Any(s => s.UserId == CurrentUserId)
             || IsWallAdmin);
 
-    /// <summary>Gets or sets the list's style (<c>?style=</c>), carried into the link so the boulder's back link returns to that list.</summary>
-    [Parameter] public string? Style { get; set; }
+    /// <summary>Gets or sets the list's level (<c>style=power</c>, <c>hold=crimp</c>; BoulderBrowse.ListQuery), carried into the link so the boulder's back link returns to that list.</summary>
+    [Parameter] public string? ListQuery { get; set; }
 
     private string BoulderUrl => (!string.IsNullOrEmpty(ShareToken)
         ? $"/walls/{WallId}/boulders/{Boulder.Id}/shared/{ShareToken}"
         : $"/walls/{WallId}/boulders/{Boulder.Id}")
-        + (Blocwerk.Core.Helpers.BoulderStyles.QueryValue(Style) is { } style ? $"?style={style}" : string.Empty);
+        + (string.IsNullOrEmpty(ListQuery) ? string.Empty : "?" + ListQuery);
 }

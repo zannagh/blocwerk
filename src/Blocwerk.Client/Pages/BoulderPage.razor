@@ -93,6 +93,7 @@ else
                 }
 
                 <BoulderStyleBadges Styles="BoulderStyles.FromNames(boulder.Styles)" />
+                <HoldTypeBadge Value="holdType" />
 
                 @if (!holds.Saved)
                 {
@@ -146,6 +147,7 @@ else
 @code {
     private Blocwerk.Contracts.Documents.BouldersDocumentBoulder? boulder;
     private BoulderHolds? holds;
+    private EffectiveHoldType? holdType;
     private WallPanelGrid? grid;
     private PanelView? start;
     private IReadOnlyList<Blocwerk.Contracts.Documents.CommentsDocumentComment> comments = [];
@@ -161,11 +163,15 @@ else
         boulder is null ? [] : comments.Select(c => c.CreatedAt).Append(boulder.CreatedAt);
 
     /// <summary>Gets or sets the style of the list this boulder was opened from (<c>?style=</c>).</summary>
-    [SupplyParameterFromQuery(Name = "style")]
+    [SupplyParameterFromQuery(Name = BoulderBrowse.StyleKey)]
     public string? Style { get; set; }
 
+    /// <summary>Gets or sets the hold type of the list this boulder was opened from (<c>?hold=</c>).</summary>
+    [SupplyParameterFromQuery(Name = BoulderBrowse.HoldKey)]
+    public string? Hold { get; set; }
+
     private string BackLink => ClientRoutes.WallLink(WallId, ShareToken)
-        + (BoulderStyles.QueryValue(Style) is { } style ? "?style=" + style : string.Empty);
+        + (BoulderBrowse.From(null, Style, Hold).ListQuery is { } list ? "?" + list : string.Empty);
 
     private RenderFragment Byline => @<text>by @boulder!.SetBy &middot; <time datetime="@boulder.CreatedAt.UtcDateTime.ToString("o")">@ClientTime.Date(boulder.CreatedAt, OffsetOf(boulder.CreatedAt))</time></text>;
 
@@ -182,12 +188,13 @@ else
         boulder = Wall is null ? null : ClassBoulders.Of(Wall).FirstOrDefault(b => b.Id == BoulderId);
         if (Wall is null || boulder is null)
         {
-            (holds, grid, start, comments) = (null, null, null, []);
+            (holds, grid, start, comments, holdType) = (null, null, null, [], null);
             return;
         }
 
         grid = new WallPanelGrid(Wall.Wall!, Wall.Holds);
         holds = new BoulderHolds(boulder, Wall.Holds, grid);
+        holdType = DocumentHoldTypes.Of(boulder, DocumentHoldTypes.Index(Wall.Holds));
         start = grid.StartFor(holds.Ids);
         comments = Wall.CommentsFor(BoulderId).Reverse().ToList();
     }

@@ -350,6 +350,7 @@ else
         @* Right column on the desktop tier: everything you DO with the boulder. *@
         <div class="boulder-side-col">
         <BoulderStylesPanel Boulder="_boulder" CanEdit="CanManageBoulder" />
+        <BoulderHoldTypePanel Boulder="_boulder" CanEdit="CanManageBoulder" />
         <BoulderRulesSummary Boulder="_boulder" />
 
         @if (!_isAnonymous)
@@ -554,7 +555,11 @@ else
     [SupplyParameterFromQuery(Name = "style")]
     public string? Style { get; set; }
 
-    private string BackStyleQuery => Blocwerk.Core.Helpers.BoulderStyles.QueryValue(Style) is { } style ? $"&style={style}" : string.Empty;
+    /// <summary>The hold type of the list this boulder was opened from (<c>?hold=</c>), so back returns to that very list.</summary>
+    [SupplyParameterFromQuery(Name = "hold")]
+    public string? Hold { get; set; }
+
+    private string BackStyleQuery => Blocwerk.Core.Helpers.BoulderBrowse.From(null, Style, Hold).ListQuery is { } list ? "&" + list : string.Empty;
 
     // Route params of the boulder currently loaded. Under enhanced navigation, boulder→boulder
     // navigation keeps this component alive (same route template, new parameters), so these guard a
