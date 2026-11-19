@@ -32,7 +32,9 @@ public partial interface IBoulderService
     /// <summary>
     /// Makes <paramref name="variantIds"/> the listed variants of this boulder, which stays or becomes a parent. A chosen
     /// boulder brings its own variants along; a listed variant left out loses its parent. Drafts, archived and historic
-    /// variants are not listed and stay. Only the boulder's creator, a setter or a wall admin may do this.
+    /// variants are not listed and stay. On a boulder that is a variant itself the chosen boulders join its parent and the
+    /// boulder stays where it is, unless the parent is among them: then the family turns around and this boulder leads it.
+    /// Only the boulder's creator, a setter or a wall admin may do this.
     /// </summary>
     /// <param name="boulderId">The boulder the change starts from.</param>
     /// <param name="variantIds">The boulders that should be its variants.</param>
@@ -164,10 +166,13 @@ public partial class BoulderService
 
             if (targets.Count > 0)
             {
-                start.ParentBoulderId = null;
+                // A variant has no variants of its own: what it gathers joins its parent, unless that parent is what it picked.
+                var keepsParent = start.ParentBoulderId is { } current && !ids.Contains(current);
+                var parentId = keepsParent ? start.ParentBoulderId!.Value : boulderId;
+                start.ParentBoulderId = keepsParent ? parentId : null;
                 foreach (var moved in variants.Where(v => v.ParentBoulderId is { } p && ids.Contains(p) && v.Id != boulderId).Concat(targets))
                 {
-                    moved.ParentBoulderId = boulderId;
+                    moved.ParentBoulderId = parentId;
                 }
             }
 
@@ -238,6 +243,7 @@ public partial class BoulderService
                 r.Grade,
                 r.ParentId == start.Id,
                 r.Id == start.ParentBoulderId,
+                start.ParentBoulderId is not null && r.ParentId == start.ParentBoulderId,
                 counts.GetValueOrDefault(r.Id),
                 r.ParentId is { } parent && parent != start.Id ? names.GetValueOrDefault(parent) : null))
             .OrderByDescending(c => c.IsParent)

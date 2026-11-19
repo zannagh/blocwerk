@@ -31,7 +31,7 @@
             <legend>How are they related?</legend>
             <label class="variant-mode @(_asParent ? "is-on" : "")">
                 <input type="radio" name="variant-mode" checked="@_asParent" @onchange="() => _asParent = true" />
-                <span><strong>Variants of this boulder</strong><small>This boulder stays or becomes the parent.</small></span>
+                <span><strong>Variants of this boulder</strong><small>@VariantsHint</small></span>
             </label>
             <label class="variant-mode @(!_asParent ? "is-on" : "")">
                 <input type="radio" name="variant-mode" checked="@(!_asParent)" @onchange="() => _asParent = false" />
@@ -129,9 +129,15 @@
 
     // A boulder's own variants cannot be its parent, so the second mode does not offer them.
     private List<BoulderVariantChoice> Visible => (_choices?.Choices ?? [])
-        .Where(c => _asParent || !c.IsVariant)
+        .Where(c => _asParent ? !c.IsSibling : !c.IsVariant)
         .Where(c => string.IsNullOrWhiteSpace(_search) || c.Name.Contains(_search.Trim(), StringComparison.CurrentCultureIgnoreCase))
         .ToList();
+
+    private string? ParentName => _choices?.Choices.FirstOrDefault(c => c.IsParent)?.Name;
+
+    private string VariantsHint => ParentName is { } parent
+        ? $"They join {parent}'s family. Pick {parent} itself to make this boulder the parent."
+        : "This boulder stays or becomes the parent.";
 
     private bool CanConfirm => _asParent || _parentChoice is not null || _choices?.ParentId is not null;
 
@@ -171,7 +177,7 @@
     {
         if (choice.IsParent)
         {
-            return "Parent of this boulder";
+            return _asParent ? "Parent of this boulder. Picking it makes this boulder the parent" : "Parent of this boulder";
         }
 
         if (choice.ParentName is { } parent)

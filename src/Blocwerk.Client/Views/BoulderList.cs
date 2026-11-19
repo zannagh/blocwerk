@@ -56,7 +56,7 @@ public static class BoulderList
     /// <returns>Each listed boulder's family.</returns>
     public static IReadOnlyDictionary<Guid, BoulderFamilyRow> Families(IReadOnlyList<BouldersDocumentBoulder> boulders) =>
         BoulderFamilies.Rows(boulders.Select(b => new BoulderFamilyMember(
-            b.Id, b.ParentBoulderId, b.Name, b.Grade, b.Draft == true, b.IsArchived, BoulderStyles.FromNames(b.Styles))));
+            b.Id, b.ParentBoulderId, b.Name, b.Grade, b.Draft == true, b.IsArchived, BoulderStyles.FromNames(b.Styles), b.IsHistoric)));
 
     private static IEnumerable<BouldersDocumentBoulder> Filter(
         IEnumerable<BouldersDocumentBoulder> src, MineMarks mine, BoulderFilter filter, IReadOnlyDictionary<Guid, BoulderFamilyRow> families)
@@ -94,7 +94,7 @@ public static class BoulderList
 
         var min = ScoreOf(filter.GradeMin);
         var max = ScoreOf(filter.GradeMax);
-        return min is null && max is null ? src : src.Where(b => families[b.Id].Grades.Any(grade => InRange(grade, min, max)));
+        return min is null && max is null ? src : src.Where(b => BoulderFamilies.MatchesGradeRange(families[b.Id], min, max));
     }
 
     private static IEnumerable<BouldersDocumentBoulder> Sort(
@@ -107,13 +107,6 @@ public static class BoulderList
         BoulderSort.MyAttempts => src.OrderByDescending(b => mine.TickFor(b.Id)?.Attempts ?? 0),
         _ => src.OrderByDescending(b => b.CreatedAt),
     };
-
-    // Ungraded (or unrecognised) boulders stay visible when a grade range is set.
-    private static bool InRange(string? grade, int? min, int? max)
-    {
-        var score = GradeScoring.GetScore(grade, false);
-        return score == 0 || ((min is null || score >= min) && (max is null || score <= max));
-    }
 
     private static int? ScoreOf(string? grade)
     {

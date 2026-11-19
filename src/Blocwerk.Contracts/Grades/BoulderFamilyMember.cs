@@ -13,4 +13,5 @@ namespace Blocwerk.Core.Helpers;
 /// <param name="IsDraft">True for a draft.</param>
 /// <param name="IsArchived">True for an archived boulder.</param>
 /// <param name="Styles">Its style tags.</param>
-public readonly record struct BoulderFamilyMember(Guid Id, Guid? ParentId, string Name, string? Grade, bool IsDraft, bool IsArchived, BoulderStyle Styles = BoulderStyle.None);
+/// <param name="IsHistoric">True for a boulder the wall has moved on from.</param>
+public readonly record struct BoulderFamilyMember(Guid Id, Guid? ParentId, string Name, string? Grade, bool IsDraft, bool IsArchived, BoulderStyle Styles = BoulderStyle.None, bool IsHistoric = false);

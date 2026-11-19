@@ -10,6 +10,7 @@ namespace Blocwerk.Core.Services;
 /// <param name="Grade">Its grade, if set.</param>
 /// <param name="IsVariant">True when it is a variant of the boulder the page started from.</param>
 /// <param name="IsParent">True when it is the parent of the boulder the page started from.</param>
+/// <param name="IsSibling">True when it is a variant of the same parent as the boulder the page started from.</param>
 /// <param name="VariantCount">How many variants it has, which move along with it.</param>
 /// <param name="ParentName">The parent it is a variant of now, if any.</param>
-public sealed record BoulderVariantChoice(Guid Id, string Name, string? Grade, bool IsVariant, bool IsParent, int VariantCount, string? ParentName);
+public sealed record BoulderVariantChoice(Guid Id, string Name, string? Grade, bool IsVariant, bool IsParent, bool IsSibling, int VariantCount, string? ParentName);

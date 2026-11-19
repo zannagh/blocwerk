@@ -6,7 +6,8 @@ namespace Blocwerk.Core.Helpers;
 /// <summary>
 /// How a boulder list folds families of variants, the same on the Server's list and in the offline client. A published
 /// variant is hidden under its parent. A draft variant keeps its own row until it is published, or nobody could find it to
-/// finish it, and never counts towards the family; an archived one stays in the archive, where it can be restored.
+/// finish it, and never counts towards the family; an archived one stays in the archive, where it can be restored. A
+/// historic boulder is no longer on the wall as set: it keeps its own row, as historic boulders do, and adds nothing to a family.
 /// </summary>
 public static class BoulderFamilies
 {
@@ -39,10 +40,21 @@ public static class BoulderFamilies
         return GradeScoring.GetScore(lowest, false) == GradeScoring.GetScore(highest, false) ? lowest : $"{lowest}–{highest}";
     }
 
+    /// <summary>Whether a row's family has a grade in the range. A family with no graded member stays, as an ungraded boulder does.</summary>
+    /// <param name="row">The row.</param>
+    /// <param name="minScore">The lowest score allowed, if any.</param>
+    /// <param name="maxScore">The highest score allowed, if any.</param>
+    /// <returns>True when the row belongs in the filtered list.</returns>
+    public static bool MatchesGradeRange(BoulderFamilyRow row, int? minScore, int? maxScore)
+    {
+        var scores = row.Grades.Select(g => GradeScoring.GetScore(g, false)).Where(s => s > 0).ToList();
+        return scores.Count == 0 || scores.Any(s => (minScore is null || s >= minScore) && (maxScore is null || s <= maxScore));
+    }
+
     private static bool IsUnderParent(BoulderFamilyMember member, Dictionary<Guid, BoulderFamilyMember> byId) =>
-        member is { ParentId: { } parentId, IsDraft: false, IsArchived: false }
+        member is { ParentId: { } parentId, IsDraft: false, IsArchived: false, IsHistoric: false }
         && byId.TryGetValue(parentId, out var parent)
-        && parent is { IsDraft: false, IsArchived: false };
+        && parent is { IsDraft: false, IsArchived: false, IsHistoric: false };
 
     private static BoulderFamilyRow RowOf(BoulderFamilyMember head, List<BoulderFamilyMember> variants)
     {

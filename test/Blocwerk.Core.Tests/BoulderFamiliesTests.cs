@@ -63,6 +63,65 @@ public class BoulderFamiliesTests
         Assert.Equal(0, rows[Parent].VariantCount);
     }
 
+    [Theory]
+    [InlineData("7A", null, true)]
+    [InlineData("8A", null, false)]
+    [InlineData(null, "5", false)]
+    public void AnUngradedMember_DoesNotMakeAFamilyMatchEveryGradeFilter(string? min, string? max, bool expected)
+    {
+        var rows = BoulderFamilies.Rows([Member("Parent", "6A", null, Parent), Member("Hard", "7A", Parent), Member("Ungraded", null, Parent)]);
+
+        Assert.Equal(expected, BoulderFamilies.MatchesGradeRange(rows[Parent], Score(min), Score(max)));
+    }
+
+    [Fact]
+    public void AFamilyWithNoGradedMember_StaysInAGradeFilter_AsAnUngradedBoulderDoes()
+    {
+        var rows = BoulderFamilies.Rows([Member("Parent", null, null, Parent), Member("Variant", null, Parent)]);
+
+        Assert.True(BoulderFamilies.MatchesGradeRange(rows[Parent], Score("7A"), Score("8A")));
+    }
+
+    [Fact]
+    public void AHistoricFormerParent_KeepsItsOwnRow_AndAddsNothingToTheFamily()
+    {
+        var heir = Guid.NewGuid();
+        var former = Member("Former parent", "7C", heir) with { IsHistoric = true, Styles = BoulderStyle.Power };
+
+        var rows = BoulderFamilies.Rows([Member("Heir", "6A", null, heir), Member("Variant", "6B", heir), former]);
+
+        Assert.Equal((1, "6A–6B"), (rows[heir].VariantCount, rows[heir].GradeRange));
+        Assert.DoesNotContain("7C", rows[heir].Grades);
+        Assert.False(rows[heir].Styles.HasFlag(BoulderStyle.Power));
+        Assert.Equal((0, "7C"), (rows[former.Id].VariantCount, rows[former.Id].GradeRange));
+    }
+
+    [Fact]
+    public void TheOverviewCount_IsTheListsRows()
+    {
+        IReadOnlyList<BouldersDocumentBoulder> boulders =
+        [
+            CrimpLine() with { Id = Parent, Name = "Parent" },
+            CrimpLine() with { Id = Guid.NewGuid(), Name = "Variant", ParentBoulderId = Parent },
+            CrimpLine() with { Id = Guid.NewGuid(), Name = "Other" },
+        ];
+
+        Assert.Equal(2, BoulderList.Visible(boulders).Count);
+    }
+
+    [Fact]
+    public async Task ThePill_NamesItsVariantsInHiddenText_NotInAnAriaLabel()
+    {
+        await using var view = await ViewHarness.StartAsync(CachedDevice(UserA), $"walls/{Wall}");
+        var html = await view.RenderAsync<BoulderRow>(new()
+        {
+            ["Boulder"] = CrimpLine(), ["WallId"] = Wall, ["Family"] = new BoulderFamilyRow(2, "6A–7A", 6000, ["6A", "7A"], []),
+        });
+
+        Assert.Contains("<span class=\"boulder-variants-label\">2 variants</span>", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("aria-label", html, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void TheOfflineList_ShowsOnlyTheParent_AndFindsItByItsFamily()
     {
@@ -121,6 +180,8 @@ public class BoulderFamiliesTests
 
     private static IEnumerable<string> Names(IReadOnlyList<BouldersDocumentBoulder> boulders, BoulderFilter filter) =>
         BoulderList.Apply(boulders, MineMarks.None, filter).Active.Select(b => b.Name);
+
+    private static int? Score(string? grade) => grade is null ? null : GradeScoring.GetScore(grade, false);
 
     private static BoulderFamilyMember Member(string name, string? grade, Guid? parent, Guid? id = null) =>
         new(id ?? Guid.NewGuid(), parent, name, grade, false, false);

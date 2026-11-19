@@ -31,7 +31,7 @@ public partial class WallDetail
     }
 
     private static BoulderFamilyMember FamilyMember(Boulder b) =>
-        new(b.Id, b.ParentBoulderId, b.Name, b.Grade, b.IsDraft, b.IsArchived, b.Styles);
+        new(b.Id, b.ParentBoulderId, b.Name, b.Grade, b.IsDraft, b.IsArchived, b.Styles, b.IsHistoric);
 
     private BoulderFamilyRow FamilyOf(BoulderListItem item) => FamilyRows.GetValueOrDefault(item.Boulder.Id, NoFamily);
 }

@@ -62,6 +62,7 @@
 
 /* A boulder's family of variants: the list row's pill and the boulder page's card. */
 .boulder-variants-pill {
+    position: relative;
     flex: none;
     padding: 2px 8px;
     font-size: 0.75rem;
@@ -72,6 +73,18 @@
     background: var(--bg-surface-alt);
     border: 1px solid var(--border);
     border-radius: 999px;
+}
+
+.boulder-variants-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
 }
 
 .boulder-card-right .boulder-grade {

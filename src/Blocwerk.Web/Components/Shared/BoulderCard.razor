@@ -68,7 +68,7 @@
         }
         @if (Family is { VariantCount: > 0 } family)
         {
-            <span class="boulder-variants-pill" title="@VariantsLabel(family.VariantCount)" aria-label="@VariantsLabel(family.VariantCount)">+@family.VariantCount</span>
+            <span class="boulder-variants-pill" title="@VariantsLabel(family.VariantCount)"><span aria-hidden="true">+@family.VariantCount</span><span class="boulder-variants-label">@VariantsLabel(family.VariantCount)</span></span>
         }
         @if (!string.IsNullOrEmpty(GradeText))
         {

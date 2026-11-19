@@ -1,5 +1,7 @@
+/* Positioned so the hidden label stays inside it: loose in the swipe carousel it would widen the whole page. */
 .boulder-variants-pill {
-    flex: none; padding: 2px 8px; font-size: 0.75rem; font-weight: 700; line-height: 1.4; white-space: nowrap;
+    position: relative; flex: none; padding: 2px 8px; font-size: 0.75rem; font-weight: 700; line-height: 1.4; white-space: nowrap;
     color: var(--text); background: var(--bg-surface-alt); border: 1px solid var(--border); border-radius: 999px;
 }
+.boulder-variants-label { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .boulder-grade { white-space: nowrap; }

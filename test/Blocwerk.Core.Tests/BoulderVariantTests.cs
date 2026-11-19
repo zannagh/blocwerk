@@ -136,6 +136,25 @@ public class BoulderVariantTests
     }
 
     [Fact]
+    public async Task MarkingFromAVariant_LinksUnderItsParent_AndLeavesTheFamilyWhole()
+    {
+        using var h = new WallTestHarness();
+        var holds = await h.SeedWallAsync();
+        var parent = await CreateAsync(h, holds, "Parent");
+        var variant = await VariantAsync(h, holds, "Variant", parent.Id);
+        var sibling = await VariantAsync(h, holds, "Sibling", parent.Id);
+        var other = await CreateAsync(h, holds, "Other");
+        var otherVariant = await VariantAsync(h, holds, "Other variant", other.Id);
+
+        await h.BoulderService.SetVariantsAsync(variant.Id, [other.Id]);
+
+        Assert.Equal(parent.Id, await ParentOfAsync(h, variant.Id));
+        Assert.Equal(parent.Id, await ParentOfAsync(h, sibling.Id));
+        Assert.Equal(parent.Id, await ParentOfAsync(h, other.Id));
+        Assert.Equal(parent.Id, await ParentOfAsync(h, otherVariant.Id));
+    }
+
+    [Fact]
     public async Task UncheckingAVariant_ClearsItsParent_AndLeavesUnlistedDraftsLinked()
     {
         using var h = new WallTestHarness();

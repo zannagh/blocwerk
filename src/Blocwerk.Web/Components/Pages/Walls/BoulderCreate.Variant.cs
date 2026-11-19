@@ -44,6 +44,7 @@ public partial class BoulderCreate
         _grade = origin.Grade;
         _preferFont = GradeScale.IsFont(origin.Grade) ?? _preferFont;
         _allKickboardOn = origin.KickboardFootholdsOn;
+        _handsFollowFeet = origin.HandsFollowFeet;
         _footColorOnly = origin.FootColorOnly;
         _noMatch = origin.NoMatch;
         _customRule = origin.CustomRule;

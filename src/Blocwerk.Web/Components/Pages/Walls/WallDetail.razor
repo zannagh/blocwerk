@@ -1294,27 +1294,10 @@ else
         var maxScore = ScoreOf(_gradeMax);
         if (minScore.HasValue || maxScore.HasValue)
         {
-            src = src.Where(i => FamilyOf(i).Grades.Any(grade => MatchesGradeRange(grade, minScore, maxScore)));
+            src = src.Where(i => BoulderFamilies.MatchesGradeRange(FamilyOf(i), minScore, maxScore));
         }
 
         return src;
-    }
-
-    // Ungraded (or unrecognised) boulders always stay visible when a grade range is set.
-    private static bool MatchesGradeRange(string? grade, int? minScore, int? maxScore)
-    {
-        var score = GradeScoring.GetScore(grade, false);
-        if (score == 0)
-        {
-            return true;
-        }
-
-        if (minScore.HasValue && score < minScore.Value)
-        {
-            return false;
-        }
-
-        return !maxScore.HasValue || score <= maxScore.Value;
     }
 
     private static int? ScoreOf(string? grade)
