@@ -67,6 +67,9 @@ internal sealed class SeedWalls
         var widePanels = db.WallPanels.Local.Where(p => p.WallId == wide.Wall.Id).OrderBy(p => p.Col).Select(p => p.Id).ToList();
         var multiPanel = SeedMultiPanel.Add(db, wide.Wall.Id, widePanels, pia.Id);
         AddSpecBoulders(wide.Wall.Id, pia.Id);
+        var vera = AddUser("vera@browser.test", "Vera");
+        var variants = AddWall("Variants", vera, panels: 1, seed: 60);
+        SeedVariants.Add(db, variants.Wall.Id, db.WallPanels.Local.Single(p => p.WallId == variants.Wall.Id).Id, vera.Id);
         await db.SaveChangesAsync();
 
         return new SeededWorld(
@@ -80,6 +83,7 @@ internal sealed class SeedWalls
                 ["dave"] = new(dave.Id, dave.DisplayName),
                 ["pia"] = new(pia.Id, pia.DisplayName),
                 ["stella"] = new(stella.Id, stella.DisplayName),
+                ["vera"] = new(vera.Id, vera.DisplayName),
             },
             new Dictionary<string, SeededWall>
             {
@@ -89,6 +93,7 @@ internal sealed class SeedWalls
                 ["bobs"] = new(bobs.Wall.Id, bobs.Shas, null, null, null, null),
                 ["social"] = new(socialWall.Wall.Id, socialWall.Shas, null, null, null, null),
                 ["wide"] = new(wide.Wall.Id, wide.Shas, null, null, null, null),
+                ["variants"] = new(variants.Wall.Id, variants.Shas, null, null, null, null),
             },
             kioskToken,
             alpha.Wall.ShareToken,
