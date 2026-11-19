@@ -49,6 +49,10 @@ else
                 {
                     <span class="grade-badge">@_boulder.Grade</span>
                 }
+                @if (!_isAnonymous)
+                {
+                    <BoulderStatusIcon Summary="_summary" />
+                }
                 @if (_boulder.IsDraft)
                 {
                     <span class="draft-badge">draft</span>
@@ -66,41 +70,25 @@ else
                     {
                         <BoulderFavoriteToggle BoulderId="_boulder.Id" IsFavorite="_isFavorite" />
                     }
-                    @if ((_isCreator || _isAdmin || _isSetter) && !_isAnonymous && !_editMeta)
+                    @* The pencil opens the full editor (name, grade, holds, rules); same permission as before. *@
+                    @if (CanFullRevise)
                     {
-                        <button class="btn-icon boulder-edit-btn" @onclick="StartEditMeta" title="Rename or change grade">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                        <a href="/walls/@WallId/boulders/@BoulderId/revise" class="btn-icon boulder-edit-btn"
+                           title="Edit boulder" aria-label="Edit boulder">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true">
                                 <path d="M12 20h9" />
                                 <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
                             </svg>
-                        </button>
+                        </a>
                     }
                     @* Only when the wall has a measured 3D model: flips the view between the photos and the
                        inline 3D view with this boulder's holds highlighted. *@
                     <WallViewToggle WallId="WallId" Pill="true" Show3D="_show3D" Show3DChanged="SetShow3DAsync" />
-                    @if (CanFullRevise)
-                    {
-                        <a href="/walls/@WallId/boulders/@BoulderId/revise" class="btn-revise">Revise</a>
-                    }
                 </div>
             </div>
 
             @* An open inline editor, kept in the browser when the page is hidden (deploy-drafts.js). *@
             <div hidden aria-hidden="true" data-bw-keep-key="@KeepKey" data-bw-keep-payload="@KeepPayload"></div>
-
-            @if (_editMeta)
-            {
-                <div class="boulder-meta-edit">
-                    <input class="boulder-name-input" maxlength="128" placeholder="Boulder name"
-                           @bind="_editName" @bind:event="oninput" />
-                    <GradePicker @bind-Value="_editGrade" />
-                    <div class="meta-edit-actions">
-                        <button class="proposal-btn accept" @onclick="SaveMeta"
-                                disabled="@string.IsNullOrWhiteSpace(_editName)">Save</button>
-                        <button class="proposal-btn reject" @onclick="CancelEditMeta">Cancel</button>
-                    </div>
-                </div>
-            }
 
             @if (_boulder.Setters.Count > 0)
             {
@@ -114,7 +102,7 @@ else
         </div>
 
         @* Phone tier only: the first screen is the wall view plus the ascent buttons, so the setter line
-           and the Revise action leave the header and follow below the fold (CSS hides these two
+           leaves the header and follows below the fold (CSS hides these two
            everywhere else, and hides their header twins on the phone). *@
         <div class="boulder-below-meta">
             <p class="boulder-full-name">@_boulder.Name@(string.IsNullOrEmpty(_boulder.Grade) ? string.Empty : " · " + _boulder.Grade)</p>
@@ -125,10 +113,6 @@ else
             else
             {
                 <p class="meta">by @CreatorDisplay &middot; <LocalTime Value="@_boulder.CreatedAt" Format="LocalTimeFormat.Date" /></p>
-            }
-            @if (CanFullRevise)
-            {
-                <a href="/walls/@WallId/boulders/@BoulderId/revise" class="btn-revise">Revise</a>
             }
         </div>
 
@@ -211,7 +195,8 @@ else
         @* The historic Then/Now toggle. The photo / 3D switch is the header's "3D" button: the 3D model is
            today's wall, so going to "Then" leaves the 3D view, and asking for 3D on "Then" goes to "Now". *@
         <div class="boulder-toggle-row">
-        @if (CanViewHistoric)
+        @* Only for a boulder that needs revision (or while the historic view is up, so it can be left). *@
+        @if (CanViewHistoric && (_boulder.NeedsReview || _showHistoric))
         {
             @* Both states are rendered, with the active one marked. A single button labelled with the
                CURRENT state reads as a status label, so nobody could tell whether "Then" meant "you
@@ -231,7 +216,7 @@ else
         }
         </div>
 
-        @if (!string.IsNullOrEmpty(_boulder.FootColorOnly) || _boulder.NoMatch)
+        @if (!string.IsNullOrEmpty(_boulder.FootColorOnly) || _boulder.NoMatch || !string.IsNullOrEmpty(_boulder.CustomRule))
         {
             <div class="boulder-info-banners">
                 @if (!string.IsNullOrEmpty(_boulder.FootColorOnly))
@@ -249,6 +234,11 @@ else
                     <div class="boulder-info-banner">
                         No matching — you may not use two hands, or a hand and a foot, on the same hold.
                     </div>
+                }
+                @if (!string.IsNullOrEmpty(_boulder.CustomRule))
+                {
+                    @* Plain text: @-expression output is HTML-encoded, never MarkupString. *@
+                    <div class="boulder-info-banner boulder-custom-rule">@_boulder.CustomRule</div>
                 }
             </div>
         }
@@ -367,7 +357,7 @@ else
                permanent); don't offer the ascent buttons until it's published. *@
             @if (!_boulder.IsDraft)
             {
-                <BoulderAttemptBar BoulderId="_boulder.Id" Summary="_summary" />
+                <BoulderAttemptBar BoulderId="_boulder.Id" />
             }
 
             <div class="rating-section">
@@ -648,9 +638,6 @@ else
     private bool _isFavorite;
     private RatingInfo _rating = new(null, 0, null);
 
-    private bool _editMeta;
-    private string _editName = "";
-    private string? _editGrade;
     private DateTime _backdateTime = DateTime.Now;
 
     // A single busy lease held whenever any inline editor (name/grade or grade proposal) is open, so a
@@ -1313,7 +1300,7 @@ else
         // Share viewers are skipped by TOKEN, not only by _isAnonymous: a signed-in viewer following
         // a share link has _isAnonymous == false even with no membership on this wall, and their
         // reads go through the uncached share path that this cache signal says nothing about.
-        if (change.Scope == WallCacheChangeScope.WallList || _isAnonymous || !string.IsNullOrEmpty(ShareToken) || _editMeta)
+        if (change.Scope == WallCacheChangeScope.WallList || _isAnonymous || !string.IsNullOrEmpty(ShareToken))
         {
             return;
         }
@@ -1768,20 +1755,6 @@ else
         }
     }
 
-    private void StartEditMeta()
-    {
-        _editName = _boulder?.Name ?? "";
-        _editGrade = _boulder?.Grade;
-        _editMeta = true;
-        SyncBoulderEditLease();
-    }
-
-    private void CancelEditMeta()
-    {
-        _editMeta = false;
-        SyncBoulderEditLease();
-    }
-
     private void ShowGradeForm()
     {
         _showGradeForm = true;
@@ -1799,7 +1772,7 @@ else
     // Called after every edit-flag change and from DisposeAsync.
     private void SyncBoulderEditLease()
     {
-        if (_editMeta || _showGradeForm)
+        if (_showGradeForm)
         {
             _editLease ??= EditActivity.BeginBoulderEdit(WallId, _currentUserId == Guid.Empty ? null : _currentUserId);
         }
@@ -1812,21 +1785,6 @@ else
 
         SyncDeployFlush();
     }
-
-    private Task SaveMeta() => Guard(async () =>
-    {
-        if (_boulder == null || string.IsNullOrWhiteSpace(_editName))
-        {
-            return;
-        }
-
-        var updated = await BoulderService.RenameBoulderAsync(BoulderId, _editName, _editGrade);
-        _boulder.Name = updated.Name;
-        _boulder.Grade = updated.Grade;
-        _editMeta = false;
-        SyncBoulderEditLease();
-        await ShowToast("Boulder updated");
-    }, "Could not update the boulder");
 
     // A backdated log runs the server path directly (not the offline queue), so it needs a live
     // circuit — acceptable for a deliberate "log an old ascent" action. The picked wall-clock time

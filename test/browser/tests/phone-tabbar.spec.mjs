@@ -111,25 +111,24 @@ test('the tab bar steps aside only while the keyboard is up, and a page left zoo
     await fakeViewport(page, {});
 });
 
-test('the inline rename editor on a multi-panel boulder gets its own row on a phone', async ({ page, world }) => {
+test('the boulder page header keeps favourite, edit and 3D on one line on a phone', async ({ page, world }) => {
     const mp = world.multiPanel;
     await signIn(page, world.users.pia, `/walls/${mp.wallId}/boulders/${mp.boulder}`);
-    await page.locator('.boulder-edit-btn').click();
-    const editor = page.locator('.boulder-detail .page-header > .boulder-meta-edit');
-    await expect(editor).toBeVisible();
-    const [header, box] = await Promise.all([
-        page.locator('.boulder-detail .page-header').boundingBox(),
-        editor.boundingBox()
-    ]);
-    expect(Math.abs(box.width - header.width)).toBeLessThanOrEqual(1);
-    await expectPinned(page);
-    await editor.getByRole('button', { name: 'Cancel' }).click();
-    await expect(editor).toHaveCount(0);
+    const edit = page.locator('.boulder-detail .boulder-edit-btn');
+    await expect(edit).toBeVisible();
+    const boxes = await Promise.all(['.fav-wrap', '.boulder-edit-btn', '.btn-view3d'].map(sel =>
+        page.locator(`.boulder-detail .title-actions ${sel}`).first().boundingBox()));
+    for (const box of boxes) {
+        expect(box).not.toBeNull();
+        expect(box.x + box.width).toBeLessThanOrEqual(375);
+        expect(box.y).toBeCloseTo(boxes[0].y, -1);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
 });
 
 // iOS zooms the page in when a text field under 16px takes focus and leaves it zoomed after the keyboard closes; the
 // fixed tab bar is then drawn mid-screen over the form. Playwright cannot zoom on focus, so this pins the cause: no
-// text field on the edit flow (revise page, the boulder page with its rename editor open) is under 16px on a phone.
+// text field on the edit flow (revise page, the revise page the pencil opens) is under 16px on a phone.
 const smallFields = page => page.evaluate(() => [...document.querySelectorAll('input, select, textarea')]
     .filter(e => !['hidden', 'checkbox', 'radio', 'range', 'color', 'file', 'button', 'submit', 'reset', 'image'].includes(e.type))
     .filter(e => e.getClientRects().length > 0 && parseFloat(getComputedStyle(e).fontSize) < 16)
@@ -147,13 +146,6 @@ test('no text field on the boulder edit flow or the settings pages is small enou
     // the editor and releases the lease at once.
     const mp = world.multiPanel;
     const go = url => page.evaluate(u => window.Blazor.navigateTo(u), url);
-    await go(`/walls/${mp.wallId}/boulders/${mp.boulder}`);
-    await page.locator('.boulder-edit-btn').click();
-    const editor = page.locator('.boulder-meta-edit');
-    await expect(editor).toBeVisible();
-    expect(await smallFields(page)).toEqual([]);
-    await editor.getByRole('button', { name: 'Cancel' }).click();
-    await expect(editor).toHaveCount(0);
 
     // The settings surfaces: the wall's settings slide (every card opened) and the profile page.
     await go(`/walls/${mp.wallId}`);

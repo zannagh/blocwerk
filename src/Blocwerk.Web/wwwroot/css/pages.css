@@ -1224,9 +1224,9 @@ a.wall3d-link {
 }
 /* "3D" / "Photos" next to Revise on the boulder page (WallViewToggle): an outlined pill, secondary to Revise. */
 .btn-view3d {
-    display: inline-flex; align-items: center; gap: 5px; min-height: 36px; padding: 6px 12px;
+    display: inline-flex; align-items: center; gap: 5px; min-height: 32px; padding: 4px 10px;
     background: var(--bg-surface); color: var(--text-heading); border: 1px solid var(--border);
-    text-decoration: none; border-radius: 6px; font: inherit; font-weight: 600; font-size: 0.85rem; cursor: pointer;
+    text-decoration: none; border-radius: 6px; font: inherit; font-weight: 600; font-size: 0.8rem; cursor: pointer;
 }
 .btn-view3d:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .btn-view3d:hover { background: var(--bg-surface-alt); }
@@ -1261,19 +1261,20 @@ a.wall3d-link {
 }
 .grade-propose-actions { display: flex; gap: 8px; margin-top: 10px; }
 
-/* Creator inline rename / regrade, shown from the pencil next to the title. */
-.boulder-edit-btn { color: var(--text-secondary); }
-.boulder-edit-btn:hover { color: var(--accent); }
-.boulder-meta-edit {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
-    padding: 12px 14px; background: var(--bg-surface-alt); border-radius: 8px; margin: 8px 0 12px;
+/* The pencil next to the title: a link to the full editor (name, grade, holds, rules). */
+.boulder-edit-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; padding: 0; color: var(--text-secondary); text-decoration: none;
 }
-.boulder-name-input {
-    flex: 1 1 200px; min-width: 160px; padding: 8px 10px; font-size: 1rem;
-    border: 1px solid var(--border); border-radius: var(--r-sm);
-    background: var(--input-bg); color: var(--text);
-}
-.meta-edit-actions { display: flex; gap: 8px; }
+.boulder-edit-btn:hover, .boulder-edit-btn:focus-visible { color: var(--accent); }
+/* The title-row actions stay small so favourite, edit and 3D fit one line at phone width. */
+.title-actions .fav-toggle { font-size: 1.25rem; min-width: 34px; min-height: 34px; padding: 0 2px; }
+/* The viewer's best result by the grade: attempted (block sign), sent (check), flashed (thunder). */
+.boulder-status { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+.boulder-status.try { color: var(--label-try); }
+.boulder-status.send { color: var(--label-send); }
+.boulder-status.flash { color: var(--label-flash); }
+.boulder-custom-rule { overflow-wrap: anywhere; }
 
 /* Backdated logging: a collapsed card with a time picker and the three ascent buttons. */
 .backdate-card {
@@ -1295,16 +1296,6 @@ a.wall3d-link {
 }
 .photo-section .wall-photo { width: 100%; display: block; }
 .photo-section .hold-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
-
-.legend-bar { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
-.legend-chip {
-    padding: 4px 10px; border-radius: 6px; font-size: 0.8rem; font-weight: 600;
-}
-.legend-chip.start { background: var(--success-bg); color: var(--success-text); }
-.legend-chip.normal { background: var(--info-bg); color: var(--info-text); }
-.legend-chip.top { background: var(--danger-bg); color: var(--danger-text); }
-.legend-chip.usage { background: var(--bg-surface); color: var(--text-muted); border: 1px solid var(--border); }
-.legend-chip.foot { background: var(--foot-hold-soft); color: var(--foot-hold-text); }
 
 /* Informational rule banners above the boulder image (feet-of-a-colour, no-match). */
 .boulder-info-banners { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
@@ -1352,11 +1343,6 @@ a.wall3d-link {
 .attempt-btn.flash { color: var(--label-flash); }
 .attempt-btn.flash:hover:not(:disabled) { border-color: var(--label-flash); background: var(--flash-bg); }
 
-.my-stats {
-    display: flex; align-items: center; gap: 8px; padding: 10px 14px;
-    background: var(--bg-surface-alt); border-radius: 8px; font-size: 0.9rem;
-    color: var(--text-secondary); margin-bottom: 16px;
-}
 .chip { padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: 600; }
 .flash-chip { background: #FBE9E7; color: #D84315; }
 .send-chip { background: var(--success-bg); color: var(--success-text); }
@@ -4053,19 +4039,14 @@ a.wall-update-link {
 
     /* One-line header: arrow, title, grade, favourite, edit. */
     .boulder-detail .page-header { display: flex; align-items: center; gap: 4px; min-height: 44px; }
-    /* The rename/grade editor is a form, not a header item: its own full-width row under the arrow,
-       instead of a name field and a grade picker squeezed in beside the grade badge. */
-    .boulder-detail .page-header:has(> .boulder-meta-edit) { flex-wrap: wrap; }
-    .boulder-detail .page-header > .boulder-meta-edit { flex: 1 0 100%; margin: 0; }
     .boulder-detail .back-link { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; margin-left: -8px; font-size: 1.3rem; }
     .boulder-detail .back-link-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     .boulder-detail .title-row { margin: 0; flex: 1 1 auto; min-width: 0; flex-wrap: nowrap; gap: 8px; }
     .boulder-detail .title-row h1 { font-size: 1.15rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 1 auto; }
     .boulder-detail .title-row > :is(.draft-badge, .historic-badge, .archived-badge) { display: none; }
     .boulder-detail .title-actions { flex: 0 0 auto; }
-    .boulder-detail .title-actions .btn-revise { display: none; }
     /* The photo / 3D switch stays: it is the only one on the boulder page. */
-    .boulder-detail .title-actions .btn-view3d { min-height: 40px; padding: 6px 10px; }
+    .boulder-detail .title-actions .btn-view3d { min-height: 34px; padding: 4px 9px; }
     .boulder-detail .page-header .meta { display: none; }
 
     /* The view: exactly the leftover height, image contained, zoom engine untouched. */

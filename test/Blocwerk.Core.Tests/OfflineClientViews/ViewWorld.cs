@@ -48,7 +48,8 @@ internal static class ViewWorld
     public static BouldersDocumentBoulder CrimpLine() => new(
         Crimp, "Crimp Line", "6A", 2, null, false, false, At, At, "Alice", true, false, false, "red",
         new BouldersDocumentStats(7, 2, 4.5),
-        [new BouldersDocumentHold(HoldStart, "Start", "HandAndFoot"), new BouldersDocumentHold(HoldTop, "Top", "HandAndFoot"), new BouldersDocumentHold(HoldRight, "Normal", "FootOnly")]);
+        [new BouldersDocumentHold(HoldStart, "Start", "HandAndFoot"), new BouldersDocumentHold(HoldTop, "Top", "HandAndFoot"), new BouldersDocumentHold(HoldRight, "Normal", "FootOnly")],
+        "Keep it <i>clean</i>");
 
     public static BouldersDocumentBoulder SlabArchived() => new(
         Slab, "Old Slab", "7A", 1, null, true, true, At.AddDays(-30), At.AddDays(-30), "Bob", false, false, false, null,

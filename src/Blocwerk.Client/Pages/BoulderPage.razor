@@ -4,8 +4,8 @@
 @using Blocwerk.Contracts.Documents
 @using Blocwerk.Core.Holds
 @* A boulder's detail from the device (the Server's BoulderDetail, read-only): name, grade, badges and setter; the
-   rule banners; the photo with the boulder's holds; the hold breakdown; rating and ascents; the viewer's own log
-   (sent, flashed, attempts) and favourite; and every comment, newest first. No ascent buttons, no rating, no favourite
+   rule banners; the photo with the boulder's holds; the hold breakdown; rating and ascents; the viewer's best result as an icon by the grade
+   and favourite; and every comment, newest first. No ascent buttons, no rating, no favourite
    toggle, no comment box, no revise or edit. Slots for PR 3.13: BoulderActions and BoulderStage (wraps the photo). *@
 <PageTitle>@(boulder?.Name ?? "Boulder") - Blocwerk</PageTitle>
 
@@ -31,6 +31,7 @@ else
                         {
                             <span class="grade-badge">@boulder.Grade</span>
                         }
+                        <BoulderStatusIcon BoulderId="boulder.Id" Mine="Wall.Mine" />
                         @if (boulder.Draft == true)
                         {
                             <span class="draft-badge">draft</span>
@@ -65,7 +66,7 @@ else
                     <div class="bw-draft-notice"><p>This is a draft — it can't be climbed until it is published.</p></div>
                 }
 
-                @if (!string.IsNullOrEmpty(boulder.FootColorOnly) || boulder.NoMatch)
+                @if (!string.IsNullOrEmpty(boulder.FootColorOnly) || boulder.NoMatch || !string.IsNullOrEmpty(boulder.CustomRule))
                 {
                     <div class="boulder-info-banners">
                         @if (!string.IsNullOrEmpty(boulder.FootColorOnly))
@@ -81,6 +82,10 @@ else
                         @if (boulder.NoMatch)
                         {
                             <div class="boulder-info-banner">No matching — you may not use two hands, or a hand and a foot, on the same hold.</div>
+                        }
+                        @if (!string.IsNullOrEmpty(boulder.CustomRule))
+                        {
+                            <div class="boulder-info-banner boulder-custom-rule">@boulder.CustomRule</div>
                         }
                     </div>
                 }
@@ -108,8 +113,7 @@ else
             </div>
 
             <div class="boulder-side-col">
-                <RulesSummary Boulder="boulder" Holds="holds" />
-                <MineLog BoulderId="boulder.Id" Mine="Wall.Mine" />
+                <RulesSummary Boulder="boulder" />
                 <div class="rating-section">
                     <div class="rating-summary">
                         @if (boulder.Stats.RatingCount > 0)

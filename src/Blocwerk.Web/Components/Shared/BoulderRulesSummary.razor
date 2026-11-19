@@ -1,18 +1,4 @@
-@* The hold breakdown and the rule chips shown under a boulder's photo/schematic. *@
-
-<div class="legend-bar">
-    <span class="legend-chip start">@_starts start</span>
-    <span class="legend-chip normal">@(Boulder.BoulderHolds.Count - _starts - _tops) moves</span>
-    <span class="legend-chip top">@_tops top</span>
-    @if (_handOnly > 0)
-    {
-        <span class="legend-chip usage">@_handOnly hand only</span>
-    }
-    @if (_footOnly > 0)
-    {
-        <span class="legend-chip foot">@_footOnly foot only</span>
-    }
-</div>
+@* The rule chips shown under a boulder's photo/schematic. *@
 
 <div class="rules-bar">
     <span class="rule-chip @(Boulder.KickboardFootholdsOn ? "on" : "off")">
@@ -33,17 +19,4 @@
 
 @code {
     [Parameter, EditorRequired] public Boulder Boulder { get; set; } = null!;
-
-    private int _starts;
-    private int _tops;
-    private int _handOnly;
-    private int _footOnly;
-
-    protected override void OnParametersSet()
-    {
-        _starts = Boulder.BoulderHolds.Count(h => h.Type == HoldType.Start);
-        _tops = Boulder.BoulderHolds.Count(h => h.Type == HoldType.Top);
-        _handOnly = Boulder.BoulderHolds.Count(h => h.Usage == HoldUsage.HandOnly);
-        _footOnly = Boulder.BoulderHolds.Count(h => h.Usage == HoldUsage.FootOnly);
-    }
 }

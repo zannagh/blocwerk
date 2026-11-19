@@ -32,7 +32,7 @@ public partial class BoulderDetail
                 new LeafScope(WallId, BoulderId, StatsKinds),
                 InvokeAsync,
                 ApplyStatsAsync,
-                () => _editMeta || _showGradeForm || _boulder is null,
+                () => _showGradeForm || _boulder is null,
                 Logger)
             : null;
     }
