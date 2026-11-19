@@ -14,4 +14,6 @@ namespace Blocwerk.Core.Helpers;
 /// <param name="IsArchived">True for an archived boulder.</param>
 /// <param name="Styles">Its style tags.</param>
 /// <param name="IsHistoric">True for a boulder the wall has moved on from.</param>
-public readonly record struct BoulderFamilyMember(Guid Id, Guid? ParentId, string Name, string? Grade, bool IsDraft, bool IsArchived, BoulderStyle Styles = BoulderStyle.None, bool IsHistoric = false);
+/// <param name="HoldType">Its effective dominant hold type (<see cref="BoulderHoldTypes.Effective"/>), if any.</param>
+public readonly record struct BoulderFamilyMember(
+    Guid Id, Guid? ParentId, string Name, string? Grade, bool IsDraft, bool IsArchived, BoulderStyle Styles = BoulderStyle.None, bool IsHistoric = false, HoldHandType? HoldType = null);

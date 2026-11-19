@@ -11,16 +11,23 @@ namespace Blocwerk.Core.Helpers;
 /// </summary>
 public static class BoulderStyles
 {
-    /// <summary>Gets the styles in the order the cards and pickers show them.</summary>
-    public static IReadOnlyList<BoulderStyle> All { get; } =
+    /// <summary>
+    /// Gets every style in the order the cards and pickers show them: the ONE place a style is defined. Adding a style means
+    /// a new flag in <see cref="BoulderStyle"/> (the next free bit, so stored values keep their meaning) and a line here.
+    /// </summary>
+    public static IReadOnlyList<BrowseDefinition<BoulderStyle>> Definitions { get; } =
     [
-        BoulderStyle.Tension,
-        BoulderStyle.Dynamic,
-        BoulderStyle.Funky,
-        BoulderStyle.Endurance,
-        BoulderStyle.Power,
-        BoulderStyle.Technical,
+        new(BoulderStyle.Warmup, "Warmup", "<path d=\"M12 22a6 6 0 0 0 6-6c0-4-3-6-4-10-2 2-3 4-3 6-1-1-2-2-2-3-2 2-3 4-3 7a6 6 0 0 0 6 6z\"/>"),
+        new(BoulderStyle.Tension, "Tension", "<path d=\"M3 12h18\"/><path d=\"M7 8l-4 4 4 4\"/><path d=\"M17 8l4 4-4 4\"/>"),
+        new(BoulderStyle.Dynamic, "Dynamic", "<path d=\"M4 19c2-8 7-12 16-13\"/><path d=\"M15 3l5 3-3 5\"/>"),
+        new(BoulderStyle.Funky, "Funky", "<path d=\"M2 13c2.5-7 5-7 7.5 0s5 7 7.5 0c1.2-3 2.4-4 5-3\"/>"),
+        new(BoulderStyle.Endurance, "Endurance", "<rect x=\"2\" y=\"8\" width=\"17\" height=\"8\" rx=\"2\"/><path d=\"M22 11v2\"/><path d=\"M6 12h6\"/>"),
+        new(BoulderStyle.Power, "Power", "<path d=\"M13 2L4 14h7l-1 8 9-12h-7z\"/>"),
+        new(BoulderStyle.Technical, "Technical", "<circle cx=\"12\" cy=\"12\" r=\"3\"/><path d=\"M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1\"/>"),
     ];
+
+    /// <summary>Gets the styles in the order the cards and pickers show them.</summary>
+    public static IReadOnlyList<BoulderStyle> All { get; } = Definitions.Select(d => d.Value).ToList();
 
     /// <summary>Gets every style at once, the mask that drops unknown bits.</summary>
     public static BoulderStyle Mask { get; } = All.Aggregate(BoulderStyle.None, (acc, s) => acc | s);
@@ -28,12 +35,17 @@ public static class BoulderStyles
     /// <summary>The display label of one style.</summary>
     /// <param name="style">A single style.</param>
     /// <returns>Its name.</returns>
-    public static string Label(BoulderStyle style) => style.ToString();
+    public static string Label(BoulderStyle style) => Definitions.FirstOrDefault(d => d.Value == style)?.Label ?? style.ToString();
+
+    /// <summary>The icon of one style (see <see cref="BrowseDefinition{T}.Icon"/>); empty for anything but a single style.</summary>
+    /// <param name="style">A single style.</param>
+    /// <returns>The SVG content.</returns>
+    public static string Icon(BoulderStyle style) => Definitions.FirstOrDefault(d => d.Value == style)?.Icon ?? string.Empty;
 
     /// <summary>The URL value of one style (lower case, the label).</summary>
     /// <param name="style">A single style.</param>
     /// <returns>The slug.</returns>
-    public static string Slug(BoulderStyle style) => style.ToString().ToLowerInvariant();
+    public static string Slug(BoulderStyle style) => Label(style).ToLowerInvariant();
 
     /// <summary>The single style a URL value names, or null for anything else ("all", empty, unknown).</summary>
     /// <param name="slug">The query value.</param>

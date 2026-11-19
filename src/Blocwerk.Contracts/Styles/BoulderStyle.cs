@@ -30,4 +30,7 @@ public enum BoulderStyle
 
     /// <summary>Technical: footwork and precision.</summary>
     Technical = 32,
+
+    /// <summary>Warm-up: easy, flowing climbing to get going.</summary>
+    Warmup = 64,
 }

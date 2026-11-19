@@ -81,6 +81,7 @@ public static class BoulderFamilies
             grades,
             variants.Select(v => v.Name).ToList(),
             variants.Aggregate(head.Styles, (styles, v) => styles | v.Styles),
-            variants.Select(v => v.Id).ToList());
+            variants.Select(v => v.Id).ToList(),
+            variants.Prepend(head).Where(m => m.HoldType.HasValue).Select(m => m.HoldType!.Value).Distinct().ToList());
     }
 }

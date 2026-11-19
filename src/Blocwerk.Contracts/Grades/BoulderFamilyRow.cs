@@ -13,5 +13,13 @@ namespace Blocwerk.Core.Helpers;
 /// <param name="VariantNames">The names of the variants, which the list's search also finds the row by.</param>
 /// <param name="VariantIds">The variants the row stands for, so a filter can match the family through any of them.</param>
 /// <param name="Styles">Every style tag a published member carries: the family shows under each of them.</param>
+/// <param name="HoldTypes">Every effective hold type a published member has: the family shows under each of them.</param>
 public sealed record BoulderFamilyRow(
-    int VariantCount, string? GradeRange, int LowestScore, IReadOnlyList<string?> Grades, IReadOnlyList<string> VariantNames, BoulderStyle Styles = BoulderStyle.None, IReadOnlyList<Guid>? VariantIds = null);
+    int VariantCount,
+    string? GradeRange,
+    int LowestScore,
+    IReadOnlyList<string?> Grades,
+    IReadOnlyList<string> VariantNames,
+    BoulderStyle Styles = BoulderStyle.None,
+    IReadOnlyList<Guid>? VariantIds = null,
+    IReadOnlyList<HoldHandType>? HoldTypes = null);
