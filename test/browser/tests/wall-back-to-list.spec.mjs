@@ -30,9 +30,9 @@ function installSampler() {
 const listPage = page => page.locator('.wall-carousel > .wall-page').nth(LIST_PAGE);
 
 async function openList(page, world, wall) {
-    await signIn(page, world.users.alice, `/walls/${wall.id}?view=boulders`);
+    await signIn(page, world.users.alice, `/walls/${wall.id}?view=boulders&style=all`);
     await page.addInitScript(installSampler);
-    await page.goto(`/walls/${wall.id}?view=boulders`);
+    await page.goto(`/walls/${wall.id}?view=boulders&style=all`);
     await expect(page.locator('.wall-carousel:not(.carousel-pending)')).toBeVisible();
     await expect(listPage(page).locator('.boulder-card').first()).toBeInViewport();
 }
@@ -63,7 +63,7 @@ test('back from a boulder lands on the boulder list with no hidden, wrong-page o
     const before = await serverStats(page);
     const backAt = await page.evaluate(() => { window.__bwFrames = []; return performance.now(); });
     await page.goBack();
-    await expect(page).toHaveURL(/\?view=boulders$/);
+    await expect(page).toHaveURL(/\?view=boulders&style=all$/);
     await expectStraightToList(page, backAt);
 
     await page.waitForTimeout(1500);
@@ -106,7 +106,7 @@ test('"Back to boulder list" goes back in history instead of pushing a new entry
     const length = await page.evaluate(() => history.length);
 
     await page.locator('a.back-link').click();
-    await expect(page).toHaveURL(/\?view=boulders$/);
+    await expect(page).toHaveURL(/\?view=boulders&style=all$/);
     await expect(listPage(page).locator('.boulder-card').first()).toBeInViewport();
     expect(await page.evaluate(() => history.length)).toBe(length);
     // Forward is the boulder again: the link was a step back, not a new page.
@@ -132,6 +132,11 @@ test('swiping to the list puts ?view=boulders in the URL, so back from a boulder
         return Math.abs(el.scrollLeft - 3 * el.clientWidth) <= 1;
     })).toBe(true);
 
+    // The swipe lands on the browser's cards; All opens the list (?view=boulders&style=all).
+    await listPage(page).locator('.style-card[data-card="all"]').dispatchEvent('click');
+    await expect(page).toHaveURL(/[?&]style=all/);
+    await expect(page).toHaveURL(/[?&]view=boulders/);
+    await expect(listPage(page).locator('.boulder-card').first()).toBeVisible();
     await listPage(page).locator('.boulder-card').first().dispatchEvent('click');
     await expect(page.locator('.boulder-detail h1')).toBeVisible();
     const backAt = await page.evaluate(() => { window.__bwFrames = []; return performance.now(); });

@@ -31,7 +31,7 @@ test('airplane mode on a cached wall: the wall view, the boulder detail with its
     await server.unreachable();
     const mark = await server.mark();
 
-    await expectClient(page, `/walls/${social.wallId}`);
+    await expectClient(page, `/walls/${social.wallId}?style=all`);
     await expect(page.locator('h1')).toHaveText('Social');
     await expect(page.locator('.bw-client-store')).toHaveAttribute('data-bw-store', 'ready');
     await expect(page.locator('.boulder-card', { hasText: 'Social boulder' })).toBeVisible();
@@ -43,7 +43,7 @@ test('airplane mode on a cached wall: the wall view, the boulder detail with its
 
     // Into the boulder within the client: the router navigates in place, the runtime does not start again.
     await page.locator('.boulder-card', { hasText: 'Social boulder' }).click();
-    await expect(page).toHaveURL(new RegExp(`/v/walls/${social.wallId}/boulders/${social.boulder}$`));
+    await expect(page).toHaveURL(new RegExp(`/v/walls/${social.wallId}/boulders/${social.boulder}\\?style=all$`));
     await expect(page.locator('h1')).toHaveText('Social boulder');
     expect(await page.evaluate(m => performance.getEntriesByName(m).length, READY)).toBe(1);
     const comment = text => page.locator('.comment-row', { hasText: text });
@@ -59,7 +59,7 @@ test('airplane mode on a cached wall: the wall view, the boulder detail with its
     await expect(comment(social.comment)).toBeVisible();
 
     await page.getByRole('link', { name: 'Back to boulder list' }).click();
-    await expect(page).toHaveURL(new RegExp(`/v/walls/${social.wallId}$`));
+    await expect(page).toHaveURL(new RegExp(`/v/walls/${social.wallId}\\?style=all$`));
     await expect(page.locator('h1')).toHaveText('Social');
     expect((await server.log(mark)).filter(e => !e.fault), 'nothing reached the server').toEqual([]);
 });
@@ -76,6 +76,9 @@ test('offline, the viewer\'s own marks show on the list and the boulder, and the
 
     await page.locator('.wall-card', { hasText: 'Alpha' }).click();
     await expect(page).toHaveURL(new RegExp(`/v/walls/${alpha.id}$`));
+    // The wall opens on the boulder browser's cards; All lists every boulder.
+    await page.locator('.style-card[data-card="all"]').click();
+    await expect(page).toHaveURL(/style=all$/);
     const row = page.locator(`.boulder-card[data-bw-boulder="${alpha.boulder}"]`);
     await expect(row.locator('.fav-icon')).toBeVisible();
     await expect(row.locator('.send-icon, .flash-icon')).toBeVisible();

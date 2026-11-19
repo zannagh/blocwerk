@@ -21,7 +21,7 @@ const slot = testInfo => ['chromium', 'webkit', 'firefox'].indexOf(testInfo.proj
 // Pia's Wide wall holds a "Logging boulder 0..2" of its own for this: Beta's boulders are counted by
 // boulder-list-search ("Not done by me" expects all 40), so a log there would change its numbers.
 async function openWideBoulder(page, world, name) {
-    await signIn(page, world.users.pia, `/walls/${world.walls.wide.id}?view=boulders`);
+    await signIn(page, world.users.pia, `/walls/${world.walls.wide.id}?view=boulders&style=all`);
     await expect(page.locator('.wall-carousel:not(.carousel-pending)')).toBeVisible();
     await page.locator('.wall-carousel > .wall-page').nth(3).locator('.boulder-card', { hasText: name }).click();
     await expect(page.locator('.rules-bar')).toBeVisible();

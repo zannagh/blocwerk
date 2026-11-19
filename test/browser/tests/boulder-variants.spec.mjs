@@ -41,8 +41,8 @@ const answerConsent = (page, baseURL) => page.context().addCookies([{ name: 'coo
 async function openList(page, world, baseURL) {
     const wall = world.walls.variants;
     await answerConsent(page, baseURL);
-    await signIn(page, world.users.vera, `/walls/${wall.id}?view=boulders`);
-    await page.goto(`/walls/${wall.id}?view=boulders`);
+    await signIn(page, world.users.vera, `/walls/${wall.id}?view=boulders&style=all`);
+    await page.goto(`/walls/${wall.id}?view=boulders&style=all`);
     await expect(page.locator('.wall-carousel:not(.carousel-pending)')).toBeVisible();
     return wall;
 }
@@ -179,7 +179,7 @@ test('Add Variant starts from the origin, holds can be removed and added, and th
     await expect(page.locator('h1').first()).toHaveText('Origin');
     await expect.poll(() => drawnHolds(page)).toBe(4);
 
-    await page.goto(`/walls/${world.walls.variants.id}?view=boulders`);
+    await page.goto(`/walls/${world.walls.variants.id}?view=boulders&style=all`);
     await expect(row(page, 'Origin').first().locator('.boulder-grade')).toHaveText('6B–7A');
 });
 
@@ -216,7 +216,7 @@ test('offline: the family row, its pill and range, and the Variants card, from t
     const wall = world.walls.variants;
     expect(await precacheAs(page, server, world.users.vera, `/walls/${wall.id}`)).toBe('complete');
     await server.unreachable();
-    await expectClient(page, `/walls/${wall.id}`);
+    await expectClient(page, `/walls/${wall.id}?style=all`);
 
     const parentRow = page.locator('.boulder-card', { hasText: 'Family parent' });
     await expect(pillCount(parentRow)).toHaveText('+2');

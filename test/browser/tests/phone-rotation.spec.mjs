@@ -60,7 +60,7 @@ for (const index of [1, 2, 3]) {
         // Still a working carousel afterwards: a dot moves it, and the list's own scroll is untouched.
         await page.getByRole('button', { name: 'Page 4', exact: true }).click();
         await expect(page).toHaveURL(/\?view=boulders$/);
-        await expect(page.locator('.wall-carousel > .wall-page').nth(3).locator('.boulder-card').first()).toBeInViewport();
+        await expect(page.locator('.wall-carousel > .wall-page').nth(3).locator('.style-card').first()).toBeInViewport();
     });
 }
 

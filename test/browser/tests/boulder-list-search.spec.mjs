@@ -9,8 +9,8 @@ const cards = page => listPage(page).locator('.boulder-card');
 
 async function openList(page, world) {
     const wall = world.walls.beta;
-    await signIn(page, world.users.alice, `/walls/${wall.id}?view=boulders`);
-    await page.goto(`/walls/${wall.id}?view=boulders`);
+    await signIn(page, world.users.alice, `/walls/${wall.id}?view=boulders&style=all`);
+    await page.goto(`/walls/${wall.id}?view=boulders&style=all`);
     await expect(page.locator('.wall-carousel:not(.carousel-pending)')).toBeVisible();
     await expect(cards(page)).toHaveCount(40);
     return wall;
@@ -144,8 +144,9 @@ test('only the page on screen is searchable: every other carousel page is inert'
 test('the page a swipe lands on scrolls and takes taps before the carousel settles', async ({ page, world }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     const wall = world.walls.beta;
-    await signIn(page, world.users.alice, `/walls/${wall.id}`);
-    await page.goto(`/walls/${wall.id}`);
+    // ?style=all: the overview opens with the whole list behind it on page 4 (a bare URL has the browser's cards there).
+    await signIn(page, world.users.alice, `/walls/${wall.id}?style=all`);
+    await page.goto(`/walls/${wall.id}?style=all`);
     await expect(page.locator('.wall-carousel:not(.carousel-pending)')).toBeVisible();
     await expect.poll(() => listPage(page).evaluate(p => p.inert)).toBe(true);
     await expect(cards(page)).toHaveCount(40);
