@@ -99,6 +99,30 @@ test('offline client: the cards, the counts and the filtered list at phone width
     await page.locator('.style-card[data-style="power"]').click();
     await expect(page).toHaveURL(/style=power/);
     await expect(page.locator('.boulder-card')).toHaveCount(2);
+    await expect(page.locator('[data-style-back]')).toBeVisible();
+    await page.screenshot({ path: '../../.out/styles-client-list-375.png' });
+
+    // Badges on the boulder page: "Styled boulder 1" is tension + power.
+    await page.locator('.boulder-card', { hasText: 'Styled boulder 1' }).click();
+    await expect(page.locator('.style-badge')).toHaveCount(2);
+    await page.screenshot({ path: '../../.out/styles-client-badges-375.png' });
+    await page.goBack();
+    await expect(page.locator('.boulder-card')).toHaveCount(2);
     await page.goBack();
     await expect(page.locator('.style-card')).toHaveCount(7);
+});
+
+test('dark mode at phone width: cards, list header and the tagging chips', async ({ page, world }) => {
+    await page.setViewportSize(PHONE);
+    await page.emulateMedia({ colorScheme: 'dark' });
+    const wall = await openBrowser(page, world);
+    await expect(cards(page)).toHaveCount(7);
+    await page.screenshot({ path: '../../.out/styles-cards-dark-375.png' });
+    await listPage(page).locator('.style-card[data-style="power"]').click();
+    await expect(rows(page)).toHaveCount(2);
+    await page.screenshot({ path: '../../.out/styles-list-dark-375.png' });
+    await rows(page).first().click();
+    await expect(page.locator('.boulder-styles .style-pick')).toHaveCount(6);
+    await page.screenshot({ path: '../../.out/styles-boulder-dark-375.png' });
+    expect(wall.id).toBeTruthy();
 });
