@@ -93,6 +93,14 @@ test('tagging from the boulder page saves at once and the style shows up in the 
 
     await page.goto(`/walls/${wall.id}?view=boulders`);
     await expect(listPage(page).locator('.style-card[data-style="funky"] .style-card-count')).toHaveText('2');
+
+    // The database is shared by the browser projects: put the boulder back as seeded, so the next project counts the same.
+    await page.goto(`/walls/${wall.id}?view=boulders&style=all`);
+    await rows(page).filter({ hasText: 'Styled boulder 7' }).click();
+    await page.locator('.boulder-styles .style-pick[data-style="funky"]').click();
+    await expect(page.locator('.boulder-styles .style-pick[data-style="funky"]')).toHaveAttribute('aria-pressed', 'false');
+    await page.reload();
+    await expect(page.locator('.boulder-styles .style-pick[data-style="funky"]')).toHaveAttribute('aria-pressed', 'false');
 });
 
 test('offline client: the cards, the counts and the filtered list at phone width', async ({ page, world, server }) => {
