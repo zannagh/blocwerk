@@ -147,6 +147,7 @@ public partial class BoulderCreate
         _name = string.IsNullOrWhiteSpace(snapshot.Name) ? _name : snapshot.Name;
         _grade = snapshot.Grade;
         _allKickboardOn = snapshot.KickboardFootholdsOn;
+        _handsFollowFeet = snapshot.HandsFollowFeet;
         _footColorOnly = snapshot.FootColorOnly;
         _noMatch = snapshot.NoMatch;
         _customRule = snapshot.CustomRule;
