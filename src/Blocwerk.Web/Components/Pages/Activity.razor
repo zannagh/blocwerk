@@ -140,7 +140,7 @@
                                     <span class="summary-meta">
                                         @h.Sets x @h.Duration.TotalSeconds.ToString("F0")s
                                         @if (h.AdditionalWeightKg > 0) { <text>+@h.AdditionalWeightKg kg</text> }
-                                        <button class="delete-btn" @onclick="() => DeleteHangboard(h.Id)">x</button>
+                                        <button class="delete-btn" @onclick="() => DeleteHangboard(h.Id)" title="Delete session" aria-label="Delete session">&times;</button>
                                     </span>
                                 </div>
                             }
@@ -155,7 +155,7 @@
                                     <span class="summary-name">@p.Sets x @p.Repetitions reps</span>
                                     <span class="summary-meta">
                                         @if (p.AdditionalWeightKg > 0) { <text>+@p.AdditionalWeightKg kg</text> }
-                                        <button class="delete-btn" @onclick="() => DeletePullup(p.Id)">x</button>
+                                        <button class="delete-btn" @onclick="() => DeletePullup(p.Id)" title="Delete session" aria-label="Delete session">&times;</button>
                                     </span>
                                 </div>
                             }

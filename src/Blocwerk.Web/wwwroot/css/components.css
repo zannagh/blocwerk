@@ -304,12 +304,16 @@
 /* ========== GradePicker ========== */
 
 .grade-picker { display: flex; align-items: center; gap: 6px; }
-.scale-toggle { display: flex; gap: 2px; }
-.scale-btn {
-    padding: 4px 8px; border: 1px solid var(--border); background: var(--bg-surface);
-    border-radius: 4px; font-size: 0.75rem; cursor: pointer; color: var(--text-secondary);
+/* One segmented control as tall as the grade select beside it; the chosen scale reads as chosen in both themes. */
+.scale-toggle {
+    display: flex; align-self: stretch; gap: 2px; padding: 2px;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface);
 }
-.scale-btn.active { background: var(--topbar-bg); color: white; border-color: var(--topbar-bg); }
+.scale-btn {
+    padding: 0 10px; border: none; background: none;
+    border-radius: 6px; font-size: 0.8rem; font-weight: 600; cursor: pointer; color: var(--text-secondary);
+}
+.scale-btn.active { background: var(--text-heading); color: var(--bg-surface); }
 .grade-select {
     padding: 8px 10px; border: 2px solid var(--border); border-radius: 8px;
     font-size: 1rem; font-weight: 700; background: var(--input-bg); min-width: 80px;

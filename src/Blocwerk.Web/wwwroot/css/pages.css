@@ -1086,8 +1086,8 @@ a.wall3d-link {
     margin-bottom: 6px; box-shadow: 0 1px 3px var(--shadow-sm);
 }
 .member-name-link {
-    font-weight: 600; font-size: 0.9rem; color: var(--secondary);
-    text-decoration: underline; padding: 4px 0; min-height: 24px; display: inline-flex; align-items: center; gap: 8px;
+    font-weight: 600; font-size: 0.9rem; color: var(--text-heading);
+    text-decoration: none; padding: 4px 0; min-height: 24px; display: inline-flex; align-items: center; gap: 8px;
 }
 .member-name-link:hover { text-decoration: underline; }
 .member-name-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -1287,7 +1287,17 @@ a.wall3d-link {
 }
 .backdate-card > summary {
     cursor: pointer; padding: 12px 14px; font-weight: 600; color: var(--text-heading);
+    display: flex; align-items: center; gap: 8px; list-style: none;
 }
+.backdate-card > summary::-webkit-details-marker { display: none; }
+/* The same disclosure triangle as the Beta Videos card next to it. */
+.backdate-card > summary::before {
+    content: ''; width: 0; height: 0; flex: none;
+    border-left: 5px solid currentColor;
+    border-top: 4px solid transparent; border-bottom: 4px solid transparent;
+    color: var(--text-secondary); transition: transform 0.15s ease;
+}
+.backdate-card[open] > summary::before { transform: rotate(90deg); }
 .backdate-body { display: flex; flex-direction: column; gap: 10px; padding: 0 14px 14px; }
 .backdate-label { font-size: 0.85rem; color: var(--text-secondary); }
 .backdate-input {
@@ -1356,7 +1366,7 @@ a.wall3d-link {
    be opened deliberately. The strip scrolls horizontally rather than wrapping — one row keeps
    the "+" tile permanently in reach on a phone, however many clips a boulder collects. */
 .beta-section {
-    margin-bottom: 20px; border: 1px solid var(--border); border-radius: 12px;
+    margin-bottom: 16px; border: 1px solid var(--border); border-radius: 12px;
     background: var(--bg-surface); overflow: hidden;
 }
 .beta-summary {
@@ -1374,7 +1384,7 @@ a.wall3d-link {
     color: var(--text-secondary); transition: transform 0.15s ease;
 }
 .beta-section[open] > .beta-summary::before { transform: rotate(90deg); }
-.beta-title { font-weight: 600; color: var(--text-heading); font-size: 1.1rem; }
+.beta-title { font-weight: 600; color: var(--text-heading); }
 .beta-count {
     font-size: 0.75rem; font-weight: 600; padding: 1px 7px; border-radius: var(--r-pill);
     background: var(--accent-soft); color: var(--accent);
@@ -2921,6 +2931,14 @@ html.bw-compact {
     gap: 12px;
     margin-bottom: 8px;
 }
+.panel-selector .btn-icon {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 40px; min-height: 36px; padding: 0;
+    border: 1px solid var(--border); border-radius: var(--r-md);
+    background: var(--bg-surface); color: var(--text-heading);
+    font-size: 1.25rem; line-height: 1; cursor: pointer;
+}
+.panel-selector .btn-icon:hover { border-color: var(--text-secondary); }
 .panel-selector-label {
     min-width: 84px;
     text-align: center;
@@ -4293,8 +4311,7 @@ a.wall-update-link {
 .browse-landing .browse-mine.is-empty .style-card-count { font-weight: 400; color: var(--text-secondary); }
 @media (min-width: 600px) {
     .browse-landing .browse-tall { aspect-ratio: auto; min-height: 180px; }
-}
-/* Desktop tier: the list under the cards is the point, so the cards get compact. All is a short banner (icon, name and
+}/* Desktop tier: the list under the cards is the point, so the cards get compact. All is a short banner (icon, name and
    count in one row), and the pair and the own lists share one row of landscape cards; the portrait pair is phone-only. */
 @media (min-width: 900px) {
     @container style(--tier: desktop) {

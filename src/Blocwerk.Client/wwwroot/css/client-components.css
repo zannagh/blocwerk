@@ -26,7 +26,7 @@
     :root:not([data-theme="light"]) { --foot-hold: #FFB74D; --foot-hold-soft: rgba(255, 183, 77, 0.18); --foot-hold-text: #FFCC80; --top-hold: #CE93D8; --top-hold-soft: rgba(206, 147, 216, 0.18); --top-hold-text: #E1BEE7; --wall-bg: #1c1c28; --wall-floor: #6b5a52; }
 }
 [data-theme="dark"] { --foot-hold: #FFB74D; --foot-hold-soft: rgba(255, 183, 77, 0.18); --foot-hold-text: #FFCC80; --top-hold: #CE93D8; --top-hold-soft: rgba(206, 147, 216, 0.18); --top-hold-text: #E1BEE7; --wall-bg: #1c1c28; --wall-floor: #6b5a52; }
-.scale-toggle { display: flex; gap: 2px; }
-.scale-btn { padding: 4px 8px; border: 1px solid var(--border); background: var(--bg-surface); border-radius: 4px; font-size: 0.75rem; cursor: pointer; color: var(--text-secondary); }
-.scale-btn.active { background: var(--topbar-bg); color: white; border-color: var(--topbar-bg); }
+.scale-toggle { display: flex; align-self: stretch; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface); }
+.scale-btn { padding: 0 10px; border: none; background: none; border-radius: 6px; font-size: 0.8rem; font-weight: 600; cursor: pointer; color: var(--text-secondary); }
+.scale-btn.active { background: var(--text-heading); color: var(--bg-surface); }
 .grade-select { padding: 8px 10px; border: 2px solid var(--border); border-radius: 8px; font-size: 1rem; font-weight: 700; background: var(--input-bg); min-width: 80px; color: var(--text); }
