@@ -8,4 +8,7 @@ public enum BoulderMine
 {
     /// <summary>The boulders the viewer marked as a favourite (<c>?mine=favorites</c>).</summary>
     Favorites,
+
+    /// <summary>The boulders the viewer marked as one of their projects (<c>?mine=projects</c>).</summary>
+    Projects,
 }

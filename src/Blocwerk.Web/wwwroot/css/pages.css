@@ -4254,6 +4254,7 @@ a.wall-update-link {
 .browse-landing .style-card[data-card="holds"] { --card-tone: var(--secondary); }
 .browse-landing .style-card[data-card="styles"] { --card-tone: var(--star-gold); }
 .browse-landing .style-card[data-card="favorites"] { --card-tone: var(--accent); }
+.browse-landing .style-card[data-card="projects"] { --card-tone: var(--step-done); }
 
 .browse-landing .browse-hero {
     grid-column: 1 / -1; grid-template-columns: 1fr; grid-template-rows: none; justify-items: center; row-gap: 8px;

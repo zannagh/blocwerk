@@ -13,7 +13,7 @@ namespace Blocwerk.Web.Components.Pages.Walls;
 /// By Style (<c>BoulderBrowser</c>); the latter two open a page of cards, and a card opens the list limited to it. Every
 /// level lives in the URL (<see cref="BoulderBrowse"/>: <c>?view=boulders&amp;browse=holds</c>, <c>&amp;hold=crimp</c>,
 /// <c>&amp;style=power</c>, <c>&amp;style=all</c>, <c>&amp;mine=favorites</c>), so reload and back return to it. Signed in,
-/// the landing also has a card per own list (favourites). On the desktop tier the landing shows the whole list under
+/// the landing also has a card per own list (projects, favourites). On the desktop tier the landing shows the whole list under
 /// the cards (pages.css hides it on a phone).
 /// </summary>
 public partial class WallDetail
@@ -30,7 +30,7 @@ public partial class WallDetail
     [SupplyParameterFromQuery(Name = BoulderBrowse.HoldKey)]
     public string? Hold { get; set; }
 
-    /// <summary>Gets or sets the <c>?mine=</c> query value: one of the viewer's own lists (<c>favorites</c>).</summary>
+    /// <summary>Gets or sets the <c>?mine=</c> query value: one of the viewer's own lists (<c>projects</c>, <c>favorites</c>).</summary>
     [SupplyParameterFromQuery(Name = BoulderBrowse.MineKey)]
     public string? Mine { get; set; }
 
@@ -58,6 +58,7 @@ public partial class WallDetail
     // (the list's "My favourites" filter follows the same rule), so a share link or an anonymous kiosk has no such card.
     private IReadOnlyDictionary<BoulderMine, int>? MineCounts => _isAnonymous ? null : new Dictionary<BoulderMine, int>
     {
+        [BoulderMine.Projects] = VisibleItems().Count(i => AnyMember(i, m => m.IsProject)),
         [BoulderMine.Favorites] = VisibleItems().Count(i => AnyMember(i, m => m.IsFavorite)),
     };
 
@@ -87,6 +88,7 @@ public partial class WallDetail
         { Style: { } style } => FamilyOf(item).Styles.HasFlag(style),
         { HoldType: { } hold } => FamilyOf(item).HoldTypes?.Contains(hold) == true,
         { Mine: BoulderMine.Favorites } => !_isAnonymous && AnyMember(item, m => m.IsFavorite),
+        { Mine: BoulderMine.Projects } => !_isAnonymous && AnyMember(item, m => m.IsProject),
         _ => true,
     };
 }

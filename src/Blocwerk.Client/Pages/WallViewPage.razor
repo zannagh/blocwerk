@@ -166,7 +166,7 @@ else
     [SupplyParameterFromQuery(Name = BoulderBrowse.HoldKey)]
     public string? Hold { get; set; }
 
-    /// <summary>Gets or sets the <c>?mine=</c> value: one of the viewer's own lists (<c>favorites</c>).</summary>
+    /// <summary>Gets or sets the <c>?mine=</c> value: one of the viewer's own lists (<c>projects</c>, <c>favorites</c>).</summary>
     [SupplyParameterFromQuery(Name = BoulderBrowse.MineKey)]
     public string? Mine { get; set; }
 
@@ -175,6 +175,7 @@ else
     // The viewer's own lists on the landing: only a signed-in device holds marks.
     private IReadOnlyDictionary<BoulderMine, int>? MineCounts => !ShowsMine || Wall is null ? null : new Dictionary<BoulderMine, int>
     {
+        [BoulderMine.Projects] = BoulderList.MineCount(boulders, Wall.Mine, BoulderMine.Projects),
         [BoulderMine.Favorites] = BoulderList.MineCount(boulders, Wall.Mine, BoulderMine.Favorites),
     };
 

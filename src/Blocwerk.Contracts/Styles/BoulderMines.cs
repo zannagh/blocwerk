@@ -12,6 +12,7 @@ public static class BoulderMines
     public static string Slug(BoulderMine mine) => mine switch
     {
         BoulderMine.Favorites => "favorites",
+        BoulderMine.Projects => "projects",
         _ => mine.ToString().ToLowerInvariant(),
     };
 
@@ -21,6 +22,7 @@ public static class BoulderMines
     public static BoulderMine? FromSlug(string? value) => value?.Trim().ToLowerInvariant() switch
     {
         "favorites" or "favourites" => BoulderMine.Favorites,
+        "projects" => BoulderMine.Projects,
         _ => null,
     };
 }

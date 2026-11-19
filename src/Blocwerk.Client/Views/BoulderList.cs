@@ -98,6 +98,11 @@ public static class BoulderList
             src = src.Where(b => AnyMember(b, families, mine.IsFavourite));
         }
 
+        if (filter.Mine is BoulderMine.Projects)
+        {
+            src = src.Where(b => AnyMember(b, families, mine.IsProject));
+        }
+
         if (!string.IsNullOrWhiteSpace(filter.Search))
         {
             src = src.Where(b => b.Name?.Contains(filter.Search, StringComparison.OrdinalIgnoreCase) == true

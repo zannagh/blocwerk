@@ -27,6 +27,10 @@ public static class BrowseIcons
     public const string Favorites =
         "<path d=\"M19.5 12.6 12 20l-7.5-7.4A4.8 4.8 0 0 1 12 6.3a4.8 4.8 0 0 1 7.5 6.3z\"/>";
 
+    /// <summary>A flag on a summit: the viewer's projects.</summary>
+    public const string Projects =
+        "<path d=\"M3 21l6.5-11 3.5 5.5 2.5-3.5L21 21z\"/><path d=\"M13 15V3l5 2.5L13 8\"/>";
+
     /// <summary>The name and icon of a screen or list, for the bar above it.</summary>
     /// <param name="browse">The level.</param>
     /// <returns>Its name and icon.</returns>
@@ -37,6 +41,7 @@ public static class BrowseIcons
         { HoldType: { } hold } => (BoulderHoldTypes.Label(hold), BoulderHoldTypes.Icon(hold)),
         { Style: { } style } => (BoulderStyles.Label(style), BoulderStyles.Icon(style)),
         { Mine: BoulderMine.Favorites } => ("Favorites", Favorites),
+        { Mine: BoulderMine.Projects } => ("My projects", Projects),
         _ => ("All", All),
     };
 }

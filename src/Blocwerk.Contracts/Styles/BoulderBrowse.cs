@@ -13,7 +13,7 @@ namespace Blocwerk.Core.Helpers;
 /// <param name="Level">The screen.</param>
 /// <param name="Style">The style a list is limited to.</param>
 /// <param name="HoldType">The hold type a list is limited to.</param>
-/// <param name="Mine">The viewer's own list (favourites) a list is limited to.</param>
+/// <param name="Mine">The viewer's own list (favourites, projects) a list is limited to.</param>
 public sealed record BoulderBrowse(BoulderBrowseLevel Level, BoulderStyle? Style = null, HoldHandType? HoldType = null, BoulderMine? Mine = null)
 {
     /// <summary>The query keys the browser owns.</summary>

@@ -62,6 +62,12 @@
             new("styles", "By Style", BrowseIcons.Styles, Rows.Count(r => r.Styles != BoulderStyle.None),
                 HrefFor(new BoulderBrowse(BoulderBrowseLevel.Styles)), BrowseCardShape.Tall),
         ];
+        if (MineCounts?.TryGetValue(BoulderMine.Projects, out var projects) == true)
+        {
+            landing.Add(new("projects", "My projects", BrowseIcons.Projects, projects,
+                HrefFor(new BoulderBrowse(BoulderBrowseLevel.List, Mine: BoulderMine.Projects)), BrowseCardShape.Mine));
+        }
+
         if (MineCounts?.TryGetValue(BoulderMine.Favorites, out var favorites) == true)
         {
             landing.Add(new("favorites", "Favorites", BrowseIcons.Favorites, favorites,
