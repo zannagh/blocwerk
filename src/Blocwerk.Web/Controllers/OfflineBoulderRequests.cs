@@ -109,6 +109,9 @@ public sealed class ReviseBoulderRequest
     /// <summary>The style tags as <c>BoulderStyle</c> flags; absent leaves the boulder's tags as they are.</summary>
     public int? Styles { get; set; }
 
+    /// <summary>The dominant hold type by name; absent leaves it as stored, "" clears it (<c>BoulderHoldTypeChange.FromForm</c>).</summary>
+    public string? HoldType { get; set; }
+
     /// <summary>The boulder's holds; null (a metadata-only save) leaves the stored holds and the review state alone.</summary>
     public List<BoulderHoldDto>? Holds { get; set; } = [];
 

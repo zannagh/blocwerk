@@ -79,6 +79,38 @@ public sealed class BoulderHoldTypeServiceTests
     }
 
     [Fact]
+    public async Task ARevisionSetsAndClearsTheType_InTheSameSave_AndNullLeavesItAlone()
+    {
+        using var h = new WallTestHarness();
+        var holds = await h.SeedWallAsync(holdCount: 1);
+        var boulder = await h.BoulderService.CreateBoulderAsync(h.WallId, "B", null, [new BoulderHoldInput(holds[0].Id)]);
+
+        await h.BoulderService.ReviseBoulderAsync(boulder.Id, null, name: "B2", holdType: new BoulderHoldTypeChange(HoldHandType.Pinch));
+        Assert.Equal(HoldHandType.Pinch, await StoredAsync(h, boulder.Id));
+
+        await h.BoulderService.ReviseBoulderAsync(boulder.Id, null, name: "B3");
+        Assert.Equal(HoldHandType.Pinch, await StoredAsync(h, boulder.Id));
+
+        await h.BoulderService.ReviseBoulderAsync(boulder.Id, null, name: "B3", holdType: new BoulderHoldTypeChange(null));
+        Assert.Null(await StoredAsync(h, boulder.Id));
+    }
+
+    [Fact]
+    public async Task ARevisionChangingOnlyTheType_IsNoReplay_AndAnUnknownTypeIsRefused()
+    {
+        using var h = new WallTestHarness();
+        var holds = await h.SeedWallAsync(holdCount: 1);
+        var boulder = await h.BoulderService.CreateBoulderAsync(h.WallId, "B", null, [new BoulderHoldInput(holds[0].Id)]);
+
+        await h.BoulderService.ReviseBoulderAsync(boulder.Id, null, name: "B", holdType: new BoulderHoldTypeChange(HoldHandType.Jug));
+        Assert.Equal(HoldHandType.Jug, await StoredAsync(h, boulder.Id));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            h.BoulderService.ReviseBoulderAsync(boulder.Id, null, name: "B", holdType: new BoulderHoldTypeChange((HoldHandType)42)));
+        Assert.Equal(HoldHandType.Jug, await StoredAsync(h, boulder.Id));
+    }
+
+    [Fact]
     public async Task ARevisionKeepsTheType()
     {
         using var h = new WallTestHarness();

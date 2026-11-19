@@ -169,7 +169,8 @@ public partial interface IBoulderService
         bool noMatch = false,
         IReadOnlyList<Guid>? setterUserIds = null,
         string? customRule = null,
-        BoulderStyle? styles = null);
+        BoulderStyle? styles = null,
+        BoulderHoldTypeChange? holdType = null);
 
     /// <summary>
     /// Permanently removes a boulder. Only its creator, one of its setters, or an admin of its
@@ -1030,7 +1031,8 @@ public partial class BoulderService : IBoulderService
         bool noMatch = false,
         IReadOnlyList<Guid>? setterUserIds = null,
         string? customRule = null,
-        BoulderStyle? styles = null)
+        BoulderStyle? styles = null,
+        BoulderHoldTypeChange? holdType = null)
     {
         using var op = BlocwerkMetrics.TimeOperation("Boulder.Revise");
         try
@@ -1071,7 +1073,7 @@ public partial class BoulderService : IBoulderService
                 // here after the first apply flipped IsHistoric off; if the requested state already
                 // matches what is stored, this is that replay: return the boulder unchanged so the
                 // queue records a success.
-                if (RevisionIsNoOp(boulder, updatedHolds, name, grade, kickboardFootholdsOn, handsFollowFeet, footColorOnly, noMatch, setterUserIds, customRule, styles))
+                if (RevisionIsNoOp(boulder, updatedHolds, name, grade, kickboardFootholdsOn, handsFollowFeet, footColorOnly, noMatch, setterUserIds, customRule, styles, holdType))
                 {
                     // ...except that reviewing a boulder and concluding nothing needs to change IS
                     // the point of the review: the setter opened it, checked it against the new
@@ -1163,6 +1165,13 @@ public partial class BoulderService : IBoulderService
             if (styles.HasValue)
             {
                 boulder.Styles = BoulderStyles.Normalize(styles.Value);
+            }
+
+            // Null leaves the dominant hold type as it is, like the tags; a change with no type clears it.
+            if (holdType is { } change)
+            {
+                EnsureKnownHoldType(change.Type);
+                boulder.DominantHoldType = change.Type;
             }
 
             if (updatedHolds is not null)
@@ -1538,7 +1547,8 @@ public partial class BoulderService : IBoulderService
         bool noMatch,
         IReadOnlyList<Guid>? setterUserIds,
         string? customRule,
-        BoulderStyle? styles = null)
+        BoulderStyle? styles = null,
+        BoulderHoldTypeChange? holdType = null)
     {
         var effectiveHandsFollowFeet = handsFollowFeet ?? boulder.HandsFollowFeet;
         if (updatedHolds is not null)
@@ -1594,6 +1604,11 @@ public partial class BoulderService : IBoulderService
         }
 
         if (styles.HasValue && boulder.Styles != BoulderStyles.Normalize(styles.Value))
+        {
+            return false;
+        }
+
+        if (holdType is { } change && boulder.DominantHoldType != change.Type)
         {
             return false;
         }

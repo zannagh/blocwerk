@@ -116,7 +116,8 @@ public sealed class OfflineBouldersController : ControllerBase
                 request.NoMatch,
                 request.Setters,
                 request.CustomRule,
-                request.Styles is { } styles ? (BoulderStyle)styles : null);
+                request.Styles is { } styles ? (BoulderStyle)styles : null,
+                BoulderHoldTypeChange.FromForm(request.HoldType));
 
             return Canonical(boulder);
         });

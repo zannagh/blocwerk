@@ -325,6 +325,8 @@
         // null = a metadata-only save: the stored holds and the review state stay as they are.
         holds = ReplaceHolds ? _selectedHolds.Select(h => new { holdId = h.HoldId, type = (int)h.Type, usage = (int)h.Usage }) : null,
         styles = (int)_styles,
+        // The type's name; "" clears it (the holds decide again), a missing value would leave it as stored.
+        holdType = BoulderHoldTypeChange.ToForm(_holdType),
         setters = _selectedSetters.ToList(),
     });
 
@@ -592,12 +594,8 @@
                 _noMatch,
                 _selectedSetters.ToList(),
                 _customRule ?? string.Empty,
-                _styles);
-            if (_holdType != _boulder.DominantHoldType)
-            {
-                await BoulderService.SetBoulderHoldTypeAsync(BoulderId, _holdType);
-            }
-
+                _styles,
+                new BoulderHoldTypeChange(_holdType));
             Navigation.NavigateTo($"/walls/{WallId}/boulders/{BoulderId}");
         }
         catch (Exception ex)

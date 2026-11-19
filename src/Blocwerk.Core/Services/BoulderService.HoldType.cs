@@ -52,10 +52,7 @@ public partial class BoulderService
                 throw new InvalidOperationException(HoldTypeNotAllowedMessage);
             }
 
-            if (holdType is { } type && BoulderHoldTypes.Definitions.All(d => d.Value != type))
-            {
-                throw new InvalidOperationException("Unknown hold type");
-            }
+            EnsureKnownHoldType(holdType);
 
             if (boulder.DominantHoldType != holdType)
             {
@@ -70,6 +67,15 @@ public partial class BoulderService
         {
             op.Fail(ex);
             throw;
+        }
+    }
+
+    // Refuses anything but one of the five hold types (null, clearing, is fine).
+    private static void EnsureKnownHoldType(HoldHandType? holdType)
+    {
+        if (holdType is { } type && BoulderHoldTypes.Definitions.All(d => d.Value != type))
+        {
+            throw new InvalidOperationException("Unknown hold type");
         }
     }
 }
