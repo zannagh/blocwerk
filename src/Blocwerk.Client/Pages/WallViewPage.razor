@@ -79,10 +79,12 @@ else
                             <h2>Boulders<span class="list-count">@browseRows.Count</span></h2>
                         </div>
                     </div>
-                    <BoulderBrowser Browse="Browsing" Rows="browseRows" HrefFor="BrowseHref" />
+                    <BoulderBrowser Browse="Browsing" Rows="browseRows" HrefFor="BrowseHref" MineCounts="mineCounts" />
                 }
                 else
                 {
+                @* A list level. Unlike the Server's desktop tier, the device shows no list under the landing's cards. *@
+                <div class="boulder-list-block" data-browse-list="level">
                 <div class="boulder-list-head">
                     <div class="section-header">
                         <h2>Boulders<span class="list-count">@active.Count</span></h2>
@@ -124,6 +126,7 @@ else
                         </details>
                     }
                 }
+                </div>
                 }
             </div>
         </div>
@@ -142,6 +145,7 @@ else
     private int holdCount;
     private CachedWall? derivedFrom;
     private IReadOnlyList<BoulderFamilyRow> browseRows = [];
+    private IReadOnlyDictionary<BoulderMine, int>? mineCounts;
 
     /// <summary>Gets or sets the <c>?browse=</c> value: <c>holds</c> or <c>styles</c> for a card page.</summary>
     [SupplyParameterFromQuery(Name = BoulderBrowse.BrowseKey)]
@@ -155,13 +159,22 @@ else
     [SupplyParameterFromQuery(Name = BoulderBrowse.HoldKey)]
     public string? Hold { get; set; }
 
-    private BoulderBrowse Browsing => BoulderBrowse.From(Browse, Style, Hold);
+    /// <summary>Gets or sets the <c>?mine=</c> value: one of the viewer's own lists (<c>projects</c>, <c>favorites</c>).</summary>
+    [SupplyParameterFromQuery(Name = BoulderBrowse.MineKey)]
+    public string? Mine { get; set; }
+
+    // ?mine= only counts where the viewer has own lists.
+    private BoulderBrowse Browsing => BoulderBrowse.From(Browse, Style, Hold, HasOwnLists ? Mine : null);
+
+    // The viewer's own lists (My projects, Favorites): a signed-in device's marks, on the wall itself. A share link shows
+    // the wall as its link holder sees it, and a kiosk holds no marks, so neither has the cards or the level.
+    private bool HasOwnLists => ShowsMine && string.IsNullOrEmpty(ShareToken);
 
     private bool ShowBrowseCards => Browsing.Level != BoulderBrowseLevel.List;
 
     private string BrowseHref(BoulderBrowse level) => Navigation.GetUriWithQueryParameters(level.Query());
 
-    private BoulderFilter ListFilter => filter with { Style = Browsing.Style, HoldType = Browsing.HoldType };
+    private BoulderFilter ListFilter => filter with { Style = Browsing.Style, HoldType = Browsing.HoldType, Mine = Browsing.Mine };
 
     /// <inheritdoc />
     protected override void OnParametersSet()
@@ -181,6 +194,7 @@ else
         filter = new BoulderFilter();
         (grid, derivedFrom, boulders, active, archived) = (null, null, [], [], []);
         browseRows = [];
+        mineCounts = null;
     }
 
     /// <inheritdoc />
@@ -201,6 +215,7 @@ else
             boulders = ClassBoulders.Of(Wall);
             families = BoulderList.Families(boulders, Wall.Holds);
             browseRows = BoulderList.Visible(boulders).Select(b => families[b.Id]).ToList();
+            mineCounts = HasOwnLists ? BoulderList.MineCounts(boulders, Wall.Mine, families) : null;
         }
 
         (active, archived) = BoulderList.Apply(boulders, Wall.Mine, ListFilter, Wall.Holds);

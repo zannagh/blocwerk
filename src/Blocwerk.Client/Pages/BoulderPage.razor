@@ -166,8 +166,12 @@ else
     [SupplyParameterFromQuery(Name = BoulderBrowse.HoldKey)]
     public string? Hold { get; set; }
 
+    /// <summary>Gets or sets the viewer's own list this boulder was opened from (<c>?mine=</c>).</summary>
+    [SupplyParameterFromQuery(Name = BoulderBrowse.MineKey)]
+    public string? Mine { get; set; }
+
     private string BackLink => ClientRoutes.WallLink(WallId, ShareToken)
-        + (BoulderBrowse.From(null, Style, Hold).ListQuery is { } list ? "?" + list : string.Empty);
+        + (BoulderBrowse.From(null, Style, Hold, Mine).ListQuery is { } list ? "?" + list : string.Empty);
 
     private RenderFragment Byline => @<text>by @boulder!.SetBy &middot; <time datetime="@boulder.CreatedAt.UtcDateTime.ToString("o")">@ClientTime.Date(boulder.CreatedAt, OffsetOf(boulder.CreatedAt))</time></text>;
 

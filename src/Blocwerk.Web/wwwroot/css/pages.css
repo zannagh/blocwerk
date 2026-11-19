@@ -2165,6 +2165,8 @@ html.bw-fullscreen { --tier: desktop; }
                Read only by .boulders-page, so no other list is affected. */
             --boulder-list-display: grid;
             --boulder-list-columns: repeat(auto-fill, minmax(360px, 1fr));
+            /* The boulder browser's landing shows the whole list under its cards on this tier only. */
+            --browse-landing-list-display: grid;
 
             /* Boulder detail: header + photo left, interaction rail right. */
             --boulder-detail-display: grid;
@@ -4195,10 +4197,9 @@ a.wall-update-link {
     border: 1px solid var(--border-light); border-radius: var(--r-md); box-shadow: 0 1px 4px var(--shadow-sm);
     transition: transform 0.12s, box-shadow 0.12s;
 }
-.style-card:hover { box-shadow: 0 3px 10px var(--shadow-md); }
-.style-card:active { transform: translateY(1px); }
+.style-card.is-link:hover { box-shadow: 0 3px 10px var(--shadow-md); }
+.style-card.is-link:active { transform: translateY(1px); }
 .style-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.style-card-all { grid-column: 1 / -1; min-height: 68px; }
 .style-card-icon {
     grid-row: 1 / span 2; display: inline-flex; align-items: center; justify-content: center;
     width: 40px; height: 40px; border-radius: 50%; background: var(--accent-soft); color: var(--accent);
@@ -4237,9 +4238,102 @@ a.wall-update-link {
 /* ---- Boulder browser: compact cards (a card page fits a 375 x 667 phone), greyed-out empty cards, the hold-type hint and note ---- */
 .style-cards { gap: 8px; padding: 4px 0 8px; }
 .style-card { min-height: 64px; padding: 10px 14px; }
-.style-card-all { min-height: 60px; }
 .style-card.is-empty { opacity: 0.5; box-shadow: none; filter: grayscale(1); cursor: default; }
 .style-card.is-empty .style-card-icon { background: var(--border-light); color: var(--text-secondary); }
 .style-pick.inferred { border-style: dashed; border-color: var(--accent); color: var(--accent); }
+
+/* ---- Boulder browser landing: All across the grid, a portrait pair, the viewer's own lists; each card tinted by its
+   own token (--card-tone). On a phone it is one screen; on the desktop tier the whole list follows under a divider. ---- */
+.style-cards.browse-landing { gap: 12px; width: 100%; max-width: 720px; margin: 0 auto; padding: 4px 0 12px; }
+.browse-landing .style-card {
+    --card-tone: var(--accent);
+    border-radius: var(--r-lg);
+    border-color: color-mix(in srgb, var(--card-tone) 24%, var(--border-light));
+    background: linear-gradient(160deg, color-mix(in srgb, var(--card-tone) 13%, var(--bg-surface)) 0%, var(--bg-surface) 72%);
+    box-shadow: 0 2px 8px var(--shadow-sm);
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+    -webkit-tap-highlight-color: transparent;
+}
+.browse-landing .style-card.is-link:hover { box-shadow: 0 6px 18px -6px color-mix(in srgb, var(--card-tone) 45%, transparent); }
+.browse-landing .style-card.is-link:active { transform: scale(0.97); box-shadow: 0 1px 3px var(--shadow-sm); }
+.browse-landing .style-card-icon { background: color-mix(in srgb, var(--card-tone) 17%, transparent); color: var(--card-tone); }
+.browse-landing .style-card-label { font-family: var(--font-display); letter-spacing: -0.01em; }
+.browse-landing .style-card[data-card="holds"] { --card-tone: var(--secondary); }
+.browse-landing .style-card[data-card="styles"] { --card-tone: var(--star-gold); }
+.browse-landing .style-card[data-card="favorites"] { --card-tone: var(--accent); }
+.browse-landing .style-card[data-card="projects"] { --card-tone: var(--step-done); }
+
+.browse-landing .browse-hero {
+    grid-column: 1 / -1; grid-template-columns: 1fr; grid-template-rows: none; justify-items: center; row-gap: 8px;
+    min-height: 156px; padding: 20px 16px; text-align: center;
+    border: none; color: var(--on-accent);
+    background:
+        radial-gradient(120% 90% at 85% 0%, rgba(255, 255, 255, 0.22) 0%, transparent 55%),
+        linear-gradient(135deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 55%, var(--topbar-bg)) 100%);
+    box-shadow: 0 10px 24px -12px color-mix(in srgb, var(--accent) 80%, transparent);
+}
+.browse-landing .browse-hero.is-link:hover { box-shadow: 0 14px 28px -12px color-mix(in srgb, var(--accent) 90%, transparent); }
+.browse-landing .browse-hero .style-card-icon { grid-row: auto; width: 56px; height: 56px; background: rgba(255, 255, 255, 0.2); color: var(--on-accent); }
+.browse-landing .browse-hero .style-card-label { color: var(--on-accent); font-size: 1.3rem; }
+.browse-landing .browse-hero .style-card-count {
+    padding: 2px 12px; border-radius: var(--r-pill); background: rgba(255, 255, 255, 0.2);
+    color: var(--on-accent); font-size: 0.9rem; font-weight: 700;
+}
+
+.browse-landing .browse-tall {
+    grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; justify-items: start; row-gap: 4px;
+    aspect-ratio: 4 / 5; min-height: 0; padding: 16px;
+}
+.browse-landing .browse-tall .style-card-icon { grid-row: auto; width: 56px; height: 56px; border-radius: var(--r-lg); }
+.browse-landing .browse-tall .style-card-label { align-self: end; font-size: 1.12rem; white-space: normal; }
+.browse-landing .browse-tall .style-card-count { font-family: var(--font-display); font-size: 1.7rem; font-weight: 800; line-height: 1; color: var(--card-tone); }
+.browse-landing .browse-tall.is-empty .style-card-count { font-family: inherit; font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); }
+.browse-landing .browse-mine { min-height: 72px; }
+.browse-landing .browse-mine .style-card-count { font-weight: 700; color: var(--card-tone); }
+.browse-landing .browse-mine.is-empty .style-card-count { font-weight: 400; color: var(--text-secondary); }
+@media (min-width: 600px) {
+    .browse-landing .browse-tall { aspect-ratio: auto; min-height: 180px; }
+}
+/* Desktop tier: the list under the cards is the point, so the cards get compact. All is a short banner (icon, name and
+   count in one row), and the pair and the own lists share one row of landscape cards; the portrait pair is phone-only. */
+@media (min-width: 900px) {
+    @container style(--tier: desktop) {
+        .style-cards.browse-landing { grid-template-columns: repeat(4, minmax(0, 1fr)); max-width: 960px; gap: 10px; padding-bottom: 4px; }
+        .browse-landing .browse-hero {
+            grid-template-columns: auto auto auto; justify-content: center; align-items: center; column-gap: 14px;
+            min-height: 0; padding: 14px 20px;
+        }
+        .browse-landing .browse-hero .style-card-icon { width: 44px; height: 44px; }
+        .browse-landing .browse-hero .style-card-label { font-size: 1.15rem; }
+        .browse-landing .browse-tall {
+            grid-template-columns: auto 1fr; grid-template-rows: auto auto; row-gap: 0; align-items: center;
+            min-height: 72px; padding: 12px 14px;
+        }
+        .browse-landing .browse-tall .style-card-icon { grid-row: 1 / span 2; width: 40px; height: 40px; border-radius: 50%; }
+        .browse-landing .browse-tall .style-card-label { align-self: end; font-size: 1rem; white-space: nowrap; }
+        .browse-landing .browse-tall .style-card-count { align-self: start; font-size: 1.05rem; }
+        .browse-landing .browse-mine { min-height: 72px; }
+        .browse-list-divider { margin-top: 14px; }
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .browse-landing .style-card { transition: none; }
+    .browse-landing .style-card.is-link:active { transform: none; }
+}
+
+/* A list level's rows join the section's grid; under the landing they are a block of their own, shown on the desktop
+   tier only (--browse-landing-list-display, set in the layout-tier section at the bottom of this file). */
+.boulders-page .browse-landing-block { grid-column: 1 / -1; }
+.boulder-list-block { display: contents; }
+.boulder-list-block.browse-landing-list {
+    display: var(--browse-landing-list-display, none);
+    grid-column: 1 / -1; grid-template-columns: var(--boulder-list-columns, none); gap: 0 12px; align-content: start;
+}
+.browse-list-divider {
+    grid-column: 1 / -1; display: flex; align-items: center; gap: 14px; margin: 20px 0 0;
+    color: var(--text-secondary); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+}
+.browse-list-divider::before,
+.browse-list-divider::after { content: ""; flex: 1 1 auto; height: 1px; background: var(--border); }
 .boulder-hold-type-note { margin: 0; color: var(--text-secondary); font-size: 0.82rem; }
 .hold-type-badge { margin: 8px 0; }

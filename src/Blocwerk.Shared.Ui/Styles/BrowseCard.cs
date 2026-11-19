@@ -9,5 +9,5 @@ namespace Blocwerk.Shared.Ui.Styles;
 /// <param name="Icon">Its icon's SVG content.</param>
 /// <param name="Count">How many families it leads to; a card with none is greyed out and leads nowhere.</param>
 /// <param name="Href">Where a tap goes.</param>
-/// <param name="Wide">True for a card across the whole row.</param>
-public sealed record BrowseCard(string Key, string Label, string Icon, int Count, string Href, bool Wide = false);
+/// <param name="Shape">How it is drawn: a card page's tile, or one of the landing's shapes.</param>
+public sealed record BrowseCard(string Key, string Label, string Icon, int Count, string Href, BrowseCardShape Shape = BrowseCardShape.Tile);

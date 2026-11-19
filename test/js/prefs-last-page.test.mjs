@@ -33,6 +33,15 @@ test('a boulder opened from a style list resumes on that list', () => {
     assert.equal(lastPage(`/walls/${WALL}/boulders/${BOULDER}`, '?style=power'), `/walls/${WALL}?view=boulders&style=power`);
 });
 
+test('a boulder opened from the favourites list resumes on that list', () => {
+    assert.equal(lastPage(`/walls/${WALL}/boulders/${BOULDER}`, '?mine=favorites'), `/walls/${WALL}?view=boulders&mine=favorites`);
+});
+
+test('an unknown own list falls back to the style list, as the page reads it', () => {
+    assert.equal(lastPage(`/walls/${WALL}/boulders/${BOULDER}`, '?mine=bogus&style=power'), `/walls/${WALL}?view=boulders&style=power`);
+    assert.equal(lastPage(`/walls/${WALL}/boulders/${BOULDER}`, '?mine=Projects'), `/walls/${WALL}?view=boulders&mine=projects`);
+});
+
 test('a boulder opened without a list resumes on the whole list, not on the cards', () => {
     assert.equal(lastPage(`/walls/${WALL}/boulders/${BOULDER}`), `/walls/${WALL}?view=boulders&style=all`);
 });

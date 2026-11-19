@@ -12,7 +12,9 @@ namespace Blocwerk.Web.Components.Pages.Walls;
 /// The boulder list's browser. Opening the list from the wall's Boulders card shows three cards, All, By Hold Type and
 /// By Style (<c>BoulderBrowser</c>); the latter two open a page of cards, and a card opens the list limited to it. Every
 /// level lives in the URL (<see cref="BoulderBrowse"/>: <c>?view=boulders&amp;browse=holds</c>, <c>&amp;hold=crimp</c>,
-/// <c>&amp;style=power</c>, <c>&amp;style=all</c>), so reload and back return to it.
+/// <c>&amp;style=power</c>, <c>&amp;style=all</c>, <c>&amp;mine=favorites</c>), so reload and back return to it. A
+/// viewer with own lists also gets a card per list (WallDetail.OwnLists.cs). On the desktop tier the landing renders the
+/// whole list under the cards (WallDetail.BrowseTier.cs).
 /// </summary>
 public partial class WallDetail
 {
@@ -28,8 +30,12 @@ public partial class WallDetail
     [SupplyParameterFromQuery(Name = BoulderBrowse.HoldKey)]
     public string? Hold { get; set; }
 
-    /// <summary>The browser's level as the URL names it.</summary>
-    private BoulderBrowse Browsing => BoulderBrowse.From(Browse, Style, Hold);
+    /// <summary>Gets or sets the <c>?mine=</c> query value: one of the viewer's own lists (<c>projects</c>, <c>favorites</c>).</summary>
+    [SupplyParameterFromQuery(Name = BoulderBrowse.MineKey)]
+    public string? Mine { get; set; }
+
+    /// <summary>The browser's level as the URL names it; <c>?mine=</c> only counts for a viewer with own lists.</summary>
+    private BoulderBrowse Browsing => BoulderBrowse.From(Browse, Style, Hold, HasOwnLists ? Mine : null);
 
     /// <summary>
     /// The boulders the list shows as its rows (archived ones sit apart): the ONE query both the list and the browser's
@@ -44,6 +50,11 @@ public partial class WallDetail
     private bool ShowNewBoulderLink => _holds.Count > 0 && (!_isAnonymous || _canCreateAnonymously);
 
     private bool ShowBrowseCards => Browsing.Level != BoulderBrowseLevel.List;
+
+    // A list level shows its list; the landing carries the whole list under its cards only on the desktop tier, and
+    // never on a kiosk; the card pages carry none.
+    private bool ShowBoulderList => Browsing.Level == BoulderBrowseLevel.List
+        || (Browsing.Level == BoulderBrowseLevel.Landing && desktopTier && !KioskContext.IsKiosk);
 
     // The same wall URL at another level of the browser, whatever else it carries (a share token sits in the path).
     private string BrowseHref(BoulderBrowse level)
@@ -70,6 +81,8 @@ public partial class WallDetail
     {
         { Style: { } style } => FamilyOf(item).Styles.HasFlag(style),
         { HoldType: { } hold } => FamilyOf(item).HoldTypes?.Contains(hold) == true,
+        { Mine: BoulderMine.Favorites } => AnyMember(item, m => m.IsFavorite),
+        { Mine: BoulderMine.Projects } => AnyMember(item, m => m.IsProject),
         _ => true,
     };
 }

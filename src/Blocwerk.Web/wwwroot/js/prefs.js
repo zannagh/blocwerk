@@ -72,12 +72,19 @@ window.bwPrefs = (function () {
         return !NON_RECORDABLE.test(path);
     }
 
-    // The boulder list a boulder page was opened from, as a query: hold=crimp, style=power, or style=all.
+    // The viewer's own lists BoulderBrowse.From reads (BoulderMines.FromSlug); any other ?mine= value names no list.
+    const MINE_LISTS = { favorites: 'favorites', favourites: 'favorites', projects: 'projects' };
+
+    // The boulder list a boulder page was opened from, as a query, in BoulderBrowse.From's order: hold=crimp, then
+    // mine=favorites|projects, then style=power, else style=all.
     function boulderListLevel(params) {
         const hold = params.get('hold');
+        const mine = MINE_LISTS[(params.get('mine') || '').trim().toLowerCase()];
         return hold
             ? 'hold=' + encodeURIComponent(hold)
-            : 'style=' + encodeURIComponent(params.get('style') || 'all');
+            : mine
+                ? 'mine=' + encodeURIComponent(mine)
+                : 'style=' + encodeURIComponent(params.get('style') || 'all');
     }
 
     function recordLastPage() {
@@ -89,7 +96,7 @@ window.bwPrefs = (function () {
             }
 
             // Collapse a boulder-detail view to its boulder list so returning lands on the list: the list it was
-            // opened from (its ?hold= or ?style=, which the boulder page carries), else the whole list. A bare
+            // opened from (its ?hold=, ?mine= or ?style=, which the boulder page carries), else the whole list. A bare
             // ?view=boulders would land on the boulder browser's cards instead.
             const detail = path.match(BOULDER_DETAIL);
             const value = detail

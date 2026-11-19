@@ -12,13 +12,16 @@ namespace Blocwerk.Core.Tests.OfflineClientViews;
 /// <summary>The offline wall view's boulder browser: the landing, the card pages with their counts, and the limited lists.</summary>
 public sealed class WallViewBrowseTests
 {
+    // The second boulder, the viewer's one project (Crimp Line is the favourite).
+    private static readonly Guid Second = Guid.Parse("5ec0bd00-0000-4000-8000-000000000002");
+
     private static FakeStoreSource Device(string[] first, string[] second, string? secondHoldType = null, string? startHandType = null)
     {
         var source = new FakeStoreSource();
         BouldersDocumentBoulder[] boulders =
         [
             CrimpLine() with { Styles = first },
-            CrimpLine() with { Id = Guid.NewGuid(), Name = "Second Line", Styles = second, HoldType = secondHoldType },
+            CrimpLine() with { Id = Second, Name = "Second Line", Styles = second, HoldType = secondHoldType },
             SlabArchived(),
         ];
         var holds = HoldsDoc();
@@ -30,7 +33,7 @@ public sealed class WallViewBrowseTests
             [DataDocumentKinds.Boulders] = new(Sha('b'), Json(new BouldersDocument(1, Wall, boulders))),
             [DataDocumentKinds.Comments] = new(Sha('c'), Json(new CommentsDocument(1, Wall, []))),
         },
-        mine: [Marks()]);
+        mine: [Marks() with { Projects = [Second] }]);
         return source;
     }
 
@@ -45,12 +48,97 @@ public sealed class WallViewBrowseTests
         await using var view = await ViewHarness.StartAsync(CachedDevice(UserA), $"walls/{Wall}");
         var html = await RenderAsync(view);
 
-        Assert.Contains("<a class=\"style-card style-card-all\" href=", html, StringComparison.Ordinal);
-        Assert.Contains("<span class=\"style-card is-empty style-card-all\" aria-disabled=\"true\" data-card=\"holds\">", html, StringComparison.Ordinal);
-        Assert.Contains("<span class=\"style-card is-empty style-card-all\" aria-disabled=\"true\" data-card=\"styles\">", html, StringComparison.Ordinal);
-        Assert.DoesNotContain("Crimp Line", html, StringComparison.Ordinal);
+        Assert.Matches("<a class=\"style-card browse-hero is-link\" href=\"[^\"]*\\?style=all\" data-card=\"all\"", html);
+        Assert.Contains("<a class=\"style-card browse-tall is-empty\" aria-disabled=\"true\" data-card=\"holds\">", html, StringComparison.Ordinal);
+        Assert.Contains("<a class=\"style-card browse-tall is-empty\" aria-disabled=\"true\" data-card=\"styles\">", html, StringComparison.Ordinal);
         // The landing keeps the wall's photo (and the stage the 3D switch uses) and its counts.
         Assert.Contains("wall-photo-container", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TheLanding_RendersNoListUnderItsCards()
+    {
+        await using var view = await ViewHarness.StartAsync(Device(["Tension"], ["Power"]), $"walls/{Wall}");
+        var html = await RenderAsync(view);
+
+        Assert.Contains("data-browse-level=\"landing\"", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("data-browse-list", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("Crimp Line", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SignedInOnAShareLink_HasNoOwnListCards_AndIgnoresMine()
+    {
+        await using var view = await ViewHarness.StartAsync(Device([], []), $"walls/{Wall}/shared/tok?mine=favorites");
+        var html = await view.RenderAsync<WallViewPage>(new() { ["WallId"] = Wall, ["ShareToken"] = "tok" });
+
+        Assert.Contains("data-browse-level=\"landing\"", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("data-card=\"favorites\"", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("data-card=\"projects\"", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SignedIn_TheLandingHasAFavoritesCard_CountingTheFavouriteFamilies()
+    {
+        await using var view = await ViewHarness.StartAsync(Device([], []), $"walls/{Wall}");
+        var html = await RenderAsync(view);
+
+        Assert.Matches("<a class=\"style-card browse-mine is-link\" href=\"[^\"]*\\?mine=favorites\" data-card=\"favorites\">", html);
+        Assert.Matches("(?s)data-card=\"favorites\">.*?<span class=\"style-card-count\">1</span>", html);
+    }
+
+    [Fact]
+    public async Task SignedIn_TheLandingHasAMyProjectsCard_AndItsListHoldsTheProjects()
+    {
+        await using var landing = await ViewHarness.StartAsync(Device([], []), $"walls/{Wall}");
+        var html = await RenderAsync(landing);
+        Assert.Matches("<a class=\"style-card browse-mine is-link\" href=\"[^\"]*\\?mine=projects\" data-card=\"projects\">", html);
+        Assert.Matches("(?s)data-card=\"projects\">.*?<span class=\"style-card-count\">1</span>", html);
+
+        await using var list = await ViewHarness.StartAsync(Device([], []), $"walls/{Wall}?mine=projects");
+        var rows = await RenderAsync(list);
+        Assert.Contains("Second Line", rows, StringComparison.Ordinal);
+        Assert.DoesNotContain("Crimp Line", rows, StringComparison.Ordinal);
+        Assert.Contains($"href=\"walls/{Wall}/boulders/{Second}?mine=projects\"", rows, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(Kiosk)]
+    [InlineData(Anon)]
+    public async Task WithoutMarks_TheLandingHasNoOwnListCards_AndMineIsIgnored(string partition)
+    {
+        await using var landing = await ViewHarness.StartAsync(CachedDevice(partition), $"walls/{Wall}");
+        var html = await RenderAsync(landing);
+        Assert.DoesNotContain("data-card=\"favorites\"", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("data-card=\"projects\"", html, StringComparison.Ordinal);
+
+        // The level is ignored: the URL opens the landing, not a list.
+        await using var list = await ViewHarness.StartAsync(CachedDevice(partition), $"walls/{Wall}?mine=favorites");
+        var ignored = await RenderAsync(list);
+        Assert.Contains("data-browse-level=\"landing\"", ignored, StringComparison.Ordinal);
+        Assert.DoesNotContain("Crimp Line", ignored, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task MineFavorites_LimitsTheListToTheFavourites_AndTheBoulderLinkReturnsToIt()
+    {
+        await using var view = await ViewHarness.StartAsync(Device([], []), $"walls/{Wall}?mine=favorites");
+        var html = await RenderAsync(view);
+
+        Assert.Contains("Crimp Line", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("Second Line", html, StringComparison.Ordinal);
+        Assert.Contains($"href=\"walls/{Wall}/boulders/{Crimp}?mine=favorites\"", html, StringComparison.Ordinal);
+        Assert.Contains("data-browse-back", html, StringComparison.Ordinal);
+        Assert.Contains("data-browse-list=\"level\"", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TheBoulderPage_OpenedFromTheFavourites_BacksIntoThem()
+    {
+        await using var view = await ViewHarness.StartAsync(Device([], []), $"walls/{Wall}/boulders/{Crimp}?mine=favorites");
+        var html = await RenderBoulderAsync(view, Crimp);
+
+        Assert.Contains($"href=\"walls/{Wall}?mine=favorites\"", html, StringComparison.Ordinal);
     }
 
     [Fact]

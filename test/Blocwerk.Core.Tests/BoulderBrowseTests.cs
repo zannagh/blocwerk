@@ -43,8 +43,55 @@ public sealed class BoulderBrowseTests
     {
         var query = new BoulderBrowse(BoulderBrowseLevel.List, HoldType: HoldHandType.Sloper).Query();
 
-        Assert.Equal(new Dictionary<string, object?> { ["browse"] = null, ["style"] = null, ["hold"] = "sloper" }, query);
+        Assert.Equal(new Dictionary<string, object?> { ["browse"] = null, ["style"] = null, ["hold"] = "sloper", ["mine"] = null }, query);
         Assert.Equal("holds", new BoulderBrowse(BoulderBrowseLevel.HoldTypes).Query()["browse"]);
         Assert.Equal("all", BoulderBrowse.All.Query()["style"]);
     }
+
+    [Theory]
+    [InlineData("favorites")]
+    [InlineData("Favourites")]
+    public void MineFavorites_IsAListOfItsOwn_UnderTheLanding(string value)
+    {
+        var browse = BoulderBrowse.From(null, null, null, value);
+
+        Assert.Equal(new BoulderBrowse(BoulderBrowseLevel.List, Mine: BoulderMine.Favorites), browse);
+        Assert.False(browse.IsAll);
+        Assert.Equal(BoulderBrowseLevel.Landing, browse.Up.Level);
+        Assert.Equal("Boulders", browse.UpLabel);
+        Assert.Equal("mine=favorites", browse.ListQuery);
+    }
+
+    [Fact]
+    public void MineFavorites_Query_ClearsTheOtherLevels_AndALevelClearsIt()
+    {
+        var mine = new BoulderBrowse(BoulderBrowseLevel.List, Mine: BoulderMine.Favorites).Query();
+
+        Assert.Equal(new Dictionary<string, object?> { ["browse"] = null, ["style"] = null, ["hold"] = null, ["mine"] = "favorites" }, mine);
+        Assert.Null(BoulderBrowse.All.Query()["mine"]);
+        Assert.Null(BoulderBrowse.Landing.Query()["mine"]);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("projects-of-someone")]
+    public void AnUnknownMineValue_FallsBackToTheLanding(string? value) =>
+        Assert.Equal(BoulderBrowse.Landing, BoulderBrowse.From(null, null, null, value));
+
+    [Fact]
+    public void MineProjects_IsAListOfItsOwn_WithItsOwnQuery()
+    {
+        var browse = BoulderBrowse.From(null, null, null, "PROJECTS");
+
+        Assert.Equal(new BoulderBrowse(BoulderBrowseLevel.List, Mine: BoulderMine.Projects), browse);
+        Assert.Equal(BoulderBrowseLevel.Landing, browse.Up.Level);
+        Assert.Equal("mine=projects", browse.ListQuery);
+        Assert.Equal("projects", browse.Query()["mine"]);
+        Assert.Null(browse.Query()["style"]);
+    }
+
+    [Fact]
+    public void AHoldTypeInTheUrl_WinsOverMine() =>
+        Assert.Equal(HoldHandType.Crimp, BoulderBrowse.From(null, null, "crimp", "favorites").HoldType);
 }

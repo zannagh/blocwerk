@@ -98,6 +98,7 @@ test('the Server twin of a client URL keeps the query and fragment, and never le
     // A level of the boulder browser opens the Server wall page on its list page, not the overview.
     assert.equal(api.serverUrl('/v/walls/W1?hold=crimp'), '/walls/W1?hold=crimp&view=boulders');
     assert.equal(api.serverUrl('/v/walls/W1/shared/T?browse=styles'), '/walls/W1/shared/T?browse=styles&view=boulders');
+    assert.equal(api.serverUrl('/v/walls/W1?mine=favorites'), '/walls/W1?mine=favorites&view=boulders');
     assert.equal(api.serverUrl('/v/walls/W1?view=boulders&style=all'), '/walls/W1?view=boulders&style=all');
     assert.equal(api.serverUrl('/v/walls/W1/boulders/B2?style=power'), '/walls/W1/boulders/B2?style=power');
     assert.equal(api.serverUrl('/v/walls/W1'), '/walls/W1');

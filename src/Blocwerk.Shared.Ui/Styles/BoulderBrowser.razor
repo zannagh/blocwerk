@@ -1,34 +1,28 @@
 @using Blocwerk.Core.Enums
 @using Blocwerk.Core.Helpers
-@* The boulder browser's card screens, the same on the Server and offline: the landing (All, By Hold Type, By Style) and
-   the two card pages. Plain links, so every choice is a history entry and its level is in the URL (BoulderBrowse).
-   A card counts families, as the list shows them; one with none is greyed out and not a link. Laid out to fit a
-   390 x 844 phone without scrolling: the landing is three rows, a card page two columns. *@
+@* The boulder browser's card screens, the same on the Server and offline: the landing (All, By Hold Type, By Style and,
+   signed in, the viewer's own lists) and the two card pages. Plain links, so every choice is a history entry and its
+   level is in the URL (BoulderBrowse). A card counts families, as the list shows them; one with none is greyed out and
+   not a link. The landing is All across the grid, then two portrait cards, then the own lists, all on one phone screen;
+   a card page is two columns. *@
 @if (Browse.Level != BoulderBrowseLevel.Landing)
 {
     var (label, icon) = BrowseIcons.Describe(Browse);
     <BrowseBar BackHref="@HrefFor(Browse.Up)" BackLabel="@Browse.UpLabel" Label="@label" Icon="@icon" />
 }
-<nav class="style-cards"
+<nav class="style-cards@(Browse.Level == BoulderBrowseLevel.Landing ? " browse-landing" : string.Empty)"
      aria-label="@BrowseIcons.Describe(Browse).Label" data-browse-level="@Browse.Level.ToString().ToLowerInvariant()">
     @foreach (var card in cards)
     {
-        if (card.Count > 0 || card.Key == "all")
-        {
-            <a class="style-card@(card.Wide ? " style-card-all" : string.Empty)" href="@card.Href" data-card="@card.Key">
-                <span class="style-card-icon"><BrowseIcon Markup="@card.Icon" Size="26" /></span>
-                <span class="style-card-label">@card.Label</span>
-                <span class="style-card-count">@card.Count</span>
-            </a>
-        }
-        else
-        {
-            <span class="style-card is-empty@(card.Wide ? " style-card-all" : string.Empty)" aria-disabled="true" data-card="@card.Key">
-                <span class="style-card-icon"><BrowseIcon Markup="@card.Icon" Size="26" /></span>
-                <span class="style-card-label">@card.Label</span>
-                <span class="style-card-count">None yet</span>
-            </span>
-        }
+        // An empty card is the same element without its href: greyed out, no link, not in the tab order.
+        var empty = card.Count == 0 && card.Key != "all";
+        var size = card.Shape is BrowseCardShape.Hero or BrowseCardShape.Tall ? 30 : 24;
+        <a class="style-card @(card.Shape switch { BrowseCardShape.Hero => "browse-hero", BrowseCardShape.Tall => "browse-tall", BrowseCardShape.Mine => "browse-mine", _ => "" }) @(empty ? "is-empty" : "is-link")"
+           href="@(empty ? null : card.Href)" aria-disabled="@(empty ? "true" : null)" data-card="@card.Key">
+            <span class="style-card-icon"><BrowseIcon Markup="@card.Icon" Size="size" /></span>
+            <span class="style-card-label">@card.Label</span>
+            <span class="style-card-count">@(empty ? "None yet" : card.Count.ToString(System.Globalization.CultureInfo.InvariantCulture))</span>
+        </a>
     }
 </nav>
 
@@ -44,6 +38,12 @@
     /// <summary>Gets or sets the link of a level.</summary>
     [Parameter, EditorRequired] public Func<BoulderBrowse, string> HrefFor { get; set; } = _ => "#";
 
+    /// <summary>
+    /// Gets or sets the families on each of the viewer's own lists; a list without an entry has no card (a share link, a
+    /// kiosk nobody is picked on and an anonymous viewer have no marks, so they see none).
+    /// </summary>
+    [Parameter] public IReadOnlyDictionary<BoulderMine, int>? MineCounts { get; set; }
+
     /// <inheritdoc />
     protected override void OnParametersSet() => cards = Browse.Level switch
     {
@@ -52,14 +52,30 @@
         _ => LandingCards(),
     };
 
-    private List<BrowseCard> LandingCards() =>
-    [
-        new("all", "All", BrowseIcons.All, Rows.Count, HrefFor(BoulderBrowse.All), Wide: true),
-        new("holds", "By Hold Type", BrowseIcons.HoldTypes, Rows.Count(r => r.HoldTypes is { Count: > 0 }),
-            HrefFor(new BoulderBrowse(BoulderBrowseLevel.HoldTypes)), Wide: true),
-        new("styles", "By Style", BrowseIcons.Styles, Rows.Count(r => r.Styles != BoulderStyle.None),
-            HrefFor(new BoulderBrowse(BoulderBrowseLevel.Styles)), Wide: true),
-    ];
+    private List<BrowseCard> LandingCards()
+    {
+        List<BrowseCard> landing =
+        [
+            new("all", "All boulders", BrowseIcons.All, Rows.Count, HrefFor(BoulderBrowse.All), BrowseCardShape.Hero),
+            new("holds", "By Hold Type", BrowseIcons.HoldTypes, Rows.Count(r => r.HoldTypes is { Count: > 0 }),
+                HrefFor(new BoulderBrowse(BoulderBrowseLevel.HoldTypes)), BrowseCardShape.Tall),
+            new("styles", "By Style", BrowseIcons.Styles, Rows.Count(r => r.Styles != BoulderStyle.None),
+                HrefFor(new BoulderBrowse(BoulderBrowseLevel.Styles)), BrowseCardShape.Tall),
+        ];
+        if (MineCounts?.TryGetValue(BoulderMine.Projects, out var projects) == true)
+        {
+            landing.Add(new("projects", "My projects", BrowseIcons.Projects, projects,
+                HrefFor(new BoulderBrowse(BoulderBrowseLevel.List, Mine: BoulderMine.Projects)), BrowseCardShape.Mine));
+        }
+
+        if (MineCounts?.TryGetValue(BoulderMine.Favorites, out var favorites) == true)
+        {
+            landing.Add(new("favorites", "Favorites", BrowseIcons.Favorites, favorites,
+                HrefFor(new BoulderBrowse(BoulderBrowseLevel.List, Mine: BoulderMine.Favorites)), BrowseCardShape.Mine));
+        }
+
+        return landing;
+    }
 
     private List<BrowseCard> HoldTypeCards()
     {
