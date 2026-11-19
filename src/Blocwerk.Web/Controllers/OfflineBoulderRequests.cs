@@ -56,6 +56,8 @@ public sealed class CreateBoulderRequest
 
     public bool NoMatch { get; set; }
 
+    public string? CustomRule { get; set; }
+
     public List<BoulderHoldDto> Holds { get; set; } = [];
 
     /// <summary>
@@ -94,6 +96,9 @@ public sealed class ReviseBoulderRequest
     public string? FootColorOnly { get; set; }
 
     public bool NoMatch { get; set; }
+
+    /// <summary>The custom rule; null (a snapshot queued before it existed) leaves it as stored, "" clears it.</summary>
+    public string? CustomRule { get; set; }
 
     public List<BoulderHoldDto> Holds { get; set; } = [];
 

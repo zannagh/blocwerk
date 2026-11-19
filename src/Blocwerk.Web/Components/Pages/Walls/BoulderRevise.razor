@@ -154,6 +154,7 @@
         <BoulderNewRules @bind-AllKickboardOn="_allKickboardOn"
                          @bind-FootColorOnly="_footColorOnly"
                          @bind-NoMatch="_noMatch"
+                         @bind-CustomRule="_customRule"
                          WallHolds="_displayHolds" />
 
         @if (_members.Count > 0)
@@ -231,6 +232,7 @@
     private string? _footColorOnly;
     // Editable via the "No match" checkbox in the below-image rules (BoulderNewRules).
     private bool _noMatch;
+    private string? _customRule;
     // The current user's preferred grade scale, seeded into the GradePicker so the grade input opens
     // on Fontainebleau or V-Scale to match their profile setting.
     private bool _preferFont = true;
@@ -297,6 +299,8 @@
         // "" clears the foot colour server-side; the revise endpoint maps a missing value the same way.
         footColorOnly = _footColorOnly ?? string.Empty,
         noMatch = _noMatch,
+        // "" clears the rule server-side; a missing value would leave it as stored.
+        customRule = _customRule ?? string.Empty,
         holds = _selectedHolds.Select(h => new { holdId = h.HoldId, type = (int)h.Type, usage = (int)h.Usage }),
         setters = _selectedSetters.ToList(),
     });
@@ -406,6 +410,7 @@
         _handsFollowFeet = _boulder.HandsFollowFeet;
         _footColorOnly = _boulder.FootColorOnly;
         _noMatch = _boulder.NoMatch;
+        _customRule = _boulder.CustomRule;
         _displayHolds = _wall.Holds.ToList();
 
         // Every wall carries its holds across several panel images, each in its own panel-local
@@ -560,7 +565,8 @@
                 EffectiveHandsFollowFeet,
                 _footColorOnly ?? string.Empty,
                 _noMatch,
-                _selectedSetters.ToList());
+                _selectedSetters.ToList(),
+                _customRule ?? string.Empty);
             Navigation.NavigateTo($"/walls/{WallId}/boulders/{BoulderId}");
         }
         catch (Exception ex)

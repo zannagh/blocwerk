@@ -35,7 +35,7 @@ internal static class BouldersDocumentBuilder
             .Where(b => b.WallId == wallId && (archived || !b.IsArchived) && (drafts || !b.IsDraft))
             .Select(b => new BoulderRow(
                 b.Id, b.Name, b.Grade, b.Generation, b.IsDraft, b.IsHistoric, b.IsArchived, b.CreatedAt, b.PublishedAt,
-                b.NoMatch, b.KickboardFootholdsOn, b.HandsFollowFeet, b.FootColorOnly, b.CreatedByUserId,
+                b.NoMatch, b.KickboardFootholdsOn, b.HandsFollowFeet, b.FootColorOnly, b.CustomRule, b.CreatedByUserId,
                 b.CreatedBy.DisplayName, b.CreatedBy.CustomDisplayName))
             .ToListAsync(ct);
         var ids = boulders.Select(b => b.Id).ToList();
@@ -72,5 +72,6 @@ internal static class BouldersDocumentBuilder
         b.HandsFollowFeet,
         b.FootColorOnly,
         stats ?? BoulderStatsCounts.None,
-        holds.OrderBy(h => h.HoldId).ToList());
+        holds.OrderBy(h => h.HoldId).ToList(),
+        b.CustomRule);
 }

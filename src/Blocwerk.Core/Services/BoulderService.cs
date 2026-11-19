@@ -38,7 +38,8 @@ public partial interface IBoulderService
         string? footColorOnly = null,
         Guid? id = null,
         bool noMatch = false,
-        IReadOnlyList<Guid>? setterUserIds = null);
+        IReadOnlyList<Guid>? setterUserIds = null,
+        string? customRule = null);
 
     /// <summary>
     /// Whether THIS session — a registered kiosk tablet with nobody signed in — satisfies every
@@ -159,7 +160,8 @@ public partial interface IBoulderService
         bool? handsFollowFeet = null,
         string? footColorOnly = null,
         bool noMatch = false,
-        IReadOnlyList<Guid>? setterUserIds = null);
+        IReadOnlyList<Guid>? setterUserIds = null,
+        string? customRule = null);
 
     /// <summary>
     /// Renames and/or regrades a boulder in place, without touching its holds. Only the
@@ -277,7 +279,8 @@ public partial class BoulderService : IBoulderService
         string? footColorOnly = null,
         Guid? id = null,
         bool noMatch = false,
-        IReadOnlyList<Guid>? setterUserIds = null)
+        IReadOnlyList<Guid>? setterUserIds = null,
+        string? customRule = null)
     {
         using var op = BlocwerkMetrics.TimeOperation("Boulder.Create", wallId);
         try
@@ -361,6 +364,7 @@ public partial class BoulderService : IBoulderService
                 HandsFollowFeet = handsFollowFeet,
                 FootColorOnly = NormalizeFootColor(footColorOnly),
                 NoMatch = noMatch,
+                CustomRule = BoulderCustomRule.Normalize(customRule),
                 IsDraft = isDraft,
                 PublishedAt = isDraft ? null : DateTimeOffset.UtcNow,
             };
@@ -1067,7 +1071,8 @@ public partial class BoulderService : IBoulderService
         bool? handsFollowFeet = null,
         string? footColorOnly = null,
         bool noMatch = false,
-        IReadOnlyList<Guid>? setterUserIds = null)
+        IReadOnlyList<Guid>? setterUserIds = null,
+        string? customRule = null)
     {
         using var op = BlocwerkMetrics.TimeOperation("Boulder.Revise");
         try
@@ -1108,7 +1113,7 @@ public partial class BoulderService : IBoulderService
                 // here after the first apply flipped IsHistoric off; if the requested state already
                 // matches what is stored, this is that replay: return the boulder unchanged so the
                 // queue records a success.
-                if (RevisionIsNoOp(boulder, updatedHolds, name, grade, kickboardFootholdsOn, handsFollowFeet, footColorOnly, noMatch, setterUserIds))
+                if (RevisionIsNoOp(boulder, updatedHolds, name, grade, kickboardFootholdsOn, handsFollowFeet, footColorOnly, noMatch, setterUserIds, customRule))
                 {
                     // ...except that reviewing a boulder and concluding nothing needs to change IS
                     // the point of the review: the setter opened it, checked it against the new
@@ -1179,6 +1184,13 @@ public partial class BoulderService : IBoulderService
             }
 
             boulder.NoMatch = noMatch;
+
+            // Past the creator / setter / admin guard above, so only someone who may edit the boulder
+            // can set the rule. null leaves it alone; "" (or blanks) clears it.
+            if (customRule != null)
+            {
+                boulder.CustomRule = BoulderCustomRule.Normalize(customRule);
+            }
 
             await EnsureNoUnconfirmedHoldAddedAsync(db, updatedHolds, boulder.BoulderHolds.Select(bh => bh.HoldId).ToList());
             db.BoulderHolds.RemoveRange(boulder.BoulderHolds);
@@ -1543,7 +1555,8 @@ public partial class BoulderService : IBoulderService
         bool? handsFollowFeet,
         string? footColorOnly,
         bool noMatch,
-        IReadOnlyList<Guid>? setterUserIds)
+        IReadOnlyList<Guid>? setterUserIds,
+        string? customRule)
     {
         var effectiveHandsFollowFeet = handsFollowFeet ?? boulder.HandsFollowFeet;
         var target = EnforceHandsFollowFeet(updatedHolds, effectiveHandsFollowFeet)
@@ -1586,6 +1599,11 @@ public partial class BoulderService : IBoulderService
         // noMatch is a plain bool the revise path always writes (see ReviseBoulderAsync), so a
         // revision that only flips it must not be mistaken for a no-op replay.
         if (boulder.NoMatch != noMatch)
+        {
+            return false;
+        }
+
+        if (customRule != null && boulder.CustomRule != BoulderCustomRule.Normalize(customRule))
         {
             return false;
         }

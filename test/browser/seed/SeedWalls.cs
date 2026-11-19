@@ -151,7 +151,7 @@ internal sealed class SeedWalls
     private (string Thumbnail, Guid BoulderId) AddVideoThumbnail(Guid wallId, Guid uploaderId)
     {
         var thumbnail = SeedImages.Jpeg(320, 180, 42);
-        var boulder = new Boulder { WallId = wallId, Name = "Seeded boulder", CreatedByUserId = uploaderId };
+        var boulder = new Boulder { WallId = wallId, Name = "Seeded boulder", CreatedByUserId = uploaderId, CustomRule = "No heel hooks <b>here</b>" };
         db.Boulders.Add(boulder);
         db.BetaVideos.Add(new BetaVideo { BoulderId = boulder.Id, UploadedByUserId = uploaderId, ContentType = "video/mp4", Thumbnail = thumbnail });
         return (Hex(thumbnail), boulder.Id);

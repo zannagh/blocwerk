@@ -20,6 +20,7 @@ internal sealed record BoulderRow(
     bool KickboardFootholdsOn,
     bool HandsFollowFeet,
     string? FootColorOnly,
+    string? CustomRule,
     Guid CreatorId,
     string CreatorDisplayName,
     string? CreatorCustomName)

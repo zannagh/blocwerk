@@ -20,6 +20,7 @@ namespace Blocwerk.Contracts.Documents;
 /// <param name="FootColorOnly">The one foothold colour allowed, if restricted.</param>
 /// <param name="Stats">The wall-wide counts.</param>
 /// <param name="Holds">The boulder's holds, by hold id.</param>
+/// <param name="CustomRule">The setter's free-text rule (plain text), if any.</param>
 public sealed record BouldersDocumentBoulder(
     Guid Id,
     string Name,
@@ -36,4 +37,5 @@ public sealed record BouldersDocumentBoulder(
     bool HandsFollowFeet,
     string? FootColorOnly,
     BouldersDocumentStats Stats,
-    IReadOnlyList<BouldersDocumentHold> Holds);
+    IReadOnlyList<BouldersDocumentHold> Holds,
+    string? CustomRule = null);

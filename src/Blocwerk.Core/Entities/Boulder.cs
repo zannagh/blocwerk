@@ -53,6 +53,16 @@ public class Boulder
     public bool NoMatch { get; set; }
 
     /// <summary>
+    /// A free-text rule the setter added to this boulder ("no kickboard", "start matched"). Plain text,
+    /// at most <see cref="CustomRuleMaxLength"/> characters, trimmed; null when there is none.
+    /// </summary>
+    [MaxLength(CustomRuleMaxLength)]
+    public string? CustomRule { get; set; }
+
+    /// <summary>The longest custom rule, in characters.</summary>
+    public const int CustomRuleMaxLength = 200;
+
+    /// <summary>
     /// Derived from the boulder's foothold rules; kept so read-sites can keep asking the
     /// single "does this boulder define its own footholds?" question. A boulder that
     /// neither marks dedicated footholds nor names a foot color leaves the kickboard rule

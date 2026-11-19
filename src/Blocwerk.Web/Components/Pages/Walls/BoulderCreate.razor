@@ -86,6 +86,7 @@
         <BoulderNewRules @bind-AllKickboardOn="_allKickboardOn"
                          @bind-FootColorOnly="_footColorOnly"
                          @bind-NoMatch="_noMatch"
+                         @bind-CustomRule="_customRule"
                          WallHolds="_holds" />
 
         @if (_setterOptions.Count > 0)
@@ -245,6 +246,7 @@
     private readonly bool _handsFollowFeet = true;
     private string? _footColorOnly;
     private bool _noMatch;
+    private string? _customRule;
     private bool _isSubmitting;
     private string? _error;
 
@@ -270,6 +272,7 @@
         handsFollowFeet = EffectiveHandsFollowFeet,
         footColorOnly = _footColorOnly,
         noMatch = _noMatch,
+        customRule = _customRule,
         holds = _selectedHolds.Select(h => new { holdId = h.HoldId, type = (int)h.Type, usage = (int)h.Usage }),
         setters = _selectedSetters.ToList(),
     });
@@ -514,7 +517,7 @@
             var boulder = await BoulderService.CreateBoulderAsync(
                 WallId, _name, _grade, _selectedHolds, isDraft,
                 _allKickboardOn, EffectiveHandsFollowFeet, _footColorOnly, _clientId, _noMatch,
-                _selectedSetters.ToList());
+                _selectedSetters.ToList(), _customRule);
             Navigation.NavigateTo($"/walls/{WallId}/boulders/{boulder.Id}");
         }
         catch (Exception ex)
