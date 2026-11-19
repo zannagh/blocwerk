@@ -74,28 +74,32 @@ public static class BoulderList
 
         if (filter.Attempted)
         {
-            src = src.Where(b => mine.TickFor(b.Id) is not null);
+            src = src.Where(b => AnyMember(b, families, id => mine.TickFor(id) is not null));
         }
 
         if (filter.Done)
         {
-            src = src.Where(b => mine.IsSent(b.Id));
+            src = src.Where(b => AnyMember(b, families, mine.IsSent));
         }
 
         if (filter.NotDone)
         {
-            src = src.Where(b => !mine.IsSent(b.Id));
+            src = src.Where(b => AnyMember(b, families, id => !mine.IsSent(id)));
         }
 
         if (filter.Favourites)
         {
-            src = src.Where(b => mine.IsFavourite(b.Id));
+            src = src.Where(b => AnyMember(b, families, mine.IsFavourite));
         }
 
         var min = ScoreOf(filter.GradeMin);
         var max = ScoreOf(filter.GradeMax);
         return min is null && max is null ? src : src.Where(b => BoulderFamilies.MatchesGradeRange(families[b.Id], min, max));
     }
+
+    // The viewer's marks keep a family in a filter when any of its published members has them.
+    private static bool AnyMember(BouldersDocumentBoulder b, IReadOnlyDictionary<Guid, BoulderFamilyRow> families, Func<Guid, bool> test) =>
+        test(b.Id) || (families[b.Id].VariantIds ?? []).Any(test);
 
     private static IEnumerable<BouldersDocumentBoulder> Sort(
         IEnumerable<BouldersDocumentBoulder> src, MineMarks mine, BoulderSort sort, IReadOnlyDictionary<Guid, BoulderFamilyRow> families) => sort switch

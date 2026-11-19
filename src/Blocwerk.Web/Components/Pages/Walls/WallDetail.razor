@@ -1255,17 +1255,17 @@ else
 
         if (_fAttempted)
         {
-            src = src.Where(i => i.AttemptedByMe);
+            src = src.Where(i => AnyMember(i, m => m.AttemptedByMe));
         }
 
         if (_fDone)
         {
-            src = src.Where(i => i.DoneByMe);
+            src = src.Where(i => AnyMember(i, m => m.DoneByMe));
         }
 
         if (_fNotDone)
         {
-            src = src.Where(i => !i.DoneByMe);
+            src = src.Where(i => AnyMember(i, m => !m.DoneByMe));
         }
 
         if (_fBeta)
@@ -1277,17 +1277,17 @@ else
         // IsHistoric, so a boulder can need review without being historic and vice versa.
         if (_fNeedsReview)
         {
-            src = src.Where(i => i.Boulder.NeedsReview);
+            src = src.Where(i => AnyMember(i, m => m.Boulder.NeedsReview));
         }
 
         if (_fFavorites)
         {
-            src = src.Where(i => i.IsFavorite);
+            src = src.Where(i => AnyMember(i, m => m.IsFavorite));
         }
 
         if (_fCreated)
         {
-            src = src.Where(i => i.Boulder.CreatedByUserId == _currentUserId);
+            src = src.Where(i => AnyMember(i, m => m.Boulder.CreatedByUserId == _currentUserId));
         }
 
         var minScore = ScoreOf(_gradeMin);

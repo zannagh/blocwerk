@@ -97,6 +97,35 @@ public class BoulderFamiliesTests
     }
 
     [Fact]
+    public void AFilter_KeepsAFamily_WhenAnyVariantPasses()
+    {
+        var variant = Member("Hard", "7A", Parent);
+        var row = BoulderFamilies.Rows([Member("Parent", "6A", null, Parent), variant])[Parent];
+        var sent = new HashSet<Guid> { variant.Id };
+
+        Assert.True(BoulderFamilies.AnyMember<string>("parent", row, id => id == variant.Id ? "variant" : null, name => name == "variant"));
+        Assert.True(BoulderFamilies.AnyMember<object>(Parent, row, id => id, id => sent.Contains((Guid)id)));
+        Assert.False(BoulderFamilies.AnyMember<object>(Parent, row, id => id, id => false));
+    }
+
+    [Fact]
+    public void TheOfflineMarkFilters_KeepAFamily_WhoseVariantTheViewerSentOrFavourited()
+    {
+        // The viewer sent and favourited Crimp (StoreWorld's marks): here it is a variant under another parent.
+        IReadOnlyList<BouldersDocumentBoulder> boulders =
+        [
+            CrimpLine() with { Id = Parent, Name = "Parent" },
+            CrimpLine() with { Name = "Sent variant", ParentBoulderId = Parent },
+            CrimpLine() with { Id = Guid.NewGuid(), Name = "Other" },
+        ];
+        var mine = MineMarks.From(Marks());
+
+        Assert.Equal(["Parent"], BoulderList.Apply(boulders, mine, new BoulderFilter { Done = true }).Active.Select(b => b.Name));
+        Assert.Equal(["Parent"], BoulderList.Apply(boulders, mine, new BoulderFilter { Favourites = true }).Active.Select(b => b.Name));
+        Assert.Equal(["Parent"], BoulderList.Apply(boulders, mine, new BoulderFilter { Attempted = true }).Active.Select(b => b.Name));
+    }
+
+    [Fact]
     public void TheOverviewCount_IsTheListsRows()
     {
         IReadOnlyList<BouldersDocumentBoulder> boulders =

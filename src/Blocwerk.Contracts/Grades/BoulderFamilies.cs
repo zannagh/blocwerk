@@ -51,6 +51,20 @@ public static class BoulderFamilies
         return scores.Count == 0 || scores.Any(s => (minScore is null || s >= minScore) && (maxScore is null || s <= maxScore));
     }
 
+    /// <summary>
+    /// Whether a list filter keeps a row: the row's own boulder or any variant it stands for passes <paramref name="test"/>,
+    /// so a variant the viewer sent, favourited or set, or one that needs review, keeps its family in that filter.
+    /// </summary>
+    /// <typeparam name="T">The list's row type.</typeparam>
+    /// <param name="head">The row's own boulder.</param>
+    /// <param name="row">The row's family.</param>
+    /// <param name="byId">Looks a variant up among the list's boulders; null when the list does not have it.</param>
+    /// <param name="test">The filter.</param>
+    /// <returns>True when a member passes.</returns>
+    public static bool AnyMember<T>(T head, BoulderFamilyRow row, Func<Guid, T?> byId, Func<T, bool> test)
+        where T : class =>
+        test(head) || (row.VariantIds ?? []).Any(id => byId(id) is { } variant && test(variant));
+
     private static bool IsUnderParent(BoulderFamilyMember member, Dictionary<Guid, BoulderFamilyMember> byId) =>
         member is { ParentId: { } parentId, IsDraft: false, IsArchived: false, IsHistoric: false }
         && byId.TryGetValue(parentId, out var parent)
@@ -66,6 +80,7 @@ public static class BoulderFamilies
             scores.Count > 0 ? scores.Min() : 0,
             grades,
             variants.Select(v => v.Name).ToList(),
-            variants.Aggregate(head.Styles, (styles, v) => styles | v.Styles));
+            variants.Aggregate(head.Styles, (styles, v) => styles | v.Styles),
+            variants.Select(v => v.Id).ToList());
     }
 }
