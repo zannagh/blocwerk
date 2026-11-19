@@ -56,6 +56,9 @@ internal sealed class SeedWalls
 
         var beta = AddWall("Beta", alice, panels: 1, seed: 10);
         AddListBoulders(beta.Wall.Id, alice.Id, 40);
+        var stella = AddUser("stella@browser.test", "Stella");
+        var styled = AddWall("Styled", stella, panels: 1, seed: 50);
+        AddStyledBoulders(styled.Wall.Id, stella.Id);
         var bobs = AddWall("Bobs", bob, panels: 1, seed: 20);
         var socialWall = AddWall("Social", erin, panels: 1, seed: 30);
         var social = SeedSocial.Add(db, socialWall.Wall.Id, AddKioskKey(socialWall.Wall.Id, erin.Id), erin.Id, cora.Id, dave.Id);
@@ -75,11 +78,13 @@ internal sealed class SeedWalls
                 ["cora"] = new(cora.Id, cora.DisplayName),
                 ["dave"] = new(dave.Id, dave.DisplayName),
                 ["pia"] = new(pia.Id, pia.DisplayName),
+                ["stella"] = new(stella.Id, stella.DisplayName),
             },
             new Dictionary<string, SeededWall>
             {
                 ["alpha"] = new(alpha.Wall.Id, alpha.Shas, geometry.Texture, geometry.Mask, geometry.Splat, thumbnail, boulderId),
                 ["beta"] = new(beta.Wall.Id, beta.Shas, null, null, null, null),
+                ["styled"] = new(styled.Wall.Id, styled.Shas, null, null, null, null),
                 ["bobs"] = new(bobs.Wall.Id, bobs.Shas, null, null, null, null),
                 ["social"] = new(socialWall.Wall.Id, socialWall.Shas, null, null, null, null),
                 ["wide"] = new(wide.Wall.Id, wide.Shas, null, null, null, null),
@@ -139,6 +144,23 @@ internal sealed class SeedWalls
     }
 
     // Plain boulders (no photo, no holds) one minute apart, so the newest-first list has a fixed order.
+    // Eight boulders, six of them tagged, every style at least once: tension 2, dynamic 1, funky 1, endurance 1, power 2,
+    // technical 1 (the style cards' counts); the last two carry none.
+    private void AddStyledBoulders(Guid wallId, Guid setterId)
+    {
+        BoulderStyle[] styles =
+        [
+            BoulderStyle.Tension | BoulderStyle.Power, BoulderStyle.Dynamic, BoulderStyle.Funky,
+            BoulderStyle.Endurance | BoulderStyle.Tension, BoulderStyle.Technical, BoulderStyle.Power,
+            BoulderStyle.None, BoulderStyle.None,
+        ];
+        var start = DateTimeOffset.UtcNow.AddHours(-1);
+        for (var i = 0; i < styles.Length; i++)
+        {
+            db.Boulders.Add(new Boulder { WallId = wallId, Name = $"Styled boulder {i + 1}", CreatedByUserId = setterId, CreatedAt = start.AddMinutes(i), Styles = styles[i] });
+        }
+    }
+
     private void AddListBoulders(Guid wallId, Guid setterId, int count)
     {
         var start = DateTimeOffset.UtcNow.AddHours(-1);

@@ -3,6 +3,7 @@
 
 using Blocwerk.Contracts.Documents;
 using Blocwerk.Core.Data;
+using Blocwerk.Core.Helpers;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 
@@ -36,7 +37,7 @@ internal static class BouldersDocumentBuilder
             .Select(b => new BoulderRow(
                 b.Id, b.Name, b.Grade, b.Generation, b.IsDraft, b.IsHistoric, b.IsArchived, b.CreatedAt, b.PublishedAt,
                 b.NoMatch, b.KickboardFootholdsOn, b.HandsFollowFeet, b.FootColorOnly, b.CustomRule, b.CreatedByUserId,
-                b.CreatedBy.DisplayName, b.CreatedBy.CustomDisplayName))
+                b.CreatedBy.DisplayName, b.CreatedBy.CustomDisplayName, b.Styles))
             .ToListAsync(ct);
         var ids = boulders.Select(b => b.Id).ToList();
         var holds = (await db.BoulderHolds.AsNoTracking()
@@ -73,5 +74,6 @@ internal static class BouldersDocumentBuilder
         b.FootColorOnly,
         stats ?? BoulderStatsCounts.None,
         holds.OrderBy(h => h.HoldId).ToList(),
-        b.CustomRule);
+        b.CustomRule,
+        BoulderStyles.ToNames(b.Styles));
 }

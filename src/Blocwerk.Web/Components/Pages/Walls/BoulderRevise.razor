@@ -157,6 +157,13 @@
                          @bind-CustomRule="_customRule"
                          WallHolds="_displayHolds" />
 
+        <details class="settings-panel settings-card" open>
+            <summary class="settings-card-summary"><h2>Styles</h2></summary>
+            <div class="settings-card-body">
+                <BoulderStyleChips @bind-Value="_styles" />
+            </div>
+        </details>
+
         @if (_members.Count > 0)
         {
             <details class="settings-panel settings-card">
@@ -236,6 +243,7 @@
     // Editable via the "No match" checkbox in the below-image rules (BoulderNewRules).
     private bool _noMatch;
     private string? _customRule;
+    private BoulderStyle _styles;
     // The current user's preferred grade scale, seeded into the GradePicker so the grade input opens
     // on Fontainebleau or V-Scale to match their profile setting.
     private bool _preferFont = true;
@@ -307,6 +315,7 @@
         customRule = _customRule ?? string.Empty,
         // null = a metadata-only save: the stored holds and the review state stay as they are.
         holds = ReplaceHolds ? _selectedHolds.Select(h => new { holdId = h.HoldId, type = (int)h.Type, usage = (int)h.Usage }) : null,
+        styles = (int)_styles,
         setters = _selectedSetters.ToList(),
     });
 
@@ -416,6 +425,7 @@
         _footColorOnly = _boulder.FootColorOnly;
         _noMatch = _boulder.NoMatch;
         _customRule = _boulder.CustomRule;
+        _styles = _boulder.Styles;
         _displayHolds = _wall.Holds.ToList();
 
         // Every wall carries its holds across several panel images, each in its own panel-local
@@ -571,7 +581,8 @@
                 _footColorOnly ?? string.Empty,
                 _noMatch,
                 _selectedSetters.ToList(),
-                _customRule ?? string.Empty);
+                _customRule ?? string.Empty,
+                _styles);
             Navigation.NavigateTo($"/walls/{WallId}/boulders/{BoulderId}");
         }
         catch (Exception ex)

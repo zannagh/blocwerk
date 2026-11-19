@@ -324,6 +324,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<DateTimeOffset?>("PublishedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int>("Styles")
+                        .HasColumnType("integer");
+
                     b.Property<Guid>("WallId")
                         .HasColumnType("uuid");
 

@@ -1,0 +1,26 @@
+@using Blocwerk.Core.Helpers
+@* Toggle chips for choosing a boulder's styles (create, editor, boulder page). Each chip is a checkbox-like button, so the
+   choice is a set, not a single value. *@
+<div class="style-picker" role="group" aria-label="Styles">
+    @foreach (var style in BoulderStyles.All)
+    {
+        var on = Value.HasFlag(style);
+        <button type="button" class="style-pick@(on ? " on" : string.Empty)" aria-pressed="@(on ? "true" : "false")"
+                data-style="@BoulderStyles.Slug(style)" disabled="@Disabled" @onclick="() => Toggle(style)">
+            <BoulderStyleIcon Style="style" Size="15" /><span>@BoulderStyles.Label(style)</span>
+        </button>
+    }
+</div>
+
+@code {
+    /// <summary>Gets or sets the chosen styles.</summary>
+    [Parameter] public Blocwerk.Core.Enums.BoulderStyle Value { get; set; }
+
+    /// <summary>Gets or sets the callback with the new set.</summary>
+    [Parameter] public EventCallback<Blocwerk.Core.Enums.BoulderStyle> ValueChanged { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether the chips are inert (a save is running).</summary>
+    [Parameter] public bool Disabled { get; set; }
+
+    private Task Toggle(Blocwerk.Core.Enums.BoulderStyle style) => ValueChanged.InvokeAsync(Value ^ style);
+}

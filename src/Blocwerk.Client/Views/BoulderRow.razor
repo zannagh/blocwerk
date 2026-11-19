@@ -2,7 +2,7 @@
 @using Blocwerk.Contracts.Documents
 @* One boulder of the wall view's list: the Server's BoulderCard (its markup and classes) without its publish, archive
    and restore buttons. The viewer's marks show as on the Server: favourite, then flash, send or the attempt count. *@
-<a href="@ClientRoutes.BoulderLink(WallId, Boulder.Id, ShareToken)" class="boulder-card" data-bw-boulder="@Boulder.Id">
+<a href="@(ClientRoutes.BoulderLink(WallId, Boulder.Id, ShareToken) + (Blocwerk.Core.Helpers.BoulderStyles.QueryValue(Style) is { } style ? "?style=" + style : string.Empty))" class="boulder-card" data-bw-boulder="@Boulder.Id">
     <div class="boulder-card-left">
         <span class="boulder-name">
             @Boulder.Name
@@ -61,4 +61,8 @@
     /// <summary>Gets or sets the viewer's marks (none on a share link or a kiosk).</summary>
     [Parameter]
     public MineMarks Mine { get; set; } = MineMarks.None;
+
+    /// <summary>Gets or sets the list's style (<c>?style=</c>), carried into the link so the boulder's back link returns to that list.</summary>
+    [Parameter]
+    public string? Style { get; set; }
 }

@@ -1,0 +1,19 @@
+@using Blocwerk.Core.Helpers
+@* Under the list's title once a style is chosen: which style this is, and the way back to the cards. *@
+<div class="style-bar">
+    <a class="style-back" href="@BackHref" data-style-back>
+        <span aria-hidden="true">&larr;</span><span> Styles</span>
+    </a>
+    <span class="style-current">
+        <BoulderStyleIcon Style="Style" Size="16" />
+        <span>@(Style is { } s ? BoulderStyles.Label(s) : "All")</span>
+    </span>
+</div>
+
+@code {
+    /// <summary>Gets or sets the style the list is limited to, or null for "All".</summary>
+    [Parameter] public Blocwerk.Core.Enums.BoulderStyle? Style { get; set; }
+
+    /// <summary>Gets or sets the link back to the cards.</summary>
+    [Parameter, EditorRequired] public string BackHref { get; set; } = "#";
+}

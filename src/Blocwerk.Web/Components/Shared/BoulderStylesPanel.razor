@@ -1,0 +1,76 @@
+@using Blocwerk.Core.Entities
+@using Blocwerk.Core.Enums
+@inject IBoulderService BoulderService
+@inject ILogger<BoulderStylesPanel> Logger
+@* A boulder's styles on its page. Everybody sees them as small chips; whoever may edit the boulder (CanEdit, the same
+   rule the service enforces) gets the chips as toggles that save on the tap, so the boulders already on a wall can be
+   tagged without opening the editor. *@
+@if (CanEdit)
+{
+    <div class="boulder-styles editable">
+        <span class="boulder-styles-label">Styles</span>
+        <BoulderStyleChips Value="value" ValueChanged="SetAsync" Disabled="saving" />
+        @if (error is not null)
+        {
+            <p class="boulder-styles-error" role="alert">@error</p>
+        }
+    </div>
+}
+else if (value != BoulderStyle.None)
+{
+    <div class="boulder-styles">
+        <BoulderStyleBadges Styles="value" />
+    </div>
+}
+
+@code {
+    /// <summary>Gets or sets the boulder.</summary>
+    [Parameter, EditorRequired] public Boulder Boulder { get; set; } = null!;
+
+    /// <summary>Gets or sets a value indicating whether the viewer may edit the boulder (creator, setter, wall admin).</summary>
+    [Parameter] public bool CanEdit { get; set; }
+
+    private BoulderStyle value;
+    private bool saving;
+    private string? error;
+
+    protected override void OnParametersSet()
+    {
+        if (!saving)
+        {
+            value = Boulder.Styles;
+        }
+    }
+
+    // The chips hand over the whole new set; what the tap changed is the one bit that differs, and that bit is what is sent,
+    // so the service applies it to the stored tags instead of replacing them with this page's possibly stale copy.
+    private async Task SetAsync(BoulderStyle next)
+    {
+        var previous = value;
+        var toggled = next ^ previous;
+        (value, saving, error) = (next, true, null);
+        try
+        {
+            var saved = await BoulderService.SetBoulderStyleAsync(Boulder.Id, toggled, next.HasFlag(toggled));
+            value = saved.Styles;
+            Boulder.Styles = saved.Styles;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Whatever failed (a refusal, a database error, a session that ran out), the click handler must not throw: an
+            // unhandled exception here ends the circuit.
+            Logger.LogWarning(ex, "Setting styles of boulder {BoulderId} failed", Boulder.Id);
+            value = previous;
+            error = ex switch
+            {
+                InvalidOperationException => ex.Message,
+                UnauthorizedAccessException => "Your session has ended. Sign in again to change the styles.",
+                _ => "The styles could not be saved. Try again.",
+            };
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+}

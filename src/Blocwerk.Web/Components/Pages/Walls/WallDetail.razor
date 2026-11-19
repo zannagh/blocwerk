@@ -637,7 +637,7 @@ else
                             <span class="stat-value">@_holds.Count(h => h.Generation <= _wall.CurrentGeneration && h.KeptUnconfirmedGeneration is null)</span>
                             <span class="stat-label">Holds</span>
                         </div>
-                        <button type="button" class="stat clickable" @onclick="GoToBoulders">
+                        <button type="button" class="stat clickable" @onclick="GoToBouldersFromOverviewAsync">
                             <span class="stat-value">@ActiveBoulderCount</span>
                             <span class="stat-label">Boulders</span>
                         </button>
@@ -744,6 +744,22 @@ else
         <Page4>
             @* Boulders *@
             <div class="boulder-section" @ref="_boulderSection">
+                @if (ShowStyleCards)
+                {
+                    @* First screen of the boulder browser: pick a style (WallDetail.Styles.cs). *@
+                    <div class="boulder-list-head">
+                        <div class="section-header">
+                            <h2>Boulders<span class="list-count">@StyleTotal</span></h2>
+                            @if (ShowNewBoulderLink)
+                            {
+                                <a href="/walls/@WallId/boulders/create" class="btn-add-boulder">+ New</a>
+                            }
+                        </div>
+                    </div>
+                    <BoulderStyleCards Total="StyleTotal" Counts="StyleCounts" HrefFor="StyleHref" />
+                }
+                else
+                {
                 @* Header + filters are ONE sticky head: on a list this long they used to scroll away
                    within the first flick and never come back. *@
                 <div class="boulder-list-head">
@@ -758,6 +774,11 @@ else
                         <a href="/walls/@WallId/boulders/create" class="btn-add-boulder">+ New</a>
                     }
                 </div>
+
+                @if (!string.IsNullOrEmpty(Style))
+                {
+                    <BoulderStyleBar Style="StyleFilter" BackHref="@StyleUri(null)" />
+                }
 
                 @if (_items.Count > 0)
                 {
@@ -869,7 +890,7 @@ else
                 {
                     @foreach (var item in ActiveBoulders)
                     {
-                        <BoulderCard @key="item.Boulder.Id" Item="item" WallId="WallId" ShareToken="@ShareToken"
+                        <BoulderCard @key="item.Boulder.Id" Item="item" WallId="WallId" ShareToken="@ShareToken" Style="@Style"
                                      CurrentUserId="_currentUserId" IsAnonymous="_isAnonymous"
                                      IsWallAdmin="_isAdmin"
                                      ShowArchiveAction="true" ReconciledHoldCount="ReconciledHoldCount(item.Boulder)"
@@ -882,7 +903,7 @@ else
                             <summary class="archive-summary">Archive (@ArchivedBoulders.Count)</summary>
                             @foreach (var item in ArchivedBoulders)
                             {
-                                <BoulderCard @key="item.Boulder.Id" Item="item" WallId="WallId" ShareToken="@ShareToken"
+                                <BoulderCard @key="item.Boulder.Id" Item="item" WallId="WallId" ShareToken="@ShareToken" Style="@Style"
                                              CurrentUserId="_currentUserId" IsAnonymous="_isAnonymous"
                                              IsWallAdmin="_isAdmin"
                                              ReconciledHoldCount="ReconciledHoldCount(item.Boulder)"
@@ -895,6 +916,7 @@ else
                    the end of the page. wall-carousel.js toggles `has-more` on the slide; this fades
                    in only while there really is more below. *@
                 <div class="list-fade" aria-hidden="true"></div>
+                }
             </div>
         </Page4>
 
@@ -1182,11 +1204,11 @@ else
     private List<BoulderListItem>? _activeCache;
     private List<BoulderListItem>? _archivedCache;
     private object? _boulderCacheItemsRef;
-    private (string?, bool, bool, bool, bool, bool, bool, bool, string?, string?, SortMode, Guid?) _boulderCacheKey;
+    private (string?, bool, bool, bool, bool, bool, bool, bool, string?, string?, SortMode, Guid?, BoulderStyle?) _boulderCacheKey;
 
     private void EnsureBoulderLists()
     {
-        var key = (_searchText, _fAttempted, _fDone, _fNotDone, _fFavorites, _fCreated, _fBeta, _fNeedsReview, _gradeMin, _gradeMax, _sort, _currentUserId);
+        var key = (_searchText, _fAttempted, _fDone, _fNotDone, _fFavorites, _fCreated, _fBeta, _fNeedsReview, _gradeMin, _gradeMax, _sort, _currentUserId, StyleFilter);
         if (_activeCache is not null && _archivedCache is not null
             && ReferenceEquals(_boulderCacheItemsRef, _items) && key.Equals(_boulderCacheKey))
         {
@@ -1198,7 +1220,7 @@ else
 
         // Historic boulders always sink to the bottom of the active list; OrderBy is a stable
         // sort in LINQ-to-objects, so the chosen sort order is preserved within each group.
-        _activeCache = ApplySort(ApplyFilters(_items.Where(i => !i.Boulder.IsArchived)))
+        _activeCache = ApplySort(ApplyFilters(VisibleItems()))
             .OrderBy(i => i.Boulder.IsHistoric)
             .ToList();
         _archivedCache = ApplySort(ApplyFilters(_items.Where(i => i.Boulder.IsArchived))).ToList();
@@ -1220,6 +1242,11 @@ else
 
     private IEnumerable<BoulderListItem> ApplyFilters(IEnumerable<BoulderListItem> src)
     {
+        if (StyleFilter is { } style)
+        {
+            src = src.Where(i => i.Boulder.Styles.HasFlag(style));
+        }
+
         var terms = BoulderListSearch.Terms(_searchText);
         if (terms.Length > 0)
         {
@@ -1935,7 +1962,6 @@ else
         SyncDeployFlush();
     }
 
-    private Task GoToBoulders() => _carousel?.GoToPageAsync(3) ?? Task.CompletedTask;
     private Task GoToMembers() => _carousel?.GoToPageAsync(1) ?? Task.CompletedTask;
 
     private async Task OnMemberRoleChanged(WallMember member, ChangeEventArgs e)

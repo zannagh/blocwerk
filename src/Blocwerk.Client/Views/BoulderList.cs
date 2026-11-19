@@ -21,15 +21,35 @@ public static class BoulderList
     public static (IReadOnlyList<BouldersDocumentBoulder> Active, IReadOnlyList<BouldersDocumentBoulder> Archived) Apply(
         IReadOnlyList<BouldersDocumentBoulder> boulders, MineMarks mine, BoulderFilter filter)
     {
-        var active = Sort(Filter(boulders.Where(b => !b.IsArchived), mine, filter), mine, filter.Sort)
+        var active = Sort(Filter(Visible(boulders), mine, filter), mine, filter.Sort)
             .OrderBy(b => b.IsHistoric)
             .ToList();
         var archived = Sort(Filter(boulders.Where(b => b.IsArchived), mine, filter), mine, filter.Sort).ToList();
         return (active, archived);
     }
 
+    /// <summary>
+    /// The boulders the list shows as rows (archived ones sit apart): the ONE query the list and the style cards' counts
+    /// both start from, so a rule about what counts as a row is applied here only.
+    /// </summary>
+    /// <param name="boulders">The boulders the class may see.</param>
+    /// <returns>The active ones.</returns>
+    public static IReadOnlyList<BouldersDocumentBoulder> Visible(IReadOnlyList<BouldersDocumentBoulder> boulders) =>
+        boulders.Where(b => !b.IsArchived).ToList();
+
+    /// <summary>Boulders per style over <see cref="Visible"/>, as the cards show them.</summary>
+    /// <param name="boulders">The boulders the class may see.</param>
+    /// <returns>The count per style.</returns>
+    public static IReadOnlyDictionary<Blocwerk.Core.Enums.BoulderStyle, int> StyleCounts(IReadOnlyList<BouldersDocumentBoulder> boulders) =>
+        BoulderStyles.CountBy(Visible(boulders).Select(b => BoulderStyles.FromNames(b.Styles)));
+
     private static IEnumerable<BouldersDocumentBoulder> Filter(IEnumerable<BouldersDocumentBoulder> src, MineMarks mine, BoulderFilter filter)
     {
+        if (filter.Style is { } style)
+        {
+            src = src.Where(b => BoulderStyles.FromNames(b.Styles).HasFlag(style));
+        }
+
         if (!string.IsNullOrWhiteSpace(filter.Search))
         {
             src = src.Where(b => b.Name?.Contains(filter.Search, StringComparison.OrdinalIgnoreCase) == true);

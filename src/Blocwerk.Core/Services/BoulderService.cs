@@ -39,7 +39,8 @@ public partial interface IBoulderService
         Guid? id = null,
         bool noMatch = false,
         IReadOnlyList<Guid>? setterUserIds = null,
-        string? customRule = null);
+        string? customRule = null,
+        BoulderStyle styles = BoulderStyle.None);
 
     /// <summary>
     /// Whether THIS session — a registered kiosk tablet with nobody signed in — satisfies every
@@ -161,7 +162,8 @@ public partial interface IBoulderService
         string? footColorOnly = null,
         bool noMatch = false,
         IReadOnlyList<Guid>? setterUserIds = null,
-        string? customRule = null);
+        string? customRule = null,
+        BoulderStyle? styles = null);
 
     /// <summary>
     /// Permanently removes a boulder. Only its creator, one of its setters, or an admin of its
@@ -273,7 +275,8 @@ public partial class BoulderService : IBoulderService
         Guid? id = null,
         bool noMatch = false,
         IReadOnlyList<Guid>? setterUserIds = null,
-        string? customRule = null)
+        string? customRule = null,
+        BoulderStyle styles = BoulderStyle.None)
     {
         using var op = BlocwerkMetrics.TimeOperation("Boulder.Create", wallId);
         try
@@ -358,6 +361,7 @@ public partial class BoulderService : IBoulderService
                 FootColorOnly = NormalizeFootColor(footColorOnly),
                 NoMatch = noMatch,
                 CustomRule = BoulderCustomRule.Normalize(customRule),
+                Styles = BoulderStyles.Normalize(styles),
                 IsDraft = isDraft,
                 PublishedAt = isDraft ? null : DateTimeOffset.UtcNow,
             };
@@ -1016,7 +1020,8 @@ public partial class BoulderService : IBoulderService
         string? footColorOnly = null,
         bool noMatch = false,
         IReadOnlyList<Guid>? setterUserIds = null,
-        string? customRule = null)
+        string? customRule = null,
+        BoulderStyle? styles = null)
     {
         using var op = BlocwerkMetrics.TimeOperation("Boulder.Revise");
         try
@@ -1057,7 +1062,7 @@ public partial class BoulderService : IBoulderService
                 // here after the first apply flipped IsHistoric off; if the requested state already
                 // matches what is stored, this is that replay: return the boulder unchanged so the
                 // queue records a success.
-                if (RevisionIsNoOp(boulder, updatedHolds, name, grade, kickboardFootholdsOn, handsFollowFeet, footColorOnly, noMatch, setterUserIds, customRule))
+                if (RevisionIsNoOp(boulder, updatedHolds, name, grade, kickboardFootholdsOn, handsFollowFeet, footColorOnly, noMatch, setterUserIds, customRule, styles))
                 {
                     // ...except that reviewing a boulder and concluding nothing needs to change IS
                     // the point of the review: the setter opened it, checked it against the new
@@ -1142,6 +1147,13 @@ public partial class BoulderService : IBoulderService
             if (customRule != null)
             {
                 boulder.CustomRule = BoulderCustomRule.Normalize(customRule);
+            }
+
+            // Null leaves the tags as they are, so a revision from a caller that does not know them (an offline replay,
+            // the API) never wipes them; the boulder keeps its row, so they carry into the new generation.
+            if (styles.HasValue)
+            {
+                boulder.Styles = BoulderStyles.Normalize(styles.Value);
             }
 
             if (updatedHolds is not null)
@@ -1516,7 +1528,8 @@ public partial class BoulderService : IBoulderService
         string? footColorOnly,
         bool noMatch,
         IReadOnlyList<Guid>? setterUserIds,
-        string? customRule)
+        string? customRule,
+        BoulderStyle? styles = null)
     {
         var effectiveHandsFollowFeet = handsFollowFeet ?? boulder.HandsFollowFeet;
         if (updatedHolds is not null)
@@ -1567,6 +1580,11 @@ public partial class BoulderService : IBoulderService
         }
 
         if (customRule != null && boulder.CustomRule != BoulderCustomRule.Normalize(customRule))
+        {
+            return false;
+        }
+
+        if (styles.HasValue && boulder.Styles != BoulderStyles.Normalize(styles.Value))
         {
             return false;
         }

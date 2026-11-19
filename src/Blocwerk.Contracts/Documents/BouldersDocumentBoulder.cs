@@ -21,6 +21,8 @@ namespace Blocwerk.Contracts.Documents;
 /// <param name="Stats">The wall-wide counts.</param>
 /// <param name="Holds">The boulder's holds, by hold id.</param>
 /// <param name="CustomRule">The setter's free-text rule (plain text), if any.</param>
+/// <param name="Styles">The style tags (<c>Tension</c>, <c>Power</c>...) it carries; left out when it has none. Appended
+/// last and optional, so an older client reads the document unchanged and a document without it means "no tags".</param>
 public sealed record BouldersDocumentBoulder(
     Guid Id,
     string Name,
@@ -38,4 +40,5 @@ public sealed record BouldersDocumentBoulder(
     string? FootColorOnly,
     BouldersDocumentStats Stats,
     IReadOnlyList<BouldersDocumentHold> Holds,
-    string? CustomRule = null);
+    string? CustomRule = null,
+    IReadOnlyList<string>? Styles = null);

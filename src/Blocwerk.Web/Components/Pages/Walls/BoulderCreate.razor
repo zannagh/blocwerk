@@ -89,6 +89,13 @@
                          @bind-CustomRule="_customRule"
                          WallHolds="_holds" />
 
+        <details class="settings-panel settings-card" open>
+            <summary class="settings-card-summary"><h2>Styles</h2></summary>
+            <div class="settings-card-body">
+                <BoulderStyleChips @bind-Value="_styles" />
+            </div>
+        </details>
+
         @if (_setterOptions.Count > 0)
         {
             <details class="settings-panel settings-card" open="@_isAnonymous">
@@ -247,6 +254,7 @@
     private string? _footColorOnly;
     private bool _noMatch;
     private string? _customRule;
+    private BoulderStyle _styles;
     private bool _isSubmitting;
     private string? _error;
 
@@ -273,6 +281,7 @@
         footColorOnly = _footColorOnly,
         noMatch = _noMatch,
         customRule = _customRule,
+        styles = (int)_styles,
         holds = _selectedHolds.Select(h => new { holdId = h.HoldId, type = (int)h.Type, usage = (int)h.Usage }),
         setters = _selectedSetters.ToList(),
     });
@@ -517,7 +526,7 @@
             var boulder = await BoulderService.CreateBoulderAsync(
                 WallId, _name, _grade, _selectedHolds, isDraft,
                 _allKickboardOn, EffectiveHandsFollowFeet, _footColorOnly, _clientId, _noMatch,
-                _selectedSetters.ToList(), _customRule);
+                _selectedSetters.ToList(), _customRule, _styles);
             Navigation.NavigateTo($"/walls/{WallId}/boulders/{boulder.Id}");
         }
         catch (Exception ex)
