@@ -1226,9 +1226,9 @@ else
         _archivedCache = ApplySort(ApplyFilters(_items.Where(i => i.Boulder.IsArchived && FamilyRows.ContainsKey(i.Boulder.Id)))).ToList();
     }
 
-    // The overview's count is the boulder list's own rows (drafts only where the list shows them), never
-    // _wall.Boulders: the count must not tell a share or anonymous-kiosk viewer that drafts exist.
-    private int ActiveBoulderCount => VisibleItems().Count();
+    // The overview's count is every active boulder the list holds, variants included (drafts only where the list loads
+    // them), never _wall.Boulders: the count must not tell a share or anonymous-kiosk viewer that drafts exist.
+    private int ActiveBoulderCount => _items.Count(i => !i.Boulder.IsArchived);
 
     private List<BoulderListItem> ActiveBoulders
     {

@@ -223,8 +223,11 @@ test('offline: the family row, its pill and range, and the Variants card, from t
     await expect(parentRow.locator('.boulder-variants-label')).toHaveText('2 variants');
     await expect(parentRow.locator('.boulder-grade')).toHaveText('5+–7A');
     await expect(page.locator('.boulder-card', { hasText: 'Family hard' })).toHaveCount(0);
-    // The overview counts what the list shows: a family is one boulder.
-    await expect(page.locator('.stat-value').nth(1)).toHaveText(String(await page.locator('.boulder-card').count()));
+    // The overview counts every boulder, the variants too; the list shows each family once, its variants in the pill.
+    const pills = await page.locator('.boulder-variants-pill [aria-hidden="true"]').allTextContents();
+    const hidden = pills.reduce((sum, text) => sum + Number(/\+(\d+)/.exec(text)?.[1] ?? 0), 0);
+    expect(hidden).toBeGreaterThanOrEqual(2);
+    await expect(page.locator('.stat-value').nth(1)).toHaveText(String((await page.locator('.boulder-card').count()) + hidden));
     await parentRow.scrollIntoViewIfNeeded();
     await shot(page, 'offline-list-375');
     await page.emulateMedia({ colorScheme: 'dark' });

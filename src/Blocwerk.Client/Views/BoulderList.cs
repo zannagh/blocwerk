@@ -42,6 +42,14 @@ public static class BoulderList
         return boulders.Where(b => !b.IsArchived && families.ContainsKey(b.Id)).ToList();
     }
 
+    /// <summary>
+    /// How many boulders the wall has on the wall page's overview: every active boulder, a variant as much as a parent
+    /// (unlike <see cref="Visible"/>, which is the list's rows and counts a family once).
+    /// </summary>
+    /// <param name="boulders">The boulders the class may see.</param>
+    /// <returns>The count of non-archived boulders.</returns>
+    public static int ActiveCount(IReadOnlyList<BouldersDocumentBoulder> boulders) => boulders.Count(b => !b.IsArchived);
+
     /// <summary>Families per style over <see cref="Visible"/>, as the cards show them: a family counts once, under every style a published member has.</summary>
     /// <param name="boulders">The boulders the class may see.</param>
     /// <returns>The count per style.</returns>

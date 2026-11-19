@@ -59,7 +59,7 @@ else
                         <span class="stat-label">Holds</span>
                     </div>
                     <div class="stat">
-                        <span class="stat-value">@(Wall.Boulders is null ? "–" : BoulderList.Visible(boulders).Count.ToString(System.Globalization.CultureInfo.InvariantCulture))</span>
+                        <span class="stat-value">@(Wall.Boulders is null ? "–" : BoulderList.ActiveCount(boulders).ToString(System.Globalization.CultureInfo.InvariantCulture))</span>
                         <span class="stat-label">Boulders</span>
                     </div>
                 </div>
