@@ -39,7 +39,7 @@
         @if (CanManage)
         {
             <div class="revision-actions">
-                <a href="/walls/@WallId/boulders/@BoulderId/revise" class="btn-revise">@(moves.Any(m => m.Outcome == HoldMoveOutcome.Removed) ? "Pick another hold" : "Revise Boulder")</a>
+                <a href="/walls/@WallId/boulders/@BoulderId/revise?review=true" class="btn-revise">@(moves.Any(m => m.Outcome == HoldMoveOutcome.Removed) ? "Pick another hold" : "Revise Boulder")</a>
                 <button class="btn-archive" @onclick="OnArchive">Archive</button>
             </div>
         }

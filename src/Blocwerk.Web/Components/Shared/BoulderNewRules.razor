@@ -45,6 +45,13 @@
             No match
         </label>
         <p class="rule-hint">Matching a hold is not allowed &mdash; no two hands, and no hand plus foot, on the same hold.</p>
+
+        <label class="custom-rule-label" for="boulder-custom-rule">Custom rule</label>
+        <input id="boulder-custom-rule" class="form-input custom-rule-input" type="text"
+               maxlength="@Boulder.CustomRuleMaxLength" autocomplete="off"
+               placeholder="Anything else a climber should know"
+               value="@CustomRule" @oninput="OnCustomRuleChanged" />
+        <p class="rule-hint">Optional, shown to climbers as plain text (up to @Boulder.CustomRuleMaxLength characters).</p>
     </div>
 </div>
 
@@ -58,6 +65,9 @@
     [Parameter] public bool NoMatch { get; set; }
     [Parameter] public EventCallback<bool> NoMatchChanged { get; set; }
 
+    [Parameter] public string? CustomRule { get; set; }
+    [Parameter] public EventCallback<string?> CustomRuleChanged { get; set; }
+
     /// <summary>The wall's holds, used to show how many holds a colour actually covers.</summary>
     [Parameter] public List<Hold> WallHolds { get; set; } = [];
 
@@ -70,6 +80,12 @@
 
     private int CountOnWall(string? colorKey) =>
         string.IsNullOrEmpty(colorKey) ? 0 : WallHolds.Count(h => h.Color == colorKey);
+
+    private Task OnCustomRuleChanged(ChangeEventArgs e)
+    {
+        CustomRule = e.Value as string;
+        return CustomRuleChanged.InvokeAsync(CustomRule);
+    }
 
     private Task OnNoMatchChanged(ChangeEventArgs e) => NoMatchChanged.InvokeAsync(e.Value is true);
 

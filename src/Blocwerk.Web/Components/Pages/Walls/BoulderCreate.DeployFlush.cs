@@ -78,7 +78,7 @@ public partial class BoulderCreate
             var boulder = await BoulderService.CreateBoulderAsync(
                 WallId, _name, _grade, _selectedHolds, isDraft: true,
                 _allKickboardOn, EffectiveHandsFollowFeet, _footColorOnly, _clientId, _noMatch,
-                _selectedSetters.ToList());
+                _selectedSetters.ToList(), _customRule);
 
             // Saved. Everything below needs the browser, is bounded, and cannot undo the save.
             NavigateQuietly(DetailUrl);
@@ -148,6 +148,7 @@ public partial class BoulderCreate
         _allKickboardOn = snapshot.KickboardFootholdsOn;
         _footColorOnly = snapshot.FootColorOnly;
         _noMatch = snapshot.NoMatch;
+        _customRule = snapshot.CustomRule;
         _selectedHolds = (snapshot.Holds ?? []).Where(h => holdIds.Contains(h.HoldId)).Select(h => h.ToInput()).ToList();
         _selectedSetters.Clear();
         foreach (var id in (snapshot.Setters ?? []).Where(id => _setterOptions.Any(o => o.UserId == id)))

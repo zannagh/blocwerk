@@ -1,20 +1,6 @@
 @using Blocwerk.Contracts.Documents
-@* The hold breakdown and rule chips under a boulder's photo: the Server's BoulderRulesSummary (its markup and
+@* The rule chips under a boulder's photo: the Server's BoulderRulesSummary (its markup and
    classes) over the cached boulder. *@
-<div class="legend-bar">
-    <span class="legend-chip start">@Holds.Starts start</span>
-    <span class="legend-chip normal">@(Holds.Ids.Count - Holds.Starts - Holds.Tops) moves</span>
-    <span class="legend-chip top">@Holds.Tops top</span>
-    @if (Holds.HandOnly > 0)
-    {
-        <span class="legend-chip usage">@Holds.HandOnly hand only</span>
-    }
-    @if (Holds.FootOnlyCount > 0)
-    {
-        <span class="legend-chip foot">@Holds.FootOnlyCount foot only</span>
-    }
-</div>
-
 <div class="rules-bar">
     <span class="rule-chip @(Boulder.KickboardFootholdsOn ? "on" : "off")">
         @(Boulder.KickboardFootholdsOn ? "All kickboard holds are on" : "Kickboard holds are off")
@@ -34,9 +20,4 @@
     [Parameter]
     [EditorRequired]
     public BouldersDocumentBoulder Boulder { get; set; } = null!;
-
-    /// <summary>Gets or sets its holds.</summary>
-    [Parameter]
-    [EditorRequired]
-    public BoulderHolds Holds { get; set; } = null!;
 }

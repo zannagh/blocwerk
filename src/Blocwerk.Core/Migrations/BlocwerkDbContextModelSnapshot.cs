@@ -280,6 +280,10 @@ namespace Blocwerk.Core.Migrations
                     b.Property<Guid>("CreatedByUserId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("CustomRule")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
                     b.Property<string>("FootColorOnly")
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");

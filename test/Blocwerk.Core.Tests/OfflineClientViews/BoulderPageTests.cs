@@ -32,9 +32,11 @@ public sealed class BoulderPageTests
         Assert.Contains("All red holds may be used as footholds.", html, StringComparison.Ordinal);
         Assert.DoesNotContain("no such holds on this wall", html, StringComparison.Ordinal);
         Assert.Contains("No matching", html, StringComparison.Ordinal);
-        Assert.Contains("1 start", html, StringComparison.Ordinal);
-        Assert.Contains("1 top", html, StringComparison.Ordinal);
-        Assert.Contains("1 foot only", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("legend-chip", html, StringComparison.Ordinal);
+
+        // The custom rule is a banner of plain text: its markup is shown, never parsed.
+        Assert.Contains("<div class=\"boulder-info-banner boulder-custom-rule\">Keep it &lt;i&gt;clean&lt;/i&gt;</div>", html, StringComparison.Ordinal);
+        Assert.Contains("rule-chip", html, StringComparison.Ordinal);
         Assert.Contains("7 ascents", html, StringComparison.Ordinal);
         Assert.Contains("(2 ratings)", html, StringComparison.Ordinal);
 
@@ -46,10 +48,9 @@ public sealed class BoulderPageTests
         Assert.DoesNotContain("cx=\"50.00\" cy=\"50.00\"", html, StringComparison.Ordinal);
         Assert.DoesNotContain("holds-all-tool", html, StringComparison.Ordinal);
 
-        // Own log: three attempts, sent; a favourite.
-        Assert.Contains($"data-bw-mine=\"{Crimp}\"", html, StringComparison.Ordinal);
-        Assert.Contains("My stats: 3 attempts", html, StringComparison.Ordinal);
-        Assert.Contains("<span class=\"chip send-chip\">Sent</span>", html, StringComparison.Ordinal);
+        // Own log: sent shows as an icon with an accessible label next to the grade, not as a stats line; a favourite.
+        Assert.DoesNotContain("My stats", html, StringComparison.Ordinal);
+        Assert.Contains("class=\"boulder-status send\" role=\"img\" aria-label=\"Sent\"", html, StringComparison.Ordinal);
         Assert.Contains("One of your favourites", html, StringComparison.Ordinal);
     }
 
@@ -59,8 +60,8 @@ public sealed class BoulderPageTests
         await using var view = await ViewHarness.StartAsync(CachedDevice(UserA), $"walls/{Wall}/boulders/{Slab}");
         var html = await RenderAsync(view, Slab);
 
-        Assert.Contains("My stats: 1 attempt<", html, StringComparison.Ordinal);
-        Assert.Contains("<span class=\"chip flash-chip\">Flashed!</span>", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("My stats", html, StringComparison.Ordinal);
+        Assert.Contains("class=\"boulder-status flash\" role=\"img\" aria-label=\"Flashed\"", html, StringComparison.Ordinal);
         Assert.Contains("archived-badge", html, StringComparison.Ordinal);
     }
 
@@ -70,7 +71,7 @@ public sealed class BoulderPageTests
         await using var view = await ViewHarness.StartAsync(CachedDevice(Anon), $"walls/{Wall}/boulders/{Crimp}/shared/tok");
         var html = await RenderAsync(view, Crimp, "tok");
 
-        Assert.DoesNotContain("My stats", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("boulder-status", html, StringComparison.Ordinal);
         Assert.DoesNotContain("One of your favourites", html, StringComparison.Ordinal);
         Assert.Contains($"href=\"walls/{Wall}/shared/tok\"", html, StringComparison.Ordinal);
         Assert.Contains($"/a/{PanelSha('1')}/1920?token=tok", html, StringComparison.Ordinal);

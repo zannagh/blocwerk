@@ -1,8 +1,8 @@
-// The grade picker opens on the scale the grade is written in: the boulder page's rename editor on a Font grade ("6B")
-// used to open on the V-Scale with nothing selected, because it passed no preferred scale.
+// The grade picker opens on the scale the grade is written in: the editor on a Font grade ("6B") used to open on the
+// V-Scale with nothing selected, because it passed no preferred scale. The boulder page's pencil opens the full editor.
 import { test, expect, signIn } from '../harness/fixtures.mjs';
 
-// The rename editor holds an edit lease; leave the page so no later spec sees a busy deploy gate.
+// The editor holds an edit lease; leave the page so no later spec sees a busy deploy gate.
 test.afterEach(async ({ page }) => {
     await page.evaluate(() => window.Blazor && window.Blazor.navigateTo('/walls')).catch(() => undefined);
     await expect.poll(async () => {
@@ -11,13 +11,11 @@ test.afterEach(async ({ page }) => {
     }, { timeout: 15000 }).toBe('200 idle');
 });
 
-test('the inline grade editor opens on Font with the boulder\'s Font grade selected', async ({ page, world }) => {
+test('the pencil opens the full editor on Font with the boulder\'s Font grade selected', async ({ page, world }) => {
     const mp = world.multiPanel;
     await signIn(page, world.users.pia, `/walls/${mp.wallId}/boulders/${mp.boulder}`);
     await page.locator('.boulder-edit-btn').click();
-    const editor = page.locator('.boulder-meta-edit');
-    await expect(editor.locator('.scale-btn.active')).toHaveText('Font');
-    await expect(editor.locator('select.grade-select')).toHaveValue('6B');
-    await editor.getByRole('button', { name: 'Cancel' }).click();
-    await expect(editor).toHaveCount(0);
+    await expect(page).toHaveURL(new RegExp(`/walls/${mp.wallId}/boulders/${mp.boulder}/revise$`));
+    await expect(page.locator('.scale-btn.active')).toHaveText('Font');
+    await expect(page.locator('select.grade-select')).toHaveValue('6B');
 });

@@ -56,6 +56,8 @@ public sealed class CreateBoulderRequest
 
     public bool NoMatch { get; set; }
 
+    public string? CustomRule { get; set; }
+
     public List<BoulderHoldDto> Holds { get; set; } = [];
 
     /// <summary>
@@ -95,7 +97,11 @@ public sealed class ReviseBoulderRequest
 
     public bool NoMatch { get; set; }
 
-    public List<BoulderHoldDto> Holds { get; set; } = [];
+    /// <summary>The custom rule; null (a snapshot queued before it existed) leaves it as stored, "" clears it.</summary>
+    public string? CustomRule { get; set; }
+
+    /// <summary>The boulder's holds; null (a metadata-only save) leaves the stored holds and the review state alone.</summary>
+    public List<BoulderHoldDto>? Holds { get; set; } = [];
 
     /// <summary>
     /// The boulder's setter(s), as wall-member user ids. On revise this REPLACES the stored set
@@ -103,5 +109,5 @@ public sealed class ReviseBoulderRequest
     /// </summary>
     public List<Guid> Setters { get; set; } = [];
 
-    public List<BoulderHoldInput> ToInputs() => Holds.Select(h => h.ToInput()).ToList();
+    public List<BoulderHoldInput>? ToInputs() => Holds?.Select(h => h.ToInput()).ToList();
 }

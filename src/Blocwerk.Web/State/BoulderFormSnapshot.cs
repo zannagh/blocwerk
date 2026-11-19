@@ -19,7 +19,8 @@ public sealed record BoulderFormSnapshot(
     string? FootColorOnly,
     bool NoMatch,
     List<BoulderFormHold>? Holds,
-    List<Guid>? Setters)
+    List<Guid>? Setters,
+    string? CustomRule = null)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 

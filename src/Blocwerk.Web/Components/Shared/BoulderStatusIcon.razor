@@ -1,0 +1,32 @@
+@* The signed-in user's best result on this boulder, as one small icon next to its grade: a block sign for
+   attempted, a checkmark for sent, a thunderbolt for flashed. Nothing without activity (or when anonymous). *@
+@if (Summary.HasFlashed)
+{
+    <span class="boulder-status flash" role="img" aria-label="Flashed" title="Flashed">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+        </svg>
+    </span>
+}
+else if (Summary.HasSent)
+{
+    <span class="boulder-status send" role="img" aria-label="Sent" title="Sent">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="4 12 10 18 20 6" />
+        </svg>
+    </span>
+}
+else if (Summary.TotalAttempts > 0)
+{
+    <span class="boulder-status try" role="img" aria-label="Attempted" title="Attempted">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" />
+            <line x1="5.6" y1="5.6" x2="18.4" y2="18.4" />
+        </svg>
+    </span>
+}
+
+@code {
+    /// <summary>The current user's tally on this boulder; an anonymous viewer passes the empty one.</summary>
+    [Parameter] public AttemptSummary Summary { get; set; } = new(0, false, false);
+}

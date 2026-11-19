@@ -28,7 +28,7 @@ public sealed class VirtualHoldTests
         Assert.Contains($"data-bw-panel=\"{PanelLeft}\"", html, StringComparison.Ordinal);
         Assert.Contains(VirtualTopHold, html, StringComparison.Ordinal);
         Assert.Contains("panel-arrow right", html, StringComparison.Ordinal);
-        Assert.Contains("1 top", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("legend-chip", html, StringComparison.Ordinal);
         Assert.DoesNotContain("not on the wall", html, StringComparison.Ordinal);
 
         // Only the boulder's own holds: not the left panel's other holds.

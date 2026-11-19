@@ -4,6 +4,7 @@
 
 using System.Data.Common;
 using Blocwerk.Core.Services;
+using Blocwerk.Web.State;
 
 namespace Blocwerk.Web.Components.Pages.Walls;
 
@@ -29,6 +30,25 @@ public partial class BoulderRevise
     // Lineage picks whose hold was later split with the split tool; only one part is ticked.
     private int _splitCount;
 
+    // The pre-selection as the prefill left it, to tell an edit of the holds from a metadata-only change.
+    private string _initialHoldsKey = string.Empty;
+    private int _initialGuessedCount;
+
+    private string HoldsKey() => string.Join(
+        ';', _selectedHolds.OrderBy(h => h.HoldId).Select(h => $"{h.HoldId}:{h.Type}:{h.Usage}"));
+
+    /// <summary>
+    /// Whether this save replaces the boulder's holds (and so signs off a review). A draft or historic boulder
+    /// always does; a live one only when the holds were edited or the review was confirmed from its notice. Fixing
+    /// a name or a grade must leave the stored holds, unmapped ones included, and the review flag alone.
+    /// </summary>
+    private bool ReplaceHolds =>
+        BoulderReviseRules.ReplacesHolds(
+            _isDraft,
+            _boulder is not { IsHistoric: false },
+            Review,
+            HoldsKey() != _initialHoldsKey || _guessedEntries.Count != _initialGuessedCount);
+
     private IReadOnlySet<Guid> GuessedHoldIds => _guessedEntries.Keys.ToHashSet();
 
     /// <summary>Clears everything the previous boulder left behind, so a new BoulderId starts from nothing.</summary>
@@ -38,6 +58,8 @@ public partial class BoulderRevise
         _panelTracker = new([], []);
         _unmappedCount = 0;
         _splitCount = 0;
+        _initialHoldsKey = string.Empty;
+        _initialGuessedCount = 0;
     }
 
     /// <summary>Loads the lineage-based pre-selection and picks the panel to open on.</summary>
@@ -64,6 +86,7 @@ public partial class BoulderRevise
                 .Select(bh => new BoulderHoldInput(bh.HoldId, bh.Type, bh.Usage))
                 .ToList();
             _currentPanel = StartPanel(null);
+            MarkInitialSelection();
             return;
         }
 
@@ -81,6 +104,13 @@ public partial class BoulderRevise
         _unmappedCount = prefill.UnmappedHoldIds.Count;
         _splitCount = prefill.SplitHoldIds.Count;
         _currentPanel = StartPanel(prefill.StartPanelId);
+        MarkInitialSelection();
+    }
+
+    private void MarkInitialSelection()
+    {
+        _initialHoldsKey = HoldsKey();
+        _initialGuessedCount = _guessedEntries.Count;
     }
 
     // The panel the editor opens on: the one carrying most of the PRE-SELECTED current holds (the old rows'

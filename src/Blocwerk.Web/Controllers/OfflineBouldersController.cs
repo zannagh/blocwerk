@@ -79,7 +79,8 @@ public sealed class OfflineBouldersController : ControllerBase
                 request.FootColorOnly,
                 request.Id,
                 request.NoMatch,
-                request.Setters);
+                request.Setters,
+                request.CustomRule);
 
             return Canonical(boulder);
         });
@@ -109,7 +110,8 @@ public sealed class OfflineBouldersController : ControllerBase
                 request.HandsFollowFeet,
                 request.FootColorOnly ?? string.Empty, // "" clears the foot colour server-side; null would mean "leave unchanged".
                 request.NoMatch,
-                request.Setters);
+                request.Setters,
+                request.CustomRule);
 
             return Canonical(boulder);
         });

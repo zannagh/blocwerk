@@ -9,9 +9,9 @@ using Microsoft.AspNetCore.Components;
 namespace Blocwerk.Web.Components.Pages.Walls;
 
 /// <summary>
-/// The pre-deploy flush of the inline editors (see <see cref="CircuitEditFlush"/>): a half-typed rename/regrade or a
-/// grade proposal not yet sent. Both act on a LIVE boulder at once, so neither is sent on the user's behalf; the open
-/// editor and its values are kept on the device and reopened after the reload.
+/// The pre-deploy flush of the inline grade proposal (see <see cref="CircuitEditFlush"/>): a proposal not yet sent acts
+/// on a LIVE boulder at once, so it is not sent on the user's behalf; the open form and its value are kept on the
+/// device and reopened after the reload.
 /// </summary>
 public partial class BoulderDetail
 {
@@ -25,30 +25,28 @@ public partial class BoulderDetail
 
     private string KeepKey => KeptCopyKey.For(_currentUserId, KioskContext, $"boulder-edit:{BoulderId}");
 
-    // What the inline editors started from; a restore compares it with the boulder now.
+    // What the inline editor started from; a restore compares it with the boulder now.
     private string InlineBase => $"{_boulder?.Name}\n{_boulder?.Grade}";
 
-    private bool InlineDirty =>
-        (_editMeta && _boulder is not null && (_editName != _boulder.Name || _editGrade != _boulder.Grade))
-        || (_showGradeForm && !string.IsNullOrEmpty(_proposedGrade));
+    private bool InlineDirty => _showGradeForm && !string.IsNullOrEmpty(_proposedGrade);
 
     private string? KeepPayload => InlineDirty
-        ? new BaseKeep(JsonSerializer.Serialize(new InlineEditKeep(_editMeta, _editName, _editGrade, _showGradeForm, _proposedGrade), KeepJson), InlineBase).ToJson()
+        ? new BaseKeep(JsonSerializer.Serialize(new InlineEditKeep(false, null, null, _showGradeForm, _proposedGrade), KeepJson), InlineBase).ToJson()
         : null;
 
-    /// <summary>Registers the flush while an inline editor is open; called from <c>SyncBoulderEditLease</c>.</summary>
+    /// <summary>Registers the flush while the inline form is open; called from <c>SyncBoulderEditLease</c>.</summary>
     private void SyncDeployFlush()
     {
-        if (_editMeta || _showGradeForm)
+        if (_showGradeForm)
         {
             _flushRegistration ??= EditFlush.Register(
                 InvokeAsync,
                 FlushForDeployAsync,
-                () => new EditFlushTarget("inline boulder edit", WallId, _currentUserId == Guid.Empty ? null : _currentUserId));
+                () => new EditFlushTarget("inline grade proposal", WallId, _currentUserId == Guid.Empty ? null : _currentUserId));
         }
         else if (_flushRegistration is not null)
         {
-            // Both editors closed by the user (saved or cancelled): a copy kept while hidden is obsolete.
+            // The form closed by the user (saved or cancelled): a copy kept while hidden is obsolete.
             _flushRegistration.Dispose();
             _flushRegistration = null;
             _ = DeployDraftInterop.DropAsync(JS, KeepKey);
@@ -89,13 +87,7 @@ public partial class BoulderDetail
             await DeployDraftInterop.ShowAsync(JS, BaseKeep.ChangedSince, $"/walls/{WallId}/boulders/{BoulderId}");
         }
 
-        if (kept.Meta && (_isCreator || _isAdmin || _isSetter))
-        {
-            _editName = kept.Name ?? _boulder.Name;
-            _editGrade = kept.Grade;
-            _editMeta = true;
-        }
-
+        // A copy kept by an older build may carry an open rename (kept.Meta): that editor is gone, the edit page replaced it.
         if (kept.Propose && !_isCreator)
         {
             _proposedGrade = kept.ProposedGrade;

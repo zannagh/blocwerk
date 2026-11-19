@@ -1,5 +1,5 @@
 @*
-    The three ascent buttons plus the "my stats" chip.
+    The three ascent buttons .
 
     These carry NO @onclick on purpose. The delegated DOM handler in
     wwwroot/js/offline-actions.js is the single writer for the attempt action, which is
@@ -42,24 +42,6 @@
     </div>
 </div>
 
-@if (Summary.TotalAttempts > 0)
-{
-    <div class="my-stats">
-        <span>My stats: @Summary.TotalAttempts attempt@(Summary.TotalAttempts != 1 ? "s" : string.Empty)</span>
-        @if (Summary.HasFlashed)
-        {
-            <span class="chip flash-chip">Flashed!</span>
-        }
-        else if (Summary.HasSent)
-        {
-            <span class="chip send-chip">Sent</span>
-        }
-    </div>
-}
-
 @code {
     [Parameter] public Guid BoulderId { get; set; }
-
-    /// <summary>The current user's tally, re-read from the server after every queue flush.</summary>
-    [Parameter] public AttemptSummary Summary { get; set; } = new(0, false, false);
 }

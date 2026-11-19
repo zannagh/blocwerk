@@ -59,7 +59,7 @@
     :is(.capture-history, .glyph-history, .capture-photos) .btn-link { min-height: 44px; }
     .role-select { min-height: 40px; padding: 4px 6px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-surface); color: var(--text); }
     .delete-btn { min-width: 44px; min-height: 44px; margin: -12px -6px -12px 0; }
-    .boulder-edit-btn { min-width: 44px; min-height: 44px; }
+    .boulder-edit-btn { min-width: 36px; min-height: 36px; }
 
     /* Capture history, geometry history and the capture photo lists: one small card per row. Direct
        children only: a capture's photo picker opens as a table inside its history row. */
