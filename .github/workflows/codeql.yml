@@ -82,7 +82,7 @@ jobs:
           versionSpec: '6.x'
 
       - name: Install GitVersion
-        run: dotnet tool install --global gitversion.tool
+        run: dotnet tool install --global gitversion.tool --version '6.*'
 
       - name: Update project files with version
         uses: gittools/actions/gitversion/command@v4.2.0
