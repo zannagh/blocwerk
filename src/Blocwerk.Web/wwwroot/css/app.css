@@ -240,6 +240,9 @@ h1, h2, h3, h4 {
 }
 h1 { font-size: 1.9rem; font-weight: 700; letter-spacing: -0.03em; }
 h2 { font-size: 1.15rem; }
+/* The one title of the top-level pages (My Walls, Activity, Profile, Tools, Create Boulder): the walls list's bold
+   display heading. A page's own rules set only its spacing. */
+.page-title { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.03em; color: var(--text-heading); margin: 0; }
 
 /* Tabular numerics for stat values + counts */
 .stat-value, .hold-count, .pick-count, .stitcher-toolbar .option-hint {
@@ -832,7 +835,7 @@ body.bw-tabbar-collapsed .tabbar-restore { display: flex; }
     box-shadow: 0 1px 3px var(--shadow-sm), 0 1px 2px var(--shadow-md);
 }
 
-/* Bottom banners (consent, install, notifications) sit ABOVE the tab bar, never over it, one at a
+/* Bottom banners (consent, notifications, storage) sit ABOVE the tab bar, never over it, one at a
    time: consent first, then whichever prompt rendered first. wwwroot/js/bottom-banners.js measures
    the one showing into --bw-banner-h, which --bottomnav-h adds, so the page (the carousel dots, the
    3D view's preset buttons, the last row of a list) shrinks above it instead of hiding under it. */
@@ -863,11 +866,20 @@ body.bw-tabbar-collapsed .tabbar-restore { display: flex; }
 .bw-consent-accept:hover { background: var(--accent-hover); }
 
 /* ---------------------------------------------------------------------------
-   "Install as an app" banner (Components/Shared/InstallPrompt.razor)
+   The bottom notices (notifications, storage, the offline lock) and their shared parts
    Placed with the other bottom banners (above the tab bar, the page kept clear
    of it; see .bw-consent). Under .bw-consent's z-index: consent is the one
    banner that has to win.
    --------------------------------------------------------------------------- */
+/* "Install as an app" (Components/Shared/InstallPrompt.razor): an inline card at the end of the walls list, in the
+   page's flow, with the notices' title and buttons. */
+.bw-install-inline {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 16px; padding: 4px 4px 4px 16px;
+    border: 1px solid var(--border-light); border-radius: var(--r-lg);
+    background: var(--bg-surface);
+    box-shadow: 0 1px 2px var(--shadow-sm);
+}
 .bw-install {
     position: fixed;
     left: 12px; right: 12px;
@@ -1155,10 +1167,9 @@ div.bw-conn-pill { cursor: default; }
    bounded by the content column, so a slightly smaller cap looks fine there too.
    Only wall photo boxes read --wall-photo-chrome (see pages.css), so this is scoped. */
 :root:root {
-    /* Measured, not estimated: .stats-bar is 82px tall on the phone tier with a 20px bottom
-       margin, and .wall-main adds its own 12px column gap under it. (The old 96px assumed a
-       64px card and under-budgeted the slice by 18px.) */
-    --wall-stats-h: 114px;                                   /* 82px stats bar + 20px margin + 12px column gap */
+    /* Measured, not estimated: .stats-bar is 71px tall on the phone tier (the wall's smaller stat
+       values, pages.css) with a 20px bottom margin, and .wall-main adds its own 12px column gap under it. */
+    --wall-stats-h: 103px;                                   /* 71px stats bar + 20px margin + 12px column gap */
     /* Room under the photo that the wall-dim bar used to take. The bar is gone (a boulder view
        has a focus button over its photo now); the room is kept so the read-only photo keeps its
        size, and edit mode still subtracts it — see pages.css. */

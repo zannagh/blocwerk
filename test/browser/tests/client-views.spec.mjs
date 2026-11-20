@@ -51,6 +51,8 @@ test('airplane mode on a cached wall: the wall view, the boulder detail with its
     await expect(comment(social.unconsentedComment).locator('.comment-author')).toHaveText('Dave');
     await expectPhoto(page);
     await expectReadOnly(page);
+    // Storage management ("Clear offline data") is the wall list's, not a content page's.
+    await expect(page.locator('.bw-client-saved')).toHaveCount(0);
 
     // A reload while still offline: the shell, the runtime and the data all come from the device.
     await page.reload();
@@ -72,6 +74,7 @@ test('offline, the viewer\'s own marks show on the list and the boulder, and the
     await expectClient(page, '/walls');
     await expect(page.locator('h1')).toHaveText('My Walls');
     await expect(page.locator('.wall-card h3', { hasText: 'Alpha' })).toBeVisible();
+    await expect(page.locator('.bw-client-saved')).toContainText('saved on this device');
     await expectReadOnly(page);
 
     await page.locator('.wall-card', { hasText: 'Alpha' }).click();

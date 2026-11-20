@@ -21,6 +21,7 @@ h3,
 h4 { font-family: var(--font-display); font-weight: 600; letter-spacing: -0.025em; color: var(--text-heading); line-height: 1.15; }
 h1 { font-size: 1.9rem; font-weight: 700; letter-spacing: -0.03em; }
 h2 { font-size: 1.15rem; }
+.page-title { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.03em; color: var(--text-heading); margin: 0; }
 .stat-value { font-variant-numeric: tabular-nums; }
 :where(button, a, input, select, textarea, [tabindex]):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-sm); }
 .loading { text-align: center; color: var(--text-secondary); padding: 48px; }
@@ -28,12 +29,11 @@ h2 { font-size: 1.15rem; }
 .empty-msg { text-align: center; color: var(--text-secondary); font-size: 0.85rem; padding: 8px; }
 .pager-btn { padding: 4px 12px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 4px; font-size: 0.8rem; cursor: pointer; color: var(--text); }
 .pager-btn:hover { background: var(--bg-surface-alt); }
-:root:root { --wall-stats-h: 114px; --wall-dim-bar-h: 40px; --wall-photo-chrome-base: 140px; --wall-photo-chrome: calc(var(--wall-photo-chrome-base) + var(--wall-stats-h)); --boulder-photo-chrome: 330px; }
+:root:root { --wall-stats-h: 103px; --wall-dim-bar-h: 40px; --wall-photo-chrome-base: 140px; --wall-photo-chrome: calc(var(--wall-photo-chrome-base) + var(--wall-stats-h)); --boulder-photo-chrome: 330px; }
 .wall-main .wall-photo-container { position: relative; }
 /* ---- from Web's css/pages.css ---- */
 .wall-list { padding: 16px; max-width: var(--page-max, 600px); margin: 0 auto; }
 .list-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-.list-header h1 { font-size: 1.5rem; font-weight: 700; color: var(--text-heading); }
 .wall-cards { display: flex; flex-direction: column; gap: 12px; }
 .wall-card { display: flex; gap: 12px; padding: 12px; background: var(--bg-surface); border-radius: 12px; box-shadow: 0 2px 8px var(--shadow-md); text-decoration: none; color: inherit; transition: transform 0.15s; }
 .wall-card:hover { transform: translateY(-2px); box-shadow: 0 4px 16px var(--shadow-lg); }
@@ -63,6 +63,8 @@ h2 { font-size: 1.15rem; }
 .stat { flex: 1 1 var(--stat-basis, 0); text-align: center; padding: 14px 10px 12px; background: var(--bg-surface); border: 1px solid var(--border-light); border-radius: var(--r-lg); box-shadow: 0 1px 2px var(--shadow-sm); transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease; }
 .stat-value { display: block; font-family: var(--font-display); font-size: 1.75rem; font-weight: 600; letter-spacing: -0.04em; color: var(--text-heading); line-height: 1; margin-bottom: 4px; }
 svg.stat-value { margin-inline: auto; }
+.wall-side .stat { flex-basis: var(--wall-stat-basis, 0); padding: var(--wall-stat-pad, 11px 8px 10px); }
+.wall-side .stat-value { font-size: var(--wall-stat-size, 1.35rem); }
 .stat-label { font-size: 0.7rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary); }
 .filter-card { margin-top: 0; margin-bottom: 12px; padding: 14px 16px; }
 .filter-card .filter-card-title { display: inline-flex; align-items: center; gap: 8px; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-secondary); }
@@ -194,7 +196,7 @@ img.avatar { object-fit: cover; }
 }
 @media (min-width: 900px) {
     @container style(--tier: desktop) {
-        body { --wall-main-display: grid; --wall-main-align: start; --wall-side-display: flex; --wall-side-max-h: calc(var(--bw-app-h, 100dvh) - var(--topbar-h) - var(--bottomnav-h) - 48px); --stats-wrap: wrap; --stat-basis: 130px; --boulder-list-display: grid; --boulder-list-columns: repeat(auto-fill, minmax(360px, 1fr)); --browse-landing-list-display: grid; --boulder-detail-display: grid; --boulder-col-display: block; --boulder-wide-display: grid; --boulder-wide-group-display: flex; --boulder-photo-col-position: sticky; --boulder-page-max: 1320px; --boulder-photo-chrome: 190px; }
+        body { --wall-main-display: grid; --wall-main-align: start; --wall-side-display: flex; --wall-side-max-h: calc(var(--bw-app-h, 100dvh) - var(--topbar-h) - var(--bottomnav-h) - 48px); --stats-wrap: wrap; --stat-basis: 130px; --wall-stat-basis: 90px; --wall-stat-pad: 14px 10px 12px; --wall-stat-size: 1.75rem; --boulder-list-display: grid; --boulder-list-columns: repeat(auto-fill, minmax(360px, 1fr)); --browse-landing-list-display: grid; --boulder-detail-display: grid; --boulder-col-display: block; --boulder-wide-display: grid; --boulder-wide-group-display: flex; --boulder-photo-col-position: sticky; --boulder-page-max: 1320px; --boulder-photo-chrome: 190px; }
         .wall-main:has(> .wall-side) { --wall-photo-chrome: var(--wall-photo-chrome-base); }
     }
 }

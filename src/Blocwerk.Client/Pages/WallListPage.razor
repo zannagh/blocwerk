@@ -11,7 +11,7 @@
 
 <div class="wall-list">
     <div class="list-header">
-        <h1>My Walls</h1>
+        <h1 class="page-title">My Walls</h1>
     </div>
 
     @if (cards is null)
@@ -52,6 +52,8 @@
             }
         </div>
     }
+
+    <SavedFooter />
 </div>
 
 @code {

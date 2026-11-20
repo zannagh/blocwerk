@@ -1,0 +1,30 @@
+@* The App tab's link rows: Tools (calculators and guides) for everybody and, for an admin, the installation-wide
+   administration. Navigation only: both routes keep their own authorization. Not on a kiosk: /administration is on
+   the kiosk deny-list and Tools is already on the kiosk tab bar. *@
+<nav class="profile-link-list" aria-label="More">
+    <a class="profile-link-row" href="/tools">
+        <span class="profile-link-text">
+            <span class="profile-link-title">Tools</span>
+            <span class="profile-link-hint">Calculators and guides</span>
+        </span>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
+    </a>
+    @if (IsAdmin)
+    {
+        <a class="profile-link-row" href="/administration">
+            <span class="profile-link-text">
+                <span class="profile-link-title">Administration</span>
+                <span class="profile-link-hint">The installation-wide dashboard</span>
+            </span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
+        </a>
+    }
+</nav>
+
+@code {
+    /// <summary>Gets or sets a value indicating whether the viewer is an admin, which adds the Administration row.</summary>
+    [Parameter]
+    public bool IsAdmin { get; set; }
+}

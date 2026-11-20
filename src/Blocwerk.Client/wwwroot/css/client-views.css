@@ -12,6 +12,11 @@
     padding: 0 16px;
 }
 
+/* On the wall list (the one page that shows it) the list's own gutter holds it. */
+.bw-client-main .wall-list .bw-client-saved {
+    padding: 0;
+}
+
 /* A photo the device does not hold (and the network cannot give). */
 .bw-client-no-photo {
     display: flex;

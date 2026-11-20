@@ -8,30 +8,34 @@ namespace Blocwerk.Web.Components.Pages.Walls;
 /// <summary>The wall activity card's icon and verb for each kind of entry.</summary>
 public static class WallActivityText
 {
-    public static string Icon(ActivityType type) => type switch
+    /// <summary>
+    /// The word on the row's chip: what the entry is about, in the same chip style as the boulder history's
+    /// Send / Flash / Attempt. A single letter said nothing on its own.
+    /// </summary>
+    public static string Chip(ActivityType type) => type switch
     {
-        ActivityType.HoldAdded => "+",
-        ActivityType.HoldMoved => "~",
-        ActivityType.HoldDeleted => "-",
-        ActivityType.HoldColorChanged => "~",
-        ActivityType.HoldShapeChanged => "~",
-        ActivityType.HoldNamed => "T",
-        ActivityType.BoulderCreated => "B",
-        ActivityType.BoulderRevised => "R",
-        ActivityType.WallPhotoUploaded => "P",
-        ActivityType.WallPhotoStaged => "P",
-        ActivityType.WallPhotoConfirmed => "P",
-        ActivityType.WallPhotoDiscarded => "P",
-        ActivityType.WallRecreated => "!",
-        ActivityType.HoldMarkedModified => "!",
-        ActivityType.HoldMerged => "M",
-        ActivityType.WallReset => "!",
-        ActivityType.MemberJoined => "J",
-        ActivityType.MemberRoleChanged => "R",
-        ActivityType.AttemptLogged => "A",
-        ActivityType.CommentAdded => "C",
-        ActivityType.BetaVideoUploaded => "V",
-        _ => "?",
+        ActivityType.HoldAdded or ActivityType.HoldMoved or ActivityType.HoldDeleted
+            or ActivityType.HoldColorChanged or ActivityType.HoldShapeChanged or ActivityType.HoldNamed
+            or ActivityType.HoldMarkedModified or ActivityType.HoldMerged => "Hold",
+        ActivityType.BoulderCreated => "New",
+        ActivityType.BoulderRevised => "Revised",
+        ActivityType.WallPhotoUploaded or ActivityType.WallPhotoStaged
+            or ActivityType.WallPhotoConfirmed or ActivityType.WallPhotoDiscarded => "Photo",
+        ActivityType.WallRecreated or ActivityType.WallReset => "Wall",
+        ActivityType.MemberJoined or ActivityType.MemberRoleChanged => "Member",
+        ActivityType.AttemptLogged => "Attempt",
+        ActivityType.CommentAdded => "Comment",
+        ActivityType.BetaVideoUploaded => "Video",
+        _ => "Other",
+    };
+
+    /// <summary>The chip's colour class: attempts as in the boulder history, boulders and members tinted, the rest neutral.</summary>
+    public static string ChipTone(ActivityType type) => type switch
+    {
+        ActivityType.AttemptLogged => "attempt",
+        ActivityType.BoulderCreated or ActivityType.BoulderRevised => "boulder",
+        ActivityType.MemberJoined or ActivityType.MemberRoleChanged => "member",
+        _ => "neutral",
     };
 
     public static string Verb(ActivityType type) => type switch

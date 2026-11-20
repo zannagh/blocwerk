@@ -126,7 +126,6 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
     display: flex; justify-content: space-between; align-items: center;
     margin-bottom: 16px;
 }
-.list-header h1 { font-size: 1.5rem; font-weight: 700; color: var(--text-heading); }
 
 .btn-create {
     padding: 10px 20px; background: var(--accent); color: var(--on-accent);
@@ -619,11 +618,24 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
     margin-bottom: 4px;
 }
 svg.stat-value { margin-inline: auto; }
-/* "View in 3D" under the wall stats (Wall3DLink's default btn-secondary look, as a link). */
+/* "View in 3D" (Wall3DLink's default btn-secondary look, as a link). */
 a.wall3d-link {
     display: flex; align-items: center; justify-content: center; gap: 8px;
     box-sizing: border-box; text-decoration: none; margin-bottom: 20px;
 }
+/* The wall's own stat cards: smaller numbers on the phone tier (--wall-stat-size and --wall-stat-pad are set
+   back to the full size on the desktop tier, where the 3 cards sit in one row of the rail). */
+.wall-side .stat { flex-basis: var(--wall-stat-basis, 0); padding: var(--wall-stat-pad, 11px 8px 10px); }
+.wall-side .stat-value { font-size: var(--wall-stat-size, 1.35rem); }
+/* Invite and the 3D page under the wall stats: one row of equal buttons, actions apart from the numbers. */
+.wall-actions { display: flex; gap: 10px; margin-bottom: 20px; }
+.wall-actions:empty { display: none; }
+.wall-actions > .btn-secondary {
+    flex: 1 1 0; width: auto; min-width: 0; margin: 0; min-height: 46px;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    font-size: 0.95rem; text-decoration: none;
+}
+.wall-actions > .btn-secondary svg { flex: 0 0 auto; color: var(--text-secondary); }
 .stat-label {
     font-size: 0.7rem;
     font-weight: 600;
@@ -752,10 +764,16 @@ a.wall3d-link {
 .rating-count, .rating-empty { font-size: 0.8rem; color: var(--text-secondary); }
 .rating-mine { display: flex; align-items: center; gap: 8px; }
 .rating-mine-label { font-size: 0.78rem; color: var(--text-secondary); font-weight: 600; }
+/* Clear your rating: a round ghost icon button on the stars' centre line, the size of a star's hit area. */
 .rating-clear {
-    background: none; border: none; color: var(--text-secondary);
-    text-decoration: underline; font-size: 0.72rem; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+    width: 34px; height: 34px; padding: 0; margin-left: -4px;
+    background: none; border: 1px solid transparent; border-radius: 50%;
+    color: var(--text-secondary); cursor: pointer;
+    transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
+.rating-clear:hover { background: var(--bg-surface); border-color: var(--border); color: var(--text-heading); }
+.rating-clear:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .revision-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .btn-archive {
     background: var(--bg-surface); color: var(--text-secondary); border: 1px solid var(--border);
@@ -1137,10 +1155,11 @@ a.wall3d-link {
     background: var(--bg-surface); border-radius: 6px; margin-bottom: 4px;
     box-shadow: 0 1px 2px var(--shadow-sm); font-size: 0.85rem;
 }
-.activity-icon {
-    width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
-    background: var(--bg-surface-alt); border-radius: 4px; font-size: 0.7rem; font-weight: 700; color: var(--text-secondary);
-}
+/* The row's chip (WallActivityText.Chip): the boulder history's .attempt-type pill, one fixed width so the texts line up. */
+.attempt-type.activity-chip { flex: 0 0 auto; min-width: 6em; padding: 2px 6px; text-align: center; font-size: 0.62rem; letter-spacing: 0.03em; }
+.attempt-type.boulder { background: var(--info-bg); color: var(--info-text); }
+.attempt-type.member { background: var(--success-bg); color: var(--success-text); }
+.attempt-type.neutral { background: var(--bg-surface-alt); color: var(--text-secondary); }
 .activity-text { flex: 1; color: var(--text); }
 .activity-time { font-size: 0.75rem; color: var(--text-secondary); white-space: nowrap; }
 .activity-pager { display: flex; gap: 6px; margin-top: 8px; }
@@ -1539,7 +1558,7 @@ a.wall3d-link {
 /* ========== Boulder Create ========== */
 
 .boulder-create { padding: 16px; max-width: var(--page-max, 600px); margin: 0 auto; }
-.boulder-create .page-header h1 { font-size: 1.4rem; font-weight: 700; color: var(--text-heading); margin-top: 4px; }
+.boulder-create .page-header .page-title { margin-top: 4px; }
 .boulder-create .form-group > label { font-size: 0.85rem; }
 
 .form-section { margin-bottom: 12px; }
@@ -1980,11 +1999,12 @@ img.avatar { object-fit: cover; }
 
 /* ---- Staged profile shell -------------------------------------------------
    /profile is content the app authors end to end, so it is a fixed composition sized to the viewport
-   instead of a 3.4-viewport scroll: a persistent identity/links side column plus four tabbed screens.
+   instead of a 3.4-viewport scroll: a persistent identity side column plus three tabbed screens.
    Scoped to .profile-shell so the settings pages that reuse the plain .profile-page shell (API keys,
    delete account) keep their narrow single-column layout. ---- */
 .profile-shell { max-width: var(--profile-max, 1180px); }
 
+.profile-shell > .page-title { margin-bottom: 16px; }
 .profile-columns { display: flex; flex-direction: column; gap: 16px; align-items: stretch; }
 .profile-shell .profile-side > .profile-card { margin-bottom: 16px; }
 .profile-shell .profile-side .section:last-child { margin-bottom: 0; }
@@ -2015,6 +2035,24 @@ img.avatar { object-fit: cover; }
 .profile-shell .profile-grid > .section { margin-bottom: 0; }
 .profile-shell .profile-grid > .profile-collapsible { margin-bottom: 0; }
 .profile-grid-wide { grid-column: 1 / -1; }
+
+/* The App tab's link rows (ProfileAppLinks.razor): Tools and, for an admin, Administration, one tappable row each. */
+.profile-link-list {
+    display: flex; flex-direction: column; margin-bottom: 14px; overflow: hidden;
+    background: var(--bg-surface); border: 1px solid var(--border);
+    border-radius: var(--r-md); box-shadow: 0 1px 2px var(--shadow-sm);
+}
+.profile-link-row {
+    display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 10px 14px 10px 16px;
+    color: var(--text-heading); text-decoration: none;
+}
+.profile-link-row + .profile-link-row { border-top: 1px solid var(--border-light); }
+.profile-link-row:hover { background: var(--bg-surface-alt); }
+.profile-link-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.profile-link-row > svg { flex: 0 0 auto; color: var(--text-secondary); }
+.profile-link-text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.profile-link-title { font-weight: 600; }
+.profile-link-hint { font-size: 0.82rem; color: var(--text-secondary); }
 .profile-notify-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 2px 18px; }
 
 /* The two progression charts sit side by side once there is room for both. */
@@ -2168,6 +2206,9 @@ html.bw-fullscreen { --tier: desktop; }
             --wall-side-max-h: calc(var(--bw-app-h, 100dvh) - var(--topbar-h) - var(--bottomnav-h) - 48px);
             --stats-wrap: wrap;
             --stat-basis: 130px;
+            --wall-stat-basis: 90px;
+            --wall-stat-pad: 14px 10px 12px;
+            --wall-stat-size: 1.75rem;
 
             /* Boulder LIST (wall carousel page 4): the wall page loses --page-max on this tier,
                so a 31-card list was one 600px-ish column of cards in a 1440px slide and nearly

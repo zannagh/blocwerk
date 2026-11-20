@@ -12,6 +12,8 @@
         <div class="toast-msg">@_toast</div>
     }
 
+    <h1 class="page-title">Profile</h1>
+
     @if (_loading)
     {
         <p class="loading">Loading...</p>
@@ -19,7 +21,7 @@
     else if (!_available || _target == null)
     {
         <div class="profile-card">
-            <h1>Profile unavailable</h1>
+            <h2>Profile unavailable</h2>
             <p class="member-since">This profile isn't available.</p>
         </div>
     }
@@ -38,31 +40,11 @@
     else
     {
         @* Everything on this page is content WE author, so it is a staged composition rather than one
-           long scroll: the identity card and the navigation links stay put in a side column, and the
-           four settings screens — each holding one job somebody comes here to do — swap in beside them. *@
+           long scroll: the identity card stays put in a side column, and the three settings screens —
+           each holding one job somebody comes here to do — swap in beside it. *@
         <div class="profile-columns">
             <div class="profile-side">
                 <ProfileIdentityCard Target="_target" IsSelf="true" OnSelfChanged="ReloadSelfAsync" />
-
-                @* Moved off the bottom tab bar, which was up to six items on a phone. The Admin entry
-                   keeps the tab bar's condition exactly — the viewer's Admin role — and both routes keep
-                   their own authorization; this is navigation only. The kiosk gate is additional:
-                   /administration is on the kiosk deny-list, so offering it on a tablet is a tap that
-                   only ever bounces, and Tools is already on the kiosk tab bar. *@
-                @if (!KioskContext.IsKiosk)
-                {
-                    <div class="section profile-section-card">
-                        <h2>More</h2>
-                        <div class="profile-links">
-                            <a class="btn-secondary" href="/tools">Tools</a>
-                            @if (_target.Role == IdentityRole.Admin)
-                            {
-                                <a class="btn-secondary" href="/administration">Administration</a>
-                            }
-                        </div>
-                        <p class="member-since">Calculators and guides@(_target.Role == IdentityRole.Admin ? ", and the installation-wide administration dashboard" : string.Empty).</p>
-                    </div>
-                }
             </div>
 
             <div class="profile-main">
@@ -79,10 +61,6 @@
 
                 @switch (_tab)
                 {
-                    case ProfileTab.App:
-                        <ProfilePreferencesPane Viewer="_target" MyWalls="_myWalls" />
-                        break;
-
                     case ProfileTab.Account:
                         @* Account security lives on your OWN device, never on a wall tablet. These writes
                            are refused at the service (CurrentUserService.EnsureNotKiosk) and, for the
@@ -113,7 +91,13 @@
                         break;
 
                     default:
-                        <ProfileProgressionPane TargetUserId="_target.Id" IsSelf="true" />
+                        @* Progression lives on the Activity tab; your own profile is identity and settings. *@
+                        @if (!KioskContext.IsKiosk)
+                        {
+                            <ProfileAppLinks IsAdmin="_target.Role == IdentityRole.Admin" />
+                        }
+
+                        <ProfilePreferencesPane Viewer="_target" MyWalls="_myWalls" />
                         break;
                 }
             </div>

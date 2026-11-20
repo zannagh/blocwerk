@@ -19,11 +19,12 @@ namespace Blocwerk.Core.Tests.OfflineClientViews;
 /// </summary>
 public sealed partial class NoEditControlTests
 {
-    // The 3D switch, the gallery's thumbnails and its "Load more" (PR 3.13) too.
+    // The 3D switch, the gallery's thumbnails and its "Load more" (PR 3.13) too, and the wall list's "Clear offline data"
+    // (it deletes the device's copy, never anything on the server).
     private static readonly string[] AllowedButtons =
     [
         "panel-arrow", "holds-all-tool", "settings-card-summary", "scale-btn", "bw-client-3d-switch", "wall-gallery-thumb",
-        "wall-gallery-more",
+        "wall-gallery-more", "bw-client-clear",
     ];
 
     private static readonly string[] AllowedSelects = ["filter-select", "grade-select"];
