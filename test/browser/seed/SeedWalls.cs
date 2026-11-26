@@ -25,6 +25,7 @@ namespace Blocwerk.Browser.Seed;
 /// <item><b>wide</b>: Pia's wall of two panels and a boulder with holds on both (<see cref="SeedMultiPanel"/>).</item>
 /// <item><b>grips</b>: Gina's wall of typed holds for the boulder browser's hold types (<see cref="SeedHoldTypes"/>).</item>
 /// <item><b>landing</b>: Lena's wall with two favourites and three projects, for the browser's landing cards (<see cref="SeedLanding"/>).</item>
+/// <item><b>visit</b>: Vic's wall with Mia as a member and an expired visitor link, for one-time visitor links (<see cref="SeedVisit"/>).</item>
 /// </list>
 /// </summary>
 internal sealed class SeedWalls
@@ -78,6 +79,10 @@ internal sealed class SeedWalls
         var lena = AddUser("lena@browser.test", "Lena");
         var landing = AddWall("Landing", lena, panels: 1, seed: 80);
         SeedLanding.Add(db, landing.Wall, lena.Id);
+        var vic = AddUser("vic@browser.test", "Vic");
+        var mia = AddUser("mia@browser.test", "Mia");
+        var visit = AddWall("Visit", vic, panels: 1, seed: 90);
+        var expiredVisitToken = SeedVisit.Add(db, visit.Wall.Id, vic.Id, mia.Id);
         await db.SaveChangesAsync();
 
         return new SeededWorld(
@@ -94,6 +99,8 @@ internal sealed class SeedWalls
                 ["vera"] = new(vera.Id, vera.DisplayName),
                 ["gina"] = new(gina.Id, gina.DisplayName),
                 ["lena"] = new(lena.Id, lena.DisplayName),
+                ["vic"] = new(vic.Id, vic.DisplayName),
+                ["mia"] = new(mia.Id, mia.DisplayName),
             },
             new Dictionary<string, SeededWall>
             {
@@ -106,11 +113,13 @@ internal sealed class SeedWalls
                 ["variants"] = new(variants.Wall.Id, variants.Shas, null, null, null, null),
                 ["grips"] = new(grips.Wall.Id, grips.Shas, null, null, null, null),
                 ["landing"] = new(landing.Wall.Id, landing.Shas, null, null, null, null),
+                ["visit"] = new(visit.Wall.Id, visit.Shas, null, null, null, null),
             },
             kioskToken,
             alpha.Wall.ShareToken,
             social,
-            multiPanel);
+            multiPanel,
+            expiredVisitToken);
     }
 
     // One boulder per browser project for the specs that log on a boulder (boulder-page-cleanup): the browsers share this
@@ -228,7 +237,7 @@ internal sealed class SeedWalls
 
 internal sealed record SeededWorld(
     Dictionary<string, SeededUser> Users, Dictionary<string, SeededWall> Walls, string KioskToken, string ShareToken, SeededSocial Social,
-    SeededMultiPanel MultiPanel);
+    SeededMultiPanel MultiPanel, string ExpiredVisitToken);
 
 internal sealed record SeededUser(Guid Id, string Name);
 
