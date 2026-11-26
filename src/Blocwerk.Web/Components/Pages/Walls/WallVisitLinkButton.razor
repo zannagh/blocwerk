@@ -75,6 +75,12 @@
             Logger.LogWarning(ex, "Visitor link for wall {WallId} refused", WallId);
             Show("You can't make a visitor link for this wall.");
         }
+        catch (Exception ex)
+        {
+            // A database hiccup must not take the member's page down with it.
+            Logger.LogError(ex, "Visitor link for wall {WallId} failed", WallId);
+            Show("The visitor link could not be made. Please try again.");
+        }
         finally
         {
             busy = false;

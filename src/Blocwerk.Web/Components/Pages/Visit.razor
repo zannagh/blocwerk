@@ -26,6 +26,8 @@
             <p class="visit-note">The link works once, on this device.</p>
             <form method="post" action="/visit/@Token/start" data-enhance-nav="false">
                 <AntiforgeryToken />
+                @* This page's claim on the link: a second post of the same form is the same claim and still wins. *@
+                <input type="hidden" name="claim" value="@claim" />
                 <button type="submit" class="btn-primary visit-start">Start visit</button>
             </form>
             break;
@@ -52,6 +54,7 @@
 @code {
     private VisitLinkLookup link = VisitLinkLookup.NotFound;
     private VisitLandingState state = VisitLandingState.Invalid;
+    private readonly Guid claim = Guid.NewGuid();
 
     [Parameter] public string Token { get; set; } = string.Empty;
 

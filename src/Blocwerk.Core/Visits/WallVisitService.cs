@@ -107,36 +107,41 @@ public sealed class WallVisitService(
     }
 
     /// <inheritdoc/>
-    public async Task<VisitGrant?> RedeemAsync(string token, CancellationToken ct = default)
+    public async Task<VisitGrant?> RedeemAsync(string token, Guid claimId, CancellationToken ct = default)
     {
-        if (!VisitLinkTokens.IsWellFormed(token))
+        if (!VisitLinkTokens.IsWellFormed(token) || claimId == Guid.Empty)
         {
             return null;
         }
 
         var hash = VisitLinkTokens.Hash(token);
         var now = Clock.GetUtcNow();
-        var redemptionId = Guid.NewGuid();
-        await using var db = await contexts.CreateDbContextAsync(ct);
+
+        // Not cancelled with the request: once the update below has committed, the grant must be read and handed out,
+        // or the link is used and its guest has no cookie.
+        await using var db = await contexts.CreateDbContextAsync(CancellationToken.None);
 
         // The one write that decides who got the link: the WHERE carries "unused and unexpired", so the database lets
         // exactly one of two concurrent attempts change the row, and the other changes nothing.
-        var changed = await db.WallVisitLinks
+        await db.WallVisitLinks
             .Where(l => l.TokenHash == hash && l.RedemptionId == null && l.ExpiresAt > now)
             .ExecuteUpdateAsync(
-                s => s.SetProperty(l => l.RedemptionId, (Guid?)redemptionId).SetProperty(l => l.RedeemedAt, (DateTimeOffset?)now),
-                ct);
-        if (changed != 1)
+                s => s.SetProperty(l => l.RedemptionId, (Guid?)claimId).SetProperty(l => l.RedeemedAt, (DateTimeOffset?)now),
+                CancellationToken.None);
+
+        // Whether this attempt won or an earlier one with the same claim did (a double tap of the same page, whose
+        // first answer the browser dropped): either way the link's redemption is this claim, and only this page has it.
+        var link = await db.WallVisitLinks.AsNoTracking()
+            .Where(l => l.TokenHash == hash && l.RedemptionId == claimId && l.ExpiresAt > now)
+            .Select(l => new { l.Id, l.WallId, l.ExpiresAt })
+            .FirstOrDefaultAsync(CancellationToken.None);
+        if (link is null)
         {
             return null;
         }
 
-        var link = await db.WallVisitLinks.AsNoTracking()
-            .Where(l => l.TokenHash == hash && l.RedemptionId == redemptionId)
-            .Select(l => new { l.Id, l.WallId, l.ExpiresAt })
-            .FirstAsync(ct);
         logger.LogInformation("Visitor link {LinkId} used for wall {WallId}", link.Id, link.WallId);
-        return new VisitGrant(link.Id, link.WallId, redemptionId, link.ExpiresAt);
+        return new VisitGrant(link.Id, link.WallId, claimId, link.ExpiresAt);
     }
 
     /// <inheritdoc/>

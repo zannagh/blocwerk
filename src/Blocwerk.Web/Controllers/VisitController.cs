@@ -36,9 +36,9 @@ public sealed class VisitController : Controller
     [HttpPost("/visit/{token}/start")]
     [AllowAnonymous]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Start(string token, CancellationToken ct)
+    public async Task<IActionResult> Start(string token, [FromForm] Guid claim, CancellationToken ct)
     {
-        if (!VisitLinkTokens.IsWellFormed(token))
+        if (!VisitLinkTokens.IsWellFormed(token) || claim == Guid.Empty)
         {
             return NotFound();
         }
@@ -55,7 +55,7 @@ public sealed class VisitController : Controller
             return LocalRedirect(landing);
         }
 
-        var grant = await visits.RedeemAsync(token, ct);
+        var grant = await visits.RedeemAsync(token, claim, ct);
         if (grant is null)
         {
             return LocalRedirect(landing);

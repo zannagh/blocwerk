@@ -35,7 +35,7 @@ public class VisitorPermissionTests
         Assert.NotNull(await boulders.GetBoulderAsync(published));
         Assert.Null(await boulders.GetBoulderAsync(draft));
         Assert.Null(await boulders.GetBoulderAsync(elsewhere));
-        await Assert.ThrowsAnyAsync<Exception>(async () => Assert.Null(await walls.GetWallAsync(otherWall)));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => walls.GetWallAsync(otherWall));
     }
 
     [Fact]
@@ -70,7 +70,7 @@ public class VisitorPermissionTests
         var (walls, boulders, visitor) = Services(h);
 
         Assert.False(await boulders.CanCreateAnonymouslyAsync(h.WallId));
-        await Assert.ThrowsAnyAsync<Exception>(() => boulders.CreateBoulderAsync(h.WallId, "Mine", "6a", []));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => boulders.CreateBoulderAsync(h.WallId, "Mine", "6a", []));
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => boulders.ArchiveBoulderAsync(boulder));
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => walls.AddHoldAsync(h.WallId, 0.5, 0.5, 0.02, null));
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => walls.UpdateWallAsync(h.WallId, "Renamed", null));

@@ -21,7 +21,7 @@ public class WallVisitRedemptionTests
         Assert.Equal(VisitLinkStatus.Open, (await service.LookUpAsync(created.Token)).Status);
 
         clock.Advance(TimeSpan.FromHours(3));
-        var grant = await service.RedeemAsync(created.Token);
+        var grant = await service.RedeemAsync(created.Token, Guid.NewGuid());
 
         Assert.NotNull(grant);
         Assert.Equal(h.WallId, grant!.WallId);
@@ -40,7 +40,7 @@ public class WallVisitRedemptionTests
         await h.SeedWallAsync();
         var service = VisitFixture.Service(h, new VisitTestClock(VisitFixture.Start));
         var created = await service.CreateAsync(h.WallId);
-        var grant = await service.RedeemAsync(created.Token);
+        var grant = await service.RedeemAsync(created.Token, Guid.NewGuid());
 
         var link = await service.LookUpAsync(created.Token);
         var stranger = grant! with { RedemptionId = Guid.NewGuid() };
@@ -49,7 +49,25 @@ public class WallVisitRedemptionTests
         Assert.Equal(VisitLandingState.GoToWall, VisitLanding.Decide(link, false, false, grant));
         Assert.Equal(VisitLandingState.Used, VisitLanding.Decide(link, false, false, null));
         Assert.Equal(VisitLandingState.Used, VisitLanding.Decide(link, false, false, stranger));
-        Assert.Null(await service.RedeemAsync(created.Token));
+        Assert.Null(await service.RedeemAsync(created.Token, Guid.NewGuid()));
+    }
+
+    [Fact]
+    public async Task DoubleTap_TheSameClaimGetsTheSameGrantAgain_AnotherClaimNothing()
+    {
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync();
+        var service = VisitFixture.Service(h, new VisitTestClock(VisitFixture.Start));
+        var created = await service.CreateAsync(h.WallId);
+        var claim = Guid.NewGuid();
+
+        var first = await service.RedeemAsync(created.Token, claim);
+        var again = await service.RedeemAsync(created.Token, claim);
+
+        Assert.NotNull(first);
+        Assert.Equal(first, again);
+        Assert.Null(await service.RedeemAsync(created.Token, Guid.NewGuid()));
+        Assert.Null(await service.RedeemAsync(created.Token, Guid.Empty));
     }
 
     [Fact]
@@ -61,11 +79,11 @@ public class WallVisitRedemptionTests
         var service = VisitFixture.Service(h, clock);
         var unused = await service.CreateAsync(h.WallId);
         var used = await service.CreateAsync(h.WallId);
-        var grant = await service.RedeemAsync(used.Token);
+        var grant = await service.RedeemAsync(used.Token, Guid.NewGuid());
 
         clock.Advance(WallVisitService.Lifetime);
 
-        Assert.Null(await service.RedeemAsync(unused.Token));
+        Assert.Null(await service.RedeemAsync(unused.Token, Guid.NewGuid()));
         var unusedLink = await service.LookUpAsync(unused.Token);
         var usedLink = await service.LookUpAsync(used.Token);
         Assert.Equal(VisitLinkStatus.Expired, unusedLink.Status);
@@ -85,7 +103,7 @@ public class WallVisitRedemptionTests
         var service = VisitFixture.Service(h, new VisitTestClock(VisitFixture.Start));
         var created = await service.CreateAsync(h.WallId);
 
-        var attempts = await Task.WhenAll(Enumerable.Range(0, 12).Select(_ => Task.Run(() => service.RedeemAsync(created.Token))));
+        var attempts = await Task.WhenAll(Enumerable.Range(0, 12).Select(_ => Task.Run(() => service.RedeemAsync(created.Token, Guid.NewGuid()))));
 
         var winner = Assert.Single(attempts, a => a is not null);
         await using var db = h.CreateContext();
@@ -101,7 +119,7 @@ public class WallVisitRedemptionTests
 
         Assert.Equal(VisitLandingState.Invalid, VisitLanding.Decide(await service.LookUpAsync(VisitLinkTokens.Create()), false, false, null));
         Assert.Equal(VisitLinkStatus.NotFound, (await service.LookUpAsync("../../etc")).Status);
-        Assert.Null(await service.RedeemAsync(VisitLinkTokens.Create()));
+        Assert.Null(await service.RedeemAsync(VisitLinkTokens.Create(), Guid.NewGuid()));
     }
 
     [Fact]
@@ -127,7 +145,7 @@ public class WallVisitRedemptionTests
         var otherWall = await VisitFixture.SeedOtherWallAsync(h);
         var service = VisitFixture.Service(h, new VisitTestClock(VisitFixture.Start));
         var created = await service.CreateAsync(h.WallId);
-        var grant = await service.RedeemAsync(created.Token);
+        var grant = await service.RedeemAsync(created.Token, Guid.NewGuid());
         var visitor = VisitFixture.Visitor(grant!.WallId, grant.ExpiresAt);
 
         Assert.True(KioskViewing.AllowsAnonymousViewOf(visitor, h.WallId));

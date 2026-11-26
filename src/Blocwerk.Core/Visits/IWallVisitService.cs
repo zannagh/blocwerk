@@ -22,10 +22,12 @@ public interface IWallVisitService
     Task<VisitLinkLookup> LookUpAsync(string token, CancellationToken ct = default);
 
     /// <summary>
-    /// Uses <paramref name="token"/>: one conditional update marks an unused, unexpired link as used, so of two
-    /// concurrent attempts exactly one wins. Null when the link is unknown, expired, or already used.
+    /// Uses <paramref name="token"/>: one conditional update marks an unused, unexpired link as used by
+    /// <paramref name="claimId"/>, so of two concurrent attempts exactly one wins. The claim is a random id the landing
+    /// page put in its form: a second post of the same page (a double tap) gets the same grant again, any other claim
+    /// gets null. Null too when the link is unknown or expired.
     /// </summary>
-    Task<VisitGrant?> RedeemAsync(string token, CancellationToken ct = default);
+    Task<VisitGrant?> RedeemAsync(string token, Guid claimId, CancellationToken ct = default);
 
     /// <summary>
     /// True when somebody is signed in who already sees <paramref name="wallId"/> (a member or its owner): such a

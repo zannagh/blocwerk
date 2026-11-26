@@ -676,7 +676,7 @@ else
                                 Invite
                             </button>
                         }
-                        @if (_isMember && !KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))
+                        @if ((_isMember || _isAdmin) && !KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))
                         {
                             <WallVisitLinkButton WallId="WallId" />
                         }
