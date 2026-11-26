@@ -1073,6 +1073,13 @@ a.wall3d-link {
 
 .share-link { margin-bottom: 12px; }
 
+/* The visitor-link dialog (WallVisitLinkButton): the text, the link in a read-only field, and Copy and Done side by side. */
+.visit-link-modal .visit-link-text { margin: 0; color: var(--text-secondary); line-height: 1.45; }
+.visit-link-modal .visit-link-input { width: 100%; box-sizing: border-box; font-size: 0.85rem; }
+.visit-link-modal .visit-link-status { margin: 0; min-height: 1.2em; }
+.visit-link-actions { display: flex; gap: 10px; }
+.visit-link-actions > .btn-secondary { flex: 1 1 0; margin: 0; }
+
 /* Cross-panel linking, said out loud on the wall page: the tool itself is otherwise a bare icon
    buried in per-panel edit mode, so a multi-panel wall could be built with zero links. */
 .panel-link-callout {

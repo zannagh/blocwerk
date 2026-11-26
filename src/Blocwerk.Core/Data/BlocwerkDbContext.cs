@@ -228,6 +228,7 @@ public partial class BlocwerkDbContext : DbContext
         ConfigureLookOver(modelBuilder);
         ConfigureWallEnhancement(modelBuilder);
         ConfigureFeed(modelBuilder);
+        ConfigureVisitLinks(modelBuilder);
     }
 
     private static void ConfigureTopLogger(ModelBuilder modelBuilder)

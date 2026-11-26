@@ -4,7 +4,7 @@
 
 @* The wall-asset cache's storage notices (design 2026-10-21 §6.8). Which one shows, if any, is a client fact
    (bwAssetNotice.current: the viewer's 3D wall count, the 3D setting, the iOS tab, a remembered dismissal), so this
-   renders nothing until it has answered. Never on a kiosk. Shares the bottom-banner slot with
+   renders nothing until it has answered. Never on a kiosk or for a visitor. Shares the bottom-banner slot with
    NotificationPrompt: app.css shows one .bw-install at a time. *@
 @if (_notice != null)
 {
@@ -34,7 +34,8 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender || KioskContext.IsKiosk)
+        // Nor for a visitor from a visitor link: they keep nothing on the device and are not asked to install.
+        if (!firstRender || KioskContext.IsKiosk || Blocwerk.Core.Abstractions.KioskViewing.IsVisitor(KioskContext))
         {
             return;
         }

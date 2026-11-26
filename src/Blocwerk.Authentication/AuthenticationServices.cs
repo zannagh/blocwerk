@@ -66,6 +66,10 @@ public static class AuthenticationServices
         // because "is this session a kiosk" is a property of the request/circuit and both cache
         // within it. See KioskContext for how the scoped instance survives a live circuit.
         app.Services.AddSingleton<KioskDeviceCookie>();
+
+        // A one-time visitor link's grant: read into the same scoped KioskContext, which makes the visitor the
+        // other anonymous viewer of one wall (KioskViewing).
+        app.Services.AddSingleton<VisitGrantCookie>();
         app.Services.AddScoped<IKioskContext, KioskContext>();
         app.Services.AddScoped<KioskKeyValidator>();
 

@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Visits;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Http;
 
@@ -32,20 +33,27 @@ public sealed class KioskContext : IKioskContext
     private readonly IHttpContextAccessor httpContextAccessor;
     private readonly AuthenticationStateProvider? authenticationStateProvider;
     private readonly KioskDeviceCookie deviceCookie;
+    private readonly VisitGrantCookie? visitCookie;
+    private readonly TimeProvider clock;
 
     private bool initialized;
     private bool isKiosk;
     private Guid? wallId;
     private Guid? apiKeyId;
+    private VisitGrant? visit;
 
     public KioskContext(
         IHttpContextAccessor httpContextAccessor,
         KioskDeviceCookie deviceCookie,
-        AuthenticationStateProvider? authenticationStateProvider = null)
+        AuthenticationStateProvider? authenticationStateProvider = null,
+        VisitGrantCookie? visitCookie = null,
+        TimeProvider? clock = null)
     {
         this.httpContextAccessor = httpContextAccessor;
         this.deviceCookie = deviceCookie;
         this.authenticationStateProvider = authenticationStateProvider;
+        this.visitCookie = visitCookie;
+        this.clock = clock ?? TimeProvider.System;
     }
 
     public bool IsKiosk
@@ -75,6 +83,28 @@ public sealed class KioskContext : IKioskContext
         }
     }
 
+    /// <summary>
+    /// The wall of a visit that is still on, re-checked against the clock on every read: a circuit opened during the
+    /// visit stops viewing the moment it ends, not at its next page load.
+    /// </summary>
+    public Guid? VisitorWallId
+    {
+        get
+        {
+            EnsureInitialized();
+            return visit is { } grant && grant.IsActiveAt(clock.GetUtcNow()) ? grant.WallId : null;
+        }
+    }
+
+    public DateTimeOffset? VisitorExpiresAt
+    {
+        get
+        {
+            EnsureInitialized();
+            return visit?.ExpiresAt;
+        }
+    }
+
     public async Task InitializeAsync()
     {
         if (initialized)
@@ -83,7 +113,19 @@ public sealed class KioskContext : IKioskContext
         }
 
         var principal = await ResolvePrincipalAsync();
-        Apply(principal, deviceCookie.Read(httpContextAccessor.HttpContext));
+        var http = httpContextAccessor.HttpContext;
+        Apply(principal, deviceCookie.Read(http), visitCookie?.Read(http));
+    }
+
+    /// <summary>
+    /// <see cref="Apply(ClaimsPrincipal?, KioskDeviceRegistration?)"/>, then the visit: kept only for a session that is
+    /// neither a kiosk tablet nor signed in. A visit cookie left in a browser that has since signed in is ignored, so it
+    /// can never narrow, or widen, what a signed-in person sees.
+    /// </summary>
+    internal void Apply(ClaimsPrincipal? principal, KioskDeviceRegistration? registration, VisitGrant? grant)
+    {
+        Apply(principal, registration);
+        visit = !isKiosk && principal?.Identity?.IsAuthenticated != true ? grant : null;
     }
 
     /// <summary>

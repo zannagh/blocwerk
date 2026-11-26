@@ -1,0 +1,111 @@
+@using Blocwerk.Core.Visits
+@inject IWallVisitService Visits
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject ILogger<WallVisitLinkButton> Logger
+
+@* "Visit" on the wall overview, between Invite and 3D View: makes a one-time visitor link and shows it in a dialog,
+   copied to the clipboard as the Invite link is. Every tap makes a new link; the service caps a member at 20 an hour
+   and refuses anyone who may not invite (kiosks, visitors, signed-out viewers), so hiding the button elsewhere is
+   cosmetic. *@
+
+<button type="button" class="btn-secondary wall-visit" @onclick="CreateAsync" disabled="@busy">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"></path>
+        <circle cx="12" cy="12" r="3"></circle>
+    </svg>
+    Visit
+</button>
+
+@if (open)
+{
+    <Modal Title="Visitor link" OnClose="Close" PanelClass="visit-link-modal">
+        @if (error is not null)
+        {
+            <p class="error-msg">@error</p>
+        }
+        else if (created is not null)
+        {
+            <p class="visit-link-text">
+                Whoever opens this link first can look around the wall as a guest, read-only, until
+                <LocalTime Value="@created.ExpiresAt" Format="LocalTimeFormat.DateTime" />. It works once.
+            </p>
+            <input class="form-input visit-link-input" value="@link" readonly aria-label="Visitor link" />
+            <p class="hint visit-link-status" role="status">@copyLabel</p>
+        }
+        <div class="visit-link-actions">
+            @if (created is not null)
+            {
+                <button type="button" class="btn-secondary" @onclick="CopyAsync">Copy link</button>
+            }
+            <button type="button" class="btn-secondary" @onclick="Close">Done</button>
+        </div>
+    </Modal>
+}
+
+@code {
+    private bool open;
+    private bool busy;
+    private VisitLinkCreated? created;
+    private string? link;
+    private string? error;
+    private string copyLabel = string.Empty;
+
+    [Parameter, EditorRequired] public Guid WallId { get; set; }
+
+    private async Task CreateAsync()
+    {
+        busy = true;
+        error = null;
+        created = null;
+        try
+        {
+            created = await Visits.CreateAsync(WallId);
+            link = $"{Navigation.BaseUri}visit/{created.Token}";
+            open = true;
+            await CopyAsync();
+        }
+        catch (VisitLinkLimitException ex)
+        {
+            Show(ex.Message);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidOperationException or KioskRestrictedException)
+        {
+            Logger.LogWarning(ex, "Visitor link for wall {WallId} refused", WallId);
+            Show("You can't make a visitor link for this wall.");
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    // As the Invite link: copy at once, and show the link either way, since Safari can refuse writeText outside a
+    // trusted gesture and the read-only field is then the way to copy it by hand.
+    private async Task CopyAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", link);
+            copyLabel = "Copied to clipboard";
+        }
+        catch (Exception)
+        {
+            copyLabel = "Select the link above and copy it.";
+        }
+    }
+
+    private void Show(string message)
+    {
+        error = message;
+        open = true;
+    }
+
+    private void Close()
+    {
+        open = false;
+        created = null;
+        link = null;
+    }
+}
