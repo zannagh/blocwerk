@@ -26,9 +26,18 @@ public static class KioskBylines
     /// <summary>True for the setter entries whose author the tablet names whatever their consent.</summary>
     public static bool KeepsName(ActivityType type) => type is ActivityType.BoulderCreated or ActivityType.BoulderRevised;
 
-    /// <summary>The members of <paramref name="wallId"/> who consented to the kiosk.</summary>
-    public static async Task<HashSet<Guid>> ConsentedAsync(BlocwerkDbContext db, Guid wallId)
+    /// <summary>
+    /// The members of <paramref name="wallId"/> who consented to the kiosk, and so whom this session may name. None for
+    /// a visitor from a visitor link: the consent was given for the tablet in the gym, not for a remote guest, so a
+    /// visitor reads every byline the tablet would mask, and only the setters of setting entries stay named.
+    /// </summary>
+    public static async Task<HashSet<Guid>> ConsentedAsync(BlocwerkDbContext db, Guid wallId, IKioskContext? kiosk)
     {
+        if (KioskViewing.IsVisitor(kiosk))
+        {
+            return [];
+        }
+
         var ids = await db.WallMembers.IgnoreQueryFilters().AsNoTracking()
             .Where(m => m.WallId == wallId && m.KioskConsentedAt != null)
             .Select(m => m.UserId)
@@ -36,7 +45,10 @@ public static class KioskBylines
         return ids.ToHashSet();
     }
 
-    /// <summary>True for a kiosk tablet bound to a wall with nobody picked: the one viewer these bylines are for.</summary>
+    /// <summary>
+    /// True for a kiosk tablet bound to a wall with nobody picked, or a visitor from a visitor link: the viewers these
+    /// bylines are for (a visitor with no consented names at all, see <see cref="ConsentedAsync"/>).
+    /// </summary>
     public static async Task<bool> IsRestingKioskAsync(ICurrentUserService users, IKioskContext? kiosk)
     {
         if (KioskViewing.ViewableWallId(kiosk) is null)
@@ -59,7 +71,7 @@ public static class KioskBylines
     /// The proposer of <paramref name="proposal"/> as the tablet may show them: named when they consented to the kiosk,
     /// or when they are credited on the boulder (its setters and its creator are named on the same page anyway).
     /// </summary>
-    public static async Task MaskProposerAsync(BlocwerkDbContext db, GradeProposal proposal)
+    public static async Task MaskProposerAsync(BlocwerkDbContext db, GradeProposal proposal, IKioskContext? kiosk)
     {
         var boulder = await db.Boulders.AsNoTracking()
             .Where(b => b.Id == proposal.BoulderId)
@@ -67,7 +79,7 @@ public static class KioskBylines
             .FirstOrDefaultAsync();
         var proposer = proposal.ProposedByUserId;
         var named = boulder is not null
-            && (boulder.CreatedByUserId == proposer || boulder.Setters.Contains(proposer) || (await ConsentedAsync(db, boulder.WallId)).Contains(proposer));
+            && (boulder.CreatedByUserId == proposer || boulder.Setters.Contains(proposer) || (await ConsentedAsync(db, boulder.WallId, kiosk)).Contains(proposer));
         proposal.ProposedBy = Mask(proposal.ProposedBy, named);
         proposal.ProposedByUserId = proposal.ProposedBy.Id == Guid.Empty ? Guid.Empty : proposer;
     }

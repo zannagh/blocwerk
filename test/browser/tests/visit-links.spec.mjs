@@ -83,6 +83,11 @@ test('a visitor link opens the wall read-only once, for the browser that used it
         await expect(guest.locator('.bw-anon-notice')).toContainText('nothing can be logged');
         await expect(guest.locator('.attempt-buttons, .comment-input, .backdate-card')).toHaveCount(0);
 
+        // Mia agreed to be named on the gym's tablet, not to remote guests: her comment reads as "A member".
+        const comment = guest.locator('.comments-section .comment-row', { hasText: 'Mantle at the top' });
+        await expect(comment.locator('.comment-author')).toHaveText('A member');
+        await expect(guest.locator('body')).not.toContainText('Mia');
+
         // No way in to setting a boulder, and the server refuses the offline write queue outright.
         await guest.goto(`/walls/${wall.id}/boulders/create`);
         await guest.waitForURL(new RegExp(`/walls/${wall.id}$`));

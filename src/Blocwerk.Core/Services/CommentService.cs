@@ -144,7 +144,7 @@ public class CommentService : ICommentService
             var items = await query.Skip(page * pageSize).Take(pageSize).ToListAsync();
             if (access is { } kioskWall && kioskWall != Guid.Empty)
             {
-                var consented = await KioskBylines.ConsentedAsync(db, kioskWall);
+                var consented = await KioskBylines.ConsentedAsync(db, kioskWall, _kioskContext);
                 foreach (var comment in items.Where(c => !consented.Contains(c.UserId)))
                 {
                     comment.User = KioskBylines.Mask(comment.User, named: false);

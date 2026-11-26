@@ -47,6 +47,7 @@ public class KioskActivityAccessTests
     [InlineData(DraftViewer.KioskActAsMember)]
     [InlineData(DraftViewer.Member)]
     [InlineData(DraftViewer.ShareAnonymous)]
+    [InlineData(DraftViewer.Visitor)]
     public async Task Bylines_TheRestingKioskNamesConsentingMembersAndSetters_ElseAMember(DraftViewer viewer)
     {
         using var h = new WallTestHarness();
@@ -58,6 +59,7 @@ public class KioskActivityAccessTests
     [InlineData(DraftViewer.KioskActAsMember)]
     [InlineData(DraftViewer.Member)]
     [InlineData(DraftViewer.ShareAnonymous)]
+    [InlineData(DraftViewer.Visitor)]
     public async Task ProposalBylines_TheRestingKioskNamesConsentingMembersAndTheCreator_ElseAMember(DraftViewer viewer)
     {
         using var h = new WallTestHarness();
