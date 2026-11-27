@@ -9,11 +9,14 @@ import { test, expect, signIn } from '../harness/fixtures.mjs';
 const PHONE = { width: 402, height: 874 };
 const ready = page => expect(page.locator('.wall-carousel:not(.carousel-pending)')).toBeVisible();
 
+// Every browser here has accepted the cookie notice already. The notice renders only once the circuit is live, at no
+// fixed time: arriving under an open dialog, its OK button cannot be tapped.
+const consented = (context, baseURL) =>
+    context.addCookies([{ name: 'cookie_consent', value: 'accepted', url: baseURL }]);
+
+test.beforeEach(({ context, baseURL }) => consented(context, baseURL));
+
 async function shoot(page, name) {
-    const ok = page.locator('.bw-consent-accept');
-    if (await ok.isVisible().catch(() => false)) {
-        await ok.click();
-    }
     for (const scheme of ['light', 'dark']) {
         await page.emulateMedia({ colorScheme: scheme });
         await page.screenshot({ path: `.out/visit-${name}-${scheme}.png` });
@@ -22,7 +25,8 @@ async function shoot(page, name) {
 }
 
 // Mia makes a link on her phone and reads it out of the dialog. A tap before the circuit is live does nothing, so it
-// taps until the dialog is there (each live tap makes a link; the dialog shows the last one).
+// taps until the dialog is there. An open dialog covers the button, and it may open later than one round's wait: no tap
+// then, and a tap it overtakes gives up and goes round again.
 async function makeLink(page, world, browserName) {
     const wall = world.walls.visit;
     await page.setViewportSize(PHONE);
@@ -34,12 +38,15 @@ async function makeLink(page, world, browserName) {
         await shoot(page, 'buttons-phone');
     }
 
+    const dialog = page.getByRole('dialog', { name: 'Visitor link' });
     const input = page.locator('.visit-link-input');
     await expect(async () => {
-        await actions.getByRole('button', { name: 'Visit', exact: true }).click();
+        if (!await dialog.isVisible()) {
+            await actions.getByRole('button', { name: 'Visit', exact: true }).click({ timeout: 2000 });
+        }
         await expect(input).toBeVisible({ timeout: 2000 });
     }).toPass();
-    await expect(page.getByRole('dialog', { name: 'Visitor link' })).toContainText('It works once');
+    await expect(dialog).toContainText('It works once');
     if (browserName === 'chromium') {
         await shoot(page, 'dialog-phone');
     }
@@ -55,6 +62,8 @@ test('a visitor link opens the wall read-only once, for the browser that used it
 
     const guestContext = await browser.newContext({ baseURL, viewport: PHONE });
     const otherContext = await browser.newContext({ baseURL, viewport: PHONE });
+    await consented(guestContext, baseURL);
+    await consented(otherContext, baseURL);
     try {
         const guest = await guestContext.newPage();
         await guest.goto(path);
