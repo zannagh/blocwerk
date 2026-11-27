@@ -160,4 +160,23 @@ public class WallScanUploadTests
         Assert.Equal(ScanUploadState.Received, same.Status);
         Assert.Equal(ScanUploadException.Conflict, changed.StatusCode);
     }
+
+    [Fact]
+    public async Task AManifestWithoutAWallId_IsStoredWithTheUrlsWall_AndASyntheticOneIsMarked()
+    {
+        using var h = new WallTestHarness();
+        using var s = new ScanScenario(h);
+        await s.SeedScanWallAsync();
+        var (manifest, _) = ScanPackageBuilder.Build(h.WallId);
+
+        await s.Service.BeginAsync(h.WallId, manifest with { WallId = null, Synthetic = true }, None);
+        var resumed = await s.Service.BeginAsync(h.WallId, manifest with { Synthetic = true }, None);
+
+        await using var db = h.CreateContext();
+        var scan = await db.WallScans.SingleAsync(x => x.CaptureId == manifest.ScanId);
+        Assert.True(scan.Synthetic);
+        Assert.Contains(h.WallId.ToString(), scan.ManifestJson, StringComparison.Ordinal);
+        Assert.Equal(ScanUploadState.Uploading, resumed.Status);
+        Assert.True(Assert.Single(await s.Service.ListAsync(h.WallId, None)).Synthetic);
+    }
 }

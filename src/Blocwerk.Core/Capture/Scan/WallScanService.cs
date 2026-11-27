@@ -31,17 +31,17 @@ public sealed partial class WallScanService(
     /// <summary>What the wall's capture page shows for a scan whose package is complete.</summary>
     public const string ReceivedStage = "Received, waiting for processing";
 
-    private const string UploadingStage = "Receiving the iPhone scan";
-    private const string Action = "Uploading an iPhone scan";
-
-    /// <summary>Room kept free on the store's volume beyond what the package still needs.</summary>
-    private const long FreeSpaceMargin = 2L * 1024 * 1024 * 1024;
-
     /// <summary>Open (uncommitted) scans one user may have at a time, over all walls.</summary>
     public const int MaxOpenScansPerUser = 2;
 
     /// <summary>Open (uncommitted) scans one wall may have at a time.</summary>
     public const int MaxOpenScansPerWall = 4;
+
+    private const string UploadingStage = "Receiving the iPhone scan";
+    private const string Action = "Uploading an iPhone scan";
+
+    /// <summary>Room kept free on the store's volume beyond what the package still needs.</summary>
+    private const long FreeSpaceMargin = 2L * 1024 * 1024 * 1024;
 
     /// <summary>One lock per file of a scan while it streams.</summary>
     private static readonly KeyedAsyncLocks<(Guid ScanId, string Name)> FileLocks = new();
@@ -54,16 +54,6 @@ public sealed partial class WallScanService(
     /// <summary>Free bytes on the store's volume; tests replace it to see a full disk.</summary>
     internal Func<long> FreeSpace { get; set; } = () => new ScanStorage(files).FreeBytes();
 
-    /// <summary>True while a request works on the scan: begin, commit, or a file streaming in.</summary>
-    /// <param name="scanId">The scan.</param>
-    /// <returns>Whether retention must leave the scan alone for now.</returns>
-    internal static bool IsBusy(Guid scanId) => CaptureImportLocks.Has(scanId) || FilesBusy(scanId);
-
-    /// <summary>True while a file of the scan streams in (its PUT holds no scan lock until it moves the file).</summary>
-    /// <param name="scanId">The scan.</param>
-    /// <returns>Whether any file lock of the scan is held or waited for.</returns>
-    internal static bool FilesBusy(Guid scanId) => FileLocks.Any(k => k.ScanId == scanId);
-
     public async Task<ScanUploadState> GetAsync(Guid wallId, Guid scanId, CancellationToken ct)
     {
         var db = await OpenForUploaderAsync(wallId, ct);
@@ -73,6 +63,16 @@ public sealed partial class WallScanService(
             return State(capture, manifest);
         }
     }
+
+    /// <summary>True while a request works on the scan: begin, commit, or a file streaming in.</summary>
+    /// <param name="scanId">The scan.</param>
+    /// <returns>Whether retention must leave the scan alone for now.</returns>
+    internal static bool IsBusy(Guid scanId) => CaptureImportLocks.Has(scanId) || FilesBusy(scanId);
+
+    /// <summary>True while a file of the scan streams in (its PUT holds no scan lock until it moves the file).</summary>
+    /// <param name="scanId">The scan.</param>
+    /// <returns>Whether any file lock of the scan is held or waited for.</returns>
+    internal static bool FilesBusy(Guid scanId) => FileLocks.Any(k => k.ScanId == scanId);
 
     /// <summary>
     /// Opens a context for a caller who may upload scans to <paramref name="wallId"/>: the wall's owner, an admin or a

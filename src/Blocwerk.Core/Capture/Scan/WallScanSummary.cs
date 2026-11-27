@@ -10,5 +10,6 @@ namespace Blocwerk.Core.Capture.Scan;
 /// <param name="Stage">What is happening with it ("Received, waiting for processing").</param>
 /// <param name="DeviceModel">The phone.</param>
 /// <param name="TotalBytes">The package size.</param>
+/// <param name="Synthetic">A generated test package, not a real recording.</param>
 public sealed record WallScanSummary(
-    Guid ScanId, DateTimeOffset CreatedAt, DateTimeOffset? ReceivedAt, string? Stage, string? DeviceModel, long TotalBytes);
+    Guid ScanId, DateTimeOffset CreatedAt, DateTimeOffset? ReceivedAt, string? Stage, string? DeviceModel, long TotalBytes, bool Synthetic = false);

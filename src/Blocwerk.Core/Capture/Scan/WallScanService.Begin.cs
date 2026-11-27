@@ -31,6 +31,8 @@ public sealed partial class WallScanService
                 throw new ScanUploadException(ScanUploadException.BadRequest, "The scan manifest is not valid.", problems);
             }
 
+            // The wall is the URL's, whether or not the manifest names it (it may leave wallId out).
+            manifest = manifest with { WallId = wallId };
             var scanId = manifest.ScanId!.Value;
             return await CaptureImportLocks.RunAsync(scanId, () => BeginLockedAsync(db, wallId, scanId, manifest, ct), ct);
         }
@@ -152,6 +154,7 @@ public sealed partial class WallScanService
         scan.TotalBytes = manifest.Files.Sum(f => f.Bytes ?? 0);
         scan.DeviceModel = manifest.Device?.Model;
         scan.AppVersion = manifest.App?.Version;
+        scan.Synthetic = manifest.Synthetic ?? false;
     }
 
     /// <summary>A received file the new manifest no longer lists with the same hash is dropped, so it is sent again.</summary>

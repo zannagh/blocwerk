@@ -16,13 +16,13 @@ public sealed partial class WallScanService
         {
             var rows = await db.WallScans.AsNoTracking()
                 .Where(s => s.Capture.WallId == wallId && s.Capture.GeometryMode == WallCaptureGeometryMode.Device)
-                .Select(s => new { s.CaptureId, s.Capture.CreatedAt, s.ReceivedAt, s.Capture.Stage, s.DeviceModel, s.TotalBytes })
+                .Select(s => new { s.CaptureId, s.Capture.CreatedAt, s.ReceivedAt, s.Capture.Stage, s.DeviceModel, s.TotalBytes, s.Synthetic })
                 .ToListAsync(ct);
 
             // Ordered in memory: SQLite (the tests) cannot order by DateTimeOffset.
             return rows.OrderByDescending(r => r.CreatedAt)
                 .Take(10)
-                .Select(r => new WallScanSummary(r.CaptureId, r.CreatedAt, r.ReceivedAt, r.Stage, r.DeviceModel, r.TotalBytes))
+                .Select(r => new WallScanSummary(r.CaptureId, r.CreatedAt, r.ReceivedAt, r.Stage, r.DeviceModel, r.TotalBytes, r.Synthetic))
                 .ToList();
         }
     }

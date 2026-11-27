@@ -84,7 +84,7 @@ def build(args):
     end = START + seconds + 0.1
     manifest = {
         "schemaVersion": "blocwerk-scan/1", "scanId": str(uuid.UUID(int=rng.getrandbits(128), version=4)),
-        "wallId": args.wall, "startedAt": "2026-11-27T10:00:00Z",
+        "wallId": args.wall, "synthetic": True, "startedAt": "2026-11-27T10:00:00Z",
         "app": {"version": "0.0-synthetic", "build": "1"}, "device": {"model": "iPhone17,1", "osVersion": "26.1"},
         "video": {"codec": "hevc", "width": 3840, "height": 2160, "fps": FPS},
         "exposureLock": {"exposureDurationSeconds": 1 / 120, "iso": 200, "whiteBalanceRed": 1.9, "whiteBalanceGreen": 1.0,

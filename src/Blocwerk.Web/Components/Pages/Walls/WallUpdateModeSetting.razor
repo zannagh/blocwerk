@@ -36,6 +36,10 @@
                     <p class="field-hint">
                         Scan of @scan.CreatedAt.ToLocalTime().ToString("d MMM yyyy, HH:mm") · @(scan.DeviceModel ?? "iPhone")
                         · @(scan.TotalBytes / (1024 * 1024)) MB: <strong>@(scan.Stage ?? "Uploading")</strong>
+                        @if (scan.Synthetic)
+                        {
+                            <span class="chip">synthetic</span>
+                        }
                     </p>
                 }
             </div>
