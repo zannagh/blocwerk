@@ -155,6 +155,18 @@ public class Wall
     public double? MarkerSizeMm { get; set; }
 
     /// <summary>
+    /// How the wall is updated: panel photos (the default, and every existing wall) or iPhone scans from the companion
+    /// app. Turning <see cref="WallUpdateMode.Scan"/> on only lets scans be uploaded; nothing changes for climbers.
+    /// </summary>
+    public WallUpdateMode UpdateMode { get; set; }
+
+    /// <summary>
+    /// The iPhone scan (a <see cref="WallCapture"/> in mode <see cref="WallCaptureGeometryMode.Device"/>) the wall was
+    /// last moved onto. Null until a first scan is applied; while null, <see cref="UpdateMode"/> may be switched freely.
+    /// </summary>
+    public Guid? ActiveScanCaptureId { get; set; }
+
+    /// <summary>
     /// "Volumes on this wall have flat sides" (default off): newly detected volumes get flat faces automatically when
     /// they fit well (<see cref="WallVolume.HasFlatSides"/>); each volume can still be switched back.
     /// </summary>

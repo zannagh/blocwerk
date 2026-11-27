@@ -1,0 +1,83 @@
+@* "iPhone scan": lets the companion app upload scans of this wall. Admin-only and never on a tablet; the hiding is
+   cosmetic, WallUpdateModeService refuses a kiosk and re-checks wall admin against the database. *@
+@using Blocwerk.Core.Capture.Scan
+@using Blocwerk.Core.Entities
+@inject IWallUpdateModeService UpdateModes
+@inject ILogger<WallUpdateModeSetting> Logger
+
+@if (_view is not null)
+{
+    <div class="form-group wall-update-mode">
+        <label class="filter-check">
+            <input type="checkbox" checked="@(_view.Mode == WallUpdateMode.Scan)" disabled="@(_busy || !CanToggle)"
+                   @onchange="e => ToggleAsync(e.Value is true)" />
+            iPhone scan: update this wall with the Blocwerk Companion app
+        </label>
+        <p class="field-hint">
+            @if (_view.CanSwitchToPanels)
+            {
+                <text>Lets admins and moderators upload scans of this wall from the iPhone app. Nothing changes for climbers, and you can switch it off again until a scan has been applied.</text>
+            }
+            else
+            {
+                <text>@WallUpdateModeService.LockedMessage</text>
+            }
+        </p>
+        @if (_message is not null)
+        {
+            <p class="field-hint" role="status">@_message</p>
+        }
+    </div>
+}
+
+@code {
+    [Parameter]
+    public Guid WallId { get; set; }
+
+    private WallUpdateModeView? _view;
+    private bool _busy;
+    private string? _message;
+
+    private bool CanToggle => _view is { Mode: WallUpdateMode.Panels } or { CanSwitchToPanels: true };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        try
+        {
+            _view = await UpdateModes.GetAsync(WallId);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or KioskRestrictedException)
+        {
+            _view = null;
+        }
+    }
+
+    private async Task ToggleAsync(bool scan)
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        _message = null;
+        try
+        {
+            _view = await UpdateModes.SetAsync(WallId, scan ? WallUpdateMode.Scan : WallUpdateMode.Panels);
+            _message = scan ? "Saved: scans can be uploaded for this wall." : "Saved: this wall is updated with panel photos.";
+        }
+        catch (UserFacingException ex)
+        {
+            _message = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Could not change the update mode of wall {WallId}.", WallId);
+            _message = "Could not change this setting. Nothing was saved, please try again.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

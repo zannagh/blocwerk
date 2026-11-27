@@ -110,7 +110,7 @@ public sealed partial class JobProgressReader
 
     private static string CaptureState(WallCaptureStatus status) => status switch
     {
-        WallCaptureStatus.Queued => JobStates.Queued,
+        WallCaptureStatus.Queued or WallCaptureStatus.Received => JobStates.Queued,
         WallCaptureStatus.Failed => JobStates.Failed,
         _ when RunningStatuses.Contains(status) => JobStates.Running,
         _ => JobStates.Succeeded,
