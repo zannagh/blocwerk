@@ -86,6 +86,25 @@ public class ScanUploadRetentionTests
         Assert.True(await db.WallScans.AnyAsync(x => x.CaptureId == done.ScanId));
     }
 
+    [Fact]
+    public async Task AResumedUpload_IsKeptRightAfterTheResume()
+    {
+        using var h = new WallTestHarness();
+        using var s = new ScanScenario(h);
+        await s.SeedScanWallAsync();
+        var (open, openFiles) = ScanPackageBuilder.Build(h.WallId);
+        await s.PutMissingAsync(await s.Service.BeginAsync(h.WallId, open, None), openFiles, limit: 2);
+        Backdate(s.Storage.Folder(open.ScanId!.Value));
+
+        await s.Service.BeginAsync(h.WallId, open, None);
+        var options = new WallCapturePipelineOptions { RetentionDryRun = false };
+        var outcome = await ScanUploadRetention.RunAsync(
+            h.RootContextFactory, s.Files, options, DateTimeOffset.UtcNow + options.ImportStagingLifetime - TimeSpan.FromHours(1), NullLogger.Instance, None);
+
+        Assert.Equal(0, outcome.Count);
+        Assert.True(File.Exists(s.Storage.FilePath(open.ScanId.Value, "mesh/arkit.ply")));
+    }
+
     private static void Backdate(string folder)
     {
         var old = DateTime.UtcNow.AddDays(-30);

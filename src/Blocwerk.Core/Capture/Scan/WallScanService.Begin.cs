@@ -63,6 +63,13 @@ public sealed partial class WallScanService
 
         DropChangedFiles(scanId, JsonSerializer.Deserialize<ScanManifest>(scan.ManifestJson, CapturePackageFiles.Json)!, manifest);
         Describe(scan, manifest, json);
+
+        // A resume is activity: retention counts the upload's idle time from here, not from its last file.
+        if (storage.HasFolder)
+        {
+            storage.Touch(scanId);
+        }
+
         var state = State(capture, manifest);
         EnsureSpace(state.TotalBytes - state.ReceivedBytes);
         await db.SaveChangesAsync(ct);

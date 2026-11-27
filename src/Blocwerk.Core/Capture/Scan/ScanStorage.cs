@@ -44,6 +44,14 @@ public sealed class ScanStorage(ICaptureFileStore files)
         return info.Exists && info.Length == bytes;
     }
 
+    /// <summary>Marks the scan's folder as active now (made when missing), so retention counts its idle time from here.</summary>
+    public void Touch(Guid scanId)
+    {
+        var folder = Folder(scanId);
+        Directory.CreateDirectory(folder);
+        Directory.SetLastWriteTimeUtc(folder, DateTime.UtcNow);
+    }
+
     public void Delete(Guid scanId)
     {
         var folder = Folder(scanId);
