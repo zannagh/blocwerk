@@ -76,13 +76,40 @@
             }
         });
         items.forEach(function (item) {
-            item.classList.toggle('active', item === winner);
-            if (item === winner) {
+            const on = item === winner;
+            if (item.classList.contains('active') !== on) {
+                item.classList.toggle('active', on);
+            }
+            if (on && item.getAttribute('aria-current') !== 'page') {
                 item.setAttribute('aria-current', 'page');
-            } else {
+            } else if (!on && item.hasAttribute('aria-current')) {
                 item.removeAttribute('aria-current');
             }
         });
+    }
+
+    // Blazor patches the server-rendered bar into the page without the class (on an enhanced load, and when the circuit
+    // connects), and that can land after the enhancedload event or before its listener is attached. So the bar is
+    // watched: any change inside it that left the mark wrong is put right. markActive only writes what differs, so
+    // its own writes settle at once.
+    function watchTabbar() {
+        if (!window.MutationObserver) {
+            return;
+        }
+        let queued = false;
+        new MutationObserver(function (records) {
+            const inBar = records.some(function (r) {
+                const el = r.target.nodeType === 1 ? r.target : r.target.parentElement;
+                return el && (el.closest('.bw-tabbar') || el.querySelector('.bw-tabbar'));
+            });
+            if (inBar && !queued) {
+                queued = true;
+                Promise.resolve().then(function () {
+                    queued = false;
+                    markActive();
+                });
+            }
+        }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'href'] });
     }
 
     // Everything that runs after an enhanced navigation, behind ONE wait for the Blazor API (bwNav.onEnhancedLoad
@@ -102,6 +129,7 @@
     function install() {
         apply();
         markActive();
+        watchTabbar();
         window.addEventListener('popstate', markActive);
 
         // Blazor.start() runs later (blazor-boot.js), so poll briefly for the API and attach the

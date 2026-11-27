@@ -51,3 +51,24 @@ for (const [size, options, viewport] of sizes) {
         });
     }
 }
+
+test('the Guides page marks Tools, and back and forward re-mark the tab of the page shown', async ({ page, world }) => {
+    await signIn(page, world.users.pia, '/guides');
+    await expectActive(page, 'Tools');
+
+    for (const [url, label] of [['/walls', 'Walls'], ['/profile', 'Profile']]) {
+        await page.evaluate(u => window.Blazor.navigateTo(u), url);
+        await expect(page).toHaveURL(new RegExp(`${url}$`));
+        await expectActive(page, label);
+    }
+
+    await page.goBack();
+    await expect(page).toHaveURL(/\/walls$/);
+    await expectActive(page, 'Walls');
+    await page.goBack();
+    await expect(page).toHaveURL(/\/guides$/);
+    await expectActive(page, 'Tools');
+    await page.goForward();
+    await expect(page).toHaveURL(/\/walls$/);
+    await expectActive(page, 'Walls');
+});

@@ -13,7 +13,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Blocwerk.Core.Migrations
 {
     [DbContext(typeof(BlocwerkDbContext))]
-    [Migration("20261127193932_RemoveShowToolsInNav")]
+    [Migration("20261127215508_RemoveShowToolsInNav")]
     partial class RemoveShowToolsInNav
     {
         /// <inheritdoc />
@@ -2273,6 +2273,9 @@ namespace Blocwerk.Core.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("ActiveScanCaptureId")
+                        .HasColumnType("uuid");
+
                     b.Property<bool>("AllowAnonymousKioskSetting")
                         .HasColumnType("boolean");
 
@@ -2380,6 +2383,9 @@ namespace Blocwerk.Core.Migrations
 
                     b.Property<bool>("UnderMaintenance")
                         .HasColumnType("boolean");
+
+                    b.Property<int>("UpdateMode")
+                        .HasColumnType("integer");
 
                     b.Property<bool>("UsesMultipleImages")
                         .HasColumnType("boolean");
@@ -3503,6 +3509,52 @@ namespace Blocwerk.Core.Migrations
                         .IsUnique();
 
                     b.ToTable("WallResets");
+                });
+
+            modelBuilder.Entity("Blocwerk.Core.Entities.WallScan", b =>
+                {
+                    b.Property<Guid>("CaptureId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AppVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("DeviceModel")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("FileCount")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ManifestJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<long?>("PointCloudBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("PointCloudPath")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<DateTimeOffset?>("ReceivedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SchemaVersion")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<bool>("Synthetic")
+                        .HasColumnType("boolean");
+
+                    b.Property<long>("TotalBytes")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CaptureId");
+
+                    b.ToTable("WallScans");
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallSegment", b =>
@@ -4986,6 +5038,17 @@ namespace Blocwerk.Core.Migrations
                     b.Navigation("ResetBy");
 
                     b.Navigation("Wall");
+                });
+
+            modelBuilder.Entity("Blocwerk.Core.Entities.WallScan", b =>
+                {
+                    b.HasOne("Blocwerk.Core.Entities.WallCapture", "Capture")
+                        .WithOne()
+                        .HasForeignKey("Blocwerk.Core.Entities.WallScan", "CaptureId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Capture");
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallSegment", b =>
