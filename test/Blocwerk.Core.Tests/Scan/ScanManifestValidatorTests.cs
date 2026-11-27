@@ -55,6 +55,8 @@ public class ScanManifestValidatorTests
     [InlineData("video/../../x.mov")]
     [InlineData("keyframes/k1.heic")]
     [InlineData("depth/d1.mov")]
+    [InlineData("mesh/arkit.ply\n")]
+    [InlineData("video/seg0-000.mov\r\n")]
     public void APathThatIsNoPackageName_IsRefused(string name)
     {
         Assert.Equal(ScanFileKind.Invalid, ScanFileNames.KindOf(name));
