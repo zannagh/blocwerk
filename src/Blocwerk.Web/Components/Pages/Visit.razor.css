@@ -1,0 +1,50 @@
+.visit-page {
+    max-width: 520px;
+    margin: 32px auto;
+    padding: 22px 20px;
+    background: var(--bg-surface);
+    border-radius: 14px;
+    box-shadow: 0 2px 12px var(--shadow-sm, rgba(0, 0, 0, 0.06));
+}
+
+.visit-page h1 {
+    font-size: 1.3rem;
+    color: var(--text-heading);
+    margin: 0 0 12px;
+    overflow-wrap: anywhere;
+}
+
+/* FocusOnNavigate moves focus to the heading for screen readers; it is no control, so it draws no ring. */
+.visit-page h1:focus {
+    outline: none;
+}
+
+.visit-page p {
+    margin: 0 0 14px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.visit-page .visit-note {
+    font-size: 0.9rem;
+}
+
+.visit-page form {
+    margin: 18px 0 0;
+}
+
+.visit-page .visit-start {
+    width: 100%;
+    min-height: 46px;
+}
+
+.visit-page .visit-home {
+    display: inline-block;
+    text-decoration: none;
+}
+
+@media (max-width: 560px) {
+    .visit-page {
+        margin: 16px;
+    }
+}

@@ -49,6 +49,12 @@ public sealed class KioskScopedDbContextFactory : IDbContextFactory<BlocwerkDbCo
             {
                 context.KioskWallId = kioskContext.KioskWallId ?? Guid.Empty;
             }
+            else if (kioskContext?.VisitorExpiresAt is not null)
+            {
+                // A visitor reads exactly the wall their link opened, by the same stamp; once the visit ended the
+                // session reads no wall at all rather than the unstamped default.
+                context.KioskWallId = kioskContext.VisitorWallId ?? Guid.Empty;
+            }
         }
         catch
         {

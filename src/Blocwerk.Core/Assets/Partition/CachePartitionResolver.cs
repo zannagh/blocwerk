@@ -15,6 +15,7 @@ namespace Blocwerk.Core.Assets.Partition;
 /// <item><description>a kiosk tablet: <c>k-</c> + HMAC of its key and wall, for every identity it takes (anonymous and
 /// act-as alike), or <c>none</c> when it may not cache its wall (<see cref="KioskCacheRules"/>);</description></item>
 /// <item><description>a signed-in user: <c>u-</c> + HMAC of the user id;</description></item>
+/// <item><description>a visitor from a one-time visitor link: <c>none</c>, nothing is kept;</description></item>
 /// <item><description>nobody: <c>anon</c>.</description></item>
 /// </list>
 /// A share token never changes the partition: a share-linked wall is cached under the viewer's own one.
@@ -41,6 +42,12 @@ public sealed class CachePartitionResolver(
                 return kioskContext.KioskApiKeyId is { } keyId && await KioskCacheRules.CachedWallIdAsync(kioskContext, kioskKeys, CancellationToken.None) is { } wallId
                     ? CachePartitions.KioskPrefix + Label($"kiosk:{keyId:N}:{wallId:N}")
                     : CachePartitions.None;
+            }
+
+            // A visitor keeps nothing on the device: the visit ends after 24 hours, and a copy would outlive it.
+            if (kioskContext.VisitorExpiresAt is not null)
+            {
+                return CachePartitions.None;
             }
         }
 

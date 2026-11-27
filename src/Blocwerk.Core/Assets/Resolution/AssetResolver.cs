@@ -43,6 +43,12 @@ public sealed class AssetResolver(
         }
 
         var asset = await LookUpAsync(db, wallId, hash, access, ct) is { } found ? found with { WallId = wallId } : null;
+        // A visitor's browser keeps no copy past the visit: their assets are never stored, not even in the HTTP cache.
+        if (asset is not null && KioskViewing.IsVisitor(kioskContext))
+        {
+            return asset with { NoStore = true };
+        }
+
         return asset is null || kioskContext is not { IsKiosk: true } || ManifestAudiences.Lists(ManifestAudience.Kiosk, asset.Kind)
             ? asset
             : asset with { NoStore = true };

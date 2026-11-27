@@ -333,6 +333,13 @@
                 return;
             }
 
+            // A visitor views the wall and sets nothing: back to the wall rather than a form they cannot send.
+            if (KioskViewing.IsVisitor(KioskContext))
+            {
+                Navigation.NavigateTo($"/walls/{WallId}", replace: true);
+                return;
+            }
+
             _isAnonymous = true;
         }
 

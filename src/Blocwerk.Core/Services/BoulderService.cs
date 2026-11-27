@@ -1380,7 +1380,7 @@ public partial class BoulderService : IBoulderService
             // "Proposed by …" on the resting kiosk names only whom the tablet may name (KioskBylines).
             if (proposal is not null && await KioskBylines.IsRestingKioskAsync(_currentUserService, _kioskContext))
             {
-                await KioskBylines.MaskProposerAsync(db, proposal);
+                await KioskBylines.MaskProposerAsync(db, proposal, _kioskContext);
             }
 
             return proposal;

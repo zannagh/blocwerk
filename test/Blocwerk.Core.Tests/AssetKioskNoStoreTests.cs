@@ -5,6 +5,7 @@ using Blocwerk.Core.Assets.Manifest;
 using Blocwerk.Core.Assets.Resolution;
 using Blocwerk.Web.Endpoints;
 using Microsoft.AspNetCore.Http;
+using NSubstitute;
 
 namespace Blocwerk.Core.Tests;
 
@@ -59,6 +60,25 @@ public class AssetKioskNoStoreTests
         f.BindKiosk(f.Harness.WallId);
 
         AssetRouteAccessTests.AssertRefused(await f.GetAsync(f.Harness.WallId, s.VideoThumbnail));
+    }
+
+    [Fact]
+    public async Task AVisitor_GetsTheWallsAssets_AsNoStore()
+    {
+        using var f = new AssetRouteFixture();
+        var s = await f.SeedAsync();
+        f.Caller = null;
+        f.Kiosk.IsKiosk.Returns(false);
+        f.Kiosk.VisitorWallId.Returns(f.Harness.WallId);
+        f.Kiosk.VisitorExpiresAt.Returns(DateTimeOffset.UtcNow.AddHours(1));
+
+        foreach (var sha in new[] { s.Panel, s.Texture, s.Splat })
+        {
+            var http = await f.GetAsync(f.Harness.WallId, sha);
+
+            Assert.Equal(StatusCodes.Status200OK, http.Response.StatusCode);
+            Assert.Equal(AssetResponse.NoStoreCacheControl, http.Response.Headers.CacheControl.ToString());
+        }
     }
 
     [Fact]

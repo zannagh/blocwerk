@@ -382,6 +382,10 @@ else
                     <a href="/join/@Uri.EscapeDataString(ShareToken ?? string.Empty)">Join this wall</a> to comment and log ticks.
                 </div>
             }
+            else if (KioskViewing.IsVisitor(KioskContext))
+            {
+                <div class="bw-anon-notice">You're visiting as a guest: look around, nothing can be logged or changed.</div>
+            }
             else
             {
                 <div class="bw-anon-notice">

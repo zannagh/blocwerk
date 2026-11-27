@@ -141,6 +141,7 @@ internal static class FeedBulkSites
         Excluded("Recognition/RecognitionQueue.Reattach.cs", typeof(RecognitionJob), 1, RecognitionQueue),
         Excluded("Recognition/RecognitionQueue.Report.cs", typeof(RecognitionJob), 1, RecognitionQueue),
         Excluded("Runners/GpuJobQueue.Failures.cs", typeof(GpuRunnerFailure), 1, "runner failure retention, runner administration"),
+        Excluded("Visits/WallVisitService.cs", typeof(WallVisitLink), 2, "visit link redemption and expiry cleanup, never in the feed"),
     ];
 
     private static FeedBulkSite Rows(string file, Type? entity, int count, string reason) => Site(file, entity, count, FeedBulkHandling.Rows, reason);

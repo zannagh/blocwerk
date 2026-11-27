@@ -1,0 +1,73 @@
+@page "/visit/{Token}"
+@attribute [AllowAnonymous]
+@using Blocwerk.Authentication.Kiosk
+@using Blocwerk.Core.Visits
+@inject IWallVisitService Visits
+@inject VisitGrantCookie VisitCookie
+@inject IHttpContextAccessor HttpContextAccessor
+@inject NavigationManager Navigation
+
+@* The landing page of a one-time visitor link. Static SSR, and it only READS the link: a GET never uses it, because
+   chat apps fetch a shared link for its preview and would use it up before the guest ever saw it. The visit starts
+   with the form post below (VisitController), which is the one thing that redeems. *@
+
+<PageTitle>Visit - Blocwerk</PageTitle>
+
+<div class="visit-page">
+    @switch (state)
+    {
+        case VisitLandingState.Open:
+            <h1>You're invited to visit @link.WallName</h1>
+            <p>
+                Look around the wall, its boulders and its 3D view as a guest until
+                <LocalTime Value="@link.ExpiresAt" Format="LocalTimeFormat.DateTime" />. You can look, but not log,
+                rate or comment.
+            </p>
+            <p class="visit-note">The link works once, on this device.</p>
+            <form method="post" action="/visit/@Token/start" data-enhance-nav="false">
+                <AntiforgeryToken />
+                @* This page's claim on the link: a second post of the same form is the same claim and still wins. *@
+                <input type="hidden" name="claim" value="@claim" />
+                <button type="submit" class="btn-primary visit-start">Start visit</button>
+            </form>
+            break;
+        case VisitLandingState.Expired:
+            <h1>This invitation has expired</h1>
+            <p>Visitor links last 24 hours. Ask a member of the wall for a new one.</p>
+            break;
+        case VisitLandingState.Used:
+            <h1>This invitation was already used</h1>
+            <p>Visitor links work once, on the device that opened them first. Ask a member of the wall for a new one.</p>
+            break;
+        case VisitLandingState.SignedIn:
+            <h1>This link is for guests</h1>
+            <p>You're signed in, and visitor links are for people without an account on the wall. Ask a member for the wall's invite link to join it.</p>
+            <a class="btn-secondary visit-home" href="/walls">Back to my walls</a>
+            break;
+        default:
+            <h1>This invitation link doesn't work</h1>
+            <p>Check that the whole link was copied, or ask a member of the wall for a new one.</p>
+            break;
+    }
+</div>
+
+@code {
+    private VisitLinkLookup link = VisitLinkLookup.NotFound;
+    private VisitLandingState state = VisitLandingState.Invalid;
+    private readonly Guid claim = Guid.NewGuid();
+
+    [Parameter] public string Token { get; set; } = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        link = await Visits.LookUpAsync(Token);
+        var http = HttpContextAccessor.HttpContext;
+        var signedIn = http?.User.Identity?.IsAuthenticated == true;
+        var isMember = signedIn && link.WallId != Guid.Empty && await Visits.CallerIsMemberAsync(link.WallId);
+        state = VisitLanding.Decide(link, signedIn, isMember, VisitCookie.Read(http));
+        if (state == VisitLandingState.GoToWall)
+        {
+            Navigation.NavigateTo($"/walls/{link.WallId}", replace: true);
+        }
+    }
+}

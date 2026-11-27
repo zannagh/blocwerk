@@ -30,6 +30,9 @@ public enum DraftViewer
 
     /// <summary>The wall's kiosk tablet acting as that member.</summary>
     KioskActAsMember,
+
+    /// <summary>A guest from a one-time visitor link: nobody signed in, viewing this one wall.</summary>
+    Visitor,
 }
 
 /// <summary>
@@ -60,6 +63,9 @@ internal sealed class DraftExposureScenario
     public Guid WallId => Harness.WallId;
 
     public static bool SeesDrafts(DraftViewer viewer) => viewer is DraftViewer.Member or DraftViewer.KioskActAsMember;
+
+    /// <summary>The anonymous viewers of one wall that read it the way the resting kiosk does: the tablet and a visitor.</summary>
+    public static bool ViewsAsRestingKiosk(DraftViewer viewer) => viewer is DraftViewer.KioskAnonymous or DraftViewer.Visitor;
 
     public static bool UsesShareLink(DraftViewer viewer) => viewer is DraftViewer.ShareAnonymous or DraftViewer.ShareNonMember;
 
@@ -171,6 +177,16 @@ internal sealed class DraftExposureScenario
         else
         {
             users.GetCurrentUserAsync().Returns(Task.FromResult(signedIn));
+        }
+
+        if (viewer == DraftViewer.Visitor)
+        {
+            // The production stamp, which is the one that pins a visitor to the wall.
+            var visitor = Substitute.For<IKioskContext>();
+            visitor.IsKiosk.Returns(false);
+            visitor.VisitorWallId.Returns(WallId);
+            visitor.VisitorExpiresAt.Returns(DateTimeOffset.UtcNow.AddHours(1));
+            return (new KioskScopedDbContextFactory(Harness.RootContextFactory, visitor), users, visitor);
         }
 
         if (viewer is not (DraftViewer.KioskAnonymous or DraftViewer.KioskActAsMember))

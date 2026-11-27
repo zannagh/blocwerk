@@ -192,7 +192,7 @@ public class ActivityLogService : IActivityLogService
         return await reader.Db.Walls.AnyAsync(w => w.Id == wallId);
     }
 
-    private static async Task<(List<ActivityLogEntry> Items, int TotalCount)> PageAsync(
+    private async Task<(List<ActivityLogEntry> Items, int TotalCount)> PageAsync(
         BlocwerkDbContext db,
         Expression<Func<ActivityLogEntry, bool>> predicate,
         Guid? restingKioskWall,
@@ -211,16 +211,16 @@ public class ActivityLogService : IActivityLogService
         var items = await query.Skip(page * pageSize).Take(pageSize).ToListAsync();
         if (restingKioskWall is { } wallId)
         {
-            await MaskForKioskAsync(db, wallId, items);
+            await MaskForKioskAsync(db, wallId, items, _kioskContext);
         }
 
         return (items, total);
     }
 
     // The resting tablet names consenting members and the setters of setting entries only (KioskBylines).
-    private static async Task MaskForKioskAsync(BlocwerkDbContext db, Guid wallId, List<ActivityLogEntry> items)
+    private static async Task MaskForKioskAsync(BlocwerkDbContext db, Guid wallId, List<ActivityLogEntry> items, IKioskContext? kiosk)
     {
-        var consented = await KioskBylines.ConsentedAsync(db, wallId);
+        var consented = await KioskBylines.ConsentedAsync(db, wallId, kiosk);
         foreach (var item in items)
         {
             item.User = KioskBylines.Mask(item.User, consented.Contains(item.UserId) || KioskBylines.KeepsName(item.Type));

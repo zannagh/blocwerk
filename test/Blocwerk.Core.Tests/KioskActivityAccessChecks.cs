@@ -24,7 +24,7 @@ internal static class KioskActivityAccessChecks
         var activity = s.Activity(viewer);
 
         // The resting tablet reads activity per boulder only; the wall-wide log is for members.
-        if (DraftExposureScenario.UsesShareLink(viewer) || viewer == DraftViewer.KioskAnonymous)
+        if (DraftExposureScenario.UsesShareLink(viewer) || DraftExposureScenario.ViewsAsRestingKiosk(viewer))
         {
             await Assert.ThrowsAsync<UnauthorizedAccessException>(() => activity.GetWallActivityAsync(s.WallId));
             return;
@@ -56,7 +56,7 @@ internal static class KioskActivityAccessChecks
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => activity.GetBoulderActivityAsync(s.DraftId, shareToken: token));
 
         // An archived boulder's log stays readable by its share link, as before; the tablet no longer lists it.
-        if (viewer == DraftViewer.KioskAnonymous)
+        if (DraftExposureScenario.ViewsAsRestingKiosk(viewer))
         {
             await Assert.ThrowsAsync<UnauthorizedAccessException>(() => activity.GetBoulderActivityAsync(log.ArchivedBoulder));
         }

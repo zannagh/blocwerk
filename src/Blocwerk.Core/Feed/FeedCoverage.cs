@@ -17,6 +17,7 @@ public static class FeedCoverage
     public static IReadOnlyDictionary<Type, string> ReviewedExcluded { get; } = new Dictionary<Type, string>
     {
         [typeof(ApiKey)] = "credentials, managed on the owner's settings page; no wall view shows them",
+        [typeof(WallVisitLink)] = "one-time visitor links: only their hash is stored, and no wall view lists them",
         [typeof(GpuJob)] = "job queue (GpuJobQueue); progress goes through IWallPulse, results land on mapped rows",
         [typeof(GpuRunnerApproval)] = "runner administration, not a wall view",
         [typeof(GpuRunnerFailure)] = "runner administration, not a wall view",

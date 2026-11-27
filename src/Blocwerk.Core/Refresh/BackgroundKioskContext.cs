@@ -15,5 +15,9 @@ internal sealed class BackgroundKioskContext : IKioskContext
 
     public Guid? KioskApiKeyId => null;
 
+    public Guid? VisitorWallId => null;
+
+    public DateTimeOffset? VisitorExpiresAt => null;
+
     public Task InitializeAsync() => Task.CompletedTask;
 }

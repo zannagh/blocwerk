@@ -34,6 +34,20 @@ public interface IKioskContext
     Guid? KioskApiKeyId { get; }
 
     /// <summary>
+    /// The one wall a visitor may view read-only, from the protected visit cookie made by a one-time visitor link; null
+    /// when this is no visit or the visit has ended. Never set for a kiosk tablet or a signed-in session: a visitor is
+    /// always anonymous, so every write still refuses them for want of a user.
+    /// </summary>
+    Guid? VisitorWallId { get; }
+
+    /// <summary>
+    /// When the visit ends, or null when this session carries no visit. Stays set after the visit ended (when
+    /// <see cref="VisitorWallId"/> is already null), so the database contexts of such a session stay closed to every
+    /// wall rather than falling back to the unstamped default.
+    /// </summary>
+    DateTimeOffset? VisitorExpiresAt { get; }
+
+    /// <summary>
     /// Resolves the kiosk state from the underlying cookies/principal. Idempotent, and cached for
     /// the lifetime of the scope. Call it once at the start of a request and at circuit open so the
     /// synchronous members above are never read before they are populated.

@@ -23,6 +23,7 @@ using Blocwerk.Core.Services.PanelCrop;
 using Blocwerk.Core.Services.Projects;
 using Blocwerk.Core.Services.TopLogger;
 using Blocwerk.Core.Telemetry;
+using Blocwerk.Core.Visits;
 using Blocwerk.Core.WhatsNew;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -186,6 +187,7 @@ public static class CoreServices
                 : new KioskGuardedApiKeyService(inner, kioskContext, sp.GetService<IApiKeySessionContext>());
         });
         builder.Services.AddScoped<IKioskService, KioskService>();
+        builder.Services.AddScoped<IWallVisitService, WallVisitService>();
         builder.Services.AddScoped<IWallSegmentService, WallSegmentService>();
         builder.Services.AddScoped<IWallGlyphService, WallGlyphService>();
         builder.Services.AddScoped<IHoldOutlineUpgradeService, HoldOutlineUpgradeService>();

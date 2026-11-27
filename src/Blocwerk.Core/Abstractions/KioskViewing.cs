@@ -17,7 +17,8 @@ namespace Blocwerk.Core.Abstractions;
 /// </para>
 /// <para>
 /// Deliberately narrow, and read-only: it grants nothing but VIEWING, and only of the ONE wall the
-/// device is registered to. Every write still needs a picked user. A kiosk whose wall could not be
+/// device is registered to, or, for a visitor from a one-time visitor link, the one wall the link opened
+/// (<see cref="IKioskContext.VisitorWallId"/>). Every write still needs a picked user. A kiosk whose wall could not be
 /// determined (<see cref="System.Guid.Empty"/> — the fail-closed value the query filter uses for a
 /// device re-registered mid-session) matches no wall and is refused here too.
 /// </para>
@@ -30,13 +31,28 @@ public static class KioskViewing
     /// </summary>
     public static Guid? ViewableWallId(IKioskContext? kioskContext)
     {
-        if (kioskContext is not { IsKiosk: true })
+        if (kioskContext is null)
         {
             return null;
         }
 
+        if (!kioskContext.IsKiosk)
+        {
+            // A visitor from a one-time visitor link: the second, and only other, anonymous viewer of exactly one
+            // wall. The context sets it only for a session with nobody signed in and only until the visit ends.
+            return kioskContext.VisitorWallId is { } visitWallId && visitWallId != Guid.Empty ? visitWallId : null;
+        }
+
         return kioskContext.KioskWallId is { } wallId && wallId != Guid.Empty ? wallId : null;
     }
+
+    /// <summary>
+    /// True for a visitor from a one-time visitor link whose visit is still on: an anonymous viewer of one wall who is
+    /// not a kiosk tablet, so none of the tablet's own allowances (setting boulders anonymously, its offline copy, the
+    /// member picker) apply.
+    /// </summary>
+    public static bool IsVisitor(IKioskContext? kioskContext) =>
+        kioskContext is { IsKiosk: false } && ViewableWallId(kioskContext) is not null;
 
     /// <summary>
     /// True when an anonymous caller on this session may read <paramref name="wallId"/> because the

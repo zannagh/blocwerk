@@ -13,7 +13,8 @@ namespace Blocwerk.Core.Tests;
 /// Whose name the kiosk tablet with nobody picked shows on a boulder's comments and activity (<see cref="KioskBylines"/>),
 /// shared by the SQLite and the PostgreSQL runs: a member who consented to the kiosk by name, any other member as
 /// "A member" with no id and no avatar, the setter of a created or revised entry by name either way, an erased author as
-/// Ghost. Acting as a member, and on a share link, the names are what they were.
+/// Ghost. Acting as a member, and on a share link, the names are what they were. A visitor from a visitor link reads as
+/// the resting tablet does, except that the tablet's consent names nobody to them: only setters stay named.
 /// </summary>
 internal static class KioskBylineChecks
 {
@@ -23,17 +24,18 @@ internal static class KioskBylineChecks
         var cora = await ConsentingMemberAsync(h, "cora@test");
         var erased = await ErasedUserAsync(h);
         var log = await SeedAsync(h, s, cora, erased);
-        var masks = viewer == DraftViewer.KioskAnonymous;
+        var masks = viewer is DraftViewer.KioskAnonymous or DraftViewer.Visitor;
         var member = masks ? KioskBylines.PlaceholderName : s.Member.Name;
+        var coraName = viewer == DraftViewer.Visitor ? KioskBylines.PlaceholderName : cora.Name;
 
         var comments = (await s.Comments(viewer).GetCommentsAsync(s.LiveId, shareToken: s.TokenFor(viewer))).Items;
         Assert.Equal(
-            [("from cora", cora.Name), ("from the erased", PlaceholderIdentity.DisplayName), ("from the member", member)],
+            [("from cora", coraName), ("from the erased", PlaceholderIdentity.DisplayName), ("from the member", member)],
             comments.Select(c => (c.Text, c.User.Name)).OrderBy(x => x.Text));
 
         var activity = (await s.Activity(viewer).GetBoulderActivityAsync(s.LiveId, pageSize: 10, shareToken: s.TokenFor(viewer)))
             .Items.ToDictionary(a => a.Id);
-        Assert.Equal(cora.Name, activity[log.Cora].User.Name);
+        Assert.Equal(coraName, activity[log.Cora].User.Name);
         Assert.Equal(member, activity[log.Member].User.Name);
         Assert.Equal(s.Member.Name, activity[log.Created].User.Name); // the setter, consent or not
         Assert.Equal(PlaceholderIdentity.DisplayName, activity[log.Erased].User.Name);
@@ -72,12 +74,13 @@ internal static class KioskBylineChecks
         }
 
         var boulders = s.Boulders(viewer);
-        var masks = viewer == DraftViewer.KioskAnonymous;
+        var masks = viewer is DraftViewer.KioskAnonymous or DraftViewer.Visitor;
         var member = (await boulders.GetActiveProposalAsync(s.LiveId))!;
         Assert.Equal(masks ? KioskBylines.PlaceholderName : s.Member.Name, member.ProposedBy.Name);
         Assert.Equal(masks ? Guid.Empty : s.Member.Id, member.ProposedByUserId);
         Assert.Equal(masks ? Guid.Empty : s.Member.Id, member.ProposedBy.Id);
-        Assert.Equal(cora.Name, (await boulders.GetActiveProposalAsync(byCora))!.ProposedBy.Name);
+        var coraName = viewer == DraftViewer.Visitor ? KioskBylines.PlaceholderName : cora.Name;
+        Assert.Equal(coraName, (await boulders.GetActiveProposalAsync(byCora))!.ProposedBy.Name);
         Assert.Equal(h.Owner.Name, (await boulders.GetActiveProposalAsync(byCreator))!.ProposedBy.Name);
     }
 

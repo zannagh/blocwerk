@@ -50,7 +50,8 @@ public static class KioskAnonymousSetting
         Guid wallId,
         CancellationToken ct = default)
     {
-        if (!KioskViewing.AllowsAnonymousViewOf(kioskContext, wallId))
+        // A visitor views anonymously too, but is no tablet: the anonymous write is the tablet's alone.
+        if (kioskContext is not { IsKiosk: true } || !KioskViewing.AllowsAnonymousViewOf(kioskContext, wallId))
         {
             return false;
         }

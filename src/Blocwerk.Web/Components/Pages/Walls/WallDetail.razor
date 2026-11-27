@@ -440,6 +440,13 @@ else
                             <a href="/kiosk/users">Pick yourself</a> to log attempts and set boulders.
                         </div>
                     }
+                    else if (_isAnonymous && KioskViewing.IsVisitor(KioskContext))
+                    {
+                        <div class="bw-anon-notice">
+                            <span>You're visiting as a guest</span> until
+                            <LocalTime Value="@KioskContext.VisitorExpiresAt" Format="LocalTimeFormat.DateTime" />. Look around: nothing can be changed.
+                        </div>
+                    }
                     else if (_isAnonymous)
                     {
                         <div class="bw-anon-notice">
@@ -651,8 +658,9 @@ else
                        can hand out the wall's invite link, not just admins; hidden for non-members (kiosks and
                        never-joined viewers), and the service guard is the gate. The 3D page renders only when the
                        wall has a measured 3D model; share-link viewers keep their token, and the kiosk may open it
-                       (Wall3D is on its allow-list). It reads "Open 3D view" with an open-page arrow, so it does not
-                       look like the photo's cube button, which shows the 3D view in place. *@
+                       (Wall3D is on its allow-list). It reads "3D View" with an open-page arrow, so it does not
+                       look like the photo's cube button, which shows the 3D view in place. Visit, in the middle: a
+                       one-time visitor link (WallVisitLinkButton), for members on their own device only. *@
                     <div class="wall-actions">
                         @if (_isMember)
                         {
@@ -668,8 +676,12 @@ else
                                 Invite
                             </button>
                         }
+                        @if ((_isMember || _isAdmin) && !KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))
+                        {
+                            <WallVisitLinkButton WallId="WallId" />
+                        }
                         <Wall3DLink WallId="WallId" ShareToken="@ShareToken">
-                            Open 3D view
+                            3D View
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                  stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                 <path d="M7 17 17 7"></path>

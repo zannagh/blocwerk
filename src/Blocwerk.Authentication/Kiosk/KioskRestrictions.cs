@@ -314,6 +314,10 @@ public static class KioskRestrictions
         // the minting is refused at the service as well.
         "Blocwerk.Web.Components.Pages.Join",
 
+        // A one-time visitor link's landing page. A visit is for a guest's own phone; a tablet already shows its
+        // wall, and using somebody's link from it would only burn the link. /visit is under no allowed prefix either.
+        "Blocwerk.Web.Components.Pages.Visit",
+
         // A wall the tablet is not registered to, and cannot be.
         "Blocwerk.Web.Components.Pages.Walls.WallCreate",
 

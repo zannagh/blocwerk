@@ -3981,6 +3981,49 @@ namespace Blocwerk.Core.Migrations
                     b.ToTable("WallUpdateShapeProposals");
                 });
 
+            modelBuilder.Entity("Blocwerk.Core.Entities.WallVisitLink", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("RedeemedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("RedemptionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid>("WallId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("WallId");
+
+                    b.HasIndex("CreatedByUserId", "CreatedAt");
+
+                    b.ToTable("WallVisitLinks");
+                });
+
             modelBuilder.Entity("Blocwerk.Core.Entities.WallVolume", b =>
                 {
                     b.Property<Guid>("Id")
@@ -5109,6 +5152,25 @@ namespace Blocwerk.Core.Migrations
                         .IsRequired();
 
                     b.Navigation("Hold");
+                });
+
+            modelBuilder.Entity("Blocwerk.Core.Entities.WallVisitLink", b =>
+                {
+                    b.HasOne("Blocwerk.Core.Entities.User", "CreatedBy")
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Blocwerk.Core.Entities.Wall", "Wall")
+                        .WithMany()
+                        .HasForeignKey("WallId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("CreatedBy");
+
+                    b.Navigation("Wall");
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallVolume", b =>
