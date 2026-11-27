@@ -162,6 +162,31 @@ public class WallScanUploadTests
     }
 
     [Fact]
+    public async Task APutToAReceivedScan_AnswersFromItsFolder_WithoutReadingItsFileTableAgain()
+    {
+        using var h = new WallTestHarness();
+        using var s = new ScanScenario(h);
+        await s.SeedScanWallAsync();
+        var (manifest, files) = ScanPackageBuilder.Build(h.WallId);
+        await s.PutMissingAsync(await s.Service.BeginAsync(h.WallId, manifest, None), files);
+        await s.Service.CommitAsync(h.WallId, manifest.ScanId!.Value, None);
+
+        var again = await s.PutAsync(manifest.ScanId.Value, "mesh/arkit.ply", files["mesh/arkit.ply"]);
+        var unknown = await Assert.ThrowsAsync<ScanUploadException>(() => s.PutAsync(manifest.ScanId.Value, "mesh/other.ply", [1]));
+        var loaded = false;
+        await ScanFileTables.GetAsync(manifest.ScanId.Value, () =>
+        {
+            loaded = true;
+            return Task.FromResult<string?>(null);
+        });
+
+        Assert.Equal(files["mesh/arkit.ply"].Length, again.Bytes);
+        Assert.Equal(ScanUploadException.Conflict, unknown.StatusCode);
+        Assert.True(loaded); // nothing cached it after the commit
+        ScanFileTables.Forget(manifest.ScanId.Value);
+    }
+
+    [Fact]
     public async Task AManifestWithoutAWallId_IsStoredWithTheUrlsWall_AndASyntheticOneIsMarked()
     {
         using var h = new WallTestHarness();

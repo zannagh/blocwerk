@@ -29,6 +29,12 @@ public sealed partial class WallScanService
                           .FirstOrDefaultAsync(c => c.Id == scanId && c.WallId == wallId && c.GeometryMode == WallCaptureGeometryMode.Device, ct)
                       ?? throw new ScanUploadException(ScanUploadException.NotFound, "There is no scan with this id on this wall.");
         await EnsureCreatorAsync(db, capture, ct);
+        if (capture.Status != WallCaptureStatus.Draft)
+        {
+            // Checked before the file table: a committed scan's table is never read (or cached) again.
+            return Committed(scanId, name);
+        }
+
         var (version, expected) = await FileOfAsync(db, scanId, name, ct);
         if (sha256 is not null && !string.Equals(sha256, expected.Sha256, StringComparison.OrdinalIgnoreCase))
         {
@@ -37,7 +43,6 @@ public sealed partial class WallScanService
 
         if (!storage.Has(scanId, name, expected.Bytes!.Value))
         {
-            EnsureOpen(capture);
             EnsureSpace(expected.Bytes.Value);
             try
             {
@@ -87,6 +92,18 @@ public sealed partial class WallScanService
         return table is { } t && t.Files.TryGetValue(name, out var entry)
             ? (t.Version, entry)
             : throw new ScanUploadException(ScanUploadException.NotFound, $"{name} is not a file of this scan.");
+    }
+
+    /// <summary>
+    /// A re-sent file of a committed scan: answered from its folder (every file there is verified), 409 when the scan
+    /// has no such file.
+    /// </summary>
+    private ScanFileState Committed(Guid scanId, string name)
+    {
+        var file = ScanFileNames.KindOf(name) == ScanFileKind.Invalid ? null : new FileInfo(storage.FilePath(scanId, name));
+        return file is { Exists: true }
+            ? new ScanFileState(scanId, name, file.Length)
+            : throw new ScanUploadException(ScanUploadException.Conflict, "This scan is no longer taking files.");
     }
 
     private static void EnsureOpen(WallCapture capture)
