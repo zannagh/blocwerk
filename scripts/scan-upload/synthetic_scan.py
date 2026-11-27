@@ -90,7 +90,7 @@ def build(args):
         "video": {"codec": "hevc", "width": 3840, "height": 2160, "fps": FPS},
         "exposureLock": {"exposureDurationSeconds": 1 / 120, "iso": 200, "whiteBalanceRed": 1.9, "whiteBalanceGreen": 1.0,
                          "whiteBalanceBlue": 2.1, "lensPosition": 0.8, "lockedAt": START},
-        "wallBox": [[-2, 0, -1.5], [2, 0, -1.5], [2, 3, -1.5]],
+        "referencePlane": {"point": [0, 1.5, -1.5], "normal": [0, 0, 1]},
         "segments": [{"id": 0, "startTime": START, "endTime": end,
                       "videos": [{"file": f"video/seg0-{p:03d}.mov", "startTime": START + 60 * p} for p in range(pieces)]}],
         "frames": frames, "depth": depth, "mesh": {"file": "mesh/arkit.ply"},

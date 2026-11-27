@@ -187,6 +187,24 @@ public class WallScanUploadTests
     }
 
     [Fact]
+    public async Task APackageWithAReferencePlaneAndNoWallBox_IsReceived()
+    {
+        using var h = new WallTestHarness();
+        using var s = new ScanScenario(h);
+        await s.SeedScanWallAsync();
+        var (built, files) = ScanPackageBuilder.Build(h.WallId);
+        var manifest = built with { WallBox = null, ReferencePlane = new ScanReferencePlane([0, 1.5, -1.5], [0, 0, 1]) };
+
+        await s.PutMissingAsync(await s.Service.BeginAsync(h.WallId, manifest, None), files);
+        var committed = await s.Service.CommitAsync(h.WallId, manifest.ScanId!.Value, None);
+
+        Assert.Equal(ScanUploadState.Received, committed.Status);
+        await using var db = h.CreateContext();
+        var stored = await db.WallScans.SingleAsync(x => x.CaptureId == manifest.ScanId);
+        Assert.Contains("\"referencePlane\"", stored.ManifestJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task AManifestWithoutAWallId_IsStoredWithTheUrlsWall_AndASyntheticOneIsMarked()
     {
         using var h = new WallTestHarness();
