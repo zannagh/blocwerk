@@ -15,4 +15,10 @@ public enum WallCaptureGeometryMode
     /// Scale and gravity may be estimates (<see cref="Geometry.WallGeometryWorld.ScaleSource"/>).
     /// </summary>
     Features = 1,
+
+    /// <summary>
+    /// An iPhone scan from the companion app (<see cref="WallScan"/>): ARKit poses, intrinsics, LiDAR depth and mesh come
+    /// with the package, so neither markers nor a feature reconstruction measure the wall. Received only for now.
+    /// </summary>
+    Device = 2,
 }

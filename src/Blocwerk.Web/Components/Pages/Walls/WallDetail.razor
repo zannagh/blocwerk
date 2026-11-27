@@ -108,6 +108,11 @@ else
                         <p class="field-hint">Optional, and separate from the updates below. Turn it on while you work if climbers should not see a half-updated wall: everyone except you sees a "being updated" notice. It does not update anything by itself.</p>
                     </div>
 
+                    @if (!KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))
+                    {
+                        <WallUpdateModeSetting WallId="WallId" />
+                    }
+
                     @* Anchor for "where panel photos are managed" (linked from the capture section). *@
                     <div id="wall-panels">
                     @if (_showBigUpdate)

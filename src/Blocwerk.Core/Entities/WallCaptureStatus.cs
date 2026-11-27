@@ -44,4 +44,10 @@ public enum WallCaptureStatus
     /// active model's frame (see Error for the reason). Nothing downstream ran; an admin may activate it by hand.
     /// </summary>
     StoredNotActivated = 10,
+
+    /// <summary>
+    /// An iPhone scan (<see cref="WallCaptureGeometryMode.Device"/>) whose package arrived complete and verified, waiting for
+    /// processing. Nothing runs on it yet; no worker, sweep or retention rule picks it up.
+    /// </summary>
+    Received = 11,
 }
