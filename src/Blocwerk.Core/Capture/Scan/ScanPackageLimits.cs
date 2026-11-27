@@ -12,8 +12,12 @@ public static class ScanPackageLimits
     /// <summary>The only schema this server reads.</summary>
     public const string SchemaV1 = "blocwerk-scan/1";
 
-    /// <summary>The manifest carries one record per video frame (36 000 at most): a few MB in practice.</summary>
-    public const long MaxManifestBytes = 64L * 1024 * 1024;
+    /// <summary>
+    /// The manifest carries one record per video frame, about 435 bytes each as the app writes them. The app's ten
+    /// minutes at 30 fps (18 000 frames) with as many depth maps as the file cap allows come to about 11 MB, so this
+    /// leaves room for that. A begin reads the whole manifest into memory, so it stays small.
+    /// </summary>
+    public const long MaxManifestBytes = 16L * 1024 * 1024;
 
     public const int MaxFiles = 20_000;
 
