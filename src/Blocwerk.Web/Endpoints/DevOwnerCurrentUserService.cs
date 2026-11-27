@@ -32,8 +32,6 @@ internal sealed class DevOwnerCurrentUserService(User owner) : ICurrentUserServi
 
     public Task SetPreferFontGradesAsync(bool preferFont) => throw NotSupported();
 
-    public Task SetShowToolsInNavAsync(bool show) => throw NotSupported();
-
     public Task SetNotificationDisabledAsync(NotificationType type, bool disabled) => throw NotSupported();
 
     public Task SetDisplayNameAsync(string? name) => throw NotSupported();

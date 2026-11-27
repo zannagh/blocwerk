@@ -1,5 +1,5 @@
 /*
- * bwNav — hide/show toggle for the bottom tab bar.
+ * bwNav — hide/show toggle for the bottom tab bar, and the highlight on the current page's tab.
  *
  * MainLayout is rendered statically (no @rendermode), so the chevron buttons can't use Blazor
  * @onclick — the handlers never fire. Instead the collapsed STATE lives as a class on
@@ -45,9 +45,49 @@
         document.body.classList.toggle(CLASS, isCollapsed());
     }
 
+    // Whether `path` is `base` or sits under it, on a path-segment boundary (/walls/x is under /walls, /wallsx is not).
+    function isUnder(path, base) {
+        return path === base || path.indexOf(base + '/') === 0;
+    }
+
+    // How deep a tab's destination matches the current path: the length of the longest of its hrefs (plus any
+    // data-nav-also paths) that the path sits under, or -1. Longest wins so the Home tab (one wall) beats Walls.
+    function matchDepth(item, path) {
+        const bases = [(item.getAttribute('href') || '').split(/[?#]/)[0]]
+            .concat((item.getAttribute('data-nav-also') || '').split(' '))
+            .filter(Boolean);
+        return bases.reduce(function (best, base) {
+            return isUnder(path, base) ? Math.max(best, base.length) : best;
+        }, -1);
+    }
+
+    // The tab bar is rendered by the server, so the active class is set here from the URL (the CSS has always had
+    // an .active style). Exactly one tab at most: the deepest match, the first one when two tie.
+    function markActive() {
+        const items = Array.prototype.slice.call(document.querySelectorAll('.bw-tabbar .nav-item'));
+        const path = location.pathname.replace(/\/+$/, '') || '/';
+        let winner = null;
+        let depth = -1;
+        items.forEach(function (item) {
+            const d = matchDepth(item, path);
+            if (d > depth) {
+                depth = d;
+                winner = item;
+            }
+        });
+        items.forEach(function (item) {
+            item.classList.toggle('active', item === winner);
+            if (item === winner) {
+                item.setAttribute('aria-current', 'page');
+            } else {
+                item.removeAttribute('aria-current');
+            }
+        });
+    }
+
     // Everything that runs after an enhanced navigation, behind ONE wait for the Blazor API (bwNav.onEnhancedLoad
     // adds to it, e.g. wall-carousel-nav.js). Each listener runs on its own: one that throws never stops the others.
-    const enhancedLoadListeners = [apply];
+    const enhancedLoadListeners = [apply, markActive];
 
     function onEnhancedLoad() {
         enhancedLoadListeners.forEach(function (listener) {
@@ -61,6 +101,8 @@
 
     function install() {
         apply();
+        markActive();
+        window.addEventListener('popstate', markActive);
 
         // Blazor.start() runs later (blazor-boot.js), so poll briefly for the API and attach the
         // enhancedload listener once it exists rather than assuming it's ready at head-parse time.

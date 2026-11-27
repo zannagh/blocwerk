@@ -95,18 +95,6 @@ public partial class CurrentUserService : ICurrentUserService
         InvalidateCache();
     }
 
-    public async Task SetShowToolsInNavAsync(bool show)
-    {
-        var user = await GetCurrentUserAsync();
-
-        await using var dbContext = await _dbContextFactory.CreateDbContextAsync();
-        var dbUser = await dbContext.Users.FirstAsync(u => u.Id == user.Id);
-        dbUser.ShowToolsInNav = show;
-        await dbContext.SaveChangesAsync();
-
-        InvalidateCache();
-    }
-
     public async Task SetNotificationDisabledAsync(NotificationType type, bool disabled)
     {
         var user = await GetCurrentUserAsync();

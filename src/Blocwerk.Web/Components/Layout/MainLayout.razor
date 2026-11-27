@@ -56,8 +56,7 @@
     <AssetCacheFeedRelay @rendermode="InteractiveServer" />
 
     @* Every item in the non-kiosk bar is behind AuthorizeView, so an anonymous visitor would get an
-       empty bar and a chevron that collapses nothing — Tools used to be the one tab they saw, and it
-       now lives on Profile. A kiosk keeps its bar while anonymous: the user picker is on it. *@
+       empty bar and a chevron that collapses nothing. A kiosk keeps its bar while anonymous: the user picker is on it. *@
     @if (KioskContext.IsKiosk || _signedIn)
     {
     <nav class="bw-tabbar">
@@ -78,7 +77,7 @@
                lands on the sign-in page. It appears once somebody has picked themselves. *@
             <AuthorizeView>
                 <Authorized>
-                    <a href="/tools" class="nav-item">
+                    <a href="/tools" class="nav-item" data-nav-also="/guides">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
                             <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
                             <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
@@ -110,9 +109,8 @@
         }
         else
         {
-        @* Four items at most: Walls, Home (when a home wall is set), Session-or-Activity, Profile.
-           Admin and Tools moved to the Profile page — six tabs did not fit a phone bar, and neither
-           is a place you go mid-session. Their visibility rules moved with them unchanged. *@
+        @* Five items at most: Walls, Home (when a home wall is set), Session-or-Activity, Tools, Profile.
+           Admin lives on the Profile page. *@
         <AuthorizeView>
             <Authorized>
                 <a href="/walls" class="nav-item">
@@ -162,18 +160,13 @@
         </AuthorizeView>
         <AuthorizeView>
             <Authorized>
-                @* Opt-in per user (default on): the Tools/Guides button that used to be a permanent tab.
-                   The kiosk branch above renders Tools unconditionally; this one honours the setting. *@
-                @if (_showToolsInNav)
-                {
-                    <a href="/tools" class="nav-item">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
-                            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
-                            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
-                        </svg>
-                        <span>Tools</span>
-                    </a>
-                }
+                <a href="/tools" class="nav-item" data-nav-also="/guides">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
+                        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+                        <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+                    </svg>
+                    <span>Tools</span>
+                </a>
                 <a href="/profile" class="nav-item">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
                         <circle cx="12" cy="8" r="4" />
@@ -242,7 +235,6 @@
     private static readonly TimeSpan SessionSyncMinInterval = TimeSpan.FromHours(3);
 
     private Guid? _homeWallId;
-    private bool _showToolsInNav = true;
     private bool _signedIn;
     private Guid? _userId;
     private string? _userName;
@@ -352,7 +344,6 @@
             var user = await CurrentUserService.GetCurrentUserAsync();
             _signedIn = user is not null;
             _homeWallId = user?.HomeWallId;
-            _showToolsInNav = user?.ShowToolsInNav ?? true;
             _userId = user?.Id;
             _userName = user?.Name;
             _userHasAvatar = user?.HasAvatar ?? false;
@@ -361,7 +352,6 @@
         {
             _signedIn = false;
             _homeWallId = null;
-            _showToolsInNav = true;
             _userId = null;
             _userName = null;
             _userHasAvatar = false;

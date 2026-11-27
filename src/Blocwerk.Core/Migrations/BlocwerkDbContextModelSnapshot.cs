@@ -2158,9 +2158,6 @@ namespace Blocwerk.Core.Migrations
                     b.Property<int>("Role")
                         .HasColumnType("integer");
 
-                    b.Property<bool>("ShowToolsInNav")
-                        .HasColumnType("boolean");
-
                     b.Property<bool>("TotpEnabled")
                         .HasColumnType("boolean");
 
@@ -2201,7 +2198,6 @@ namespace Blocwerk.Core.Migrations
                             ProgressionGroupBy = 1,
                             ProgressionWindowDays = 60,
                             Role = 1,
-                            ShowToolsInNav = true,
                             TotpEnabled = false
                         });
                 });

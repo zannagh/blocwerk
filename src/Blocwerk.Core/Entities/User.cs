@@ -124,12 +124,6 @@ public class User : IEquatable<User>
     public bool PreferFontGrades { get; set; } = true;
 
     /// <summary>
-    /// Whether the Tools/Guides button is shown in the bottom navigation bar for this user. True (the
-    /// default) restores it; false hides it. Kiosk tablets always show Tools regardless of this flag.
-    /// </summary>
-    public bool ShowToolsInNav { get; set; } = true;
-
-    /// <summary>
     /// The notification types this user has opted OUT of, stored as a <see cref="NotificationType"/>
     /// bitmask. <see cref="NotificationType.None"/> (0, the default) means every type is on, so any
     /// type added later is on-by-default for existing users. A set bit means that type is disabled.
