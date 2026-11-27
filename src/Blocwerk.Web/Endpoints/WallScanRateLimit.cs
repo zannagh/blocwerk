@@ -11,7 +11,7 @@ namespace Blocwerk.Web.Endpoints;
 public static class WallScanRateLimit
 {
     public static IServiceCollection AddWallScanRateLimit(this IServiceCollection services) =>
-        services.AddSingleton(_ => new WallScanRateLimiter());
+        services.AddSingleton(_ => new WallScanRateLimiter()).AddSingleton(_ => new WallScanBeginGate());
 
     /// <summary>Limits every route of <paramref name="group"/> with the one shared <see cref="WallScanRateLimiter"/>.</summary>
     public static RouteGroupBuilder RequireWallScanRateLimit(this RouteGroupBuilder group)
@@ -20,4 +20,9 @@ public static class WallScanRateLimit
             context.HttpContext.RequestServices.GetRequiredService<WallScanRateLimiter>().InvokeAsync(context, next));
         return group;
     }
+
+    /// <summary>One begin in flight per user (<see cref="WallScanBeginGate"/>).</summary>
+    public static RouteHandlerBuilder RequireOneBeginPerUser(this RouteHandlerBuilder route) =>
+        route.AddEndpointFilter((context, next) =>
+            context.HttpContext.RequestServices.GetRequiredService<WallScanBeginGate>().InvokeAsync(context, next));
 }

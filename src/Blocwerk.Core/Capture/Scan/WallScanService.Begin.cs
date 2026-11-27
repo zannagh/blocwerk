@@ -13,18 +13,21 @@ namespace Blocwerk.Core.Capture.Scan;
 /// <summary>Begin: the manifest is validated, the scan opened (or resumed), and the missing files are named.</summary>
 public sealed partial class WallScanService
 {
+    public async Task EnsureMayBeginAsync(Guid wallId, CancellationToken ct)
+    {
+        var db = await OpenForUploaderAsync(wallId, ct);
+        await using (db)
+        {
+            await EnsureScanModeAsync(db, wallId, ct);
+        }
+    }
+
     public async Task<ScanUploadState> BeginAsync(Guid wallId, ScanManifest manifest, CancellationToken ct)
     {
         var db = await OpenForUploaderAsync(wallId, ct);
         await using (db)
         {
-            var mode = await db.Walls.IgnoreQueryFilters().Where(w => w.Id == wallId).Select(w => (WallUpdateMode?)w.UpdateMode).FirstOrDefaultAsync(ct)
-                       ?? throw new ScanUploadException(ScanUploadException.NotFound, "There is no such wall.");
-            if (mode != WallUpdateMode.Scan)
-            {
-                throw new ScanUploadException(ScanUploadException.Conflict, "Switch on \"iPhone scan\" in this wall's settings first.");
-            }
-
+            await EnsureScanModeAsync(db, wallId, ct);
             var problems = ScanManifestValidator.Validate(manifest, wallId);
             if (problems.Count > 0)
             {
@@ -35,6 +38,16 @@ public sealed partial class WallScanService
             manifest = manifest with { WallId = wallId };
             var scanId = manifest.ScanId!.Value;
             return await CaptureImportLocks.RunAsync(scanId, () => BeginLockedAsync(db, wallId, scanId, manifest, ct), ct);
+        }
+    }
+
+    private static async Task EnsureScanModeAsync(BlocwerkDbContext db, Guid wallId, CancellationToken ct)
+    {
+        var mode = await db.Walls.IgnoreQueryFilters().Where(w => w.Id == wallId).Select(w => (WallUpdateMode?)w.UpdateMode).FirstOrDefaultAsync(ct)
+                   ?? throw new ScanUploadException(ScanUploadException.NotFound, "There is no such wall.");
+        if (mode != WallUpdateMode.Scan)
+        {
+            throw new ScanUploadException(ScanUploadException.Conflict, "Switch on \"iPhone scan\" in this wall's settings first.");
         }
     }
 

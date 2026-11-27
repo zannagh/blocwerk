@@ -14,6 +14,12 @@ public interface IWallScanService
     Task<ScanUploadState> BeginAsync(Guid wallId, ScanManifest manifest, CancellationToken ct);
 
     /// <summary>
+    /// The checks of a begin that need no manifest: the caller may upload to the wall, and the wall is set to "iPhone
+    /// scan". The route runs them before it reads the manifest's body.
+    /// </summary>
+    Task EnsureMayBeginAsync(Guid wallId, CancellationToken ct);
+
+    /// <summary>
     /// Takes one file as a stream, verified against the manifest's size and SHA-256 (and <paramref name="sha256"/>, when
     /// the caller sends it). A file already received is not read again. Answers with that file only; the files of one
     /// scan may be sent in parallel. Only the user who began the scan, or an administrator of the installation, may send.

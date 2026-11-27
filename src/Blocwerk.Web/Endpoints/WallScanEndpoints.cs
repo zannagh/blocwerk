@@ -36,7 +36,7 @@ public static class WallScanEndpoints
             .RequireAuthorization(BlocwerkPolicies.HumanOrUserApiKey)
             .DisableAntiforgery()
             .RequireWallScanRateLimit();
-        group.MapPost(string.Empty, BeginAsync);
+        group.MapPost(string.Empty, BeginAsync).RequireOneBeginPerUser();
         group.MapPut("{scanId:guid}/files/{**name}", PutFileAsync);
         group.MapPost("{scanId:guid}/commit", CommitAsync);
         group.MapGet("{scanId:guid}", (Guid wallId, Guid scanId, IWallScanService scans, CancellationToken ct) =>
@@ -54,7 +54,11 @@ public static class WallScanEndpoints
             }
 
             EnsureJson(http);
-            var manifest = await JsonSerializer.DeserializeAsync<ScanManifest>(http.Request.Body, CapturePackageFiles.Json, ct)
+
+            // Who may upload, and whether the wall takes scans, is settled before a byte of the manifest is read.
+            await scans.EnsureMayBeginAsync(wallId, ct);
+            await using var body = new BoundedReadStream(http.Request.Body, ScanPackageLimits.MaxManifestBytes);
+            var manifest = await JsonSerializer.DeserializeAsync<ScanManifest>(body, CapturePackageFiles.Json, ct)
                            ?? throw new JsonException("The body is empty.");
             return await scans.BeginAsync(wallId, manifest, ct);
         });
