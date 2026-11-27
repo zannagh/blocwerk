@@ -104,6 +104,7 @@ public partial class WallCaptureStatusList : IAsyncDisposable
         WallCaptureStatus.SucceededWithoutSplat => "Model ready (no photo-real view)",
         WallCaptureStatus.StoredNotActivated => "Model stored, not activated",
         WallCaptureStatus.Failed => "Failed",
+        WallCaptureStatus.Received => Blocwerk.Core.Capture.Scan.WallScanService.ReceivedStage,
         _ => "Uploading",
     };
 

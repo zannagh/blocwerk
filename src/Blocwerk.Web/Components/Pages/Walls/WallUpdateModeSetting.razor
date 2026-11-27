@@ -3,6 +3,7 @@
 @using Blocwerk.Core.Capture.Scan
 @using Blocwerk.Core.Entities
 @inject IWallUpdateModeService UpdateModes
+@inject IWallScanService Scans
 @inject ILogger<WallUpdateModeSetting> Logger
 
 @if (_view is not null)
@@ -27,6 +28,28 @@
         {
             <p class="field-hint" role="status">@_message</p>
         }
+        @if (_scans.Count > 0)
+        {
+            <div class="wall-scan-list">
+                @foreach (var scan in _scans)
+                {
+                    <div class="field-hint wall-scan-row">
+                        Scan of @scan.CreatedAt.ToLocalTime().ToString("d MMM yyyy, HH:mm") · @(scan.DeviceModel ?? "iPhone")
+                        · @(scan.TotalBytes / (1024 * 1024)) MB: <strong>@(scan.Stage ?? "Uploading")</strong>
+                        @if (scan.Synthetic)
+                        {
+                            <span class="chip">synthetic</span>
+                        }
+                        @if (_mayDelete && scan.ReceivedAt is not null)
+                        {
+                            <ConfirmAction Label="Remove" ConfirmLabel="Remove this scan" Disabled="@_busy"
+                                           Question="Remove this scan and its files for good?"
+                                           OnConfirm="() => DeleteAsync(scan.ScanId)" />
+                        }
+                    </div>
+                }
+            </div>
+        }
     </div>
 }
 
@@ -35,7 +58,9 @@
     public Guid WallId { get; set; }
 
     private WallUpdateModeView? _view;
+    private IReadOnlyList<WallScanSummary> _scans = [];
     private bool _busy;
+    private bool _mayDelete;
     private string? _message;
 
     private bool CanToggle => _view is { Mode: WallUpdateMode.Panels } or { CanSwitchToPanels: true };
@@ -45,10 +70,43 @@
         try
         {
             _view = await UpdateModes.GetAsync(WallId);
+            _scans = await Scans.ListAsync(WallId, CancellationToken.None);
+            _mayDelete = await Scans.MayDeleteAsync(CancellationToken.None);
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or KioskRestrictedException)
         {
             _view = null;
+        }
+    }
+
+    /// <summary>Site admins only (the service re-checks): removes a received scan to make room under the limits.</summary>
+    private async Task DeleteAsync(Guid scanId)
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        _message = null;
+        try
+        {
+            await Scans.DeleteAsync(WallId, scanId, CancellationToken.None);
+            _scans = await Scans.ListAsync(WallId, CancellationToken.None);
+            _message = "Removed the scan and its files.";
+        }
+        catch (UserFacingException ex)
+        {
+            _message = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Could not remove scan {ScanId} of wall {WallId}.", scanId, WallId);
+            _message = "Could not remove the scan. Please try again.";
+        }
+        finally
+        {
+            _busy = false;
         }
     }
 

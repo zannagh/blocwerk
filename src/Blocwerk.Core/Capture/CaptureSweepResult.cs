@@ -20,6 +20,9 @@ public sealed record CaptureSweepResult(int Drafts, int ExpiredPhotos, int Orpha
     /// <summary>Abandoned capture import folders removed (in a dry run: would be).</summary>
     public RetentionOutcome AbandonedImports { get; init; } = RetentionOutcome.None;
 
-    /// <summary>Bytes actually freed on disk by the whole sweep (a dry run's rules count 0).</summary>
+    /// <summary>Abandoned iPhone scan uploads removed (in a dry run too: they are the server's own staging).</summary>
+    public RetentionOutcome AbandonedScans { get; init; } = RetentionOutcome.None;
+
+    /// <summary>Bytes actually freed on disk by the whole sweep (a dry run's rules count 0; abandoned scans always count).</summary>
     public long FreedBytes { get; init; }
 }

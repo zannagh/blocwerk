@@ -54,6 +54,7 @@ public sealed partial class WallCaptureService(
         {
             var draft = await db.WallCaptures.AsNoTracking()
                 .Where(c => c.WallId == wallId && c.CreatedByUserId == userId && c.Status == WallCaptureStatus.Draft
+                            && c.GeometryMode != WallCaptureGeometryMode.Device
                             && !db.WallRefreshes.Any(r => r.CaptureId == c.Id))
                 .FirstOrDefaultAsync();
             return draft is null ? null : await ToDraftAsync(db, draft);
@@ -73,6 +74,7 @@ public sealed partial class WallCaptureService(
 
             var draft = await db.WallCaptures
                 .FirstOrDefaultAsync(c => c.WallId == wallId && c.CreatedByUserId == userId && c.Status == WallCaptureStatus.Draft
+                            && c.GeometryMode != WallCaptureGeometryMode.Device
                             && !db.WallRefreshes.Any(r => r.CaptureId == c.Id));
             if (draft is null)
             {
@@ -168,7 +170,8 @@ public sealed partial class WallCaptureService(
     private async Task<(BlocwerkDbContext Db, Guid UserId, WallCapture Capture)> OpenDraftAsync(Guid captureId)
     {
         var (db, userId, capture) = await OpenCaptureAsync(captureId);
-        if (capture.Status != WallCaptureStatus.Draft || capture.CreatedByUserId != userId)
+        // An iPhone scan's draft takes its files through the scan upload only.
+        if (capture.Status != WallCaptureStatus.Draft || capture.CreatedByUserId != userId || capture.GeometryMode == WallCaptureGeometryMode.Device)
         {
             await db.DisposeAsync();
             throw new UserFacingException("This capture has already been started and can no longer be changed.");

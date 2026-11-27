@@ -20,10 +20,12 @@ namespace Blocwerk.Core.Capture;
 /// <item>a capture's sparse points (<see cref="WallCapture.SparsePointsStoredPath"/>) follow its photos.</item>
 /// <item>retired models' textures and photo-real views beyond the few kept for a revert (<see cref="SupersededModelRetention"/>);</item>
 /// <item>3D runners' trained results once the view is long installed (<see cref="Runners.GpuJobQueue.DropAgedResultsAsync"/>);</item>
-/// <item>abandoned capture imports (<see cref="ImportStagingRetention"/>).</item>
+/// <item>abandoned capture imports (<see cref="ImportStagingRetention"/>) and iPhone scan uploads (<see cref="ScanUploadRetention"/>,
+/// which also owns the scan drafts: the draft rule above skips them).</item>
 /// </list>
-/// The last three, and the <c>.spz</c> orphans, only log what they would free while
-/// <see cref="WallCapturePipelineOptions.RetentionDryRun"/> is set.
+/// Retired models, runner results and capture imports, and the <c>.spz</c> orphans, only log what they would free while
+/// <see cref="WallCapturePipelineOptions.RetentionDryRun"/> is set; abandoned scan uploads are the server's own staging
+/// and go even then.
 /// A capture's walk-along video and its extracted frames (<see cref="CaptureVideoFiles"/>) follow its
 /// photos: removed with a draft, and with the photos once they expire.
 /// Only the store's known kinds (images, videos, texture source maps, runner files, sparse clouds, photo-real
@@ -50,13 +52,15 @@ public sealed class WallCaptureSweeper(
         var models = await SupersededModelRetention.RunAsync(dbContextFactory, files, options, now, logger, ct);
         var results = await Runners.GpuJobQueue.DropAgedResultsAsync(dbContextFactory, files, options, now, logger, ct);
         var imports = await ImportStagingRetention.RunAsync(files, options, now, logger, ct);
+        var scans = await ScanUploadRetention.RunAsync(dbContextFactory, files, options, now, logger, ct);
         var orphans = await SweepOrphansAsync(now, ct);
         var result = new CaptureSweepResult(drafts, expired, orphans)
         {
             SupersededModels = models,
             RunnerResults = results,
             AbandonedImports = imports,
-            FreedBytes = Interlocked.Read(ref freedBytes) + (options.RetentionDryRun ? 0 : models.Bytes + results.Bytes + imports.Bytes),
+            AbandonedScans = scans,
+            FreedBytes = Interlocked.Read(ref freedBytes) + scans.Bytes + (options.RetentionDryRun ? 0 : models.Bytes + results.Bytes + imports.Bytes),
         };
         Log(result);
         return result;
@@ -80,7 +84,7 @@ public sealed class WallCaptureSweeper(
             .ToListAsync(ct);
 
         // Filtered in memory: SQLite cannot compare DateTimeOffset in SQL.
-        var candidates = (await db.WallCaptures.Where(c => c.Status == WallCaptureStatus.Draft && !owned.Contains(c.Id)).ToListAsync(ct))
+        var candidates = (await db.WallCaptures.Where(c => c.Status == WallCaptureStatus.Draft && c.GeometryMode != WallCaptureGeometryMode.Device && !owned.Contains(c.Id)).ToListAsync(ct))
             .Where(c => c.CreatedAt < cutoff)
             .ToList();
         var candidateIds = candidates.Select(d => d.Id).ToList();
@@ -108,25 +112,29 @@ public sealed class WallCaptureSweeper(
 
     private void Log(CaptureSweepResult r)
     {
-        var retained = r.SupersededModels + r.RunnerResults + r.AbandonedImports;
+        // Abandoned scan uploads are removed even in a dry run, so they count with what was freed, never "would be".
+        var dryRules = r.SupersededModels + r.RunnerResults + r.AbandonedImports;
         var dry = options.RetentionDryRun;
-        if (dry && retained.Count > 0)
+        if (dry && dryRules.Count + r.AbandonedScans.Count > 0)
         {
             logger.LogInformation(
                 "Capture retention (dry run) would free {Bytes}: the 3D files of {Models} retired model(s) ({ModelBytes}), "
-                + "{Results} runner result(s) ({ResultBytes}), {Imports} abandoned import(s) ({ImportBytes})",
-                RetentionFiles.Format(retained.Bytes), r.SupersededModels.Count, RetentionFiles.Format(r.SupersededModels.Bytes),
+                + "{Results} runner result(s) ({ResultBytes}), {Imports} abandoned import(s) ({ImportBytes}); "
+                + "{Scans} abandoned scan upload(s) ({ScanBytes}) were removed regardless",
+                RetentionFiles.Format(dryRules.Bytes), r.SupersededModels.Count, RetentionFiles.Format(r.SupersededModels.Bytes),
                 r.RunnerResults.Count, RetentionFiles.Format(r.RunnerResults.Bytes), r.AbandonedImports.Count,
-                RetentionFiles.Format(r.AbandonedImports.Bytes));
+                RetentionFiles.Format(r.AbandonedImports.Bytes), r.AbandonedScans.Count, RetentionFiles.Format(r.AbandonedScans.Bytes));
         }
 
-        if (r.Drafts + r.ExpiredPhotos + r.OrphanFiles + (dry ? 0 : retained.Count) > 0)
+        if (r.Drafts + r.ExpiredPhotos + r.OrphanFiles + (dry ? 0 : dryRules.Count) + r.AbandonedScans.Count > 0)
         {
             logger.LogInformation(
                 "Capture sweep freed {Bytes}: {Drafts} draft(s), {Photos} expired photo(s), {Orphans} orphan file(s), "
-                + "the 3D files of {Models} retired model(s), {Results} runner result(s), {Imports} abandoned import(s)",
+                + "the 3D files of {Models} retired model(s), {Results} runner result(s), {Imports} abandoned import(s), "
+                + "{Scans} abandoned scan upload(s) ({ScanBytes})",
                 RetentionFiles.Format(r.FreedBytes), r.Drafts, r.ExpiredPhotos, r.OrphanFiles,
-                dry ? 0 : r.SupersededModels.Count, dry ? 0 : r.RunnerResults.Count, dry ? 0 : r.AbandonedImports.Count);
+                dry ? 0 : r.SupersededModels.Count, dry ? 0 : r.RunnerResults.Count, dry ? 0 : r.AbandonedImports.Count,
+                r.AbandonedScans.Count, RetentionFiles.Format(r.AbandonedScans.Bytes));
         }
     }
 

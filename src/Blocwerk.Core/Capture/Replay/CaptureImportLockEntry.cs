@@ -3,7 +3,7 @@
 
 namespace Blocwerk.Core.Capture.Replay;
 
-/// <summary>One import's lock in <see cref="CaptureImportLocks"/> and how many requests hold or wait for it.</summary>
+/// <summary>One key's lock in <see cref="KeyedAsyncLocks{TKey}"/> and how many callers hold or wait for it.</summary>
 internal sealed class CaptureImportLockEntry
 {
     public SemaphoreSlim Gate { get; } = new(1, 1);
