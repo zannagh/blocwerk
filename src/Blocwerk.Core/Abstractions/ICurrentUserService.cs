@@ -43,13 +43,6 @@ public interface ICurrentUserService
     Task SetPreferFontGradesAsync(bool preferFont);
 
     /// <summary>
-    /// Sets whether the current user sees the Tools/Guides button in the bottom navigation bar.
-    /// Persisted on the user row (<see cref="Entities.User.ShowToolsInNav"/>) and invalidates the
-    /// cached user. Kiosk tablets always show Tools regardless of this setting.
-    /// </summary>
-    Task SetShowToolsInNavAsync(bool show);
-
-    /// <summary>
     /// Enables or disables a single notification type for the current user. The stored value is an
     /// opt-OUT bitmask (<see cref="Entities.User.DisabledNotifications"/>): <paramref name="disabled"/>
     /// true sets the type's bit (opts out), false clears it (opts back in). Invalidates the cached user.

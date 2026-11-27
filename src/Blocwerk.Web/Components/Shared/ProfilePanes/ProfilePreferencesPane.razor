@@ -1,5 +1,5 @@
 @* "App" pane: everything that changes how Blocwerk behaves for this member — home wall, zoom lens,
-   grading system, the Tools button and the per-type notification opt-outs. Behaviour (handlers, error
+   grading system and the per-type notification opt-outs. Behaviour (handlers, error
    text, optimistic mirroring onto the shared Viewer instance, the @key revision trick) is unchanged
    from the single-file Profile page. *@
 @implements IDisposable
@@ -65,26 +65,6 @@
         @if (toolbarPlacementError != null)
         {
             <p class="field-error">@toolbarPlacementError</p>
-        }
-    </div>
-
-    <div class="section profile-section-card">
-        <h2>Tools button</h2>
-        <label class="toggle-label">
-            @* @key re-syncs the native checkbox to the bound value: on a failed save we bump
-               settingsRev so Blazor recreates the input (its recorded value is unchanged, so a
-               plain diff would leave it visually flipped). *@
-            <input type="checkbox" checked="@Viewer.ShowToolsInNav"
-                   @onchange="OnShowToolsInNavChange" @key="(settingsRev, 0)" />
-            Show Tools in navigation bar
-        </label>
-        <p class="member-since">
-            Puts the Tools &amp; guides button back in the bottom bar. Wall tablets always show
-            it regardless of this setting.
-        </p>
-        @if (showToolsError != null)
-        {
-            <p class="field-error">@showToolsError</p>
         }
     </div>
 
@@ -171,7 +151,6 @@
 
     private string? homeWallError;
     private string? preferFontError;
-    private string? showToolsError;
     private string? notificationError;
     private string? toolbarPlacementError;
 
@@ -270,25 +249,6 @@
         }
     }
 
-    private async Task OnShowToolsInNavChange(ChangeEventArgs e)
-    {
-        bool show = e.Value is true;
-
-        try
-        {
-            await CurrentUserService.SetShowToolsInNavAsync(show);
-            showToolsError = null;
-            Viewer.ShowToolsInNav = show;
-        }
-        catch (Exception)
-        {
-            showToolsError = "Couldn't update your Tools button setting. Please try again.";
-            // Save failed: Viewer still holds the true value, but the native checkbox flipped. Force a
-            // fresh input (new @key) so it re-renders to the real state instead of staying flipped.
-            settingsRev++;
-        }
-    }
-
     // Opt-OUT semantics: a checked box means the type is ENABLED (its bit is NOT set). Persist the
     // inverse and mirror it into the local mask so the box reflects the change without a reload.
     private async Task OnNotificationToggle(NotificationType type, ChangeEventArgs e)
@@ -311,7 +271,7 @@
         catch (Exception)
         {
             notificationError = "Couldn't update your notification settings. Please try again.";
-            // See OnShowToolsInNavChange: re-key the checkboxes so the failed one snaps back.
+            // Re-key the checkboxes so the failed one snaps back.
             settingsRev++;
         }
     }
