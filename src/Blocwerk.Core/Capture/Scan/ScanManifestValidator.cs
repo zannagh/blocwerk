@@ -4,8 +4,9 @@
 namespace Blocwerk.Core.Capture.Scan;
 
 /// <summary>
-/// Checks a <c>blocwerk-scan/1</c> manifest before a byte of the package is taken: schema version, identity, the 4K
-/// HEVC format, the exposure lock, the file list (names, sizes, hashes, totals), segments, every frame's timestamp, pose
+/// Checks a <c>blocwerk-scan/1</c> manifest before a byte of the package is taken: schema version, identity, the HEVC
+/// format and size, the exposure lock (whole recording or per segment), the optional wall box reach and coverage, the
+/// file list (names, sizes, hashes, totals), segments, every frame's timestamp, pose
 /// and intrinsics, the depth samples and the mesh, and that every listed file is used and every used file listed.
 /// Returns plain sentences naming the field (empty = valid).
 /// </summary>
@@ -24,12 +25,14 @@ public static partial class ScanManifestValidator
         }
 
         CheckHeader(m, wallId, errors);
-        CheckVideoFormat(m.Video, errors);
-        CheckExposureLock(m.ExposureLock, errors);
+        var size = CheckVideoFormat(m.Video, errors);
+        CheckExposureLocks(m, errors);
         CheckWallBox(m.WallBox, errors);
+        CheckWallBoxReach(m.WallBoxReach, errors);
+        CheckCoverage(m.Coverage, errors);
         var files = CheckFiles(m.Files, errors);
         var segments = CheckSegments(m.Segments, files, errors);
-        CheckFrames(m.Frames, segments, errors);
+        CheckFrames(m.Frames, segments, size, errors);
         CheckDepth(m.Depth, m.Frames?.Count ?? 0, segments, files, errors);
         CheckMesh(m.Mesh, files, errors);
         CheckUnreferenced(m, files, errors);
@@ -43,9 +46,9 @@ public static partial class ScanManifestValidator
             errors.Add("scanId is missing.");
         }
 
-        if (m.WallId != wallId)
+        if (m.WallId is { } sent && sent != wallId)
         {
-            errors.Add($"wallId {m.WallId} is not the wall this upload goes to ({wallId}).");
+            errors.Add($"wallId {sent} is not the wall this upload goes to ({wallId}).");
         }
 
         if (m.StartedAt is null)
@@ -61,55 +64,6 @@ public static partial class ScanManifestValidator
         if (string.IsNullOrWhiteSpace(m.Device?.Model) || m.Device.Model.Length > 64 || string.IsNullOrWhiteSpace(m.Device.OsVersion))
         {
             errors.Add("device.model and device.osVersion are required (model at most 64 characters).");
-        }
-    }
-
-    private static void CheckVideoFormat(ScanVideoFormat? video, ScanManifestErrors errors)
-    {
-        if (video is null)
-        {
-            errors.Add("video is missing.");
-            return;
-        }
-
-        if (!string.Equals(video.Codec, "hevc", StringComparison.Ordinal))
-        {
-            errors.Add($"video.codec must be \"hevc\", not \"{video.Codec}\".");
-        }
-
-        if (video.Width != ScanPackageLimits.VideoWidth || video.Height != ScanPackageLimits.VideoHeight)
-        {
-            errors.Add($"video must be 4K ({ScanPackageLimits.VideoWidth}×{ScanPackageLimits.VideoHeight}), not {video.Width}×{video.Height}.");
-        }
-
-        if (video.Fps is not (>= 1 and <= 60))
-        {
-            errors.Add($"video.fps must be between 1 and 60, not {video.Fps}.");
-        }
-    }
-
-    private static void CheckExposureLock(ScanExposureLock? lk, ScanManifestErrors errors)
-    {
-        if (lk is null)
-        {
-            errors.Add("exposureLock is missing: exposure, ISO, white balance and focus are locked when recording starts.");
-            return;
-        }
-
-        if (lk.ExposureDurationSeconds is not (> 0 and < 1) || lk.Iso is not (> 0 and < 100_000))
-        {
-            errors.Add("exposureLock.exposureDurationSeconds (0–1 s) and exposureLock.iso (> 0) are required.");
-        }
-
-        if (lk.WhiteBalanceRed is not (>= 1 and <= 16) || lk.WhiteBalanceGreen is not (>= 1 and <= 16)
-            || lk.WhiteBalanceBlue is not (>= 1 and <= 16))
-        {
-            errors.Add("exposureLock.whiteBalanceRed/Green/Blue must be device gains between 1 and 16.");
-        }
-
-        if (lk.LensPosition is not (>= 0 and <= 1) || lk.LockedAt is not { } at || !double.IsFinite(at))
-        {
-            errors.Add("exposureLock.lensPosition (0–1) and exposureLock.lockedAt (session time) are required.");
         }
     }
 

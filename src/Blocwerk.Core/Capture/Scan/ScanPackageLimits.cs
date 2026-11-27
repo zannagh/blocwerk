@@ -37,9 +37,21 @@ public static class ScanPackageLimits
     /// <summary>The longest a scan may span on the session clock (the app stops at ten minutes; pauses add some).</summary>
     public const double MaxDurationSeconds = 30 * 60;
 
-    public const int VideoWidth = 3840;
+    /// <summary>The smallest video frame taken: 1280×720 (16:9) or 1280×960 (4:3).</summary>
+    public const int MinVideoWidth = 1280;
 
-    public const int VideoHeight = 2160;
+    public const int MinVideoHeight = 720;
+
+    /// <summary>The largest video frame taken: 3840×2160 (16:9) or 2880×2160 (4:3).</summary>
+    public const int MaxVideoWidth = 3840;
+
+    public const int MaxVideoHeight = 2160;
+
+    /// <summary>The most named bins a coverage summary may carry.</summary>
+    public const int MaxCoverageBins = 32;
+
+    /// <summary>The furthest a wall box reaches in front of or behind its plane (overhangs, a roof), in metres.</summary>
+    public const double MaxWallBoxReachMeters = 20;
 
     public const int MaxDepthSide = 1024;
 

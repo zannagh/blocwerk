@@ -3547,6 +3547,9 @@ namespace Blocwerk.Core.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
+                    b.Property<bool>("Synthetic")
+                        .HasColumnType("boolean");
+
                     b.Property<long>("TotalBytes")
                         .HasColumnType("bigint");
 

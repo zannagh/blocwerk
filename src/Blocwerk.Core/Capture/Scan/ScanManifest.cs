@@ -15,7 +15,11 @@ public sealed record ScanManifest
 
     public Guid? ScanId { get; init; }
 
+    /// <summary>Optional: the wall comes from the URL and is stored from there; when sent, it must be that wall.</summary>
     public Guid? WallId { get; init; }
+
+    /// <summary>A generated test package, not a real recording; stored on the scan and shown as "synthetic".</summary>
+    public bool? Synthetic { get; init; }
 
     public DateTimeOffset? StartedAt { get; init; }
 
@@ -25,10 +29,20 @@ public sealed record ScanManifest
 
     public ScanVideoFormat? Video { get; init; }
 
+    /// <summary>
+    /// The lock of the whole recording. Kept for older apps: a package needs either this or an
+    /// <see cref="ScanSegment.ExposureLock"/> on every segment.
+    /// </summary>
     public ScanExposureLock? ExposureLock { get; init; }
 
     /// <summary>Three points in ARKit world (metres): the two floor ends of the wall and a point on its top edge.</summary>
     public IReadOnlyList<double[]>? WallBox { get; init; }
+
+    /// <summary>Optional: how far the wall reaches in front of and behind the box's plane (overhangs).</summary>
+    public ScanWallBoxReach? WallBoxReach { get; init; }
+
+    /// <summary>Optional: how much of the wall the app saw well enough, as it showed the climber while scanning.</summary>
+    public ScanCoverage? Coverage { get; init; }
 
     public IReadOnlyList<ScanSegment>? Segments { get; init; }
 

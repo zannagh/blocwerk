@@ -80,14 +80,13 @@ public class ScanManifestValidatorTests
     }
 
     [Fact]
-    public void OnlyFourKHevc_IsTaken()
+    public void OnlyHevc_IsTaken()
     {
         var (manifest, _) = ScanPackageBuilder.Build(WallId);
 
-        var problems = ScanManifestValidator.Validate(manifest with { Video = new ScanVideoFormat("h264", 1920, 1080, 30) }, WallId);
+        var problems = ScanManifestValidator.Validate(manifest with { Video = new ScanVideoFormat("h264", 3840, 2160, 30) }, WallId);
 
         Assert.Contains(problems, p => p.Contains("hevc", StringComparison.Ordinal));
-        Assert.Contains(problems, p => p.Contains("4K", StringComparison.Ordinal));
     }
 
     [Fact]

@@ -35,6 +35,7 @@ namespace Blocwerk.Core.Migrations
                     TotalBytes = table.Column<long>(type: "bigint", nullable: false),
                     DeviceModel = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: true),
                     AppVersion = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: true),
+                    Synthetic = table.Column<bool>(type: "boolean", nullable: false),
                     ReceivedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
                     PointCloudPath = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: true),
                     PointCloudBytes = table.Column<long>(type: "bigint", nullable: true)

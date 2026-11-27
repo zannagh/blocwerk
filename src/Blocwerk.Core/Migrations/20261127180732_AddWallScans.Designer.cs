@@ -13,7 +13,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Blocwerk.Core.Migrations
 {
     [DbContext(typeof(BlocwerkDbContext))]
-    [Migration("20261127151735_AddWallScans")]
+    [Migration("20261127180732_AddWallScans")]
     partial class AddWallScans
     {
         /// <inheritdoc />
@@ -3549,6 +3549,9 @@ namespace Blocwerk.Core.Migrations
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
+
+                    b.Property<bool>("Synthetic")
+                        .HasColumnType("boolean");
 
                     b.Property<long>("TotalBytes")
                         .HasColumnType("bigint");

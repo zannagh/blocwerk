@@ -38,6 +38,9 @@ public class WallScan
     [MaxLength(64)]
     public string? AppVersion { get; set; }
 
+    /// <summary>A generated test package (the manifest's <c>synthetic</c>), not a real recording; the UI marks it.</summary>
+    public bool Synthetic { get; set; }
+
     /// <summary>When the commit found every file present and verified; null while the upload is open.</summary>
     public DateTimeOffset? ReceivedAt { get; set; }
 

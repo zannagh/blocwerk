@@ -29,7 +29,7 @@ public static partial class ScanManifestValidator
 
             if (s.Videos is not { Count: > 0 })
             {
-                errors.Add($"segment {id}: videos is empty; every segment is recorded as 4K video.");
+                errors.Add($"segment {id}: videos is empty; every segment is recorded as video.");
             }
 
             foreach (var piece in s.Videos ?? [])
@@ -57,7 +57,8 @@ public static partial class ScanManifestValidator
         }
     }
 
-    private static void CheckFrames(IReadOnlyList<ScanFrame>? frames, Dictionary<int, (double Start, double End)> segments, ScanManifestErrors errors)
+    private static void CheckFrames(
+        IReadOnlyList<ScanFrame>? frames, Dictionary<int, (double Start, double End)> segments, (int Width, int Height) size, ScanManifestErrors errors)
     {
         if (frames is not { Count: > 0 } || frames.Count > ScanPackageLimits.MaxFrames)
         {
@@ -82,18 +83,18 @@ public static partial class ScanManifestValidator
                 last[f.Segment.Value] = f.T!.Value;
             }
 
-            CheckFrame(i, f, errors);
+            CheckFrame(i, f, size, errors);
         }
     }
 
-    private static void CheckFrame(int i, ScanFrame f, ScanManifestErrors errors)
+    private static void CheckFrame(int i, ScanFrame f, (int Width, int Height) size, ScanManifestErrors errors)
     {
         if (ScanPoseCheck.Problem(f.Pose) is { } pose)
         {
             errors.Add($"frames[{i}].pose: {pose}");
         }
 
-        if (ScanPoseCheck.IntrinsicsProblem(f.Intrinsics, ScanPackageLimits.VideoWidth, ScanPackageLimits.VideoHeight) is { } k)
+        if (ScanPoseCheck.IntrinsicsProblem(f.Intrinsics, size.Width, size.Height) is { } k)
         {
             errors.Add($"frames[{i}].intrinsics: {k}");
         }
@@ -101,6 +102,11 @@ public static partial class ScanManifestValidator
         if (f.Tracking is null || !TrackingStates.Contains(f.Tracking))
         {
             errors.Add($"frames[{i}].tracking must be normal, limited or notAvailable.");
+        }
+
+        if (f.Camera is { } camera && CameraProblem(camera) is { } problem)
+        {
+            errors.Add($"frames[{i}].camera: {problem}");
         }
     }
 
