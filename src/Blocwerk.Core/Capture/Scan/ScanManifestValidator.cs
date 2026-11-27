@@ -28,6 +28,7 @@ public static partial class ScanManifestValidator
         var size = CheckVideoFormat(m.Video, errors);
         CheckExposureLocks(m, errors);
         CheckWallBox(m.WallBox, errors);
+        CheckReferencePlane(m.ReferencePlane, errors);
         CheckWallBoxReach(m.WallBoxReach, errors);
         CheckCoverage(m.Coverage, errors);
         var files = CheckFiles(m.Files, errors);
@@ -67,11 +68,36 @@ public static partial class ScanManifestValidator
         }
     }
 
+    /// <summary>Optional; when sent, three points.</summary>
     private static void CheckWallBox(IReadOnlyList<double[]>? box, ScanManifestErrors errors)
     {
-        if (box is not { Count: 3 } || box.Any(p => p is not { Length: 3 } || p.Any(v => !double.IsFinite(v) || Math.Abs(v) > 100)))
+        if (box is null)
+        {
+            return;
+        }
+
+        if (box.Count != 3 || box.Any(p => p is not { Length: 3 } || p.Any(v => !double.IsFinite(v) || Math.Abs(v) > 100)))
         {
             errors.Add("wallBox must be three points of three finite coordinates in metres (within 100 m).");
+        }
+    }
+
+    /// <summary>Optional; when sent, a point within 100 m and a finite normal of non-zero length.</summary>
+    private static void CheckReferencePlane(ScanReferencePlane? plane, ScanManifestErrors errors)
+    {
+        if (plane is null)
+        {
+            return;
+        }
+
+        if (plane.Point is not { Length: 3 } point || point.Any(v => !double.IsFinite(v) || Math.Abs(v) > 100))
+        {
+            errors.Add("referencePlane.point must be three finite coordinates in metres (within 100 m).");
+        }
+
+        if (plane.UnitNormal is null)
+        {
+            errors.Add("referencePlane.normal must be three finite numbers, not of zero length.");
         }
     }
 }

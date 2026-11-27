@@ -25,6 +25,33 @@ public class ScanManifestOptionalFieldsTests
     }
 
     [Fact]
+    public void WithoutAWallBox_TheManifestIsValid_AnEmptyOneIsNot()
+    {
+        var (manifest, _) = ScanPackageBuilder.Build(WallId);
+
+        Assert.Empty(ScanManifestValidator.Validate(manifest with { WallBox = null }, WallId));
+        Assert.Contains(ScanManifestValidator.Validate(manifest with { WallBox = [] }, WallId), p => p.StartsWith("wallBox", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void AReferencePlane_IsTakenWithItsNormalNormalised_AZeroOrNonFiniteOneIsNot()
+    {
+        var (manifest, _) = ScanPackageBuilder.Build(WallId);
+        var plane = new ScanReferencePlane([0.5, 1.2, -1.5], [0, 0, 2]);
+
+        Assert.Empty(ScanManifestValidator.Validate(manifest with { WallBox = null, ReferencePlane = plane }, WallId));
+        Assert.Equal(new[] { 0.0, 0.0, 1.0 }, plane.UnitNormal);
+        Assert.Contains(
+            ScanManifestValidator.Validate(manifest with { ReferencePlane = plane with { Normal = [0, 0, 0] } }, WallId),
+            p => p.StartsWith("referencePlane.normal", StringComparison.Ordinal));
+        Assert.Contains(
+            ScanManifestValidator.Validate(manifest with { ReferencePlane = plane with { Point = [double.NaN, 0, 0] } }, WallId),
+            p => p.StartsWith("referencePlane.point", StringComparison.Ordinal));
+        var read = JsonSerializer.Deserialize<ScanManifest>("""{"referencePlane":{"point":[1,2,3],"normal":[0,3,4]}}""", CapturePackageFiles.Json)!;
+        Assert.Equal(new[] { 0.0, 0.6, 0.8 }, read.ReferencePlane!.UnitNormal);
+    }
+
+    [Fact]
     public void EveryOptionalPart_WhenValid_IsTaken()
     {
         var (manifest, _) = ScanPackageBuilder.Build(WallId);

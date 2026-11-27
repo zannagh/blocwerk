@@ -35,10 +35,16 @@ public sealed record ScanManifest
     /// </summary>
     public ScanExposureLock? ExposureLock { get; init; }
 
-    /// <summary>Three points in ARKit world (metres): the two floor ends of the wall and a point on its top edge.</summary>
+    /// <summary>
+    /// Optional: three points in ARKit world (metres), the two floor ends of the wall and a point on its top edge. Older
+    /// apps send it; the app now sends <see cref="ReferencePlane"/> instead.
+    /// </summary>
     public IReadOnlyList<double[]>? WallBox { get; init; }
 
-    /// <summary>Optional: how far the wall reaches in front of and behind the box's plane (overhangs).</summary>
+    /// <summary>Optional: the wall's plane, a point on it and its normal (ARKit world, metres).</summary>
+    public ScanReferencePlane? ReferencePlane { get; init; }
+
+    /// <summary>Optional: how far the wall reaches in front of and behind its plane (overhangs).</summary>
     public ScanWallBoxReach? WallBoxReach { get; init; }
 
     /// <summary>Optional: how much of the wall the app saw well enough, as it showed the climber while scanning.</summary>
