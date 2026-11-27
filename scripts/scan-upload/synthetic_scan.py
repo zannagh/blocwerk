@@ -7,7 +7,8 @@
     synthetic_scan.py upload --base https://host --wall WALL_ID --dir DIR [--stop-after N] [--corrupt NAME]
 
 The upload reads the personal API key (write access) from BLOCWERK_API_KEY. It begins with the manifest, PUTs only the
-files the server says are missing, then commits. Redirects are refused, so the key is never sent anywhere else. Run it again after an interruption: it sends only what is still
+files the server says are missing, then commits. Redirects are refused, so the key is never sent anywhere else, and
+--base must be https unless the host is localhost or 127.0.0.1. Run it again after an interruption: it sends only what is still
 missing. --stop-after N stops after N files (to test resume); --corrupt NAME sends that file with one byte flipped and
 expects the server to refuse it. The video pieces are random bytes, not real HEVC: the server does not decode video yet.
 Standard library only.
@@ -130,7 +131,18 @@ def call(method, url, key, body=None, headers=None):
             return error.code, {"message": text}
 
 
+def check_base(base):
+    """Refuses a base URL the key would travel to in the clear: https only, plain http for this machine alone."""
+    url = urllib.parse.urlsplit(base)
+    if url.scheme == "https" and url.hostname:
+        return
+    if url.scheme == "http" and url.hostname in ("localhost", "127.0.0.1"):
+        return
+    sys.exit(f"Refusing {base}: use https (plain http only for localhost or 127.0.0.1), so the API key is not sent in the clear.")
+
+
 def upload(args):
+    check_base(args.base)
     key = os.environ.get("BLOCWERK_API_KEY")
     if not key:
         sys.exit("Set BLOCWERK_API_KEY to a personal API key with write access.")
