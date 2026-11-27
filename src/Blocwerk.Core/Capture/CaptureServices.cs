@@ -83,6 +83,7 @@ public static class CaptureServices
 
         // Replaying a finished capture on another instance without training (app admins; see CapturePackageService).
         services.AddScoped<Replay.ICapturePackageService, Replay.CapturePackageService>();
+        services.AddScoped<Scan.IWallScanService, Scan.WallScanService>();
         services.AddScoped<Scan.IWallUpdateModeService, Scan.WallUpdateModeService>();
 
         // The progress read model of every long-running job, its API/UI service and its telemetry (see JobProgressReader).

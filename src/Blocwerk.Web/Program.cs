@@ -276,6 +276,9 @@ public static class Program
         // app keeps ONE OnRejected that dispatches per policy (a second AddRateLimiter would overwrite it).
         builder.Services.AddRunnerRateLimit();
 
+        // The iPhone scan upload's per-caller limit (see WallScanRateLimit), through RateLimitPolicies as well.
+        builder.Services.AddWallScanRateLimit();
+
         // The feed's catch-up and stream routes (PR 1.6): their open-stream caps and their per-address rate limit, also
         // through RateLimitPolicies.
         builder.Services.AddFeedStream();
@@ -495,6 +498,9 @@ public static class Program
 
         // The "Update panels + 3D" drop zone: one photo or video per request (see WallRefreshUploadEndpoint).
         app.MapWallRefreshUpload();
+
+        // The companion app's iPhone scan upload: begin, one file per PUT, commit (see WallScanEndpoints).
+        app.MapWallScans();
 
         // The pictures of the confirm screen's cards, made on request (see WallRefreshCheckCropEndpoint).
         app.MapWallRefreshCheckCrops();

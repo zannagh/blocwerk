@@ -2,7 +2,8 @@
 
 What the companion app uploads for a wall update by iPhone scan, and how. The server checks every manifest with
 `ScanManifestValidator` (`src/Blocwerk.Core/Capture/Scan/`) before it takes a byte of the package; its tests
-(`test/Blocwerk.Core.Tests/Scan/`) are the reference.
+(`test/Blocwerk.Core.Tests/Scan/`) are the reference. `scripts/scan-upload/synthetic_scan.py` builds and uploads a valid
+synthetic package.
 
 Conventions are ARKit's, unconverted: world right-handed, Y up = gravity, metres; camera x right, y up, looking down −Z.
 Times are seconds on the session clock (`ARFrame.timestamp`).
@@ -41,3 +42,23 @@ A file name is one of these four folders and `[A-Za-z0-9_-]{1,64}` plus the fold
 | `depth[]` | `{t, segment, file, confidenceFile, width, height}` | at a lower rate than the frames, at least one, no more than there are frames; sides 1–1024 px |
 | `mesh` | `{file}` | `mesh/*.ply` |
 | `files[]` | `{name, bytes, sha256}` | 1–20 000 files, sha256 lowercase hex; video ≤ 1 GiB, depth/confidence ≤ 2 MiB, mesh ≤ 512 MiB, package ≤ 4 GiB; every file used by the manifest and every used file listed |
+
+## Upload
+
+All under `/api/walls/{wallId}/scans`, JSON, `Authorization: Bearer bwk_…` (a personal API key with write access) or the
+browser session. Only the wall's owner, admins and moderators, and administrators of the installation, may upload; the
+wall must have "iPhone scan" switched on in its settings. Wall keys, kiosk keys, share links and visitors are refused.
+Per caller about 20 requests per second (bursts of 1000); 429 with `Retry-After` beyond.
+
+| Call | Answer |
+|---|---|
+| `POST /` with the manifest (≤ 64 MB) | 200 with the state; 400 with `problems[]` for an invalid manifest; 409 when the wall is not set to iPhone scan or the `scanId` is taken |
+| `PUT /{scanId}/files/{name}` raw body, optional `X-Content-SHA256` | 200 with the state; a file already received is not read again; 422 for wrong bytes or hash; 413 when longer than the manifest says |
+| `POST /{scanId}/commit` | 200 with status `received`; 409 with the missing files in `problems[]` |
+| `GET /{scanId}` | 200 with the state |
+
+The state is `{scanId, wallId, status: "uploading"|"received", stage, missing[], totalFiles, totalBytes, receivedBytes}`.
+After an interruption, `POST` the same manifest again and send exactly `missing[]`. A received scan shows on the wall's
+3D capture list as "Received, waiting for processing". An upload left unfinished for the import retention period
+(`ImportStagingDays`, default 3 days) is removed by the capture retention; a received scan, and the point cloud that
+processing will keep in its folder (`derived/point-cloud.ply`), are not.

@@ -3,6 +3,7 @@
 @using Blocwerk.Core.Capture.Scan
 @using Blocwerk.Core.Entities
 @inject IWallUpdateModeService UpdateModes
+@inject IWallScanService Scans
 @inject ILogger<WallUpdateModeSetting> Logger
 
 @if (_view is not null)
@@ -27,6 +28,18 @@
         {
             <p class="field-hint" role="status">@_message</p>
         }
+        @if (_scans.Count > 0)
+        {
+            <div class="wall-scan-list">
+                @foreach (var scan in _scans)
+                {
+                    <p class="field-hint">
+                        Scan of @scan.CreatedAt.ToLocalTime().ToString("d MMM yyyy, HH:mm") · @(scan.DeviceModel ?? "iPhone")
+                        · @(scan.TotalBytes / (1024 * 1024)) MB: <strong>@(scan.Stage ?? "Uploading")</strong>
+                    </p>
+                }
+            </div>
+        }
     </div>
 }
 
@@ -35,6 +48,7 @@
     public Guid WallId { get; set; }
 
     private WallUpdateModeView? _view;
+    private IReadOnlyList<WallScanSummary> _scans = [];
     private bool _busy;
     private string? _message;
 
@@ -45,6 +59,7 @@
         try
         {
             _view = await UpdateModes.GetAsync(WallId);
+            _scans = await Scans.ListAsync(WallId, CancellationToken.None);
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or KioskRestrictedException)
         {
