@@ -81,8 +81,13 @@ public sealed class ScanStorage(ICaptureFileStore files)
         return new DateTimeOffset(last, TimeSpan.Zero);
     }
 
-    /// <summary>Free bytes on the store's volume.</summary>
-    public long FreeBytes() => new DriveInfo(Root()).AvailableFreeSpace;
+    /// <summary>Free bytes on the store's volume (the scans folder is made first: a drive is looked up by an existing path).</summary>
+    public long FreeBytes()
+    {
+        var root = Root();
+        Directory.CreateDirectory(root);
+        return new DriveInfo(root).AvailableFreeSpace;
+    }
 
     private string Root()
     {

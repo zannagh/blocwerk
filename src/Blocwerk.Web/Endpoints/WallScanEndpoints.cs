@@ -18,7 +18,8 @@ namespace Blocwerk.Web.Endpoints;
 /// read again), <c>POST …/commit</c>, and <c>GET</c> the state. Under <c>/api/walls</c>, so a personal key's bearer reaches
 /// the API-key handler; the policy then admits a signed-in browser user or a PERSONAL key with write access only (never a
 /// wall key, kiosk key or installation key), and <see cref="IWallScanService"/> decides the wall: owner, admin or
-/// moderator of it, or an administrator of the installation, never from a kiosk or a visitor link.
+/// moderator of it, or an administrator of the installation, never from a kiosk or a visitor link. Begin and commit take
+/// <c>Content-Type: application/json</c> only (415 otherwise), so a cross-site form can never post one.
 /// </summary>
 public static class WallScanEndpoints
 {
@@ -29,15 +30,15 @@ public static class WallScanEndpoints
     public static void MapWallScans(this WebApplication app)
     {
         // Antiforgery is off like the other streamed uploads: the SameSite=Lax cookie is never sent on a cross-site
-        // POST or PUT, and a key caller has no antiforgery token to send.
+        // POST or PUT, a key caller has no antiforgery token to send, and the POSTs want a JSON content type, which a
+        // cross-site form cannot send.
         var group = app.MapGroup(Prefix)
             .RequireAuthorization(BlocwerkPolicies.HumanOrUserApiKey)
             .DisableAntiforgery()
-            .RequireRateLimiting(WallScanRateLimit.Policy);
+            .RequireWallScanRateLimit();
         group.MapPost(string.Empty, BeginAsync);
         group.MapPut("{scanId:guid}/files/{**name}", PutFileAsync);
-        group.MapPost("{scanId:guid}/commit", (Guid wallId, Guid scanId, IWallScanService scans, CancellationToken ct) =>
-            RunAsync(() => scans.CommitAsync(wallId, scanId, ct)));
+        group.MapPost("{scanId:guid}/commit", CommitAsync);
         group.MapGet("{scanId:guid}", (Guid wallId, Guid scanId, IWallScanService scans, CancellationToken ct) =>
             RunAsync(() => scans.GetAsync(wallId, scanId, ct)));
     }
@@ -52,11 +53,19 @@ public static class WallScanEndpoints
                 throw new ScanUploadException(ScanUploadException.TooLarge, "The manifest is too large.");
             }
 
+            EnsureJson(http);
             var manifest = await JsonSerializer.DeserializeAsync<ScanManifest>(http.Request.Body, CapturePackageFiles.Json, ct)
                            ?? throw new JsonException("The body is empty.");
             return await scans.BeginAsync(wallId, manifest, ct);
         });
     }
+
+    internal static Task<IResult> CommitAsync(Guid wallId, Guid scanId, HttpContext http, IWallScanService scans, CancellationToken ct) =>
+        RunAsync(() =>
+        {
+            EnsureJson(http);
+            return scans.CommitAsync(wallId, scanId, ct);
+        });
 
     internal static Task<IResult> PutFileAsync(Guid wallId, Guid scanId, string name, HttpContext http, IWallScanService scans, CancellationToken ct)
     {
@@ -72,7 +81,7 @@ public static class WallScanEndpoints
         return RunAsync(() => scans.PutFileAsync(wallId, scanId, name, sha256, http.Request.ContentLength, http.Request.Body, ct));
     }
 
-    internal static async Task<IResult> RunAsync(Func<Task<ScanUploadState>> action)
+    internal static async Task<IResult> RunAsync<T>(Func<Task<T>> action)
     {
         try
         {
@@ -97,6 +106,15 @@ public static class WallScanEndpoints
         catch (UserFacingException ex)
         {
             return Error(StatusCodes.Status409Conflict, ex.Message);
+        }
+    }
+
+    /// <summary>415 unless the request says it is JSON (an empty commit body too).</summary>
+    private static void EnsureJson(HttpContext http)
+    {
+        if (!http.Request.HasJsonContentType())
+        {
+            throw new ScanUploadException(StatusCodes.Status415UnsupportedMediaType, "Send this request with Content-Type: application/json.");
         }
     }
 

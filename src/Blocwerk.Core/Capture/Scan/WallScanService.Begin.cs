@@ -42,31 +42,82 @@ public sealed partial class WallScanService
         var capture = await db.WallCaptures.FirstOrDefaultAsync(c => c.Id == scanId, ct);
         if (capture is null)
         {
-            capture = Open(db, wallId, scanId, manifest, json);
+            return await OpenNewAsync(db, wallId, scanId, manifest, json, ct);
         }
-        else if (capture.WallId != wallId || capture.GeometryMode != WallCaptureGeometryMode.Device)
+
+        if (capture.WallId != wallId || capture.GeometryMode != WallCaptureGeometryMode.Device)
         {
             throw new ScanUploadException(ScanUploadException.Conflict, "This scanId is already in use; start the scan again with a new one.");
         }
-        else
-        {
-            var scan = await db.WallScans.FirstAsync(s => s.CaptureId == scanId, ct);
-            if (capture.Status != WallCaptureStatus.Draft)
-            {
-                return scan.ManifestJson == json
-                    ? State(capture, manifest)
-                    : throw new ScanUploadException(ScanUploadException.Conflict, "This scan was received already; a changed package needs a new scanId.");
-            }
 
-            DropChangedFiles(scanId, JsonSerializer.Deserialize<ScanManifest>(scan.ManifestJson, CapturePackageFiles.Json)!, manifest);
-            Describe(scan, manifest, json);
+        await EnsureCreatorAsync(db, capture, ct);
+        var scan = await db.WallScans.FirstAsync(s => s.CaptureId == scanId, ct);
+        if (capture.Status != WallCaptureStatus.Draft)
+        {
+            return scan.ManifestJson == json
+                ? State(capture, manifest)
+                : throw new ScanUploadException(ScanUploadException.Conflict, "This scan was received already; a changed package needs a new scanId.");
         }
 
+        DropChangedFiles(scanId, JsonSerializer.Deserialize<ScanManifest>(scan.ManifestJson, CapturePackageFiles.Json)!, manifest);
+        Describe(scan, manifest, json);
         var state = State(capture, manifest);
-        EnsureSpace(state);
+        EnsureSpace(state.TotalBytes - state.ReceivedBytes);
         await db.SaveChangesAsync(ct);
+        ScanFileTables.Changed(scanId);
+        return Begun(state);
+    }
+
+    /// <summary>A new scan: within the open-scan caps and the free space, its capture, row and folder are made.</summary>
+    private async Task<ScanUploadState> OpenNewAsync(BlocwerkDbContext db, Guid wallId, Guid scanId, ScanManifest manifest, string json, CancellationToken ct)
+    {
+        await OpenGate.WaitAsync(ct);
+        try
+        {
+            await EnsureUnderCapsAsync(db, wallId, ct);
+            EnsureSpace(manifest.Files!.Sum(f => f.Bytes ?? 0));
+            var capture = Open(db, wallId, scanId, manifest, json);
+            await db.SaveChangesAsync(ct);
+            ScanFileTables.Changed(scanId);
+            return Begun(State(capture, manifest));
+        }
+        finally
+        {
+            OpenGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// At most <see cref="MaxOpenScansPerUser"/> open scans per user and <see cref="MaxOpenScansPerWall"/> per wall, so
+    /// begun-and-forgotten uploads cannot fill the disk; an abandoned one is removed by retention after a while.
+    /// </summary>
+    private static async Task EnsureUnderCapsAsync(BlocwerkDbContext db, Guid wallId, CancellationToken ct)
+    {
+        var userId = db.CurrentUserId;
+        var open = await db.WallCaptures.AsNoTracking()
+            .Where(c => c.GeometryMode == WallCaptureGeometryMode.Device && c.Status == WallCaptureStatus.Draft
+                        && (c.WallId == wallId || c.CreatedByUserId == userId))
+            .Select(c => new { c.WallId, c.CreatedByUserId })
+            .ToListAsync(ct);
+        if (open.Count(c => c.CreatedByUserId == userId) >= MaxOpenScansPerUser)
+        {
+            throw new ScanUploadException(
+                ScanUploadException.Conflict,
+                $"You have {MaxOpenScansPerUser} scan uploads open already. Finish one of them (send it again to resume it) before you begin another.");
+        }
+
+        if (open.Count(c => c.WallId == wallId) >= MaxOpenScansPerWall)
+        {
+            throw new ScanUploadException(
+                ScanUploadException.Conflict,
+                $"This wall has {MaxOpenScansPerWall} scan uploads open already. Finish one of them before you begin another.");
+        }
+    }
+
+    private ScanUploadState Begun(ScanUploadState state)
+    {
         logger.LogInformation(
-            "Scan {ScanId} on wall {WallId}: begun, {Missing} of {Total} file(s) missing", scanId, wallId, state.Missing.Count, state.TotalFiles);
+            "Scan {ScanId} on wall {WallId}: begun, {Missing} of {Total} file(s) missing", state.ScanId, state.WallId, state.Missing.Count, state.TotalFiles);
         return state;
     }
 
@@ -113,10 +164,11 @@ public sealed partial class WallScanService
         }
     }
 
-    private void EnsureSpace(ScanUploadState state)
+    /// <summary>Refuses when the store's volume would keep less than the margin free after <paramref name="bytes"/> more.</summary>
+    private void EnsureSpace(long bytes)
     {
-        var needed = state.TotalBytes - state.ReceivedBytes + FreeSpaceMargin;
-        if (storage.FreeBytes() < needed)
+        var needed = bytes + FreeSpaceMargin;
+        if (FreeSpace() < needed)
         {
             throw new ScanUploadException(
                 ScanUploadException.Conflict, $"The server has not enough free space for this scan ({needed / (1024 * 1024)} MB needed).");

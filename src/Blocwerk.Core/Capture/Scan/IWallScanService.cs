@@ -15,9 +15,10 @@ public interface IWallScanService
 
     /// <summary>
     /// Takes one file as a stream, verified against the manifest's size and SHA-256 (and <paramref name="sha256"/>, when
-    /// the caller sends it). A file already received is not read again.
+    /// the caller sends it). A file already received is not read again. Answers with that file only; the files of one
+    /// scan may be sent in parallel. Only the user who began the scan, or an administrator of the installation, may send.
     /// </summary>
-    Task<ScanUploadState> PutFileAsync(Guid wallId, Guid scanId, string name, string? sha256, long? length, Stream body, CancellationToken ct);
+    Task<ScanFileState> PutFileAsync(Guid wallId, Guid scanId, string name, string? sha256, long? length, Stream body, CancellationToken ct);
 
     /// <summary>Marks the scan received once every file is there; 409 with the missing files otherwise.</summary>
     Task<ScanUploadState> CommitAsync(Guid wallId, Guid scanId, CancellationToken ct);

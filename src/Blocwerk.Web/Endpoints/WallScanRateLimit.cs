@@ -1,39 +1,23 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
-using System.Security.Claims;
-using System.Threading.RateLimiting;
-using Blocwerk.Authentication.Endpoints;
-
 namespace Blocwerk.Web.Endpoints;
 
 /// <summary>
-/// The scan upload's rate limit, per caller (the signed-in user or key owner, else the address): a package is up to a
-/// few thousand files, sent a few at a time by a background session, so the bucket lets a whole package through in
-/// minutes while a runaway client is held to about 20 requests a second.
+/// The scan upload's rate limit (<see cref="WallScanRateLimiter"/>): an endpoint filter rather than a policy of the
+/// rate-limiter middleware, because that middleware runs before authentication and could only count per address. The
+/// filter runs after authorization, so it counts per user and per key.
 /// </summary>
 public static class WallScanRateLimit
 {
-    public const string Policy = "scans";
+    public static IServiceCollection AddWallScanRateLimit(this IServiceCollection services) =>
+        services.AddSingleton(_ => new WallScanRateLimiter());
 
-    private const int Burst = 1000;
-
-    public static void AddWallScanRateLimit(this IServiceCollection services) =>
-        services.AddRateLimitPolicy(
-            Policy,
-            http => RateLimitPartition.GetTokenBucketLimiter(
-                http.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-                _ => new TokenBucketRateLimiterOptions
-                {
-                    TokenLimit = Burst,
-                    TokensPerPeriod = 200,
-                    ReplenishmentPeriod = TimeSpan.FromSeconds(10),
-                    QueueLimit = 0,
-                    AutoReplenishment = true,
-                }),
-            (context, _) =>
-            {
-                context.HttpContext.Response.Headers.RetryAfter = "10";
-                return ValueTask.CompletedTask;
-            });
+    /// <summary>Limits every route of <paramref name="group"/> with the one shared <see cref="WallScanRateLimiter"/>.</summary>
+    public static RouteGroupBuilder RequireWallScanRateLimit(this RouteGroupBuilder group)
+    {
+        group.AddEndpointFilter((context, next) =>
+            context.HttpContext.RequestServices.GetRequiredService<WallScanRateLimiter>().InvokeAsync(context, next));
+        return group;
+    }
 }

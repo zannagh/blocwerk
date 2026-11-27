@@ -47,18 +47,18 @@ internal sealed class ScanScenario : IDisposable
         await db.SaveChangesAsync();
     }
 
-    /// <summary>Sends every file the state names as missing (or only the first <paramref name="limit"/>).</summary>
+    /// <summary>Sends every file the state names as missing (or only the first <paramref name="limit"/>); answers the new state.</summary>
     public async Task<ScanUploadState> PutMissingAsync(ScanUploadState state, Dictionary<string, byte[]> files, int limit = int.MaxValue)
     {
         foreach (var name in state.Missing.Take(limit))
         {
-            state = await PutAsync(state.ScanId, name, files[name]);
+            await PutAsync(state.ScanId, name, files[name]);
         }
 
-        return state;
+        return await Service.GetAsync(Harness.WallId, state.ScanId, CancellationToken.None);
     }
 
-    public Task<ScanUploadState> PutAsync(Guid scanId, string name, byte[] bytes, string? sha = null) =>
+    public Task<ScanFileState> PutAsync(Guid scanId, string name, byte[] bytes, string? sha = null) =>
         Service.PutFileAsync(Harness.WallId, scanId, name, sha, bytes.Length, new MemoryStream(bytes), CancellationToken.None);
 
     public void Dispose()

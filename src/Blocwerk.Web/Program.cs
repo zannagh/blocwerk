@@ -276,7 +276,8 @@ public static class Program
         // app keeps ONE OnRejected that dispatches per policy (a second AddRateLimiter would overwrite it).
         builder.Services.AddRunnerRateLimit();
 
-        // The iPhone scan upload's per-caller limit (see WallScanRateLimit), through RateLimitPolicies as well.
+        // The iPhone scan upload's per-user-and-key limit (see WallScanRateLimit): an endpoint filter after
+        // authentication, not a RateLimitPolicies policy, since UseRateLimiter runs before authentication.
         builder.Services.AddWallScanRateLimit();
 
         // The feed's catch-up and stream routes (PR 1.6): their open-stream caps and their per-address rate limit, also

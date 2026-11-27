@@ -47,7 +47,7 @@ public class WallScanHttpTests
             Assert.Equal(HttpStatusCode.OK, (await PutAsync(client, $"{scans}/{begun.ScanId}/files/{name}", files[name])).StatusCode);
         }
 
-        var commit = await client.PostAsync($"{scans}/{begun.ScanId}/commit", null);
+        var commit = await client.PostAsync($"{scans}/{begun.ScanId}/commit", JsonContent.Create(new { }));
         Assert.Equal(HttpStatusCode.OK, commit.StatusCode);
         var state = await client.GetFromJsonAsync<ScanUploadState>($"{scans}/{begun.ScanId}", CapturePackageFiles.Json);
         Assert.Equal(ScanUploadState.Received, state!.Status);
@@ -126,7 +126,6 @@ public class WallScanHttpTests
         var app = builder.Build();
         app.UseAuthentication();
         app.UseAuthorization();
-        app.UseRateLimiter();
         app.MapWallScans();
         await app.StartAsync();
         return app;

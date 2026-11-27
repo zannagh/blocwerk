@@ -48,17 +48,25 @@ A file name is one of these four folders and `[A-Za-z0-9_-]{1,64}` plus the fold
 All under `/api/walls/{wallId}/scans`, JSON, `Authorization: Bearer bwk_…` (a personal API key with write access) or the
 browser session. Only the wall's owner, admins and moderators, and administrators of the installation, may upload; the
 wall must have "iPhone scan" switched on in its settings. Wall keys, kiosk keys, share links and visitors are refused.
-Per caller about 20 requests per second (bursts of 1000); 429 with `Retry-After` beyond.
+Per user and key (or browser session) 200 requests a second with bursts of 4000, enough for a phone sending about 20
+files at a time with retries; 429 with `Retry-After: 1` beyond. The `POST`s need `Content-Type: application/json` (an
+empty or `{}` body for the commit); anything else is 415.
+
+Only the user who began a scan, or an administrator of the installation, may begin it again, send its files or commit
+it (403 otherwise). A user may have 2 uploads open at a time, a wall 4; another begin is 409 until one is committed or
+removed. Free space is checked at the begin and on every `PUT` (409 when the server would run short). The files of one
+scan may be sent in parallel.
 
 | Call | Answer |
 |---|---|
 | `POST /` with the manifest (≤ 64 MB) | 200 with the state; 400 with `problems[]` for an invalid manifest; 409 when the wall is not set to iPhone scan or the `scanId` is taken |
-| `PUT /{scanId}/files/{name}` raw body, optional `X-Content-SHA256` | 200 with the state; a file already received is not read again; 422 for wrong bytes or hash; 413 when longer than the manifest says |
+| `PUT /{scanId}/files/{name}` raw body, optional `X-Content-SHA256` | 200 with `{scanId, name, bytes, status: "received"}` for that file only; a file already received is not read again; 422 for wrong bytes or hash; 413 when longer than the manifest says |
 | `POST /{scanId}/commit` | 200 with status `received`; 409 with the missing files in `problems[]` |
 | `GET /{scanId}` | 200 with the state |
 
 The state is `{scanId, wallId, status: "uploading"|"received", stage, missing[], totalFiles, totalBytes, receivedBytes}`.
 After an interruption, `POST` the same manifest again and send exactly `missing[]`. A received scan shows on the wall's
 3D capture list as "Received, waiting for processing". An upload left unfinished for the import retention period
-(`ImportStagingDays`, default 3 days) is removed by the capture retention; a received scan, and the point cloud that
+(`ImportStagingDays`, default 3 days) is removed by the capture retention, even while retention is a dry run (it is the
+server's own staging, not anybody's data); a received scan, and the point cloud that
 processing will keep in its folder (`derived/point-cloud.ply`), are not.

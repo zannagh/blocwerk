@@ -11,6 +11,9 @@ public sealed class ScanUploadException(int statusCode, string message, IReadOnl
 {
     public const int BadRequest = 400;
 
+    /// <summary>A scan begun by someone else.</summary>
+    public const int Forbidden = 403;
+
     public const int NotFound = 404;
 
     public const int Conflict = 409;

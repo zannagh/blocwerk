@@ -15,8 +15,11 @@ namespace Blocwerk.Core.Capture.Scan;
 /// <summary>
 /// The scan upload (<see cref="IWallScanService"/>). A scan is a <see cref="WallCapture"/> in mode
 /// <see cref="WallCaptureGeometryMode.Device"/> with the manifest's <c>scanId</c> as its id, plus its
-/// <see cref="WallScan"/> row; every request for one scan runs under that id's <see cref="CaptureImportLocks"/> lock,
-/// so a retried PUT never races the commit. The files go to <see cref="ScanStorage"/>.
+/// <see cref="WallScan"/> row. Begin and commit run under the scan id's <see cref="CaptureImportLocks"/> lock; a PUT
+/// streams under a lock of its own file only (so the files of one scan arrive in parallel) and takes the scan's lock just
+/// to move the verified file into place, so it never races a begin that changed the manifest or the commit. Only the
+/// user who began a scan, or an administrator of the installation, may continue it. The files go to
+/// <see cref="ScanStorage"/>.
 /// </summary>
 public sealed partial class WallScanService(
     IDbContextFactory<BlocwerkDbContext> dbContextFactory,
@@ -34,7 +37,32 @@ public sealed partial class WallScanService(
     /// <summary>Room kept free on the store's volume beyond what the package still needs.</summary>
     private const long FreeSpaceMargin = 2L * 1024 * 1024 * 1024;
 
+    /// <summary>Open (uncommitted) scans one user may have at a time, over all walls.</summary>
+    public const int MaxOpenScansPerUser = 2;
+
+    /// <summary>Open (uncommitted) scans one wall may have at a time.</summary>
+    public const int MaxOpenScansPerWall = 4;
+
+    /// <summary>One lock per file of a scan while it streams.</summary>
+    private static readonly KeyedAsyncLocks<(Guid ScanId, string Name)> FileLocks = new();
+
+    /// <summary>Counting the open scans and opening a new one run one at a time, so two begins never both slip under a cap.</summary>
+    private static readonly SemaphoreSlim OpenGate = new(1, 1);
+
     private readonly ScanStorage storage = new(files);
+
+    /// <summary>Free bytes on the store's volume; tests replace it to see a full disk.</summary>
+    internal Func<long> FreeSpace { get; set; } = () => new ScanStorage(files).FreeBytes();
+
+    /// <summary>True while a request works on the scan: begin, commit, or a file streaming in.</summary>
+    /// <param name="scanId">The scan.</param>
+    /// <returns>Whether retention must leave the scan alone for now.</returns>
+    internal static bool IsBusy(Guid scanId) => CaptureImportLocks.Has(scanId) || FilesBusy(scanId);
+
+    /// <summary>True while a file of the scan streams in (its PUT holds no scan lock until it moves the file).</summary>
+    /// <param name="scanId">The scan.</param>
+    /// <returns>Whether any file lock of the scan is held or waited for.</returns>
+    internal static bool FilesBusy(Guid scanId) => FileLocks.Any(k => k.ScanId == scanId);
 
     public async Task<ScanUploadState> GetAsync(Guid wallId, Guid scanId, CancellationToken ct)
     {
@@ -72,6 +100,17 @@ public sealed partial class WallScanService(
         {
             await db.DisposeAsync();
             throw;
+        }
+    }
+
+    /// <summary>Refuses a caller who neither began the scan nor administers the installation.</summary>
+    private static async Task EnsureCreatorAsync(BlocwerkDbContext db, WallCapture capture, CancellationToken ct)
+    {
+        if (capture.CreatedByUserId != db.CurrentUserId && !await AppAdminGuard.IsAppAdminAsync(db, db.CurrentUserId, ct))
+        {
+            throw new ScanUploadException(
+                ScanUploadException.Forbidden,
+                "Someone else began this scan; only they or an administrator of the installation may continue it.");
         }
     }
 

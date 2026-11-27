@@ -14,11 +14,13 @@ namespace Blocwerk.Core.Capture.Retention;
 /// An iPhone scan upload (<see cref="ScanStorage"/>) that was begun but never committed, and in which nothing changed for
 /// <see cref="WallCapturePipelineOptions.ImportStagingLifetime"/>, is removed with its draft capture: begin it again to
 /// continue. A scan folder whose capture is gone (its wall was deleted) goes too. A RECEIVED scan is never touched here,
-/// nor anything processing later keeps in its folder (its point cloud): those live as long as the scan.
+/// nor anything processing later keeps in its folder (its point cloud): those live as long as the scan. Unlike the other
+/// retention rules this one also deletes while <see cref="WallCapturePipelineOptions.RetentionDryRun"/> is set: an
+/// unfinished upload is the server's own staging, not anybody's data, and left alone it would fill the disk.
 /// </summary>
 public static class ScanUploadRetention
 {
-    /// <summary>Deletes (or, in a dry run, measures) the abandoned scan uploads.</summary>
+    /// <summary>Deletes the abandoned scan uploads, dry run or not, and says how many and how many bytes that freed.</summary>
     public static async Task<RetentionOutcome> RunAsync(
         RootDbContextFactory dbContextFactory, ICaptureFileStore files, WallCapturePipelineOptions options, DateTimeOffset now,
         ILogger logger, CancellationToken ct)
@@ -33,14 +35,12 @@ public static class ScanUploadRetention
         var outcome = RetentionOutcome.None;
         foreach (var scanId in storage.List())
         {
-            if (CaptureImportLocks.Has(scanId) || !(storage.LastActivity(scanId) < cutoff) || await IsKeptAsync(dbContextFactory, scanId, ct))
+            if (WallScanService.IsBusy(scanId) || !(storage.LastActivity(scanId) < cutoff) || await IsKeptAsync(dbContextFactory, scanId, ct))
             {
                 continue;
             }
 
-            outcome += options.RetentionDryRun
-                ? new RetentionOutcome(1, RetentionFiles.FolderSize(storage.Folder(scanId)))
-                : await CaptureImportLocks.RunAsync(scanId, () => RemoveAsync(dbContextFactory, storage, scanId, cutoff, logger, ct), ct);
+            outcome += await CaptureImportLocks.RunAsync(scanId, () => RemoveAsync(dbContextFactory, storage, scanId, cutoff, logger, ct), ct);
         }
 
         return outcome;
@@ -57,7 +57,7 @@ public static class ScanUploadRetention
         RootDbContextFactory dbContextFactory, ScanStorage storage, Guid scanId, DateTimeOffset cutoff, ILogger logger, CancellationToken ct)
     {
         // Checked again under the lock: a request that held it may have touched or committed the scan.
-        if (!(storage.LastActivity(scanId) < cutoff) || await IsKeptAsync(dbContextFactory, scanId, ct))
+        if (WallScanService.FilesBusy(scanId) || !(storage.LastActivity(scanId) < cutoff) || await IsKeptAsync(dbContextFactory, scanId, ct))
         {
             return RetentionOutcome.None;
         }
@@ -75,7 +75,9 @@ public static class ScanUploadRetention
             }
 
             storage.Delete(scanId);
-            logger.LogInformation("Removed the abandoned scan upload {ScanId} ({Size})", scanId, RetentionFiles.Format(size));
+            ScanFileTables.Forget(scanId);
+            logger.LogInformation(
+                "Removed the abandoned scan upload {ScanId}, freeing {Size} ({Bytes} bytes)", scanId, RetentionFiles.Format(size), size);
             return new(1, size);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

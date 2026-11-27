@@ -7,7 +7,7 @@
     synthetic_scan.py upload --base https://host --wall WALL_ID --dir DIR [--stop-after N] [--corrupt NAME]
 
 The upload reads the personal API key (write access) from BLOCWERK_API_KEY. It begins with the manifest, PUTs only the
-files the server says are missing, then commits. Run it again after an interruption: it sends only what is still
+files the server says are missing, then commits. Redirects are refused, so the key is never sent anywhere else. Run it again after an interruption: it sends only what is still
 missing. --stop-after N stops after N files (to test resume); --corrupt NAME sends that file with one byte flipped and
 expects the server to refuse it. The video pieces are random bytes, not real HEVC: the server does not decode video yet.
 Standard library only.
@@ -105,12 +105,24 @@ def build(args):
     print(f"Built scan {manifest['scanId']}: {len(files)} files, {sum(map(len, files.values())) // 1024} kB in {args.out}")
 
 
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuses every redirect, so the API key in Authorization never goes to another address."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.HTTPError(req.full_url, code, f"refused a redirect to {newurl}", headers, None)
+
+
+OPENER = urllib.request.build_opener(NoRedirect)
+
+
 def call(method, url, key, body=None, headers=None):
     request = urllib.request.Request(url, data=body, method=method, headers={"Authorization": f"Bearer {key}", **(headers or {})})
     try:
-        with urllib.request.urlopen(request, timeout=600) as response:
+        with OPENER.open(request, timeout=600) as response:
             return response.status, json.load(response)
     except urllib.error.HTTPError as error:
+        if 300 <= error.code < 400:
+            return error.code, {"message": error.reason}
         text = error.read().decode(errors="replace")
         try:
             return error.code, json.loads(text)
@@ -146,7 +158,7 @@ def upload(args):
             sys.exit(0 if status == 422 else f"expected 422 for the corrupted file, got {status}")
         if status != 200:
             sys.exit(f"{name} refused ({status}): {answer.get('message')}")
-    status, state = call("POST", f"{base}/{state['scanId']}/commit", key)
+    status, state = call("POST", f"{base}/{state['scanId']}/commit", key, b"{}", {"Content-Type": "application/json"})
     print(f"commit: {status} {state.get('status') or state.get('message')} {state.get('stage') or ''}")
     sys.exit(0 if status == 200 else 1)
 
