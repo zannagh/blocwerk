@@ -53,16 +53,20 @@ files at a time with retries; 429 with `Retry-After: 1` beyond. The `POST`s need
 empty or `{}` body for the commit); anything else is 415.
 
 Only the user who began a scan, or an administrator of the installation, may begin it again, send its files or commit
-it (403 otherwise). A user may have 2 uploads open at a time, a wall 4; another begin is 409 until one is committed or
+it (403 otherwise). Received scans are kept until processing applies them, so a wall may hold 3 received scans that are
+not applied yet, and a user may commit 20 GB of scans in any 30 days over all walls (`Blocwerk:Scan:MaxWaitingPerWall`,
+`MaxGbPerUser`, `UserWindowDays`); a begin, or a commit that would go over, is 409 until a site admin removes a waiting
+scan (the remove button in the wall's settings scan list). A user may have 2 uploads open at a time, a wall 4; another begin is 409 until one is committed or
 removed. Free space is checked at the begin and on every `PUT` (409 when the server would run short). The files of one
 scan may be sent in parallel.
 
 | Call | Answer |
 |---|---|
-| `POST /` with the manifest (≤ 64 MB) | 200 with the state; 400 with `problems[]` for an invalid manifest; 409 when the wall is not set to iPhone scan or the `scanId` is taken |
+| `POST /` with the manifest (≤ 16 MB; the app's ten minutes at 30 fps are about 11 MB) | 200 with the state; 400 with `problems[]` for an invalid manifest; 403/409 for a caller who may not upload or a wall not set to iPhone scan, before the manifest is read; 409 when the `scanId` is taken or a limit below is reached; 429 while another begin of the same user runs |
 | `PUT /{scanId}/files/{name}` raw body, optional `X-Content-SHA256` | 200 with `{scanId, name, bytes, status: "received"}` for that file only; a file already received is not read again; 422 for wrong bytes or hash; 413 when longer than the manifest says |
 | `POST /{scanId}/commit` | 200 with status `received`; 409 with the missing files in `problems[]` |
 | `GET /{scanId}` | 200 with the state |
+| `DELETE /{scanId}` | site admins only: removes a received scan and its files (200); 409 for an upload still open |
 
 The state is `{scanId, wallId, status: "uploading"|"received", stage, missing[], totalFiles, totalBytes, receivedBytes}`.
 After an interruption, `POST` the same manifest again and send exactly `missing[]`. A received scan shows on the wall's

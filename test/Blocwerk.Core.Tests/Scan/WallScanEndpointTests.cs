@@ -35,7 +35,7 @@ public class WallScanEndpointTests
 
         var endpoints = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints).OfType<RouteEndpoint>().ToList();
 
-        Assert.Equal(4, endpoints.Count);
+        Assert.Equal(5, endpoints.Count);
         foreach (var endpoint in endpoints)
         {
             var authorize = endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>();

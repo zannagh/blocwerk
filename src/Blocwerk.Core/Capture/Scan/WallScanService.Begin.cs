@@ -97,7 +97,9 @@ public sealed partial class WallScanService
         try
         {
             await EnsureUnderCapsAsync(db, wallId, ct);
-            EnsureSpace(manifest.Files!.Sum(f => f.Bytes ?? 0));
+            var bytes = manifest.Files!.Sum(f => f.Bytes ?? 0);
+            await EnsureUnderQuotaAsync(db, wallId, db.CurrentUserId, bytes, ct);
+            EnsureSpace(bytes);
             var capture = Open(db, wallId, scanId, manifest, json);
             await db.SaveChangesAsync(ct);
             ScanFileTables.Changed(scanId);

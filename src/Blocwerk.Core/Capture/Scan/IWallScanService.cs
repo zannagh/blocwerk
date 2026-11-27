@@ -31,6 +31,15 @@ public interface IWallScanService
 
     Task<ScanUploadState> GetAsync(Guid wallId, Guid scanId, CancellationToken ct);
 
+    /// <summary>
+    /// Removes a received scan with its files. Site admins only (<see cref="UnauthorizedAccessException"/> otherwise); 409
+    /// for an upload still open, which retention removes.
+    /// </summary>
+    Task<bool> DeleteAsync(Guid wallId, Guid scanId, CancellationToken ct);
+
+    /// <summary>True when the caller may <see cref="DeleteAsync"/>: an administrator of the installation, not on a kiosk.</summary>
+    Task<bool> MayDeleteAsync(CancellationToken ct);
+
     /// <summary>The wall's ten most recent scans, newest first.</summary>
     Task<IReadOnlyList<WallScanSummary>> ListAsync(Guid wallId, CancellationToken ct);
 }

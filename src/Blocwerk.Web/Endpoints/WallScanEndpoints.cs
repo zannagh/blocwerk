@@ -41,6 +41,8 @@ public static class WallScanEndpoints
         group.MapPost("{scanId:guid}/commit", CommitAsync);
         group.MapGet("{scanId:guid}", (Guid wallId, Guid scanId, IWallScanService scans, CancellationToken ct) =>
             RunAsync(() => scans.GetAsync(wallId, scanId, ct)));
+        group.MapDelete("{scanId:guid}", (Guid wallId, Guid scanId, IWallScanService scans, CancellationToken ct) =>
+            RunAsync(() => scans.DeleteAsync(wallId, scanId, ct)));
     }
 
     internal static Task<IResult> BeginAsync(Guid wallId, HttpContext http, IWallScanService scans, CancellationToken ct)

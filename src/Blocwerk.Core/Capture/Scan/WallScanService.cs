@@ -26,7 +26,8 @@ public sealed partial class WallScanService(
     ICurrentUserService currentUserService,
     ICaptureFileStore files,
     ILogger<WallScanService> logger,
-    IKioskContext? kioskContext = null) : IWallScanService
+    IKioskContext? kioskContext = null,
+    ScanUploadOptions? options = null) : IWallScanService
 {
     /// <summary>What the wall's capture page shows for a scan whose package is complete.</summary>
     public const string ReceivedStage = "Received, waiting for processing";
@@ -50,6 +51,8 @@ public sealed partial class WallScanService(
     private static readonly SemaphoreSlim OpenGate = new(1, 1);
 
     private readonly ScanStorage storage = new(files);
+
+    private readonly ScanUploadOptions scanOptions = options ?? new ScanUploadOptions();
 
     /// <summary>Free bytes on the store's volume; tests replace it to see a full disk.</summary>
     internal Func<long> FreeSpace { get; set; } = () => new ScanStorage(files).FreeBytes();

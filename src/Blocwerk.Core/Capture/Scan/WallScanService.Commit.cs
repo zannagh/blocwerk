@@ -2,6 +2,7 @@
 // See License in the project root for license information.
 
 using Blocwerk.Core.Capture.Replay;
+using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Microsoft.Extensions.Logging;
 
@@ -34,15 +35,34 @@ public sealed partial class WallScanService
                     }
 
                     EnsureOpen(capture);
-                    capture.Status = WallCaptureStatus.Received;
-                    capture.Stage = ReceivedStage;
-                    scan.ReceivedAt = DateTimeOffset.UtcNow;
-                    await db.SaveChangesAsync(ct);
+                    await ReceiveUnderQuotaAsync(db, capture, scan, ct);
                     ScanFileTables.Forget(scanId);
                     logger.LogInformation("Scan {ScanId} on wall {WallId}: received ({Bytes} bytes)", scanId, wallId, state.TotalBytes);
                     return State(capture, manifest);
                 },
                 ct);
+        }
+    }
+
+    /// <summary>
+    /// Marks the scan received, unless the wall or its uploader reached a limit meanwhile (another scan was committed since
+    /// this one began): then it stays open, to be committed once a site admin removed a waiting scan. Under the gate the
+    /// begins count under, so two commits cannot both slip under a limit.
+    /// </summary>
+    private async Task ReceiveUnderQuotaAsync(BlocwerkDbContext db, WallCapture capture, WallScan scan, CancellationToken ct)
+    {
+        await OpenGate.WaitAsync(ct);
+        try
+        {
+            await EnsureUnderQuotaAsync(db, capture.WallId, capture.CreatedByUserId, scan.TotalBytes, ct);
+            capture.Status = WallCaptureStatus.Received;
+            capture.Stage = ReceivedStage;
+            scan.ReceivedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync(ct);
+        }
+        finally
+        {
+            OpenGate.Release();
         }
     }
 }
