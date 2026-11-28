@@ -143,9 +143,12 @@ public sealed class DeviceWallGalleryController : ControllerBase
 
     private async Task<IActionResult> StoreAsync(Guid wallId, Guid userId, Guid? clientRequestId, CancellationToken ct)
     {
-        var upload = await WallImageIntake.ReadAsync(Request, storage, ct);
+        // A hard deadline, so a receipt is never taken over while its upload may still be running.
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(DeviceWriteReceiptService.RequestTimeout);
+        var upload = await WallImageIntake.ReadAsync(Request, storage, deadline.Token);
         var commit = upload.IsSuccess
-            ? await WallImageIntake.CommitAsync(storage, images, wallId, upload, ct)
+            ? await WallImageIntake.CommitAsync(storage, images, wallId, upload, deadline.Token)
             : WallImageCommit.Failed(upload.ErrorStatus!.Value, upload.ErrorMessage!);
         if (commit.Image is not { } image)
         {

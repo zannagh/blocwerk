@@ -89,6 +89,7 @@ public sealed class DeviceBetaVideosController : ControllerBase
         Guid boulderId,
         [FromQuery] Guid? clientRequestId,
         [FromServices] IBetaVideoStorage storage,
+        [FromServices] BetaVideoQuota quota,
         [FromServices] BlocwerkSettings settings,
         [FromServices] ILoggerFactory loggers,
         CancellationToken ct)
@@ -130,7 +131,10 @@ public sealed class DeviceBetaVideosController : ControllerBase
             return refused;
         }
 
-        var result = await BetaVideoUploadEndpoint.UploadAsync(boulderId, HttpContext, videos, storage, cap, loggers, ct);
+        // A hard deadline, so a receipt is never taken over while its upload may still be running.
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(DeviceWriteReceiptService.RequestTimeout);
+        var result = await BetaVideoUploadEndpoint.UploadAsync(boulderId, HttpContext, videos, storage, quota, cap, loggers, deadline.Token);
         return await AnswerAsync(result, userId, clientRequestId, ct);
     }
 
@@ -199,6 +203,9 @@ public sealed class DeviceBetaVideosController : ControllerBase
             BadRequest<string> bad => DeviceWriteAnswers.Refused(StatusCodes.Status400BadRequest, bad.Value ?? "Bad upload."),
             UnauthorizedHttpResult => DeviceWriteAnswers.Refused(StatusCodes.Status401Unauthorized, "Your session has expired. Sign in to sync."),
             ForbidHttpResult => DeviceWriteAnswers.Refused(StatusCodes.Status404NotFound, "Boulder not found"),
+
+            // The quota frees up only as old uploads age out; the queue drops the entry and shows the message.
+            Conflict<string> full => OfflineActionRunner.Error(StatusCodes.Status409Conflict, full.Value ?? "Beta video quota reached.", permanent: true),
             _ => OfflineActionRunner.Error(StatusCodes.Status500InternalServerError, "The upload could not be processed.", permanent: false),
         };
     }

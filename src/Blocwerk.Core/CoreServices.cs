@@ -151,6 +151,8 @@ public static class CoreServices
         builder.Services.AddSingleton<IBetaVideoStorage, FileSystemBetaVideoStorage>();
         builder.Services.AddSingleton<IVideoTranscoder, FfmpegVideoTranscoder>();
         builder.Services.AddScoped<IBetaVideoService, BetaVideoService>();
+        builder.Services.AddScoped<BetaVideoQuota>();
+        builder.Services.AddHostedService<UploadHousekeepingWorker>();
 
         // Beta-video normalization: every upload is stored verbatim and then re-encoded to a
         // universally playable MP4 off the request thread. The signal is the "work is waiting" nudge

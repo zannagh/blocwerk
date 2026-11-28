@@ -161,6 +161,8 @@ public class BlocwerkSettings
             TargetVideoBitsPerSecond = ParseBytes(section["BetaVideo:TargetVideoBitsPerSecond"], "BETAVIDEO__TARGETVIDEOBITSPERSECOND", 3_000_000),
             MaxUploadBytes = ParseBytes(section["BetaVideo:MaxUploadBytes"], "BETAVIDEO__MAXUPLOADBYTES", 4L * 1024 * 1024 * 1024),
             MaxEncodeSeconds = (int)ParseBytes(section["BetaVideo:MaxEncodeSeconds"], "BETAVIDEO__MAXENCODESECONDS", 600),
+            QuotaBytes = ParseBytes(section["BetaVideo:QuotaBytes"], "BETAVIDEO__QUOTABYTES", 10L * 1024 * 1024 * 1024),
+            QuotaWindowDays = (int)ParseBytes(section["BetaVideo:QuotaWindowDays"], "BETAVIDEO__QUOTAWINDOWDAYS", 30),
             FfmpegPath = section["BetaVideo:FfmpegPath"] ?? Environment.GetEnvironmentVariable("BETAVIDEO__FFMPEGPATH") ?? "ffmpeg",
             FfprobePath = section["BetaVideo:FfprobePath"] ?? Environment.GetEnvironmentVariable("BETAVIDEO__FFPROBEPATH") ?? "ffprobe",
             HlsSegmentSeconds = (int)ParseBytes(section["BetaVideo:HlsSegmentSeconds"], "BETAVIDEO__HLSSEGMENTSECONDS", 4),
@@ -317,6 +319,15 @@ public class BetaVideoSettings
 
     /// <summary>Hard upload ceiling; env <c>BETAVIDEO__MAXUPLOADBYTES</c>. The original is stored, then normalized.</summary>
     public long MaxUploadBytes { get; set; } = 4L * 1024 * 1024 * 1024;
+
+    /// <summary>
+    /// How many bytes of clips one user may upload within <see cref="QuotaWindowDays"/>; env <c>BETAVIDEO__QUOTABYTES</c>.
+    /// Default 10 GB. 0 or negative disables the quota.
+    /// </summary>
+    public long QuotaBytes { get; set; } = 10L * 1024 * 1024 * 1024;
+
+    /// <summary>The rolling window of <see cref="QuotaBytes"/>, in days; env <c>BETAVIDEO__QUOTAWINDOWDAYS</c>. Default 30.</summary>
+    public int QuotaWindowDays { get; set; } = 30;
 
     /// <summary>
     /// Hard per-ffmpeg-invocation ceiling (seconds); env <c>BETAVIDEO__MAXENCODESECONDS</c>. A clip that

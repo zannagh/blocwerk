@@ -82,4 +82,29 @@ public sealed class DeviceWriteReceiptServiceTests
 
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => receipts.ClaimAsync(h.Owner.Id, Guid.Empty, "gallery", Guid.Empty, default));
     }
+
+    [Fact]
+    public async Task TheSweep_DropsReceiptsPastTheirRetention_Only()
+    {
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync(holdCount: 0);
+        var clock = new MutableTestClock(new DateTimeOffset(2026, 11, 28, 12, 0, 0, TimeSpan.Zero));
+        var receipts = new DeviceWriteReceiptService(h.DbContextFactory, clock);
+        var old = Guid.NewGuid();
+        await receipts.ClaimAsync(h.Owner.Id, old, "gallery", Guid.Empty, default);
+        clock.Advance(DeviceWriteReceiptService.Retention);
+        var fresh = Guid.NewGuid();
+        await receipts.ClaimAsync(h.Owner.Id, fresh, "gallery", Guid.Empty, default);
+        clock.Advance(TimeSpan.FromMinutes(1));
+
+        Assert.Equal(1, await receipts.SweepAsync(default));
+        await using var db = h.CreateContext();
+        Assert.Equal(fresh, Assert.Single(await db.Set<DeviceWriteReceipt>().ToListAsync()).ClientRequestId);
+    }
+
+    [Fact]
+    public void AnUnfinishedReceipt_IsTakenOver_OnlyPastTheRequestDeadline()
+    {
+        Assert.True(DeviceWriteReceiptService.AbandonedAfter > DeviceWriteReceiptService.RequestTimeout);
+    }
 }

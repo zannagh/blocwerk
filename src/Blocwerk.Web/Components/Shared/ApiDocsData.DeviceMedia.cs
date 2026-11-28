@@ -21,7 +21,8 @@ internal static partial class ApiDocsData
             [WallParam, ClientRequestIdParam],
             "// multipart/form-data with a 'file' part (+ optional caption/capturedAt fields),\n// or the raw image/jpeg, image/png or image/webp body",
             "{\n  \"applied\": true,\n  \"clientRequestId\": \"<guid>\",\n  \"result\": { \"imageId\": \"<guid>\", \"capturedAt\": \"…\" }\n}",
-            MediaWriteNotes + " At most 20 MB; location and other metadata are removed. 403 for a member who is not an admin."),
+            MediaWriteNotes + " At most 20 MB, and the bytes must be the declared format (415); location and other metadata are removed. "
+                + "403 for a member who is not an admin."),
         new("DELETE", "/api/v1/walls/{wallId}/gallery/{imageId}", "Delete an uploaded photo of the wall's gallery. Wall admins only.",
             [WallParam, new("imageId", "path", "An uploaded gallery photo of this wall."), ClientRequestIdParam],
             null,
@@ -37,7 +38,8 @@ internal static partial class ApiDocsData
             [WallParam, BoulderParam, ClientRequestIdParam],
             "// multipart/form-data with a 'file' part (a video type)\n// and an optional 'thumbnail' part (a small JPEG)",
             "{\n  \"applied\": true,\n  \"clientRequestId\": \"<guid>\",\n  \"result\": { \"videoId\": \"<guid>\" }\n}",
-            MediaWriteNotes + " One request, at most 1 GiB, with a Content-Length (411 without, 413 over)."),
+            MediaWriteNotes + " One request, at most 1 GiB, with a Content-Length (411 without, 413 over); one file part, a thumbnail "
+                + "of at most 512 KB. 409 permanent when you have uploaded 10 GB of clips in 30 days."),
         new("DELETE", "/api/v1/walls/{wallId}/boulders/{boulderId}/beta-videos/{videoId}", "Delete one of your own beta clips.",
             [WallParam, BoulderParam, VideoParam, ClientRequestIdParam],
             null,

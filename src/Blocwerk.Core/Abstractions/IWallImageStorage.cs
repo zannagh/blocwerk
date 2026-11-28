@@ -10,6 +10,12 @@ public interface IWallImageStorage
     /// <summary>A fresh temp path on the same volume as the store, so committing it is an atomic move.</summary>
     string CreateTempPath(string extension);
 
+    /// <summary>
+    /// Deletes temp files last written before <paramref name="olderThan"/>: uploads a crash or a dropped connection left
+    /// behind. Returns how many. A store without a temp folder has nothing to sweep.
+    /// </summary>
+    int SweepTemp(DateTimeOffset olderThan) => 0;
+
     /// <summary>Moves a finished temp file into the store and returns the stored (relative) name.</summary>
     string Commit(string tempPath, string extension);
 

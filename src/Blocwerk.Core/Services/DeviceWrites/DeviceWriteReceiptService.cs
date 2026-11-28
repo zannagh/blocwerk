@@ -13,13 +13,21 @@ namespace Blocwerk.Core.Services.DeviceWrites;
 /// so another user's write with the same id is their own new write.
 /// </summary>
 /// <remarks>
-/// A receipt left without a row for longer than <see cref="AbandonedAfter"/> (the request died between the two steps) is
-/// taken over by the next retry, so a crash never blocks a key for good.
+/// A device write runs under a hard deadline of <see cref="RequestTimeout"/>. A receipt left without a row for longer
+/// than <see cref="AbandonedAfter"/>, past that deadline, belongs to a request that died between the two steps, so the
+/// next retry takes it over and a crash never blocks a key for good. <see cref="SweepAsync"/> drops receipts older than
+/// <see cref="Retention"/>.
 /// </remarks>
 public sealed class DeviceWriteReceiptService(IDbContextFactory<BlocwerkDbContext> dbContextFactory, TimeProvider? time = null)
 {
-    /// <summary>How long an unfinished receipt blocks its key before a retry may take it over.</summary>
-    public static readonly TimeSpan AbandonedAfter = TimeSpan.FromMinutes(15);
+    /// <summary>The deadline every device write that takes a receipt runs under (a 1 GiB clip at about 5 Mbit/s).</summary>
+    public static readonly TimeSpan RequestTimeout = TimeSpan.FromMinutes(30);
+
+    /// <summary>How long an unfinished receipt blocks its key before a retry may take it over: past the deadline.</summary>
+    public static readonly TimeSpan AbandonedAfter = RequestTimeout + TimeSpan.FromMinutes(5);
+
+    /// <summary>How long a receipt is kept: an app queue retries for days at most, never a month.</summary>
+    public static readonly TimeSpan Retention = TimeSpan.FromDays(30);
 
     private readonly TimeProvider clock = time ?? TimeProvider.System;
 
@@ -97,6 +105,14 @@ public sealed class DeviceWriteReceiptService(IDbContextFactory<BlocwerkDbContex
         await db.DeviceWriteReceipts
             .Where(r => r.UserId == userId && r.ClientRequestId == key && r.SubjectId == null)
             .ExecuteDeleteAsync();
+    }
+
+    /// <summary>Drops the receipts older than <see cref="Retention"/>; returns how many.</summary>
+    public async Task<int> SweepAsync(CancellationToken ct)
+    {
+        var before = clock.GetUtcNow() - Retention;
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+        return await db.DeviceWriteReceipts.Where(r => r.CreatedAt < before).ExecuteDeleteAsync(ct);
     }
 
     private async Task<bool> TryInsertAsync(Guid userId, Guid key, string kind, Guid scopeId, CancellationToken ct)

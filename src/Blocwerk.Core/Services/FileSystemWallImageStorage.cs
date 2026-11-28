@@ -23,6 +23,8 @@ public class FileSystemWallImageStorage : IWallImageStorage
     public string CreateTempPath(string extension) =>
         Path.Combine(tempRoot, $"{Guid.NewGuid():N}{Normalize(extension)}");
 
+    public int SweepTemp(DateTimeOffset olderThan) => TempFolderSweep.Sweep(tempRoot, olderThan);
+
     public string Commit(string tempPath, string extension)
     {
         var name = $"{Guid.NewGuid():N}{Normalize(extension)}";

@@ -89,7 +89,17 @@ The app adds and removes media through the web's own upload code, as the key's o
 | `DELETE /api/v1/walls/{w}/boulders/{b}/beta-videos/{videoId}` | the uploader | their own clip |
 | `GET /api/v1/beta-videos/{id}`, `/thumbnail`, `/hls/{*path}` | members | the web's own playback handlers for `/api/beta-videos/{id}…`: the file with range requests, the poster frame, the HLS ladder |
 
-- **The same pipeline.** A gallery photo goes through the camera's pipeline (`WallImageIntake`, shared with `/api/walls/{w}/images`): at most 20 MB, JPEG, PNG or WebP only (415 otherwise), and location and every other piece of metadata are stripped before the file is stored (`StoredPhotoSanitizer`). A beta clip goes through the browser's streamed upload (`BetaVideoUploadEndpoint.UploadAsync`): any `video/*` type, then the background normalizer and HLS ladder as for a clip from the web.
+- **The same pipeline.** A gallery photo goes through the camera's pipeline (`WallImageIntake`, shared with `/api/walls/{w}/images`):
+  - at most 20 MB, JPEG, PNG or WebP only (415 otherwise);
+  - the bytes must be the declared format: a HEIC or TIFF sent as `image/jpeg` is a 415 (`GalleryImageCheck`);
+  - the header must name at most the app's pixel limit (400 otherwise), read without decoding, because the resized copies decode it whole;
+  - location and every other piece of metadata are stripped before the file is stored (`StoredPhotoSanitizer`).
+- **Beta clips** go through the browser's streamed upload (`BetaVideoUploadEndpoint.UploadAsync`, with its body read by `BetaVideoMultipart`):
+  - exactly one `file` part of a `video/*` type (a second one is a 400);
+  - a `thumbnail` part of at most 512 KB and a `fileName` of at most 1 KB, refused beyond that without reading further;
+  - then the background normalizer and HLS ladder, as for a clip from the web.
+  No exit leaves a temp file behind, and a scheduled sweep (`UploadHousekeepingWorker`, hourly) deletes upload temp files older than 12 hours.
+- **Quota.** Each user may upload at most 10 GB of beta clips within 30 days, counted over all walls and the web too (`BetaVideo:QuotaBytes`, `BetaVideo:QuotaWindowDays`; 0 turns it off). It is checked before the body is read (with the declared length) and again with the real size. Over it, the answer is 409 with a message saying how much was used. On the app's route that 409 is `permanent: true`, because only time or a deleted clip frees space.
 - **Who.** The web lets nobody but a wall key add gallery photos, and lets wall admins delete them. The app takes the admin rule for both (`IWallImageService.EnsureCanUploadAsync`, the same `WallAdminGuard` as the delete). Beta clips keep the web's rule: members upload, the uploader deletes. A wall the owner is not a member of, an unknown boulder and a boulder of another wall answer the same 404; a member who is not an admin gets 403 on the gallery.
 - **Gallery per boulder.** The web has no photo gallery per boulder (a boulder's media are its beta clips), so there is none here either. The app reads the wall gallery through the `gallery` document; a new or deleted photo reaches it through the feed (`gallery.changed`, `gallery.deleted`), a clip through `video.added`, `video.status` and `video.deleted`.
 - **Size and resumption.** Neither web upload is chunked or resumable: each is one streamed request. So the app's are too, with a cap: 20 MB a photo (the web's) and 1 GiB a clip (the web allows up to its configured 4 GB, which is not sane for one request over a phone connection). A clip needs a `Content-Length`, so it is refused before a byte is read: 411 without one, 413 over the cap.
@@ -97,7 +107,8 @@ The app adds and removes media through the web's own upload code, as the key's o
   - A retry after the write returns the stored photo or clip, with no second row.
   - A retry while the write is still running gets 409 `permanent: false`.
   - A write that failed frees the id again.
-  - A receipt left unfinished for 15 minutes (the request died) is taken over.
+  - Every app upload runs under a 30-minute deadline. A receipt left unfinished for 35 minutes, past that deadline, belongs to a request that died, so the next retry takes it over.
+  - Receipts are deleted after 30 days by the same hourly sweep.
   - The same id on another wall, boulder or kind of write is a permanent 400.
 - **Playback.** `hlsUrl` is null until the clip has a ladder; play `videoUrl` then. Pending and Processing clips answer 404 until they are normalized, as on the web. The HLS playlists use relative URIs, so a player that sends the key on every request of the asset (AVURLAsset with HTTP header fields) follows them under `/api/v1/beta-videos/{id}/hls/`. Playback counts in the key's sync bucket.
 

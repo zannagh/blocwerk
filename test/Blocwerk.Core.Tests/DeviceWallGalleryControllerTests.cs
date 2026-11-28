@@ -61,6 +61,8 @@ public sealed class DeviceWallGalleryControllerTests
         var key = Guid.NewGuid();
 
         Refused(await Controller(h, [1, 2, 3], "application/pdf").Upload(h.WallId, key, default), 415);
+        Refused(await Controller(h, PrivacyPhotos.ExifTiff(), "image/jpeg").Upload(h.WallId, key, default), 415);
+        Refused(await Controller(h, PrivacyPhotos.GpsPng(), "image/jpeg").Upload(h.WallId, key, default), 415);
         Refused(await Controller(h, []).Upload(h.WallId, null, default), 400);
         Refused(await Controller(h, PrivacyPhotos.GpsJpeg()).Upload(h.WallId, Guid.Empty, default), 400);
 

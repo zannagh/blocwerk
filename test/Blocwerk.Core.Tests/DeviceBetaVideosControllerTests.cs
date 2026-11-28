@@ -4,6 +4,7 @@
 using System.Net.Http.Headers;
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Services;
 using Blocwerk.Core.Services.DeviceWrites;
 using Blocwerk.Web.Controllers;
 using Microsoft.AspNetCore.Http;
@@ -88,27 +89,75 @@ public sealed class DeviceBetaVideosControllerTests
         Refused(await Controller(h).Delete(h.WallId, boulder, id, null), 404);
     }
 
+    [Fact]
+    public async Task AnOversizedThumbnail_OrASecondFilePart_IsRefused_AndLeavesNoTempFile()
+    {
+        using var h = new WallTestHarness();
+        var boulder = await SeedAsync(h);
+        var bigThumbnail = new ByteArrayContent(new byte[(512 * 1024) + 1]);
+
+        Refused(await Upload(h, boulder, null, extra: c => c.Add(bigThumbnail, "thumbnail", "poster.jpg")), 400);
+        Refused(await Upload(h, boulder, null, extra: c => c.Add(new ByteArrayContent(Clip), "file", "second.mp4")), 400);
+        Applied(await Upload(h, boulder, null, extra: c => c.Add(new ByteArrayContent(new byte[1024]), "thumbnail", "poster.jpg")));
+
+        Assert.Equal(0, h.BetaStorage.SweepTemp(DateTimeOffset.MaxValue));
+        await using var db = h.CreateContext();
+        Assert.Single(await db.BetaVideos.ToListAsync());
+    }
+
+    [Fact]
+    public async Task AnUploadOverTheUsersQuota_IsAPermanent409_UntilTheOldClipsAgeOut()
+    {
+        using var h = new WallTestHarness();
+        var boulder = await SeedAsync(h);
+        var old = await h.BetaVideoService.AddVideoAsync(boulder, Clip, "video/mp4", null, "old.mp4");
+        await using (var db = h.CreateContext())
+        {
+            await db.BetaVideos.Where(v => v.Id == old.Id)
+                .ExecuteUpdateAsync(u => u.SetProperty(v => v.SizeBytes, new BlocwerkSettings().BetaVideo.QuotaBytes));
+        }
+
+        var refused = Assert.IsType<ObjectResult>(await Upload(h, boulder, null));
+        Assert.Equal(409, refused.StatusCode);
+        var error = Assert.IsType<OfflineActionError>(refused.Value);
+        Assert.True(error.Permanent);
+        Assert.Contains("the limit is 10 GB", error.Message, StringComparison.Ordinal);
+        Assert.Equal(0, h.BetaStorage.SweepTemp(DateTimeOffset.MaxValue));
+
+        await using (var db = h.CreateContext())
+        {
+            await db.BetaVideos.Where(v => v.Id == old.Id)
+                .ExecuteUpdateAsync(u => u.SetProperty(v => v.CreatedAt, DateTimeOffset.UtcNow.AddDays(-31)));
+        }
+
+        Applied(await Upload(h, boulder, null));
+    }
+
     private static Task<IActionResult> Upload(
         WallTestHarness h,
         Guid boulder,
         Guid? key,
         Guid? wallId = null,
         long? contentLength = -1,
-        string contentType = "video/mp4")
+        string contentType = "video/mp4",
+        Action<MultipartFormDataContent>? extra = null,
+        BlocwerkSettings? settings = null)
     {
+        settings ??= new BlocwerkSettings();
         var controller = Controller(h);
         using var content = new MultipartFormDataContent();
         var part = new ByteArrayContent(Clip);
         part.Headers.ContentType = new MediaTypeHeaderValue(contentType);
         content.Add(part, "file", "beta.mp4");
+        extra?.Invoke(content);
         var body = new MemoryStream();
         content.CopyTo(body, null, CancellationToken.None);
         body.Position = 0;
         controller.Request.Body = body;
         controller.Request.ContentType = content.Headers.ContentType!.ToString();
         controller.Request.ContentLength = contentLength == -1 ? body.Length : contentLength;
-        return controller.Upload(
-            wallId ?? h.WallId, boulder, key, h.BetaStorage, new BlocwerkSettings(), NullLoggerFactory.Instance, default);
+        var quota = new BetaVideoQuota(h.DbContextFactory, h.CurrentUser, settings);
+        return controller.Upload(wallId ?? h.WallId, boulder, key, h.BetaStorage, quota, settings, NullLoggerFactory.Instance, default);
     }
 
     private static Guid VideoId(OfflineActionResponse body) =>

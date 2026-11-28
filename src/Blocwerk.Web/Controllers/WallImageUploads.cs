@@ -175,8 +175,9 @@ internal static class WallImageUploads
     /// <summary>
     /// Removes location and every other piece of metadata from the uploaded temp file in place, before
     /// it is committed: a JPEG, PNG or WebP keeps its pixels byte for byte and its EXIF orientation;
-    /// other formats are kept as sent. A structurally broken JPEG/PNG/WebP is refused (400) and its temp
-    /// file dropped. The whole file is read once here — at most <see cref="MaxUploadBytes"/>.
+    /// other formats are kept as sent. Bytes that are not the declared format are refused (415) and a picture over
+    /// the pixel limit (400), see <see cref="GalleryImageCheck"/>. A structurally broken JPEG/PNG/WebP is refused (400)
+    /// and its temp file dropped. The whole file is read once here — at most <see cref="MaxUploadBytes"/>.
     /// </summary>
     public static async Task<WallImageUpload> RemoveMetadataAsync(
         WallImageUpload upload,
@@ -186,6 +187,11 @@ internal static class WallImageUploads
         try
         {
             var bytes = await File.ReadAllBytesAsync(upload.TempPath, cancellationToken);
+            if (GalleryImageCheck.Refusal(bytes, upload.ContentType) is { } refusal)
+            {
+                return WallImageUpload.Failed(refusal.Status, refusal.Message);
+            }
+
             var clean = StoredPhotoSanitizer.Sanitize(bytes);
             if (clean.Length != bytes.Length || !clean.AsSpan().SequenceEqual(bytes))
             {
