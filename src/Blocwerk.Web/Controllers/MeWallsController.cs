@@ -3,6 +3,7 @@
 
 using Blocwerk.Authentication.Authorization;
 using Blocwerk.Authentication.Handlers;
+using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Assets;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Services;
@@ -30,14 +31,16 @@ public sealed class MeWallsController : ControllerBase
 {
     private readonly IWallService walls;
     private readonly IAssetHashReader hashes;
+    private readonly ICurrentUserService currentUser;
 
-    public MeWallsController(IWallService walls, IAssetHashReader hashes)
+    public MeWallsController(IWallService walls, IAssetHashReader hashes, ICurrentUserService currentUser)
     {
         this.walls = walls;
         this.hashes = hashes;
+        this.currentUser = currentUser;
     }
 
-    /// <summary>The caller's walls in the web page's order: id, name, member count and the card photo's hash.</summary>
+    /// <summary>The caller's walls in the web page's order: id, name, member count, the card photo's hash and the caller's role.</summary>
     [HttpGet]
     public async Task<IActionResult> GetWalls(CancellationToken ct)
     {
@@ -47,9 +50,11 @@ public sealed class MeWallsController : ControllerBase
         }
 
         List<Wall> mine;
+        Guid userId;
         try
         {
             mine = await walls.GetMyWallsAsync();
+            userId = (await currentUser.GetCurrentUserAsync()).Id;
         }
         catch (UnauthorizedAccessException)
         {
@@ -59,12 +64,15 @@ public sealed class MeWallsController : ControllerBase
         var photos = await hashes.WallPhotosAsync(mine.Select(w => w.Id).ToList(), ct);
         Response.Headers.CacheControl = "no-store";
         return Ok(mine
-            .Select(w => new MeWallResponse(
-                w.Id,
-                w.Name,
-                w.Members.Count,
-                w.PhotoContentType is not null,
-                photos.GetValueOrDefault(w.Id)))
+            .Select(w => (Wall: w, Caller: WallCaller.Of(w, userId)))
+            .Select(x => new MeWallResponse(
+                x.Wall.Id,
+                x.Wall.Name,
+                x.Wall.Members.Count,
+                x.Wall.PhotoContentType is not null,
+                photos.GetValueOrDefault(x.Wall.Id),
+                x.Caller.RoleName,
+                x.Caller.IsOwner))
             .ToList());
     }
 }

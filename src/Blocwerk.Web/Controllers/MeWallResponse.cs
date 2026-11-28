@@ -11,4 +11,6 @@ namespace Blocwerk.Web.Controllers;
 /// <param name="PhotoSha">
 /// The card photo's hash, read as <c>/api/walls/{id}/a/{sha}/640</c>; null without a photo or while it is not hashed yet.
 /// </param>
-public sealed record MeWallResponse(Guid Id, string Name, int MemberCount, bool HasPhoto, string? PhotoSha);
+/// <param name="Role">The caller's role: Admin (the owner included), Moderator or Member.</param>
+/// <param name="IsOwner">True when the caller owns the wall.</param>
+public sealed record MeWallResponse(Guid Id, string Name, int MemberCount, bool HasPhoto, string? PhotoSha, string Role, bool IsOwner);
