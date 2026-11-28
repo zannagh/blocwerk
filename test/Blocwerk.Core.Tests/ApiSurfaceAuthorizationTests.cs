@@ -34,6 +34,8 @@ namespace Blocwerk.Core.Tests;
 public class ApiSurfaceAuthorizationTests
 {
     /// <summary>The offline client's wall routes a linked device key may read (<see cref="BlocwerkPolicies.WallSync"/>).</summary>
+    private const string MeWallsRoute = "api/v1/me/walls";
+
     private static readonly string[] SyncRoutes =
     [
         DocumentEndpoints.IndexRoute,
@@ -295,7 +297,20 @@ public class ApiSurfaceAuthorizationTests
             .Order(StringComparer.Ordinal)
             .ToList();
 
-        Assert.Equal(SyncRoutes.Concat([FeedEndpoints.DeviceSelfChangesRoute, MineEndpoints.DeviceRoute]).Order(StringComparer.Ordinal), admitting);
+        Assert.Equal(
+            SyncRoutes.Concat([FeedEndpoints.DeviceSelfChangesRoute, MineEndpoints.DeviceRoute, MeWallsRoute]).Order(StringComparer.Ordinal),
+            admitting);
+    }
+
+    /// <summary>The companion app's wall list: a device key only, on the API-key surface, rate limited like the feed.</summary>
+    [Fact]
+    public void TheDeviceWallList_IsForADeviceKeyOnly_AndRateLimited()
+    {
+        var walls = Assert.Single(AllEndpoints().Where(e => e.RoutePattern.RawText == MeWallsRoute));
+
+        Assert.True(ApiKeySurface.Covers(ToPath(MeWallsRoute)));
+        Assert.Equal(BlocwerkPolicies.DeviceApiKey, walls.Metadata.GetMetadata<IAuthorizeData>()?.Policy);
+        Assert.Equal(FeedEndpoints.RateLimitPolicy, walls.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName);
     }
 
     /// <summary>

@@ -23,6 +23,13 @@ internal static partial class ApiDocsData
         DeviceIntro,
         "Device key",
         [
+            new("GET", "/api/v1/me/walls", "Your walls, as the My Walls page lists them: the walls you are a member of.",
+                [],
+                null,
+                "[\n  {\n    \"id\": \"<guid>\",\n    \"name\": \"The Attic\",\n    \"memberCount\": 4,"
+                    + "\n    \"hasPhoto\": true,\n    \"photoSha\": \"<hex>\"\n  }\n]",
+                "Device key only. Read the card photo as /api/walls/{id}/a/{photoSha}/640; photoSha is null without a photo "
+                    + "or while it is not hashed yet."),
             new("GET", "/api/walls/{wallId}/docs", "The wall's data documents for you: kind (wall, holds, boulders, gallery, comments) and sha of each.",
                 [WallParam, TokenParam],
                 null,
