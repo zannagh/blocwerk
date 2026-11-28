@@ -1331,9 +1331,13 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("BoulderId");
-
                     b.HasIndex("ProposedByUserId");
+
+                    b.HasIndex(new[] { "BoulderId" }, "IX_GradeProposals_BoulderId");
+
+                    b.HasIndex(new[] { "BoulderId" }, "IX_GradeProposals_BoulderId_Open")
+                        .IsUnique()
+                        .HasFilter("NOT \"IsResolved\"");
 
                     b.ToTable("GradeProposals");
                 });

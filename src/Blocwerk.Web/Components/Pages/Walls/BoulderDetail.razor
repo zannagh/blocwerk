@@ -1892,7 +1892,7 @@ else
             return;
         }
 
-        await BoulderService.AcceptGradeProposalAsync(_activeProposal.Id);
+        await BoulderService.AcceptGradeProposalAsync(_activeProposal.Id, _activeProposal.ProposedGrade);
         if (_boulder != null)
         {
             _boulder.Grade = _activeProposal.ProposedGrade;
