@@ -4,6 +4,7 @@
 using Blocwerk.Authentication.Authorization;
 using Blocwerk.Authentication.Handlers;
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.AppleSignIn;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -28,10 +29,12 @@ public sealed class MeAvatarController : ControllerBase
     public const long MaxUploadBytes = 30L * 1024 * 1024;
 
     private readonly ICurrentUserService currentUser;
+    private readonly IAppleSignInService apple;
 
-    public MeAvatarController(ICurrentUserService currentUser)
+    public MeAvatarController(ICurrentUserService currentUser, IAppleSignInService apple)
     {
         this.currentUser = currentUser;
+        this.apple = apple;
     }
 
     /// <summary>Replaces the avatar with the request body; the body's Content-Type names the format.</summary>
@@ -60,12 +63,18 @@ public sealed class MeAvatarController : ControllerBase
         {
             await currentUser.SetAvatarAsync(image, contentType);
             currentUser.InvalidateCache();
-            return Ok(MeProfileResponse.From(await currentUser.GetCurrentUserAsync()));
+            return Ok(await ProfileAsync());
         }
         catch (InvalidOperationException ex)
         {
             // Too large, not JPEG/PNG/WebP, or not readable: the service's own messages.
             return BadRequest(new ApiErrorResponse(ex.Message));
         }
+    }
+
+    private async Task<MeProfileResponse> ProfileAsync()
+    {
+        var user = await currentUser.GetCurrentUserAsync();
+        return MeProfileResponse.From(user, await apple.IsLinkedAsync(user.Id));
     }
 }

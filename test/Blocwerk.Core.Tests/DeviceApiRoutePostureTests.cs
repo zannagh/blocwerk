@@ -60,6 +60,8 @@ public sealed class DeviceApiRoutePostureTests
         ("GET", "api/v1/me/days/{date}"),
         ("PUT", "api/v1/me/avatar"),
         ("DELETE", "api/v1/me/avatar"),
+        ("POST", "api/v1/me/apple"),
+        ("DELETE", "api/v1/me/apple"),
         ("POST", "api/v1/walls/{wallId:guid}/boulders"),
         ("PUT", "api/v1/walls/{wallId:guid}/boulders/{boulderId:guid}"),
         ("GET", "api/v1/walls/{wallId:guid}/settings"),

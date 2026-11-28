@@ -1,4 +1,5 @@
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.AppleSignIn;
 using Blocwerk.Core.Assets;
 using Blocwerk.Core.Assets.Backfill;
 using Blocwerk.Core.Assets.Manifest;
@@ -195,6 +196,7 @@ public static class CoreServices
         builder.Services.AddSingleton<VisitGrantCheck>();
         builder.Services.AddScoped<Services.Membership.IWallMembershipService, Services.Membership.WallMembershipService>();
         builder.Services.AddScoped<IDeviceLinkService, DeviceLinkService>();
+        builder.AddAppleSignIn();
         builder.Services.AddScoped<IWallSegmentService, WallSegmentService>();
         builder.Services.AddScoped<IWallGlyphService, WallGlyphService>();
         builder.Services.AddScoped<IHoldOutlineUpgradeService, HoldOutlineUpgradeService>();

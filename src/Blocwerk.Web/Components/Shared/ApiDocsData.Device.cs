@@ -128,6 +128,7 @@ internal static partial class ApiDocsData
                 null,
                 MarksNotes),
             .. DeviceProfileEndpoints,
+            .. DeviceAppleEndpoints,
             .. DeviceWallEndpoints,
             .. DeviceMediaEndpoints,
             .. DeviceActivityEndpoints,

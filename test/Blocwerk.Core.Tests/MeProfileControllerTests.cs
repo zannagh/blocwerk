@@ -5,13 +5,16 @@ using System.Security.Claims;
 using System.Text.Json;
 using Blocwerk.Authentication.Services;
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.AppleSignIn;
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Services;
 using Blocwerk.Web.Controllers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 namespace Blocwerk.Core.Tests;
@@ -169,8 +172,16 @@ public sealed class MeProfileControllerTests
 
     private static JsonElement Json(string text) => JsonDocument.Parse(text).RootElement.Clone();
 
+    /// <summary>The real Apple link service over the harness's database, for the profile's <c>appleLinked</c>.</summary>
+    internal static IAppleSignInService Apple(WallTestHarness h) => new AppleSignInService(
+        h.DbContextFactory,
+        Substitute.For<IAppleIdentityTokenValidator>(),
+        new AppleNonceStore(h.DbContextFactory, Substitute.For<IAppleNonceCodec>()),
+        Substitute.For<IApiKeyService>(),
+        NullLogger<AppleSignInService>.Instance);
+
     private static MeProfileController Controller(WallTestHarness h, User user) =>
-        new(RealCurrentUser(h, user))
+        new(RealCurrentUser(h, user), Apple(h))
         {
             ControllerContext = new ControllerContext
             {

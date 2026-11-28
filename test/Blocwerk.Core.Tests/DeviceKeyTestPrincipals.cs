@@ -17,20 +17,23 @@ internal static class DeviceKeyTestPrincipals
     /// <summary>A personal key minted by the app's sign-in: User scope, write access, the device claim.</summary>
     public static ClaimsPrincipal Device() => Key(ApiKeyScope.User, device: true);
 
+    /// <summary>A device key principal for the real key <paramref name="keyId"/>.</summary>
+    public static ClaimsPrincipal Device(Guid keyId) => Key(ApiKeyScope.User, device: true, keyId);
+
     /// <summary>A personal key made under Settings → API keys, with write access but no device claim.</summary>
     public static ClaimsPrincipal Plain() => Key(ApiKeyScope.User, device: false);
 
     /// <summary>A wall key with write access.</summary>
     public static ClaimsPrincipal Wall() => Key(ApiKeyScope.Wall, device: false);
 
-    private static ClaimsPrincipal Key(ApiKeyScope scope, bool device)
+    private static ClaimsPrincipal Key(ApiKeyScope scope, bool device, Guid? keyId = null)
     {
         var claims = new List<Claim>
         {
             new(ClaimTypes.Name, "Some Climber"),
             new(ClaimTypes.NameIdentifier, "gh|4711"),
             new(ApiKeyClaimTypes.Scope, scope.ToString()),
-            new(ApiKeyClaimTypes.ApiKeyId, Guid.NewGuid().ToString()),
+            new(ApiKeyClaimTypes.ApiKeyId, (keyId ?? Guid.NewGuid()).ToString()),
             new(ApiKeyClaimTypes.AllowWrite, "true"),
         };
         if (scope == ApiKeyScope.Wall)

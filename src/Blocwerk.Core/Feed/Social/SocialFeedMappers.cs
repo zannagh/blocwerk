@@ -18,5 +18,6 @@ public static class SocialFeedMappers
         new ActivityLogFeedMapper(),
         new View3DFeedMapper(),
         new UserProfileFeedMapper(),
+        new AppleLinkFeedMapper(),
     ];
 }

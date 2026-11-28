@@ -13,8 +13,9 @@ internal static partial class ApiDocsData
             null,
             "{\n  \"id\": \"<guid>\",\n  \"name\": \"Crimp Queen\",\n  \"accountName\": \"octocat\",\n  \"customDisplayName\": \"Crimp Queen\","
                 + "\n  \"role\": \"User\",\n  \"memberSince\": \"2026-01-03T10:00:00+00:00\",\n  \"avatarUrl\": \"/api/users/<guid>/avatar\","
-                + "\n  \"homeWallId\": \"<guid>\",\n  \"gradeScale\": \"font\",\n  \"notifications\": { \"BoulderAdded\": true, \"MemberJoined\": false }\n}",
-            "Device key only."),
+                + "\n  \"homeWallId\": \"<guid>\",\n  \"gradeScale\": \"font\",\n  \"notifications\": { \"BoulderAdded\": true, \"MemberJoined\": false },"
+                + "\n  \"appleLinked\": false\n}",
+            "Device key only. appleLinked is true when an Apple ID is linked (POST /api/v1/me/apple)."),
         new("PATCH", "/api/v1/me/profile", "Change the fields you send; null resets the display name or clears the home wall.",
             [],
             "{\n  \"displayName\": \"Crimp Queen\",\n  \"homeWallId\": null,\n  \"gradeScale\": \"v\",\n  \"notifications\": { \"BoulderAdded\": false }\n}",

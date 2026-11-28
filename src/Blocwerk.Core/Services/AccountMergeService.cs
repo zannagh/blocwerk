@@ -82,6 +82,8 @@ public partial class AccountMergeService : IAccountMergeService
             .Where(i => i.UserId == sourceUserId)
             .ExecuteUpdateAsync(s => s.SetProperty(i => i.UserId, targetUserId));
 
+        await MoveAppleLinkAsync(db, sourceUserId, targetUserId);
+
         // RefreshToken.UserId is the JWT subject string, not a User FK — just drop the source's.
         if (sourceProviderSubjects.Count > 0)
         {
@@ -144,6 +146,22 @@ public partial class AccountMergeService : IAccountMergeService
             .ExecuteUpdateAsync(s => s.SetProperty(x => x.StagedByUserId, (Guid?)targetUserId));
         await db.WallPanels.Where(x => x.StagedByUserId == sourceUserId)
             .ExecuteUpdateAsync(s => s.SetProperty(x => x.StagedByUserId, (Guid?)targetUserId));
+    }
+
+    /// <summary>
+    /// Moves the source's Apple ID onto the target when the target has none, so it keeps signing in to the surviving
+    /// account; when the target has its own, the target's stays and the source's goes with the source row.
+    /// </summary>
+    private static async Task MoveAppleLinkAsync(BlocwerkDbContext db, Guid sourceUserId, Guid targetUserId)
+    {
+        if (await db.AppleLinks.AnyAsync(l => l.UserId == targetUserId))
+        {
+            await db.AppleLinks.Where(l => l.UserId == sourceUserId).ExecuteDeleteAsync();
+            return;
+        }
+
+        await db.AppleLinks.Where(l => l.UserId == sourceUserId)
+            .ExecuteUpdateAsync(s => s.SetProperty(l => l.UserId, targetUserId));
     }
 
     /// <summary>
