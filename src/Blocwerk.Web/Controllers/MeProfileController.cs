@@ -19,13 +19,12 @@ namespace Blocwerk.Web.Controllers;
 /// </summary>
 /// <remarks>
 /// The page's other App settings (appearance, zoom lens, editor toolbar) live in a browser cookie, not on the account,
-/// so they are not here. Avatar changes and account security stay on the web. A linked device key only, rate limited
-/// like the feed, never cached.
+/// so they are not here. Avatar changes and account security stay on the web. A linked device key only, never cached;
+/// reads take the feed's rate limit, the patch the per-key write limit.
 /// </remarks>
 [ApiController]
 [Route("api/v1/me/profile")]
 [Authorize(Policy = BlocwerkPolicies.DeviceApiKey, AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName)]
-[EnableRateLimiting(FeedEndpoints.RateLimitPolicy)]
 [DeviceKeyOnly]
 [IgnoreAntiforgeryToken]
 [Produces("application/json")]
@@ -40,6 +39,7 @@ public sealed class MeProfileController : ControllerBase
 
     /// <summary>The caller's identity and preferences.</summary>
     [HttpGet]
+    [EnableRateLimiting(FeedEndpoints.RateLimitPolicy)]
     public async Task<IActionResult> Get()
     {
         try
@@ -54,6 +54,7 @@ public sealed class MeProfileController : ControllerBase
 
     /// <summary>Changes the fields sent (a merge patch, <see cref="ProfilePatch"/>) and answers the whole profile.</summary>
     [HttpPatch]
+    [DeviceKeyWriteRateLimit]
     public async Task<IActionResult> Patch([FromBody] JsonElement body)
     {
         var (patch, error) = ProfilePatch.Parse(body);
@@ -87,7 +88,7 @@ public sealed class MeProfileController : ControllerBase
             await currentUser.SetHomeWallAsync(wallId);
             return null;
         }
-        catch (InvalidOperationException)
+        catch (NotAWallMemberException)
         {
             return BadRequest(new ApiErrorResponse("homeWallId must be a wall you are a member of."));
         }

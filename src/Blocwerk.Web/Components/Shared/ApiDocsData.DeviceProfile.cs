@@ -19,7 +19,8 @@ internal static partial class ApiDocsData
             [],
             "{\n  \"displayName\": \"Crimp Queen\",\n  \"homeWallId\": null,\n  \"gradeScale\": \"v\",\n  \"notifications\": { \"BoulderAdded\": false }\n}",
             null,
-            "Device key only. Answers the whole profile. 400 for an unknown field or value, a name over 256 characters, or a home "
+            "Device key only; per-key write limit. Answers the whole profile. 400 for an unknown field or value, a name over 256 "
+                + "characters or with invisible or text-direction characters, or a home "
                 + "wall you are not a member of; a refused body changes nothing."),
         new("GET", "/api/v1/users/{userId}", "Another member's profile: identity and progression, as the web shows it.",
             [

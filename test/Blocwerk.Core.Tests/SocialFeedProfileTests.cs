@@ -43,6 +43,17 @@ public sealed class SocialFeedProfileTests : IDisposable
     }
 
     [Fact]
+    public async Task ANotificationOptOut_TellsTheUsersOtherDevices_AndNobodyElse()
+    {
+        await fixture.SeedAsync();
+
+        await fixture.ChangeAsync<User>(u => u.Id == fixture.OwnerId, (u, _) => u.DisabledNotifications = NotificationType.BoulderAdded);
+
+        var row = Assert.Single(await fixture.RowsAsync());
+        Assert.Equal((FeedAudience.User, (Guid?)fixture.OwnerId, (Guid?)null), (row.Audience, row.AudienceUserId, row.WallId));
+    }
+
+    [Fact]
     public async Task OnlyTheActiveGeometryModel_ChangesThe3DView()
     {
         await fixture.SeedAsync();
