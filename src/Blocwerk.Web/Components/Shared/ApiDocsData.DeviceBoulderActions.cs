@@ -43,5 +43,11 @@ internal static partial class ApiDocsData
             "[\n  { \"boulderId\": \"<guid>\", \"createdByUserId\": \"<guid>\", \"setterIds\": [ \"<guid>\" ], \"hasBetaVideo\": true,"
                 + " \"needsReview\": false, \"canEdit\": true }\n]",
             "Device key only; members of the wall. Not in the boulders document, which share links read too."),
+        new("GET", "/api/v1/me/security", "Your sign-in and security set-up, read-only: e-mail, password sign-in, two-factor, linked providers.",
+            [],
+            null,
+            "{\n  \"email\": \"you@example.com\",\n  \"emailVerified\": true,\n  \"hasPassword\": true,\n  \"totpEnabled\": false,"
+                + "\n  \"linkedProviders\": [ \"github\" ],\n  \"manageUrl\": \"/profile?tab=account\"\n}",
+            "Device key only. Changes stay on the web: a key session may never change account security."),
     ];
 }
