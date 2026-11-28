@@ -91,7 +91,8 @@ public static class OfflineActionRunner
     public static OkObjectResult Applied(Guid? clientRequestId, object? result) =>
         new(new OfflineActionResponse(true, clientRequestId, result));
 
-    private static ObjectResult Error(int status, string message, bool permanent) =>
+    /// <summary>A refusal in the queue's envelope: <paramref name="permanent"/> tells it to drop the entry rather than retry.</summary>
+    public static ObjectResult Error(int status, string message, bool permanent) =>
         new(new OfflineActionError(message, permanent)) { StatusCode = status };
 
     private static bool IsDomainGuard(InvalidOperationException ex) =>

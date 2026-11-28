@@ -199,6 +199,20 @@ public class WallImageService : IWallImageService
         logger.LogInformation("Wall image {ImageId} deleted from wall {WallId} by {UserId}", imageId, image.WallId, actingUserId);
     }
 
+    public async Task EnsureCanUploadAsync(Guid wallId, Guid actingUserId, CancellationToken ct = default)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+        db.CurrentUserId = actingUserId;
+
+        // The wall query filter is the membership check: a wall the user is not a member of reads as missing.
+        if (!await db.Walls.AnyAsync(w => w.Id == wallId, ct))
+        {
+            throw new InvalidOperationException("Wall not found");
+        }
+
+        await WallAdminGuard.EnsureWallAdminAsync(db, wallId, actingUserId, ct);
+    }
+
     private static async Task<List<WallGalleryItem>> LoadUploadsAsync(
         BlocwerkDbContext db,
         Guid wallId,

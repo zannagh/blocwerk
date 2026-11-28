@@ -151,6 +151,8 @@ public static class CoreServices
         builder.Services.AddSingleton<IBetaVideoStorage, FileSystemBetaVideoStorage>();
         builder.Services.AddSingleton<IVideoTranscoder, FfmpegVideoTranscoder>();
         builder.Services.AddScoped<IBetaVideoService, BetaVideoService>();
+        builder.Services.AddScoped<BetaVideoQuota>();
+        builder.Services.AddHostedService<UploadHousekeepingWorker>();
 
         // Beta-video normalization: every upload is stored verbatim and then re-encoded to a
         // universally playable MP4 off the request thread. The signal is the "work is waiting" nudge
@@ -173,6 +175,7 @@ public static class CoreServices
         builder.Services.AddWallManifest();
 
         builder.Services.AddScoped<IWallImageService, WallImageService>();
+        builder.Services.AddScoped<Services.DeviceWrites.DeviceWriteReceiptService>();
         builder.Services.AddScoped<IWallTemperatureService, WallTemperatureService>();
         // API-key MINTING is blocked for kiosk sessions on the service, not just in the UI: the
         // pages that mint keys are interactive components calling straight into this service inside

@@ -76,6 +76,42 @@ A refusal is `{ message, permanent }`. `permanent: true` means a retry can never
 
 A wall the caller is not a member of answers 404 on `members` and `hold-links`, and 403 on the link routes, as the web's services refuse it. A plain member gets 403 on `hold-links` and `rotate`. A visitor link is redeemed in a browser (`/visit/{token}`), not by the app.
 
+## Gallery and beta videos
+
+The app adds and removes media through the web's own upload code, as the key's owner. **Device key only**, `no-store`, and every write counts in the per-key write bucket above.
+
+| Route | Who | What |
+| --- | --- | --- |
+| `POST /api/v1/walls/{w}/gallery?clientRequestId=` | wall admins (owner or Admin) | one photo, multipart with a `file` part or the raw image body, as the wall camera sends it |
+| `DELETE /api/v1/walls/{w}/gallery/{imageId}` | wall admins | an uploaded photo of that wall (the wall photo and retired photos are not deletable) |
+| `GET /api/v1/walls/{w}/boulders/{b}/beta-videos` | members | the boulder page's beta carousel, newest first: `[{ id, uploadedByUserId, uploaderName, createdAt, contentType, sizeBytes, encodingStatus, thumbnailSha, videoUrl, hlsUrl, thumbnailUrl, mine }]` |
+| `POST /api/v1/walls/{w}/boulders/{b}/beta-videos?clientRequestId=` | members | one clip, multipart with a `file` part (a video type) and an optional `thumbnail` part, as the boulder page sends it |
+| `DELETE /api/v1/walls/{w}/boulders/{b}/beta-videos/{videoId}` | the uploader | their own clip |
+| `GET /api/v1/beta-videos/{id}`, `/thumbnail`, `/hls/{*path}` | members | the web's own playback handlers for `/api/beta-videos/{id}…`: the file with range requests, the poster frame, the HLS ladder |
+
+- **The same pipeline.** A gallery photo goes through the camera's pipeline (`WallImageIntake`, shared with `/api/walls/{w}/images`):
+  - at most 20 MB, JPEG, PNG or WebP only (415 otherwise);
+  - the bytes must be the declared format: a HEIC or TIFF sent as `image/jpeg` is a 415 (`GalleryImageCheck`);
+  - the header must name at most the app's pixel limit (400 otherwise), read without decoding, because the resized copies decode it whole;
+  - location and every other piece of metadata are stripped before the file is stored (`StoredPhotoSanitizer`).
+- **Beta clips** go through the browser's streamed upload (`BetaVideoUploadEndpoint.UploadAsync`, with its body read by `BetaVideoMultipart`):
+  - exactly one `file` part of a `video/*` type (a second one is a 400);
+  - a `thumbnail` part of at most 512 KB and a `fileName` of at most 1 KB, refused beyond that without reading further;
+  - then the background normalizer and HLS ladder, as for a clip from the web.
+  No exit leaves a temp file behind, and a scheduled sweep (`UploadHousekeepingWorker`, hourly) deletes upload temp files older than 12 hours.
+- **Quota.** Each user may upload at most 10 GB of beta clips within 30 days, counted over all walls and the web too (`BetaVideo:QuotaBytes`, `BetaVideo:QuotaWindowDays`; 0 turns it off). It is checked before the body is read (with the declared length) and again with the real size. Over it, the answer is 409 with a message saying how much was used. On the app's route that 409 is `permanent: true`, because only time or a deleted clip frees space.
+- **Who.** The web lets nobody but a wall key add gallery photos, and lets wall admins delete them. The app takes the admin rule for both (`IWallImageService.EnsureCanUploadAsync`, the same `WallAdminGuard` as the delete). Beta clips keep the web's rule: members upload, the uploader deletes. A wall the owner is not a member of, an unknown boulder and a boulder of another wall answer the same 404; a member who is not an admin gets 403 on the gallery.
+- **Gallery per boulder.** The web has no photo gallery per boulder (a boulder's media are its beta clips), so there is none here either. The app reads the wall gallery through the `gallery` document; a new or deleted photo reaches it through the feed (`gallery.changed`, `gallery.deleted`), a clip through `video.added`, `video.status` and `video.deleted`.
+- **Size and resumption.** Neither web upload is chunked or resumable: each is one streamed request. So the app's are too, with a cap: 20 MB a photo (the web's) and 1 GiB a clip (the web allows up to its configured 4 GB, which is not sane for one request over a phone connection). A clip needs a `Content-Length`, so it is refused before a byte is read: 411 without one, 413 over the cap.
+- **Replay.** `clientRequestId` goes in the query string, so a retry is recognised before its body is read. The first request takes the id in a receipt (`DeviceWriteReceipts`, unique on user and id) before it writes. Then:
+  - A retry after the write returns the stored photo or clip, with no second row.
+  - A retry while the write is still running gets 409 `permanent: false`.
+  - A write that failed frees the id again.
+  - Every app upload runs under a 30-minute deadline. A receipt left unfinished for 35 minutes, past that deadline, belongs to a request that died, so the next retry takes it over.
+  - Receipts are deleted after 30 days by the same hourly sweep.
+  - The same id on another wall, boulder or kind of write is a permanent 400.
+- **Playback.** `hlsUrl` is null until the clip has a ladder; play `videoUrl` then. Pending and Processing clips answer 404 until they are normalized, as on the web. The HLS playlists use relative URIs, so a player that sends the key on every request of the asset (AVURLAsset with HTTP header fields) follows them under `/api/v1/beta-videos/{id}/hls/`. Playback counts in the key's sync bucket.
+
 ## Rules
 
 - **Who gets in.** The `/api/v1/me` write routes use the `DeviceApiKey` policy and answer any other caller 404. The sync routes use the `WallSync` policy and the `DenyApiKeyPrincipalsExceptDevices()` filter. Both admit a device key and refuse every other key with the same bare 404 as before: a plain personal key, a wall key, a kiosk key or an installation key. The `/api/v1/me` routes (walls, changes, mine) use the `DeviceApiKey` policy, so a browser cookie does not work there either.
@@ -83,4 +119,4 @@ A wall the caller is not a member of answers 404 on `members` and `hold-links`, 
 - **Kiosk and visitor links.** These are unchanged. Both are cookie sessions, and a request authenticated by a key is never a kiosk.
 - **Rate limits.** The feed's per-address token bucket covers the wall catch-up, the stream and the three `/api/v1/me` routes, whoever the caller is. The boulder log counts in the device key's own sync bucket. As before, the document, image and manifest routes have no limiter for anyone.
 - **Revocation.** A revoked key is refused on its next request. An open stream ends within its 5-minute lifetime, and the reconnect is refused.
-- **Never open to a device key.** `/api/offline/*`, Blazor pages, the gallery, the panel and photo routes, 3D geometry, and the other `/api/me/*` routes.
+- **Never open to a device key.** `/api/offline/*`, Blazor pages, the browser's gallery byte route (`/media/…`; the app reads gallery images as `/a/{sha}`), the panel and photo routes, 3D geometry, `/api/beta-videos/*` (the app has its `/api/v1` aliases), and the other `/api/me/*` routes.

@@ -22,7 +22,7 @@ public static class BetaVideoHlsEndpoints
         app.MapGet("/api/beta-videos/{videoId:guid}/hls/{*path}", HandleAsync);
     }
 
-    private static async Task<IResult> HandleAsync(
+    internal static async Task<IResult> HandleAsync(
         Guid videoId,
         string path,
         [FromQuery] string? token,

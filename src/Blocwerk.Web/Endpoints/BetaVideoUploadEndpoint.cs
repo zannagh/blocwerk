@@ -1,3 +1,6 @@
+// Copyright (c) 2026, zannagh. All rights reserved.
+// See License in the project root for license information.
+
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Services;
@@ -29,131 +32,56 @@ public static class BetaVideoUploadEndpoint
             .DisableAntiforgery();
     }
 
-    private static async Task<IResult> HandleAsync(
+    /// <summary>
+    /// The upload itself, for the browser's route and the companion app's (which passes a smaller
+    /// <paramref name="maxUploadBytes"/>): permission and quota first, then the streamed multipart read
+    /// (<see cref="BetaVideoMultipart"/>), the quota again with the real size, the commit and the row. No exit leaves a
+    /// temp file or an unrecorded stored file behind.
+    /// </summary>
+    internal static async Task<IResult> UploadAsync(
         Guid boulderId,
         HttpContext http,
         IBetaVideoService betaVideoService,
         IBetaVideoStorage storage,
-        BlocwerkSettings settings,
+        BetaVideoQuota quota,
+        long maxUploadBytes,
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
         var logger = loggerFactory.CreateLogger("BetaVideoUpload");
-        var opts = settings.BetaVideo;
-
-        // Decide first, write second. Permission is resolved from the authenticated principal and a
-        // server-side lookup of the boulder's wall — nothing in the request body or its headers has a
-        // say. Previously the only check lived in AddVideoFromFileAsync, which runs after the clip has
-        // already been streamed to disk and possibly transcoded.
-        try
-        {
-            await betaVideoService.EnsureCanUploadAsync(boulderId);
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return Results.Unauthorized();
-        }
-        catch (InvalidOperationException)
-        {
-            return Results.Forbid();
-        }
-
-        var sizeFeature = http.Features.Get<IHttpMaxRequestBodySizeFeature>();
-        if (sizeFeature is { IsReadOnly: false })
-        {
-            sizeFeature.MaxRequestBodySize = opts.MaxUploadBytes;
-        }
-
-        if (string.IsNullOrEmpty(http.Request.ContentType)
-            || !http.Request.ContentType.Contains("multipart/", StringComparison.OrdinalIgnoreCase))
-        {
-            return Results.BadRequest("Expected a multipart/form-data upload.");
-        }
-
-        var boundary = HeaderUtilities.RemoveQuotes(
-            MediaTypeHeaderValue.Parse(http.Request.ContentType).Boundary).Value;
-        if (string.IsNullOrEmpty(boundary))
-        {
-            return Results.BadRequest("Malformed multipart upload.");
-        }
-
-        var reader = new MultipartReader(boundary, http.Request.Body);
         string? tempPath = null;
-        string? contentType = null;
-        string? fileName = null;
-        byte[]? thumbnail = null;
-
         try
         {
-            for (var section = await reader.ReadNextSectionAsync(cancellationToken);
-                 section is not null;
-                 section = await reader.ReadNextSectionAsync(cancellationToken))
+            // Decide first, write second. Permission is resolved from the authenticated principal and a
+            // server-side lookup of the boulder's wall — nothing in the request body or its headers has a
+            // say, and the quota is checked against the declared length before a byte is read.
+            if (await RefuseBeforeReadingAsync(boulderId, http, betaVideoService, quota, maxUploadBytes, cancellationToken) is { } early)
             {
-                if (!ContentDispositionHeaderValue.TryParse(section.ContentDisposition, out var disposition))
-                {
-                    continue;
-                }
-
-                var isFile = disposition.FileName.HasValue || disposition.FileNameStar.HasValue;
-                if (isFile && disposition.Name.Value == "file")
-                {
-                    contentType = string.IsNullOrWhiteSpace(section.ContentType) ? "video/mp4" : section.ContentType;
-                    fileName ??= disposition.FileNameStar.Value ?? disposition.FileName.Value;
-                    tempPath = storage.CreateTempPath(Path.GetExtension(fileName ?? string.Empty));
-                    await using var fs = File.Create(tempPath);
-                    await section.Body.CopyToAsync(fs, cancellationToken);
-                }
-                else if (disposition.Name.Value == "thumbnail")
-                {
-                    using var ms = new MemoryStream();
-                    await section.Body.CopyToAsync(ms, cancellationToken);
-                    thumbnail = ms.Length > 0 ? ms.ToArray() : null;
-                }
-                else if (disposition.Name.Value == "fileName")
-                {
-                    using var sr = new StreamReader(section.Body);
-                    fileName = await sr.ReadToEndAsync(cancellationToken);
-                }
+                return early;
             }
 
-            if (tempPath is null || !File.Exists(tempPath))
+            var boundary = HeaderUtilities.RemoveQuotes(MediaTypeHeaderValue.Parse(http.Request.ContentType).Boundary).Value;
+            if (string.IsNullOrEmpty(boundary))
             {
-                return Results.BadRequest("No video file part was sent.");
+                return Results.BadRequest("Malformed multipart upload.");
             }
 
-            var size = new FileInfo(tempPath).Length;
-            if (size == 0)
+            var parts = await BetaVideoMultipart.ReadAsync(new MultipartReader(boundary, http.Request.Body), storage, cancellationToken);
+            tempPath = parts.TempPath;
+            if (parts.Error is not null)
             {
-                return Results.BadRequest("The video file is empty.");
+                return Results.BadRequest(parts.Error);
             }
 
-            if (string.IsNullOrWhiteSpace(contentType) || !contentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
+            var size = new FileInfo(tempPath!).Length;
+            if (await RefuseAfterReadingAsync(parts, size, quota, cancellationToken) is { } late)
             {
-                return Results.BadRequest("Only video files can be uploaded as beta.");
+                return late;
             }
 
-            var extension = Path.GetExtension(fileName ?? string.Empty);
-
-            // Store the original verbatim and return promptly. The background normalizer re-encodes it
-            // to a web-safe MP4 (or fast-remuxes one that is already H.264/AAC) off the request thread.
-            var storedName = storage.Commit(tempPath, extension);
-            tempPath = null; // ownership moved into the store
-
-            try
-            {
-                var info = await betaVideoService.AddVideoFromFileAsync(boulderId, storedName, size, contentType, thumbnail, fileName);
-                return Results.Ok(info);
-            }
-            catch (UnauthorizedAccessException)
-            {
-                storage.Delete(storedName);
-                return Results.Unauthorized();
-            }
-            catch (InvalidOperationException ex)
-            {
-                storage.Delete(storedName);
-                return Results.BadRequest(ex.Message);
-            }
+            var result = await StoreAsync(boulderId, parts, size, betaVideoService, storage);
+            tempPath = null; // committed (and, on a failed record, deleted) by StoreAsync
+            return result;
         }
         catch (UnauthorizedAccessException)
         {
@@ -166,10 +94,97 @@ public static class BetaVideoUploadEndpoint
         }
         finally
         {
-            if (tempPath is not null && File.Exists(tempPath))
-            {
-                File.Delete(tempPath);
-            }
+            BetaVideoMultipart.Discard(tempPath);
         }
     }
+
+    // Permission, the quota on the declared length, the size cap and the body type: everything decided before reading.
+    private static async Task<IResult?> RefuseBeforeReadingAsync(
+        Guid boulderId,
+        HttpContext http,
+        IBetaVideoService betaVideoService,
+        BetaVideoQuota quota,
+        long maxUploadBytes,
+        CancellationToken ct)
+    {
+        try
+        {
+            await betaVideoService.EnsureCanUploadAsync(boulderId);
+        }
+        catch (InvalidOperationException)
+        {
+            return Results.Forbid();
+        }
+
+        if (await quota.RefusalAsync(http.Request.ContentLength ?? 0, ct) is { } full)
+        {
+            return Results.Conflict(full);
+        }
+
+        var sizeFeature = http.Features.Get<IHttpMaxRequestBodySizeFeature>();
+        if (sizeFeature is { IsReadOnly: false })
+        {
+            sizeFeature.MaxRequestBodySize = maxUploadBytes;
+        }
+
+        return string.IsNullOrEmpty(http.Request.ContentType)
+            || !http.Request.ContentType.Contains("multipart/", StringComparison.OrdinalIgnoreCase)
+            ? Results.BadRequest("Expected a multipart/form-data upload.")
+            : null;
+    }
+
+    // An empty clip, a clip that is not a video, or one that does not fit the quota after all.
+    private static async Task<IResult?> RefuseAfterReadingAsync(BetaVideoParts parts, long size, BetaVideoQuota quota, CancellationToken ct)
+    {
+        if (size == 0)
+        {
+            return Results.BadRequest("The video file is empty.");
+        }
+
+        if (string.IsNullOrWhiteSpace(parts.ContentType) || !parts.ContentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
+        {
+            return Results.BadRequest("Only video files can be uploaded as beta.");
+        }
+
+        return await quota.RefusalAsync(size, ct) is { } full ? Results.Conflict(full) : null;
+    }
+
+    // Stores the original verbatim and records the row; the background normalizer re-encodes it to a web-safe MP4 (or
+    // fast-remuxes one that is already H.264/AAC) off the request thread. A failed record deletes the stored file again.
+    private static async Task<IResult> StoreAsync(
+        Guid boulderId,
+        BetaVideoParts parts,
+        long size,
+        IBetaVideoService betaVideoService,
+        IBetaVideoStorage storage)
+    {
+        var storedName = storage.Commit(parts.TempPath!, Path.GetExtension(parts.FileName ?? string.Empty));
+        try
+        {
+            var info = await betaVideoService.AddVideoFromFileAsync(
+                boulderId, storedName, size, parts.ContentType!, parts.Thumbnail, parts.FileName);
+            return Results.Ok(info);
+        }
+        catch (InvalidOperationException ex)
+        {
+            storage.Delete(storedName);
+            return Results.BadRequest(ex.Message);
+        }
+        catch
+        {
+            storage.Delete(storedName);
+            throw;
+        }
+    }
+
+    private static Task<IResult> HandleAsync(
+        Guid boulderId,
+        HttpContext http,
+        IBetaVideoService betaVideoService,
+        IBetaVideoStorage storage,
+        BetaVideoQuota quota,
+        BlocwerkSettings settings,
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken) =>
+        UploadAsync(boulderId, http, betaVideoService, storage, quota, settings.BetaVideo.MaxUploadBytes, loggerFactory, cancellationToken);
 }

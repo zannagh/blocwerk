@@ -44,6 +44,14 @@ public sealed class DeviceApiRoutePostureTests
         ("POST", "api/v1/walls/{wallId:guid}/visit-links"),
         ("POST", "api/v1/join/{token}"),
         ("GET", "api/v1/walls/{wallId:guid}/boulders/{boulderId:guid}/attempts"),
+        ("POST", "api/v1/walls/{wallId:guid}/gallery"),
+        ("DELETE", "api/v1/walls/{wallId:guid}/gallery/{imageId:guid}"),
+        ("GET", "api/v1/walls/{wallId:guid}/boulders/{boulderId:guid}/beta-videos"),
+        ("POST", "api/v1/walls/{wallId:guid}/boulders/{boulderId:guid}/beta-videos"),
+        ("DELETE", "api/v1/walls/{wallId:guid}/boulders/{boulderId:guid}/beta-videos/{videoId:guid}"),
+        ("GET", "api/v1/beta-videos/{videoId:guid}"),
+        ("GET", "api/v1/beta-videos/{videoId:guid}/thumbnail"),
+        ("GET", "api/v1/beta-videos/{videoId:guid}/hls/{*path}"),
     ];
 
     public static TheoryData<string, string> Routes()

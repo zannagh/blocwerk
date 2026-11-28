@@ -80,7 +80,7 @@ internal static class PrivacyPhotos
         Assert.Equal(JpegImageData(original), JpegImageData(stored));
     }
 
-    private static byte[] Chunk(string type, byte[] data)
+    public static byte[] Chunk(string type, byte[] data)
     {
         var chunk = new byte[12 + data.Length];
         BinaryPrimitives.WriteUInt32BigEndian(chunk, (uint)data.Length);

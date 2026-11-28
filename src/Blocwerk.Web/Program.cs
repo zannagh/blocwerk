@@ -457,43 +457,8 @@ public static class Program
         // User avatar bytes; same browser-only auth posture as the wall photo routes above.
         app.MapUserAvatars();
 
-        // Beta clips and their poster frames. Access mirrors the wall photo routes above: a share
-        // token takes the anonymous path, otherwise the caller must be signed in.
-        // enableRangeProcessing matters here — without it <video> cannot seek, and Safari refuses
-        // to play at all because it opens every media element with a Range request.
-        app.MapGet("/api/beta-videos/{videoId:guid}", async (
-            Guid videoId,
-            [FromQuery] string? token,
-            [FromServices] IBetaVideoService betaVideoService) =>
-        {
-            try
-            {
-                var video = await betaVideoService.GetVideoFileAsync(videoId, token);
-                if (video is null)
-                {
-                    return Results.NotFound();
-                }
-
-                // Withhold a clip that has not been verified web-safe yet: Pending is a brand-new,
-                // un-normalized upload and Processing may be mid-swap. Ready serves the normalized
-                // rendition; Failed serves the ORIGINAL as a fallback so a clip that played before is
-                // never made unplayable (the player renders it with a "couldn't optimize" note).
-                if (video.EncodingStatus is BetaVideoEncodingStatus.Pending or BetaVideoEncodingStatus.Processing)
-                {
-                    return Results.NotFound();
-                }
-
-                // Stream disk-backed clips straight from the file (never load them whole into memory);
-                // fall back to the legacy in-database bytes. Range processing lets <video> seek.
-                return video.PhysicalPath is not null
-                    ? Results.File(video.PhysicalPath, video.ContentType, enableRangeProcessing: true)
-                    : Results.File(video.Bytes!, video.ContentType, enableRangeProcessing: true);
-            }
-            catch (UnauthorizedAccessException)
-            {
-                return Results.Unauthorized();
-            }
-        });
+        // Beta clips and their poster frames (see BetaVideoFileEndpoints).
+        app.MapBetaVideoFiles();
 
         app.MapBetaVideoUpload();
 
@@ -524,24 +489,6 @@ public static class Program
         // Gallery item bytes for the signed-in browser (uploads, the wall photo, retired
         // generation photos). Lives outside /api because /api is the API-key surface.
         app.MapWallGalleryImages();
-
-        app.MapGet("/api/beta-videos/{videoId:guid}/thumbnail", async (
-            Guid videoId,
-            [FromQuery] string? token,
-            [FromServices] IBetaVideoService betaVideoService) =>
-        {
-            try
-            {
-                var thumbnail = await betaVideoService.GetThumbnailAsync(videoId, token);
-                return thumbnail == null
-                    ? Results.NotFound()
-                    : Results.File(thumbnail.Data, thumbnail.ContentType);
-            }
-            catch (UnauthorizedAccessException)
-            {
-                return Results.Unauthorized();
-            }
-        });
 
         // DEVELOPMENT-ONLY: an unauthenticated HTTP harness that drives and visualises the whole
         // big-wall update (stage photos → run the OpenCV/YOLO carryover matcher → promote / discard)

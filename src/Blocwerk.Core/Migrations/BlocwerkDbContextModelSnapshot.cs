@@ -730,6 +730,40 @@ namespace Blocwerk.Core.Migrations
                     b.ToTable("DeviceLinkCodes");
                 });
 
+            modelBuilder.Entity("Blocwerk.Core.Entities.DeviceWriteReceipt", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ClientRequestId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<Guid>("ScopeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("SubjectId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "ClientRequestId")
+                        .IsUnique();
+
+                    b.ToTable("DeviceWriteReceipts");
+                });
+
             modelBuilder.Entity("Blocwerk.Core.Entities.EmailVerificationCode", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4508,6 +4542,17 @@ namespace Blocwerk.Core.Migrations
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.DeviceLinkCode", b =>
+                {
+                    b.HasOne("Blocwerk.Core.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Blocwerk.Core.Entities.DeviceWriteReceipt", b =>
                 {
                     b.HasOne("Blocwerk.Core.Entities.User", "User")
                         .WithMany()
