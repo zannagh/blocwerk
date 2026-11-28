@@ -382,6 +382,10 @@ public class BoulderVariantTests
         var boulder = new Boulder { WallId = wall.Id, Name = "Foreign", CreatedByUserId = h.Owner.Id };
         db.Walls.Add(wall);
         db.Boulders.Add(boulder);
+
+        // A wall the setter is a member of: a boulder there is visible, so pairing across walls is refused outright. On a
+        // wall they cannot see, a create treats the origin as missing (DeviceBouldersControllerTests).
+        db.WallMembers.Add(new WallMember { WallId = wall.Id, UserId = h.Owner.Id, Role = WallRole.Admin });
         await db.SaveChangesAsync();
         return boulder.Id;
     }

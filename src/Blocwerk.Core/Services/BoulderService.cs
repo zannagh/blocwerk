@@ -220,6 +220,12 @@ public partial class BoulderService : IBoulderService
         "This boulder has already been sent by others; only its name and grade can be changed";
 
     /// <summary>
+    /// Thrown by <see cref="CreateBoulderAsync"/> when the client-minted id is the caller's own boulder on another wall:
+    /// not a replay of this create. A permanent refusal for the offline queue and the companion app.
+    /// </summary>
+    public const string IdOnOtherWallMessage = "This boulder id is already used on another wall.";
+
+    /// <summary>
     /// Thrown by <see cref="ReviseBoulderAsync"/> when the acting user is neither the boulder's
     /// creator, one of its setters, nor a wall admin. Exposed as a const so the offline controller
     /// can list it among its permanent (non-retryable) rejections without the strings drifting apart.
@@ -339,6 +345,12 @@ public partial class BoulderService : IBoulderService
                             "Create replay rejected: boulder {BoulderId} belongs to {OwnerUserId}, not caller {UserId}",
                             id.Value, existing.CreatedByUserId, creatorId);
                         throw new InvalidOperationException("Boulder not found");
+                    }
+
+                    if (existing.WallId != wallId)
+                    {
+                        // The same client id on another wall is not a replay of this create.
+                        throw new UserFacingException(IdOnOtherWallMessage);
                     }
 
                     return existing;

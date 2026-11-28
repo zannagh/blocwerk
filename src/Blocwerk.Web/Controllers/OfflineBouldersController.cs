@@ -39,6 +39,7 @@ public sealed class OfflineBouldersController : ControllerBase
         ["Select at least one hold"] = StatusCodes.Status400BadRequest,
         [BoulderService.UnconfirmedHoldMessage] = StatusCodes.Status400BadRequest,
         [BoulderService.HoldOtherWallMessage] = StatusCodes.Status400BadRequest,
+        [BoulderService.IdOnOtherWallMessage] = StatusCodes.Status409Conflict,
         [BoulderService.VariantOtherWallMessage] = StatusCodes.Status400BadRequest,
     };
 

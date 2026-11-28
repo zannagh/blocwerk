@@ -25,7 +25,7 @@ namespace Blocwerk.Web.Controllers;
 /// <remarks>
 /// A linked device key only, limited per key, never cached. A wall the owner is not a member of, an unknown boulder and
 /// a boulder of another wall answer 404. A <c>clientRequestId</c> makes a create or a revise happen once: a retry gets
-/// the boulder as it is, never a second boulder or an old revision applied over a newer one.
+/// the boulder as it is, never a second boulder or an old revision applied over a newer one. The key is required.
 /// </remarks>
 [ApiController]
 [Route("api/v1/walls/{wallId:guid}/boulders")]
@@ -79,43 +79,58 @@ public sealed class DeviceBouldersController : ControllerBase
             request.VariantOfBoulderId));
     }
 
-    /// <summary>Revises the boulder: holds (when sent), name, grade, rules, styles, setters and hold types.</summary>
+    /// <summary>
+    /// Revises the boulder. Every field of <see cref="DeviceReviseBoulderRequest"/> is optional: one left out keeps the
+    /// boulder's current value, so the call is mapped onto the boulder as it is before the service runs.
+    /// </summary>
     [HttpPut("{boulderId:guid}")]
-    public async Task<IActionResult> Revise(Guid wallId, Guid boulderId, [FromBody] ReviseBoulderRequest request)
+    public async Task<IActionResult> Revise(Guid wallId, Guid boulderId, [FromBody] DeviceReviseBoulderRequest request)
     {
         if (DeviceBoulderRequestCheck.ReviseError(request) is { } error)
         {
             return OfflineActionRunner.Permanent(error);
         }
 
-        if (!await OnWallAsync(wallId, boulderId))
+        Boulder? current;
+        try
+        {
+            current = await boulders.GetBoulderAsync(boulderId);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return DeviceWriteAnswers.Refused(StatusCodes.Status401Unauthorized, "Your session has expired. Sign in to sync.");
+        }
+
+        if (current is null || current.WallId != wallId)
         {
             return DeviceWriteAnswers.Refused(StatusCodes.Status404NotFound, "Boulder not found");
         }
 
         return await RunAsync(request.ClientRequestId, ReviseKind, boulderId, () => boulders.ReviseBoulderAsync(
             boulderId,
-            request.ToInputs(),
+            HoldsFor(request.Holds, current),
             request.Name,
             request.Grade,
             request.KickboardFootholdsOn,
             request.HandsFollowFeet,
-            request.FootColorOnly ?? string.Empty, // "" clears the foot colour server-side; null would mean "leave unchanged".
-            request.NoMatch,
+            request.FootColorOnly,
+            request.NoMatch ?? current.NoMatch,
             request.Setters,
             request.CustomRule,
             request.Styles is { } styles ? (BoulderStyle)styles : null,
-            BoulderHoldTypeChange.FromRequest(request.HoldTypes, request.HoldType)));
+            BoulderHoldTypeChange.FromNames(request.HoldTypes)));
     }
+
+    // The holds to save: the ones sent, else none for a live boulder (a metadata-only save keeps them and its review
+    // state), else a draft's own holds, which the service needs on every draft save.
+    private static List<BoulderHoldInput>? HoldsFor(List<BoulderHoldDto>? sent, Boulder current) =>
+        sent is not null ? sent.Select(h => h.ToInput()).ToList()
+        : current.IsDraft ? current.BoulderHolds.Select(h => new BoulderHoldInput(h.HoldId, h.Type, h.Usage)).ToList()
+        : null;
 
     // Takes the replay key, runs the write, completes or releases the key, and maps the service's refusals.
     private async Task<IActionResult> RunAsync(Guid? clientRequestId, string kind, Guid scopeId, Func<Task<Boulder>> write)
     {
-        if (clientRequestId == Guid.Empty)
-        {
-            return OfflineActionRunner.Permanent(ClientRequestIds.EmptyMessage);
-        }
-
         Guid userId;
         try
         {
@@ -173,8 +188,4 @@ public sealed class DeviceBouldersController : ControllerBase
         Log.Error(ex, "Device boulder write failed");
         return OfflineActionRunner.Error(StatusCodes.Status500InternalServerError, "The boulder could not be saved. It stays queued.", permanent: false);
     }
-
-    // The boulder is on this wall and the caller may see it (a member; the web page's own read).
-    private async Task<bool> OnWallAsync(Guid wallId, Guid boulderId) =>
-        await boulders.GetBoulderAsync(boulderId) is { } boulder && boulder.WallId == wallId;
 }

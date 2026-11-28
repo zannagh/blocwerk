@@ -4,21 +4,18 @@
 using Blocwerk.Contracts.Feed;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
-using Blocwerk.Core.Feed;
 using Blocwerk.Core.Services;
-using Blocwerk.Core.Services.DeviceWrites;
 using Blocwerk.Web.Controllers;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging.Abstractions;
+using static Blocwerk.Core.Tests.DeviceSetterFixture;
 
 namespace Blocwerk.Core.Tests;
 
 /// <summary>
-/// <c>POST/PUT /api/v1/walls/{w}/boulders</c> for the companion app: the web setter's service calls under the web's
-/// rules (members set, the creator or an admin revises, holds on the wall), once per <c>clientRequestId</c>, with the
-/// feed rows other devices update from. Who may call at all is <see cref="DeviceApiRoutePostureTests"/>.
+/// <c>POST /api/v1/walls/{w}/boulders</c> for the companion app: the web setter's create under the web's rules (members
+/// set, holds on the wall, a variant on its parent's wall), once per required <c>clientRequestId</c>, with the feed rows
+/// other devices update from. Revise is <see cref="DeviceBoulderReviseTests"/>; who may call at all is
+/// <see cref="DeviceApiRoutePostureTests"/>.
 /// </summary>
 public sealed class DeviceBouldersControllerTests
 {
@@ -28,7 +25,7 @@ public sealed class DeviceBouldersControllerTests
         using var h = new WallTestHarness();
         var holds = await h.SeedWallAsync();
         h.ActingUser = await h.AddMemberAsync("member@test", WallRole.Member);
-        var body = Create(holds, Guid.NewGuid());
+        var body = Create(holds);
 
         var first = Applied(await FeedController(h).Create(h.WallId, body));
         var replay = Applied(await FeedController(h).Create(h.WallId, body));
@@ -46,11 +43,11 @@ public sealed class DeviceBouldersControllerTests
     {
         using var h = new WallTestHarness();
         var holds = await h.SeedWallAsync();
-        var foreign = await ForeignHoldAsync(h);
-
-        Refused(await Controller(h).Create(h.WallId, Create([holds[0], foreign], null)), 400, BoulderService.HoldOtherWallMessage);
+        var (_, foreign) = await OtherWallAsync(h, h.Owner, ownerIsMember: true);
         var unknown = new Hold { Id = Guid.NewGuid(), WallId = h.WallId };
-        Refused(await Controller(h).Create(h.WallId, Create([holds[0], unknown], null)), 400, BoulderService.HoldOtherWallMessage);
+
+        Refused(await Controller(h).Create(h.WallId, Create([holds[0], foreign])), 400, BoulderService.HoldOtherWallMessage);
+        Refused(await Controller(h).Create(h.WallId, Create([holds[0], unknown])), 400, BoulderService.HoldOtherWallMessage);
 
         await using var db = h.CreateContext();
         Assert.Empty(await db.Boulders.ToListAsync());
@@ -61,129 +58,63 @@ public sealed class DeviceBouldersControllerTests
     {
         using var h = new WallTestHarness();
         var holds = await h.SeedWallAsync();
-        var controller = Controller(h);
+        var c = Controller(h);
+        var many = Enumerable.Range(0, DeviceBoulderRequestCheck.MaxHolds + 1).Select(_ => new BoulderHoldDto { HoldId = Guid.NewGuid() }).ToList();
 
-        Refused(await controller.Create(h.WallId, With(Create(holds, null), r => r.Grade = "6Z")), 400);
-        Refused(await controller.Create(h.WallId, With(Create(holds, null), r => r.Styles = 1 << 30)), 400);
-        Refused(await controller.Create(h.WallId, With(Create(holds, null), r => r.Name = " ")), 400);
-        Refused(await controller.Create(h.WallId, With(Create(holds, null), r => r.CustomRule = new string('x', 201))), 400);
-        Refused(await controller.Create(h.WallId, With(Create(holds, null), r => r.Holds = [])), 400);
-        Refused(await controller.Create(h.WallId, With(Create(holds, null), r => r.WallId = Guid.NewGuid())), 400);
-        Refused(await controller.Create(h.WallId, Create(holds, Guid.Empty)), 400);
+        Refused(await c.Create(h.WallId, Create(holds, change: r => r.Grade = "6Z")), 400);
+        Refused(await c.Create(h.WallId, Create(holds, change: r => r.Styles = 1 << 30)), 400);
+        Refused(await c.Create(h.WallId, Create(holds, change: r => r.Name = " ")), 400);
+        Refused(await c.Create(h.WallId, Create(holds, change: r => r.CustomRule = new string('x', 201))), 400);
+        Refused(await c.Create(h.WallId, Create(holds, change: r => r.FootColorOnly = new string('x', 33))), 400);
+        Refused(await c.Create(h.WallId, Create(holds, change: r => r.Holds = [])), 400);
+        Refused(await c.Create(h.WallId, Create(holds, change: r => r.Holds = many)), 400);
+        Refused(await c.Create(h.WallId, Create(holds, change: r => r.Holds.Add(r.Holds[0]))), 400);
+        Refused(await c.Create(h.WallId, Create(holds, change: r => r.Setters = Enumerable.Range(0, 21).Select(_ => Guid.NewGuid()).ToList())), 400);
+        Refused(await c.Create(h.WallId, Create(holds, change: r => r.Setters = [h.Owner.Id, h.Owner.Id])), 400);
+        Refused(await c.Create(h.WallId, Create(holds, change: r => r.WallId = Guid.NewGuid())), 400);
+        Refused(await c.Create(h.WallId, Create(holds, change: r => r.ClientRequestId = null)), 400, DeviceBoulderRequestCheck.ClientRequestIdRequired);
+        Refused(await c.Create(h.WallId, Create(holds, Guid.Empty)), 400);
 
         h.ActingUser = await OutsiderAsync(h);
-        Refused(await Controller(h).Create(h.WallId, Create(holds, null)), 404);
+        Refused(await Controller(h).Create(h.WallId, Create(holds)), 404);
     }
 
     [Fact]
-    public async Task TheCreator_Revises_AnotherMemberCannot_AndAnOldRetryNeverRollsBack()
+    public async Task AVariant_OfABoulderOnTheWall_IsLinked_OneOnAWallYouCannotSee_IsLikeAMissingOrigin()
     {
         using var h = new WallTestHarness();
         var holds = await h.SeedWallAsync();
-        var id = BoulderId(Applied(await Controller(h).Create(h.WallId, Create(holds, null))));
-        var firstRevise = new ReviseBoulderRequest { ClientRequestId = Guid.NewGuid(), Name = "Renamed", Grade = "7A", Holds = null };
-
-        Applied(await Controller(h).Revise(h.WallId, id, firstRevise));
-        Applied(await Controller(h).Revise(h.WallId, id, new ReviseBoulderRequest { Name = "Newer", Grade = "7A", Holds = null }));
-        Applied(await Controller(h).Revise(h.WallId, id, firstRevise)); // the queue's retry of the first one
+        var parent = BoulderId(Applied(await Controller(h).Create(h.WallId, Create(holds))));
+        var (hiddenWall, hiddenHold) = await OtherWallAsync(h, new User { Identifier = "stranger@test", DisplayName = "S" }, ownerIsMember: false);
+        Guid hidden;
         await using (var db = h.CreateContext())
         {
-            Assert.Equal("Newer", (await db.Boulders.SingleAsync(b => b.Id == id)).Name);
+            var b = new Boulder { WallId = hiddenWall, Name = "Hidden", CreatedByUserId = h.Owner.Id };
+            db.Boulders.Add(b);
+            await db.SaveChangesAsync();
+            hidden = b.Id;
         }
 
-        Refused(await Controller(h).Revise(Guid.NewGuid(), id, new ReviseBoulderRequest { Name = "x", Holds = null }), 404);
-        Refused(await Controller(h).Revise(h.WallId, id, new ReviseBoulderRequest { HoldTypes = ["Nope"], Holds = null }), 400);
-        h.ActingUser = await h.AddMemberAsync("member@test", WallRole.Member);
-        Refused(await Controller(h).Revise(h.WallId, id, new ReviseBoulderRequest { Name = "Mine now", Holds = null }), 403);
+        var variant = BoulderId(Applied(await Controller(h).Create(h.WallId, Create(holds, change: r => r.VariantOfBoulderId = parent))));
+        var ofHidden = BoulderId(Applied(await Controller(h).Create(h.WallId, Create(holds, change: r => r.VariantOfBoulderId = hidden))));
+        var ofMissing = BoulderId(Applied(await Controller(h).Create(h.WallId, Create(holds, change: r => r.VariantOfBoulderId = Guid.NewGuid()))));
+
+        await using var check = h.CreateContext();
+        Assert.Equal(parent, (await check.Boulders.SingleAsync(b => b.Id == variant)).ParentBoulderId);
+        Assert.Null((await check.Boulders.SingleAsync(b => b.Id == ofHidden)).ParentBoulderId);
+        Assert.Null((await check.Boulders.SingleAsync(b => b.Id == ofMissing)).ParentBoulderId);
+        Assert.NotEqual(hiddenHold.WallId, h.WallId);
     }
 
     [Fact]
-    public async Task AMember_CreatesAVariant_OfABoulderOnTheWall()
+    public async Task AnIdOfYourOwnBoulderOnAnotherWall_IsAPermanent409_NotAReplay()
     {
         using var h = new WallTestHarness();
         var holds = await h.SeedWallAsync();
-        var parent = BoulderId(Applied(await Controller(h).Create(h.WallId, Create(holds, null))));
+        var (otherWall, otherHold) = await OtherWallAsync(h, h.Owner, ownerIsMember: true);
+        var id = Guid.NewGuid();
+        Applied(await Controller(h).Create(otherWall, Create([otherHold], change: r => r.Id = id)));
 
-        var variant = BoulderId(Applied(await Controller(h).Create(h.WallId, With(Create(holds, null), r => r.VariantOfBoulderId = parent))));
-
-        await using var db = h.CreateContext();
-        Assert.NotEqual(parent, variant);
-        Assert.Equal(2, await db.Boulders.CountAsync(b => b.WallId == h.WallId));
+        Refused(await Controller(h).Create(h.WallId, Create(holds, change: r => r.Id = id)), 409, BoulderService.IdOnOtherWallMessage);
     }
-
-    private static CreateBoulderRequest Create(IReadOnlyList<Hold> holds, Guid? key) => new()
-    {
-        ClientRequestId = key,
-        Name = "Crimp line",
-        Grade = "6B+",
-        Holds = holds.Take(2).Select(hold => new BoulderHoldDto { HoldId = hold.Id }).ToList(),
-    };
-
-    private static CreateBoulderRequest With(CreateBoulderRequest request, Action<CreateBoulderRequest> change)
-    {
-        change(request);
-        return request;
-    }
-
-    private static async Task<Hold> ForeignHoldAsync(WallTestHarness h)
-    {
-        await using var db = h.CreateContext();
-        var wall = new Wall { Name = "Other", OwnerId = h.Owner.Id };
-        var hold = new Hold { WallId = wall.Id, X = 0.5, Y = 0.5, Radius = 0.02 };
-        db.Walls.Add(wall);
-        db.Holds.Add(hold);
-        await db.SaveChangesAsync();
-        return hold;
-    }
-
-    private static async Task<User> OutsiderAsync(WallTestHarness h)
-    {
-        await using var db = h.CreateContext();
-        var user = new User { Identifier = "outsider@test", DisplayName = "Outsider" };
-        db.Users.Add(user);
-        await db.SaveChangesAsync();
-        return user;
-    }
-
-    private static Guid BoulderId(OfflineActionResponse body) =>
-        (Guid)body.Result!.GetType().GetProperty("boulderId")!.GetValue(body.Result)!;
-
-    private static OfflineActionResponse Applied(IActionResult result)
-    {
-        var body = Assert.IsType<OfflineActionResponse>(Assert.IsType<OkObjectResult>(result).Value);
-        Assert.True(body.Applied);
-        return body;
-    }
-
-    private static void Refused(IActionResult result, int status, string? message = null)
-    {
-        var refused = Assert.IsType<ObjectResult>(result);
-        Assert.Equal(status, refused.StatusCode);
-        var error = Assert.IsType<OfflineActionError>(refused.Value);
-        Assert.True(error.Permanent);
-        if (message is not null)
-        {
-            Assert.Equal(message, error.Message);
-        }
-    }
-
-    private static DeviceBouldersController Controller(WallTestHarness h) => Controller(h, h.BoulderService);
-
-    // The production feed interceptor on the service's contexts, so the save writes its feed rows as it does live.
-    private static DeviceBouldersController FeedController(WallTestHarness h)
-    {
-        var feed = new FeedInterceptor(
-            new FeedMapperRegistry(FeedMappers.Create()), new RecordingFeedSignal(), NullLogger<FeedInterceptor>.Instance, TestFeedCommits.Unobserved());
-        var factory = new InterceptedDbContextFactory(h.DbContextFactory.ConnectionString, [feed]);
-        return Controller(h, new BoulderService(factory, h.CurrentUser, h.ActivityLog, NullLogger<BoulderService>.Instance));
-    }
-
-    private static DeviceBouldersController Controller(WallTestHarness h, IBoulderService service) =>
-        new(service, h.CurrentUser, new DeviceWriteReceiptService(h.DbContextFactory))
-        {
-            ControllerContext = new ControllerContext
-            {
-                HttpContext = new DefaultHttpContext { User = DeviceKeyTestPrincipals.Device() },
-            },
-        };
 }

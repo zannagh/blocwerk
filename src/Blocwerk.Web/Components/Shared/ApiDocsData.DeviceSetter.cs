@@ -7,8 +7,9 @@ namespace Blocwerk.Web.Components.Shared;
 internal static partial class ApiDocsData
 {
     private const string SetterNotes =
-        "Device key only; the web setter's rules: members create, the creator, a setter or a wall admin revises (403 "
-        + "otherwise), holds must be on the wall and confirmed, a grade must be a Font or V grade. 404 for a wall you are "
+        "Device key only; clientRequestId is required. The web setter's rules: members create, the creator, a setter or a "
+        + "wall admin revises (403 otherwise), holds must be on the wall and confirmed, a grade must be a Font or V grade. "
+        + "At most 200 distinct holds and 20 distinct setters; a foot colour of at most 32 characters. 404 for a wall you are "
         + "not a member of or a boulder of another wall. The same clientRequestId again returns the boulder as it is now.";
 
     private const string BoulderAnswer =
@@ -23,10 +24,11 @@ internal static partial class ApiDocsData
                 + "\n  \"isDraft\": false,\n  \"styles\": 0,\n  \"customRule\": null,\n  \"variantOfBoulderId\": null,\n  \"clientRequestId\": \"<guid>\"\n}",
             BoulderAnswer,
             SetterNotes),
-        new("PUT", "/api/v1/walls/{wallId}/boulders/{boulderId}", "Revise a boulder: holds (null keeps them), name, grade, rules, styles, hold types, setters.",
+        new("PUT", "/api/v1/walls/{wallId}/boulders/{boulderId}", "Revise a boulder. Every field is optional: one left out keeps its value; \"\" or [] clears.",
             [WallParam, BoulderParam],
-            "{\n  \"name\": \"Crimp line\",\n  \"grade\": \"6C\",\n  \"holds\": null,\n  \"holdTypes\": [ \"Crimp\" ],\n  \"clientRequestId\": \"<guid>\"\n}",
+            "{\n  \"clientRequestId\": \"<guid>\",\n  \"grade\": \"6C\",\n  \"holdTypes\": [ \"Crimp\" ]\n}",
             BoulderAnswer,
-            SetterNotes + " Once someone else has sent it, only the name and grade may change."),
+            SetterNotes + " Fields: name, grade, kickboardFootholdsOn, handsFollowFeet, footColorOnly, noMatch, customRule, styles, "
+                + "holdTypes, holds (never empty), setters."),
     ];
 }
