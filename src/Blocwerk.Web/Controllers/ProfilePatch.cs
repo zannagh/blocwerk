@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Helpers;
 
 namespace Blocwerk.Web.Controllers;
 
@@ -79,6 +80,11 @@ public sealed record ProfilePatch(
         }
 
         var name = value.GetString()!;
+        if (DisplayNameRules.HasInvisibleCharacters(name))
+        {
+            return (null, DisplayNameRules.InvisibleCharacterMessage);
+        }
+
         return name.Trim().Length > MaxDisplayNameLength
             ? (null, $"displayName must be at most {MaxDisplayNameLength} characters.")
             : (patch with { SetsDisplayName = true, DisplayName = name }, null);

@@ -92,6 +92,10 @@ public sealed class MeProfileControllerTests
     [InlineData("""{ "notifications": { "BoulderAdded": "no" } }""")]
     [InlineData("""{ "homeWallId": "not-a-guid" }""")]
     [InlineData("""{ "displayName": 7 }""")]
+    [InlineData("""{ "displayName": "Ad\u202Emin" }""")]
+    [InlineData("""{ "displayName": "Sam\u200B" }""")]
+    [InlineData("""{ "displayName": "\uFEFFSam" }""")]
+    [InlineData("""{ "displayName": "Sam\u2066x\u2069" }""")]
     public async Task Patch_RefusesABadBody(string body)
     {
         using var h = new WallTestHarness();
@@ -108,6 +112,16 @@ public sealed class MeProfileControllerTests
         var body = JsonSerializer.Serialize(new { displayName = new string('a', 257) });
 
         Assert.IsType<BadRequestObjectResult>(await Controller(h, h.Owner).Patch(Json(body)));
+    }
+
+    [Fact]
+    public async Task TheWebSave_RefusesTheSameCharacters()
+    {
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync(holdCount: 0);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => RealCurrentUser(h, h.Owner).SetDisplayNameAsync("Ad\u202Emin"));
+        await RealCurrentUser(h, h.Owner).SetDisplayNameAsync("Zoë 🧗");
     }
 
     internal static CurrentUserService RealCurrentUser(WallTestHarness h, User user)
