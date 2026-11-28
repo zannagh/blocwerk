@@ -232,6 +232,21 @@ The native wall settings pages call the web settings card's own service calls. *
   - **Damaged photos.** A JPEG or PNG the sanitizer finds damaged is a 400.
 - **Role.** Admins set any member's role through `SetMemberRoleAsync`. The owner's role can never be changed (403, now refused in the service for the web too). An unknown member is a 404 `{ message: "Member not found" }`.
 
+## iPhone scan setting and deleting a wall
+
+The settings' "iPhone scan" card and the danger zone call the web's own services. **Device key only**, `no-store`, and refusals are `{ message }`. A wall the caller is not a member of is a bare 404.
+
+| Route | Who | Body | Answer |
+| --- | --- | --- | --- |
+| `GET /api/v1/walls/{w}/scan-mode` | admins | none | `{ mode: "Panels"\|"Scan", canSwitchToPanels, scans: [{ scanId, createdAt, receivedAt, stage, deviceModel, totalBytes, synthetic }], mayDeleteScans }` |
+| `PUT /api/v1/walls/{w}/scan-mode` | admins | `{ mode: "Panels"\|"Scan" }` | as `GET` |
+| `DELETE /api/v1/walls/{w}/scans/{scanId}` | administrators of the installation | none | 204 |
+| `DELETE /api/v1/walls/{w}` | the wall's **owner** | `{ confirmName }` | 204 |
+
+- **Mode.** The mode goes through `IWallUpdateModeService`, and the scan list through `IWallScanService.ListAsync` (the ten most recent scans, newest first). Once a scan has been applied to the wall, going back to `Panels` is a 409 with the service's message; `canSwitchToPanels` says so beforehand. An unknown mode is a 400.
+- **Removing a scan.** This calls `IWallScanService.DeleteAsync`, for administrators of the installation only (`mayDeleteScans`). A wall member who isn't one gets 403, and anyone else 404. A refusal that lands between the check and the delete (a demotion, a kiosk session) is also a 403. Only a received scan can be removed: an open upload is a 409, and an unknown scan is a 404 `{ message }`. The same delete under `/api/walls/{w}/scans/{id}` stays as it was; this route is its device-key alias.
+- **Deleting the wall.** This calls `IWallService.DeleteWallAsync`. The web shows the button to admins, but the service deletes only for the owner, so this route is for the owner only: another admin gets 403. `confirmName` must equal the wall's name, compared exactly (case included) after trimming surrounding spaces on both, as the web's confirmation field does; otherwise it is a 400 and nothing is deleted. The web now shows the danger card to the owner only; other admins leave the wall instead. Leaving a wall and removing a member are `POST /api/v1/walls/{w}/leave` and `DELETE /api/v1/walls/{w}/members/{userId}`, in their own PR.
+
 ## Rules
 
 - **Who gets in.** The `/api/v1/me` write routes use the `DeviceApiKey` policy and answer any other caller 404. The sync routes use the `WallSync` policy and the `DenyApiKeyPrincipalsExceptDevices()` filter. Both admit a device key and refuse every other key with the same bare 404 as before: a plain personal key, a wall key, a kiosk key or an installation key. The `/api/v1/me` routes (walls, changes, mine) use the `DeviceApiKey` policy, so a browser cookie does not work there either.

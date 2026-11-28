@@ -310,8 +310,9 @@ else
                 }
                 }
 
-                @* Deleting the wall is a card of its own at the very bottom, collapsed, far from every update control. *@
-                @if (_isAdmin && !_showBigUpdate && !KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))
+                @* Deleting the wall is a card of its own at the very bottom, collapsed, far from every update control. Only the
+                   owner can delete a wall (WallService.DeleteWallAsync), so only the owner sees it; other admins leave instead. *@
+                @if (_isAdmin && _wall.OwnerId == _currentUserId && !_showBigUpdate && !KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))
                 {
                     <LazySettingsCard Title="Delete this wall" Class="settings-panel settings-card danger-card">
                             <section class="danger-zone" aria-labelledby="danger-zone-title">
