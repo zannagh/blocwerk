@@ -53,7 +53,7 @@ public partial class WallService
         }
     }
 
-    public Task<Wall> UploadFirstPhotoAsync(Guid wallId, byte[] photo, string contentType) =>
+    public Task<Wall> UploadFirstPhotoAsync(Guid wallId, byte[] photo, string contentType, bool autoDetect = true) =>
         FirstPhotoLocks.RunAsync(
             wallId,
             async () =>
@@ -68,7 +68,7 @@ public partial class WallService
                     }
                 }
 
-                return await UploadPhotoAsync(wallId, photo, contentType);
+                return await UploadPhotoAsync(wallId, photo, contentType, autoDetect);
             },
             CancellationToken.None);
 

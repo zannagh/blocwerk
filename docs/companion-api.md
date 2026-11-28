@@ -211,7 +211,7 @@ The native wall settings pages call the web settings card's own service calls. *
 | --- | --- | --- | --- |
 | `GET /api/v1/walls/{w}/settings` | members | none | `{ name, description, angle, underMaintenance, myRole: "Member"\|"Moderator"\|"Admin", ownerId, photoSha, panelCount, allowAnonymousKiosk, allowKioskKeyboardShortcuts }` |
 | `PATCH /api/v1/walls/{w}/settings` | admins (the owner included) | any of `{ name, description, angle, underMaintenance, allowAnonymousKiosk, allowKioskKeyboardShortcuts }` | the settings, as `GET` |
-| `PUT /api/v1/walls/{w}/photo?clientRequestId=` | admins | the raw photo: `image/jpeg`, `image/png` or `image/heic` | `{ photoSha }` |
+| `PUT /api/v1/walls/{w}/photo?clientRequestId=&autoDetect=true` | admins | the raw photo: `image/jpeg`, `image/png` or `image/heic` | `{ photoSha }` |
 | `PUT /api/v1/walls/{w}/members/{userId}/role` | admins | `{ role: "Member"\|"Moderator"\|"Admin" }` | `{ userId, role }` |
 
 - **PATCH.** It is a merge patch: a field that is absent (or `null`) stays as it is, and `description: ""` clears the description.
@@ -304,6 +304,15 @@ The web boulder page's buttons, through `IBoulderService`. **Device key only**, 
 - the deletion preview and deleting the account.
 
 The rule exists so that a leaked key can never become a permanent takeover: a new password, a second factor the owner does not hold, another recovery address, fresh keys, or an erased account. The app opens `manageUrl` in the browser (an in-app Safari sheet), where the person is signed in with their full login, including the second factor.
+
+## Creating a wall
+
+`POST /api/v1/walls` takes `{ clientRequestId, name, description?, angle? }` and returns `{ wallId, name, description, angle }`. This is the web's "+ New Wall" (`IWallService.CreateWallAsync`): the caller becomes the wall's owner and admin. **Device key only**, write bucket, `no-store`.
+
+- **Replay.** A create is not idempotent, so `clientRequestId` is **required**. A retry answers the wall the first request made, never a second wall.
+- **Body checks** (400): a name of 1–256 characters, a description of at most 1024, an angle of 0–90 (0 when left out).
+- **Photo.** It follows as the web uploads it right after creating: `PUT /api/v1/walls/{wallId}/photo?clientRequestId=…&autoDetect=true`. With `autoDetect=false` the photo is stored without detecting holds, the web create page's "I'll mark the holds myself".
+- **Markers.** The web form's "This wall has markers" switch is not part of this route: the marker path is being replaced by the iPhone scan.
 
 ## Rules
 
