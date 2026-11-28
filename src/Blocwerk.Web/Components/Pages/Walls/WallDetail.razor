@@ -67,7 +67,7 @@ else
                         {
                             <div class="activity-row">
                                 <span class="attempt-type activity-chip @WallActivityText.ChipTone(item.Type)">@WallActivityText.Chip(item.Type)</span>
-                                <span class="activity-text">@ActivityAuthor(item) @WallActivityText.Verb(item.Type)</span>
+                                <span class="activity-text">@ActivityAuthor(item) @ActivityVerb(item)</span>
                                 <span class="activity-time"><LocalTime Value="@item.Timestamp" Format="LocalTimeFormat.Relative" /></span>
                             </div>
                         }

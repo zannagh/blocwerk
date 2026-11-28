@@ -33,6 +33,15 @@ public class ActivityLogEntry
     [ForeignKey(nameof(UserId))]
     public User User { get; set; } = null!;
 
+    /// <summary>
+    /// The member an entry is about when that is not its author: the person a <see cref="ActivityType.MemberRemoved"/>
+    /// entry removed. Null for every other entry.
+    /// </summary>
+    public Guid? SubjectUserId { get; set; }
+
+    [ForeignKey(nameof(SubjectUserId))]
+    public User? SubjectUser { get; set; }
+
     public ActivityType Type { get; set; }
 
     [MaxLength(1024)]

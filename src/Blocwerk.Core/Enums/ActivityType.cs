@@ -22,6 +22,12 @@ public enum ActivityType
     HoldMerged = 7,
     MemberJoined = 30,
     MemberRoleChanged = 31,
+
+    /// <summary>An admin removed a member; the entry's author is the admin, its subject the person removed.</summary>
+    MemberRemoved = 32,
+
+    /// <summary>A member left the wall; the entry's author is the person who left.</summary>
+    MemberLeft = 33,
     AttemptLogged = 40,
     CommentAdded = 50,
     BetaVideoUploaded = 60,

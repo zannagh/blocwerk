@@ -74,6 +74,9 @@ namespace Blocwerk.Core.Migrations
                         .HasMaxLength(1024)
                         .HasColumnType("character varying(1024)");
 
+                    b.Property<Guid?>("SubjectUserId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTimeOffset>("Timestamp")
                         .HasColumnType("timestamp with time zone");
 
@@ -89,6 +92,8 @@ namespace Blocwerk.Core.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("AttemptId");
+
+                    b.HasIndex("SubjectUserId");
 
                     b.HasIndex("UserId");
 
@@ -2404,6 +2409,10 @@ namespace Blocwerk.Core.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("JoinToken")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<int?>("KeptHoldsGeneration")
                         .HasColumnType("integer");
 
@@ -2494,6 +2503,10 @@ namespace Blocwerk.Core.Migrations
                         .HasColumnType("boolean");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("JoinToken")
+                        .IsUnique()
+                        .HasFilter("\"JoinToken\" IS NOT NULL");
 
                     b.HasIndex("OwnerId");
 
@@ -4287,6 +4300,11 @@ namespace Blocwerk.Core.Migrations
                         .HasForeignKey("BoulderId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("Blocwerk.Core.Entities.User", "SubjectUser")
+                        .WithMany()
+                        .HasForeignKey("SubjectUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("Blocwerk.Core.Entities.User", "User")
                         .WithMany()
                         .HasForeignKey("UserId")
@@ -4302,6 +4320,8 @@ namespace Blocwerk.Core.Migrations
                     b.Navigation("Attempt");
 
                     b.Navigation("Boulder");
+
+                    b.Navigation("SubjectUser");
 
                     b.Navigation("User");
 

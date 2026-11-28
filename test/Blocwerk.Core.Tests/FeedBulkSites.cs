@@ -87,7 +87,7 @@ internal static class FeedBulkSites
         Excluded(Erase, typeof(ApiKey), 2, "credentials: wall keys handed to the owner, user keys deleted; no wall view shows them"),
         Resync(Core + "Services/AccountDeletionService.Ownership.cs", typeof(Wall), 2, "ownership transfer and maintenance release; " + ErasedWalls),
         Resync(Merge, typeof(Attempt), 1, MergedWalls),
-        Resync(Merge, typeof(ActivityLogEntry), 1, MergedWalls),
+        Resync(Merge, typeof(ActivityLogEntry), 2, MergedWalls),
         Resync(Merge, typeof(BoulderComment), 1, MergedWalls),
         Resync(Merge, typeof(Boulder), 1, MergedWalls),
         Resync(Merge, typeof(GradeProposal), 1, MergedWalls),

@@ -13,6 +13,12 @@ public interface IActivityLogService
     Task LogAsync(Guid wallId, Guid? boulderId, ActivityType type, string? details = null);
 
     /// <summary>
+    /// Logs a wall-level entry by the session user about a member (<paramref name="subjectUserId"/>), e.g. "removed X"
+    /// or "X left". The member is stored by id, not by name, so their name follows a rename or an erased account.
+    /// </summary>
+    Task LogAboutMemberAsync(Guid wallId, ActivityType type, Guid subjectUserId);
+
+    /// <summary>
     /// Logs an entry attributed to the Ghost system row instead of to a session user.
     /// </summary>
     /// <remarks>
@@ -79,11 +85,17 @@ public class ActivityLogService : IActivityLogService
         return WriteAsync(wallId, boulderId, type, GhostUser.Id, details);
     }
 
+    public async Task LogAboutMemberAsync(Guid wallId, ActivityType type, Guid subjectUserId)
+    {
+        var user = await _currentUserService.GetCurrentUserAsync();
+        await WriteAsync(wallId, null, type, user.Id, null, subjectUserId);
+    }
+
     /// <summary>
     /// The single insert both public entry points funnel through. Private on purpose: the arbitrary
     /// user id lives here, where nothing outside this class can reach it.
     /// </summary>
-    private async Task WriteAsync(Guid wallId, Guid? boulderId, ActivityType type, Guid userId, string? details)
+    private async Task WriteAsync(Guid wallId, Guid? boulderId, ActivityType type, Guid userId, string? details, Guid? subjectUserId = null)
     {
         await using var db = await _dbContextFactory.CreateDbContextAsync();
 
@@ -94,6 +106,7 @@ public class ActivityLogService : IActivityLogService
             UserId = userId,
             Type = type,
             Details = details,
+            SubjectUserId = subjectUserId,
         });
 
         await db.SaveChangesAsync();
@@ -205,6 +218,7 @@ public class ActivityLogService : IActivityLogService
             .AsNoTracking()
             .Where(predicate)
             .Include(a => a.User)
+            .Include(a => a.SubjectUser)
             .OrderByDescending(a => a.Timestamp);
 
         var total = await query.CountAsync();
