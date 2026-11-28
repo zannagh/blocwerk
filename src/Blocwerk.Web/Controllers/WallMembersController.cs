@@ -32,6 +32,8 @@ namespace Blocwerk.Web.Controllers;
 [Produces("application/json")]
 public sealed class WallMembersController : ControllerBase
 {
+    private const string MembershipChanged = "This membership changed at the same moment. Reload the members and try again.";
+
     private readonly IDbContextFactory<BlocwerkDbContext> contexts;
     private readonly ICurrentUserService currentUser;
     private readonly IWallService walls;
@@ -108,17 +110,24 @@ public sealed class WallMembersController : ControllerBase
         return await EndAsync(() => membership.RemoveMemberAsync(wallId, userId, ct));
     }
 
-    /// <summary>The caller leaves the wall, as the members list's Leave does. Any member but the owner.</summary>
+    /// <summary>
+    /// The caller leaves the wall, as the members list's Leave does. Any member but the owner. The beta clips they
+    /// uploaded to the wall go too unless <paramref name="deleteBetaVideos"/> is false.
+    /// </summary>
     [HttpPost("leave")]
     [DeviceKeyWriteRateLimit]
-    public async Task<IActionResult> Leave(Guid wallId, [FromServices] IWallMembershipService membership, CancellationToken ct)
+    public async Task<IActionResult> Leave(
+        Guid wallId,
+        [FromServices] IWallMembershipService membership,
+        CancellationToken ct,
+        [FromQuery] bool deleteBetaVideos = true)
     {
         if (await CallerAsync(wallId, ct) is not { IsMember: true })
         {
             return NotFound();
         }
 
-        return await EndAsync(() => membership.LeaveAsync(wallId, ct));
+        return await EndAsync(() => membership.LeaveAsync(wallId, deleteBetaVideos, ct));
     }
 
     private async Task<IActionResult> EndAsync(Func<Task> end)
@@ -139,6 +148,11 @@ public sealed class WallMembersController : ControllerBase
         catch (UnauthorizedAccessException)
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ApiErrorResponse("Only wall admins remove members."));
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // The membership changed under this request (a role change, another removal): nothing was saved.
+            return Conflict(new ApiErrorResponse(MembershipChanged));
         }
     }
 

@@ -1996,7 +1996,18 @@ else
             return;
         }
 
-        await WallService.SetMemberRoleAsync(WallId, member.UserId, newRole);
+        try
+        {
+            await WallService.SetMemberRoleAsync(WallId, member.UserId, newRole);
+        }
+        catch (Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException)
+        {
+            // They left or were removed at the same moment: the row this change was for is gone.
+            await ShowToast($"{member.User.Name} is no longer a member of this wall");
+            await LoadMembersAsync();
+            return;
+        }
+
         member.Role = newRole;
         await ShowToast($"{member.User.Name} is now {newRole}");
     }

@@ -1,6 +1,7 @@
 // Removing a member and leaving a wall, on the Members wall (seed/SeedMembers.cs). Rhea, its owner, removes Max from the
-// member list after a confirm; Nia leaves from her own row and lands on her wall list without the wall; Max's old invite
-// link no longer lets him back in. One browser only: the steps change the seeded world. Screenshots of the member list
+// member list after a confirm; Nia leaves from her own row (the "delete my beta videos" choice ticked by default) and
+// lands on her wall list without the wall; Max's old invite link no longer lets him back in, while the wall's public share
+// link still shows it. One browser only: the steps change the seeded world. Screenshots of the member list
 // (phone 402x874 at 3x and desktop 1440x900, light and dark) land in test/browser/.out/members-*.png.
 import { test, expect, signIn } from '../harness/fixtures.mjs';
 
@@ -65,14 +66,22 @@ test('an admin removes a member, a member leaves, and the old invite no longer j
     await expect(leaver.page.getByRole('button', { name: 'Remove', exact: true })).toHaveCount(0);
     await shoot(leaver.page, 'member-phone');
     await leaver.page.getByRole('button', { name: 'Leave wall' }).click();
+    await expect(leaver.page.locator('.confirm-action input[type=checkbox]')).toBeChecked();
+    await shoot(leaver.page, 'leave-confirm-phone');
     await leaver.page.locator('.confirm-action').getByRole('button', { name: 'Leave', exact: true }).click();
     await expect(leaver.page).toHaveURL(/\/walls$/);
     await expect(leaver.page.getByText('Members', { exact: true })).toHaveCount(0);
     await leaver.context.close();
 
-    const removed = await openAs(browser, baseURL, max, '/join/browser-members-share-token', PHONE);
-    await expect(removed.page.locator('.error-state')).toContainText('Invalid share token');
+    const removed = await openAs(browser, baseURL, max, '/join/browser-members-join-token', PHONE);
+    await expect(removed.page.locator('.error-state')).toContainText('Invalid invite token');
     await removed.page.goto('/walls');
     await expect(removed.page.getByText('Members', { exact: true })).toHaveCount(0);
     await removed.context.close();
+
+    const anonymous = await browser.newContext({ baseURL, ...PHONE });
+    const viewer = await anonymous.newPage();
+    const shared = await viewer.request.get(`/walls/${wall.id}/shared/browser-members-share-token`, { maxRedirects: 0 });
+    expect(shared.status()).toBe(200);
+    await anonymous.close();
 });

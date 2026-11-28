@@ -1,21 +1,28 @@
 @using Blocwerk.Core.Services.Membership
+@using Microsoft.EntityFrameworkCore
 @inject IWallMembershipService Membership
 @inject NavigationManager Navigation
 @inject ILogger<WallMemberEnd> Logger
 @* Under one row of the wall's member list: Remove (an admin, on another member who is not the owner) or Leave (the viewer's
-   own row, unless they own the wall). Both ask first. The service is the gate (admin, owner, self, kiosk); this only
-   decides which button shows. Ending a membership also replaces the wall's invite link. *@
+   own row, unless they own the wall). Both ask first; Leave also asks whether the viewer's beta videos here go too
+   (ticked: they do). The service is the gate (admin, owner, self, kiosk); this only decides which button shows. Ending a
+   membership replaces the wall's invite link; its public share link stays. *@
 
 @if (Leave)
 {
     <ConfirmAction Label="Leave wall" TriggerClass="btn-secondary member-end-btn" ConfirmLabel="Leave" Disabled="busy"
                    Question="@($"Leave \"{WallName}\"? Your favourites and projects here are removed; your ticks, comments and boulders stay. You need a new invite to come back.")"
-                   OnConfirm="LeaveAsync" />
+                   OnConfirm="LeaveAsync">
+        <label class="member-end-choice">
+            <input type="checkbox" @bind="deleteBetaVideos" />
+            <span>Also delete the beta videos I uploaded to this wall</span>
+        </label>
+    </ConfirmAction>
 }
 else
 {
     <ConfirmAction Label="Remove" TriggerClass="btn-secondary member-end-btn" ConfirmLabel="Remove" Disabled="busy"
-                   Question="@($"Remove {MemberName} from \"{WallName}\"? Their ticks, comments and boulders stay. The invite link is replaced, so the old one no longer works.")"
+                   Question="@($"Remove {MemberName} from \"{WallName}\"? Their ticks, comments and boulders stay; the beta videos they uploaded here are deleted, as they would be if they deleted their account. The invite link is replaced, so the old one no longer works; the share link keeps working.")"
                    OnConfirm="RemoveAsync" />
 }
 @if (error is not null)
@@ -25,6 +32,7 @@ else
 
 @code {
     private bool busy;
+    private bool deleteBetaVideos = true;
     private string? error;
 
     [Parameter, EditorRequired] public Guid WallId { get; set; }
@@ -50,7 +58,7 @@ else
 
     private Task LeaveAsync() => RunAsync(async () =>
     {
-        await Membership.LeaveAsync(WallId);
+        await Membership.LeaveAsync(WallId, deleteBetaVideos);
         Navigation.NavigateTo("/walls");
     });
 
@@ -69,6 +77,11 @@ else
         catch (Exception ex) when (ex is UnauthorizedAccessException or KioskRestrictedException)
         {
             error = "You can't do that here.";
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Someone changed this membership (a role, another removal) at the same moment; nothing was saved.
+            error = "This membership changed at the same moment. Reload the page and try again.";
         }
         catch (Exception ex)
         {
