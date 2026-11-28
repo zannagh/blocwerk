@@ -84,6 +84,7 @@ public sealed class DeviceApiRoutePostureTests
         ("POST", "api/v1/walls/{wallId:guid}/boulders/{boulderId:guid}/grade-proposal/{proposalId:guid}/reject"),
         ("PUT", "api/v1/walls/{wallId:guid}/boulders/{boulderId:guid}/parent"),
         ("PUT", "api/v1/walls/{wallId:guid}/boulders/{boulderId:guid}/variants"),
+        ("GET", "api/v1/walls/{wallId:guid}/boulder-meta"),
     ];
 
     public static TheoryData<string, string> Routes()

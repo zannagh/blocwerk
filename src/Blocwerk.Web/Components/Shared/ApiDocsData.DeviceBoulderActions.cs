@@ -37,5 +37,11 @@ internal static partial class ApiDocsData
             [WallParam, BoulderParam], "{\n  \"parentId\": \"<guid>\"\n}", null, ManageNotes + " 400 for a cycle, another wall or a boulder not live."),
         new("PUT", "/api/v1/walls/{wallId}/boulders/{boulderId}/variants", "Set the boulders that are variants of this one.",
             [WallParam, BoulderParam], "{\n  \"variantIds\": [ \"<guid>\" ]\n}", null, ManageNotes + " At most 100 distinct ids."),
+        new("GET", "/api/v1/walls/{wallId}/boulder-meta", "Creator and setter ids, beta clips, review state and your edit right, per boulder.",
+            [WallParam],
+            null,
+            "[\n  { \"boulderId\": \"<guid>\", \"createdByUserId\": \"<guid>\", \"setterIds\": [ \"<guid>\" ], \"hasBetaVideo\": true,"
+                + " \"needsReview\": false, \"canEdit\": true }\n]",
+            "Device key only; members of the wall. Not in the boulders document, which share links read too."),
     ];
 }
