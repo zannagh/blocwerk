@@ -285,6 +285,7 @@ public static class Program
 
         // The device keys' per-key limit on the sync reads (documents, /a/, manifest); cookie callers are not counted.
         builder.Services.AddDeviceKeySyncRateLimit();
+        builder.Services.AddScoped<Blocwerk.Web.Controllers.DeviceWallSettingsReader>();
 
         // The feed's catch-up and stream routes (PR 1.6): their open-stream caps and their per-address rate limit, also
         // through RateLimitPolicies.

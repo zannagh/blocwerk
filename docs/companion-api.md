@@ -203,6 +203,31 @@ The creator, a setter of the boulder, or a wall admin. The body has its own shap
 - **Replay.** A retry of a create returns the boulder it made. A retry of a revise returns the boulder as it is now, and never applies an old snapshot over a newer revision.
 - **Feed.** The save writes the `boulder.changed` rows (and `activity.added` for a published boulder) that other devices and the web update from.
 
+## Wall settings, photo and roles
+
+The native wall settings pages call the web settings card's own service calls. **Device key only**, `no-store`; reads count in the key's sync bucket, writes in its write bucket. A refusal is `{ message }`: 400 for a bad body, 403 for a member without the role, 409 for a state that does not allow it. A wall the caller is not a member of is a bare 404, the same as an unknown wall.
+
+| Route | Who | Body | Answer |
+| --- | --- | --- | --- |
+| `GET /api/v1/walls/{w}/settings` | members | none | `{ name, description, angle, underMaintenance, myRole: "Member"\|"Moderator"\|"Admin", ownerId, photoSha, panelCount, allowAnonymousKiosk, allowKioskKeyboardShortcuts }` |
+| `PATCH /api/v1/walls/{w}/settings` | admins (the owner included) | any of `{ name, description, angle, underMaintenance, allowAnonymousKiosk, allowKioskKeyboardShortcuts }` | the settings, as `GET` |
+| `PUT /api/v1/walls/{w}/photo?clientRequestId=` | admins | the raw photo: `image/jpeg`, `image/png` or `image/heic` | `{ photoSha }` |
+| `PUT /api/v1/walls/{w}/members/{userId}/role` | admins | `{ role: "Member"\|"Moderator"\|"Admin" }` | `{ userId, role }` |
+
+- **PATCH.** It is a merge patch: a field that is absent (or `null`) stays as it is, and `description: ""` clears the description.
+  - Each change runs through the web's own call: name, description and angle through `UpdateWallAsync`; update mode through `SetMaintenanceAsync`; the kiosk switches through `SetAnonymousKioskSettingAsync` and `SetKioskKeyboardShortcutsAsync`.
+  - These values are refused with 400: an unknown field, a value of the wrong type, a blank name or one over 256 characters, a description over 1024, an angle outside 0–90.
+  - Every value is absolute, so a retry is harmless and the route needs no `clientRequestId`.
+- **Photo.** This is the web's upload for a wall that has **no photo and no panels yet** (`UploadPhotoAsync`: it strips the metadata, makes the centre panel and detects the holds).
+  - A wall that already has a photo or panels answers 409; it is updated through the wall update.
+  - The body goes through the gallery's checks:
+    - at most 20 MB (413);
+    - the bytes must be the declared type (415);
+    - a HEIC is converted to an upright JPEG with no metadata, or refused (415) where the server has no converter;
+    - the picture must stay under the pixel limit (400).
+  - Every upload detects holds again, so it is not idempotent: `clientRequestId` is **required** (query string). A retry returns the stored photo's sha.
+- **Role.** Admins set any member's role through `SetMemberRoleAsync`. The owner's role can never be changed (403, now refused in the service for the web too). An unknown member is a 404 `{ message: "Member not found" }`.
+
 ## Rules
 
 - **Who gets in.** The `/api/v1/me` write routes use the `DeviceApiKey` policy and answer any other caller 404. The sync routes use the `WallSync` policy and the `DenyApiKeyPrincipalsExceptDevices()` filter. Both admit a device key and refuse every other key with the same bare 404 as before: a plain personal key, a wall key, a kiosk key or an installation key. The `/api/v1/me` routes (walls, changes, mine) use the `DeviceApiKey` policy, so a browser cookie does not work there either.
