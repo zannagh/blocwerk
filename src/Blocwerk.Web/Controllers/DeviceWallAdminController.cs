@@ -33,7 +33,7 @@ namespace Blocwerk.Web.Controllers;
 public sealed class DeviceWallAdminController : ControllerBase
 {
     /// <summary>The refusal when the typed name is not the wall's.</summary>
-    public const string ConfirmNameMessage = "confirmName must be the wall's name, exactly.";
+    public const string ConfirmNameMessage = "confirmName must be the wall's name (surrounding spaces aside, case included).";
 
     private readonly IDbContextFactory<BlocwerkDbContext> contexts;
     private readonly ICurrentUserService currentUser;
@@ -97,15 +97,12 @@ public sealed class DeviceWallAdminController : ControllerBase
                 : NotFound();
         }
 
-        try
+        // Through RunAsync: a demotion or a kiosk session between the check above and the delete is a 403, not a 500.
+        return await RunAsync(async () =>
         {
             await scans.DeleteAsync(wallId, scanId, ct);
             return NoContent();
-        }
-        catch (ScanUploadException ex)
-        {
-            return DeviceWallRefusal.Refused(ex.StatusCode, ex.Message);
-        }
+        });
     }
 
     /// <summary>Deletes the wall for good: the owner only, with <c>confirmName</c> equal to the wall's name.</summary>
@@ -119,7 +116,8 @@ public sealed class DeviceWallAdminController : ControllerBase
             return refused;
         }
 
-        if (request.ConfirmName is null || !string.Equals(request.ConfirmName, await NameAsync(wallId, ct), StringComparison.Ordinal))
+        // As the web's ConfirmAction: both sides trimmed, then compared exactly (case included).
+        if (request.ConfirmName is null || !string.Equals(request.ConfirmName.Trim(), (await NameAsync(wallId, ct))?.Trim(), StringComparison.Ordinal))
         {
             return DeviceWallRefusal.Refused(StatusCodes.Status400BadRequest, ConfirmNameMessage);
         }
@@ -161,6 +159,10 @@ public sealed class DeviceWallAdminController : ControllerBase
         catch (Exception ex) when (ex is UserFacingException { Message: WallUpdateModeService.LockedMessage })
         {
             return DeviceWallRefusal.Refused(StatusCodes.Status409Conflict, ex.Message);
+        }
+        catch (ScanUploadException ex)
+        {
+            return DeviceWallRefusal.Refused(ex.StatusCode, ex.Message);
         }
         catch (Exception ex) when (DeviceWallRefusal.FromService(ex) is { } refusal)
         {

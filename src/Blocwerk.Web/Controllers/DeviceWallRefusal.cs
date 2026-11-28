@@ -43,7 +43,7 @@ internal static class DeviceWallRefusal
     /// <summary>The answer for a service's domain refusal, or null for anything else (an unexpected failure).</summary>
     public static IActionResult? FromService(Exception ex) => ex switch
     {
-        UnauthorizedAccessException => Forbidden(AdminsOnly),
+        UnauthorizedAccessException or KioskRestrictedException => Forbidden(AdminsOnly),
         InvalidOperationException { Message: "Wall not found" } => new NotFoundResult(),
         InvalidOperationException { Message: "Wall not found or not owner" } => Forbidden(OwnerOnly),
         InvalidOperationException { Message: "Member not found" } => Refused(StatusCodes.Status404NotFound, "Member not found"),

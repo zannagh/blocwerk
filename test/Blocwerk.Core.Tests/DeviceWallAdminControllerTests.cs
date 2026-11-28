@@ -4,6 +4,7 @@
 using Blocwerk.Core.Capture.Scan;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Services;
 using Blocwerk.Core.Tests.Scan;
 using Blocwerk.Web.Controllers;
 using Microsoft.AspNetCore.Http;
@@ -94,9 +95,17 @@ public sealed class DeviceWallAdminControllerTests
             Assert.True(await db.Walls.IgnoreQueryFilters().AnyAsync(w => w.Id == h.WallId));
         }
 
-        Assert.IsType<NoContentResult>(await Controller(s).DeleteWall(h.WallId, new DeleteWallRequest { ConfirmName = "Test Wall" }, h.WallService, default));
+        // Surrounding spaces are trimmed, as the web's confirmation field does.
+        Assert.IsType<NoContentResult>(await Controller(s).DeleteWall(h.WallId, new DeleteWallRequest { ConfirmName = " Test Wall " }, h.WallService, default));
         await using var check = h.CreateContext();
         Assert.False(await check.Walls.IgnoreQueryFilters().AnyAsync(w => w.Id == h.WallId));
+    }
+
+    [Fact]
+    public void AServiceRefusalMidCall_IsA403_NotA500()
+    {
+        Assert.Equal(403, Assert.IsType<ObjectResult>(DeviceWallRefusal.FromService(new UnauthorizedAccessException())).StatusCode);
+        Assert.Equal(403, Assert.IsType<ObjectResult>(DeviceWallRefusal.FromService(new KioskRestrictedException("Removing an iPhone scan"))).StatusCode);
     }
 
     private static DeviceScanModeResponse View(IActionResult result) =>
