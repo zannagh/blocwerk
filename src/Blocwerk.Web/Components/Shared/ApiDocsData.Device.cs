@@ -33,9 +33,9 @@ internal static partial class ApiDocsData
                 [],
                 null,
                 "[\n  {\n    \"id\": \"<guid>\",\n    \"name\": \"The Attic\",\n    \"memberCount\": 4,"
-                    + "\n    \"hasPhoto\": true,\n    \"photoSha\": \"<hex>\"\n  }\n]",
+                    + "\n    \"hasPhoto\": true,\n    \"photoSha\": \"<hex>\",\n    \"role\": \"Admin\",\n    \"isOwner\": true\n  }\n]",
                 "Device key only. Read the card photo as /api/walls/{id}/a/{photoSha}/640; photoSha is null without a photo "
-                    + "or while it is not hashed yet."),
+                    + "or while it is not hashed yet. role is Admin, Moderator or Member (the owner is Admin)."),
             new("GET", "/api/walls/{wallId}/docs", "The wall's data documents for you: kind (wall, holds, boulders, gallery, comments) and sha of each.",
                 [WallParam, TokenParam],
                 null,
@@ -119,5 +119,6 @@ internal static partial class ApiDocsData
                 null,
                 MarksNotes),
             .. DeviceProfileEndpoints,
+            .. DeviceWallEndpoints,
         ]);
 }

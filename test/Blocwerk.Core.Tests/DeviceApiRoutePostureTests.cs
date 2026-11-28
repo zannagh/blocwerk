@@ -37,6 +37,12 @@ public sealed class DeviceApiRoutePostureTests
         ("GET", "api/v1/me/profile"),
         ("PATCH", "api/v1/me/profile"),
         ("GET", "api/v1/users/{userId:guid}"),
+        ("GET", "api/v1/walls/{wallId:guid}/members"),
+        ("GET", "api/v1/walls/{wallId:guid}/hold-links"),
+        ("POST", "api/v1/walls/{wallId:guid}/invite-link"),
+        ("POST", "api/v1/walls/{wallId:guid}/invite-link/rotate"),
+        ("POST", "api/v1/walls/{wallId:guid}/visit-links"),
+        ("POST", "api/v1/join/{token}"),
     ];
 
     public static TheoryData<string, string> Routes()
