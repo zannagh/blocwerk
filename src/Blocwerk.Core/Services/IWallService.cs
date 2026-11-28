@@ -33,7 +33,7 @@ public interface IWallService
     /// lock, so two concurrent uploads never both run hold detection. Throws <see cref="UserFacingException"/> with
     /// <c>WallService.FirstPhotoTakenMessage</c> when the wall already has a photo or panels.
     /// </summary>
-    Task<Wall> UploadFirstPhotoAsync(Guid wallId, byte[] photo, string contentType);
+    Task<Wall> UploadFirstPhotoAsync(Guid wallId, byte[] photo, string contentType, bool autoDetect = true);
 
     /// <summary>
     /// Applies a settings-card change in one save: only the fields that are set are written. Owner or Admin member only;

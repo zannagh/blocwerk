@@ -67,7 +67,8 @@ public sealed class DeviceWallPhotoController : ControllerBase
         Guid wallId,
         [FromQuery] Guid? clientRequestId,
         [FromServices] IEnumerable<ICapturePhotoConverter> converters,
-        CancellationToken ct)
+        CancellationToken ct,
+        [FromQuery] bool autoDetect = true)
     {
         if (clientRequestId is null || clientRequestId == Guid.Empty)
         {
@@ -91,7 +92,7 @@ public sealed class DeviceWallPhotoController : ControllerBase
                 return DeviceWallRefusal.Refused(StatusCodes.Status400BadRequest, "clientRequestId was already used for another write.");
         }
 
-        var result = await StoreAsync(wallId, converters.FirstOrDefault(), ct);
+        var result = await StoreAsync(wallId, converters.FirstOrDefault(), autoDetect, ct);
         if (result is OkObjectResult)
         {
             await receipts.CompleteAsync(caller.UserId, clientRequestId, wallId, ct);
@@ -104,7 +105,7 @@ public sealed class DeviceWallPhotoController : ControllerBase
         return result;
     }
 
-    private async Task<IActionResult> StoreAsync(Guid wallId, ICapturePhotoConverter? converter, CancellationToken ct)
+    private async Task<IActionResult> StoreAsync(Guid wallId, ICapturePhotoConverter? converter, bool autoDetect, CancellationToken ct)
     {
         if (await HasPhotoOrPanelsAsync(wallId, ct))
         {
@@ -121,7 +122,7 @@ public sealed class DeviceWallPhotoController : ControllerBase
 
         try
         {
-            await walls.UploadFirstPhotoAsync(wallId, bytes, type!);
+            await walls.UploadFirstPhotoAsync(wallId, bytes, type!, autoDetect);
         }
         catch (Exception ex) when (DeviceWallRefusal.FromService(ex) is { } refusal)
         {

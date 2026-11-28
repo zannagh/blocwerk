@@ -142,6 +142,17 @@ public sealed class DeviceWallPhotoControllerTests
         return box;
     }
 
+    [Fact]
+    public async Task AutoDetectFalse_StoresThePhotoWithoutDetectingHolds()
+    {
+        using var h = new WallTestHarness();
+        var wallId = await EmptyWallAsync(h);
+
+        Assert.NotNull(Sha(await Controller(h, PrivacyPhotos.GpsJpeg(), "image/jpeg").Upload(wallId, Guid.NewGuid(), [], default, autoDetect: false)));
+
+        await h.HoldDetection.DidNotReceive().DetectHoldsAsync(Arg.Any<byte[]>(), Arg.Any<HoldDetectionParameters?>());
+    }
+
     private static byte[] Heic() => [0, 0, 0, 0x18, .. "ftypheic"u8, 0, 0, 0, 0, .. "mif1heic"u8];
 
     private static string? Sha(IActionResult result) =>

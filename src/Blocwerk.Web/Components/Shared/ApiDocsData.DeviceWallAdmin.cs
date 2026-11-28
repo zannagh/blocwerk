@@ -59,5 +59,10 @@ internal static partial class ApiDocsData
             "{\n  \"confirmName\": \"The Attic\"\n}",
             null,
             "Device key only; the wall's owner only (403 for other admins). confirmName must equal the wall's name exactly (400)."),
+        new("POST", "/api/v1/walls", "Create a wall you own (the web's + New Wall); upload its photo with PUT …/photo next.",
+            [],
+            "{\n  \"clientRequestId\": \"<guid>\",\n  \"name\": \"The Attic\",\n  \"description\": null,\n  \"angle\": 40\n}",
+            "{\n  \"wallId\": \"<guid>\",\n  \"name\": \"The Attic\",\n  \"description\": null,\n  \"angle\": 40\n}",
+            "Device key only. clientRequestId is required; the same one again returns the same wall. Name 1-256, angle 0-90."),
     ];
 }
