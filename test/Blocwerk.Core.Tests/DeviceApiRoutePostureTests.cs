@@ -75,6 +75,15 @@ public sealed class DeviceApiRoutePostureTests
         ("GET", "api/v1/walls/{wallId:guid}/leaderboard"),
         ("GET", "api/v1/walls/{wallId:guid}/temperature"),
         ("GET", "api/v1/walls/{wallId:guid}/look-over"),
+        ("POST", "api/v1/walls/{wallId:guid}/boulders/{boulderId:guid}/publish"),
+        ("POST", "api/v1/walls/{wallId:guid}/boulders/{boulderId:guid}/archive"),
+        ("POST", "api/v1/walls/{wallId:guid}/boulders/{boulderId:guid}/unarchive"),
+        ("GET", "api/v1/walls/{wallId:guid}/boulders/{boulderId:guid}/grade-proposal"),
+        ("POST", "api/v1/walls/{wallId:guid}/boulders/{boulderId:guid}/grade-proposal"),
+        ("POST", "api/v1/walls/{wallId:guid}/boulders/{boulderId:guid}/grade-proposal/{proposalId:guid}/accept"),
+        ("POST", "api/v1/walls/{wallId:guid}/boulders/{boulderId:guid}/grade-proposal/{proposalId:guid}/reject"),
+        ("PUT", "api/v1/walls/{wallId:guid}/boulders/{boulderId:guid}/parent"),
+        ("PUT", "api/v1/walls/{wallId:guid}/boulders/{boulderId:guid}/variants"),
     ];
 
     public static TheoryData<string, string> Routes()

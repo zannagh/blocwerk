@@ -264,6 +264,24 @@ The web wall page's read-only cards, from the page's own services. **Device key 
 - **Temperature.** `range` is `24h`, `7d`, `30d`, `1y` or `all` (400 otherwise). The windows and bucket widths are the web chart's (`WallTemperatureWindow`, now shared with the web panel): 120 buckets for the day and 96 for wider windows. A bucket with no readings is absent and drawn as a gap. With `all` and no readings, `from` is null and `buckets` empty.
 - **Look-over.** This is `IWallLookOverService.GetStateAsync`, the banner. While `pending` is true, admins and moderators (`canLookOver`) get the headline numbers; everyone else gets "This wall was updated recently." Update mode is `underMaintenance` in `GET /api/v1/walls/{w}/settings`, which members may read.
 
+## Boulder actions: publish, archive, grade proposals, variants
+
+The web boulder page's buttons, through `IBoulderService`. **Device key only**, `no-store`; writes count in the key's write bucket and the read in its sync bucket. A wall the caller is not a member of, an unknown boulder and a boulder of another wall answer 404. Refusals are `{ message }`. Every write is absolute (publish, archive, the one open proposal per boulder, the links), so a retry is harmless and needs no `clientRequestId`.
+
+| Route | Body | Who | Answer |
+| --- | --- | --- | --- |
+| `POST /api/v1/walls/{w}/boulders/{b}/publish` | none | the creator, a setter or a wall admin | the boulder `{ boulderId, wallId, name, grade, isDraft, holdCount }`; publishing a published boulder is a no-op; a draft with no holds is a 409 |
+| `POST …/{b}/archive`, `POST …/{b}/unarchive` | none | the same | `{ boulderId, isArchived }`; only a historic boulder can be archived (409 otherwise) |
+| `GET …/{b}/grade-proposal` | none | members | `{ proposal: { id, proposedGrade, proposedByUserId, proposedByName, createdAt } \| null, canPropose, canResolve }` |
+| `POST …/{b}/grade-proposal` | `{ grade }` | anyone but the creator | as `GET`; a Font or V grade (400 otherwise); a second proposal replaces the open one |
+| `POST …/{b}/grade-proposal/{id}/accept`, `/reject` | none | the creator, a setter or a wall admin | as `GET`; accept sets the boulder's grade; another id than the open proposal is a 404 |
+| `PUT …/{b}/parent` | `{ parentId }` (null: not a variant) | may edit both families | `{ boulderId, parentId }` |
+| `PUT …/{b}/variants` | `{ variantIds: [] }` (replaces the list; at most 100, distinct) | the same | `{ boulderId, variantIds }` |
+
+- **Who may.** This is the service's one authority rule (`CanManageBoulderAsync`), as on the web: an unauthorised caller gets 403. `canPropose` and `canResolve` say beforehand which buttons to show, as the web page does.
+- **Variants.** These are the "Mark Variant" page's two modes (`SetParentAsync`, `SetVariantsAsync`). The service's refusals pass through as 400: a cycle, another wall, or a draft, archived or historic boulder. Its permission refusals are 403.
+- **Per-boulder activity** is `GET /api/v1/walls/{w}/boulders/{b}/activity` (see *Wall activity*).
+
 ## Rules
 
 - **Who gets in.** The `/api/v1/me` write routes use the `DeviceApiKey` policy and answer any other caller 404. The sync routes use the `WallSync` policy and the `DenyApiKeyPrincipalsExceptDevices()` filter. Both admit a device key and refuse every other key with the same bare 404 as before: a plain personal key, a wall key, a kiosk key or an installation key. The `/api/v1/me` routes (walls, changes, mine) use the `DeviceApiKey` policy, so a browser cookie does not work there either.
