@@ -43,6 +43,13 @@ public sealed class DeviceKeySyncRateLimiter(
                 AutoReplenishment = true,
             }));
 
+    /// <summary>Takes one request from <paramref name="keyId"/>'s bucket; false when it is empty.</summary>
+    public bool TryAcquire(Guid keyId)
+    {
+        using var lease = limiter.AttemptAcquire(keyId);
+        return lease.IsAcquired;
+    }
+
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
         var user = context.HttpContext.User;
@@ -51,8 +58,7 @@ public sealed class DeviceKeySyncRateLimiter(
             return await next(context);
         }
 
-        using var lease = limiter.AttemptAcquire(keyId);
-        if (!lease.IsAcquired)
+        if (!TryAcquire(keyId))
         {
             context.HttpContext.Response.Headers.RetryAfter = "1";
             return Results.StatusCode(StatusCodes.Status429TooManyRequests);

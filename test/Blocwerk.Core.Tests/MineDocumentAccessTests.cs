@@ -40,6 +40,9 @@ public sealed class MineDocumentAccessTests
         Assert.DoesNotContain(f.OtherWallBoulderId, ticks.Keys);
         Assert.DoesNotContain(f.OtherWallBoulderId, mine.Favourites);
         Assert.Equal([f.Docs.ArchivedId], mine.Projects); // never the other wall's, never the setter's
+        Assert.Equal(
+            new[] { new MineDocumentRating(f.Docs.PublishedId, 4), new MineDocumentRating(f.Docs.DraftId, 3) }.OrderBy(r => r.BoulderId),
+            mine.Ratings); // the same
     }
 
     [Fact]
@@ -54,6 +57,7 @@ public sealed class MineDocumentAccessTests
         Assert.Equal((f.Docs.PublishedId, 1, true), (tick.BoulderId, tick.Attempts, tick.Flashed));
         Assert.Equal([f.Docs.HistoricId], mine.Favourites);
         Assert.Equal([f.Docs.PublishedId], mine.Projects);
+        Assert.Equal([new MineDocumentRating(f.Docs.PublishedId, 5)], mine.Ratings);
     }
 
     [Fact]

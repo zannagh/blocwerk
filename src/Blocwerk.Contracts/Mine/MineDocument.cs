@@ -21,6 +21,10 @@ namespace Blocwerk.Contracts.Mine;
 /// <param name="Ticks">One entry per boulder the reader logged an attempt on, by boulder id.</param>
 /// <param name="Favourites">The reader's favourite boulders of the wall, by id.</param>
 /// <param name="Projects">The reader's project boulders of the wall, by id (absent from a document of an older server).</param>
+/// <param name="Ratings">
+/// The reader's own star ratings on the wall's boulders, by boulder id (absent from a document of an older server). The
+/// feed's <c>rating.mine</c> rows tell the reader to read the document again.
+/// </param>
 public sealed record MineDocument(
     int V,
     Guid WallId,
@@ -28,4 +32,5 @@ public sealed record MineDocument(
     string Cursor,
     IReadOnlyList<MineDocumentTick> Ticks,
     IReadOnlyList<Guid> Favourites,
-    IReadOnlyList<Guid>? Projects = null);
+    IReadOnlyList<Guid>? Projects = null,
+    IReadOnlyList<MineDocumentRating>? Ratings = null);

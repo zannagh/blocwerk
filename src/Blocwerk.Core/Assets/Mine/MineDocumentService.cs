@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Blocwerk.Core.Assets.Mine;
 
 /// <summary>
-/// Serves <c>GET /api/me/walls/{w}/mine</c> (Phase 3 plan §1, PR 3.4): the reader's own ticks, favourites and projects of one
+/// Serves <c>GET /api/me/walls/{w}/mine</c> (Phase 3 plan §1, PR 3.4): the reader's own ticks, favourites, projects and ratings of one
 /// wall, for the boulders their class sees in the <c>boulders</c> document (drafts and archived ones for members and
 /// setters), and the feed mark read <b>before</b> them, so a tick logged during the read is replayed, never lost.
 /// </summary>
@@ -51,6 +51,10 @@ public sealed class MineDocumentService(RootDbContextFactory dbContextFactory, I
             .Where(p => p.UserId == userId && boulders.Contains(p.BoulderId))
             .Select(p => p.BoulderId)
             .ToListAsync(ct);
+        var ratings = await db.BoulderRatings.AsNoTracking()
+            .Where(r => r.UserId == userId && boulders.Contains(r.BoulderId))
+            .Select(r => new MineDocumentRating(r.BoulderId, r.Stars))
+            .ToListAsync(ct);
 
         // Grouped here, not in SQL: a projection of a group does not translate on every provider.
         var ticks = attempts.GroupBy(a => a.BoulderId)
@@ -63,6 +67,13 @@ public sealed class MineDocumentService(RootDbContextFactory dbContextFactory, I
                 g.Max(a => a.Timestamp)))
             .ToList();
         return new MineDocument(
-            DataDocumentSchema.Version, wallId, partition, mark.ToString(), ticks, favourites.Order().ToList(), projects.Order().ToList());
+            DataDocumentSchema.Version,
+            wallId,
+            partition,
+            mark.ToString(),
+            ticks,
+            favourites.Order().ToList(),
+            projects.Order().ToList(),
+            ratings.OrderBy(r => r.BoulderId).ToList());
     }
 }
