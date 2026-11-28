@@ -879,6 +879,8 @@ public partial class BlocwerkDbContext : DbContext
 
             // One open proposal per boulder: a second propose updates it (ProposeGradeAsync), and the index makes two
             // concurrent first proposals collide instead of leaving two open ones.
+            // The plain index stays too: it serves every lookup and the cascade from the boulder, resolved rows included.
+            entity.HasIndex(gp => gp.BoulderId, "IX_GradeProposals_BoulderId");
             entity.HasIndex(gp => gp.BoulderId, "IX_GradeProposals_BoulderId_Open")
                 .IsUnique()
                 .HasFilter("NOT \"IsResolved\"");
