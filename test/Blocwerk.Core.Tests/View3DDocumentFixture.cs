@@ -91,6 +91,7 @@ public sealed class View3DDocumentFixture : IDisposable
     private WebApplication BuildApp()
     {
         var builder = WebApplication.CreateBuilder();
+        builder.Services.AddDeviceKeySyncRateLimit();
         builder.Services.AddAuthorization();
         builder.Services.AddSingleton(_ => new View3DDocumentService(
             Assets.Harness.DbContextFactory, Assets.CurrentUser, Views, Store, TimeProvider.System,

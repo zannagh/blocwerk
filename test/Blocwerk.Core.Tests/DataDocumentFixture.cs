@@ -41,6 +41,7 @@ internal sealed class DataDocumentFixture : IDisposable
         Kiosk = Substitute.For<IKioskContext>();
         KioskKeys = Substitute.For<IKioskKeyValidator>();
         KioskKeys.IsKeyValidAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(true);
+        DeviceKeys.IsLiveAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(true);
         CurrentUser = Substitute.For<ICurrentUserService>();
         CurrentUser.GetCurrentUserAsync().Returns(_ => Caller is { } user
             ? Task.FromResult(user)
@@ -59,6 +60,12 @@ internal sealed class DataDocumentFixture : IDisposable
     public IKioskContext Kiosk { get; }
 
     public IKioskKeyValidator KioskKeys { get; }
+
+    /// <summary>Gets the device key check; every device key is live until a test says otherwise.</summary>
+    public IDeviceKeyValidator DeviceKeys { get; } = Substitute.For<IDeviceKeyValidator>();
+
+    /// <summary>Gets or sets the device keys' sync limit the routes use (the production default unless a test sets one).</summary>
+    public DeviceKeySyncRateLimiter SyncLimiter { get; set; } = new();
 
     public ICurrentUserService CurrentUser { get; }
 
@@ -126,10 +133,15 @@ internal sealed class DataDocumentFixture : IDisposable
         Feed);
 
     public FeedSession Session() => new(
-        new FeedCaller(Principal?.Identity?.IsAuthenticated ?? Caller is not null, Principal?.IsApiKeyPrincipal() == true),
+        new FeedCaller(
+            Principal?.Identity?.IsAuthenticated ?? Caller is not null,
+            Principal?.IsApiKeyPrincipal() == true,
+            Principal?.IsDeviceKey() == true,
+            Principal?.GetApiKeyId()),
         CurrentUser,
         Kiosk,
-        KioskKeys);
+        KioskKeys,
+        DeviceKeys);
 
     public Task<DocumentAccess> AccessAsync(string? token = null, Guid? wallId = null) =>
         Service().AccessAsync(wallId ?? WallId, token, Session(), default);
@@ -196,6 +208,7 @@ internal sealed class DataDocumentFixture : IDisposable
     public void Dispose()
     {
         (app as IDisposable)?.Dispose();
+        SyncLimiter.Dispose();
         Harness.Dispose();
     }
 
@@ -250,6 +263,8 @@ internal sealed class DataDocumentFixture : IDisposable
         builder.Services.AddSingleton(CurrentUser);
         builder.Services.AddSingleton(Kiosk);
         builder.Services.AddSingleton(KioskKeys);
+        builder.Services.AddSingleton(DeviceKeys);
+        builder.Services.AddSingleton(SyncLimiter);
         builder.Services.AddSingleton(_ => Service());
         builder.Services.AddSingleton(_ => new View3DDocumentService(
             Harness.DbContextFactory, CurrentUser, Substitute.For<IWall3DViewService>(), new View3DDocumentStore(), TimeProvider.System,

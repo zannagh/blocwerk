@@ -17,14 +17,16 @@ namespace Blocwerk.Web.Endpoints.Feed;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The wall routes take the wall media's posture: the gallery-image policy (a signed-in human, a share token, or a kiosk
-/// tablet), API-key principals rejected, and the grant decided per request by <see cref="FeedAccessGate"/>. The rows are
-/// then narrowed to that viewer's audiences, exactly as the hub narrows a circuit's deliveries. <c>/api/me/changes</c> is
-/// outside the API-key surface, so a key presented there authenticates nobody.
+/// The wall routes take the wall media's posture: the sync policy (a signed-in human, a share token, a kiosk tablet, or a
+/// linked device key acting as its owner), every other API-key principal rejected, and the grant decided per request by
+/// <see cref="FeedAccessGate"/>. The rows are then narrowed to that viewer's audiences, exactly as the hub narrows a
+/// circuit's deliveries. <c>/api/me/changes</c> is outside the API-key surface, so a key presented there authenticates
+/// nobody; a device key reads the same rows at <see cref="DeviceSelfChangesRoute"/>.
 /// </para>
 /// <para>
-/// All three are limited per address (<see cref="RateLimitPolicy"/>): a token bucket generous enough for a gym's phones
-/// behind one NAT paging through a backlog, and tight enough that a loop hammering the horizon read is cut off.
+/// All four are limited per address (<see cref="RateLimitPolicy"/>), whoever the caller is, a device key included: a token
+/// bucket generous enough for a gym's phones behind one NAT paging through a backlog, and tight enough that a loop
+/// hammering the horizon read is cut off.
 /// </para>
 /// </remarks>
 public static class FeedEndpoints
@@ -34,6 +36,12 @@ public static class FeedEndpoints
     public const string StreamRoute = "/api/walls/{wallId:guid}/feed/stream";
 
     public const string SelfChangesRoute = "/api/me/changes";
+
+    /// <summary>
+    /// <see cref="SelfChangesRoute"/> for a linked device key (the companion app): the same handler, under the API-key
+    /// surface, admitting that key only (<see cref="BlocwerkPolicies.DeviceApiKey"/>). <c>/api/me</c> stays cookie-only.
+    /// </summary>
+    public const string DeviceSelfChangesRoute = "/api/v1/me/changes";
 
     public const string RateLimitPolicy = "feed";
 
@@ -57,16 +65,20 @@ public static class FeedEndpoints
     public static void MapFeed(this WebApplication app)
     {
         app.MapGet(WallChangesRoute, WallChangesAsync)
-            .RequireAuthorization(BlocwerkPolicies.WallGalleryImage)
-            .DenyApiKeyPrincipals()
+            .RequireAuthorization(BlocwerkPolicies.WallSync)
+            .DenyApiKeyPrincipalsExceptDevices()
             .RequireRateLimiting(RateLimitPolicy);
         app.MapGet(StreamRoute, FeedStreamEndpoint.HandleAsync)
-            .RequireAuthorization(BlocwerkPolicies.WallGalleryImage)
-            .DenyApiKeyPrincipals()
+            .RequireAuthorization(BlocwerkPolicies.WallSync)
+            .DenyApiKeyPrincipalsExceptDevices()
             .RequireRateLimiting(RateLimitPolicy)
             .WithMetadata(new LongPollEndpoint());
         app.MapGet(SelfChangesRoute, SelfChangesAsync)
             .RequireAuthorization()
+            .RequireRateLimiting(RateLimitPolicy);
+        app.MapGet(DeviceSelfChangesRoute, SelfChangesAsync)
+            .RequireAuthorization(BlocwerkPolicies.DeviceApiKey)
+            .DenyApiKeyPrincipalsExceptDevices()
             .RequireRateLimiting(RateLimitPolicy);
     }
 

@@ -72,6 +72,7 @@ public static class AuthenticationServices
         app.Services.AddSingleton<VisitGrantCookie>();
         app.Services.AddScoped<IKioskContext, KioskContext>();
         app.Services.AddScoped<KioskKeyValidator>();
+        app.Services.AddScoped<IDeviceKeyValidator, DeviceKeys.DeviceKeyValidator>();
 
         // The same scoped instance behind the Core-facing interface, so a Core service that must
         // GRANT on a kiosk registration (BoulderService's anonymous create) re-checks the key
@@ -182,6 +183,8 @@ public static class AuthenticationServices
                 policy => BuildApiKeyPolicy(policy, ApiKeyScope.Installation));
             options.AddPolicy(BlocwerkPolicies.HumanOrUserApiKey, HumanOrPersonalApiKeyPolicy.Build(new AuthorizationPolicyBuilder()));
             options.AddPolicy(BlocwerkPolicies.WallGalleryImage, BuildGalleryImagePolicy(new AuthorizationPolicyBuilder()));
+            options.AddPolicy(BlocwerkPolicies.WallSync, DeviceKeyPolicies.BuildWallSync(new AuthorizationPolicyBuilder()));
+            options.AddPolicy(BlocwerkPolicies.DeviceApiKey, DeviceKeyPolicies.BuildDeviceApiKey(new AuthorizationPolicyBuilder()));
             options.AddPolicy(BlocwerkPolicies.AppAdmin, BuildAppAdminPolicy(new AuthorizationPolicyBuilder()));
         });
 

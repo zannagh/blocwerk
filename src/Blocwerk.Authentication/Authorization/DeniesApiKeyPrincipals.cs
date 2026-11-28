@@ -10,4 +10,11 @@ namespace Blocwerk.Authentication.Authorization;
 /// share-token viewers cannot carry <c>[Authorize]</c> — it would break the share links — so this
 /// is how they satisfy the "no unguarded endpoint under a covered prefix" rule.
 /// </remarks>
-public sealed class DeniesApiKeyPrincipals;
+public sealed class DeniesApiKeyPrincipals
+{
+    /// <summary>
+    /// True when a linked device key is let through (<c>ApiKeyEndpointExtensions.DenyApiKeyPrincipalsExceptDevices</c>);
+    /// every other key is still rejected.
+    /// </summary>
+    public bool ExceptDeviceKeys { get; init; }
+}

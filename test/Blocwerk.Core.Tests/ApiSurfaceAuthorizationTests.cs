@@ -33,6 +33,20 @@ namespace Blocwerk.Core.Tests;
 /// </remarks>
 public class ApiSurfaceAuthorizationTests
 {
+    /// <summary>The offline client's wall routes a linked device key may read (<see cref="BlocwerkPolicies.WallSync"/>).</summary>
+    private const string MeWallsRoute = "api/v1/me/walls";
+
+    private static readonly string[] SyncRoutes =
+    [
+        DocumentEndpoints.IndexRoute,
+        DocumentEndpoints.Route,
+        AssetEndpoints.Route,
+        AssetEndpoints.VariantRoute,
+        ManifestEndpoints.ManifestRoute,
+        FeedEndpoints.WallChangesRoute,
+        FeedEndpoints.StreamRoute,
+    ];
+
     [Fact]
     public void EveryEndpointUnderAnApiKeyPrefix_DeclaresItsOwnAuthorization()
     {
@@ -114,6 +128,8 @@ public class ApiSurfaceAuthorizationTests
 
         Assert.Contains(FeedEndpoints.WallChangesRoute, routes);
         Assert.Contains(FeedEndpoints.StreamRoute, routes);
+        Assert.Contains(FeedEndpoints.DeviceSelfChangesRoute, routes);
+        Assert.Contains(MineEndpoints.DeviceRoute, routes);
         Assert.Contains("/api/v1/me/sessions", routes);
         Assert.Contains("/api/captures/{captureId:guid}/video", routes);
         Assert.Contains("/api/refreshes/{refreshId:guid}/files", routes);
@@ -183,8 +199,12 @@ public class ApiSurfaceAuthorizationTests
 
             // The gallery policy is the one that admits a signed-in caller OR an anonymous viewer
             // holding a share token, while rejecting an API-key principal — anything else here
-            // either locks out share links or lets a leaked key walk other walls.
-            Assert.Equal(BlocwerkPolicies.WallGalleryImage, authorize!.Policy);
+            // either locks out share links or lets a leaked key walk other walls. The offline
+            // client's sync routes take its one widening: a linked device key, read as its owner.
+            var expected = SyncRoutes.Contains(route.RoutePattern.RawText)
+                ? BlocwerkPolicies.WallSync
+                : BlocwerkPolicies.WallGalleryImage;
+            Assert.Equal(expected, authorize!.Policy);
         }
     }
 
@@ -202,10 +222,16 @@ public class ApiSurfaceAuthorizationTests
         {
             var endpoint = Assert.Single(endpoints.Where(e => e.RoutePattern.RawText == route));
             Assert.True(ApiKeySurface.Covers(ToPath(route)));
-            Assert.Equal(BlocwerkPolicies.WallGalleryImage, endpoint.Metadata.GetMetadata<IAuthorizeData>()?.Policy);
-            Assert.NotNull(endpoint.Metadata.GetMetadata<DeniesApiKeyPrincipals>());
+            Assert.Equal(BlocwerkPolicies.WallSync, endpoint.Metadata.GetMetadata<IAuthorizeData>()?.Policy);
+            Assert.True(endpoint.Metadata.GetMetadata<DeniesApiKeyPrincipals>()?.ExceptDeviceKeys);
             Assert.Equal(FeedEndpoints.RateLimitPolicy, endpoint.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName);
         }
+
+        var device = Assert.Single(endpoints.Where(e => e.RoutePattern.RawText == FeedEndpoints.DeviceSelfChangesRoute));
+        Assert.True(ApiKeySurface.Covers(ToPath(FeedEndpoints.DeviceSelfChangesRoute)));
+        Assert.Equal(BlocwerkPolicies.DeviceApiKey, device.Metadata.GetMetadata<IAuthorizeData>()?.Policy);
+        Assert.True(device.Metadata.GetMetadata<DeniesApiKeyPrincipals>()?.ExceptDeviceKeys);
+        Assert.Equal(FeedEndpoints.RateLimitPolicy, device.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName);
 
         var self = Assert.Single(endpoints.Where(e => e.RoutePattern.RawText == FeedEndpoints.SelfChangesRoute));
         Assert.False(ApiKeySurface.Covers(ToPath(FeedEndpoints.SelfChangesRoute)));
@@ -230,8 +256,8 @@ public class ApiSurfaceAuthorizationTests
         {
             var endpoint = Assert.Single(endpoints.Where(e => e.RoutePattern.RawText == route));
             Assert.True(ApiKeySurface.Covers(ToPath(route)));
-            Assert.Equal(BlocwerkPolicies.WallGalleryImage, endpoint.Metadata.GetMetadata<IAuthorizeData>()?.Policy);
-            Assert.NotNull(endpoint.Metadata.GetMetadata<DeniesApiKeyPrincipals>());
+            Assert.Equal(BlocwerkPolicies.WallSync, endpoint.Metadata.GetMetadata<IAuthorizeData>()?.Policy);
+            Assert.True(endpoint.Metadata.GetMetadata<DeniesApiKeyPrincipals>()?.ExceptDeviceKeys);
         }
     }
 
@@ -248,7 +274,43 @@ public class ApiSurfaceAuthorizationTests
         Assert.NotNull(mine.Metadata.GetMetadata<IAuthorizeData>());
         Assert.Null(mine.Metadata.GetMetadata<IAuthorizeData>()!.Policy);
         Assert.Null(mine.Metadata.GetMetadata<IAllowAnonymous>());
-        Assert.NotNull(mine.Metadata.GetMetadata<DeniesApiKeyPrincipals>());
+        Assert.False(mine.Metadata.GetMetadata<DeniesApiKeyPrincipals>()?.ExceptDeviceKeys);
+
+        var device = Assert.Single(AllEndpoints().Where(e => e.RoutePattern.RawText == MineEndpoints.DeviceRoute));
+        Assert.True(ApiKeySurface.Covers(ToPath(MineEndpoints.DeviceRoute)));
+        Assert.Equal(BlocwerkPolicies.DeviceApiKey, device.Metadata.GetMetadata<IAuthorizeData>()?.Policy);
+        Assert.True(device.Metadata.GetMetadata<DeniesApiKeyPrincipals>()?.ExceptDeviceKeys);
+        Assert.Equal(FeedEndpoints.RateLimitPolicy, device.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName);
+    }
+
+    /// <summary>
+    /// A linked device key gets through on exactly the offline client's sync routes and their two <c>/api/v1/me</c>
+    /// aliases. Widening any other route to it is a decision this list has to show.
+    /// </summary>
+    [Fact]
+    public void OnlyTheSyncRoutes_AdmitADeviceKey()
+    {
+        var admitting = AllEndpoints()
+            .Where(e => e.Metadata.GetMetadata<DeniesApiKeyPrincipals>()?.ExceptDeviceKeys == true
+                        || e.Metadata.GetMetadata<IAuthorizeData>()?.Policy is BlocwerkPolicies.WallSync or BlocwerkPolicies.DeviceApiKey)
+            .Select(e => e.RoutePattern.RawText!)
+            .Order(StringComparer.Ordinal)
+            .ToList();
+
+        Assert.Equal(
+            SyncRoutes.Concat([FeedEndpoints.DeviceSelfChangesRoute, MineEndpoints.DeviceRoute, MeWallsRoute]).Order(StringComparer.Ordinal),
+            admitting);
+    }
+
+    /// <summary>The companion app's wall list: a device key only, on the API-key surface, rate limited like the feed.</summary>
+    [Fact]
+    public void TheDeviceWallList_IsForADeviceKeyOnly_AndRateLimited()
+    {
+        var walls = Assert.Single(AllEndpoints().Where(e => e.RoutePattern.RawText == MeWallsRoute));
+
+        Assert.True(ApiKeySurface.Covers(ToPath(MeWallsRoute)));
+        Assert.Equal(BlocwerkPolicies.DeviceApiKey, walls.Metadata.GetMetadata<IAuthorizeData>()?.Policy);
+        Assert.Equal(FeedEndpoints.RateLimitPolicy, walls.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName);
     }
 
     /// <summary>

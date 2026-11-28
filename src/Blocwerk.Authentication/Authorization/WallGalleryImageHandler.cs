@@ -26,6 +26,12 @@ public sealed class WallGalleryImageHandler : AuthorizationHandler<WallGalleryIm
     {
         if (context.User.IsApiKeyPrincipal())
         {
+            // The sync routes' variant admits a linked device key; the endpoint's grant then checks its owner's walls.
+            if (requirement.AdmitsDeviceKeys && context.User.IsDeviceKey())
+            {
+                context.Succeed(requirement);
+            }
+
             return Task.CompletedTask;
         }
 

@@ -44,6 +44,7 @@ internal sealed class FeedRouteFixture : IAsyncDisposable
         Kiosk = Substitute.For<IKioskContext>();
         KioskKeys = Substitute.For<IKioskKeyValidator>();
         KioskKeys.IsKeyValidAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(true);
+        DeviceKeys.IsLiveAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(true);
         CurrentUser = Substitute.For<ICurrentUserService>();
         CurrentUser.GetCurrentUserAsync().Returns(_ => Caller is { } user
             ? Task.FromResult(user)
@@ -68,6 +69,9 @@ internal sealed class FeedRouteFixture : IAsyncDisposable
 
     /// <summary>Gets the kiosk key check; every key is live until a test says otherwise.</summary>
     public IKioskKeyValidator KioskKeys { get; }
+
+    /// <summary>Gets the device key check; every device key is live until a test says otherwise.</summary>
+    public IDeviceKeyValidator DeviceKeys { get; } = Substitute.For<IDeviceKeyValidator>();
 
     /// <summary>Gets the app's shutdown, as the stream host sees it.</summary>
     public CancellationTokenSource Stopping { get; } = new();
@@ -231,6 +235,7 @@ internal sealed class FeedRouteFixture : IAsyncDisposable
         builder.Services.AddSingleton(CurrentUser);
         builder.Services.AddSingleton(Kiosk);
         builder.Services.AddSingleton(KioskKeys);
+        builder.Services.AddSingleton(DeviceKeys);
         builder.Services.AddSingleton(CatchUp);
         var lifetime = Substitute.For<IHostApplicationLifetime>();
         lifetime.ApplicationStopping.Returns(Stopping.Token);

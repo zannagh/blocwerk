@@ -165,6 +165,7 @@ public sealed class AssetRouteFixture : IDisposable
     private WebApplication BuildApp()
     {
         var builder = WebApplication.CreateBuilder();
+        builder.Services.AddDeviceKeySyncRateLimit();
         builder.Services.AddAuthorization();
         builder.Services.AddSingleton<IAssetResolver>(Resolver());
         builder.Services.AddSingleton(Variants);

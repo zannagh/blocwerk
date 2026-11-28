@@ -18,6 +18,12 @@ public sealed class FeedStreamOptions
     /// </summary>
     public double Jitter { get; init; } = 0.2;
 
+    /// <summary>
+    /// Gets how often an open stream decides its grant again even when no row asks for it, so a revoked device or kiosk
+    /// key, or a membership gone without its own row, stops reading within this time instead of at the stream's end.
+    /// </summary>
+    public TimeSpan AccessRecheck { get; init; } = TimeSpan.FromSeconds(60);
+
     /// <summary>Gets the gap after which an idle stream sends a comment, so proxies and phones keep it open.</summary>
     public TimeSpan Heartbeat { get; init; } = TimeSpan.FromSeconds(30);
 

@@ -24,6 +24,10 @@ namespace Blocwerk.Web.Endpoints;
 /// whose class sees no marks online (403: a share link), an account that is gone (410) and an unknown wall (404).
 /// </para>
 /// <para>
+/// A linked device key (the companion app) reads the same document at <see cref="DeviceRoute"/>, under the API-key surface,
+/// through the same gate as its owner's cookie. No other key is admitted there.
+/// </para>
+/// <para>
 /// Every answer is <c>no-store</c>: one reader's data, never kept by the browser's HTTP cache or a proxy. The device's
 /// copy lives in the ledger only, where every wipe of the partition reaches it.
 /// </para>
@@ -33,11 +37,21 @@ public static class MineEndpoints
     /// <summary><c>GET</c>: the caller's marks on the wall (<see cref="MineDocument"/>).</summary>
     public const string Route = "/api/me/walls/{wallId:guid}/mine";
 
+    /// <summary>
+    /// <see cref="Route"/> for a linked device key (the companion app): the same handler under the API-key surface,
+    /// admitting that key only, rate limited like the feed. <c>/api/me</c> stays cookie-only.
+    /// </summary>
+    public const string DeviceRoute = "/api/v1/me/walls/{wallId:guid}/mine";
+
     public static void MapMine(this WebApplication app)
     {
         app.MapGet(Route, HandleAsync)
             .RequireAuthorization()
             .DenyApiKeyPrincipals();
+        app.MapGet(DeviceRoute, HandleAsync)
+            .RequireAuthorization(BlocwerkPolicies.DeviceApiKey)
+            .DenyApiKeyPrincipalsExceptDevices()
+            .RequireRateLimiting(FeedEndpoints.RateLimitPolicy);
     }
 
     internal static async Task<IResult> HandleAsync(

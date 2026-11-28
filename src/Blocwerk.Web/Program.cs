@@ -283,6 +283,9 @@ public static class Program
         // authentication, not a RateLimitPolicies policy, since UseRateLimiter runs before authentication.
         builder.Services.AddWallScanRateLimit();
 
+        // The device keys' per-key limit on the sync reads (documents, /a/, manifest); cookie callers are not counted.
+        builder.Services.AddDeviceKeySyncRateLimit();
+
         // The feed's catch-up and stream routes (PR 1.6): their open-stream caps and their per-address rate limit, also
         // through RateLimitPolicies.
         builder.Services.AddFeedStream();

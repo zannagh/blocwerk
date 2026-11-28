@@ -14,6 +14,7 @@ internal static partial class ApiDocsData
     public static IReadOnlyList<ApiSurfaceDoc> Surfaces { get; } = new[]
     {
         UserSurface,
+        DeviceSurface,
         WallSurface,
         WallUpdateShapesSurface,
         WallGeometryPlacementSurface,

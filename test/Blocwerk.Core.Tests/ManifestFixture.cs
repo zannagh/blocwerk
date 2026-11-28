@@ -112,6 +112,7 @@ public sealed class ManifestFixture : IDisposable
     private WebApplication BuildApp()
     {
         var builder = WebApplication.CreateBuilder();
+        builder.Services.AddDeviceKeySyncRateLimit();
         builder.Services.AddAuthorization();
         builder.Services.AddScoped(_ => Service());
         var built = builder.Build();

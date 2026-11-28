@@ -28,7 +28,7 @@ public static class DocumentAudienceGate
         var access = await FeedAccessGate.ForWallAsync(db, wallId, shareToken, session, ct);
         if (access.Viewer is not { } viewer)
         {
-            var missing = access.Refusal == FeedAccessRefusal.NoAccess && !session.Caller.IsApiKey
+            var missing = access.Refusal == FeedAccessRefusal.NoAccess && !session.Caller.IsRefusedKey
                 && !await db.Walls.IgnoreQueryFilters().AnyAsync(w => w.Id == wallId, ct);
             return DocumentAccess.Refuse(access.Refusal, missing);
         }
