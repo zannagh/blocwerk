@@ -14,4 +14,10 @@ public enum AppleLinkOutcome
 
     /// <summary>The Apple ID is already linked to another account on this instance.</summary>
     LinkedElsewhere,
+
+    /// <summary>The account already has an Apple ID; a device does not replace it (unlink on the web first).</summary>
+    AlreadyLinked,
+
+    /// <summary>The device key is older than <see cref="AppleSignInService.LinkKeyMaxAge"/>: sign in again to link.</summary>
+    KeyNotFresh,
 }

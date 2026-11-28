@@ -18,7 +18,8 @@ namespace Blocwerk.Core.Migrations
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
                     UserId = table.Column<Guid>(type: "uuid", nullable: false),
                     Subject = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: false),
-                    LinkedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
+                    LinkedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    LinkedFrom = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true)
                 },
                 constraints: table =>
                 {
@@ -37,9 +38,8 @@ namespace Blocwerk.Core.Migrations
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
                     NonceHash = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
-                    CreatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                     ExpiresAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
-                    UsedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true)
+                    UsedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
                 },
                 constraints: table =>
                 {

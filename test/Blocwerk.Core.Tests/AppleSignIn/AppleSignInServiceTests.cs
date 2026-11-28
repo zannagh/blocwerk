@@ -82,26 +82,56 @@ public sealed class AppleSignInServiceTests
         using var bed = AppleSignInTestBed.Create();
         var user = await bed.AddUserAsync("climber");
         await bed.LinkAsync(user.Id, "apple-sub-1");
-        var nonce = await bed.Nonces.IssueAsync();
+        var nonce = bed.Nonces.Issue();
         var token = StubAppleValidator.Token("apple-sub-1");
 
         Assert.Equal(AppleSignInOutcome.SignedIn, (await bed.Service.SignInAsync(token, nonce, "Phone")).Outcome);
         Assert.Equal(AppleSignInOutcome.InvalidGrant, (await bed.Service.SignInAsync(token, nonce, "Phone")).Outcome);
         Assert.Equal(AppleSignInOutcome.InvalidGrant, (await bed.Service.SignInAsync(token, "never-issued", "Phone")).Outcome);
-        Assert.Equal(AppleLinkOutcome.InvalidToken, await bed.Service.LinkAsync(user.Id, token, nonce));
     }
 
     [Fact]
-    public async Task AnExpiredNonce_IsRefused()
+    public async Task ABadToken_StillSpendsTheNonce()
+    {
+        using var bed = AppleSignInTestBed.Create();
+        var user = await bed.AddUserAsync("climber");
+        await bed.LinkAsync(user.Id, "apple-sub-1");
+        var nonce = bed.Nonces.Issue();
+
+        await bed.Service.SignInAsync("forged", nonce, "Phone");
+
+        Assert.Equal(AppleSignInOutcome.InvalidGrant, (await bed.Service.SignInAsync(StubAppleValidator.Token("apple-sub-1"), nonce, "Phone")).Outcome);
+    }
+
+    [Fact]
+    public async Task AnExpiredOrForgedNonce_IsRefused()
     {
         using var bed = AppleSignInTestBed.Create();
         var clock = new MutableTestClock(DateTimeOffset.UtcNow);
-        var nonces = new AppleNonceStore(bed.Contexts, clock);
-        var nonce = await nonces.IssueAsync();
+        var nonces = new AppleNonceStore(bed.Contexts, bed.Codec, clock);
+        var nonce = nonces.Issue();
+        var stranger = new AppleNonceStore(bed.Contexts, new Web.DeviceLinks.DataProtectionAppleNonceCodec(
+            new Microsoft.AspNetCore.DataProtection.EphemeralDataProtectionProvider()));
+
+        Assert.False(await stranger.TryUseAsync(nonce));
+        Assert.False(await nonces.TryUseAsync(nonce[..^2] + "AA"));
 
         clock.Advance(AppleNonceStore.Lifetime + TimeSpan.FromSeconds(1));
-
         Assert.False(await nonces.TryUseAsync(nonce));
+    }
+
+    [Fact]
+    public async Task IssuingANonce_StoresNothing()
+    {
+        using var bed = AppleSignInTestBed.Create();
+
+        for (var i = 0; i < 5; i++)
+        {
+            bed.Nonces.Issue();
+        }
+
+        await using var db = bed.Harness.CreateContext();
+        Assert.Empty(await db.AppleSignInNonces.ToListAsync());
     }
 
     [Fact]
@@ -111,12 +141,12 @@ public sealed class AppleSignInServiceTests
         var user = await bed.AddUserAsync("climber");
         await bed.LinkAsync(user.Id, "apple-sub-1");
 
-        Assert.Equal(AppleSignInOutcome.InvalidGrant, (await bed.Service.SignInAsync("forged", await bed.Nonces.IssueAsync(), "Phone")).Outcome);
+        Assert.Equal(AppleSignInOutcome.InvalidGrant, (await bed.Service.SignInAsync("forged", bed.Nonces.Issue(), "Phone")).Outcome);
         Assert.Equal(AppleSignInOutcome.InvalidGrant, (await bed.SignInAsync("apple-sub-1", device: " ​ ")).Outcome);
     }
 
     [Fact]
-    public async Task AnAppleIdLinkedToAnotherAccount_IsRefused_AndRelinkingYourOwnIsANoOp()
+    public async Task AnAppleIdLinkedToAnotherAccount_IsRefused()
     {
         using var bed = AppleSignInTestBed.Create();
         var first = await bed.AddUserAsync("first");
@@ -125,20 +155,83 @@ public sealed class AppleSignInServiceTests
 
         Assert.Equal(AppleLinkOutcome.LinkedElsewhere, await bed.LinkAsync(second.Id, "apple-sub-1"));
         Assert.False(await bed.Service.IsLinkedAsync(second.Id));
-        Assert.Equal(AppleLinkOutcome.Linked, await bed.LinkAsync(first.Id, "apple-sub-1"));
     }
 
     [Fact]
-    public async Task LinkingAnotherAppleId_ReplacesTheOldOne()
+    public async Task ADevice_NeverReplacesAnAccountsAppleId()
     {
         using var bed = AppleSignInTestBed.Create();
         var user = await bed.AddUserAsync("climber");
         await bed.LinkAsync(user.Id, "apple-sub-1");
 
-        Assert.Equal(AppleLinkOutcome.Linked, await bed.LinkAsync(user.Id, "apple-sub-2"));
+        Assert.Equal(AppleLinkOutcome.AlreadyLinked, await bed.LinkAsync(user.Id, "apple-sub-2"));
+        Assert.Equal(AppleLinkOutcome.AlreadyLinked, await bed.LinkAsync(user.Id, "apple-sub-1"));
 
-        Assert.Equal(AppleSignInOutcome.NotLinked, (await bed.SignInAsync("apple-sub-1")).Outcome);
-        Assert.Equal(AppleSignInOutcome.SignedIn, (await bed.SignInAsync("apple-sub-2")).Outcome);
+        Assert.Equal(AppleSignInOutcome.SignedIn, (await bed.SignInAsync("apple-sub-1")).Outcome);
+        Assert.Equal(AppleSignInOutcome.NotLinked, (await bed.SignInAsync("apple-sub-2")).Outcome);
+    }
+
+    [Fact]
+    public async Task AnOldOrRevokedOrForeignKey_CannotLink()
+    {
+        using var bed = AppleSignInTestBed.Create();
+        var user = await bed.AddUserAsync("climber");
+        var other = await bed.AddUserAsync("other");
+        var old = await bed.DeviceKeyAsync(user.Id, "Old");
+        var revoked = await bed.DeviceKeyAsync(user.Id, "Revoked");
+        var foreign = await bed.DeviceKeyAsync(other.Id, "Theirs");
+        await using (var db = bed.Harness.CreateContext())
+        {
+            var aged = DateTimeOffset.UtcNow - AppleSignInService.LinkKeyMaxAge - TimeSpan.FromMinutes(1);
+            await db.ApiKeys.IgnoreQueryFilters().Where(k => k.Id == old).ExecuteUpdateAsync(s => s.SetProperty(k => k.CreatedAt, aged));
+            await db.ApiKeys.IgnoreQueryFilters().Where(k => k.Id == revoked).ExecuteUpdateAsync(s => s.SetProperty(k => k.RevokedAt, DateTimeOffset.UtcNow));
+        }
+
+        foreach (var key in new[] { old, revoked, foreign })
+        {
+            Assert.Equal(AppleLinkOutcome.KeyNotFresh, await bed.Service.LinkAsync(user.Id, key, StubAppleValidator.Token("s"), bed.Nonces.Issue()));
+        }
+
+        Assert.False(await bed.Service.IsLinkedAsync(user.Id));
+    }
+
+    [Fact]
+    public async Task TheLink_RecordsTheDeviceThatMadeIt()
+    {
+        using var bed = AppleSignInTestBed.Create();
+        var user = await bed.AddUserAsync("climber");
+
+        await bed.LinkAsync(user.Id, "apple-sub-1");
+
+        var link = await bed.Service.FindLinkAsync(user.Id);
+        Assert.Equal("iPhone: Linking iPhone", link?.LinkedFrom);
+    }
+
+    [Fact]
+    public async Task APasswordReset_DropsTheAppleId()
+    {
+        using var bed = AppleSignInTestBed.Create();
+        var user = await bed.AddUserAsync("climber");
+        await bed.LinkAsync(user.Id, "apple-sub-1");
+
+        await new PasswordLoginService(bed.Contexts, new PasswordService()).ResetPasswordAsync(user.Id, "a-new-password-1");
+
+        Assert.False(await bed.Service.IsLinkedAsync(user.Id));
+    }
+
+    [Fact]
+    public async Task SettingAFirstPassword_KeepsTheAppleId_ButChangingItDropsIt()
+    {
+        using var bed = AppleSignInTestBed.Create();
+        var user = await bed.AddUserAsync("climber");
+        await bed.LinkAsync(user.Id, "apple-sub-1");
+        var passwords = new PasswordLoginService(bed.Contexts, new PasswordService());
+
+        await passwords.SetPasswordAsync(user.Id, "climber", "first-password-1", null);
+        Assert.True(await bed.Service.IsLinkedAsync(user.Id));
+
+        await passwords.SetPasswordAsync(user.Id, "climber", "second-password-2", "first-password-1");
+        Assert.False(await bed.Service.IsLinkedAsync(user.Id));
     }
 
     [Fact]

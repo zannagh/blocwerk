@@ -12,8 +12,20 @@ public interface IAppleSignInService
     /// <summary>Issues a single-use nonce for one Apple request.</summary>
     Task<string> CreateNonceAsync(CancellationToken ct = default);
 
-    /// <summary>Links the token's Apple ID to <paramref name="userId"/>, replacing any Apple ID linked before.</summary>
-    Task<AppleLinkOutcome> LinkAsync(Guid userId, string? identityToken, string? nonce, CancellationToken ct = default);
+    /// <summary>
+    /// Links the token's Apple ID to <paramref name="userId"/> from the device key <paramref name="apiKeyId"/>: only while
+    /// the account has no Apple ID yet, and only from a key minted within <see cref="AppleSignInService.LinkKeyMaxAge"/>,
+    /// so a key someone held briefly cannot quietly add their own Apple ID later.
+    /// </summary>
+    Task<AppleLinkOutcome> LinkAsync(
+        Guid userId,
+        Guid apiKeyId,
+        string? identityToken,
+        string? nonce,
+        CancellationToken ct = default);
+
+    /// <summary>The account's linked Apple ID, or null.</summary>
+    Task<Entities.AppleLink?> FindLinkAsync(Guid userId, CancellationToken ct = default);
 
     /// <summary>Removes the account's Apple ID; false when none was linked.</summary>
     Task<bool> UnlinkAsync(Guid userId, CancellationToken ct = default);

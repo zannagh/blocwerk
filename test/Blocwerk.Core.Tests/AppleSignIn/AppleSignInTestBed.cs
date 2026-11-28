@@ -6,6 +6,8 @@ using Blocwerk.Core.AppleSignIn;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Feed;
 using Blocwerk.Core.Services;
+using Blocwerk.Web.DeviceLinks;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -22,12 +24,14 @@ internal sealed class AppleSignInTestBed : IDisposable
         Harness = harness;
         Contexts = contexts;
         Kiosk = kiosk;
-        Nonces = new AppleNonceStore(contexts);
+        Codec = new DataProtectionAppleNonceCodec(new EphemeralDataProtectionProvider());
+        Nonces = new AppleNonceStore(contexts, Codec);
+        ApiKeys = new ApiKeyService(contexts, NullLogger<ApiKeyService>.Instance);
         Service = new AppleSignInService(
             contexts,
             new StubAppleValidator(),
             Nonces,
-            new ApiKeyService(contexts, NullLogger<ApiKeyService>.Instance),
+            ApiKeys,
             NullLogger<AppleSignInService>.Instance,
             kiosk);
     }
@@ -38,7 +42,11 @@ internal sealed class AppleSignInTestBed : IDisposable
 
     public IKioskContext Kiosk { get; }
 
+    public DataProtectionAppleNonceCodec Codec { get; }
+
     public AppleNonceStore Nonces { get; }
+
+    public ApiKeyService ApiKeys { get; }
 
     public AppleSignInService Service { get; }
 
@@ -55,13 +63,17 @@ internal sealed class AppleSignInTestBed : IDisposable
 
     public Task<User> AddUserAsync(string identifier) => MeProfileControllerTests.AddUserAsync(Harness, identifier);
 
-    /// <summary>Links <paramref name="subject"/> to <paramref name="userId"/> with a fresh nonce.</summary>
+    /// <summary>A fresh device key of <paramref name="userId"/>, as the app holds right after signing in.</summary>
+    public async Task<Guid> DeviceKeyAsync(Guid userId, string device = "Linking iPhone") =>
+        (await ApiKeys.CreateDeviceKeyAsync(userId, "iPhone: " + device)).Key.Id;
+
+    /// <summary>Links <paramref name="subject"/> to <paramref name="userId"/> from a fresh device key with a fresh nonce.</summary>
     public async Task<AppleLinkOutcome> LinkAsync(Guid userId, string subject) =>
-        await Service.LinkAsync(userId, StubAppleValidator.Token(subject), await Nonces.IssueAsync());
+        await Service.LinkAsync(userId, await DeviceKeyAsync(userId), StubAppleValidator.Token(subject), Nonces.Issue());
 
     /// <summary>Signs <paramref name="subject"/> in from <paramref name="device"/> with a fresh nonce.</summary>
-    public async Task<AppleSignInResult> SignInAsync(string subject, string device = "Test iPhone") =>
-        await Service.SignInAsync(StubAppleValidator.Token(subject), await Nonces.IssueAsync(), device);
+    public Task<AppleSignInResult> SignInAsync(string subject, string device = "Test iPhone") =>
+        Service.SignInAsync(StubAppleValidator.Token(subject), Nonces.Issue(), device);
 
     public void Dispose()
     {

@@ -7,8 +7,8 @@ using Blocwerk.Authentication.Endpoints;
 namespace Blocwerk.Web.Endpoints;
 
 /// <summary>
-/// The per-address limits of the anonymous Sign in with Apple routes (nonce and sign-in), plus the server-wide failure
-/// budget. There is no server-wide limit on requests: anyone could spend it and so block every sign-in.
+/// The per-address limits of the anonymous Sign in with Apple routes (nonce and sign-in), the server-wide nonce
+/// issuance cap and the nonce codec. Sign-in has no server-wide limit: anyone could spend it and so block every sign-in.
 /// </summary>
 public static class AppleSignInRateLimit
 {
@@ -23,9 +23,10 @@ public static class AppleSignInRateLimit
 
     public static readonly TimeSpan Window = TimeSpan.FromMinutes(1);
 
-    public static IServiceCollection AddAppleSignInRateLimit(this IServiceCollection services)
+    public static IServiceCollection AddAppleSignInWeb(this IServiceCollection services)
     {
-        services.AddSingleton<DeviceLinks.AppleSignInFailureBudget>();
+        services.AddSingleton<DeviceLinks.AppleNonceIssuanceCap>();
+        services.AddSingleton<Core.AppleSignIn.IAppleNonceCodec, DeviceLinks.DataProtectionAppleNonceCodec>();
         PerAddress(services, NoncePolicy, NoncesPerWindow);
         return PerAddress(services, SignInPolicy, SignInsPerWindow);
     }

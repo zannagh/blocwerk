@@ -13,7 +13,11 @@ internal sealed class StubAppleValidator : IAppleIdentityTokenValidator
 {
     public static string Token(string subject) => "ok:" + subject;
 
-    public Task<AppleIdentity?> ValidateAsync(string? identityToken, string? nonce, CancellationToken ct = default) =>
+    public Task<AppleIdentity?> ValidateAsync(
+        string? identityToken,
+        string? nonce,
+        IReadOnlyCollection<string>? audiences = null,
+        CancellationToken ct = default) =>
         Task.FromResult(identityToken is not null && identityToken.StartsWith("ok:", StringComparison.Ordinal) && !string.IsNullOrEmpty(nonce)
             ? new AppleIdentity(identityToken[3..])
             : null);

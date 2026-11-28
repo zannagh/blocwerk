@@ -11,7 +11,7 @@ namespace Blocwerk.Core.Tests.AppleSignIn;
 
 /// <summary>
 /// The anonymous routes over HTTP: the token exchange's envelope on success, invalid_grant and the not-linked 404 on
-/// refusal, the per-address limits, and the server-wide failure budget that never refuses a success.
+/// refusal, the per-address limits, and the server-wide cap on nonce issuance.
 /// </summary>
 public sealed class AppleSignInEndpointTests
 {
@@ -88,17 +88,14 @@ public sealed class AppleSignInEndpointTests
     }
 
     [Fact]
-    public async Task ASpentFailureBudget_TurnsFailuresInto429_ButASuccessStillSignsIn()
+    public async Task NonceIssuance_HasAServerWideCap()
     {
-        await using var host = await AppleSignInTestHost.StartAsync(failuresPerMinute: 2);
-        var user = await host.Bed.AddUserAsync("climber");
-        await host.Bed.LinkAsync(user.Id, "apple-sub-1");
+        await using var host = await AppleSignInTestHost.StartAsync(noncesPerMinute: 2);
 
-        Assert.Equal(HttpStatusCode.BadRequest, (await host.SignInAsync("forged", "10.0.1.1")).StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound, (await host.SignInAsync(StubAppleValidator.Token("other"), "10.0.1.2")).StatusCode);
-        Assert.Equal(HttpStatusCode.TooManyRequests, (await host.SignInAsync("forged", "10.0.1.3")).StatusCode);
+        await host.NonceAsync("10.0.2.1");
+        await host.NonceAsync("10.0.2.2");
+        var capped = await host.SendAsync("/api/device-link/apple/nonce", null, "10.0.2.3");
 
-        var success = await host.SignInAsync(StubAppleValidator.Token("apple-sub-1"), "10.0.1.4");
-        Assert.Equal(HttpStatusCode.OK, success.StatusCode);
+        Assert.Equal(HttpStatusCode.TooManyRequests, capped.StatusCode);
     }
 }

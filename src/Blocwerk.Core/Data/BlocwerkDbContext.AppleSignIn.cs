@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Data;
 
-/// <summary>Model configuration of Sign in with Apple: linked Apple IDs and issued nonces. Strictly additive.</summary>
+/// <summary>Model configuration of Sign in with Apple: linked Apple IDs and spent nonces. Strictly additive.</summary>
 public partial class BlocwerkDbContext
 {
     public DbSet<AppleLink> AppleLinks => Set<AppleLink>();
@@ -15,7 +15,8 @@ public partial class BlocwerkDbContext
 
     /// <remarks>
     /// The link hangs off its user and goes with them. Both its columns are unique: one account per Apple ID, one
-    /// Apple ID per account. The nonce hash is the lookup of every use; the expiry index serves the clean-up.
+    /// Apple ID per account. A spent nonce's hash is unique, so a nonce is spent once; the expiry index serves the
+    /// clean-up.
     /// </remarks>
     private static void ConfigureAppleSignIn(ModelBuilder modelBuilder)
     {

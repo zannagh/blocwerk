@@ -16,7 +16,7 @@ namespace Blocwerk.Core.AppleSignIn;
 /// <remarks>
 /// Every use of a token first verifies it (<see cref="IAppleIdentityTokenValidator"/>), then uses its nonce, so a token
 /// works once and only with a nonce this server issued. The link and unlink save tracked rows, so the feed tells the
-/// user's devices (<c>user.profile</c>).
+/// user's devices and the web profile (<c>user.profile</c>), which shows the device that linked it.
 /// </remarks>
 public sealed class AppleSignInService(
     IDbContextFactory<BlocwerkDbContext> contexts,
@@ -29,15 +29,31 @@ public sealed class AppleSignInService(
 {
     private TimeProvider Clock => clock ?? TimeProvider.System;
 
-    /// <inheritdoc/>
-    public Task<string> CreateNonceAsync(CancellationToken ct = default) => nonces.IssueAsync(ct);
+    /// <summary>How young a device key must be to link an Apple ID: the app links right after it signed in.</summary>
+    public static readonly TimeSpan LinkKeyMaxAge = TimeSpan.FromMinutes(15);
 
     /// <inheritdoc/>
-    public async Task<AppleLinkOutcome> LinkAsync(Guid userId, string? identityToken, string? nonce, CancellationToken ct = default)
+    public Task<string> CreateNonceAsync(CancellationToken ct = default) => Task.FromResult(nonces.Issue());
+
+    /// <inheritdoc/>
+    public async Task<AppleLinkOutcome> LinkAsync(
+        Guid userId,
+        Guid apiKeyId,
+        string? identityToken,
+        string? nonce,
+        CancellationToken ct = default)
     {
         if (userId == Guid.Empty || GhostUser.Is(userId))
         {
             throw new UnauthorizedAccessException("Only a signed-in user can link an Apple ID.");
+        }
+
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        db.CurrentUserId = Guid.Empty;
+        var refusal = await LinkRefusalAsync(db, userId, apiKeyId, ct);
+        if (refusal is not null)
+        {
+            return refusal.Value;
         }
 
         var subject = await VerifyAsync(identityToken, nonce, ct);
@@ -46,37 +62,33 @@ public sealed class AppleSignInService(
             return AppleLinkOutcome.InvalidToken;
         }
 
-        await using var db = await contexts.CreateDbContextAsync(ct);
-        db.CurrentUserId = Guid.Empty;
-        var holder = await db.AppleLinks.AsNoTracking().FirstOrDefaultAsync(l => l.Subject == subject, ct);
-        if (holder is not null)
+        if (await db.AppleLinks.AnyAsync(l => l.Subject == subject, ct))
         {
-            return holder.UserId == userId ? AppleLinkOutcome.Linked : Refuse(userId);
+            return Refuse(userId);
         }
 
-        var own = await db.AppleLinks.FirstOrDefaultAsync(l => l.UserId == userId, ct);
-        if (own is null)
-        {
-            db.AppleLinks.Add(new AppleLink { UserId = userId, Subject = subject, LinkedAt = Clock.GetUtcNow() });
-        }
-        else
-        {
-            own.Subject = subject;
-            own.LinkedAt = Clock.GetUtcNow();
-        }
-
+        var keyName = await db.ApiKeys.IgnoreQueryFilters().Where(k => k.Id == apiKeyId).Select(k => k.Name).FirstAsync(ct);
+        db.AppleLinks.Add(new AppleLink { UserId = userId, Subject = subject, LinkedAt = Clock.GetUtcNow(), LinkedFrom = keyName });
         try
         {
             await db.SaveChangesAsync(ct);
         }
         catch (DbUpdateException)
         {
-            // Another account linked the same Apple ID a moment earlier; the unique index decided.
+            // Another account linked the same Apple ID a moment earlier (or this one linked twice); the indexes decided.
             return Refuse(userId);
         }
 
-        logger.LogInformation("Apple ID linked to user {UserId}", userId);
+        logger.LogInformation("Apple ID linked to user {UserId} from key {ApiKeyId}", userId, apiKeyId);
         return AppleLinkOutcome.Linked;
+    }
+
+    /// <inheritdoc/>
+    public async Task<AppleLink?> FindLinkAsync(Guid userId, CancellationToken ct = default)
+    {
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        db.CurrentUserId = Guid.Empty;
+        return await db.AppleLinks.AsNoTracking().FirstOrDefaultAsync(l => l.UserId == userId, ct);
     }
 
     /// <inheritdoc/>
@@ -136,7 +148,7 @@ public sealed class AppleSignInService(
     /// </summary>
     private async Task<string?> VerifyAsync(string? identityToken, string? nonce, CancellationToken ct)
     {
-        var identity = await validator.ValidateAsync(identityToken, nonce, ct);
+        var identity = await validator.ValidateAsync(identityToken, nonce, ct: ct);
         var used = !string.IsNullOrEmpty(nonce) && nonce.Length <= AppleIdentityTokenValidator.MaxNonceLength
             && await nonces.TryUseAsync(nonce);
         if (identity is null)
@@ -180,6 +192,30 @@ public sealed class AppleSignInService(
         {
             throw new KioskRestrictedException("A kiosk tablet cannot sign in a device.");
         }
+    }
+
+    /// <summary>
+    /// Refuses before the token is looked at: an account that already has an Apple ID, or a device key that is not the
+    /// caller's own live device key minted within <see cref="LinkKeyMaxAge"/>.
+    /// </summary>
+    private async Task<AppleLinkOutcome?> LinkRefusalAsync(BlocwerkDbContext db, Guid userId, Guid apiKeyId, CancellationToken ct)
+    {
+        if (await db.AppleLinks.AnyAsync(l => l.UserId == userId, ct))
+        {
+            return AppleLinkOutcome.AlreadyLinked;
+        }
+
+        var notBefore = Clock.GetUtcNow() - LinkKeyMaxAge;
+        var fresh = await db.ApiKeys.IgnoreQueryFilters().AnyAsync(
+            k => k.Id == apiKeyId && k.UserId == userId && k.IsDevice && k.RevokedAt == null && k.CreatedAt >= notBefore,
+            ct);
+        if (!fresh)
+        {
+            logger.LogWarning("Apple ID link refused for user {UserId}: key {ApiKeyId} is not a fresh device key", userId, apiKeyId);
+            return AppleLinkOutcome.KeyNotFresh;
+        }
+
+        return null;
     }
 
     private AppleLinkOutcome Refuse(Guid userId)

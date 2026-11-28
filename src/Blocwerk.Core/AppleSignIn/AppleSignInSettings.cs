@@ -16,11 +16,16 @@ public sealed class AppleSignInSettings
     public const string WebServicesId = "me.zannagh.blocwerk.web";
 
     /// <summary>
-    /// Gets or sets the audiences (<c>aud</c>) a token may carry: the iOS app's bundle id and the web's Services ID by
-    /// default. Configured as <c>AppleSignIn__AllowedAudiences__0</c>, <c>__1</c>, …; a configured list replaces the
-    /// default.
+    /// Gets or sets the audiences (<c>aud</c>) the native routes accept: the iOS app's bundle id by default. Configured as
+    /// <c>AppleSignIn__AllowedAudiences__0</c>, <c>__1</c>, …; a configured list replaces the default.
     /// </summary>
-    public string[] AllowedAudiences { get; set; } = [IosBundleId, WebServicesId];
+    public string[] AllowedAudiences { get; set; } = [IosBundleId];
+
+    /// <summary>
+    /// Gets or sets the audiences the web Sign in with Apple flow accepts: the Services ID by default
+    /// (<c>AppleSignIn__WebAudiences__0</c>, …). The native routes never accept these.
+    /// </summary>
+    public string[] WebAudiences { get; set; } = [WebServicesId];
 
     /// <summary>Gets or sets where Apple publishes its signing keys.</summary>
     public string KeysUrl { get; set; } = "https://appleid.apple.com/auth/keys";

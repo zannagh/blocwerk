@@ -176,7 +176,7 @@ public sealed class MeProfileControllerTests
     internal static IAppleSignInService Apple(WallTestHarness h) => new AppleSignInService(
         h.DbContextFactory,
         Substitute.For<IAppleIdentityTokenValidator>(),
-        new AppleNonceStore(h.DbContextFactory),
+        new AppleNonceStore(h.DbContextFactory, Substitute.For<IAppleNonceCodec>()),
         Substitute.For<IApiKeyService>(),
         NullLogger<AppleSignInService>.Instance);
 

@@ -178,6 +178,10 @@ namespace Blocwerk.Core.Migrations
                     b.Property<DateTimeOffset>("LinkedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("LinkedFrom")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<string>("Subject")
                         .IsRequired()
                         .HasMaxLength(255)
@@ -203,9 +207,6 @@ namespace Blocwerk.Core.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<DateTimeOffset>("ExpiresAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -214,7 +215,7 @@ namespace Blocwerk.Core.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
-                    b.Property<DateTimeOffset?>("UsedAt")
+                    b.Property<DateTimeOffset>("UsedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");

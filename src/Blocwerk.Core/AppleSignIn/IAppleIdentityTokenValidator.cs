@@ -10,6 +10,12 @@ public interface IAppleIdentityTokenValidator
     /// The token's subject, or null unless it is signed by one of Apple's keys with RS256, issued by Apple for one of
     /// the allowed audiences, unexpired, and its <c>nonce</c> claim is the SHA-256 of <paramref name="nonce"/>.
     /// Checks the token only: whether the nonce is one the server issued and still unused is the caller's step.
+    /// <paramref name="audiences"/> defaults to the native app's (<see cref="AppleSignInSettings.AllowedAudiences"/>); the
+    /// web flow passes <see cref="AppleSignInSettings.WebAudiences"/>.
     /// </summary>
-    Task<AppleIdentity?> ValidateAsync(string? identityToken, string? nonce, CancellationToken ct = default);
+    Task<AppleIdentity?> ValidateAsync(
+        string? identityToken,
+        string? nonce,
+        IReadOnlyCollection<string>? audiences = null,
+        CancellationToken ct = default);
 }

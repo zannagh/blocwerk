@@ -6,28 +6,22 @@ using System.ComponentModel.DataAnnotations;
 namespace Blocwerk.Core.Entities;
 
 /// <summary>
-/// A nonce the server issued for one Sign in with Apple: the app hashes it into its Apple request, so the identity
-/// token Apple returns carries the hash and cannot be replayed with another nonce.
+/// A spent Sign in with Apple nonce, kept until it would have expired so it cannot be used again. Unspent nonces are
+/// never stored: they are signed by the server and carry their own expiry.
 /// </summary>
-/// <remarks>
-/// Only the hex SHA-256 is stored (<see cref="NonceHash"/>), which is also exactly the value the token's <c>nonce</c>
-/// claim carries. A nonce lives five minutes and is used at most once: <see cref="UsedAt"/> is set by one conditional
-/// update, so of two concurrent uses exactly one wins.
-/// </remarks>
 public class AppleSignInNonce
 {
     [Key]
     public Guid Id { get; set; } = Guid.NewGuid();
 
-    /// <summary>Hex SHA-256 of the nonce. The nonce itself is never stored.</summary>
+    /// <summary>Hex SHA-256 of the nonce, unique, so a second use fails to insert.</summary>
     [Required]
     [MaxLength(64)]
     public required string NonceHash { get; set; }
 
-    public DateTimeOffset CreatedAt { get; set; }
-
+    /// <summary>When the nonce expires; the row can go then.</summary>
     public DateTimeOffset ExpiresAt { get; set; }
 
-    /// <summary>When the nonce was used, or null while unused.</summary>
-    public DateTimeOffset? UsedAt { get; set; }
+    /// <summary>When the nonce was spent.</summary>
+    public DateTimeOffset UsedAt { get; set; }
 }

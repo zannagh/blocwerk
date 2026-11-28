@@ -28,8 +28,8 @@ public sealed class AppleIdentityTokenValidator(
     /// <summary>The longest token looked at; anything longer is refused unread.</summary>
     public const int MaxTokenLength = 8192;
 
-    /// <summary>The longest nonce looked at.</summary>
-    public const int MaxNonceLength = 128;
+    /// <summary>The longest nonce looked at (a signed nonce is about 120 characters).</summary>
+    public const int MaxNonceLength = 512;
 
     /// <summary>How far the token's times may be off this server's clock.</summary>
     public static readonly TimeSpan ClockSkew = TimeSpan.FromMinutes(1);
@@ -39,7 +39,11 @@ public sealed class AppleIdentityTokenValidator(
     private TimeProvider Clock => clock ?? TimeProvider.System;
 
     /// <inheritdoc/>
-    public async Task<AppleIdentity?> ValidateAsync(string? identityToken, string? nonce, CancellationToken ct = default)
+    public async Task<AppleIdentity?> ValidateAsync(
+        string? identityToken,
+        string? nonce,
+        IReadOnlyCollection<string>? audiences = null,
+        CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(identityToken) || identityToken.Length > MaxTokenLength
             || string.IsNullOrEmpty(nonce) || nonce.Length > MaxNonceLength
@@ -50,7 +54,7 @@ public sealed class AppleIdentityTokenValidator(
 
         var jwt = new JsonWebToken(identityToken);
         var keys = await keySource.GetKeysAsync(jwt.Kid, ct);
-        var result = await handler.ValidateTokenAsync(jwt, Parameters(keys));
+        var result = await handler.ValidateTokenAsync(jwt, Parameters(keys, audiences ?? settings.AllowedAudiences));
         if (!result.IsValid)
         {
             logger.LogWarning("Apple identity token refused: {Reason}", result.Exception?.GetType().Name ?? "invalid");
@@ -81,10 +85,10 @@ public sealed class AppleIdentityTokenValidator(
     private static string? CheckSubject(JsonWebToken jwt) =>
         string.IsNullOrWhiteSpace(jwt.Subject) || jwt.Subject.Length > 255 ? "no usable subject" : null;
 
-    private TokenValidationParameters Parameters(IReadOnlyList<SecurityKey> keys) => new()
+    private static TokenValidationParameters Parameters(IReadOnlyList<SecurityKey> keys, IReadOnlyCollection<string> audiences) => new()
     {
         ValidIssuer = Issuer,
-        ValidAudiences = settings.AllowedAudiences,
+        ValidAudiences = audiences,
         IssuerSigningKeys = keys,
         ValidAlgorithms = [SecurityAlgorithms.RsaSha256],
         RequireSignedTokens = true,

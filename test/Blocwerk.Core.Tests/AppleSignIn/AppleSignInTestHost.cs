@@ -21,7 +21,7 @@ using NSubstitute;
 namespace Blocwerk.Core.Tests.AppleSignIn;
 
 /// <summary>
-/// An in-memory host for the anonymous Sign in with Apple routes: the real controller, rate limiter and failure budget,
+/// An in-memory host for the anonymous Sign in with Apple routes: the real controller, rate limiter and nonce cap,
 /// the real service over the test bed's database with <see cref="StubAppleValidator"/>.
 /// </summary>
 internal sealed class AppleSignInTestHost : IAsyncDisposable
@@ -42,13 +42,14 @@ internal sealed class AppleSignInTestHost : IAsyncDisposable
 
     public HttpClient Client { get; }
 
-    public static async Task<AppleSignInTestHost> StartAsync(int failuresPerMinute = AppleSignInFailureBudget.DefaultFailuresPerMinute)
+    public static async Task<AppleSignInTestHost> StartAsync(int noncesPerMinute = AppleNonceIssuanceCap.DefaultNoncesPerMinute)
     {
         var bed = AppleSignInTestBed.Create();
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Production" });
         builder.WebHost.UseTestServer();
-        builder.Services.AddAppleSignInRateLimit();
-        builder.Services.AddSingleton(new AppleSignInFailureBudget(failuresPerMinute));
+        builder.Services.AddAppleSignInWeb();
+        builder.Services.AddSingleton(new AppleNonceIssuanceCap(noncesPerMinute));
+        builder.Services.AddSingleton<IAppleNonceCodec>(bed.Codec);
         builder.Services.AddControllers().AddApplicationPart(typeof(AppleSignInController).Assembly);
         builder.Services.AddSingleton<IDbContextFactory<BlocwerkDbContext>>(bed.Contexts);
         builder.Services.AddScoped(_ => Substitute.For<IKioskContext>());

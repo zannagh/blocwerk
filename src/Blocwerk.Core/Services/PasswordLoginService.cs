@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.AppleSignIn;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
@@ -79,6 +80,11 @@ public partial class PasswordLoginService : IPasswordLoginService
         if (taken)
         {
             throw new InvalidOperationException("That username is already taken. Please choose another.");
+        }
+
+        if (dbUser.HasPassword)
+        {
+            await AppleLinkReset.StageAsync(dbContext, userId);
         }
 
         dbUser.LoginUsername = username;
@@ -242,6 +248,7 @@ public partial class PasswordLoginService : IPasswordLoginService
         // No step-up here: the verified reset code is itself the proof of control. Only the password hash
         // changes — the lockout counters are left to the login lockout service, unchanged.
         dbUser.PasswordHash = passwordService.Hash(newPassword);
+        await AppleLinkReset.StageAsync(dbContext, userId);
         await dbContext.SaveChangesAsync();
     }
 

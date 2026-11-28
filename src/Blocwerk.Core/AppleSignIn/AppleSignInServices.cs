@@ -16,8 +16,9 @@ public static class AppleSignInServices
         var settings = section.Get<AppleSignInSettings>() ?? new AppleSignInSettings();
 
         // The binder appends configured array items to the default ones; a configured list is meant to replace them.
-        var audiences = section.GetSection(nameof(AppleSignInSettings.AllowedAudiences)).Get<string[]>();
-        settings.AllowedAudiences = audiences is { Length: > 0 } ? audiences : new AppleSignInSettings().AllowedAudiences;
+        var defaults = new AppleSignInSettings();
+        settings.AllowedAudiences = Configured(section, nameof(AppleSignInSettings.AllowedAudiences)) ?? defaults.AllowedAudiences;
+        settings.WebAudiences = Configured(section, nameof(AppleSignInSettings.WebAudiences)) ?? defaults.WebAudiences;
         builder.Services.AddSingleton(settings);
         builder.Services.AddHttpClient(AppleKeyCache.HttpClientName, client =>
         {
@@ -30,4 +31,7 @@ public static class AppleSignInServices
         builder.Services.AddScoped<IAppleSignInService, AppleSignInService>();
         return builder;
     }
+
+    private static string[]? Configured(IConfigurationSection section, string key) =>
+        section.GetSection(key).Get<string[]>() is { Length: > 0 } list ? list : null;
 }

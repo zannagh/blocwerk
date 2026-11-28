@@ -29,13 +29,14 @@ public sealed class AppleIdentityTokenValidatorTests
     }
 
     [Fact]
-    public async Task AWebServicesIdToken_IsAccepted_ByTheDefaultAudiences()
+    public async Task AWebServicesIdToken_IsRefusedByTheNativeCheck_AndAcceptedByTheWebOne()
     {
         var (validator, _) = Validator(apple);
-
         var token = apple.Mint("001234.abc", Nonce, Now, audience: AppleSignInSettings.WebServicesId);
 
-        Assert.NotNull(await validator.ValidateAsync(token, Nonce));
+        Assert.Null(await validator.ValidateAsync(token, Nonce));
+        Assert.NotNull(await validator.ValidateAsync(token, Nonce, new AppleSignInSettings().WebAudiences));
+        Assert.Null(await validator.ValidateAsync(apple.Mint("s", Nonce, Now), Nonce, new AppleSignInSettings().WebAudiences));
     }
 
     [Fact]

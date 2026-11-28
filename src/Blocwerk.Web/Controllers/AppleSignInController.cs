@@ -18,8 +18,8 @@ namespace Blocwerk.Web.Controllers;
 /// </summary>
 /// <remarks>
 /// Anonymous: the Apple-signed token is the credential, and it works only for an account its Apple ID was linked to
-/// from a signed-in app. Rate limited per client address; failures also count against a server-wide budget that a
-/// success never touches (<see cref="AppleSignInFailureBudget"/>). JSON bodies only, so a cross-site form cannot post.
+/// from a signed-in app. Rate limited per client address, and nonce issuance also has a server-wide backstop
+/// (<see cref="AppleNonceIssuanceCap"/>). JSON bodies only, so a cross-site form cannot post.
 /// </remarks>
 [ApiController]
 [Route("api/device-link/apple")]
@@ -32,12 +32,12 @@ public sealed class AppleSignInController : ControllerBase
         "No Blocwerk account is linked to this Apple ID on this instance. Sign in once and link it under Profile.";
 
     private readonly IAppleSignInService apple;
-    private readonly AppleSignInFailureBudget failures;
+    private readonly AppleNonceIssuanceCap issuance;
 
-    public AppleSignInController(IAppleSignInService apple, AppleSignInFailureBudget failures)
+    public AppleSignInController(IAppleSignInService apple, AppleNonceIssuanceCap issuance)
     {
         this.apple = apple;
-        this.failures = failures;
+        this.issuance = issuance;
     }
 
     /// <summary>Issues a single-use nonce, alive for five minutes.</summary>
@@ -46,6 +46,11 @@ public sealed class AppleSignInController : ControllerBase
     public async Task<IActionResult> Nonce(CancellationToken ct)
     {
         Response.Headers.CacheControl = "no-store";
+        if (!issuance.TryIssue())
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests);
+        }
+
         return Ok(new AppleNonceResponse(await apple.CreateNonceAsync(ct)));
     }
 
@@ -68,11 +73,6 @@ public sealed class AppleSignInController : ControllerBase
         if (result.Key is { } key)
         {
             return Ok(new DeviceLinkTokenResponse(key.Token, key.KeyId, key.Name));
-        }
-
-        if (!failures.TryChargeFailure())
-        {
-            return StatusCode(StatusCodes.Status429TooManyRequests);
         }
 
         return result.Outcome == AppleSignInOutcome.NotLinked

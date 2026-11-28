@@ -4,18 +4,22 @@
 @inject Blocwerk.Core.AppleSignIn.IAppleSignInService Apple
 
 <details class="section profile-collapsible" id="apple-section">
-    <summary>@(linked ? "Sign in with Apple (linked)" : "Sign in with Apple")</summary>
-    @if (linked)
+    <summary>@(link is not null ? "Sign in with Apple (linked)" : "Sign in with Apple")</summary>
+    @if (link is not null)
     {
         <div class="field-group">
             <div class="field-actions">
-                <span class="field-label">Apple ID linked</span>
+                <span class="field-label">
+                    Apple ID linked@(link.LinkedFrom is null ? null : $" on {link.LinkedFrom}"),
+                    <time datetime="@link.LinkedAt.ToString("O")">@link.LinkedAt.ToString("d MMM yyyy, HH:mm 'UTC'")</time>
+                </span>
                 <button class="btn-secondary" @onclick="UnlinkAsync" disabled="@busy">Unlink</button>
             </div>
         </div>
         <p class="member-since">
-            The Blocwerk iPhone app can sign in to this account with your Apple ID. Unlinking stops that; devices
-            already signed in stay signed in until you revoke their keys under API keys.
+            The Blocwerk iPhone app can sign in to this account with your Apple ID. If you did not link it, unlink it
+            and revoke the device's key under API keys. Unlinking stops new sign-ins; devices already signed in stay
+            signed in until you revoke their keys. Changing your password or two-factor settings unlinks it too.
         </p>
     }
     else
@@ -28,7 +32,7 @@
 </details>
 
 @code {
-    private bool linked;
+    private Blocwerk.Core.Entities.AppleLink? link;
     private bool busy;
 
     /// <summary>Gets or sets the signed-in user whose link is shown.</summary>
@@ -38,7 +42,7 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        linked = await Apple.IsLinkedAsync(UserId);
+        link = await Apple.FindLinkAsync(UserId);
     }
 
     private async Task UnlinkAsync()
@@ -47,7 +51,7 @@
         try
         {
             await Apple.UnlinkAsync(UserId);
-            linked = false;
+            link = null;
         }
         finally
         {

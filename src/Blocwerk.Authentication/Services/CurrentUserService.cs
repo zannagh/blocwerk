@@ -1,4 +1,5 @@
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.AppleSignIn;
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
@@ -274,6 +275,7 @@ public partial class CurrentUserService : ICurrentUserService
         }
 
         dbUser.TotpEnabled = true;
+        await AppleLinkReset.StageAsync(dbContext, user.Id);
         await dbContext.SaveChangesAsync();
 
         InvalidateCache();
@@ -314,6 +316,7 @@ public partial class CurrentUserService : ICurrentUserService
         dbUser.TotpSecretProtected = null;
         dbUser.TotpEnabled = false;
         dbUser.TotpLastUsedStep = null;
+        await AppleLinkReset.StageAsync(dbContext, user.Id);
         await dbContext.SaveChangesAsync();
 
         InvalidateCache();
