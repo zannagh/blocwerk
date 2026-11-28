@@ -30,7 +30,7 @@ public sealed class OfflineBouldersController : ControllerBase
     // Verbatim domain-guard messages the Core service throws. Only these are treated as permanent;
     // anything else surfacing as InvalidOperationException is infrastructure and stays retryable,
     // because EF Core and Npgsql also raise it for transient connection failures.
-    private static readonly Dictionary<string, int> PermanentGuards = new(StringComparer.Ordinal)
+    internal static readonly Dictionary<string, int> PermanentGuards = new(StringComparer.Ordinal)
     {
         ["Boulder not found"] = StatusCodes.Status404NotFound,
         ["Wall not found"] = StatusCodes.Status404NotFound,
@@ -38,6 +38,8 @@ public sealed class OfflineBouldersController : ControllerBase
         [BoulderService.SentByOthersRevisionMessage] = StatusCodes.Status403Forbidden,
         ["Select at least one hold"] = StatusCodes.Status400BadRequest,
         [BoulderService.UnconfirmedHoldMessage] = StatusCodes.Status400BadRequest,
+        [BoulderService.HoldOtherWallMessage] = StatusCodes.Status400BadRequest,
+        [BoulderService.IdOnOtherWallMessage] = StatusCodes.Status409Conflict,
         [BoulderService.VariantOtherWallMessage] = StatusCodes.Status400BadRequest,
     };
 
@@ -123,7 +125,8 @@ public sealed class OfflineBouldersController : ControllerBase
         });
     }
 
-    private static object Canonical(Boulder boulder) => new
+    /// <summary>The boulder as a create or revise answers it; shared with the companion app's setter routes.</summary>
+    internal static object Canonical(Boulder boulder) => new
     {
         boulderId = boulder.Id,
         wallId = boulder.WallId,

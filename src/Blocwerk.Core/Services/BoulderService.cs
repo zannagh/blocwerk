@@ -220,6 +220,12 @@ public partial class BoulderService : IBoulderService
         "This boulder has already been sent by others; only its name and grade can be changed";
 
     /// <summary>
+    /// Thrown by <see cref="CreateBoulderAsync"/> when the client-minted id is the caller's own boulder on another wall:
+    /// not a replay of this create. A permanent refusal for the offline queue and the companion app.
+    /// </summary>
+    public const string IdOnOtherWallMessage = "This boulder id is already used on another wall.";
+
+    /// <summary>
     /// Thrown by <see cref="ReviseBoulderAsync"/> when the acting user is neither the boulder's
     /// creator, one of its setters, nor a wall admin. Exposed as a const so the offline controller
     /// can list it among its permanent (non-retryable) rejections without the strings drifting apart.
@@ -341,6 +347,12 @@ public partial class BoulderService : IBoulderService
                         throw new InvalidOperationException("Boulder not found");
                     }
 
+                    if (existing.WallId != wallId)
+                    {
+                        // The same client id on another wall is not a replay of this create.
+                        throw new UserFacingException(IdOnOtherWallMessage);
+                    }
+
                     return existing;
                 }
             }
@@ -376,6 +388,7 @@ public partial class BoulderService : IBoulderService
 
             // A variant starts from its original's holds, so those count as already used.
             var originHolds = await AttachToOriginAsync(db, boulder, variantOfBoulderId);
+            await EnsureHoldsOnWallAsync(db, wallId, holds);
             await EnsureNoUnconfirmedHoldAddedAsync(db, holds, originHolds);
             db.Boulders.Add(boulder);
 
@@ -995,6 +1008,7 @@ public partial class BoulderService : IBoulderService
 
             if (holds != null)
             {
+                await EnsureHoldsOnWallAsync(db, boulder.WallId, holds);
                 await EnsureNoUnconfirmedHoldAddedAsync(db, holds, boulder.BoulderHolds.Select(bh => bh.HoldId).ToList());
                 db.BoulderHolds.RemoveRange(boulder.BoulderHolds);
                 foreach (var h in EnforceHandsFollowFeet(holds, boulder.HandsFollowFeet))
@@ -1176,6 +1190,7 @@ public partial class BoulderService : IBoulderService
 
             if (updatedHolds is not null)
             {
+                await EnsureHoldsOnWallAsync(db, boulder.WallId, updatedHolds);
                 await EnsureNoUnconfirmedHoldAddedAsync(db, updatedHolds, boulder.BoulderHolds.Select(bh => bh.HoldId).ToList());
                 db.BoulderHolds.RemoveRange(boulder.BoulderHolds);
                 foreach (var h in EnforceHandsFollowFeet(updatedHolds, boulder.HandsFollowFeet))

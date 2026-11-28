@@ -321,8 +321,10 @@ public partial class BoulderService
             return [];
         }
 
+        // Through the wall filter: an origin on a wall the setter is not a member of reads as missing, so the answer does
+        // not tell such a boulder exists. Only an origin the setter can see on another of their walls is refused.
         var origin = await db.Boulders.AsNoTracking()
-            .Where(b => b.Id == id)
+            .Where(b => b.Id == id && db.Walls.Any(w => w.Id == b.WallId))
             .Select(b => new { b.WallId, b.IsDraft, b.ParentBoulderId })
             .FirstOrDefaultAsync();
         if (origin is not null && origin.WallId != variant.WallId)
@@ -332,7 +334,7 @@ public partial class BoulderService
 
         if (origin is null || origin.IsDraft)
         {
-            // Gone while the create waited in the offline queue: the setter's boulder still counts, without the link.
+            // Gone while the create waited in the offline queue (or never visible): the setter's boulder still counts, without the link.
             _logger.LogWarning("Boulder {BoulderId} created without its origin {OriginId}, which is gone or a draft", variant.Id, id);
             return [];
         }
