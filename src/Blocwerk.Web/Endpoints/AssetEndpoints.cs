@@ -18,10 +18,10 @@ namespace Blocwerk.Web.Endpoints;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Same posture as the other wall media: the gallery-image policy, API-key principals rejected, and the grant decided
-/// per request by <see cref="AssetAccessGate"/> (membership, a matching share token, or the wall's own anonymous
-/// kiosk). The sha must belong to the wall in the route: <see cref="IAssetResolver"/> looks it up through the hash
-/// columns, scoped by the wall. Every refusal, an unknown or stale sha included, is the same bare 404 with no cache
+/// Same posture as the other wall media: the sync policy, API-key principals rejected except a linked device key (the
+/// companion app, read as its owner), and the grant decided per request by <see cref="AssetAccessGate"/> (membership,
+/// a matching share token, or the wall's own anonymous kiosk). The sha must belong to the wall in the route:
+/// <see cref="IAssetResolver"/> looks it up through the hash columns, scoped by the wall. Every refusal, an unknown or stale sha included, is the same bare 404 with no cache
 /// headers, so nothing is cached for it and nothing tells a refused caller that the sha exists elsewhere.
 /// </para>
 /// <para>
@@ -42,11 +42,11 @@ public static class AssetEndpoints
     public static void MapAssets(this WebApplication app)
     {
         app.MapMethods(Route, Verbs, HandleAsync)
-            .RequireAuthorization(BlocwerkPolicies.WallGalleryImage)
-            .DenyApiKeyPrincipals();
+            .RequireAuthorization(BlocwerkPolicies.WallSync)
+            .DenyApiKeyPrincipalsExceptDevices();
         app.MapMethods(VariantRoute, Verbs, HandleVariantAsync)
-            .RequireAuthorization(BlocwerkPolicies.WallGalleryImage)
-            .DenyApiKeyPrincipals();
+            .RequireAuthorization(BlocwerkPolicies.WallSync)
+            .DenyApiKeyPrincipalsExceptDevices();
     }
 
     internal static async Task<IResult> HandleAsync(
@@ -58,7 +58,7 @@ public static class AssetEndpoints
         [FromServices] IAssetResolver resolver,
         CancellationToken ct)
     {
-        if (user.IsApiKeyPrincipal())
+        if (user.IsNonDeviceApiKey())
         {
             return Results.NotFound();
         }
@@ -86,7 +86,7 @@ public static class AssetEndpoints
         [FromServices] IDbContextFactory<BlocwerkDbContext> dbContextFactory,
         CancellationToken ct)
     {
-        if (user.IsApiKeyPrincipal() || !ImageVariants.IsAllowed(width))
+        if (user.IsNonDeviceApiKey() || !ImageVariants.IsAllowed(width))
         {
             return Results.NotFound();
         }

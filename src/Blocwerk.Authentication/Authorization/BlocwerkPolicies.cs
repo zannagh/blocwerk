@@ -37,6 +37,19 @@ public static class BlocwerkPolicies
     public const string WallGalleryImage = "WallGalleryImage";
 
     /// <summary>
+    /// Guards the offline client's sync routes (documents, assets, manifest, wall feed): everything
+    /// <see cref="WallGalleryImage"/> admits, plus a linked device key (the companion app). Never a plain personal key, nor
+    /// a wall, kiosk or installation key.
+    /// </summary>
+    public const string WallSync = "WallSync";
+
+    /// <summary>
+    /// A linked device key only (a personal key minted by the companion app's sign-in): the <c>/api/v1/me</c> aliases of the
+    /// offline client's own-data routes. Never satisfied by a cookie, a plain personal key or any other key.
+    /// </summary>
+    public const string DeviceApiKey = "DeviceApiKey";
+
+    /// <summary>
     /// Guards the app-wide administration area: a signed-in user whose role is
     /// <see cref="Blocwerk.Core.Enums.IdentityRole.Admin"/>. The role is not a claim, so the policy
     /// is decided by <see cref="AppAdminHandler"/> against the database, not the principal.

@@ -91,12 +91,12 @@ internal sealed class MineDocumentFixture : IDisposable
         return await Service().BuildAsync(WallId, access.UserId!.Value, access.Audience!.Value, await Partitions().ResolveAsync(), default);
     }
 
-    /// <summary>Calls the registered route as the fixture's caller.</summary>
-    public async Task<DefaultHttpContext> HttpAsync(Guid? wallId = null)
+    /// <summary>Calls the registered route (<see cref="MineEndpoints.Route"/> unless named) as the fixture's caller.</summary>
+    public async Task<DefaultHttpContext> HttpAsync(Guid? wallId = null, string? route = null)
     {
         app ??= BuildApp();
         var endpoint = ((IEndpointRouteBuilder)app).DataSources
-            .SelectMany(s => s.Endpoints).OfType<RouteEndpoint>().Single(e => e.RoutePattern.RawText == MineEndpoints.Route);
+            .SelectMany(s => s.Endpoints).OfType<RouteEndpoint>().Single(e => e.RoutePattern.RawText == (route ?? MineEndpoints.Route));
         var http = new DefaultHttpContext { RequestServices = app.Services };
         http.User = Docs.Principal ?? (Docs.Caller is null ? new ClaimsPrincipal(new ClaimsIdentity()) : FeedRouteFixture.SignedIn());
         http.Request.Method = HttpMethods.Get;

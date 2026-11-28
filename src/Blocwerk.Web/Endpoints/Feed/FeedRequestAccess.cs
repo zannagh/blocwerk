@@ -18,7 +18,7 @@ namespace Blocwerk.Web.Endpoints.Feed;
 internal static class FeedRequestAccess
 {
     public static FeedCaller CallerOf(HttpContext http) =>
-        new(http.User.Identity?.IsAuthenticated == true, http.User.IsApiKeyPrincipal());
+        new(http.User.Identity?.IsAuthenticated == true, http.User.IsApiKeyPrincipal(), http.User.IsDeviceKey());
 
     public static FeedSession SessionOf(HttpContext http) => new(
         CallerOf(http),

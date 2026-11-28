@@ -12,7 +12,8 @@ namespace Blocwerk.Core.Feed;
 /// Who may read the feed over HTTP (design §5.8), and as which <see cref="FeedViewer"/>: the same audiences the circuits
 /// subscribe with (<c>CircuitFeedViewer</c>), so a catch-up page never carries a row the hub would not have delivered.
 /// <list type="bullet">
-/// <item><description>An API key never reads the feed: it is a device secret, and the feed spans every kind of the wall.</description></item>
+/// <item><description>An API key never reads the feed (it is a device secret, and the feed spans every kind of the wall),
+/// except a linked device key (the companion app), which reads exactly as its owner's cookie would.</description></item>
 /// <item><description>A kiosk tablet reads its own wall only, as <see cref="FeedViewer.Kiosk"/> with nobody picked and as
 /// <see cref="FeedViewer.KioskActing"/> acting as a member (the bylines differ, the rows do not), so a member's own rows
 /// never reach the shared tablet, and only while its key is live; it never reads
@@ -32,7 +33,7 @@ public static class FeedAccessGate
         FeedSession session,
         CancellationToken cancellationToken)
     {
-        if (session.Caller.IsApiKey)
+        if (session.Caller.IsRefusedKey)
         {
             return FeedAccess.Refuse(FeedAccessRefusal.NoAccess);
         }
@@ -72,7 +73,7 @@ public static class FeedAccessGate
     /// </summary>
     public static async Task<FeedAccess> ForSelfAsync(FeedSession session)
     {
-        if (session.Caller.IsApiKey || await IsKioskAsync(session.Kiosk))
+        if (session.Caller.IsRefusedKey || await IsKioskAsync(session.Kiosk))
         {
             return FeedAccess.Refuse(FeedAccessRefusal.NoAccess);
         }

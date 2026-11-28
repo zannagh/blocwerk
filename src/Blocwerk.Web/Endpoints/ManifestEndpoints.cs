@@ -19,8 +19,8 @@ namespace Blocwerk.Web.Endpoints;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The manifest takes the posture of the <c>/a/</c> routes it lists: the gallery-image policy, API-key principals
-/// rejected, and the grant decided by <c>AssetAccessGate</c>. Every refusal is the same bare 404, which a client takes as
+/// The manifest takes the posture of the <c>/a/</c> routes it lists: the sync policy, API-key principals rejected except
+/// a linked device key, and the grant decided by <c>AssetAccessGate</c>. Every refusal is the same bare 404, which a client takes as
 /// "drop this wall's assets" (§6.6 rule 4). A 200 is <c>private, no-cache</c> with the wall hash as a WEAK ETag (the
 /// body's cursor is outside the hash, so two bodies under one tag are equivalent, not byte-identical), so a client
 /// revalidates every time and an unchanged wall costs a 304.
@@ -44,8 +44,8 @@ public static class ManifestEndpoints
     public static void MapAssetManifest(this WebApplication app)
     {
         app.MapGet(ManifestRoute, HandleManifestAsync)
-            .RequireAuthorization(BlocwerkPolicies.WallGalleryImage)
-            .DenyApiKeyPrincipals();
+            .RequireAuthorization(BlocwerkPolicies.WallSync)
+            .DenyApiKeyPrincipalsExceptDevices();
         app.MapGet(PartitionRoute, HandlePartitionAsync)
             .AllowAnonymous();
         app.MapGet(SummaryRoute, HandleSummaryAsync)
@@ -60,7 +60,7 @@ public static class ManifestEndpoints
         [FromServices] WallManifestService manifests,
         CancellationToken ct)
     {
-        if (user.IsApiKeyPrincipal() || await manifests.GetAsync(wallId, token, ct) is not { } manifest)
+        if (user.IsNonDeviceApiKey() || await manifests.GetAsync(wallId, token, ct) is not { } manifest)
         {
             return Results.NotFound();
         }

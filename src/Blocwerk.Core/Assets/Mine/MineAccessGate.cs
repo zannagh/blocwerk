@@ -11,8 +11,8 @@ namespace Blocwerk.Core.Assets.Mine;
 /// Who may read their own marks of a wall (<c>/api/me/walls/{w}/mine</c>). Two gates, both of which must grant:
 /// <list type="number">
 /// <item><description>The caller's own rows (<see cref="FeedAccessGate.ForSelfAsync"/>): a signed-in person only. A kiosk
-/// tablet, whoever it acts as, and an API key are refused (403), nobody is 401, and an erased, Ghost or merged account is
-/// 410, as on <c>/api/me/changes</c>. Per-user data never reaches a shared tablet.</description></item>
+/// tablet, whoever it acts as, and an API key other than a linked device key are refused (403), nobody is 401, and an
+/// erased, Ghost or merged account is 410, as on <c>/api/me/changes</c>. Per-user data never reaches a shared tablet.</description></item>
 /// <item><description>The wall (<see cref="DocumentAudienceGate"/>, kiosk first): the reader's class must be one that sees
 /// its own marks on the wall page online (<see cref="DocumentAudiences.SeesMine"/>), so a signed-in non-member reading a
 /// share link gets 403, as its page shows no sends and no favourites. No share token is taken: it never grants

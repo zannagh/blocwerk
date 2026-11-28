@@ -20,7 +20,8 @@ namespace Blocwerk.Web.Endpoints;
 /// without <c>no-store</c> whose ETag names the sha.
 /// </summary>
 /// <remarks>
-/// Same posture as <see cref="AssetEndpoints"/>: the gallery-image policy, API-key principals rejected, the grant decided by
+/// Same posture as <see cref="AssetEndpoints"/>: the sync policy, API-key principals rejected except a linked device key
+/// (the companion app, read as its owner), the grant decided by
 /// <c>AssetAccessGate</c> through <see cref="View3DDocumentService"/> (the data kinds: <c>DocumentAudienceGate</c>, by
 /// class), and every refusal (an unknown kind, a malformed or
 /// unknown sha, another wall's document) the same bare 404 with no cache headers. A kiosk session that may not cache its
@@ -39,11 +40,11 @@ public static class DocumentEndpoints
     public static void MapWallDocuments(this WebApplication app)
     {
         app.MapMethods(Route, Verbs, HandleAsync)
-            .RequireAuthorization(BlocwerkPolicies.WallGalleryImage)
-            .DenyApiKeyPrincipals();
+            .RequireAuthorization(BlocwerkPolicies.WallSync)
+            .DenyApiKeyPrincipalsExceptDevices();
         app.MapGet(IndexRoute, DataDocumentEndpoints.HandleIndexAsync)
-            .RequireAuthorization(BlocwerkPolicies.WallGalleryImage)
-            .DenyApiKeyPrincipals();
+            .RequireAuthorization(BlocwerkPolicies.WallSync)
+            .DenyApiKeyPrincipalsExceptDevices();
     }
 
     internal static async Task<IResult> HandleAsync(
@@ -57,7 +58,7 @@ public static class DocumentEndpoints
         [FromServices] View3DDocumentService documents,
         CancellationToken ct)
     {
-        if (user.IsApiKeyPrincipal())
+        if (user.IsNonDeviceApiKey())
         {
             return Results.NotFound();
         }

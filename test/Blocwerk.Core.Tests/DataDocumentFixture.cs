@@ -126,7 +126,10 @@ internal sealed class DataDocumentFixture : IDisposable
         Feed);
 
     public FeedSession Session() => new(
-        new FeedCaller(Principal?.Identity?.IsAuthenticated ?? Caller is not null, Principal?.IsApiKeyPrincipal() == true),
+        new FeedCaller(
+            Principal?.Identity?.IsAuthenticated ?? Caller is not null,
+            Principal?.IsApiKeyPrincipal() == true,
+            Principal?.IsDeviceKey() == true),
         CurrentUser,
         Kiosk,
         KioskKeys);
