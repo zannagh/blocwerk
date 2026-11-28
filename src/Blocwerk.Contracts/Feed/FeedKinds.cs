@@ -62,7 +62,7 @@ public static class FeedKinds
     public const string UserResync = "user.resync";
 
     /// <summary>
-    /// The user's set of walls changed: they were added to <c>WallId</c>, or created it. Addressed to that user alone, who
+    /// The user's set of walls changed: they were added to <c>WallId</c>, created it, left it or were removed from it. Addressed to that user alone, who
     /// had no access before, so no subscription of theirs reaches it through the wall: their wall list reloads.
     /// </summary>
     public const string WallsChanged = "walls.changed";

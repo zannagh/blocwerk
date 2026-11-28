@@ -1,0 +1,83 @@
+@using Blocwerk.Core.Services.Membership
+@inject IWallMembershipService Membership
+@inject NavigationManager Navigation
+@inject ILogger<WallMemberEnd> Logger
+@* Under one row of the wall's member list: Remove (an admin, on another member who is not the owner) or Leave (the viewer's
+   own row, unless they own the wall). Both ask first. The service is the gate (admin, owner, self, kiosk); this only
+   decides which button shows. Ending a membership also replaces the wall's invite link. *@
+
+@if (Leave)
+{
+    <ConfirmAction Label="Leave wall" TriggerClass="btn-secondary member-end-btn" ConfirmLabel="Leave" Disabled="busy"
+                   Question="@($"Leave \"{WallName}\"? Your favourites and projects here are removed; your ticks, comments and boulders stay. You need a new invite to come back.")"
+                   OnConfirm="LeaveAsync" />
+}
+else
+{
+    <ConfirmAction Label="Remove" TriggerClass="btn-secondary member-end-btn" ConfirmLabel="Remove" Disabled="busy"
+                   Question="@($"Remove {MemberName} from \"{WallName}\"? Their ticks, comments and boulders stay. The invite link is replaced, so the old one no longer works.")"
+                   OnConfirm="RemoveAsync" />
+}
+@if (error is not null)
+{
+    <p class="error-msg">@error</p>
+}
+
+@code {
+    private bool busy;
+    private string? error;
+
+    [Parameter, EditorRequired] public Guid WallId { get; set; }
+
+    [Parameter, EditorRequired] public string WallName { get; set; } = string.Empty;
+
+    /// <summary>The member to remove; ignored when <see cref="Leave"/> is set.</summary>
+    [Parameter] public Guid MemberId { get; set; }
+
+    [Parameter] public string MemberName { get; set; } = string.Empty;
+
+    /// <summary>True for the viewer's own row: the button leaves the wall instead of removing someone.</summary>
+    [Parameter] public bool Leave { get; set; }
+
+    /// <summary>Raised after a removal, so the page reloads its member list.</summary>
+    [Parameter] public EventCallback OnRemoved { get; set; }
+
+    private Task RemoveAsync() => RunAsync(async () =>
+    {
+        await Membership.RemoveMemberAsync(WallId, MemberId);
+        await OnRemoved.InvokeAsync();
+    });
+
+    private Task LeaveAsync() => RunAsync(async () =>
+    {
+        await Membership.LeaveAsync(WallId);
+        Navigation.NavigateTo("/walls");
+    });
+
+    private async Task RunAsync(Func<Task> end)
+    {
+        busy = true;
+        error = null;
+        try
+        {
+            await end();
+        }
+        catch (MembershipRefusedException ex)
+        {
+            error = ex.Message;
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or KioskRestrictedException)
+        {
+            error = "You can't do that here.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Ending a membership on wall {WallId} failed", WallId);
+            error = "That didn't work. Please try again.";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+}

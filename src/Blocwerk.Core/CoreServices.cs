@@ -192,6 +192,7 @@ public static class CoreServices
         });
         builder.Services.AddScoped<IKioskService, KioskService>();
         builder.Services.AddScoped<IWallVisitService, WallVisitService>();
+        builder.Services.AddScoped<Services.Membership.IWallMembershipService, Services.Membership.WallMembershipService>();
         builder.Services.AddScoped<IDeviceLinkService, DeviceLinkService>();
         builder.Services.AddScoped<IWallSegmentService, WallSegmentService>();
         builder.Services.AddScoped<IWallGlyphService, WallGlyphService>();

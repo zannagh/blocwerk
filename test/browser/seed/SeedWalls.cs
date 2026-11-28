@@ -25,6 +25,7 @@ namespace Blocwerk.Browser.Seed;
 /// <item><b>wide</b>: Pia's wall of two panels and a boulder with holds on both (<see cref="SeedMultiPanel"/>).</item>
 /// <item><b>grips</b>: Gina's wall of typed holds for the boulder browser's hold types (<see cref="SeedHoldTypes"/>).</item>
 /// <item><b>landing</b>: Lena's wall with two favourites and three projects, for the browser's landing cards (<see cref="SeedLanding"/>).</item>
+/// <item><b>members</b>: Rhea's wall with Max, Nia and Ola as members, for removing and leaving (<see cref="SeedMembers"/>).</item>
 /// <item><b>visit</b>: Vic's wall with Mia as a member and an expired visitor link, for one-time visitor links (<see cref="SeedVisit"/>).</item>
 /// </list>
 /// </summary>
@@ -86,6 +87,12 @@ internal sealed class SeedWalls
         var mia = AddUser("mia@browser.test", "Mia");
         var visit = AddWall("Visit", vic, panels: 1, seed: 90);
         var expiredVisitToken = SeedVisit.Add(db, visit.Wall.Id, vic.Id, mia.Id);
+        var rhea = AddUser("rhea@browser.test", "Rhea");
+        var max = AddUser("max@browser.test", "Max");
+        var nia = AddUser("nia@browser.test", "Nia");
+        var ola = AddUser("ola@browser.test", "Ola");
+        var members = AddWall("Members", rhea, panels: 1, seed: 100);
+        SeedMembers.Add(db, members.Wall, max.Id, nia.Id, ola.Id);
         await db.SaveChangesAsync();
 
         return new SeededWorld(
@@ -105,6 +112,10 @@ internal sealed class SeedWalls
                 ["vic"] = new(vic.Id, vic.DisplayName),
                 ["mia"] = new(mia.Id, mia.DisplayName),
                 ["dina"] = new(dina.Id, dina.DisplayName),
+                ["rhea"] = new(rhea.Id, rhea.DisplayName),
+                ["max"] = new(max.Id, max.DisplayName),
+                ["nia"] = new(nia.Id, nia.DisplayName),
+                ["ola"] = new(ola.Id, ola.DisplayName),
             },
             new Dictionary<string, SeededWall>
             {
@@ -118,6 +129,7 @@ internal sealed class SeedWalls
                 ["grips"] = new(grips.Wall.Id, grips.Shas, null, null, null, null),
                 ["landing"] = new(landing.Wall.Id, landing.Shas, null, null, null, null),
                 ["visit"] = new(visit.Wall.Id, visit.Shas, null, null, null, null),
+                ["members"] = new(members.Wall.Id, members.Shas, null, null, null, null),
             },
             kioskToken,
             alpha.Wall.ShareToken,

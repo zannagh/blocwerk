@@ -62,6 +62,26 @@ public sealed class WallMembersControllerTests
     }
 
     [Fact]
+    public async Task TheDeviceRoutes_RemoveAndLeave_WithTheServicesRules()
+    {
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync(holdCount: 0);
+        var member = await h.AddMemberAsync("member@test", WallRole.Member);
+        var other = await h.AddMemberAsync("other@test", WallRole.Member);
+        var service = WallMembershipServiceTests.Service(h);
+
+        h.ActingUser = member;
+        Assert.Equal(StatusCodes.Status403Forbidden, Assert.IsType<ObjectResult>(await Controller(h).RemoveMember(h.WallId, other.Id, service, default)).StatusCode);
+        Assert.IsType<NoContentResult>(await Controller(h).Leave(h.WallId, service, default));
+        Assert.IsType<NotFoundResult>(await Controller(h).Leave(h.WallId, service, default));
+
+        h.ActingUser = h.Owner;
+        Assert.Equal(StatusCodes.Status403Forbidden, Assert.IsType<ObjectResult>(await Controller(h).Leave(h.WallId, service, default)).StatusCode);
+        Assert.IsType<NotFoundObjectResult>(await Controller(h).RemoveMember(h.WallId, member.Id, service, default));
+        Assert.IsType<NoContentResult>(await Controller(h).RemoveMember(h.WallId, other.Id, service, default));
+    }
+
+    [Fact]
     public async Task TheLinkCount_CountsOnlyLinksBetweenLiveHoldsOfLivePanels()
     {
         var wallId = Guid.NewGuid();

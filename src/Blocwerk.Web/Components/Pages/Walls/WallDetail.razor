@@ -366,6 +366,13 @@ else
                                     <span class="member-role">@member.Role</span>
                                 }
                             </div>
+                            @if (member.UserId != _wall.OwnerId && !KioskContext.IsKiosk
+                                 && (member.UserId == _currentUserId || _isAdmin))
+                            {
+                                <WallMemberEnd WallId="WallId" WallName="@_wall.Name" MemberId="member.UserId"
+                                               MemberName="@(member.User?.Name ?? "this member")"
+                                               Leave="member.UserId == _currentUserId" OnRemoved="LoadMembersAsync" />
+                            }
                             @* Consent to appear on the tablet is granted and withdrawn from your own
                                device — KioskService refuses both from a kiosk session, so on a tablet
                                these controls only ever produced an error line. *@

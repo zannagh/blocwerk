@@ -84,7 +84,9 @@ public sealed class FeedStructureMapperTests
         }
 
         var rows = await RowsAsync(harness);
-        Assert.Equal([FeedKinds.MemberChanged, FeedKinds.WallsChanged, FeedKinds.MemberChanged, FeedKinds.AccessRevoked], rows.Select(r => r.Kind));
+        Assert.Equal(
+            [FeedKinds.MemberChanged, FeedKinds.WallsChanged, FeedKinds.MemberChanged, FeedKinds.AccessRevoked, FeedKinds.WallsChanged],
+            rows.Select(r => r.Kind));
         Assert.All(new[] { rows[0], rows[2] }, r => Assert.Equal((FeedAudience.Members, user.Id), (r.Audience, r.EntityId)));
         Assert.Equal("Moderator", Payload(rows[0]).GetProperty("role").GetString());
         var joined = rows[1]; // addressed to the new member alone: their wall list reloads
@@ -93,6 +95,8 @@ public sealed class FeedStructureMapperTests
         var revoked = rows[3];
         Assert.Equal((FeedAudience.User, user.Id, harness.WallId, harness.WallId), (revoked.Audience, revoked.AudienceUserId, revoked.WallId, revoked.EntityId));
         Assert.Null(revoked.DataJson);
+        var dropped = rows[4]; // removed: their wall lists drop the wall
+        Assert.Equal((FeedAudience.User, user.Id, harness.WallId), (dropped.Audience, dropped.AudienceUserId, dropped.WallId));
     }
 
     [Theory]

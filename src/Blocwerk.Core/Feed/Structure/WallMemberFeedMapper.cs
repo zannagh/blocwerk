@@ -16,7 +16,8 @@ namespace Blocwerk.Core.Feed.Structure;
 /// who loses some of them also gets <c>access.revoked</c>, addressed to that user alone: removed (payload null, their views
 /// leave the wall) or demoted (payload <c>{ role }</c>, the new role, so their views subscribe again with the audiences
 /// that role still has and stop receiving, say, a setter's draft rows). An added member (a join, or the owner of a wall
-/// just created) gets <c>walls.changed</c>, addressed to them alone: they had no subscription that could reach them.
+/// just created) gets <c>walls.changed</c>, addressed to them alone: they had no subscription that could reach them. A
+/// removed member (removed by an admin, or left) gets <c>walls.changed</c> too, so their wall lists drop the wall.
 /// </summary>
 internal sealed class WallMemberFeedMapper : IFeedMapper
 {
@@ -53,6 +54,11 @@ internal sealed class WallMemberFeedMapper : IFeedMapper
         }
 
         context.Add(AddressedTo(FeedKinds.AccessRevoked, member, removed ? null : new MemberPayload(role.ToString())));
+        if (removed)
+        {
+            // Removed or left: the person's wall lists (every device, through /api/me/changes) drop the wall.
+            context.Add(AddressedTo(FeedKinds.WallsChanged, member, null));
+        }
     }
 
     private static WallChange AddressedTo(string kind, WallMember member, FeedPayload? payload)

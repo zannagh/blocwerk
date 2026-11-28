@@ -39,6 +39,8 @@ public sealed class DeviceApiRoutePostureTests
         ("GET", "api/v1/users/{userId:guid}"),
         ("GET", "api/v1/walls/{wallId:guid}/members"),
         ("GET", "api/v1/walls/{wallId:guid}/hold-links"),
+        ("DELETE", "api/v1/walls/{wallId:guid}/members/{userId:guid}"),
+        ("POST", "api/v1/walls/{wallId:guid}/leave"),
         ("POST", "api/v1/walls/{wallId:guid}/invite-link"),
         ("POST", "api/v1/walls/{wallId:guid}/invite-link/rotate"),
         ("POST", "api/v1/walls/{wallId:guid}/visit-links"),
