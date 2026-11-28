@@ -124,6 +124,18 @@ public sealed class MeProfileControllerTests
         await RealCurrentUser(h, h.Owner).SetDisplayNameAsync("Zoë 🧗");
     }
 
+    [Fact]
+    public async Task Patch_AcceptsAClimbingZwjSequence()
+    {
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync(holdCount: 0);
+        var body = JsonSerializer.Serialize(new { displayName = "Crimp Queen \U0001F9D7\u200D\u2640\uFE0F" });
+
+        var profile = Body(await Controller(h, h.Owner).Patch(Json(body)));
+
+        Assert.Equal("Crimp Queen \U0001F9D7\u200D\u2640\uFE0F", profile.Name);
+    }
+
     internal static CurrentUserService RealCurrentUser(WallTestHarness h, User user)
     {
         var claims = new List<Claim>
