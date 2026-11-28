@@ -29,17 +29,20 @@ public static class BetaVideoUploadEndpoint
             .DisableAntiforgery();
     }
 
-    private static async Task<IResult> HandleAsync(
+    /// <summary>
+    /// The upload itself, for the browser's route and the companion app's (which passes a smaller
+    /// <paramref name="maxUploadBytes"/>): permission first, then the streamed multipart read, the commit and the row.
+    /// </summary>
+    internal static async Task<IResult> UploadAsync(
         Guid boulderId,
         HttpContext http,
         IBetaVideoService betaVideoService,
         IBetaVideoStorage storage,
-        BlocwerkSettings settings,
+        long maxUploadBytes,
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
         var logger = loggerFactory.CreateLogger("BetaVideoUpload");
-        var opts = settings.BetaVideo;
 
         // Decide first, write second. Permission is resolved from the authenticated principal and a
         // server-side lookup of the boulder's wall — nothing in the request body or its headers has a
@@ -61,7 +64,7 @@ public static class BetaVideoUploadEndpoint
         var sizeFeature = http.Features.Get<IHttpMaxRequestBodySizeFeature>();
         if (sizeFeature is { IsReadOnly: false })
         {
-            sizeFeature.MaxRequestBodySize = opts.MaxUploadBytes;
+            sizeFeature.MaxRequestBodySize = maxUploadBytes;
         }
 
         if (string.IsNullOrEmpty(http.Request.ContentType)
@@ -172,4 +175,14 @@ public static class BetaVideoUploadEndpoint
             }
         }
     }
+
+    private static Task<IResult> HandleAsync(
+        Guid boulderId,
+        HttpContext http,
+        IBetaVideoService betaVideoService,
+        IBetaVideoStorage storage,
+        BlocwerkSettings settings,
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken) =>
+        UploadAsync(boulderId, http, betaVideoService, storage, settings.BetaVideo.MaxUploadBytes, loggerFactory, cancellationToken);
 }

@@ -136,8 +136,9 @@ public class ApiSurfaceAuthorizationTests
         Assert.Contains("/api/refreshes/{refreshId:guid}/checks/{checkId:guid}/{view}", routes);
 
         // The browser gallery route lives under /media, outside the prefixes, so it must NOT show
-        // up here — if it ever moved under /api/walls this assertion would say so.
-        Assert.DoesNotContain(routes, r => r.Contains("/gallery/", StringComparison.Ordinal));
+        // up here — if it ever moved under /api/walls this assertion would say so. The companion app's gallery
+        // writes are device-key routes, pinned by DeviceApiRoutePostureTests.
+        Assert.DoesNotContain(routes, r => r.Contains("/gallery/", StringComparison.Ordinal) && !IsDeviceOnly(r));
     }
 
     /// <summary>
@@ -152,7 +153,7 @@ public class ApiSurfaceAuthorizationTests
     {
         var gallery = AllEndpoints()
             .Select(e => ToPath(e.RoutePattern.RawText))
-            .Where(p => (p.Value ?? string.Empty).Contains("/gallery/", StringComparison.Ordinal))
+            .Where(p => (p.Value ?? string.Empty).Contains("/gallery/", StringComparison.Ordinal) && !IsDeviceOnly(p.Value))
             .ToList();
 
         var route = Assert.Single(gallery);
@@ -186,6 +187,7 @@ public class ApiSurfaceAuthorizationTests
                     .EndsWith("/manifest", StringComparison.Ordinal)
                 || (e.RoutePattern.RawText ?? string.Empty)
                     .EndsWith("/docs", StringComparison.Ordinal))
+            .Where(e => !IsDeviceOnly(e.RoutePattern.RawText))
             .ToList();
 
         Assert.NotEmpty(mediaRoutes);
@@ -455,4 +457,8 @@ public class ApiSurfaceAuthorizationTests
 
         return new PathString(rawText.StartsWith('/') ? rawText : "/" + rawText);
     }
+
+    // A companion-app route, pinned (device key only, no-store, rate limited) by DeviceApiRoutePostureTests.
+    private static bool IsDeviceOnly(string? route) =>
+        DeviceApiRoutePostureTests.DeviceOnlyRoutes.Any(r => r.Route == (route ?? string.Empty).TrimStart('/'));
 }

@@ -63,4 +63,12 @@ public interface IWallImageService
     /// </summary>
     /// <exception cref="UnauthorizedAccessException">The acting user does not administer the wall.</exception>
     Task DeleteImageAsync(Guid imageId, Guid actingUserId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Throws unless <paramref name="actingUserId"/> may add a photo to the wall's gallery by hand: the same wall-admin
+    /// rule as <see cref="DeleteImageAsync"/>. Called before a byte of the upload is read.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">"Wall not found": no such wall, or the user is not a member of it.</exception>
+    /// <exception cref="UnauthorizedAccessException">A member who does not administer the wall.</exception>
+    Task EnsureCanUploadAsync(Guid wallId, Guid actingUserId, CancellationToken ct = default);
 }

@@ -173,6 +173,7 @@ public static class CoreServices
         builder.Services.AddWallManifest();
 
         builder.Services.AddScoped<IWallImageService, WallImageService>();
+        builder.Services.AddScoped<Services.DeviceWrites.DeviceWriteReceiptService>();
         builder.Services.AddScoped<IWallTemperatureService, WallTemperatureService>();
         // API-key MINTING is blocked for kiosk sessions on the service, not just in the UI: the
         // pages that mint keys are interactive components calling straight into this service inside

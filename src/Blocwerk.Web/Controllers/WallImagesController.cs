@@ -4,9 +4,7 @@ using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
-using Serilog;
 
 namespace Blocwerk.Web.Controllers;
 
@@ -58,30 +56,16 @@ public sealed class WallImagesController : WallScopedApiController
             return guard;
         }
 
-        // Let the request through up to our own cap plus a little multipart framing slack, so the
-        // caller gets our 413 with a readable message instead of Kestrel's bare connection reset.
-        var sizeFeature = HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>();
-        if (sizeFeature is { IsReadOnly: false })
-        {
-            sizeFeature.MaxRequestBodySize = WallImageUploads.MaxUploadBytes + (1024 * 1024);
-        }
-
-        var isMultipart = Request.ContentType?.Contains("multipart/", StringComparison.OrdinalIgnoreCase) == true;
-        var upload = isMultipart
-            ? await WallImageUploads.ReadMultipartAsync(Request, storage, cancellationToken)
-            : await WallImageUploads.ReadRawAsync(Request, storage, cancellationToken);
-
-        if (upload.IsSuccess)
-        {
-            upload = await WallImageUploads.RemoveMetadataAsync(upload, cancellationToken);
-        }
-
+        var upload = await WallImageIntake.ReadAsync(Request, storage, cancellationToken);
         if (!upload.IsSuccess)
         {
             return StatusCode(upload.ErrorStatus!.Value, new ApiErrorResponse(upload.ErrorMessage!));
         }
 
-        return await CommitAsync(wallId, upload, cancellationToken);
+        var commit = await WallImageIntake.CommitAsync(storage, imageService, wallId, upload, cancellationToken);
+        return commit.Image is { } image
+            ? StatusCode(StatusCodes.Status201Created, new WallImageCreatedResponse(image.Id, image.CapturedAt))
+            : StatusCode(commit.ErrorStatus!.Value, new ApiErrorResponse(commit.ErrorMessage!));
     }
 
     /// <summary>The wall's gallery, newest capture first, merged across the three image sources.</summary>
@@ -200,59 +184,5 @@ public sealed class WallImagesController : WallScopedApiController
         }
 
         return NoContent();
-    }
-
-    /// <summary>
-    /// Moves the temp file into the store and records the row. Anything that goes wrong after the
-    /// commit removes the orphaned file again, so a failed record never leaves bytes behind.
-    /// </summary>
-    private async Task<IActionResult> CommitAsync(
-        Guid wallId,
-        WallImageUpload upload,
-        CancellationToken cancellationToken)
-    {
-        string storedName;
-        try
-        {
-            storedName = storage.Commit(upload.TempPath, upload.Extension);
-        }
-        catch (Exception ex)
-        {
-            WallImageUploads.Discard(upload.TempPath);
-            Log.Error(ex, "Wall image upload could not be stored for wall {WallId}", wallId);
-            return StatusCode(
-                StatusCodes.Status500InternalServerError,
-                new ApiErrorResponse("The image could not be stored."));
-        }
-
-        try
-        {
-            var image = await imageService.RecordImageAsync(
-                wallId,
-                storedName,
-                upload.ContentType,
-                upload.SizeBytes,
-                upload.Caption,
-                upload.CapturedAt,
-                cancellationToken);
-
-            return StatusCode(
-                StatusCodes.Status201Created,
-                new WallImageCreatedResponse(image.Id, image.CapturedAt));
-        }
-        catch (InvalidOperationException ex)
-        {
-            // "Wall not found" — the key outlived the wall it was issued for.
-            storage.Delete(storedName);
-            return NotFound(new ApiErrorResponse(ex.Message));
-        }
-        catch (Exception ex)
-        {
-            storage.Delete(storedName);
-            Log.Error(ex, "Wall image could not be recorded for wall {WallId}", wallId);
-            return StatusCode(
-                StatusCodes.Status500InternalServerError,
-                new ApiErrorResponse("The image could not be stored."));
-        }
     }
 }
