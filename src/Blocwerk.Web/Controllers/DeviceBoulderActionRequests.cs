@@ -14,4 +14,10 @@ public sealed class DeviceBoulderActionRequests
 
     /// <summary><c>PUT …/variants</c>: the boulders that are variants of this one (replaces the list).</summary>
     public List<Guid>? VariantIds { get; set; }
+
+    /// <summary><c>POST …/accept</c>: the grade the caller saw on the proposal; required, a changed proposal is a 409.</summary>
+    public string? ExpectedGrade { get; set; }
+
+    /// <summary><c>POST …/grade-proposal</c>: an optional replay key; the same one again answers without proposing anew.</summary>
+    public Guid? ClientRequestId { get; set; }
 }

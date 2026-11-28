@@ -876,6 +876,12 @@ public partial class BlocwerkDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(gp => gp.ProposedByUserId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            // One open proposal per boulder: a second propose updates it (ProposeGradeAsync), and the index makes two
+            // concurrent first proposals collide instead of leaving two open ones.
+            entity.HasIndex(gp => gp.BoulderId, "IX_GradeProposals_BoulderId_Open")
+                .IsUnique()
+                .HasFilter("NOT \"IsResolved\"");
         });
     }
 

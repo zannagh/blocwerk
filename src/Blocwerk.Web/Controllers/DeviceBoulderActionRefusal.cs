@@ -27,7 +27,7 @@ internal static class DeviceBoulderActionRefusal
             DeviceWallRefusal.Refused(StatusCodes.Status403Forbidden, ex.Message),
         InvalidOperationException guard when guard.Message.StartsWith(ManagePrefix, StringComparison.Ordinal) =>
             DeviceWallRefusal.Refused(StatusCodes.Status403Forbidden, ex.Message),
-        InvalidOperationException { Message: "Only historic boulders can be archived" or "Select at least one hold before publishing" } =>
+        InvalidOperationException { Message: "Only historic boulders can be archived" or "Select at least one hold before publishing" or BoulderService.ProposalChangedMessage } =>
             DeviceWallRefusal.Refused(StatusCodes.Status409Conflict, ex.Message),
         UserFacingException user => DeviceWallRefusal.Refused(StatusCodes.Status400BadRequest, user.Message),
         _ => null,

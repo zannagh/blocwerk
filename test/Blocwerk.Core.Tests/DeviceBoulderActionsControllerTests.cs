@@ -69,14 +69,15 @@ public sealed class DeviceBoulderActionsControllerTests
         Refused(await Controller(h).Propose(h.WallId, boulder.Id, new DeviceBoulderActionRequests { Grade = "6Z" }, default), 400);
         var proposed = State(await Controller(h).Propose(h.WallId, boulder.Id, new DeviceBoulderActionRequests { Grade = "7A" }, default));
         Assert.Equal(("7A", member.Id, true, false), (proposed.Proposal!.ProposedGrade, proposed.Proposal.ProposedByUserId, proposed.CanPropose, proposed.CanResolve));
-        Refused(await Controller(h).Accept(h.WallId, boulder.Id, proposed.Proposal.Id, default), 403);
+        Refused(await Controller(h).Accept(h.WallId, boulder.Id, proposed.Proposal.Id, Expect("7A"), default), 403);
 
         h.ActingUser = h.Owner;
         var asCreator = State(await Controller(h).GetProposal(h.WallId, boulder.Id, default));
         Assert.Equal((false, true), (asCreator.CanPropose, asCreator.CanResolve));
         Refused(await Controller(h).Propose(h.WallId, boulder.Id, new DeviceBoulderActionRequests { Grade = "6B" }, default), 403);
-        Refused(await Controller(h).Accept(h.WallId, boulder.Id, Guid.NewGuid(), default), 404);
-        Assert.Null(State(await Controller(h).Accept(h.WallId, boulder.Id, proposed.Proposal.Id, default)).Proposal);
+        Refused(await Controller(h).Accept(h.WallId, boulder.Id, Guid.NewGuid(), Expect("7A"), default), 404);
+        Refused(await Controller(h).Accept(h.WallId, boulder.Id, proposed.Proposal.Id, new DeviceBoulderActionRequests(), default), 400);
+        Assert.Null(State(await Controller(h).Accept(h.WallId, boulder.Id, proposed.Proposal.Id, Expect("7A"), default)).Proposal);
 
         await using var db = h.CreateContext();
         Assert.Equal("7A", (await db.Boulders.SingleAsync(b => b.Id == boulder.Id)).Grade);
@@ -90,7 +91,9 @@ public sealed class DeviceBoulderActionsControllerTests
         var parent = await h.BoulderService.CreateBoulderAsync(h.WallId, "Parent", "6A", [new BoulderHoldInput(holds[0].Id)]);
         var child = await h.BoulderService.CreateBoulderAsync(h.WallId, "Child", "6B", [new BoulderHoldInput(holds[1].Id)]);
 
-        Assert.IsType<OkObjectResult>(await Controller(h).SetParent(h.WallId, child.Id, new DeviceBoulderActionRequests { ParentId = parent.Id }, default));
+        var links = Assert.IsType<DeviceBoulderLinks>(Assert.IsType<OkObjectResult>(
+            await Controller(h).SetParent(h.WallId, child.Id, new DeviceBoulderActionRequests { ParentId = parent.Id }, default)).Value);
+        Assert.Equal(new DeviceBoulderLinks(child.Id, parent.Id, []), links with { VariantIds = [] });
         await using (var db = h.CreateContext())
         {
             Assert.Equal(parent.Id, (await db.Boulders.SingleAsync(b => b.Id == child.Id)).ParentBoulderId);
@@ -111,6 +114,87 @@ public sealed class DeviceBoulderActionsControllerTests
         Assert.IsType<NotFoundResult>(await Controller(h).GetProposal(h.WallId, parent.Id, default));
     }
 
+    [Fact]
+    public async Task AnAccept_OfAProposalThatChangedMeanwhile_Is409_AndAppliesNothing()
+    {
+        using var h = new WallTestHarness();
+        var holds = await h.SeedWallAsync();
+        var boulder = await h.BoulderService.CreateBoulderAsync(h.WallId, "B", "6A", [new BoulderHoldInput(holds[0].Id)]);
+        h.ActingUser = await h.AddMemberAsync("a@test", WallRole.Member);
+        var seen = State(await Controller(h).Propose(h.WallId, boulder.Id, new DeviceBoulderActionRequests { Grade = "7A" }, default)).Proposal!;
+        h.ActingUser = await h.AddMemberAsync("b@test", WallRole.Member);
+        Assert.Equal(seen.Id, State(await Controller(h).Propose(h.WallId, boulder.Id, new DeviceBoulderActionRequests { Grade = "7C" }, default)).Proposal!.Id);
+
+        h.ActingUser = h.Owner;
+        Refused(await Controller(h).Accept(h.WallId, boulder.Id, seen.Id, Expect("7A"), default), 409);
+        await using var db = h.CreateContext();
+        Assert.Equal("6A", (await db.Boulders.SingleAsync(b => b.Id == boulder.Id)).Grade);
+    }
+
+    [Fact]
+    public async Task AProposalOfAnotherBoulder_Is404_AndARetriedProposalNeverPutsBackAnOlderGrade()
+    {
+        using var h = new WallTestHarness();
+        var holds = await h.SeedWallAsync();
+        var first = await h.BoulderService.CreateBoulderAsync(h.WallId, "A", "6A", [new BoulderHoldInput(holds[0].Id)]);
+        var second = await h.BoulderService.CreateBoulderAsync(h.WallId, "B", "6A", [new BoulderHoldInput(holds[1].Id)]);
+        h.ActingUser = await h.AddMemberAsync("member@test", WallRole.Member);
+        var key = Guid.NewGuid();
+        State(await Controller(h).Propose(h.WallId, first.Id, new DeviceBoulderActionRequests { Grade = "7A", ClientRequestId = key }, default));
+        var other = State(await Controller(h).Propose(h.WallId, second.Id, new DeviceBoulderActionRequests { Grade = "7B" }, default)).Proposal!;
+        State(await Controller(h).Propose(h.WallId, first.Id, new DeviceBoulderActionRequests { Grade = "7C" }, default));
+
+        var retried = State(await Controller(h).Propose(h.WallId, first.Id, new DeviceBoulderActionRequests { Grade = "7A", ClientRequestId = key }, default));
+        Assert.Equal("7C", retried.Proposal!.ProposedGrade);
+
+        h.ActingUser = h.Owner;
+        Refused(await Controller(h).Accept(h.WallId, first.Id, other.Id, Expect("7B"), default), 404);
+        Refused(await Controller(h).Reject(h.WallId, first.Id, other.Id, default), 404);
+    }
+
+    [Fact]
+    public async Task TwoOpenProposalsForOneBoulder_AreRefusedByTheDatabase()
+    {
+        using var h = new WallTestHarness();
+        var holds = await h.SeedWallAsync();
+        var boulder = await h.BoulderService.CreateBoulderAsync(h.WallId, "B", "6A", [new BoulderHoldInput(holds[0].Id)]);
+        await using var db = h.CreateContext();
+        db.GradeProposals.AddRange(
+            new GradeProposal { BoulderId = boulder.Id, ProposedByUserId = h.Owner.Id, ProposedGrade = "7A" },
+            new GradeProposal { BoulderId = boulder.Id, ProposedByUserId = h.Owner.Id, ProposedGrade = "7B" });
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task ALinkOntoAnotherWall_OrOntoItsOwnVariant_IsRefused()
+    {
+        using var h = new WallTestHarness();
+        var holds = await h.SeedWallAsync();
+        var parent = await h.BoulderService.CreateBoulderAsync(h.WallId, "Parent", "6A", [new BoulderHoldInput(holds[0].Id)]);
+        var child = await h.BoulderService.CreateBoulderAsync(h.WallId, "Child", "6B", [new BoulderHoldInput(holds[1].Id)], variantOfBoulderId: parent.Id);
+        var (otherWall, otherHold) = await DeviceSetterFixture.OtherWallAsync(h, h.Owner, ownerIsMember: true);
+        var foreign = await h.BoulderService.CreateBoulderAsync(otherWall, "Foreign", "6A", [new BoulderHoldInput(otherHold.Id)]);
+
+        // Another wall's boulder is never linked: refused as another wall (400) or as not found (404), never applied.
+        RefusedAny(await Controller(h).SetParent(h.WallId, parent.Id, new DeviceBoulderActionRequests { ParentId = foreign.Id }, default), 400, 404);
+        RefusedAny(await Controller(h).SetVariants(h.WallId, parent.Id, new DeviceBoulderActionRequests { VariantIds = [foreign.Id] }, default), 400, 404);
+        await using (var db = h.CreateContext())
+        {
+            Assert.Null((await db.Boulders.SingleAsync(b => b.Id == parent.Id)).ParentBoulderId);
+            Assert.Null((await db.Boulders.SingleAsync(b => b.Id == foreign.Id)).ParentBoulderId);
+        }
+
+        Refused(await Controller(h).SetParent(h.WallId, parent.Id, new DeviceBoulderActionRequests { ParentId = child.Id }, default), 400);
+    }
+
+    private static void RefusedAny(IActionResult result, params int[] statuses)
+    {
+        var refused = Assert.IsType<ObjectResult>(result);
+        Assert.Contains(refused.StatusCode ?? 0, statuses);
+    }
+
+    private static DeviceBoulderActionRequests Expect(string grade) => new() { ExpectedGrade = grade };
+
     private static async Task<bool> ArchivedAsync(WallTestHarness h, Guid id)
     {
         await using var db = h.CreateContext();
@@ -128,7 +212,7 @@ public sealed class DeviceBoulderActionsControllerTests
     }
 
     private static DeviceBoulderActionsController Controller(WallTestHarness h) =>
-        new(h.DbContextFactory, h.CurrentUser, h.BoulderService)
+        new(h.DbContextFactory, h.CurrentUser, h.BoulderService, new Services.DeviceWrites.DeviceWriteReceiptService(h.DbContextFactory))
         {
             ControllerContext = new ControllerContext
             {

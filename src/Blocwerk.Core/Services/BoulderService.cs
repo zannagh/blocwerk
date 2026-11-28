@@ -190,7 +190,12 @@ public partial interface IBoulderService
 
     Task<GradeProposal?> GetActiveProposalAsync(Guid boulderId);
 
-    Task AcceptGradeProposalAsync(Guid proposalId);
+    /// <summary>
+    /// Accepts the open proposal: the boulder takes its grade. With <paramref name="expectedGrade"/>, the grade the caller
+    /// saw, a proposal changed in the meantime (a second propose updates it in place) is refused with
+    /// <see cref="BoulderService.ProposalChangedMessage"/> instead of applying a grade nobody looked at.
+    /// </summary>
+    Task AcceptGradeProposalAsync(Guid proposalId, string? expectedGrade = null);
 
     Task RejectGradeProposalAsync(Guid proposalId);
 }
@@ -224,6 +229,12 @@ public partial class BoulderService : IBoulderService
     /// not a replay of this create. A permanent refusal for the offline queue and the companion app.
     /// </summary>
     public const string IdOnOtherWallMessage = "This boulder id is already used on another wall.";
+
+    /// <summary>
+    /// Thrown by <see cref="AcceptGradeProposalAsync"/> when the open proposal's grade is no longer the one the caller saw
+    /// (a second propose updated it in place).
+    /// </summary>
+    public const string ProposalChangedMessage = "The grade proposal changed meanwhile. Look at it again before accepting.";
 
     /// <summary>
     /// Thrown by <see cref="ReviseBoulderAsync"/> when the acting user is neither the boulder's
@@ -1364,7 +1375,16 @@ public partial class BoulderService : IBoulderService
             };
 
             db.GradeProposals.Add(proposal);
-            await db.SaveChangesAsync();
+            try
+            {
+                await db.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex) when (DatabaseErrors.IsUniqueViolation(ex))
+            {
+                // Another first proposal won the race (one open proposal per boulder): update that one instead.
+                return await UpdateOpenProposalAsync(boulderId, proposedGrade, user);
+            }
+
             _logger.LogInformation(
                 "Grade proposal {ProposalId} created for boulder {BoulderId} by {UserId}",
                 proposal.Id, boulderId, user.Id);
@@ -1407,7 +1427,7 @@ public partial class BoulderService : IBoulderService
         }
     }
 
-    public async Task AcceptGradeProposalAsync(Guid proposalId)
+    public async Task AcceptGradeProposalAsync(Guid proposalId, string? expectedGrade = null)
     {
         using var op = BlocwerkMetrics.TimeOperation("Boulder.AcceptGradeProposal");
         try
@@ -1432,6 +1452,11 @@ public partial class BoulderService : IBoulderService
                     "Accept grade denied: user {UserId} is neither creator {OwnerUserId}, a setter, nor an admin of boulder {BoulderId} (proposal {ProposalId})",
                     user.Id, proposal.Boulder.CreatedByUserId, proposal.BoulderId, proposalId);
                 throw new InvalidOperationException("Only the creator, a setter, or a wall admin can accept a grade proposal");
+            }
+
+            if (expectedGrade is not null && !string.Equals(proposal.ProposedGrade, expectedGrade, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(ProposalChangedMessage);
             }
 
             proposal.Boulder.Grade = proposal.ProposedGrade;
