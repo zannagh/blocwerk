@@ -5,20 +5,9 @@ using Blocwerk.Web.DeviceLinks;
 
 namespace Blocwerk.Core.Tests.DeviceLinks;
 
-/// <summary>The server-wide exchange budget and the per-user consent budget.</summary>
+/// <summary>The per-user consent budget.</summary>
 public class DeviceLinkLimitsTests
 {
-    [Fact]
-    public void Exchanges_ShareOneServerWideBudget()
-    {
-        using var limits = new DeviceLinkLimits(globalExchangesPerMinute: 3);
-
-        Assert.True(limits.TryExchange());
-        Assert.True(limits.TryExchange());
-        Assert.True(limits.TryExchange());
-        Assert.False(limits.TryExchange());
-    }
-
     [Fact]
     public void Confirms_AreCountedPerUser()
     {

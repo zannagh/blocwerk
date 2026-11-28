@@ -2,7 +2,6 @@
 // See License in the project root for license information.
 
 using Blocwerk.Core.DeviceLinks;
-using Blocwerk.Web.DeviceLinks;
 using Blocwerk.Web.Endpoints;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -12,13 +11,14 @@ namespace Blocwerk.Web.Controllers;
 
 /// <summary>
 /// <c>POST /api/device-link/token</c>: the app exchanges its one-time code and PKCE verifier for a personal API key.
-/// Anonymous (the code is the credential), rate limited per client address and server-wide, and the key is in the
-/// answer only.
+/// Anonymous (the code is the credential), rate limited per client address, and the key is in the answer only.
 /// </summary>
 /// <remarks>
 /// Every refusal is the same 400 <c>invalid_grant</c>, so a caller learns nothing about why; the log says. No cookie
 /// authorizes anything here (the code is the whole credential), and the body binds from JSON only, which a cross-site
-/// form cannot send (a form post answers 415), so there is nothing for antiforgery to protect.
+/// form cannot send (a form post answers 415), so there is nothing for antiforgery to protect. There is no server-wide
+/// budget on purpose: anyone could spend it and so block every device link, and a 256-bit code needs no such guard
+/// against guessing.
 /// </remarks>
 [ApiController]
 [Route("api/device-link")]
@@ -27,12 +27,10 @@ namespace Blocwerk.Web.Controllers;
 public sealed class DeviceLinkTokenController : ControllerBase
 {
     private readonly IDeviceLinkService deviceLinks;
-    private readonly DeviceLinkLimits limits;
 
-    public DeviceLinkTokenController(IDeviceLinkService deviceLinks, DeviceLinkLimits limits)
+    public DeviceLinkTokenController(IDeviceLinkService deviceLinks)
     {
         this.deviceLinks = deviceLinks;
-        this.limits = limits;
     }
 
     /// <summary>Uses the code and answers with the new key, once.</summary>
@@ -41,11 +39,6 @@ public sealed class DeviceLinkTokenController : ControllerBase
     public async Task<IActionResult> Exchange([FromBody] DeviceLinkTokenRequest body, CancellationToken ct)
     {
         Response.Headers.CacheControl = "no-store";
-        if (!limits.TryExchange())
-        {
-            return StatusCode(StatusCodes.Status429TooManyRequests);
-        }
-
         var result = await deviceLinks.ExchangeAsync(body.Code, body.CodeVerifier, body.Device, ct);
         if (result is null)
         {

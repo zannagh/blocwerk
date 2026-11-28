@@ -99,15 +99,19 @@ public sealed class DeviceLinkEndpointTests
     }
 
     [Fact]
-    public async Task Exchanges_AlsoShareAServerWideLimit()
+    public async Task OneClientsFailedExchanges_DoNotBlockAnotherClientsLink()
     {
-        await using var host = await DeviceLinkTestHost.StartAsync(globalExchangesPerMinute: 3);
-        for (var i = 0; i < 3; i++)
+        await using var host = await DeviceLinkTestHost.StartAsync();
+        await host.SignInAsync();
+        for (var i = 0; i < DeviceLinkRateLimit.PermitsPerWindow * 7; i++)
         {
-            Assert.Equal(HttpStatusCode.BadRequest, (await ExchangeAsync(host, "x", Verifier)).StatusCode);
+            var guess = await ExchangeAsync(host, DeviceLinkPkce.Challenge($"guess-{i}"), Verifier, $"203.0.113.{i % 250}");
+            Assert.Equal(HttpStatusCode.BadRequest, guess.StatusCode);
         }
 
-        Assert.Equal(HttpStatusCode.TooManyRequests, (await ExchangeAsync(host, "x", Verifier)).StatusCode);
+        var code = await LinkAsync(host);
+
+        Assert.Equal(HttpStatusCode.OK, (await ExchangeAsync(host, code, Verifier, "198.51.100.7")).StatusCode);
     }
 
     [Fact]
@@ -205,8 +209,23 @@ public sealed class DeviceLinkEndpointTests
         return consent.Headers.Location!.OriginalString.Split("code=")[1].Split('&')[0];
     }
 
-    private static Task<HttpResponseMessage> ExchangeAsync(DeviceLinkTestHost host, string code, string verifier) =>
-        host.Client.PostAsJsonAsync("/api/device-link/token", new { code, code_verifier = verifier, device = Device });
+    private static Task<HttpResponseMessage> ExchangeAsync(
+        DeviceLinkTestHost host,
+        string code,
+        string verifier,
+        string? address = null)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/device-link/token")
+        {
+            Content = JsonContent.Create(new { code, code_verifier = verifier, device = Device }),
+        };
+        if (address is not null)
+        {
+            request.Headers.Add(DeviceLinkTestHost.AddressHeader, address);
+        }
+
+        return host.Client.SendAsync(request);
+    }
 
     private static Dictionary<string, string> Consent(string decision, string redirect = DeviceLinkRequest.RedirectUri) => new()
     {

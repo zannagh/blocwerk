@@ -53,7 +53,10 @@ internal sealed class DeviceLinkTestHost : IAsyncDisposable
 
     public HttpClient Client { get; }
 
-    public static async Task<DeviceLinkTestHost> StartAsync(int globalExchangesPerMinute = DeviceLinkLimits.DefaultGlobalExchangesPerMinute)
+    /// <summary>The header a test sets to send a request from another client address.</summary>
+    public const string AddressHeader = "X-Test-Remote-Address";
+
+    public static async Task<DeviceLinkTestHost> StartAsync()
     {
         var connectionString = TestDbContextFactory.IsolatedDatabase();
         var connection = new SqliteConnection(connectionString);
@@ -74,9 +77,17 @@ internal sealed class DeviceLinkTestHost : IAsyncDisposable
         });
         builder.WebHost.UseTestServer();
         AddServices(builder.Services, factory, owner);
-        builder.Services.AddSingleton(new DeviceLinkLimits(globalExchangesPerMinute));
 
         var app = builder.Build();
+        app.Use((http, next) =>
+        {
+            if (http.Request.Headers.TryGetValue(AddressHeader, out var address))
+            {
+                http.Connection.RemoteIpAddress = System.Net.IPAddress.Parse(address.ToString());
+            }
+
+            return next(http);
+        });
         app.ConfigureAuthenticationMiddlewares();
         app.MapControllers();
         app.MapGet("/in", (HttpContext http) => http.SignInAsync(new ClaimsPrincipal(new ClaimsIdentity(
