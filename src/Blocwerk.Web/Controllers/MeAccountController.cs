@@ -1,9 +1,9 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
-using System.Security.Claims;
 using Blocwerk.Authentication.Authorization;
 using Blocwerk.Authentication.Handlers;
+using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -31,18 +31,23 @@ public sealed class MeAccountController : ControllerBase
 
     private readonly IDbContextFactory<BlocwerkDbContext> contexts;
     private readonly IApiKeyService apiKeys;
+    private readonly ICurrentUserService currentUser;
 
-    public MeAccountController(IDbContextFactory<BlocwerkDbContext> contexts, IApiKeyService apiKeys)
+    public MeAccountController(
+        IDbContextFactory<BlocwerkDbContext> contexts,
+        IApiKeyService apiKeys,
+        ICurrentUserService currentUser)
     {
         this.contexts = contexts;
         this.apiKeys = apiKeys;
+        this.currentUser = currentUser;
     }
 
     /// <summary>The key's owner: id, name, e-mail, avatar link (null without one) and the key's own name.</summary>
     [HttpGet("account")]
     public async Task<IActionResult> GetAccount(CancellationToken ct)
     {
-        if (OwnerId() is not { } userId || User.GetApiKeyId() is not { } keyId)
+        if (await OwnerIdAsync() is not { } userId || User.GetApiKeyId() is not { } keyId)
         {
             return Unauthorized();
         }
@@ -70,7 +75,7 @@ public sealed class MeAccountController : ControllerBase
     [Produces("image/png", "image/jpeg", "image/webp", "image/gif")]
     public async Task<IActionResult> GetAvatar(CancellationToken ct)
     {
-        if (OwnerId() is not { } userId)
+        if (await OwnerIdAsync() is not { } userId)
         {
             return Unauthorized();
         }
@@ -93,7 +98,7 @@ public sealed class MeAccountController : ControllerBase
     [HttpDelete("api-key")]
     public async Task<IActionResult> RevokeOwnKey(CancellationToken ct)
     {
-        if (OwnerId() is not { } userId || User.GetApiKeyId() is not { } keyId)
+        if (await OwnerIdAsync() is not { } userId || User.GetApiKeyId() is not { } keyId)
         {
             return Unauthorized();
         }
@@ -102,6 +107,19 @@ public sealed class MeAccountController : ControllerBase
         return NoContent();
     }
 
-    private Guid? OwnerId() =>
-        Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : null;
+    /// <summary>
+    /// The key's owner, resolved the way every other <c>/api/v1/me</c> route resolves it. The key principal's
+    /// name-identifier is the provider's id, not the user id, so it is never parsed here.
+    /// </summary>
+    private async Task<Guid?> OwnerIdAsync()
+    {
+        try
+        {
+            return (await currentUser.GetCurrentUserAsync()).Id;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
 }

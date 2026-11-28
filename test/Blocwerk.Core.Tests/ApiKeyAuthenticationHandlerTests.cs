@@ -175,6 +175,31 @@ public sealed class ApiKeyAuthenticationHandlerTests : IDisposable
         await apiKeyService.Received(1).MarkUsedAsync(key, Arg.Any<CancellationToken>());
     }
 
+    [Theory]
+    [InlineData(ApiKeyScope.User, true, true)]
+    [InlineData(ApiKeyScope.User, false, false)]
+    [InlineData(ApiKeyScope.Wall, true, false)]
+    [InlineData(ApiKeyScope.Kiosk, true, false)]
+    public async Task DeviceClaim_OnlyOnAPersonalKeyMadeByADeviceLink(ApiKeyScope scope, bool isDevice, bool expected)
+    {
+        var key = new ApiKey
+        {
+            Name = "iPhone: Test",
+            Scope = scope,
+            UserId = user.Id,
+            KeyHash = "hash",
+            Prefix = "bwk_0123",
+            AllowWrite = true,
+            IsDevice = isDevice,
+        };
+        apiKeyService.FindActiveAsync(ValidToken, Arg.Any<CancellationToken>()).Returns(key);
+
+        var result = await AuthenticateAsync($"Bearer {ValidToken}");
+
+        Assert.Equal(expected, result.Principal!.HasClaim(ApiKeyClaimTypes.Device, "true"));
+        Assert.Equal(expected, result.Principal!.IsDeviceKey());
+    }
+
     [Fact]
     public async Task AKeyOfAnErasedOwner_IsNotRecordedAsUsed()
     {

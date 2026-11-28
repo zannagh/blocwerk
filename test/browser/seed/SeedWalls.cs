@@ -48,6 +48,9 @@ internal sealed class SeedWalls
         var cora = AddUser("cora@browser.test", "Cora");
         var dave = AddUser("dave@browser.test", "Dave");
 
+        // Links the companion app in device-link.spec.mjs and owns nothing else, so the keys it mints touch no other spec.
+        var dina = AddUser("dina@browser.test", "Dina");
+
         var alpha = AddWall("Alpha", alice, panels: 2, seed: 1);
         db.WallMembers.Add(new WallMember { WallId = alpha.Wall.Id, UserId = carol.Id, Role = WallRole.Member, KioskConsentedAt = DateTimeOffset.UtcNow });
         var geometry = await AddGeometryAsync(alpha.Wall.Id);
@@ -101,6 +104,7 @@ internal sealed class SeedWalls
                 ["lena"] = new(lena.Id, lena.DisplayName),
                 ["vic"] = new(vic.Id, vic.DisplayName),
                 ["mia"] = new(mia.Id, mia.DisplayName),
+                ["dina"] = new(dina.Id, dina.DisplayName),
             },
             new Dictionary<string, SeededWall>
             {

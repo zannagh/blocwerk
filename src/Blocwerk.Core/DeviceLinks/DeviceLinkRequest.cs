@@ -60,12 +60,14 @@ public sealed record DeviceLinkRequest(string State, string CodeChallenge, strin
         var kept = new System.Text.StringBuilder(device.Length);
         foreach (var c in device)
         {
-            if (char.IsControl(c) || char.GetUnicodeCategory(c) == System.Globalization.UnicodeCategory.Format)
+            if (char.IsWhiteSpace(c))
             {
-                continue;
+                kept.Append(' ');
             }
-
-            kept.Append(char.IsWhiteSpace(c) ? ' ' : c);
+            else if (!char.IsControl(c) && char.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.Format)
+            {
+                kept.Append(c);
+            }
         }
 
         var cleaned = string.Join(' ', kept.ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries));

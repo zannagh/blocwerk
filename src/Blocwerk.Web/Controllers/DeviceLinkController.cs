@@ -10,7 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Blocwerk.Web.Controllers;
 
 /// <summary>
-/// The answer to the consent page (<c>/device-link</c>): Link makes a one-time code and redirects to the app with it,
+/// The answer to the consent page (<c>/device-link</c>, posted to <c>/device-link/confirm</c> because the page itself owns POST on its own route): Link makes a one-time code and redirects to the app with it,
 /// Cancel tells the app the user said no. An antiforgery-protected form post of a signed-in user.
 /// </summary>
 /// <remarks>
@@ -37,7 +37,7 @@ public sealed class DeviceLinkController : Controller
     }
 
     /// <summary>Links the device, or declines, and sends the browser back to the app.</summary>
-    [HttpPost("/device-link")]
+    [HttpPost("/device-link/confirm")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Decide([FromForm] DeviceLinkDecision form, CancellationToken ct)
     {

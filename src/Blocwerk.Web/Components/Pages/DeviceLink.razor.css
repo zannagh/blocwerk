@@ -35,6 +35,12 @@
 .device-link-actions button {
     width: 100%;
     min-height: 46px;
+    margin: 0;
+}
+
+/* .btn-primary is styled for links; as a button it would keep the browser's own border. */
+.device-link-actions .btn-primary {
+    border: none;
 }
 
 .device-link-page .device-link-home {

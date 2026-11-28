@@ -15,12 +15,12 @@ namespace Blocwerk.Web.Controllers;
 /// </summary>
 /// <remarks>
 /// Every refusal is the same 400 <c>invalid_grant</c>, so a caller learns nothing about why; the log says. No cookie
-/// authorizes anything here, so there is no ambient credential to forge with and antiforgery does not apply.
+/// authorizes anything here (the code is the whole credential), and the body binds from JSON only, which a cross-site
+/// form cannot send (a form post answers 415), so there is nothing for antiforgery to protect.
 /// </remarks>
 [ApiController]
 [Route("api/device-link")]
 [AllowAnonymous]
-[IgnoreAntiforgeryToken]
 [Produces("application/json")]
 public sealed class DeviceLinkTokenController : ControllerBase
 {

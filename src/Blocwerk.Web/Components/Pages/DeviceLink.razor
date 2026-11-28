@@ -30,7 +30,7 @@
             The Blocwerk app on this iPhone will act as you: it can read and log your climbing and record wall
             captures. You can revoke it any time under Settings &rarr; API keys.
         </p>
-        <form method="post" action="/device-link" data-enhance-nav="false">
+        <form method="post" action="/device-link/confirm" data-enhance-nav="false">
             <AntiforgeryToken />
             <input type="hidden" name="state" value="@request.State" />
             <input type="hidden" name="code_challenge" value="@request.CodeChallenge" />
