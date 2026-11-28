@@ -25,14 +25,14 @@ public sealed class WallMembershipServiceTests
         using var h = new WallTestHarness();
         await h.SeedWallAsync(holdCount: 0);
         var member = await h.AddMemberAsync("member@test", WallRole.Member);
-        var oldToken = await h.WallService.GetOrCreateShareTokenAsync(h.WallId);
+        var oldToken = await h.WallService.GetOrCreateJoinTokenAsync(h.WallId);
 
         await Service(h).RemoveMemberAsync(h.WallId, member.Id);
 
         h.ActingUser = member;
         await Assert.ThrowsAsync<InvalidOperationException>(() => h.WallService.JoinWallAsync(oldToken));
         h.ActingUser = h.Owner;
-        Assert.NotEqual(oldToken, await h.WallService.GetOrCreateShareTokenAsync(h.WallId));
+        Assert.NotEqual(oldToken, await h.WallService.GetOrCreateJoinTokenAsync(h.WallId));
     }
 
     [Fact]
@@ -83,12 +83,12 @@ public sealed class WallMembershipServiceTests
         using var h = new WallTestHarness();
         await h.SeedWallAsync(holdCount: 0);
         var member = await h.AddMemberAsync("member@test", WallRole.Moderator);
-        var oldToken = await h.WallService.GetOrCreateShareTokenAsync(h.WallId);
+        var oldToken = await h.WallService.GetOrCreateJoinTokenAsync(h.WallId);
 
-        Assert.Equal(MembershipRefusal.Owner, (await Assert.ThrowsAsync<MembershipRefusedException>(() => Service(h).LeaveAsync(h.WallId))).Reason);
+        Assert.Equal(MembershipRefusal.Owner, (await Assert.ThrowsAsync<MembershipRefusedException>(() => Service(h).LeaveAsync(h.WallId, deleteBetaVideos: true))).Reason);
         h.ActingUser = member;
-        await Service(h).LeaveAsync(h.WallId);
-        Assert.Equal(MembershipRefusal.NotAMember, (await Assert.ThrowsAsync<MembershipRefusedException>(() => Service(h).LeaveAsync(h.WallId))).Reason);
+        await Service(h).LeaveAsync(h.WallId, deleteBetaVideos: true);
+        Assert.Equal(MembershipRefusal.NotAMember, (await Assert.ThrowsAsync<MembershipRefusedException>(() => Service(h).LeaveAsync(h.WallId, deleteBetaVideos: true))).Reason);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => h.WallService.JoinWallAsync(oldToken));
     }
@@ -101,15 +101,15 @@ public sealed class WallMembershipServiceTests
         var member = await h.AddMemberAsync("member@test", WallRole.Member);
         var kiosk = Substitute.For<IKioskContext>();
         kiosk.IsKiosk.Returns(true);
-        var service = new WallMembershipService(h.DbContextFactory, h.CurrentUser, NullLogger<WallMembershipService>.Instance, kiosk);
+        var service = new WallMembershipService(h.DbContextFactory, h.CurrentUser, h.ActivityLog, h.BetaStorage, NullLogger<WallMembershipService>.Instance, kiosk);
 
         await Assert.ThrowsAsync<KioskRestrictedException>(() => service.RemoveMemberAsync(h.WallId, member.Id));
         h.ActingUser = member;
-        await Assert.ThrowsAsync<KioskRestrictedException>(() => service.LeaveAsync(h.WallId));
+        await Assert.ThrowsAsync<KioskRestrictedException>(() => service.LeaveAsync(h.WallId, deleteBetaVideos: true));
     }
 
     internal static WallMembershipService Service(WallTestHarness h) =>
-        new(h.DbContextFactory, h.CurrentUser, NullLogger<WallMembershipService>.Instance);
+        new(h.DbContextFactory, h.CurrentUser, h.ActivityLog, h.BetaStorage, NullLogger<WallMembershipService>.Instance);
 
     // A favourite, a project, a tick, a comment, an open session, the home wall and a wall key the member named.
     private static async Task<Guid> SeedMemberDataAsync(WallTestHarness h, User member, Guid boulder)
