@@ -26,7 +26,7 @@ Send `Authorization: Bearer bwk_…`. No cookie and no antiforgery token. The ro
 
 ## Your marks
 
-The app writes the owner's marks on a boulder with the offline web client's bodies, service calls and answers (`/api/offline/*`), so a write from the app lands exactly as one from the browser. **Device key only**, rate limited like the feed, `no-store`.
+The app writes the owner's marks on a boulder with the offline web client's bodies, service calls and answers (`/api/offline/*`), so a write from the app lands exactly as one from the browser. **Device key only**, `no-store`, and limited per key (not per address): a bucket of 60 writes, refilled 1 a second, shared by every device write; beyond it 429 with `Retry-After: 1`.
 
 | Route | Body | Answer |
 | --- | --- | --- |
@@ -40,7 +40,7 @@ The app writes the owner's marks on a boulder with the offline web client's bodi
 | `DELETE /api/v1/me/comments/{commentId}` | none | `result: { commentId }`; the caller's own comments only |
 | `POST /api/v1/me/attempts`, `DELETE /api/v1/me/attempts/{id}` | unchanged (any personal key) | ticks and attempts, with `clientRequestId` and `timestamp` |
 
-A refusal is `{ message, permanent }`. `permanent: true` means a retry can never succeed, so a queue drops the entry: 400 for a bad body (no boulder id, stars outside 1-5, empty text or more than 1024 characters), 403 when the owner is not a member of the boulder's wall (or the boulder is a draft, for attempts), 404 for an unknown boulder, or a comment that is not the owner's or is already gone. `permanent: false` (401, 500) means keep it queued and retry.
+A refusal is `{ message, permanent }`. `permanent: true` means a retry can never succeed, so a queue drops the entry: 400 for a bad body (no boulder id, stars outside 1-5, empty text or more than 1024 characters), 404 for an unknown boulder, a boulder on a wall the owner is not a member of (the same answer, so it does not tell the boulder exists), or a comment that is not the owner's or is already gone, 403 for a draft (attempts). A `clientRequestId` is a replay key for its own sender only: another user's write with the same id is their own new write. The empty id is a 400, and so is a comment id reused on another boulder. `permanent: false` (401, 500) means keep it queued and retry.
 
 ## Rules
 

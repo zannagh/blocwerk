@@ -81,7 +81,7 @@ public sealed class MeBoulderMarksControllerTests
     }
 
     [Fact]
-    public async Task AnOutsidersKey_IsRefusedOnEveryWrite_AndCannotDeleteSomeoneElsesComment()
+    public async Task AnOutsidersKey_Gets404OnEveryWrite_AsForAnUnknownBoulder()
     {
         using var h = new WallTestHarness();
         var boulder = await SeedAsync(h);
@@ -90,9 +90,9 @@ public sealed class MeBoulderMarksControllerTests
         h.ActingUser = await AddUserAsync(h, "outsider@test");
         var controller = Controller(h);
 
-        AssertRefused(await controller.SetRating(new SetRatingRequest { BoulderId = boulder, Stars = 3 }), 403);
-        AssertRefused(await controller.SetFavorite(new SetFavoriteRequest { BoulderId = boulder, Favorite = true }), 403);
-        AssertRefused(await controller.SetProject(new SetProjectRequest { BoulderId = boulder, Project = true }), 403);
+        AssertRefused(await controller.SetRating(new SetRatingRequest { BoulderId = boulder, Stars = 3 }), 404);
+        AssertRefused(await controller.SetFavorite(new SetFavoriteRequest { BoulderId = boulder, Favorite = true }), 404);
+        AssertRefused(await controller.SetProject(new SetProjectRequest { BoulderId = boulder, Project = true }), 404);
         AssertRefused(await controller.AddComment(new AddCommentRequest { BoulderId = boulder, Text = "hi" }), 404);
         AssertRefused(await controller.DeleteComment(comment.Id), 404);
 
@@ -127,6 +127,20 @@ public sealed class MeBoulderMarksControllerTests
         AssertRefused(await controller.AddComment(new AddCommentRequest { BoulderId = boulder, Text = "  " }), 400);
         AssertRefused(await controller.AddComment(new AddCommentRequest { BoulderId = boulder, Text = new string('x', 1025) }), 400);
         AssertRefused(await controller.SetRating(new SetRatingRequest { BoulderId = Guid.NewGuid(), Stars = 3 }), 404);
+        AssertRefused(await controller.AddComment(new AddCommentRequest { BoulderId = boulder, Text = "x", ClientRequestId = Guid.Empty }), 400);
+    }
+
+    [Fact]
+    public async Task ACommentIdReusedOnAnotherBoulder_IsAPermanent400_NotAReplay()
+    {
+        using var h = new WallTestHarness();
+        var boulder = await SeedAsync(h);
+        var other = await VisitFixture.SeedBoulderAsync(h, h.WallId);
+        var controller = Controller(h);
+        var requestId = Guid.NewGuid();
+
+        AssertApplied(await controller.AddComment(new AddCommentRequest { BoulderId = boulder, Text = "a", ClientRequestId = requestId }));
+        AssertRefused(await controller.AddComment(new AddCommentRequest { BoulderId = other, Text = "b", ClientRequestId = requestId }), 400);
     }
 
     private static OfflineActionResponse AssertApplied(IActionResult result)
