@@ -119,6 +119,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<DateTimeOffset?>("ExpiresAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<bool>("IsDevice")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("KeyHash")
                         .IsRequired()
                         .HasMaxLength(128)
@@ -680,6 +683,51 @@ namespace Blocwerk.Core.Migrations
                     b.HasIndex("WallId");
 
                     b.ToTable("ClimbingSessions");
+                });
+
+            modelBuilder.Entity("Blocwerk.Core.Entities.DeviceLinkCode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CodeChallenge")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("CodeHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DeviceName")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("UsedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CodeHash")
+                        .IsUnique();
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("DeviceLinkCodes");
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.EmailVerificationCode", b =>
@@ -4457,6 +4505,17 @@ namespace Blocwerk.Core.Migrations
                     b.Navigation("User");
 
                     b.Navigation("Wall");
+                });
+
+            modelBuilder.Entity("Blocwerk.Core.Entities.DeviceLinkCode", b =>
+                {
+                    b.HasOne("Blocwerk.Core.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.ExternalAscent", b =>

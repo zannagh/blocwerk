@@ -96,6 +96,12 @@ public sealed class KioskGuardedApiKeyService : IApiKeyService
         return inner.CreateUserKeyAsync(userId, actingUserId, name, expiresAt, allowWrite, ct);
     }
 
+    public Task<(ApiKey Key, string Token)> CreateDeviceKeyAsync(Guid userId, string name, CancellationToken ct = default)
+    {
+        EnsureNotKiosk();
+        return inner.CreateDeviceKeyAsync(userId, name, ct);
+    }
+
     public Task<(ApiKey Key, string Token)> CreateInstallationKeyAsync(
         Guid actingUserId,
         string name,

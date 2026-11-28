@@ -54,6 +54,12 @@ public interface IApiKeyService
         CancellationToken ct = default);
 
     /// <summary>
+    /// Issues the personal key of a linked device (<see cref="ApiKey.IsDevice"/>): user scope, write access, no
+    /// expiry. Only the device link makes one, for the user who confirmed the link.
+    /// </summary>
+    Task<(ApiKey Key, string Token)> CreateDeviceKeyAsync(Guid userId, string name, CancellationToken ct = default);
+
+    /// <summary>
     /// Issues a key that acts for the whole installation rather than for a wall or a person — the
     /// autodeploy hook is the only intended holder. Restricted to app administrators.
     /// </summary>

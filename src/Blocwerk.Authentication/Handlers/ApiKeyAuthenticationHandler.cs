@@ -154,6 +154,11 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<ApiKeyAuthentic
             claims.Add(new Claim(ApiKeyClaimTypes.AllowWrite, "true"));
         }
 
+        if (key.IsDevice && key.Scope == ApiKeyScope.User)
+        {
+            claims.Add(new Claim(ApiKeyClaimTypes.Device, "true"));
+        }
+
         return new ClaimsIdentity(claims, SchemeName, ClaimTypes.Name, ClaimTypes.Role);
     }
 }

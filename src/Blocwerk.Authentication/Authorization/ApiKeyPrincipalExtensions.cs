@@ -55,6 +55,17 @@ public static class ApiKeyPrincipalExtensions
             && principal.HasClaim(ApiKeyClaimTypes.AllowWrite, "true");
     }
 
+    /// <summary>
+    /// True when the request authenticated with a personal key minted by linking a device (the companion app). Plain
+    /// personal keys answer false.
+    /// </summary>
+    public static bool IsDeviceKey(this ClaimsPrincipal principal)
+    {
+        return principal.IsApiKeyPrincipal()
+            && principal.GetApiKeyScope() == ApiKeyScope.User
+            && principal.HasClaim(ApiKeyClaimTypes.Device, "true");
+    }
+
     /// <summary>The id of the API key the request authenticated with, or null when there is none.</summary>
     public static Guid? GetApiKeyId(this ClaimsPrincipal principal)
     {

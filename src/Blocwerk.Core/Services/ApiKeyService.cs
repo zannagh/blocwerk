@@ -255,7 +255,8 @@ public partial class ApiKeyService : IApiKeyService
         string name,
         DateTimeOffset? expiresAt,
         CancellationToken ct,
-        bool allowWrite = false)
+        bool allowWrite = false,
+        bool isDevice = false)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -275,6 +276,9 @@ public partial class ApiKeyService : IApiKeyService
 
             // Only a personal or wall key can carry it; kiosk and installation keys have a surface fixed by scope.
             AllowWrite = allowWrite && scope is (ApiKeyScope.User or ApiKeyScope.Wall),
+
+            // Only a personal key can belong to a linked device.
+            IsDevice = isDevice && scope == ApiKeyScope.User,
         };
 
         db.ApiKeys.Add(key);

@@ -1,0 +1,49 @@
+.device-link-page {
+    max-width: 520px;
+    margin: 32px auto;
+    padding: 22px 20px;
+    background: var(--bg-surface);
+    border-radius: 14px;
+    box-shadow: 0 2px 12px var(--shadow-sm, rgba(0, 0, 0, 0.06));
+}
+
+.device-link-page h1 {
+    font-size: 1.3rem;
+    color: var(--text-heading);
+    margin: 0 0 12px;
+    overflow-wrap: anywhere;
+}
+
+/* FocusOnNavigate moves focus to the heading for screen readers; it is no control, so it draws no ring. */
+.device-link-page h1:focus {
+    outline: none;
+}
+
+.device-link-page p {
+    margin: 0 0 14px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.device-link-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 18px 0 0;
+}
+
+.device-link-actions button {
+    width: 100%;
+    min-height: 46px;
+}
+
+.device-link-page .device-link-home {
+    display: inline-block;
+    text-decoration: none;
+}
+
+@media (max-width: 560px) {
+    .device-link-page {
+        margin: 16px;
+    }
+}

@@ -1,0 +1,69 @@
+@page "/device-link"
+@using Microsoft.Extensions.Logging
+@attribute [Authorize]
+@using Blocwerk.Core.DeviceLinks
+@inject IApiKeySessionContext ApiKeySession
+@inject ILogger<DeviceLink> Logger
+
+@* The consent page of the companion app's sign-in. Static SSR: the app opens it in a system browser sheet, a signed-out
+   visitor goes through the normal sign-in first and comes back here, and only the form post below (DeviceLinkController)
+   makes a code and redirects to the app. A request that fails validation never redirects anywhere. *@
+
+<PageTitle>Link a device - Blocwerk</PageTitle>
+
+<div class="device-link-page">
+    @if (request is null)
+    {
+        <h1>This link request doesn't work</h1>
+        <p>Start the sign-in again from the Blocwerk app.</p>
+        <a class="btn-secondary device-link-home" href="/walls">Back to my walls</a>
+    }
+    else if (ApiKeySession.IsApiKeySession)
+    {
+        <h1>Sign in as yourself to link a device</h1>
+        <p>This session was opened with an API key, which can't link another device. Sign out and sign in again.</p>
+    }
+    else
+    {
+        <h1>Link this iPhone (@request.DeviceName) to your Blocwerk account?</h1>
+        <p>
+            The Blocwerk app on this iPhone will act as you: it can read and log your climbing and record wall
+            captures. You can revoke it any time under Settings &rarr; API keys.
+        </p>
+        <form method="post" action="/device-link" data-enhance-nav="false">
+            <AntiforgeryToken />
+            <input type="hidden" name="state" value="@request.State" />
+            <input type="hidden" name="code_challenge" value="@request.CodeChallenge" />
+            <input type="hidden" name="code_challenge_method" value="@DeviceLinkRequest.ChallengeMethod" />
+            <input type="hidden" name="device" value="@request.DeviceName" />
+            <input type="hidden" name="redirect_uri" value="@DeviceLinkRequest.RedirectUri" />
+            <div class="device-link-actions">
+                <button type="submit" name="decision" value="link" class="btn-primary">Link</button>
+                <button type="submit" name="decision" value="cancel" class="btn-secondary">Cancel</button>
+            </div>
+        </form>
+    }
+</div>
+
+@code {
+    private DeviceLinkRequest? request;
+
+    [SupplyParameterFromQuery(Name = "state")] public string? State { get; set; }
+
+    [SupplyParameterFromQuery(Name = "code_challenge")] public string? CodeChallenge { get; set; }
+
+    [SupplyParameterFromQuery(Name = "code_challenge_method")] public string? CodeChallengeMethod { get; set; }
+
+    [SupplyParameterFromQuery(Name = "device")] public string? Device { get; set; }
+
+    [SupplyParameterFromQuery(Name = "redirect_uri")] public string? RedirectUri { get; set; }
+
+    protected override void OnInitialized()
+    {
+        request = DeviceLinkRequest.TryParse(State, CodeChallenge, CodeChallengeMethod, Device, RedirectUri, out var reason);
+        if (request is null)
+        {
+            Logger.LogWarning("Device link page refused a request: {Reason}", reason);
+        }
+    }
+}

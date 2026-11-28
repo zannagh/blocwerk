@@ -20,4 +20,7 @@ public static class ApiKeyClaimTypes
     /// (<c>ApiKey.AllowWrite</c>). Absent otherwise.
     /// </summary>
     public const string AllowWrite = "blocwerk:apikey_write";
+
+    /// <summary>Present (value "true") only on a personal key minted by a device link (<c>ApiKey.IsDevice</c>).</summary>
+    public const string Device = "blocwerk:apikey_device";
 }

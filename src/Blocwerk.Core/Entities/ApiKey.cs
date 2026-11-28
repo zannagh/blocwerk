@@ -93,4 +93,11 @@ public class ApiKey
     /// wall-admin checks still run for the owner.
     /// </remarks>
     public bool AllowWrite { get; set; }
+
+    /// <summary>
+    /// True for a personal key minted by linking the companion app (<c>/device-link</c>), false for every key made by
+    /// hand. Always a <see cref="ApiKeyScope.User"/> key with write access, so everything that accepts a personal key
+    /// accepts it unchanged; the flag only lets a route admit device keys and no other key.
+    /// </summary>
+    public bool IsDevice { get; set; }
 }
