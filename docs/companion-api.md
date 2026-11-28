@@ -127,6 +127,33 @@ The app adds and removes media through the web's own upload code, as the key's o
   - The same id on another wall, boulder or kind of write is a permanent 400.
 - **Playback.** `hlsUrl` is null until the clip has a ladder; play `videoUrl` then. Pending and Processing clips answer 404 until they are normalized, as on the web. The HLS playlists use relative URIs, so a player that sends the key on every request of the asset (AVURLAsset with HTTP header fields) follows them under `/api/v1/beta-videos/{id}/hls/`. Playback counts in the key's sync bucket.
 
+## Setting boulders
+
+The setter flow, through the offline web client's bodies and the web's own service calls (`IBoulderService.CreateBoulderAsync`, `ReviseBoulderAsync`). **Device key only**, `no-store`, per-key write limit. Answers are `{ applied, clientRequestId, result: { boulderId, wallId, name, grade, isDraft, holdCount } }` or `{ message, permanent }`.
+
+| Route | Body | Who |
+| --- | --- | --- |
+| `POST /api/v1/walls/{w}/boulders` | `{ name, grade?, holds: [{ holdId, type, usage }], isDraft?, kickboardFootholdsOn?, handsFollowFeet?, footColorOnly?, noMatch?, customRule?, styles?, setters?, variantOfBoulderId?, id?, clientRequestId? }` | members; with `variantOfBoulderId`, a variant of a boulder on the same wall |
+| `PUT /api/v1/walls/{w}/boulders/{b}` | `{ holds?, name?, grade?, kickboardFootholdsOn?, handsFollowFeet?, footColorOnly?, noMatch?, customRule?, styles?, holdTypes?, setters?, clientRequestId? }` (`holds: null` keeps the holds) | the creator, a setter of the boulder or a wall admin |
+
+- **The web's rules.** The service decides as for the browser:
+  - any member may set;
+  - only the creator, a setter of the boulder or a wall admin may revise (403);
+  - once someone else has sent a boulder, a revise may change only its name and grade (403);
+  - a hold the last update did not find again must be confirmed first (400);
+  - a variant stays on its parent's wall (400).
+- **Holds on the wall.** Create and revise now refuse a hold that is not on the boulder's wall, or that does not exist, with 400 (`One of the holds is not on this wall.`). This is checked in the service, so it covers the web and the offline queue too.
+- **Body checks** (400, before the service runs):
+  - a name is required, at most 256 characters;
+  - a grade must be one of the pickers' (Font or V);
+  - only known style bits and hold-type names;
+  - a custom rule of at most 200 characters;
+  - at least one hold on create;
+  - a `wallId` in the body must match the route.
+- **Errors.** A wall the owner is not a member of, an unknown boulder and a boulder of another wall answer 404.
+- **Replay.** `clientRequestId` takes a receipt as for uploads. A retry of a create returns the boulder it made, never a second one. A retry of a revise returns the boulder as it is now, and never applies an old snapshot over a newer revision. The client-minted `id` of the offline queue still works on create.
+- **Feed.** The save writes the `boulder.changed` rows (and `activity.added` for a published boulder) that other devices and the web update from, as a save in the browser does.
+
 ## Rules
 
 - **Who gets in.** The `/api/v1/me` write routes use the `DeviceApiKey` policy and answer any other caller 404. The sync routes use the `WallSync` policy and the `DenyApiKeyPrincipalsExceptDevices()` filter. Both admit a device key and refuse every other key with the same bare 404 as before: a plain personal key, a wall key, a kiosk key or an installation key. The `/api/v1/me` routes (walls, changes, mine) use the `DeviceApiKey` policy, so a browser cookie does not work there either.

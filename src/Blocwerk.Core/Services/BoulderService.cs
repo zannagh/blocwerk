@@ -376,6 +376,7 @@ public partial class BoulderService : IBoulderService
 
             // A variant starts from its original's holds, so those count as already used.
             var originHolds = await AttachToOriginAsync(db, boulder, variantOfBoulderId);
+            await EnsureHoldsOnWallAsync(db, wallId, holds);
             await EnsureNoUnconfirmedHoldAddedAsync(db, holds, originHolds);
             db.Boulders.Add(boulder);
 
@@ -995,6 +996,7 @@ public partial class BoulderService : IBoulderService
 
             if (holds != null)
             {
+                await EnsureHoldsOnWallAsync(db, boulder.WallId, holds);
                 await EnsureNoUnconfirmedHoldAddedAsync(db, holds, boulder.BoulderHolds.Select(bh => bh.HoldId).ToList());
                 db.BoulderHolds.RemoveRange(boulder.BoulderHolds);
                 foreach (var h in EnforceHandsFollowFeet(holds, boulder.HandsFollowFeet))
@@ -1176,6 +1178,7 @@ public partial class BoulderService : IBoulderService
 
             if (updatedHolds is not null)
             {
+                await EnsureHoldsOnWallAsync(db, boulder.WallId, updatedHolds);
                 await EnsureNoUnconfirmedHoldAddedAsync(db, updatedHolds, boulder.BoulderHolds.Select(bh => bh.HoldId).ToList());
                 db.BoulderHolds.RemoveRange(boulder.BoulderHolds);
                 foreach (var h in EnforceHandsFollowFeet(updatedHolds, boulder.HandsFollowFeet))
