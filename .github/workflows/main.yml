@@ -248,7 +248,7 @@ jobs:
     runs-on: ${{ (contains(fromJSON('["push","schedule","workflow_dispatch","merge_group"]'), github.event_name) || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON(vars.RUNS_ON || '{}').browser-tests || 'ubuntu-latest' }}
     continue-on-error: true
     # A hang must never stall the run.
-    timeout-minutes: 35
+    timeout-minutes: 50
     permissions:
       contents: read
       # The GitHub Packages feed (nuget.config), as in the build job.
@@ -293,10 +293,11 @@ jobs:
         timeout-minutes: 5
         run: npm ci
 
-      # About 10 min for both engines on a quiet run (171 tests), plus CI's retries: 12 cut the WebKit half off.
+      # Both engines in one run, plus CI's retries. 12 min cut the WebKit half off at 171 tests; with about 300 tests,
+      # 22 min cut it off again around test 285, so 40 leaves headroom for the suite to grow.
       - name: Browser tests
         working-directory: test/browser
-        timeout-minutes: 22
+        timeout-minutes: 40
         env:
           CI: "true"
           BW_BROWSER_PG: postgres://postgres:blocwerk@postgres:5432/bw_browser_ci
