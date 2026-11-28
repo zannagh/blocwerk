@@ -283,6 +283,14 @@ The web boulder page's buttons, through `IBoulderService`. **Device key only**, 
 - **Variants.** These are the "Mark Variant" page's two modes (`SetParentAsync`, `SetVariantsAsync`). The service's refusals pass through as 400: a cycle, another wall, or a draft, archived or historic boulder. Its permission refusals are 403.
 - **Per-boulder activity** is `GET /api/v1/walls/{w}/boulders/{b}/activity` (see *Wall activity*).
 
+## Boulder people and flags
+
+`GET /api/v1/walls/{w}/boulder-meta` returns one entry per boulder of the wall, ordered by id: `[{ boulderId, createdByUserId, setterIds, hasBetaVideo, needsReview, canEdit }]`. This is what the web wall page uses for "Created by me", "Has beta video", "Needs review" (filter and badge) and the edit pencil. **Device key only**, members of the wall only (anyone else gets a bare 404), counted in the key's sync bucket, `no-store`.
+
+- **Why not in the `boulders` document.** That document deliberately carries no user id, because share links read it too. These fields are one wall's people, so they are served to members here instead.
+- **Fields.** `canEdit` is the web's rule: the creator, one of the setters, or a wall admin. `hasBetaVideo` counts any clip, as the web filter does. Every boulder a member sees is listed, drafts and the archive included.
+- **Refresh.** Read it again on the feed's `boulder.changed`, `video.added` and `video.deleted` rows.
+
 ## Rules
 
 - **Who gets in.** The `/api/v1/me` write routes use the `DeviceApiKey` policy and answer any other caller 404. The sync routes use the `WallSync` policy and the `DenyApiKeyPrincipalsExceptDevices()` filter. Both admit a device key and refuse every other key with the same bare 404 as before: a plain personal key, a wall key, a kiosk key or an installation key. The `/api/v1/me` routes (walls, changes, mine) use the `DeviceApiKey` policy, so a browser cookie does not work there either.
