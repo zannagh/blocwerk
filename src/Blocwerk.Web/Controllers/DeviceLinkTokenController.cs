@@ -2,6 +2,7 @@
 // See License in the project root for license information.
 
 using Blocwerk.Core.DeviceLinks;
+using Blocwerk.Core.Services;
 using Blocwerk.Web.Endpoints;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -39,7 +40,17 @@ public sealed class DeviceLinkTokenController : ControllerBase
     public async Task<IActionResult> Exchange([FromBody] DeviceLinkTokenRequest body, CancellationToken ct)
     {
         Response.Headers.CacheControl = "no-store";
-        var result = await deviceLinks.ExchangeAsync(body.Code, body.CodeVerifier, body.Device, ct);
+        DeviceLinkExchange? result;
+        try
+        {
+            result = await deviceLinks.ExchangeAsync(body.Code, body.CodeVerifier, body.Device, ct);
+        }
+        catch (Exception ex) when (ex is ApiKeySessionRestrictedException or KioskRestrictedException)
+        {
+            // The key service refuses a kiosk tablet or an API-key session; that is a 403, not a server error.
+            return StatusCode(StatusCodes.Status403Forbidden, new ApiErrorResponse(ex.Message));
+        }
+
         if (result is null)
         {
             return BadRequest(new DeviceLinkTokenError("invalid_grant"));

@@ -131,15 +131,20 @@ public sealed class AppleSignInService(
         return new AppleSignInResult(AppleSignInOutcome.SignedIn, new DeviceLinkExchange(key.Id, token, key.Name));
     }
 
+    /// <summary>
+    /// Verifies the token, and spends the nonce whatever the token's verdict, so a nonce is good for one attempt only.
+    /// </summary>
     private async Task<string?> VerifyAsync(string? identityToken, string? nonce, CancellationToken ct)
     {
         var identity = await validator.ValidateAsync(identityToken, nonce, ct);
+        var used = !string.IsNullOrEmpty(nonce) && nonce.Length <= AppleIdentityTokenValidator.MaxNonceLength
+            && await nonces.TryUseAsync(nonce);
         if (identity is null)
         {
             return null;
         }
 
-        if (!await nonces.TryUseAsync(nonce!))
+        if (!used)
         {
             logger.LogWarning("Apple identity token refused: nonce not issued, expired or already used");
             return null;
