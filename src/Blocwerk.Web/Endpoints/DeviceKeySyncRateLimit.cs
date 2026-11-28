@@ -11,7 +11,9 @@ namespace Blocwerk.Web.Endpoints;
 public static class DeviceKeySyncRateLimit
 {
     public static IServiceCollection AddDeviceKeySyncRateLimit(this IServiceCollection services) =>
-        services.AddSingleton(_ => new DeviceKeySyncRateLimiter());
+        services
+            .AddSingleton(_ => new DeviceKeySyncRateLimiter())
+            .AddSingleton(_ => new DeviceKeyWriteRateLimiter());
 
     /// <summary>Counts a device key's calls of <paramref name="route"/> in its one shared bucket.</summary>
     public static RouteHandlerBuilder RequireDeviceKeySyncRateLimit(this RouteHandlerBuilder route) =>

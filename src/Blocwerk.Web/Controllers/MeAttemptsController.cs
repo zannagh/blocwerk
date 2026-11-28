@@ -64,6 +64,11 @@ public sealed class MeAttemptsController : ControllerBase
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ApiErrorResponse("Not allowed on this boulder."));
         }
+        catch (ArgumentOutOfRangeException ex)
+        {
+            // An empty clientRequestId.
+            return BadRequest(new ApiErrorResponse(ex.Message));
+        }
         catch (InvalidOperationException ex) when (ex.Message == NotAWallMember)
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ApiErrorResponse(ex.Message));

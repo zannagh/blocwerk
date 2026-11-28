@@ -17,8 +17,8 @@ internal static partial class ApiDocsData
     private static ApiParamDoc WallParam => new("wallId", "path", "A wall you can see.");
 
     private const string MarksNotes =
-        "Device key only. Refusals are { message, permanent }: permanent true (400 bad body, 403 not a member, 404 unknown) "
-        + "means never retry; false (401, 500) means retry later.";
+        "Device key only; 60 writes per key, then 1 a second (429). Refusals are { message, permanent }: permanent true "
+        + "(400 bad body, 404 unknown boulder or not your wall) means never retry; false (401, 500) means retry later.";
 
     private static ApiParamDoc BoulderParam => new("boulderId", "path", "A boulder on one of your walls.");
 

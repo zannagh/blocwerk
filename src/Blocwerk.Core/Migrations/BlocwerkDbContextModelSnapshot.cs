@@ -198,11 +198,11 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("BoulderId");
 
-                    b.HasIndex("ClientRequestId")
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("UserId", "ClientRequestId")
                         .IsUnique()
                         .HasFilter("\"ClientRequestId\" IS NOT NULL");
-
-                    b.HasIndex("UserId");
 
                     b.ToTable("Attempts");
                 });
@@ -380,11 +380,11 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("BoulderId");
 
-                    b.HasIndex("ClientRequestId")
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("UserId", "ClientRequestId")
                         .IsUnique()
                         .HasFilter("\"ClientRequestId\" IS NOT NULL");
-
-                    b.HasIndex("UserId");
 
                     b.ToTable("BoulderComments");
                 });

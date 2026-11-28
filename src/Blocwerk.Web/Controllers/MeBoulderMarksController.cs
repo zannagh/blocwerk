@@ -5,10 +5,8 @@ using Blocwerk.Authentication.Authorization;
 using Blocwerk.Authentication.Handlers;
 using Blocwerk.Core.Services;
 using Blocwerk.Core.Services.Projects;
-using Blocwerk.Web.Endpoints.Feed;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.RateLimiting;
 
 namespace Blocwerk.Web.Controllers;
 
@@ -19,7 +17,7 @@ namespace Blocwerk.Web.Controllers;
 /// and ticks are <c>/api/v1/me/attempts</c>.
 /// </summary>
 /// <remarks>
-/// A linked device key only, rate limited like the feed, never cached. Antiforgery does not apply: the policy pins the
+/// A linked device key only, rate limited per key (<see cref="Endpoints.DeviceKeyWriteRateLimiter"/>), never cached. Antiforgery does not apply: the policy pins the
 /// API-key scheme, so a browser cookie never authorizes these routes. Every write is idempotent: rating, favourite and
 /// project are absolute values (removing one not set is a no-op), and a comment carries a <c>clientRequestId</c>. A
 /// comment already deleted answers 404, which a queue treats as permanent and drops.
@@ -27,8 +25,8 @@ namespace Blocwerk.Web.Controllers;
 [ApiController]
 [Route("api/v1/me")]
 [Authorize(Policy = BlocwerkPolicies.DeviceApiKey, AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName)]
-[EnableRateLimiting(FeedEndpoints.RateLimitPolicy)]
 [DeviceKeyOnly]
+[DeviceKeyWriteRateLimit]
 [IgnoreAntiforgeryToken]
 [Produces("application/json")]
 public sealed class MeBoulderMarksController : ControllerBase
@@ -103,11 +101,14 @@ public sealed class MeBoulderMarksController : ControllerBase
     /// <summary>Deletes one of the caller's own comments, as the web's delete button does.</summary>
     [HttpDelete("comments/{commentId:guid}")]
     public Task<IActionResult> DeleteComment(Guid commentId) =>
-        OfflineActionRunner.RunAsync(commentId, async () =>
-        {
-            await comments.DeleteCommentAsync(commentId);
-            return OfflineActionRunner.Applied(null, new { commentId });
-        });
+        OfflineActionRunner.RunAsync(
+            commentId,
+            async () =>
+            {
+                await comments.DeleteCommentAsync(commentId);
+                return OfflineActionRunner.Applied(null, new { commentId });
+            },
+            hideBoulders: true);
 
     private static Task<IActionResult> RunAsync(Guid boulderId, Guid? clientRequestId, Func<Task<object>> write)
     {
@@ -116,6 +117,9 @@ public sealed class MeBoulderMarksController : ControllerBase
             return Task.FromResult<IActionResult>(OfflineActionRunner.Permanent("A boulder id is required."));
         }
 
-        return OfflineActionRunner.RunAsync(boulderId, async () => OfflineActionRunner.Applied(clientRequestId, await write()));
+        return OfflineActionRunner.RunAsync(
+            boulderId,
+            async () => OfflineActionRunner.Applied(clientRequestId, await write()),
+            hideBoulders: true);
     }
 }

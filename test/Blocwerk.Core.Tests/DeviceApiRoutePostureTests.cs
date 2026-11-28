@@ -57,8 +57,19 @@ public sealed class DeviceApiRoutePostureTests
 
         Assert.True(ApiKeySurface.Covers(new PathString("/" + route)));
         Assert.Equal(BlocwerkPolicies.DeviceApiKey, endpoint.Metadata.GetMetadata<IAuthorizeData>()?.Policy);
-        Assert.Equal(FeedEndpoints.RateLimitPolicy, endpoint.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName);
         Assert.NotNull(endpoint.Metadata.GetMetadata<DeviceKeyOnlyAttribute>());
+
+        // A read takes the feed's bucket; a write takes the key's own write bucket and not the per-address one.
+        if (method == "GET")
+        {
+            Assert.Equal(FeedEndpoints.RateLimitPolicy, endpoint.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName);
+            Assert.Null(endpoint.Metadata.GetMetadata<DeviceKeyWriteRateLimitAttribute>());
+        }
+        else
+        {
+            Assert.Null(endpoint.Metadata.GetMetadata<EnableRateLimitingAttribute>());
+            Assert.NotNull(endpoint.Metadata.GetMetadata<DeviceKeyWriteRateLimitAttribute>());
+        }
     }
 
     [Fact]

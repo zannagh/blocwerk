@@ -45,7 +45,11 @@ public static class OfflineActionRunner
     /// </summary>
     /// <param name="subjectId">The boulder or comment the write is about, for the log line of an unexpected failure.</param>
     /// <param name="write">The write and its own answer.</param>
-    public static async Task<IActionResult> RunAsync(Guid subjectId, Func<Task<IActionResult>> write)
+    /// <param name="hideBoulders">
+    /// True to answer a boulder on a wall the caller is not a member of with the same 404 as an unknown boulder, as a
+    /// comment already does, so the answer does not tell the boulder exists. The offline client keeps its 403.
+    /// </param>
+    public static async Task<IActionResult> RunAsync(Guid subjectId, Func<Task<IActionResult>> write, bool hideBoulders = false)
     {
         try
         {
@@ -64,6 +68,11 @@ public static class OfflineActionRunner
         {
             // Only the known domain guards are permanent. EF Core and Npgsql also raise InvalidOperationException for
             // transient connection failures, and calling one of those permanent would drop a valid queued action.
+            if (hideBoulders && ex.Message == NotAWallMember)
+            {
+                return Error(StatusCodes.Status404NotFound, BoulderNotFound, permanent: true);
+            }
+
             var notFound = ex.Message is BoulderNotFound or CommentNotFound;
             return Error(notFound ? StatusCodes.Status404NotFound : StatusCodes.Status403Forbidden, ex.Message, permanent: true);
         }

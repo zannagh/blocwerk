@@ -31,6 +31,9 @@ public interface ICommentService
 
 public class CommentService : ICommentService
 {
+    /// <summary>The refusal of a <c>clientRequestId</c> the caller already used for a comment on another boulder.</summary>
+    public const string ReusedRequestIdMessage = "This clientRequestId was already used for a comment on another boulder.";
+
     private readonly IDbContextFactory<BlocwerkDbContext> _dbContextFactory;
     private readonly ICurrentUserService _currentUserService;
     private readonly IActivityLogService _activityLogService;
@@ -56,6 +59,7 @@ public class CommentService : ICommentService
 
     public async Task<BoulderComment> AddCommentAsync(Guid boulderId, string text, Guid? clientRequestId = null)
     {
+        ClientRequestIds.EnsureValid(clientRequestId);
         using var op = BlocwerkMetrics.TimeOperation("Comment.Add");
         try
         {
@@ -77,13 +81,18 @@ public class CommentService : ICommentService
 
             if (clientRequestId.HasValue)
             {
+                // The caller's own earlier post of this request only: the id is unique per user, not across users.
                 var replayed = await db.BoulderComments
                     .Include(c => c.User)
-                    .FirstOrDefaultAsync(c => c.ClientRequestId == clientRequestId.Value);
+                    .FirstOrDefaultAsync(c => c.UserId == user.Id && c.ClientRequestId == clientRequestId.Value);
 
                 if (replayed != null)
                 {
-                    return replayed;
+                    // The same id on another boulder is a client bug, not a replay: refuse it rather than answer with
+                    // a comment the request did not ask for (or fail on the unique index).
+                    return replayed.BoulderId == boulderId
+                        ? replayed
+                        : throw new ArgumentOutOfRangeException(nameof(clientRequestId), ReusedRequestIdMessage);
                 }
             }
 

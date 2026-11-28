@@ -77,6 +77,7 @@ public class AttemptService : IAttemptService
         Guid? clientRequestId = null,
         DateTimeOffset? timestamp = null)
     {
+        ClientRequestIds.EnsureValid(clientRequestId);
         using var op = BlocwerkMetrics.TimeOperation("Attempt.Log");
         try
         {
@@ -109,8 +110,9 @@ public class AttemptService : IAttemptService
 
             if (clientRequestId.HasValue)
             {
+                // The caller's own earlier send of this request only: an id is unique per user, not across users.
                 var replayed = await db.Attempts
-                    .FirstOrDefaultAsync(a => a.ClientRequestId == clientRequestId.Value);
+                    .FirstOrDefaultAsync(a => a.UserId == user.Id && a.ClientRequestId == clientRequestId.Value);
 
                 if (replayed != null)
                 {

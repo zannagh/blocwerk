@@ -793,8 +793,11 @@ public partial class BlocwerkDbContext : DbContext
                 .HasForeignKey(a => a.UserId)
                 .OnDelete(DeleteBehavior.Restrict);
 
-            // Offline replay: the same queued attempt may arrive twice.
-            entity.HasIndex(a => a.ClientRequestId)
+            // Offline replay: the same queued attempt may arrive twice. Scoped to the user, so an id another
+            // person happened to send is never their replay, and never blocks their insert.
+            // The plain user index stays: the replay index is partial, so it cannot serve a lookup by user.
+            entity.HasIndex(a => a.UserId);
+            entity.HasIndex(a => new { a.UserId, a.ClientRequestId })
                 .IsUnique()
                 .HasFilter("\"ClientRequestId\" IS NOT NULL");
         });
@@ -951,8 +954,9 @@ public partial class BlocwerkDbContext : DbContext
                 .HasForeignKey(c => c.UserId)
                 .OnDelete(DeleteBehavior.Restrict);
 
-            // Offline replay: a comment has no natural dedupe key.
-            entity.HasIndex(c => c.ClientRequestId)
+            // Offline replay: a comment has no natural dedupe key. Scoped to the user, like attempts.
+            entity.HasIndex(c => c.UserId);
+            entity.HasIndex(c => new { c.UserId, c.ClientRequestId })
                 .IsUnique()
                 .HasFilter("\"ClientRequestId\" IS NOT NULL");
         });
