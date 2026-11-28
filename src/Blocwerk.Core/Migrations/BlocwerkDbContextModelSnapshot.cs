@@ -169,6 +169,64 @@ namespace Blocwerk.Core.Migrations
                     b.ToTable("ApiKeys");
                 });
 
+            modelBuilder.Entity("Blocwerk.Core.Entities.AppleLink", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("LinkedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Subject")
+                        .IsUnique();
+
+                    b.HasIndex("UserId")
+                        .IsUnique();
+
+                    b.ToTable("AppleLinks");
+                });
+
+            modelBuilder.Entity("Blocwerk.Core.Entities.AppleSignInNonce", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("NonceHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTimeOffset?>("UsedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("NonceHash")
+                        .IsUnique();
+
+                    b.ToTable("AppleSignInNonces");
+                });
+
             modelBuilder.Entity("Blocwerk.Core.Entities.Attempt", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4344,6 +4402,17 @@ namespace Blocwerk.Core.Migrations
                     b.Navigation("User");
 
                     b.Navigation("Wall");
+                });
+
+            modelBuilder.Entity("Blocwerk.Core.Entities.AppleLink", b =>
+                {
+                    b.HasOne("Blocwerk.Core.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.Attempt", b =>
