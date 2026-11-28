@@ -42,7 +42,9 @@ public partial class ApiKeyService
         }
 
         var now = DateTimeOffset.UtcNow;
-        if (key.RevokedAt is not null || (key.ExpiresAt is not null && key.ExpiresAt <= now))
+        if (key.RevokedAt is not null
+            || (key.ExpiresAt is not null && key.ExpiresAt <= now)
+            || DeviceLinks.DeviceLinkPolicy.IsIdleExpired(key, now))
         {
             return null;
         }

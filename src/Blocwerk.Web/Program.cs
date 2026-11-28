@@ -202,6 +202,9 @@ public static class Program
         // The change-journal audit of the automation API's writes (panel update, wall preparation).
         builder.Services.AddScoped<ApiWriteAudit>();
 
+        // The companion app's code exchange (POST /api/device-link/token) is rate limited per client address.
+        builder.Services.AddDeviceLinkRateLimit();
+
         // Counts live circuits into the "connected users" gauge.
         builder.Services.AddScoped<CircuitHandler, TelemetryCircuitHandler>();
 

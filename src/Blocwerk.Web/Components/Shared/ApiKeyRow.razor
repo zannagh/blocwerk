@@ -8,6 +8,10 @@
             {
                 <span class="apikey-scope kiosk">Kiosk</span>
             }
+            else if (Key.IsDevice)
+            {
+                <span class="apikey-scope kiosk">Linked device</span>
+            }
             else if (Key.AllowWrite)
             {
                 <span class="apikey-scope">Write</span>

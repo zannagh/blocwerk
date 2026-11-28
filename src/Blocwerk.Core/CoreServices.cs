@@ -8,6 +8,7 @@ using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Detection.Enrichment;
 using Blocwerk.Core.Detection.Gating;
+using Blocwerk.Core.DeviceLinks;
 using Blocwerk.Core.Enhancement;
 using Blocwerk.Core.Feed;
 using Blocwerk.Core.HoldMoves;
@@ -188,6 +189,7 @@ public static class CoreServices
         });
         builder.Services.AddScoped<IKioskService, KioskService>();
         builder.Services.AddScoped<IWallVisitService, WallVisitService>();
+        builder.Services.AddScoped<IDeviceLinkService, DeviceLinkService>();
         builder.Services.AddScoped<IWallSegmentService, WallSegmentService>();
         builder.Services.AddScoped<IWallGlyphService, WallGlyphService>();
         builder.Services.AddScoped<IHoldOutlineUpgradeService, HoldOutlineUpgradeService>();

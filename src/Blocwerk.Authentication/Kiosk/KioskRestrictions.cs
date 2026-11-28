@@ -292,6 +292,9 @@ public static class KioskRestrictions
         // Credentials that outlive the session.
         "Blocwerk.Web.Components.Pages.Settings.ApiKeys",
 
+        // Linking a phone mints a device key for the acting member: a credential that outlives the session.
+        "Blocwerk.Web.Components.Pages.DeviceLink",
+
         // Permanently erasing the acting member's account from a public tablet.
         "Blocwerk.Web.Components.Pages.Settings.DeleteAccount",
 

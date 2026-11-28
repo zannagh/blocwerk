@@ -229,6 +229,7 @@ public partial class BlocwerkDbContext : DbContext
         ConfigureWallEnhancement(modelBuilder);
         ConfigureFeed(modelBuilder);
         ConfigureVisitLinks(modelBuilder);
+        ConfigureDeviceLinks(modelBuilder);
         ConfigureWallScans(modelBuilder);
     }
 
