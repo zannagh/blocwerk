@@ -10,5 +10,10 @@ namespace Blocwerk.Core.Feed;
 /// <param name="CurrentUser">Resolves the signed-in user.</param>
 /// <param name="Kiosk">The session's kiosk state, or null outside an HTTP host.</param>
 /// <param name="KioskKeys">Re-validates a kiosk tablet's key on every grant, so a revoked key stops reading at once.</param>
+/// <param name="DeviceKeys">Re-validates a linked device key on every grant, likewise.</param>
 public sealed record FeedSession(
-    FeedCaller Caller, ICurrentUserService CurrentUser, IKioskContext? Kiosk, IKioskKeyValidator? KioskKeys);
+    FeedCaller Caller,
+    ICurrentUserService CurrentUser,
+    IKioskContext? Kiosk,
+    IKioskKeyValidator? KioskKeys,
+    IDeviceKeyValidator? DeviceKeys = null);

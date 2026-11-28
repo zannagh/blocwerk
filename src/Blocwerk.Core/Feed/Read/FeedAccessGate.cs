@@ -13,7 +13,9 @@ namespace Blocwerk.Core.Feed;
 /// subscribe with (<c>CircuitFeedViewer</c>), so a catch-up page never carries a row the hub would not have delivered.
 /// <list type="bullet">
 /// <item><description>An API key never reads the feed (it is a device secret, and the feed spans every kind of the wall),
-/// except a linked device key (the companion app), which reads exactly as its owner's cookie would.</description></item>
+/// except a linked device key (the companion app), which reads exactly as its owner's cookie would, and only while the
+/// key is live (checked on every grant, so an open stream's next access check ends it once the key is
+/// revoked).</description></item>
 /// <item><description>A kiosk tablet reads its own wall only, as <see cref="FeedViewer.Kiosk"/> with nobody picked and as
 /// <see cref="FeedViewer.KioskActing"/> acting as a member (the bylines differ, the rows do not), so a member's own rows
 /// never reach the shared tablet, and only while its key is live; it never reads
@@ -33,7 +35,7 @@ public static class FeedAccessGate
         FeedSession session,
         CancellationToken cancellationToken)
     {
-        if (session.Caller.IsRefusedKey)
+        if (session.Caller.IsRefusedKey || !await DeviceKeyMayReadAsync(session, cancellationToken))
         {
             return FeedAccess.Refuse(FeedAccessRefusal.NoAccess);
         }
@@ -71,9 +73,11 @@ public static class FeedAccessGate
     /// The viewer for the caller's own rows across walls (<c>/api/me/changes</c>): a signed-in person only, never a kiosk
     /// tablet (per-user data is never stored on one, design §7.2).
     /// </summary>
-    public static async Task<FeedAccess> ForSelfAsync(FeedSession session)
+    public static async Task<FeedAccess> ForSelfAsync(FeedSession session, CancellationToken cancellationToken = default)
     {
-        if (session.Caller.IsRefusedKey || await IsKioskAsync(session.Kiosk))
+        if (session.Caller.IsRefusedKey
+            || !await DeviceKeyMayReadAsync(session, cancellationToken)
+            || await IsKioskAsync(session.Kiosk))
         {
             return FeedAccess.Refuse(FeedAccessRefusal.NoAccess);
         }
@@ -96,6 +100,13 @@ public static class FeedAccessGate
         && session.Kiosk?.KioskApiKeyId is { } keyId && keyId != Guid.Empty
         && session.KioskKeys is { } keys
         && await keys.IsKeyValidAsync(keyId, wallId, cancellationToken);
+
+    // Anyone but a device key passes; a device key only while it is live. No validator means no grant.
+    private static async Task<bool> DeviceKeyMayReadAsync(FeedSession session, CancellationToken cancellationToken) =>
+        !session.Caller.IsDeviceKey
+        || (session.Caller.ApiKeyId is { } keyId
+            && session.DeviceKeys is { } keys
+            && await keys.IsLiveAsync(keyId, cancellationToken));
 
     private static async Task<bool> IsKioskAsync(IKioskContext? kiosk)
     {

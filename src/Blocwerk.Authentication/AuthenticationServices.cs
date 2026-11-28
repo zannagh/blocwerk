@@ -72,6 +72,7 @@ public static class AuthenticationServices
         app.Services.AddSingleton<VisitGrantCookie>();
         app.Services.AddScoped<IKioskContext, KioskContext>();
         app.Services.AddScoped<KioskKeyValidator>();
+        app.Services.AddScoped<IDeviceKeyValidator, DeviceKeys.DeviceKeyValidator>();
 
         // The same scoped instance behind the Core-facing interface, so a Core service that must
         // GRANT on a kiosk registration (BoulderService's anonymous create) re-checks the key

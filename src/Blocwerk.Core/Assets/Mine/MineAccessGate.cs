@@ -24,7 +24,7 @@ public static class MineAccessGate
     /// <summary>The reader and their class on <paramref name="wallId"/>, or why there is none.</summary>
     public static async Task<MineAccess> DecideAsync(BlocwerkDbContext db, Guid wallId, FeedSession session, CancellationToken ct)
     {
-        var self = await FeedAccessGate.ForSelfAsync(session);
+        var self = await FeedAccessGate.ForSelfAsync(session, ct);
         if (self.Viewer is null || self.CallerUserId is not { } userId)
         {
             return MineAccess.Refuse(self.Refusal);

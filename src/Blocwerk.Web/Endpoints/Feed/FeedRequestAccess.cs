@@ -18,13 +18,18 @@ namespace Blocwerk.Web.Endpoints.Feed;
 internal static class FeedRequestAccess
 {
     public static FeedCaller CallerOf(HttpContext http) =>
-        new(http.User.Identity?.IsAuthenticated == true, http.User.IsApiKeyPrincipal(), http.User.IsDeviceKey());
+        new(
+            http.User.Identity?.IsAuthenticated == true,
+            http.User.IsApiKeyPrincipal(),
+            http.User.IsDeviceKey(),
+            http.User.GetApiKeyId());
 
     public static FeedSession SessionOf(HttpContext http) => new(
         CallerOf(http),
         http.RequestServices.GetRequiredService<ICurrentUserService>(),
         http.RequestServices.GetService<IKioskContext>(),
-        http.RequestServices.GetService<IKioskKeyValidator>());
+        http.RequestServices.GetService<IKioskKeyValidator>(),
+        http.RequestServices.GetService<IDeviceKeyValidator>());
 
     public static async Task<FeedAccess> ForWallAsync(HttpContext http, Guid wallId, string? shareToken, CancellationToken ct)
     {
@@ -32,7 +37,8 @@ internal static class FeedRequestAccess
         return await FeedAccessGate.ForWallAsync(db, wallId, shareToken, SessionOf(http), ct);
     }
 
-    public static Task<FeedAccess> ForSelfAsync(HttpContext http) => FeedAccessGate.ForSelfAsync(SessionOf(http));
+    public static Task<FeedAccess> ForSelfAsync(HttpContext http) =>
+        FeedAccessGate.ForSelfAsync(SessionOf(http), http.RequestAborted);
 
     public static IResult Refused(HttpContext http, FeedAccessRefusal refusal)
     {

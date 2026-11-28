@@ -124,6 +124,7 @@ internal sealed class MineDocumentFixture : IDisposable
         builder.Services.AddSingleton(Docs.CurrentUser);
         builder.Services.AddSingleton(Docs.Kiosk);
         builder.Services.AddSingleton(Docs.KioskKeys);
+        builder.Services.AddSingleton(Docs.DeviceKeys);
         builder.Services.AddSingleton(_ => Service());
         builder.Services.AddSingleton<ICachePartitionResolver>(_ => Partitions());
         var built = builder.Build();

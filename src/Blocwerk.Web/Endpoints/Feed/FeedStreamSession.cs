@@ -18,7 +18,8 @@ namespace Blocwerk.Web.Endpoints.Feed;
 /// (<see cref="FeedStreamChecks"/>) before anything after it is written: the caller's own <c>access.revoked</c> ends the
 /// stream at once, and a role, owner, share-token or wall change is decided again before the next row goes out. The
 /// stream also ends when its (jittered) lifetime is up, when the client falls behind the queue, or when the app stops.
-/// The browser then reconnects with its last id and is gated afresh.
+/// The browser then reconnects with its last id and is gated afresh. While live, the grant is also decided again every
+/// <see cref="FeedStreamOptions.AccessRecheck"/>, rows or not, so a key revoked without a feed row still ends the stream.
 /// </remarks>
 internal sealed class FeedStreamSession(FeedStreamHost host, FeedStreamWriter writer)
 {
@@ -76,6 +77,7 @@ internal sealed class FeedStreamSession(FeedStreamHost host, FeedStreamWriter wr
     {
         var lifetime = host.Options.Spread(host.Options.Lifetime);
         var clock = Stopwatch.StartNew();
+        var recheckAt = host.Options.AccessRecheck;
         while (true)
         {
             var left = lifetime - clock.Elapsed;
@@ -84,7 +86,18 @@ internal sealed class FeedStreamSession(FeedStreamHost host, FeedStreamWriter wr
                 return FeedStreamEvents.ByeLifetime;
             }
 
-            var ready = await WaitAsync(reader, left < host.Options.Heartbeat ? left : host.Options.Heartbeat, host.Stopping, ct);
+            if (clock.Elapsed >= recheckAt)
+            {
+                if (!await StillGrantedAsync(request, ct))
+                {
+                    return FeedStreamEvents.ByeAccess;
+                }
+
+                recheckAt = clock.Elapsed + host.Options.AccessRecheck;
+            }
+
+            var wait = Min(left, host.Options.Heartbeat, recheckAt - clock.Elapsed);
+            var ready = await WaitAsync(reader, wait, host.Stopping, ct);
             if (ready is null)
             {
                 if (!host.Stopping.IsCancellationRequested)
@@ -106,6 +119,8 @@ internal sealed class FeedStreamSession(FeedStreamHost host, FeedStreamWriter wr
             }
         }
     }
+
+    private static TimeSpan Min(TimeSpan a, TimeSpan b, TimeSpan c) => a < b ? (a < c ? a : c) : (b < c ? b : c);
 
     // True when a delivery is waiting, false when the queue was closed, null when the wait ran out (idle) or the app stops.
     private static async Task<bool?> WaitAsync(
