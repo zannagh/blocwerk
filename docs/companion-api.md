@@ -218,6 +218,7 @@ The native wall settings pages call the web settings card's own service calls. *
   - Each change runs through the web's own call: name, description and angle through `UpdateWallAsync`; update mode through `SetMaintenanceAsync`; the kiosk switches through `SetAnonymousKioskSettingAsync` and `SetKioskKeyboardShortcutsAsync`.
   - These values are refused with 400: an unknown field, a value of the wrong type, a blank name or one over 256 characters, a description over 1024, an angle outside 0–90.
   - Every value is absolute, so a retry is harmless and the route needs no `clientRequestId`.
+  - The patch is applied in one save (`IWallService.UpdateSettingsAsync`), with the same admin and kiosk guards as the card's own calls. Only the fields that were sent are written, so a rename made meanwhile is never overwritten by a patch that only sets the angle.
 - **Photo.** This is the web's upload for a wall that has **no photo and no panels yet** (`UploadPhotoAsync`: it strips the metadata, makes the centre panel and detects the holds).
   - A wall that already has a photo or panels answers 409; it is updated through the wall update.
   - The body goes through the gallery's checks:
@@ -226,6 +227,9 @@ The native wall settings pages call the web settings card's own service calls. *
     - a HEIC is converted to an upright JPEG with no metadata, or refused (415) where the server has no converter;
     - the picture must stay under the pixel limit (400).
   - Every upload detects holds again, so it is not idempotent: `clientRequestId` is **required** (query string). A retry returns the stored photo's sha.
+  - **Concurrency.** The route refuses a wall that already has a photo before it reads the body. The service (`UploadFirstPhotoAsync`) then checks again under a per-wall lock, so two concurrent uploads never both run hold detection; the second gets 409.
+  - **HEIC.** Before conversion, the sizes in the HEIC header (its `ispe` boxes) are checked against the pixel limit: over it, or unreadable, is a 400. At most two `heif-convert` runs happen at once in the whole server, and further uploads wait their turn.
+  - **Damaged photos.** A JPEG or PNG the sanitizer finds damaged is a 400.
 - **Role.** Admins set any member's role through `SetMemberRoleAsync`. The owner's role can never be changed (403, now refused in the service for the web too). An unknown member is a 404 `{ message: "Member not found" }`.
 
 ## Rules

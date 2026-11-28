@@ -15,11 +15,10 @@ using Microsoft.EntityFrameworkCore;
 namespace Blocwerk.Web.Controllers;
 
 /// <summary>
-/// The wall settings card and member roles for the companion app, through the web's own service calls
-/// (<see cref="IWallService.UpdateWallAsync"/>, <see cref="IWallService.SetMaintenanceAsync"/>,
-/// <see cref="IWallService.SetAnonymousKioskSettingAsync"/>, <see cref="IWallService.SetKioskKeyboardShortcutsAsync"/>,
-/// <see cref="IWallService.SetMemberRoleAsync"/>), so the web's rules hold: members read the settings, admins (the
-/// owner included) change them and the roles, and nobody changes the owner's role.
+/// The wall settings card and member roles for the companion app, through the wall service
+/// (<see cref="IWallService.UpdateSettingsAsync"/>: the card's fields in one save, with the same admin and kiosk guards
+/// as the card's own calls; <see cref="IWallService.SetMemberRoleAsync"/>), so the web's rules hold: members read the
+/// settings, admins (the owner included) change them and the roles, and nobody changes the owner's role.
 /// </summary>
 /// <remarks>
 /// A linked device key only, never cached. A wall the caller is not a member of answers a bare 404; a member who is not
@@ -80,16 +79,18 @@ public sealed class DeviceWallSettingsController : ControllerBase
             return refused;
         }
 
-        var current = await reader.ReadAsync(wallId, caller!, ct);
-        if (current is null)
-        {
-            return NotFound();
-        }
-
         return await RunAsync(async () =>
         {
-            await ApplyAsync(wallId, patch, current);
-            return Ok(await reader.ReadAsync(wallId, caller!, ct));
+            await walls.UpdateSettingsAsync(
+                wallId,
+                new WallSettingsUpdate(
+                    patch.Name,
+                    patch.Description,
+                    patch.Angle,
+                    patch.UnderMaintenance,
+                    patch.AllowAnonymousKiosk,
+                    patch.AllowKioskKeyboardShortcuts));
+            return await reader.ReadAsync(wallId, caller!, ct) is { } settings ? Ok(settings) : NotFound();
         });
     }
 
@@ -113,30 +114,6 @@ public sealed class DeviceWallSettingsController : ControllerBase
             await walls.SetMemberRoleAsync(wallId, userId, role);
             return Ok(new SetMemberRoleResponse(userId, role.ToString()));
         });
-    }
-
-    private async Task ApplyAsync(Guid wallId, WallSettingsPatch patch, DeviceWallSettingsResponse current)
-    {
-        if (patch.ChangesDetails)
-        {
-            var description = patch.Description is null ? current.Description : (patch.Description.Length == 0 ? null : patch.Description);
-            await walls.UpdateWallAsync(wallId, patch.Name ?? current.Name, description, patch.Angle);
-        }
-
-        if (patch.UnderMaintenance is { } maintenance)
-        {
-            await walls.SetMaintenanceAsync(wallId, maintenance);
-        }
-
-        if (patch.AllowAnonymousKiosk is { } anonymous)
-        {
-            await walls.SetAnonymousKioskSettingAsync(wallId, anonymous);
-        }
-
-        if (patch.AllowKioskKeyboardShortcuts is { } shortcuts)
-        {
-            await walls.SetKioskKeyboardShortcutsAsync(wallId, shortcuts);
-        }
     }
 
     private async Task<WallCaller?> CallerAsync(Guid wallId, CancellationToken ct)

@@ -82,6 +82,66 @@ public sealed class DeviceWallPhotoControllerTests
         Assert.IsType<NotFoundResult>(await Controller(h, PrivacyPhotos.GpsJpeg(), "image/jpeg").Upload(Guid.NewGuid(), Guid.NewGuid(), [], default));
     }
 
+    [Fact]
+    public async Task TwoConcurrentUploads_RunHoldDetectionOnce_TheOtherIs409()
+    {
+        using var h = new WallTestHarness();
+        var wallId = await EmptyWallAsync(h);
+        var first = Controller(h, PrivacyPhotos.GpsJpeg(), "image/jpeg");
+        var second = Controller(h, PrivacyPhotos.GpsJpeg(), "image/jpeg");
+        var release = new TaskCompletionSource();
+        h.HoldDetection.DetectHoldsAsync(Arg.Any<byte[]>(), Arg.Any<HoldDetectionParameters?>())
+            .Returns(async _ =>
+            {
+                await release.Task;
+                return new List<DetectedHold>();
+            });
+
+        var a = first.Upload(wallId, Guid.NewGuid(), [], default);
+        var b = second.Upload(wallId, Guid.NewGuid(), [], default);
+        await Task.Delay(200);
+        release.SetResult();
+        var results = await Task.WhenAll(a, b);
+
+        Assert.Single(results.OfType<OkObjectResult>());
+        Refused(Assert.Single(results.OfType<ObjectResult>().Where(r => r is not OkObjectResult)), 409);
+        await h.HoldDetection.Received(1).DetectHoldsAsync(Arg.Any<byte[]>(), Arg.Any<HoldDetectionParameters?>());
+    }
+
+    [Fact]
+    public async Task AHeicOverThePixelLimit_IsRefusedBeforeConversion()
+    {
+        using var h = new WallTestHarness();
+        var wallId = await EmptyWallAsync(h);
+        var converter = Substitute.For<ICapturePhotoConverter>();
+
+        Refused(await Controller(h, Heic(60_000, 60_000), "image/heic").Upload(wallId, Guid.NewGuid(), [converter], default), 400);
+        Refused(await Controller(h, Heic(), "image/heic").Upload(wallId, Guid.NewGuid(), [converter], default), 400); // no sizes at all
+
+        await converter.DidNotReceive().ToJpegAsync(Arg.Any<byte[]>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public void TheHeicHeader_NamesTheLargestImage()
+    {
+        Assert.Equal((4032, 3024), HeicHeader.LargestImage(Heic(4032, 3024)));
+        Assert.Equal((4032, 3024), HeicHeader.LargestImage([.. Heic(512, 512), .. Ispe(4032, 3024)]));
+        Assert.Null(HeicHeader.LargestImage(Heic()));
+    }
+
+    // An ftyp box naming HEIC, then (with a size) one ispe property box.
+    private static byte[] Heic(uint width, uint height) => [.. Heic(), .. Ispe(width, height)];
+
+    private static byte[] Ispe(uint width, uint height)
+    {
+        var box = new byte[20];
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(box, 20);
+        "ispe"u8.CopyTo(box.AsSpan(4));
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(box.AsSpan(12), width);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(box.AsSpan(16), height);
+        return box;
+    }
+
     private static byte[] Heic() => [0, 0, 0, 0x18, .. "ftypheic"u8, 0, 0, 0, 0, .. "mif1heic"u8];
 
     private static string? Sha(IActionResult result) =>

@@ -52,6 +52,31 @@ public sealed class DeviceWallSettingsControllerTests
         Assert.Equal(("Attic", 40), (cleared.Name, cleared.Angle));
     }
 
+    [Fact]
+    public async Task APatch_WritesOnlyWhatItSends_SoARenameMeanwhileIsKept()
+    {
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync(holdCount: 0);
+        await using (var db = h.CreateContext())
+        {
+            await db.Walls.IgnoreQueryFilters().Where(w => w.Id == h.WallId)
+                .ExecuteUpdateAsync(u => u.SetProperty(w => w.Name, "Renamed elsewhere"));
+        }
+
+        var after = Settings(await Controller(h).PatchSettings(h.WallId, Json("""{ "angle": 25, "underMaintenance": true }"""), default));
+
+        Assert.Equal(("Renamed elsewhere", 25, true), (after.Name, after.Angle, after.UnderMaintenance));
+        await using var check = h.CreateContext();
+        Assert.Equal(h.ActingUser.Id, await check.Walls.IgnoreQueryFilters().Where(w => w.Id == h.WallId).Select(w => w.MaintenanceByUserId).SingleAsync());
+    }
+
+    [Fact]
+    public void TheSanitizersDamagedPhoto_IsA400()
+    {
+        var refusal = Assert.IsType<ObjectResult>(DeviceWallRefusal.FromService(new InvalidOperationException(Capture.StoredPhotoSanitizer.DamagedMessage)));
+        Assert.Equal(400, refusal.StatusCode);
+    }
+
     [Theory]
     [InlineData("""{ "angle": 91 }""")]
     [InlineData("""{ "angle": "steep" }""")]

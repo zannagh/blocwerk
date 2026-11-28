@@ -17,10 +17,11 @@ using Serilog;
 namespace Blocwerk.Web.Controllers;
 
 /// <summary>
-/// The wall's first photo for the companion app: the web's empty-wall upload (<see cref="IWallService.UploadPhotoAsync"/>,
+/// The wall's first photo for the companion app: the web's empty-wall upload (<see cref="IWallService.UploadFirstPhotoAsync"/>,
 /// which strips the metadata, makes the centre panel and detects the holds), with the gallery's hardening
 /// (<see cref="WallPhotoIntake"/>). Like the web, only on a wall that has no photo and no panels yet; a wall with photos
-/// is updated through the wall update.
+/// is updated through the wall update. The route refuses a taken wall before reading the body, and the service checks
+/// again under a per-wall lock, so two concurrent uploads never both run hold detection.
 /// </summary>
 /// <remarks>
 /// A linked device key only, write-limited, never cached; admins (the owner included) only. Every upload detects holds
@@ -38,9 +39,6 @@ public sealed class DeviceWallPhotoController : ControllerBase
 {
     /// <summary>The receipt kind of a wall photo upload.</summary>
     public const string ReceiptKind = "wall.photo";
-
-    /// <summary>The refusal on a wall that already has its photo or panels.</summary>
-    public const string HasPhotoMessage = "This wall already has a photo or panels. Update it through the wall update.";
 
     private readonly IDbContextFactory<BlocwerkDbContext> contexts;
     private readonly ICurrentUserService currentUser;
@@ -110,7 +108,7 @@ public sealed class DeviceWallPhotoController : ControllerBase
     {
         if (await HasPhotoOrPanelsAsync(wallId, ct))
         {
-            return DeviceWallRefusal.Refused(StatusCodes.Status409Conflict, HasPhotoMessage);
+            return DeviceWallRefusal.Refused(StatusCodes.Status409Conflict, WallService.FirstPhotoTakenMessage);
         }
 
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -123,7 +121,7 @@ public sealed class DeviceWallPhotoController : ControllerBase
 
         try
         {
-            await walls.UploadPhotoAsync(wallId, bytes, type!);
+            await walls.UploadFirstPhotoAsync(wallId, bytes, type!);
         }
         catch (Exception ex) when (DeviceWallRefusal.FromService(ex) is { } refusal)
         {

@@ -2,6 +2,7 @@
 // See License in the project root for license information.
 
 using Blocwerk.Core.Capture;
+using Blocwerk.Core.Helpers;
 using Microsoft.AspNetCore.Http.Features;
 
 namespace Blocwerk.Web.Controllers;
@@ -9,7 +10,8 @@ namespace Blocwerk.Web.Controllers;
 /// <summary>
 /// Reads the companion app's wall photo (the raw request body) with the gallery's hardening: at most
 /// <see cref="MaxBytes"/>, JPEG, PNG or HEIC only, the bytes must be the declared type, a HEIC is converted to JPEG with
-/// its metadata dropped, and the picture must stay under the pixel limit (<see cref="GalleryImageCheck"/>). Location and
+/// its metadata dropped (its header's sizes checked against the pixel limit before it is converted), and the picture
+/// must stay under the pixel limit (<see cref="GalleryImageCheck"/>). Location and
 /// the other metadata of a JPEG or PNG are stripped by the service's own upload.
 /// </summary>
 internal static class WallPhotoIntake
@@ -48,6 +50,12 @@ internal static class WallPhotoIntake
 
         if (kind == CapturePhotoKind.Heic)
         {
+            // The header's sizes first: a picture over the pixel limit never reaches the converter.
+            if (HeicRefusal(bytes) is { } tooLarge)
+            {
+                return (null, null, StatusCodes.Status400BadRequest, tooLarge);
+            }
+
             bytes = await ToJpegAsync(bytes, converter, ct);
             if (bytes is null)
             {
@@ -60,6 +68,14 @@ internal static class WallPhotoIntake
             ? (null, null, refusal.Status, refusal.Message)
             : (bytes, type, StatusCodes.Status200OK, null);
     }
+
+    private static string? HeicRefusal(byte[] heic) => HeicHeader.LargestImage(heic) switch
+    {
+        null => "The HEIC photo could not be read.",
+        { } size when ImagePixelLimit.IsTooLarge(size.Width, size.Height) =>
+            $"The image has more than {ImagePixelLimit.MaxPixels / 1_000_000} megapixels.",
+        _ => null,
+    };
 
     private static bool Matches(CapturePhotoKind kind, string? declared) => kind switch
     {

@@ -8,16 +8,40 @@ namespace Blocwerk.Core.Capture;
 /// <see cref="ICapturePhotoConverter"/> over libheif's <c>heif-convert</c> (Debian/Ubuntu package
 /// <c>libheif-examples</c> plus <c>libheif-plugin-libde265</c>). It decodes the primary image, applies the
 /// HEIF rotation/mirror to the pixels (so the JPEG is upright with orientation 1) and writes the image's
-/// EXIF into the JPEG. The photo is written to a private temp folder that is deleted afterwards.
+/// EXIF into the JPEG. The photo is written to a private temp folder that is deleted afterwards. At most
+/// <see cref="MaxConcurrent"/> conversions run at once in the whole server (each decodes a full photo in memory);
+/// further callers wait their turn.
 /// </summary>
 public sealed class HeifCapturePhotoConverter(WallCapturePipelineOptions options) : ICapturePhotoConverter
 {
     /// <summary>Default JPEG quality of the conversion: visually lossless for marker corners and textures.</summary>
     public const int Quality = 92;
 
+    /// <summary>The most conversions that run at once, server-wide.</summary>
+    public const int MaxConcurrent = 2;
+
     private static readonly TimeSpan Timeout = TimeSpan.FromMinutes(1);
 
+    private static readonly SemaphoreSlim Gate = new(MaxConcurrent, MaxConcurrent);
+
     public async Task<byte[]> ToJpegAsync(byte[] heic, CancellationToken ct)
+    {
+        await Gate.WaitAsync(ct);
+        try
+        {
+            return await ConvertAsync(heic, ct);
+        }
+        finally
+        {
+            Gate.Release();
+        }
+    }
+
+    /// <summary>heif-convert's arguments: JPEG at <paramref name="quality"/> (default <see cref="Quality"/>).</summary>
+    public static IReadOnlyList<string> Arguments(string input, string output, int quality = Quality) =>
+        ["-q", quality.ToString(System.Globalization.CultureInfo.InvariantCulture), input, output];
+
+    private async Task<byte[]> ConvertAsync(byte[] heic, CancellationToken ct)
     {
         var work = Directory.CreateTempSubdirectory("blocwerk-capture-heic-");
         try
@@ -36,10 +60,6 @@ public sealed class HeifCapturePhotoConverter(WallCapturePipelineOptions options
             work.Delete(recursive: true);
         }
     }
-
-    /// <summary>heif-convert's arguments: JPEG at <paramref name="quality"/> (default <see cref="Quality"/>).</summary>
-    public static IReadOnlyList<string> Arguments(string input, string output, int quality = Quality) =>
-        ["-q", quality.ToString(System.Globalization.CultureInfo.InvariantCulture), input, output];
 
     /// <summary>
     /// The primary image: <c>photo.jpg</c>, or <c>photo-1.jpg</c> when the file held several top-level images

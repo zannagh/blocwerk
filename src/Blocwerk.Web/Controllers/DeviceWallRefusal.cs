@@ -1,6 +1,7 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using Blocwerk.Core.Capture;
 using Blocwerk.Core.Services;
 using Microsoft.AspNetCore.Mvc;
 
@@ -46,6 +47,8 @@ internal static class DeviceWallRefusal
         InvalidOperationException { Message: "Wall not found" } => new NotFoundResult(),
         InvalidOperationException { Message: "Member not found" } => Refused(StatusCodes.Status404NotFound, "Member not found"),
         InvalidOperationException { Message: WallService.OwnerRoleMessage } => Forbidden(WallService.OwnerRoleMessage),
+        InvalidOperationException { Message: WallService.FirstPhotoTakenMessage } => Refused(StatusCodes.Status409Conflict, ex.Message),
+        InvalidOperationException { Message: StoredPhotoSanitizer.DamagedMessage } => Refused(StatusCodes.Status400BadRequest, ex.Message),
         UserFacingException user => Refused(StatusCodes.Status400BadRequest, user.Message),
         _ => null,
     };

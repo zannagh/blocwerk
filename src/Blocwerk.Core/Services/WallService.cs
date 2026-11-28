@@ -15,7 +15,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core.Services;
 
-public class WallService : IWallService
+public partial class WallService : IWallService
 {
     /// <summary>The refusal when somebody tries to change the wall owner's role.</summary>
     public const string OwnerRoleMessage = "The wall owner's role can't be changed.";
