@@ -34,6 +34,9 @@ public sealed class DeviceApiRoutePostureTests
         ("DELETE", "api/v1/me/projects/{boulderId:guid}"),
         ("POST", "api/v1/me/comments"),
         ("DELETE", "api/v1/me/comments/{commentId:guid}"),
+        ("GET", "api/v1/me/profile"),
+        ("PATCH", "api/v1/me/profile"),
+        ("GET", "api/v1/users/{userId:guid}"),
     ];
 
     public static TheoryData<string, string> Routes()

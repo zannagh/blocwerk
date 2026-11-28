@@ -118,5 +118,6 @@ internal static partial class ApiDocsData
                 null,
                 null,
                 MarksNotes),
+            .. DeviceProfileEndpoints,
         ]);
 }
