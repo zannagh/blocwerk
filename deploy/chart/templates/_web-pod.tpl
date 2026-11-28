@@ -63,6 +63,11 @@ containers:
     envFrom:
       - secretRef:
           name: {{ .Values.secrets.app }}
+      {{- with .Values.secrets.appleSignin }}
+      - secretRef:
+          name: {{ . }}
+          optional: true
+      {{- end }}
     startupProbe:
       httpGet: {path: /health, port: http}   # includes the database
       periodSeconds: 5

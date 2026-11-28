@@ -28,7 +28,9 @@ ingresses for the dashboard, backups, and every Secret (referenced by name in `s
 - **One web replica.** The app keeps circuits, edit leases, the feed signal and job queues in its process;
   `web.replicas` is 0 or 1 (0 only for a cutover). The later web/worker split changes this chart, not the rule's reason.
 - **Secrets by name only.** `secrets.app` (envFrom), `secrets.postgres`, `secrets.compute`, optional
-  `secrets.appsettings` and `secrets.deploy`, and `secrets.recognition` while the recognition worker is on. `BLOCWERK__ENCRYPTIONKEY` and the key ring in `keys/` on the data volume
+  `secrets.appsettings`, `secrets.deploy` and `secrets.appleSignin` (a second, optional envFrom on the web container
+  with the four `APPLE_SIGNIN_*` keys; unset = Sign in with Apple stays off), and `secrets.recognition` while the
+  recognition worker is on. `BLOCWERK__ENCRYPTIONKEY` and the key ring in `keys/` on the data volume
   must be carried over verbatim when moving an installation.
 - **splat-cpu is optional** and nothing assumes it. `splat.onRunners: true` (`SPLATSERVICE__ONRUNNERS`) sends
   splat-prepare and splat-finish to 3D runners as jobs (needs `web.env.RUNNERS__MODE` other than `off`; the render

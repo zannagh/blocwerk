@@ -70,6 +70,20 @@
 .microsoft:hover { border-color: #0078d4; background: #0078d4; color: white; }
 .google:hover { border-color: #db4437; background: #db4437; color: white; }
 
+/* Sign in with Apple (Apple HIG): black with white logo and title on a light page, white with black on a dark one;
+   the system font; the colours stay put on hover. */
+.provider-button.apple,
+.provider-button.apple:hover {
+    background: #000; border-color: #000; color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .provider-button.apple,
+    :root:not([data-theme="light"]) .provider-button.apple:hover { background: #fff; border-color: #fff; color: #000; }
+}
+[data-theme="dark"] .provider-button.apple,
+[data-theme="dark"] .provider-button.apple:hover { background: #fff; border-color: #fff; color: #000; }
+
 .provider-icon { width: 24px; height: 24px; margin-right: 12px; flex-shrink: 0; }
 .provider-text { flex: 1; text-align: left; }
 

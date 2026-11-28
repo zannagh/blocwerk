@@ -89,32 +89,10 @@ public partial class AccountController
     /// </summary>
     private async Task<IActionResult> HandleReauthCallbackAsync(string code, Guid reauthUserId)
     {
-        // Single-use: drop the intent up front so a replayed callback cannot mint a second ticket.
-        Response.Cookies.Delete(ReauthIntentCookieName, ReauthIntentCookieDeleteOptions());
-
-        if (KioskRestrictions.IsBlockedAccountLink(_kioskContext))
+        var (currentUser, refusal) = await CheckReauthSessionAsync(reauthUserId);
+        if (currentUser is null)
         {
-            return Redirect("/walls?kiosk_blocked=1");
-        }
-
-        User currentUser;
-        try
-        {
-            currentUser = await _currentUserService.GetCurrentUserAsync();
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return Redirect("/account/login?error=reauth_session_lost");
-        }
-
-        // The session must still be the one that asked. A mismatch means it changed mid-round-trip.
-        if (currentUser.Id != reauthUserId)
-        {
-            Log.Warning(
-                "[Web Authentication] Step-up aborted: stashed user {StashedUser} != current user {CurrentUser}.",
-                reauthUserId,
-                currentUser.Id);
-            return Redirect($"{AccountReauthRoutes.DeleteAccountPath}?reauth_error=mismatch");
+            return refusal!;
         }
 
         var info = await ExchangeCodeForIdentityAsync(code);
@@ -140,7 +118,58 @@ public partial class AccountController
             return Redirect($"{AccountReauthRoutes.DeleteAccountPath}?reauth_error=not_yours");
         }
 
-        var ticket = _reauthTicketStore.Issue(currentUser.Id);
+        return ReauthTicketRedirect(currentUser.Id);
+    }
+
+    /// <summary>
+    /// The checks every step-up callback makes before it looks at the returned identity: it spends the intent, refuses
+    /// a kiosk session, and requires the session to still be the account that asked. Returns that account, or null and
+    /// where to send the browser instead.
+    /// </summary>
+    private async Task<(User? User, IActionResult? Refusal)> CheckReauthSessionAsync(Guid reauthUserId)
+    {
+        // Single-use: drop the intent up front so a replayed callback cannot mint a second ticket.
+        Response.Cookies.Delete(ReauthIntentCookieName, ReauthIntentCookieDeleteOptions());
+
+        if (KioskRestrictions.IsBlockedAccountLink(_kioskContext))
+        {
+            return (null, Redirect("/walls?kiosk_blocked=1"));
+        }
+
+        // A session signed in with an API key proves nothing about the person: the same refusal the link path makes.
+        if (Services.ApiKeySessionClaims.IsApiKeySession(User))
+        {
+            Log.Warning("[Web Authentication] Step-up refused for user {UserId}: API key session.", reauthUserId);
+            return (null, Redirect($"{AccountReauthRoutes.DeleteAccountPath}?reauth_error=failed"));
+        }
+
+        User currentUser;
+        try
+        {
+            currentUser = await _currentUserService.GetCurrentUserAsync();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return (null, Redirect("/account/login?error=reauth_session_lost"));
+        }
+
+        // The session must still be the one that asked. A mismatch means it changed mid-round-trip.
+        if (currentUser.Id != reauthUserId)
+        {
+            Log.Warning(
+                "[Web Authentication] Step-up aborted: stashed user {StashedUser} != current user {CurrentUser}.",
+                reauthUserId,
+                currentUser.Id);
+            return (null, Redirect($"{AccountReauthRoutes.DeleteAccountPath}?reauth_error=mismatch"));
+        }
+
+        return (currentUser, null);
+    }
+
+    /// <summary>Issues the single-use step-up ticket and hands it back to the waiting page.</summary>
+    private IActionResult ReauthTicketRedirect(Guid userId)
+    {
+        var ticket = _reauthTicketStore.Issue(userId);
         return Redirect(
             $"{AccountReauthRoutes.DeleteAccountPath}?{AccountReauthRoutes.TicketQueryParameter}={Uri.EscapeDataString(ticket)}");
     }

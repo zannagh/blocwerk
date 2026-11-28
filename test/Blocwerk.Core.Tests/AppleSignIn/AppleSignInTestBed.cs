@@ -61,7 +61,18 @@ internal sealed class AppleSignInTestBed : IDisposable
             Substitute.For<IKioskContext>());
     }
 
-    public Task<User> AddUserAsync(string identifier) => MeProfileControllerTests.AddUserAsync(Harness, identifier);
+    /// <summary>An account as every account before web Sign in with Apple is: with a provider identity (GitHub).</summary>
+    public async Task<User> AddUserAsync(string identifier)
+    {
+        var user = await MeProfileControllerTests.AddUserAsync(Harness, identifier);
+        await using var db = Harness.CreateContext();
+        db.UserIdentities.Add(new UserIdentity { UserId = user.Id, Provider = "github", ProviderUserId = $"gh-{user.Id:N}" });
+        await db.SaveChangesAsync();
+        return user;
+    }
+
+    /// <summary>An account with no password and no provider identity, as web Sign in with Apple makes one.</summary>
+    public Task<User> AddAppleOnlyUserAsync(string identifier) => MeProfileControllerTests.AddUserAsync(Harness, identifier);
 
     /// <summary>A fresh device key of <paramref name="userId"/>, as the app holds right after signing in.</summary>
     public async Task<Guid> DeviceKeyAsync(Guid userId, string device = "Linking iPhone") =>

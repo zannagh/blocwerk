@@ -76,6 +76,28 @@ public partial class AccountController
     /// </summary>
     private async Task<IActionResult> HandleLinkCallbackAsync(string code, Guid linkUserId, string linkProvider)
     {
+        var (currentUser, refusal) = await CheckLinkSessionAsync(linkUserId);
+        if (currentUser is null)
+        {
+            return refusal!;
+        }
+
+        var info = await ExchangeCodeForIdentityAsync(code);
+        if (info is null)
+        {
+            return Redirect("/profile?link=error");
+        }
+
+        return await LinkProviderIdentityAsync(currentUser, info.Value.Provider, linkProvider, info.Value.ProviderUserId);
+    }
+
+    /// <summary>
+    /// The checks every link callback makes before it looks at the returned identity: it spends the intent cookie,
+    /// refuses a kiosk or API-key session, and requires the session to still be the account that started the link.
+    /// Returns that account, or null and where to send the browser instead.
+    /// </summary>
+    private async Task<(User? User, IActionResult? Refusal)> CheckLinkSessionAsync(Guid linkUserId)
+    {
         // Single-use: drop the intent cookie up front so a replay can't re-trigger a link/merge.
         Response.Cookies.Delete(LinkIntentCookieName, LinkIntentCookieDeleteOptions());
 
@@ -89,14 +111,14 @@ public partial class AccountController
             Log.Warning(
                 "[Web Authentication] Account-link refused for user {UserId}: kiosk session.",
                 linkUserId);
-            return KioskLinkRefused();
+            return (null, KioskLinkRefused());
         }
 
         // Linking and merging from a session signed in with an API key: same refusal as Link.
         if (Services.ApiKeySessionClaims.IsApiKeySession(User))
         {
             Log.Warning("[Web Authentication] Account-link refused for user {UserId}: API key session.", linkUserId);
-            return Redirect("/profile?link=apikey");
+            return (null, Redirect("/profile?link=apikey"));
         }
 
         User currentUser;
@@ -106,7 +128,7 @@ public partial class AccountController
         }
         catch (UnauthorizedAccessException)
         {
-            return Redirect("/account/login?error=link_session_lost");
+            return (null, Redirect("/account/login?error=link_session_lost"));
         }
 
         // The user must still be signed in as the SAME account that started the link. A mismatch means
@@ -117,18 +139,21 @@ public partial class AccountController
                 "[Web Authentication] Account-link aborted: stashed user {StashedUser} != current user {CurrentUser}.",
                 linkUserId,
                 currentUser.Id);
-            return Redirect("/profile?link=error");
+            return (null, Redirect("/profile?link=error"));
         }
 
-        var info = await ExchangeCodeForIdentityAsync(code);
-        if (info is null)
-        {
-            return Redirect("/profile?link=error");
-        }
+        return (currentUser, null);
+    }
 
+    /// <summary>Links, reports, or merges one verified UserIdentities provider identity into the current account.</summary>
+    private async Task<IActionResult> LinkProviderIdentityAsync(
+        User currentUser,
+        string returnedProvider,
+        string linkProvider,
+        string providerUserId)
+    {
         // Trust the provider re-derived by /token; fall back to the stashed provider if absent.
-        var provider = string.IsNullOrEmpty(info.Value.Provider) ? linkProvider : info.Value.Provider;
-        var providerUserId = info.Value.ProviderUserId;
+        var provider = string.IsNullOrEmpty(returnedProvider) ? linkProvider : returnedProvider;
 
         await using var db = await _dbContextFactory.CreateDbContextAsync();
         var existing = await db.UserIdentities

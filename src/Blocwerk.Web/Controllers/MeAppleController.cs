@@ -79,7 +79,9 @@ public sealed class MeAppleController : ControllerBase
         }
     }
 
-    /// <summary>Unlinks the caller's Apple ID; unlinking none is a no-op.</summary>
+    /// <summary>
+    /// Unlinks the caller's Apple ID; unlinking none is a no-op. 409 when the Apple ID is the account's only way in.
+    /// </summary>
     [HttpDelete]
     [DeviceKeyWriteRateLimit]
     public async Task<IActionResult> Unlink(CancellationToken ct)
@@ -89,6 +91,10 @@ public sealed class MeAppleController : ControllerBase
             var user = await currentUser.GetCurrentUserAsync();
             await apple.UnlinkAsync(user.Id, ct);
             return NoContent();
+        }
+        catch (AppleOnlySignInException)
+        {
+            return Conflict(new ApiErrorResponse(AppleOnlySignInException.UserMessage));
         }
         catch (UnauthorizedAccessException)
         {

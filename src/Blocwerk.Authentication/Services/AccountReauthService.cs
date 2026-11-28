@@ -38,6 +38,7 @@ public sealed class AccountReauthService : IAccountReauthService
     private readonly IAccountReauthTicketStore ticketStore;
     private readonly AccountReauthThrottle throttle;
     private readonly BlocwerkSettings settings;
+    private readonly Apple.AppleWebSignIn? apple;
 
     // The redeemed provider step-up, for this request/circuit only. Never serialised, never in a URL.
     private Guid providerReauthUserId;
@@ -50,7 +51,8 @@ public sealed class AccountReauthService : IAccountReauthService
         ITotpService totpService,
         IAccountReauthTicketStore ticketStore,
         AccountReauthThrottle throttle,
-        BlocwerkSettings settings)
+        BlocwerkSettings settings,
+        Apple.AppleWebSignIn? apple = null)
     {
         this.currentUserService = currentUserService;
         this.dbContextFactory = dbContextFactory;
@@ -59,6 +61,7 @@ public sealed class AccountReauthService : IAccountReauthService
         this.ticketStore = ticketStore;
         this.throttle = throttle;
         this.settings = settings;
+        this.apple = apple;
     }
 
     /// <summary>
@@ -177,6 +180,11 @@ public sealed class AccountReauthService : IAccountReauthService
         if (settings.MicrosoftOAuth.Enabled)
         {
             providers.Add("microsoft");
+        }
+
+        if (apple?.IsEnabled == true)
+        {
+            providers.Add(Apple.AppleWebSettings.Provider);
         }
 
         return providers;

@@ -35,6 +35,11 @@ secrets:
   # Key RECOGNITION__INSTANCEKEY (32 to 256 characters, e.g. `openssl rand -hex 32`): the recognition worker's
   # instance runner key, read by the web app and the worker. Only used while recognition.enabled.
   recognition: blocwerk-recognition
+  # Optional. Sign in with Apple on the web: envFrom of the web container, mounted only when set ("" = off, the
+  # button stays hidden). Keys APPLE_SIGNIN_PRIVATE_KEY, APPLE_SIGNIN_KEY_ID, APPLE_SIGNIN_TEAM_ID,
+  # APPLE_SIGNIN_SERVICES_ID; the provider is on only when all four are set. Marked optional, so a missing Secret
+  # leaves the provider off instead of holding the pod.
+  appleSignin: ""
 
 # Capture limits, shared by the app (CAPTURE__*) and both workers (CAPTURE_MAX_*), as in compose. "" = app default.
 capture:

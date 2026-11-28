@@ -156,7 +156,7 @@ public class SiteDataClearingTests
         var kiosk = Substitute.For<IKioskContext>();
         kiosk.IsKiosk.Returns(isKiosk);
         var controller = new AccountController(
-            null!, null!, null!, null!, null!, null!, null!, null!, null!, null!, kiosk, null!, new EphemeralDataProtectionProvider())
+            null!, null!, null!, null!, null!, null!, null!, null!, null!, null!, kiosk, null!, new EphemeralDataProtectionProvider(), null!)
         {
             ControllerContext = new ControllerContext { HttpContext = http },
         };
