@@ -24,6 +24,9 @@ public readonly record struct PhotoMetadataFacts(bool HasLocation, bool NeedsCle
 /// </summary>
 public static class StoredPhotoSanitizer
 {
+    /// <summary>The refusal for a JPEG, PNG or WebP that is structurally broken.</summary>
+    public const string DamagedMessage = "The photo is damaged or incomplete and cannot be used.";
+
     private const ushort TagOrientation = 0x0112;
     private const ushort TagGpsIfd = 0x8825;
 
@@ -47,7 +50,7 @@ public static class StoredPhotoSanitizer
         }
         catch (InvalidDataException)
         {
-            throw new InvalidOperationException("The photo is damaged or incomplete and cannot be used.");
+            throw new InvalidOperationException(DamagedMessage);
         }
 
         if (orientation is < 2 or > 8)

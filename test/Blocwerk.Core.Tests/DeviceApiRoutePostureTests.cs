@@ -62,6 +62,10 @@ public sealed class DeviceApiRoutePostureTests
         ("DELETE", "api/v1/me/avatar"),
         ("POST", "api/v1/walls/{wallId:guid}/boulders"),
         ("PUT", "api/v1/walls/{wallId:guid}/boulders/{boulderId:guid}"),
+        ("GET", "api/v1/walls/{wallId:guid}/settings"),
+        ("PATCH", "api/v1/walls/{wallId:guid}/settings"),
+        ("PUT", "api/v1/walls/{wallId:guid}/photo"),
+        ("PUT", "api/v1/walls/{wallId:guid}/members/{userId:guid}/role"),
     ];
 
     public static TheoryData<string, string> Routes()

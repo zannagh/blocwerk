@@ -15,8 +15,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core.Services;
 
-public class WallService : IWallService
+public partial class WallService : IWallService
 {
+    /// <summary>The refusal when somebody tries to change the wall owner's role.</summary>
+    public const string OwnerRoleMessage = "The wall owner's role can't be changed.";
+
     private readonly IDbContextFactory<BlocwerkDbContext> _dbContextFactory;
     private readonly ICurrentUserService _currentUserService;
     private readonly IHoldDetectionService _holdDetectionService;
@@ -2046,6 +2049,12 @@ public class WallService : IWallService
             // Owner-aware admin check: a bare-owner (no explicit Admin member row) counts as admin,
             // matching the client _isAdmin gate. Everyone else is rejected exactly as before.
             await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
+
+            // The owner is the wall's admin by ownership; a role row of theirs must never demote them.
+            if (userId == wall.OwnerId)
+            {
+                throw new InvalidOperationException(OwnerRoleMessage);
+            }
 
             var membership = await db.WallMembers
                 .FirstOrDefaultAsync(wm => wm.WallId == wallId && wm.UserId == userId);
