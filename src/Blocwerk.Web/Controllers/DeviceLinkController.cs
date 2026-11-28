@@ -69,7 +69,7 @@ public sealed class DeviceLinkController : Controller
             return Redirect(DeviceLinkCallback.Denied(request.State));
         }
 
-        if (!tickets.IsValid(form.Ticket, user.Id, request.CodeChallenge))
+        if (!tickets.IsValid(form.Ticket, user.Id, request))
         {
             return LocalRedirect(PageAgain(request));
         }

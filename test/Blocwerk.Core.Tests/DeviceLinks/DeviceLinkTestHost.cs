@@ -123,7 +123,7 @@ internal sealed class DeviceLinkTestHost : IAsyncDisposable
 
     /// <summary>
     /// Posts the consent form as the page would: a fresh antiforgery token unless told not to, and the page's ticket for
-    /// the owner and the form's challenge unless <paramref name="ticket"/> names another.
+    /// the owner and the form's request unless <paramref name="ticket"/> names another.
     /// </summary>
     public async Task<HttpResponseMessage> PostConsentAsync(
         IDictionary<string, string> fields,
@@ -131,7 +131,9 @@ internal sealed class DeviceLinkTestHost : IAsyncDisposable
         string? ticket = null)
     {
         var form = new Dictionary<string, string>(fields);
-        form["ticket"] = ticket ?? app.Services.GetRequiredService<DeviceLinkPageTicket>().Issue(Owner.Id, fields["code_challenge"]);
+        form["ticket"] = ticket ?? app.Services.GetRequiredService<DeviceLinkPageTicket>().Issue(
+            Owner.Id,
+            new DeviceLinkRequest(fields["state"], fields["code_challenge"], fields["device"]));
         if (withToken)
         {
             var tokenResponse = await SendAsync(new HttpRequestMessage(HttpMethod.Get, "/form"));

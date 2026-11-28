@@ -23,7 +23,7 @@ public sealed class DeviceLinkDecision
     [FromForm(Name = "redirect_uri")]
     public string? RedirectUri { get; set; }
 
-    /// <summary>The page's own stamp (<c>DeviceLinkPageTicket</c>): who opened it, for which challenge, when.</summary>
+    /// <summary>The page's own stamp (<c>DeviceLinkPageTicket</c>): who opened it, for which request, when.</summary>
     [FromForm(Name = "ticket")]
     public string? Ticket { get; set; }
 

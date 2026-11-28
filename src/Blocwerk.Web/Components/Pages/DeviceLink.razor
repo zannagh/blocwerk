@@ -94,7 +94,7 @@
         if (!ApiKeySession.IsApiKeySession)
         {
             var user = await CurrentUser.GetCurrentUserAsync();
-            ticket = Tickets.Issue(user.Id, request.CodeChallenge);
+            ticket = Tickets.Issue(user.Id, request);
         }
     }
 }
