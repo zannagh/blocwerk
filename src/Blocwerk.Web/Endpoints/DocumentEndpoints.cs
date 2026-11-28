@@ -41,10 +41,12 @@ public static class DocumentEndpoints
     {
         app.MapMethods(Route, Verbs, HandleAsync)
             .RequireAuthorization(BlocwerkPolicies.WallSync)
-            .DenyApiKeyPrincipalsExceptDevices();
+            .DenyApiKeyPrincipalsExceptDevices()
+            .RequireDeviceKeySyncRateLimit();
         app.MapGet(IndexRoute, DataDocumentEndpoints.HandleIndexAsync)
             .RequireAuthorization(BlocwerkPolicies.WallSync)
-            .DenyApiKeyPrincipalsExceptDevices();
+            .DenyApiKeyPrincipalsExceptDevices()
+            .RequireDeviceKeySyncRateLimit();
     }
 
     internal static async Task<IResult> HandleAsync(

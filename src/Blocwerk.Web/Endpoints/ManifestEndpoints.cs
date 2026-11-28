@@ -45,7 +45,8 @@ public static class ManifestEndpoints
     {
         app.MapGet(ManifestRoute, HandleManifestAsync)
             .RequireAuthorization(BlocwerkPolicies.WallSync)
-            .DenyApiKeyPrincipalsExceptDevices();
+            .DenyApiKeyPrincipalsExceptDevices()
+            .RequireDeviceKeySyncRateLimit();
         app.MapGet(PartitionRoute, HandlePartitionAsync)
             .AllowAnonymous();
         app.MapGet(SummaryRoute, HandleSummaryAsync)

@@ -43,10 +43,12 @@ public static class AssetEndpoints
     {
         app.MapMethods(Route, Verbs, HandleAsync)
             .RequireAuthorization(BlocwerkPolicies.WallSync)
-            .DenyApiKeyPrincipalsExceptDevices();
+            .DenyApiKeyPrincipalsExceptDevices()
+            .RequireDeviceKeySyncRateLimit();
         app.MapMethods(VariantRoute, Verbs, HandleVariantAsync)
             .RequireAuthorization(BlocwerkPolicies.WallSync)
-            .DenyApiKeyPrincipalsExceptDevices();
+            .DenyApiKeyPrincipalsExceptDevices()
+            .RequireDeviceKeySyncRateLimit();
     }
 
     internal static async Task<IResult> HandleAsync(

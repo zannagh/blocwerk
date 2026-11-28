@@ -64,6 +64,9 @@ internal sealed class DataDocumentFixture : IDisposable
     /// <summary>Gets the device key check; every device key is live until a test says otherwise.</summary>
     public IDeviceKeyValidator DeviceKeys { get; } = Substitute.For<IDeviceKeyValidator>();
 
+    /// <summary>Gets or sets the device keys' sync limit the routes use (the production default unless a test sets one).</summary>
+    public DeviceKeySyncRateLimiter SyncLimiter { get; set; } = new();
+
     public ICurrentUserService CurrentUser { get; }
 
     public Guid KioskKeyId { get; } = Guid.NewGuid();
@@ -205,6 +208,7 @@ internal sealed class DataDocumentFixture : IDisposable
     public void Dispose()
     {
         (app as IDisposable)?.Dispose();
+        SyncLimiter.Dispose();
         Harness.Dispose();
     }
 
@@ -260,6 +264,7 @@ internal sealed class DataDocumentFixture : IDisposable
         builder.Services.AddSingleton(Kiosk);
         builder.Services.AddSingleton(KioskKeys);
         builder.Services.AddSingleton(DeviceKeys);
+        builder.Services.AddSingleton(SyncLimiter);
         builder.Services.AddSingleton(_ => Service());
         builder.Services.AddSingleton(_ => new View3DDocumentService(
             Harness.DbContextFactory, CurrentUser, Substitute.For<IWall3DViewService>(), new View3DDocumentStore(), TimeProvider.System,
