@@ -247,6 +247,23 @@ The settings' "iPhone scan" card and the danger zone call the web's own services
 - **Removing a scan.** This calls `IWallScanService.DeleteAsync`, for administrators of the installation only (`mayDeleteScans`). A wall member who isn't one gets 403, and anyone else 404. A refusal that lands between the check and the delete (a demotion, a kiosk session) is also a 403. Only a received scan can be removed: an open upload is a 409, and an unknown scan is a 404 `{ message }`. The same delete under `/api/walls/{w}/scans/{id}` stays as it was; this route is its device-key alias.
 - **Deleting the wall.** This calls `IWallService.DeleteWallAsync`. The web shows the button to admins, but the service deletes only for the owner, so this route is for the owner only: another admin gets 403. `confirmName` must equal the wall's name, compared exactly (case included) after trimming surrounding spaces on both, as the web's confirmation field does; otherwise it is a 400 and nothing is deleted. The web now shows the danger card to the owner only; other admins leave the wall instead. Leaving a wall and removing a member are `POST /api/v1/walls/{w}/leave` and `DELETE /api/v1/walls/{w}/members/{userId}`, in their own PR.
 
+## Wall activity, leaderboard, temperature and look-over
+
+The web wall page's read-only cards, from the page's own services. **Device key only**, members of the wall only (anyone else gets a bare 404), counted in the key's sync bucket, `no-store`.
+
+| Route | Answer |
+| --- | --- |
+| `GET /api/v1/walls/{w}/activity?page=0&pageSize=20` | `{ items: [{ id, type, userId, userName, avatarUrl, boulderId, details, timestamp, subjectUserId, subjectUserName }], totalCount, page, pageSize }`, newest first |
+| `GET /api/v1/walls/{w}/boulders/{b}/activity?page=0&pageSize=5` | the same, for one boulder (404 for a boulder of another wall) |
+| `GET /api/v1/walls/{w}/leaderboard` | `[{ userId, name, avatarUrl, hardestSendGrade, hardestSendScore, score, volumeMinutes }]` |
+| `GET /api/v1/walls/{w}/temperature?range=24h` | `{ latestCelsius, latestAt, range, from, to, bucketSeconds, buckets: [{ bucketStart, averageCelsius, minCelsius, maxCelsius, sampleCount }] }` |
+| `GET /api/v1/walls/{w}/look-over` | `{ pending, pendingSince, generation, openFindings, totalFindings, completedAt, completedBy, canLookOver, bouldersMarked, moreBoulders, missingHolds }` |
+
+- **Activity.** This is `IActivityLogService` (wall and boulder). `type` is the `ActivityType` name (`BoulderCreated`, `AttemptLogged`, `CommentAdded`, `BetaVideoUploaded`, `MemberJoined`, …). Bylines follow the web's rule (`LeafAuthors`): an erased or system author reads as Ghost, with `userId` null. `subjectUserId` and `subjectUserName` name the person a member row is about (`MemberJoined`, `MemberRoleChanged`, `MemberRemoved`, `MemberLeft`), by the same rule. `pageSize` is clamped to 1–50 and `page` to 0–10000. A membership revoked during the read answers 404. The feed's `activity.added` rows say when to read again.
+- **Leaderboard.** This is `IProgressionService.GetWallLeaderboardAsync`, the members card. Sort by `hardestSendScore`, `score` or `volumeMinutes`.
+- **Temperature.** `range` is `24h`, `7d`, `30d`, `1y` or `all` (400 otherwise). The windows and bucket widths are the web chart's (`WallTemperatureWindow`, now shared with the web panel): 120 buckets for the day and 96 for wider windows. A bucket with no readings is absent and drawn as a gap. With `all` and no readings, `from` is null and `buckets` empty.
+- **Look-over.** This is `IWallLookOverService.GetStateAsync`, the banner. While `pending` is true, admins and moderators (`canLookOver`) get the headline numbers; everyone else gets "This wall was updated recently." Update mode is `underMaintenance` in `GET /api/v1/walls/{w}/settings`, which members may read.
+
 ## Rules
 
 - **Who gets in.** The `/api/v1/me` write routes use the `DeviceApiKey` policy and answer any other caller 404. The sync routes use the `WallSync` policy and the `DenyApiKeyPrincipalsExceptDevices()` filter. Both admit a device key and refuse every other key with the same bare 404 as before: a plain personal key, a wall key, a kiosk key or an installation key. The `/api/v1/me` routes (walls, changes, mine) use the `DeviceApiKey` policy, so a browser cookie does not work there either.
