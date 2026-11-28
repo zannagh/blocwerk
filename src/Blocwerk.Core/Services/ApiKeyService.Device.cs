@@ -15,6 +15,8 @@ namespace Blocwerk.Core.Services;
 /// Linking the same device again replaces its key (earlier device keys with the same name are revoked), and a user
 /// keeps at most <see cref="DeviceLinkPolicy.MaxLiveDeviceKeys"/> live device keys, the oldest revoked first. A device
 /// key also stops working after <see cref="DeviceLinkPolicy.DeviceKeyIdleLifetime"/> without use (see FindActiveAsync).
+/// Retiring and minting run in one transaction that first locks the user's row, so two links of the same user at once
+/// take turns: the second one sees the first one's key, and the cap holds.
 /// </remarks>
 public partial class ApiKeyService
 {
@@ -27,11 +29,29 @@ public partial class ApiKeyService
 
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);
         db.CurrentUserId = Guid.Empty;
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await LockUserAsync(db, userId, ct);
         await RetireDeviceKeysAsync(db, userId, name.Trim(), ct);
 
         var key = await PersistAsync(db, ApiKeyScope.User, userId, null, name, null, ct, allowWrite: true, isDevice: true);
+        await transaction.CommitAsync(ct);
         logger.LogInformation("Device API key {ApiKeyId} issued for user {UserId}", key.Key.Id, userId);
         return key;
+    }
+
+    /// <summary>
+    /// Holds the user's row until the transaction ends, so another link of the same user waits here. <c>NO KEY</c>
+    /// keeps foreign-key checks of other writes that point at the user unblocked. SQLite (tests only) has a single
+    /// writer anyway.
+    /// </summary>
+    private static async Task LockUserAsync(BlocwerkDbContext db, Guid userId, CancellationToken ct)
+    {
+        if (db.Database.IsNpgsql())
+        {
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $"SELECT 1 FROM \"Users\" WHERE \"Id\" = {userId} FOR NO KEY UPDATE",
+                ct);
+        }
     }
 
     /// <summary>
