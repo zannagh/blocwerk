@@ -34,6 +34,7 @@ public sealed class KioskContext : IKioskContext
     private readonly AuthenticationStateProvider? authenticationStateProvider;
     private readonly KioskDeviceCookie deviceCookie;
     private readonly VisitGrantCookie? visitCookie;
+    private readonly VisitGrantCheck? visitCheck;
     private readonly TimeProvider clock;
 
     private bool initialized;
@@ -47,12 +48,14 @@ public sealed class KioskContext : IKioskContext
         KioskDeviceCookie deviceCookie,
         AuthenticationStateProvider? authenticationStateProvider = null,
         VisitGrantCookie? visitCookie = null,
-        TimeProvider? clock = null)
+        TimeProvider? clock = null,
+        VisitGrantCheck? visitCheck = null)
     {
         this.httpContextAccessor = httpContextAccessor;
         this.deviceCookie = deviceCookie;
         this.authenticationStateProvider = authenticationStateProvider;
         this.visitCookie = visitCookie;
+        this.visitCheck = visitCheck;
         this.clock = clock ?? TimeProvider.System;
     }
 
@@ -114,7 +117,20 @@ public sealed class KioskContext : IKioskContext
 
         var principal = await ResolvePrincipalAsync();
         var http = httpContextAccessor.HttpContext;
-        Apply(principal, deviceCookie.Read(http), visitCookie?.Read(http));
+        var registration = deviceCookie.Read(http);
+        var grant = visitCookie?.Read(http);
+
+        // The cookie is the visitor's own copy of the grant; whether it still stands (the link, its maker still on the
+        // wall) is in the database. Asked once per request and once per circuit, and only by a session that has one.
+        if (grant is not null && visitCheck is not null && !await visitCheck.IsLiveAsync(grant).ConfigureAwait(false))
+        {
+            grant = null;
+        }
+
+        if (!initialized)
+        {
+            Apply(principal, registration, grant);
+        }
     }
 
     /// <summary>
@@ -200,6 +216,11 @@ public sealed class KioskContext : IKioskContext
         // synchronisation context, silently and everywhere at once. If that provider is ever replaced,
         // this method must become async (and every caller of the synchronous members with it) rather
         // than keeping GetAwaiter().GetResult().
-        InitializeAsync().GetAwaiter().GetResult();
+        //
+        // The visit's database check is the one part that is not synchronous, so this backstop leaves the visit out
+        // rather than block on it: a visitor read before priming sees nothing, which is the safe side.
+        var principal = ResolvePrincipalAsync().GetAwaiter().GetResult();
+        var http = httpContextAccessor.HttpContext;
+        Apply(principal, deviceCookie.Read(http), visitCheck is null ? visitCookie?.Read(http) : null);
     }
 }
