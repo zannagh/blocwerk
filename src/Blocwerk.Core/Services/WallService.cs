@@ -17,9 +17,13 @@ namespace Blocwerk.Core.Services;
 
 public partial class WallService : IWallService
 {
+    /// <summary>The refusal when a user already owns as many walls as <see cref="WallCreationOptions.MaxOwnedPerUser"/> allows.</summary>
+    public const string WallLimitMessage = "You already own as many walls as one account may. Delete one you no longer use first.";
+
     /// <summary>The refusal when somebody tries to change the wall owner's role.</summary>
     public const string OwnerRoleMessage = "The wall owner's role can't be changed.";
 
+    private readonly WallCreationOptions creationOptions;
     private readonly IDbContextFactory<BlocwerkDbContext> _dbContextFactory;
     private readonly ICurrentUserService _currentUserService;
     private readonly IHoldDetectionService _holdDetectionService;
@@ -48,9 +52,11 @@ public partial class WallService : IWallService
         IPushNotificationService? pushNotificationService = null,
         IChangeJournal? changeJournal = null,
         IHoldEnrichmentService? holdEnrichment = null,
-        IHoldRefinementQueue? refinementQueue = null)
+        IHoldRefinementQueue? refinementQueue = null,
+        WallCreationOptions? creationOptions = null)
     {
         this.refinementQueue = refinementQueue;
+        this.creationOptions = creationOptions ?? new WallCreationOptions();
         _dbContextFactory = dbContextFactory;
         _currentUserService = currentUserService;
         _holdDetectionService = holdDetectionService;
@@ -75,6 +81,12 @@ public partial class WallService : IWallService
             // created after the fact. Creating one from the kiosk only ever produces a wall the
             // acting user owns and cannot see from here — and it is a write outside the kiosk's wall.
             KioskGuard.EnsureNotKiosk(_kioskContext, db, "Creating a wall");
+
+            var cap = creationOptions.MaxOwnedPerUser;
+            if (cap > 0 && await db.Walls.IgnoreQueryFilters().CountAsync(w => w.OwnerId == user.Id) >= cap)
+            {
+                throw new UserFacingException(WallLimitMessage);
+            }
 
             var wall = new Wall
             {

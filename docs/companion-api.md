@@ -311,6 +311,10 @@ The rule exists so that a leaked key can never become a permanent takeover: a ne
 
 - **Replay.** A create is not idempotent, so `clientRequestId` is **required**. A retry answers the wall the first request made, never a second wall.
 - **Body checks** (400): a name of 1–256 characters, a description of at most 1024, an angle of 0–90 (0 when left out).
+- **Limits.**
+  - One user may own at most 20 walls (`Walls:MaxOwnedPerUser`, env `WALLS__MAXOWNEDPERUSER`; 0 turns the cap off). The cap is in `CreateWallAsync`, so the web create page shares it. Over it is a 409 with a message.
+  - Each device key may also create at most 5 walls an hour, in a bucket of its own; over that is a 429 with `Retry-After`. A replay never spends from it.
+- **After the wall exists.** Its receipt is kept even if the request is cancelled, so the retry can't make a second wall. A replay reads the wall through the membership filter: a wall deleted since, or one the caller no longer belongs to, is a 404.
 - **Photo.** It follows as the web uploads it right after creating: `PUT /api/v1/walls/{wallId}/photo?clientRequestId=…&autoDetect=true`. With `autoDetect=false` the photo is stored without detecting holds, the web create page's "I'll mark the holds myself".
 - **Markers.** The web form's "This wall has markers" switch is not part of this route: the marker path is being replaced by the iPhone scan.
 

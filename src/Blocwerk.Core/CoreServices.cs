@@ -62,6 +62,7 @@ public static class CoreServices
         var config = settings;
         builder.Services.AddSingleton(config);
         builder.Services.AddSingleton(builder.Configuration.GetSection(HoldMoveOptions.Section).Get<HoldMoveOptions>() ?? new HoldMoveOptions());
+        builder.Services.AddSingleton(builder.Configuration.GetSection(WallCreationOptions.Section).Get<WallCreationOptions>() ?? new WallCreationOptions());
         builder.Services.AddSingleton(builder.Configuration.GetSection(HoldSamenessOptions.Section).Get<HoldSamenessOptions>() ?? new HoldSamenessOptions());
 
         // The "this server is about to be replaced" notice. A singleton for the same reason and with
