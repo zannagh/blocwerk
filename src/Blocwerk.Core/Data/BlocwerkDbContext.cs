@@ -651,6 +651,10 @@ public partial class BlocwerkDbContext : DbContext
                 .IsUnique()
                 .HasFilter("\"ShareToken\" IS NOT NULL");
 
+            entity.HasIndex(w => w.JoinToken)
+                .IsUnique()
+                .HasFilter("\"JoinToken\" IS NOT NULL");
+
             entity.Property(w => w.BorderPoints)
                 .HasConversion(
                     v => v == null ? null : JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),

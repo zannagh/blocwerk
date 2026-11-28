@@ -62,16 +62,24 @@ public interface IWallService
     /// </summary>
     Task PromoteVirtualHoldAsync(Guid virtualHoldId, CancellationToken ct = default);
 
-    Task<string> GenerateShareTokenAsync(Guid wallId);
+    /// <summary>
+    /// Replaces the wall's invite (join) token, so the old invite link stops joining. Admins only, never from a kiosk.
+    /// The public share token is left alone.
+    /// </summary>
+    Task<string> RotateJoinTokenAsync(Guid wallId);
 
     /// <summary>
-    /// Returns the wall's share token so any member can invite others, minting one only when the
+    /// Returns the wall's invite (join) token so any member can invite others, minting one only when the
     /// wall has none yet. Non-destructive: an existing token is returned unchanged (unlike
-    /// <see cref="GenerateShareTokenAsync"/>, which regenerates). Refused for kiosk sessions.
+    /// <see cref="RotateJoinTokenAsync"/>, which replaces it). Refused for kiosk sessions.
     /// </summary>
-    Task<string> GetOrCreateShareTokenAsync(Guid wallId);
+    Task<string> GetOrCreateJoinTokenAsync(Guid wallId);
 
-    Task<Wall> JoinWallAsync(string shareToken);
+    /// <summary>The wall an invite token belongs to (slim row, no photos), or null; for the signed-out Join page.</summary>
+    Task<Wall?> GetWallByJoinTokenAsync(string joinToken);
+
+    /// <summary>Joins the wall whose invite (join) token this is, as a member. Not the public share token.</summary>
+    Task<Wall> JoinWallAsync(string joinToken);
 
     Task<byte[]?> GetPhotoAsync(Guid wallId);
 

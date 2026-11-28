@@ -34,6 +34,7 @@ public static class WallQueryExtensions
             StagingMode = w.StagingMode,
             OwnerId = w.OwnerId,
             ShareToken = w.ShareToken,
+            JoinToken = w.JoinToken,
             Angle = w.Angle,
             BorderPoints = w.BorderPoints,
             IsActive = w.IsActive,

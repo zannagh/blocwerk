@@ -22,7 +22,7 @@ public sealed class WallListSignalTests
     {
         await using var f = new OwnWriteFixture();
         await f.StartAsync();
-        var token = await f.Circuit.Walls.GetOrCreateShareTokenAsync(f.WallId);
+        var token = await f.Circuit.Walls.GetOrCreateJoinTokenAsync(f.WallId);
         var joiner = await AddUserAsync(f, "joiner@test");
         f.Harness.ActingUser = joiner;
         f.Viewer.Viewer = null;

@@ -43,8 +43,20 @@ public class Wall
     [ForeignKey(nameof(OwnerId))]
     public User Owner { get; set; } = null!;
 
+    /// <summary>
+    /// The public share token: <c>/walls/{id}/shared/{token}</c> lets anyone look at the wall without joining it. Kept
+    /// when a member leaves or is removed, so a link already handed around keeps working.
+    /// </summary>
     [MaxLength(64)]
     public string? ShareToken { get; set; }
+
+    /// <summary>
+    /// The invite token: <c>/join/{token}</c> makes the signed-in holder a member. Separate from
+    /// <see cref="ShareToken"/>, so it can be replaced (an admin's rotate, a removal, a member leaving) without ending
+    /// the public share link. Walls from before the split started with both the same.
+    /// </summary>
+    [MaxLength(64)]
+    public string? JoinToken { get; set; }
 
     public int Angle { get; set; }
 

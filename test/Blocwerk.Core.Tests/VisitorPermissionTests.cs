@@ -74,7 +74,7 @@ public class VisitorPermissionTests
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => boulders.ArchiveBoulderAsync(boulder));
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => walls.AddHoldAsync(h.WallId, 0.5, 0.5, 0.02, null));
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => walls.UpdateWallAsync(h.WallId, "Renamed", null));
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => walls.GetOrCreateShareTokenAsync(h.WallId));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => walls.GetOrCreateJoinTokenAsync(h.WallId));
         await Assert.ThrowsAsync<UnauthorizedAccessException>(
             () => VisitFixture.Service(h, new VisitTestClock(VisitFixture.Start), visitor).CreateAsync(h.WallId));
 

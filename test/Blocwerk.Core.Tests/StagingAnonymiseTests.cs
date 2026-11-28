@@ -38,7 +38,9 @@ public class StagingAnonymiseTests
         Assert.Equal(userId, identity.UserId);
         Assert.Equal("github", identity.Provider);
         Assert.Equal("12345", identity.ProviderUserId);
-        Assert.Null((await db.Walls.IgnoreQueryFilters().SingleAsync(w => w.Id == wallId)).ShareToken);
+        var wall = await db.Walls.IgnoreQueryFilters().SingleAsync(w => w.Id == wallId);
+        Assert.Null(wall.ShareToken);
+        Assert.Null(wall.JoinToken);
         Assert.Contains(await db.Users.IgnoreQueryFilters().ToListAsync(), u => u.Identifier == "system:ghost");
     }
 
@@ -55,7 +57,7 @@ public class StagingAnonymiseTests
             TotpSecretProtected = "secret",
             TotpEnabled = true,
         };
-        var wall = new Wall { Name = "Home", OwnerId = user.Id, ShareToken = "share-me" };
+        var wall = new Wall { Name = "Home", OwnerId = user.Id, ShareToken = "share-me", JoinToken = "join-me" };
         db.Users.Add(user);
         db.Walls.Add(wall);
         db.UserIdentities.Add(new UserIdentity { UserId = user.Id, Provider = "github", ProviderUserId = "12345" });

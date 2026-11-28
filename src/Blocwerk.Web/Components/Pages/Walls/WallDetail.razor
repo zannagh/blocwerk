@@ -1701,9 +1701,9 @@ else
         _boulders = _items.Select(i => i.Boulder).ToList();
         ComputeReconciledHoldCounts();
 
-        if (!string.IsNullOrEmpty(wall.ShareToken))
+        if (!string.IsNullOrEmpty(wall.JoinToken))
         {
-            _shareLink = $"{Navigation.BaseUri}join/{wall.ShareToken}";
+            _shareLink = $"{Navigation.BaseUri}join/{wall.JoinToken}";
         }
     }
 
@@ -2003,13 +2003,13 @@ else
 
     private async Task GenerateShareLink()
     {
-        var token = await WallService.GenerateShareTokenAsync(WallId);
+        var token = await WallService.RotateJoinTokenAsync(WallId);
         _shareLink = $"{Navigation.BaseUri}join/{token}";
     }
 
     private async Task InviteAsync()
     {
-        var token = await WallService.GetOrCreateShareTokenAsync(WallId);
+        var token = await WallService.GetOrCreateJoinTokenAsync(WallId);
         _shareLink = $"{Navigation.BaseUri}join/{token}";
         _showInviteLink = true;
 
