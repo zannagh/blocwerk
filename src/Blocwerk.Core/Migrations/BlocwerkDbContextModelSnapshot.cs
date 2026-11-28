@@ -198,6 +198,8 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasIndex("BoulderId");
 
+                    b.HasIndex("UserId");
+
                     b.HasIndex("UserId", "ClientRequestId")
                         .IsUnique()
                         .HasFilter("\"ClientRequestId\" IS NOT NULL");
@@ -377,6 +379,8 @@ namespace Blocwerk.Core.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("BoulderId");
+
+                    b.HasIndex("UserId");
 
                     b.HasIndex("UserId", "ClientRequestId")
                         .IsUnique()
