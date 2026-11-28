@@ -50,7 +50,7 @@ public sealed class DeviceWallPhotoControllerTests
         Refused(await Controller(h, PrivacyPhotos.GpsJpeg(), "image/jpeg").Upload(h.WallId, Guid.NewGuid(), [], default), 409);
         Refused(await Controller(h, PrivacyPhotos.ExifTiff(), "image/jpeg").Upload(empty, Guid.NewGuid(), [], default), 415);
         Refused(await Controller(h, PrivacyPhotos.GpsPng(), "image/jpeg").Upload(empty, Guid.NewGuid(), [], default), 415);
-        Refused(await Controller(h, Heic(), "image/heic").Upload(empty, Guid.NewGuid(), [], default), 415); // no converter
+        Refused(await Controller(h, Heic(4032, 3024), "image/heic").Upload(empty, Guid.NewGuid(), [], default), 415); // no converter
         Refused(await Controller(h, PrivacyPhotos.GpsJpeg(), "image/jpeg").Upload(empty, null, [], default), 400);
     }
 
@@ -62,7 +62,7 @@ public sealed class DeviceWallPhotoControllerTests
         var converter = Substitute.For<ICapturePhotoConverter>();
         converter.ToJpegAsync(Arg.Any<byte[]>(), Arg.Any<CancellationToken>()).Returns(PrivacyPhotos.GpsJpeg());
 
-        Assert.NotNull(Sha(await Controller(h, Heic(), "image/heic").Upload(wallId, Guid.NewGuid(), [converter], default)));
+        Assert.NotNull(Sha(await Controller(h, Heic(4032, 3024), "image/heic").Upload(wallId, Guid.NewGuid(), [converter], default)));
 
         await using var db = h.CreateContext();
         var wall = await db.Walls.IgnoreQueryFilters().SingleAsync(w => w.Id == wallId);
