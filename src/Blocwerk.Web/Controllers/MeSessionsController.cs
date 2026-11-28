@@ -52,14 +52,24 @@ public sealed class MeSessionsController : ControllerBase
             return BadRequest(new ApiErrorResponse("A wallId is required."));
         }
 
+        if (request.ClientRequestId == Guid.Empty)
+        {
+            return BadRequest(new ApiErrorResponse(ClientRequestIds.EmptyMessage));
+        }
+
         try
         {
-            var session = await sessionService.StartSessionAsync(request.WallId);
+            var session = await sessionService.StartSessionAsync(request.WallId, request.ClientRequestId);
             return Ok(session.ToResponse());
         }
         catch (UnauthorizedAccessException)
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ApiErrorResponse("Not allowed on this wall."));
+        }
+        catch (ArgumentOutOfRangeException ex)
+        {
+            // A clientRequestId already used for a session on another wall.
+            return BadRequest(new ApiErrorResponse(ex.Message));
         }
         catch (InvalidOperationException ex)
         {

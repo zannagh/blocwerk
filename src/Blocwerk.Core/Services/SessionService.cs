@@ -13,7 +13,7 @@ public interface ISessionService
     /// Starts a session on the given wall, ending any session the user already had open. The wall
     /// must be one the user can see, or this throws.
     /// </summary>
-    Task<ClimbingSession> StartSessionAsync(Guid wallId);
+    Task<ClimbingSession> StartSessionAsync(Guid wallId, Guid? clientRequestId = null);
 
     /// <summary>
     /// The user's live session, or null when none is open. A session whose day has passed is
@@ -27,6 +27,9 @@ public interface ISessionService
 
 public class SessionService : ISessionService
 {
+    /// <summary>The refusal of a <c>clientRequestId</c> the caller already used to start a session on another wall.</summary>
+    public const string ReusedRequestIdMessage = "This clientRequestId was already used to start a session on another wall.";
+
     private readonly IDbContextFactory<BlocwerkDbContext> _dbContextFactory;
     private readonly ICurrentUserService _currentUserService;
     private readonly ILogger<SessionService> _logger;
@@ -44,8 +47,9 @@ public class SessionService : ISessionService
         _pushNotificationService = pushNotificationService;
     }
 
-    public async Task<ClimbingSession> StartSessionAsync(Guid wallId)
+    public async Task<ClimbingSession> StartSessionAsync(Guid wallId, Guid? clientRequestId = null)
     {
+        ClientRequestIds.EnsureValid(clientRequestId);
         using var op = BlocwerkMetrics.TimeOperation("Session.Start", wallId);
         try
         {
@@ -62,28 +66,27 @@ public class SessionService : ISessionService
                 throw new InvalidOperationException("Wall not found");
             }
 
+            if (await ReplayedStartAsync(db, user.Id, clientRequestId) is { } replayed)
+            {
+                // The same key for another wall is a client bug, not a replay.
+                return replayed.WallId == wallId
+                    ? replayed
+                    : throw new ArgumentOutOfRangeException(nameof(clientRequestId), ReusedRequestIdMessage);
+            }
+
             await CloseOpenSessions(db, user.Id);
 
             var session = new ClimbingSession
             {
                 UserId = user.Id,
                 WallId = wallId,
+                ClientRequestId = clientRequestId,
             };
 
             db.ClimbingSessions.Add(session);
             await db.SaveChangesAsync();
 
-            BlocwerkMetrics.RecordSessionStarted(wallId);
-
-            _logger.LogInformation("Session {SessionId} started on wall {WallId} by {UserId}", session.Id, wallId, user.Id);
-
-            // After the commit: tell the wall's other members. Internally guarded, so a push failure
-            // never surfaces here and can never break or block starting the session.
-            if (_pushNotificationService is not null)
-            {
-                await _pushNotificationService.NotifySessionStartedAsync(wallId, user.Id);
-            }
-
+            await AnnounceStartAsync(session);
             session.Wall = await db.Walls.Where(w => w.Id == wallId).WithoutPhotos().FirstAsync();
             return session;
         }
@@ -152,6 +155,32 @@ public class SessionService : ISessionService
             op.Fail(ex);
             throw;
         }
+    }
+
+    // After the commit: count it, log it and tell the wall's other members. The push is internally guarded, so a push
+    // failure never surfaces here and can never break or block starting the session.
+    private async Task AnnounceStartAsync(ClimbingSession session)
+    {
+        BlocwerkMetrics.RecordSessionStarted(session.WallId);
+        _logger.LogInformation("Session {SessionId} started on wall {WallId} by {UserId}", session.Id, session.WallId, session.UserId);
+        if (_pushNotificationService is not null)
+        {
+            await _pushNotificationService.NotifySessionStartedAsync(session.WallId, session.UserId);
+        }
+    }
+
+    // A replay of the caller's own earlier start returns that session as it is now, and closes nothing: a retried start
+    // must not end the session it started.
+    private static async Task<ClimbingSession?> ReplayedStartAsync(BlocwerkDbContext db, Guid userId, Guid? clientRequestId)
+    {
+        if (clientRequestId is not { } requestId
+            || await db.ClimbingSessions.FirstOrDefaultAsync(c => c.UserId == userId && c.ClientRequestId == requestId) is not { } replayed)
+        {
+            return null;
+        }
+
+        replayed.Wall = await db.Walls.Where(w => w.Id == replayed.WallId).WithoutPhotos().FirstAsync();
+        return replayed;
     }
 
     private static async Task CloseOpenSessions(BlocwerkDbContext db, Guid userId)

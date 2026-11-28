@@ -5,7 +5,7 @@ namespace Blocwerk.Web.Controllers;
 /// EF entity carrying <c>User</c>/<c>Wall</c>/<c>Boulder</c> navigation properties: serializing
 /// those directly would either cycle or hand the caller rows belonging to other users.
 /// </summary>
-public record SessionResponse(Guid Id, Guid WallId, DateTimeOffset StartedAt, DateTimeOffset? EndedAt);
+public record SessionResponse(Guid Id, Guid WallId, DateTimeOffset StartedAt, DateTimeOffset? EndedAt, string? WallName = null);
 
 public record AttemptResponse(
     Guid Id,
@@ -48,7 +48,8 @@ public record ActivitySummaryResponse(
     int BoulderCount,
     int HangboardCount,
     int PullupCount,
-    string? WallName);
+    string? WallName,
+    string? GymName = null);
 
 public record ActivityDetailResponse(
     Guid Id,
@@ -58,7 +59,8 @@ public record ActivityDetailResponse(
     IReadOnlyList<BoulderAttemptSummaryResponse> Boulders,
     IReadOnlyList<HangboardSessionResponse> Hangboard,
     IReadOnlyList<PullupSessionResponse> Pullups,
-    string? WallName);
+    string? WallName,
+    string? GymName = null);
 
 public record ProgressionBucketResponse(
     DateOnly Start,

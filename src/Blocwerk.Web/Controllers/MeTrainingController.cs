@@ -73,12 +73,18 @@ public sealed class MeTrainingController : ControllerBase
             return BadRequest(new ApiErrorResponse("edgeSizeMm, durationSeconds and sets must be positive."));
         }
 
+        if (request.ClientRequestId == Guid.Empty)
+        {
+            return BadRequest(new ApiErrorResponse(ClientRequestIds.EmptyMessage));
+        }
+
         var session = await trainingService.SaveHangboardSessionAsync(
             request.EdgeSizeMm,
             request.AdditionalWeightKg,
             TimeSpan.FromSeconds(request.DurationSeconds),
             request.Sets,
-            request.Notes);
+            request.Notes,
+            request.ClientRequestId);
 
         return Ok(session.ToResponse());
     }
@@ -91,11 +97,17 @@ public sealed class MeTrainingController : ControllerBase
             return BadRequest(new ApiErrorResponse("repetitions and sets must be positive."));
         }
 
+        if (request.ClientRequestId == Guid.Empty)
+        {
+            return BadRequest(new ApiErrorResponse(ClientRequestIds.EmptyMessage));
+        }
+
         var session = await trainingService.SavePullupSessionAsync(
             request.Repetitions,
             request.AdditionalWeightKg,
             request.Sets,
-            request.Notes);
+            request.Notes,
+            request.ClientRequestId);
 
         return Ok(session.ToResponse());
     }

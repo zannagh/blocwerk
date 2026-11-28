@@ -1,6 +1,8 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Visits;
 using Blocwerk.Web.Controllers;
@@ -8,6 +10,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 
 namespace Blocwerk.Core.Tests;
 
@@ -51,15 +54,15 @@ public sealed class WallLinksControllerTests
     }
 
     [Fact]
-    public async Task AnOutsider_GetsNoInviteAndNoVisitorLink()
+    public async Task AnOutsider_Gets404_LikeAnUnknownWall()
     {
         using var h = new WallTestHarness();
         await h.SeedWallAsync(holdCount: 0);
         h.ActingUser = await MeProfileControllerTests.AddUserAsync(h, "outsider@test");
 
-        AssertStatus(await Controller(h).GetInvite(h.WallId), StatusCodes.Status403Forbidden);
-        AssertStatus(await Controller(h).RotateInvite(h.WallId), StatusCodes.Status403Forbidden);
-        AssertStatus(await Controller(h).CreateVisit(h.WallId, default), StatusCodes.Status403Forbidden);
+        Assert.IsType<NotFoundResult>(await Controller(h).GetInvite(h.WallId));
+        Assert.IsType<NotFoundResult>(await Controller(h).RotateInvite(h.WallId));
+        Assert.IsType<NotFoundResult>(await Controller(h).CreateVisit(h.WallId, default));
         Assert.IsType<NotFoundResult>(await Controller(h).GetInvite(Guid.NewGuid()));
     }
 
@@ -100,19 +103,61 @@ public sealed class WallLinksControllerTests
         Assert.Equal(WallRole.Member, membership.Role);
     }
 
+    [Fact]
+    public async Task ThePreview_NamesTheWall_WithoutJoiningIt()
+    {
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync(holdCount: 0);
+        var token = Link(await Controller(h).GetInvite(h.WallId)).Token;
+        var newcomer = await MeProfileControllerTests.AddUserAsync(h, "newcomer@test");
+        h.ActingUser = newcomer;
+
+        var ok = Assert.IsType<OkObjectResult>(await Controller(h).PreviewJoin(token, Substitute.For<IKioskContext>(), default));
+
+        Assert.Equal(new JoinPreviewResponse(h.WallId, "Test Wall", 1), ok.Value);
+        Assert.IsType<NotFoundObjectResult>(await Controller(h).PreviewJoin("not-a-token", Substitute.For<IKioskContext>(), default));
+        await using var db = h.CreateContext();
+        Assert.False(await db.WallMembers.AnyAsync(m => m.UserId == newcomer.Id));
+    }
+
+    [Fact]
+    public async Task ThePreview_IsRefusedOnAKiosk()
+    {
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync(holdCount: 0);
+        var token = Link(await Controller(h).GetInvite(h.WallId)).Token;
+        var kiosk = Substitute.For<IKioskContext>();
+        kiosk.IsKiosk.Returns(true);
+
+        AssertStatus(await Controller(h).PreviewJoin(token, kiosk, default), StatusCodes.Status403Forbidden);
+    }
+
     private static WallLinkResponse Link(IActionResult result) =>
         Assert.IsType<WallLinkResponse>(Assert.IsType<OkObjectResult>(result).Value);
 
     private static void AssertStatus(IActionResult result, int status) =>
         Assert.Equal(status, Assert.IsType<ObjectResult>(result).StatusCode);
 
-    private static WallLinksController Controller(WallTestHarness h)
+    [Fact]
+    public async Task Links_StartWithTheConfiguredServerAddress()
+    {
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync(holdCount: 0);
+        var settings = new BlocwerkSettings();
+        settings.Server.Url = "https://blocwerk.app/";
+
+        var invite = Link(await Controller(h, settings).GetInvite(h.WallId));
+
+        Assert.Equal($"https://blocwerk.app/join/{invite.Token}", invite.Url);
+    }
+
+    private static WallLinksController Controller(WallTestHarness h, BlocwerkSettings? settings = null)
     {
         var http = new DefaultHttpContext { User = DeviceKeyTestPrincipals.Device() };
         http.Request.Scheme = "https";
         http.Request.Host = new HostString("blocwerk.test");
         var visits = new WallVisitService(h.DbContextFactory, h.CurrentUser, NullLogger<WallVisitService>.Instance);
-        return new WallLinksController(h.WallService, visits)
+        return new WallLinksController(h.WallService, visits, h.DbContextFactory, h.CurrentUser, settings ?? new BlocwerkSettings())
         {
             ControllerContext = new ControllerContext { HttpContext = http },
         };

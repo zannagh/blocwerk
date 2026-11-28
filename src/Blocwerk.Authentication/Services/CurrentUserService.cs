@@ -178,6 +178,11 @@ public partial class CurrentUserService : ICurrentUserService
                 throw new InvalidOperationException("Avatar image must be a JPEG, PNG or WebP file.");
             }
 
+            if (!AvatarImageSignature.Matches(image, contentType))
+            {
+                throw new InvalidOperationException("That file is not the image type it says it is.");
+            }
+
             // Downscale + re-encode server-side so avatars are stored small regardless of the source
             // resolution. Original bytes may be many MB from a phone camera; the stored copy is a
             // <=512px WebP. A decode failure surfaces to the caller's error field.

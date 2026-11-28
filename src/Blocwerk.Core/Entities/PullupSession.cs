@@ -27,6 +27,12 @@ public class PullupSession
     /// <summary>The training activity this session was grouped into (see <see cref="Activity"/>).</summary>
     public Guid? ActivityId { get; set; }
 
+    /// <summary>
+    /// The replay key a client sent with the write (a phone's offline queue), unique per user: the same key again returns
+    /// this row instead of saving a second one. Null for writes that came without one.
+    /// </summary>
+    public Guid? ClientRequestId { get; set; }
+
     [ForeignKey(nameof(ActivityId))]
     public Activity? Activity { get; set; }
 }

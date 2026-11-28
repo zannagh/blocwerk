@@ -664,6 +664,9 @@ namespace Blocwerk.Core.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("ClientRequestId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTimeOffset?>("EndedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -681,6 +684,10 @@ namespace Blocwerk.Core.Migrations
                     b.HasIndex("UserId");
 
                     b.HasIndex("WallId");
+
+                    b.HasIndex("UserId", "ClientRequestId")
+                        .IsUnique()
+                        .HasFilter("\"ClientRequestId\" IS NOT NULL");
 
                     b.ToTable("ClimbingSessions");
                 });
@@ -1363,6 +1370,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<double>("AdditionalWeightKg")
                         .HasColumnType("double precision");
 
+                    b.Property<Guid?>("ClientRequestId")
+                        .HasColumnType("uuid");
+
                     b.Property<TimeSpan>("Duration")
                         .HasColumnType("interval");
 
@@ -1387,6 +1397,10 @@ namespace Blocwerk.Core.Migrations
                     b.HasIndex("ActivityId");
 
                     b.HasIndex("UserId");
+
+                    b.HasIndex("UserId", "ClientRequestId")
+                        .IsUnique()
+                        .HasFilter("\"ClientRequestId\" IS NOT NULL");
 
                     b.ToTable("HangboardSessions");
                 });
@@ -1915,6 +1929,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<double>("AdditionalWeightKg")
                         .HasColumnType("double precision");
 
+                    b.Property<Guid?>("ClientRequestId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Notes")
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
@@ -1936,6 +1953,10 @@ namespace Blocwerk.Core.Migrations
                     b.HasIndex("ActivityId");
 
                     b.HasIndex("UserId");
+
+                    b.HasIndex("UserId", "ClientRequestId")
+                        .IsUnique()
+                        .HasFilter("\"ClientRequestId\" IS NOT NULL");
 
                     b.ToTable("PullupSessions");
                 });

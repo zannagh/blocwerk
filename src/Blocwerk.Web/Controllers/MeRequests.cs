@@ -7,6 +7,12 @@ namespace Blocwerk.Web.Controllers;
 public sealed class StartSessionRequest
 {
     public Guid WallId { get; set; }
+
+    /// <summary>
+    /// Optional replay key: the same key again (from the same user) returns the row already saved instead of a second
+    /// one, so an offline queue can retry safely. Never the empty id.
+    /// </summary>
+    public Guid? ClientRequestId { get; set; }
 }
 
 /// <summary>Body of <c>POST /api/v1/me/attempts</c>.</summary>
@@ -43,6 +49,12 @@ public sealed class SaveHangboardRequest
     public int Sets { get; set; } = 1;
 
     public string? Notes { get; set; }
+
+    /// <summary>
+    /// Optional replay key: the same key again (from the same user) returns the row already saved instead of a second
+    /// one, so an offline queue can retry safely. Never the empty id.
+    /// </summary>
+    public Guid? ClientRequestId { get; set; }
 }
 
 /// <summary>Body of <c>POST /api/v1/me/training/pullups</c>.</summary>
@@ -55,4 +67,10 @@ public sealed class SavePullupRequest
     public int Sets { get; set; } = 1;
 
     public string? Notes { get; set; }
+
+    /// <summary>
+    /// Optional replay key: the same key again (from the same user) returns the row already saved instead of a second
+    /// one, so an offline queue can retry safely. Never the empty id.
+    /// </summary>
+    public Guid? ClientRequestId { get; set; }
 }

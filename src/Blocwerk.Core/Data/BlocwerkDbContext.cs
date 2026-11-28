@@ -224,6 +224,7 @@ public partial class BlocwerkDbContext : DbContext
         ConfigureHoldProposals(modelBuilder);
         ConfigureWallRefresh(modelBuilder);
         ConfigureHoldLinkSuggestions(modelBuilder);
+        ConfigureReplayKeys(modelBuilder);
         ConfigurePanelCrops(modelBuilder);
         ConfigureLookOver(modelBuilder);
         ConfigureWallEnhancement(modelBuilder);
