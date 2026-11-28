@@ -205,6 +205,9 @@ public static class Program
         // The companion app's code exchange (POST /api/device-link/token) is rate limited per client address.
         builder.Services.AddDeviceLinkRateLimit();
 
+        // Sign in with Apple's anonymous nonce and sign-in routes: per address, plus a server-wide failure budget.
+        builder.Services.AddAppleSignInRateLimit();
+
         // Counts live circuits into the "connected users" gauge.
         builder.Services.AddScoped<CircuitHandler, TelemetryCircuitHandler>();
 

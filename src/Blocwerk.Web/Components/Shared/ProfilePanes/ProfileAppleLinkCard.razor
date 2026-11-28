@@ -1,0 +1,57 @@
+@* "Sign in with Apple" on the Account pane: whether an Apple ID is linked, and an Unlink button. Linking happens in
+   the iPhone app while it is signed in (POST /api/v1/me/apple); the web only shows and removes the link. Not on a
+   kiosk: the whole Account pane is replaced there. *@
+@inject Blocwerk.Core.AppleSignIn.IAppleSignInService Apple
+
+<details class="section profile-collapsible" id="apple-section">
+    <summary>@(linked ? "Sign in with Apple (linked)" : "Sign in with Apple")</summary>
+    @if (linked)
+    {
+        <div class="field-group">
+            <div class="field-actions">
+                <span class="field-label">Apple ID linked</span>
+                <button class="btn-secondary" @onclick="UnlinkAsync" disabled="@busy">Unlink</button>
+            </div>
+        </div>
+        <p class="member-since">
+            The Blocwerk iPhone app can sign in to this account with your Apple ID. Unlinking stops that; devices
+            already signed in stay signed in until you revoke their keys under API keys.
+        </p>
+    }
+    else
+    {
+        <p class="member-since">
+            No Apple ID is linked. Sign in to the Blocwerk iPhone app once and link your Apple ID under Profile to sign
+            in with Apple from then on.
+        </p>
+    }
+</details>
+
+@code {
+    private bool linked;
+    private bool busy;
+
+    /// <summary>Gets or sets the signed-in user whose link is shown.</summary>
+    [Parameter]
+    [EditorRequired]
+    public Guid UserId { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        linked = await Apple.IsLinkedAsync(UserId);
+    }
+
+    private async Task UnlinkAsync()
+    {
+        busy = true;
+        try
+        {
+            await Apple.UnlinkAsync(UserId);
+            linked = false;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+}

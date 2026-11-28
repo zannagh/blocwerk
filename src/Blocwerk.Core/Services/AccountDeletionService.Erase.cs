@@ -53,6 +53,7 @@ public partial class AccountDeletionService
 
         await ReassignWallScopedApiKeysAsync(db, userId, ct);
         await db.ApiKeys.Where(k => k.UserId == userId).ExecuteDeleteAsync(ct);
+        await db.AppleLinks.Where(l => l.UserId == userId).ExecuteDeleteAsync(ct);
 
         // Third-party import: the encrypted TopLogger tokens and everything pulled with them. This
         // is another service's data about the person; none of it belongs to a Blocwerk wall.

@@ -54,12 +54,29 @@ A refusal is `{ message, permanent }`. `permanent: true` means a retry can never
 
 | Route | Body / query | Answer |
 | --- | --- | --- |
-| `GET /api/v1/me/profile` | none | `{ id, name, accountName, customDisplayName, role, memberSince, avatarUrl, homeWallId, gradeScale: "font"\|"v", notifications: { SessionStarted: true, … } }` |
+| `GET /api/v1/me/profile` | none | `{ id, name, accountName, customDisplayName, role, memberSince, avatarUrl, homeWallId, gradeScale: "font"\|"v", notifications: { SessionStarted: true, … }, appleLinked }` |
 | `PATCH /api/v1/me/profile` | merge patch: `{ displayName?, homeWallId?, gradeScale?, notifications?: { BoulderAdded: false } }` | the whole profile, as `GET` |
 | `GET /api/v1/users/{id}` | `?windowDays=90&groupBy=Week` | `{ id, name, role, memberSince, avatarUrl, progression }` (`progression` as `/api/v1/me/progression`) |
 
 - **PATCH.** A field you leave out stays as it is. `displayName: null` (or blank) resets it to the account name, and `homeWallId: null` clears the home wall. The answer is 400 for an unknown field, a `gradeScale` other than `font` or `v`, an unknown notification type, a non-boolean value, a display name over 256 characters or with invisible or text-direction characters (bidi overrides and isolates, direction marks, zero-width characters; a zero-width joiner between two emoji, as in the woman climbing, is fine; the web's save follows the same rule), or a home wall you are not a member of. A refused body changes nothing. The patch takes the per-key write limit (60, then 1 a second); the reads take the feed's.
 - **Other members.** The web page's rule applies: you see a profile when you share a wall with that person (or it is your own). Anyone else, and an unknown id, gets 404. `windowDays` is clamped to 7–365. `avatarUrl` is the web's `/api/users/{id}/avatar`, which needs no key.
+
+## Sign in with Apple
+
+The app can sign in with the user's Apple ID instead of the browser device link, once the Apple ID is linked to the account. The app uses `ASAuthorizationAppleIDProvider`; the server checks the identity token against Apple's public keys (`https://appleid.apple.com/auth/keys`, cached, refetched for an unknown key id at most once a minute): RS256, issuer `https://appleid.apple.com`, an audience from `AppleSignIn:AllowedAudiences` (by default the app's bundle id `me.zannagh.blocwerk.ios` and the web's Services ID `me.zannagh.blocwerk.web`; a configured list replaces both), unexpired with a minute of skew, and its `nonce` claim the SHA-256 of a nonce this server issued. Only `sub` is used; the token's e-mail never picks an account.
+
+| Route | Auth | Body | Answer |
+| --- | --- | --- | --- |
+| `POST /api/device-link/apple/nonce` | none, 20 a minute per address | none | `{ nonce }`: 5 minutes, single use, stored hashed |
+| `POST /api/v1/me/apple` | device key, per-key write limit | `{ identityToken, nonce }` | 204; 400 `{ message }` bad token or nonce; 409 `{ message }` Apple ID linked to another account |
+| `DELETE /api/v1/me/apple` | device key, per-key write limit | none | 204 (also when none was linked) |
+| `POST /api/device-link/apple` | none, 10 a minute per address | `{ identityToken, nonce, device }` | 200 `{ token, keyId, name }` as `/api/device-link/token`; 400 `{ error: "invalid_grant" }`; 404 `{ message }` not linked; 429 |
+
+- **Nonce.** Fetch one per Apple request, set `ASAuthorizationAppleIDRequest.nonce` to its lowercase hex SHA-256, and send the nonce itself with the token. Every use spends it, success or not.
+- **Linking.** One Apple ID opens one account per instance (409 otherwise); linking another Apple ID replaces the account's old one. Link and unlink write a `user.profile` row for the owner's devices, so `appleLinked` is read again. The web profile shows the link under Account and can unlink it.
+- **Signing in.** A linked Apple ID mints a device key exactly as the device link's code exchange: named `iPhone: <device>`, an older key of the same name revoked, at most 5 live device keys, idle expiry after 90 days, refused from a kiosk tablet (403). Not linked: 404 `{ "message": "No Blocwerk account is linked to this Apple ID on this instance. Sign in once and link it under Profile." }`.
+- **Limits.** Both anonymous routes are limited per address only. Failed sign-ins also count against a server-wide budget (60 a minute); once spent, failures answer 429, but a valid linked token still signs in, so nobody can lock others out by spending it.
+- **Account changes.** Erasing the account removes the link. Merging an account moves its Apple ID onto the surviving account unless that one already has its own.
 
 ## Walls: members, links, joining
 

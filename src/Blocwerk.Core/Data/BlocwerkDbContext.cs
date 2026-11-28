@@ -231,6 +231,7 @@ public partial class BlocwerkDbContext : DbContext
         ConfigureFeed(modelBuilder);
         ConfigureVisitLinks(modelBuilder);
         ConfigureDeviceLinks(modelBuilder);
+        ConfigureAppleSignIn(modelBuilder);
         ConfigureDeviceWrites(modelBuilder);
         ConfigureWallScans(modelBuilder);
     }

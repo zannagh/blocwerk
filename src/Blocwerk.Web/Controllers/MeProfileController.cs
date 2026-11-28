@@ -5,6 +5,7 @@ using System.Text.Json;
 using Blocwerk.Authentication.Authorization;
 using Blocwerk.Authentication.Handlers;
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.AppleSignIn;
 using Blocwerk.Web.Endpoints.Feed;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -31,10 +32,12 @@ namespace Blocwerk.Web.Controllers;
 public sealed class MeProfileController : ControllerBase
 {
     private readonly ICurrentUserService currentUser;
+    private readonly IAppleSignInService apple;
 
-    public MeProfileController(ICurrentUserService currentUser)
+    public MeProfileController(ICurrentUserService currentUser, IAppleSignInService apple)
     {
         this.currentUser = currentUser;
+        this.apple = apple;
     }
 
     /// <summary>The caller's identity and preferences.</summary>
@@ -44,7 +47,7 @@ public sealed class MeProfileController : ControllerBase
     {
         try
         {
-            return Ok(MeProfileResponse.From(await currentUser.GetCurrentUserAsync()));
+            return Ok(await ProfileAsync());
         }
         catch (UnauthorizedAccessException)
         {
@@ -72,7 +75,7 @@ public sealed class MeProfileController : ControllerBase
 
             await ApplyAsync(patch);
             currentUser.InvalidateCache();
-            return Ok(MeProfileResponse.From(await currentUser.GetCurrentUserAsync()));
+            return Ok(await ProfileAsync());
         }
         catch (UnauthorizedAccessException)
         {
@@ -110,5 +113,11 @@ public sealed class MeProfileController : ControllerBase
         {
             await currentUser.SetNotificationDisabledAsync(type, disabled: !enabled);
         }
+    }
+
+    private async Task<MeProfileResponse> ProfileAsync()
+    {
+        var user = await currentUser.GetCurrentUserAsync();
+        return MeProfileResponse.From(user, await apple.IsLinkedAsync(user.Id));
     }
 }

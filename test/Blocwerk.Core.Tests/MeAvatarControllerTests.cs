@@ -68,7 +68,7 @@ public sealed class MeAvatarControllerTests
         var http = new DefaultHttpContext { User = DeviceKeyTestPrincipals.Device() };
         http.Request.Body = new MemoryStream(body);
         http.Request.ContentType = contentType;
-        return new MeAvatarController(MeProfileControllerTests.RealCurrentUser(h, h.Owner))
+        return new MeAvatarController(MeProfileControllerTests.RealCurrentUser(h, h.Owner), MeProfileControllerTests.Apple(h))
         {
             ControllerContext = new ControllerContext { HttpContext = http },
         };

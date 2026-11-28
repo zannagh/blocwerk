@@ -99,6 +99,8 @@ internal static class FeedBulkSites
         Excluded(Merge, typeof(Activity), 1, "user-private training activity (FeedCoverage: excluded)"),
         Excluded(Merge, typeof(ClimbingSession), 1, "user-private check-ins (FeedCoverage: excluded)"),
         Excluded(Merge, typeof(ApiKey), 1, "credentials; no wall view shows them"),
+        Resync(Erase, typeof(AppleLink), 1, "the linked Apple ID deleted; the erasure scrubs every row addressed to the user"),
+        Resync(Merge, typeof(AppleLink), 2, "the source's Apple ID moved or dropped; the target's devices get user.resync (FeedAccountRows.MergeAsync)"),
         Excluded("Services/ApiKeyService.Validation.cs", typeof(ApiKey), 1, "LastUsedAt stamp on validation"),
     ];
 
