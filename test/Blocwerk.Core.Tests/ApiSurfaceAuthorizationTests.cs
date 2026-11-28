@@ -284,8 +284,9 @@ public class ApiSurfaceAuthorizationTests
     }
 
     /// <summary>
-    /// A linked device key gets through on exactly the offline client's sync routes and their two <c>/api/v1/me</c>
-    /// aliases. Widening any other route to it is a decision this list has to show.
+    /// A linked device key gets through on exactly the offline client's sync routes, their <c>/api/v1/me</c> aliases and
+    /// the companion app's own routes (<see cref="DeviceApiRoutePostureTests.DeviceOnlyRoutes"/>). Widening any other
+    /// route to it is a decision these lists have to show.
     /// </summary>
     [Fact]
     public void OnlyTheSyncRoutes_AdmitADeviceKey()
@@ -298,7 +299,10 @@ public class ApiSurfaceAuthorizationTests
             .ToList();
 
         Assert.Equal(
-            SyncRoutes.Concat([FeedEndpoints.DeviceSelfChangesRoute, MineEndpoints.DeviceRoute, MeWallsRoute]).Order(StringComparer.Ordinal),
+            SyncRoutes
+                .Concat([FeedEndpoints.DeviceSelfChangesRoute, MineEndpoints.DeviceRoute, MeWallsRoute])
+                .Concat(DeviceApiRoutePostureTests.DeviceOnlyRoutes.Select(r => r.Route))
+                .Order(StringComparer.Ordinal),
             admitting);
     }
 
@@ -348,7 +352,7 @@ public class ApiSurfaceAuthorizationTests
     }
 
     /// <summary>Every endpoint the registration calls under test produce.</summary>
-    private static IReadOnlyList<RouteEndpoint> AllEndpoints()
+    internal static IReadOnlyList<RouteEndpoint> AllEndpoints()
     {
         IEndpointRouteBuilder routes = BuildRouteTable();
 

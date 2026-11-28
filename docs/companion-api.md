@@ -6,7 +6,7 @@ With that key the app reads exactly what the offline web client (`/v/`) reads, a
 
 ## Routes
 
-Send `Authorization: Bearer bwk_…`. No cookie and no antiforgery token. All routes are `GET` (the image and document routes take `HEAD` too).
+Send `Authorization: Bearer bwk_…`. No cookie and no antiforgery token. The routes in this table are `GET` (the image and document routes take `HEAD` too); the writes are listed under *Your marks* below.
 
 | Route | Before | Now |
 | --- | --- | --- |
@@ -24,9 +24,27 @@ Send `Authorization: Bearer bwk_…`. No cookie and no antiforgery token. All ro
 
 `/api/me` stays cookie-only. The app uses the `/api/v1/me` aliases, because a key only authenticates on the API-key surface (`ApiKeySurface`).
 
+## Your marks
+
+The app writes the owner's marks on a boulder with the offline web client's bodies, service calls and answers (`/api/offline/*`), so a write from the app lands exactly as one from the browser. **Device key only**, rate limited like the feed, `no-store`.
+
+| Route | Body | Answer |
+| --- | --- | --- |
+| `POST /api/v1/me/ratings` | `{ boulderId, stars: 1-5 }` | `{ applied: true, clientRequestId, result: { stars } }` |
+| `DELETE /api/v1/me/ratings/{boulderId}` | none | `result: { stars: null }`; no rating is a no-op |
+| `POST /api/v1/me/favorites` | `{ boulderId, favorite: bool }` | `result: { favorite }` (absolute, never a toggle) |
+| `DELETE /api/v1/me/favorites/{boulderId}` | none | `result: { favorite: false }` |
+| `POST /api/v1/me/projects` | `{ boulderId, project: bool }` | `result: { project }` |
+| `DELETE /api/v1/me/projects/{boulderId}` | none | `result: { project: false }` |
+| `POST /api/v1/me/comments` | `{ boulderId, text, clientRequestId? }` | `result: { commentId }`; the same `clientRequestId` returns the stored comment |
+| `DELETE /api/v1/me/comments/{commentId}` | none | `result: { commentId }`; the caller's own comments only |
+| `POST /api/v1/me/attempts`, `DELETE /api/v1/me/attempts/{id}` | unchanged (any personal key) | ticks and attempts, with `clientRequestId` and `timestamp` |
+
+A refusal is `{ message, permanent }`. `permanent: true` means a retry can never succeed, so a queue drops the entry: 400 for a bad body (no boulder id, stars outside 1-5, empty text or more than 1024 characters), 403 when the owner is not a member of the boulder's wall (or the boulder is a draft, for attempts), 404 for an unknown boulder, or a comment that is not the owner's or is already gone. `permanent: false` (401, 500) means keep it queued and retry.
+
 ## Rules
 
-- **Who gets in.** The sync routes use the `WallSync` policy and the `DenyApiKeyPrincipalsExceptDevices()` filter. Both admit a device key and refuse every other key with the same bare 404 as before: a plain personal key, a wall key, a kiosk key or an installation key. The `/api/v1/me` routes (walls, changes, mine) use the `DeviceApiKey` policy, so a browser cookie does not work there either.
+- **Who gets in.** The `/api/v1/me` write routes use the `DeviceApiKey` policy and answer any other caller 404. The sync routes use the `WallSync` policy and the `DenyApiKeyPrincipalsExceptDevices()` filter. Both admit a device key and refuse every other key with the same bare 404 as before: a plain personal key, a wall key, a kiosk key or an installation key. The `/api/v1/me` routes (walls, changes, mine) use the `DeviceApiKey` policy, so a browser cookie does not work there either.
 - **What it sees.** The grant is unchanged. `FeedAccessGate`, `DocumentAudienceGate`, `AssetAccessGate` and `MineAccessGate` decide for the key's owner exactly as for that owner's cookie: the walls they belong to, their role's audiences (drafts only for setters), a share token as in the browser. A wall they cannot see answers 403 on the document and feed routes and 404 on the image and manifest routes.
 - **Kiosk and visitor links.** These are unchanged. Both are cookie sessions, and a request authenticated by a key is never a kiosk.
 - **Rate limits.** The feed's per-address token bucket covers the wall catch-up, the stream and the three `/api/v1/me` routes, whoever the caller is. As before, the document, image and manifest routes have no limiter for anyone.
