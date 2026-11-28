@@ -5,6 +5,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Blocwerk.Core.DeviceLinks;
+using Blocwerk.Web.DeviceLinks;
 using Blocwerk.Web.Endpoints;
 
 namespace Blocwerk.Core.Tests.DeviceLinks;
@@ -52,6 +53,61 @@ public sealed class DeviceLinkEndpointTests
 
         Assert.Equal(HttpStatusCode.NoContent, (await host.WithKeyAsync(HttpMethod.Delete, "/api/v1/me/api-key", token)).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await host.WithKeyAsync(HttpMethod.Get, "/api/v1/me/account", token)).StatusCode);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("forged")]
+    public async Task WithoutAFreshPageTicket_ThePageIsShownAgain_AndNoCodeIsMade(string ticket)
+    {
+        await using var host = await DeviceLinkTestHost.StartAsync();
+        await host.SignInAsync();
+
+        var consent = await host.PostConsentAsync(Consent("link"), ticket: ticket);
+
+        Assert.Equal(HttpStatusCode.Redirect, consent.StatusCode);
+        var location = consent.Headers.Location!.OriginalString;
+        Assert.StartsWith("/device-link?", location);
+        Assert.Contains("reopened=1", location);
+        Assert.Contains($"state={State}", location);
+    }
+
+    [Fact]
+    public async Task ConsentPosts_AreLimitedPerUser()
+    {
+        await using var host = await DeviceLinkTestHost.StartAsync();
+        await host.SignInAsync();
+        for (var i = 0; i < DeviceLinkLimits.DefaultConfirmsPerUserPerMinute; i++)
+        {
+            Assert.Equal(HttpStatusCode.Redirect, (await host.PostConsentAsync(Consent("cancel"))).StatusCode);
+        }
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, (await host.PostConsentAsync(Consent("cancel"))).StatusCode);
+    }
+
+    [Fact]
+    public async Task LiveCodes_AreCappedPerUser()
+    {
+        await using var host = await DeviceLinkTestHost.StartAsync();
+        await host.SignInAsync();
+        for (var i = 0; i < DeviceLinkPolicy.MaxLiveCodes; i++)
+        {
+            Assert.Equal(HttpStatusCode.Redirect, (await host.PostConsentAsync(Consent("link"))).StatusCode);
+        }
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, (await host.PostConsentAsync(Consent("link"))).StatusCode);
+    }
+
+    [Fact]
+    public async Task Exchanges_AlsoShareAServerWideLimit()
+    {
+        await using var host = await DeviceLinkTestHost.StartAsync(globalExchangesPerMinute: 3);
+        for (var i = 0; i < 3; i++)
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, (await ExchangeAsync(host, "x", Verifier)).StatusCode);
+        }
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, (await ExchangeAsync(host, "x", Verifier)).StatusCode);
     }
 
     [Fact]

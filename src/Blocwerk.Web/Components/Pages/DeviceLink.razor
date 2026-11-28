@@ -2,7 +2,10 @@
 @using Microsoft.Extensions.Logging
 @attribute [Authorize]
 @using Blocwerk.Core.DeviceLinks
+@using Blocwerk.Web.DeviceLinks
 @inject IApiKeySessionContext ApiKeySession
+@inject ICurrentUserService CurrentUser
+@inject DeviceLinkPageTicket Tickets
 @inject ILogger<DeviceLink> Logger
 
 @* The consent page of the companion app's sign-in. Static SSR: the app opens it in a system browser sheet, a signed-out
@@ -25,10 +28,25 @@
     }
     else
     {
-        <h1>Link this iPhone (@request.DeviceName) to your Blocwerk account?</h1>
+        <h1>Link an iPhone to your Blocwerk account?</h1>
+        @if (Reopened)
+        {
+            <p class="device-link-reopened">This page was open for more than five minutes. Check the code again.</p>
+        }
+        <div class="device-link-match">
+            <span class="device-link-match-label">Code</span>
+            <span class="device-link-match-code">@DeviceLinkPkce.MatchCode(request.CodeChallenge)</span>
+            <span class="device-link-match-hint">
+                Only continue if the Blocwerk app on your iPhone shows this code and you just started this there.
+            </span>
+        </div>
+        <p class="device-link-device">
+            The device calls itself <q class="device-link-device-name">@request.DeviceName</q>.
+            Anyone can choose that name, so go by the code.
+        </p>
         <p>
-            The Blocwerk app on this iPhone will act as you: it can read and log your climbing and record wall
-            captures. You can revoke it any time under Settings &rarr; API keys.
+            The Blocwerk app will act as you: it can read and log your climbing and record wall captures. You can
+            revoke it any time under Settings &rarr; API keys.
         </p>
         <form method="post" action="/device-link/confirm" data-enhance-nav="false">
             <AntiforgeryToken />
@@ -37,6 +55,7 @@
             <input type="hidden" name="code_challenge_method" value="@DeviceLinkRequest.ChallengeMethod" />
             <input type="hidden" name="device" value="@request.DeviceName" />
             <input type="hidden" name="redirect_uri" value="@DeviceLinkRequest.RedirectUri" />
+            <input type="hidden" name="ticket" value="@ticket" />
             <div class="device-link-actions">
                 <button type="submit" name="decision" value="link" class="btn-primary">Link</button>
                 <button type="submit" name="decision" value="cancel" class="btn-secondary">Cancel</button>
@@ -47,6 +66,7 @@
 
 @code {
     private DeviceLinkRequest? request;
+    private string? ticket;
 
     [SupplyParameterFromQuery(Name = "state")] public string? State { get; set; }
 
@@ -58,12 +78,23 @@
 
     [SupplyParameterFromQuery(Name = "redirect_uri")] public string? RedirectUri { get; set; }
 
-    protected override void OnInitialized()
+    [SupplyParameterFromQuery(Name = "reopened")] public string? ReopenedFlag { get; set; }
+
+    private bool Reopened => ReopenedFlag == "1";
+
+    protected override async Task OnInitializedAsync()
     {
         request = DeviceLinkRequest.TryParse(State, CodeChallenge, CodeChallengeMethod, Device, RedirectUri, out var reason);
         if (request is null)
         {
             Logger.LogWarning("Device link page refused a request: {Reason}", reason);
+            return;
+        }
+
+        if (!ApiKeySession.IsApiKeySession)
+        {
+            var user = await CurrentUser.GetCurrentUserAsync();
+            ticket = Tickets.Issue(user.Id, request.CodeChallenge);
         }
     }
 }

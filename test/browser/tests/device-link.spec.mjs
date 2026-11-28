@@ -9,6 +9,14 @@ import { test, expect, signIn } from '../harness/fixtures.mjs';
 const PHONE = { width: 402, height: 874 };
 const DESKTOP = { width: 1440, height: 900 };
 const DEVICE = 'Dina’s iPhone';
+// The match code the app shows (DeviceLinkPkce.MatchCode): top 30 bits of SHA-256 over the challenge, Crockford base32.
+function matchCode(challenge) {
+    const alphabet = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+    const bits = createHash('sha256').update(challenge).digest().readUInt32BE(0) >>> 2;
+    const chars = [0, 1, 2, 3, 4, 5].map(i => alphabet[(bits >>> (25 - 5 * i)) & 31]).join('');
+    return `${chars.slice(0, 3)}-${chars.slice(3)}`;
+}
+
 const b64url = buf => buf.toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
 
 test.beforeEach(({ context, baseURL }) =>
@@ -17,14 +25,15 @@ test.beforeEach(({ context, baseURL }) =>
 function linkRequest(redirect = 'blocwerk-companion://auth') {
     const verifier = b64url(randomBytes(32));
     const state = b64url(randomBytes(32));
+    const challenge = b64url(createHash('sha256').update(verifier).digest());
     const query = new URLSearchParams({
         state,
-        code_challenge: b64url(createHash('sha256').update(verifier).digest()),
+        code_challenge: challenge,
         code_challenge_method: 'S256',
         device: DEVICE,
         redirect_uri: redirect,
     });
-    return { verifier, state, path: `/device-link?${query}` };
+    return { verifier, state, code: matchCode(challenge), path: `/device-link?${query}` };
 }
 
 // Presses a consent button and returns where the server sent the browser. The post goes through route.fetch without
@@ -70,8 +79,12 @@ test('a signed-out phone signs in, links and gets a device key', async ({ page, 
 
     // The provider round-trip is the dev sign-in here; it honours the same local return URL.
     await signIn(page, world.users.dina, returnUrl);
-    const heading = page.getByRole('heading', { name: `Link this iPhone (${DEVICE}) to your Blocwerk account?` });
-    await expect(heading).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Link an iPhone to your Blocwerk account?' })).toBeVisible();
+    // The code the app shows, and the device's own name only as quoted, untrusted text.
+    expect(matchCode('E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM')).toBe('1MM-SP7');
+    await expect(page.locator('.device-link-match-code')).toHaveText(link.code);
+    await expect(page.locator('.device-link-match')).toContainText('Only continue if the Blocwerk app on your iPhone shows this code');
+    await expect(page.locator('q.device-link-device-name')).toHaveText(DEVICE);
     if (browserName === 'chromium') {
         await shoot(page, 'consent');
     }

@@ -21,6 +21,14 @@ public class DeviceLinkRequestTests
         Assert.False(DeviceLinkPkce.Verifies(null, Challenge));
     }
 
+    [Theory]
+    [InlineData(Challenge, "1MM-SP7")]
+    [InlineData("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "1W0-771")]
+    public void MatchCode_IsSixCrockfordCharactersOfTheChallengeHash(string challenge, string expected)
+    {
+        Assert.Equal(expected, DeviceLinkPkce.MatchCode(challenge));
+    }
+
     [Fact]
     public void ValidRequest_Parses()
     {

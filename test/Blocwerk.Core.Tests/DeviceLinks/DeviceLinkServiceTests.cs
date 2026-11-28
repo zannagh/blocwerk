@@ -146,7 +146,7 @@ public class DeviceLinkServiceTests
         var keySession = Substitute.For<IApiKeySessionContext>();
         keySession.IsApiKeySession.Returns(true);
         var service = new DeviceLinkService(
-            h.DbContextFactory, h.ApiKeyService, NullLogger<DeviceLinkService>.Instance, keySession, new ManualTime());
+            h.DbContextFactory, h.ApiKeyService, NullLogger<DeviceLinkService>.Instance, keySession, clock: new ManualTime());
 
         await Assert.ThrowsAsync<ApiKeySessionRestrictedException>(() => service.CreateCodeAsync(h.Owner.Id, Request));
     }
@@ -167,6 +167,51 @@ public class DeviceLinkServiceTests
         Assert.Equal(1, await db.DeviceLinkCodes.CountAsync());
     }
 
+    [Fact]
+    public async Task KioskTablet_CannotMakeACode()
+    {
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync();
+        var kiosk = Substitute.For<IKioskContext>();
+        kiosk.IsKiosk.Returns(true);
+        var service = new DeviceLinkService(
+            h.DbContextFactory, h.ApiKeyService, NullLogger<DeviceLinkService>.Instance, kioskContext: kiosk, clock: new ManualTime());
+
+        await Assert.ThrowsAsync<KioskRestrictedException>(() => service.CreateCodeAsync(h.Owner.Id, Request));
+        await kiosk.Received().InitializeAsync();
+    }
+
+    [Fact]
+    public async Task LiveCodes_AreCappedPerUser_UntilTheyExpire()
+    {
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync();
+        var clock = new ManualTime();
+        var service = Service(h, clock);
+        for (var i = 0; i < DeviceLinkPolicy.MaxLiveCodes; i++)
+        {
+            await service.CreateCodeAsync(h.Owner.Id, Request);
+        }
+
+        await Assert.ThrowsAsync<DeviceLinkLimitException>(() => service.CreateCodeAsync(h.Owner.Id, Request));
+
+        clock.Advance(TimeSpan.FromSeconds(61));
+        Assert.NotNull(await service.CreateCodeAsync(h.Owner.Id, Request));
+    }
+
+    [Fact]
+    public async Task UsedCodes_DoNotCountTowardsTheCap()
+    {
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync();
+        var service = Service(h, new ManualTime());
+        for (var i = 0; i < DeviceLinkPolicy.MaxLiveCodes + 2; i++)
+        {
+            var code = await service.CreateCodeAsync(h.Owner.Id, Request);
+            Assert.NotNull(await service.ExchangeAsync(code, Verifier, Device));
+        }
+    }
+
     private static DeviceLinkService Service(WallTestHarness h, ManualTime clock) =>
-        new(h.DbContextFactory, h.ApiKeyService, NullLogger<DeviceLinkService>.Instance, null, clock);
+        new(h.DbContextFactory, h.ApiKeyService, NullLogger<DeviceLinkService>.Instance, clock: clock);
 }

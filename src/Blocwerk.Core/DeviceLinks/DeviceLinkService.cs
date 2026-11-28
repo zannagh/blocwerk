@@ -23,6 +23,7 @@ public sealed class DeviceLinkService(
     IApiKeyService apiKeys,
     ILogger<DeviceLinkService> logger,
     IApiKeySessionContext? apiKeySession = null,
+    IKioskContext? kioskContext = null,
     TimeProvider? clock = null) : IDeviceLinkService
 {
     /// <summary>What every key a device link makes is called, before the device's name.</summary>
@@ -39,17 +40,18 @@ public sealed class DeviceLinkService(
     /// <inheritdoc/>
     public async Task<string> CreateCodeAsync(Guid userId, DeviceLinkRequest request, CancellationToken ct = default)
     {
-        ApiKeySessionGuard.EnsureNotApiKeySession(apiKeySession);
-        if (userId == Guid.Empty || userId == GhostUser.Id)
-        {
-            throw new UnauthorizedAccessException("Only a signed-in user can link a device.");
-        }
-
+        await EnsureMayLinkAsync(userId);
         var now = Clock.GetUtcNow();
         var code = DeviceLinkPkce.CreateCode();
         await using var db = await contexts.CreateDbContextAsync(ct);
         db.CurrentUserId = Guid.Empty;
         await db.DeviceLinkCodes.Where(c => c.ExpiresAt < now - Retention).ExecuteDeleteAsync(ct);
+        var live = await db.DeviceLinkCodes.CountAsync(c => c.UserId == userId && c.UsedAt == null && c.ExpiresAt > now, ct);
+        if (live >= DeviceLinkPolicy.MaxLiveCodes)
+        {
+            throw new DeviceLinkLimitException();
+        }
+
         db.DeviceLinkCodes.Add(new DeviceLinkCode
         {
             UserId = userId,
@@ -100,6 +102,28 @@ public sealed class DeviceLinkService(
         var (key, token) = await apiKeys.CreateDeviceKeyAsync(row.UserId, name, ct);
         logger.LogInformation("Device link: key {ApiKeyId} made for user {UserId}", key.Id, row.UserId);
         return new DeviceLinkExchange(key.Id, token, key.Name);
+    }
+
+    /// <summary>
+    /// Only a person signed in as themselves links a device: not a session opened with an API key, not a kiosk tablet
+    /// (its member session included), not the Ghost user.
+    /// </summary>
+    private async Task EnsureMayLinkAsync(Guid userId)
+    {
+        ApiKeySessionGuard.EnsureNotApiKeySession(apiKeySession);
+        if (kioskContext is not null)
+        {
+            await kioskContext.InitializeAsync();
+            if (kioskContext.IsKiosk)
+            {
+                throw new KioskRestrictedException("A kiosk tablet cannot link a device.");
+            }
+        }
+
+        if (userId == Guid.Empty || userId == GhostUser.Id)
+        {
+            throw new UnauthorizedAccessException("Only a signed-in user can link a device.");
+        }
     }
 
     /// <summary>

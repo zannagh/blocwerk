@@ -27,6 +27,29 @@ public static class DeviceLinkPkce
     /// <summary>The S256 challenge of a verifier: URL-safe base64 of its SHA-256, without padding.</summary>
     public static string Challenge(string verifier) => Base64Url(SHA256.HashData(Encoding.ASCII.GetBytes(verifier)));
 
+    /// <summary>
+    /// The short code the app and the consent page both show, so the user can tell a link they started from one someone
+    /// sent them: the top 30 bits of SHA-256 over the challenge text, as six Crockford base32 characters, "XXX-XXX".
+    /// </summary>
+    public static string MatchCode(string challenge)
+    {
+        const string alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(challenge));
+        var bits = System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(hash) >> 2;
+        var chars = new char[7];
+        for (int i = 0, at = 0; i < 6; i++, at++)
+        {
+            if (i == 3)
+            {
+                chars[at++] = '-';
+            }
+
+            chars[at] = alphabet[(int)((bits >> (25 - (5 * i))) & 31)];
+        }
+
+        return new string(chars);
+    }
+
     /// <summary>True when <paramref name="verifier"/> is RFC 7636 shaped and hashes to <paramref name="challenge"/>.</summary>
     public static bool Verifies(string? verifier, string challenge)
     {

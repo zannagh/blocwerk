@@ -16,7 +16,15 @@ public static class DeviceLinkRateLimit
 
     public static readonly TimeSpan Window = TimeSpan.FromMinutes(1);
 
-    public static IServiceCollection AddDeviceLinkRateLimit(this IServiceCollection services) =>
+    /// <summary>The per-address policy, plus <see cref="DeviceLinks.DeviceLinkLimits"/> and the consent page's ticket.</summary>
+    public static IServiceCollection AddDeviceLinkRateLimit(this IServiceCollection services)
+    {
+        services.AddSingleton<DeviceLinks.DeviceLinkLimits>();
+        services.AddSingleton<DeviceLinks.DeviceLinkPageTicket>();
+        return AddPerAddressPolicy(services);
+    }
+
+    private static IServiceCollection AddPerAddressPolicy(IServiceCollection services) =>
         services.AddRateLimitPolicy(
             Policy,
             http => RateLimitPartition.GetFixedWindowLimiter(

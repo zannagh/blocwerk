@@ -3,8 +3,8 @@
 
 using System.Security.Claims;
 using Blocwerk.Authentication;
-using Blocwerk.Authentication.Handlers;
 using Blocwerk.Authentication.Authorization;
+using Blocwerk.Authentication.Handlers;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.DeviceLinks;
@@ -12,6 +12,7 @@ using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
 using Blocwerk.Web.Controllers;
+using Blocwerk.Web.DeviceLinks;
 using Blocwerk.Web.Endpoints;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
@@ -52,7 +53,7 @@ internal sealed class DeviceLinkTestHost : IAsyncDisposable
 
     public HttpClient Client { get; }
 
-    public static async Task<DeviceLinkTestHost> StartAsync()
+    public static async Task<DeviceLinkTestHost> StartAsync(int globalExchangesPerMinute = DeviceLinkLimits.DefaultGlobalExchangesPerMinute)
     {
         var connectionString = TestDbContextFactory.IsolatedDatabase();
         var connection = new SqliteConnection(connectionString);
@@ -73,6 +74,7 @@ internal sealed class DeviceLinkTestHost : IAsyncDisposable
         });
         builder.WebHost.UseTestServer();
         AddServices(builder.Services, factory, owner);
+        builder.Services.AddSingleton(new DeviceLinkLimits(globalExchangesPerMinute));
 
         var app = builder.Build();
         app.ConfigureAuthenticationMiddlewares();
@@ -108,10 +110,17 @@ internal sealed class DeviceLinkTestHost : IAsyncDisposable
 
     public async Task SignInAsync() => await SendAsync(new HttpRequestMessage(HttpMethod.Get, "/in"));
 
-    /// <summary>Posts the consent form as the page would, with a fresh antiforgery token unless told not to.</summary>
-    public async Task<HttpResponseMessage> PostConsentAsync(IDictionary<string, string> fields, bool withToken = true)
+    /// <summary>
+    /// Posts the consent form as the page would: a fresh antiforgery token unless told not to, and the page's ticket for
+    /// the owner and the form's challenge unless <paramref name="ticket"/> names another.
+    /// </summary>
+    public async Task<HttpResponseMessage> PostConsentAsync(
+        IDictionary<string, string> fields,
+        bool withToken = true,
+        string? ticket = null)
     {
         var form = new Dictionary<string, string>(fields);
+        form["ticket"] = ticket ?? app.Services.GetRequiredService<DeviceLinkPageTicket>().Issue(Owner.Id, fields["code_challenge"]);
         if (withToken)
         {
             var tokenResponse = await SendAsync(new HttpRequestMessage(HttpMethod.Get, "/form"));
