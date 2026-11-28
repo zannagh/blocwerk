@@ -70,6 +70,11 @@ public sealed class DeviceApiRoutePostureTests
         ("PUT", "api/v1/walls/{wallId:guid}/scan-mode"),
         ("DELETE", "api/v1/walls/{wallId:guid}/scans/{scanId:guid}"),
         ("DELETE", "api/v1/walls/{wallId:guid}"),
+        ("GET", "api/v1/walls/{wallId:guid}/activity"),
+        ("GET", "api/v1/walls/{wallId:guid}/boulders/{boulderId:guid}/activity"),
+        ("GET", "api/v1/walls/{wallId:guid}/leaderboard"),
+        ("GET", "api/v1/walls/{wallId:guid}/temperature"),
+        ("GET", "api/v1/walls/{wallId:guid}/look-over"),
     ];
 
     public static TheoryData<string, string> Routes()
