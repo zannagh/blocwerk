@@ -45,6 +45,7 @@ internal static class DeviceWallRefusal
     {
         UnauthorizedAccessException => Forbidden(AdminsOnly),
         InvalidOperationException { Message: "Wall not found" } => new NotFoundResult(),
+        InvalidOperationException { Message: "Wall not found or not owner" } => Forbidden(OwnerOnly),
         InvalidOperationException { Message: "Member not found" } => Refused(StatusCodes.Status404NotFound, "Member not found"),
         InvalidOperationException { Message: WallService.OwnerRoleMessage } => Forbidden(WallService.OwnerRoleMessage),
         InvalidOperationException { Message: WallService.FirstPhotoTakenMessage } => Refused(StatusCodes.Status409Conflict, ex.Message),
