@@ -3,7 +3,6 @@ using Blocwerk.Core.Services;
 using Blocwerk.Core.Services.Projects;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Serilog;
 
 namespace Blocwerk.Web.Controllers;
 
@@ -20,11 +19,6 @@ namespace Blocwerk.Web.Controllers;
 [Produces("application/json")]
 public sealed class OfflineActionsController : ControllerBase
 {
-    // Verbatim messages the Core services throw for their permanent domain guards. Anything
-    // else surfacing as InvalidOperationException is infrastructure and must stay retryable.
-    private const string BoulderNotFound = "Boulder not found";
-    private const string NotAWallMember = "Only wall members can do this";
-
     private readonly IAttemptService attemptService;
     private readonly IBoulderFeedbackService feedbackService;
     private readonly ICommentService commentService;
@@ -109,9 +103,9 @@ public sealed class OfflineActionsController : ControllerBase
     [ValidateAntiForgeryToken]
     public Task<IActionResult> AddComment([FromBody] AddCommentRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request.Text))
+        if (OfflineActionRunner.CommentTextError(request.Text) is { } error)
         {
-            return Task.FromResult<IActionResult>(Permanent("Comment text must not be empty."));
+            return Task.FromResult<IActionResult>(OfflineActionRunner.Permanent(error));
         }
 
         return ExecuteAsync(request, async () =>
@@ -126,21 +120,19 @@ public sealed class OfflineActionsController : ControllerBase
     }
 
     /// <summary>
-    /// Runs an action and maps domain exceptions onto the status codes the client queue
-    /// branches on. A replayed-but-already-applied action reaches this method's success path
-    /// (the services return the stored row rather than throwing), so it answers 200 and the
-    /// queue can clear the entry.
+    /// Runs an action through <see cref="OfflineActionRunner"/>, after the checks only the browser's queue needs: a boulder
+    /// id, and that the person the action was queued for is the person signed in now.
     /// </summary>
-    private async Task<IActionResult> ExecuteAsync(
+    private Task<IActionResult> ExecuteAsync(
         OfflineActionRequest request,
         Func<Task<object>> action)
     {
         if (request.BoulderId == Guid.Empty)
         {
-            return Permanent("A boulder id is required.");
+            return Task.FromResult<IActionResult>(OfflineActionRunner.Permanent("A boulder id is required."));
         }
 
-        try
+        return OfflineActionRunner.RunAsync(request.BoulderId, async () =>
         {
             // Before anything is written: the person this action was queued FOR has to be the person
             // the request is authenticated AS. 409 rather than a 4xx the client treats as permanent,
@@ -152,51 +144,7 @@ public sealed class OfflineActionsController : ControllerBase
                     new OfflineActionError(OfflineActionOwnership.MismatchMessage, false));
             }
 
-            var result = await action();
-            return Ok(new OfflineActionResponse(true, request.ClientRequestId, result));
-        }
-        catch (UnauthorizedAccessException)
-        {
-            // Session gone. Retryable in principle: the queue pauses and prompts re-login.
-            return StatusCode(
-                StatusCodes.Status401Unauthorized,
-                new OfflineActionError("Your session has expired. Sign in to sync.", false));
-        }
-        catch (ArgumentOutOfRangeException ex)
-        {
-            return Permanent(ex.Message);
-        }
-        catch (InvalidOperationException ex) when (IsDomainGuard(ex))
-        {
-            // Only the two known domain guards are treated as permanent. Matching loosely here
-            // would be dangerous: EF Core and Npgsql also raise InvalidOperationException for
-            // transient connection failures, and classifying one of those as permanent would
-            // make the client drop a perfectly valid queued action.
-            var notFound = ex.Message.Equals(BoulderNotFound, StringComparison.Ordinal);
-            return StatusCode(
-                notFound ? StatusCodes.Status404NotFound : StatusCodes.Status403Forbidden,
-                new OfflineActionError(ex.Message, true));
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Offline action failed for boulder {BoulderId}", request.BoulderId);
-            return StatusCode(
-                StatusCodes.Status500InternalServerError,
-                new OfflineActionError("The action could not be saved. It stays queued.", false));
-        }
-    }
-
-    private static bool IsDomainGuard(InvalidOperationException ex)
-    {
-        return ex.Message.Equals(BoulderNotFound, StringComparison.Ordinal)
-               || ex.Message.Equals(NotAWallMember, StringComparison.Ordinal)
-               || ex.Message.Equals(AttemptService.DraftNotLoggableMessage, StringComparison.Ordinal);
-    }
-
-    private ObjectResult Permanent(string message)
-    {
-        return StatusCode(
-            StatusCodes.Status400BadRequest,
-            new OfflineActionError(message, true));
+            return OfflineActionRunner.Applied(request.ClientRequestId, await action());
+        });
     }
 }

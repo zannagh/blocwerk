@@ -7,14 +7,20 @@ namespace Blocwerk.Web.Components.Shared;
 internal static partial class ApiDocsData
 {
     private const string DeviceIntro =
-        "What the companion app reads: the same content-addressed documents, images and feed the offline web client "
-        + "reads. Only a device key works here, the personal key the app gets when you link it (listed as \"iPhone: …\" "
+        "What the companion app reads and writes: the same content-addressed documents, images and feed the offline web client "
+        + "reads, and your own marks on a boulder as it writes them. Only a device key works here, the personal key the app gets when you link it (listed as \"iPhone: …\" "
         + "under Settings → API keys and revocable there). A personal key you create on this page gets 404, and so does "
         + "a wall, kiosk or installation key. The key reads as you: exactly the walls, boulders and audiences your own "
         + "sign-in sees, a share token works as in the browser, and a wall you cannot see answers 403 (documents, feed) "
         + "or 404 (images, manifest). Send Authorization: Bearer <key>; no cookie and no antiforgery token are needed.";
 
     private static ApiParamDoc WallParam => new("wallId", "path", "A wall you can see.");
+
+    private const string MarksNotes =
+        "Device key only; 60 writes per key, then 1 a second (429). Refusals are { message, permanent }: permanent true "
+        + "(400 bad body, 404 unknown boulder or not your wall) means never retry; false (401, 500) means retry later.";
+
+    private static ApiParamDoc BoulderParam => new("boulderId", "path", "A boulder on one of your walls.");
 
     private static ApiParamDoc TokenParam => new("token", "query", "Optional share token, as in a share link.");
 
@@ -72,5 +78,45 @@ internal static partial class ApiDocsData
                 null,
                 "{\n  \"v\": 1,\n  \"wallId\": \"<guid>\",\n  \"partition\": \"u-…\",\n  \"cursor\": \"…\",\n  \"ticks\": [ … ],\n  \"favourites\": [ \"<boulder id>\" ],\n  \"projects\": [ \"<boulder id>\" ]\n}",
                 "Device key only. 403 on a wall you only see through a share link."),
+            new("POST", "/api/v1/me/ratings", "Rate a boulder 1 to 5 stars, as the offline web client does.",
+                [],
+                "{\n  \"boulderId\": \"<guid>\",\n  \"stars\": 4\n}",
+                "{\n  \"applied\": true,\n  \"clientRequestId\": null,\n  \"result\": { \"stars\": 4 }\n}",
+                MarksNotes),
+            new("DELETE", "/api/v1/me/ratings/{boulderId}", "Clear your rating. Clearing none is a no-op.",
+                [BoulderParam],
+                null,
+                null,
+                MarksNotes),
+            new("POST", "/api/v1/me/favorites", "Set your favourite mark to an absolute value (never a toggle).",
+                [],
+                "{\n  \"boulderId\": \"<guid>\",\n  \"favorite\": true\n}",
+                null,
+                MarksNotes),
+            new("DELETE", "/api/v1/me/favorites/{boulderId}", "Remove your favourite mark.",
+                [BoulderParam],
+                null,
+                null,
+                MarksNotes),
+            new("POST", "/api/v1/me/projects", "Set your project mark to an absolute value.",
+                [],
+                "{\n  \"boulderId\": \"<guid>\",\n  \"project\": true\n}",
+                null,
+                MarksNotes),
+            new("DELETE", "/api/v1/me/projects/{boulderId}", "Remove your project mark.",
+                [BoulderParam],
+                null,
+                null,
+                MarksNotes),
+            new("POST", "/api/v1/me/comments", "Comment on a boulder. The same clientRequestId again returns the stored comment.",
+                [],
+                "{\n  \"boulderId\": \"<guid>\",\n  \"text\": \"Nice heel hook\",\n  \"clientRequestId\": \"<guid>\"\n}",
+                "{\n  \"applied\": true,\n  \"clientRequestId\": \"<guid>\",\n  \"result\": { \"commentId\": \"<guid>\" }\n}",
+                MarksNotes + " Text: 1 to 1024 characters."),
+            new("DELETE", "/api/v1/me/comments/{commentId}", "Delete one of your own comments.",
+                [new("commentId", "path", "One of your comments.")],
+                null,
+                null,
+                MarksNotes),
         ]);
 }
