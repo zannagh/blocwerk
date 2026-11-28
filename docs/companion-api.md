@@ -21,8 +21,14 @@ Send `Authorization: Bearer bwk_…`. No cookie and no antiforgery token. The ro
 | `/api/v1/me/walls` | did not exist | **device key only**: the web My Walls list (the walls the owner is a member of, same order), with `id`, `name`, `memberCount`, `hasPhoto`, `photoSha`, `role` (Admin, Moderator or Member; the owner is Admin) and `isOwner` (read the card photo as `/a/{photoSha}/640`); rate limited |
 | `/api/v1/me/changes` | did not exist | **device key only**, same handler as `/api/me/changes`, rate limited |
 | `/api/v1/me/walls/{w}/mine` | did not exist | **device key only**, same handler as `/api/me/walls/{w}/mine`, rate limited |
+| `/api/v1/walls/{w}/boulders/{b}/attempts` | did not exist | **device key only**: everyone's log on the boulder, newest first, as the web boulder page's History (see *Boulder reads*) |
 
 `/api/me` stays cookie-only. The app uses the `/api/v1/me` aliases, because a key only authenticates on the API-key surface (`ApiKeySurface`).
+
+## Boulder reads
+
+- **Your rating.** `/api/v1/me/walls/{w}/mine` now carries `ratings: [{ boulderId, stars }]`, the caller's own star rating per boulder of the wall (absent from an older server's document). It lives there rather than behind a new `/api/v1/me/ratings?wallId=` read because the mine document is already the per-reader overlay the boulder list and page read, with one fetch per wall and the same gate (`MineAccessGate`). The feed already writes a `rating.mine` row to `/api/v1/me/changes` on every rating change, which tells the app to read the document again, exactly as for ticks and favourites.
+- **Everyone's log.** `GET /api/v1/walls/{w}/boulders/{b}/attempts` answers `[{ id, userId, userName, type, timestamp, mine }]`, newest first, where `type` is `Attempt`, `Send` or `Flash` and `mine` marks the caller's own rows (the ones the web lets them delete). It calls the web page's own services (`IBoulderService.GetBoulderAsync`, then `IAttemptService.GetAttemptsForBoulderAsync`), so the visibility is the web's: members of the wall only, drafts included for them. A wall the owner is not a member of, an unknown boulder and a boulder of another wall all answer the same bare 404. Counted in the key's sync bucket (the one the documents and images share), `no-store`.
 
 ## Your marks
 
@@ -75,6 +81,6 @@ A wall the caller is not a member of answers 404 on `members` and `hold-links`, 
 - **Who gets in.** The `/api/v1/me` write routes use the `DeviceApiKey` policy and answer any other caller 404. The sync routes use the `WallSync` policy and the `DenyApiKeyPrincipalsExceptDevices()` filter. Both admit a device key and refuse every other key with the same bare 404 as before: a plain personal key, a wall key, a kiosk key or an installation key. The `/api/v1/me` routes (walls, changes, mine) use the `DeviceApiKey` policy, so a browser cookie does not work there either.
 - **What it sees.** The grant is unchanged. `FeedAccessGate`, `DocumentAudienceGate`, `AssetAccessGate` and `MineAccessGate` decide for the key's owner exactly as for that owner's cookie: the walls they belong to, their role's audiences (drafts only for setters), a share token as in the browser. A wall they cannot see answers 403 on the document and feed routes and 404 on the image and manifest routes.
 - **Kiosk and visitor links.** These are unchanged. Both are cookie sessions, and a request authenticated by a key is never a kiosk.
-- **Rate limits.** The feed's per-address token bucket covers the wall catch-up, the stream and the three `/api/v1/me` routes, whoever the caller is. As before, the document, image and manifest routes have no limiter for anyone.
+- **Rate limits.** The feed's per-address token bucket covers the wall catch-up, the stream and the three `/api/v1/me` routes, whoever the caller is. The boulder log counts in the device key's own sync bucket. As before, the document, image and manifest routes have no limiter for anyone.
 - **Revocation.** A revoked key is refused on its next request. An open stream ends within its 5-minute lifetime, and the reconnect is refused.
 - **Never open to a device key.** `/api/offline/*`, Blazor pages, the gallery, the panel and photo routes, 3D geometry, and the other `/api/me/*` routes.

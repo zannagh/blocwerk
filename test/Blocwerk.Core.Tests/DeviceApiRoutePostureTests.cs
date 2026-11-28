@@ -43,6 +43,7 @@ public sealed class DeviceApiRoutePostureTests
         ("POST", "api/v1/walls/{wallId:guid}/invite-link/rotate"),
         ("POST", "api/v1/walls/{wallId:guid}/visit-links"),
         ("POST", "api/v1/join/{token}"),
+        ("GET", "api/v1/walls/{wallId:guid}/boulders/{boulderId:guid}/attempts"),
     ];
 
     public static TheoryData<string, string> Routes()
@@ -68,10 +69,13 @@ public sealed class DeviceApiRoutePostureTests
         Assert.Equal(BlocwerkPolicies.DeviceApiKey, endpoint.Metadata.GetMetadata<IAuthorizeData>()?.Policy);
         Assert.NotNull(endpoint.Metadata.GetMetadata<DeviceKeyOnlyAttribute>());
 
-        // A read takes the feed's bucket; a write takes the key's own write bucket and not the per-address one.
+        // A read takes the key's sync bucket (or, for the older routes, the feed's); a write takes the key's own write
+        // bucket and not the per-address one.
         if (method == "GET")
         {
-            Assert.Equal(FeedEndpoints.RateLimitPolicy, endpoint.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName);
+            Assert.True(
+                endpoint.Metadata.GetMetadata<DeviceKeySyncRateLimitAttribute>() is not null
+                || endpoint.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName == FeedEndpoints.RateLimitPolicy);
             Assert.Null(endpoint.Metadata.GetMetadata<DeviceKeyWriteRateLimitAttribute>());
         }
         else

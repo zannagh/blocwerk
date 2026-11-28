@@ -73,6 +73,11 @@ internal sealed class MineDocumentFixture : IDisposable
             new BoulderProject { BoulderId = Docs.ArchivedId, UserId = Member.Id },
             new BoulderProject { BoulderId = other.Id, UserId = Member.Id },
             new BoulderProject { BoulderId = Docs.PublishedId, UserId = Setter.Id });
+        // The member already rated the published boulder 4 (DataDocumentFixture).
+        db.BoulderRatings.AddRange(
+            new BoulderRating { BoulderId = Docs.DraftId, UserId = Member.Id, Stars = 3 },
+            new BoulderRating { BoulderId = other.Id, UserId = Member.Id, Stars = 2 },
+            new BoulderRating { BoulderId = Docs.PublishedId, UserId = Setter.Id, Stars = 5 });
         await db.SaveChangesAsync();
         Docs.Caller = Member;
     }

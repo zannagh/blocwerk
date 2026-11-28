@@ -73,11 +73,20 @@ internal static partial class ApiDocsData
                 null,
                 null,
                 "Device key only. Same body as /api/walls/{wallId}/changes."),
-            new("GET", "/api/v1/me/walls/{wallId}/mine", "Your ticks, favourites and projects on one wall.",
+            new("GET", "/api/v1/me/walls/{wallId}/mine", "Your ticks, favourites, projects and star ratings on one wall.",
                 [WallParam],
                 null,
-                "{\n  \"v\": 1,\n  \"wallId\": \"<guid>\",\n  \"partition\": \"u-…\",\n  \"cursor\": \"…\",\n  \"ticks\": [ … ],\n  \"favourites\": [ \"<boulder id>\" ],\n  \"projects\": [ \"<boulder id>\" ]\n}",
-                "Device key only. 403 on a wall you only see through a share link."),
+                "{\n  \"v\": 1,\n  \"wallId\": \"<guid>\",\n  \"partition\": \"u-…\",\n  \"cursor\": \"…\",\n  \"ticks\": [ … ],\n  \"favourites\": [ \"<boulder id>\" ],\n  \"projects\": [ \"<boulder id>\" ],"
+                    + "\n  \"ratings\": [ { \"boulderId\": \"<guid>\", \"stars\": 4 } ]\n}",
+                "Device key only. 403 on a wall you only see through a share link. A rating.mine row in /api/v1/me/changes means "
+                    + "read it again."),
+            new("GET", "/api/v1/walls/{wallId}/boulders/{boulderId}/attempts", "Everyone's log on a boulder, newest first, as the boulder page's History lists it.",
+                [WallParam, BoulderParam],
+                null,
+                "[\n  {\n    \"id\": \"<guid>\",\n    \"userId\": \"<guid>\",\n    \"userName\": \"Alex\",\n    \"type\": \"Flash\","
+                    + "\n    \"timestamp\": \"2026-11-28T18:00:00+00:00\",\n    \"mine\": false\n  }\n]",
+                "Device key only; members of the wall only. A wall you are not a member of, an unknown boulder or one of "
+                    + "another wall is a bare 404. type is Attempt, Send or Flash."),
             new("POST", "/api/v1/me/ratings", "Rate a boulder 1 to 5 stars, as the offline web client does.",
                 [],
                 "{\n  \"boulderId\": \"<guid>\",\n  \"stars\": 4\n}",
