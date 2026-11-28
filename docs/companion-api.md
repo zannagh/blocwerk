@@ -291,6 +291,20 @@ The web boulder page's buttons, through `IBoulderService`. **Device key only**, 
 - **Fields.** `canEdit` is the web's rule: the creator, one of the setters, or a wall admin. `hasBetaVideo` counts any clip, as the web filter does. Every boulder a member sees is listed, drafts and the archive included.
 - **Refresh.** Read it again on the feed's `boulder.changed`, `video.added` and `video.deleted` rows.
 
+## Sign-in and security
+
+`GET /api/v1/me/security` returns `{ email, emailVerified, hasPassword, loginUsername, totpEnabled, linkedProviders: ["github", "google", …], manageUrl: "/profile?tab=account" }`: the web profile's "Sign-in and security" section, read-only. **Device key only**, sync bucket, `no-store`. It never contains a secret (no password hash, no TOTP secret).
+
+**Changes stay on the web, by design.** `ApiKeySessionGuard` refuses every account-security change in a session authenticated by an API key, device keys included. That covers:
+- setting or changing the password;
+- enrolling or disabling two-factor;
+- sending or verifying a recovery e-mail code;
+- linking a provider;
+- listing, creating or revoking API keys;
+- the deletion preview and deleting the account.
+
+The rule exists so that a leaked key can never become a permanent takeover: a new password, a second factor the owner does not hold, another recovery address, fresh keys, or an erased account. The app opens `manageUrl` in the browser (an in-app Safari sheet), where the person is signed in with their full login, including the second factor.
+
 ## Rules
 
 - **Who gets in.** The `/api/v1/me` write routes use the `DeviceApiKey` policy and answer any other caller 404. The sync routes use the `WallSync` policy and the `DenyApiKeyPrincipalsExceptDevices()` filter. Both admit a device key and refuse every other key with the same bare 404 as before: a plain personal key, a wall key, a kiosk key or an installation key. The `/api/v1/me` routes (walls, changes, mine) use the `DeviceApiKey` policy, so a browser cookie does not work there either.
