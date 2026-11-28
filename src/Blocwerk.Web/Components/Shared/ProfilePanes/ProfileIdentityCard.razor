@@ -113,6 +113,10 @@
             CurrentUserService.InvalidateCache();
             await OnSelfChanged.InvokeAsync();
         }
+        catch (ArgumentException)
+        {
+            nameError = DisplayNameRules.InvisibleCharacterMessage;
+        }
         catch (Exception)
         {
             nameError = "Couldn't update your display name. Please try again.";

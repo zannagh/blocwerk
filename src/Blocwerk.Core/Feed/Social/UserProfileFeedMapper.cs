@@ -26,7 +26,7 @@ internal sealed class UserProfileFeedMapper : IFeedMapper
 
     private static readonly IReadOnlySet<string> OwnPreferences = new HashSet<string>
     {
-        nameof(User.PreferFontGrades), nameof(User.HomeWallId),
+        nameof(User.PreferFontGrades), nameof(User.HomeWallId), nameof(User.DisabledNotifications),
     };
 
     public IReadOnlyCollection<Type> EntityTypes { get; } = [typeof(User)];

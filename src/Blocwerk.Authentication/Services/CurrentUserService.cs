@@ -3,6 +3,7 @@ using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Helpers;
 using Blocwerk.Core.Services;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -71,7 +72,7 @@ public partial class CurrentUserService : ICurrentUserService
                 .AnyAsync(m => m.WallId == targetWallId && m.UserId == user.Id);
             if (!isMember)
             {
-                throw new InvalidOperationException(
+                throw new NotAWallMemberException(
                     $"Cannot set home wall {targetWallId}: user {user.Id} is not a member of that wall.");
             }
         }
@@ -134,6 +135,11 @@ public partial class CurrentUserService : ICurrentUserService
     public async Task SetDisplayNameAsync(string? name)
     {
         var user = await GetCurrentUserAsync();
+
+        if (DisplayNameRules.HasInvisibleCharacters(name))
+        {
+            throw new ArgumentException(DisplayNameRules.InvisibleCharacterMessage, nameof(name));
+        }
 
         var trimmed = name?.Trim();
         if (string.IsNullOrEmpty(trimmed))

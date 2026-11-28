@@ -42,6 +42,19 @@ The app writes the owner's marks on a boulder with the offline web client's bodi
 
 A refusal is `{ message, permanent }`. `permanent: true` means a retry can never succeed, so a queue drops the entry: 400 for a bad body (no boulder id, stars outside 1-5, empty text or more than 1024 characters), 404 for an unknown boulder, a boulder on a wall the owner is not a member of (the same answer, so it does not tell the boulder exists), or a comment that is not the owner's or is already gone, 403 for a draft (attempts). A `clientRequestId` is a replay key for its own sender only: another user's write with the same id is their own new write. The empty id is a 400, and so is a comment id reused on another boulder. `permanent: false` (401, 500) means keep it queued and retry.
 
+## Profile
+
+**Device key only**, rate limited like the feed, `no-store`. The fields are what the web profile page keeps on the account. Appearance, zoom lens and editor toolbar are stored in a browser cookie, so they are not here. Avatar changes and account security (e-mail, password, two-factor, linked accounts) stay on the web.
+
+| Route | Body / query | Answer |
+| --- | --- | --- |
+| `GET /api/v1/me/profile` | none | `{ id, name, accountName, customDisplayName, role, memberSince, avatarUrl, homeWallId, gradeScale: "font"\|"v", notifications: { SessionStarted: true, … } }` |
+| `PATCH /api/v1/me/profile` | merge patch: `{ displayName?, homeWallId?, gradeScale?, notifications?: { BoulderAdded: false } }` | the whole profile, as `GET` |
+| `GET /api/v1/users/{id}` | `?windowDays=90&groupBy=Week` | `{ id, name, role, memberSince, avatarUrl, progression }` (`progression` as `/api/v1/me/progression`) |
+
+- **PATCH.** A field you leave out stays as it is. `displayName: null` (or blank) resets it to the account name, and `homeWallId: null` clears the home wall. The answer is 400 for an unknown field, a `gradeScale` other than `font` or `v`, an unknown notification type, a non-boolean value, a display name over 256 characters or with invisible or text-direction characters (bidi overrides and isolates, direction marks, zero-width characters; a zero-width joiner between two emoji, as in the woman climbing, is fine; the web's save follows the same rule), or a home wall you are not a member of. A refused body changes nothing. The patch takes the per-key write limit (60, then 1 a second); the reads take the feed's.
+- **Other members.** The web page's rule applies: you see a profile when you share a wall with that person (or it is your own). Anyone else, and an unknown id, gets 404. `windowDays` is clamped to 7–365. `avatarUrl` is the web's `/api/users/{id}/avatar`, which needs no key.
+
 ## Rules
 
 - **Who gets in.** The `/api/v1/me` write routes use the `DeviceApiKey` policy and answer any other caller 404. The sync routes use the `WallSync` policy and the `DenyApiKeyPrincipalsExceptDevices()` filter. Both admit a device key and refuse every other key with the same bare 404 as before: a plain personal key, a wall key, a kiosk key or an installation key. The `/api/v1/me` routes (walls, changes, mine) use the `DeviceApiKey` policy, so a browser cookie does not work there either.
