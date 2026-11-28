@@ -87,7 +87,7 @@ internal static class FeedBulkSites
         Excluded(Erase, typeof(ApiKey), 2, "credentials: wall keys handed to the owner, user keys deleted; no wall view shows them"),
         Resync(Core + "Services/AccountDeletionService.Ownership.cs", typeof(Wall), 2, "ownership transfer and maintenance release; " + ErasedWalls),
         Resync(Merge, typeof(Attempt), 1, MergedWalls),
-        Resync(Merge, typeof(ActivityLogEntry), 1, MergedWalls),
+        Resync(Merge, typeof(ActivityLogEntry), 2, MergedWalls),
         Resync(Merge, typeof(BoulderComment), 1, MergedWalls),
         Resync(Merge, typeof(Boulder), 1, MergedWalls),
         Resync(Merge, typeof(GradeProposal), 1, MergedWalls),
@@ -142,6 +142,7 @@ internal static class FeedBulkSites
         Excluded("Recognition/RecognitionQueue.Report.cs", typeof(RecognitionJob), 1, RecognitionQueue),
         Excluded("Runners/GpuJobQueue.Failures.cs", typeof(GpuRunnerFailure), 1, "runner failure retention, runner administration"),
         Excluded("Visits/WallVisitService.cs", typeof(WallVisitLink), 2, "visit link redemption and expiry cleanup, never in the feed"),
+        Excluded("Services/Membership/WallMembershipEnd.cs", typeof(WallVisitLink), 1, "a departing member's visitor links, never in the feed"),
     ];
 
     private static FeedBulkSite Rows(string file, Type? entity, int count, string reason) => Site(file, entity, count, FeedBulkHandling.Rows, reason);

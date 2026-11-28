@@ -24,4 +24,8 @@ public partial class WallDetail
 
     private string ActivityAuthor(ActivityLogEntry item) =>
         LeafAuthors.Describe(item.User, FeedViewer.Member(_currentUserId)).Name;
+
+    // The member an entry is about ("removed X"), under the same byline rule as its author.
+    private string ActivityVerb(ActivityLogEntry item) =>
+        WallActivityText.Verb(item.Type, item.SubjectUser is null ? null : LeafAuthors.Describe(item.SubjectUser, FeedViewer.Member(_currentUserId)).Name);
 }

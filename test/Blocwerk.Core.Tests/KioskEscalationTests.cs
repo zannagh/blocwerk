@@ -50,10 +50,10 @@ public class KioskEscalationTests
         // authority check passes; the refusal is purely "not from this device".
         var walls = KioskWallService(h, h.WallId);
 
-        await Assert.ThrowsAsync<KioskRestrictedException>(() => walls.GenerateShareTokenAsync(h.WallId));
+        await Assert.ThrowsAsync<KioskRestrictedException>(() => walls.RotateJoinTokenAsync(h.WallId));
 
         await using var db = h.CreateContext();
-        Assert.Null(await db.Walls.IgnoreQueryFilters().Where(w => w.Id == h.WallId).Select(w => w.ShareToken).FirstAsync());
+        Assert.Null(await db.Walls.IgnoreQueryFilters().Where(w => w.Id == h.WallId).Select(w => w.JoinToken).FirstAsync());
     }
 
     [Fact]
@@ -62,7 +62,7 @@ public class KioskEscalationTests
         using var h = new WallTestHarness();
         await h.SeedWallAsync();
 
-        var token = await h.WallService.GenerateShareTokenAsync(h.WallId);
+        var token = await h.WallService.RotateJoinTokenAsync(h.WallId);
         Assert.False(string.IsNullOrWhiteSpace(token));
     }
 
@@ -91,7 +91,7 @@ public class KioskEscalationTests
     {
         using var h = new WallTestHarness();
         await h.SeedWallAsync();
-        var token = await h.WallService.GenerateShareTokenAsync(h.WallId);
+        var token = await h.WallService.RotateJoinTokenAsync(h.WallId);
 
         // The redeeming half. Without this, "generate a link on the tablet, redeem it from a phone"
         // buys permanent membership; with the minting refused as well, neither half is reachable.

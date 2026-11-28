@@ -37,14 +37,15 @@
         }
         catch (UnauthorizedAccessException)
         {
-            var wall = await WallService.GetWallByShareTokenAsync(ShareToken);
-            if (wall != null)
+            // Signed out: show the wall through its public share link, a different token from the invite.
+            var wall = await WallService.GetWallByJoinTokenAsync(ShareToken);
+            if (wall is { ShareToken: { Length: > 0 } shareToken })
             {
-                Navigation.NavigateTo($"/walls/{wall.Id}/shared/{ShareToken}");
+                Navigation.NavigateTo($"/walls/{wall.Id}/shared/{Uri.EscapeDataString(shareToken)}");
             }
             else
             {
-                _error = "Invalid share link.";
+                _error = "This invite link is not valid any more.";
                 _isJoining = false;
             }
         }

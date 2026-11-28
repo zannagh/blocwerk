@@ -651,6 +651,10 @@ public partial class BlocwerkDbContext : DbContext
                 .IsUnique()
                 .HasFilter("\"ShareToken\" IS NOT NULL");
 
+            entity.HasIndex(w => w.JoinToken)
+                .IsUnique()
+                .HasFilter("\"JoinToken\" IS NOT NULL");
+
             entity.Property(w => w.BorderPoints)
                 .HasConversion(
                     v => v == null ? null : JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
@@ -841,6 +845,11 @@ public partial class BlocwerkDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(a => a.UserId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(a => a.SubjectUser)
+                .WithMany()
+                .HasForeignKey(a => a.SubjectUserId)
+                .OnDelete(DeleteBehavior.SetNull);
 
             // An attempt's entry goes with the attempt, whichever way it is deleted (a boulder's attempts cascade too).
             entity.HasOne(a => a.Attempt)

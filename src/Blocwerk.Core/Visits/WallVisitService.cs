@@ -84,8 +84,10 @@ public sealed class WallVisitService(
         await using var db = await contexts.CreateDbContextAsync(ct);
 
         // The token is the authority here, not the session, so the wall is read past the membership and kiosk filters.
+        // A link whose maker has left the wall reads as no link at all, as it is once the leaving deleted it.
         var row = await db.WallVisitLinks.AsNoTracking()
             .Where(l => l.TokenHash == hash)
+            .Where(VisitLinkCreators.StillMayInvite(db))
             .Select(l => new
             {
                 l.Id,
@@ -121,10 +123,11 @@ public sealed class WallVisitService(
         // or the link is used and its guest has no cookie.
         await using var db = await contexts.CreateDbContextAsync(CancellationToken.None);
 
-        // The one write that decides who got the link: the WHERE carries "unused and unexpired", so the database lets
-        // exactly one of two concurrent attempts change the row, and the other changes nothing.
+        // The one write that decides who got the link: the WHERE carries "unused and unexpired" and "its maker may still
+        // invite", so the database lets exactly one of two concurrent attempts change the row, and the other changes nothing.
         await db.WallVisitLinks
             .Where(l => l.TokenHash == hash && l.RedemptionId == null && l.ExpiresAt > now)
+            .Where(VisitLinkCreators.StillMayInvite(db))
             .ExecuteUpdateAsync(
                 s => s.SetProperty(l => l.RedemptionId, (Guid?)claimId).SetProperty(l => l.RedeemedAt, (DateTimeOffset?)now),
                 CancellationToken.None);
@@ -133,6 +136,7 @@ public sealed class WallVisitService(
         // first answer the browser dropped): either way the link's redemption is this claim, and only this page has it.
         var link = await db.WallVisitLinks.AsNoTracking()
             .Where(l => l.TokenHash == hash && l.RedemptionId == claimId && l.ExpiresAt > now)
+            .Where(VisitLinkCreators.StillMayInvite(db))
             .Select(l => new { l.Id, l.WallId, l.ExpiresAt })
             .FirstOrDefaultAsync(CancellationToken.None);
         if (link is null)

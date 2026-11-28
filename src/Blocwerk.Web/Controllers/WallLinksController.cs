@@ -18,8 +18,8 @@ namespace Blocwerk.Web.Controllers;
 
 /// <summary>
 /// The web wall page's link buttons for the companion app, through the same service calls and so under the same rules:
-/// Invite (any member gets the wall's invite link, made on first use), Generate Share Link (an admin replaces it, which
-/// ends the old one), Visit (a member makes a one-time visitor link, at most 20 an hour), and joining a wall from an
+/// Invite (any member gets the wall's invite link, made on first use), Generate Share Link (an admin replaces the invite,
+/// which ends the old one; the public share link stays), Visit (a member makes a one-time visitor link, at most 20 an hour), and joining a wall from an
 /// invite token. A wall the caller is not a member of answers 404 on the three wall routes.
 /// </summary>
 /// <remarks>
@@ -61,13 +61,13 @@ public sealed class WallLinksController : ControllerBase
     [HttpPost("walls/{wallId:guid}/invite-link")]
     [DeviceKeyWriteRateLimit]
     public Task<IActionResult> GetInvite(Guid wallId) =>
-        InviteAsync(wallId, () => walls.GetOrCreateShareTokenAsync(wallId));
+        InviteAsync(wallId, () => walls.GetOrCreateJoinTokenAsync(wallId));
 
     /// <summary>A new invite link in place of the old one, which stops working (the web's Generate Share Link). Admins.</summary>
     [HttpPost("walls/{wallId:guid}/invite-link/rotate")]
     [DeviceKeyWriteRateLimit]
     public Task<IActionResult> RotateInvite(Guid wallId) =>
-        InviteAsync(wallId, () => walls.GenerateShareTokenAsync(wallId));
+        InviteAsync(wallId, () => walls.RotateJoinTokenAsync(wallId));
 
     /// <summary>A one-time visitor link (the web's Visit button). Members, at most 20 an hour.</summary>
     [HttpPost("walls/{wallId:guid}/visit-links")]
@@ -106,7 +106,7 @@ public sealed class WallLinksController : ControllerBase
 
         await using var db = await contexts.CreateDbContextAsync(ct);
         var wall = await db.Walls.IgnoreQueryFilters().AsNoTracking()
-            .Where(w => w.ShareToken != null && w.ShareToken == token)
+            .Where(w => w.JoinToken != null && w.JoinToken == token)
             .Select(w => new JoinPreviewResponse(w.Id, w.Name, w.Members.Count))
             .FirstOrDefaultAsync(ct);
         return wall is null ? NotFound(new ApiErrorResponse(InvalidInvite)) : Ok(wall);

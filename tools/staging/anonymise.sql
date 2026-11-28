@@ -22,7 +22,8 @@
 --   RefreshTokens      deleted: login tokens (the new DataProtection key ring ends cookie sessions as well).
 --   EmailVerificationCodes  deleted: pending verify-email / password-reset / signup codes (hold the address).
 --   TopLoggerConnections    deleted: encrypted TopLogger access and refresh tokens.
---   Walls              ShareToken -> NULL: the link grants read access; ChangeJournalEntries of walls lose it too.
+--   Walls              ShareToken, JoinToken -> NULL: the links grant read access and membership; ChangeJournalEntries of
+--                      walls lose them too.
 --   WallMembers        kiosk PIN hash and length cleared (a 4-8 digit hash is trivially brute-forced).
 --   GpuRunners         deleted (cascades to GpuRunnerWalls, GpuRunnerApprovals = pending approvals, GpuRunnerFailures);
 --                      the app re-registers the instance runner from RECOGNITION__INSTANCEKEY on start.
@@ -49,12 +50,13 @@ SET "Email"           = CASE WHEN "Email" IS NULL THEN NULL ELSE 'user-' || "Id"
     "LockoutUntil"        = NULL
 WHERE "Identifier" NOT LIKE 'system:%';
 
-UPDATE "Walls" SET "ShareToken" = NULL WHERE "ShareToken" IS NOT NULL;
+UPDATE "Walls" SET "ShareToken" = NULL, "JoinToken" = NULL WHERE "ShareToken" IS NOT NULL OR "JoinToken" IS NOT NULL;
 
 UPDATE "ChangeJournalEntries"
-SET "BeforeJson" = regexp_replace("BeforeJson", '"ShareToken"\s*:\s*"[^"]*"', '"ShareToken":null', 'gi'),
-    "AfterJson"  = regexp_replace("AfterJson",  '"ShareToken"\s*:\s*"[^"]*"', '"ShareToken":null', 'gi')
-WHERE "BeforeJson" ILIKE '%ShareToken%' OR "AfterJson" ILIKE '%ShareToken%';
+SET "BeforeJson" = regexp_replace("BeforeJson", '"(ShareToken|JoinToken)"\s*:\s*"[^"]*"', '"\1":null', 'gi'),
+    "AfterJson"  = regexp_replace("AfterJson",  '"(ShareToken|JoinToken)"\s*:\s*"[^"]*"', '"\1":null', 'gi')
+WHERE "BeforeJson" ILIKE '%ShareToken%' OR "AfterJson" ILIKE '%ShareToken%'
+   OR "BeforeJson" ILIKE '%JoinToken%' OR "AfterJson" ILIKE '%JoinToken%';
 
 UPDATE "WallMembers"
 SET "KioskPinHash" = NULL, "KioskPinLength" = 0
@@ -83,6 +85,7 @@ SELECT t.name AS cleared, t.n AS rows_left FROM (
     UNION ALL SELECT 'GpuRunnerFailures', count(*) FROM "GpuRunnerFailures"
     UNION ALL SELECT 'GpuRunners', count(*) FROM "GpuRunners"
     UNION ALL SELECT 'Walls with ShareToken', count(*) FROM "Walls" WHERE "ShareToken" IS NOT NULL
+    UNION ALL SELECT 'Walls with JoinToken', count(*) FROM "Walls" WHERE "JoinToken" IS NOT NULL
     UNION ALL SELECT 'WallMembers with kiosk PIN', count(*) FROM "WallMembers" WHERE "KioskPinHash" IS NOT NULL
     UNION ALL SELECT 'Users with TOTP', count(*) FROM "Users" WHERE "TotpEnabled" OR "TotpSecretProtected" IS NOT NULL
     UNION ALL SELECT 'Users with a real e-mail', count(*) FROM "Users" WHERE "Email" IS NOT NULL AND "Email" NOT LIKE '%@staging.invalid'

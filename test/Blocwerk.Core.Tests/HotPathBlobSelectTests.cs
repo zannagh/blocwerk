@@ -41,7 +41,7 @@ public class HotPathBlobSelectTests
         using var h = new WallTestHarness();
         var holds = await h.SeedWallAsync(holdCount: 2);
         var boulderId = await SeedBoulderAsync(h, holds);
-        var token = await h.WallService.GenerateShareTokenAsync(h.WallId);
+        var token = await WallShareTokens.MintAsync(h);
         var capture = new SqlCapture();
         var factory = new CapturingDbContextFactory(h.DbContextFactory.ConnectionString, capture);
         var walls = new WallService(factory, h.CurrentUser, h.HoldDetection, h.ActivityLog, NullLogger<WallService>.Instance);

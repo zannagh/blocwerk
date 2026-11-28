@@ -58,7 +58,7 @@ public sealed class FeedReviewFixTests
         }
 
         var rows = await RowsAsync(harness);
-        Assert.Equal([FeedKinds.WallResync, FeedKinds.AccessRevoked], rows.Select(r => r.Kind));
+        Assert.Equal([FeedKinds.WallResync, FeedKinds.AccessRevoked, FeedKinds.WallsChanged], rows.Select(r => r.Kind));
         Assert.Equal((FeedAudience.User, user.Id), (rows[1].Audience, rows[1].AudienceUserId));
     }
 

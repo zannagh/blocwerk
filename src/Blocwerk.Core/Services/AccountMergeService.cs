@@ -122,6 +122,8 @@ public partial class AccountMergeService : IAccountMergeService
             .ExecuteUpdateAsync(s => s.SetProperty(x => x.UserId, targetUserId));
         await db.ActivityLog.Where(x => x.UserId == sourceUserId)
             .ExecuteUpdateAsync(s => s.SetProperty(x => x.UserId, targetUserId));
+        await db.ActivityLog.Where(x => x.SubjectUserId == sourceUserId)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.SubjectUserId, targetUserId));
         await db.BoulderComments.Where(x => x.UserId == sourceUserId)
             .ExecuteUpdateAsync(s => s.SetProperty(x => x.UserId, targetUserId));
         await db.HangboardSessions.Where(x => x.UserId == sourceUserId)

@@ -22,7 +22,8 @@ public static class WallActivityText
         ActivityType.WallPhotoUploaded or ActivityType.WallPhotoStaged
             or ActivityType.WallPhotoConfirmed or ActivityType.WallPhotoDiscarded => "Photo",
         ActivityType.WallRecreated or ActivityType.WallReset => "Wall",
-        ActivityType.MemberJoined or ActivityType.MemberRoleChanged => "Member",
+        ActivityType.MemberJoined or ActivityType.MemberRoleChanged
+            or ActivityType.MemberRemoved or ActivityType.MemberLeft => "Member",
         ActivityType.AttemptLogged => "Attempt",
         ActivityType.CommentAdded => "Comment",
         ActivityType.BetaVideoUploaded => "Video",
@@ -34,9 +35,17 @@ public static class WallActivityText
     {
         ActivityType.AttemptLogged => "attempt",
         ActivityType.BoulderCreated or ActivityType.BoulderRevised => "boulder",
-        ActivityType.MemberJoined or ActivityType.MemberRoleChanged => "member",
+        ActivityType.MemberJoined or ActivityType.MemberRoleChanged
+            or ActivityType.MemberRemoved or ActivityType.MemberLeft => "member",
         _ => "neutral",
     };
+
+    /// <summary>
+    /// The verb with the member an entry is about, where it names one: "removed Max" rather than "removed a member".
+    /// <paramref name="subjectName"/> is that member's byline, or null when the entry has none.
+    /// </summary>
+    public static string Verb(ActivityType type, string? subjectName) =>
+        type == ActivityType.MemberRemoved && !string.IsNullOrEmpty(subjectName) ? $"removed {subjectName}" : Verb(type);
 
     public static string Verb(ActivityType type) => type switch
     {
@@ -58,6 +67,8 @@ public static class WallActivityText
         ActivityType.WallReset => "reset the wall",
         ActivityType.MemberJoined => "joined the wall",
         ActivityType.MemberRoleChanged => "role was changed",
+        ActivityType.MemberRemoved => "removed a member",
+        ActivityType.MemberLeft => "left the wall",
         ActivityType.AttemptLogged => "logged an attempt",
         ActivityType.CommentAdded => "commented on a boulder",
         ActivityType.BetaVideoUploaded => "added a beta video",

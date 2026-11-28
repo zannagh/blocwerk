@@ -3,9 +3,11 @@
 
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
+using Blocwerk.Core.Services.Membership;
 using Blocwerk.Web.Controllers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using NSubstitute;
 
 namespace Blocwerk.Core.Tests;
@@ -62,6 +64,26 @@ public sealed class WallMembersControllerTests
     }
 
     [Fact]
+    public async Task TheDeviceRoutes_RemoveAndLeave_WithTheServicesRules()
+    {
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync(holdCount: 0);
+        var member = await h.AddMemberAsync("member@test", WallRole.Member);
+        var other = await h.AddMemberAsync("other@test", WallRole.Member);
+        var service = WallMembershipServiceTests.Service(h);
+
+        h.ActingUser = member;
+        Assert.Equal(StatusCodes.Status403Forbidden, Assert.IsType<ObjectResult>(await Controller(h).RemoveMember(h.WallId, other.Id, service, default)).StatusCode);
+        Assert.IsType<NoContentResult>(await Controller(h).Leave(h.WallId, service, default));
+        Assert.IsType<NotFoundResult>(await Controller(h).Leave(h.WallId, service, default));
+
+        h.ActingUser = h.Owner;
+        Assert.Equal(StatusCodes.Status403Forbidden, Assert.IsType<ObjectResult>(await Controller(h).Leave(h.WallId, service, default)).StatusCode);
+        Assert.IsType<NotFoundObjectResult>(await Controller(h).RemoveMember(h.WallId, member.Id, service, default));
+        Assert.IsType<NoContentResult>(await Controller(h).RemoveMember(h.WallId, other.Id, service, default));
+    }
+
+    [Fact]
     public async Task TheLinkCount_CountsOnlyLinksBetweenLiveHoldsOfLivePanels()
     {
         var wallId = Guid.NewGuid();
@@ -87,6 +109,37 @@ public sealed class WallMembersControllerTests
         panels.GetPanelsAsync(wallId).Returns([Panel(live: true)]);
 
         Assert.Equal(new WallHoldLinksResponse(1, 0, false), await WallHoldLinkCount.CountAsync(panels, wallId, false));
+    }
+
+    [Fact]
+    public async Task AMembershipChangedMeanwhile_Is409_OnLeaveAndOnRemove()
+    {
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync(holdCount: 0);
+        var member = await h.AddMemberAsync("member@test", WallRole.Member);
+        var racing = Substitute.For<IWallMembershipService>();
+        racing.LeaveAsync(Arg.Any<Guid>(), Arg.Any<bool>(), Arg.Any<CancellationToken>()).Returns(Task.FromException(new DbUpdateConcurrencyException()));
+        racing.RemoveMemberAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(Task.FromException(new DbUpdateConcurrencyException()));
+
+        Assert.Equal(StatusCodes.Status409Conflict, Assert.IsType<ConflictObjectResult>(await Controller(h).RemoveMember(h.WallId, member.Id, racing, default)).StatusCode);
+        h.ActingUser = member;
+        Assert.Equal(StatusCodes.Status409Conflict, Assert.IsType<ConflictObjectResult>(await Controller(h).Leave(h.WallId, racing, default)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Leave_PassesTheClipChoiceThrough_DeletingByDefault()
+    {
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync(holdCount: 0);
+        var member = await h.AddMemberAsync("member@test", WallRole.Member);
+        var membership = Substitute.For<IWallMembershipService>();
+        h.ActingUser = member;
+
+        await Controller(h).Leave(h.WallId, membership, default);
+        await Controller(h).Leave(h.WallId, membership, default, deleteBetaVideos: false);
+
+        await membership.Received(1).LeaveAsync(h.WallId, true, Arg.Any<CancellationToken>());
+        await membership.Received(1).LeaveAsync(h.WallId, false, Arg.Any<CancellationToken>());
     }
 
     private static WallPanelInfo Panel(bool live) => new(Guid.NewGuid(), 0, 0, live, false, 0, false);

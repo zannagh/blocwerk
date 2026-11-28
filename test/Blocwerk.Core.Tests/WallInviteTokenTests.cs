@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Blocwerk.Core.Tests;
 
 /// <summary>
-/// Pins the member-facing invite path: <see cref="Services.IWallService.GetOrCreateShareTokenAsync"/>
+/// Pins the member-facing invite path: <see cref="Services.IWallService.GetOrCreateJoinTokenAsync"/>
 /// lets any wall member hand out the wall's share link, rejects non-members, and — unlike the
 /// admin-only regenerate — never replaces a token that already exists.
 /// </summary>
@@ -19,7 +19,7 @@ public class WallInviteTokenTests
         var member = await h.AddMemberAsync("member@test", WallRole.Member);
         h.ActingUser = member;
 
-        var token = await h.WallService.GetOrCreateShareTokenAsync(h.WallId);
+        var token = await h.WallService.GetOrCreateJoinTokenAsync(h.WallId);
 
         Assert.False(string.IsNullOrEmpty(token));
     }
@@ -41,7 +41,7 @@ public class WallInviteTokenTests
 
         h.ActingUser = h.Owner;
 
-        var token = await h.WallService.GetOrCreateShareTokenAsync(h.WallId);
+        var token = await h.WallService.GetOrCreateJoinTokenAsync(h.WallId);
 
         Assert.False(string.IsNullOrEmpty(token));
     }
@@ -54,7 +54,7 @@ public class WallInviteTokenTests
         h.ActingUser = new User { Identifier = "stranger@test", DisplayName = "Stranger" };
 
         await Assert.ThrowsAsync<UnauthorizedAccessException>(
-            () => h.WallService.GetOrCreateShareTokenAsync(h.WallId));
+            () => h.WallService.GetOrCreateJoinTokenAsync(h.WallId));
     }
 
     [Fact]
@@ -65,8 +65,8 @@ public class WallInviteTokenTests
         var member = await h.AddMemberAsync("member@test", WallRole.Member);
         h.ActingUser = member;
 
-        var first = await h.WallService.GetOrCreateShareTokenAsync(h.WallId);
-        var second = await h.WallService.GetOrCreateShareTokenAsync(h.WallId);
+        var first = await h.WallService.GetOrCreateJoinTokenAsync(h.WallId);
+        var second = await h.WallService.GetOrCreateJoinTokenAsync(h.WallId);
 
         Assert.Equal(first, second);
     }

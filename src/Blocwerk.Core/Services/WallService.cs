@@ -1,4 +1,3 @@
-﻿using System.Security.Cryptography;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Assets;
 using Blocwerk.Core.Capture;
@@ -213,6 +212,8 @@ public class WallService : IWallService
 
             if (wall != null)
             {
+                // A share viewer looks; they do not get the invite, which is its own token.
+                wall.JoinToken = null;
                 db.Attach(wall);
                 await db.WallMembers.Where(m => m.WallId == wall.Id).ToListAsync();
                 await db.Holds.Where(h => h.WallId == wall.Id).ToListAsync();
@@ -924,9 +925,9 @@ public class WallService : IWallService
         }
     }
 
-    public async Task<string> GenerateShareTokenAsync(Guid wallId)
+    public async Task<string> RotateJoinTokenAsync(Guid wallId)
     {
-        using var op = BlocwerkMetrics.TimeOperation("Wall.GenerateShareToken", wallId);
+        using var op = BlocwerkMetrics.TimeOperation("Wall.RotateJoinToken", wallId);
         try
         {
             var user = await _currentUserService.GetCurrentUserAsync();
@@ -954,10 +955,12 @@ public class WallService : IWallService
                 throw new InvalidOperationException("Wall not found");
             }
 
-            wall.ShareToken = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
+            // Only the invite: the public share link (ShareToken) stays, so pages already handed around keep working.
+            wall.JoinToken = WallTokens.Create();
+            wall.ShareToken ??= WallTokens.Create();
             await db.SaveChangesAsync();
-            _logger.LogInformation("Share token generated for wall {WallId} by {UserId}", wallId, user.Id);
-            return wall.ShareToken;
+            _logger.LogInformation("Invite token replaced for wall {WallId} by {UserId}", wallId, user.Id);
+            return wall.JoinToken;
         }
         catch (Exception ex)
         {
@@ -966,9 +969,9 @@ public class WallService : IWallService
         }
     }
 
-    public async Task<string> GetOrCreateShareTokenAsync(Guid wallId)
+    public async Task<string> GetOrCreateJoinTokenAsync(Guid wallId)
     {
-        using var op = BlocwerkMetrics.TimeOperation("Wall.GetOrCreateShareToken", wallId);
+        using var op = BlocwerkMetrics.TimeOperation("Wall.GetOrCreateJoinToken", wallId);
         try
         {
             var user = await _currentUserService.GetCurrentUserAsync();
@@ -1002,16 +1005,18 @@ public class WallService : IWallService
             }
 
             // Non-destructive: reuse an existing link so members do not silently invalidate one
-            // another's invites. Only mint (and save) when the wall has never had a token.
-            if (!string.IsNullOrEmpty(wall.ShareToken))
+            // another's invites. Only mint (and save) when the wall has never had a token. The public share token is
+            // minted alongside, because an invite opened while signed out shows the wall through it (Join page).
+            if (!string.IsNullOrEmpty(wall.JoinToken) && !string.IsNullOrEmpty(wall.ShareToken))
             {
-                return wall.ShareToken;
+                return wall.JoinToken;
             }
 
-            wall.ShareToken = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
+            wall.JoinToken ??= WallTokens.Create();
+            wall.ShareToken ??= WallTokens.Create();
             await db.SaveChangesAsync();
-            _logger.LogInformation("Share token minted for wall {WallId} by member {UserId}", wallId, user.Id);
-            return wall.ShareToken;
+            _logger.LogInformation("Invite token minted for wall {WallId} by member {UserId}", wallId, user.Id);
+            return wall.JoinToken;
         }
         catch (Exception ex)
         {
@@ -1020,7 +1025,19 @@ public class WallService : IWallService
         }
     }
 
-    public async Task<Wall> JoinWallAsync(string shareToken)
+    public async Task<Wall?> GetWallByJoinTokenAsync(string joinToken)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        db.CurrentUserId = Guid.Empty;
+
+        // The token is the authority, as in JoinWallAsync; only the slim row, for the signed-out Join page.
+        return await db.Walls.IgnoreQueryFilters().AsNoTracking()
+            .Where(w => w.JoinToken != null && w.JoinToken == joinToken)
+            .WithoutPhotos()
+            .FirstOrDefaultAsync();
+    }
+
+    public async Task<Wall> JoinWallAsync(string joinToken)
     {
         using var op = BlocwerkMetrics.TimeOperation("Wall.Join");
         try
@@ -1035,11 +1052,11 @@ public class WallService : IWallService
             // enrolled into a wall they never chose.
             KioskGuard.EnsureNotKiosk(_kioskContext, db, "Joining a wall from a share link");
 
-            var wall = await db.Walls.FirstOrDefaultAsync(w => w.ShareToken == shareToken);
+            var wall = await db.Walls.FirstOrDefaultAsync(w => w.JoinToken != null && w.JoinToken == joinToken);
             if (wall == null)
             {
-                _logger.LogWarning("Invalid share token used to join by {UserId}", user.Id);
-                throw new InvalidOperationException("Invalid share token");
+                _logger.LogWarning("Invalid invite token used to join by {UserId}", user.Id);
+                throw new InvalidOperationException("Invalid invite token");
             }
 
             var existingMembership = await db.WallMembers

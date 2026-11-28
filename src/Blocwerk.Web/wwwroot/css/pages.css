@@ -1118,6 +1118,10 @@ a.wall3d-link {
 .member-name-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .member-role { font-size: 0.8rem; font-weight: 600; padding: 3px 10px; border-radius: 4px; }
 .member-role.owner { background: var(--success-bg); color: var(--success-text); }
+/* Remove / Leave under a member row: small, left-aligned, never full width. */
+.btn-secondary.member-end-btn { width: auto; margin: 0 0 8px 12px; padding: 4px 12px; font-size: 0.8rem; }
+.member-end-choice { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 10px; font-size: 0.85rem; color: var(--text); cursor: pointer; }
+.member-end-choice input { margin-top: 2px; accent-color: var(--accent); }
 .role-toggle {
     padding: 3px 10px; border: 1px solid var(--border); background: var(--bg-surface); border-radius: 4px;
     font-size: 0.8rem; font-weight: 600; cursor: pointer; color: var(--text);

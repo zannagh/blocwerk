@@ -24,6 +24,7 @@ public class WallProjectionTests
         full.StagedAt = DateTimeOffset.UtcNow;
         full.StagedByUserId = Guid.NewGuid();
         full.ShareToken = "tok";
+        full.JoinToken = "join";
         full.Angle = 7;
         full.BorderPoints = [new ShapePoint { Dx = 1, Dy = 2 }];
         full.LastResetAt = DateTimeOffset.UtcNow;

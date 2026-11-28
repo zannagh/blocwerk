@@ -73,6 +73,8 @@ A refusal is `{ message, permanent }`. `permanent: true` means a retry can never
 | `POST /api/v1/walls/{w}/invite-link/rotate` | admins (Generate Share Link) | a new `{ token, url }`; the old link stops working |
 | `POST /api/v1/walls/{w}/visit-links` | members (the Visit button) | `{ token, url: ".../visit/{token}", expiresAt }`; one-time, read-only; at most 20 an hour, then 429 |
 | `GET /api/v1/join/{token}` | anyone with an invite token | `{ wallId, name, memberCount }` without joining, for "Join <wall>?"; 404 for an unknown token, 403 on a kiosk |
+| `DELETE /api/v1/walls/{w}/members/{userId}` | admins (not the owner, not themselves) | 204; 404 for someone not on the wall, 403 for the owner or oneself, 409 when the membership changed at the same moment |
+| `POST /api/v1/walls/{w}/leave?deleteBetaVideos=true` | members but the owner | 204; 403 for the owner, 409 when the membership changed at the same moment; `deleteBetaVideos` (default `true`) also deletes the caller's beta videos on this wall |
 | `POST /api/v1/join/{token}` | anyone with an invite token | `{ wallId, name }`; joins as Member, joining again is a no-op; 404 for an unknown or replaced token |
 
 A wall the caller is not a member of answers 404 on every wall route, as an unknown wall does. Links start with the configured server address (`Blocwerk:Server:Url`, env `SERVER__URL`) when it is set to a public address, else with the request's origin, as the web pages' own links do. A plain member gets 403 on `hold-links` and `rotate`. A visitor link is redeemed in a browser (`/visit/{token}`), not by the app.
@@ -90,6 +92,17 @@ A wall the caller is not a member of answers 404 on every wall route, as an unkn
 | `DELETE /api/v1/me/avatar` | none | the profile without an avatar |
 
 Added to existing routes (any personal key, as before): `wallName` on `/api/v1/me/sessions` answers, `gymName` (the TopLogger gym) on `/api/v1/me/activities` and `/activities/{id}`, and an optional `clientRequestId` on `POST /api/v1/me/training/hangboard`, `/training/pullups` and `/sessions`. The same key from the same user returns the row already saved; a replayed session start ends nothing; another user's key is their own new row; the empty id is a 400. Ending a session is idempotent already and takes no key.
+
+### Removing and leaving
+
+Removal and leaving end a membership the same way, following what account deletion does for a person who leaves every wall, narrowed to this wall:
+- **Gone:** the membership (and with it the kiosk PIN and consent), the person's favourites and projects on this wall's boulders, their home-wall choice if it was this wall, and the visitor links they made for this wall (a visit already under way ends too). An open session on this wall is ended.
+- **Beta videos** the person uploaded to this wall: deleted on a removal, as account deletion deletes them (they show the person, who can no longer reach the wall to take them down); on leaving, deleted unless `deleteBetaVideos=false`.
+- **Moved:** wall keys (tablet, sensor) the person minted for this wall go to the owner under a neutral name.
+- **Kept:** what other members see stays, with the person's name on it: boulders, setter credits, comments, ratings, attempts and ticks and the wall's history. Their training history is not wall data and is untouched.
+- **Invite:** the invite token is replaced, so an old invite link no longer joins. The public share link (`/walls/{w}/shared/{token}`, a separate token) keeps working.
+- **Activity:** the wall's log gets "removed X" or "X left".
+- **Feed:** `member.changed` goes to the wall; `access.revoked` and `walls.changed` go to the person's own devices; `video.deleted` per deleted clip.
 
 ## Gallery and beta videos
 
