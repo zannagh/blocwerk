@@ -34,7 +34,12 @@ public class PostgresMembershipTests
             await blocker.Database.ExecuteSqlRawAsync("SELECT 1 FROM \"WallMembers\" WHERE \"WallId\" = {0} FOR UPDATE", h.WallId);
             var removeB = Capture(As(h, a).RemoveMemberAsync(h.WallId, b.Id));
             var removeA = Capture(As(h, b).RemoveMemberAsync(h.WallId, a.Id));
-            await WaitForLockWaitersAsync(blocker, 2, removeB, removeA);
+            // Watched from a connection of its own: inside a transaction pg_stat_activity is read once and then cached.
+            await using (var watcher = h.CreateContext())
+            {
+                await WaitForLockWaitersAsync(watcher, 2, removeB, removeA);
+            }
+
             await hold.RollbackAsync();
 
             var outcomes = await Task.WhenAll(removeB, removeA);
