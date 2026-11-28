@@ -46,7 +46,8 @@ internal static partial class ApiDocsData
         new("GET", "/api/v1/me/security", "Your sign-in and security set-up, read-only: e-mail, password sign-in, two-factor, linked providers.",
             [],
             null,
-            "{\n  \"email\": \"you@example.com\",\n  \"emailVerified\": true,\n  \"hasPassword\": true,\n  \"totpEnabled\": false,"
+            "{\n  \"email\": \"you@example.com\",\n  \"emailVerified\": true,\n  \"hasPassword\": true,\n  \"loginUsername\": \"climber\","
+                + "\n  \"totpEnabled\": false,"
                 + "\n  \"linkedProviders\": [ \"github\" ],\n  \"manageUrl\": \"/profile?tab=account\"\n}",
             "Device key only. Changes stay on the web: a key session may never change account security."),
     ];
