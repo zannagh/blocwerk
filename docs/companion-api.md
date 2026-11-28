@@ -18,7 +18,7 @@ Send `Authorization: Bearer bwk_…`. No cookie and no antiforgery token. The ro
 | `/api/walls/{w}/feed/stream` (SSE) | the same as above, rate limited per address | plus a device key, same limit |
 | `/api/me/changes` | signed-in human only (outside the API-key surface) | unchanged |
 | `/api/me/walls/{w}/mine` | signed-in human only (outside the API-key surface) | unchanged |
-| `/api/v1/me/walls` | did not exist | **device key only**: the web My Walls list (the walls the owner is a member of, same order), with `id`, `name`, `memberCount`, `hasPhoto` and `photoSha` (read the card photo as `/a/{photoSha}/640`); rate limited |
+| `/api/v1/me/walls` | did not exist | **device key only**: the web My Walls list (the walls the owner is a member of, same order), with `id`, `name`, `memberCount`, `hasPhoto`, `photoSha`, `role` (Admin, Moderator or Member; the owner is Admin) and `isOwner` (read the card photo as `/a/{photoSha}/640`); rate limited |
 | `/api/v1/me/changes` | did not exist | **device key only**, same handler as `/api/me/changes`, rate limited |
 | `/api/v1/me/walls/{w}/mine` | did not exist | **device key only**, same handler as `/api/me/walls/{w}/mine`, rate limited |
 
@@ -54,6 +54,21 @@ A refusal is `{ message, permanent }`. `permanent: true` means a retry can never
 
 - **PATCH.** A field you leave out stays as it is. `displayName: null` (or blank) resets it to the account name, and `homeWallId: null` clears the home wall. The answer is 400 for an unknown field, a `gradeScale` other than `font` or `v`, an unknown notification type, a non-boolean value, a display name over 256 characters or with invisible or text-direction characters (bidi overrides and isolates, direction marks, zero-width characters; a zero-width joiner between two emoji, as in the woman climbing, is fine; the web's save follows the same rule), or a home wall you are not a member of. A refused body changes nothing. The patch takes the per-key write limit (60, then 1 a second); the reads take the feed's.
 - **Other members.** The web page's rule applies: you see a profile when you share a wall with that person (or it is your own). Anyone else, and an unknown id, gets 404. `windowDays` is clamped to 7–365. `avatarUrl` is the web's `/api/users/{id}/avatar`, which needs no key.
+
+## Walls: members, links, joining
+
+**Device key only**, `no-store`. The two reads take the feed's rate limit and the four `POST` routes the per-key write limit. These are the web wall page's member list and buttons, through the same service calls and so under the same rules.
+
+| Route | Who | Answer |
+| --- | --- | --- |
+| `GET /api/v1/walls/{w}/members` | members | `[ { userId, name, avatarUrl, role, isOwner, joinedAt } ]` in join order |
+| `GET /api/v1/walls/{w}/hold-links` | admins and moderators | `{ panelCount, linkCount, linksFinalized }`; the web's "link holds across panels" reminder shows while `panelCount >= 2` and not `linksFinalized` |
+| `POST /api/v1/walls/{w}/invite-link` | members (the Invite button) | `{ token, url: ".../join/{token}", expiresAt: null }`; the same link each time, made on first use |
+| `POST /api/v1/walls/{w}/invite-link/rotate` | admins (Generate Share Link) | a new `{ token, url }`; the old link stops working |
+| `POST /api/v1/walls/{w}/visit-links` | members (the Visit button) | `{ token, url: ".../visit/{token}", expiresAt }`; one-time, read-only; at most 20 an hour, then 429 |
+| `POST /api/v1/join/{token}` | anyone with an invite token | `{ wallId, name }`; joins as Member, joining again is a no-op; 404 for an unknown or replaced token |
+
+A wall the caller is not a member of answers 404 on `members` and `hold-links`, and 403 on the link routes, as the web's services refuse it. A plain member gets 403 on `hold-links` and `rotate`. A visitor link is redeemed in a browser (`/visit/{token}`), not by the app.
 
 ## Rules
 
