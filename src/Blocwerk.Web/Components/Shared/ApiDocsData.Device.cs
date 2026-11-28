@@ -130,5 +130,6 @@ internal static partial class ApiDocsData
             .. DeviceProfileEndpoints,
             .. DeviceWallEndpoints,
             .. DeviceMediaEndpoints,
+            .. DeviceActivityEndpoints,
         ]);
 }

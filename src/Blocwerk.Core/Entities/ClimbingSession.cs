@@ -27,4 +27,10 @@ public class ClimbingSession
 
     /// <summary>When the session was closed, or null while it is still live.</summary>
     public DateTimeOffset? EndedAt { get; set; }
+
+    /// <summary>
+    /// The replay key a client sent with the write (a phone's offline queue), unique per user: the same key again returns
+    /// this row instead of saving a second one. Null for writes that came without one.
+    /// </summary>
+    public Guid? ClientRequestId { get; set; }
 }

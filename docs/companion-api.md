@@ -72,9 +72,24 @@ A refusal is `{ message, permanent }`. `permanent: true` means a retry can never
 | `POST /api/v1/walls/{w}/invite-link` | members (the Invite button) | `{ token, url: ".../join/{token}", expiresAt: null }`; the same link each time, made on first use |
 | `POST /api/v1/walls/{w}/invite-link/rotate` | admins (Generate Share Link) | a new `{ token, url }`; the old link stops working |
 | `POST /api/v1/walls/{w}/visit-links` | members (the Visit button) | `{ token, url: ".../visit/{token}", expiresAt }`; one-time, read-only; at most 20 an hour, then 429 |
+| `GET /api/v1/join/{token}` | anyone with an invite token | `{ wallId, name, memberCount }` without joining, for "Join <wall>?"; 404 for an unknown token, 403 on a kiosk |
 | `POST /api/v1/join/{token}` | anyone with an invite token | `{ wallId, name }`; joins as Member, joining again is a no-op; 404 for an unknown or replaced token |
 
-A wall the caller is not a member of answers 404 on `members` and `hold-links`, and 403 on the link routes, as the web's services refuse it. A plain member gets 403 on `hold-links` and `rotate`. A visitor link is redeemed in a browser (`/visit/{token}`), not by the app.
+A wall the caller is not a member of answers 404 on every wall route, as an unknown wall does. Links start with the configured server address (`Blocwerk:Server:Url`, env `SERVER__URL`) when it is set to a public address, else with the request's origin, as the web pages' own links do. A plain member gets 403 on `hold-links` and `rotate`. A visitor link is redeemed in a browser (`/visit/{token}`), not by the app.
+
+## Activity
+
+**Device key only**, `no-store`. These are the Activity page's own edits and its day panel, through the same `IProgressionService` calls. The edits take the per-key write limit, the day read the feed's.
+
+| Route | Body | Answer |
+| --- | --- | --- |
+| `PATCH /api/v1/me/progression` | `{ windowDays?: 7-365, groupBy?: "Day"\|"Week"\|"Month" }` | the progression under the saved preference, as `/api/v1/me/progression` |
+| `PATCH /api/v1/me/activities/{id}` | `{ durationMinutes: 0-1440 }` | the activity, as `/api/v1/me/activities/{id}`; 404 for someone else's |
+| `GET /api/v1/me/days/{yyyy-MM-dd}` | none | `{ date, boulders, hangboard, pullups, sessionDurationMinutes }` for any day, also outside the window |
+| `PUT /api/v1/me/avatar` | the image bytes, `Content-Type: image/jpeg`, `image/png` or `image/webp`, at most 30 MB | the profile, as `GET /api/v1/me/profile`; stored scaled to 512 px as WebP, like the web |
+| `DELETE /api/v1/me/avatar` | none | the profile without an avatar |
+
+Added to existing routes (any personal key, as before): `wallName` on `/api/v1/me/sessions` answers, `gymName` (the TopLogger gym) on `/api/v1/me/activities` and `/activities/{id}`, and an optional `clientRequestId` on `POST /api/v1/me/training/hangboard`, `/training/pullups` and `/sessions`. The same key from the same user returns the row already saved; a replayed session start ends nothing; another user's key is their own new row; the empty id is a 400. Ending a session is idempotent already and takes no key.
 
 ## Gallery and beta videos
 

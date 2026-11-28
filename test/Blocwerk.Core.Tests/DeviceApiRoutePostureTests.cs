@@ -52,6 +52,12 @@ public sealed class DeviceApiRoutePostureTests
         ("GET", "api/v1/beta-videos/{videoId:guid}"),
         ("GET", "api/v1/beta-videos/{videoId:guid}/thumbnail"),
         ("GET", "api/v1/beta-videos/{videoId:guid}/hls/{*path}"),
+        ("GET", "api/v1/join/{token}"),
+        ("PATCH", "api/v1/me/progression"),
+        ("PATCH", "api/v1/me/activities/{activityId:guid}"),
+        ("GET", "api/v1/me/days/{date}"),
+        ("PUT", "api/v1/me/avatar"),
+        ("DELETE", "api/v1/me/avatar"),
     ];
 
     public static TheoryData<string, string> Routes()

@@ -10,9 +10,9 @@ namespace Blocwerk.Core.Services;
 
 public interface ITrainingService
 {
-    Task<HangboardSession> SaveHangboardSessionAsync(int edgeSizeMm, double additionalWeightKg, TimeSpan duration, int sets, string? notes = null);
+    Task<HangboardSession> SaveHangboardSessionAsync(int edgeSizeMm, double additionalWeightKg, TimeSpan duration, int sets, string? notes = null, Guid? clientRequestId = null);
 
-    Task<PullupSession> SavePullupSessionAsync(int repetitions, double additionalWeightKg, int sets, string? notes = null);
+    Task<PullupSession> SavePullupSessionAsync(int repetitions, double additionalWeightKg, int sets, string? notes = null, Guid? clientRequestId = null);
 
     Task DeleteHangboardSessionAsync(Guid sessionId);
 
@@ -32,13 +32,27 @@ public class TrainingService : ITrainingService
         _logger = logger;
     }
 
-    public async Task<HangboardSession> SaveHangboardSessionAsync(int edgeSizeMm, double additionalWeightKg, TimeSpan duration, int sets, string? notes = null)
+    public async Task<HangboardSession> SaveHangboardSessionAsync(
+        int edgeSizeMm,
+        double additionalWeightKg,
+        TimeSpan duration,
+        int sets,
+        string? notes = null,
+        Guid? clientRequestId = null)
     {
+        ClientRequestIds.EnsureValid(clientRequestId);
         using var op = BlocwerkMetrics.TimeOperation("Training.SaveHangboard");
         try
         {
             var user = await _currentUserService.GetCurrentUserAsync();
             await using var db = await _dbContextFactory.CreateDbContextAsync();
+
+            // A replay of the caller's own earlier save returns that row.
+            if (clientRequestId is { } requestId
+                && await db.HangboardSessions.FirstOrDefaultAsync(t => t.UserId == user.Id && t.ClientRequestId == requestId) is { } replayed)
+            {
+                return replayed;
+            }
 
             var session = new HangboardSession
             {
@@ -48,6 +62,7 @@ public class TrainingService : ITrainingService
                 Duration = duration,
                 Sets = sets,
                 Notes = notes,
+                ClientRequestId = clientRequestId,
             };
 
             session.ActivityId = await ActivityGrouping.ResolveActivityIdAsync(db, user.Id, session.Timestamp, null);
@@ -64,13 +79,26 @@ public class TrainingService : ITrainingService
         }
     }
 
-    public async Task<PullupSession> SavePullupSessionAsync(int repetitions, double additionalWeightKg, int sets, string? notes = null)
+    public async Task<PullupSession> SavePullupSessionAsync(
+        int repetitions,
+        double additionalWeightKg,
+        int sets,
+        string? notes = null,
+        Guid? clientRequestId = null)
     {
+        ClientRequestIds.EnsureValid(clientRequestId);
         using var op = BlocwerkMetrics.TimeOperation("Training.SavePullup");
         try
         {
             var user = await _currentUserService.GetCurrentUserAsync();
             await using var db = await _dbContextFactory.CreateDbContextAsync();
+
+            // A replay of the caller's own earlier save returns that row.
+            if (clientRequestId is { } requestId
+                && await db.PullupSessions.FirstOrDefaultAsync(t => t.UserId == user.Id && t.ClientRequestId == requestId) is { } replayed)
+            {
+                return replayed;
+            }
 
             var session = new PullupSession
             {
@@ -79,6 +107,7 @@ public class TrainingService : ITrainingService
                 AdditionalWeightKg = additionalWeightKg,
                 Sets = sets,
                 Notes = notes,
+                ClientRequestId = clientRequestId,
             };
 
             session.ActivityId = await ActivityGrouping.ResolveActivityIdAsync(db, user.Id, session.Timestamp, null);

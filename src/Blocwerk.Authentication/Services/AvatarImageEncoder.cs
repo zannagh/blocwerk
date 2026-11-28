@@ -20,14 +20,30 @@ public static class AvatarImageEncoder
     public const int Quality = 80;
 
     /// <summary>
+    /// The most pixels an upload may declare (about a 40-megapixel photo). The header is read before anything is decoded,
+    /// so a small file that claims a huge image (a decompression bomb) is refused without allocating its pixels.
+    /// </summary>
+    public const long MaxPixels = 40_000_000;
+
+    /// <summary>
     /// Decodes <paramref name="image"/>, scales it so its longest edge is at most
     /// <see cref="MaxEdge"/> (preserving aspect ratio; smaller images are left at their pixel size),
     /// and re-encodes it.
     /// </summary>
-    /// <exception cref="InvalidOperationException">The bytes cannot be decoded or re-encoded, so
-    /// the UI can show its avatar error.</exception>
+    /// <exception cref="InvalidOperationException">The bytes cannot be decoded or re-encoded, or declare more than
+    /// <see cref="MaxPixels"/> pixels, so the UI can show its avatar error.</exception>
     public static (byte[] Image, string ContentType) Scale(byte[] image)
     {
+        if (Measure(image) is not { } size)
+        {
+            throw new InvalidOperationException("Couldn't read that image. Please try a JPEG, PNG or WebP file.");
+        }
+
+        if ((long)size.Width * size.Height > MaxPixels)
+        {
+            throw new InvalidOperationException("That image has too many pixels (at most 40 megapixels).");
+        }
+
         // Skia throws rather than returning null when it cannot build a codec for the bytes, so the
         // friendly error below needs the catch to fire at all.
         SKBitmap? decoded;

@@ -8,7 +8,7 @@ internal static class MeMappings
 {
     public static SessionResponse ToResponse(this ClimbingSession session)
     {
-        return new SessionResponse(session.Id, session.WallId, session.StartedAt, session.EndedAt);
+        return new SessionResponse(session.Id, session.WallId, session.StartedAt, session.EndedAt, session.Wall?.Name);
     }
 
     public static AttemptResponse ToResponse(this Attempt attempt)
@@ -65,7 +65,8 @@ internal static class MeMappings
             summary.BoulderCount,
             summary.HangboardCount,
             summary.PullupCount,
-            summary.WallName);
+            summary.WallName,
+            summary.GymName);
     }
 
     public static ActivityDetailResponse ToResponse(this ActivityDetail detail)
@@ -78,7 +79,8 @@ internal static class MeMappings
             detail.Boulders.Select(b => b.ToResponse()).ToList(),
             detail.Hangboard.Select(h => h.ToResponse()).ToList(),
             detail.Pullups.Select(p => p.ToResponse()).ToList(),
-            detail.WallName);
+            detail.WallName,
+            detail.GymName);
     }
 
     public static ProgressionResponse ToResponse(this UserProgression progression)
