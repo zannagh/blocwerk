@@ -253,13 +253,13 @@ The web wall page's read-only cards, from the page's own services. **Device key 
 
 | Route | Answer |
 | --- | --- |
-| `GET /api/v1/walls/{w}/activity?page=0&pageSize=20` | `{ items: [{ id, type, userId, userName, avatarUrl, boulderId, details, timestamp }], totalCount, page, pageSize }`, newest first |
+| `GET /api/v1/walls/{w}/activity?page=0&pageSize=20` | `{ items: [{ id, type, userId, userName, avatarUrl, boulderId, details, timestamp, subjectUserId, subjectUserName }], totalCount, page, pageSize }`, newest first |
 | `GET /api/v1/walls/{w}/boulders/{b}/activity?page=0&pageSize=5` | the same, for one boulder (404 for a boulder of another wall) |
 | `GET /api/v1/walls/{w}/leaderboard` | `[{ userId, name, avatarUrl, hardestSendGrade, hardestSendScore, score, volumeMinutes }]` |
 | `GET /api/v1/walls/{w}/temperature?range=24h` | `{ latestCelsius, latestAt, range, from, to, bucketSeconds, buckets: [{ bucketStart, averageCelsius, minCelsius, maxCelsius, sampleCount }] }` |
 | `GET /api/v1/walls/{w}/look-over` | `{ pending, pendingSince, generation, openFindings, totalFindings, completedAt, completedBy, canLookOver, bouldersMarked, moreBoulders, missingHolds }` |
 
-- **Activity.** This is `IActivityLogService` (wall and boulder). `type` is the `ActivityType` name (`BoulderCreated`, `AttemptLogged`, `CommentAdded`, `BetaVideoUploaded`, `MemberJoined`, …). Bylines follow the web's rule (`LeafAuthors`): an erased or system author reads as Ghost, with `userId` null. `pageSize` is clamped to 1–50. The feed's `activity.added` rows say when to read again.
+- **Activity.** This is `IActivityLogService` (wall and boulder). `type` is the `ActivityType` name (`BoulderCreated`, `AttemptLogged`, `CommentAdded`, `BetaVideoUploaded`, `MemberJoined`, …). Bylines follow the web's rule (`LeafAuthors`): an erased or system author reads as Ghost, with `userId` null. `subjectUserId` and `subjectUserName` name the person a member row is about (`MemberJoined`, `MemberRoleChanged`, `MemberRemoved`, `MemberLeft`), by the same rule. `pageSize` is clamped to 1–50 and `page` to 0–10000. A membership revoked during the read answers 404. The feed's `activity.added` rows say when to read again.
 - **Leaderboard.** This is `IProgressionService.GetWallLeaderboardAsync`, the members card. Sort by `hardestSendScore`, `score` or `volumeMinutes`.
 - **Temperature.** `range` is `24h`, `7d`, `30d`, `1y` or `all` (400 otherwise). The windows and bucket widths are the web chart's (`WallTemperatureWindow`, now shared with the web panel): 120 buckets for the day and 96 for wider windows. A bucket with no readings is absent and drawn as a gap. With `all` and no readings, `from` is null and `buckets` empty.
 - **Look-over.** This is `IWallLookOverService.GetStateAsync`, the banner. While `pending` is true, admins and moderators (`canLookOver`) get the headline numbers; everyone else gets "This wall was updated recently." Update mode is `underMaintenance` in `GET /api/v1/walls/{w}/settings`, which members may read.

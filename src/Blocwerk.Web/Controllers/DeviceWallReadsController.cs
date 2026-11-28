@@ -38,6 +38,9 @@ public sealed class DeviceWallReadsController : ControllerBase
 {
     private const int MaxPageSize = 50;
 
+    /// <summary>The highest page asked for; far beyond any wall's log, and page * size stays well inside an int.</summary>
+    private const int MaxPage = 10_000;
+
     private readonly IDbContextFactory<BlocwerkDbContext> contexts;
     private readonly ICurrentUserService currentUser;
 
@@ -62,8 +65,11 @@ public sealed class DeviceWallReadsController : ControllerBase
         }
 
         var (size, at) = Paging(page, pageSize);
-        var (items, total) = await activity.GetWallActivityAsync(wallId, at, size);
-        return Ok(Page(items, total, at, size, caller.UserId));
+        return await ReadAsync(async () =>
+        {
+            var (items, total) = await activity.GetWallActivityAsync(wallId, at, size);
+            return Ok(Page(items, total, at, size, caller.UserId));
+        });
     }
 
     /// <summary>One boulder's activity, newest first, a page at a time (the web shows 5).</summary>
@@ -84,8 +90,11 @@ public sealed class DeviceWallReadsController : ControllerBase
         }
 
         var (size, at) = Paging(page, pageSize);
-        var (items, total) = await activity.GetBoulderActivityAsync(boulderId, at, size);
-        return Ok(Page(items, total, at, size, caller.UserId));
+        return await ReadAsync(async () =>
+        {
+            var (items, total) = await activity.GetBoulderActivityAsync(boulderId, at, size);
+            return Ok(Page(items, total, at, size, caller.UserId));
+        });
     }
 
     /// <summary>The members' leaderboard: hardest send, score and volume on this wall.</summary>
@@ -152,8 +161,21 @@ public sealed class DeviceWallReadsController : ControllerBase
         return await lookOver.GetStateAsync(wallId, ct) is { } state ? Ok(state) : NotFound();
     }
 
+    // A membership revoked between the check and the read: the service refuses, and the answer is the outsider's 404.
+    private static async Task<IActionResult> ReadAsync(Func<Task<IActionResult>> read)
+    {
+        try
+        {
+            return await read();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return new NotFoundResult();
+        }
+    }
+
     private static (int Size, int Page) Paging(int page, int pageSize) =>
-        (Math.Clamp(pageSize, 1, MaxPageSize), Math.Max(0, page));
+        (Math.Clamp(pageSize, 1, MaxPageSize), Math.Clamp(page, 0, MaxPage));
 
     private static DeviceActivityPage Page(List<ActivityLogEntry> items, int total, int page, int size, Guid viewerId)
     {
@@ -168,6 +190,9 @@ public sealed class DeviceWallReadsController : ControllerBase
     private static DeviceActivityItem Item(ActivityLogEntry item, FeedViewer viewer)
     {
         var author = LeafAuthors.Describe(item.User, viewer);
+
+        // The person a member row is about (joined, role changed, removed, left), named by the same rule as the author.
+        var subject = item.SubjectUser is null ? null : LeafAuthors.Describe(item.SubjectUser, viewer);
         return new DeviceActivityItem(
             item.Id,
             item.Type.ToString(),
@@ -176,7 +201,9 @@ public sealed class DeviceWallReadsController : ControllerBase
             author is { HasAvatar: true, Id: { } id } ? $"/api/users/{id}/avatar" : null,
             item.BoulderId,
             item.Details,
-            item.Timestamp);
+            item.Timestamp,
+            subject?.Id,
+            subject?.Name);
     }
 
     private async Task<WallCaller?> CallerAsync(Guid wallId, CancellationToken ct)

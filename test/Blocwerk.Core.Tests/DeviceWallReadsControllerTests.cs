@@ -44,6 +44,28 @@ public sealed class DeviceWallReadsControllerTests
     }
 
     [Fact]
+    public async Task AHugePage_IsClamped_AMemberRow_NamesItsSubject_AndARefusalMidCallIs404()
+    {
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync(holdCount: 0);
+        var member = await h.AddMemberAsync("member@test", WallRole.Member);
+        await AddAsync(h, new ActivityLogEntry { WallId = h.WallId, UserId = h.Owner.Id, SubjectUserId = member.Id, Type = ActivityType.MemberRoleChanged });
+        var activity = new ActivityLogService(h.DbContextFactory, h.CurrentUser);
+
+        var huge = Page(await Controller(h).GetActivity(h.WallId, activity, page: int.MaxValue, pageSize: 50));
+        Assert.Equal((10_000, 0, 1), (huge.Page, huge.Items.Count, huge.TotalCount));
+
+        var row = Assert.Single(Page(await Controller(h).GetActivity(h.WallId, activity)).Items);
+        Assert.Equal((member.Id, member.Name), (row.SubjectUserId, row.SubjectUserName));
+
+        var revoked = NSubstitute.Substitute.For<IActivityLogService>();
+        NSubstitute.SubstituteExtensions.Returns(
+            revoked.GetWallActivityAsync(h.WallId, 0, 20, null),
+            Task.FromException<(List<ActivityLogEntry>, int)>(new UnauthorizedAccessException()));
+        Assert.IsType<NotFoundResult>(await Controller(h).GetActivity(h.WallId, revoked));
+    }
+
+    [Fact]
     public async Task AMember_ReadsTheLeaderboard_AndTheLookOverState()
     {
         using var h = new WallTestHarness();

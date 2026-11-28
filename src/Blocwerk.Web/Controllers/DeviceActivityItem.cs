@@ -12,6 +12,8 @@ namespace Blocwerk.Web.Controllers;
 /// <param name="BoulderId">The boulder it is about, or null for a wall-wide row.</param>
 /// <param name="Details">The row's free text, e.g. a boulder name or "12 holds detected".</param>
 /// <param name="Timestamp">When it happened.</param>
+/// <param name="SubjectUserId">The person a member row is about (joined, role changed, removed, left), or null.</param>
+/// <param name="SubjectUserName">Their name as the web shows it, or null.</param>
 public sealed record DeviceActivityItem(
     Guid Id,
     string Type,
@@ -20,4 +22,6 @@ public sealed record DeviceActivityItem(
     string? AvatarUrl,
     Guid? BoulderId,
     string? Details,
-    DateTimeOffset Timestamp);
+    DateTimeOffset Timestamp,
+    Guid? SubjectUserId = null,
+    string? SubjectUserName = null);
