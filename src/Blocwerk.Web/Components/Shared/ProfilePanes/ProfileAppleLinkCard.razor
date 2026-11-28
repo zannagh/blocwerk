@@ -1,7 +1,10 @@
-@* "Sign in with Apple" on the Account pane: whether an Apple ID is linked, and an Unlink button. Linking happens in
-   the iPhone app while it is signed in (POST /api/v1/me/apple); the web only shows and removes the link. Not on a
-   kiosk: the whole Account pane is replaced there. *@
+@* "Sign in with Apple" on the Account pane, beside the linked providers: whether an Apple ID is linked and from where,
+   Link Apple ID (the web round trip, while web Sign in with Apple is configured) and Unlink. The iPhone app links
+   through POST /api/v1/me/apple instead. Unlink is held back (by the shared service) while the Apple ID is the
+   account's only way in. Not on a kiosk: the whole Account pane is replaced there. *@
 @inject Blocwerk.Core.AppleSignIn.IAppleSignInService Apple
+@inject Blocwerk.Authentication.Apple.AppleWebSignIn AppleWeb
+@inject NavigationManager Navigation
 
 <details class="section profile-collapsible" id="apple-section">
     <summary>@(link is not null ? "Sign in with Apple (linked)" : "Sign in with Apple")</summary>
@@ -13,13 +16,31 @@
                     Apple ID linked@(link.LinkedFrom is null ? null : $" on {link.LinkedFrom}"),
                     <time datetime="@link.LinkedAt.ToString("O")">@link.LinkedAt.ToString("d MMM yyyy, HH:mm 'UTC'")</time>
                 </span>
-                <button class="btn-secondary" @onclick="UnlinkAsync" disabled="@busy">Unlink</button>
+                <button class="btn-secondary" @onclick="UnlinkAsync" disabled="@(busy || !canUnlink)">Unlink</button>
+            </div>
+        </div>
+        @if (!canUnlink)
+        {
+            <p class="member-since">@Blocwerk.Core.AppleSignIn.AppleOnlySignInException.UserMessage</p>
+        }
+        <p class="member-since">
+            You can sign in to this account with your Apple ID here and in the Blocwerk iPhone app. If you did not link
+            it, unlink it and revoke the device's key under API keys. Unlinking stops new sign-ins; devices already
+            signed in stay signed in until you revoke their keys. Changing your password or two-factor settings unlinks
+            an Apple ID linked later, not the one this account was made with.
+        </p>
+    }
+    else if (AppleWeb.IsEnabled)
+    {
+        <div class="field-group">
+            <div class="field-actions">
+                <span class="field-label">Apple ID</span>
+                <button class="btn-secondary" @onclick="StartLink">Link Apple ID</button>
             </div>
         </div>
         <p class="member-since">
-            The Blocwerk iPhone app can sign in to this account with your Apple ID. If you did not link it, unlink it
-            and revoke the device's key under API keys. Unlinking stops new sign-ins; devices already signed in stay
-            signed in until you revoke their keys. Changing your password or two-factor settings unlinks it too.
+            Link your Apple ID to sign in with Apple here and in the Blocwerk iPhone app. An Apple ID that already
+            signs in to another Blocwerk account is refused, never merged.
         </p>
     }
     else
@@ -33,6 +54,7 @@
 
 @code {
     private Blocwerk.Core.Entities.AppleLink? link;
+    private bool canUnlink;
     private bool busy;
 
     /// <summary>Gets or sets the signed-in user whose link is shown.</summary>
@@ -43,7 +65,11 @@
     protected override async Task OnParametersSetAsync()
     {
         link = await Apple.FindLinkAsync(UserId);
+        canUnlink = link is not null && await Apple.HasOtherSignInAsync(UserId);
     }
+
+    // A full navigation: /account/link 302s to appleid.apple.com, which enhanced navigation cannot follow.
+    private void StartLink() => Navigation.NavigateTo("/account/link?provider=apple", forceLoad: true);
 
     private async Task UnlinkAsync()
     {
@@ -52,6 +78,11 @@
         {
             await Apple.UnlinkAsync(UserId);
             link = null;
+        }
+        catch (Blocwerk.Core.AppleSignIn.AppleOnlySignInException)
+        {
+            // The service checks again at the click: another tab may have removed the password meanwhile.
+            canUnlink = false;
         }
         finally
         {

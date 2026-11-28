@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using System.Text.Json;
 using Blocwerk.Authentication.Providers;
 using Blocwerk.Authentication.Resources;
@@ -38,6 +37,7 @@ public partial class AccountController : Controller
     private readonly IDataProtector _totpPendingProtector;
     private readonly IDataProtector _reauthProtector;
     private readonly Services.IAccountReauthTicketStore _reauthTicketStore;
+    private readonly Apple.AppleWebSignIn _apple;
 
     public AccountController(
         BlocwerkSettings settings,
@@ -52,7 +52,8 @@ public partial class AccountController : Controller
         Services.ITotpService totpService,
         IKioskContext kioskContext,
         Services.IAccountReauthTicketStore reauthTicketStore,
-        IDataProtectionProvider dataProtectionProvider)
+        IDataProtectionProvider dataProtectionProvider,
+        Apple.AppleWebSignIn apple)
     {
         _configuration = settings;
         _redirectUriProvider = redirectUriProvider;
@@ -66,6 +67,7 @@ public partial class AccountController : Controller
         _totpService = totpService;
         _kioskContext = kioskContext;
         _reauthTicketStore = reauthTicketStore;
+        _apple = apple;
         _linkProtector = dataProtectionProvider.CreateProtector(LinkIntentPurpose);
         _totpPendingProtector = dataProtectionProvider.CreateProtector(TotpPendingPurpose);
         _reauthProtector = dataProtectionProvider.CreateProtector(ReauthIntentPurpose);
@@ -173,6 +175,13 @@ public partial class AccountController : Controller
             return Redirect("/account/login?error=cancelled");
         }
 
+        // A code Apple's form POST parked (and only such a code) runs the Apple branch: its sign-in, link and
+        // step-up resolve through the Apple link model rather than through UserIdentities.
+        if (_apple.TryTakeTicket(code, out var appleTicket))
+        {
+            return await HandleAppleCallbackAsync(code, state, appleTicket);
+        }
+
         // A signed-in user re-proving themselves carries a step-up intent cookie BOUND TO THIS
         // CALLBACK'S STATE. Like the link branch below it never signs anybody in — it only answers
         // "is this identity yours" and hands the waiting page a single-use ticket. The state binding
@@ -190,52 +199,7 @@ public partial class AccountController : Controller
             return await HandleLinkCallbackAsync(code, linkUserId, linkProvider);
         }
 
-        try
-        {
-            var info = await ExchangeCodeForIdentityAsync(code);
-            if (info is null)
-            {
-                return Redirect("/account/login?error=auth_failed");
-            }
-
-            var claims = new List<Claim>
-            {
-                new(ClaimTypes.NameIdentifier, info.Value.ProviderUserId),
-                new(ClaimTypes.Name, info.Value.Name),
-                new("Name", info.Value.Name),
-            };
-
-            // Carry the provider (github/google/microsoft) onto the cookie principal so
-            // CurrentUserService can resolve the user by their provider identity, not just the legacy
-            // "{name}__{id}" identifier. Absent for legacy cookies and dev login, which fall back to
-            // identifier-based resolution.
-            if (!string.IsNullOrEmpty(info.Value.Provider))
-            {
-                claims.Add(new Claim("provider", info.Value.Provider));
-            }
-
-            // Stamp WHEN this sign-in happened. CurrentUserService only lets a login that just
-            // happened create an account, which is what stops a still-valid cookie for a deleted
-            // account from silently minting a new one (see AuthFreshness).
-            claims.Add(Services.AuthFreshness.Stamp());
-
-            var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
-            var principal = new ClaimsPrincipal(identity);
-            await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal);
-
-            // Returning-visitor + remember-method bookkeeping. Both are best-effort UX cookies, so they
-            // ride on this successful sign-in and never affect the redirect below.
-            SetReturningVisitorCookie();
-            TrackProviderUsageAndMaybeRemember(info.Value.Provider);
-
-            var returnUrl = TempData["ReturnUrl"] as string ?? "/walls";
-            return LocalRedirect(returnUrl);
-        }
-        catch (Exception ex)
-        {
-            Log.Error("[Web Authentication] Authentication callback error: {Message}", ex.Message);
-            return Redirect("/account/login?error=callback_failed");
-        }
+        return await SignInWithProviderCodeAsync(code);
     }
 
     [HttpGet("/account/logout")]
@@ -337,7 +301,15 @@ public partial class AccountController : Controller
             ["redirect_uri"] = $"{BaseUrl}/oauth-callback",
         };
 
-        if (provider == "google")
+        if (provider == Apple.AppleWebSettings.Provider)
+        {
+            parameters["redirect_uri"] = AppleRedirectUri;
+            foreach (var (key, value) in _apple.BeginAuthorize(Response, state))
+            {
+                parameters[key] = value;
+            }
+        }
+        else if (provider == "google")
         {
             parameters["response_type"] = "code";
             parameters["scope"] = "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile";
@@ -385,6 +357,7 @@ public partial class AccountController : Controller
         "github" when _configuration.GitHubOAuth.Enabled => (_configuration.GitHubOAuth.OAuthUrl, _configuration.GitHubOAuth.ClientId),
         "microsoft" when _configuration.MicrosoftOAuth.Enabled => (_configuration.MicrosoftOAuth.OAuthUrl, _configuration.MicrosoftOAuth.ClientId),
         "google" when _configuration.GoogleOAuth.Enabled => (_configuration.GoogleOAuth.OAuthUrl, _configuration.GoogleOAuth.ClientId),
+        Apple.AppleWebSettings.Provider when _apple.IsEnabled => (_apple.AuthorizeUrl, _apple.ServicesId),
         _ => null,
     };
 }

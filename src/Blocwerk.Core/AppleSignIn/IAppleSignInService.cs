@@ -27,8 +27,23 @@ public interface IAppleSignInService
     /// <summary>The account's linked Apple ID, or null.</summary>
     Task<Entities.AppleLink?> FindLinkAsync(Guid userId, CancellationToken ct = default);
 
-    /// <summary>Removes the account's Apple ID; false when none was linked.</summary>
+    /// <summary>
+    /// Links an Apple ID already verified by the caller (the web sign-in's code exchange) to <paramref name="userId"/>,
+    /// with the same rules as <see cref="LinkAsync"/>: it replaces an Apple ID linked before, and is refused when
+    /// another account holds this one.
+    /// </summary>
+    Task<AppleLinkOutcome> LinkSubjectAsync(Guid userId, string subject, CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes the account's Apple ID; false when none was linked. Throws <see cref="AppleOnlySignInException"/> when
+    /// the Apple ID is the account's only way in (<see cref="HasOtherSignInAsync"/> is false).
+    /// </summary>
     Task<bool> UnlinkAsync(Guid userId, CancellationToken ct = default);
+
+    /// <summary>
+    /// True when the account can sign in without its Apple ID: a password, or a GitHub, Google or Microsoft identity.
+    /// </summary>
+    Task<bool> HasOtherSignInAsync(Guid userId, CancellationToken ct = default);
 
     /// <summary>True when an Apple ID is linked to the account.</summary>
     Task<bool> IsLinkedAsync(Guid userId, CancellationToken ct = default);

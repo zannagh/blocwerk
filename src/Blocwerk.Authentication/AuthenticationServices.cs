@@ -1,4 +1,5 @@
 using System.Text;
+using Blocwerk.Authentication.Apple;
 using Blocwerk.Authentication.Authorization;
 using Blocwerk.Authentication.Endpoints;
 using Blocwerk.Authentication.Handlers;
@@ -55,6 +56,9 @@ public static class AuthenticationServices
 
         app.Services.AddSingleton<RedirectUriProvider>();
         app.Services.AddSingleton<CodeBasedAuthProvider>();
+
+        // Web Sign in with Apple; off (button hidden, routes fall back) until the APPLE_SIGNIN_* variables are set.
+        app.AddAppleWebSignIn();
         app.Services.AddSingleton<ISecurityTokenHandler, JwtTokenHandler>();
         app.Services.AddSingleton<IRefreshTokenHandler, RefreshTokenHandler>();
 

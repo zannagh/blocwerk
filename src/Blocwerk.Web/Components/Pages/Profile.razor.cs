@@ -200,6 +200,8 @@ public partial class Profile
         "linked" => "Account linked.",
         "merged" => "Accounts merged — the other account was absorbed into this one.",
         "already" => "That account is already linked to this profile.",
+        "apple_elsewhere" => "That Apple ID already signs in to another Blocwerk account. Unlink it there first.",
+        "apple_already" => "This account already has an Apple ID. Unlink it first to link another one.",
         "error" => "Couldn't link that account. Please try again.",
         "unavailable" => "That provider isn't available.",
         "apikey" => Blocwerk.Core.Services.ApiKeySessionRestrictedException.UserMessage,

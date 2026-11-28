@@ -27,6 +27,9 @@ public sealed class AppleSignInService(
     IKioskContext? kioskContext = null,
     TimeProvider? clock = null) : IAppleSignInService
 {
+    /// <summary>What <see cref="AppleLink.LinkedFrom"/> says for an Apple ID linked on the web profile.</summary>
+    public const string WebLinkedFrom = "Web";
+
     private TimeProvider Clock => clock ?? TimeProvider.System;
 
     /// <summary>How young a device key must be to link an Apple ID: the app links right after it signed in.</summary>
@@ -84,6 +87,41 @@ public sealed class AppleSignInService(
     }
 
     /// <inheritdoc/>
+    public async Task<AppleLinkOutcome> LinkSubjectAsync(Guid userId, string subject, CancellationToken ct = default)
+    {
+        if (userId == Guid.Empty || GhostUser.Is(userId) || string.IsNullOrWhiteSpace(subject) || subject.Length > 255)
+        {
+            throw new UnauthorizedAccessException("Only a signed-in user can link a verified Apple ID.");
+        }
+
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        db.CurrentUserId = Guid.Empty;
+        var holder = await db.AppleLinks.AsNoTracking().FirstOrDefaultAsync(l => l.Subject == subject, ct);
+        if (holder is not null)
+        {
+            return holder.UserId == userId ? AppleLinkOutcome.Linked : Refuse(userId);
+        }
+
+        if (await db.AppleLinks.AnyAsync(l => l.UserId == userId, ct))
+        {
+            return AppleLinkOutcome.AlreadyLinked;
+        }
+
+        db.AppleLinks.Add(new AppleLink { UserId = userId, Subject = subject, LinkedAt = Clock.GetUtcNow(), LinkedFrom = WebLinkedFrom });
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException)
+        {
+            return Refuse(userId);
+        }
+
+        logger.LogInformation("Apple ID linked to user {UserId} from the web", userId);
+        return AppleLinkOutcome.Linked;
+    }
+
+    /// <inheritdoc/>
     public async Task<AppleLink?> FindLinkAsync(Guid userId, CancellationToken ct = default)
     {
         await using var db = await contexts.CreateDbContextAsync(ct);
@@ -102,10 +140,28 @@ public sealed class AppleSignInService(
             return false;
         }
 
+        if (!await HasOtherSignInAsync(userId, ct))
+        {
+            logger.LogWarning("Apple ID unlink refused for user {UserId}: it is the account's only way in", userId);
+            throw new AppleOnlySignInException();
+        }
+
         db.AppleLinks.Remove(link);
         await db.SaveChangesAsync(ct);
         logger.LogInformation("Apple ID unlinked from user {UserId}", userId);
         return true;
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> HasOtherSignInAsync(Guid userId, CancellationToken ct = default)
+    {
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        db.CurrentUserId = Guid.Empty;
+        var passwordHash = await db.Users.IgnoreQueryFilters()
+            .Where(u => u.Id == userId)
+            .Select(u => u.PasswordHash)
+            .FirstOrDefaultAsync(ct);
+        return !string.IsNullOrEmpty(passwordHash) || await db.UserIdentities.AnyAsync(i => i.UserId == userId, ct);
     }
 
     /// <inheritdoc/>

@@ -247,6 +247,26 @@ public sealed class AppleSignInServiceTests
     }
 
     [Fact]
+    public async Task Unlink_IsRefused_WhileTheAppleIdIsTheOnlyWayIn()
+    {
+        using var bed = AppleSignInTestBed.Create();
+        var user = await bed.AddAppleOnlyUserAsync("apple-only");
+        await bed.LinkAsync(user.Id, "apple-sub-1");
+
+        Assert.False(await bed.Service.HasOtherSignInAsync(user.Id));
+        await Assert.ThrowsAsync<AppleOnlySignInException>(() => bed.Service.UnlinkAsync(user.Id));
+        Assert.True(await bed.Service.IsLinkedAsync(user.Id));
+
+        await using (var db = bed.Harness.CreateContext())
+        {
+            (await db.Users.SingleAsync(u => u.Id == user.Id)).PasswordHash = "hash";
+            await db.SaveChangesAsync();
+        }
+
+        Assert.True(await bed.Service.UnlinkAsync(user.Id));
+    }
+
+    [Fact]
     public async Task LinkAndUnlink_TellTheOwnersDevices()
     {
         using var bed = AppleSignInTestBed.Create();

@@ -91,5 +91,10 @@ public partial class AccountController
         {
             yield return _configuration.GoogleOAuth.OAuthUrl;
         }
+
+        if (_apple.IsEnabled)
+        {
+            yield return _apple.AuthorizeUrl;
+        }
     }
 }

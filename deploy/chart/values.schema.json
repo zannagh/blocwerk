@@ -72,7 +72,8 @@
         "appsettings": {"type": "string"},
         "compute": {"type": "string", "minLength": 1},
         "deploy": {"type": "string"},
-        "recognition": {"type": "string", "minLength": 1}
+        "recognition": {"type": "string", "minLength": 1},
+        "appleSignin": {"type": "string"}
       }
     },
     "capture": {

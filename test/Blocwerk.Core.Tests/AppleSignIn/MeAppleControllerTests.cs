@@ -1,6 +1,7 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using Blocwerk.Core.AppleSignIn;
 using Blocwerk.Core.Entities;
 using Blocwerk.Web.Controllers;
 using Microsoft.AspNetCore.Http;
@@ -43,6 +44,20 @@ public sealed class MeAppleControllerTests
 
         var conflict = Assert.IsType<ConflictObjectResult>(result);
         Assert.Equal(MeAppleController.LinkedElsewhereMessage, Assert.IsType<ApiErrorResponse>(conflict.Value).Message);
+    }
+
+    [Fact]
+    public async Task UnlinkingTheOnlyWayIn_Answers409_AndKeepsTheLink()
+    {
+        using var bed = AppleSignInTestBed.Create();
+        var user = await bed.AddAppleOnlyUserAsync("apple-only");
+        var controller = Controller(bed, user, await bed.DeviceKeyAsync(user.Id));
+        Assert.IsType<NoContentResult>(await controller.Link(Body(bed, "apple-sub-1"), CancellationToken.None));
+
+        var conflict = Assert.IsType<ConflictObjectResult>(await controller.Unlink(CancellationToken.None));
+
+        Assert.Equal(AppleOnlySignInException.UserMessage, Assert.IsType<ApiErrorResponse>(conflict.Value).Message);
+        Assert.True(await ProfileLinkedAsync(bed, user));
     }
 
     [Fact]
